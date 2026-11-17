@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.agents.mcp.client import MCPRegistry, ToolHandle
 from app.agents.models.agent import Agent
@@ -754,3 +755,48 @@ async def test_partial_discovery_is_not_recorded_as_the_tool_list(
     assert mcp.calls == [("securo__list_accounts", {})]
     assert test_agent.tools_initialized is False
     assert await agent_service.allowed_tool_pairs(session, test_agent.id) == set()
+
+
+async def test_initialization_seen_late_keeps_the_saved_list(session, test_user, test_agent):
+    """Two requests can discover at once, or the owner can save a list while
+    a turn is discovering. A request that still sees the agent as
+    uninitialized must not add rows over the list already written, nor fail
+    on rows that already exist."""
+    from sqlalchemy import update
+
+    from app.agents.services import agent_service
+
+    assert test_agent.tools_initialized is False
+    # The owner saves a list in another request; this request's copy of the
+    # agent still says uninitialized.
+    await session.execute(
+        update(Agent).where(Agent.id == test_agent.id).values(tools_initialized=True)
+        .execution_options(synchronize_session=False)
+    )
+    await session.commit()
+    await agent_service.replace_tool_enablement(
+        session, test_agent.id, [("securo", "list_accounts", False)]
+    )
+    # The stale copy: what this request loaded, without a pending write.
+    set_committed_value(test_agent, "tools_initialized", False)
+
+    await agent_service.initialize_tools(
+        session, test_agent, [("securo", "list_accounts"), ("securo", "list_budgets")]
+    )
+
+    assert test_agent.tools_initialized is True
+    rows = {(r.server, r.tool_name, r.enabled) for r in await agent_service.list_tools(session, test_agent.id)}
+    assert rows == {("securo", "list_accounts", False)}
+
+
+async def test_initialization_runs_once(session, test_user, test_agent):
+    from app.agents.services import agent_service
+
+    await agent_service.initialize_tools(session, test_agent, [("securo", "list_accounts")])
+    # A second request with a stale copy, without a pending write.
+    set_committed_value(test_agent, "tools_initialized", False)
+    await agent_service.initialize_tools(
+        session, test_agent, [("securo", "list_accounts"), ("securo", "list_budgets")]
+    )
+
+    assert await agent_service.allowed_tool_pairs(session, test_agent.id) == {("securo", "list_accounts")}

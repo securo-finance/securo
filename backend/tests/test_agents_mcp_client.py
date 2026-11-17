@@ -109,6 +109,18 @@ def test_parse_servers_handles_extra_with_and_without_alias(monkeypatch):
     assert urls["gamma"] == "http://c:9002/mcp"
 
 
+@pytest.mark.parametrize("name", ["rep__orts", "reports_", "a__b__c", "x_"])
+def test_parse_servers_skips_names_that_break_the_wire_name(monkeypatch, name):
+    """Calls go out as `<server>__<tool>` and are split at the first "__".
+    With servers `reports` and `reports_`, `reports___x` would reach
+    `reports` asking for `_x`."""
+    from app.agents.config import get_agent_settings
+
+    s = get_agent_settings()
+    monkeypatch.setattr(s, "extra_mcp_servers", f"http://a:9000/mcp|{name}, http://b:9001/mcp|reports")
+    assert [sp.name for sp in _parse_servers()] == ["securo", "reports"]
+
+
 # --------------------------------------------------------------------- MCPClient.list_tools
 
 @pytest.mark.asyncio

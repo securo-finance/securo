@@ -217,21 +217,40 @@ async def initialize_tools(
     server was down). Callers pass only a complete discovery."""
     if agent.tools_initialized:
         return
+    # Claim the initialization atomically. Two requests (a chat turn and the
+    # Tools tab) can discover at once, and an explicit save can land in
+    # between: only the request whose UPDATE flips the flag writes rows. The
+    # UPDATE also takes the agent's row lock, which replace_tool_enablement
+    # takes first, so an explicit save and this claim never interleave.
+    claimed = await session.execute(
+        update(Agent)
+        .where(Agent.id == agent.id, Agent.tools_initialized.is_(False))
+        .values(tools_initialized=True)
+        .execution_options(synchronize_session=False)
+    )
+    if getattr(claimed, "rowcount", 0) != 1:
+        # Another request initialized it, or the owner saved a list: keep it.
+        await session.refresh(agent)
+        return
     existing = {(r.server, r.tool_name) for r in await list_tools(session, agent.id)}
-    for server, name in discovered:
+    for server, name in dict.fromkeys(discovered):
         if (server, name) not in existing:
             session.add(AgentTool(agent_id=agent.id, server=server, tool_name=name, enabled=True))
-    agent.tools_initialized = True
     await session.commit()
+    await session.refresh(agent)
 
 
 async def replace_tool_enablement(
     session: AsyncSession, agent_id: uuid.UUID, items: list[tuple[str, str, bool]]
 ) -> None:
-    await session.execute(delete(AgentTool).where(AgentTool.agent_id == agent_id))
-    for server, name, enabled in items:
-        session.add(AgentTool(agent_id=agent_id, server=server, tool_name=name, enabled=enabled))
+    # Mark the list as written before touching the rows: the UPDATE takes the
+    # agent's row lock, so a concurrent initialize_tools either finished
+    # already (and its rows are replaced here) or waits and then finds the
+    # list initialized.
     await session.execute(
         update(Agent).where(Agent.id == agent_id).values(tools_initialized=True)
     )
+    await session.execute(delete(AgentTool).where(AgentTool.agent_id == agent_id))
+    for server, name, enabled in items:
+        session.add(AgentTool(agent_id=agent_id, server=server, tool_name=name, enabled=enabled))
     await session.commit()

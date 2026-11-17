@@ -66,6 +66,16 @@ def _parse_servers() -> list[_ServerSpec]:
                     BUILTIN_SERVER_NAME,
                 )
                 continue
+            if not name or "__" in name or name.endswith("_"):
+                # Tools are called as `<server>__<tool>`, split at the first
+                # "__". A server name holding "__" or ending in "_" makes that
+                # split land elsewhere, so a call could reach another server.
+                logger.warning(
+                    "Ignoring extra MCP server %r: its name %r can't contain '__' or end with '_'.",
+                    url.strip(),
+                    name,
+                )
+                continue
             out.append(_ServerSpec(name=name, url=url.strip()))
     return out
 
