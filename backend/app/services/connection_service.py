@@ -22,6 +22,7 @@ from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
 from app.models.bank_connection import BankConnection
 from app.models.account import Account
+from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.category import Category
 from app.models.institution import Institution
 from app.models.invoice import Invoice
@@ -281,6 +282,61 @@ def _account_balance(acc_data: AccountData, deducted: dict[str, Decimal]) -> Dec
     if not amount or acc_data.auto_invested_balance <= 0:
         return acc_data.balance
     return acc_data.balance - amount
+
+
+async def _sync_reserved_balances(
+    session: AsyncSession, account: Account, acc_data: AccountData
+) -> None:
+    """Mirror the provider's reserved balances for one account.
+
+    ``None`` from the provider means it did not report the collection, so the
+    stored rows are left untouched (an unsupported connector must not wipe
+    them). A reported list is authoritative: rows whose ``(external_id,
+    currency)`` is absent are deleted, the rest are upserted — renames and
+    amount changes update in place, so identity is the provider's
+    identification, scoped to the parent account, never the label. Zero-amount
+    reservations are stored: Open Finance requires them and "reserved nothing"
+    is worth seeing.
+    """
+    if acc_data.reserved_balances is None or account.id is None:
+        return
+
+    existing = (
+        await session.execute(
+            select(AccountReservedBalance).where(
+                AccountReservedBalance.account_id == account.id
+            )
+        )
+    ).scalars().all()
+    by_key = {(row.external_id, row.currency): row for row in existing}
+
+    seen: set[tuple[str, str]] = set()
+    for item in acc_data.reserved_balances:
+        key = (item.external_id, item.currency)
+        seen.add(key)
+        row = by_key.get(key)
+        if row is None:
+            row = AccountReservedBalance(
+                # The connection owner's workspace, matching the account
+                # row, never the caller's (ADR 0002).
+                workspace_id=account.workspace_id,
+                account_id=account.id,
+                external_id=item.external_id,
+                name=item.name,
+                currency=item.currency,
+                amount=item.amount,
+            )
+            session.add(row)
+            by_key[key] = row
+        else:
+            row.name = item.name
+            row.amount = item.amount
+
+    for key, row in by_key.items():
+        if key not in seen:
+            await session.delete(row)
+
+    await session.flush()
 
 
 async def _fetch_holdings(
@@ -1654,6 +1710,8 @@ async def handle_oauth_callback(
         )
         session.add(account)
         await session.flush()
+
+        await _sync_reserved_balances(session, account, acc_data)
 
         bills_by_external_id = await _sync_credit_card_bills(
             session, user_id, account, provider, connection_data.credentials
@@ -3356,6 +3414,8 @@ async def sync_connection(
                 )
                 session.add(account)
                 await session.flush()
+
+            await _sync_reserved_balances(session, account, acc_data)
 
             # Fetch the bills feed before transactions so transaction → bill
             # FK resolution happens in-memory (no N+1). Empty dict for non-CC

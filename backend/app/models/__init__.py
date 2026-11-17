@@ -7,6 +7,7 @@ from app.models.category_group import CategoryGroup
 from app.models.bank_connection import BankConnection
 from app.models.institution import Institution
 from app.models.account import Account
+from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.transaction import Transaction
 from app.models.rule import Rule
 from app.models.workspace_plugin import WorkspacePlugin
@@ -67,6 +68,7 @@ __all__ = [
     "BankConnection",
     "Institution",
     "Account",
+    "AccountReservedBalance",
     "Transaction",
     "Rule",
     "WorkspacePlugin",

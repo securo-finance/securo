@@ -338,8 +338,27 @@ def serialize_account(
         "secured_asset_id": acc.secured_asset_id,
         "balance": acc.balance,
         "currency": acc.currency,
+        # Provider balance as reported. Reserves are shown separately and never
+        # added to account totals (ADR 0022).
         "current_balance": resolved_balance,
         "previous_balance": float(previous_balance or 0),
+        "reserved_balances": [
+            {
+                "id": row.id,
+                "external_id": row.external_id,
+                "name": row.name,
+                "currency": row.currency,
+                "amount": float(row.amount),
+            }
+            for row in acc.reserved_balances
+        ],
+        # Sum of the same-currency reservations, in the account's currency.
+        "reserved_total": float(
+            sum(
+                (r.amount for r in acc.reserved_balances if r.currency == acc.currency),
+                Decimal(0),
+            )
+        ),
         "is_closed": acc.is_closed,
         "closed_at": acc.closed_at,
         "credit_limit": float(acc.credit_limit) if acc.credit_limit is not None else None,

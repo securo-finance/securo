@@ -198,7 +198,17 @@ export interface Account {
   loan_first_payment_date?: string | null
   loan_amortization?: LoanAmortization | null
   balance: number
+  // Provider balance as reported; reserves are a separate display-only breakdown.
   current_balance: number
+  reserved_balances?: {
+    id: string
+    external_id: string
+    name: string | null
+    currency: string
+    amount: number
+  }[]
+  // Sum of the same-currency reservations, in the account's currency.
+  reserved_total?: number
   previous_balance: number | null
   // Date of the opening-balance transaction; null when there is none.
   balance_date?: string | null
