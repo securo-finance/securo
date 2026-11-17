@@ -85,6 +85,20 @@ jobs:
               return ok;
             }
 
+            // `run.pull_requests` is empty for a run whose head lives in a fork:
+            // the field only lists pull requests whose branch is in this
+            // repository, and every run this workflow exists for is the other
+            // kind. The pairing is made from the head instead, and it must be
+            // the exact commit: the files above are read at the head of the
+            // pull request, so a run of an older commit could otherwise be
+            // approved by a later one that reverted a `.github/` change.
+            const open = await github.paginate(github.rest.pulls.list, {
+              owner: OWNER, repo: REPO, state: 'open', per_page: 100,
+            });
+            const byHead = new Map(open.map((pr) => [
+              `${pr.head.repo?.full_name}@${pr.head.sha}`, pr.number,
+            ]));
+
             const runs = await github.paginate(
               github.rest.actions.listWorkflowRunsForRepo,
               { owner: OWNER, repo: REPO, status: 'action_required', per_page: 100 },
@@ -92,16 +106,19 @@ jobs:
 
             let approved = 0, held = 0;
             for (const run of runs) {
-              const numbers = (run.pull_requests || []).map((p) => p.number);
-              if (numbers.length === 0) { held++; continue; }
-
-              let allowed = true;
-              for (const number of numbers) {
-                if (!(await mayApprove(number))) allowed = false;
-              }
-              if (!allowed) {
+              const number = byHead.get(
+                `${run.head_repository?.full_name}@${run.head_sha}`,
+              );
+              if (number === undefined) {
+                // Closed, force-pushed past, or a run with no pull request at
+                // all: not this workflow's decision to make.
                 held++;
-                core.info(`run ${run.id} (${run.name}) left for a maintainer: ${numbers.join(', ')}`);
+                continue;
+              }
+
+              if (!(await mayApprove(number))) {
+                held++;
+                core.info(`run ${run.id} (${run.name}) left for a maintainer: #${number}`);
                 continue;
               }
 
@@ -110,7 +127,7 @@ jobs:
                   owner: OWNER, repo: REPO, run_id: run.id,
                 });
                 approved++;
-                core.info(`approved run ${run.id} (${run.name}) for ${numbers.join(', ')}`);
+                core.info(`approved run ${run.id} (${run.name}) for #${number}`);
               } catch (err) {
                 // A 403 here means this token may not approve runs at all,
                 // which a retry will not fix; a 404 means the run was approved
