@@ -3021,27 +3021,32 @@ def _throttle_retry_after(
     provider: object,
     throttled_accounts: set[str],
     retry_after: Optional[float],
+    throttled_without_retry_after: bool = False,
 ) -> Optional[float]:
     """Retry-After to note when a sync fails for another reason after a 429
-    on some account. The failure decides the status, but the bank's 429 still
-    sets a floor on the next scheduled try: its own Retry-After, or the usual
-    6 hours when it gave none. A 429 can be noted by the provider (account
-    discovery) or by the sync itself (transaction fetch); the longest wins."""
+    on some account. The failure decides the status, but each 429 still sets
+    a floor on the next scheduled try: its own Retry-After, or the usual 6
+    hours when it gave none. A 429 can be noted by the provider (account
+    discovery) or by the sync itself (transaction fetch); the longest wins,
+    so a short Retry-After on one account never undercuts the 6 hours another
+    account's bare 429 implies."""
+    default = RATE_LIMITED_RETRY_DEFAULT.total_seconds()
     floors: list[float] = []
     if throttled_accounts:
-        floors.append(
-            retry_after
-            if retry_after is not None
-            else RATE_LIMITED_RETRY_DEFAULT.total_seconds()
-        )
+        if retry_after is not None:
+            floors.append(retry_after)
+        if retry_after is None or throttled_without_retry_after:
+            floors.append(default)
     throttled = getattr(provider, "rate_limited_account_ids", None)
     if isinstance(throttled, (set, frozenset, list, tuple)) and throttled:
         provider_retry_after = getattr(provider, "rate_limit_retry_after", None)
-        floors.append(
-            float(provider_retry_after)
-            if isinstance(provider_retry_after, (int, float))
-            else RATE_LIMITED_RETRY_DEFAULT.total_seconds()
-        )
+        has_header = isinstance(provider_retry_after, (int, float))
+        if has_header:
+            floors.append(float(provider_retry_after))
+        if not has_header or (
+            getattr(provider, "rate_limited_without_retry_after", False) is True
+        ):
+            floors.append(default)
     return max(floors) if floors else None
 
 
@@ -3107,6 +3112,9 @@ async def sync_connection(
     # so a later failure in the run still notes them as the retry floor.
     rate_limited_accounts: set[str] = set()
     retry_after: Optional[float] = None
+    # Whether some 429 in this run came without a Retry-After: that throttle
+    # still implies the 6-hour default, whatever the others asked for.
+    throttled_without_retry_after = False
     try:
         # Refresh credentials if needed
         credentials = await provider.refresh_credentials(connection.credentials or {})
@@ -3382,6 +3390,8 @@ async def sync_connection(
                 rate_limited_accounts.add(acc_data.external_id)
                 if exc.retry_after is not None:
                     retry_after = max(retry_after or 0.0, exc.retry_after)
+                else:
+                    throttled_without_retry_after = True
                 logger.warning(
                     "Sync %s: provider rate-limited transactions for account %s; "
                     "skipping it for this run",
@@ -3935,7 +3945,10 @@ async def sync_connection(
             connection_id,
             "error",
             retry_after=_throttle_retry_after(
-                provider, rate_limited_accounts, retry_after
+                provider,
+                rate_limited_accounts,
+                retry_after,
+                throttled_without_retry_after,
             ),
         )
         raise

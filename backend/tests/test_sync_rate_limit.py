@@ -418,6 +418,68 @@ async def test_failure_after_transaction_throttle_keeps_retry_floor(
 
 
 @pytest.mark.asyncio
+async def test_mixed_throttles_without_header_keep_six_hour_floor(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Account A's transactions 429 without a Retry-After (6 hours by
+    default), account B's 429 with one hour, then account C fails with a
+    network error: B's shorter header must not undercut A's default."""
+    conn = await _make_connection(session, test_user.id, test_workspace.id)
+    provider = _mock_provider_two_accounts()
+    provider.rate_limited_account_ids = set()
+    provider.rate_limit_retry_after = None
+    provider.get_accounts = AsyncMock(
+        return_value=[
+            AccountData(
+                external_id=ext_id,
+                name=f"Account {ext_id[-1].upper()}",
+                type="checking",
+                balance=Decimal("100"),
+                currency="BRL",
+            )
+            for ext_id in ("rl-acc-a", "rl-acc-b", "rl-acc-c")
+        ]
+    )
+
+    def _transactions(creds, account_external_id, since=None, payee_source="auto"):
+        if account_external_id == "rl-acc-a":
+            raise ProviderRateLimited("429", retry_after=None)
+        if account_external_id == "rl-acc-b":
+            raise ProviderRateLimited("429", retry_after=3600.0)
+        raise httpx.ConnectError("boom")
+
+    provider.get_transactions = AsyncMock(side_effect=_transactions)
+
+    with _sync_patches(provider), pytest.raises(httpx.ConnectError):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    stored = await session.get(BankConnection, conn.id, populate_existing=True)
+    assert stored is not None and stored.status == "error"
+    assert 6 * 3600 - 100 < _retry_floor_seconds(stored) <= 6 * 3600
+
+
+@pytest.mark.asyncio
+async def test_mixed_provider_throttles_without_header_keep_six_hour_floor(
+    session: AsyncSession, test_user, test_workspace
+):
+    """The same mix noted by the provider during account discovery: one
+    account's 429 had no Retry-After, another's had one hour."""
+    conn = await _make_connection(session, test_user.id, test_workspace.id)
+    provider = _mock_provider_two_accounts()
+    provider.rate_limited_account_ids = {"rl-acc-a", "rl-acc-b"}
+    provider.rate_limit_retry_after = 3600.0
+    provider.rate_limited_without_retry_after = True
+    provider.get_accounts = AsyncMock(side_effect=httpx.ConnectError("boom"))
+
+    with _sync_patches(provider), pytest.raises(httpx.ConnectError):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    stored = await session.get(BankConnection, conn.id, populate_existing=True)
+    assert stored is not None and stored.status == "error"
+    assert 6 * 3600 - 100 < _retry_floor_seconds(stored) <= 6 * 3600
+
+
+@pytest.mark.asyncio
 async def test_failure_without_throttle_notes_no_floor(
     session: AsyncSession, test_user, test_workspace
 ):
@@ -626,6 +688,7 @@ async def test_enable_banking_get_accounts_skips_throttled_accounts(uids):
     assert accounts[0].balance == Decimal("100.00")
     assert provider.rate_limited_account_ids == {"uid-a", "uid-b"}
     assert provider.rate_limit_retry_after == 60.0
+    assert provider.rate_limited_without_retry_after is True
 
 
 @pytest.mark.asyncio

@@ -964,6 +964,9 @@ class EnableBankingProvider(BankProvider):
         # partial, keep its checkpoint and back off before the next attempt.
         self.rate_limited_account_ids: set[str] = set()
         self.rate_limit_retry_after: Optional[float] = None
+        # Whether some of those 429s came without a Retry-After, so the sync
+        # layer can still apply its default floor for them.
+        self.rate_limited_without_retry_after = False
         data = await self._request("GET", f"/sessions/{session_id}")
         # The bank can end consent well before `valid_until`; EB still answers
         # 200 here but flags the session, and every account call then fails.
@@ -1082,6 +1085,8 @@ class EnableBankingProvider(BankProvider):
             self.rate_limit_retry_after = max(
                 self.rate_limit_retry_after or 0.0, exc.retry_after
             )
+        else:
+            self.rate_limited_without_retry_after = True
         logger.warning(
             "Enable Banking rate-limited account %s; skipping it this run", uid
         )
