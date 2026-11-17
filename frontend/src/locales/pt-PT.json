@@ -1371,8 +1371,16 @@
     "connectionStatus": {
       "active": "Ativa",
       "error": "Erro",
-      "expired": "Expirada"
-    }
+      "expired": "Expirada",
+      "disconnected": "Desligada"
+    },
+    "pluginConnectors": "Dos seus plugins",
+    "pluginUnavailable": "O plugin desta ligação já não está instalado ou disponível.",
+    "confirmDisconnectKeepDesc": "{{institution}} vai deixar de sincronizar. As contas e o histórico de transações continuam na app, e pode voltar a ligá-lo mais tarde.",
+    "disconnectAlsoDelete": "Apagar também as contas e transações",
+    "disconnectedKept": "Banco desligado. As contas e o histórico foram mantidos.",
+    "removeConnection": "Remover ligação",
+    "connectionDisconnected": "Desligada. Volte a ligar para sincronizar"
   },
   "loans": {
     "title": "Contrato do empréstimo",
@@ -1586,7 +1594,18 @@
     "autoGenerate": "Gerar transações automaticamente",
     "autoGenerateHelp": "Cria uma transação sempre que esta conta vence. Desativa para aguardar o lançamento real (por exemplo, da sincronização bancária) e mostrá-la apenas como prevista até lá.",
     "fxEstimate": "Estimativa baseada na última taxa de câmbio ({{rate}}). O valor final pode mudar.",
-    "confirmDeleteDescription": "A definição recorrente \"{{description}}\" será eliminada permanentemente. As transações existentes manter-se-ão, mas perderão a ligação recorrente. Esta ação não pode ser desfeita."
+    "confirmDeleteDescription": "A definição recorrente \"{{description}}\" será eliminada permanentemente. As transações existentes manter-se-ão, mas perderão a ligação recorrente. Esta ação não pode ser desfeita.",
+    "priceHistory": "Histórico de preços",
+    "viewPriceHistory": "Ver histórico de preços",
+    "priceChangesTitle": "Alterações recentes de preço (últimos 30 dias)",
+    "priceChangesEmpty": "Nenhuma alteração de preço estável detetada",
+    "priceChangeBadge": "Preço alterado",
+    "priceChangeIncrease": "Preço aumentou",
+    "priceChangeDecrease": "Preço diminuiu",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "Após uma lacuna de {{days}} dias",
+    "priceChangeInsufficient": "São necessárias pelo menos 3 cobranças publicadas e vinculadas para relatar uma alteração de preço estável."
   },
   "rules": {
     "searchPlaceholder": "Procurar regras...",
@@ -2051,6 +2070,7 @@
     "noTransactions": "Nenhuma transação ainda",
     "txBuy": "Compra",
     "txSell": "Venda",
+    "txSplit": "Desdobramento",
     "txFee": "Taxa",
     "txSaved": "Transação guardada",
     "txDeleted": "Transação eliminada",
@@ -2061,6 +2081,10 @@
     "unitPrice": "Preço unitário",
     "fee": "Taxa",
     "txTotal": "Total",
+    "splitOldUnits": "Unidades antes",
+    "splitNewUnits": "Unidades depois",
+    "splitHint": "Indica as unidades que tinhas antes do desdobramento e em quantas se transformaram: um desdobramento de 1 para 100 é 1 → 100, um agrupamento (reverse split) de 10 para 1 é 10 → 1. Usa como data o primeiro dia em que o ativo é cotado ao novo preço.",
+    "splitInvalid": "Introduz dois números inteiros diferentes, de 1 a 1.000.000.",
     "confirmDeleteTxTitle": "Eliminar transação?",
     "confirmDeleteTx": "Isso remove o lançamento e recalcula o preço médio do ativo.",
     "editAsset": "Editar Ativo",
@@ -2417,7 +2441,8 @@
     "preview": "Pré-visualizar",
     "download": "Transferir",
     "closePreview": "Fechar pré-visualização",
-    "remove": "Remover"
+    "remove": "Remover",
+    "invalidAmount": "Introduza um valor válido, como {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "Pesquisar grupos...",
@@ -2805,6 +2830,8 @@
       "saveFailed": "Falha ao guardar a seleção de ferramentas",
       "empty": "Nenhuma ferramenta descoberta. O servidor MCP está a correr? Com Docker: `docker compose --profile agents up -d`.",
       "proposeBadge": "proposta",
+      "enabledCount": "{{enabled}} de {{total}} ativadas",
+      "enableAll": "Ativar todas",
       "loading": "A carregar ferramentas…"
     },
     "chat": {
@@ -2856,7 +2883,13 @@
         "deleteBudget": "{{category}}: {{amount}} para {{month}}",
         "deleteRecurringBudget": "{{category}}: {{amount}} todos os meses a partir de {{month}}",
         "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
-        "createCategoryGroup": "“{{name}}”"
+        "createCategoryGroup": "“{{name}}”",
+        "createManualAccount": "{{name}} · {{type}} · {{currentBalance}} · {{openingBalance}}{{balanceDate}}",
+        "updateManualAccount": "{{name}}. {{currentBalance}}. {{changes}}",
+        "manualAccountMoney": "{{label}}: {{amount}}",
+        "manualAccountDate": "{{label}}: {{date}}",
+        "manualAccountChange": "{{field}}: {{before}} → {{after}}",
+        "manualAccountNoChanges": "Nenhuma alteração"
       }
     },
     "conversation": {
@@ -2882,6 +2915,7 @@
       "baseUrl": "URL do endpoint",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "A URL do endpoint é obrigatória para este fornecedor",
+      "baseUrlInvalid": "Introduz uma URL de endpoint http ou https válida",
       "ollamaHint": "Se o Ollama estiver a correr na tua máquina, usa http://host.docker.internal:11434 (Mac/Windows) ou o IP do teu host (Linux).",
       "openaiCompatHint": "Cola apenas host:porta (ex.: http://192.168.1.142:1234). O caminho /v1 é adicionado automaticamente. De dentro do Docker no Mac/Windows, troque localhost por host.docker.internal.",
       "apiKey": "Chave de API / token",
@@ -3390,7 +3424,8 @@
         "type": "Tipo",
         "content": "Conteúdo",
         "language": "Idioma",
-        "status": "Estado"
+        "status": "Estado",
+        "workspace": "Espaço de trabalho"
       },
       "view": {
         "all": "Todos",
@@ -3437,7 +3472,9 @@
       "type": "Tipo",
       "added": "Adicionado",
       "connections": "Ligações",
-      "codeNote": "Instalar mostra o que pode aceder e alterar antes de qualquer coisa ser executada."
+      "codeNote": "Instalar mostra o que pode aceder e alterar antes de qualquer coisa ser executada.",
+      "workspaces": "Espaços de trabalho",
+      "anyWorkspace": "Pessoal e negócios"
     },
     "installedFailed": "Não foi possível carregar os plugins instalados.",
     "planRecordOnly": {
@@ -3456,6 +3493,7 @@
       "write": "Ler e alterar {{what}}",
       "ownerOnly": "Só o proprietário do espaço de trabalho pode adicionar, atualizar ou remover um plugin que executa código.",
       "removeConnections": "As ligações dele neste espaço de trabalho ({{count}}) são removidas, juntamente com as chaves guardadas e os acessos.",
+      "unlinks": "As ligações bancárias dele ({{count}}) deixam de sincronizar. As contas e transações ficam, como contas manuais.",
       "removeNothing": "O código do plugin sai do seu servidor quando nenhum espaço de trabalho o usar.",
       "auth": {
         "credentials": "Chave ou palavra-passe",
@@ -3480,6 +3518,15 @@
         "install": "Este plugin não traz dados. Veja o que o código dele pode fazer:",
         "update": "Veja o que a nova versão pode fazer:",
         "remove": "O código dele deixa de ser executado neste espaço de trabalho."
+      },
+      "provides": "Sincroniza como um banco ligado",
+      "providesHint": "O Securo adiciona estes registos a este workspace e mantém-nos atualizados, como num banco ligado. Cada ligação aparece em Ligações Bancárias.",
+      "kinds": {
+        "accounts": "Contas",
+        "transactions": "transações",
+        "bills": "faturas de cartão",
+        "holdings": "investimentos",
+        "trades": "compras e vendas"
       }
     },
     "connections": {
@@ -3517,8 +3564,13 @@
       "added": "{{name}} ligada",
       "removeTitle": "Remover {{name}}?",
       "removeHint": "As chaves guardadas e o acesso a este espaço de trabalho são apagados. O que já trouxe mantém-se.",
+      "removeBankHint": "Sincroniza como um banco ligado: removê-la desliga esse banco e remove as contas que sincronizou, com as transações.",
       "removed": "{{name}} removida",
-      "copyFailed": "Não foi possível copiar. Selecione o endereço e copie-o manualmente."
+      "copyFailed": "Não foi possível copiar. Selecione o endereço e copie-o manualmente.",
+      "editTitle": "Voltar a ligar {{name}}",
+      "editHint": "Atualize o que mudou, como uma nova palavra-passe ou token. A ligação sincroniza de novo a seguir.",
+      "keepBlank": "Deixe um campo em branco para manter o valor atual.",
+      "updated": "{{name}} atualizada"
     },
     "oauth": {
       "title": "A concluir o início de sessão",
@@ -3527,7 +3579,9 @@
       "failed": "Não foi possível concluir o início de sessão. Tente novamente.",
       "missing": "O serviço não devolveu o início de sessão. Tente novamente.",
       "serviceError": "O serviço indicou um erro: {{message}}"
-    }
+    },
+    "onlyForBusiness": "Só espaços de trabalho de negócios",
+    "onlyForPersonal": "Só espaços de trabalho pessoais"
   },
   "library": {
     "title": "Biblioteca",

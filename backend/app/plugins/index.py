@@ -7,15 +7,20 @@ plugin, where a copy of its manifest is and that copy's sha256. Listing the
 catalog is that one request; a manifest is fetched only to plan an install
 or update, from the index's own host, and is refused unless its sha256
 matches. A plugin's README is copied there too and fetched, on the same
-terms, only when someone opens that plugin. Requests never follow redirects
-and are capped in size.
+terms, only when someone opens that plugin. Its icon, when it has one, is
+copied there under its sha256 (`icons/<sha256>.png`) and fetched when a
+browser asks Securo for it by that name: the content must hash to the name.
+A few are kept in memory by that name, as READMEs are.
+Requests never follow redirects and are capped in size.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import logging
+import re
 import tomllib
+from dataclasses import dataclass
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version as package_version
 from pathlib import Path
@@ -24,7 +29,9 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from app.models.workspace import WORKSPACE_KINDS
 from app.core.config import get_settings
+from app.plugins.logos import content_type as image_type
 from app.plugins.manifest import (
     CODE_KINDS,
     DATA_KINDS,
@@ -45,7 +52,12 @@ _MAX_INDEX_BYTES = 4 << 20
 _MAX_MANIFEST_BYTES = 2 << 20
 _MAX_README_BYTES = 256 << 10
 _MAX_ARCHIVE_BYTES = 20 << 20
+MAX_ICON_BYTES = 64 << 10
 _MANIFEST_CACHE_SIZE = 256
+#: Icons kept in memory: at 64 KB each, 4 MB at most.
+_ICON_CACHE_SIZE = 64
+#: An icon's file name in the catalog: its sha256 and what it is.
+ICON_NAME = re.compile(r"[0-9a-f]{64}\.(?:png|webp)")
 
 def supported_contributions() -> frozenset[str]:
     """What this instance can apply. Plugins with anything else are listed but
@@ -73,6 +85,7 @@ class IndexEntry(BaseModel):
     manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     readme: str | None = Field(default=None, max_length=512, description="The README copy, relative to the index.")
     readme_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    icon: str | None = Field(default=None, max_length=512, description="The icon copy, relative to the index.")
     archive: str | None = Field(
         default=None, max_length=512, description="The release's source tarball, relative to the index (plugins with code)."
     )
@@ -91,10 +104,19 @@ class IndexEntry(BaseModel):
     updated_at: datetime | None = None
     revoked: bool = False
     revoked_reason: str | None = Field(default=None, max_length=500)
+    workspaces: list[str] = Field(
+        default_factory=lambda: list(WORKSPACE_KINDS), description="The workspace types it's meant for."
+    )
 
     @property
     def owner(self) -> str:
         return self.repository.rstrip("/").split("/")[-2]
+
+    @property
+    def icon_name(self) -> str | None:
+        """The icon's file name in the catalog, when the index names its copy by its sha256."""
+        folder, _, name = (self.icon or "").partition("/")
+        return name if folder == "icons" and ICON_NAME.fullmatch(name) else None
 
     @property
     def supported(self) -> bool:
@@ -104,6 +126,10 @@ class IndexEntry(BaseModel):
     @property
     def compatible(self) -> bool:
         return is_compatible(self.min_securo_version)
+
+    def fits(self, workspace_kind: str) -> bool:
+        """It's meant for workspaces of this type."""
+        return workspace_kind in self.workspaces
 
 
 def http_client() -> httpx.AsyncClient:
@@ -163,8 +189,8 @@ def manifest_url(entry: IndexEntry) -> str:
     return _on_index_host(entry, entry.manifest, "manifest")
 
 
-def _remember(cache: dict, key: str, value) -> None:
-    if len(cache) >= _MANIFEST_CACHE_SIZE:
+def _remember(cache: dict, key: str, value, size: int = _MANIFEST_CACHE_SIZE) -> None:
+    if len(cache) >= size:
         cache.pop(next(iter(cache)))
     cache[key] = value
 
@@ -205,13 +231,55 @@ async def fetch_readme(client: httpx.AsyncClient, entry: IndexEntry) -> str | No
     return readme
 
 
+@dataclass(frozen=True)
+class Icon:
+    """A plugin's icon, as the catalog's copy holds it."""
+
+    content_type: str
+    data: bytes
+
+
+_icons: dict[str, Icon] = {}
+
+
+async def fetch_icon(client: httpx.AsyncClient, name: str) -> Icon:
+    """An icon by its file name in the catalog: `<sha256>.png` or `.webp`.
+
+    The name is all it takes to find and check it: it's fetched from
+    `icons/` beside the index, and refused unless it hashes to that name and
+    is a small PNG or WebP.
+    """
+    if not ICON_NAME.fullmatch(name):
+        raise PluginIndexError("not an icon's name")
+    if name in _icons:  # addressed by content: a hit can't be stale
+        return _icons[name]
+    body = await _get(client, urljoin(get_settings().plugins_index_url, f"icons/{name}"), MAX_ICON_BYTES)
+    if hashlib.sha256(body).hexdigest() != name.partition(".")[0]:
+        raise PluginIndexError(f"icon {name} doesn't match its checksum")
+    kind = image_type(body)
+    if kind is None:
+        raise PluginIndexError(f"icon {name} isn't a PNG or WebP image")
+    icon = Icon(content_type=kind, data=body)
+    _remember(_icons, name, icon, _ICON_CACHE_SIZE)
+    return icon
+
+
+#: The last archive fetched, by checksum: an install reads it for the runner
+#: and again for the logos in it, one right after the other.
+_last_archive: tuple[str, bytes] | None = None
+
+
 async def fetch_archive(client: httpx.AsyncClient, entry: IndexEntry) -> tuple[bytes, str]:
     """The source tarball of a plugin with code, and its sha256, checked against the index."""
+    global _last_archive
     if not entry.archive or not entry.archive_sha256:
         raise PluginIndexError(f"{entry.id}: the catalog has no copy of its code")
+    if _last_archive is not None and _last_archive[0] == entry.archive_sha256:
+        return _last_archive[1], entry.archive_sha256
     body = await _get(client, _on_index_host(entry, entry.archive, "code"), _MAX_ARCHIVE_BYTES)
     if hashlib.sha256(body).hexdigest() != entry.archive_sha256:
         raise PluginIndexError(f"{entry.id}: the code doesn't match the catalog's checksum")
+    _last_archive = (entry.archive_sha256, body)
     return body, entry.archive_sha256
 
 

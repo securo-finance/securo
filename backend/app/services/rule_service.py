@@ -87,14 +87,24 @@ async def validate_rule_definition(
     for condition in _flatten_conditions(conditions):
         field = _rule_item_value(condition, "field")
         op = _rule_item_value(condition, "op")
-        if field not in _ALLOWED_CONDITION_FIELDS or op not in _ALLOWED_CONDITION_OPS:
-            raise ValueError("Invalid rule condition")
-        if field == "status" and (
-            op not in _STATUS_CONDITION_OPS
-            or str(_rule_item_value(condition, "value") or "").strip().lower()
-            not in _STATUS_CONDITION_VALUES
-        ):
-            raise ValueError("Invalid rule condition")
+        if field not in _ALLOWED_CONDITION_FIELDS:
+            raise ValueError(f"Invalid condition: unsupported field {field!r}")
+        if op not in _ALLOWED_CONDITION_OPS:
+            raise ValueError(
+                f"Invalid condition: unsupported op {op!r} for field {field!r}"
+            )
+        if field == "status":
+            if op not in _STATUS_CONDITION_OPS:
+                raise ValueError(
+                    f"Invalid condition: unsupported op {op!r} for field 'status'; "
+                    "status supports only 'equals' and 'not_equals'"
+                )
+            value = str(_rule_item_value(condition, "value") or "").strip().lower()
+            if value not in _STATUS_CONDITION_VALUES:
+                raise ValueError(
+                    f"Invalid condition: unsupported status value {value!r}; "
+                    "use 'pending' or 'posted'"
+                )
         if op == "regex":
             compile_rule_regex(str(_rule_item_value(condition, "value") or ""))
 
@@ -102,7 +112,7 @@ async def validate_rule_definition(
         op = _rule_item_value(action, "op")
         value = _rule_item_value(action, "value")
         if op not in _ALLOWED_ACTION_OPS:
-            raise ValueError("Invalid rule action")
+            raise ValueError(f"Invalid action: unsupported op {op!r}")
         if op == "set_category":
             try:
                 category_id = uuid.UUID(str(value))

@@ -81,6 +81,7 @@ const CURRENCY_LOCALE: Record<string, string> = {
   TWD: 'zh-TW',
   ZAR: 'en-ZA',
   GEL: 'en-GE',
+  ILS: 'en-IL',
 }
 
 /**

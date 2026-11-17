@@ -17,7 +17,7 @@ import { useWorkspace } from '@/contexts/workspace-context'
 import { plugins as pluginsApi } from '@/lib/api'
 import { localized } from '@/lib/localized-text'
 import { pluginTheme } from '@/lib/themes'
-import { contributedKinds, pluginLocales, pluginTypes } from '@/lib/plugin-catalog'
+import { contributedKinds, onlyFor, pluginLocales, pluginTypes } from '@/lib/plugin-catalog'
 import { compactNumber, languageName, relativeDate, scopeLabel } from '@/lib/plugin-format'
 import { conditionSummary } from '@/lib/rule-summary'
 import { cn } from '@/lib/utils'
@@ -124,7 +124,7 @@ export default function PluginDetailPage() {
       {back}
 
       <header className="mb-8 flex gap-5">
-        <PluginAvatar seed={plugin.id} label={pluginName} className="size-14 text-lg sm:size-16 sm:text-xl" />
+        <PluginAvatar seed={plugin.id} label={pluginName} src={plugin.icon_url} className="size-14 text-lg sm:size-16 sm:text-xl" />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <h1 className="text-2xl font-semibold tracking-tight">{pluginName}</h1>
@@ -207,7 +207,7 @@ export default function PluginDetailPage() {
 
 function Actions({ plugin, canWrite, onAction }: { plugin: PluginCatalogEntry; canWrite: boolean; onAction: (action: PluginAction) => void }) {
   const { t } = useTranslation()
-  const installable = canWrite && !plugin.revoked && plugin.compatible && plugin.supported
+  const installable = canWrite && !plugin.revoked && plugin.compatible && plugin.supported && plugin.fits_workspace
   return (
     <div className="space-y-2">
       {installable && plugin.update_available && (
@@ -240,11 +240,16 @@ function Facts({ plugin }: { plugin: PluginCatalogEntry }) {
   const { t, i18n } = useTranslation()
   const lang = i18n.language
   const locales = pluginLocales(plugin)
+  const only = onlyFor(plugin)
+  const workspacesLabel = only
+    ? t(only === 'business' ? 'plugins.onlyForBusiness' : 'plugins.onlyForPersonal')
+    : t('plugins.detail.anyWorkspace')
   const rows: [string, React.ReactNode][] = [
     [t('plugins.detail.type'), <span className="inline-flex flex-wrap justify-end gap-x-2"><PluginTypes entry={plugin} /></span>],
     [t('plugins.detail.version'), <span className="tabular-nums">{plugin.version}</span>],
     [t('plugins.detail.license'), plugin.license],
     [t('plugins.detail.requires'), <span className="tabular-nums">Securo {plugin.min_securo_version}+</span>],
+    [t('plugins.detail.workspaces'), workspacesLabel],
     ...(plugin.updated_at ? [[t('plugins.detail.updated'), relativeDate(plugin.updated_at, lang)] as [string, React.ReactNode]] : []),
     ...(plugin.added_at ? [[t('plugins.detail.added'), relativeDate(plugin.added_at, lang)] as [string, React.ReactNode]] : []),
     ...(locales.length
