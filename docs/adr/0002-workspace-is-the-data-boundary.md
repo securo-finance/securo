@@ -32,4 +32,4 @@ Every financial row belongs to a workspace, and every read and write is scoped t
 
 ## Enforced by
 
-Per-area tests: `tests/test_asset_group_workspace_scope.py`, `tests/test_payee_workspace_scope.py`, `tests/test_access_tokens.py`, `tests/test_mcp_token_scoping.py`, `tests/test_group_visibility.py`, `tests/test_shared_transactions_view.py`. A test that walks every table and requires `workspace_id`, or one of the reasons above, is proposed in #1471.
+`tests/test_workspace_boundary_schema.py` walks every table: each one has a non-null, indexed `workspace_id` referencing `workspaces` with `ON DELETE CASCADE`, or is listed with one of the reasons above, and the reason is checked (a parent-scoped table really hangs off a workspace-owned parent). Per-area tests: `tests/test_asset_group_workspace_scope.py`, `tests/test_payee_workspace_scope.py`, `tests/test_access_tokens.py`, `tests/test_mcp_token_scoping.py`, `tests/test_group_visibility.py`, `tests/test_shared_transactions_view.py`.

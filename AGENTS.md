@@ -8,14 +8,14 @@ FastAPI, SQLAlchemy (async), Alembic and Celery on Redis in `backend/`; React 19
 
 ## Rules the code keeps
 
-- **The workspace is the data boundary** (ADR 0002). Financial tables carry `workspace_id`; routes take `WorkspaceContext` from `current_workspace` or `current_writable_workspace`; services filter by `ctx.id`. Queries that read rows shared from other workspaces add `in_bound_workspace(...)`. New code never relies on `workspace_autostamp`.
+- **The workspace is the data boundary** (ADR 0002). Financial tables carry `workspace_id`; routes take `WorkspaceContext` from `current_workspace` or `current_writable_workspace`; services filter by `ctx.id`. Queries that read rows shared from other workspaces add `in_bound_workspace(...)`. New code never relies on `workspace_autostamp`. `tests/test_workspace_boundary_schema.py` fails on a table without `workspace_id` unless it is listed there with a reason.
 - **Every mutating route has a write gate** (ADR 0003): it depends on `current_writable_workspace`, directly or through `require_module_write`, or sits in the test's `ALLOWLIST` with a reason. `tests/test_write_permission_coverage.py` fails otherwise. Roles are `owner`, `editor`, `viewer`, plus the virtual `manager`.
 - **Optional means one switch, off by default, free when off** (ADR 0004): a setting in `backend/app/core/config.py`, no imports, routes, jobs or containers when off (Compose profiles for services), documented in `.env.example` and the README.
 - **Feature areas are modules** (ADR 0005), listed in `module_service.py` and `frontend/src/lib/modules.ts`; their routes use `require_module` or `require_module_write`.
 - **Logic lives in services** (ADR 0011). Routers parse, check access, call a service, return a schema. What counts as income or expense is defined once, in `backend/app/services/_query_filters.py`.
 - **Money is exact** (ADR 0008): `Numeric(15, 2)` and `Decimal`, never `float`. Every row keeps its `currency`; cross-currency sums use `amount_primary`.
 - **"Today" comes from `app_today()`** (ADR 0009), never `date.today()`. Stored timestamps are UTC.
-- **Migrations are one numbered line** (ADR 0010): next number after the head, `down_revision` the previous one; a merged migration is never edited.
+- **Migrations are one numbered line** (ADR 0010): next number after the head, `down_revision` the previous one; a merged migration is never edited. `tests/test_schema_matches_migrations_postgres.py` fails when the migrations and the models disagree; fix it with a migration, never by adding to `tests/schema_drift_baseline.txt`.
 - **Every outbound call is gated, and there is no telemetry** (ADR 0016). A new external call needs a switch and a superseding ADR for the list.
 - **Files go through `get_storage_provider()`** with keys that start with the workspace id (ADR 0013).
 - **New routes are closed to access tokens** until mapped in `backend/app/core/access_token_scopes.py` (ADR 0012).
