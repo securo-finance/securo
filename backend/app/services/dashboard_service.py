@@ -1527,7 +1527,10 @@ async def _total_balance_by_currency(
             # Every card in the group carries the same shared debt, so `total`
             # counts it len(group) times; strip the duplicates.
             current_shared = await _account_balance_at(
-                session, group[0], today, include_pending=include_pending
+                session,
+                group[0],
+                today,
+                include_pending=include_pending,
             )
             total -= current_shared * (len(group) - 1)
         currency = group[0].currency

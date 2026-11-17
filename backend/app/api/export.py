@@ -11,6 +11,7 @@ from app.core.app_clock import app_today
 from app.core.database import get_async_session
 from app.core.workspace_context import WorkspaceContext, current_workspace
 from app.models.account import Account
+from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.asset import Asset
 from app.models.asset_value import AssetValue
 from app.models.budget import Budget
@@ -78,6 +79,11 @@ async def _collect(ctx: WorkspaceContext, session: AsyncSession) -> dict[str, ob
     budgets = (await session.execute(select(Budget).where(Budget.workspace_id == ws_id))).scalars().all()
     assets = (await session.execute(select(Asset).where(Asset.workspace_id == ws_id))).scalars().all()
     import_logs = (await session.execute(select(ImportLog).where(ImportLog.workspace_id == ws_id))).scalars().all()
+    reserved_balance_rows = (
+        await session.execute(
+            select(AccountReservedBalance).where(AccountReservedBalance.workspace_id == ws_id)
+        )
+    ).scalars().all()
 
     asset_ids = [a.id for a in assets]
     if asset_ids:
@@ -97,6 +103,7 @@ async def _collect(ctx: WorkspaceContext, session: AsyncSession) -> dict[str, ob
         "budgets": budgets,
         "assets": assets,
         "asset_values": asset_values,
+        "account_reserved_balances": reserved_balance_rows,
         "import_logs": import_logs,
     }
 

@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.asset import Asset
 from app.models.asset_value import AssetValue
 from app.models.bank_connection import BankConnection
@@ -983,6 +984,70 @@ async def test_net_worth_with_credit_card(session: AsyncSession, test_user, test
     assert dp.breakdowns["accounts"] == 5000.0
     assert dp.breakdowns["liabilities"] == 1000.0
     assert dp.value == 4000.0
+
+
+# --- reserved balances (ADR 0022) -----------------------------------------
+
+
+async def _add_reserved_balance(
+    session, workspace_id, account_id, external_id, amount, currency="BRL",
+):
+    row = AccountReservedBalance(
+        id=uuid.uuid4(), workspace_id=workspace_id, account_id=account_id,
+        external_id=external_id, name=None, currency=currency, amount=Decimal(amount),
+    )
+    session.add(row)
+    await session.commit()
+    return row
+
+
+async def _connected_account(session, user_id, workspace_id, balance, pockets):
+    conn = BankConnection(
+        id=uuid.uuid4(), user_id=user_id, provider="pluggy",
+        external_id=f"ext-{uuid.uuid4().hex[:8]}", institution_name="Mercado Pago",
+        credentials={}, status="active",
+        last_sync_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn)
+    await session.flush()
+    account = Account(
+        id=uuid.uuid4(), user_id=user_id, workspace_id=workspace_id, connection_id=conn.id,
+        name="Mercado Pago", type="checking", balance=Decimal(balance), currency="BRL",
+    )
+    session.add(account)
+    await session.commit()
+    for external_id, amount in pockets:
+        await _add_reserved_balance(session, workspace_id, account.id, external_id, amount)
+    return account
+
+
+@pytest.mark.asyncio
+async def test_net_worth_ignores_reserved_balances(
+    session: AsyncSession, test_user, test_workspace: User,
+):
+    """Loading reserve rows must not change net worth or its composition."""
+    account = await _connected_account(
+        session, test_user.id, test_workspace.id, "1000.00", [],
+    )
+    before = await _net_worth_at(session, test_workspace.id, date.today(), "BRL")
+    assert before.value == pytest.approx(1000.00)
+
+    for external_id, amount in (
+        ("emergency-fund", "0"),
+        ("round-up", "2000"),
+        ("marketplace", "2000"),
+    ):
+        await _add_reserved_balance(
+            session, test_workspace.id, account.id, external_id, amount
+        )
+    await session.refresh(account, attribute_names=["reserved_balances"])
+
+    after = await _net_worth_at(session, test_workspace.id, date.today(), "BRL")
+    assert after.value == pytest.approx(before.value)
+    assert after.breakdowns["accounts"] == pytest.approx(1000.00)
+    accounts_items = [c for c in after.composition if c.group == "accounts"]
+    assert [c.value for c in accounts_items] == [pytest.approx(1000.00)]
 
 
 async def _make_shared_credit_cards(session, user_id, workspace_id, balance):

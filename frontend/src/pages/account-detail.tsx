@@ -1379,6 +1379,40 @@ export default function AccountDetailPage() {
         </div>
       )}
 
+      {!isCreditCard && (account.reserved_balances?.length ?? 0) > 0 && (
+        <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-5 mb-6">
+          <p className="text-sm font-semibold text-foreground mb-1">
+            {t('accounts.reservedBalances')}
+          </p>
+          <p className="text-[10px] sm:text-xs text-muted-foreground mb-3">
+            {t('accounts.reservedBalancesHint')}
+          </p>
+          <ul className="space-y-2">
+            {account.reserved_balances!.map((reserved) => (
+              <li
+                key={reserved.id}
+                className="flex items-center justify-between gap-3 text-sm"
+              >
+                <span className="text-muted-foreground truncate">
+                  {reserved.name || t('accounts.reservedBalanceFallback')}
+                </span>
+                <span className="tabular-nums text-foreground shrink-0">
+                  {mask(formatCurrency(Number(reserved.amount), reserved.currency, locale))}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="flex items-center justify-between gap-3 mt-3 pt-3 border-t border-border text-sm">
+            <span className="font-medium text-muted-foreground">
+              {t('accounts.reservedTotal')}
+            </span>
+            <span className="font-bold tabular-nums text-foreground">
+              {mask(formatCurrency(Number(account.reserved_total ?? 0), account.currency, locale))}
+            </span>
+          </div>
+        </div>
+      )}
+
       {isCreditCard && (() => {
         const limit = account.credit_limit != null ? Number(account.credit_limit) : null
         // Cycle-bound utilization: how much of the limit was charged in the cycle
