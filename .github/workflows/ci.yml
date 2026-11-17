@@ -9,6 +9,12 @@ on:
   # GITHUB_TOKEN starts no workflow run, so main would otherwise go unchecked.
   workflow_dispatch:
 
+# The workflow only reads the repository: no job pushes a commit,
+# publishes a release or writes a label, so every token it gets is
+# read-only whatever the repository default is.
+permissions:
+  contents: read
+
 # Only superseded PR runs are cancelled; every main push is validated.
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.run_id }}
@@ -23,6 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          persist-credentials: false
           fetch-depth: 2
 
       - name: Detect backend-relevant changes
@@ -40,6 +47,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -102,6 +111,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -183,6 +194,8 @@ jobs:
         run: echo "No backend-relevant changes; nothing to combine."
 
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
         if: needs.backend-changes.outputs.run_backend != 'false'
 
       - name: Set up Python
@@ -257,6 +270,8 @@ jobs:
       # base branch. That is the whole point: a revision id that only clashes
       # once both sides are together is visible here and nowhere else.
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Test CI change selection
         run: python3 .github/ci/test_changes.py
@@ -272,6 +287,8 @@ jobs:
       # Runs on every pull request, whatever it touches: a frontend-only rename
       # can break the map in AGENTS.md just as well as a backend one.
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Check the paths AGENTS.md and the ADRs cite
         run: python3 .github/ci/check_doc_paths.py
@@ -286,6 +303,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          persist-credentials: false
           fetch-depth: 2
 
       - name: Detect frontend-relevant changes
@@ -327,6 +345,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          persist-credentials: false
           fetch-depth: 2
 
       - name: Detect helm-relevant changes
