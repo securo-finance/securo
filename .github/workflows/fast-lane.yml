@@ -59,9 +59,12 @@ on:
   # cron below has produced no run since it landed on main — not one of its
   # hourly slots — while the workflow stayed `active`, so it is kept only as the
   # thing to fall back on if GitHub ever starts delivering it. What opens the
-  # slot in practice is the first CI run after :00 on a push to main, below in
-  # step 0: every merge to main starts one, so it is the one event this
-  # repository is guaranteed to deliver.
+  # slot in practice is the first CI run after :00 on main, below in step 0:
+  # every merge to main starts one, so it is the one event this repository is
+  # guaranteed to deliver. That holds for a merge made by a person, which is a
+  # push, and for a merge made by this lane, which dispatches `ci.yml` because a
+  # push made with the workflow token starts no run — and the lane's own merge
+  # is the one that leaves a resolved thread behind.
   schedule:
     - cron: '17 * * * *'
   workflow_dispatch:
@@ -76,13 +79,13 @@ on:
 # and the answer has to change from one hour to the next. Look at the runs whose
 # log carries a sweep, newest first:
 #   gh api "repos/{owner}/{repo}/actions/workflows/fast-lane.yml/runs?per_page=20"
-# The run started by a push to main is a `workflow_run` one, the same event as
+# The run started by a CI run on main is a `workflow_run` one, the same event as
 # an ordinary pull request evaluation; only the log tells them apart. No sweep in
-# the last hour of pushes to main is the symptom. The `event=schedule` filter is
-# no longer the check: it answers a question nobody depends on any more, since
-# the cron is the fallback and not the clock.
+# the last hour a merge landed is the symptom. The `event=schedule` filter is no
+# longer the check: it answers a question nobody depends on any more, since the
+# cron is the fallback and not the clock.
 #
-# A sweep is not one run per push: only a CI run on main queued in the first ten
+# A sweep is not one run per merge: only a CI run on main queued in the first ten
 # minutes of the hour opens the slot, so an hour with six merges sweeps once or
 # twice rather than six times. The cost of a sweep is every open pull request
 # through the gates (~250 calls today), and that guard is what keeps the
@@ -497,16 +500,24 @@ jobs:
             if (ev === 'workflow_run') {
               const run = context.payload.workflow_run;
               if (run.conclusion !== 'success') return;
-              if (run.event === 'push' && run.head_branch === 'main') {
-                // A push to main has no pull request, but its CI run is the one
-                // event this repository delivers every time: each merge to main
-                // starts one. The first ten minutes of the hour are the slot the
-                // cron was meant to open, and a push there opens it. A busy hour
-                // sweeps once or twice instead of once per push; the sweep is
-                // every open pull request, so the guard is what keeps the token
-                // for the per-pull-request runs somebody is waiting on.
-                // `run_started_at` and not the clock: a CI run queued at :06 and
-                // finishing at :20 opens the slot it was queued in.
+              // A CI run on main is the one event this repository delivers
+              // every time: each merge to main starts one. There are two ways
+              // it starts, and both have to open the slot. A person's merge is
+              // a push. A merge by this lane is not — a push made with the
+              // workflow token starts no run, so `tryMerge` dispatches `ci.yml`
+              // on main — and that is the merge that leaves a resolved thread
+              // behind, so a clock a person's merge alone opens would miss
+              // exactly the case the sweep exists for.
+              //
+              // The first ten minutes of the hour are the slot the cron was
+              // meant to open. A busy hour sweeps once or twice instead of once
+              // per merge; the sweep is every open pull request, so the guard is
+              // what keeps the token for the per-pull-request runs somebody is
+              // waiting on. `run_started_at` and not the clock: a CI run queued
+              // at :06 and finishing at :20 opens the slot it was queued in.
+              const onMain = run.head_branch === 'main'
+                && (run.event === 'push' || run.event === 'workflow_dispatch');
+              if (onMain) {
                 if (new Date(run.run_started_at).getUTCMinutes() >= 10) return;
                 sweep = true;
               } else {
@@ -547,7 +558,7 @@ jobs:
               // Which trigger this is: a run started by the hourly slot and one
               // started by hand look the same in a list of runs, and the log is
               // where the difference is read.
-              const by = sweep ? 'the hourly slot (a push to main)'
+              const by = sweep ? 'the hourly slot (a CI run on main)'
                 : (ev === 'schedule' ? 'the hourly schedule' : 'a manual run');
               core.info(`sweep started by ${by}`);
               core.info(`sweeping ${open.length} open pull requests`);
