@@ -2981,6 +2981,8 @@
       "saveFailed": "Výběr nástrojů se nepodařilo uložit",
       "empty": "Nebyly nalezeny žádné nástroje. Běží MCP server? S Dockerem: `docker compose --profile agents up -d`.",
       "proposeBadge": "navrhuje",
+      "enabledCount": "Zapnuto {{enabled}} z {{total}}",
+      "enableAll": "Zapnout vše",
       "loading": "Načítání nástrojů…"
     },
     "chat": {

@@ -2817,6 +2817,8 @@
       "saveFailed": "ツール選択の保存に失敗しました",
       "empty": "検出されたツールはありません。MCPサーバーは起動していますか?Dockerの場合: `docker compose --profile agents up -d`",
       "proposeBadge": "提案",
+      "enabledCount": "{{total}} 件中 {{enabled}} 件が有効",
+      "enableAll": "すべて有効にする",
       "loading": "ツールを読み込み中…"
     },
     "chat": {

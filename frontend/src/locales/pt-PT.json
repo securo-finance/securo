@@ -2805,6 +2805,8 @@
       "saveFailed": "Falha ao guardar a seleção de ferramentas",
       "empty": "Nenhuma ferramenta descoberta. O servidor MCP está a correr? Com Docker: `docker compose --profile agents up -d`.",
       "proposeBadge": "proposta",
+      "enabledCount": "{{enabled}} de {{total}} ativadas",
+      "enableAll": "Ativar todas",
       "loading": "A carregar ferramentas…"
     },
     "chat": {

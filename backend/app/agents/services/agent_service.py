@@ -69,7 +69,15 @@ async def create_agent(
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
     data: AgentCreate,
+    discovered: Optional[list[tuple[str, str]]] = None,
 ) -> Agent:
+    """Create an agent and its tool list in one transaction.
+
+    `data.tools` set (even empty) is the exact list. Left out, every tool in
+    `discovered` is enabled. When `discovered` is None (no complete
+    discovery was possible), the agent is created uninitialized and its
+    first complete discovery enables what it finds.
+    """
     agent = Agent(
         user_id=user_id,
         workspace_id=workspace_id,
@@ -90,12 +98,16 @@ async def create_agent(
     )
     session.add(agent)
     if data.tools is not None:
+        items = [(t.server, t.tool_name, t.enabled) for t in data.tools]
+    elif discovered is not None:
+        items = [(server, name, True) for server, name in discovered]
+    else:
+        items = None
+    if items is not None:
+        agent.tools_initialized = True
         await session.flush()
-        for item in data.tools:
-            session.add(AgentTool(
-                agent_id=agent.id, server=item.server,
-                tool_name=item.tool_name, enabled=item.enabled,
-            ))
+        for server, name, enabled in items:
+            session.add(AgentTool(agent_id=agent.id, server=server, tool_name=name, enabled=enabled))
     await session.commit()
     await session.refresh(agent)
     return agent
@@ -190,14 +202,27 @@ async def set_tool_enabled(
     return existing
 
 
-async def allowed_tool_pairs(session: AsyncSession, agent_id: uuid.UUID) -> Optional[set[tuple[str, str]]]:
-    """Returns the set of (server, tool_name) pairs the agent is permitted
-    to call. Returns None when no rows exist — interpreted as 'allow all'
-    so first-run agents work without setup."""
+async def allowed_tool_pairs(session: AsyncSession, agent_id: uuid.UUID) -> set[tuple[str, str]]:
+    """The (server, tool_name) pairs the agent may call: its enabled rows.
+    No rows means no tools."""
     rows = await list_tools(session, agent_id)
-    if not rows:
-        return None
     return {(r.server, r.tool_name) for r in rows if r.enabled}
+
+
+async def initialize_tools(
+    session: AsyncSession, agent: Agent, discovered: list[tuple[str, str]]
+) -> None:
+    """Enable every discovered tool for an agent whose list was never
+    written out (created before tool lists were explicit, or while an MCP
+    server was down). Callers pass only a complete discovery."""
+    if agent.tools_initialized:
+        return
+    existing = {(r.server, r.tool_name) for r in await list_tools(session, agent.id)}
+    for server, name in discovered:
+        if (server, name) not in existing:
+            session.add(AgentTool(agent_id=agent.id, server=server, tool_name=name, enabled=True))
+    agent.tools_initialized = True
+    await session.commit()
 
 
 async def replace_tool_enablement(
@@ -206,4 +231,7 @@ async def replace_tool_enablement(
     await session.execute(delete(AgentTool).where(AgentTool.agent_id == agent_id))
     for server, name, enabled in items:
         session.add(AgentTool(agent_id=agent_id, server=server, tool_name=name, enabled=enabled))
+    await session.execute(
+        update(Agent).where(Agent.id == agent_id).values(tools_initialized=True)
+    )
     await session.commit()

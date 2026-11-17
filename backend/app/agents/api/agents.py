@@ -49,7 +49,14 @@ async def create_agent(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    return await agent_service.create_agent(session, ctx.workspace.id, ctx.user_id, data)
+    discovered = None
+    if data.tools is None:
+        mcp = MCPRegistry()
+        handles = await mcp.discover(user_id=ctx.user_id, workspace_id=ctx.workspace.id)
+        discovered = mcp.complete_pairs(handles)
+    return await agent_service.create_agent(
+        session, ctx.workspace.id, ctx.user_id, data, discovered=discovered
+    )
 
 
 @router.get("/{agent_id}", response_model=AgentRead)
@@ -104,17 +111,19 @@ async def get_agent_tools(
 
     mcp = MCPRegistry()
     handles = await mcp.discover(user_id=ctx.user_id, workspace_id=ctx.workspace.id)
-    rows = await agent_service.list_tools(session, agent_id)
-    enabled_lookup = {(r.server, r.tool_name): r.enabled for r in rows}
-    no_explicit_rows = len(rows) == 0
+    discovered = mcp.complete_pairs(handles)
+    if discovered is not None:
+        await agent_service.initialize_tools(session, agent, discovered)
+    allowed = await agent_service.allowed_tool_pairs(session, agent_id)
     tools = [
         {
             "server": h.server,
             "name": h.name,
             "description": h.description,
             "is_proposal": h.is_proposal,
-            # If no explicit rows yet, default to enabled (allow-all).
-            "enabled": enabled_lookup.get((h.server, h.name), True if no_explicit_rows else False),
+            # Not initialized only while a server is unreachable: the agent
+            # still runs with what it finds, as it did before (see executor).
+            "enabled": (h.server, h.name) in allowed or not agent.tools_initialized,
         }
         for h in handles
     ]

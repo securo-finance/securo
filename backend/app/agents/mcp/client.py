@@ -285,6 +285,10 @@ class MCPRegistry:
     two servers expose tools with the same name.
     """
 
+    # Servers the last discover() could not reach. A partial tool list must
+    # not be recorded as an agent's whole tool list.
+    unreachable: tuple[str, ...] = ()
+
     def __init__(self):
         self._servers: dict[str, MCPClient] = {}
         for spec in _parse_servers():
@@ -320,10 +324,12 @@ class MCPRegistry:
             agent_id=agent_id,
         )
         out: list[ToolHandle] = []
+        unreachable: list[str] = []
         for server_name, client in self._servers.items():
             try:
                 tools = await client.list_tools(token=self._token_for(server_name, **claims))
             except Exception as exc:
+                unreachable.append(server_name)
                 # A server that can't be reached costs the agent every tool it
                 # exposes, and the chat still answers, just without any data.
                 # Say so in the log: otherwise the only symptom is an assistant
@@ -337,7 +343,15 @@ class MCPRegistry:
                 )
                 continue
             out.extend(tools)
+        self.unreachable = tuple(unreachable)
         return out
+
+    def complete_pairs(self, handles: list[ToolHandle]) -> Optional[list[tuple[str, str]]]:
+        """(server, tool_name) pairs of `handles` when the discovery that
+        produced them reached every server, else None."""
+        if self.unreachable or not handles:
+            return None
+        return list(dict.fromkeys((h.server, h.name) for h in handles))
 
     @staticmethod
     def to_provider_tools(handles: list[ToolHandle], *, allowed: Optional[set[tuple[str, str]]] = None) -> list[ToolDefinition]:

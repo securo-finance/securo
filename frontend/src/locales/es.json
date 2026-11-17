@@ -2805,6 +2805,8 @@
       "saveFailed": "No se pudo guardar la selección de herramientas",
       "empty": "No se detectaron herramientas. ¿Está en ejecución el servidor MCP? Con Docker: `docker compose --profile agents up -d`.",
       "proposeBadge": "proponer",
+      "enabledCount": "{{enabled}} de {{total}} activadas",
+      "enableAll": "Activar todas",
       "loading": "Cargando herramientas…"
     },
     "chat": {

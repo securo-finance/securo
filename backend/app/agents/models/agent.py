@@ -61,6 +61,11 @@ class Agent(Base):
     # At most one agent per user has is_default=True (enforced by partial
     # unique index). The global slide-over chat panel uses this agent.
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # False until the agent's tool list has been written out as AgentTool
+    # rows. While False, the first discovery records every tool it finds as
+    # enabled; after that, only rows grant access and a tool that shows up
+    # later starts disabled.
+    tools_initialized: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -75,8 +80,9 @@ class Agent(Base):
 
 class AgentTool(Base):
     """Per-agent tool whitelist. Tools are discovered from registered MCP
-    servers; this row records that the user has enabled a given tool for a
-    given agent. Absence = disabled (closed-by-default for safety on writes).
+    servers; a row with enabled=True lets the agent call that tool. No row
+    means disabled, including for tools that appear after the agent's list
+    was initialized (see Agent.tools_initialized).
     """
     __tablename__ = "agent_tools"
 

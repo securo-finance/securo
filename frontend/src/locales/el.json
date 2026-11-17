@@ -2817,6 +2817,8 @@
       "saveFailed": "Αποτυχία αποθήκευσης επιλογής εργαλείων",
       "empty": "Δεν εντοπίστηκαν εργαλεία. Εκτελείται ο διακομιστής MCP; Με Docker: `docker compose --profile agents up -d`.",
       "proposeBadge": "πρόταση",
+      "enabledCount": "Ενεργά {{enabled}} από {{total}}",
+      "enableAll": "Ενεργοποίηση όλων",
       "loading": "Φόρτωση εργαλείων…"
     },
     "chat": {
