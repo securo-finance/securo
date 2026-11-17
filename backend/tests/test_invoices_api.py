@@ -1734,10 +1734,12 @@ async def test_pdf_downloads_survive_any_number_prefix(
         assert "filename*=UTF-8''" in disposition
 
     pdf_url = f"/api/invoices/{invoice['id']}/pdf"
+    # The rendered routes go first: they are the ones that raised on
+    # `main`, while `/pdf` serves the filed copy under an ASCII name.
     for url, headers in [
-        (pdf_url, biz_headers),
         (f"/api/invoices/{invoice['id']}/statement", biz_headers),
         (f"/api/public/invoices/{token}/pdf", {}),
+        (pdf_url, biz_headers),
     ]:
         await assert_downloads(url, headers)
 
