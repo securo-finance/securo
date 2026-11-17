@@ -9,6 +9,7 @@ import i18n from 'i18next'
  * to the English text instead of showing the wrong translation.
  */
 const KNOWN_MESSAGES: Record<string, string> = {
+  'Cannot change amount or date on a synchronized transaction': 'transactions.syncedAmountDateError',
   'A category split needs at least two lines': 'categoryLines.errors.tooFewLines',
   'Each category can appear only once in a split': 'categoryLines.errors.duplicateCategory',
   'Each line needs an amount': 'categoryLines.errors.invalidLines',

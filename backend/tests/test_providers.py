@@ -7,7 +7,6 @@ from unittest.mock import patch
 from app.providers import (
     register_provider,
     get_provider,
-    list_providers,
     all_known_providers,
     get_storage_provider,
     _PROVIDERS,
@@ -71,19 +70,23 @@ def test_get_provider_unknown():
         get_provider("nonexistent_provider")
 
 
-def test_list_providers_includes_registered():
-    register_provider("fake", FakeProvider)
-    result = list_providers()
-    names = [p["name"] for p in result]
-    assert "fake" in names
-
-
 def test_all_known_providers():
     result = all_known_providers()
     assert isinstance(result, list)
     for p in result:
         assert "name" in p
         assert "configured" in p
+
+
+def test_simplefin_constructs_with_runtime_settings():
+    from app.providers.simplefin import SimpleFinProvider
+
+    settings = Settings(simplefin_enabled=True)
+    provider = get_provider("simplefin", settings=settings)
+
+    assert isinstance(provider, SimpleFinProvider)
+    assert provider.settings is settings
+    assert provider.action_required_warnings == []
 
 
 def test_get_storage_provider_local():

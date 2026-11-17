@@ -24,6 +24,8 @@ from app.schemas.rule import (
     RuleUpdate,
 )
 from app.services import rule_service
+from app.plugins.sync import SyncPlanChanged
+from app.services import rule_packs
 from app.services.rule_packs import get_pack
 from app.services.rule_service import DuplicateRuleError
 
@@ -233,7 +235,7 @@ async def list_rule_packs(
     session: AsyncSession = Depends(get_async_session),
 ):
     """The built-in rule packs and where this workspace stands with each."""
-    statuses = await rule_service.list_rule_packs(session, ctx.workspace.id)
+    statuses = await rule_packs.list_rule_packs(session, ctx.workspace.id)
     return [
         RulePackRead(
             code=s.pack.code,
@@ -263,7 +265,7 @@ async def install_rule_pack(
     if get_pack(pack_code) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule pack not found")
     lang = (ctx.user.preferences or {}).get("language", "pt-BR")
-    result = await rule_service.install_rule_pack(
+    result = await rule_packs.install_rule_pack(
         session,
         ctx.workspace.id,
         ctx.user_id,
@@ -285,7 +287,7 @@ async def preview_rule_pack_removal(
     session: AsyncSession = Depends(get_async_session),
 ):
     """What removing the pack would delete, and which edited rules it keeps."""
-    removal = await rule_service.plan_rule_pack_removal(session, ctx.workspace.id, pack_code)
+    removal = await rule_packs.plan_rule_pack_removal(session, ctx.workspace.id, pack_code)
     if removal is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule pack not found")
     return removal
@@ -305,8 +307,8 @@ async def remove_rule_pack(
     answer is 409 and nothing is removed.
     """
     try:
-        removal = await rule_service.remove_rule_pack(session, ctx.workspace.id, pack_code, token)
-    except rule_service.RulePackRemovalChanged:
+        removal = await rule_packs.remove_rule_pack(session, ctx.workspace.id, ctx.user_id, pack_code, token)
+    except SyncPlanChanged:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="The pack's rules changed since the preview. Review the removal again.",

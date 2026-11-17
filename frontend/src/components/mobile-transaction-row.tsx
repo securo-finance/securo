@@ -10,6 +10,7 @@ import { formatCurrency } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { isTransferTransaction } from '@/lib/transaction-transfer'
 import { transactionDescription } from '@/lib/transaction-description'
+import { ReportingDateBadge } from '@/components/reporting-date-badge'
 
 /** Keep long merchant references on one line when there are no word breaks. */
 function hasWordBreaks(text: string): boolean {
@@ -26,6 +27,8 @@ interface MobileTransactionRowProps {
   highlighted: boolean
   highlightedRowRef?: React.Ref<HTMLDivElement>
   locale: string
+  /** Locale for dates (follows the date-format setting); defaults to `locale`. */
+  dateLocale?: string
   userCurrency: string
   onSelect: (id: string, shiftKey: boolean) => void
   onClick: (tx: Transaction) => void
@@ -45,6 +48,7 @@ export function MobileTransactionRow({
   highlighted,
   highlightedRowRef,
   locale,
+  dateLocale,
   userCurrency,
   onSelect,
   onClick,
@@ -186,6 +190,7 @@ export function MobileTransactionRow({
             </div>
           )
         )}
+        <ReportingDateBadge tx={tx} locale={dateLocale ?? locale} />
       </div>
 
       {/* Amount */}

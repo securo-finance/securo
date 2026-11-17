@@ -114,6 +114,65 @@ async def test_transaction_calendar_combines_actual_projected_and_balances(
 
 
 @pytest.mark.asyncio
+async def test_transaction_calendar_defaults_to_reporting_date_with_bank_date_option(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Reporting calendar",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
+    )
+    transaction = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        description="Month-end groceries",
+        amount=Decimal("100"),
+        amount_primary=Decimal("100"),
+        currency="BRL",
+        date=date(2026, 7, 10),
+        reporting_date_override=date(2026, 7, 3),
+        type="debit",
+        source="sync",
+        status="posted",
+    )
+    session.add_all([account, transaction])
+    await session.commit()
+
+    reporting_calendar = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 7, 1)
+    )
+    bank_calendar = await get_transaction_calendar(
+        session,
+        test_workspace.id,
+        test_user.id,
+        month=date(2026, 7, 1),
+        date_basis="bank",
+    )
+    reporting_days = {day.date: day for day in reporting_calendar.days}
+    bank_days = {day.date: day for day in bank_calendar.days}
+
+    assert [item.id for item in reporting_days[date(2026, 7, 3)].items] == [
+        transaction.id
+    ]
+    assert reporting_days[date(2026, 7, 3)].actual_expense == 100.0
+    assert reporting_days[date(2026, 7, 3)].ending_balance == 0.0
+    assert reporting_days[date(2026, 7, 10)].ending_balance == -100.0
+
+    assert bank_days[date(2026, 7, 3)].items == []
+    assert [item.id for item in bank_days[date(2026, 7, 10)].items] == [
+        transaction.id
+    ]
+    assert bank_days[date(2026, 7, 10)].actual_expense == 100.0
+    assert bank_days[date(2026, 7, 10)].ending_balance == -100.0
+
+
+@pytest.mark.asyncio
 async def test_transaction_calendar_respects_account_filter(
     session: AsyncSession, test_user, test_workspace
 ):

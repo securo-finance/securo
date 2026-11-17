@@ -59,6 +59,27 @@ async def test_setup_2fa(client: AsyncClient, auth_headers: dict):
     assert "otpauth://totp/" in data["otpauth_uri"]
 
 
+async def test_setup_2fa_refused_when_already_enabled(
+    client: AsyncClient,
+    test_user,
+    session,
+    auth_headers: dict,
+):
+    secret = pyotp.random_base32()
+    test_user.totp_secret = secret
+    test_user.is_2fa_enabled = True
+    session.add(test_user)
+    await session.commit()
+
+    response = await client.post("/api/auth/2fa/setup", headers=auth_headers)
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "2FA is already enabled"
+    await session.refresh(test_user)
+    assert test_user.totp_secret == secret
+    assert test_user.is_2fa_enabled is True
+
+
 @pytest.mark.parametrize("path", ["/api/auth/2fa/setup", "/api/auth/2fa/enable"])
 async def test_totp_enrollment_forbidden_when_local_auth_disabled(
     client: AsyncClient,

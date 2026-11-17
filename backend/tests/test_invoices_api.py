@@ -20,6 +20,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.fx_rate import FxRate
 from app.models.payee import Payee
 from app.models.transaction import Transaction
 
@@ -895,6 +896,43 @@ async def test_the_summary_is_not_scoped_by_year(client: AsyncClient, biz_header
                   issue_date="2024-06-10", due_date="2024-07-10")
     summary = (await client.get("/api/invoices/summary", headers=biz_headers)).json()
     assert summary["outstanding"] == "900.00"
+
+
+@pytest.mark.asyncio
+async def test_summary_adds_invoices_in_the_reader_currency(
+    client: AsyncClient, biz_headers, session: AsyncSession, inflow: Transaction
+):
+    """A user reading in BRL bills one client in BRL and another in USD.
+    The summary is one figure in BRL, so the USD amounts are converted
+    before they are added, not summed as if they were BRL.
+
+    The only stored rate is a few days old, as on a day the provider has
+    not published yet: the summary uses the latest stored rate."""
+    session.add(FxRate(
+        base_currency="USD", quote_currency="BRL", date=date.today() - timedelta(days=3),
+        rate=Decimal("5"), source="test",
+    ))
+    await session.commit()
+    await client.patch("/api/invoices/settings", headers=biz_headers, json={"preset": "tracking"})
+    await _create(client, biz_headers, total="200.00", currency="BRL",
+                  due_date=str(date.today() + timedelta(days=5)))
+    await _create(client, biz_headers, total="100.00", currency="USD",
+                  issue_date=str(date.today() - timedelta(days=60)),
+                  due_date=str(date.today() - timedelta(days=45)))
+    paid = await _create(client, biz_headers, total="3000.00", currency="USD")
+    resp = await client.post(
+        f"/api/invoices/{paid['id']}/allocations",
+        headers=biz_headers,
+        json={"transaction_id": str(inflow.id)},
+    )
+    assert resp.status_code == 201, resp.text
+
+    summary = (await client.get("/api/invoices/summary", headers=biz_headers)).json()
+    assert summary["outstanding"] == "700.00"
+    assert summary["overdue_amount"] == "500.00"
+    assert summary["buckets"]["current"] == "200.00"
+    assert summary["buckets"]["d31_60"] == "500.00"
+    assert summary["received_this_month"] == "15000.00"
 
 
 @pytest.mark.asyncio

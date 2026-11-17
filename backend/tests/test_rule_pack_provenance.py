@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 from httpx import AsyncClient
-from pydantic import ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,22 +17,20 @@ from app.models.rule import Rule
 from app.models.transaction import Transaction
 from app.models.workspace import Workspace, WorkspaceMember
 from app.services.category_service import create_default_categories
+from app.plugins.provenance import rule_content_hash
+from app.plugins.sync import SyncPlanChanged
 from app.services.rule_packs import (
     PACK_FILES,
     PACKS_DIR,
     built_in_packs,
     find_pack_rule,
-    load_pack,
-    rule_content_hash,
-)
-from app.services.rule_service import (
-    RulePackRemovalChanged,
-    _validate_rule_definition,
     install_rule_pack,
     list_rule_packs,
+    load_pack,
     plan_rule_pack_removal,
     remove_rule_pack,
 )
+from app.services.rule_service import validate_rule_definition
 
 
 @pytest.fixture
@@ -54,7 +51,7 @@ async def _status(session: AsyncSession, workspace_id: uuid.UUID, code: str):
 async def _remove(session: AsyncSession, workspace_id: uuid.UUID, code: str):
     plan = await plan_rule_pack_removal(session, workspace_id, code)
     assert plan is not None
-    return await remove_rule_pack(session, workspace_id, code, plan.token)
+    return await remove_rule_pack(session, workspace_id, uuid.uuid4(), code, plan.token)
 
 
 def _content(rule: Rule) -> dict:
@@ -101,7 +98,7 @@ def test_flags():
         lambda m: m.update(min_securo_version=">=0.19"),
         lambda m: m.pop("min_securo_version"),
         lambda m: m["contributes"]["rules"].append(m["contributes"]["rules"][0]),
-        lambda m: m["contributes"].update(categories=[]),
+        lambda m: m["contributes"].update(categories=[{"key": "pets", "name": "Pets"}]),
     ],
     ids=[
         "data pack reaches the network", "data pack runs code", "bad key", "translation without en",
@@ -113,7 +110,7 @@ def test_a_pack_that_breaks_the_contract_is_rejected(tmp_path, change):
     change(manifest)
     path = tmp_path / "br.json"
     path.write_text(json.dumps(manifest), encoding="utf-8")
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValueError):  # a pydantic ValidationError is one too
         load_pack(path)
 
 
@@ -125,7 +122,7 @@ async def test_every_pack_installs_whole_and_passes_the_rule_validator(session: 
     assert result.unresolved == 0
     assert len(result.rules) == len(built_in_packs()[code].rules)
     for rule in result.rules:
-        await _validate_rule_definition(session, workspace_id, rule.conditions, rule.actions)
+        await validate_rule_definition(session, workspace_id, rule.conditions, rule.actions)
 
 
 # --- Installing records the origin --------------------------------------------------
@@ -184,7 +181,7 @@ async def test_removing_a_pack_keeps_what_the_user_edited(session: AsyncSession,
     assert len(plan.remove) == len(installed) - 1
     assert switched_off_id in {r.id for r in plan.remove}, "switching a rule off doesn't make it the user's"
 
-    removal = await remove_rule_pack(session, workspace_id, "BR", plan.token)
+    removal = await remove_rule_pack(session, workspace_id, user_id, "BR", plan.token)
     assert removal == plan
     left = {r.id: r for r in await _rules(session, workspace_id)}
     assert set(left) == {edited_id, mine_id}
@@ -247,8 +244,8 @@ async def test_removal_refuses_a_plan_that_changed(session: AsyncSession, ids):
     rules[0].priority += 1
     await session.commit()
 
-    with pytest.raises(RulePackRemovalChanged):
-        await remove_rule_pack(session, workspace_id, "BR", plan.token)
+    with pytest.raises(SyncPlanChanged):
+        await remove_rule_pack(session, workspace_id, user_id, "BR", plan.token)
     assert len(await _rules(session, workspace_id)) == len(built_in_packs()["BR"].rules)
 
 
@@ -268,8 +265,8 @@ async def test_removal_rereads_rules_this_session_already_holds(session: AsyncSe
     ))
     await session.commit()
 
-    with pytest.raises(RulePackRemovalChanged):
-        await remove_rule_pack(session, workspace_id, "BR", plan.token)
+    with pytest.raises(SyncPlanChanged):
+        await remove_rule_pack(session, workspace_id, user_id, "BR", plan.token)
 
 
 @pytest.mark.asyncio
@@ -284,7 +281,7 @@ async def test_a_pack_whose_remaining_rules_are_all_edited_can_still_be_removed(
     plan = await plan_rule_pack_removal(session, workspace_id, "BR")
     assert plan is not None
     assert (len(plan.remove), len(plan.keep)) == (0, len(built_in_packs()["BR"].rules))
-    await remove_rule_pack(session, workspace_id, "BR", plan.token)
+    await remove_rule_pack(session, workspace_id, user_id, "BR", plan.token)
     assert (await _status(session, workspace_id, "BR")).rules_from_pack == 0
 
 
@@ -292,7 +289,7 @@ async def test_a_pack_whose_remaining_rules_are_all_edited_can_still_be_removed(
 async def test_unknown_pack(session: AsyncSession, ids):
     workspace_id, _ = ids
     assert await plan_rule_pack_removal(session, workspace_id, "ZZ") is None
-    assert await remove_rule_pack(session, workspace_id, "ZZ", "any") is None
+    assert await remove_rule_pack(session, workspace_id, uuid.uuid4(), "ZZ", "any") is None
 
 
 # --- Rules installed before packs recorded their origin ------------------------------------
@@ -382,7 +379,7 @@ def test_two_packs_sharing_a_rule_name_are_told_apart_by_content():
     """US and GB both have "Rent / Mortgage", with different conditions."""
     us = next(r for r in built_in_packs()["US"].rules if r.name == "Rent / Mortgage")
     found = find_pack_rule(
-        name=us.name, conditions_op=us.conditions_op, conditions=us.conditions,
+        name=us.name, conditions_op=us.conditions_op, conditions=us.template()["conditions"],
         actions=[{"op": "set_category", "value": "cat-1"}], priority=us.priority,
         category_names={"cat-1": "Housing"},
     )

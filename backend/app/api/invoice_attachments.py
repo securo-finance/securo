@@ -18,6 +18,7 @@ from app.services.module_service import ModuleId
 from app.core.workspace_context import WorkspaceContext
 from app.schemas.invoice import InvoiceAttachmentRead, InvoiceAttachmentUpdate
 from app.services import invoice_attachment_service
+from app.services.attachment_service import served_content_type
 
 router = APIRouter(
     prefix="/api/invoices/{invoice_id}/attachments", tags=["invoices"]
@@ -48,7 +49,6 @@ async def upload_attachment(
             user_id=ctx.user_id,
             invoice_id=invoice_id,
             filename=file.filename or "unnamed",
-            content_type=file.content_type or "application/octet-stream",
             data=await file.read(),
             kind=kind,
             source=source,
@@ -90,7 +90,7 @@ async def download_attachment(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
     return Response(
         content=data,
-        media_type=attachment.content_type,
+        media_type=served_content_type(attachment.filename),
         headers={"Content-Disposition": f'inline; filename="{attachment.filename}"'},
     )
 
