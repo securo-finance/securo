@@ -41,9 +41,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    if op.get_bind().dialect.name == "postgresql":
-        op.alter_column(
-            "agent_tools", "server",
-            existing_type=sa.String(500), type_=sa.String(80), existing_nullable=False,
-        )
+    # agent_tools.server stays at 500: narrowing it would fail on a server
+    # named by a long URL, and truncating would change where calls go.
     op.drop_column("agents", "tools_initialized")
