@@ -34,11 +34,11 @@ on:
     types: [created, edited]
   pull_request_review:
     types: [submitted, dismissed]
-  # Gate 3b below is a review thread, and resolving one starts no CI run:
-  # without this event a pull request held only by that gate would sit until
-  # something else happened.
-  pull_request_review_thread:
-    types: [resolved]
+  # There is deliberately no trigger for "review thread resolved": GitHub
+  # exposes it as a webhook but not as a workflow event, and naming it here
+  # makes the whole file invalid. Resolving the last blocking thread therefore
+  # starts no run; whoever triages it re-posts the verdict comment, and the
+  # `issue_comment` trigger above picks the pull request up again.
 
 permissions:
   contents: write
@@ -192,10 +192,14 @@ jobs:
                 repository(owner: $owner, name: $repo) {
                   pullRequest(number: $number) {
                     reviewThreads(first: 100) {
+                      pageInfo { hasNextPage }
                       nodes {
                         isResolved
                         isOutdated
-                        comments(first: 5) { nodes { author { login } body } }
+                        comments(first: 5) {
+                          pageInfo { hasNextPage }
+                          nodes { author { login } body }
+                        }
                       }
                     }
                   }
@@ -205,7 +209,17 @@ jobs:
               try {
                 const data = await github.graphql(query,
                   { owner: OWNER, repo: REPO, number });
-                threads = data.repository.pullRequest.reviewThreads.nodes || [];
+                const conn = data.repository.pullRequest.reviewThreads;
+                // A gate that needs every thread has to stop when it has not
+                // read every thread, otherwise the part it could not see is
+                // the part that would have blocked the merge.
+                if (conn.pageInfo.hasNextPage) {
+                  return skip('more than 100 review threads to read');
+                }
+                threads = conn.nodes || [];
+                if (threads.some((t) => t.comments.pageInfo.hasNextPage)) {
+                  return skip('a review thread has more comments than this gate reads');
+                }
               } catch (e) {
                 return skip(`cannot read the review threads: ${e.message}`);
               }
