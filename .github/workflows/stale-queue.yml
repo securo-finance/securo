@@ -1,17 +1,29 @@
 name: stale queue
 
-# A pull request whose branch has not moved for thirty days is not waiting on
-# anyone: the author stopped. It stays in the queue, it shows up in every
-# triage pass, and it makes the open count say something that is not true.
+# A pull request where we asked the author for something and heard nothing back
+# for thirty days is not waiting on anyone: the author stopped. It stays in the
+# queue, it shows up in every triage pass, and it makes the open count say
+# something that is not true.
 #
 # This gives the author a warning first and closes a week later if nothing
-# moves. The clock is the last commit on the branch, from whoever pushed it:
-# comments are not a signal here, because bots comment on everything and a
-# warning from us is not progress. That also means a rebase or a maintainer
-# push resets the timer, which is what should happen.
+# moves. Our work is not commits, so the clock is not the branch. It is the
+# conversation between people, bots left out:
 #
-# Closing is reversible and the closing comment says how. `stale: keep`
-# exempts a pull request for good.
+# - our word: a comment or review from an owner, member or collaborator.
+# - the author's activity: a commit they authored, or a comment or review from
+#   them. "Update branch", merges from main and maintainer pushes do not count.
+#
+# A pull request is swept only when the ball is with the author:
+#
+# 1. we have said something at all. Without that it is waiting in our queue, and
+#    a warning would blame the author for our silence.
+# 2. our last word is newer than the author's last activity, so we asked and
+#    they have not answered. If they answered, by comment or by push, the ball
+#    is with us and the idle days are ours.
+# 3. our last word is not an approval: after that the next step is ours.
+#
+# The thirty days count from our last word. Closing is reversible and the
+# closing comment says how. `stale: keep` exempts a pull request for good.
 #
 # Never swept: pull requests from maintainers (owner, member, collaborator),
 # drafts, and anything with a review request still pending on us.
@@ -40,7 +52,7 @@ jobs:
           script: |
             const OWNER = context.repo.owner, REPO = context.repo.repo;
 
-            const WARN_AFTER = 30;   // days without a commit before the warning
+            const WARN_AFTER = 30;   // days since our last word, unanswered
             const CLOSE_AFTER = 7;   // days the warning stands before closing
             const KEEP = 'stale: keep';
             const MAINTAINERS = ['OWNER', 'MEMBER', 'COLLABORATOR'];
@@ -49,6 +61,8 @@ jobs:
             const DAY = 24 * 60 * 60 * 1000;
 
             const days = (iso) => Math.floor((Date.now() - Date.parse(iso)) / DAY);
+            const isBot = (u) => !u || u.type === 'Bot' || u.login.endsWith('[bot]');
+            const newest = (list) => list.filter(Boolean).sort().pop();
 
             const pulls = await github.paginate(github.rest.pulls.list,
               { owner: OWNER, repo: REPO, state: 'open', per_page: 100 });
@@ -69,41 +83,70 @@ jobs:
               if ((pr.requested_reviewers || []).length > 0) continue;
               if ((pr.requested_teams || []).length > 0) continue;
 
-              // The newest commit on the branch decides the clock.
-              let movedAt = pr.updated_at;
+              const author = pr.user.login;
+              const args = { owner: OWNER, repo: REPO, per_page: 100 };
+              let commits, comments, reviews, inline;
               try {
-                const commits = await github.paginate(github.rest.pulls.listCommits,
-                  { owner: OWNER, repo: REPO, pull_number: pr.number, per_page: 100 });
-                const last = commits.map((c) => c.commit.committer.date).sort().pop();
-                if (last) movedAt = last;
+                [commits, comments, reviews, inline] = await Promise.all([
+                  github.paginate(github.rest.pulls.listCommits, { ...args, pull_number: pr.number }),
+                  github.paginate(github.rest.issues.listComments, { ...args, issue_number: pr.number }),
+                  github.paginate(github.rest.pulls.listReviews, { ...args, pull_number: pr.number }),
+                  github.paginate(github.rest.pulls.listReviewComments, { ...args, pull_number: pr.number }),
+                ]);
               } catch (e) {
-                core.info(`#${pr.number}: could not read commits, skipping`);
+                core.info(`#${pr.number}: could not read the history, skipping`);
                 continue;
               }
 
-              const idle = days(movedAt);
+              // Every human word on the pull request, bots left out.
+              const words = [
+                ...comments.map((c) => ({ user: c.user, assoc: c.author_association, at: c.created_at })),
+                ...inline.map((c) => ({ user: c.user, assoc: c.author_association, at: c.created_at })),
+                ...reviews.filter((r) => r.submitted_at).map((r) =>
+                  ({ user: r.user, assoc: r.author_association, at: r.submitted_at, state: r.state })),
+              ].filter((w) => !isBot(w.user));
+
+              const ours = words.filter((w) => MAINTAINERS.includes(w.assoc))
+                .sort((a, b) => a.at.localeCompare(b.at));
+              const lastOurs = ours[ours.length - 1];
+
+              // 1. Nothing from us yet: it is waiting in our queue.
+              if (!lastOurs) continue;
+
+              // 3. Our last word approved it: the next step is ours.
+              if (lastOurs.state === 'APPROVED') continue;
+
+              const authorAt = newest([
+                ...commits.filter((c) => c.author && c.author.login === author)
+                  .map((c) => c.commit.committer.date),
+                ...words.filter((w) => w.user.login === author).map((w) => w.at),
+              ]);
+
+              // 2. The author answered after our last word: the ball is with us.
+              if (authorAt && Date.parse(authorAt) >= Date.parse(lastOurs.at)) continue;
+
+              const askedAt = lastOurs.at;
+              const idle = days(askedAt);
               if (idle < WARN_AFTER) continue;
 
-              const comments = await github.paginate(github.rest.issues.listComments,
-                { owner: OWNER, repo: REPO, issue_number: pr.number, per_page: 100 });
-              const byBody = (marker) => comments.filter((c) => (c.body || '').includes(marker));
-
-              // Only a warning newer than the last commit counts: a pull request
-              // that was warned once, moved, and then stalled again gets a fresh
-              // warning instead of jumping straight to closing on an old one.
-              const warnings = byBody(WARNED)
-                .filter((c) => Date.parse(c.created_at) > Date.parse(movedAt));
-              const warning = warnings.pop();
+              // Only a warning newer than our last word counts: a pull request
+              // that was warned, answered, asked again and then stalled gets a
+              // fresh warning instead of closing on an old one.
+              const warning = comments
+                .filter((c) => (c.body || '').includes(WARNED))
+                .filter((c) => Date.parse(c.created_at) > Date.parse(askedAt))
+                .pop();
 
               if (!warning) {
                 // First pass: a warning, with the reason and the way out.
                 await github.rest.issues.createComment({
                   owner: OWNER, repo: REPO, issue_number: pr.number,
-                  body: `${WARNED}\nThis pull request has had no commit for ${idle} ` +
-                        `days, since ${movedAt.slice(0, 10)}. It will be closed in ` +
-                        `${CLOSE_AFTER} days unless the branch moves. If you are still ` +
-                        `on it, a rebase or a push is enough to reset this. If it should ` +
-                        `stay open regardless, say so and it gets the \`${KEEP}\` label.`,
+                  body: `${WARNED}\nThis pull request has been waiting on you for ${idle} ` +
+                        `days, since our last comment on ${askedAt.slice(0, 10)}. It will ` +
+                        `be closed in ${CLOSE_AFTER} days unless there is a reply or a push. ` +
+                        `If you are still on it, a short comment or a push is enough to reset ` +
+                        `this. If it should stay open regardless, say so and it gets the ` +
+                        `\`${KEEP}\` label.`,
                 });
                 warned++;
                 continue;
@@ -113,9 +156,9 @@ jobs:
 
               await github.rest.issues.createComment({
                 owner: OWNER, repo: REPO, issue_number: pr.number,
-                body: `${CLOSED}\nClosed: no commit for ${idle} days, and the warning ` +
-                      `above stood for a week without a push. Nothing is lost, the branch ` +
-                      `and the commits are still there and reopening the pull request ` +
+                body: `${CLOSED}\nClosed: no reply or push for ${idle} days since our last ` +
+                      `comment, and the warning above stood for a week. Nothing is lost, the ` +
+                      `branch and the commits are still there and reopening the pull request ` +
                       `brings it back. Reopen it whenever you want to pick it up again.`,
               });
               await github.rest.pulls.update(
