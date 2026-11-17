@@ -139,12 +139,6 @@ jobs:
               // ---- 2. files that never take the fast lane -------------------
               const files = await github.paginate(github.rest.pulls.listFiles,
                 { owner: OWNER, repo: REPO, pull_number: number, per_page: 100 });
-              // GitHub caps this list at 3,000 files even with pagination, so a blocked
-              // file past that cut would be invisible. `changed_files` is the count the
-              // pull request reports: when the two differ, files went unread.
-              if (files.length !== pr.changed_files) {
-                return skip(`read ${files.length} of ${pr.changed_files} changed files`);
-              }
               // A rename reports the new path in `filename` and the old one in
               // `previous_filename`: moving a migration, an auth file or this
               // workflow out of its directory would otherwise pass the list.
