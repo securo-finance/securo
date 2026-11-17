@@ -76,6 +76,9 @@ export function BankConnectDialog({
   const handleSuccess = async (data: { item: { id: string } }) => {
     try {
       if (reconnectConnectionId) {
+        // The callback stores the item again and marks the connection active,
+        // which a connection that was disconnected needs before it can sync.
+        await connections.handleCallback(data.item.id, provider, undefined, undefined, reconnectConnectionId)
         await connections.sync(reconnectConnectionId)
       } else {
         await connections.handleCallback(

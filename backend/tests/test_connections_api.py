@@ -428,6 +428,28 @@ async def test_reconnect_token_with_item_id(
 
 
 @pytest.mark.asyncio
+async def test_reconnect_token_after_disconnect_reopens_the_same_item(
+    client: AsyncClient, auth_headers, test_connection: BankConnection,
+):
+    """Disconnecting drops the credentials, so the reconnect token has to find
+    the widget item through the connection's external_id."""
+    await client.delete(f"/api/connections/{test_connection.id}", headers=auth_headers)
+
+    mock_token = MagicMock()
+    mock_token.access_token = "recon-token"
+    with patch("app.services.connection_service.get_provider") as mock_gp:
+        mock_gp.return_value.create_connect_token = AsyncMock(return_value=mock_token)
+        resp = await client.post(
+            f"/api/connections/{test_connection.id}/reconnect-token", headers=auth_headers,
+        )
+
+    assert resp.status_code == 200
+    mock_gp.return_value.create_connect_token.assert_awaited_once_with(
+        str(test_connection.user_id), item_id="ext-123"
+    )
+
+
+@pytest.mark.asyncio
 async def test_update_settings_success(
     client: AsyncClient, auth_headers, session: AsyncSession, test_user: User,
 ):

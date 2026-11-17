@@ -242,6 +242,10 @@ async def get_reconnect_token(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
 
     item_id = connection.credentials.get("item_id") if connection.credentials else None
+    # A disconnected connection has no credentials left, but the widget item
+    # it was linked to is its external_id, so it can still be reopened.
+    if not item_id and connection.status == connection_service.DISCONNECTED_STATUS:
+        item_id = connection.external_id
     if not item_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
