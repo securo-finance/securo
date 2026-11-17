@@ -54,15 +54,18 @@ jobs:
             // One lookup per pull request, however many runs it opened.
             const decided = new Map();
 
-            async function mayApprove(number) {
+            async function mayApprove(number, sha) {
               if (decided.has(number)) return decided.get(number);
 
               const { data: pr } = await github.rest.pulls.get({
                 owner: OWNER, repo: REPO, pull_number: number,
               });
 
-              // Only a fork's run needs the approval this workflow grants.
-              let ok = pr.head.repo !== null &&
+              // The head is read again here, later than the listing that paired
+              // it with the run: a push in between would let this approve a run
+              // of the old commit on the new commit's file list. Only a fork's
+              // run needs the approval this workflow grants.
+              let ok = pr.head.sha === sha && pr.head.repo !== null &&
                        pr.head.repo.full_name !== `${OWNER}/${REPO}`;
 
               if (ok) {
@@ -120,7 +123,7 @@ jobs:
                 continue;
               }
 
-              if (!(await mayApprove(number))) {
+              if (!(await mayApprove(number, run.head_sha))) {
                 held++;
                 core.info(`run ${run.id} (${run.name}) left for a maintainer: #${number}`);
                 continue;
