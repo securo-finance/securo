@@ -669,7 +669,15 @@ async def download_pdf(
     # be a page nobody issued.
     primary = await invoice_attachment_service.primary_for(session, invoice.id)
     if primary is not None:
-        data = await invoice_attachment_service.read_bytes(session, primary)
+        try:
+            data = await invoice_attachment_service.read_bytes(session, primary)
+        except FileNotFoundError:
+            # Filed in the ledger and gone from storage: the file the
+            # document is does not exist, so there is nothing to serve.
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Attachment file is missing from storage",
+            )
         return Response(
             content=data,
             media_type=served_content_type(primary.filename),
