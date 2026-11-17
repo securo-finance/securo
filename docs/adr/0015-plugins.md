@@ -18,6 +18,7 @@ People want categories, rules, integrations and looks that Securo doesn't ship. 
   - **themes**: tokens rendered by Securo itself, checked for WCAG AA contrast.
 - Installs are per workspace at a pinned commit (`workspace_plugin`). Rows a plugin created carry their origin (`plugin_origin`); a row the user edited is left alone on update and kept on removal.
 - Installing code requires the workspace owner.
+- Extended by [0021](0021-plugin-icons.md): a plugin's icon is read from the catalog's host when a browser asks Securo for it, as well as when someone opens the catalog.
 
 ## Consequences
 

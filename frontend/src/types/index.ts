@@ -788,6 +788,8 @@ export interface PluginCatalogEntry {
   workspaces: string[]
   /** It's meant for this workspace's type. */
   fits_workspace: boolean
+  /** Where Securo serves the plugin's icon; null draws the generated badge. */
+  icon_url: string | null
   installed_version: string | null
   update_available: boolean
 }

@@ -124,7 +124,7 @@ export default function PluginDetailPage() {
       {back}
 
       <header className="mb-8 flex gap-5">
-        <PluginAvatar seed={plugin.id} label={pluginName} className="size-14 text-lg sm:size-16 sm:text-xl" />
+        <PluginAvatar seed={plugin.id} label={pluginName} src={plugin.icon_url} className="size-14 text-lg sm:size-16 sm:text-xl" />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <h1 className="text-2xl font-semibold tracking-tight">{pluginName}</h1>
