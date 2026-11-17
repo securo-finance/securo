@@ -1288,6 +1288,11 @@
     "disconnected": "Conexión eliminada",
     "confirmDisconnectTitle": "¿Desconectar conexión bancaria?",
     "confirmDisconnectDesc": "Esto desvinculará a {{institution}} y eliminará las cuentas y transacciones sincronizadas de la app. Esta acción es irreversible.",
+    "confirmDisconnectKeepDesc": "{{institution}} dejará de sincronizarse. Sus cuentas y el historial de transacciones se quedan en la app, y puedes volver a conectarlo más tarde.",
+    "disconnectAlsoDelete": "Eliminar también cuentas y transacciones",
+    "disconnectedKept": "Banco desconectado. Se conservaron las cuentas y el historial.",
+    "removeConnection": "Eliminar conexión",
+    "connectionDisconnected": "Desconectada. Vuelve a conectar para sincronizar",
     "viewTransactions": "Ver transacciones",
     "currentBalance": "Saldo actual",
     "income": "Ingresos",
@@ -1371,7 +1376,8 @@
     "connectionStatus": {
       "active": "Activa",
       "error": "Error",
-      "expired": "Caducada"
+      "expired": "Caducada",
+      "disconnected": "Desconectada"
     }
   },
   "loans": {

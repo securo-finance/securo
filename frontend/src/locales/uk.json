@@ -1301,6 +1301,11 @@
     "disconnected": "Підключення видалено",
     "confirmDisconnectTitle": "Відключити підключення до банку?",
     "confirmDisconnectDesc": "Це відв'яже {{institution}} та видалить синхронізовані рахунки й транзакції із застосунку. Ця дія незворотна.",
+    "confirmDisconnectKeepDesc": "{{institution}} перестане синхронізуватися. Рахунки та історія транзакцій залишаться в застосунку, а підключення можна буде відновити пізніше.",
+    "disconnectAlsoDelete": "Також видалити рахунки та транзакції",
+    "disconnectedKept": "Банк відключено. Рахунки та історію збережено.",
+    "removeConnection": "Видалити підключення",
+    "connectionDisconnected": "Відключено. Підключіть знову, щоб синхронізувати",
     "viewTransactions": "Перегляд транзакцій",
     "currentBalance": "Поточний баланс",
     "income": "Дохід",
@@ -1384,7 +1389,8 @@
     "connectionStatus": {
       "active": "Активне",
       "error": "Помилка",
-      "expired": "Термін дії минув"
+      "expired": "Термін дії минув",
+      "disconnected": "Відключено"
     }
   },
   "loans": {

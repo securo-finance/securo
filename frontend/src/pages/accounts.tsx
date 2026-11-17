@@ -85,6 +85,7 @@ export default function AccountsPage() {
   const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null)
   const [settingsConnection, setSettingsConnection] = useState<BankConnection | null>(null)
   const [disconnectingConnection, setDisconnectingConnection] = useState<BankConnection | null>(null)
+  const [deleteOnDisconnect, setDeleteOnDisconnect] = useState(false)
   const [closingAccountId, setClosingAccountId] = useState<string | null>(null)
   const [reconnectConnId, setReconnectConnId] = useState<string | null>(null)
   const [reconnectItemId, setReconnectItemId] = useState<string | null>(null)
@@ -167,17 +168,27 @@ export default function AccountsPage() {
   })
 
   const disconnectMutation = useMutation({
-    mutationFn: (id: string) => connections.delete(id),
-    onSuccess: () => {
+    mutationFn: ({ id, keepAccounts }: { id: string; keepAccounts: boolean }) =>
+      connections.delete(id, { keepAccounts }),
+    onSuccess: (_data, { keepAccounts }) => {
       invalidateFinancialQueries(queryClient)
       queryClient.invalidateQueries({ queryKey: ['connections'] })
       queryClient.invalidateQueries({ queryKey: ['assets'] })
       queryClient.invalidateQueries({ queryKey: ['asset-groups'] })
       queryClient.invalidateQueries({ queryKey: ['portfolio-trend'] })
       setDisconnectingConnection(null)
-      toast.success(t('accounts.disconnected'))
+      toast.success(t(keepAccounts ? 'accounts.disconnectedKept' : 'accounts.disconnected'))
     },
   })
+
+  const openDisconnectDialog = (conn: BankConnection) => {
+    setDeleteOnDisconnect(false)
+    setDisconnectingConnection(conn)
+  }
+  // A connection that is already disconnected kept its accounts, so the only
+  // thing left to do with it is to delete them.
+  const alreadyDisconnected = disconnectingConnection?.status === 'disconnected'
+  const deletingOnDisconnect = alreadyDisconnected || deleteOnDisconnect
 
   const createMutation = useMutation({
     mutationFn: (data: { name: string; type: string; balance?: number; currency?: string }) =>
@@ -414,7 +425,9 @@ export default function AccountsPage() {
                             title={needsReconnect
                               ? conn.status === 'expired'
                                 ? t('accounts.connectionExpired')
-                                : t('accounts.connectionError')
+                                : conn.status === 'disconnected'
+                                  ? t('accounts.connectionDisconnected')
+                                  : t('accounts.connectionError')
                               : t('accounts.sync')}
                             aria-label={needsReconnect ? t('accounts.reconnect') : t('accounts.sync')}
                           >
@@ -430,9 +443,9 @@ export default function AccountsPage() {
                             variant="ghost"
                             size="sm"
                             className="h-8 w-8 p-0 text-muted-foreground hover:text-rose-500"
-                            onClick={() => setDisconnectingConnection(conn)}
+                            onClick={() => openDisconnectDialog(conn)}
                             disabled={disconnectMutation.isPending}
-                            title={t('accounts.disconnect')}
+                            title={conn.status === 'disconnected' ? t('accounts.removeConnection') : t('accounts.disconnect')}
                           >
                             <Unlink size={14} />
                           </Button>
@@ -578,19 +591,37 @@ export default function AccountsPage() {
           <DialogHeader>
             <DialogTitle>{t('accounts.confirmDisconnectTitle')}</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            {t('accounts.confirmDisconnectDesc', { institution: disconnectingConnection ? getConnectionName(disconnectingConnection, t) : '' })}
+          <p className="text-sm text-muted-foreground" data-testid="disconnect-description">
+            {t(
+              deletingOnDisconnect ? 'accounts.confirmDisconnectDesc' : 'accounts.confirmDisconnectKeepDesc',
+              { institution: disconnectingConnection ? getConnectionName(disconnectingConnection, t) : '' },
+            )}
           </p>
+          {!alreadyDisconnected && (
+            <label className="text-sm inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={deleteOnDisconnect}
+                onChange={(e) => setDeleteOnDisconnect(e.target.checked)}
+              />
+              {t('accounts.disconnectAlsoDelete')}
+            </label>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDisconnectingConnection(null)}>
               {t('common.cancel')}
             </Button>
             <Button
               variant="destructive"
-              onClick={() => disconnectingConnection && disconnectMutation.mutate(disconnectingConnection.id)}
+              onClick={() => disconnectingConnection && disconnectMutation.mutate({
+                id: disconnectingConnection.id,
+                keepAccounts: !deletingOnDisconnect,
+              })}
               disabled={disconnectMutation.isPending}
             >
-              {disconnectMutation.isPending ? t('common.loading') : t('accounts.disconnect')}
+              {disconnectMutation.isPending
+                ? t('common.loading')
+                : alreadyDisconnected ? t('accounts.removeConnection') : t('accounts.disconnect')}
             </Button>
           </DialogFooter>
         </DialogContent>

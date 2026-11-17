@@ -9,6 +9,7 @@ const api = vi.hoisted(() => ({
   accountsList: vi.fn(),
   connectionsList: vi.fn(),
   sync: vi.fn(),
+  deleteConnection: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
@@ -18,7 +19,7 @@ vi.mock('@/lib/api', () => ({
     list: api.connectionsList,
     getProviders: vi.fn().mockResolvedValue([]),
     sync: api.sync,
-    delete: vi.fn(),
+    delete: api.deleteConnection,
     getReauthUrl: vi.fn(),
   },
   currencies: { list: vi.fn().mockResolvedValue([]) },
@@ -146,12 +147,62 @@ describe('AccountsPage connection row actions', () => {
   })
 })
 
+describe('AccountsPage disconnect dialog', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    api.accountsList.mockResolvedValue([])
+    api.deleteConnection.mockResolvedValue(undefined)
+  })
+
+  it('keeps accounts and history unless the delete box is checked', async () => {
+    api.connectionsList.mockResolvedValue([makeConnection({ id: 'conn-d', status: 'active' })])
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    await user.click(await screen.findByTitle(t('accounts.disconnect')))
+    const box = screen.getByRole('checkbox', { name: t('accounts.disconnectAlsoDelete') })
+    expect(box).not.toBeChecked()
+    expect(screen.getByTestId('disconnect-description')).toHaveTextContent(
+      t('accounts.confirmDisconnectKeepDesc', { institution: 'Institution B' }),
+    )
+    await user.click(screen.getByRole('button', { name: t('accounts.disconnect') }))
+
+    expect(api.deleteConnection).toHaveBeenCalledExactlyOnceWith('conn-d', { keepAccounts: true })
+  })
+
+  it('deletes accounts and transactions when the box is checked', async () => {
+    api.connectionsList.mockResolvedValue([makeConnection({ id: 'conn-d', status: 'active' })])
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    await user.click(await screen.findByTitle(t('accounts.disconnect')))
+    await user.click(screen.getByRole('checkbox', { name: t('accounts.disconnectAlsoDelete') }))
+    expect(screen.getByTestId('disconnect-description')).toHaveTextContent(
+      t('accounts.confirmDisconnectDesc', { institution: 'Institution B' }),
+    )
+    await user.click(screen.getByRole('button', { name: t('accounts.disconnect') }))
+
+    expect(api.deleteConnection).toHaveBeenCalledExactlyOnceWith('conn-d', { keepAccounts: false })
+  })
+
+  it('offers reconnect and removal for a disconnected connection', async () => {
+    api.connectionsList.mockResolvedValue([makeConnection({ id: 'conn-d', status: 'disconnected' })])
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    expect(await screen.findByText(t('accounts.connectionStatus.disconnected'))).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('accounts.reconnect') })).toBeInTheDocument()
+    await user.click(screen.getByTitle(t('accounts.removeConnection')))
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: t('accounts.removeConnection') }))
+
+    expect(api.deleteConnection).toHaveBeenCalledExactlyOnceWith('conn-d', { keepAccounts: false })
+  })
+})
+
 describe('AccountDialog account types', () => {
   it.each([
     { kind: 'manual', connectionId: null },
-    { kind: 'bank-connected', connectionId: 'conn-1' },
+    { kind: 'bank-connected', connectionId: 'conn-d' },
   ])('saves Loan when editing an existing $kind checking account', async ({ connectionId }) => {
-    const account = { ...makeAccount('conn-1'), connection_id: connectionId }
+    const account = { ...makeAccount('conn-d'), connection_id: connectionId }
     const onSave = vi.fn()
     const { user } = renderWithProviders(
       <AccountDialog open account={account} onClose={vi.fn()} onSave={onSave} loading={false} />,

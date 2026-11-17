@@ -1284,6 +1284,11 @@
     "disconnected": "Kapcsolat eltávolítva",
     "confirmDisconnectTitle": "Leválasztod a bankkapcsolatot?",
     "confirmDisconnectDesc": "Ez leválasztja a következőt: {{institution}}, és eltávolítja a szinkronizált számlákat és tranzakciókat az alkalmazásból. Ez a művelet nem vonható vissza.",
+    "confirmDisconnectKeepDesc": "A(z) {{institution}} szinkronizálása leáll. A számlák és a tranzakciós előzmények az alkalmazásban maradnak, és később újra csatlakoztathatod.",
+    "disconnectAlsoDelete": "A számlák és tranzakciók törlése is",
+    "disconnectedKept": "Bank leválasztva. A számlák és az előzmények megmaradtak.",
+    "removeConnection": "Kapcsolat eltávolítása",
+    "connectionDisconnected": "Leválasztva. Csatlakoztasd újra a szinkronizáláshoz",
     "viewTransactions": "Tranzakciók megtekintése",
     "currentBalance": "Aktuális egyenleg",
     "income": "Bevétel",
@@ -1367,7 +1372,8 @@
     "connectionStatus": {
       "active": "Aktív",
       "error": "Hiba",
-      "expired": "Lejárt"
+      "expired": "Lejárt",
+      "disconnected": "Leválasztva"
     }
   },
   "loans": {

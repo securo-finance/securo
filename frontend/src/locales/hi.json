@@ -1284,6 +1284,11 @@
     "disconnected": "कनेक्शन हटाया गया",
     "confirmDisconnectTitle": "बैंक कनेक्शन डिस्कनेक्ट करें?",
     "confirmDisconnectDesc": "इससे {{institution}} अलग हो जाएगा और सिंक किए गए खाते और लेन-देन ऐप से हट जाएँगे। यह कार्रवाई वापस नहीं ली जा सकती।",
+    "confirmDisconnectKeepDesc": "{{institution}} का सिंक बंद हो जाएगा। इसके खाते और लेन-देन का इतिहास ऐप में बना रहेगा, और आप इसे बाद में फिर से जोड़ सकते हैं।",
+    "disconnectAlsoDelete": "खाते और लेन-देन भी हटाएँ",
+    "disconnectedKept": "बैंक डिस्कनेक्ट हो गया। खाते और इतिहास रखे गए।",
+    "removeConnection": "कनेक्शन हटाएँ",
+    "connectionDisconnected": "डिस्कनेक्ट है। फिर से सिंक करने के लिए दोबारा जोड़ें",
     "viewTransactions": "लेन-देन देखें",
     "currentBalance": "मौजूदा शेष राशि",
     "income": "आय",
@@ -1367,7 +1372,8 @@
     "connectionStatus": {
       "active": "सक्रिय",
       "error": "त्रुटि",
-      "expired": "समाप्त"
+      "expired": "समाप्त",
+      "disconnected": "डिस्कनेक्ट"
     }
   },
   "loans": {

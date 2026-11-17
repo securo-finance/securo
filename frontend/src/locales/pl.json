@@ -1334,6 +1334,11 @@
     "disconnected": "Usunięto połączenie",
     "confirmDisconnectTitle": "Odłączyć połączenie bankowe?",
     "confirmDisconnectDesc": "Spowoduje to odłączenie {{institution}} oraz usunięcie z aplikacji zsynchronizowanych kont i transakcji. Ta operacja jest nieodwracalna.",
+    "confirmDisconnectKeepDesc": "{{institution}} przestanie się synchronizować. Konta i historia transakcji zostaną w aplikacji, a połączenie można później przywrócić.",
+    "disconnectAlsoDelete": "Usuń też konta i transakcje",
+    "disconnectedKept": "Bank odłączony. Konta i historia zostały zachowane.",
+    "removeConnection": "Usuń połączenie",
+    "connectionDisconnected": "Odłączone. Połącz ponownie, aby znów synchronizować",
     "viewTransactions": "Zobacz transakcje",
     "currentBalance": "Bieżące saldo",
     "income": "Przychody",
@@ -1420,7 +1425,8 @@
     "connectionStatus": {
       "active": "Aktywne",
       "error": "Błąd",
-      "expired": "Wygasłe"
+      "expired": "Wygasłe",
+      "disconnected": "Odłączone"
     }
   },
   "loans": {

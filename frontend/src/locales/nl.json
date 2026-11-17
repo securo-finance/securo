@@ -1285,6 +1285,11 @@
     "disconnected": "Verbinding verwijderd",
     "confirmDisconnectTitle": "Bankverbinding verbreken?",
     "confirmDisconnectDesc": "Hierdoor wordt {{institution}} ontkoppeld en worden gesynchroniseerde accounts en transacties uit de app verwijderd. Deze actie is onomkeerbaar.",
+    "confirmDisconnectKeepDesc": "{{institution}} wordt niet meer gesynchroniseerd. De rekeningen en transactiegeschiedenis blijven in de app, en je kunt later opnieuw verbinden.",
+    "disconnectAlsoDelete": "Ook rekeningen en transacties verwijderen",
+    "disconnectedKept": "Bank losgekoppeld. Rekeningen en geschiedenis zijn bewaard.",
+    "removeConnection": "Verbinding verwijderen",
+    "connectionDisconnected": "Losgekoppeld. Verbind opnieuw om weer te synchroniseren",
     "viewTransactions": "Transacties bekijken",
     "currentBalance": "Huidig saldo",
     "income": "Inkomen",
@@ -1369,7 +1374,8 @@
     "connectionStatus": {
       "active": "Actief",
       "error": "Fout",
-      "expired": "Verlopen"
+      "expired": "Verlopen",
+      "disconnected": "Losgekoppeld"
     }
   },
   "loans": {

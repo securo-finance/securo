@@ -1284,6 +1284,11 @@
     "disconnected": "接続を削除しました",
     "confirmDisconnectTitle": "銀行接続を切断しますか?",
     "confirmDisconnectDesc": "{{institution}}との紐付けを解除し、同期済みの口座と取引をアプリから削除します。この操作は取り消せません。",
+    "confirmDisconnectKeepDesc": "{{institution}} の同期を停止します。口座と取引履歴はアプリに残り、あとで再接続できます。",
+    "disconnectAlsoDelete": "口座と取引も削除する",
+    "disconnectedKept": "銀行の接続を解除しました。口座と履歴は残っています。",
+    "removeConnection": "接続を削除",
+    "connectionDisconnected": "接続解除済み。再接続すると同期を再開します",
     "viewTransactions": "取引を表示",
     "currentBalance": "現在残高",
     "income": "収入",
@@ -1367,7 +1372,8 @@
     "connectionStatus": {
       "active": "有効",
       "error": "エラー",
-      "expired": "期限切れ"
+      "expired": "期限切れ",
+      "disconnected": "接続解除済み"
     }
   },
   "loans": {

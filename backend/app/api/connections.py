@@ -203,6 +203,8 @@ async def sync_connection(
         }
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except connection_service.ConnectionDisconnectedError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except ProviderUserActionRequired as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -276,10 +278,19 @@ async def update_settings(
 @router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_connection(
     connection_id: uuid.UUID,
+    keep_accounts: bool = True,
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    deleted = await connection_service.delete_connection(session, connection_id, ctx.workspace.id)
+    """Disconnect a bank.
+
+    By default the accounts and their history stay and the connection is
+    archived so it can be reconnected later. keep_accounts=false deletes the
+    connection with its accounts and transactions.
+    """
+    deleted = await connection_service.delete_connection(
+        session, connection_id, ctx.workspace.id, keep_accounts=keep_accounts
+    )
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
 

@@ -1285,6 +1285,11 @@
     "disconnected": "Verbindung entfernt",
     "confirmDisconnectTitle": "Bankverbindung trennen?",
     "confirmDisconnectDesc": "Dadurch wird die Verknüpfung mit {{institution}} aufgehoben und die synchronisierten Konten und Transaktionen werden aus der App gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
+    "confirmDisconnectKeepDesc": "{{institution}} wird nicht mehr synchronisiert. Die Konten und der Transaktionsverlauf bleiben in der App, und du kannst die Bank später wieder verbinden.",
+    "disconnectAlsoDelete": "Auch Konten und Transaktionen löschen",
+    "disconnectedKept": "Bank getrennt. Konten und Verlauf wurden behalten.",
+    "removeConnection": "Verbindung entfernen",
+    "connectionDisconnected": "Getrennt. Erneut verbinden, um wieder zu synchronisieren",
     "viewTransactions": "Transaktionen anzeigen",
     "currentBalance": "Aktueller Saldo",
     "income": "Einnahmen",
@@ -1368,7 +1373,8 @@
     "connectionStatus": {
       "active": "Aktiv",
       "error": "Fehler",
-      "expired": "Abgelaufen"
+      "expired": "Abgelaufen",
+      "disconnected": "Getrennt"
     }
   },
   "loans": {

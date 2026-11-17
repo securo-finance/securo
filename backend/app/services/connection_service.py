@@ -2711,6 +2711,10 @@ async def sync_connection(
     )
     if not connection:
         raise ValueError("Connection not found")
+    if connection.status == DISCONNECTED_STATUS:
+        raise ConnectionDisconnectedError(
+            "This connection was disconnected. Reconnect it to sync again."
+        )
     if not connection.credentials:
         raise ValueError("Credentials not found")
 
@@ -3485,12 +3489,37 @@ async def sync_connection(
         raise
 
 
+DISCONNECTED_STATUS = "disconnected"
+
+
+class ConnectionDisconnectedError(Exception):
+    """A sync was asked of a connection the user disconnected."""
+
+
 async def delete_connection(
-    session: AsyncSession, connection_id: uuid.UUID, workspace_id: uuid.UUID
+    session: AsyncSession,
+    connection_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    *,
+    keep_accounts: bool = False,
 ) -> bool:
     connection = await get_connection(session, connection_id, workspace_id)
     if not connection:
         return False
+
+    if keep_accounts:
+        # Disconnecting keeps the accounts, their history, payees and
+        # recurrings. The connection is archived rather than deleted so its
+        # accounts stay linked to it: a later reconnect goes through the
+        # reconnect flow, which matches each account by the same
+        # (connection_id, external_id) a normal sync uses, so the re-sync
+        # updates the existing rows instead of importing them again.
+        # Dropping the credentials ends the access, and the status keeps the
+        # scheduler and manual sync away from it.
+        connection.status = DISCONNECTED_STATUS
+        connection.credentials = None
+        await session.commit()
+        return True
 
     # Archive synced investment assets rather than deleting them: the user
     # may still want to see their historical AssetValue trend, and if they

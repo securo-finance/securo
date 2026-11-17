@@ -1348,6 +1348,11 @@
     "disconnected": "Prepojenie odstránené",
     "confirmDisconnectTitle": "Odpojiť prepojenie banky?",
     "confirmDisconnectDesc": "Odpojí sa {{institution}} a z aplikácie sa odstránia synchronizované účty a transakcie. Táto akcia je nezvratná.",
+    "confirmDisconnectKeepDesc": "{{institution}} sa prestane synchronizovať. Účty a história transakcií zostanú v aplikácii a banku môžete neskôr znova pripojiť.",
+    "disconnectAlsoDelete": "Zmazať aj účty a transakcie",
+    "disconnectedKept": "Banka odpojená. Účty a história zostali zachované.",
+    "removeConnection": "Odstrániť pripojenie",
+    "connectionDisconnected": "Odpojené. Pripojte znova pre synchronizáciu",
     "viewTransactions": "Zobraziť transakcie",
     "currentBalance": "Aktuálny zostatok",
     "income": "Príjmy",
@@ -1435,7 +1440,8 @@
     "connectionStatus": {
       "active": "Aktívne",
       "error": "Chyba",
-      "expired": "Vypršané"
+      "expired": "Vypršané",
+      "disconnected": "Odpojené"
     }
   },
   "loans": {
