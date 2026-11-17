@@ -37,3 +37,4 @@ Each file here records one decision about how Securo is built: what we chose, wh
 | [0020](0020-instance-secrets-in-the-database.md) | An install with no secret of its own gets one, kept in the database |
 | [0021](0021-plugin-icons.md) | Plugin icons come from the catalog by checksum, served by Securo |
 | [0022](0022-provider-reserved-balances.md) | Provider reserved balances are shown, never summed into a total |
+| [0023](0023-new-bank-providers-are-plugins.md) | New bank sync providers are plugins; the core keeps the pipeline |
