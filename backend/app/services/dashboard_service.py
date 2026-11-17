@@ -38,6 +38,7 @@ from app.services._query_filters import (
 from app.services import invoice_forecast_service
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.recurring_transaction_service import get_occurrences_in_range
+from app.services.account_service import reserved_totals_by_account
 from app.services.asset_service import get_asset_values_at
 from app.services.fx_rate_service import _resolve_rate, convert
 from app.models.user import User
@@ -1355,6 +1356,7 @@ async def _account_balance_at(
     cutoff: date,
     *,
     include_pending: bool = False,
+    reserved: Optional[Decimal] = None,
 ) -> float:
     """Get balance for a single account at a specific date.
 
@@ -1362,6 +1364,12 @@ async def _account_balance_at(
     do not affect it. Connected accounts are the one explicit exception at the
     current cutoff: their provider balance is returned verbatim so it keeps
     matching the bank app. Forecast callers add pending/future rows separately.
+
+    Reserved funds the provider reports beside the balance (Mercado Pago
+    cofrinhos) are added on top: they are money the user holds that the
+    provider's own figure does not include (ADR 0022). Callers inside a loop
+    prefetch them with ``reserved_totals_by_account`` and pass them in; omitted,
+    they are looked up for this one account. Manual accounts have no pockets.
     """
     today = app_today()
     balance_cutoff = min(cutoff, today)
@@ -1370,6 +1378,11 @@ async def _account_balance_at(
         current_bal = float(account.balance)
         if account.type in {"credit_card", "loan"}:
             current_bal = -current_bal
+        if reserved is None:
+            reserved = (await reserved_totals_by_account(session, [account.id])).get(
+                account.id, Decimal(0)
+            )
+        current_bal += float(reserved)
 
         # The provider number is the source of truth for the current balance,
         # including whatever pending entries the provider happens to include.
@@ -1501,6 +1514,12 @@ async def _total_balance_by_currency(
                 Transaction.status == "pending",
             )
 
+    # Reserved (pocket) money per account, added to the provider's balance.
+    # Prefetched once so the loop below never queries.
+    reserved_by_account = await reserved_totals_by_account(
+        session, [account.id for account in accounts]
+    )
+
     totals: dict[str, float] = {}
     balances: dict[uuid.UUID, float] = {}
     for account in accounts:
@@ -1508,6 +1527,7 @@ async def _total_balance_by_currency(
             bal = float(account.balance)
             if account.type in {"credit_card", "loan"}:
                 bal = -bal
+            bal += float(reserved_by_account.get(account.id, Decimal(0)))
             if cutoff < today:
                 bal -= connected_deltas.get(account.id, 0.0)
                 if not include_pending:
@@ -1527,7 +1547,11 @@ async def _total_balance_by_currency(
             # Every card in the group carries the same shared debt, so `total`
             # counts it len(group) times; strip the duplicates.
             current_shared = await _account_balance_at(
-                session, group[0], today, include_pending=include_pending
+                session,
+                group[0],
+                today,
+                include_pending=include_pending,
+                reserved=reserved_by_account.get(group[0].id, Decimal(0)),
             )
             total -= current_shared * (len(group) - 1)
         currency = group[0].currency

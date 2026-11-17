@@ -7,7 +7,7 @@ import { ArrowRight, RefreshCw, SendHorizontal, Sparkles } from 'lucide-react'
 
 import { accounts as accountsApi, budgets, dashboard, invoiceSchedules, invoices as invoicesApi } from '@/lib/api'
 import { AGING_BUCKETS, displayNumber } from '@/lib/invoice-utils'
-import { sumAccountBalances, getAccountLabel } from '@/lib/account-utils'
+import { accountBalanceWithReserves, sumAccountBalances, getAccountLabel } from '@/lib/account-utils'
 import { formatCurrency } from '@/lib/format'
 import { monthLastDay, shiftMonth } from '@/lib/month-utils'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
@@ -349,7 +349,7 @@ export function CreditCardsWidget({ scope }: { scope: DashboardScope }) {
   const owed = Math.max(0, -sumAccountBalances(cards))
   const available = scoped
     .filter((a) => a.type === 'checking' || a.type === 'savings')
-    .reduce((sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0)
+    .reduce((sum, a) => sum + accountBalanceWithReserves(a), 0)
   const money = (value: number, currency = scope.currency) => mask(formatCurrency(value, currency, locale))
   // Cards on one shared credit line report the line's whole balance each: list
   // the line once, under all its cards' names, so the rows add up to the total.

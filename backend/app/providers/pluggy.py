@@ -20,6 +20,7 @@ from app.providers.base import (
     ConnectTokenData,
     HoldingData,
     RefreshOutcome,
+    ReservedBalanceData,
     TransactionData,
     mask_last4,
 )
@@ -353,6 +354,83 @@ def _build_bill_data(raw: dict) -> Optional[BillData]:
     )
 
 
+def _reserved_balances(account: dict) -> Optional[list[ReservedBalanceData]]:
+    """Reserved/earmarked funds the account holds, or None when unreported.
+
+    Pluggy exposes Mercado Pago cofrinhos and other "saldo reservado" in
+    ``bankData.reservedBalances``. They are money the account holds that
+    ``balance`` does not include, so callers store them and add this sum to the
+    account's value once (ADR 0022).
+
+    None means the provider did not report the collection at all (stored rows
+    stay as they are); an empty list means the institution answered with no
+    active reservation, which is authoritative. ``availableAmounts`` carries one
+    entry per remuneration band, so bands are summed per currency. A
+    reservation without a usable identification, or a payload whose entries are
+    all unusable, is reported as None rather than silently dropping money.
+    """
+    bank_data = account.get("bankData")
+    if not isinstance(bank_data, dict):
+        return None
+    if bank_data.get("hasReservedBalance") is False:
+        return []
+    raw = bank_data.get("reservedBalances")
+    if not isinstance(raw, list):
+        return None
+    if not raw:
+        return []
+
+    rows: list[ReservedBalanceData] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        identification = entry.get("identification")
+        if identification is None or isinstance(identification, bool):
+            logger.warning(
+                "Pluggy reserved balance for account %s has no identification; skipping",
+                account.get("id"),
+            )
+            continue
+        external_id = str(identification).strip()
+        if not external_id:
+            logger.warning(
+                "Pluggy reserved balance for account %s has an empty identification; skipping",
+                account.get("id"),
+            )
+            continue
+        raw_name = entry.get("name")
+        name = raw_name.strip() if isinstance(raw_name, str) and raw_name.strip() else None
+        # One entry per remuneration band: sum them per currency. `remuneration`
+        # is display metadata and never adjusts the amount.
+        totals: dict[str, Decimal] = {}
+        for band in entry.get("availableAmounts") or []:
+            if not isinstance(band, dict):
+                continue
+            currency = band.get("currencyCode")
+            if not isinstance(currency, str) or not currency:
+                continue
+            amount = _decimal_or_none(band.get("amount"))
+            if amount is None or not amount.is_finite() or amount < 0:
+                continue
+            totals[currency] = totals.get(currency, Decimal(0)) + amount
+        for currency, amount in totals.items():
+            rows.append(
+                ReservedBalanceData(
+                    external_id=external_id, name=name, currency=currency, amount=amount
+                )
+            )
+
+    if not rows:
+        logger.warning(
+            "Pluggy reported reserved balances for account %s but none were usable; "
+            "keeping stored rows",
+            account.get("id"),
+        )
+        return None
+    rows.sort(key=lambda r: (r.external_id, r.currency))
+    return rows
+
+
 def _auto_invested_balance(account: dict) -> Decimal:
     """Amount of the account balance that Pluggy has auto-invested.
 
@@ -418,12 +496,14 @@ def _build_account_data(acc: dict, type_mapper) -> AccountData:
             credit_data, acc.get("balance"), acc.get("currencyCode") or "USD"
         )
 
+    account_currency = acc.get("currencyCode", "USD")
+
     return AccountData(
         external_id=acc["id"],
         name=acc["name"],
         type=account_type,
         balance=Decimal(str(acc.get("balance", 0))),
-        currency=acc.get("currencyCode", "USD"),
+        currency=account_currency,
         credit_limit=credit_limit,
         statement_close_day=statement_close_day,
         payment_due_day=payment_due_day,
@@ -437,6 +517,7 @@ def _build_account_data(acc: dict, type_mapper) -> AccountData:
         auto_invested_balance=(
             Decimal(0) if account_type == "credit_card" else _auto_invested_portion(acc)
         ),
+        reserved_balances=_reserved_balances(acc),
     )
 
 

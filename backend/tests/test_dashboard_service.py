@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
 from app.models.account import Account
+from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.category import Category
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
@@ -385,6 +386,80 @@ async def test_total_balance_backtracks_shared_credit_balance_across_all_cards(
     )
 
     assert totals["BRL"] == pytest.approx(-225.0)
+
+
+# --- reserved balances (ADR 0022) -----------------------------------------
+
+
+async def _add_reserved(
+    session, workspace_id, account_id, external_id, amount, currency="BRL",
+):
+    row = AccountReservedBalance(
+        id=uuid.uuid4(), workspace_id=workspace_id, account_id=account_id,
+        external_id=external_id, name=None, currency=currency, amount=Decimal(amount),
+    )
+    session.add(row)
+    await session.commit()
+    return row
+
+
+async def _connected_account(session, test_user, test_workspace, balance, pockets):
+    from datetime import datetime, timezone
+
+    conn = BankConnection(
+        id=uuid.uuid4(), user_id=test_user.id, provider="pluggy",
+        external_id=f"ext-{uuid.uuid4().hex[:8]}", institution_name="Mercado Pago",
+        credentials={}, status="active",
+        last_sync_at=datetime.now(timezone.utc), created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn)
+    await session.flush()
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn.id, name="Mercado Pago", type="checking",
+        balance=Decimal(balance), currency="BRL",
+    )
+    session.add(account)
+    await session.commit()
+    for external_id, amount in pockets:
+        await _add_reserved(session, test_workspace.id, account.id, external_id, amount)
+    return account
+
+
+@pytest.mark.asyncio
+async def test_account_balance_at_adds_reserved_balances(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """An account's value is the provider's balance plus its reserved pockets,
+    at the current cutoff and at historical ones alike (ADR 0022)."""
+    with_pockets = await _connected_account(
+        session, test_user, test_workspace, "1000.00",
+        [("emergency-fund", "0"), ("round-up", "2000"), ("marketplace", "2000")],
+    )
+    without = await _connected_account(session, test_user, test_workspace, "1000.00", [])
+    today = date.today()
+
+    # 1,000 in the balance, plus 2,000 + 2,000 reserved.
+    assert await _account_balance_at(session, with_pockets, today) == pytest.approx(5000.00)
+    assert await _account_balance_at(session, without, today) == pytest.approx(1000.00)
+    assert await _account_balance_at(session, with_pockets, today - timedelta(days=1)) == pytest.approx(5000.00)
+
+
+@pytest.mark.asyncio
+async def test_total_balance_by_currency_counts_reserved_once(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The pockets land in the account's own currency bucket, once; a
+    foreign-currency pocket is stored but lands in no bucket."""
+    account = await _connected_account(
+        session, test_user, test_workspace, "1000.00",
+        [("round-up", "2000"), ("marketplace", "2000")],
+    )
+    await _add_reserved(session, test_workspace.id, account.id, "usd", "75", currency="USD")
+
+    totals = await _total_balance_by_currency(session, test_workspace.id, date.today())
+
+    assert totals == {"BRL": pytest.approx(5000.00)}
 
 
 # ---------------------------------------------------------------------------

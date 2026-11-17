@@ -269,6 +269,37 @@ it('shows the mortgage breakdown editor for a payment opened from the dashboard'
   expect(screen.getByLabelText(t('transactions.mortgageInterest'))).toBeInTheDocument()
 })
 
+describe('Dashboard available balance with reserves', () => {
+  it.each([
+    { currency: 'USD', current_balance: 1000, balance_primary: null, reserved_total_primary: null, expected: 5000 },
+    { currency: 'BRL', current_balance: 1000, balance_primary: 200, reserved_total_primary: 800, expected: 1000 },
+    { currency: 'BRL', current_balance: 0, balance_primary: 0, reserved_total_primary: 800, expected: 800 },
+    { currency: 'EUR', current_balance: 1000, balance_primary: null, reserved_total_primary: null, expected: 5000, fx_fallback: true },
+  ])('includes reserves in the headline, chip and breakdown: $currency / $current_balance', async (values) => {
+    collectionFilter.activeAccountIds = ['reserved', 'card']
+    api.accounts.list.mockResolvedValue([
+      account({ id: 'reserved', name: 'Reserved account', reserved_total: 4000, ...values }),
+      account({ id: 'outside', current_balance: 90000, reserved_total: 10000 }),
+      account({ id: 'card', type: 'credit_card', current_balance: -500 }),
+    ])
+    const { user } = renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+    )
+
+    const chip = (await screen.findByText('Reserved account')).closest('a')!
+    const currency = values.balance_primary == null ? values.currency : 'USD'
+    expect(chip).toHaveTextContent(formatCurrency(values.expected, currency, 'en-US'))
+    const heading = screen.getByText(t('dashboard.availableBalance'))
+    expect(heading.nextElementSibling).toHaveTextContent(formatCurrency(values.expected, 'USD', 'en-US'))
+    await user.hover(screen.getByRole('button', { name: 'i' }))
+    const tooltip = await screen.findByRole('tooltip')
+    const row = within(tooltip).getByText(t('dashboard.availableBalance')).parentElement!
+    expect(row).toHaveTextContent(formatCurrency(values.expected, 'USD', 'en-US'))
+  })
+})
+
 describe('Dashboard available balance without an FX rate', () => {
   const renderDashboard = () => renderWithProviders(
     <TooltipProvider delayDuration={0}>

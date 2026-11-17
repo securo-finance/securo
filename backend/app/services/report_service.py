@@ -45,6 +45,7 @@ from app.schemas.report import (
     ReportSummary,
 )
 from app.services import invoice_forecast_service
+from app.services.account_service import reserved_totals_by_account
 from app.services.dashboard_service import (
     _account_balance_at,
     _get_forecast_transactions,
@@ -161,6 +162,12 @@ async def _net_worth_at(
     if accounts is None:
         accounts = await _get_open_accounts(session, workspace_id, account_ids)
 
+    # Reserved (pocket) money per account, counted on top of the balance
+    # (ADR 0022). Prefetched once for the whole snapshot.
+    reserved_by_account = await reserved_totals_by_account(
+        session, [account.id for account in accounts]
+    )
+
     accounts_total = 0.0
     liabilities_total = 0.0
     composition: list[ReportCompositionItem] = []
@@ -178,12 +185,22 @@ async def _net_worth_at(
         account = group[0]
         bal = 0.0
         for member in group:
-            bal += await _account_balance_at(session, member, cutoff)
+            bal += await _account_balance_at(
+                session,
+                member,
+                cutoff,
+                reserved=reserved_by_account.get(member.id, Decimal(0)),
+            )
         if len(group) > 1 and account.shared_balance_group:
             # Each card's balance at the cutoff is the shared debt today minus
             # that card's own activity since, so the duplicates to strip are
             # today's shared debt once per extra card.
-            current_shared = await _account_balance_at(session, account, app_today())
+            current_shared = await _account_balance_at(
+                session,
+                account,
+                app_today(),
+                reserved=reserved_by_account.get(account.id, Decimal(0)),
+            )
             bal -= current_shared * (len(group) - 1)
         label = " + ".join(get_account_name(member) for member in group)
         converted, _ = await convert(

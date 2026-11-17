@@ -49,7 +49,7 @@ async def list_accounts(
 
 
 async def _convert_to_primary(session: AsyncSession, acc: dict, primary_currency: str) -> None:
-    """Fill the primary-currency balance and open bill of a serialized account."""
+    """Fill primary-currency balances, reserves and open bill of an account."""
     if acc["currency"] == primary_currency:
         return
     # Use the real rate only: the 1:1 fallback would present a foreign
@@ -61,6 +61,8 @@ async def _convert_to_primary(session: AsyncSession, acc: dict, primary_currency
         return
     converted = Decimal(str(acc["current_balance"])) * rate
     acc["balance_primary"] = float(converted.quantize(Decimal("0.01")))
+    reserved = Decimal(str(acc["reserved_total"])) * rate
+    acc["reserved_total_primary"] = float(reserved.quantize(Decimal("0.01")))
     if acc["open_bill_total"] is not None:
         bill = Decimal(str(acc["open_bill_total"])) * rate
         acc["open_bill_total_primary"] = float(bill.quantize(Decimal("0.01")))

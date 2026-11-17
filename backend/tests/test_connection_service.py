@@ -9,6 +9,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.asset import Asset
 from app.models.bank_connection import BankConnection
 from app.models.category import Category
@@ -24,6 +25,7 @@ from app.providers.base import (
     HoldingData,
     ProviderRateLimited,
     ProviderUserActionRequired,
+    ReservedBalanceData,
     TransactionData,
 )
 from app.providers.enable_banking import EnableBankingProvider
@@ -8577,3 +8579,172 @@ async def test_sync_simplefin_lowercase_account_currency_counts_portfolio_once(
     assert {a.currency for a in assets} == {"USD"}
     dp = await _net_worth_at(session, test_workspace.id, date.today(), "USD")
     assert dp.value == pytest.approx(1057.20 + 889.92)
+
+
+# ---------------------------------------------------------------------------
+# reserved balances (Pluggy bankData.reservedBalances / Mercado Pago cofrinhos)
+# ---------------------------------------------------------------------------
+
+
+def _reserved(external_id, name, currency, amount):
+    return ReservedBalanceData(
+        external_id=external_id, name=name, currency=currency, amount=Decimal(amount)
+    )
+
+
+def _mp_account(reserved):
+    """A representative payload: 1,000 in the balance, with 2,000 + 2,000 held
+    in cofrinhos the balance does not include."""
+    return AccountData(
+        external_id="mp-acc-1",
+        name="Mercado Pago",
+        type="checking",
+        balance=Decimal("1000.00"),
+        currency="BRL",
+        auto_invested_balance=Decimal("1000.00"),
+        reserved_balances=reserved,
+    )
+
+
+MP_POCKETS = [
+    _reserved("emergency-fund", "Emergency fund", "BRL", "0"),
+    _reserved("round-up", "Round-up savings", "BRL", "2000"),
+    _reserved("marketplace", "Marketplace savings", "BRL", "2000"),
+]
+
+
+async def _import_mp(session, test_user, test_workspace, acc_data):
+    mock_provider = AsyncMock()
+    mock_provider.handle_oauth_callback = AsyncMock(return_value=ConnectionData(
+        external_id=f"ext-{uuid.uuid4().hex[:8]}",
+        institution_name="Mercado Pago",
+        credentials={"token": "abc"},
+        accounts=[acc_data],
+    ))
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        return await handle_oauth_callback(
+            session, test_workspace.id, test_user.id, "code", "pluggy"
+        )
+
+
+async def _sync_mp_account(session, conn, test_user, test_workspace, acc_data):
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "refreshed"})
+    mock_provider.get_accounts = AsyncMock(return_value=[acc_data])
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        return await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+
+async def _reserved_rows(session, account_id):
+    return (
+        await session.execute(
+            select(AccountReservedBalance)
+            .where(AccountReservedBalance.account_id == account_id)
+            .order_by(AccountReservedBalance.external_id)
+        )
+    ).scalars().all()
+
+
+async def _mp_account_row(session, conn):
+    return (
+        await session.execute(select(Account).where(Account.connection_id == conn.id))
+    ).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_reserved_balances_stored_on_initial_import(
+    session: AsyncSession, test_user, test_workspace
+):
+    """The three cofrinhos land as provider rows under their account, and the
+    stored balance stays the provider's own figure (the ledger invariant): the
+    reservations are added by the value paths, not stored into the balance."""
+    conn = await _import_mp(session, test_user, test_workspace, _mp_account(MP_POCKETS))
+    account = await _mp_account_row(session, conn)
+
+    assert account.balance == Decimal("1000.00")
+    rows = await _reserved_rows(session, account.id)
+    # Ordered by the provider identification.
+    assert [(r.external_id, r.name, r.currency, r.amount) for r in rows] == [
+        ("emergency-fund", "Emergency fund", "BRL", Decimal("0")),
+        ("marketplace", "Marketplace savings", "BRL", Decimal("2000")),
+        ("round-up", "Round-up savings", "BRL", Decimal("2000")),
+    ]
+    assert {r.workspace_id for r in rows} == {test_workspace.id}
+
+
+@pytest.mark.asyncio
+async def test_reserved_balances_upsert_rename_and_delete_on_resync(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Identity is (external_id, currency): a repeat sync changes nothing, a
+    rename updates the row in place, and a pocket the provider stops
+    reporting is deleted."""
+    conn = await _import_mp(session, test_user, test_workspace, _mp_account(MP_POCKETS))
+    account_id = (await _mp_account_row(session, conn)).id
+    first = await _reserved_rows(session, account_id)
+    ids = {r.external_id: r.id for r in first}
+
+    await _sync_mp_account(session, conn, test_user, test_workspace, _mp_account(MP_POCKETS))
+    assert len(await _reserved_rows(session, account_id)) == 3
+
+    renamed = [
+        _reserved("emergency-fund", "Emergency fund", "BRL", "0"),
+        _reserved("round-up", "Travel savings", "BRL", "4000"),
+        _reserved("marketplace", "Marketplace savings", "BRL", "2000"),
+    ]
+    await _sync_mp_account(session, conn, test_user, test_workspace, _mp_account(renamed))
+    rows = {r.external_id: r for r in await _reserved_rows(session, account_id)}
+    assert set(rows) == set(ids)
+    assert rows["round-up"].id == ids["round-up"]
+    assert rows["round-up"].name == "Travel savings"
+    assert rows["round-up"].amount == Decimal("4000")
+
+    await _sync_mp_account(session, conn, test_user, test_workspace, _mp_account([]))
+    assert await _reserved_rows(session, account_id) == []
+
+
+@pytest.mark.asyncio
+async def test_reserved_balances_kept_when_provider_is_silent(
+    session: AsyncSession, test_user, test_workspace
+):
+    """`None` means the provider did not report the collection — an
+    unsupported connector or an all-malformed payload — so the stored rows
+    survive; only a reported list is authoritative."""
+    conn = await _import_mp(session, test_user, test_workspace, _mp_account(MP_POCKETS))
+    account_id = (await _mp_account_row(session, conn)).id
+
+    await _sync_mp_account(session, conn, test_user, test_workspace, _mp_account(None))
+
+    assert len(await _reserved_rows(session, account_id)) == 3
+
+
+@pytest.mark.asyncio
+async def test_reserved_balance_in_another_currency_is_stored_but_not_summed(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A USD pocket on a BRL account is kept and shown, but contributes
+    nothing to the account's own-currency total."""
+    from app.services.account_service import serialize_account
+
+    conn = await _import_mp(
+        session,
+        test_user,
+        test_workspace,
+        _mp_account([_reserved("usd-pocket", "USD Pocket", "USD", "75")]),
+    )
+    account = await _mp_account_row(session, conn)
+
+    rows = await _reserved_rows(session, account.id)
+    assert [(r.external_id, r.currency) for r in rows] == [("usd-pocket", "USD")]
+
+    payload = serialize_account(account, None, None)
+    assert [r["currency"] for r in payload["reserved_balances"]] == ["USD"]
+    assert payload["reserved_total"] == 0.0

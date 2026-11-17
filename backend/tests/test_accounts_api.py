@@ -18,6 +18,87 @@ async def test_list_accounts(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "currency,balance,rate,reserved_primary",
+    [
+        ("BRL", "1000.00", None, None),
+        ("USD", "1000.00", "5", 20000.0),
+        ("USD", "0.00", "5", 20000.0),
+        ("EUR", "1000.00", None, None),
+    ],
+)
+async def test_list_accounts_exposes_reserved_balances(
+    client: AsyncClient, auth_headers, session, test_user, test_workspace,
+    currency, balance, rate, reserved_primary,
+):
+    """The account payload carries the provider's pockets and their
+    same-currency total; `current_balance` stays the provider's figure exactly
+    as reported (ADR 0022)."""
+    import uuid
+    from datetime import datetime, timezone
+    from decimal import Decimal
+
+    from app.models.account_reserved_balance import AccountReservedBalance
+    from app.models.bank_connection import BankConnection
+    from app.core.app_clock import app_today
+    from app.models.fx_rate import FxRate
+
+    if rate is not None:
+        session.add(FxRate(
+            base_currency="USD", quote_currency="BRL", date=app_today(),
+            rate=Decimal(rate), source="test",
+        ))
+
+    conn = BankConnection(
+        id=uuid.uuid4(), user_id=test_user.id, provider="pluggy",
+        external_id="ext-reserved-api", institution_name="Mercado Pago",
+        credentials={}, status="active",
+        last_sync_at=datetime.now(timezone.utc), created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn)
+    await session.flush()
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn.id, name="Mercado Pago", type="checking",
+        balance=Decimal(balance), currency=currency,
+    )
+    session.add(account)
+    await session.flush()
+    session.add_all([
+        AccountReservedBalance(
+            id=uuid.uuid4(), workspace_id=test_workspace.id, account_id=account.id,
+            external_id="emergency-fund", name="Emergency fund", currency=currency, amount=Decimal("0"),
+        ),
+        AccountReservedBalance(
+            id=uuid.uuid4(), workspace_id=test_workspace.id, account_id=account.id,
+            external_id="round-up", name="Round-up savings", currency=currency,
+            amount=Decimal("2000"),
+        ),
+        AccountReservedBalance(
+            id=uuid.uuid4(), workspace_id=test_workspace.id, account_id=account.id,
+            external_id="marketplace", name="Marketplace savings", currency=currency,
+            amount=Decimal("2000"),
+        ),
+    ])
+    await session.commit()
+
+    response = await client.get("/api/accounts", headers=auth_headers)
+    assert response.status_code == 200
+    payload = next(a for a in response.json() if a["id"] == str(account.id))
+
+    assert payload["reserved_total"] == 4000.0
+    assert payload["reserved_total_primary"] == reserved_primary
+    assert {r["external_id"]: r["name"] for r in payload["reserved_balances"]} == {
+        "emergency-fund": "Emergency fund",
+        "round-up": "Round-up savings",
+        "marketplace": "Marketplace savings",
+    }
+    # The payload's own balance stays the provider's figure; the value paths
+    # count the reserved total on top of it.
+    assert payload["current_balance"] == float(balance)
+
+
+@pytest.mark.asyncio
 async def test_list_accounts_empty(client: AsyncClient, auth_headers):
     response = await client.get("/api/accounts", headers=auth_headers)
     assert response.status_code == 200

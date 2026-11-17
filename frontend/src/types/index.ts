@@ -198,7 +198,21 @@ export interface Account {
   loan_first_payment_date?: string | null
   loan_amortization?: LoanAmortization | null
   balance: number
+  // The provider's balance, exactly as reported. Reserved funds held inside the
+  // account (cofrinhos) are reported separately in `reserved_balances` and are
+  // counted on top of it.
   current_balance: number
+  reserved_balances?: {
+    id: string
+    external_id: string
+    name: string | null
+    currency: string
+    amount: number
+  }[]
+  // Sum of the same-currency reservations, in the account's currency.
+  reserved_total?: number
+  // Same total in the primary currency; null when no conversion is available.
+  reserved_total_primary?: number | null
   previous_balance: number | null
   // Date of the opening-balance transaction; null when there is none.
   balance_date?: string | null

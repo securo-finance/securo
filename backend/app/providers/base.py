@@ -56,6 +56,25 @@ def mask_last4(value: Optional[str]) -> Optional[str]:
 
 
 @dataclass
+class ReservedBalanceData:
+    """Funds an institution holds reserved/earmarked inside an account.
+
+    Mercado Pago cofrinhos, "saldo reservado", caixinhas. The provider reports
+    them beside the account's balance, and they are money the user holds that
+    the balance does not include — so an account's value is the balance plus
+    this sum (ADR 0022). `external_id` is the provider's identification for the
+    reservation, stable across syncs and scoped to the account it belongs to.
+    One instance per currency: `amount` is the sum of the reservation's
+    remuneration bands in that currency.
+    """
+
+    external_id: str
+    name: Optional[str]
+    currency: str
+    amount: Decimal
+
+
+@dataclass
 class AccountData:
     # The provider's identifier for this account. It is expected to be stable
     # across re-syncs, and the sync matches an incoming account on it first. A
@@ -101,6 +120,11 @@ class AccountData:
     # money is counted once: as the asset when one mirrors it, as cash
     # otherwise.
     auto_invested_balance: Decimal = Decimal(0)
+    # Reserved/earmarked funds held inside this account (Mercado Pago
+    # cofrinhos, caixinhas), reported beside the balance and counted on top of
+    # it once (ADR 0022). None = the provider did not report the collection, so
+    # stored rows are left alone; [] = reported, none active.
+    reserved_balances: Optional[list[ReservedBalanceData]] = None
 
 
 @dataclass

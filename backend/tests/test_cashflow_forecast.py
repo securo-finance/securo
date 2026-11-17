@@ -318,6 +318,57 @@ async def test_cashflow_forecast_starts_from_current_balance_of_manual_accounts(
     assert forecast.summary.starting_liquid_balance == Decimal("974.50")
 
 
+@pytest.mark.asyncio
+async def test_cashflow_forecast_excludes_reserved_balances(session):
+    """The runway starts from money that can pay a bill today, so a connected
+    account's pockets (cofrinhos) never extend it — even though the account's own
+    value counts them (ADR 0022)."""
+    from datetime import datetime, timezone
+
+    from app.models.account_reserved_balance import AccountReservedBalance
+    from app.models.bank_connection import BankConnection
+
+    user_id = uuid.uuid4()
+    ws = Workspace(id=uuid.uuid4(), name="Forecast Reserved WS", default_currency="USD")
+    session.add(ws)
+    await session.flush()
+
+    conn = BankConnection(
+        id=uuid.uuid4(), user_id=user_id, workspace_id=ws.id, provider="pluggy",
+        external_id="ext-reserved", institution_name="Mercado Pago",
+        credentials={}, status="active",
+        last_sync_at=datetime.now(timezone.utc), created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn)
+    await session.flush()
+
+    account = Account(
+        id=uuid.uuid4(), user_id=user_id, workspace_id=ws.id, connection_id=conn.id,
+        name="Mercado Pago", type="checking",
+        balance=Decimal("1000.00"), currency="USD",
+    )
+    session.add(account)
+    await session.flush()
+    session.add(
+        AccountReservedBalance(
+            id=uuid.uuid4(), workspace_id=ws.id, account_id=account.id,
+            external_id="round-up", name="Round-up savings", currency="USD",
+            amount=Decimal("2000.00"),
+        )
+    )
+    await session.commit()
+
+    forecast = await generate_cashflow_forecast(
+        session,
+        ws.id,
+        horizon_days=30,
+        include_discretionary_burn=False,
+        reference_date=date(2026, 9, 1),
+    )
+
+    assert forecast.summary.starting_liquid_balance == Decimal("1000.00")
+
+
 async def _forecast_workspace(session, name):
     user_id = uuid.uuid4()
     ws = Workspace(id=uuid.uuid4(), name=name, default_currency="USD")

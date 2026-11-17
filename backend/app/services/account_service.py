@@ -17,6 +17,7 @@ from sqlalchemy.orm import contains_eager
 
 from app.core.app_clock import app_today
 from app.models.account import Account
+from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.asset import LOAN_COLLATERAL_TYPES, Asset
 from app.models.bank_connection import BankConnection
 from app.models.credit_card_bill import CreditCardBill
@@ -308,6 +309,37 @@ def _institution(
     return name, acc.institution.logo_url or connection.logo_url
 
 
+async def reserved_totals_by_account(
+    session: AsyncSession, account_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, Decimal]:
+    """Reserved (pocket) money per account, in the account's own currency.
+
+    The provider reports these beside ``balance``, and they are money the user
+    holds, so an account's value is the balance plus this sum (ADR 0022). Rows
+    in another currency are left out and reported by the caller: every consumer
+    sums an account's value in the account's currency, and converting here would
+    invent a rate the caller cannot see. Accounts without pockets are absent
+    from the result.
+
+    # ponytail: pocket value is today's for every cutoff; add a values table
+    # when pocket history is asked for.
+    """
+    if not account_ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(AccountReservedBalance.account_id, func.sum(AccountReservedBalance.amount))
+            .join(Account, Account.id == AccountReservedBalance.account_id)
+            .where(
+                AccountReservedBalance.account_id.in_(account_ids),
+                AccountReservedBalance.currency == Account.currency,
+            )
+            .group_by(AccountReservedBalance.account_id)
+        )
+    ).all()
+    return {account_id: Decimal(amount) for account_id, amount in rows}
+
+
 def serialize_account(
     acc: Account,
     current_balance: Optional[Decimal],
@@ -338,8 +370,28 @@ def serialize_account(
         "secured_asset_id": acc.secured_asset_id,
         "balance": acc.balance,
         "currency": acc.currency,
+        # The provider's balance as reported. Reserved funds held inside the
+        # account (cofrinhos) are reported below and counted on top of it by the
+        # value paths — this number itself stays the provider's figure.
         "current_balance": resolved_balance,
         "previous_balance": float(previous_balance or 0),
+        "reserved_balances": [
+            {
+                "id": row.id,
+                "external_id": row.external_id,
+                "name": row.name,
+                "currency": row.currency,
+                "amount": float(row.amount),
+            }
+            for row in acc.reserved_balances
+        ],
+        # Sum of the same-currency reservations, in the account's currency.
+        "reserved_total": float(
+            sum(
+                (r.amount for r in acc.reserved_balances if r.currency == acc.currency),
+                Decimal(0),
+            )
+        ),
         "is_closed": acc.is_closed,
         "closed_at": acc.closed_at,
         "credit_limit": float(acc.credit_limit) if acc.credit_limit is not None else None,
