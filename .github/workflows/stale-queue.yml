@@ -12,6 +12,9 @@ name: stale queue
 #
 # Closing is reversible and the closing comment says how. `stale: keep`
 # exempts a pull request for good.
+#
+# Never swept: pull requests from maintainers (owner, member, collaborator),
+# drafts, and anything with a review request still pending on us.
 
 on:
   schedule:
@@ -40,6 +43,7 @@ jobs:
             const WARN_AFTER = 30;   // days without a commit before the warning
             const CLOSE_AFTER = 7;   // days the warning stands before closing
             const KEEP = 'stale: keep';
+            const MAINTAINERS = ['OWNER', 'MEMBER', 'COLLABORATOR'];
             const WARNED = '<!-- stale: warned -->';
             const CLOSED = '<!-- stale: closed -->';
             const DAY = 24 * 60 * 60 * 1000;
@@ -53,6 +57,17 @@ jobs:
 
             for (const pr of pulls) {
               if (pr.labels.some((l) => l.name === KEEP)) continue;
+
+              // Maintainers' pull requests, ours included, are never swept.
+              if (MAINTAINERS.includes(pr.author_association)) continue;
+
+              // A draft says on its own that it is not ready yet.
+              if (pr.draft) continue;
+
+              // A pending review request means the ball is with us, not with
+              // the author, so the idle days are ours to answer for.
+              if ((pr.requested_reviewers || []).length > 0) continue;
+              if ((pr.requested_teams || []).length > 0) continue;
 
               // The newest commit on the branch decides the clock.
               let movedAt = pr.updated_at;
