@@ -2956,6 +2956,7 @@
       "baseUrl": "URL эндпоинта",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "URL эндпоинта обязателен для этого провайдера",
+      "baseUrlInvalid": "Введите корректный URL эндпоинта http или https",
       "ollamaHint": "Если Ollama работает на вашем хост-компьютере, используйте http://host.docker.internal:11434 (Mac/Windows) или IP вашего хоста (Linux).",
       "openaiCompatHint": "Просто вставьте host:port (например, http://192.168.1.142:1234). Путь /v1 добавляется автоматически. Из Docker на Mac/Windows замените localhost на host.docker.internal.",
       "apiKey": "API-ключ / токен",

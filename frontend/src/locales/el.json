@@ -2931,6 +2931,7 @@
       "baseUrl": "URL τελικού σημείου",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "Το URL τελικού σημείου απαιτείται για αυτόν τον πάροχο",
+      "baseUrlInvalid": "Εισαγάγετε ένα έγκυρο URL τελικού σημείου http ή https",
       "ollamaHint": "Εάν το Ollama εκτελείται στον κεντρικό υπολογιστή σας, χρησιμοποιήστε http://host.docker.internal:11434 (Mac/Windows) ή την IP του κεντρικού υπολογιστή (Linux).",
       "openaiCompatHint": "Επικολλήστε απλώς το host:port (π.χ. http://192.168.1.142:1234). Η διαδρομή /v1 προστίθεται αυτόματα. Μέσα από το Docker σε Mac/Windows, αντικαταστήστε το localhost με το host.docker.internal.",
       "apiKey": "Κλειδί API / διακριτικό",
