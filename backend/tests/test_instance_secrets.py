@@ -355,8 +355,13 @@ def test_tokens_signed_with_a_public_default_are_refused(db_url, monkeypatch):
 
     from fastapi_users.jwt import decode_jwt, generate_jwt
 
+    import warnings
+
     settings = settings_for(db_url, OLD_COMPOSE_DEFAULT, monkeypatch)
-    forged = generate_jwt({"sub": "admin", "aud": ["fastapi-users:auth"]}, OLD_COMPOSE_DEFAULT, 60)
+    with warnings.catch_warnings():
+        # The public default is shorter than pyjwt recommends; that's the point.
+        warnings.simplefilter("ignore")
+        forged = generate_jwt({"sub": "admin", "aud": ["fastapi-users:auth"]}, OLD_COMPOSE_DEFAULT, 60)
 
     with pytest.raises(pyjwt.InvalidSignatureError):
         decode_jwt(forged, settings.secret_key.get_secret_value(), ["fastapi-users:auth"])
