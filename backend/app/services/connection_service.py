@@ -119,6 +119,14 @@ def _is_auto_wallet_name(name: str, institution_name: str) -> bool:
     return bool(re.fullmatch(re.escape(institution_name) + r" \d+", name))
 
 
+def _default_account_display_name(
+    connection: BankConnection, institution: Optional[Institution]
+) -> Optional[str]:
+    if connection.provider == "akahu" or institution is None:
+        return None
+    return institution.name
+
+
 async def _resolve_institution(
     session: AsyncSession,
     connection_id: uuid.UUID,
@@ -1454,7 +1462,7 @@ async def handle_oauth_callback(
             connection_id=connection.id,
             external_id=acc_data.external_id,
             name=acc_data.name,
-            display_name=institution.name if institution else None,
+            display_name=_default_account_display_name(connection, institution),
             masked_number=acc_data.masked_number,
             type=acc_data.type,
             balance=_account_balance(acc_data, auto_invested_deducted),
@@ -1681,19 +1689,16 @@ async def _find_existing_connected_account(
     if account is not None:
         return account
 
-    # The provider re-keyed this account. Enable Banking issues a `uid` scoped to
-    # one session, so reauthorising changes it while `stable_external_id` (the
-    # identification_hash) survives. Rebind the existing row, keeping its
-    # transactions, rules and name overrides, instead of inserting a duplicate.
-    # EB does not guarantee the hash is unique, so require exactly one unclaimed
-    # candidate: a row another incoming account already took in this run carries
-    # an external_id that is in the batch, and adopting it a second time would
-    # put both transaction feeds on one account.id.
+    # Re-keyed providers expose either a stable ID or the predecessor ID.
+    # Ambiguous or already-claimed candidates must fail closed.
     if acc_data.stable_external_id:
         stable_rows = (await session.execute(
             select(Account).where(
                 Account.connection_id == connection.id,
-                Account.stable_external_id == acc_data.stable_external_id,
+                or_(
+                    Account.stable_external_id == acc_data.stable_external_id,
+                    Account.external_id == acc_data.stable_external_id,
+                ),
             )
         )).scalars().all()
         stable_rows = [
@@ -2908,10 +2913,8 @@ async def sync_connection(
                 # Backfills existing accounts on next sync (issue #345).
                 if institution is not None:
                     account.institution_id = institution.id
-                    # Only when the user hasn't named the account themselves —
-                    # never overwrite a manual display_name.
                     if account.display_name is None:
-                        account.display_name = institution.name
+                        account.display_name = _default_account_display_name(connection, institution)
                 if acc_data.type == "credit_card":
                     # Preserve existing CC metadata when the provider doesn't
                     # expose it. Pluggy's creditData fields (limit, close/due
@@ -2945,7 +2948,7 @@ async def sync_connection(
                     external_id=acc_data.external_id,
                     stable_external_id=acc_data.stable_external_id,
                     name=acc_data.name,
-                    display_name=institution.name if institution else None,
+                    display_name=_default_account_display_name(connection, institution),
                     masked_number=acc_data.masked_number,
                     type=acc_data.type,
                     balance=_provider_to_internal_balance(
