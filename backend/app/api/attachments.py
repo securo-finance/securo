@@ -34,7 +34,6 @@ async def upload_attachment(
             user_id=ctx.user_id,
             transaction_id=transaction_id,
             filename=file.filename or "unnamed",
-            content_type=file.content_type or "application/octet-stream",
             data=data,
         )
     except LookupError:
@@ -71,7 +70,7 @@ async def download_attachment(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
     return Response(
         content=data,
-        media_type=attachment.content_type,
+        media_type=attachment_service.served_content_type(attachment.filename),
         headers={"Content-Disposition": f'inline; filename="{attachment.filename}"'},
     )
 

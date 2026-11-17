@@ -8,3 +8,4 @@ htmlcov/
 .ruff_cache/
 .env
 *.egg-info/
+secrets/

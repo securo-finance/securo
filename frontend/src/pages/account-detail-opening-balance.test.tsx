@@ -66,12 +66,15 @@ const opening = {
   fx_rate_used: null, fx_fallback: false, installment_number: null,
   total_installments: null, installment_total_amount: null,
   installment_purchase_date: null, installment_series_id: null, bill_id: null,
-  effective_bill_date: null, splits: [], is_ignored: false,
+  effective_bill_date: null, reporting_date_override: null, splits: [], is_ignored: false,
 } satisfies Transaction
 const manual = {
   ...opening, id: 'manual', source: 'manual', amount: 50, date: '2026-09-11',
 } satisfies Transaction
-const items: Transaction[] = asgiFixture?.responses.en.items ?? [opening, manual]
+const items: Transaction[] = asgiFixture?.responses.en.items.map((item) => ({
+  ...item,
+  reporting_date_override: null,
+})) ?? [opening, manual]
 
 function captureAsgiRender(locale: string) {
   const directory = process.env.SECURO_1022_RENDERED_DOM_DIR

@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
@@ -15,6 +15,7 @@ from app.providers.base import (
     ProviderUserActionRequired,
     SessionExpiredError,
 )
+from app.providers.psu import psu_context_from_request, psu_present
 from app.schemas.bank_connection import (
     BankConnectionRead,
     ConnectionSettingsUpdate,
@@ -34,19 +35,26 @@ router = APIRouter(prefix="/api/connections", tags=["connections"])
 
 
 @router.get("/providers")
-async def get_available_providers():
+async def get_available_providers(
+    session: AsyncSession = Depends(get_async_session),
+):
     """List all known open finance providers with configuration status."""
-    return {"providers": all_known_providers()}
+    from app.services.provider_settings import resolve_settings
+
+    return {"providers": all_known_providers(await resolve_settings(session))}
 
 
 @router.post("/connect-token", response_model=ConnectTokenResponse)
 async def create_connect_token(
     data: ConnectTokenRequest,
     ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
 ):
     """Create a connect token for widget-based bank connection flows."""
     try:
-        token_data = await connection_service.create_connect_token(data.provider, ctx.user_id)
+        token_data = await connection_service.create_connect_token(
+            data.provider, ctx.user_id, session=session
+        )
         return ConnectTokenResponse(**token_data)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -69,10 +77,12 @@ async def list_connections(
 async def get_oauth_url(
     data: OAuthUrlRequest,
     ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
 ):
     try:
         url = await connection_service.get_oauth_url(
-            data.provider, ctx.user_id, ctx.workspace.id, flow_params=data.flow_params
+            data.provider, ctx.user_id, ctx.workspace.id,
+            flow_params=data.flow_params, session=session,
         )
         return OAuthUrlResponse(url=url)
     except ValueError as e:
@@ -84,9 +94,10 @@ async def list_provider_institutions(
     provider: str,
     country: str | None = None,
     ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
 ):
     try:
-        return await connection_service.list_provider_institutions(provider, country)
+        return await connection_service.list_provider_institutions(provider, country, session=session)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
@@ -99,20 +110,24 @@ async def list_provider_institutions(
 @router.post("/oauth/callback", response_model=BankConnectionRead)
 async def oauth_callback(
     data: OAuthCallbackRequest,
+    request: Request,
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
-        connection = await connection_service.handle_oauth_callback(
-            session,
-            ctx.workspace.id,
-            ctx.user_id,
-            data.code,
-            provider_name=data.provider,
-            state=data.state,
-            sync_assets=data.sync_assets,
-            reconnect_connection_id=data.reconnect_connection_id,
-        )
+        # The user just came back from their bank and is waiting for the
+        # first import, so it is made as a user-present request.
+        with psu_present(psu_context_from_request(request)):
+            connection = await connection_service.handle_oauth_callback(
+                session,
+                ctx.workspace.id,
+                ctx.user_id,
+                data.code,
+                provider_name=data.provider,
+                state=data.state,
+                sync_assets=data.sync_assets,
+                reconnect_connection_id=data.reconnect_connection_id,
+            )
         return connection
     except ProviderUserActionRequired as e:
         raise HTTPException(
@@ -163,20 +178,23 @@ async def get_reauth_url(
 @router.post("/{connection_id}/sync")
 async def sync_connection(
     connection_id: uuid.UUID,
+    request: Request,
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
         # Manual sync is user-initiated, so ask the provider to pull fresh
-        # data from the bank before we read. Scheduled syncs (Celery) keep
-        # the default behaviour: read whatever the provider already has.
-        connection, merged_count, sync_outcome = await connection_service.sync_connection(
-            session,
-            connection_id,
-            ctx.workspace.id,
-            ctx.user_id,
-            trigger_provider_refresh=True,
-        )
+        # data from the bank before we read, and tell the bank the user is
+        # present. Scheduled syncs (Celery) keep the default behaviour: read
+        # whatever the provider already has, as background requests.
+        with psu_present(psu_context_from_request(request)):
+            connection, merged_count, sync_outcome = await connection_service.sync_connection(
+                session,
+                connection_id,
+                ctx.workspace.id,
+                ctx.user_id,
+                trigger_provider_refresh=True,
+            )
         result = BankConnectionRead.model_validate(connection)
         return {
             **result.model_dump(mode="json"),
@@ -230,7 +248,7 @@ async def get_reconnect_token(
 
     try:
         token_data = await connection_service.create_connect_token(
-            connection.provider, ctx.user_id, item_id=item_id
+            connection.provider, ctx.user_id, item_id=item_id, session=session
         )
         return ReconnectTokenResponse(**token_data)
     except Exception as e:

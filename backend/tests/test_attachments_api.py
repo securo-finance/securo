@@ -446,3 +446,24 @@ async def test_upload_unauthenticated(
         files={"file": ("receipt.png", TINY_PNG, "image/png")},
     )
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_download_serves_the_extension_type_not_the_claimed_one(
+    client: AsyncClient, auth_headers, test_transactions: list[Transaction]
+):
+    txn = test_transactions[0]
+    mock_storage = _make_mock_storage()
+    with patch(STORAGE_PATCH, return_value=mock_storage):
+        upload_resp = await client.post(
+            f"/api/transactions/{txn.id}/attachments",
+            headers=auth_headers,
+            files={"file": ("receipt.pdf", b"<script>1</script>", "text/html")},
+        )
+        assert upload_resp.json()["content_type"] == "application/pdf"
+
+        response = await client.get(
+            f"/api/transactions/{txn.id}/attachments/{upload_resp.json()['id']}",
+            headers=auth_headers,
+        )
+    assert response.headers["content-type"] == "application/pdf"

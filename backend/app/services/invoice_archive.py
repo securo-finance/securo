@@ -113,7 +113,6 @@ async def file_issued_document(
             user_id,
             invoice.id,
             filename=name,
-            content_type="application/pdf",
             data=pdf,
             kind="bill",
             source=SOURCE,

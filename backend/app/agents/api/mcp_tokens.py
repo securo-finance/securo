@@ -4,8 +4,9 @@ Lets a logged-in user generate a JWT they can paste into Claude Desktop,
 n8n, or any other MCP client. The token is signed with the same
 `AGENTS_MCP_JWT_SECRET` the internal runtime uses, scoped to the calling
 user AND their active workspace, with a configurable TTL (default 90
-days) and an `ext: true` claim. The MCP server already verifies any
-valid JWT — no auth changes needed there.
+days) and an `ext: true` claim. The MCP server re-checks membership and
+role on every call, so removing or demoting the user takes effect before
+the token expires.
 
 External tokens are bound to one workspace at creation time. Users with
 multiple workspaces issue one token per workspace (they switch contexts

@@ -356,7 +356,11 @@ function RulePreviewPanel({
                           {mask(formatCurrency(Math.abs(item.amount), item.currency, locale))}
                         </td>
                         <td className="py-1.5">
-                          {item.will_change ? (
+                          {item.will_change && item.current_has_category_lines ? (
+                            // A rule never recategorizes a split row; it can
+                            // still change its payee or notes.
+                            <span className="truncate">{t('categoryLines.badgeShort')}</span>
+                          ) : item.will_change ? (
                             <span className="flex items-center gap-1">
                               <span className="truncate">
                                 {item.current_category_name ?? t('transactions.uncategorized')}
@@ -369,7 +373,9 @@ function RulePreviewPanel({
                           ) : (
                             <span className="flex items-center gap-1">
                               <span className="truncate">
-                                {item.current_category_name ?? t('transactions.uncategorized')}
+                                {item.current_has_category_lines
+                                  ? t('categoryLines.badgeShort')
+                                  : item.current_category_name ?? t('transactions.uncategorized')}
                               </span>
                               <span className="shrink-0 rounded-full bg-muted px-1.5 text-[10px] font-semibold">
                                 {t('rules.previewNoChange')}

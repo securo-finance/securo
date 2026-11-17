@@ -68,6 +68,11 @@ config:
   fxSyncMode: "on_demand"
   tesouroDiretoEnabled: "true"
 
+  # Data plugins (categories and rules) from the plugin catalog. Opt-in; the
+  # catalog is fetched only when someone opens it.
+  pluginsEnabled: "false"
+  pluginsIndexUrl: "https://plugins.usesecuro.com/v1/index.json"
+
   # Redis configuration
   # If redis.enabled is true, the internal redis will be deployed.
   # If redis.enabled is false, you must provide your external Redis URL here.
@@ -232,6 +237,12 @@ redis:
     repository: docker.io/library/redis
     tag: 8-alpine
     pullPolicy: IfNotPresent
+  # The official Redis image runs as uid 999 / gid 1000. Longhorn-provisioned
+  # volumes are initially owned by root, so fsGroup must be applied before the
+  # container starts or Redis cannot persist its RDB snapshots.
+  podSecurityContext:
+    fsGroup: 1000
+    fsGroupChangePolicy: OnRootMismatch
   resources: {}
 
 serviceAccount:

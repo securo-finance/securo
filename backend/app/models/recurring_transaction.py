@@ -6,13 +6,14 @@ from typing import TYPE_CHECKING, Optional
 from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.sql import func
+from sqlalchemy.sql import false, func
 
 from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.account import Account
     from app.models.category import Category
+    from app.models.recurring_transaction_category_line import RecurringTransactionCategoryLine
     from app.models.transaction import Transaction
     from app.models.user import User
 
@@ -56,10 +57,23 @@ class RecurringTransaction(Base):
     amount_primary: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
     fx_rate_used: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=20, scale=10), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # True while the amount is split across several categories, kept in
+    # `category_lines`; `category_id` is then null. Every generated
+    # occurrence starts with the same split.
+    has_category_lines: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
 
     user: Mapped["User"] = relationship()
     account: Mapped[Optional["Account"]] = relationship()
     category: Mapped[Optional["Category"]] = relationship()
     transactions: Mapped[list["Transaction"]] = relationship(
         back_populates="recurring_transaction"
+    )
+    category_lines: Mapped[list["RecurringTransactionCategoryLine"]] = relationship(
+        back_populates="recurring_transaction",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="RecurringTransactionCategoryLine.position",
+        lazy="selectin",
     )

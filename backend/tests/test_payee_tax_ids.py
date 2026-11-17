@@ -6,6 +6,9 @@ honest about what that costs.
 """
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.exc import IntegrityError
+
+from app.services import payee_service
 
 
 @pytest.mark.asyncio
@@ -146,3 +149,122 @@ async def test_omitting_tax_ids_leaves_them_alone(client: AsyncClient, auth_head
     )
     assert patched.status_code == 200, patched.text
     assert [t["kind"] for t in patched.json()["tax_ids"]] == ["cnpj"]
+
+
+async def _payee_with(client: AsyncClient, auth_headers, name: str, tax_ids: list[dict]) -> str:
+    created = await client.post(
+        "/api/payees",
+        headers=auth_headers,
+        json={"name": name, "type": "company", "tax_ids": tax_ids},
+    )
+    assert created.status_code == 201, created.text
+    return created.json()["id"]
+
+
+async def _merge_and_read_documents(
+    client: AsyncClient, auth_headers, target_id: str, source_ids: list[str]
+) -> dict[str, str]:
+    merged = await client.post(
+        "/api/payees/merge",
+        headers=auth_headers,
+        json={"target_id": target_id, "source_ids": source_ids},
+    )
+    assert merged.status_code == 200, merged.text
+    for source_id in source_ids:
+        gone = await client.get(f"/api/payees/{source_id}", headers=auth_headers)
+        assert gone.status_code == 404
+    target = await client.get(f"/api/payees/{target_id}", headers=auth_headers)
+    return {t["kind"]: t["value"] for t in target.json()["tax_ids"]}
+
+
+@pytest.mark.asyncio
+async def test_a_merge_moves_the_documents_to_the_target(
+    client: AsyncClient, auth_headers, test_workspace
+):
+    source = await _payee_with(
+        client, auth_headers, "Dup LTDA", [{"kind": "cnpj", "value": "11222333000181"}]
+    )
+    target = await _payee_with(client, auth_headers, "Main LTDA", [])
+
+    documents = await _merge_and_read_documents(client, auth_headers, target, [source])
+
+    assert documents == {"cnpj": "11222333000181"}
+
+
+@pytest.mark.asyncio
+async def test_a_merge_keeps_the_target_document_of_a_shared_kind(
+    client: AsyncClient, auth_headers, test_workspace
+):
+    """One document per kind, so the target's stays and the other kinds join it."""
+    source = await _payee_with(
+        client,
+        auth_headers,
+        "Dup LTDA",
+        [{"kind": "other", "value": "SOURCE-1"}, {"kind": "cnpj", "value": "11222333000181"}],
+    )
+    target = await _payee_with(
+        client, auth_headers, "Main LTDA", [{"kind": "other", "value": "TARGET-1"}]
+    )
+
+    documents = await _merge_and_read_documents(client, auth_headers, target, [source])
+
+    assert documents == {"other": "TARGET-1", "cnpj": "11222333000181"}
+
+
+@pytest.mark.asyncio
+async def test_a_merge_of_two_sources_with_one_kind_moves_one_document(
+    client: AsyncClient, auth_headers, test_workspace
+):
+    first = await _payee_with(client, auth_headers, "Dup A", [{"kind": "other", "value": "A-1"}])
+    second = await _payee_with(client, auth_headers, "Dup B", [{"kind": "other", "value": "B-1"}])
+    target = await _payee_with(client, auth_headers, "Main LTDA", [])
+
+    documents = await _merge_and_read_documents(client, auth_headers, target, [first, second])
+
+    assert documents == {"other": "A-1"}
+
+
+@pytest.mark.asyncio
+async def test_a_merge_that_loses_a_race_answers_conflict(
+    client: AsyncClient, auth_headers, test_workspace, monkeypatch
+):
+    """A concurrent merge can land the same kind on the target first."""
+    source = await _payee_with(client, auth_headers, "Dup LTDA", [])
+    target = await _payee_with(client, auth_headers, "Main LTDA", [])
+
+    async def lose_the_race(*args, **kwargs):
+        raise IntegrityError("INSERT INTO payee_tax_ids", {}, Exception("uq_payee_tax_id_kind"))
+
+    monkeypatch.setattr(payee_service, "merge_payees", lose_the_race)
+    merged = await client.post(
+        "/api/payees/merge",
+        headers=auth_headers,
+        json={"target_id": target, "source_ids": [source]},
+    )
+
+    assert merged.status_code == 409, merged.text
+    assert "Retry the merge" in merged.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_a_merge_blocked_by_another_constraint_is_not_a_conflict(
+    client: AsyncClient, auth_headers, test_workspace, monkeypatch
+):
+    """Only the document-kind race is worth a retry; others fail as before."""
+    source = await _payee_with(client, auth_headers, "Dup LTDA", [])
+    target = await _payee_with(client, auth_headers, "Main LTDA", [])
+
+    async def blocked_by_a_schedule(*args, **kwargs):
+        raise IntegrityError(
+            "DELETE FROM payees",
+            {},
+            Exception("invoice_schedules_payee_id_fkey"),
+        )
+
+    monkeypatch.setattr(payee_service, "merge_payees", blocked_by_a_schedule)
+    with pytest.raises(IntegrityError):
+        await client.post(
+            "/api/payees/merge",
+            headers=auth_headers,
+            json={"target_id": target, "source_ids": [source]},
+        )
