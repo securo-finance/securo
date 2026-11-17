@@ -213,13 +213,22 @@ async def fetch_readme(client: httpx.AsyncClient, entry: IndexEntry) -> str | No
     return readme
 
 
+#: The last archive fetched, by checksum: an install reads it for the runner
+#: and again for the logos in it, one right after the other.
+_last_archive: tuple[str, bytes] | None = None
+
+
 async def fetch_archive(client: httpx.AsyncClient, entry: IndexEntry) -> tuple[bytes, str]:
     """The source tarball of a plugin with code, and its sha256, checked against the index."""
+    global _last_archive
     if not entry.archive or not entry.archive_sha256:
         raise PluginIndexError(f"{entry.id}: the catalog has no copy of its code")
+    if _last_archive is not None and _last_archive[0] == entry.archive_sha256:
+        return _last_archive[1], entry.archive_sha256
     body = await _get(client, _on_index_host(entry, entry.archive, "code"), _MAX_ARCHIVE_BYTES)
     if hashlib.sha256(body).hexdigest() != entry.archive_sha256:
         raise PluginIndexError(f"{entry.id}: the code doesn't match the catalog's checksum")
+    _last_archive = (entry.archive_sha256, body)
     return body, entry.archive_sha256
 
 

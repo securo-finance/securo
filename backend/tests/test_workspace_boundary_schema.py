@@ -22,6 +22,7 @@ GLOBAL: dict[str, str] = {
     "workspaces": "the boundary itself",
     "app_settings": "instance-wide settings, written by admins",
     "fx_rates": "exchange rates are public facts, shared by every workspace (ADR 0008)",
+    "plugin_logos": "images from a public plugin release, kept per commit and shared by every workspace that runs it",
 }
 
 #: Tables owned by a user across workspaces: their credentials and their own AI keys.

@@ -34,6 +34,10 @@ class BankConnectionRead(BankConnectionBase):
     # Institutions this link spans. Empty for providers that are one
     # institution per connection — institution_name above covers those.
     institutions: list[ConnectionInstitutionRead] = []
+    # Set when a plugin syncs this connection: manage it through the plugin connection.
+    plugin_connection_id: Optional[uuid.UUID] = None
+    plugin_id: Optional[str] = None
+    integration: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

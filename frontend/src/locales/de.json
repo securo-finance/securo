@@ -1369,7 +1369,9 @@
       "active": "Aktiv",
       "error": "Fehler",
       "expired": "Abgelaufen"
-    }
+    },
+    "pluginConnectors": "Aus deinen Plugins",
+    "pluginUnavailable": "Das Plugin dieser Verbindung ist nicht mehr installiert oder verfügbar."
   },
   "loans": {
     "title": "Kreditvertrag",
@@ -3458,6 +3460,7 @@
       "write": "{{what}} lesen und ändern",
       "ownerOnly": "Nur der Eigentümer des Arbeitsbereichs kann ein Plugin, das Code ausführt, hinzufügen, aktualisieren oder entfernen.",
       "removeConnections": "Seine Verbindungen in diesem Arbeitsbereich ({{count}}) werden entfernt, samt gespeicherter Schlüssel und Zugriffe.",
+      "unlinks": "Seine Bankverbindungen ({{count}}) werden nicht mehr synchronisiert. Ihre Konten und Transaktionen bleiben als manuelle Konten erhalten.",
       "removeNothing": "Der Code des Plugins wird von deinem Server entfernt, sobald ihn kein Arbeitsbereich mehr nutzt.",
       "auth": {
         "credentials": "Schlüssel oder Passwort",
@@ -3482,6 +3485,15 @@
         "install": "Dieses Plugin bringt keine Daten. Prüfe, was sein Code tun darf:",
         "update": "Prüfe, was die neue Version tun darf:",
         "remove": "Sein Code läuft in diesem Arbeitsbereich nicht mehr."
+      },
+      "provides": "Synchronisiert wie eine verbundene Bank",
+      "providesHint": "Securo fügt diese Daten diesem Workspace hinzu und hält sie aktuell, wie bei einer verbundenen Bank. Jede Verbindung erscheint unter Bankverbindungen.",
+      "kinds": {
+        "accounts": "Konten",
+        "transactions": "Transaktionen",
+        "bills": "Kartenabrechnungen",
+        "holdings": "Anlagen",
+        "trades": "Käufe und Verkäufe"
       }
     },
     "connections": {
@@ -3519,8 +3531,13 @@
       "added": "{{name}} verbunden",
       "removeTitle": "{{name}} entfernen?",
       "removeHint": "Die gespeicherten Schlüssel und der Zugriff auf diesen Arbeitsbereich werden gelöscht. Was bereits übernommen wurde, bleibt.",
+      "removeBankHint": "Sie wird wie eine verbundene Bank synchronisiert: Beim Entfernen wird diese Bank getrennt und die synchronisierten Konten samt Transaktionen werden entfernt.",
       "removed": "{{name}} entfernt",
-      "copyFailed": "Kopieren nicht möglich. Markiere die Adresse und kopiere sie von Hand."
+      "copyFailed": "Kopieren nicht möglich. Markiere die Adresse und kopiere sie von Hand.",
+      "editTitle": "{{name}} neu verbinden",
+      "editHint": "Aktualisiere, was sich geändert hat, etwa ein neues Passwort oder Token. Danach wird die Verbindung erneut synchronisiert.",
+      "keepBlank": "Lass ein Feld leer, um den aktuellen Wert zu behalten.",
+      "updated": "{{name}} aktualisiert"
     },
     "oauth": {
       "title": "Anmeldung wird abgeschlossen",

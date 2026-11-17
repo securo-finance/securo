@@ -1368,7 +1368,9 @@
       "active": "Aktív",
       "error": "Hiba",
       "expired": "Lejárt"
-    }
+    },
+    "pluginConnectors": "A bővítményeidből",
+    "pluginUnavailable": "A kapcsolat bővítménye már nincs telepítve vagy nem érhető el."
   },
   "loans": {
     "title": "Hitelszerződés",
@@ -3457,6 +3459,7 @@
       "write": "Olvasás és módosítás: {{what}}",
       "ownerOnly": "Kódot futtató bővítményt csak a munkaterület tulajdonosa adhat hozzá, frissíthet vagy távolíthat el.",
       "removeConnections": "A kapcsolatai ebben a munkaterületben ({{count}}) törlődnek a mentett kulcsokkal és hozzáférésekkel együtt.",
+      "unlinks": "A bankkapcsolatai ({{count}}) nem szinkronizálnak tovább. A számlák és tranzakciók megmaradnak, kézi számlaként.",
       "removeNothing": "A bővítmény kódja lekerül a szerveredről, amint egyetlen munkaterület sem használja.",
       "auth": {
         "credentials": "Kulcs vagy jelszó",
@@ -3481,6 +3484,15 @@
         "install": "Ez a bővítmény nem hoz adatot. Nézd át, mit tehet a kódja:",
         "update": "Nézd át, mit tehet az új verzió:",
         "remove": "A kódja ebben a munkaterületben többé nem fut."
+      },
+      "provides": "Összekapcsolt bankként szinkronizál",
+      "providesHint": "A Securo hozzáadja ezeket az adatokat ehhez a munkaterülethez, és naprakészen tartja őket, mint egy összekapcsolt banknál. Minden kapcsolat a Bankkapcsolatok között jelenik meg.",
+      "kinds": {
+        "accounts": "Számlák",
+        "transactions": "tranzakciók",
+        "bills": "kártyaszámlák",
+        "holdings": "befektetések",
+        "trades": "vételek és eladások"
       }
     },
     "connections": {
@@ -3518,8 +3530,13 @@
       "added": "{{name}} csatlakoztatva",
       "removeTitle": "Eltávolítod: {{name}}?",
       "removeHint": "A mentett kulcsok és a munkaterülethez való hozzáférés törlődik. Amit már behozott, megmarad.",
+      "removeBankHint": "Csatlakoztatott bankként szinkronizál: eltávolítása leválasztja ezt a bankot, és törli a szinkronizált számlákat a tranzakcióikkal együtt.",
       "removed": "{{name}} eltávolítva",
-      "copyFailed": "Nem sikerült másolni. Jelöld ki a címet, és másold kézzel."
+      "copyFailed": "Nem sikerült másolni. Jelöld ki a címet, és másold kézzel.",
+      "editTitle": "{{name}} újracsatlakoztatása",
+      "editHint": "Frissítsd, ami megváltozott, például egy új jelszót vagy tokent. Utána a kapcsolat újra szinkronizál.",
+      "keepBlank": "Hagyd üresen a mezőt, hogy megmaradjon a jelenlegi értéke.",
+      "updated": "{{name}} frissítve"
     },
     "oauth": {
       "title": "Bejelentkezés befejezése",
