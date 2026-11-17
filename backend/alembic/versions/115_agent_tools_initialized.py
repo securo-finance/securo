@@ -7,15 +7,15 @@ initialized: the next tool discovery for them records every tool it finds
 as enabled, which keeps what they could already do. Agents that already
 have rows keep exactly those.
 
-Revision ID: 114
-Revises: 113
+Revision ID: 115
+Revises: 114
 """
 
 from alembic import op
 import sqlalchemy as sa
 
-revision = "114"
-down_revision = "113"
+revision = "115"
+down_revision = "114"
 branch_labels = None
 depends_on = None
 
