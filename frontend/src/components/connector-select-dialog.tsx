@@ -66,7 +66,7 @@ function ConnectorSelectSession({ open, onClose, onSelect, plugins = [], onSelec
           <DialogTitle>{t('accounts.selectConnector')}</DialogTitle>
           <DialogDescription>{t('accounts.selectConnectorDesc')}</DialogDescription>
         </DialogHeader>
-        <div className="space-y-2 pt-2">
+        <div className="-mx-1 max-h-[65vh] space-y-2 overflow-y-auto px-1 pt-2">
           {loading ? (
             <div className="flex justify-center py-8">
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />

@@ -136,16 +136,22 @@ export default function AccountsPage() {
     enabled: pluginsEnabled && hasPluginConnections,
     refetchInterval: (query) => (query.state.data?.some((c) => c.status === 'pending') ? 3000 : false),
   })
-  const pluginSyncing = (pluginConnectionsList ?? []).some((c) => c.status === 'pending')
-  const wasPluginSyncing = useRef(false)
+  // Each connection that stops syncing refreshes the page, even while another still syncs.
+  const syncingKey = (pluginConnectionsList ?? [])
+    .filter((c) => c.status === 'pending')
+    .map((c) => c.id)
+    .sort()
+    .join(',')
+  const wasSyncing = useRef<Set<string>>(new Set())
   useEffect(() => {
-    if (wasPluginSyncing.current && !pluginSyncing) {
+    const syncing = new Set(syncingKey ? syncingKey.split(',') : [])
+    if ([...wasSyncing.current].some((id) => !syncing.has(id))) {
       queryClient.invalidateQueries({ queryKey: ['connections'] })
       queryClient.invalidateQueries({ queryKey: ['assets'] })
       invalidateFinancialQueries(queryClient)
     }
-    wasPluginSyncing.current = pluginSyncing
-  }, [pluginSyncing, queryClient])
+    wasSyncing.current = syncing
+  }, [syncingKey, queryClient])
 
   const providersByName = useMemo(() => {
     const map = new Map<string, Provider>()
@@ -155,8 +161,20 @@ export default function AccountsPage() {
 
   const handleReconnectClick = async (conn: BankConnection) => {
     if (conn.plugin_connection_id) {
-      const plugin = conn.plugin_id ? pluginsById.get(conn.plugin_id) : undefined
-      const pluginConnection = (pluginConnectionsList ?? []).find((c) => c.id === conn.plugin_connection_id)
+      // Read what the form needs, waiting for it if the page hasn't loaded it yet.
+      let installedNow: InstalledPlugin[]
+      let connectionsNow: PluginConnection[]
+      try {
+        ;[installedNow, connectionsNow] = await Promise.all([
+          queryClient.fetchQuery({ queryKey: ['plugins', 'installed'], queryFn: pluginsApi.installed }),
+          queryClient.fetchQuery({ queryKey: ['plugin-connections'], queryFn: pluginsApi.connections }),
+        ])
+      } catch {
+        toast.error(t('common.error'))
+        return
+      }
+      const plugin = installedNow.find((p) => p.plugin_id === conn.plugin_id)
+      const pluginConnection = connectionsNow.find((c) => c.id === conn.plugin_connection_id)
       if (!plugin || !pluginConnection) {
         toast.error(t('accounts.pluginUnavailable'))
         return

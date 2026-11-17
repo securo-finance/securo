@@ -219,5 +219,25 @@ describe('AccountsPage connections a plugin syncs', () => {
     expect(screen.getByText(t('plugins.connections.keepBlank'))).toBeInTheDocument()
     expect(screen.getByRole('button', { name: t('common.save') })).toBeEnabled()
   })
-})
 
+  it('reconnects even before the page has loaded the plugin connections', async () => {
+    api.pluginConnections.mockResolvedValueOnce([]).mockResolvedValue([pluginConnection])
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+    await user.click(await screen.findByRole('button', { name: t('accounts.reconnect') }))
+    expect(await screen.findByText(t('plugins.connections.editTitle', { name: 'Main' }))).toBeInTheDocument()
+  })
+
+  it('refreshes the page when one connection finishes while another still syncs', async () => {
+    const pending = (id: string) => ({ ...pluginConnection, id, status: 'pending' as const })
+    api.connectionsList.mockResolvedValue([
+      makeConnection({ id: 'bank-1', provider: 'plugin:acme/ledger', plugin_connection_id: 'pc-1', plugin_id: 'acme/ledger' }),
+      makeConnection({ id: 'bank-2', provider: 'plugin:acme/ledger', plugin_connection_id: 'pc-2', plugin_id: 'acme/ledger' }),
+    ])
+    api.pluginConnections
+      .mockResolvedValueOnce([pending('pc-1'), pending('pc-2')])
+      .mockResolvedValue([{ ...pluginConnection, id: 'pc-1', status: 'active' as const }, pending('pc-2')])
+    renderWithProviders(<AccountsPage />, { route: '/accounts' })
+    await vi.waitFor(() => expect(api.pluginConnections).toHaveBeenCalledTimes(2), { timeout: 5000 })
+    await vi.waitFor(() => expect(api.connectionsList.mock.calls.length).toBeGreaterThan(1))
+  }, 10000)
+})
