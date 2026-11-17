@@ -1285,11 +1285,6 @@
     "disconnected": "Verbinding verwijderd",
     "confirmDisconnectTitle": "Bankverbinding verbreken?",
     "confirmDisconnectDesc": "Hierdoor wordt {{institution}} ontkoppeld en worden gesynchroniseerde accounts en transacties uit de app verwijderd. Deze actie is onomkeerbaar.",
-    "confirmDisconnectKeepDesc": "{{institution}} wordt niet meer gesynchroniseerd. De rekeningen en transactiegeschiedenis blijven in de app, en je kunt later opnieuw verbinden.",
-    "disconnectAlsoDelete": "Ook rekeningen en transacties verwijderen",
-    "disconnectedKept": "Bank losgekoppeld. Rekeningen en geschiedenis zijn bewaard.",
-    "removeConnection": "Verbinding verwijderen",
-    "connectionDisconnected": "Losgekoppeld. Verbind opnieuw om weer te synchroniseren",
     "viewTransactions": "Transacties bekijken",
     "currentBalance": "Huidig saldo",
     "income": "Inkomen",
@@ -1376,7 +1371,14 @@
       "error": "Fout",
       "expired": "Verlopen",
       "disconnected": "Losgekoppeld"
-    }
+    },
+    "pluginConnectors": "Uit je plugins",
+    "pluginUnavailable": "De plugin van deze koppeling is niet meer geïnstalleerd of beschikbaar.",
+    "confirmDisconnectKeepDesc": "{{institution}} wordt niet meer gesynchroniseerd. De rekeningen en transactiegeschiedenis blijven in de app, en je kunt later opnieuw verbinden.",
+    "disconnectAlsoDelete": "Ook rekeningen en transacties verwijderen",
+    "disconnectedKept": "Bank losgekoppeld. Rekeningen en geschiedenis zijn bewaard.",
+    "removeConnection": "Verbinding verwijderen",
+    "connectionDisconnected": "Losgekoppeld. Verbind opnieuw om weer te synchroniseren"
   },
   "loans": {
     "title": "Leningcontract",
@@ -3463,6 +3465,7 @@
       "write": "{{what}} lezen en wijzigen",
       "ownerOnly": "Alleen de eigenaar van de werkruimte kan een plugin die code uitvoert toevoegen, bijwerken of verwijderen.",
       "removeConnections": "De koppelingen in deze werkruimte ({{count}}) worden verwijderd, samen met de opgeslagen sleutels en toegang.",
+      "unlinks": "De bankkoppelingen ({{count}}) stoppen met synchroniseren. Hun rekeningen en transacties blijven, als handmatige rekeningen.",
       "removeNothing": "De code van de plugin wordt van je server verwijderd zodra geen werkruimte hem nog gebruikt.",
       "auth": {
         "credentials": "Sleutel of wachtwoord",
@@ -3487,6 +3490,15 @@
         "install": "Deze plugin brengt geen gegevens mee. Bekijk wat de code mag doen:",
         "update": "Bekijk wat de nieuwe versie mag doen:",
         "remove": "De code draait niet meer in deze werkruimte."
+      },
+      "provides": "Synchroniseert als een gekoppelde bank",
+      "providesHint": "Securo voegt deze gegevens aan deze werkruimte toe en houdt ze bij, zoals bij een gekoppelde bank. Elke koppeling staat onder Bankverbindingen.",
+      "kinds": {
+        "accounts": "Rekeningen",
+        "transactions": "transacties",
+        "bills": "kaartafrekeningen",
+        "holdings": "beleggingen",
+        "trades": "aan- en verkopen"
       }
     },
     "connections": {
@@ -3524,8 +3536,13 @@
       "added": "{{name}} gekoppeld",
       "removeTitle": "{{name}} verwijderen?",
       "removeHint": "De opgeslagen sleutels en de toegang tot deze werkruimte worden gewist. Wat al is binnengehaald, blijft.",
+      "removeBankHint": "Deze synchroniseert als een gekoppelde bank: verwijderen koppelt die bank los en verwijdert de gesynchroniseerde rekeningen, met hun transacties.",
       "removed": "{{name}} verwijderd",
-      "copyFailed": "Kopiëren lukte niet. Selecteer het adres en kopieer het zelf."
+      "copyFailed": "Kopiëren lukte niet. Selecteer het adres en kopieer het zelf.",
+      "editTitle": "{{name}} opnieuw koppelen",
+      "editHint": "Werk bij wat er veranderd is, zoals een nieuw wachtwoord of token. Daarna synchroniseert de koppeling opnieuw.",
+      "keepBlank": "Laat een veld leeg om de huidige waarde te houden.",
+      "updated": "{{name}} bijgewerkt"
     },
     "oauth": {
       "title": "Inloggen afronden",

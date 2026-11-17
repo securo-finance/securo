@@ -15,6 +15,7 @@ from app.core.app_clock import (
 from app.worker import celery_app
 from app.core.config import get_settings
 from app.models.bank_connection import BankConnection
+from app.plugins.provider import PLUGIN_PROVIDER_PREFIX
 from app.providers.base import ProviderNotConfiguredError
 from app.services import connection_service
 
@@ -170,6 +171,8 @@ async def _sync_all() -> int:
                     BankConnection.settings,
                 ).where(
                     BankConnection.status.in_(["active", "error"]),
+                    # A plugin's connection follows its plugin's schedule.
+                    ~BankConnection.provider.startswith(PLUGIN_PROVIDER_PREFIX),
                     (BankConnection.last_sync_at < cutoff)
                     | (BankConnection.last_sync_at.is_(None)),
                 )

@@ -10,6 +10,9 @@ const api = vi.hoisted(() => ({
   connectionsList: vi.fn(),
   sync: vi.fn(),
   deleteConnection: vi.fn(),
+  pluginsInstalled: vi.fn(),
+  pluginConnections: vi.fn(),
+  pluginUpdateValues: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
@@ -23,6 +26,8 @@ vi.mock('@/lib/api', () => ({
     getReauthUrl: vi.fn(),
   },
   currencies: { list: vi.fn().mockResolvedValue([]) },
+  info: { get: vi.fn().mockResolvedValue({ features: { plugins: true } }) },
+  plugins: { installed: api.pluginsInstalled, connections: api.pluginConnections, updateValues: api.pluginUpdateValues },
 }))
 
 vi.mock('@/contexts/auth-context', () => ({
@@ -38,7 +43,7 @@ vi.mock('@/contexts/collection-filter-context', () => ({
 }))
 
 vi.mock('@/hooks/use-privacy-mode', () => ({
-  usePrivacyMode: () => ({ mask: false }),
+  usePrivacyMode: () => ({ privacyMode: false, mask: (value: string) => value, MASK: '••••' }),
 }))
 
 vi.mock('@/hooks/use-display-locale', () => ({
@@ -46,9 +51,6 @@ vi.mock('@/hooks/use-display-locale', () => ({
   useDateLocale: () => 'en-US',
 }))
 
-vi.mock('@/lib/invalidate-queries', () => ({
-  invalidateFinancialQueries: vi.fn(),
-}))
 
 vi.mock('@/components/bank-connect-dialog', () => ({ BankConnectDialog: () => null }))
 vi.mock('@/components/connector-select-dialog', () => ({ ConnectorSelectDialog: () => null }))
@@ -109,6 +111,8 @@ describe('AccountsPage connection row actions', () => {
     )
     api.connectionsList.mockResolvedValue([])
     api.sync.mockResolvedValue({ sync_outcome: 'success', merged_count: 0 })
+    api.pluginsInstalled.mockResolvedValue([])
+    api.pluginConnections.mockResolvedValue([])
   })
 
   it('offers a retry next to reconnect for a connection in the error state', async () => {
@@ -216,4 +220,115 @@ describe('AccountDialog account types', () => {
 
     expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'loan' }))
   })
+})
+
+describe('AccountsPage connections a plugin syncs', () => {
+  const plugin = {
+    plugin_id: 'acme/ledger',
+    name: { en: 'Ledger' },
+    version: '1.0.0',
+    commit: '1'.repeat(40),
+    installed_at: '2026-11-12T00:00:00Z',
+    integrations: [{
+      key: 'keys',
+      name: { en: 'Ledger (API key)' },
+      auth: 'credentials' as const,
+      fields: [{ key: 'api_key', label: { en: 'API key' }, secret: true, required: true }],
+      sync_minutes: 60,
+      provides: ['accounts' as const],
+    }],
+    network: [],
+    api_scopes: [],
+    redirect_uri: null,
+  }
+  const pluginConnection = {
+    id: 'pc-1', plugin_id: 'acme/ledger', integration: 'keys', name: 'Main', status: 'needs_auth' as const,
+    config: {}, secret_fields: ['api_key'], sync_minutes: 60, last_sync_at: null, last_error: 'NeedsAuth: sign in',
+    created_at: '2026-11-12T00:00:00Z',
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    api.accountsList.mockResolvedValue([])
+    api.pluginsInstalled.mockResolvedValue([plugin])
+    api.pluginConnections.mockResolvedValue([pluginConnection])
+    api.connectionsList.mockResolvedValue([makeConnection({
+      id: 'bank-1', provider: 'plugin:acme/ledger', status: 'expired', display_name: 'Main',
+      plugin_connection_id: 'pc-1', plugin_id: 'acme/ledger', integration: 'keys',
+    })])
+  })
+
+  it('shows the plugin and reconnects through its form', async () => {
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+    expect(await screen.findByText('Main')).toBeInTheDocument()
+    expect(await screen.findByText('LE')).toBeInTheDocument()
+
+    await user.click(await screen.findByRole('button', { name: t('accounts.reconnect') }))
+    expect(await screen.findByText(t('plugins.connections.editTitle', { name: 'Main' }))).toBeInTheDocument()
+    expect(screen.getByText(t('plugins.connections.keepBlank'))).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('common.save') })).toBeEnabled()
+  })
+
+  it('shows what a reconnect brought in, even when its sync settles before any poll', async () => {
+    let synced = false
+    api.accountsList.mockImplementation(async () =>
+      synced ? [{ ...makeAccount('bank-1'), connection_id: null, name: 'Brokerage Cash', institution_name: null }] : [],
+    )
+    // The sync is done by the time the page asks: it never reads as pending.
+    api.pluginUpdateValues.mockImplementation(async () => {
+      synced = true
+      api.pluginConnections.mockResolvedValue([{ ...pluginConnection, status: 'active' as const, last_error: null }])
+      return { ...pluginConnection, status: 'pending' as const }
+    })
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+    await user.click(await screen.findByRole('button', { name: t('accounts.reconnect') }))
+    await user.click(await screen.findByRole('button', { name: t('common.save') }))
+    expect(await screen.findByText('Brokerage Cash', {}, { timeout: 5000 })).toBeInTheDocument()
+  })
+
+  it('refreshes after a reconnect whose settled state the page had already fetched', async () => {
+    let synced = false
+    api.accountsList.mockImplementation(async () =>
+      synced ? [{ ...makeAccount('bank-1'), connection_id: null, name: 'Brokerage Cash', institution_name: null }] : [],
+    )
+    // Every fetch, before and after saving, returns the same settled connection.
+    api.pluginConnections.mockResolvedValue([{ ...pluginConnection, status: 'active' as const, last_error: null }])
+    api.pluginUpdateValues.mockImplementation(async () => {
+      synced = true
+      return { ...pluginConnection, status: 'pending' as const }
+    })
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+    await user.click(await screen.findByRole('button', { name: t('accounts.reconnect') }))
+    await user.click(await screen.findByRole('button', { name: t('common.save') }))
+    expect(await screen.findByText('Brokerage Cash', {}, { timeout: 5000 })).toBeInTheDocument()
+  })
+
+  it('reconnects even before the page has loaded the plugin connections', async () => {
+    api.pluginConnections.mockResolvedValueOnce([]).mockResolvedValue([pluginConnection])
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+    await user.click(await screen.findByRole('button', { name: t('accounts.reconnect') }))
+    expect(await screen.findByText(t('plugins.connections.editTitle', { name: 'Main' }))).toBeInTheDocument()
+  })
+
+  it('refreshes the page when one connection finishes while another still syncs', async () => {
+    const pending = (id: string) => ({ ...pluginConnection, id, status: 'pending' as const })
+    api.connectionsList.mockResolvedValue([
+      makeConnection({ id: 'bank-1', provider: 'plugin:acme/ledger', plugin_connection_id: 'pc-1', plugin_id: 'acme/ledger' }),
+      makeConnection({ id: 'bank-2', provider: 'plugin:acme/ledger', plugin_connection_id: 'pc-2', plugin_id: 'acme/ledger' }),
+    ])
+    // What the first connection brought in only exists once it finished.
+    let synced = false
+    api.accountsList.mockImplementation(async () =>
+      synced ? [{ ...makeAccount('bank-1'), connection_id: null, name: 'Brokerage Cash', institution_name: null }] : [],
+    )
+    api.pluginConnections.mockReset()
+    api.pluginConnections
+      .mockResolvedValueOnce([pending('pc-1'), pending('pc-2')])
+      .mockImplementation(async () => {
+        synced = true
+        return [{ ...pluginConnection, id: 'pc-1', status: 'active' as const }, pending('pc-2')]
+      })
+    renderWithProviders(<AccountsPage />, { route: '/accounts' })
+    expect(await screen.findByText('Brokerage Cash', {}, { timeout: 6000 })).toBeInTheDocument()
+  }, 10000)
 })

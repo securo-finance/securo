@@ -1288,11 +1288,6 @@
     "disconnected": "Conexión eliminada",
     "confirmDisconnectTitle": "¿Desconectar conexión bancaria?",
     "confirmDisconnectDesc": "Esto desvinculará a {{institution}} y eliminará las cuentas y transacciones sincronizadas de la app. Esta acción es irreversible.",
-    "confirmDisconnectKeepDesc": "{{institution}} dejará de sincronizarse. Sus cuentas y el historial de transacciones se quedan en la app, y puedes volver a conectarlo más tarde.",
-    "disconnectAlsoDelete": "Eliminar también cuentas y transacciones",
-    "disconnectedKept": "Banco desconectado. Se conservaron las cuentas y el historial.",
-    "removeConnection": "Eliminar conexión",
-    "connectionDisconnected": "Desconectada. Vuelve a conectar para sincronizar",
     "viewTransactions": "Ver transacciones",
     "currentBalance": "Saldo actual",
     "income": "Ingresos",
@@ -1378,7 +1373,14 @@
       "error": "Error",
       "expired": "Caducada",
       "disconnected": "Desconectada"
-    }
+    },
+    "pluginConnectors": "De tus plugins",
+    "pluginUnavailable": "El plugin de esta conexión ya no está instalado o disponible.",
+    "confirmDisconnectKeepDesc": "{{institution}} dejará de sincronizarse. Sus cuentas y el historial de transacciones se quedan en la app, y puedes volver a conectarlo más tarde.",
+    "disconnectAlsoDelete": "Eliminar también cuentas y transacciones",
+    "disconnectedKept": "Banco desconectado. Se conservaron las cuentas y el historial.",
+    "removeConnection": "Eliminar conexión",
+    "connectionDisconnected": "Desconectada. Vuelve a conectar para sincronizar"
   },
   "loans": {
     "title": "Contrato del préstamo",
@@ -3465,6 +3467,7 @@
       "write": "Leer y cambiar {{what}}",
       "ownerOnly": "Solo el propietario del espacio de trabajo puede añadir, actualizar o quitar un plugin que ejecuta código.",
       "removeConnections": "Se eliminan sus conexiones en este espacio de trabajo ({{count}}), junto con sus claves guardadas y sus accesos.",
+      "unlinks": "Sus conexiones bancarias ({{count}}) dejan de sincronizar. Sus cuentas y transacciones se quedan, como cuentas manuales.",
       "removeNothing": "El código del plugin se borra de tu servidor cuando ningún espacio de trabajo lo usa.",
       "auth": {
         "credentials": "Clave o contraseña",
@@ -3489,6 +3492,15 @@
         "install": "Este plugin no trae datos. Revisa lo que puede hacer su código:",
         "update": "Revisa lo que puede hacer la nueva versión:",
         "remove": "Su código deja de ejecutarse en este espacio de trabajo."
+      },
+      "provides": "Se sincroniza como un banco conectado",
+      "providesHint": "Securo añade estos registros a este espacio de trabajo y los mantiene al día, como con un banco conectado. Cada conexión aparece en Conexiones bancarias.",
+      "kinds": {
+        "accounts": "Cuentas",
+        "transactions": "transacciones",
+        "bills": "facturas de tarjeta",
+        "holdings": "inversiones",
+        "trades": "compras y ventas"
       }
     },
     "connections": {
@@ -3526,8 +3538,13 @@
       "added": "{{name}} conectada",
       "removeTitle": "¿Quitar {{name}}?",
       "removeHint": "Se borran sus claves guardadas y su acceso a este espacio de trabajo. Lo que ya trajo se queda.",
+      "removeBankHint": "Se sincroniza como un banco conectado: quitarla desconecta ese banco y elimina las cuentas que sincronizó, con sus transacciones.",
       "removed": "{{name}} quitada",
-      "copyFailed": "No se pudo copiar. Selecciona la dirección y cópiala a mano."
+      "copyFailed": "No se pudo copiar. Selecciona la dirección y cópiala a mano.",
+      "editTitle": "Reconectar {{name}}",
+      "editHint": "Actualiza lo que cambió, como una nueva contraseña o token. Después, la conexión se vuelve a sincronizar.",
+      "keepBlank": "Deja un campo en blanco para mantener su valor actual.",
+      "updated": "{{name}} actualizada"
     },
     "oauth": {
       "title": "Terminando el inicio de sesión",

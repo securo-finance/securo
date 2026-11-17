@@ -1284,11 +1284,6 @@
     "disconnected": "Connection removed",
     "confirmDisconnectTitle": "Disconnect bank connection?",
     "confirmDisconnectDesc": "This will unlink {{institution}} and remove synced accounts and transactions from the app. This action is irreversible.",
-    "confirmDisconnectKeepDesc": "{{institution}} will stop syncing. Its accounts and transaction history stay in the app, and you can reconnect it later.",
-    "disconnectAlsoDelete": "Also delete accounts and transactions",
-    "disconnectedKept": "Bank disconnected. Accounts and history were kept.",
-    "removeConnection": "Remove connection",
-    "connectionDisconnected": "Disconnected. Reconnect to sync again",
     "viewTransactions": "View transactions",
     "currentBalance": "Current balance",
     "income": "Income",
@@ -1374,7 +1369,14 @@
       "error": "Error",
       "expired": "Expired",
       "disconnected": "Disconnected"
-    }
+    },
+    "pluginConnectors": "From your plugins",
+    "pluginUnavailable": "The plugin behind this connection isn't installed or available anymore.",
+    "confirmDisconnectKeepDesc": "{{institution}} will stop syncing. Its accounts and transaction history stay in the app, and you can reconnect it later.",
+    "disconnectAlsoDelete": "Also delete accounts and transactions",
+    "disconnectedKept": "Bank disconnected. Accounts and history were kept.",
+    "removeConnection": "Remove connection",
+    "connectionDisconnected": "Disconnected. Reconnect to sync again"
   },
   "loans": {
     "title": "Loan contract",
@@ -3461,6 +3463,7 @@
       "write": "Read and change {{what}}",
       "ownerOnly": "Only the workspace owner can add, update or remove a plugin that runs code.",
       "removeConnections": "Its connections in this workspace ({{count}}) are removed, along with their saved keys and access.",
+      "unlinks": "Its bank connections ({{count}}) stop syncing. Their accounts and transactions stay, as manual accounts.",
       "removeNothing": "The plugin's code is removed from your server once no workspace uses it.",
       "auth": {
         "credentials": "Key or password",
@@ -3485,6 +3488,15 @@
         "install": "This plugin brings no data. Review what its code may do:",
         "update": "Review what the new version may do:",
         "remove": "Its code stops running in this workspace."
+      },
+      "provides": "Syncs as a connected bank",
+      "providesHint": "Securo adds these records to this workspace and keeps them up to date, as for a connected bank. Each connection appears under Bank Connections.",
+      "kinds": {
+        "accounts": "Accounts",
+        "transactions": "transactions",
+        "bills": "card bills",
+        "holdings": "investments",
+        "trades": "buys and sells"
       }
     },
     "connections": {
@@ -3522,8 +3534,13 @@
       "added": "{{name}} connected",
       "removeTitle": "Remove {{name}}?",
       "removeHint": "Its saved keys and its access to this workspace are deleted. What it already brought in stays.",
+      "removeBankHint": "It syncs as a connected bank: removing it disconnects that bank and removes the accounts it synced, with their transactions.",
       "removed": "{{name}} removed",
-      "copyFailed": "Couldn't copy. Select the address and copy it by hand."
+      "copyFailed": "Couldn't copy. Select the address and copy it by hand.",
+      "editTitle": "Reconnect {{name}}",
+      "editHint": "Update what changed, such as a new password or token. The connection syncs again afterwards.",
+      "keepBlank": "Leave a field blank to keep its current value.",
+      "updated": "{{name}} updated"
     },
     "oauth": {
       "title": "Finishing the sign in",

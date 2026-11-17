@@ -24,3 +24,10 @@ export function invalidateFinancialQueries(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: ['reports'] })
   queryClient.invalidateQueries({ queryKey: ['drill-down'] })
 }
+
+/** What a bank sync can change: its connections, the money views and the assets it holds. */
+export function invalidateSyncedRecords(queryClient: QueryClient) {
+  queryClient.invalidateQueries({ queryKey: ['connections'] })
+  queryClient.invalidateQueries({ queryKey: ['assets'] })
+  invalidateFinancialQueries(queryClient)
+}

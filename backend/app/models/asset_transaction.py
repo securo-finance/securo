@@ -37,7 +37,7 @@ class AssetTransaction(Base):
     price: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=6))  # per-share, asset currency
     fee: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2), default=Decimal("0"))
     date: Mapped[_date] = mapped_column(Date, index=True)
-    source: Mapped[str] = mapped_column(String(20), default="manual")  # manual, import, pluggy
+    source: Mapped[str] = mapped_column(String(128), default="manual")  # manual, import, or the connection's provider
     external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     #: The import that wrote this row, so deleting that import can take it
