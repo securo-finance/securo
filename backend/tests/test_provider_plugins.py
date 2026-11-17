@@ -80,6 +80,7 @@ from decimal import Decimal  # noqa: E402
 from sqlalchemy import select  # noqa: E402
 
 from app.models.account import Account  # noqa: E402
+from app.models.account_reserved_balance import AccountReservedBalance  # noqa: E402
 from app.models.asset import Asset  # noqa: E402
 from app.models.bank_connection import BankConnection  # noqa: E402
 from app.models.transaction import Transaction  # noqa: E402
@@ -198,6 +199,71 @@ async def test_transactions_not_fetched_are_a_partial_feed(session: AsyncSession
     (account,) = await _rows(session, Account, connection_id=bank_connection.id)
     assert await _rows(session, Transaction, account_id=account.id) == []
     assert bank_connection.last_sync_at is None
+
+
+def payload_with_reserved(reserved: Any) -> dict[str, Any]:
+    data = payload_data()
+    data["accounts"][0]["reserved_balances"] = reserved
+    return data
+
+
+#: Reserves kept in the account's own currency (USD), plus one in another (BRL).
+POCKETS = [
+    {"external_id": "emergency-fund", "name": "Emergency fund", "currency": "USD", "amount": "0"},
+    {"external_id": "round-up", "name": "Round-up savings", "currency": "USD", "amount": "2000"},
+    {"external_id": "brl-pocket", "name": "Poupanca", "currency": "BRL", "amount": "75"},
+]
+
+
+async def _reserved_rows(session: AsyncSession, bank_connection) -> list[AccountReservedBalance]:
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    rows = await _rows(session, AccountReservedBalance, account_id=account.id)
+    return sorted(rows, key=lambda row: row.external_id)
+
+
+@pytest.mark.asyncio
+async def test_reserved_balances_from_a_payload_are_stored_and_never_summed(
+    session: AsyncSession, bank_connection, test_user, test_workspace
+):
+    """ADR 0022 through the plugin path: kept under the account, out of every total."""
+    _, _, outcome = await _pipeline(session, bank_connection, payload_with_reserved(POCKETS), test_user)
+    assert outcome == "refreshed"
+
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    rows = await _reserved_rows(session, bank_connection)
+    assert [(r.external_id, r.name, r.currency, r.amount) for r in rows] == [
+        ("brl-pocket", "Poupanca", "BRL", Decimal("75")),
+        ("emergency-fund", "Emergency fund", "USD", Decimal("0")),
+        ("round-up", "Round-up savings", "USD", Decimal("2000")),
+    ]
+    assert {r.workspace_id for r in rows} == {test_workspace.id}
+
+    # The balance stays the one the plugin reported.
+    assert account.balance == Decimal("500.00")
+    await session.refresh(account, ["reserved_balances"])
+    display = account_service.serialize_account(account, None, None)
+    assert sorted(r["external_id"] for r in display["reserved_balances"]) == [
+        "brl-pocket", "emergency-fund", "round-up",
+    ]
+    # Same-currency subtotal only: the BRL pocket never adds to a USD account.
+    assert display["reserved_total"] == 2000.0
+    assert display["current_balance"] == 500.0
+
+
+@pytest.mark.asyncio
+async def test_reserved_balances_omitted_are_kept_and_an_empty_list_clears_them(
+    session: AsyncSession, bank_connection, test_user
+):
+    await _pipeline(session, bank_connection, payload_with_reserved(POCKETS), test_user)
+    assert len(await _reserved_rows(session, bank_connection)) == 3
+
+    # The plugin didn't report the collection this run: what Securo stored stays.
+    await _pipeline(session, bank_connection, payload_data(), test_user)
+    assert len(await _reserved_rows(session, bank_connection)) == 3
+
+    # An explicit empty list is authoritative: the plugin has none active.
+    await _pipeline(session, bank_connection, payload_with_reserved([]), test_user)
+    assert await _reserved_rows(session, bank_connection) == []
 
 
 @pytest.mark.asyncio
