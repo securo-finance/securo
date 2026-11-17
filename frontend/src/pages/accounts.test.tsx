@@ -11,6 +11,7 @@ const api = vi.hoisted(() => ({
   sync: vi.fn(),
   pluginsInstalled: vi.fn(),
   pluginConnections: vi.fn(),
+  pluginUpdateValues: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
@@ -25,7 +26,7 @@ vi.mock('@/lib/api', () => ({
   },
   currencies: { list: vi.fn().mockResolvedValue([]) },
   info: { get: vi.fn().mockResolvedValue({ features: { plugins: true } }) },
-  plugins: { installed: api.pluginsInstalled, connections: api.pluginConnections },
+  plugins: { installed: api.pluginsInstalled, connections: api.pluginConnections, updateValues: api.pluginUpdateValues },
 }))
 
 vi.mock('@/contexts/auth-context', () => ({
@@ -215,6 +216,23 @@ describe('AccountsPage connections a plugin syncs', () => {
     expect(await screen.findByText(t('plugins.connections.editTitle', { name: 'Main' }))).toBeInTheDocument()
     expect(screen.getByText(t('plugins.connections.keepBlank'))).toBeInTheDocument()
     expect(screen.getByRole('button', { name: t('common.save') })).toBeEnabled()
+  })
+
+  it('shows what a reconnect brought in, even when its sync settles before any poll', async () => {
+    let synced = false
+    api.accountsList.mockImplementation(async () =>
+      synced ? [{ ...makeAccount('bank-1'), connection_id: null, name: 'Brokerage Cash', institution_name: null }] : [],
+    )
+    // The sync is done by the time the page asks: it never reads as pending.
+    api.pluginUpdateValues.mockImplementation(async () => {
+      synced = true
+      api.pluginConnections.mockResolvedValue([{ ...pluginConnection, status: 'active' as const, last_error: null }])
+      return { ...pluginConnection, status: 'pending' as const }
+    })
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+    await user.click(await screen.findByRole('button', { name: t('accounts.reconnect') }))
+    await user.click(await screen.findByRole('button', { name: t('common.save') }))
+    expect(await screen.findByText('Brokerage Cash', {}, { timeout: 5000 })).toBeInTheDocument()
   })
 
   it('reconnects even before the page has loaded the plugin connections', async () => {

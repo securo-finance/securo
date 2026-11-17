@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset import Asset
 from app.models.asset_transaction import AssetTransaction
+from app.models.asset_value import AssetValue
+from app.core.app_clock import app_today
 from app.plugins.provider import provider_name
 from tests import test_provider_plugins as provider_plugins
 from tests.test_code_plugins import PLUGIN
@@ -243,6 +245,9 @@ async def test_a_position_bought_again_after_a_sale_is_open(session: AsyncSessio
     asset = await _asset(session, bank_connection)
     assert asset.sell_date == date(2026, 11, 9)
     again = sold + [_trade("b2", "buy", 12, "5", "110")]
-    await _pipeline(session, bank_connection, holding("5", again), test_user)
+    await _pipeline(session, bank_connection, holding("5", again, current_value="560.00"), test_user)
     asset = await _asset(session, bank_connection)
     assert asset.sell_date is None and Decimal(str(asset.units)) == Decimal("5")
+    # Its value is today's again, not the one it had before the sale.
+    (today_value,) = [v for v in await _rows(session, AssetValue, asset_id=asset.id) if v.date == app_today()]
+    assert Decimal(str(today_value.amount)) == Decimal("560.00")

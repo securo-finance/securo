@@ -1097,6 +1097,7 @@ async def _sync_holding_trades(
             tx.date = trade.date
             tx.created_at = stamp + timedelta(microseconds=position)
         await session.flush()
+        was_sold = asset.sell_date is not None
         # Average price, realized gain and cost basis come from the ledger;
         # the position stays what the provider reports.
         await recompute_and_cache(session, asset)
@@ -1104,6 +1105,10 @@ async def _sync_holding_trades(
             asset.units = holding.quantity
         if sold is not None:
             asset.sell_date, asset.sell_price = sold
+        if was_sold and asset.sell_date is None and not holding.is_withdrawn:
+            # Reopened by this sync: the value step above skipped it while it
+            # still read as sold, so record today's value now.
+            await _upsert_asset_value_for_today(session, asset, holding.current_value, app_today())
 
 
 async def _upsert_asset_from_holding(

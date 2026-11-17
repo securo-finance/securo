@@ -144,10 +144,12 @@ export default function AccountsPage() {
     .join(',')
   const wasSyncing = useRef<Set<string>>(new Set())
   useEffect(() => {
+    // Runs on every fetch, so a connection added to `wasSyncing` by a form
+    // whose sync settles before any poll sees it pending still refreshes.
     const syncing = new Set(syncingKey ? syncingKey.split(',') : [])
     if ([...wasSyncing.current].some((id) => !syncing.has(id))) invalidateSyncedRecords(queryClient)
     wasSyncing.current = syncing
-  }, [syncingKey, queryClient])
+  }, [pluginConnectionsList, syncingKey, queryClient])
 
   const providersByName = useMemo(() => {
     const map = new Map<string, Provider>()
@@ -714,9 +716,10 @@ export default function AccountsPage() {
           integration={pluginForm.integration}
           connection={pluginForm.connection}
           onClose={() => setPluginForm(null)}
-          onDone={() => {
-            // The sync may already have settled before the page polls it as pending.
-            invalidateSyncedRecords(queryClient)
+          onDone={(saved) => {
+            // Follow its first sync until it settles, even if no poll sees it pending.
+            wasSyncing.current.add(saved.id)
+            queryClient.invalidateQueries({ queryKey: ['connections'] })
             queryClient.invalidateQueries({ queryKey: ['plugin-connections'] })
           }}
         />

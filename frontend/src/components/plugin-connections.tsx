@@ -197,7 +197,8 @@ export function PluginConnectionDialog({
   integration?: string
   connection?: PluginConnection | null
   onClose: () => void
-  onDone: () => void
+  /** Called with the saved connection, whose first sync may already be running. */
+  onDone: (connection: PluginConnection) => void
 }) {
   const { t, i18n } = useTranslation()
   const lang = i18n.language
@@ -222,7 +223,7 @@ export function PluginConnectionDialog({
       return { connection: updated, authorize_url }
     },
     onSuccess: ({ connection: saved, authorize_url }) => {
-      onDone()
+      onDone(saved)
       if (authorize_url) {
         window.location.assign(authorize_url)
         return
