@@ -683,7 +683,7 @@ async def download_pdf(
             content=data,
             media_type=served_content_type(primary.filename),
             headers={
-                "Content-Disposition": f'attachment; filename="{primary.filename}"'
+                "Content-Disposition": content_disposition("attachment", primary.filename)
             },
         )
 

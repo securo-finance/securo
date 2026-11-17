@@ -1725,13 +1725,25 @@ async def test_pdf_downloads_survive_any_number_prefix(
         await client.post(f"/api/invoices/{invoice['id']}/share", headers=biz_headers)
     ).json()["token"]
 
-    for url, headers in [
-        (f"/api/invoices/{invoice['id']}/statement", biz_headers),
-        (f"/api/public/invoices/{token}/pdf", {}),
-    ]:
+    async def assert_downloads(url, headers):
         resp = await client.get(url, headers=headers)
         assert resp.status_code == 200, f"{url} -> {resp.status_code}"
         assert resp.content.startswith(b"%PDF")
         disposition = resp.headers["content-disposition"]
         assert disposition.count('"') == 2, disposition
         assert "filename*=UTF-8''" in disposition
+
+    pdf_url = f"/api/invoices/{invoice['id']}/pdf"
+    for url, headers in [
+        (pdf_url, biz_headers),
+        (f"/api/invoices/{invoice['id']}/statement", biz_headers),
+        (f"/api/public/invoices/{token}/pdf", {}),
+    ]:
+        await assert_downloads(url, headers)
+
+    # Issuing filed a copy, so `/pdf` above served that file. Without it
+    # the page is rendered live under the raw number, prefix and all.
+    attachments_url = f"/api/invoices/{invoice['id']}/attachments"
+    for attachment in (await client.get(attachments_url, headers=biz_headers)).json():
+        await client.delete(f"{attachments_url}/{attachment['id']}", headers=biz_headers)
+    await assert_downloads(pdf_url, biz_headers)
