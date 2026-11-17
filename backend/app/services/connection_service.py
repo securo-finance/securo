@@ -3017,18 +3017,32 @@ def _parse_aware_datetime(value: object) -> Optional[datetime]:
     return parsed if parsed.tzinfo is not None else None
 
 
-def _throttle_retry_after(provider: object) -> Optional[float]:
-    """Retry-After to note when a sync fails for another reason after the
-    provider was throttled on some account. The failure decides the status,
-    but the bank's 429 still sets a floor on the next scheduled try: its own
-    Retry-After, or the usual 6 hours when it gave none."""
+def _throttle_retry_after(
+    provider: object,
+    throttled_accounts: set[str],
+    retry_after: Optional[float],
+) -> Optional[float]:
+    """Retry-After to note when a sync fails for another reason after a 429
+    on some account. The failure decides the status, but the bank's 429 still
+    sets a floor on the next scheduled try: its own Retry-After, or the usual
+    6 hours when it gave none. A 429 can be noted by the provider (account
+    discovery) or by the sync itself (transaction fetch); the longest wins."""
+    floors: list[float] = []
+    if throttled_accounts:
+        floors.append(
+            retry_after
+            if retry_after is not None
+            else RATE_LIMITED_RETRY_DEFAULT.total_seconds()
+        )
     throttled = getattr(provider, "rate_limited_account_ids", None)
-    if not isinstance(throttled, (set, frozenset, list, tuple)) or not throttled:
-        return None
-    retry_after = getattr(provider, "rate_limit_retry_after", None)
-    if isinstance(retry_after, (int, float)):
-        return float(retry_after)
-    return RATE_LIMITED_RETRY_DEFAULT.total_seconds()
+    if isinstance(throttled, (set, frozenset, list, tuple)) and throttled:
+        provider_retry_after = getattr(provider, "rate_limit_retry_after", None)
+        floors.append(
+            float(provider_retry_after)
+            if isinstance(provider_retry_after, (int, float))
+            else RATE_LIMITED_RETRY_DEFAULT.total_seconds()
+        )
+    return max(floors) if floors else None
 
 
 async def sync_connection(
@@ -3089,6 +3103,10 @@ async def sync_connection(
             "Ask an administrator to configure it in Settings or through the environment."
         ) from exc
 
+    # Throttled accounts and the longest Retry-After seen, set before the try
+    # so a later failure in the run still notes them as the retry floor.
+    rate_limited_accounts: set[str] = set()
+    retry_after: Optional[float] = None
     try:
         # Refresh credentials if needed
         credentials = await provider.refresh_credentials(connection.credentials or {})
@@ -3159,13 +3177,13 @@ async def sync_connection(
         # their rows are left as they are; the sync checkpoint must not
         # advance past them, and the connection backs off before retrying.
         provider_rate_limited = getattr(provider, "rate_limited_account_ids", None)
-        rate_limited_accounts: set[str] = (
+        rate_limited_accounts = (
             set(provider_rate_limited)
             if isinstance(provider_rate_limited, (set, frozenset, list, tuple))
             else set()
         )
         provider_retry_after = getattr(provider, "rate_limit_retry_after", None)
-        retry_after: Optional[float] = (
+        retry_after = (
             float(provider_retry_after)
             if isinstance(provider_retry_after, (int, float))
             else None
@@ -3908,15 +3926,17 @@ async def sync_connection(
         # no fresh data was pulled and can say so instead of a success toast.
         return refreshed or connection, 0, "rate_limited"
     except Exception:
-        # Mark connection as errored so UI shows reconnect banner. If the
-        # provider was also throttled on some account, its Retry-After is kept
-        # as the floor on the next scheduled try.
+        # Mark connection as errored so UI shows reconnect banner. If some
+        # account was also throttled in this run, its Retry-After is kept as
+        # the floor on the next scheduled try.
         await session.rollback()
         await _mark_failed_sync(
             session,
             connection_id,
             "error",
-            retry_after=_throttle_retry_after(provider),
+            retry_after=_throttle_retry_after(
+                provider, rate_limited_accounts, retry_after
+            ),
         )
         raise
 

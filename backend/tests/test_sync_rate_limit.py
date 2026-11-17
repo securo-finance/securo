@@ -387,6 +387,37 @@ async def test_transient_failure_after_throttle_keeps_retry_floor(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("retry_after", "low", "high"),
+    [(12 * 3600.0, 12 * 3600 - 100, 12 * 3600), (None, 6 * 3600 - 100, 6 * 3600)],
+)
+async def test_failure_after_transaction_throttle_keeps_retry_floor(
+    session: AsyncSession, test_user, test_workspace, retry_after, low, high
+):
+    """Account A's transactions 429 (noted only by the sync, not on the
+    provider), then account B fails with a network error: the error decides
+    the status, and A's throttle still sets the floor on the next try."""
+    conn = await _make_connection(session, test_user.id, test_workspace.id)
+    provider = _mock_provider_two_accounts()
+    provider.rate_limited_account_ids = set()
+    provider.rate_limit_retry_after = None
+
+    def _transactions(creds, account_external_id, since=None, payee_source="auto"):
+        if account_external_id == "rl-acc-a":
+            raise ProviderRateLimited("429", retry_after=retry_after)
+        raise httpx.ConnectError("boom")
+
+    provider.get_transactions = AsyncMock(side_effect=_transactions)
+
+    with _sync_patches(provider), pytest.raises(httpx.ConnectError):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    stored = await session.get(BankConnection, conn.id, populate_existing=True)
+    assert stored is not None and stored.status == "error"
+    assert low < _retry_floor_seconds(stored) <= high
+
+
+@pytest.mark.asyncio
 async def test_failure_without_throttle_notes_no_floor(
     session: AsyncSession, test_user, test_workspace
 ):
