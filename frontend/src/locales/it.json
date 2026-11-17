@@ -1371,8 +1371,16 @@
     "connectionStatus": {
       "active": "Attiva",
       "error": "Errore",
-      "expired": "Scaduta"
-    }
+      "expired": "Scaduta",
+      "disconnected": "Scollegata"
+    },
+    "pluginConnectors": "Dai tuoi plugin",
+    "pluginUnavailable": "Il plugin di questa connessione non è più installato o disponibile.",
+    "confirmDisconnectKeepDesc": "{{institution}} smetterà di sincronizzarsi. I conti e lo storico delle transazioni restano nell'app, e potrai ricollegarlo più tardi.",
+    "disconnectAlsoDelete": "Elimina anche conti e transazioni",
+    "disconnectedKept": "Banca scollegata. Conti e storico sono stati mantenuti.",
+    "removeConnection": "Rimuovi connessione",
+    "connectionDisconnected": "Scollegata. Ricollega per sincronizzare di nuovo"
   },
   "loans": {
     "title": "Contratto del prestito",
@@ -2051,6 +2059,7 @@
     "noTransactions": "Ancora nessuna transazione",
     "txBuy": "Acquisto",
     "txSell": "Vendita",
+    "txSplit": "Frazionamento",
     "txFee": "Commissione",
     "txSaved": "Transazione salvata",
     "txDeleted": "Transazione eliminata",
@@ -2061,6 +2070,10 @@
     "unitPrice": "Prezzo unitario",
     "fee": "Commissione",
     "txTotal": "Totale",
+    "splitOldUnits": "Unità prima",
+    "splitNewUnits": "Unità dopo",
+    "splitHint": "Inserisci le unità che avevi prima del frazionamento e in quante sono diventate: un frazionamento 100 a 1 è 1 → 100, un raggruppamento 1 a 10 è 10 → 1. Usa come data il primo giorno in cui il titolo viene negoziato al nuovo prezzo.",
+    "splitInvalid": "Inserisci due numeri interi diversi da 1 a 1.000.000.",
     "confirmDeleteTxTitle": "Eliminare la transazione?",
     "confirmDeleteTx": "Rimuove la voce e ricalcola il prezzo medio della posizione.",
     "editAsset": "Modifica bene",
@@ -2805,6 +2818,8 @@
       "saveFailed": "Impossibile salvare la selezione degli strumenti",
       "empty": "Nessuno strumento rilevato. Il server MCP è in esecuzione? Con Docker: `docker compose --profile agents up -d`.",
       "proposeBadge": "proponi",
+      "enabledCount": "{{enabled}} di {{total}} attivati",
+      "enableAll": "Attiva tutti",
       "loading": "Caricamento strumenti…"
     },
     "chat": {
@@ -2882,6 +2897,7 @@
       "baseUrl": "URL dell'endpoint",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "L'URL dell'endpoint è obbligatorio per questo provider",
+      "baseUrlInvalid": "Inserisci un URL dell'endpoint http o https valido",
       "ollamaHint": "Se Ollama è in esecuzione sulla tua macchina host, usa http://host.docker.internal:11434 (Mac/Windows) o l'IP del tuo host (Linux).",
       "openaiCompatHint": "Incolla semplicemente host:porta (es. http://192.168.1.142:1234). Il percorso /v1 viene aggiunto automaticamente. Dall'interno di Docker su Mac/Windows, sostituisci localhost con host.docker.internal.",
       "apiKey": "Chiave API / token",
@@ -3459,6 +3475,7 @@
       "write": "Leggere e modificare {{what}}",
       "ownerOnly": "Solo il proprietario dello spazio di lavoro può aggiungere, aggiornare o rimuovere un plugin che esegue codice.",
       "removeConnections": "Le sue connessioni in questo spazio di lavoro ({{count}}) vengono rimosse, insieme alle chiavi salvate e agli accessi.",
+      "unlinks": "Le sue connessioni bancarie ({{count}}) smettono di sincronizzarsi. I conti e le transazioni restano, come conti manuali.",
       "removeNothing": "Il codice del plugin viene rimosso dal tuo server quando nessuno spazio di lavoro lo usa più.",
       "auth": {
         "credentials": "Chiave o password",
@@ -3483,6 +3500,15 @@
         "install": "Questo plugin non porta dati. Controlla cosa può fare il suo codice:",
         "update": "Controlla cosa può fare la nuova versione:",
         "remove": "Il suo codice smette di essere eseguito in questo spazio di lavoro."
+      },
+      "provides": "Si sincronizza come una banca collegata",
+      "providesHint": "Securo aggiunge questi dati a questo spazio di lavoro e li tiene aggiornati, come per una banca collegata. Ogni connessione compare in Connessioni bancarie.",
+      "kinds": {
+        "accounts": "Conti",
+        "transactions": "transazioni",
+        "bills": "estratti conto della carta",
+        "holdings": "investimenti",
+        "trades": "acquisti e vendite"
       }
     },
     "connections": {
@@ -3520,8 +3546,13 @@
       "added": "{{name}} connessa",
       "removeTitle": "Rimuovere {{name}}?",
       "removeHint": "Le chiavi salvate e l'accesso a questo spazio di lavoro vengono eliminati. Ciò che ha già importato resta.",
+      "removeBankHint": "Si sincronizza come una banca collegata: rimuoverla scollega quella banca e rimuove i conti sincronizzati, con le loro transazioni.",
       "removed": "{{name}} rimossa",
-      "copyFailed": "Impossibile copiare. Seleziona l'indirizzo e copialo a mano."
+      "copyFailed": "Impossibile copiare. Seleziona l'indirizzo e copialo a mano.",
+      "editTitle": "Ricollega {{name}}",
+      "editHint": "Aggiorna ciò che è cambiato, come una nuova password o un token. Poi la connessione si sincronizza di nuovo.",
+      "keepBlank": "Lascia un campo vuoto per mantenere il valore attuale.",
+      "updated": "{{name}} aggiornata"
     },
     "oauth": {
       "title": "Completamento dell'accesso",

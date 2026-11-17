@@ -52,7 +52,7 @@ class AssetGroup(Base):
 
     # Provenance fields — mirror Asset's sync fields so sync code can
     # upsert groups idempotently by (user_id, source, external_id).
-    source: Mapped[str] = mapped_column(String(50), default="manual")
+    source: Mapped[str] = mapped_column(String(128), default="manual")
     connection_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("bank_connections.id", ondelete="SET NULL"), nullable=True
     )

@@ -17,6 +17,9 @@ class PluginConnection(Base):
     `state` the plugin's own cursor between syncs. When the plugin declared
     `api_scopes`, `access_token_id` is the scoped token it acts with; removing
     the connection revokes it.
+
+    An integration that `provides` records syncs them into its own bank
+    connection, `bank_connection_id`, created along with this one.
     """
 
     __tablename__ = "plugin_connections"
@@ -36,6 +39,9 @@ class PluginConnection(Base):
     sync_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     access_token_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("access_tokens.id", ondelete="SET NULL"), nullable=True
+    )
+    bank_connection_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("bank_connections.id", ondelete="SET NULL"), nullable=True, unique=True
     )
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)

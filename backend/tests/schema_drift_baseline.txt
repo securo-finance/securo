@@ -1,0 +1,92 @@
+# Schema drift that predates tests/test_schema_matches_migrations_postgres.py.
+#
+# Each line is a difference between the database the migrations build and the
+# schema the models describe. Nothing may be added here: new drift is fixed with
+# a migration or a model change. When a line is fixed, delete it (the test fails
+# until you do), so this list only shrinks.
+
+# Indexes the migrations create that the models don't declare. The database
+# has them; the models (and so create_all in the other tests) don't. Fix by
+# declaring them on the model.
+remove_index accounts ix_accounts_connection_id
+remove_index accounts ix_accounts_user_id
+remove_index agents uq_agents_one_default_per_user
+remove_index asset_groups ix_asset_groups_user_id
+remove_index asset_values ix_asset_values_asset_date
+remove_index assets ix_assets_connection_id
+remove_index assets ix_assets_group_id
+remove_index assets ix_assets_market_price
+remove_index assets ix_assets_user_id
+remove_index bank_connections ix_bank_connections_user_id
+remove_index budgets ix_budgets_recurring_lookup
+remove_index budgets ix_budgets_user_id
+remove_index categories ix_categories_user_id
+remove_index category_groups ix_category_groups_user_id
+remove_index credit_card_bills ix_credit_card_bills_account_id
+remove_index goals ix_goals_user_id
+remove_index goals ix_goals_user_status
+remove_index group_members ix_group_members_group_id
+remove_index group_members ix_group_members_linked_user_id
+remove_index group_settlements ix_group_settlements_group_id
+remove_index group_settlements ix_group_settlements_receiver_transaction_id
+remove_index group_settlements ix_group_settlements_transaction_id
+remove_index groups ix_groups_user_id
+remove_index import_logs ix_import_logs_user_id
+remove_index payee_mapping ix_payee_mapping_user_id_target_id
+remove_index payee_tax_ids ix_payee_tax_ids_workspace_kind_value
+remove_index payees ix_payees_user_id
+remove_index reconciliation_suggestions ix_reconciliation_suggestions_group
+remove_index recurring_transactions ix_recurring_transactions_user_id
+remove_index rules ix_rules_user_id
+remove_index transaction_attachments ix_transaction_attachments_transaction_id
+remove_index transaction_attachments ix_transaction_attachments_user_id
+remove_index transaction_splits ix_transaction_splits_group_member_id
+remove_index transaction_splits ix_transaction_splits_transaction_id
+remove_index transactions ix_transactions_account_date
+remove_index transactions ix_transactions_account_id
+remove_index transactions ix_transactions_category_id
+remove_index transactions ix_transactions_date
+remove_index transactions ix_transactions_is_ignored
+remove_index transactions ix_transactions_payee_id
+remove_index transactions ix_transactions_transfer_match
+remove_index transactions ix_transactions_transfer_pair_id
+remove_index transactions ix_transactions_user_id
+remove_index workspace_members ix_workspace_members_user
+remove_index workspace_members ix_workspace_members_workspace
+remove_index workspaces ix_workspaces_kind
+remove_index workspaces ix_workspaces_managed_by_user_id
+
+# Expression and vector indexes: autogenerate can't compare them, so they read
+# as missing or different even when they match.
+add_index payees uq_payees_workspace_id_lower_name
+remove_index agent_knowledge_chunks ix_agent_knowledge_chunks_embedding
+remove_index payees uq_payees_workspace_id_lower_name
+remove_index transactions ix_transactions_workspace_accrual_report_date
+remove_index transactions ix_transactions_workspace_cash_report_date
+
+# Indexes the models declare that no migration creates.
+add_index agent_knowledge_chunks ix_agent_knowledge_chunks_agent_id
+add_index agent_knowledge_chunks ix_agent_knowledge_chunks_doc_id
+add_index reconciliation_suggestions ix_reconciliation_suggestions_group_id
+
+# Unique constraints that exist only in the database. They change behavior
+# (an insert the model allows fails), so each one is a decision: declare it on
+# the model, or drop it in a migration.
+remove_constraint group_members unique(group_id,name)
+remove_constraint groups unique(user_id,name)
+remove_constraint transaction_splits unique(transaction_id,group_member_id)
+
+# Columns NOT NULL in the model but nullable in the database.
+modify_nullable asset_transactions.created_at
+modify_nullable budgets.created_at
+modify_nullable fx_rates.created_at
+modify_nullable goals.created_at
+modify_nullable goals.updated_at
+modify_nullable recurring_transactions.created_at
+modify_nullable transaction_category_lines.created_at
+
+# Column types that differ (TEXT vs String(1000), JSONB vs JSON; the vector
+# column reads as different because autogenerate doesn't know pgvector's type).
+modify_type agent_knowledge_chunks.embedding
+modify_type transactions.notes
+modify_type transactions.raw_data

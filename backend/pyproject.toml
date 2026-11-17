@@ -56,6 +56,8 @@ dev = [
     "pytest-asyncio>=1.0",
     "pytest-cov>=4.1.0",
     "pytest-xdist>=3.6.1",
+    # CI splits the suite across parallel jobs, balanced by .test_durations.
+    "pytest-split>=0.11.0",
     "httpx>=0.26.0",
     "aiosqlite>=0.19.0",
     # Upper-bounded so CI lint stays deterministic: ruff 0.16 reformats the

@@ -1,0 +1,175 @@
+name: stale queue
+
+# A pull request where we asked the author for something and heard nothing back
+# for thirty days is not waiting on anyone: the author stopped. It stays in the
+# queue, it shows up in every triage pass, and it makes the open count say
+# something that is not true.
+#
+# This gives the author a warning first and closes a week later if nothing
+# moves. Our work is not commits, so the clock is not the branch. It is the
+# conversation between people, bots left out:
+#
+# - our word: a comment or review from an owner, member or collaborator.
+# - the author's activity: a commit they authored, or a comment or review from
+#   them. "Update branch", merges from main and maintainer pushes do not count.
+#
+# A pull request is swept only when the ball is with the author:
+#
+# 1. we have said something at all. Without that it is waiting in our queue, and
+#    a warning would blame the author for our silence.
+# 2. our last word is newer than the author's last activity, so we asked and
+#    they have not answered. If they answered, by comment or by push, the ball
+#    is with us and the idle days are ours.
+# 3. our last word is not an approval: after that the next step is ours.
+#
+# The thirty days count from our last word. Closing is reversible and the
+# closing comment says how. `stale: keep` exempts a pull request for good.
+#
+# Never swept: pull requests from maintainers (owner, member, collaborator),
+# drafts, and anything with a review request still pending on us.
+
+on:
+  schedule:
+    - cron: '0 9 * * *'   # 06:00 in Sao Paulo
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: stale-queue
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    if: vars.STALE_QUEUE != 'off'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const OWNER = context.repo.owner, REPO = context.repo.repo;
+
+            const WARN_AFTER = 30;   // days since our last word, unanswered
+            const CLOSE_AFTER = 7;   // days the warning stands before closing
+            const KEEP = 'stale: keep';
+            const MAINTAINERS = ['OWNER', 'MEMBER', 'COLLABORATOR'];
+            const WARNED = '<!-- stale: warned -->';
+            const CLOSED = '<!-- stale: closed -->';
+            const DAY = 24 * 60 * 60 * 1000;
+
+            const days = (iso) => Math.floor((Date.now() - Date.parse(iso)) / DAY);
+            const isBot = (u) => !u || u.type === 'Bot' || u.login.endsWith('[bot]');
+            const newest = (list) => list.filter(Boolean).sort().pop();
+
+            const pulls = await github.paginate(github.rest.pulls.list,
+              { owner: OWNER, repo: REPO, state: 'open', per_page: 100 });
+
+            let warned = 0, closed = 0;
+
+            for (const pr of pulls) {
+              if (pr.labels.some((l) => l.name === KEEP)) continue;
+
+              // Maintainers' pull requests, ours included, are never swept.
+              if (MAINTAINERS.includes(pr.author_association)) continue;
+
+              // A draft says on its own that it is not ready yet.
+              if (pr.draft) continue;
+
+              // A pending review request means the ball is with us, not with
+              // the author, so the idle days are ours to answer for.
+              if ((pr.requested_reviewers || []).length > 0) continue;
+              if ((pr.requested_teams || []).length > 0) continue;
+
+              const author = pr.user.login;
+              const args = { owner: OWNER, repo: REPO, per_page: 100 };
+              let commits, comments, reviews, inline;
+              try {
+                [commits, comments, reviews, inline] = await Promise.all([
+                  github.paginate(github.rest.pulls.listCommits, { ...args, pull_number: pr.number }),
+                  github.paginate(github.rest.issues.listComments, { ...args, issue_number: pr.number }),
+                  github.paginate(github.rest.pulls.listReviews, { ...args, pull_number: pr.number }),
+                  github.paginate(github.rest.pulls.listReviewComments, { ...args, pull_number: pr.number }),
+                ]);
+              } catch (e) {
+                core.info(`#${pr.number}: could not read the history, skipping`);
+                continue;
+              }
+
+              // Every human word on the pull request, bots left out.
+              const words = [
+                ...comments.map((c) => ({ user: c.user, assoc: c.author_association, at: c.created_at })),
+                ...inline.map((c) => ({ user: c.user, assoc: c.author_association, at: c.created_at })),
+                ...reviews.filter((r) => r.submitted_at).map((r) =>
+                  ({ user: r.user, assoc: r.author_association, at: r.submitted_at, state: r.state })),
+              ].filter((w) => !isBot(w.user));
+
+              const ours = words.filter((w) => MAINTAINERS.includes(w.assoc))
+                .sort((a, b) => a.at.localeCompare(b.at));
+              const lastOurs = ours[ours.length - 1];
+
+              // 1. Nothing from us yet: it is waiting in our queue.
+              if (!lastOurs) continue;
+
+              // 3. Our last word approved it: the next step is ours.
+              if (lastOurs.state === 'APPROVED') continue;
+
+              const authorAt = newest([
+                // A merge from main is not an answer. A commit GitHub could not
+                // link to an account (unknown email) counts as the author's:
+                // reading it as silence could close a pull request they pushed to.
+                ...commits.filter((c) => (c.parents || []).length < 2)
+                  .filter((c) => !c.author || c.author.login === author)
+                  .map((c) => c.commit.committer.date),
+                ...words.filter((w) => w.user.login === author).map((w) => w.at),
+              ]);
+
+              // 2. The author answered after our last word: the ball is with us.
+              if (authorAt && Date.parse(authorAt) >= Date.parse(lastOurs.at)) continue;
+
+              const askedAt = lastOurs.at;
+              const idle = days(askedAt);
+              if (idle < WARN_AFTER) continue;
+
+              // Only a warning newer than our last word counts: a pull request
+              // that was warned, answered, asked again and then stalled gets a
+              // fresh warning instead of closing on an old one. Only the
+              // workflow's own comment counts: anyone can type the marker.
+              const warning = comments
+                .filter((c) => c.user && c.user.login === 'github-actions[bot]')
+                .filter((c) => (c.body || '').includes(WARNED))
+                .filter((c) => Date.parse(c.created_at) > Date.parse(askedAt))
+                .pop();
+
+              if (!warning) {
+                // First pass: a warning, with the reason and the way out.
+                await github.rest.issues.createComment({
+                  owner: OWNER, repo: REPO, issue_number: pr.number,
+                  body: `${WARNED}\nThis pull request has been waiting on you for ${idle} ` +
+                        `days, since our last comment on ${askedAt.slice(0, 10)}. It will ` +
+                        `be closed in ${CLOSE_AFTER} days unless there is a reply or a push. ` +
+                        `If you are still on it, a short comment or a push is enough to reset ` +
+                        `this. If it should stay open regardless, say so and it gets the ` +
+                        `\`${KEEP}\` label.`,
+                });
+                warned++;
+                continue;
+              }
+
+              if (days(warning.created_at) < CLOSE_AFTER) continue;
+
+              await github.rest.issues.createComment({
+                owner: OWNER, repo: REPO, issue_number: pr.number,
+                body: `${CLOSED}\nClosed: no reply or push for ${idle} days since our last ` +
+                      `comment, and the warning above stood for a week. Nothing is lost, the ` +
+                      `branch and the commits are still there and reopening the pull request ` +
+                      `brings it back. Reopen it whenever you want to pick it up again.`,
+              });
+              await github.rest.pulls.update(
+                { owner: OWNER, repo: REPO, pull_number: pr.number, state: 'closed' });
+              closed++;
+            }
+
+            core.info(`warned ${warned}, closed ${closed}, looked at ${pulls.length}`);

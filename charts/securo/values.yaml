@@ -34,8 +34,11 @@ secret:
   # OpenExchangeRates
   openexchangeratesAppId: ""
 
-  # Agents (LLM)
-  agentsMcpJwtSecret: "dev-mcp-secret-change-in-production"
+  # Agents (LLM). Signs the MCP server's JWTs. Empty derives it from secretKey,
+  # so the install needs no extra value. There is no default on purpose: a
+  # public one would let anyone mint a token for any user (#1174). A known
+  # public value is refused at startup.
+  agentsMcpJwtSecret: ""
   agentsOpenaiApiKey: ""
   agentsAnthropicApiKey: ""
   agentsOpenaiCompatApiKey: ""
@@ -86,7 +89,10 @@ config:
   # Agents feature
   agentsEnabled: "false"
   agentsBuiltinMcpUrl: 'http://{{ include "securo.fullname" . }}-mcp-server:8765/mcp'
-  agentsExternalMcpUrl: '{{ include "securo.frontendUrl" . }}/mcp'
+  # Public URL external MCP clients use, shown in the app. Empty lets the UI
+  # derive it from the browser (host:8765). Set it when you publish /mcp with
+  # mcpServer.publicRoute and reach it on the same domain.
+  agentsExternalMcpUrl: ""
   agentsExtraMcpServers: ""
   agentsMcpExternalTtlDays: "90"
   agentsDefaultProvider: "ollama"
@@ -163,6 +169,12 @@ celeryBeat:
 # Built-in MCP Server configuration
 mcpServer:
   enabled: false
+  # Add /mcp to the Ingress (or HTTPRoute) so external MCP clients can reach
+  # it through the cluster's public entry point. Off by default: the server
+  # is only reachable inside the cluster, and publishing it is a deliberate
+  # choice that should sit behind your own gateway or network policy. When
+  # you turn it on, also set config.agentsExternalMcpUrl to the public URL.
+  publicRoute: false
   replicaCount: 1
   image:
     pullPolicy: IfNotPresent

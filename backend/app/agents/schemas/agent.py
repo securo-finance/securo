@@ -52,8 +52,9 @@ class AgentUpdate(BaseModel):
 
 
 class AgentToolToggle(BaseModel):
-    server: str
-    tool_name: str
+    # The lengths of agent_tools.server and agent_tools.tool_name.
+    server: str = Field(..., min_length=1, max_length=500)
+    tool_name: str = Field(..., min_length=1, max_length=120)
     enabled: bool
 
 

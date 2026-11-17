@@ -41,6 +41,10 @@ class _ServerSpec:
 BUILTIN_SERVER_NAME = "securo"
 
 
+# agent_tools.server's length.
+_MAX_SERVER_NAME = 500
+
+
 def _parse_servers() -> list[_ServerSpec]:
     s = get_agent_settings()
     out = [_ServerSpec(name=BUILTIN_SERVER_NAME, url=s.builtin_mcp_url)]
@@ -64,6 +68,26 @@ def _parse_servers() -> list[_ServerSpec]:
                     "for the built-in server.",
                     url.strip(),
                     BUILTIN_SERVER_NAME,
+                )
+                continue
+            if len(name) > _MAX_SERVER_NAME:
+                # agent_tools.server holds the name as is; never truncated,
+                # since it routes calls.
+                logger.warning(
+                    "Ignoring extra MCP server %r: its name is longer than %d characters; "
+                    "give it a shorter alias (url|alias).",
+                    url.strip()[:80],
+                    _MAX_SERVER_NAME,
+                )
+                continue
+            if not name or "__" in name or name.endswith("_"):
+                # Tools are called as `<server>__<tool>`, split at the first
+                # "__". A server name holding "__" or ending in "_" makes that
+                # split land elsewhere, so a call could reach another server.
+                logger.warning(
+                    "Ignoring extra MCP server %r: its name %r can't contain '__' or end with '_'.",
+                    url.strip(),
+                    name,
                 )
                 continue
             out.append(_ServerSpec(name=name, url=url.strip()))
@@ -285,6 +309,10 @@ class MCPRegistry:
     two servers expose tools with the same name.
     """
 
+    # Servers the last discover() could not reach. A partial tool list must
+    # not be recorded as an agent's whole tool list.
+    unreachable: tuple[str, ...] = ()
+
     def __init__(self):
         self._servers: dict[str, MCPClient] = {}
         for spec in _parse_servers():
@@ -320,10 +348,12 @@ class MCPRegistry:
             agent_id=agent_id,
         )
         out: list[ToolHandle] = []
+        unreachable: list[str] = []
         for server_name, client in self._servers.items():
             try:
                 tools = await client.list_tools(token=self._token_for(server_name, **claims))
             except Exception as exc:
+                unreachable.append(server_name)
                 # A server that can't be reached costs the agent every tool it
                 # exposes, and the chat still answers, just without any data.
                 # Say so in the log: otherwise the only symptom is an assistant
@@ -337,7 +367,15 @@ class MCPRegistry:
                 )
                 continue
             out.extend(tools)
+        self.unreachable = tuple(unreachable)
         return out
+
+    def complete_pairs(self, handles: list[ToolHandle]) -> Optional[list[tuple[str, str]]]:
+        """(server, tool_name) pairs of `handles` when the discovery that
+        produced them reached every server, else None."""
+        if self.unreachable or not handles:
+            return None
+        return list(dict.fromkeys((h.server, h.name) for h in handles))
 
     @staticmethod
     def to_provider_tools(handles: list[ToolHandle], *, allowed: Optional[set[tuple[str, str]]] = None) -> list[ToolDefinition]:

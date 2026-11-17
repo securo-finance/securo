@@ -5,15 +5,16 @@ or a plan only needs to see the workspace; applying needs write access,
 and for a plugin with code, the owner. Connections need write access.
 Access tokens can't reach these routes.
 """
+import re
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
 from app.core.feature_flags import feature_flag
 from app.core.workspace_context import WorkspaceContext, current_workspace, current_writable_workspace
-from app.plugins import connections, runner, service
+from app.plugins import connections, logos, runner, service
 from app.plugins.index import PluginIndexError
 from app.plugins.manifest import parse_manifest
 from app.services.access_token_service import AccessTokenError
@@ -24,6 +25,7 @@ from app.schemas.plugin import (
     PluginAuthorizeRead,
     PluginConnectionCreate,
     PluginConnectionCreated,
+    PluginConnectionUpdate,
     PluginConnectionRead,
     PluginOAuthCallback,
     PluginCatalogRead,
@@ -182,6 +184,23 @@ async def create_connection(
     return PluginConnectionCreated(connection=_connection_read(connection), authorize_url=link)
 
 
+@router.put("/connections/{connection_id}/values", response_model=PluginConnectionRead)
+async def update_connection_values(
+    connection_id: uuid.UUID,
+    body: PluginConnectionUpdate,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """New form values (to reconnect after changing a password, say); then it syncs afresh."""
+    connection = await _connection_guarded(connections.get_connection(session, ctx.workspace.id, connection_id))
+    connection = await _connection_guarded(
+        connections.update_values(session, connection, name=body.name, values=body.values)
+    )
+    if connection.status == "pending":
+        _queue_sync(connection.id)
+    return _connection_read(connection)
+
+
 @router.post("/connections/{connection_id}/authorize", response_model=PluginAuthorizeRead)
 async def authorize_connection(
     connection_id: uuid.UUID,
@@ -237,6 +256,30 @@ def _queue_sync(connection_id: uuid.UUID) -> None:
         sync_plugin_connection.delay(str(connection_id))
     except Exception:  # noqa: BLE001 - the schedule picks it up anyway
         pass
+
+
+@router.get("/logos/{sha256}", include_in_schema=False)
+async def plugin_logo(sha256: str, session: AsyncSession = Depends(get_async_session)) -> Response:
+    """A logo from a plugin's package, by its checksum.
+
+    No sign-in: it's an `<img>` source, and a checksum only finds a file
+    that a public plugin release ships. Sent so a browser shows it as an
+    image and nothing else.
+    """
+    if not re.fullmatch(r"[0-9a-f]{64}", sha256):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Logo not found")
+    logo = await logos.get(session, sha256)
+    if logo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Logo not found")
+    return Response(
+        content=logo.data,
+        media_type=logo.content_type,
+        headers={
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+        },
+    )
 
 
 @router.get("/catalog", response_model=list[PluginCatalogRead])

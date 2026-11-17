@@ -1367,8 +1367,16 @@
     "connectionStatus": {
       "active": "Active",
       "error": "Error",
-      "expired": "Expired"
-    }
+      "expired": "Expired",
+      "disconnected": "Disconnected"
+    },
+    "pluginConnectors": "From your plugins",
+    "pluginUnavailable": "The plugin behind this connection isn't installed or available anymore.",
+    "confirmDisconnectKeepDesc": "{{institution}} will stop syncing. Its accounts and transaction history stay in the app, and you can reconnect it later.",
+    "disconnectAlsoDelete": "Also delete accounts and transactions",
+    "disconnectedKept": "Bank disconnected. Accounts and history were kept.",
+    "removeConnection": "Remove connection",
+    "connectionDisconnected": "Disconnected. Reconnect to sync again"
   },
   "loans": {
     "title": "Loan contract",
@@ -2047,6 +2055,7 @@
     "noTransactions": "No transactions yet",
     "txBuy": "Buy",
     "txSell": "Sell",
+    "txSplit": "Split",
     "txFee": "Fee",
     "txSaved": "Transaction saved",
     "txDeleted": "Transaction deleted",
@@ -2057,6 +2066,10 @@
     "unitPrice": "Unit price",
     "fee": "Fee",
     "txTotal": "Total",
+    "splitOldUnits": "Units before",
+    "splitNewUnits": "Units after",
+    "splitHint": "Enter the units you held before the split and what they became: a 100-for-1 split is 1 → 100, a 1-for-10 reverse split is 10 → 1. Date it on the first day the holding trades at the new price.",
+    "splitInvalid": "Enter two different whole numbers from 1 to 1,000,000.",
     "confirmDeleteTxTitle": "Delete transaction?",
     "confirmDeleteTx": "This removes the entry and recalculates the holding's average price.",
     "editAsset": "Edit Asset",
@@ -2817,6 +2830,8 @@
       "saveFailed": "Failed to save tool selection",
       "empty": "No tools discovered. Is the MCP server running? With Docker: `docker compose --profile agents up -d`.",
       "proposeBadge": "propose",
+      "enabledCount": "{{enabled}} of {{total}} enabled",
+      "enableAll": "Enable all",
       "loading": "Loading tools…"
     },
     "chat": {
@@ -2916,6 +2931,7 @@
       "baseUrl": "Endpoint URL",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "Endpoint URL is required for this provider",
+      "baseUrlInvalid": "Enter a valid http or https endpoint URL",
       "ollamaHint": "If Ollama runs on your host machine, use http://host.docker.internal:11434 (Mac/Windows) or your host IP (Linux).",
       "openaiCompatHint": "Just paste the host:port (e.g. http://192.168.1.142:1234). The /v1 path is added automatically. From inside Docker on Mac/Windows, replace localhost with host.docker.internal.",
       "apiKey": "API key / token",
@@ -3455,6 +3471,7 @@
       "write": "Read and change {{what}}",
       "ownerOnly": "Only the workspace owner can add, update or remove a plugin that runs code.",
       "removeConnections": "Its connections in this workspace ({{count}}) are removed, along with their saved keys and access.",
+      "unlinks": "Its bank connections ({{count}}) stop syncing. Their accounts and transactions stay, as manual accounts.",
       "removeNothing": "The plugin's code is removed from your server once no workspace uses it.",
       "auth": {
         "credentials": "Key or password",
@@ -3479,6 +3496,15 @@
         "install": "This plugin brings no data. Review what its code may do:",
         "update": "Review what the new version may do:",
         "remove": "Its code stops running in this workspace."
+      },
+      "provides": "Syncs as a connected bank",
+      "providesHint": "Securo adds these records to this workspace and keeps them up to date, as for a connected bank. Each connection appears under Bank Connections.",
+      "kinds": {
+        "accounts": "Accounts",
+        "transactions": "transactions",
+        "bills": "card bills",
+        "holdings": "investments",
+        "trades": "buys and sells"
       }
     },
     "connections": {
@@ -3516,8 +3542,13 @@
       "added": "{{name}} connected",
       "removeTitle": "Remove {{name}}?",
       "removeHint": "Its saved keys and its access to this workspace are deleted. What it already brought in stays.",
+      "removeBankHint": "It syncs as a connected bank: removing it disconnects that bank and removes the accounts it synced, with their transactions.",
       "removed": "{{name}} removed",
-      "copyFailed": "Couldn't copy. Select the address and copy it by hand."
+      "copyFailed": "Couldn't copy. Select the address and copy it by hand.",
+      "editTitle": "Reconnect {{name}}",
+      "editHint": "Update what changed, such as a new password or token. The connection syncs again afterwards.",
+      "keepBlank": "Leave a field blank to keep its current value.",
+      "updated": "{{name}} updated"
     },
     "oauth": {
       "title": "Finishing the sign in",

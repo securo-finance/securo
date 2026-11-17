@@ -1435,8 +1435,16 @@
     "connectionStatus": {
       "active": "Aktívne",
       "error": "Chyba",
-      "expired": "Vypršané"
-    }
+      "expired": "Vypršané",
+      "disconnected": "Odpojené"
+    },
+    "pluginConnectors": "Z vašich pluginov",
+    "pluginUnavailable": "Plugin tohto pripojenia už nie je nainštalovaný ani dostupný.",
+    "confirmDisconnectKeepDesc": "{{institution}} sa prestane synchronizovať. Účty a história transakcií zostanú v aplikácii a banku môžete neskôr znova pripojiť.",
+    "disconnectAlsoDelete": "Zmazať aj účty a transakcie",
+    "disconnectedKept": "Banka odpojená. Účty a história zostali zachované.",
+    "removeConnection": "Odstrániť pripojenie",
+    "connectionDisconnected": "Odpojené. Pripojte znova pre synchronizáciu"
   },
   "loans": {
     "title": "Úverová zmluva",
@@ -2171,6 +2179,7 @@
     "noTransactions": "Zatiaľ žiadne transakcie",
     "txBuy": "Nákup",
     "txSell": "Predaj",
+    "txSplit": "Split",
     "txFee": "Poplatok",
     "txSaved": "Transakcia uložená",
     "txDeleted": "Transakcia vymazaná",
@@ -2181,6 +2190,10 @@
     "unitPrice": "Jednotková cena",
     "fee": "Poplatok",
     "txTotal": "Spolu",
+    "splitOldUnits": "Kusov pred splitom",
+    "splitNewUnits": "Kusov po splite",
+    "splitHint": "Zadaj počet kusov pred splitom a po ňom: split 100:1 je 1 → 100, reverzný split 1:10 je 10 → 1. Ako dátum uveď prvý deň, keď sa už obchoduje za novú cenu.",
+    "splitInvalid": "Zadaj dve rôzne celé čísla od 1 do 1 000 000.",
     "confirmDeleteTxTitle": "Vymazať transakciu?",
     "confirmDeleteTx": "Záznam sa odstráni a priemerná cena pozície sa prepočíta.",
     "editAsset": "Upraviť aktívum",
@@ -2965,6 +2978,8 @@
       "saveFailed": "Výber nástrojov sa nepodarilo uložiť",
       "empty": "Nenašli sa žiadne nástroje. Beží MCP server? S Dockerom: `docker compose --profile agents up -d`.",
       "proposeBadge": "navrhuje",
+      "enabledCount": "Zapnuté {{enabled}} z {{total}}",
+      "enableAll": "Zapnúť všetko",
       "loading": "Načítavajú sa nástroje…"
     },
     "chat": {
@@ -3068,6 +3083,7 @@
       "baseUrl": "URL endpointu",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "Pre tohto poskytovateľa je URL endpointu povinná",
+      "baseUrlInvalid": "Zadajte platnú URL endpointu http alebo https",
       "ollamaHint": "Ak Ollama beží na tvojom hostiteľskom počítači, použi http://host.docker.internal:11434 (Mac/Windows) alebo IP adresu hostiteľa (Linux).",
       "openaiCompatHint": "Stačí vložiť host:port (napr. http://192.168.1.142:1234). Cesta /v1 sa pridá automaticky. Z Dockeru na Mac/Windows nahraď localhost za host.docker.internal.",
       "apiKey": "API kľúč / token",
@@ -3625,6 +3641,7 @@
       "write": "Čítanie a zmeny: {{what}}",
       "ownerOnly": "Plugin, ktorý spúšťa kód, môže pridať, aktualizovať alebo odstrániť len vlastník pracovného priestoru.",
       "removeConnections": "Jeho pripojenia v tomto pracovnom priestore ({{count}}) sa odstránia aj s uloženými kľúčmi a prístupmi.",
+      "unlinks": "Jeho bankové pripojenia ({{count}}) sa prestanú synchronizovať. Účty a transakcie zostanú ako manuálne účty.",
       "removeNothing": "Kód pluginu sa z vášho servera odstráni, keď ho žiadny pracovný priestor nepoužíva.",
       "auth": {
         "credentials": "Kľúč alebo heslo",
@@ -3649,6 +3666,15 @@
         "install": "Tento plugin neprináša údaje. Skontrolujte, čo smie robiť jeho kód:",
         "update": "Skontrolujte, čo smie robiť nová verzia:",
         "remove": "Jeho kód v tomto pracovnom priestore prestane bežať."
+      },
+      "provides": "Synchronizuje sa ako pripojená banka",
+      "providesHint": "Securo pridá tieto záznamy do tohto pracovného priestoru a udržiava ich aktuálne, ako pri pripojenej banke. Každé pripojenie sa zobrazí v sekcii „Prepojenia bánk“.",
+      "kinds": {
+        "accounts": "Účty",
+        "transactions": "transakcie",
+        "bills": "vyúčtovania kariet",
+        "holdings": "investície",
+        "trades": "nákupy a predaje"
       }
     },
     "connections": {
@@ -3686,8 +3712,13 @@
       "added": "{{name}}: pripojené",
       "removeTitle": "Odstrániť {{name}}?",
       "removeHint": "Uložené kľúče a prístup k tomuto pracovnému priestoru sa vymažú. Čo už bolo načítané, zostane.",
+      "removeBankHint": "Synchronizuje sa ako pripojená banka: odstránením sa táto banka odpojí a odstránia sa synchronizované účty aj s transakciami.",
       "removed": "{{name}}: odstránené",
-      "copyFailed": "Kopírovanie zlyhalo. Označte adresu a skopírujte ju ručne."
+      "copyFailed": "Kopírovanie zlyhalo. Označte adresu a skopírujte ju ručne.",
+      "editTitle": "Znovu pripojiť {{name}}",
+      "editHint": "Aktualizujte, čo sa zmenilo, napríklad nové heslo alebo token. Potom sa pripojenie znova synchronizuje.",
+      "keepBlank": "Nechajte pole prázdne, aby sa zachovala jeho súčasná hodnota.",
+      "updated": "{{name}} aktualizované"
     },
     "oauth": {
       "title": "Dokončuje sa prihlásenie",
