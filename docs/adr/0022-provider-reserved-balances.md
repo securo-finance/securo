@@ -30,6 +30,10 @@ balance contract and a separate decision; #1512 tracks that discussion.
 - **Provider contract**: `ReservedBalanceData` and
   `AccountData.reserved_balances` in `app/providers/base.py`.
   `None` means unreported or incomplete; `[]` means explicitly empty.
+  A provider plugin reports the same collection in its account payload,
+  through `ReservedBalance` and `Account.reserved_balances` in
+  `app/plugins/contract.py`, with the same `None` and `[]` meanings and one
+  record per `(external_id, currency)`.
 - **Complete reads only**: `app/providers/pluggy.py::_reserved_balances` checks
   the collection, every identification and every remuneration band.
   `availableAmounts` must be a non-empty list of usable bands. If any entry or
@@ -68,7 +72,11 @@ balance contract and a separate decision; #1512 tracks that discussion.
 `backend/tests/test_providers_pluggy.py` (complete parsing, invalid bands and
 scalar `availableAmounts`), `backend/tests/test_connection_service.py`
 (duplicate keys, partial responses preserving stored rows, rename, deletion
-and workspace stamping), `backend/tests/test_accounts_api.py` (display payload
+and workspace stamping), `backend/tests/test_plugin_contract.py` (the plugin
+payload's `None` and `[]`, duplicate identity and amount validation),
+`backend/tests/test_provider_plugins.py` (a plugin payload synced through the
+real pipeline stores, preserves and clears reserves without changing the
+balance), `backend/tests/test_accounts_api.py` (display payload
 with provider balances unchanged), `backend/tests/test_dashboard_service.py`
 and `backend/tests/test_report_service.py` (reserves never change totals),
 `backend/tests/test_cashflow_forecast.py` (forecast unchanged),
