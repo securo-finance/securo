@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { collections as collectionsApi } from '@/lib/api'
 import { useWorkspace } from '@/contexts/workspace-context'
@@ -39,16 +39,12 @@ export function CollectionFilterProvider({ children }: { children: ReactNode }) 
   )
 
   // If the active collection was deleted elsewhere, fall back to "all".
-  useEffect(() => {
-    if (activeCollectionId && collections.length > 0 && !activeCollection) {
-      setActiveCollectionId(null)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeCollectionId, collections, activeCollection])
+  const activeId =
+    activeCollectionId && !activeCollection && collections.length > 0 ? null : activeCollectionId
 
   const value: CollectionFilterValue = {
     collections,
-    activeCollectionId,
+    activeCollectionId: activeId,
     activeCollection,
     setActiveCollectionId,
     activeAccountIds: activeCollection ? activeCollection.account_ids : null,

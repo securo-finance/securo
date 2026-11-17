@@ -45,13 +45,18 @@ export function BankConnectDialog({
     onClose()
   })
 
-  useEffect(() => {
+  const [prevOpen, setPrevOpen] = useState(open)
+  if (prevOpen !== open) {
+    setPrevOpen(open)
     if (!open) {
       setConnectToken(null)
       setSyncAssets(true)
       setOptionsConfirmed(false)
-      return
     }
+  }
+
+  useEffect(() => {
+    if (!open) return
 
     if (needsInitialOptions && !optionsConfirmed) return
 

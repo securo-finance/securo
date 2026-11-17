@@ -15,6 +15,7 @@ import { localDateString } from '@/lib/date-utils'
 import { formatDateRange } from '@/lib/date-range-format'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import { useDateLocale } from '@/hooks/use-display-locale'
+import { useToday } from '@/hooks/use-today'
 
 export interface DateRangePickerProps {
   /** Inclusive start date as YYYY-MM-DD, or empty string when unset. */
@@ -90,6 +91,7 @@ export function DateRangePicker({
   // The trigger label has to read in the same language as the calendar below
   // it, so both follow the app language rather than the currency locale.
   const dateLocale = useDateLocale()
+  const today = useToday()
   const dateFnsLocale = resolveDateFnsLocale(i18n.resolvedLanguage ?? i18n.language)
   const [open, setOpen] = useState(false)
   const [draftFrom, setDraftFrom] = useState(from)
@@ -214,7 +216,7 @@ export function DateRangePicker({
             <Calendar
               selected={draftFrom ? new Date(draftFrom + 'T00:00:00') : undefined}
               defaultMonth={
-                draftFrom ? new Date(draftFrom + 'T00:00:00') : new Date()
+                draftFrom ? new Date(draftFrom + 'T00:00:00') : today
               }
               locale={dateFnsLocale}
               onSelect={(d) => setDraftFrom(d ? localDateString(d) : '')}
@@ -231,7 +233,7 @@ export function DateRangePicker({
                   ? new Date(draftTo + 'T00:00:00')
                   : draftFrom
                     ? new Date(draftFrom + 'T00:00:00')
-                    : new Date()
+                    : today
               }
               locale={dateFnsLocale}
               onSelect={(d) => setDraftTo(d ? localDateString(d) : '')}
