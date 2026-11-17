@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { getAccountLabel, getAccountName, sortAccountsByAbsoluteBalance, sumAccountBalances } from '@/lib/account-utils'
 import { currentMonth, shiftMonth, monthLastDay, monthLabel, monthRange } from '@/lib/month-utils'
 import { useTranslation } from 'react-i18next'
@@ -39,12 +39,15 @@ import {
   DefaultTooltipContent,
   ResponsiveContainer,
 } from 'recharts'
-import { CheckCircle2, CalendarIcon, ChevronDown, Clock, Paperclip, Target, ArrowUpDown, HelpCircle, EyeClosed, AlertCircle } from 'lucide-react'
+import { Check, CheckCircle2, CalendarIcon, ChevronDown, Clock, Paperclip, Plus, RotateCcw, Target, ArrowUpDown, HelpCircle, EyeClosed, AlertCircle, LayoutDashboard } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ICON_MAP } from '@/lib/category-icons'
 import { PageHeader } from '@/components/page-header'
 import { PageRefreshButton } from '@/components/page-refresh-button'
+import { BudgetSpendingProgress } from '@/components/budget-spending-progress'
 import { CategoryIcon } from '@/components/category-icon'
+import { CategorySplitBadge, TransactionCategoryIcon } from '@/components/category-lines-display'
+import { isSplitByCategory, projectedSplitSource } from '@/lib/category-lines'
 import { AccountIcon } from '@/components/account-icon'
 import { TransactionDrillDown, type DrillDownFilter } from '@/components/transaction-drill-down'
 import { TransactionDialog, type TransactionSavePayload } from '@/components/transaction-dialog'
@@ -60,6 +63,25 @@ import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import type { Rule, Transaction } from '@/types'
 import { formatCompactCurrency, formatCurrency } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
+import { readCalendarDateBasis } from '@/lib/transaction-calendar'
+import { WidgetGrid } from '@/components/widget-grid'
+import {
+  AgingWidget,
+  AssistantWidget,
+  CreditCardsWidget,
+  InvoicesDueWidget,
+  InvoiceTotalsWidget,
+  MonthResultWidget,
+  RecurringRevenueWidget,
+  SpendingDistributionWidget,
+  SpendingPaceWidget,
+  UpcomingWidget,
+  type DashboardScope,
+} from '@/components/dashboard-widgets'
+import { DASHBOARD_WIDGETS } from '@/lib/library'
+import { useLayout } from '@/hooks/use-layout'
+import { useEntryAvailability } from '@/hooks/use-entry-availability'
+import { useLibrary } from '@/contexts/library-context'
 
 function formatDate(dateStr: string, locale = 'pt-BR') {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString(locale)
@@ -119,6 +141,18 @@ export default function DashboardPage() {
   const displayName = user?.preferences?.display_name || ''
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
+  const dashboardLayout = useLayout('dashboard')
+  const { openLibrary } = useLibrary()
+  const [editing, setEditing] = useState(false)
+  // A widget this workspace can't run (invoices in a Personal one, the agent
+  // with agents off) isn't drawn, but stays in the saved arrangement.
+  const unavailable = useEntryAvailability()
+  const availableWidgets = DASHBOARD_WIDGETS.filter((entry) => unavailable(entry) === null)
+  const availableIds = new Set(availableWidgets.map((entry) => entry.id))
+  const gridItems = dashboardLayout.items.filter((item) => availableIds.has(item.id))
+  const keptItems = dashboardLayout.items.filter((item) => !availableIds.has(item.id))
+  // A widget that isn't on the dashboard doesn't load its data.
+  const shows = (id: string) => dashboardLayout.ready && dashboardLayout.ids.includes(id)
 
   const greeting = (() => {
     const hour = new Date().getHours()
@@ -137,6 +171,7 @@ export default function DashboardPage() {
     searchParams.get('view') === 'calendar' ? 'calendar' : 'list'
   ))
   const [calendarSelectedDate, setCalendarSelectedDate] = useState<string>(() => searchParams.get('day') ?? '')
+  const [calendarDateBasis, setCalendarDateBasis] = useState(readCalendarDateBasis)
 
   const prevSearchRef = useRef<string | null>(null)
   const searchParamsRef = useRef(searchParams)
@@ -212,7 +247,7 @@ export default function DashboardPage() {
   const { data: comparisonMonthOptions, isLoading: comparisonMonthsLoading } = useQuery({
     queryKey: ['dashboard', 'balance-history-months', activeAccountIds],
     queryFn: () => dashboard.balanceHistoryMonths(acctIds),
-    enabled: !noAccounts,
+    enabled: !noAccounts && shows('balance-flow'),
     staleTime: 60_000,
   })
   const availableComparisonMonths = comparisonMonthOptions ?? EMPTY_COMPARISON_MONTHS
@@ -277,12 +312,13 @@ export default function DashboardPage() {
   const { data: summary, isLoading: summaryLoading, isFetching: summaryFetching } = useQuery({
     queryKey: ['dashboard', 'summary', selectedMonth, activeAccountIds, activeWalletIds],
     queryFn: () => dashboard.summary(monthParam, undefined, acctIds, walletIds),
+    enabled: shows('overview') || shows('uncategorized'),
   })
 
   const { data: spending, isLoading: spendingLoading } = useQuery({
     queryKey: ['dashboard', 'spending', selectedMonth, activeAccountIds],
     queryFn: () => dashboard.spendingByCategory(monthParam, acctIds),
-    enabled: !noAccounts,
+    enabled: !noAccounts && shows('spending-by-category'),
   })
 
 
@@ -293,7 +329,7 @@ export default function DashboardPage() {
       acctIds,
       comparisonMonths.length > 0 ? comparisonMonths.map((value) => `${value}-01`) : undefined,
     ),
-    enabled: !noAccounts && !comparisonMonthsLoading,
+    enabled: !noAccounts && !comparisonMonthsLoading && shows('balance-flow'),
   })
 
   const { data: currentMonthTxs, isLoading: currentTxLoading } = useQuery({
@@ -305,18 +341,19 @@ export default function DashboardPage() {
       exclude_transfers: true,
       account_ids: acctIds,
     }),
-    enabled: !noAccounts,
+    enabled: !noAccounts && shows('transactions'),
   })
 
   // Same month grid the transactions page renders, scoped to the active
   // collection's accounts. Only fetched while the calendar is on screen.
   const calendarAccountIds = acctIds && acctIds.length > 0 ? acctIds : undefined
   const { data: calendarData, isLoading: calendarLoading } = useQuery({
-    queryKey: ['transactions', 'calendar', selectedMonth, activeAccountIds],
-    enabled: txViewMode === 'calendar' && !noAccounts,
+    queryKey: ['transactions', 'calendar', selectedMonth, activeAccountIds, calendarDateBasis],
+    enabled: txViewMode === 'calendar' && !noAccounts && shows('transactions'),
     queryFn: () => transactions.calendar({
       month: monthStart,
       account_ids: calendarAccountIds,
+      date_basis: calendarDateBasis,
     }),
   })
 
@@ -335,11 +372,13 @@ export default function DashboardPage() {
   const { data: projectedTxs, isLoading: projectedTxLoading } = useQuery({
     queryKey: ['dashboard', 'projected-transactions', selectedMonth],
     queryFn: () => dashboard.projectedTransactions({ month: monthParam }),
+    enabled: shows('transactions'),
   })
 
   const { data: budgetComparison } = useQuery({
     queryKey: ['budgets', 'comparison', selectedMonth],
     queryFn: () => budgets.comparison(monthParam),
+    enabled: shows('spending-by-category'),
   })
 
   const { data: categoriesList } = useQuery({
@@ -365,6 +404,7 @@ export default function DashboardPage() {
   const { data: goalsSummary } = useQuery({
     queryKey: ['goals', 'summary'],
     queryFn: () => goalsApi.summary(3),
+    enabled: shows('goals'),
   })
 
   const updateMutation = useMutation({
@@ -623,6 +663,8 @@ export default function DashboardPage() {
     installmentNumber: number | null
     totalInstallments: number | null
     showPendingBadge: boolean
+    /** Set when the row is split across categories, to label its parts. */
+    splitSource: Transaction | null
   }
 
   const [txPerPage, setTxPerPage] = useState<number>(() => {
@@ -673,9 +715,12 @@ export default function DashboardPage() {
         installmentNumber: tx.installment_number,
         totalInstallments: tx.total_installments,
         showPendingBadge: shouldShowPendingBadge(tx),
+        splitSource: isSplitByCategory(tx) ? tx : null,
       })
     }
     for (const pt of projectedTxs ?? []) {
+      // A split template's occurrence shows its parts like a split row.
+      const projectedSplit = projectedSplitSource(pt) as Transaction | null
       rows.push({
         key: `proj-${pt.recurring_id}-${pt.date}`,
         description: pt.description,
@@ -700,6 +745,7 @@ export default function DashboardPage() {
         installmentNumber: null,
         totalInstallments: null,
         showPendingBadge: false,
+        splitSource: projectedSplit,
       })
     }
     rows.sort((a, b) => txSortDesc ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date))
@@ -723,55 +769,31 @@ export default function DashboardPage() {
     ? '---'
     : `${savingsRate.toFixed(0)}%`
 
-  return (
-    <div>
-      {/* Header */}
-      <PageHeader
-        section={greeting}
-        title={monthLabel(selectedMonth, uiLocale).replace(/^\w/, c => c.toUpperCase())}
-        action={
-          <div className="flex items-center gap-1">
-            <button
-              className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
-              onClick={() => handleMonthChange(shiftMonth(selectedMonth, -1))}
-            >&#8249;</button>
-            <Popover open={headerCalOpen} onOpenChange={setHeaderCalOpen}>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className="inline-flex items-center justify-center gap-2 border border-border rounded-lg px-3 py-1.5 text-sm bg-card text-foreground hover:bg-muted/50 transition-all cursor-pointer min-w-[180px]"
-                >
-                  <CalendarIcon className="size-3.5 text-muted-foreground" />
-                  {monthLabel(selectedMonth, uiLocale).replace(/^\w/, c => c.toUpperCase())}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent align="center" className="w-auto p-0">
-                <MonthPicker
-                  locale={dateFnsLocale}
-                  selectedMonth={new Date(`${selectedMonth}-01T00:00:00`)}
-                  onMonthSelect={(date) => {
-                    if (!date) return
-                    const newMonth = format(date, 'yyyy-MM')
-                    setSelectedMonth(newMonth)
-                    setHeaderCalOpen(false)
-                  }}
-                />
-              </PopoverContent>
-            </Popover>
-            <button
-              className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
-              onClick={() => handleMonthChange(shiftMonth(selectedMonth, 1))}
-            >&#8250;</button>
-            <PageRefreshButton
-              onRefresh={() => queryClient.refetchQueries({ type: 'active' })}
-              refreshing={summaryFetching}
-            />
-          </div>
-        }
-      />
+  // Widgets that load their own data see the same month and collection.
+  const widgetScope: DashboardScope = {
+    month: selectedMonth,
+    activeAccountIds,
+    activeWalletIds,
+    noAccounts,
+    currency: userCurrency,
+  }
 
-      {/* Hero Card: Available Balance + secondary indicators */}
-      <div className="bg-card rounded-xl border border-border shadow-sm mb-5 px-5 pt-5 pb-4">
+  // What each widget shows; the grid places them as this person arranged them.
+  const widgetContent: Record<string, ReactNode> = {
+    'spending-pace': <SpendingPaceWidget scope={widgetScope} />,
+    'spending-distribution': <SpendingDistributionWidget scope={widgetScope} />,
+    'month-result': <MonthResultWidget scope={widgetScope} />,
+    upcoming: <UpcomingWidget scope={widgetScope} />,
+    'credit-cards': <CreditCardsWidget scope={widgetScope} />,
+    assistant: <AssistantWidget />,
+    receivables: <InvoiceTotalsWidget direction="receivable" scope={widgetScope} />,
+    payables: <InvoiceTotalsWidget direction="payable" scope={widgetScope} />,
+    'receivables-aging': <AgingWidget scope={widgetScope} />,
+    'invoices-due': <InvoicesDueWidget />,
+    'recurring-revenue': <RecurringRevenueWidget scope={widgetScope} />,
+    'overview': (
+      // A container, so the indicators below lay out by the widget's width, not the screen's.
+      <div className="@container bg-card rounded-xl border border-border shadow-sm px-5 pt-5 pb-4">
         {/* Available balance in checking/savings accounts */}
         <div className="pb-4 mb-4 border-b border-border">
           <p className="text-xs font-semibold text-muted-foreground mb-1">{t('dashboard.availableBalance')}</p>
@@ -850,7 +872,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Secondary indicators */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-4">
+        <div className="grid grid-cols-2 @xl:grid-cols-4 gap-x-5 gap-y-4">
           {/* Income */}
           <button
             type="button"
@@ -882,7 +904,7 @@ export default function DashboardPage() {
           {/* Expenses */}
           <button
             type="button"
-            className="relative min-w-0 text-left cursor-pointer hover:opacity-70 transition-opacity before:content-[''] before:hidden sm:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border"
+            className="relative min-w-0 text-left cursor-pointer hover:opacity-70 transition-opacity before:content-[''] before:hidden @xl:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border"
             onClick={() => setDrillDown({
               title: t('dashboard.drillDownExpenses', { month: monthLabelStr }),
               type: 'debit',
@@ -908,7 +930,7 @@ export default function DashboardPage() {
           </button>
 
           {/* Net worth */}
-          <div className="relative min-w-0 before:content-[''] before:hidden sm:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border">
+          <div className="relative min-w-0 before:content-[''] before:hidden @xl:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border">
             <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center gap-1">
               {t('dashboard.netWorth')}
               <Tooltip>
@@ -977,7 +999,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Savings rate */}
-          <div className="relative min-w-0 before:content-[''] before:hidden sm:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border">
+          <div className="relative min-w-0 before:content-[''] before:hidden @xl:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border">
             <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center">{t('dashboard.savingsRate')}</p>
             {summaryLoading ? (
               <Skeleton className="h-6 w-16" />
@@ -999,13 +1021,13 @@ export default function DashboardPage() {
           </p>
         )}
       </div>
-
-      {/* Uncategorized banner */}
-      {!summaryLoading && (
+    ),
+    'uncategorized': (
+      !summaryLoading && (
         uncategorizedCount > 0 ? (
           <button
             type="button"
-            className="w-full flex items-center justify-between gap-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg px-4 py-2.5 mb-5 cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors"
+            className="w-full flex items-center justify-between gap-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg px-4 py-2.5 cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors"
             onClick={() => setDrillDown({
               title: t('dashboard.drillDownUncategorized'),
               uncategorized: true,
@@ -1031,16 +1053,14 @@ export default function DashboardPage() {
             </span>
           </button>
         ) : (
-          <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-lg px-4 py-2.5 mb-5">
+          <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-lg px-4 py-2.5">
             <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
             <span className="text-sm text-emerald-900 dark:text-emerald-200">{t('dashboard.allCategorized')}</span>
           </div>
         )
-      )}
-
-      {/* Charts: Category Spending Bars + Balance Evolution */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5" style={{ gridAutoRows: 'minmax(380px, auto)' }}>
-        {/* Category Spending Bars */}
+      )
+    ),
+    'spending-by-category': (
         <div className="bg-card rounded-xl border border-border shadow-sm flex flex-col max-h-[420px]">
           <div className="px-5 py-4 border-b border-border shrink-0 flex items-center justify-between">
             <p className="text-sm font-semibold text-foreground">{t('dashboard.spendingByCategory')}</p>
@@ -1064,9 +1084,6 @@ export default function DashboardPage() {
                 {mergedCategories.map((item) => {
                   const hasBudget = item.budget_amount != null && item.budget_amount > 0
                   const pct = item.percentage_used
-                  const barColor = hasBudget
-                    ? pct! > 100 ? 'bg-rose-500' : pct! >= 80 ? 'bg-amber-400' : 'bg-emerald-500'
-                    : 'bg-muted-foreground/20'
 
                   return (
                     <div
@@ -1096,18 +1113,7 @@ export default function DashboardPage() {
                             </div>
                           </div>
                           {hasBudget && (
-                            <div className="flex items-center gap-2">
-                              <div className="flex-1 h-1.5 bg-muted/60 rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full transition-all ${barColor}`}
-                                  style={{ width: `${Math.min(pct!, 100)}%` }}
-                                />
-                              </div>
-                              <span className={`text-[11px] tabular-nums font-medium shrink-0 ${pct! > 100 ? 'text-rose-500' : pct! >= 80 ? 'text-amber-500' : 'text-muted-foreground'
-                                }`}>
-                                {mask(t('dashboard.ofBudget', { budget: formatCurrency(item.budget_amount!, userCurrency, locale) }))}
-                              </span>
-                            </div>
+                            <BudgetSpendingProgress categoryName={item.category_name} percentage={pct!} budgetAmount={item.budget_amount!} currency={userCurrency} />
                           )}
                         </div>
                       </div>
@@ -1120,8 +1126,8 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
-
-        {/* Cumulative Spending Comparison */}
+    ),
+    'balance-flow': (
         <div className="bg-card rounded-xl border border-border shadow-sm max-h-[420px] flex flex-col">
           <div className="px-5 pt-5 pb-3 shrink-0">
             <div className="flex items-start justify-between mb-0.5">
@@ -1198,23 +1204,23 @@ export default function DashboardPage() {
             </div>
             <div className="flex items-center gap-3 mt-2">
               <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <span className="inline-block w-3 h-0.5 rounded-full bg-emerald-500" />
+                <span className="inline-block w-3 h-0.5 rounded-full bg-chart-income" />
                 {t('dashboard.balanceCurrentMonthLegend')}
               </span>
               {comparisonMonths.length === 1 ? (
                 <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                  <span className="inline-block w-3 border-t-2 border-dashed border-slate-400" />
+                  <span className="inline-block w-3 border-t-2 border-dashed border-chart-muted" />
                   {monthLabel(comparisonMonths[0], uiLocale)}
                 </span>
               ) : (
                 <>
                   <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                    <span className="inline-block w-3 h-0.5 rounded-full bg-slate-400" />
+                    <span className="inline-block w-3 h-0.5 rounded-full bg-chart-muted" />
                     {t('dashboard.balanceMedianLegend')}
                   </span>
                   {cumulativeData.some((point) => point.band !== null) && (
                     <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <span className="inline-block w-3 h-2 rounded-sm bg-slate-400/25" />
+                      <span className="inline-block w-3 h-2 rounded-sm bg-chart-muted/25" />
                       {t('dashboard.balanceRangeLegend')}
                     </span>
                   )}
@@ -1255,8 +1261,8 @@ export default function DashboardPage() {
                 >
                   <defs>
                     <linearGradient id="cumGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10B981" stopOpacity={0.18} />
-                      <stop offset="95%" stopColor="#10B981" stopOpacity={0.02} />
+                      <stop offset="5%" stopColor="var(--chart-income)" stopOpacity={0.18} />
+                      <stop offset="95%" stopColor="var(--chart-income)" stopOpacity={0.02} />
                     </linearGradient>
                   </defs>
                   <XAxis
@@ -1291,7 +1297,7 @@ export default function DashboardPage() {
                             ...entry,
                             color: entry.value === 0
                               ? 'var(--muted-foreground)'
-                              : entry.value > 0 ? '#10B981' : '#F43F5E',
+                              : entry.value > 0 ? 'var(--chart-income)' : 'var(--chart-expense)',
                           }
                           : entry)}
                       />
@@ -1327,7 +1333,7 @@ export default function DashboardPage() {
                     type="monotone"
                     dataKey="band"
                     stroke="none"
-                    fill="#94A3B8"
+                    fill="var(--chart-muted)"
                     fillOpacity={0.22}
                     dot={false}
                     activeDot={false}
@@ -1336,21 +1342,21 @@ export default function DashboardPage() {
                   <Area
                     type="monotone"
                     dataKey="current"
-                    stroke="#10B981"
+                    stroke="var(--chart-income)"
                     strokeWidth={2}
                     fill="url(#cumGrad)"
                     dot={false}
-                    activeDot={{ r: 3, fill: '#10B981' }}
+                    activeDot={{ r: 3, fill: 'var(--chart-income)' }}
                     connectNulls={false}
                   />
                   <Line
                     type="monotone"
                     dataKey={comparisonMonths.length === 1 ? 'comparison' : 'median'}
-                    stroke="#94A3B8"
+                    stroke="var(--chart-muted)"
                     strokeWidth={2}
                     strokeDasharray={comparisonMonths.length === 1 ? '5 3' : undefined}
                     dot={false}
-                    activeDot={{ r: 3, fill: '#94A3B8' }}
+                    activeDot={{ r: 3, fill: 'var(--chart-muted)' }}
                     connectNulls={false}
                   />
                 </ComposedChart>
@@ -1393,11 +1399,10 @@ export default function DashboardPage() {
             )
           })()}
         </div>
-      </div>
-
-      {/* Goals Progress Widget */}
-      {goalsSummary && goalsSummary.length > 0 && (
-        <div className="bg-card rounded-xl border border-border shadow-sm mb-5">
+    ),
+    'goals': (
+      goalsSummary && goalsSummary.length > 0 && (
+        <div className="bg-card rounded-xl border border-border shadow-sm">
           <div className="px-5 py-4 border-b border-border flex items-center justify-between">
             <p className="text-sm font-semibold text-foreground">{t('goals.dashboardTitle')}</p>
             <Link to="/goals" className="text-xs font-medium text-primary hover:underline">
@@ -1464,9 +1469,9 @@ export default function DashboardPage() {
             })}
           </div>
         </div>
-      )}
-
-      {/* Period Transactions */}
+      )
+    ),
+    'transactions': (
       <div>
         {/* One control bar for both views, so the switch never moves between them. */}
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -1502,6 +1507,8 @@ export default function DashboardPage() {
             onOpenTransaction={handleOpenCalendarTransaction}
             accounts={accountsList}
             userCurrency={userCurrency}
+            dateBasis={calendarDateBasis}
+            onDateBasisChange={setCalendarDateBasis}
           />
         )}
 
@@ -1534,13 +1541,16 @@ export default function DashboardPage() {
                       >
                         {/* Category Icon */}
                         <div className="shrink-0">
-                          <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="md" />
+                          {row.splitSource
+                            ? <TransactionCategoryIcon tx={row.splitSource} size="md" />
+                            : <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="md" />}
                         </div>
 
                         {/* Content */}
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
                             <p className="text-sm font-semibold text-foreground truncate leading-tight">{row.description}</p>
+                            {row.splitSource && <CategorySplitBadge tx={row.splitSource} compact className="shrink-0 text-[9px] px-1" />}
                             {row.groupId && (
                               <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1 py-0.5 rounded-full shrink-0">
                                 {row.isShared && row.parentOwnerName
@@ -1651,10 +1661,13 @@ export default function DashboardPage() {
                           </TableCell>
                           <TableCell className="py-2.5 pl-5 sm:pl-0">
                             <div className="flex items-center gap-3">
-                              <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="lg" />
+                              {row.splitSource
+                                ? <TransactionCategoryIcon tx={row.splitSource} size="lg" />
+                                : <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="lg" />}
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2">
                                   <p className="text-sm font-semibold text-foreground truncate">{row.description}</p>
+                                  {row.splitSource && <CategorySplitBadge tx={row.splitSource} className="shrink-0" />}
                                   {row.groupId && (
                                     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300 shrink-0 uppercase tracking-wide">
                                       {row.isShared && row.parentOwnerName
@@ -1800,6 +1813,110 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+    ),
+  }
+
+  return (
+    <div>
+      {/* Header */}
+      <PageHeader
+        section={greeting}
+        title={monthLabel(selectedMonth, uiLocale).replace(/^\w/, c => c.toUpperCase())}
+        action={
+          <div className="flex items-center gap-1">
+            <button
+              className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
+              onClick={() => handleMonthChange(shiftMonth(selectedMonth, -1))}
+            >&#8249;</button>
+            <Popover open={headerCalOpen} onOpenChange={setHeaderCalOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center gap-2 border border-border rounded-lg px-3 py-1.5 text-sm bg-card text-foreground hover:bg-muted/50 transition-all cursor-pointer min-w-[180px]"
+                >
+                  <CalendarIcon className="size-3.5 text-muted-foreground" />
+                  {monthLabel(selectedMonth, uiLocale).replace(/^\w/, c => c.toUpperCase())}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="center" className="w-auto p-0">
+                <MonthPicker
+                  locale={dateFnsLocale}
+                  selectedMonth={new Date(`${selectedMonth}-01T00:00:00`)}
+                  onMonthSelect={(date) => {
+                    if (!date) return
+                    const newMonth = format(date, 'yyyy-MM')
+                    setSelectedMonth(newMonth)
+                    setHeaderCalOpen(false)
+                  }}
+                />
+              </PopoverContent>
+            </Popover>
+            <button
+              className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
+              onClick={() => handleMonthChange(shiftMonth(selectedMonth, 1))}
+            >&#8250;</button>
+            <PageRefreshButton
+              onRefresh={() => queryClient.refetchQueries({ type: 'active' })}
+              refreshing={summaryFetching}
+            />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={editing ? 'secondary' : 'outline'}
+                  size="icon"
+                  className="!size-9"
+                  aria-label={t('library.customizeDashboard')}
+                  aria-pressed={editing}
+                  onClick={() => setEditing((on) => !on)}
+                >
+                  <LayoutDashboard size={16} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('library.customizeDashboard')}</TooltipContent>
+            </Tooltip>
+          </div>
+        }
+      />
+
+      {editing && (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3 shadow-sm">
+          <p className="text-sm text-muted-foreground">{t('library.editingDashboard')}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            {dashboardLayout.isCustom && (
+              <Button variant="ghost" size="sm" onClick={dashboardLayout.reset}>
+                <RotateCcw size={14} className="mr-1" />
+                {t('library.restoreDefault')}
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={() => openLibrary('widgets')}>
+              <Plus size={14} className="mr-1" />
+              {t('library.addWidget')}
+            </Button>
+            <Button size="sm" onClick={() => setEditing(false)}>
+              <Check size={14} className="mr-1" />
+              {t('library.done')}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {!dashboardLayout.ready ? (
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2" aria-hidden>
+          <Skeleton className="h-56 rounded-xl lg:col-span-2" />
+          <Skeleton className="h-[380px] rounded-xl" />
+          <Skeleton className="h-[380px] rounded-xl" />
+        </div>
+      ) : (
+      <WidgetGrid
+        items={gridItems}
+        entries={availableWidgets}
+        content={widgetContent}
+        editing={editing}
+        onChange={(next) => dashboardLayout.save([...next, ...keptItems])}
+        onAdd={() => openLibrary('widgets')}
+      />
+      )}
+
 
       <TransactionDrillDown
         filter={
@@ -1809,7 +1926,7 @@ export default function DashboardPage() {
               // Keep drill-downs consistent with the collection-scoped cards
               // they open from (e.g. "Categorize now").
               account_ids:
-                drillDown.account_ids ?? (acctIds && acctIds.length > 0 ? acctIds : undefined),
+                drillDown.account_ids ?? acctIds,
             }
             : null
         }

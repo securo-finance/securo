@@ -23,6 +23,7 @@ async def get_app_info():
             "agents": feature_flag("AGENTS_ENABLED"),
             "demo": feature_flag("DEMO_MODE"),
             "tesouro_direto": feature_flag("TESOURO_DIRETO_ENABLED"),
+            "plugins": feature_flag("PLUGINS_ENABLED"),
         },
     }
 

@@ -16,5 +16,6 @@ export function useFeatureFlags() {
     isLoading,
     agentsEnabled: !!data?.features?.agents,
     demoMode: !!data?.features?.demo,
+    pluginsEnabled: !!data?.features?.plugins,
   }
 }

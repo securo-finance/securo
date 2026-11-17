@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
 from app.models.credit_card_bill import CreditCardBill
+from app.models.fx_rate import FxRate
 from app.models.rule import Rule
 from app.models.transaction import Transaction
 from app.schemas.transaction import TransactionCreate, TransactionUpdate, TransferCreate
@@ -627,11 +628,11 @@ async def test_update_transaction(session: AsyncSession, test_user, test_workspa
         txn.id,
         test_workspace.id,
         test_user.id,
-        TransactionUpdate(description="New", amount=Decimal("99")),
+        TransactionUpdate(description="New"),
     )
     assert updated is not None
     assert updated.description == "New"
-    assert updated.amount == Decimal("99")
+    assert updated.amount == Decimal("10")
     assert updated.original_description == "Bank Raw"
     assert updated.description_is_rule_managed is False
 
@@ -1235,8 +1236,9 @@ async def test_get_transactions_skip_pagination(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("source", ["manual", "sync"])
 async def test_update_transaction_fx_override(
-    session: AsyncSession, test_user, test_workspace, txn_account
+    session: AsyncSession, test_user, test_workspace, txn_account, source
 ):
     txn = await create_transaction(
         session,
@@ -1250,11 +1252,18 @@ async def test_update_transaction_fx_override(
             type="debit",
         ),
     )
-    data = TransactionUpdate(amount_primary=Decimal("500"), fx_rate_used=Decimal("5"))
+    txn.source = source
+    await session.commit()
+    data = TransactionUpdate(
+        currency=txn.currency,
+        amount_primary=Decimal("500"),
+        fx_rate_used=Decimal("5"),
+    )
     updated = await update_transaction(session, txn.id, test_workspace.id, test_user.id, data)
 
     assert updated is not None
     assert updated.amount_primary == Decimal("500")
+    assert updated.fx_rate_used == Decimal("5")
 
 
 @pytest.mark.asyncio
@@ -1408,6 +1417,412 @@ async def test_update_transfer_cascades(
     assert paired is not None
     assert paired.description == "Updated Xfer"
     assert paired.description_is_rule_managed is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("new_amount", "new_date", "paired_currency"),
+    [
+        (Decimal("999.99"), None, "BRL"),
+        (None, date(2025, 3, 10), "BRL"),
+        (Decimal("999.99"), date(2025, 3, 10), "BRL"),
+        (Decimal("999.99"), date(2025, 3, 10), "USD"),
+    ],
+)
+async def test_update_transfer_preserves_synced_counterpart_amount_and_date(
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+    txn_account,
+    new_amount,
+    new_date,
+    paired_currency,
+):
+    manual, synced = await _create_mixed_source_pair(
+        session, test_user, test_workspace, txn_account,
+        synced_currency=paired_currency,
+    )
+
+    protected = (
+        synced.amount,
+        synced.date,
+        synced.amount_primary,
+        synced.fx_rate_used,
+        synced.effective_date,
+    )
+    payload = {}
+    if new_amount is not None:
+        payload["amount"] = new_amount
+    if new_date is not None:
+        payload["date"] = new_date
+
+    await update_transaction(
+        session,
+        manual.id,
+        test_workspace.id,
+        test_user.id,
+        TransactionUpdate(**payload),
+    )
+    await session.refresh(manual)
+    await session.refresh(synced)
+
+    if new_amount is not None:
+        assert manual.amount == new_amount
+    if new_date is not None:
+        assert manual.date == new_date
+    assert (
+        synced.amount,
+        synced.date,
+        synced.amount_primary,
+        synced.fx_rate_used,
+        synced.effective_date,
+    ) == protected
+
+
+async def _create_mixed_source_pair(
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+    account: Account,
+    *,
+    synced_currency: str = "BRL",
+) -> tuple[Transaction, Transaction]:
+    paired_account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name=f"Mixed pair {uuid.uuid4()}",
+        type="checking",
+        balance=Decimal("0"),
+        currency=synced_currency,
+    )
+    pair_id = uuid.uuid4()
+    manual = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        description="Manual transfer",
+        amount=Decimal("200"),
+        currency="BRL",
+        date=date(2025, 1, 15),
+        effective_date=date(2025, 1, 15),
+        type="debit",
+        source="manual",
+        transfer_pair_id=pair_id,
+    )
+    synced = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=paired_account.id,
+        description="Provider transfer",
+        original_description="Provider original",
+        amount=Decimal("123.45"),
+        currency=synced_currency,
+        date=date(2025, 1, 15),
+        effective_date=date(2025, 2, 20),
+        type="credit",
+        source="sync",
+        transfer_pair_id=pair_id,
+        amount_primary=Decimal("678.90"),
+        fx_rate_used=Decimal("5.5"),
+    )
+    session.add_all([paired_account, manual, synced])
+    await session.commit()
+    return manual, synced
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("apply_category", "clear_category"),
+    [(False, False), (True, False), (True, True)],
+)
+async def test_update_transfer_propagates_metadata_without_changing_synced_values(
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+    txn_account,
+    test_categories,
+    apply_category,
+    clear_category,
+):
+    manual, synced = await _create_mixed_source_pair(
+        session, test_user, test_workspace, txn_account
+    )
+    manual.category_id = test_categories[1].id
+    synced.category_id = test_categories[0].id
+    await session.commit()
+    protected = (
+        synced.amount,
+        synced.date,
+        synced.amount_primary,
+        synced.fx_rate_used,
+        synced.effective_date,
+    )
+    category_id = None if clear_category else test_categories[2].id
+
+    await update_transaction(
+        session,
+        manual.id,
+        test_workspace.id,
+        test_user.id,
+        TransactionUpdate(
+            description="Renamed transfer",
+            notes="Shared note",
+            category_id=category_id,
+            apply_to_transfer_pair=apply_category,
+        ),
+    )
+    await session.refresh(synced)
+
+    assert synced.description == "Renamed transfer"
+    assert synced.original_description == "Provider original"
+    assert synced.notes == "Shared note"
+    assert synced.category_id == (
+        category_id if apply_category else test_categories[0].id
+    )
+    assert (
+        synced.amount,
+        synced.date,
+        synced.amount_primary,
+        synced.fx_rate_used,
+        synced.effective_date,
+    ) == protected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"amount": Decimal("999.99")},
+        {"date": date(2025, 3, 10)},
+        {"amount": Decimal("999.99"), "date": date(2025, 3, 10)},
+        {"amount": None},
+        {"date": None},
+    ],
+)
+async def test_update_synced_transaction_rejects_provider_fields_before_metadata(
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+    txn_account,
+    payload,
+):
+    manual, synced = await _create_mixed_source_pair(
+        session, test_user, test_workspace, txn_account
+    )
+    original = (
+        synced.amount,
+        synced.date,
+        synced.amount_primary,
+        synced.fx_rate_used,
+        synced.effective_date,
+        synced.description,
+    )
+
+    with pytest.raises(
+        ValueError, match="Cannot change amount or date on a synchronized transaction"
+    ):
+        await update_transaction(
+            session,
+            synced.id,
+            test_workspace.id,
+            test_user.id,
+            TransactionUpdate(description="Must not land", **payload),
+        )
+
+    assert (
+        synced.amount,
+        synced.date,
+        synced.amount_primary,
+        synced.fx_rate_used,
+        synced.effective_date,
+        synced.description,
+    ) == original
+    await session.refresh(synced)
+    await session.refresh(manual)
+    assert synced.description == "Provider transfer"
+    assert manual.amount == Decimal("200")
+    assert manual.date == date(2025, 1, 15)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"amount": Decimal("123.45"), "date": date(2025, 1, 15)},
+        {"currency": "USD"},
+        {
+            "amount": Decimal("123.45"),
+            "currency": "USD",
+            "date": date(2025, 1, 15),
+        },
+    ],
+    ids=["amount-date", "currency-only", "full-form"],
+)
+async def test_equal_synced_provider_fields_are_idempotent(
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+    txn_account,
+    payload,
+):
+    manual, synced = await _create_mixed_source_pair(
+        session, test_user, test_workspace, txn_account, synced_currency="USD"
+    )
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "BRL"}
+    session.add(
+        FxRate(
+            base_currency="USD",
+            quote_currency="BRL",
+            date=synced.date,
+            rate=Decimal("6"),
+            source="test",
+        )
+    )
+    await session.commit()
+    protected = (
+        synced.amount,
+        synced.date,
+        synced.amount_primary,
+        synced.fx_rate_used,
+        synced.effective_date,
+    )
+
+    await update_transaction(
+        session,
+        synced.id,
+        test_workspace.id,
+        test_user.id,
+        TransactionUpdate(notes="Reviewed", **payload),
+    )
+    await session.refresh(synced)
+    await session.refresh(manual)
+
+    assert synced.notes == "Reviewed"
+    assert manual.notes == "Reviewed"
+    assert synced.currency == "USD"
+    assert (
+        synced.amount,
+        synced.date,
+        synced.amount_primary,
+        synced.fx_rate_used,
+        synced.effective_date,
+    ) == protected
+    assert manual.amount == Decimal("200")
+    assert manual.date == date(2025, 1, 15)
+
+
+@pytest.mark.asyncio
+async def test_update_synced_transaction_changed_currency_restamps_fx(
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+    txn_account,
+):
+    _, synced = await _create_mixed_source_pair(
+        session, test_user, test_workspace, txn_account, synced_currency="USD"
+    )
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "BRL"}
+    await session.commit()
+
+    await update_transaction(
+        session,
+        synced.id,
+        test_workspace.id,
+        test_user.id,
+        TransactionUpdate(currency="BRL"),
+    )
+    await session.refresh(synced)
+
+    assert synced.currency == "BRL"
+    assert synced.amount == Decimal("123.45")
+    assert synced.amount_primary == Decimal("123.45")
+    assert synced.fx_rate_used == Decimal("1")
+
+
+@pytest.mark.asyncio
+async def test_update_transfer_date_restamps_manual_counterpart_fx(
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+    txn_account,
+):
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "BRL"}
+    paired_account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="USD checking",
+        type="checking",
+        balance=Decimal("0"),
+        currency="USD",
+    )
+    pair_id = uuid.uuid4()
+    anchor = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=txn_account.id,
+        description="BRL transfer",
+        amount=Decimal("50"),
+        currency="BRL",
+        date=date(2025, 1, 15),
+        effective_date=date(2025, 1, 15),
+        type="debit",
+        source="manual",
+        transfer_pair_id=pair_id,
+    )
+    counterpart = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=paired_account.id,
+        description="USD transfer",
+        amount=Decimal("10"),
+        currency="USD",
+        date=date(2025, 1, 15),
+        effective_date=date(2025, 1, 15),
+        type="credit",
+        source="manual",
+        transfer_pair_id=pair_id,
+        amount_primary=Decimal("50"),
+        fx_rate_used=Decimal("5"),
+    )
+    session.add_all(
+        [
+            paired_account,
+            anchor,
+            counterpart,
+            FxRate(
+                base_currency="USD",
+                quote_currency="BRL",
+                date=date(2025, 1, 15),
+                rate=Decimal("5"),
+                source="test",
+            ),
+            FxRate(
+                base_currency="USD",
+                quote_currency="BRL",
+                date=date(2025, 3, 10),
+                rate=Decimal("6"),
+                source="test",
+            ),
+        ]
+    )
+    await session.commit()
+
+    await update_transaction(
+        session,
+        anchor.id,
+        test_workspace.id,
+        test_user.id,
+        TransactionUpdate(date=date(2025, 3, 10)),
+    )
+    await session.refresh(counterpart)
+
+    assert counterpart.amount == Decimal("10")
+    assert counterpart.amount_primary == Decimal("60")
+    assert counterpart.fx_rate_used == Decimal("6")
+    assert counterpart.date == date(2025, 3, 10)
+    assert counterpart.effective_date == date(2025, 3, 10)
 
 
 # ---------------------------------------------------------------------------

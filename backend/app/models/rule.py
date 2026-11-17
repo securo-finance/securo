@@ -1,18 +1,20 @@
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, Integer, JSON, String
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, JSON, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models.plugin_origin import PluginOrigin
 
 if TYPE_CHECKING:
     from app.models.user import User
 
 
-class Rule(Base):
+class Rule(Base, PluginOrigin):
     __tablename__ = "rules"
+    __table_args__ = (Index("ix_rules_workspace_source", "workspace_id", "source"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))

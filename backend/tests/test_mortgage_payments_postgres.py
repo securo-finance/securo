@@ -129,6 +129,8 @@ async def test_payment_edit_waits_for_a_breakdown_being_saved(
     payment, loan = await _make_payment_and_loan(
         session, test_user, test_workspace, snapshot_date=date(2026, 5, 31)
     )
+    payment.source = "manual"
+    await session.commit()
 
     async with postgres_sessions() as saving:
         await saving.execute(
@@ -155,7 +157,8 @@ async def test_payment_edit_waits_for_a_breakdown_being_saved(
         response = await asyncio.wait_for(edit, timeout=10)
 
     assert response.status_code == 400
-    assert "mortgage breakdown" in response.json()["detail"]
+    await session.refresh(payment)
+    assert payment.amount == Decimal("232.83")
 
 
 @pytest.mark.asyncio

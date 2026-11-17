@@ -229,6 +229,31 @@ async def test_income_expenses_basic_structure(session, test_user, test_workspac
         assert len(ct.series) == len(report.trend)
 
 
+async def test_income_expenses_uses_reporting_date_override(session, test_user, test_workspace):
+    bank_date = date.today().replace(day=1)
+    reporting_date = bank_date - timedelta(days=1)
+    account = await _make_account(session, test_user.id, "Reporting Date Account")
+    transaction = await _add_txn(
+        session,
+        test_user.id,
+        account.id,
+        100,
+        "debit",
+        bank_date,
+        source="sync",
+    )
+    transaction.reporting_date_override = reporting_date
+    await session.commit()
+
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id, months=2, interval="monthly"
+    )
+    trend = {point.date: point.breakdowns for point in report.trend}
+
+    assert trend[reporting_date.strftime("%Y-%m")]["expenses"] == pytest.approx(100.0)
+    assert trend[bank_date.strftime("%Y-%m")]["expenses"] == pytest.approx(0.0)
+
+
 async def test_income_expenses_empty_data(session, test_user, test_workspace):
     """No transactions → zeroed summary, empty composition / category trend."""
     report = await get_income_expenses_report(
@@ -534,6 +559,185 @@ async def test_cash_flow_monthly_interval_aggregation(session, test_user, test_w
     for dp in report.trend:
         assert "inflow" in dp.breakdowns
         assert "outflow" in dp.breakdowns
+
+
+@pytest.mark.parametrize("status", ["posted", "pending"])
+async def test_cash_flow_override_moves_reporting_bucket_not_balance(
+    session, test_user, test_workspace, status,
+):
+    account = await _make_account(session, test_user.id, "CF Reporting Date")
+    today = date.today()
+    bank_date = today - timedelta(days=1)
+    reporting_date = today + timedelta(days=2)
+    await _add_txn(
+        session, test_user.id, account.id, 1000, "credit",
+        today - timedelta(days=10), source="opening_balance",
+    )
+    transaction = await _add_txn(
+        session, test_user.id, account.id, 100, "debit", bank_date,
+        source="sync", status=status,
+    )
+    transaction.reporting_date_override = reporting_date
+    await session.commit()
+
+    report = await get_cash_flow_report(
+        session, test_workspace.id, test_user.id, months=1, interval="daily",
+    )
+    trend = {point.date: point for point in report.trend}
+
+    assert trend[today.isoformat()].value == pytest.approx(900 if status == "posted" else 1000)
+    assert trend[reporting_date.isoformat()].breakdowns["outflow"] == pytest.approx(100.0)
+    assert trend[reporting_date.isoformat()].value == pytest.approx(900.0)
+    assert trend[(bank_date - timedelta(days=1)).isoformat()].value == pytest.approx(1000.0)
+
+
+@pytest.mark.parametrize("accounting_mode", ["cash", "accrual"])
+@pytest.mark.parametrize("override", [False, True])
+async def test_cash_flow_uses_movement_or_reporting_date_not_invoice_attribution(
+    session, test_user, test_workspace, accounting_mode, override,
+):
+    from app.models.app_settings import AppSetting
+
+    session.add(AppSetting(key="credit_card_accounting_mode", value=accounting_mode))
+    await session.commit()
+    account = await _make_account(session, test_user.id, "CF Invoice Attribution")
+    today = date.today()
+    bank_date = today + timedelta(days=2)
+    accrual_date = today + timedelta(days=4)
+    invoice_date = today + timedelta(days=8)
+    reporting_date = today + timedelta(days=6)
+    await _add_txn(
+        session, test_user.id, account.id, 1000, "credit",
+        today - timedelta(days=10), source="opening_balance",
+    )
+    transaction = await _add_txn(
+        session, test_user.id, account.id, 100, "debit", bank_date,
+        source="sync", status="posted", effective_date=accrual_date,
+    )
+    transaction.effective_bill_date = invoice_date
+    transaction.reporting_date_override = reporting_date if override else None
+    await session.commit()
+
+    report = await get_cash_flow_report(
+        session, test_workspace.id, test_user.id, months=1, interval="daily",
+    )
+    trend = {point.date: point for point in report.trend}
+    movement_date = accrual_date if accounting_mode == "accrual" else bank_date
+    flow_date = reporting_date if override else movement_date
+
+    assert trend[flow_date.isoformat()].breakdowns["outflow"] == pytest.approx(100)
+    assert trend[invoice_date.isoformat()].breakdowns["outflow"] == 0
+    assert sum(point.breakdowns["outflow"] for point in report.trend) == pytest.approx(100)
+    assert trend[(movement_date - timedelta(days=1)).isoformat()].value == pytest.approx(1000)
+    assert trend[movement_date.isoformat()].value == pytest.approx(900)
+    assert trend[flow_date.isoformat()].value == pytest.approx(900)
+
+
+async def test_cash_flow_posted_cash_mode_keeps_manual_bill_override_on_bank_date(
+    session, test_user, test_workspace,
+):
+    account = await _make_account(
+        session, test_user.id, "CF Manual Card Invoice", acc_type="credit_card",
+    )
+    today = date.today()
+    bank_date = today + timedelta(days=2)
+    invoice_date = today + timedelta(days=8)
+    transaction = await _add_txn(
+        session, test_user.id, account.id, 100, "debit", bank_date,
+        status="posted", effective_date=invoice_date,
+    )
+    transaction.effective_bill_date = invoice_date
+    await session.commit()
+
+    report = await get_cash_flow_report(
+        session, test_workspace.id, test_user.id, months=1, interval="daily",
+    )
+    trend = {point.date: point for point in report.trend}
+
+    assert trend[bank_date.isoformat()].breakdowns["outflow"] == pytest.approx(100)
+    assert trend[bank_date.isoformat()].value == pytest.approx(-100)
+    assert trend[invoice_date.isoformat()].breakdowns["outflow"] == 0
+    assert trend[invoice_date.isoformat()].value == pytest.approx(-100)
+
+
+@pytest.mark.parametrize("accounting_mode", ["cash", "accrual"])
+@pytest.mark.parametrize("bank_days", [-2, 2, 90])
+@pytest.mark.parametrize("bill_days", [-1, 0, 8, 90])
+@pytest.mark.parametrize("connected", [False, True])
+async def test_cash_flow_pending_card_forecasts_on_manual_bill_date(
+    session, test_user, test_workspace, test_connection, monkeypatch,
+    accounting_mode, bank_days, bill_days, connected,
+):
+    from app.models.app_settings import AppSetting
+
+    today = date(2026, 1, 15)
+    monkeypatch.setattr("app.services.report_service.app_today", lambda: today)
+    monkeypatch.setattr("app.services.dashboard_service.app_today", lambda: today)
+    session.add(AppSetting(key="credit_card_accounting_mode", value=accounting_mode))
+    await session.commit()
+    account = await _make_account(
+        session, test_user.id, "CF Pending Card Invoice", acc_type="credit_card",
+        connection_id=test_connection.id if connected else None,
+    )
+    bank_date = today + timedelta(days=bank_days)
+    bill_date = today + timedelta(days=bill_days)
+    transaction = await _add_txn(
+        session, test_user.id, account.id, 100, "debit", bank_date,
+        source="sync" if connected else "manual", status="pending",
+        effective_date=bill_date,
+    )
+    transaction.effective_bill_date = bill_date
+    await session.commit()
+
+    report = await get_cash_flow_report(
+        session, test_workspace.id, test_user.id, months=1, interval="daily",
+    )
+    trend = {point.date: point for point in report.trend}
+    end = date(2026, 2, 28)
+    assert trend[today.isoformat()].value == 0
+    assert all(
+        point.breakdowns["outflow"] == 0
+        for point in report.trend if point.date <= today.isoformat()
+    )
+    future_outflow = 100 if today < bill_date <= end else 0
+    assert sum(point.breakdowns["outflow"] for point in report.trend) == future_outflow
+    if today < bill_date <= end:
+        assert trend[bill_date.isoformat()].breakdowns["outflow"] == 100
+        assert trend[(bill_date - timedelta(days=1)).isoformat()].value == 0
+    expected_balance = -100 if (
+        today < bill_date <= end or (bill_date <= today and not connected)
+    ) else 0
+    assert trend[end.isoformat()].value == expected_balance
+    if bill_date <= today:
+        assert trend[(today + timedelta(days=1)).isoformat()].value == expected_balance
+
+
+@pytest.mark.parametrize("accounting_mode", ["cash", "accrual"])
+async def test_cash_flow_baseline_ignores_invoice_attribution(
+    session, test_user, test_workspace, accounting_mode,
+):
+    account = await _make_account(session, test_user.id, "CF Baseline Invoice")
+    today = date.today()
+    bank_date = today - timedelta(days=10)
+    accrual_date = today - timedelta(days=5)
+    transaction = await _add_txn(
+        session, test_user.id, account.id, 100, "debit", bank_date,
+        effective_date=accrual_date,
+    )
+    transaction.effective_bill_date = today + timedelta(days=8)
+    await session.commit()
+
+    async def to_primary(amount, currency):
+        return float(amount)
+
+    projections, lookback = await _get_baseline_projection(
+        session, test_workspace.id, today, today + timedelta(days=1),
+        "BRL", to_primary, accounting_mode=accounting_mode,
+    )
+
+    assert lookback == (5 if accounting_mode == "accrual" else 10)
+    assert len(projections) == 1
+    assert projections[0]["amount"] == pytest.approx(100 / lookback)
 
 
 async def test_cash_flow_weekly_interval_aggregation(session, test_user, test_workspace):
