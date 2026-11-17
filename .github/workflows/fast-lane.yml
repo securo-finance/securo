@@ -15,6 +15,7 @@ name: fast lane
 #   3. none of its files match BLOCKED_PATHS below
 #   4. the three required checks are green on the exact head being merged
 #   5. a trusted reviewer left a verdict comment naming that same head SHA
+#   6. no unresolved CodeRabbit `Major` or `Critical` thread is left on it
 #
 # Gate 5 is a comment and not a GitHub review on purpose: posting a review is
 # one of the calls that needs a human approval, posting a comment is not. The
@@ -33,12 +34,18 @@ on:
     types: [created, edited]
   pull_request_review:
     types: [submitted, dismissed]
+  # Gate 3b below is a review thread, and resolving one starts no CI run:
+  # without this event a pull request held only by that gate would sit until
+  # something else happened.
+  pull_request_review_thread:
+    types: [resolved]
 
 permissions:
   contents: write
   pull-requests: write
   issues: write
   checks: read
+  actions: write
 
 concurrency:
   group: fast-lane-${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.id }}
@@ -148,9 +155,14 @@ jobs:
             // ---- 2. files that never take the fast lane ---------------------
             const files = await github.paginate(github.rest.pulls.listFiles,
               { owner: OWNER, repo: REPO, pull_number: number, per_page: 100 });
+            // A rename reports the new path in `filename` and the old one in
+            // `previous_filename`: moving a migration, an auth file or this
+            // workflow out of its directory would otherwise pass the list.
             for (const f of files) {
-              for (const [re, what] of BLOCKED) {
-                if (re.test(f.filename)) return skip(`${f.filename} is ${what}`);
+              for (const p of [f.filename, f.previous_filename].filter(Boolean)) {
+                for (const [re, what] of BLOCKED) {
+                  if (re.test(p)) return skip(`${p} is ${what}`);
+                }
               }
             }
 
@@ -158,12 +170,53 @@ jobs:
             const reviews = await github.paginate(github.rest.pulls.listReviews,
               { owner: OWNER, repo: REPO, pull_number: number, per_page: 100 });
             const latest = new Map();
+            // GitHub keeps a CHANGES_REQUESTED standing until it is dismissed,
+            // even if the same reviewer later leaves a plain comment. Storing
+            // every state would let a COMMENTED review clear the block.
             for (const r of reviews) {
-              if (r.user) latest.set(r.user.login, r.state);
+              if (r.user && ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(r.state)) {
+                latest.set(r.user.login, r.state);
+              }
             }
             const blocked = [...latest].filter(([, s]) => s === 'CHANGES_REQUESTED');
             if (blocked.length) {
               return skip(`changes requested by ${blocked.map(([u]) => u).join(', ')}`);
+            }
+
+            // ---- 3b. an unresolved CodeRabbit major thread blocks the merge -
+            // CodeRabbit only ever leaves a COMMENTED review, so the check
+            // above never sees its findings. A thread counts as triaged when
+            // someone resolves it; only `Major` and `Critical` hold the merge.
+            {
+              const query = `query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $number) {
+                    reviewThreads(first: 100) {
+                      nodes {
+                        isResolved
+                        isOutdated
+                        comments(first: 5) { nodes { author { login } body } }
+                      }
+                    }
+                  }
+                }
+              }`;
+              let threads = [];
+              try {
+                const data = await github.graphql(query,
+                  { owner: OWNER, repo: REPO, number });
+                threads = data.repository.pullRequest.reviewThreads.nodes || [];
+              } catch (e) {
+                return skip(`cannot read the review threads: ${e.message}`);
+              }
+              const open = threads
+                .filter((t) => !t.isResolved && !t.isOutdated)
+                .filter((t) => t.comments.nodes.some((c) =>
+                  c.author && c.author.login === 'coderabbitai'
+                  && /\b(major|critical)\b/i.test(c.body || '')));
+              if (open.length) {
+                return skip(`${open.length} unresolved CodeRabbit major thread(s)`);
+              }
             }
 
             // ---- 4. the verdict names the head we are about to merge --------
@@ -204,6 +257,19 @@ jobs:
               });
             } catch (e) {
               return skip(`the merge call failed: ${e.message}`);
+            }
+
+            // A push made with GITHUB_TOKEN starts no workflow run, so the
+            // `push` run on main that ci.yml describes never fires here. The
+            // head was verified before the merge; this validates the squash
+            // commit itself, and a failure is visible in Actions.
+            try {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: OWNER, repo: REPO, workflow_id: 'ci.yml',
+                ref: 'main',
+              });
+            } catch (e) {
+              core.warning(`could not dispatch CI on main: ${e.message}`);
             }
 
             await github.rest.issues.createComment({
