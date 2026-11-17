@@ -214,7 +214,9 @@ function SortableWidget({
       style={style}
       aria-label={title}
       className={cn(
-        'relative grid',
+        // grid-cols-1 is minmax(0, 1fr): without it the implicit column is
+        // `auto` and a widget with unbreakable content outgrows a phone screen.
+        'relative grid grid-cols-1',
         SPAN_CLASS[shownSpan],
         entry.tall && 'min-h-[380px]',
         // While editing, each widget sits in a frame with its own header, so
