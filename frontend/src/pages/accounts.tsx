@@ -130,7 +130,7 @@ export default function AccountsPage() {
   const hasPluginConnections = (connectionsList ?? []).some((c) => c.plugin_connection_id)
   // A plugin's connection syncs in the background: follow it until it settles,
   // then show what it brought in.
-  const { data: pluginConnectionsList } = useQuery({
+  const { data: pluginConnectionsList, dataUpdatedAt: pluginConnectionsFetchedAt } = useQuery({
     queryKey: ['plugin-connections'],
     queryFn: pluginsApi.connections,
     enabled: pluginsEnabled && hasPluginConnections,
@@ -144,12 +144,13 @@ export default function AccountsPage() {
     .join(',')
   const wasSyncing = useRef<Set<string>>(new Set())
   useEffect(() => {
-    // Runs on every fetch, so a connection added to `wasSyncing` by a form
-    // whose sync settles before any poll sees it pending still refreshes.
+    // Runs on every successful fetch (even one returning the same data), so a
+    // connection added to `wasSyncing` by a form whose sync settled before any
+    // poll saw it pending still refreshes.
     const syncing = new Set(syncingKey ? syncingKey.split(',') : [])
     if ([...wasSyncing.current].some((id) => !syncing.has(id))) invalidateSyncedRecords(queryClient)
     wasSyncing.current = syncing
-  }, [pluginConnectionsList, syncingKey, queryClient])
+  }, [pluginConnectionsFetchedAt, syncingKey, queryClient])
 
   const providersByName = useMemo(() => {
     const map = new Map<string, Provider>()

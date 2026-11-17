@@ -235,6 +235,23 @@ describe('AccountsPage connections a plugin syncs', () => {
     expect(await screen.findByText('Brokerage Cash', {}, { timeout: 5000 })).toBeInTheDocument()
   })
 
+  it('refreshes after a reconnect whose settled state the page had already fetched', async () => {
+    let synced = false
+    api.accountsList.mockImplementation(async () =>
+      synced ? [{ ...makeAccount('bank-1'), connection_id: null, name: 'Brokerage Cash', institution_name: null }] : [],
+    )
+    // Every fetch, before and after saving, returns the same settled connection.
+    api.pluginConnections.mockResolvedValue([{ ...pluginConnection, status: 'active' as const, last_error: null }])
+    api.pluginUpdateValues.mockImplementation(async () => {
+      synced = true
+      return { ...pluginConnection, status: 'pending' as const }
+    })
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+    await user.click(await screen.findByRole('button', { name: t('accounts.reconnect') }))
+    await user.click(await screen.findByRole('button', { name: t('common.save') }))
+    expect(await screen.findByText('Brokerage Cash', {}, { timeout: 5000 })).toBeInTheDocument()
+  })
+
   it('reconnects even before the page has loaded the plugin connections', async () => {
     api.pluginConnections.mockResolvedValueOnce([]).mockResolvedValue([pluginConnection])
     const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
