@@ -17,10 +17,9 @@ class AccountReservedBalance(Base):
     """Funds the institution holds reserved inside a connected account.
 
     Pluggy reports these in ``bankData.reservedBalances`` (Mercado Pago
-    cofrinhos, "saldo reservado", caixinhas) beside the account's balance. They
-    are money the user holds that the balance does not include, so
-    ``Account.balance`` keeps the provider's figure as reported and the value
-    paths add this sum on top of it, once (ADR 0022).
+    cofrinhos, "saldo reservado", caixinhas). Their relationship to the account
+    balance is not guaranteed, so they are displayed separately and never
+    added to totals (ADR 0022).
 
     Provider-owned: the sync upserts by ``(account_id, external_id, currency)``
     and deletes rows the provider stopped reporting. ``name`` is a label, never

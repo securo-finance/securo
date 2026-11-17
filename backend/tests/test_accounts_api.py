@@ -19,17 +19,17 @@ async def test_list_accounts(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "currency,balance,rate,reserved_primary",
+    "currency,balance,rate,primary_balance",
     [
         ("BRL", "1000.00", None, None),
-        ("USD", "1000.00", "5", 20000.0),
-        ("USD", "0.00", "5", 20000.0),
+        ("USD", "1000.00", "5", 5000.0),
+        ("USD", "0.00", "5", 0.0),
         ("EUR", "1000.00", None, None),
     ],
 )
 async def test_list_accounts_exposes_reserved_balances(
     client: AsyncClient, auth_headers, session, test_user, test_workspace,
-    currency, balance, rate, reserved_primary,
+    currency, balance, rate, primary_balance,
 ):
     """The account payload carries the provider's pockets and their
     same-currency total; `current_balance` stays the provider's figure exactly
@@ -87,14 +87,13 @@ async def test_list_accounts_exposes_reserved_balances(
     payload = next(a for a in response.json() if a["id"] == str(account.id))
 
     assert payload["reserved_total"] == 4000.0
-    assert payload["reserved_total_primary"] == reserved_primary
+    assert payload["balance_primary"] == primary_balance
     assert {r["external_id"]: r["name"] for r in payload["reserved_balances"]} == {
         "emergency-fund": "Emergency fund",
         "round-up": "Round-up savings",
         "marketplace": "Marketplace savings",
     }
-    # The payload's own balance stays the provider's figure; the value paths
-    # count the reserved total on top of it.
+    # Reserve rows affect neither the provider balance nor its FX conversion.
     assert payload["current_balance"] == float(balance)
 
 

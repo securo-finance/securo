@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react'
-import { accountBalanceWithReserves, getAccountLabel, getAccountName, sortAccountsByAbsoluteBalance, sumAccountBalances } from '@/lib/account-utils'
+import { getAccountLabel, getAccountName, sortAccountsByAbsoluteBalance, sumAccountBalances } from '@/lib/account-utils'
 import { currentMonth, shiftMonth, monthLastDay, monthLabel, monthRange } from '@/lib/month-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
@@ -535,21 +535,23 @@ export default function DashboardPage() {
   const hasProjectedBalance = Math.abs(projectedBalance - totalBalance) >= 0.01
   const assetsValue = summary?.assets_value_primary ?? Object.values(summary?.assets_value ?? {}).reduce((a, b) => a + b, 0)
 
-  // Available balance includes checking/savings reserves, scoped to the active
-  // Collection. Stored provider balances and the liquidity forecast stay unchanged.
+  // Available balance: checking/savings accounts only — what's actually
+  // spendable today, as opposed to `totalBalance` (net worth: accounts +
+  // investments - open card bills). Scoped to the active Collection filter,
+  // same as the rest of the dashboard.
   const availableBalanceAccounts = useMemo(() => {
     const all = accountsList ?? []
     const scoped = activeAccountIds ? all.filter((a) => activeAccountIds.includes(a.id)) : all
     return scoped.filter((a) => a.type === 'checking' || a.type === 'savings')
   }, [accountsList, activeAccountIds])
   const availableBalance = availableBalanceAccounts.reduce(
-    (sum, a) => sum + accountBalanceWithReserves(a), 0,
+    (sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0,
   )
   // A foreign account without a real FX rate is summed at its native amount,
   // so the headline total is an estimate; say so instead of hiding it (#1165).
   const availableBalanceHasFxFallback = availableBalanceAccounts.some((a) => a.fx_fallback)
   const sortedAvailableBalanceAccounts = useMemo(
-    () => sortAccountsByAbsoluteBalance(availableBalanceAccounts, accountBalanceWithReserves),
+    () => sortAccountsByAbsoluteBalance(availableBalanceAccounts, (a) => a.balance_primary ?? a.current_balance),
     [availableBalanceAccounts],
   )
   // While accounts are loading or failed to load, treat their balance
@@ -566,7 +568,7 @@ export default function DashboardPage() {
   // `totalBalance` — which sums all account types.
   const nonCardAccountsBalance = (accountsList ?? [])
     .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type !== 'credit_card' && a.type !== 'loan')
-    .reduce((sum, a) => sum + accountBalanceWithReserves(a), 0)
+    .reduce((sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0)
 
   // Savings rate & projection
   const income = Number(summary?.monthly_income_primary ?? summary?.monthly_income ?? 0)
@@ -816,7 +818,7 @@ export default function DashboardPage() {
               {sortedAvailableBalanceAccounts.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-3">
                   {sortedAvailableBalanceAccounts.map((acc) => {
-                    const bal = accountBalanceWithReserves(acc)
+                    const bal = Number(acc.balance_primary ?? acc.current_balance)
                     const balCurrency = acc.balance_primary != null ? primaryCurrency : acc.currency
                     // A link, not a click handler: the chip is a navigation
                     // target, so it gets keyboard focus and cmd-click into a

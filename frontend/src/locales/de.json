@@ -1291,7 +1291,7 @@
     "reservedBalances": "Reservierte Guthaben",
     "reservedBalanceFallback": "Reserviertes Guthaben",
     "reservedTotal": "Reserviert",
-    "reservedBalancesHint": "Auf diesem Konto gehaltene reservierte Gelder, zusätzlich zum Guthaben gezählt.",
+    "reservedBalancesHint": "Vom Anbieter für dieses Konto gemeldete reservierte Gelder.",
     "income": "Einnahmen",
     "expenses": "Ausgaben",
     "projectedBalance": "Prognostizierter Saldo",

@@ -1290,7 +1290,7 @@
     "reservedBalances": "予約済み残高",
     "reservedBalanceFallback": "予約済み残高",
     "reservedTotal": "予約済み",
-    "reservedBalancesHint": "この口座に保持されている予約資金。残高に加算されます。",
+    "reservedBalancesHint": "プロバイダーがこの口座について報告する予約資金です。",
     "income": "収入",
     "expenses": "支出",
     "projectedBalance": "予測残高",

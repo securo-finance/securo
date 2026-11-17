@@ -8,7 +8,6 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -1024,11 +1023,10 @@ async def _connected_account(session, user_id, workspace_id, balance, pockets):
 
 
 @pytest.mark.asyncio
-async def test_net_worth_counts_reserved_balances_once(
+async def test_net_worth_ignores_reserved_balances(
     session: AsyncSession, test_user, test_workspace: User,
 ):
-    """The account's value is the provider's balance plus its reserved pockets,
-    counted exactly once (ADR 0022)."""
+    """Loading reserve rows must not change net worth or its composition."""
     account = await _connected_account(
         session, test_user.id, test_workspace.id, "1000.00", [],
     )
@@ -1043,58 +1041,13 @@ async def test_net_worth_counts_reserved_balances_once(
         await _add_reserved_balance(
             session, test_workspace.id, account.id, external_id, amount
         )
+    await session.refresh(account, attribute_names=["reserved_balances"])
 
     after = await _net_worth_at(session, test_workspace.id, date.today(), "BRL")
-    # Exactly the reserved total on top of the balance: 1,000 + 4,000.
-    assert after.value == pytest.approx(5000.00)
-    assert after.breakdowns["accounts"] == pytest.approx(5000.00)
+    assert after.value == pytest.approx(before.value)
+    assert after.breakdowns["accounts"] == pytest.approx(1000.00)
     accounts_items = [c for c in after.composition if c.group == "accounts"]
-    assert [c.value for c in accounts_items] == [pytest.approx(5000.00)]
-
-    # A second snapshot must not double it.
-    again = await _net_worth_at(session, test_workspace.id, date.today(), "BRL")
-    assert again.value == pytest.approx(5000.00)
-
-
-@pytest.mark.asyncio
-async def test_net_worth_pocket_redemption_is_neutral(
-    session: AsyncSession, test_user, test_workspace: User,
-):
-    """Redeeming a pocket moves money from the reservation into the balance, so
-    net worth is flat; money actually leaving the account lowers it (ADR 0022)."""
-    account = await _connected_account(
-        session, test_user.id, test_workspace.id, "1000.00",
-        [("round-up", "2000"), ("marketplace", "2000")],
-    )
-    assert (await _net_worth_at(session, test_workspace.id, date.today(), "BRL")).value == pytest.approx(5000.00)
-
-    # The round-up pocket redeemed into the account's available balance:
-    # 1,000 + 2,000 now sits in the balance, and the reservation reads zero.
-    account.balance = Decimal("3000.00")
-    redeemed = (
-        await session.execute(
-            select(AccountReservedBalance).where(
-                AccountReservedBalance.external_id == "round-up"
-            )
-        )
-    ).scalar_one()
-    redeemed.amount = Decimal("0")
-    await session.commit()
-
-    assert (await _net_worth_at(session, test_workspace.id, date.today(), "BRL")).value == pytest.approx(5000.00)
-
-    # A real withdrawal: the marketplace pocket leaves the account entirely.
-    withdrawn = (
-        await session.execute(
-            select(AccountReservedBalance).where(
-                AccountReservedBalance.external_id == "marketplace"
-            )
-        )
-    ).scalar_one()
-    withdrawn.amount = Decimal("0")
-    await session.commit()
-
-    assert (await _net_worth_at(session, test_workspace.id, date.today(), "BRL")).value == pytest.approx(3000.00)
+    assert [c.value for c in accounts_items] == [pytest.approx(1000.00)]
 
 
 async def _make_shared_credit_cards(session, user_id, workspace_id, balance):

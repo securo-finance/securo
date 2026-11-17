@@ -1291,7 +1291,7 @@
     "reservedBalances": "Gereserveerde saldi",
     "reservedBalanceFallback": "Gereserveerd saldo",
     "reservedTotal": "Gereserveerd",
-    "reservedBalancesHint": "Gereserveerde bedragen op deze rekening, bovenop het saldo geteld.",
+    "reservedBalancesHint": "Gereserveerde bedragen die de provider voor deze rekening meldt.",
     "income": "Inkomen",
     "expenses": "Kosten",
     "projectedBalance": "Geprojecteerd saldo",

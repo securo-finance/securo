@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 
 import AccountDetailPage from '@/pages/account-detail'
 import { i18n, renderWithProviders } from '@/test/utils'
@@ -123,7 +123,7 @@ describe('account-detail reserved balances (ADR 0022)', () => {
   it('renders nothing when the account has no reserved balances', async () => {
     renderPage({ ...base, reserved_balances: [], reserved_total: 0 })
 
-    await waitFor(() => expect(api.accounts.get).toHaveBeenCalled())
+    await screen.findByRole('heading', { name: 'Mercado Pago' })
     expect(screen.queryByText(i18n.t('accounts.reservedBalances'))).not.toBeInTheDocument()
   })
 
@@ -136,7 +136,7 @@ describe('account-detail reserved balances (ADR 0022)', () => {
       reserved_total: 4000,
     })
 
-    await waitFor(() => expect(api.accounts.get).toHaveBeenCalled())
+    await screen.findByRole('heading', { name: 'Mercado Pago' })
     expect(screen.queryByText(i18n.t('accounts.reservedBalances'))).not.toBeInTheDocument()
   })
 })

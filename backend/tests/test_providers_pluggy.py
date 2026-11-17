@@ -792,9 +792,8 @@ def test_reserved_balances_absent_versus_empty():
     )
 
 
-def test_reserved_balances_skip_unusable_entries():
-    """Malformed entries never become a zero row; a payload where nothing is
-    usable is unknown (None), so stored money is not deleted."""
+def test_reserved_balances_reject_partial_collections():
+    """One unreadable reservation makes the whole collection unknown."""
     from app.providers.pluggy import _reserved_balances
 
     rows = _reserved_balances(
@@ -816,8 +815,7 @@ def test_reserved_balances_skip_unusable_entries():
         }
     )
 
-    assert rows is not None
-    assert [(r.external_id, r.amount) for r in rows] == [("good", Decimal("12.5"))]
+    assert rows is None
 
     # Every entry unusable → None, never [] (which would delete stored rows).
     assert (
@@ -834,6 +832,29 @@ def test_reserved_balances_skip_unusable_entries():
         )
         is None
     )
+
+
+@pytest.mark.parametrize("bands", [10, True, "invalid", {"amount": 10}, None])
+def test_reserved_balances_reject_non_list_bands(bands):
+    from app.providers.pluggy import _build_account_data
+
+    account = _bb_account(1000, {"reservedBalances": [
+        _reservation("good", "Good", [_band(2000)]),
+        _reservation("bad", "Bad", bands),
+    ]})
+    parsed = _build_account_data(account, PluggyProvider._map_account_type)
+
+    assert parsed.balance == Decimal("1000")
+    assert parsed.reserved_balances is None
+
+
+@pytest.mark.parametrize("band", [None, {}, _band(True), _band("NaN"), _band(-1)])
+def test_reserved_balances_reject_partially_readable_bands(band):
+    from app.providers.pluggy import _reserved_balances
+
+    assert _reserved_balances({"bankData": {"reservedBalances": [
+        _reservation("pocket", "Pocket", [_band(2000), band]),
+    ]}}) is None
 
 
 @pytest.mark.parametrize(

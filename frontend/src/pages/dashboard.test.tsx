@@ -271,11 +271,11 @@ it('shows the mortgage breakdown editor for a payment opened from the dashboard'
 
 describe('Dashboard available balance with reserves', () => {
   it.each([
-    { currency: 'USD', current_balance: 1000, balance_primary: null, reserved_total_primary: null, expected: 5000 },
-    { currency: 'BRL', current_balance: 1000, balance_primary: 200, reserved_total_primary: 800, expected: 1000 },
-    { currency: 'BRL', current_balance: 0, balance_primary: 0, reserved_total_primary: 800, expected: 800 },
-    { currency: 'EUR', current_balance: 1000, balance_primary: null, reserved_total_primary: null, expected: 5000, fx_fallback: true },
-  ])('includes reserves in the headline, chip and breakdown: $currency / $current_balance', async (values) => {
+    { currency: 'USD', current_balance: 1000, balance_primary: null, expected: 1000 },
+    { currency: 'BRL', current_balance: 1000, balance_primary: 200, expected: 200 },
+    { currency: 'BRL', current_balance: 0, balance_primary: 0, expected: 0 },
+    { currency: 'EUR', current_balance: 1000, balance_primary: null, expected: 1000, fx_fallback: true },
+  ])('keeps reserves out of the headline, chip and breakdown: $currency / $current_balance', async (values) => {
     collectionFilter.activeAccountIds = ['reserved', 'card']
     api.accounts.list.mockResolvedValue([
       account({ id: 'reserved', name: 'Reserved account', reserved_total: 4000, ...values }),

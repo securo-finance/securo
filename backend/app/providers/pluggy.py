@@ -358,16 +358,15 @@ def _reserved_balances(account: dict) -> Optional[list[ReservedBalanceData]]:
     """Reserved/earmarked funds the account holds, or None when unreported.
 
     Pluggy exposes Mercado Pago cofrinhos and other "saldo reservado" in
-    ``bankData.reservedBalances``. They are money the account holds that
-    ``balance`` does not include, so callers store them and add this sum to the
-    account's value once (ADR 0022).
+    ``bankData.reservedBalances`` without documenting whether they are inside
+    ``balance``. They are stored and shown separately, never added to a total
+    (ADR 0022).
 
-    None means the provider did not report the collection at all (stored rows
-    stay as they are); an empty list means the institution answered with no
-    active reservation, which is authoritative. ``availableAmounts`` carries one
-    entry per remuneration band, so bands are summed per currency. A
-    reservation without a usable identification, or a payload whose entries are
-    all unusable, is reported as None rather than silently dropping money.
+    None means the collection is unreported or cannot be read in full, so
+    stored rows stay as they are. Only an explicitly empty collection means
+    there are no active reservations. ``availableAmounts`` carries one entry
+    per remuneration band, summed per currency; any unreadable entry or band
+    makes the entire collection unknown rather than silently dropping money.
     """
     bank_data = account.get("bankData")
     if not isinstance(bank_data, dict):
@@ -381,36 +380,39 @@ def _reserved_balances(account: dict) -> Optional[list[ReservedBalanceData]]:
         return []
 
     rows: list[ReservedBalanceData] = []
+    complete = True
     for entry in raw:
         if not isinstance(entry, dict):
+            complete = False
             continue
         identification = entry.get("identification")
-        if identification is None or isinstance(identification, bool):
-            logger.warning(
-                "Pluggy reserved balance for account %s has no identification; skipping",
-                account.get("id"),
-            )
+        if not isinstance(identification, (str, int)) or isinstance(identification, bool):
+            complete = False
             continue
         external_id = str(identification).strip()
         if not external_id:
-            logger.warning(
-                "Pluggy reserved balance for account %s has an empty identification; skipping",
-                account.get("id"),
-            )
+            complete = False
             continue
         raw_name = entry.get("name")
         name = raw_name.strip() if isinstance(raw_name, str) and raw_name.strip() else None
         # One entry per remuneration band: sum them per currency. `remuneration`
         # is display metadata and never adjusts the amount.
         totals: dict[str, Decimal] = {}
-        for band in entry.get("availableAmounts") or []:
+        bands = entry.get("availableAmounts")
+        if not isinstance(bands, list) or not bands:
+            complete = False
+            continue
+        for band in bands:
             if not isinstance(band, dict):
+                complete = False
                 continue
             currency = band.get("currencyCode")
             if not isinstance(currency, str) or not currency:
+                complete = False
                 continue
             amount = _decimal_or_none(band.get("amount"))
             if amount is None or not amount.is_finite() or amount < 0:
+                complete = False
                 continue
             totals[currency] = totals.get(currency, Decimal(0)) + amount
         for currency, amount in totals.items():
@@ -420,9 +422,9 @@ def _reserved_balances(account: dict) -> Optional[list[ReservedBalanceData]]:
                 )
             )
 
-    if not rows:
+    if not complete or not rows:
         logger.warning(
-            "Pluggy reported reserved balances for account %s but none were usable; "
+            "Pluggy reported incomplete reserved balances for account %s; "
             "keeping stored rows",
             account.get("id"),
         )

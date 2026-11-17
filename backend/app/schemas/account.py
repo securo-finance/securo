@@ -93,16 +93,11 @@ class AccountRead(AccountBase):
     institution_name: Optional[str] = None
     institution_logo_url: Optional[str] = None
     current_balance: float = 0.0
-    # Provider-owned reserved funds held inside the account (Pluggy
-    # `bankData.reservedBalances`: Mercado Pago cofrinhos). `current_balance`
-    # keeps the provider's figure as reported; the value paths count this sum on
-    # top of it once (ADR 0022).
+    # Provider-owned reserves are a separate display-only breakdown. Their
+    # relationship to the provider's balance is not guaranteed (ADR 0022).
     reserved_balances: list[AccountReservedBalanceRead] = []
     # Sum of the same-currency reservations, in the account's currency.
     reserved_total: float = 0.0
-    # Same total at the account balance's FX rate; unset without a real rate
-    # or when the account already uses the primary currency.
-    reserved_total_primary: Optional[float] = None
     previous_balance: Optional[float] = None
     # Date of the opening-balance transaction; null when there is none.
     balance_date: Optional[date] = None

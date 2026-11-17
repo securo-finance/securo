@@ -1290,7 +1290,7 @@
     "reservedBalances": "आरक्षित शेष",
     "reservedBalanceFallback": "आरक्षित शेष",
     "reservedTotal": "आरक्षित",
-    "reservedBalancesHint": "इस खाते में रखा आरक्षित धन, शेष में जोड़ा गया।",
+    "reservedBalancesHint": "इस खाते के लिए प्रदाता द्वारा बताई गई आरक्षित धनराशि।",
     "income": "आय",
     "expenses": "खर्च",
     "projectedBalance": "अनुमानित शेष राशि",

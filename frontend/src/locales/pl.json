@@ -1340,7 +1340,7 @@
     "reservedBalances": "Zarezerwowane salda",
     "reservedBalanceFallback": "Zarezerwowane saldo",
     "reservedTotal": "Zarezerwowane",
-    "reservedBalancesHint": "Zarezerwowane środki na tym koncie, doliczane do salda.",
+    "reservedBalancesHint": "Zarezerwowane środki zgłoszone przez dostawcę dla tego konta.",
     "income": "Przychody",
     "expenses": "Wydatki",
     "projectedBalance": "Saldo prognozowane",

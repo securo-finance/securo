@@ -2,9 +2,8 @@
 
 account_reserved_balances stores the "saldo reservado" a provider reports
 inside a connected account (Pluggy ``bankData.reservedBalances``: Mercado Pago
-cofrinhos, caixinhas). They are money the account holds that ``balance`` does
-not include: ``accounts.balance`` keeps the provider's figure as reported, and
-the value paths count this sum on top of it once (ADR 0022). Identity is
+cofrinhos, caixinhas). The rows are displayed separately and never added to
+``accounts.balance`` or any other total (ADR 0022). Identity is
 ``(account_id, external_id, currency)``.
 
 Revision ID: 118

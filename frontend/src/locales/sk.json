@@ -1354,7 +1354,7 @@
     "reservedBalances": "Rezervované zostatky",
     "reservedBalanceFallback": "Rezervovaný zostatok",
     "reservedTotal": "Rezervované",
-    "reservedBalancesHint": "Rezervované prostriedky na tomto účte, pripočítané k zostatku.",
+    "reservedBalancesHint": "Rezervované prostriedky hlásené poskytovateľom pre tento účet.",
     "income": "Príjmy",
     "expenses": "Výdavky",
     "projectedBalance": "Predpokladaný zostatok",

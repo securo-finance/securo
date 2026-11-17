@@ -1294,7 +1294,7 @@
     "reservedBalances": "Soldes réservés",
     "reservedBalanceFallback": "Solde réservé",
     "reservedTotal": "Réservé",
-    "reservedBalancesHint": "Fonds réservés sur ce compte, ajoutés au solde.",
+    "reservedBalancesHint": "Fonds réservés signalés par le fournisseur pour ce compte.",
     "income": "Revenus",
     "expenses": "Dépenses",
     "projectedBalance": "Solde projeté",

@@ -8593,8 +8593,7 @@ def _reserved(external_id, name, currency, amount):
 
 
 def _mp_account(reserved):
-    """A representative payload: 1,000 in the balance, with 2,000 + 2,000 held
-    in cofrinhos the balance does not include."""
+    """A provider balance with reservations reported separately alongside it."""
     return AccountData(
         external_id="mp-acc-1",
         name="Mercado Pago",
@@ -8663,9 +8662,7 @@ async def _mp_account_row(session, conn):
 async def test_reserved_balances_stored_on_initial_import(
     session: AsyncSession, test_user, test_workspace
 ):
-    """The three cofrinhos land as provider rows under their account, and the
-    stored balance stays the provider's own figure (the ledger invariant): the
-    reservations are added by the value paths, not stored into the balance."""
+    """Reservations are stored under their account without changing its balance."""
     conn = await _import_mp(session, test_user, test_workspace, _mp_account(MP_POCKETS))
     account = await _mp_account_row(session, conn)
 
@@ -8678,6 +8675,67 @@ async def test_reserved_balances_stored_on_initial_import(
         ("round-up", "Round-up savings", "BRL", Decimal("2000")),
     ]
     assert {r.workspace_id for r in rows} == {test_workspace.id}
+
+
+@pytest.mark.asyncio
+async def test_reserved_balances_repeated_key_is_upserted_once(
+    session: AsyncSession, test_user, test_workspace
+):
+    pockets = [
+        *MP_POCKETS,
+        _reserved("round-up", "Latest name", "BRL", "2500"),
+    ]
+    conn = await _import_mp(session, test_user, test_workspace, _mp_account(pockets))
+    account_id = (await _mp_account_row(session, conn)).id
+    rows = await _reserved_rows(session, account_id)
+    first_ids = {row.external_id: row.id for row in rows}
+
+    assert len(rows) == 3
+    round_up = next(row for row in rows if row.external_id == "round-up")
+    assert round_up.name == "Latest name"
+    assert round_up.amount == Decimal("2500")
+
+    await _sync_mp_account(session, conn, test_user, test_workspace, _mp_account(pockets))
+    assert {row.external_id: row.id for row in await _reserved_rows(session, account_id)} == first_ids
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad_entry", [
+    {"name": "Missing identity", "availableAmounts": [{"amount": 2000, "currencyCode": "BRL"}]},
+    {"identification": "round-up", "availableAmounts": 2000},
+    {"identification": "round-up", "availableAmounts": [
+        {"amount": 2000, "currencyCode": "BRL"},
+        {"amount": "invalid", "currencyCode": "BRL"},
+    ]},
+])
+async def test_reserved_balances_incomplete_payload_keeps_stored_money(
+    session: AsyncSession, test_user, test_workspace, bad_entry
+):
+    from app.providers.pluggy import PluggyProvider, _build_account_data
+
+    conn = await _import_mp(session, test_user, test_workspace, _mp_account(MP_POCKETS))
+    account_id = (await _mp_account_row(session, conn)).id
+    first = {
+        row.external_id: (row.id, row.name, row.amount)
+        for row in await _reserved_rows(session, account_id)
+    }
+    parsed = _build_account_data({
+        "id": "mp-acc-1", "name": "Mercado Pago", "type": "BANK",
+        "subtype": "CHECKING_ACCOUNT", "balance": 1000, "currencyCode": "BRL",
+        "bankData": {"reservedBalances": [
+            {"identification": "emergency-fund", "availableAmounts": [
+                {"amount": 10, "currencyCode": "BRL"},
+            ]},
+            bad_entry,
+        ]},
+    }, PluggyProvider._map_account_type)
+
+    await _sync_mp_account(session, conn, test_user, test_workspace, parsed)
+
+    assert {
+        row.external_id: (row.id, row.name, row.amount)
+        for row in await _reserved_rows(session, account_id)
+    } == first
 
 
 @pytest.mark.asyncio

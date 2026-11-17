@@ -4,14 +4,6 @@ export function getAccountName(account: { name: string; display_name?: string | 
   return account.display_name ?? account.name
 }
 
-/** Account balance plus reserved funds, in primary currency when converted. */
-export function accountBalanceWithReserves(
-  account: Pick<Account, 'balance_primary' | 'current_balance' | 'reserved_total' | 'reserved_total_primary'>,
-): number {
-  return Number(account.balance_primary ?? account.current_balance)
-    + Number(account.reserved_total_primary ?? account.reserved_total ?? 0)
-}
-
 /**
  * Total of the accounts' primary-currency balances. Cards on one shared credit
  * line each report the whole line's balance, so each `shared_balance_group`

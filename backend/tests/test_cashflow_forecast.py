@@ -320,9 +320,7 @@ async def test_cashflow_forecast_starts_from_current_balance_of_manual_accounts(
 
 @pytest.mark.asyncio
 async def test_cashflow_forecast_excludes_reserved_balances(session):
-    """The runway starts from money that can pay a bill today, so a connected
-    account's pockets (cofrinhos) never extend it — even though the account's own
-    value counts them (ADR 0022)."""
+    """Provider-reported reserves do not extend the liquidity runway (ADR 0022)."""
     from datetime import datetime, timezone
 
     from app.models.account_reserved_balance import AccountReservedBalance

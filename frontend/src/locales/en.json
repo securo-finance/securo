@@ -1290,7 +1290,7 @@
     "reservedBalances": "Reserved balances",
     "reservedBalanceFallback": "Reserved balance",
     "reservedTotal": "Reserved",
-    "reservedBalancesHint": "Reserved funds held in this account, counted on top of the balance.",
+    "reservedBalancesHint": "Reserved funds reported by the provider for this account.",
     "income": "Income",
     "expenses": "Expenses",
     "projectedBalance": "Projected Balance",

@@ -1294,7 +1294,7 @@
     "reservedBalances": "Saldos reservados",
     "reservedBalanceFallback": "Saldo reservado",
     "reservedTotal": "Reservado",
-    "reservedBalancesHint": "Fondos reservados en esta cuenta, sumados al saldo.",
+    "reservedBalancesHint": "Fondos reservados que el proveedor informa para esta cuenta.",
     "income": "Ingresos",
     "expenses": "Gastos",
     "projectedBalance": "Saldo proyectado",

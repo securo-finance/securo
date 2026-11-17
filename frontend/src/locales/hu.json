@@ -1290,7 +1290,7 @@
     "reservedBalances": "Fenntartott egyenlegek",
     "reservedBalanceFallback": "Fenntartott egyenleg",
     "reservedTotal": "Fenntartott",
-    "reservedBalancesHint": "Ezen a számlán tartott fenntartott összegek, az egyenleghez hozzáadva.",
+    "reservedBalancesHint": "A szolgáltató által erre a számlára jelentett fenntartott összegek.",
     "income": "Bevétel",
     "expenses": "Kiadások",
     "projectedBalance": "Várható egyenleg",

@@ -998,7 +998,7 @@
     "reservedBalances": "Δεσμευμένα υπόλοιπα",
     "reservedBalanceFallback": "Δεσμευμένο υπόλοιπο",
     "reservedTotal": "Δεσμευμένο",
-    "reservedBalancesHint": "Δεσμευμένα κεφάλαια σε αυτόν τον λογαριασμό, προστίθενται στο υπόλοιπο.",
+    "reservedBalancesHint": "Δεσμευμένα κεφάλαια που αναφέρει ο πάροχος για αυτόν τον λογαριασμό.",
     "income": "Έσοδα",
     "expenses": "Έξοδα",
     "projectedBalance": "Προβλεπόμενο υπόλοιπο",

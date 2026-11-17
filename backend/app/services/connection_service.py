@@ -316,18 +316,18 @@ async def _sync_reserved_balances(
         seen.add(key)
         row = by_key.get(key)
         if row is None:
-            session.add(
-                AccountReservedBalance(
-                    # The connection owner's workspace, matching the account
-                    # row, never the caller's (ADR 0002).
-                    workspace_id=account.workspace_id,
-                    account_id=account.id,
-                    external_id=item.external_id,
-                    name=item.name,
-                    currency=item.currency,
-                    amount=item.amount,
-                )
+            row = AccountReservedBalance(
+                # The connection owner's workspace, matching the account
+                # row, never the caller's (ADR 0002).
+                workspace_id=account.workspace_id,
+                account_id=account.id,
+                external_id=item.external_id,
+                name=item.name,
+                currency=item.currency,
+                amount=item.amount,
             )
+            session.add(row)
+            by_key[key] = row
         else:
             row.name = item.name
             row.amount = item.amount

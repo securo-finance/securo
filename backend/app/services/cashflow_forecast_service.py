@@ -163,9 +163,6 @@ async def generate_cashflow_forecast(
     # can put a solvent user at zero; new card purchases still reach the burn.
     # Amounts with no FX rate are left out and reported instead of counted 1:1
     # (#574).
-    # Reserved (pocket) money is deliberately excluded here even though the
-    # account's own value counts it: the runway starts from money that can pay a
-    # bill today, and a judicial hold or a scheduled Pix cannot (ADR 0022).
     starting_liquid_balance = Decimal("0.00")
     credit_card_balance = Decimal("0.00")
     unconverted_currencies: set[str] = set()

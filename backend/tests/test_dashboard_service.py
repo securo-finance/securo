@@ -427,11 +427,10 @@ async def _connected_account(session, test_user, test_workspace, balance, pocket
 
 
 @pytest.mark.asyncio
-async def test_account_balance_at_adds_reserved_balances(
+async def test_account_balance_at_ignores_reserved_balances(
     session: AsyncSession, test_user, test_workspace,
 ):
-    """An account's value is the provider's balance plus its reserved pockets,
-    at the current cutoff and at historical ones alike (ADR 0022)."""
+    """Reserves never change current or historical account totals (ADR 0022)."""
     with_pockets = await _connected_account(
         session, test_user, test_workspace, "1000.00",
         [("emergency-fund", "0"), ("round-up", "2000"), ("marketplace", "2000")],
@@ -439,18 +438,16 @@ async def test_account_balance_at_adds_reserved_balances(
     without = await _connected_account(session, test_user, test_workspace, "1000.00", [])
     today = date.today()
 
-    # 1,000 in the balance, plus 2,000 + 2,000 reserved.
-    assert await _account_balance_at(session, with_pockets, today) == pytest.approx(5000.00)
+    assert await _account_balance_at(session, with_pockets, today) == pytest.approx(1000.00)
     assert await _account_balance_at(session, without, today) == pytest.approx(1000.00)
-    assert await _account_balance_at(session, with_pockets, today - timedelta(days=1)) == pytest.approx(5000.00)
+    assert await _account_balance_at(session, with_pockets, today - timedelta(days=1)) == pytest.approx(1000.00)
 
 
 @pytest.mark.asyncio
-async def test_total_balance_by_currency_counts_reserved_once(
+async def test_total_balance_by_currency_ignores_reserved_balances(
     session: AsyncSession, test_user, test_workspace,
 ):
-    """The pockets land in the account's own currency bucket, once; a
-    foreign-currency pocket is stored but lands in no bucket."""
+    """Neither same-currency nor foreign reserves enter dashboard totals."""
     account = await _connected_account(
         session, test_user, test_workspace, "1000.00",
         [("round-up", "2000"), ("marketplace", "2000")],
@@ -459,7 +456,7 @@ async def test_total_balance_by_currency_counts_reserved_once(
 
     totals = await _total_balance_by_currency(session, test_workspace.id, date.today())
 
-    assert totals == {"BRL": pytest.approx(5000.00)}
+    assert totals == {"BRL": pytest.approx(1000.00)}
 
 
 # ---------------------------------------------------------------------------
