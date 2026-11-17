@@ -15,7 +15,7 @@ import tarfile
 from collections.abc import Awaitable, Callable
 from pathlib import PurePosixPath
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.plugin_logo import PluginLogo
@@ -53,7 +53,8 @@ def extract(archive: bytes, paths: dict[str, str]) -> dict[str, tuple[str, bytes
     """
     wanted: dict[str, list[str]] = {}
     for key, path in paths.items():
-        wanted.setdefault(path, []).append(key)
+        # "./logos/a.png" and "logos/a.png" are the same file in the package.
+        wanted.setdefault("/".join(PurePosixPath(path).parts), []).append(key)
     try:
         tar = tarfile.open(fileobj=io.BytesIO(archive), mode="r:*")
     except tarfile.TarError as exc:
@@ -89,6 +90,18 @@ def extract(archive: bytes, paths: dict[str, str]) -> dict[str, tuple[str, bytes
     return found
 
 
+async def _lock(session: AsyncSession, plugin_id: str, commit: str) -> None:
+    """One install or release of a commit's logos at a time, until the transaction ends.
+
+    Without it, a workspace installing a commit could find its logos kept
+    while another workspace, removing that commit, deletes them as unused.
+    """
+    if session.bind.dialect.name == "postgresql":
+        await session.execute(
+            select(func.pg_advisory_xact_lock(func.hashtext(f"plugin-logos:{plugin_id}@{commit}")))
+        )
+
+
 async def store(
     session: AsyncSession,
     plugin_id: str,
@@ -99,6 +112,7 @@ async def store(
     """Keep the commit's logos, taking them out of its package unless they're kept already (not committed)."""
     if not manifest.logos:
         return
+    await _lock(session, plugin_id, commit)
     kept = set(
         (
             await session.scalars(
@@ -140,6 +154,7 @@ async def get(session: AsyncSession, sha256: str) -> PluginLogo | None:
 
 async def release(session: AsyncSession, plugin_id: str, commit: str) -> None:
     """Drop a commit's logos once no workspace runs it (not committed)."""
+    await _lock(session, plugin_id, commit)
     still_used = await session.scalar(
         select(WorkspacePlugin.id)
         .where(WorkspacePlugin.plugin_id == plugin_id, WorkspacePlugin.commit == commit)

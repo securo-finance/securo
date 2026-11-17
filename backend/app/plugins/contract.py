@@ -21,6 +21,7 @@ from __future__ import annotations
 from datetime import date as _date
 from decimal import Decimal
 from collections.abc import Collection
+from urllib.parse import urlsplit
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, ValidationError, model_validator
@@ -142,6 +143,8 @@ class Account(_Model):
     institution_name: str | None = Field(default=None, max_length=255)
     institution_logo: str | None = Field(default=None, pattern=KEY_PATTERN)
     """A key of the manifest's `logos`: Securo serves the file from the plugin's package."""
+    institution_logo_url: str | None = Field(default=None, max_length=500, pattern=r"^https://[^\s]+$")
+    """Or an image on a host the manifest declares in `network`, for a plugin that reaches many institutions."""
     auto_invested_balance: PositiveMoney = Decimal(0)
     transactions: list[Transaction] | None = None
     bills: list[Bill] | None = None
@@ -155,7 +158,8 @@ class Account(_Model):
     def to_data(self, logos: dict[str, str] | None = None) -> AccountData:
         """The provider dataclass; `logos` maps the manifest's logo keys to where Securo serves them."""
         data = AccountData(**self.model_dump(exclude={"transactions", "bills", "institution_logo"}))
-        data.institution_logo_url = (logos or {}).get(self.institution_logo) if self.institution_logo else None
+        if self.institution_logo:
+            data.institution_logo_url = (logos or {}).get(self.institution_logo)
         return data
 
 
@@ -251,12 +255,16 @@ def _check_unique(kind: str, records: list | None) -> None:
         raise ValueError(f"{kind}: external_id must be unique")
 
 
-def parse_payload(data: Any, provides: list[str], logos: Collection[str] = ()) -> Payload | None:
+def parse_payload(
+    data: Any, provides: list[str], logos: Collection[str] = (), hosts: Collection[str] = ()
+) -> Payload | None:
     """The validated payload, or None when the plugin fetched nothing this run.
 
     Raises `PayloadError` when the data is malformed, too large, carries a
-    kind of record the integration doesn't declare in `provides`, or names a
-    logo that isn't among `logos` (the keys of the manifest's).
+    kind of record the integration doesn't declare in `provides`, names a
+    logo that isn't among `logos` (the keys of the manifest's), or points at
+    a logo on a host outside `hosts` (the manifest's `network`): showing a
+    logo makes every viewer's browser fetch it, so only declared hosts do.
     """
     if data is None:
         return None
@@ -270,9 +278,27 @@ def parse_payload(data: Any, provides: list[str], logos: Collection[str] = ()) -
     if undeclared:
         raise PayloadError(f"data has {', '.join(sorted(undeclared))}, which the integration doesn't provide")
     for index, account in enumerate(payload.accounts or []):
+        if account.institution_logo is not None and account.institution_logo_url is not None:
+            raise PayloadError(f"accounts.{index}: name a logo by institution_logo or institution_logo_url, not both")
         if account.institution_logo is not None and account.institution_logo not in logos:
             raise PayloadError(f"accounts.{index}.institution_logo: the manifest's logos have no such key")
+        if account.institution_logo_url is not None and not _on_declared_host(account.institution_logo_url, hosts):
+            raise PayloadError(f"accounts.{index}.institution_logo_url: its host isn't declared in the manifest's network")
     return payload
+
+
+def _on_declared_host(url: str, hosts: Collection[str]) -> bool:
+    """Whether an https URL points at one of the manifest's `network` hosts (`host` or `host:port`)."""
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError:
+        return False
+    if parts.scheme != "https" or not parts.hostname or parts.username or parts.password:
+        return False
+    host = parts.hostname.lower()
+    candidates = {host, f"{host}:443"} if port in (None, 443) else {f"{host}:{port}"}
+    return not candidates.isdisjoint(hosts)
 
 
 def _describe(exc: ValidationError) -> str:

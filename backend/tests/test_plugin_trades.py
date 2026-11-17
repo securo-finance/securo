@@ -196,3 +196,22 @@ async def test_a_market_priced_asset_keeps_its_own_trades(session: AsyncSession,
     await session.commit()
     await _pipeline(session, bank_connection, holding("10", [_trade("b1", "buy", 2, "10")]), test_user)
     assert await _ledger(session, await _asset(session, bank_connection)) == {}
+
+
+@pytest.mark.asyncio
+async def test_a_position_closed_before_the_first_sync_comes_in_sold(
+    session: AsyncSession, bank_connection, test_user
+):
+    trades = [_trade("b1", "buy", 2, "10", "100"), _trade("s1", "sell", 9, "10", "120")]
+    data = holding("0", trades, is_withdrawn=True, current_value="0")
+    await _pipeline(session, bank_connection, data, test_user)
+    asset = await _asset(session, bank_connection)
+    assert asset.sell_date == date(2026, 11, 9)
+    assert Decimal(str(asset.realized_gain)) == Decimal("200.00")
+    assert set(await _ledger(session, asset)) == {"b1", "s1"}
+
+
+@pytest.mark.asyncio
+async def test_a_closed_position_without_trades_is_still_skipped(session: AsyncSession, bank_connection, test_user):
+    await _pipeline(session, bank_connection, holding("0", None, is_withdrawn=True, current_value="0"), test_user)
+    assert await _rows(session, Asset, connection_id=bank_connection.id) == []

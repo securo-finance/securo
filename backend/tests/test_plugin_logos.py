@@ -214,3 +214,75 @@ async def test_an_unlinked_card_keeps_showing_its_debt(session: AsyncSession, te
     assert account is not None and account.connection_id is None
     after = await account_service.get_account_summary(session, account_id, workspace_id)
     assert after is not None and Decimal(str(after["current_balance"])) == Decimal("-200.00")
+
+
+# --- Or a logo on a declared host ------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("url", "hosts", "ok"),
+    [
+        ("https://logos.example.com/banks/123.png", {"logos.example.com"}, True),
+        ("https://LOGOS.example.com:443/x.png", {"logos.example.com"}, True),
+        ("https://logos.example.com:8443/x.png", {"logos.example.com:8443"}, True),
+        ("https://logos.example.com:8443/x.png", {"logos.example.com"}, False),
+        ("https://tracker.example/pixel.png", {"logos.example.com"}, False),
+        ("https://logos.example.com.evil.example/x.png", {"logos.example.com"}, False),
+        ("https://user@logos.example.com/x.png", {"logos.example.com"}, False),
+    ],
+    ids=["declared", "default-port", "declared-port", "other-port", "undeclared", "suffix", "credentials"],
+)
+def test_a_logo_url_must_be_on_a_declared_host(url, hosts, ok):
+    from app.plugins.contract import PayloadError, parse_payload
+
+    data = provider_plugins.payload_data()
+    data["accounts"][0]["institution_logo_url"] = url
+    if ok:
+        payload = parse_payload(data, provider_plugins.ALL_KINDS, (), hosts)
+        assert payload is not None
+        assert payload.accounts and payload.accounts[0].to_data().institution_logo_url == url
+    else:
+        with pytest.raises(PayloadError, match="institution_logo_url"):
+            parse_payload(data, provider_plugins.ALL_KINDS, (), hosts)
+
+
+def test_a_logo_is_named_one_way_only():
+    from app.plugins.contract import PayloadError, parse_payload
+
+    data = provider_plugins.payload_data()
+    data["accounts"][0].update(institution_logo="broker", institution_logo_url="https://logos.example.com/x.png")
+    with pytest.raises(PayloadError, match="not both"):
+        parse_payload(data, provider_plugins.ALL_KINDS, {"broker"}, {"logos.example.com"})
+
+
+def test_a_logo_path_may_start_with_a_dot():
+    found = logos.extract(_package({"logos/a.png": PNG}), {"a": "./logos/a.png"})
+    assert found["a"][0] == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_two_connections_reporting_the_same_position_keep_their_own_assets(
+    session: AsyncSession, test_user, test_workspace
+):
+    from app.models.asset import Asset
+    from app.plugins.contract import parse_payload
+    from app.plugins.provider import PluginPayloadProvider, provider_name
+
+    banks = []
+    for name in ("first", "second"):
+        bank = BankConnection(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id, provider=provider_name(PLUGIN),
+            external_id=name, institution_name="Ledger", credentials={}, settings={}, status="active",
+        )
+        session.add(bank)
+        banks.append(bank)
+    await session.commit()
+    for bank in banks:
+        payload = parse_payload(provider_plugins.payload_data(), provider_plugins.ALL_KINDS)
+        assert payload is not None
+        provider = PluginPayloadProvider(bank.provider, payload, scope=bank.external_id)
+        await connection_service.sync_connection(session, bank.id, test_workspace.id, test_user.id, provider=provider)
+    assets = (await session.scalars(select(Asset).where(Asset.workspace_id == test_workspace.id))).all()
+    assert sorted((a.external_id, a.connection_id == banks[0].id) for a in assets) == [
+        ("first:A1:STK:1", True), ("second:A1:STK:1", False),
+    ]

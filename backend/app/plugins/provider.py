@@ -35,8 +35,14 @@ def is_plugin_provider(name: str | None) -> bool:
 class PluginPayloadProvider(BankProvider):
     """Serves one payload. Credentials stay sealed with the plugin connection."""
 
-    def __init__(self, name: str, payload: Payload, logos: dict[str, str] | None = None) -> None:
+    def __init__(
+        self, name: str, payload: Payload, logos: dict[str, str] | None = None, scope: str | None = None
+    ) -> None:
         self._name = name
+        # Holdings are matched by (source, external_id) across the workspace,
+        # and every connection of a plugin shares its source: prefixing the
+        # connection keeps two connections that report the same position apart.
+        self._scope = scope
         # The plugin's logos, by key, as the address Securo serves each at.
         self._logos = logos or {}
         self._accounts = payload.accounts or []
@@ -66,9 +72,8 @@ class PluginPayloadProvider(BankProvider):
 
     async def get_institution_logo(self, credentials: dict) -> Optional[str]:
         # The connection shows the institution its accounts name, as native ones do.
-        return next(
-            (self._logos[a.institution_logo] for a in self._accounts if a.institution_logo in self._logos), None
-        )
+        logos = (account.to_data(self._logos).institution_logo_url for account in self._accounts)
+        return next((logo for logo in logos if logo), None)
 
     async def get_accounts(self, credentials: dict) -> list[AccountData]:
         return [account.to_data(self._logos) for account in self._accounts]
@@ -95,4 +100,8 @@ class PluginPayloadProvider(BankProvider):
         return [b.to_data() for b in account.bills or []] if account else []
 
     async def get_holdings(self, credentials: dict) -> list[HoldingData]:
-        return [holding.to_data() for holding in self._holdings or []]
+        holdings = [holding.to_data() for holding in self._holdings or []]
+        if self._scope:
+            for holding in holdings:
+                holding.external_id = f"{self._scope}:{holding.external_id}"
+        return holdings

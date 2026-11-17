@@ -533,10 +533,10 @@ async def _write_payload(
     reply = result if isinstance(result, dict) else {}
     _keep(connection, {"secrets": reply.get("secrets")}, secrets)
     await session.commit()
-    record, _ = await _installed(session, connection.workspace_id, connection.plugin_id)
+    record, manifest = await _installed(session, connection.workspace_id, connection.plugin_id)
     logo_urls = await logos.urls(session, connection.plugin_id, record.commit)
     try:
-        payload = parse_payload(reply.get("data"), provides, logo_urls)
+        payload = parse_payload(reply.get("data"), provides, logo_urls, {h.host for h in manifest.network})
     except PayloadError as exc:
         _failed(connection, str(exc), needs_auth=False)
         return
@@ -549,7 +549,7 @@ async def _write_payload(
         try:
             await connection_service.sync_connection(
                 session, bank_id, workspace_id, user_id,
-                provider=PluginPayloadProvider(bank.provider, payload, logo_urls),
+                provider=PluginPayloadProvider(bank.provider, payload, logo_urls, scope=bank.external_id),
             )
         except Exception as exc:  # noqa: BLE001 - recorded on the connection, retried on the next sync
             logger.exception("Writing the records of plugin connection %s failed", connection_id)

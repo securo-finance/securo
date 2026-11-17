@@ -828,7 +828,15 @@ async def _sync_holdings(
         #     the user) so it drops out of current totals but historical
         #     AssetValues remain visible in reports. No new AssetValue —
         #     appending today's zero would bury the real closing value.
-        if holding.is_withdrawn:
+        # A position opened and closed between two syncs still has a history
+        # when its trades come along: it's imported, and its ledger sells it.
+        closed_with_history = (
+            holding.is_withdrawn
+            and existing is None
+            and bool(holding.trades)
+            and _reconciled_trades(holding, list(holding.trades or [])) is not None
+        )
+        if holding.is_withdrawn and not closed_with_history:
             if existing is None:
                 continue
             provider_sell_date: Optional[str] = None
