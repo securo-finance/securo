@@ -28,6 +28,7 @@ from app.schemas.workspace import (
     WorkspaceUpdate,
 )
 from app.services import module_service, workspace_service
+from app.services.primary_restamp_service import restamp_user_primary_amounts
 
 router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 
@@ -160,6 +161,9 @@ async def update_workspace(
         prefs["currency_display"] = new_currency
         user.preferences = prefs
         session.add(user)
+        # The owner's stored primary amounts follow, or their totals would
+        # keep the old currency's numbers under the new symbol (#1381).
+        await restamp_user_primary_amounts(session, user.id)
     await session.commit()
     await session.refresh(workspace)
     return _workspace_read(workspace, member.role)

@@ -79,12 +79,17 @@ async def test_opening_balance_source_and_raw_description_survive_locale_changes
     assert before[manual["id"]]["date"] == date(2026, 9, 11)
     assert all(row["description"] == "Saldo inicial" for row in before.values())
 
+    # Send the whole preferences dict, as the app does: a partial one would
+    # also drop `currency_display`, which is a currency change, not a locale one.
+    response = await client.get("/api/users/me", headers=auth_headers)
+    preferences = response.json()["preferences"]
+
     locale_responses = {}
     for language in ("en", "pt-BR", "en"):
         response = await client.patch(
             "/api/users/me",
             headers=auth_headers,
-            json={"preferences": {"language": language}},
+            json={"preferences": {**preferences, "language": language}},
         )
         assert response.status_code == 200
         assert response.json()["preferences"]["language"] == language

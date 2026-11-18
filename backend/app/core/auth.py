@@ -44,7 +44,16 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     ) -> User:
         if user_update.password is not None:
             require_local_auth_enabled()
-        return await super().update(user_update, user, safe=safe, request=request)
+        previous_currency = user.primary_currency
+        updated = await super().update(user_update, user, safe=safe, request=request)
+        if updated.primary_currency != previous_currency:
+            # Stored primary amounts are in the old currency; totals that sum
+            # them would show old numbers under the new symbol (#1381).
+            from app.services.primary_restamp_service import restamp_user_primary_amounts
+
+            await restamp_user_primary_amounts(self.db_session, updated.id)
+            await self.db_session.commit()
+        return updated
 
     async def on_after_register(self, user: User, request: Optional[Request] = None):
         print(f"User {user.id} has registered.")
