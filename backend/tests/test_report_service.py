@@ -960,6 +960,33 @@ async def test_net_worth_counts_asset_sold_after_the_cutoff(
 
 
 @pytest.mark.asyncio
+async def test_net_worth_counts_account_closed_after_the_cutoff(
+    session: AsyncSession, test_user, test_workspace: User,
+):
+    """A snapshot taken before an account was closed still counts it."""
+    account = await _create_manual_account(session, test_user.id, "Closed Later")
+    await _create_transaction(
+        session, test_user.id, account.id, 3000, "credit", date(2025, 1, 10), source="opening_balance"
+    )
+    account.is_closed = True
+    account.closed_at = datetime(2025, 3, 15, 12, 0, tzinfo=timezone.utc)
+    await session.commit()
+
+    before = await _net_worth_at(session, test_workspace.id, date(2025, 2, 28), "BRL")
+    assert before.breakdowns["accounts"] == 3000.0
+
+    # From the day it is closed, the account is gone from net worth.
+    on_close = await _net_worth_at(session, test_workspace.id, date(2025, 3, 15), "BRL")
+    assert on_close.breakdowns["accounts"] == 0.0
+
+    report = await get_net_worth_report(
+        session, test_workspace.id, test_user.id, interval="monthly", currency="BRL",
+        start_date=date(2025, 1, 1), end_date=date(2025, 4, 30),
+    )
+    assert [p.value for p in report.trend] == [3000.0, 3000.0, 0.0, 0.0]
+
+
+@pytest.mark.asyncio
 async def test_net_worth_with_credit_card(session: AsyncSession, test_user, test_workspace: User):
     checking = await _make_manual_account(session, test_user.id, "NW Check")
     await _add_txn(session, test_user.id, checking.id, 5000, "credit", date.today())

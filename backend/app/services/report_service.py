@@ -154,12 +154,17 @@ async def _net_worth_at(
     summed and only assets in the collection's wallets (``asset_group_ids``)
     are included.
 
-    ``accounts`` lets a caller that already fetched the (date-independent) open
-    account list for this workspace/filter pass it in, instead of re-querying
+    ``accounts`` lets a caller that already fetched the account list for
+    this workspace/filter pass it in, instead of re-querying
     it for every snapshot in a multi-point trend. Omit it to fetch as before.
     """
     if accounts is None:
-        accounts = await _get_open_accounts(session, workspace_id, account_ids)
+        accounts = await _get_open_accounts(session, workspace_id, account_ids, closed_after=cutoff)
+    # An account closed after the cutoff was still open on it.
+    accounts = [
+        a for a in accounts
+        if not a.is_closed or (a.closed_at is not None and a.closed_at.date() > cutoff)
+    ]
 
     accounts_total = 0.0
     liabilities_total = 0.0
@@ -395,9 +400,9 @@ async def get_net_worth_report(
 
     points = _date_points(start, axis_end, interval)
 
-    # Fetch the open-account list once: it does not depend on the snapshot
-    # date, so every point below reuses it instead of re-querying it.
-    accounts = await _get_open_accounts(session, workspace_id, account_ids)
+    # Fetch the account list once, including accounts closed during the
+    # period; each point below keeps the ones still open on its date.
+    accounts = await _get_open_accounts(session, workspace_id, account_ids, closed_after=start)
 
     # Compute snapshot at each date point
     trend: list[ReportDataPoint] = []
