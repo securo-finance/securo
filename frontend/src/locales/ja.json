@@ -2016,7 +2016,9 @@
       "fee": "手数料",
       "kind": "買付/売却",
       "currency": "通貨",
-      "notes": "メモ"
+      "notes": "メモ",
+      "old_units": "分割前の数量",
+      "new_units": "分割後の数量"
     },
     "walletWarningTitle": "すでにポートフォリオに存在します",
     "warning": {
@@ -2025,7 +2027,8 @@
     },
     "kind": {
       "buy": "買付",
-      "sell": "売却"
+      "sell": "売却",
+      "split": "株式分割"
     },
     "reason": {
       "missing_ticker": "ティッカーなし",
@@ -2035,8 +2038,14 @@
       "invalid_fee": "読み取れない手数料",
       "invalid_kind": "認識できない買付/売却値",
       "unknown_ticker": "価格プロバイダーがティッカーを検出できません",
-      "oversell": "保有数を超える売却"
-    }
+      "oversell": "保有数を超える売却",
+      "invalid_split": "分割比率を読み取れない、または売買の行に比率がある",
+      "split_not_allowed": "銀行と同期している保有には分割を記録できません",
+      "split_in_future": "分割の日付を未来にすることはできません",
+      "nothing_held_before_split": "分割前に保有数量がありません",
+      "too_large": "保有が大きすぎて保存できません"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "資産",

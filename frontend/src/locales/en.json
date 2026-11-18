@@ -2016,7 +2016,9 @@
       "fee": "Fee",
       "kind": "Buy/Sell",
       "currency": "Currency",
-      "notes": "Notes"
+      "notes": "Notes",
+      "old_units": "Old units",
+      "new_units": "New units"
     },
     "walletWarningTitle": "Already in your portfolio",
     "warning": {
@@ -2025,7 +2027,8 @@
     },
     "kind": {
       "buy": "Buy",
-      "sell": "Sell"
+      "sell": "Sell",
+      "split": "Split"
     },
     "reason": {
       "missing_ticker": "no ticker",
@@ -2035,8 +2038,14 @@
       "invalid_fee": "unreadable fee",
       "invalid_kind": "unrecognised buy/sell value",
       "unknown_ticker": "ticker not found by the price provider",
-      "oversell": "selling more units than the position holds"
-    }
+      "oversell": "selling more units than the position holds",
+      "invalid_split": "unreadable split ratio, or a ratio on a buy or sell",
+      "split_not_allowed": "splits can't be recorded on a holding synced from a bank",
+      "split_in_future": "a split can't be dated in the future",
+      "nothing_held_before_split": "no units held before the split",
+      "too_large": "would leave the holding too large to store"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Assets",

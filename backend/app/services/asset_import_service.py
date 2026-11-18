@@ -24,13 +24,14 @@ import io
 import logging
 import uuid
 from datetime import date as date_type
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.models.asset import Asset
 from app.models.asset_group import AssetGroup
 from app.models.asset_transaction import AssetTransaction
@@ -65,6 +66,7 @@ _QUOTE_FALLBACK_LIMIT = 25
 #: drives both the mapping dropdowns and the downloadable template.
 ASSET_CSV_MAPPABLE_FIELDS = (
     'ticker', 'date', 'quantity', 'price', 'fee', 'kind', 'currency', 'name', 'notes', 'external_id',
+    'old_units', 'new_units',
 )
 ASSET_CSV_REQUIRED_FIELDS = ('ticker', 'date', 'quantity', 'price')
 
@@ -158,6 +160,9 @@ _COLUMN_CANDIDATES: dict[str, tuple[str, ...]] = {
         'заметки', 'примечание', 'нотатки', 'примітки',
     ),
     'external_id': ('external_id', 'id', 'order id', 'trade id', 'reference'),
+    # A split row's ratio: `old_units` held before it became `new_units`.
+    'old_units': ('old units', 'split from', 'ratio from'),
+    'new_units': ('new units', 'split to', 'ratio to'),
 }
 
 #: Values that mean "this row is a sale". Everything else is read as a buy,
@@ -181,6 +186,27 @@ _BUY_WORDS = {
     'kupno', 'zakup', 'kupic', 'kupić',                           # pl
     'покупка', 'купить', 'купівля', 'купити',                     # ru/uk
 }
+#: Values that mean "this row is a split", forward or reverse. A split row
+#: carries its ratio in `old_units`/`new_units` instead of a quantity and price.
+_SPLIT_WORDS = {
+    'split', 'stock split', 'reverse split',
+    'desdobramento', 'desdobro', 'grupamento', 'inplit',          # pt
+    'desdoblamiento', 'contrasplit',                              # es
+    'division', 'regroupement',                                   # fr
+    'aktiensplit', 'zusammenlegung',                              # de
+    'frazionamento', 'raggruppamento',                            # it
+    'podzial', 'scalenie',                                        # pl
+    'сплит', 'дробление', 'консолидация',                         # ru
+    'спліт', 'дроблення', 'консолідація',                         # uk
+}
+
+
+def _parse_split_units(raw: str) -> Optional[int]:
+    """One side of a split ratio: a whole number, or None when it isn't one."""
+    value = _parse_decimal(raw)
+    if value is None or value != value.to_integral_value():
+        return None
+    return int(value)
 
 
 def _decode(content: bytes) -> str:
@@ -308,6 +334,43 @@ def parse_orders_csv(
             errors.append(AssetImportRowError(row=index, reason='invalid_date', ticker=ticker))
             continue
 
+        kind_word = _normalize_header(cell(row, 'kind'))
+        old_units = _parse_split_units(cell(row, 'old_units'))
+        new_units = _parse_split_units(cell(row, 'new_units'))
+        if kind_word in _SPLIT_WORDS:
+            # Checked like a split entered by hand: a ratio in range that
+            # changes something, and no money on the row.
+            moves_money = any(
+                (_parse_decimal(cell(row, field)) or Decimal('0')) != 0
+                for field in ('quantity', 'price', 'fee')
+            )
+            if (
+                not asset_transaction_service.split_ratio_in_range(old_units, new_units)
+                or old_units == new_units
+                or moves_money
+            ):
+                errors.append(AssetImportRowError(row=index, reason='invalid_split', ticker=ticker))
+                continue
+            orders.append(AssetOrderImport(
+                row=index,
+                ticker=ticker,
+                date=order_date,
+                kind='split',
+                quantity=Decimal('0'),
+                price=Decimal('0'),
+                currency=(cell(row, 'currency') or None),
+                name=(cell(row, 'name') or None),
+                notes=(cell(row, 'notes') or None),
+                external_id=(cell(row, 'external_id') or None),
+                old_units=old_units,
+                new_units=new_units,
+            ))
+            continue
+        if cell(row, 'old_units') or cell(row, 'new_units'):
+            # A ratio only means something on a split.
+            errors.append(AssetImportRowError(row=index, reason='invalid_split', ticker=ticker))
+            continue
+
         quantity = _parse_decimal(cell(row, 'quantity'))
         if quantity is None or quantity == 0:
             errors.append(AssetImportRowError(row=index, reason='invalid_quantity', ticker=ticker))
@@ -320,7 +383,6 @@ def parse_orders_csv(
 
         # Buy or sell comes from an explicit column when the file has one, and
         # from the sign of the quantity otherwise — the convention brokers use.
-        kind_word = _normalize_header(cell(row, 'kind'))
         if kind_word in _SELL_WORDS:
             kind = 'sell'
         elif kind_word in _BUY_WORDS:
@@ -453,26 +515,63 @@ async def _holdings_in_other_wallets(
     return {asset.ticker.upper(): (asset, name) for asset, name in result.all() if asset.ticker}
 
 
-async def _already_imported(
+async def _ledger_rows(
     session: AsyncSession,
     asset_ids: list[uuid.UUID],
-) -> set[tuple]:
+) -> list[AssetTransaction]:
+    if not asset_ids:
+        return []
+    result = await session.execute(
+        select(AssetTransaction).where(AssetTransaction.asset_id.in_(asset_ids))
+    )
+    return list(result.scalars().all())
+
+
+def _row_key(asset_id: uuid.UUID, entry: AssetTransaction | AssetOrderImport) -> tuple:
+    """What makes a ledger row the same as a file row, on one holding."""
+    return (
+        'row', asset_id, entry.date, entry.kind, entry.quantity, entry.price,
+        entry.old_units, entry.new_units,
+    )
+
+
+def _fingerprints(rows: list[AssetTransaction]) -> set[tuple]:
     """Fingerprints of the ledger rows these holdings already carry.
 
     Re-uploading the same file is the normal way people fix a mapping mistake,
     so a repeat run should add nothing rather than double the position.
     """
-    if not asset_ids:
-        return set()
-    result = await session.execute(
-        select(AssetTransaction).where(AssetTransaction.asset_id.in_(asset_ids))
-    )
     seen = set()
-    for tx in result.scalars().all():
+    for tx in rows:
         if tx.external_id:
             seen.add(('external', tx.asset_id, tx.external_id))
-        seen.add(('row', tx.asset_id, tx.date, tx.kind, tx.quantity, tx.price))
+        seen.add(_row_key(tx.asset_id, tx))
     return seen
+
+
+def _ledger_problem(
+    ledger: list[AssetTransaction],
+    entry: AssetTransaction,
+    asset: Asset,
+) -> Optional[tuple[str, Optional[str]]]:
+    """Why `entry` can't join this holding's ledger, as (reason, detail), or None.
+
+    The same checks a buy, sell or split entered by hand goes through, run on
+    the ledger as it stands on the entry's date: a sell or a reverse split
+    must not leave any later sell short, a split needs units to split, and
+    the result has to fit the asset's columns.
+    """
+    if entry.kind == 'split' and asset_transaction_service.nothing_held_before(ledger, entry.date):
+        return 'nothing_held_before_split', None
+    prospective = ledger + [entry]
+    if entry.kind in ('sell', 'split'):
+        over = asset_transaction_service._detect_oversell(prospective)
+        if over is not None:
+            attempted, available = over
+            return 'oversell', f'selling {attempted} with {available} held'
+    if asset_transaction_service.too_large_to_store(prospective, asset):
+        return 'too_large', None
+    return None
 
 
 async def import_orders(
@@ -497,17 +596,18 @@ async def import_orders(
     tickers = [o.ticker for o in ordered]
 
     holdings = await _existing_holdings(session, workspace_id, group_id, tickers)
-    seen = await _already_imported(session, [a.id for a in holdings.values()])
+    existing_rows = await _ledger_rows(session, [a.id for a in holdings.values()])
+    seen = _fingerprints(existing_rows)
 
     elsewhere = await _holdings_in_other_wallets(session, workspace_id, group_id, tickers)
     warnings: list[AssetImportWarning] = []
     if elsewhere:
-        seen_elsewhere = await _already_imported(session, [a.id for a, _ in elsewhere.values()])
+        seen_elsewhere = _fingerprints(await _ledger_rows(session, [a.id for a, _ in elsewhere.values()]))
         for ticker, (other, wallet_name) in sorted(elsewhere.items()):
             # Same orders already on the other holding is the strong signal:
             # this is the same position about to be counted twice.
             duplicated = any(
-                ('row', other.id, o.date, o.kind, o.quantity, o.price) in seen_elsewhere
+                _row_key(other.id, o) in seen_elsewhere
                 for o in ordered if o.ticker == ticker
             )
             warnings.append(AssetImportWarning(
@@ -520,15 +620,26 @@ async def import_orders(
     resolvable = await resolve_tickers(missing_tickers, market_provider=market_provider) if missing_tickers else {}
 
     errors: list[AssetImportRowError] = []
-    accepted: list[AssetOrderImport] = []
+    accepted: list[tuple[AssetOrderImport, AssetTransaction]] = []
     skipped = 0
 
-    # Units per ticker as the file is replayed, so a sell that would leave the
-    # position negative is caught here rather than by the ledger halfway
-    # through the write.
-    units: dict[str, Decimal] = {
-        ticker: Decimal(str(asset.units or 0)) for ticker, asset in holdings.items()
-    }
+    # Each holding's ledger as the file is replayed onto it: what it already
+    # holds, splits included, plus the rows accepted so far. Every row is
+    # checked against the ledger on its own date, the way an entry made by
+    # hand is, so a sell is measured against the units held then and not
+    # against today's position, and nothing the ledger or the columns would
+    # refuse is left to fail halfway through the write.
+    ledgers: dict[str, list[AssetTransaction]] = {ticker: [] for ticker in holdings}
+    by_id = {asset.id: ticker for ticker, asset in holdings.items()}
+    for tx in existing_rows:
+        ledgers[by_id[tx.asset_id]].append(tx)
+    # A holding the file creates has no quote yet, so only its units and
+    # average price are measured.
+    unquoted = Asset(valuation_method='market_price')
+    # Rows on the same date replay in the order they were entered, so the
+    # file's rows go after the ledger's and keep the file's order.
+    entered_at = datetime.now(timezone.utc)
+    today = app_today()
 
     for order in ordered:
         if order.ticker not in holdings and not resolvable.get(order.ticker, False):
@@ -537,29 +648,45 @@ async def import_orders(
 
         asset = holdings.get(order.ticker)
         if asset is not None:
-            fingerprint = ('row', asset.id, order.date, order.kind, order.quantity, order.price)
             external = ('external', asset.id, order.external_id) if order.external_id else None
-            if fingerprint in seen or (external and external in seen):
+            if _row_key(asset.id, order) in seen or (external and external in seen):
                 skipped += 1
                 continue
 
-        held = units.get(order.ticker, Decimal('0'))
-        if order.kind == 'sell' and order.quantity > held:
-            errors.append(AssetImportRowError(
-                row=order.row, reason='oversell', ticker=order.ticker,
-                detail=f'selling {order.quantity} with {held} held',
-            ))
+        if order.kind == 'split':
+            if asset is not None and asset_transaction_service.split_not_allowed(asset):
+                errors.append(AssetImportRowError(row=order.row, reason='split_not_allowed', ticker=order.ticker))
+                continue
+            if order.date > today:
+                errors.append(AssetImportRowError(row=order.row, reason='split_in_future', ticker=order.ticker))
+                continue
+
+        entry = AssetTransaction(
+            kind=order.kind,
+            quantity=order.quantity,
+            price=order.price,
+            fee=order.fee or Decimal('0'),
+            date=order.date,
+            old_units=order.old_units,
+            new_units=order.new_units,
+            created_at=entered_at + timedelta(microseconds=len(accepted)),
+        )
+        ledger = ledgers.setdefault(order.ticker, [])
+        problem = _ledger_problem(ledger, entry, asset or unquoted)
+        if problem is not None:
+            reason, detail = problem
+            errors.append(AssetImportRowError(row=order.row, reason=reason, ticker=order.ticker, detail=detail))
             continue
 
-        units[order.ticker] = held + (order.quantity if order.kind == 'buy' else -order.quantity)
-        accepted.append(order)
+        ledger.append(entry)
+        accepted.append((order, entry))
 
-    to_create = sorted({o.ticker for o in accepted if o.ticker not in holdings})
+    to_create = sorted({o.ticker for o, _ in accepted if o.ticker not in holdings})
     summary = {
         'imported': len(accepted),
         'skipped': skipped,
         'holdings_created': len(to_create),
-        'holdings_matched': len({o.ticker for o in accepted if o.ticker in holdings}),
+        'holdings_matched': len({o.ticker for o, _ in accepted if o.ticker in holdings}),
         'errors': errors,
         'warnings': warnings,
     }
@@ -587,7 +714,7 @@ async def import_orders(
 
     touched: dict[str, Asset] = {}
     written = 0
-    for order in accepted:
+    for order, entry in accepted:
         asset = holdings.get(order.ticker)
         if asset is None:
             quote = quotes.get(order.ticker)
@@ -619,19 +746,14 @@ async def import_orders(
             await session.flush()
             holdings[order.ticker] = asset
 
-        session.add(AssetTransaction(
-            asset_id=asset.id,
-            workspace_id=workspace_id,
-            kind=order.kind,
-            quantity=order.quantity,
-            price=order.price,
-            fee=order.fee or Decimal('0'),
-            date=order.date,
-            source='import',
-            external_id=order.external_id,
-            import_id=log.id,
-            notes=order.notes,
-        ))
+        # The entry the checks ran on is the one written, entry time included.
+        entry.asset_id = asset.id
+        entry.workspace_id = workspace_id
+        entry.source = 'import'
+        entry.external_id = order.external_id
+        entry.import_id = log.id
+        entry.notes = order.notes
+        session.add(entry)
         touched[order.ticker] = asset
         written += 1
 
@@ -657,10 +779,11 @@ async def import_orders(
 def csv_template() -> str:
     """A file someone can fill in, with the required columns marked."""
     return (
-        'ticker*,date*,quantity*,price*,fee,kind,currency,notes\n'
-        'AAPL,2026-01-15,10,150.00,1.20,buy,USD,\n'
-        'AAPL,2026-03-02,-4,178.30,1.20,sell,USD,partial exit\n'
-        'PETR4.SA,2026-02-10,100,38.50,2.90,buy,BRL,\n'
+        'ticker*,date*,quantity*,price*,fee,kind,currency,notes,old_units,new_units\n'
+        'AAPL,2026-01-15,10,150.00,1.20,buy,USD,,,\n'
+        'AAPL,2026-03-02,-4,178.30,1.20,sell,USD,partial exit,,\n'
+        'PETR4.SA,2026-02-10,100,38.50,2.90,buy,BRL,,,\n'
+        'PETR4.SA,2026-04-01,,,,split,BRL,2-for-1,1,2\n'
     )
 
 

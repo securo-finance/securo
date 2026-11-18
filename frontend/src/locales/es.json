@@ -2020,7 +2020,9 @@
       "fee": "Comisión",
       "kind": "Compra/Venta",
       "currency": "Moneda",
-      "notes": "Notas"
+      "notes": "Notas",
+      "old_units": "Unidades antes",
+      "new_units": "Unidades después"
     },
     "walletWarningTitle": "Ya está en tu cartera",
     "warning": {
@@ -2029,7 +2031,8 @@
     },
     "kind": {
       "buy": "Compra",
-      "sell": "Venta"
+      "sell": "Venta",
+      "split": "Split"
     },
     "reason": {
       "missing_ticker": "sin ticker",
@@ -2039,8 +2042,14 @@
       "invalid_fee": "comisión ilegible",
       "invalid_kind": "compra/venta no reconocida",
       "unknown_ticker": "ticker no encontrado por el proveedor de precios",
-      "oversell": "venta mayor que la posición"
-    }
+      "oversell": "venta mayor que la posición",
+      "invalid_split": "proporción del split ilegible, o proporción en una compra o venta",
+      "split_not_allowed": "no se pueden registrar splits en un activo sincronizado con el banco",
+      "split_in_future": "un split no puede tener fecha futura",
+      "nothing_held_before_split": "no hay unidades antes del split",
+      "too_large": "dejaría el activo demasiado grande para guardarlo"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Activos",

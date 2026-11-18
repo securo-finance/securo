@@ -2017,7 +2017,9 @@
       "fee": "Gebühr",
       "kind": "Kauf/Verkauf",
       "currency": "Währung",
-      "notes": "Notizen"
+      "notes": "Notizen",
+      "old_units": "Stück vorher",
+      "new_units": "Stück nachher"
     },
     "walletWarningTitle": "Bereits im Portfolio",
     "warning": {
@@ -2026,7 +2028,8 @@
     },
     "kind": {
       "buy": "Kauf",
-      "sell": "Verkauf"
+      "sell": "Verkauf",
+      "split": "Split"
     },
     "reason": {
       "missing_ticker": "kein Ticker",
@@ -2036,8 +2039,14 @@
       "invalid_fee": "unlesbare Gebühr",
       "invalid_kind": "Kauf/Verkauf nicht erkannt",
       "unknown_ticker": "Ticker beim Kursanbieter nicht gefunden",
-      "oversell": "Verkauf größer als die Position"
-    }
+      "oversell": "Verkauf größer als die Position",
+      "invalid_split": "Split-Verhältnis unlesbar oder Verhältnis bei Kauf oder Verkauf",
+      "split_not_allowed": "Splits können bei einer mit der Bank synchronisierten Position nicht erfasst werden",
+      "split_in_future": "ein Split kann nicht in der Zukunft liegen",
+      "nothing_held_before_split": "vor dem Split werden keine Stücke gehalten",
+      "too_large": "die Position würde zu groß zum Speichern"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Vermögenswerte",

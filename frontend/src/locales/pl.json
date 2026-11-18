@@ -2113,7 +2113,9 @@
       "fee": "Prowizja",
       "kind": "Kupno/Sprzedaż",
       "currency": "Waluta",
-      "notes": "Notatki"
+      "notes": "Notatki",
+      "old_units": "Jednostki przed",
+      "new_units": "Jednostki po"
     },
     "walletWarningTitle": "Już w Twoim portfelu",
     "warning": {
@@ -2122,7 +2124,8 @@
     },
     "kind": {
       "buy": "Kupno",
-      "sell": "Sprzedaż"
+      "sell": "Sprzedaż",
+      "split": "Podział"
     },
     "reason": {
       "missing_ticker": "brak tickera",
@@ -2132,8 +2135,14 @@
       "invalid_fee": "nieczytelna prowizja",
       "invalid_kind": "nierozpoznane kupno/sprzedaż",
       "unknown_ticker": "ticker nieznany dostawcy notowań",
-      "oversell": "sprzedaż większa niż pozycja"
-    }
+      "oversell": "sprzedaż większa niż pozycja",
+      "invalid_split": "nieczytelny współczynnik podziału lub współczynnik przy kupnie lub sprzedaży",
+      "split_not_allowed": "nie można zapisać podziału dla pozycji synchronizowanej z bankiem",
+      "split_in_future": "podział nie może mieć daty z przyszłości",
+      "nothing_held_before_split": "brak jednostek przed podziałem",
+      "too_large": "pozycja byłaby zbyt duża, aby ją zapisać"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Aktywa",

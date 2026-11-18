@@ -2140,7 +2140,9 @@
       "fee": "Poplatok",
       "kind": "Nákup/predaj",
       "currency": "Mena",
-      "notes": "Poznámka"
+      "notes": "Poznámka",
+      "old_units": "Kusy pred",
+      "new_units": "Kusy po"
     },
     "walletWarningTitle": "Už je v tvojom portfóliu",
     "warning": {
@@ -2149,7 +2151,8 @@
     },
     "kind": {
       "buy": "Nákup",
-      "sell": "Predaj"
+      "sell": "Predaj",
+      "split": "Split"
     },
     "reason": {
       "missing_ticker": "chýba ticker",
@@ -2159,8 +2162,14 @@
       "invalid_fee": "nečitateľný poplatok",
       "invalid_kind": "nerozpoznaná hodnota nákup/predaj",
       "unknown_ticker": "poskytovateľ cien ticker nenašiel",
-      "oversell": "predaj väčšieho množstva, než pozícia obsahuje"
-    }
+      "oversell": "predaj väčšieho množstva, než pozícia obsahuje",
+      "invalid_split": "nečitateľný pomer splitu alebo pomer pri nákupe či predaji",
+      "split_not_allowed": "split nemožno zaznamenať pri pozícii synchronizovanej s bankou",
+      "split_in_future": "split nemôže mať budúci dátum",
+      "nothing_held_before_split": "pred splitom nie sú držané žiadne kusy",
+      "too_large": "pozícia by bola príliš veľká na uloženie"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Aktíva",

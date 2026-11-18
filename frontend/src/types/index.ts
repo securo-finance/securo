@@ -1268,7 +1268,8 @@ export interface AssetOrderImport {
   row: number
   ticker: string
   date: string
-  kind: 'buy' | 'sell'
+  kind: 'buy' | 'sell' | 'split'
+  /** 0 on a split, which carries its ratio in old_units → new_units. */
   quantity: number
   price: number
   fee: number
@@ -1276,6 +1277,8 @@ export interface AssetOrderImport {
   name: string | null
   notes: string | null
   external_id: string | null
+  old_units?: number | null
+  new_units?: number | null
 }
 
 export interface AssetImportRowError {

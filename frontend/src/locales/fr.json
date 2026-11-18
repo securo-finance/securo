@@ -2020,7 +2020,9 @@
       "fee": "Frais",
       "kind": "Achat/Vente",
       "currency": "Devise",
-      "notes": "Notes"
+      "notes": "Notes",
+      "old_units": "Unités avant",
+      "new_units": "Unités après"
     },
     "walletWarningTitle": "Déjà dans votre portefeuille",
     "warning": {
@@ -2029,7 +2031,8 @@
     },
     "kind": {
       "buy": "Achat",
-      "sell": "Vente"
+      "sell": "Vente",
+      "split": "Division"
     },
     "reason": {
       "missing_ticker": "aucun ticker",
@@ -2039,8 +2042,14 @@
       "invalid_fee": "frais illisibles",
       "invalid_kind": "achat/vente non reconnu",
       "unknown_ticker": "ticker introuvable chez le fournisseur de cours",
-      "oversell": "vente supérieure à la position"
-    }
+      "oversell": "vente supérieure à la position",
+      "invalid_split": "ratio de division illisible, ou ratio sur un achat ou une vente",
+      "split_not_allowed": "impossible d’enregistrer une division sur une position synchronisée avec la banque",
+      "split_in_future": "une division ne peut pas être datée dans le futur",
+      "nothing_held_before_split": "aucune unité détenue avant la division",
+      "too_large": "rendrait la position trop grande pour être enregistrée"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Actifs",

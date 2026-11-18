@@ -590,6 +590,217 @@ def test_explicit_date_format_is_strict():
     assert [(e.row, e.reason) for e in errors] == [(2, "invalid_date")]
 
 
+# ---------------------------------------------------------------------------
+# Splits (issue #1356)
+# ---------------------------------------------------------------------------
+
+
+async def _holding_with_ledger(session, user, workspace, *entries: tuple) -> Asset:
+    """An AAPL holding whose ledger holds `entries`, cached like the app does."""
+    from app.services import asset_transaction_service
+
+    asset = Asset(
+        id=uuid.uuid4(), user_id=user.id, workspace_id=workspace.id,
+        name="Apple", type="stock", currency="USD", valuation_method="market_price",
+        ticker="AAPL", units=Decimal("0"),
+    )
+    session.add(asset)
+    for kind, on, quantity, price, ratio in entries:
+        old_units, new_units = ratio or (None, None)
+        session.add(AssetTransaction(
+            asset_id=asset.id, workspace_id=workspace.id, kind=kind, date=on,
+            quantity=Decimal(quantity), price=Decimal(price), fee=Decimal("0"),
+            old_units=old_units, new_units=new_units, source="manual",
+        ))
+    await session.flush()
+    await asset_transaction_service.recompute_and_cache(session, asset)
+    await session.commit()
+    return asset
+
+
+def test_a_split_row_is_read_with_its_ratio():
+    orders, errors, _ = asset_import_service.parse_orders_csv(_csv(
+        "ticker,date,quantity,price,kind,old_units,new_units",
+        "AAPL,2026-03-01,,,split,1,4",
+        "PETR4.SA,2026-03-01,0,0,grupamento,10,1",
+    ))
+    assert errors == []
+    assert [(o.kind, o.quantity, o.price, o.old_units, o.new_units) for o in orders] == [
+        ("split", Decimal("0"), Decimal("0"), 1, 4),
+        ("split", Decimal("0"), Decimal("0"), 10, 1),
+    ]
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        "AAPL,2026-03-01,,,split,1,",          # half a ratio
+        "AAPL,2026-03-01,,,split,2,2",         # changes nothing
+        "AAPL,2026-03-01,,,split,0,4",         # zero side
+        "AAPL,2026-03-01,,,split,1.5,4",       # not whole
+        "AAPL,2026-03-01,,,split,1,1000001",   # past the manual limit
+        "AAPL,2026-03-01,5,10,split,1,4",      # a split moves no money
+        "AAPL,2026-03-01,5,10,buy,1,4",        # a ratio on a buy
+    ],
+)
+def test_a_split_row_is_validated_like_a_manual_split(row):
+    orders, errors, _ = asset_import_service.parse_orders_csv(_csv(
+        "ticker,date,quantity,price,kind,old_units,new_units", row,
+    ))
+    assert orders == []
+    assert [(e.row, e.reason) for e in errors] == [(2, "invalid_split")]
+
+
+@pytest.mark.asyncio
+async def test_a_sell_after_an_imported_split_counts_the_split_units(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,kind,old_units,new_units",
+        "AAPL,2026-01-15,10,100.00,buy,,",
+        "AAPL,2026-03-01,,,split,1,4",
+        "AAPL,2026-04-01,30,30.00,sell,,",
+    ), provider)
+
+    assert summary["errors"] == []
+    assert summary["imported"] == 3
+    stored = await _only_asset(session, test_workspace)
+    assert stored.units == Decimal("10")
+    assert stored.average_price == Decimal("25")  # 1000 of cost over 40 units
+    split = (await session.execute(
+        select(AssetTransaction).where(AssetTransaction.kind == "split")
+    )).scalar_one()
+    assert (split.old_units, split.new_units, split.source) == (1, 4, "import")
+
+
+@pytest.mark.asyncio
+async def test_a_sell_after_a_split_in_the_ledger_is_accepted(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    """The buy comes from the file, the split is already in the ledger."""
+    asset = await _holding_with_ledger(
+        session, test_user, test_workspace,
+        ("buy", date(2026, 1, 10), "1", "100", None),
+        ("split", date(2026, 3, 1), "0", "0", (1, 10)),
+    )
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price",
+        "AAPL,2026-02-01,5,100.00",
+        "AAPL,2026-04-01,-60,15.00",
+    ), provider)
+
+    assert summary["errors"] == []
+    reloaded = await session.get(Asset, asset.id)
+    assert reloaded is not None and reloaded.units == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_a_sell_before_a_split_is_measured_against_the_units_held_then(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    """Today's 100 units are 10 before the split: selling 50 then is short."""
+    asset = await _holding_with_ledger(
+        session, test_user, test_workspace,
+        ("buy", date(2026, 1, 10), "10", "100", None),
+        ("split", date(2026, 3, 1), "0", "0", (1, 10)),
+    )
+    assert asset.units == Decimal("100")
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price",
+        "AAPL,2026-02-01,-50,120.00",
+    ), provider)
+
+    assert summary["imported"] == 0
+    assert [(e.row, e.reason) for e in summary["errors"]] == [(2, "oversell")]
+
+
+@pytest.mark.asyncio
+async def test_a_sell_that_leaves_a_later_ledger_sell_short_is_refused(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    await _holding_with_ledger(
+        session, test_user, test_workspace,
+        ("buy", date(2026, 1, 10), "10", "100", None),
+        ("sell", date(2026, 3, 1), "8", "120", None),
+    )
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price",
+        "AAPL,2026-02-01,-5,110.00",
+    ), provider)
+
+    assert [(e.row, e.reason) for e in summary["errors"]] == [(2, "oversell")]
+
+
+@pytest.mark.asyncio
+async def test_a_split_with_nothing_held_before_it_is_refused(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,kind,old_units,new_units",
+        "AAPL,2026-01-01,,,split,1,4",
+        "AAPL,2026-01-15,10,100.00,buy,,",
+    ), provider)
+
+    assert summary["imported"] == 1
+    assert [(e.row, e.reason) for e in summary["errors"]] == [(2, "nothing_held_before_split")]
+
+
+@pytest.mark.asyncio
+async def test_a_split_dated_in_the_future_is_refused(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    from datetime import timedelta
+
+    from app.core.app_clock import app_today
+
+    tomorrow = (app_today() + timedelta(days=1)).isoformat()
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,kind,old_units,new_units",
+        "AAPL,2026-01-15,10,100.00,buy,,",
+        f"AAPL,{tomorrow},,,split,1,4",
+    ), provider)
+
+    assert [(e.row, e.reason) for e in summary["errors"]] == [(3, "split_in_future")]
+
+
+@pytest.mark.asyncio
+async def test_a_reimported_split_is_skipped(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    content = _csv(
+        "ticker,date,quantity,price,kind,old_units,new_units",
+        "AAPL,2026-01-15,10,100.00,buy,,",
+        "AAPL,2026-03-01,,,split,1,4",
+    )
+    await _import(session, test_workspace, test_user, content, provider)
+    summary = await _import(session, test_workspace, test_user, content, provider)
+
+    assert (summary["imported"], summary["skipped"]) == (0, 2)
+    assert (await _only_asset(session, test_workspace)).units == Decimal("40")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "rows",
+    [
+        # More units than assets.units holds.
+        ("AAPL,2026-01-15,999999999,1.00,buy,,", "AAPL,2026-01-16,1,1.00,buy,,"),
+        # A split that multiplies the position past it.
+        ("AAPL,2026-01-15,1000,1.00,buy,,", "AAPL,2026-03-01,,,split,1,1000000"),
+    ],
+)
+async def test_a_row_that_would_overflow_the_holding_is_refused(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider, rows
+):
+    """The size check manual entries get, instead of failing in the database."""
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,kind,old_units,new_units", *rows,
+    ), provider)
+
+    assert summary["imported"] == 1
+    assert [(e.row, e.reason) for e in summary["errors"]] == [(3, "too_large")]
+
+
 def test_explicit_date_format_parses_when_it_fits():
     orders, errors, _ = asset_import_service.parse_orders_csv(
         _csv(

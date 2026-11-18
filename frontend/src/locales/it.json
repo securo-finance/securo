@@ -2020,7 +2020,9 @@
       "fee": "Commissioni",
       "kind": "Acquisto/Vendita",
       "currency": "Valuta",
-      "notes": "Note"
+      "notes": "Note",
+      "old_units": "Unità prima",
+      "new_units": "Unità dopo"
     },
     "walletWarningTitle": "Già nel tuo portafoglio",
     "warning": {
@@ -2029,7 +2031,8 @@
     },
     "kind": {
       "buy": "Acquisto",
-      "sell": "Vendita"
+      "sell": "Vendita",
+      "split": "Frazionamento"
     },
     "reason": {
       "missing_ticker": "nessun ticker",
@@ -2039,8 +2042,14 @@
       "invalid_fee": "commissione illeggibile",
       "invalid_kind": "acquisto/vendita non riconosciuto",
       "unknown_ticker": "ticker non trovato dal fornitore di prezzi",
-      "oversell": "vendita superiore alla posizione"
-    }
+      "oversell": "vendita superiore alla posizione",
+      "invalid_split": "rapporto di frazionamento illeggibile, o rapporto su un acquisto o una vendita",
+      "split_not_allowed": "non si possono registrare frazionamenti su una posizione sincronizzata con la banca",
+      "split_in_future": "un frazionamento non può avere una data futura",
+      "nothing_held_before_split": "nessuna unità detenuta prima del frazionamento",
+      "too_large": "renderebbe la posizione troppo grande da salvare"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Beni",

@@ -166,14 +166,44 @@ def _raise_if_oversell(transactions: list[AssetTransaction]) -> None:
         )
 
 
+def nothing_held_before(transactions: list[AssetTransaction], on: date) -> bool:
+    """Whether the ledger holds no units just before `on`, where a split would apply.
+
+    Strictly before: a split is applied ahead of the trades on its own date.
+    """
+    return _recompute([t for t in transactions if t.date < on])["units"] <= 0
+
+
+def split_not_allowed(asset: Asset) -> bool:
+    """Splits live in the ledger of holdings tracked here. A synced holding
+    takes its units from the provider, which reflects the split itself."""
+    return asset.valuation_method != "market_price" or asset.connection_id is not None
+
+
+def too_large_to_store(transactions: list[AssetTransaction], asset: Asset) -> bool:
+    """Whether the ledger would leave more units, more value at the current
+    price or a higher average price than the asset's columns hold.
+
+    The ledger's own limits don't rule this out, and the database would only
+    say so while saving. A quote from before a split is never stored against
+    the new quantity, so it doesn't count.
+    """
+    position = _recompute(transactions)
+    units = position["units"]
+    value = Decimal("0") if _quote_predates_a_split(asset, transactions) else units * _d(asset.last_price)
+    return (
+        max(units, value) > _MAX_STORED_VALUE
+        or _d(position["average_price"]) > _MAX_STORED_PRICE
+    )
+
+
 def _raise_if_nothing_held_before(transactions: list[AssetTransaction], on: date) -> None:
     """A split needs units to split: reject one dated before the holding's
     first buy, or while the position is closed. Without this, a split on a
     holding whose units predate the ledger (a "no cost" holding) would
     recompute its units to zero.
     """
-    # Strictly before: a split is applied ahead of the trades on its own date.
-    if _recompute([t for t in transactions if t.date < on])["units"] <= 0:
+    if nothing_held_before(transactions, on):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=(
@@ -198,9 +228,7 @@ def _raise_if_split_in_future(on: date) -> None:
 
 
 def _raise_if_split_not_allowed(asset: Asset) -> None:
-    # Splits live in the ledger of holdings tracked here. A synced holding
-    # takes its units from the provider, which reflects the split itself.
-    if asset.valuation_method != "market_price" or asset.connection_id is not None:
+    if split_not_allowed(asset):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=(
@@ -218,17 +246,7 @@ def _quote_predates_a_split(asset: Asset, transactions: list[AssetTransaction]) 
 
 
 def _raise_if_too_large_to_store(transactions: list[AssetTransaction], asset: Asset) -> None:
-    # The ledger's own limits can still leave more units, more value at the
-    # current price or a higher average price than the columns hold, and the
-    # database would only say so while saving. A quote from before a split is
-    # never stored against the new quantity, so it doesn't count.
-    position = _recompute(transactions)
-    units = position["units"]
-    value = Decimal("0") if _quote_predates_a_split(asset, transactions) else units * _d(asset.last_price)
-    if (
-        max(units, value) > _MAX_STORED_VALUE
-        or _d(position["average_price"]) > _MAX_STORED_PRICE
-    ):
+    if too_large_to_store(transactions, asset):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="This would leave the holding too large to store. Check the quantity, price and ratio.",
@@ -357,6 +375,16 @@ async def list_workspace_transactions(
     return [_tx_to_read(tx, asset) for tx, asset in result.all()]
 
 
+def split_ratio_in_range(old_units: Optional[int], new_units: Optional[int]) -> bool:
+    """Both sides of a split are whole numbers from 1 to `_MAX_SPLIT_UNITS`."""
+    return (
+        old_units is not None
+        and new_units is not None
+        and 0 < old_units <= _MAX_SPLIT_UNITS
+        and 0 < new_units <= _MAX_SPLIT_UNITS
+    )
+
+
 def _validate(
     kind: str,
     quantity: Optional[Decimal],
@@ -372,12 +400,7 @@ def _validate(
             detail="kind must be 'buy', 'sell' or 'split'",
         )
     if kind == "split":
-        if (
-            old_units is None
-            or new_units is None
-            or not 0 < old_units <= _MAX_SPLIT_UNITS
-            or not 0 < new_units <= _MAX_SPLIT_UNITS
-        ):
+        if not split_ratio_in_range(old_units, new_units):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=(
