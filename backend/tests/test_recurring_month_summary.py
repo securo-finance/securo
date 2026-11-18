@@ -299,6 +299,39 @@ async def test_a_paused_schedule_skipping_its_first_keeps_the_charge_where_gener
 
 
 @pytest.mark.asyncio
+async def test_generation_never_links_a_charge_from_another_workspace(
+    session, test_user, test_workspace, test_account,
+):
+    """Sync can move an account, and its charges, to another workspace.
+
+    Generation then writes this bill's own placeholder instead of stamping
+    the other workspace's charge with a link to it.
+    """
+    other = Workspace(id=uuid.uuid4(), name="Other", created_by_user_id=test_user.id)
+    session.add(other)
+    rent = _recurring(session, test_user, test_workspace, test_account,
+                      "Rent", "500", "debit", "monthly", date(2027, 1, 1), auto_generate=True)
+    moved_charge = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=other.id,
+        account_id=test_account.id, description="Rent", amount=Decimal("500"),
+        currency="BRL", date=date(2027, 1, 1), type="debit", source="sync",
+        status="posted",
+    )
+    session.add(moved_charge)
+    await session.commit()
+
+    await generate_pending(
+        session, test_user.id, up_to=date(2027, 1, 1), workspace_id=test_workspace.id,
+    )
+    await session.refresh(moved_charge)
+    assert moved_charge.recurring_transaction_id is None
+    placeholder = (await session.execute(
+        select(Transaction).where(Transaction.recurring_transaction_id == rent.id)
+    )).scalar_one()
+    assert placeholder.workspace_id == test_workspace.id
+
+
+@pytest.mark.asyncio
 async def test_a_charge_moved_to_another_workspace_stays_out(
     session, test_user, test_workspace, test_account,
 ):
