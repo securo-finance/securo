@@ -11,11 +11,13 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.agents.schemas.conversation import SendMessageRequest
 from app.core.config import Settings
+from app.main import app
 
 
 def _shipped_default() -> int:
@@ -95,17 +97,26 @@ def test_message_content_is_capped_at_4000_characters():
     assert "4000" in str(excinfo.value)
 
 
-async def test_oversized_message_is_refused_with_422(client: AsyncClient, auth_headers):
+@pytest.mark.parametrize(
+    ("content", "expected_in_message"),
+    [
+        pytest.param("x" * 4001, "4000", id="too-long"),
+        pytest.param("", "at least 1 character", id="empty"),
+    ],
+)
+async def test_invalid_message_content_is_refused_with_422(
+    client: AsyncClient, auth_headers, content: str, expected_in_message: str
+):
     response = await client.post(
         _chat_url(),
-        json={"content": "x" * 4001},
+        json={"content": content},
         headers=auth_headers,
     )
 
     assert response.status_code == 422
     detail = response.json()["detail"]
     assert detail[0]["loc"] == ["body", "content"]
-    assert "4000" in detail[0]["msg"]
+    assert expected_in_message in detail[0]["msg"]
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +138,22 @@ async def test_chat_is_rate_limited_per_ip(client: AsyncClient):
     assert refused.headers["Retry-After"] == "60"
 
 
+async def test_chat_limit_is_per_client_ip(client: AsyncClient):
+    """One visitor exhausting the ceiling must not lock out another: a bucket
+    shared by every IP would fail the second request below with a 429."""
+    with patch("app.core.rate_limit.get_settings", lambda: _settings(limit=2)):
+        for _ in range(2):
+            response = await client.post(_chat_url(), json={"content": "hi"})
+            assert response.status_code == 401
+        assert (await client.post(_chat_url(), json={"content": "hi"})).status_code == 429
+
+        other_visitor = ASGITransport(app=app, client=("198.51.100.7", 443))
+        async with AsyncClient(transport=other_visitor, base_url="http://test") as other:
+            from_elsewhere = await other.post(_chat_url(), json={"content": "hi"})
+
+    assert from_elsewhere.status_code == 401
+
+
 async def test_chat_limit_is_shared_by_every_agent(client: AsyncClient):
     """Cycling agent ids must not hand a caller a fresh budget per path."""
     with patch("app.core.rate_limit.get_settings", lambda: _settings(limit=2)):
@@ -139,12 +166,29 @@ async def test_chat_limit_is_shared_by_every_agent(client: AsyncClient):
 
 
 async def test_zero_disables_the_chat_limit(client: AsyncClient):
+    """More requests than the shipped default, so a zero that quietly fell back
+    to the default would be refused on the surplus instead of passing here."""
     with patch("app.core.rate_limit.get_settings", lambda: _settings(limit=0)):
         responses = [
-            await client.post(_chat_url(), json={"content": "hi"}) for _ in range(12)
+            await client.post(_chat_url(), json={"content": "hi"})
+            for _ in range(_shipped_default() + 5)
         ]
 
     assert {r.status_code for r in responses} == {401}
+
+
+async def test_chat_refuses_with_503_when_the_limit_cannot_be_counted(
+    client: AsyncClient,
+):
+    """A Redis restart must not turn into a bare 500 the client cannot read."""
+
+    async def _unreachable():
+        raise RedisConnectionError("redis is down")
+
+    with patch("app.core.rate_limit.get_redis", _unreachable):
+        response = await client.post(_chat_url(), json={"content": "hi"})
+
+    assert response.status_code == 503
 
 
 async def test_default_chat_limit_leaves_room_for_a_normal_burst(client: AsyncClient):

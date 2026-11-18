@@ -74,6 +74,10 @@ x-backend-env: &backend-env
   AGENTS_ENABLED: ${AGENTS_ENABLED:-false}
   AGENTS_BUILTIN_MCP_URL: ${AGENTS_BUILTIN_MCP_URL:-http://mcp-server:8765/mcp}
   AGENTS_EXTRA_MCP_SERVERS: ${AGENTS_EXTRA_MCP_SERVERS:-}
+  # Per-IP ceiling on assistant chat messages, in requests per minute. Every
+  # message spends provider tokens, so lower it (5, for example) on a public
+  # demo. A turn that runs several tools is still one request. 0 turns off.
+  AGENTS_CHAT_RATE_LIMIT_PER_MINUTE: ${AGENTS_CHAT_RATE_LIMIT_PER_MINUTE:-30}
   # Signs the MCP server's JWTs. Empty derives it from SECRET_KEY, so an
   # install with a random SECRET_KEY needs no extra configuration. There is no
   # default value on purpose: a public one would let anyone mint a token for

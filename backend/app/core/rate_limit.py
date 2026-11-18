@@ -2,6 +2,7 @@ import time
 from collections.abc import Callable
 
 from fastapi import HTTPException, Request
+from redis.exceptions import RedisError
 
 from app.core.config import get_settings
 from app.core.redis import get_redis
@@ -64,16 +65,23 @@ class RateLimiter:
         client_ip = resolve_client_ip(request, get_settings().trusted_proxy_hops)
         key = f"rate_limit:{self.scope or request.url.path}:{client_ip}"
 
-        r = await get_redis()
-        now = time.time()
-        window_start = now - self.window_seconds
+        try:
+            r = await get_redis()
+            now = time.time()
+            window_start = now - self.window_seconds
 
-        pipe = r.pipeline()
-        pipe.zremrangebyscore(key, 0, window_start)
-        pipe.zcard(key)
-        pipe.zadd(key, {str(now): now})
-        pipe.expire(key, self.window_seconds)
-        results = await pipe.execute()
+            pipe = r.pipeline()
+            pipe.zremrangebyscore(key, 0, window_start)
+            pipe.zcard(key)
+            pipe.zadd(key, {str(now): now})
+            pipe.expire(key, self.window_seconds)
+            results = await pipe.execute()
+        except RedisError as exc:
+            # The window lives in Redis. With it unreachable nothing can be
+            # counted, and failing open would drop the protection exactly when
+            # the instance is already unhealthy. A 503 says "try again" instead
+            # of turning the route into a bare 500.
+            raise HTTPException(status_code=503, detail="Rate limit unavailable") from exc
 
         request_count = results[1]
 
