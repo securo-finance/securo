@@ -5,6 +5,7 @@ commits as it goes, and the shared in-memory session of the rest of the
 suite must not gain eighteen invoices and a catalog from here.
 """
 import importlib.util
+import re
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -16,6 +17,7 @@ from sqlalchemy.pool import StaticPool
 
 import app.models  # noqa: F401  (register every table for create_all)
 from app.core.database import Base
+from app.fiscal.validators import validate_br_cnpj
 from app.models.account import Account
 from app.models.invoice import Invoice
 from app.models.invoice_schedule import InvoiceSchedule
@@ -71,6 +73,37 @@ async def demo_database():
         yield async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     finally:
         await engine.dispose()
+
+
+def _digits(text: str) -> str:
+    return re.sub(r"\D", "", text)
+
+
+def test_every_seeded_cnpj_is_synthetic_and_passes_the_check_digits():
+    """The demo is public, so no real company may be identified on it.
+
+    Each number sits in the 99.000.0XX/0001 range: valid under the mod-11
+    rule the fiscal pack applies, and registered to nobody (checked
+    against BrasilAPI). The formatted copy the printed invoice carries
+    has to be the same number.
+    """
+    seed = _load("seed_demo").business_seed
+    numbers = [seed.COMPANY["cnpj"], seed.SECOND_COMPANY["cnpj"]]
+    numbers += [row["cnpj"] for row in seed.CLIENTS]
+    numbers += [row["cnpj"] for row in seed.SECOND_CLIENTS]
+
+    assert len(numbers) == 8
+    assert len(set(numbers)) == 8
+    for value in numbers:
+        assert value.startswith("990000"), value
+        assert validate_br_cnpj(value) is None, value
+
+    for company, settings in (
+        (seed.COMPANY, seed.INVOICE_SETTINGS),
+        (seed.SECOND_COMPANY, seed.SECOND_INVOICE_SETTINGS),
+    ):
+        printed = _digits(settings["footer_note"] + settings["payment_details"])
+        assert company["cnpj"] in printed
 
 
 async def test_business_seed_lists_first_and_covers_every_invoice_state(demo_database):
@@ -172,7 +205,7 @@ async def test_business_seed_lists_first_and_covers_every_invoice_state(demo_dat
             .all()
         )
         assert [(row.kind, row.value) for row in tax_ids] == [
-            ("cnpj", "11222333000181")
+            ("cnpj", "99000001000101")
         ]
         settings = await invoice_service.get_settings(session, business.id)
         assert settings.issuer_display_name == "Aurora Studio"
@@ -327,7 +360,7 @@ async def test_second_company_sits_between_the_studio_and_the_personal_wallet(
             .all()
         )
         assert [(row.kind, row.value) for row in tax_ids] == [
-            ("cnpj", "48291537000184")
+            ("cnpj", "99000006000126")
         ]
         settings = await invoice_service.get_settings(session, second.id)
         assert settings.issuer_display_name == "Ponte Norte Consultoria"
@@ -412,3 +445,43 @@ async def test_second_company_sits_between_the_studio_and_the_personal_wallet(
             second.id,
             personal.id,
         ]
+
+
+async def test_standalone_seed_still_opens_on_the_studio(demo_database):
+    """Run alone on a database that already has the personal wallet.
+
+    The reset passes `before` in; the standalone entry point has to find
+    it itself, or both companies would be created after the wallet and
+    the visitor would open on the personal one.
+    """
+    session_maker = demo_database
+    demo = _load("seed_demo")
+    seed = demo.business_seed
+
+    async with session_maker() as session:
+        user = User(
+            email="demo@example.test",
+            hashed_password="not-used-here",
+            is_active=True,
+            is_verified=True,
+            is_superuser=False,
+            preferences={"language": "pt-BR", "currency_display": "BRL"},
+        )
+        session.add(user)
+        await session.commit()
+        user_id = user.id
+        personal = await demo._ensure_personal_workspace(session, user)
+        personal_id = personal.id
+
+    summaries = await seed.seed(
+        "demo@example.test", "DemoSecuro1!", 6, session_factory=session_maker
+    )
+    assert summaries["business"]["workspace_name"] == "Aurora Studio"
+    assert summaries["second"]["workspace_name"] == "Ponte Norte Consultoria"
+
+    async with session_maker() as session:
+        rows = await _workspaces(session, user_id)
+        assert [row.kind for row in rows] == ["business", "business", "personal"]
+        assert str(rows[0].id) == summaries["business"]["workspace_id"]
+        assert str(rows[1].id) == summaries["second"]["workspace_id"]
+        assert rows[2].id == personal_id

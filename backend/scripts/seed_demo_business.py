@@ -55,7 +55,7 @@ from typing import Any, Optional
 
 from fastapi_users.db import SQLAlchemyUserDatabase
 from fastapi_users.exceptions import UserAlreadyExists
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
@@ -99,6 +99,11 @@ BRL = "BRL"
 CENT = Decimal("0.01")
 DEMO_TIMEZONE = "America/Sao_Paulo"
 
+# Every CNPJ this seed writes comes from the 99.000.0XX/0001 range: the
+# digits pass the mod-11 check the fiscal pack applies, and no number in
+# that range is registered to a company, so the public demo and its printed
+# invoices never carry somebody else's identity. Keep a new client there.
+#
 #: A design studio that sells projects and a monthly retainer. The name is
 #: fictional, and so is every supplier below: the demo is published on the
 #: project's own site, and a screenshot should not put somebody else's
@@ -109,8 +114,11 @@ COMPANY = {
     "address": "Rua Harmonia, 412, Vila Madalena, São Paulo, SP",
     "tax_jurisdiction": "BR",
     # Valid under the mod-11 rule the fiscal pack applies, so the issuer
-    # block and the invoice form accept it.
-    "cnpj": "11222333000181",
+    # block and the invoice form accept it, but from the 99.000.0XX range,
+    # which is never issued: the demo is public, and a real company's CNPJ
+    # here would put somebody else's identity on the marketing page and on
+    # every printed invoice.
+    "cnpj": "99000001000101",
     "icon": "briefcase",
     "color": "#0f766e",
 }
@@ -125,11 +133,11 @@ INVOICE_SETTINGS = {
     "series": "A",
     "issuer_display_name": COMPANY["name"],
     "footer_note": (
-        "Aurora Studio Ltda, CNPJ 11.222.333/0001-81. "
+        "Aurora Studio Ltda, CNPJ 99.000.001/0001-01. "
         "Obrigado pela parceria."
     ),
     "payment_details": (
-        "Pix CNPJ 11.222.333/0001-81, banco digital, "
+        "Pix CNPJ 99.000.001/0001-01, banco digital, "
         "agência 0001, conta 1234567-8"
     ),
     "accent_color": "#0f766e",
@@ -144,7 +152,7 @@ SECOND_COMPANY = {
     "legal_name": "Ponte Norte Consultoria Ltda",
     "address": "Av. Rio Branco, 155, Centro, Rio de Janeiro, RJ",
     "tax_jurisdiction": "BR",
-    "cnpj": "48291537000184",
+    "cnpj": "99000006000126",
     "icon": "building-2",
     "color": "#7c3aed",
 }
@@ -155,9 +163,9 @@ SECOND_INVOICE_SETTINGS = {
     "number_prefix": "PNO-",
     "series": "A",
     "issuer_display_name": SECOND_COMPANY["name"],
-    "footer_note": "Ponte Norte Consultoria Ltda, CNPJ 48.291.537/0001-84.",
+    "footer_note": "Ponte Norte Consultoria Ltda, CNPJ 99.000.006/0001-26.",
     "payment_details": (
-        "Pix CNPJ 48.291.537/0001-84, banco digital, "
+        "Pix CNPJ 99.000.006/0001-26, banco digital, "
         "agência 0001, conta 7654321-0"
     ),
     "accent_color": "#7c3aed",
@@ -179,13 +187,13 @@ SECOND_CATEGORIES = (
 SECOND_CLIENTS: tuple[dict[str, Any], ...] = (
     {
         "name": "Metalúrgica Andrade Ltda",
-        "cnpj": "37510482000130",
+        "cnpj": "99000007000170",
         "email": "financeiro@andrade.example",
         "favorite": True,
     },
     {
         "name": "Transportes Litoral Ltda",
-        "cnpj": "60923817000163",
+        "cnpj": "99000008000115",
         "email": "contato@litoral.example",
     },
 )
@@ -307,7 +315,7 @@ CLIENTS: tuple[dict[str, Any], ...] = (
     {
         "key": "horizonte",
         "name": "Construtora Horizonte Ltda",
-        "cnpj": "45723174000110",
+        "cnpj": "99000002000148",
         "email": "financeiro@horizonte.example",
         "phone": "(11) 3555-1020",
         "favorite": True,
@@ -315,14 +323,14 @@ CLIENTS: tuple[dict[str, Any], ...] = (
     {
         "key": "centro",
         "name": "Café do Centro Ltda",
-        "cnpj": "08187168000160",
+        "cnpj": "99000003000192",
         "email": "contato@cafedocentro.example",
         "phone": "(11) 3555-2040",
     },
     {
         "key": "bela_vista",
         "name": "Padaria Bela Vista Ltda",
-        "cnpj": "31415926000171",
+        "cnpj": "99000004000137",
         "email": "adm@belavista.example",
         "phone": "(11) 3555-3080",
         "favorite": True,
@@ -330,7 +338,7 @@ CLIENTS: tuple[dict[str, Any], ...] = (
     {
         "key": "clinica",
         "name": "Clínica Bem Viver Ltda",
-        "cnpj": "27865757000102",
+        "cnpj": "99000005000181",
         "email": "financeiro@bemviver.example",
         "phone": "(11) 3555-4010",
     },
@@ -1589,8 +1597,36 @@ async def seed_second_company(
 # ---------------------------------------------------------------------------
 # Entry points
 # ---------------------------------------------------------------------------
-async def seed(email: str, password: str, months: int) -> dict[str, Any]:
-    async with async_session_maker() as session:
+async def _personal_wallet_created_at(
+    session: AsyncSession, user: User
+) -> Optional[datetime]:
+    """The personal wallet's `created_at`, so a standalone run keeps the order.
+
+    The reset already passes this value in. Run on its own against a
+    database that has the personal wallet, the seed has to place the two
+    companies before it as well, or the studio would land last in the
+    switcher and the visitor would open on the personal wallet.
+    """
+    return await session.scalar(
+        select(func.min(Workspace.created_at))
+        .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
+        .where(
+            WorkspaceMember.user_id == user.id,
+            Workspace.kind == "personal",
+            Workspace.is_archived.is_(False),
+        )
+    )
+
+
+async def seed(
+    email: str,
+    password: str,
+    months: int,
+    *,
+    session_factory: Any = None,
+) -> dict[str, Any]:
+    maker = session_factory or async_session_maker
+    async with maker() as session:
         user = await session.scalar(select(User).where(User.email == email))
         if user is None:
             user_db = SQLAlchemyUserDatabase(session, User)
@@ -1601,8 +1637,11 @@ async def seed(email: str, password: str, months: int) -> dict[str, Any]:
                 user = await session.scalar(select(User).where(User.email == email))
             await session.commit()
         assert user is not None
-        business = await ensure_business_workspace(session, user)
-        second = await ensure_second_workspace(session, user, exclude=(business.id,))
+        before = await _personal_wallet_created_at(session, user)
+        business = await ensure_business_workspace(session, user, before=before)
+        second = await ensure_second_workspace(
+            session, user, before=before, exclude=(business.id,)
+        )
 
         # Running this script on its own must not archive the personal
         # wallet the reset created: every live personal workspace of the
