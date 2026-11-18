@@ -258,7 +258,7 @@ export function AppLayout() {
             {t('app.name')}
           </span>
         </Link>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ms-auto flex items-center gap-2">
           <button
             onClick={() => setPaletteOpen(true)}
             className="text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1"
@@ -323,9 +323,9 @@ export function AppLayout() {
         <aside
           data-collapsed={desktopSidebarCollapsed}
           className={cn(
-            'group/sidebar fixed left-0 bottom-0 z-50 w-60 bg-sidebar border-r border-sidebar-border flex flex-col transform transition-[transform,width] duration-300 ease-in-out motion-reduce:transition-none lg:translate-x-0 shrink-0',
+            'group/sidebar fixed bottom-0 start-0 z-50 w-60 bg-sidebar border-e border-sidebar-border flex flex-col transform transition-[transform,width] duration-300 ease-in-out motion-reduce:transition-none lg:translate-x-0 shrink-0',
             demoMode ? 'top-7' : 'top-0',
-            sidebarOpen ? 'translate-x-0' : '-translate-x-full',
+            sidebarOpen ? 'translate-x-0' : 'max-lg:-translate-x-full max-lg:rtl:translate-x-full',
             desktopSidebarCollapsed ? 'lg:w-16' : 'lg:w-60',
           )}
         >
@@ -407,7 +407,7 @@ export function AppLayout() {
           <button
             type="button"
             onClick={toggleDesktopSidebar}
-            className="hidden lg:flex absolute top-1/2 -right-3 -translate-y-1/2 h-6 w-6 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/sidebar:opacity-100"
+            className="hidden lg:flex absolute top-1/2 -end-3 -translate-y-1/2 h-6 w-6 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/sidebar:opacity-100"
             title={desktopSidebarCollapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
             aria-label={desktopSidebarCollapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
             aria-expanded={!desktopSidebarCollapsed}
@@ -429,7 +429,7 @@ export function AppLayout() {
               aria-label={t('cmdk.triggerAria')}
             >
               <Search size={13} className="shrink-0" />
-              <span className={cn('flex-1 text-left', desktopSidebarCollapsed && 'lg:hidden')}>{t('cmdk.triggerLabel')}</span>
+              <span className={cn('flex-1 text-start', desktopSidebarCollapsed && 'lg:hidden')}>{t('cmdk.triggerLabel')}</span>
               <kbd className={cn('hidden lg:inline-flex h-[17px] items-center rounded border border-sidebar-border bg-sidebar px-1 font-mono text-[9.5px] font-semibold text-sidebar-muted/80', desktopSidebarCollapsed && 'lg:hidden')}>
                 {isMac ? '⌘' : 'Ctrl'}&nbsp;K
               </kbd>
@@ -479,9 +479,9 @@ export function AppLayout() {
                   className={cn(
                     'flex items-center gap-3 text-[13px] font-medium transition-all rounded-lg px-3 py-2',
                     isActive
-                      ? 'bg-primary/[0.08] text-primary border-l-[3px] border-primary pl-[9px]'
+                      ? 'bg-primary/[0.08] text-primary border-s-[3px] border-primary ps-[9px]'
                       : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground',
-                    desktopSidebarCollapsed && 'lg:h-10 lg:w-10 lg:justify-center lg:border-l-0 lg:px-0 lg:pl-0',
+                    desktopSidebarCollapsed && 'lg:h-10 lg:w-10 lg:justify-center lg:border-s-0 lg:px-0 lg:ps-0',
                   )}
                 >
                   <Icon
@@ -508,7 +508,7 @@ export function AppLayout() {
                     title={t('transactions.addManual')}
                     aria-label={t('transactions.addManual')}
                     className={cn(
-                      'absolute right-2 flex h-6 w-6 items-center justify-center rounded-md border border-sidebar-border bg-sidebar text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground',
+                      'absolute end-2 flex h-6 w-6 items-center justify-center rounded-md border border-sidebar-border bg-sidebar text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground',
                       desktopSidebarCollapsed && 'lg:hidden',
                     )}
                   >
@@ -565,7 +565,7 @@ export function AppLayout() {
                             {acc.shared_balance_group && ` · ${t('accounts.sharedCreditBalance')}`}
                           </span>
                         </div>
-                        <div className="text-right shrink-0 ml-2">
+                        <div className="text-end shrink-0 ms-2">
                           <span className={`block tabular-nums font-medium text-xs ${balance < 0 ? 'text-rose-400' : 'text-sidebar-foreground'}`}>
                             {mask(formatCurrency(balance, balanceCurrency, locale))}
                           </span>
@@ -630,7 +630,7 @@ export function AppLayout() {
         {/* Main content */}
         <main className={cn(
           'flex-1 min-h-screen overflow-x-hidden transition-[margin] duration-300 ease-in-out motion-reduce:transition-none',
-          desktopSidebarCollapsed ? 'lg:ml-16' : 'lg:ml-60',
+          desktopSidebarCollapsed ? 'lg:ms-16' : 'lg:ms-60',
         )}>
           <div className="p-6 max-w-7xl mx-auto">
             {/* Active-collection filter (issue #105): sticky bar above the
@@ -968,6 +968,15 @@ function UserMenu({
               >
                 <span className="flex-1">日本語</span>
                 {currentLang === 'ja' && (
+                  <Check size={13} className="text-primary" />
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => i18n.changeLanguage('he')}
+                className="flex items-center gap-2"
+              >
+                <span className="flex-1">עברית</span>
+                {currentLang === 'he' && (
                   <Check size={13} className="text-primary" />
                 )}
               </DropdownMenuItem>

@@ -1358,6 +1358,7 @@
     "deleted": "Účet smazán",
     "syncDone": "Synchronizace dokončena",
     "syncRateLimited": "Dosáhnuto denního limitu banky, žádná nová data nebyla stažena. Zkuste to prosím později.",
+    "syncPartial": "Některé účty byly aktualizovány, ale u ostatních byl dosažen denní limit banky. Zkusíme je znovu později.",
     "syncError": "Synchronizace selhala",
     "connected": "Banka úspěšně propojena",
     "connectError": "Banku se nepodařilo propojit",
@@ -1366,6 +1367,10 @@
     "confirmDisconnectDesc": "Odpojí se {{institution}} a z aplikace se odstraní synchronizované účty a transakce. Tuto akci nelze vrátit.",
     "viewTransactions": "Zobrazit transakce",
     "currentBalance": "Aktuální zůstatek",
+    "reservedBalances": "Rezervované zůstatky",
+    "reservedBalanceFallback": "Rezervovaný zůstatek",
+    "reservedTotal": "Rezervováno",
+    "reservedBalancesHint": "Rezervované prostředky hlášené poskytovatelem pro tento účet.",
     "income": "Příjmy",
     "expenses": "Výdaje",
     "projectedBalance": "Předpokládaný zůstatek",
@@ -1451,8 +1456,16 @@
     "connectionStatus": {
       "active": "Aktivní",
       "error": "Chyba",
-      "expired": "Vypršelo"
-    }
+      "expired": "Vypršelo",
+      "disconnected": "Odpojeno"
+    },
+    "pluginConnectors": "Z vašich pluginů",
+    "pluginUnavailable": "Plugin tohoto připojení už není nainstalován ani dostupný.",
+    "confirmDisconnectKeepDesc": "{{institution}} se přestane synchronizovat. Účty a historie transakcí zůstanou v aplikaci a banku můžete později znovu připojit.",
+    "disconnectAlsoDelete": "Smazat také účty a transakce",
+    "disconnectedKept": "Banka odpojena. Účty a historie zůstaly zachovány.",
+    "removeConnection": "Odebrat připojení",
+    "connectionDisconnected": "Odpojeno. Připojte znovu pro synchronizaci"
   },
   "loans": {
     "title": "Úvěrová smlouva",
@@ -1678,7 +1691,18 @@
     "autoGenerate": "Generovat transakce automaticky",
     "autoGenerateHelp": "Vytvoří transakci vždy, když je tato platba splatná. Vypněte, pokud chcete počkat na skutečnou platbu (např. ze synchronizace banky) a do té doby ji zobrazovat jen jako nadcházející.",
     "fxEstimate": "Odhad podle posledního směnného kurzu ({{rate}}). Konečná částka se může změnit.",
-    "confirmDeleteDescription": "Opakovaná definice „{{description}}“ bude trvale smazána. Stávající transakce zůstanou, ale ztratí propojení s opakováním. Tuto akci nelze vrátit."
+    "confirmDeleteDescription": "Opakovaná definice „{{description}}“ bude trvale smazána. Stávající transakce zůstanou, ale ztratí propojení s opakováním. Tuto akci nelze vrátit.",
+    "priceHistory": "Price history",
+    "viewPriceHistory": "View price history",
+    "priceChangesTitle": "Recent price changes (posledních 30 dní)",
+    "priceChangesEmpty": "No stable price changes detected",
+    "priceChangeBadge": "Price changed",
+    "priceChangeIncrease": "Price increased",
+    "priceChangeDecrease": "Price decreased",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "After a {{days}}-day gap",
+    "priceChangeInsufficient": "At least 3 matched posted charges are needed before Securo reports a stable price change."
   },
   "rules": {
     "searchPlaceholder": "Hledat pravidla...",
@@ -2189,6 +2213,7 @@
     "noTransactions": "Zatím žádné transakce",
     "txBuy": "Nákup",
     "txSell": "Prodej",
+    "txSplit": "Split",
     "txFee": "Poplatek",
     "txSaved": "Transakce uložena",
     "txDeleted": "Transakce smazána",
@@ -2199,6 +2224,10 @@
     "unitPrice": "Jednotková cena",
     "fee": "Poplatek",
     "txTotal": "Celkem",
+    "splitOldUnits": "Kusů před splitem",
+    "splitNewUnits": "Kusů po splitu",
+    "splitHint": "Zadejte počet kusů před splitem a po něm: split 100:1 je 1 → 100, reverzní split 1:10 je 10 → 1. Jako datum uveďte první den, kdy se už obchoduje za novou cenu.",
+    "splitInvalid": "Zadejte dvě různá celá čísla od 1 do 1 000 000.",
     "confirmDeleteTxTitle": "Smazat transakci?",
     "confirmDeleteTx": "Záznam se odstraní a průměrná cena pozice se přepočítá.",
     "editAsset": "Upravit aktivum",
@@ -2565,7 +2594,8 @@
     "preview": "Náhled",
     "download": "Stáhnout",
     "closePreview": "Zavřít náhled",
-    "remove": "Odebrat"
+    "remove": "Odebrat",
+    "invalidAmount": "Zadejte platnou částku, například {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "Hledat skupiny...",
@@ -2981,6 +3011,8 @@
       "saveFailed": "Výběr nástrojů se nepodařilo uložit",
       "empty": "Nebyly nalezeny žádné nástroje. Běží MCP server? S Dockerem: `docker compose --profile agents up -d`.",
       "proposeBadge": "navrhuje",
+      "enabledCount": "Zapnuto {{enabled}} z {{total}}",
+      "enableAll": "Zapnout vše",
       "loading": "Načítání nástrojů…"
     },
     "chat": {
@@ -3036,7 +3068,13 @@
         "deleteBudget": "{{category}}: {{amount}} na {{month}}",
         "deleteRecurringBudget": "{{category}}: {{amount}} každý měsíc od {{month}}",
         "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
-        "createCategoryGroup": "„{{name}}“"
+        "createCategoryGroup": "„{{name}}“",
+        "createManualAccount": "{{name}} · {{type}} · {{currentBalance}} · {{openingBalance}}{{balanceDate}}",
+        "updateManualAccount": "{{name}}. {{currentBalance}}. {{changes}}",
+        "manualAccountMoney": "{{label}}: {{amount}}",
+        "manualAccountDate": "{{label}}: {{date}}",
+        "manualAccountChange": "{{field}}: {{before}} → {{after}}",
+        "manualAccountNoChanges": "Žádné změny"
       }
     },
     "conversation": {
@@ -3084,6 +3122,7 @@
       "baseUrl": "URL endpointu",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "Pro tohoto poskytovatele je URL endpointu povinná",
+      "baseUrlInvalid": "Zadejte platnou URL endpointu http nebo https",
       "ollamaHint": "Pokud Ollama běží na vašem hostitelském počítači, použijte http://host.docker.internal:11434 (Mac/Windows) nebo IP adresu hostitele (Linux).",
       "openaiCompatHint": "Stačí vložit host:port (např. http://192.168.1.142:1234). Cesta /v1 se přidá automaticky. Z Dockeru na Mac/Windows nahraďte localhost za host.docker.internal.",
       "apiKey": "API klíč / token",
@@ -3639,8 +3678,9 @@
       "new": "nové",
       "read": "Čtení: {{what}}",
       "write": "Čtení a změny: {{what}}",
-      "ownerOnly": "Plugin, který spouští kód, může přidat, aktualizovat nebo odebrat jen vlastník pracovního prostoru.",
+      "ownerOnly": "Plugin, který spouští kód, může přidat, aktualizovat nebo odebrat jen vlastník pracovního prostoru nebo správce.",
       "removeConnections": "Jeho připojení v tomto pracovním prostoru ({{count}}) budou odebrána i s uloženými klíči a přístupy.",
+      "unlinks": "Jeho bankovní připojení ({{count}}) se přestanou synchronizovat. Účty a transakce zůstanou jako ruční účty.",
       "removeNothing": "Kód pluginu se z vašeho serveru odstraní, jakmile ho žádný pracovní prostor nepoužívá.",
       "auth": {
         "credentials": "Klíč nebo heslo",
@@ -3665,6 +3705,15 @@
         "install": "Tento plugin nepřináší data. Zkontrolujte, co smí dělat jeho kód:",
         "update": "Zkontrolujte, co smí dělat nová verze:",
         "remove": "Jeho kód v tomto pracovním prostoru přestane běžet."
+      },
+      "provides": "Synchronizuje se jako připojená banka",
+      "providesHint": "Securo přidá tyto záznamy do tohoto pracovního prostoru a udržuje je aktuální, jako u připojené banky. Každé připojení se zobrazí v sekci „Propojení bank“.",
+      "kinds": {
+        "accounts": "Účty",
+        "transactions": "transakce",
+        "bills": "vyúčtování karet",
+        "holdings": "investice",
+        "trades": "nákupy a prodeje"
       }
     },
     "connections": {
@@ -3702,8 +3751,13 @@
       "added": "{{name}}: připojeno",
       "removeTitle": "Odebrat {{name}}?",
       "removeHint": "Uložené klíče a přístup k tomuto pracovnímu prostoru budou smazány. Co už bylo načteno, zůstane.",
+      "removeBankHint": "Synchronizuje se jako připojená banka: odebráním se tato banka odpojí a odeberou se synchronizované účty i s transakcemi.",
       "removed": "{{name}}: odebráno",
-      "copyFailed": "Kopírování se nezdařilo. Označte adresu a zkopírujte ji ručně."
+      "copyFailed": "Kopírování se nezdařilo. Označte adresu a zkopírujte ji ručně.",
+      "editTitle": "Znovu připojit {{name}}",
+      "editHint": "Aktualizujte, co se změnilo, například nové heslo nebo token. Poté se připojení znovu synchronizuje.",
+      "keepBlank": "Ponechte pole prázdné, aby se zachovala jeho současná hodnota.",
+      "updated": "{{name}} aktualizováno"
     },
     "oauth": {
       "title": "Dokončování přihlášení",

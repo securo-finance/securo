@@ -54,6 +54,8 @@ import type {
   InvoiceSettings,
   InvoiceSummary,
   RecurringTransaction,
+  RecurringPriceChange,
+  RecurringPriceChangeHistory,
   ProjectedTransaction,
   TransactionCalendarResponse,
   Budget,
@@ -492,8 +494,10 @@ export const connections = {
     const { data } = await api.patch(`/connections/${id}/settings`, settings)
     return data
   },
-  delete: async (id: string): Promise<void> => {
-    await api.delete(`/connections/${id}`)
+  // Disconnecting keeps the accounts and their history unless the caller
+  // asks for them to be deleted too.
+  delete: async (id: string, { keepAccounts = true }: { keepAccounts?: boolean } = {}): Promise<void> => {
+    await api.delete(`/connections/${id}`, { params: { keep_accounts: keepAccounts } })
   },
 }
 
@@ -1349,6 +1353,18 @@ export const recurring = {
     const { data } = await api.post('/recurring-transactions/generate')
     return data
   },
+  // Read-only price-change projections. Explicit methods keep the
+  // wire paths visible; both are plain GETs with no optimistic mutation.
+  recentPriceChanges: async (limit = 20): Promise<RecurringPriceChange[]> => {
+    const { data } = await api.get('/recurring-transactions/price-changes/recent', {
+      params: { limit },
+    })
+    return data
+  },
+  priceHistory: async (id: string): Promise<RecurringPriceChangeHistory> => {
+    const { data } = await api.get(`/recurring-transactions/${id}/price-changes`)
+    return data
+  },
 }
 
 // Budgets
@@ -1539,14 +1555,16 @@ export const assets = {
   },
   addTransaction: async (
     id: string,
-    tx: { kind: 'buy' | 'sell'; quantity: number; price: number; fee?: number; date: string; notes?: string },
+    tx:
+      | { kind: 'buy' | 'sell'; quantity: number; price: number; fee?: number; date: string; notes?: string }
+      | { kind: 'split'; old_units: number; new_units: number; date: string; notes?: string },
   ): Promise<Asset> => {
     const { data } = await api.post(`/assets/${id}/transactions`, tx)
     return data
   },
   updateTransaction: async (
     txId: string,
-    tx: Partial<{ kind: 'buy' | 'sell'; quantity: number; price: number; fee: number; date: string; notes: string }>,
+    tx: Partial<{ kind: 'buy' | 'sell' | 'split'; quantity: number; price: number; fee: number; old_units: number; new_units: number; date: string; notes: string }>,
   ): Promise<Asset> => {
     const { data } = await api.patch(`/assets/transactions/${txId}`, tx)
     return data
@@ -1980,6 +1998,14 @@ export const plugins = {
     values: Record<string, string>
   }): Promise<{ connection: PluginConnection; authorize_url: string | null }> => {
     const { data } = await api.post('/plugins/connections', body)
+    return data
+  },
+  /** New form values; fields left blank keep what they had. Then it syncs afresh. */
+  updateValues: async (
+    connectionId: string,
+    body: { name?: string; values: Record<string, string> },
+  ): Promise<PluginConnection> => {
+    const { data } = await api.put(`/plugins/connections/${connectionId}/values`, body)
     return data
   },
   authorize: async (connectionId: string): Promise<{ authorize_url: string; redirect_uri: string }> => {

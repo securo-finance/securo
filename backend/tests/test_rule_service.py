@@ -208,7 +208,7 @@ async def test_update_rule_duplicate_name_raises(session: AsyncSession, test_use
 
 @pytest.mark.asyncio
 async def test_create_rule_rejects_unknown_action(session: AsyncSession, test_user, test_workspace):
-    with pytest.raises(ValueError, match="Invalid rule action"):
+    with pytest.raises(ValueError, match="Invalid action: unsupported op 'explode'"):
         await create_rule(
             session,
             test_workspace.id,
@@ -217,6 +217,35 @@ async def test_create_rule_rejects_unknown_action(session: AsyncSession, test_us
                 name="Bad Action",
                 conditions=[RuleCondition(field="description", op="contains", value="X")],
                 actions=[RuleAction(op="explode", value="nope")],
+            ),
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("field", "op", "expected"),
+    [
+        (
+            "amount",
+            "less_than_or_equal",
+            "Invalid condition: unsupported op 'less_than_or_equal' for field 'amount'",
+        ),
+        ("amount", ">", "Invalid condition: unsupported op '>' for field 'amount'"),
+        ("foo", "equals", "Invalid condition: unsupported field 'foo'"),
+    ],
+)
+async def test_create_rule_names_the_rejected_condition(
+    session: AsyncSession, test_user, test_workspace, field, op, expected
+):
+    with pytest.raises(ValueError, match=expected):
+        await create_rule(
+            session,
+            test_workspace.id,
+            test_user.id,
+            RuleCreate(
+                name="Bad condition",
+                conditions=[RuleCondition(field=field, op=op, value=0)],
+                actions=[RuleAction(op="ignore", value=True)],
             ),
         )
 
@@ -1410,13 +1439,18 @@ async def test_create_rule_accepts_status_condition(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("op", "value"),
-    [("contains", "pending"), ("regex", "pend"), ("gt", "pending"), ("equals", "reserved")],
+    ("op", "value", "expected"),
+    [
+        ("contains", "pending", "Invalid condition: unsupported op 'contains' for field 'status'"),
+        ("regex", "pend", "Invalid condition: unsupported op 'regex' for field 'status'"),
+        ("gt", "pending", "Invalid condition: unsupported op 'gt' for field 'status'"),
+        ("equals", "reserved", "Invalid condition: unsupported status value 'reserved'"),
+    ],
 )
 async def test_create_rule_rejects_invalid_status_condition(
-    session: AsyncSession, test_user, test_workspace, op, value
+    session: AsyncSession, test_user, test_workspace, op, value, expected
 ):
-    with pytest.raises(ValueError, match="Invalid rule condition"):
+    with pytest.raises(ValueError, match=expected):
         await create_rule(
             session,
             test_workspace.id,

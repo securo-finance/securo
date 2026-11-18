@@ -2,18 +2,20 @@
 
 All of it answers 404 while PLUGINS_ENABLED is off. Reading the catalog
 or a plan only needs to see the workspace; applying needs write access,
-and for a plugin with code, the owner. Connections need write access.
+and for a plugin with code, the owner or a manager. Connections need write
+access.
 Access tokens can't reach these routes.
 """
+import re
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
 from app.core.feature_flags import feature_flag
 from app.core.workspace_context import WorkspaceContext, current_workspace, current_writable_workspace
-from app.plugins import connections, runner, service
+from app.plugins import connections, index, logos, runner, service
 from app.plugins.index import PluginIndexError
 from app.plugins.manifest import parse_manifest
 from app.services.access_token_service import AccessTokenError
@@ -24,6 +26,7 @@ from app.schemas.plugin import (
     PluginAuthorizeRead,
     PluginConnectionCreate,
     PluginConnectionCreated,
+    PluginConnectionUpdate,
     PluginConnectionRead,
     PluginOAuthCallback,
     PluginCatalogRead,
@@ -46,11 +49,21 @@ def _lang(ctx: WorkspaceContext) -> str:
     return (ctx.user.preferences or {}).get("language") or ctx.workspace.locale or "en"
 
 
+#: Where a plugin's icon is served, by its file name in the catalog.
+_ICONS = "/api/plugins/icons/"
+
+
 def _catalog_read(item: service.CatalogItem) -> PluginCatalogRead:
     entry = item.entry
     return PluginCatalogRead(
-        **entry.model_dump(exclude={"manifest", "manifest_sha256", "readme", "readme_sha256", "archive", "archive_sha256"}),
+        **entry.model_dump(
+            exclude={
+                "manifest", "manifest_sha256", "readme", "readme_sha256", "archive", "archive_sha256",
+                "icon",
+            }
+        ),
         owner=entry.owner,
+        icon_url=f"{_ICONS}{entry.icon_name}" if entry.icon_name else None,
         compatible=entry.compatible,
         supported=entry.supported,
         fits_workspace=item.fits_workspace,
@@ -84,7 +97,7 @@ async def _guarded(call):
     except service.PluginForbidden:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the workspace owner can add, update or remove a plugin with code",
+            detail="Only the workspace owner or a manager can add, update or remove a plugin with code",
         )
     except service.PluginUnavailable as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Plugin unavailable: {exc}")
@@ -182,6 +195,23 @@ async def create_connection(
     return PluginConnectionCreated(connection=_connection_read(connection), authorize_url=link)
 
 
+@router.put("/connections/{connection_id}/values", response_model=PluginConnectionRead)
+async def update_connection_values(
+    connection_id: uuid.UUID,
+    body: PluginConnectionUpdate,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """New form values (to reconnect after changing a password, say); then it syncs afresh."""
+    connection = await _connection_guarded(connections.get_connection(session, ctx.workspace.id, connection_id))
+    connection = await _connection_guarded(
+        connections.update_values(session, connection, name=body.name, values=body.values)
+    )
+    if connection.status == "pending":
+        _queue_sync(connection.id)
+    return _connection_read(connection)
+
+
 @router.post("/connections/{connection_id}/authorize", response_model=PluginAuthorizeRead)
 async def authorize_connection(
     connection_id: uuid.UUID,
@@ -237,6 +267,51 @@ def _queue_sync(connection_id: uuid.UUID) -> None:
         sync_plugin_connection.delay(str(connection_id))
     except Exception:  # noqa: BLE001 - the schedule picks it up anyway
         pass
+
+
+def _image(data: bytes, content_type: str) -> Response:
+    """An image, sent so a browser shows it as one and nothing else, and keeps it: its address is its checksum."""
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+        },
+    )
+
+
+@router.get("/logos/{sha256}", include_in_schema=False)
+async def plugin_logo(sha256: str, session: AsyncSession = Depends(get_async_session)) -> Response:
+    """A logo from a plugin's package, by its checksum.
+
+    No sign-in: it's an `<img>` source, and a checksum only finds a file
+    that a public plugin release ships.
+    """
+    if not re.fullmatch(r"[0-9a-f]{64}", sha256):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Logo not found")
+    logo = await logos.get(session, sha256)
+    if logo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Logo not found")
+    return _image(logo.data, logo.content_type)
+
+
+@router.get("/icons/{name}", include_in_schema=False)
+async def plugin_icon(name: str) -> Response:
+    """A plugin's icon from the catalog, by its name there: `<sha256>.png` or `.webp`.
+
+    No sign-in, like logos: it's an `<img>` source. Securo fetches it from
+    the catalog's host and serves it only if it hashes to that name, so the
+    browser never reaches the catalog.
+    """
+    icon = await service.icon(name) if index.ICON_NAME.fullmatch(name) else None
+    if icon is None:
+        # Not cached: the catalog may only be out of reach for now.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Icon not found", headers={"Cache-Control": "no-store"}
+        )
+    return _image(icon.data, icon.content_type)
 
 
 @router.get("/catalog", response_model=list[PluginCatalogRead])

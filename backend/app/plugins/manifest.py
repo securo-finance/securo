@@ -66,6 +66,15 @@ DEFAULT_THEME_COLORS = {
 HOST_PATTERN = r"^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(:[0-9]{1,5})?$"
 ENTRYPOINT_PATTERN = r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$"
 PATH_PATTERN = r"^[A-Za-z0-9._-][A-Za-z0-9._/-]{0,199}$"
+#: A logo in the plugin's package: a PNG or WebP file.
+LOGO_PATH_PATTERN = r"^[A-Za-z0-9._-][A-Za-z0-9._/-]{0,199}\.(png|webp)$"
+MAX_LOGOS = 50
+
+#: Records an integration can return from `sync` for the core to write
+#: through the bank sync pipeline, under a bank connection of its own.
+ProvidedKind = Literal["accounts", "transactions", "bills", "holdings", "trades"]
+#: What each kind needs alongside it.
+PROVIDES_NEEDS: dict[str, str] = {"transactions": "accounts", "bills": "accounts", "trades": "holdings"}
 
 #: Condition fields a plugin rule may use. Account and payee ids are a
 #: workspace's own data, so a plugin can't know them.
@@ -222,6 +231,8 @@ class Integration(_Model):
     `oauth`: the person signs in at the service; the plugin builds the sign-in
     link and trades the code for a token. `none`: nothing to fill in.
     With `sync_minutes`, Securo calls the plugin's `sync` on that schedule.
+    With `provides`, `sync` returns those records as data and Securo writes
+    them as it does for a connected bank (see `app.plugins.contract`).
     """
 
     key: str = Field(pattern=KEY_PATTERN)
@@ -230,6 +241,7 @@ class Integration(_Model):
     auth: Literal["credentials", "oauth", "none"] = "credentials"
     fields: list[FormField] = Field(default=[], max_length=20)
     sync_minutes: int | None = Field(default=None, ge=15, le=7 * 24 * 60)
+    provides: list[ProvidedKind] | None = None
 
     @model_validator(mode="after")
     def _unique_fields(self) -> Integration:
@@ -237,6 +249,25 @@ class Integration(_Model):
         if len(keys) != len(set(keys)):
             raise ValueError(f"integration {self.key}: field keys must be unique")
         return self
+
+    @model_validator(mode="after")
+    def _provides_what_it_needs(self) -> Integration:
+        if self.provides is None:
+            return self
+        if not self.provides:
+            raise ValueError(f"integration {self.key}: provides can't be empty")
+        if len(self.provides) != len(set(self.provides)):
+            raise ValueError(f"integration {self.key}: provides must be unique")
+        for kind in self.provides:
+            needed = PROVIDES_NEEDS.get(kind)
+            if needed and needed not in self.provides:
+                raise ValueError(f"integration {self.key}: {kind} needs {needed}")
+        return self
+
+    @property
+    def is_provider(self) -> bool:
+        """Its records go through the bank sync pipeline."""
+        return bool(self.provides)
 
 
 class Runtime(_Model):
@@ -380,6 +411,12 @@ class Manifest(_Model):
     api_scopes: list[ApiScope] = Field(default=[], max_length=len(ALL_SCOPES))
     #: The workspace types it's meant for: personal, business, or both when left out.
     workspaces: list[WorkspaceKind] = Field(default_factory=lambda: _every_workspace_kind(), min_length=1)
+    #: Logos shipped in the package, by key, for a provider's accounts to name
+    #: as their institution's. Securo serves them itself, so showing one never
+    #: reaches a host the plugin didn't declare.
+    logos: dict[
+        Annotated[str, Field(pattern=KEY_PATTERN)], Annotated[str, Field(pattern=LOGO_PATH_PATTERN)]
+    ] = Field(default={}, max_length=MAX_LOGOS)
 
     @property
     def has_code(self) -> bool:
@@ -389,8 +426,10 @@ class Manifest(_Model):
     def _code_is_declared(self) -> Manifest:
         if self.contributes.integrations and self.runtime is None:
             raise ValueError("integrations need a runtime")
-        if self.runtime is None and (self.network or self.api_scopes):
-            raise ValueError("network and api_scopes are only for plugins with a runtime")
+        if self.runtime is None and (self.network or self.api_scopes or self.logos):
+            raise ValueError("network, api_scopes and logos are only for plugins with a runtime")
+        if any(".." in path.split("/") for path in self.logos.values()):
+            raise ValueError("logos must be paths inside the package")
         if self.runtime is not None and not self.contributes.integrations:
             raise ValueError("a runtime needs something to run: add an integration")
         if len(self.workspaces) != len(set(self.workspaces)):

@@ -54,7 +54,7 @@ describe('extractApiError', () => {
   })
 })
 
-describe('localized synchronized transaction errors', () => {
+describe('localized API errors', () => {
   beforeAll(async () => {
     await i18n.init({
       lng: 'en',
@@ -75,5 +75,14 @@ describe('localized synchronized transaction errors', () => {
 
     expect(extractApiError(apiError(message))).toBe(expected)
     expect(extractApiError(apiError({ message }))).toBe(expected)
+  })
+
+  it.each([
+    ['en', 'Enter a valid http or https endpoint URL'],
+    ['pt-BR', 'Informe uma URL de endpoint http ou https válida'],
+  ])('shows the invalid connection base URL error in %s', async (language, expected) => {
+    await i18n.changeLanguage(language)
+
+    expect(extractApiError(apiError('Enter a valid http or https endpoint URL'))).toBe(expected)
   })
 })

@@ -1278,6 +1278,7 @@
     "deleted": "口座を削除しました",
     "syncDone": "同期が完了しました",
     "syncRateLimited": "銀行の1日の利用上限に達したため、新しいデータは取得されませんでした。しばらくしてから再度お試しください。",
+    "syncPartial": "一部の口座は更新されましたが、残りの口座は銀行の1日の利用上限に達しました。後ほど再試行されます。",
     "syncError": "同期に失敗しました",
     "connected": "銀行を接続しました",
     "connectError": "銀行の接続に失敗しました",
@@ -1286,6 +1287,10 @@
     "confirmDisconnectDesc": "{{institution}}との紐付けを解除し、同期済みの口座と取引をアプリから削除します。この操作は取り消せません。",
     "viewTransactions": "取引を表示",
     "currentBalance": "現在残高",
+    "reservedBalances": "予約済み残高",
+    "reservedBalanceFallback": "予約済み残高",
+    "reservedTotal": "予約済み",
+    "reservedBalancesHint": "プロバイダーがこの口座について報告する予約資金です。",
     "income": "収入",
     "expenses": "支出",
     "projectedBalance": "予測残高",
@@ -1367,8 +1372,16 @@
     "connectionStatus": {
       "active": "有効",
       "error": "エラー",
-      "expired": "期限切れ"
-    }
+      "expired": "期限切れ",
+      "disconnected": "接続解除済み"
+    },
+    "pluginConnectors": "インストール済みのプラグイン",
+    "pluginUnavailable": "この接続のプラグインはインストールされていないか、利用できなくなりました。",
+    "confirmDisconnectKeepDesc": "{{institution}} の同期を停止します。口座と取引履歴はアプリに残り、あとで再接続できます。",
+    "disconnectAlsoDelete": "口座と取引も削除する",
+    "disconnectedKept": "銀行の接続を解除しました。口座と履歴は残っています。",
+    "removeConnection": "接続を削除",
+    "connectionDisconnected": "接続解除済み。再接続すると同期を再開します"
   },
   "loans": {
     "title": "ローン契約",
@@ -1582,7 +1595,18 @@
     "autoGenerate": "取引を自動生成",
     "autoGenerateHelp": "この支払いの期日が来るたびに取引を作成します。オフにすると、実際の請求(銀行同期など)を待ち、それまでは予定として表示するだけになります。",
     "fxEstimate": "最新の為替レートによる推定({{rate}})。最終金額は変わる場合があります。",
-    "confirmDeleteDescription": "定期取引の定義「{{description}}」を完全に削除します。既存の取引は残りますが、定期の紐付けが失われます。この操作は取り消せません。"
+    "confirmDeleteDescription": "定期取引の定義「{{description}}」を完全に削除します。既存の取引は残りますが、定期の紐付けが失われます。この操作は取り消せません。",
+    "priceHistory": "価格履歴",
+    "viewPriceHistory": "価格履歴を表示",
+    "priceChangesTitle": "最近の価格変更 (過去30日間)",
+    "priceChangesEmpty": "安定した価格変更は検出されませんでした",
+    "priceChangeBadge": "価格が変更されました",
+    "priceChangeIncrease": "価格が上昇しました",
+    "priceChangeDecrease": "価格が下落しました",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "{{days}} 日間の間隔を経て",
+    "priceChangeInsufficient": "Securoが安定した価格変更を報告するには、リンクされた確定取引が最低 3 件必要です。"
   },
   "rules": {
     "searchPlaceholder": "ルールを検索...",
@@ -2047,6 +2071,7 @@
     "noTransactions": "取引はまだありません",
     "txBuy": "買付",
     "txSell": "売却",
+    "txSplit": "株式分割",
     "txFee": "手数料",
     "txSaved": "取引を保存しました",
     "txDeleted": "取引を削除しました",
@@ -2057,6 +2082,10 @@
     "unitPrice": "単価",
     "fee": "手数料",
     "txTotal": "合計",
+    "splitOldUnits": "分割前の数量",
+    "splitNewUnits": "分割後の数量",
+    "splitHint": "分割前に保有していた数量と、分割後の数量を入力してください。1株を100株にする分割は 1 → 100、10株を1株にする株式併合は 10 → 1 です。日付には、新しい価格で取引される最初の日を指定してください。",
+    "splitInvalid": "1から1,000,000までの異なる整数を2つ入力してください。",
     "confirmDeleteTxTitle": "取引を削除しますか?",
     "confirmDeleteTx": "この項目を削除し、保有の平均単価を再計算します。",
     "editAsset": "資産を編集",
@@ -2413,7 +2442,8 @@
     "preview": "プレビュー",
     "download": "ダウンロード",
     "closePreview": "プレビューを閉じる",
-    "remove": "削除"
+    "remove": "削除",
+    "invalidAmount": "有効な金額を入力してください（例: {{example}}）。"
   },
   "splitGroups": {
     "searchPlaceholder": "グループを検索...",
@@ -2817,6 +2847,8 @@
       "saveFailed": "ツール選択の保存に失敗しました",
       "empty": "検出されたツールはありません。MCPサーバーは起動していますか?Dockerの場合: `docker compose --profile agents up -d`",
       "proposeBadge": "提案",
+      "enabledCount": "{{total}} 件中 {{enabled}} 件が有効",
+      "enableAll": "すべて有効にする",
       "loading": "ツールを読み込み中…"
     },
     "chat": {
@@ -2868,7 +2900,13 @@
         "deleteBudget": "{{category}}: {{month}}の予算{{amount}}",
         "deleteRecurringBudget": "{{category}}: {{month}}から毎月{{amount}}",
         "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
-        "createCategoryGroup": "「{{name}}」"
+        "createCategoryGroup": "「{{name}}」",
+        "createManualAccount": "{{name}} · {{type}} · {{currentBalance}} · {{openingBalance}}{{balanceDate}}",
+        "updateManualAccount": "{{name}}。{{currentBalance}}。{{changes}}",
+        "manualAccountMoney": "{{label}}: {{amount}}",
+        "manualAccountDate": "{{label}}: {{date}}",
+        "manualAccountChange": "{{field}}: {{before}} → {{after}}",
+        "manualAccountNoChanges": "変更なし"
       }
     },
     "conversation": {
@@ -2916,6 +2954,7 @@
       "baseUrl": "エンドポイントURL",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "このプロバイダーにはエンドポイントURLが必要です",
+      "baseUrlInvalid": "有効な http または https のエンドポイントURLを入力してください",
       "ollamaHint": "Ollamaがホストマシンで動いている場合、http://host.docker.internal:11434(Mac/Windows)またはホストのIP(Linux)を使ってください。",
       "openaiCompatHint": "host:portだけ貼り付けてください(例: http://192.168.1.142:1234)。/v1パスは自動で追加されます。Mac/WindowsのDocker内からはlocalhostをhost.docker.internalに置き換えてください。",
       "apiKey": "APIキー / トークン",
@@ -3453,8 +3492,9 @@
       "new": "新規",
       "read": "{{what}}の読み取り",
       "write": "{{what}}の読み取りと変更",
-      "ownerOnly": "コードを実行するプラグインの追加、更新、削除はワークスペースのオーナーのみが行えます。",
+      "ownerOnly": "コードを実行するプラグインの追加、更新、削除はワークスペースのオーナーまたはマネージャーのみが行えます。",
       "removeConnections": "このワークスペースの接続（{{count}} 件）は、保存されたキーやアクセス権とともに削除されます。",
+      "unlinks": "この銀行接続（{{count}} 件）は同期を停止します。口座と取引は手動口座として残ります。",
       "removeNothing": "どのワークスペースでも使われなくなると、プラグインのコードはサーバーから削除されます。",
       "auth": {
         "credentials": "キーまたはパスワード",
@@ -3479,6 +3519,15 @@
         "install": "このプラグインはデータを追加しません。コードにできることを確認してください：",
         "update": "新しいバージョンにできることを確認してください：",
         "remove": "このワークスペースでのコードの実行が止まります。"
+      },
+      "provides": "接続済みの銀行として同期",
+      "providesHint": "Securo はこれらの記録をこのワークスペースに追加し、接続済みの銀行と同じように最新の状態に保ちます。各接続は「銀行接続」に表示されます。",
+      "kinds": {
+        "accounts": "口座",
+        "transactions": "取引",
+        "bills": "カードの請求",
+        "holdings": "投資",
+        "trades": "売買"
       }
     },
     "connections": {
@@ -3516,8 +3565,13 @@
       "added": "{{name}} を接続しました",
       "removeTitle": "{{name}} を削除しますか？",
       "removeHint": "保存されたキーとこのワークスペースへのアクセス権は削除されます。取り込み済みのデータは残ります。",
+      "removeBankHint": "接続済みの銀行として同期します。削除するとその銀行が切断され、同期した口座と取引も削除されます。",
       "removed": "{{name}} を削除しました",
-      "copyFailed": "コピーできませんでした。アドレスを選択して手動でコピーしてください。"
+      "copyFailed": "コピーできませんでした。アドレスを選択して手動でコピーしてください。",
+      "editTitle": "{{name}} を再接続",
+      "editHint": "新しいパスワードやトークンなど、変わった内容を更新してください。その後、接続はもう一度同期されます。",
+      "keepBlank": "現在の値のままにするには、空欄のままにしてください。",
+      "updated": "{{name}} を更新しました"
     },
     "oauth": {
       "title": "サインインを完了しています",

@@ -13,6 +13,9 @@ const localeLoaders = import.meta.glob<{ default: ResourceLanguage }>([
 
 function syncHtmlLang(lng: string) {
   document.documentElement.lang = lng
+  // Right-to-left languages (Hebrew) flip the whole layout: the CSS uses
+  // logical properties (ms-/me-/ps-/pe-/start-/end-), which follow `dir`.
+  document.documentElement.dir = i18n.dir(lng)
 }
 
 export const i18nReady = i18n
@@ -48,6 +51,8 @@ export const i18nReady = i18n
     detection: {
       order: ['querystring', 'localStorage', 'cookie'],
       caches: ['localStorage'],
+      // 'iw' is the pre-1989 code for Hebrew; load he.json for it too.
+      convertDetectedLanguage: (lng: string) => (/^iw(-|$)/i.test(lng) ? 'he' : lng),
     },
     interpolation: {
       escapeValue: false,
@@ -75,6 +80,7 @@ export type SupportedLang =
   | 'el'
   | 'hi'
   | 'ja'
+  | 'he'
 
 // Single source of truth for language pickers. When adding a locale, register
 // a locale JSON file and add one entry here; every picker stays in sync instead
@@ -98,6 +104,7 @@ export const SUPPORTED_LANGS: { code: SupportedLang; label: string }[] = [
   { code: 'el', label: 'Ελληνικά' },
   { code: 'hi', label: 'हिन्दी' },
   { code: 'ja', label: '日本語' },
+  { code: 'he', label: 'עברית' },
 ]
 
 // Normalise any browser/i18n language tag to one of our supported keys. The
@@ -126,6 +133,8 @@ export function resolveSupportedLang(lng?: string | null): SupportedLang {
   if (tag.startsWith('el')) return 'el'
   if (tag.startsWith('hi')) return 'hi'
   if (tag.startsWith('ja')) return 'ja'
+  // 'iw' is the pre-1989 code some browsers and Android versions still send.
+  if (tag.startsWith('he') || tag.startsWith('iw')) return 'he'
   return 'en'
 }
 

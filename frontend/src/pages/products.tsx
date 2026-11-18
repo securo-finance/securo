@@ -129,7 +129,7 @@ export default function ProductsPage() {
         action={
           canWrite ? (
             <Button size="sm" onClick={() => setEditing('new')} data-testid="product-new-button">
-              <Plus className="h-4 w-4 mr-1.5" />
+              <Plus className="h-4 w-4 me-1.5" />
               {t('invoices.products.new')}
             </Button>
           ) : undefined
@@ -174,7 +174,7 @@ export default function ProductsPage() {
             </p>
             {!search && filter === 'active' && canWrite && (
               <Button size="sm" className="mt-4" onClick={() => setEditing('new')}>
-                <Plus className="h-4 w-4 mr-1.5" />
+                <Plus className="h-4 w-4 me-1.5" />
                 {t('invoices.products.new')}
               </Button>
             )}
@@ -184,12 +184,12 @@ export default function ProductsPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border">
-                  <th className={`${TH} pl-4 sm:pl-5 text-left`}>{t('invoices.products.column.name')}</th>
-                  <th className={`${TH} text-left w-24 hidden sm:table-cell`}>{t('invoices.products.column.kind')}</th>
-                  <th className={`${TH} text-left hidden md:table-cell`}>{t('invoices.products.column.prices')}</th>
-                  <th className={`${TH} text-right w-24 hidden lg:table-cell`}>{t('invoices.products.column.invoices')}</th>
+                  <th className={`${TH} ps-4 sm:ps-5 text-start`}>{t('invoices.products.column.name')}</th>
+                  <th className={`${TH} text-start w-24 hidden sm:table-cell`}>{t('invoices.products.column.kind')}</th>
+                  <th className={`${TH} text-start hidden md:table-cell`}>{t('invoices.products.column.prices')}</th>
+                  <th className={`${TH} text-end w-24 hidden lg:table-cell`}>{t('invoices.products.column.invoices')}</th>
                   {canWrite && (
-                    <th className={`${TH} pr-4 sm:pr-5 w-28`}>
+                    <th className={`${TH} pe-4 sm:pe-5 w-28`}>
                       <span className="sr-only">{t('invoices.moreActions')}</span>
                     </th>
                   )}
@@ -200,7 +200,7 @@ export default function ProductsPage() {
                   const actions = productActions(product)
                   return (
                     <tr key={product.id} data-testid="product-row" className="border-b border-border last:border-0">
-                      <td className="py-3 pl-4 sm:pl-5">
+                      <td className="py-3 ps-4 sm:ps-5">
                         <div className="text-sm font-medium text-foreground truncate">{product.name}</div>
                         <div className="text-xs text-muted-foreground truncate">
                           {product.description ?? (product.unit ? t('invoices.products.perUnit', { unit: product.unit }) : '')}
@@ -212,11 +212,11 @@ export default function ProductsPage() {
                       <td className="py-3 hidden md:table-cell text-xs text-muted-foreground tabular-nums">
                         {priceLabel(product)}
                       </td>
-                      <td className="py-3 text-right hidden lg:table-cell text-xs text-muted-foreground tabular-nums">
+                      <td className="py-3 text-end hidden lg:table-cell text-xs text-muted-foreground tabular-nums">
                         {product.invoice_count}
                       </td>
                       {canWrite && (
-                        <td className="py-3 pr-4 sm:pr-5">
+                        <td className="py-3 pe-4 sm:pe-5">
                           <div className="flex justify-end gap-1">
                             <IconAction onClick={() => setEditing(product)} label={t('common.edit')}>
                               <Pencil className="h-3.5 w-3.5" />
@@ -516,7 +516,7 @@ export function ProductDialog({
                     }}
                     data-testid="product-ref-add"
                   >
-                    <Plus className="h-3.5 w-3.5 mr-1" />
+                    <Plus className="h-3.5 w-3.5 me-1" />
                     {t('invoices.products.field.addRef')}
                   </Button>
                 </div>
@@ -528,7 +528,7 @@ export function ProductDialog({
             <div className="flex items-center justify-between">
               <Label>{t('invoices.products.field.prices')}</Label>
               <Button size="sm" variant="ghost" onClick={() => setPrices([...prices, blankPrice(defaultCurrency)])} data-testid="product-add-price">
-                <Plus className="h-3.5 w-3.5 mr-1" />
+                <Plus className="h-3.5 w-3.5 me-1" />
                 {t('invoices.products.field.addPrice')}
               </Button>
             </div>
@@ -538,7 +538,7 @@ export function ProductDialog({
                 <div key={row.id ?? `new-${index}`} className={cn('grid grid-cols-2 sm:grid-cols-[7rem_1fr_9rem_8rem_2rem] gap-2 px-3 py-2.5 items-center', !row.active && 'opacity-60')} data-testid="product-price-row">
                   <CurrencySelect id={`price-currency-${index}`} value={row.currency} onChange={(code) => updatePrice(index, { currency: code })} />
                   <Input
-                    className="h-9 text-right"
+                    className="h-9 text-end"
                     inputMode="decimal"
                     placeholder="0.00"
                     value={row.unit_price}
@@ -599,7 +599,7 @@ export function ProductDialog({
                   {showTax && (
                     <div className="col-span-2 sm:col-span-5 flex items-center gap-2">
                       <span className="text-[11px] text-muted-foreground">{t('invoices.field.taxRate')}</span>
-                      <Input className="h-8 w-20 text-right" inputMode="decimal" placeholder="%" value={row.tax_rate} onChange={(e) => updatePrice(index, { tax_rate: e.target.value })} data-testid={`price-tax-${index}`} />
+                      <Input className="h-8 w-20 text-end" inputMode="decimal" placeholder="%" value={row.tax_rate} onChange={(e) => updatePrice(index, { tax_rate: e.target.value })} data-testid={`price-tax-${index}`} />
                     </div>
                   )}
                 </div>

@@ -300,6 +300,18 @@ async def test_currencies_include_gel_with_metadata(client: AsyncClient):
     assert gel["name"] == "Georgian Lari"
     assert gel["flag"] == "🇬🇪"
 
+
+@pytest.mark.asyncio
+async def test_currencies_include_ils_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    ils = next((currency for currency in data if currency["code"] == "ILS"), None)
+
+    assert ils is not None
+    assert ils["symbol"] == "₪"
+    assert ils["name"] == "Israeli New Shekel"
+    assert ils["flag"] == "🇮🇱"
+
 @pytest.mark.asyncio
 async def test_currencies_include_pen_with_metadata(client: AsyncClient):
     response = await client.get("/api/currencies")
