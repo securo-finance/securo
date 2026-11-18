@@ -1293,6 +1293,7 @@
       "syncNow": "Nu synchroniseren"
     },
     "connected": "Bank succesvol verbonden",
+    "connectedImportFailed": "Bank gekoppeld, maar de eerste import is mislukt. Herhaal de synchronisatie om af te ronden.",
     "connectError": "Kan geen verbinding maken met de bank",
     "disconnected": "Verbinding verwijderd",
     "confirmDisconnectTitle": "Bankverbinding verbreken?",

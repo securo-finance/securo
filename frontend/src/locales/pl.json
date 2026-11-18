@@ -1342,6 +1342,7 @@
       "syncNow": "Synchronizuj teraz"
     },
     "connected": "Pomyślnie połączono bank",
+    "connectedImportFailed": "Bank połączony, ale pierwszy import nie powiódł się. Powtórz synchronizację, aby dokończyć.",
     "connectError": "Nie udało się połączyć banku",
     "disconnected": "Usunięto połączenie",
     "confirmDisconnectTitle": "Odłączyć połączenie bankowe?",
