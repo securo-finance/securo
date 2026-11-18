@@ -14,9 +14,11 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 from redis.exceptions import ConnectionError as RedisConnectionError
+from starlette.requests import Request
 
 from app.agents.schemas.conversation import SendMessageRequest
 from app.core.config import Settings
+from app.core.rate_limit import login_rate_limit
 from app.main import app
 
 
@@ -119,6 +121,35 @@ async def test_invalid_message_content_is_refused_with_422(
     assert expected_in_message in detail[0]["msg"]
 
 
+def test_page_context_is_capped_at_4000_characters():
+    """The content cap is pointless if the blob that rides next to it into
+    the same prompt is free: a megabyte of page context still costs tokens."""
+    SendMessageRequest(content="oi", page_context={"summary": "x" * 3900})
+    with pytest.raises(ValidationError) as excinfo:
+        SendMessageRequest(content="oi", page_context={"summary": "x" * 5000})
+    assert "page_context" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        pytest.param("page_context", {"summary": "x" * 5000}, id="page-context"),
+        pytest.param("channel", "x" * 41, id="channel"),
+    ],
+)
+async def test_oversized_side_fields_are_refused_with_422(
+    client: AsyncClient, auth_headers, field: str, value
+):
+    response = await client.post(
+        _chat_url(),
+        json={"content": "oi", field: value},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", field]
+
+
 # ---------------------------------------------------------------------------
 # Rate limit
 # ---------------------------------------------------------------------------
@@ -207,6 +238,30 @@ async def test_chat_refuses_with_503_when_the_limit_cannot_be_counted(
         response = await client.post(_chat_url(), json={"content": "hi"})
 
     assert response.status_code == 503
+
+
+async def test_shared_limiters_keep_their_previous_error_handling():
+    """The 503 is opt-in, set by the chat limiter alone: login, registration
+    and password reset must keep answering exactly what they answered before
+    this change, which is the step that keeps the diff inside #1591."""
+
+    async def _unreachable():
+        raise RedisConnectionError("redis is down")
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/auth/login",
+            "headers": [],
+            "client": ("203.0.113.9", 1234),
+        }
+    )
+
+    with patch("app.core.rate_limit.get_settings", lambda: _settings(limit=5)), \
+         patch("app.core.rate_limit.get_redis", _unreachable):
+        with pytest.raises(RedisConnectionError):
+            await login_rate_limit(request)
 
 
 async def test_default_chat_limit_leaves_room_for_a_normal_burst(client: AsyncClient):
