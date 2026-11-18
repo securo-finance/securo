@@ -15,7 +15,7 @@ const api = vi.hoisted(() => ({
   dashboard: { spendingByCategory: vi.fn(), projectedTransactions: vi.fn() },
   transactions: { list: vi.fn() },
   admin: { accountingMode: vi.fn() },
-  budgets: { list: vi.fn(), comparison: vi.fn(), suggestions: vi.fn(), createBatch: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
+  budgets: { list: vi.fn(), comparison: vi.fn(), suggestions: vi.fn(), createBatch: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), copyMonth: vi.fn() },
   categories: { listIncludingHidden: vi.fn() },
   categoryGroups: { listIncludingHidden: vi.fn() },
 }))
@@ -513,5 +513,39 @@ describe('Budget spending in the inline editor', () => {
     expect(budgetRow().getByText('$0.00')).toBeInTheDocument()
     expect(budgetRow().getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0')
     expect(api.dashboard.spendingByCategory).toHaveBeenCalledTimes(calls)
+  })
+})
+
+describe('Copying the previous month', () => {
+  it('opens the copy dialog from the page header', async () => {
+    const { user } = renderWithProviders(<BudgetsPage />)
+    await screen.findByRole('textbox', { name: t('budgets.budgetFor', { category: 'Rent' }) })
+
+    await user.click(screen.getByRole('button', { name: t('budgets.copyAction') }))
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: t('budgets.copyTitle') })).toBeInTheDocument()
+    expect(api.budgets.list).toHaveBeenCalledWith('2026-09-01')
+  })
+
+  it('offers the copy action in the empty month state', async () => {
+    api.budgets.list.mockImplementation(async (month?: string) => (month === '2026-10-01' ? [] : [rent]))
+    const { user } = renderWithProviders(<BudgetsPage />)
+
+    expect(await screen.findByText(t('budgets.empty'))).toBeInTheDocument()
+    expect(screen.getByText(t('budgets.copyEmptyHint'))).toBeInTheDocument()
+    const copyButtons = screen.getAllByRole('button', { name: t('budgets.copyAction') })
+    expect(copyButtons).toHaveLength(2)
+
+    await user.click(copyButtons[1])
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('hides the copy action from a viewer', async () => {
+    api.canWrite = false
+    renderWithProviders(<BudgetsPage />)
+    await screen.findByRole('textbox', { name: t('budgets.budgetFor', { category: 'Rent' }) })
+
+    expect(screen.queryByRole('button', { name: t('budgets.copyAction') })).not.toBeInTheDocument()
   })
 })

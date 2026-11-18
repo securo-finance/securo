@@ -1400,6 +1400,15 @@ export const budgets = {
     const { data } = await api.post('/budgets/batch', payload)
     return data
   },
+  copyMonth: async (payload: {
+    source_month: string
+    target_month: string
+    adjustment_percentage?: number
+    overwrite_existing?: boolean
+  }): Promise<Budget[]> => {
+    const { data } = await api.post('/budgets/copy-month', payload)
+    return data
+  },
 }
 
 // Goals
