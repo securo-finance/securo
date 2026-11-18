@@ -423,6 +423,8 @@ export default function TransactionsPage() {
 
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['transactions', page, limit, effectiveAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterFlagged, onlyUnread, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
+  const { data, isLoading, isFetching, isSuccess, isFetchedAfterMount, fetchStatus, refetch } = useQuery({
+    queryKey: ['transactions', page, limit, effectiveAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, onlyUnread, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
     enabled: !noAccounts,
     queryFn: () =>
       transactions.list({
@@ -464,15 +466,20 @@ export default function TransactionsPage() {
   }, [data?.items])
   // A fresh page can hold fewer pages than the one being shown: clearing the
   // last rows of the review queue is the usual way it happens. Clamp only
-  // against an answer that really arrived for the page on screen: a cached
-  // total is still served while its refetch runs, and reacting to it would
-  // send the person back before they ever saw the page they asked for
+  // against a successful answer that arrived for the page on screen. A cached
+  // total, even a fresh one, is asked again first; a refetch still running,
+  // paused offline or failed leaves the page alone, so Refresh can retry it
   // (issue #636).
   useEffect(() => {
-    if (!data || isFetching) return
+    if (!data || !isSuccess || fetchStatus !== 'idle') return
     const lastPage = Math.max(1, Math.ceil(data.total / limit))
-    if (page > lastPage) setPage(lastPage)
-  }, [data, isFetching, limit, page])
+    if (page <= lastPage) return
+    if (!isFetchedAfterMount) {
+      void refetch()
+      return
+    }
+    setPage(lastPage)
+  }, [data, isSuccess, isFetchedAfterMount, fetchStatus, limit, page, refetch])
 
   // A selected row can leave the visible page without the page or the filters
   // changing: opening an unread row in the review queue clears its marker and
@@ -1740,7 +1747,10 @@ export default function TransactionsPage() {
             size="sm"
             variant="outline"
             onClick={() => markAllReadMutation.mutate(currentWorkspace?.id)}
-            disabled={!canWrite || markAllReadMutation.isPending || (data?.total ?? 0) === 0}
+            // The action clears the whole workspace, not the filtered list, so
+            // an empty filtered queue must not disable it; only wait for the
+            // list to load.
+            disabled={!canWrite || markAllReadMutation.isPending || !data}
           >
             <CheckCheck className="me-1.5 h-4 w-4" />
             {markAllReadMutation.isPending
