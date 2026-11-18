@@ -332,6 +332,44 @@ async def test_generation_never_links_a_charge_from_another_workspace(
 
 
 @pytest.mark.asyncio
+async def test_generation_waits_while_the_account_is_in_another_workspace(
+    session, test_user, test_workspace, test_account,
+):
+    """When sync moves the account itself away, generation writes nothing.
+
+    A placeholder stamped with this workspace on an account that lives in
+    another one would put a row on the wrong side of the boundary, so the
+    bill waits with its pointer where it was.
+    """
+    other = Workspace(id=uuid.uuid4(), name="Other", created_by_user_id=test_user.id)
+    session.add(other)
+    rent = _recurring(session, test_user, test_workspace, test_account,
+                      "Rent", "500", "debit", "monthly", date(2027, 1, 1), auto_generate=True)
+    test_account.workspace_id = other.id
+    moved_charge = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=other.id,
+        account_id=test_account.id, description="Rent", amount=Decimal("500"),
+        currency="BRL", date=date(2027, 1, 1), type="debit", source="sync",
+        status="posted",
+    )
+    session.add(moved_charge)
+    await session.commit()
+
+    generated = await generate_pending(
+        session, test_user.id, up_to=date(2027, 2, 1), workspace_id=test_workspace.id,
+    )
+    assert generated == 0
+    await session.refresh(moved_charge)
+    await session.refresh(rent)
+    assert moved_charge.recurring_transaction_id is None
+    assert rent.next_occurrence == date(2027, 1, 1)
+    linked = (await session.execute(
+        select(Transaction).where(Transaction.recurring_transaction_id == rent.id)
+    )).scalars().all()
+    assert linked == []
+
+
+@pytest.mark.asyncio
 async def test_a_charge_moved_to_another_workspace_stays_out(
     session, test_user, test_workspace, test_account,
 ):

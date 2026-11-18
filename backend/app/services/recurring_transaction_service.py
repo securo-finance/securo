@@ -581,6 +581,12 @@ async def generate_pending(
         # constraint — the user should edit the recurring to fix it.
         if recurring.account_id is None:
             continue
+        account = await session.get(Account, recurring.account_id)
+        # Sync can move the account to another workspace. Nothing this bill
+        # generates may land there, so it waits, pointer untouched, until the
+        # account is back or the user points the bill at another one.
+        if account is not None and account.workspace_id != recurring.workspace_id:
+            continue
         cutoff = up_to or cutoffs.get(recurring.workspace_id) or app_today()
         # Generate while the effective date is due. The nominal pointer remains
         # authoritative and is the only date used for schedule advancement and
@@ -608,7 +614,6 @@ async def generate_pending(
                 # A split bill hands its parts to an uncategorized charge.
                 await category_line_service.apply_template_split(session, existing_real, recurring)
             else:
-                account = await session.get(Account, recurring.account_id)
                 # Only occurrences that already came due reach this point, so
                 # the row is a charge that happened rather than a forecast.
                 # Whether to trust that depends on who else writes to the
