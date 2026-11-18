@@ -180,12 +180,11 @@ def _card_balance(
     booked balance is read by its sign, like any other EB account.
 
     A balance entry without a usable amount counts as absent, never as zero:
-    a missing figure must not read as the whole limit spent.
+    a missing figure must not read as the whole limit spent, and it does not
+    hide a later entry of another type that does carry one.
     """
-    available = _balance_of_type(balances, CARD_AVAILABLE_BALANCE_TYPES)
-    free_credit = _balance_amount(available)
-    booked = _balance_of_type(balances, CARD_BOOKED_BALANCE_TYPES)
-    booked_amount = _balance_amount(booked)
+    available, free_credit = _card_figure(balances, CARD_AVAILABLE_BALANCE_TYPES)
+    booked, booked_amount = _card_figure(balances, CARD_BOOKED_BALANCE_TYPES)
     if free_credit is not None:
         if credit_limit is not None:
             return credit_limit - free_credit, free_credit, available
@@ -195,6 +194,20 @@ def _card_balance(
     if booked_amount is not None:
         return -booked_amount, None, booked
     return Decimal("0"), None, None
+
+
+def _card_figure(
+    balances: list[dict], types: tuple[str, ...]
+) -> tuple[Optional[dict], Optional[Decimal]]:
+    """The first balance of ``types``, in the order given, that carries a
+    usable amount, and that amount."""
+    by_type = {b.get("balance_type") or b.get("type"): b for b in balances if isinstance(b, dict)}
+    for key in types:
+        entry = by_type.get(key)
+        amount = _balance_amount(entry)
+        if amount is not None:
+            return entry, amount
+    return None, None
 
 
 def _balance_amount(balance: Optional[dict]) -> Optional[Decimal]:

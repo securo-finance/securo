@@ -535,6 +535,27 @@ async def test_card_balance_without_a_usable_amount_is_not_the_whole_limit(eb_ke
 
 
 @pytest.mark.asyncio
+async def test_card_balance_without_a_usable_amount_does_not_hide_the_other_type(eb_keys):
+    """ITAV and CLAV mean the same thing, so an entry without an amount must
+    not hide the usable one of the other type."""
+    provider = EnableBankingProvider()
+    handler = _card_bank(
+        [
+            {"balance_type": "ITAV", "balance_amount": {"currency": "PLN"}},
+            _balance("CLAV", "4900.00"),
+        ],
+        details={"credit_limit": {"amount": "5000.00", "currency": "PLN"}},
+    )
+
+    with _patch_client(provider, handler):
+        accounts = await provider.get_accounts(_card_credentials())
+
+    card = accounts[0]
+    assert card.available_credit == Decimal("4900.00")
+    assert card.balance == Decimal("100.00")
+
+
+@pytest.mark.asyncio
 async def test_background_sync_does_not_claim_a_cached_credit_limit(eb_keys):
     """A background sync reads the cached details and never calls /details. It
     reports the free credit and no limit, so the debt is stated against the
