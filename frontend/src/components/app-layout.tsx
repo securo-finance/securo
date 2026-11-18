@@ -54,6 +54,7 @@ import {
   KeyRound,
   Check,
   HardDriveDownload,
+  HardDriveUpload,
   Shield,
   ShieldCheck,
   Fingerprint,
@@ -63,6 +64,7 @@ import {
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { ChangePasswordDialog } from '@/components/change-password-dialog'
 import { BackupDialog } from '@/components/backup-dialog'
+import { RestoreDialog } from '@/components/restore-dialog'
 import { TwoFactorSetup } from '@/components/two-factor-setup'
 import { PasskeyManagementDialog } from '@/components/passkey-management-dialog'
 import { CommandPalette } from '@/components/command-palette'
@@ -121,6 +123,7 @@ export function AppLayout() {
   const [twoFactorOpen, setTwoFactorOpen] = useState(false)
   const [passkeysOpen, setPasskeysOpen] = useState(false)
   const [backupOpen, setBackupOpen] = useState(false)
+  const [restoreOpen, setRestoreOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
   // A message the assistant widget sent, waiting for the chat to pick it up.
@@ -294,6 +297,7 @@ export function AppLayout() {
             localAuthEnabled={localAuthEnabled}
             agentsEnabled={agentsEnabled}
             onBackup={() => setBackupOpen(true)}
+            onRestore={() => setRestoreOpen(true)}
             dark
             isAdmin={user?.is_superuser}
           />
@@ -606,6 +610,7 @@ export function AppLayout() {
               onPasskeys={() => setPasskeysOpen(true)}
               localAuthEnabled={localAuthEnabled}
               onBackup={() => setBackupOpen(true)}
+              onRestore={() => setRestoreOpen(true)}
               onUpdateAvailable={() => setUpdateDialogOpen(true)}
               agentsEnabled={agentsEnabled}
               collapsed={desktopSidebarCollapsed}
@@ -657,6 +662,7 @@ export function AppLayout() {
         localAuthEnabled={localAuthEnabled}
       />
       <BackupDialog open={backupOpen} onClose={() => setBackupOpen(false)} />
+      <RestoreDialog open={restoreOpen} onClose={() => setRestoreOpen(false)} />
       {quickAddOpen && (
         <Suspense fallback={null}>
           <QuickAddTransaction open={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
@@ -692,6 +698,7 @@ function UserMenu({
   onPasskeys,
   localAuthEnabled,
   onBackup,
+  onRestore,
   dark,
   isAdmin,
   agentsEnabled,
@@ -703,6 +710,7 @@ function UserMenu({
   onPasskeys: () => void
   localAuthEnabled: boolean
   onBackup: () => void
+  onRestore: () => void
   dark?: boolean
   isAdmin?: boolean
   agentsEnabled?: boolean
@@ -777,6 +785,13 @@ function UserMenu({
         >
           <HardDriveDownload size={14} />
           {t('backup.button')}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={onRestore}
+          className="flex items-center gap-2"
+        >
+          <HardDriveUpload size={14} />
+          {t('backup.restore.button')}
         </DropdownMenuItem>
         {agentsEnabled && (
           <DropdownMenuItem

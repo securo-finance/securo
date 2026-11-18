@@ -2798,6 +2798,30 @@
     "brandPrivate": "Prywatne z założenia"
   },
   "backup": {
+    "restore": {
+      "button": "Przywróć z kopii zapasowej",
+      "title": "Przywróć kopię zapasową",
+      "description": "Wybierz plik kopii zapasowej, który zostanie skopiowany do nowej przestrzeni roboczej.",
+      "fileLabel": "Plik kopii zapasowej",
+      "passwordLabel": "Hasło",
+      "passwordPlaceholder": "Tylko jeśli kopia ma hasło",
+      "newWorkspaceNote": "Kopia zostanie przywrócona do nowej przestrzeni roboczej i nic z tego, co masz dziś otwarte, się nie zmieni. Po zakończeniu możesz na nią przełączyć.",
+      "submit": "Przywróć",
+      "restoring": "Przywracanie...",
+      "error": "Nie udało się przywrócić tej kopii zapasowej",
+      "successToast": "Przywrócono „{{name}}”",
+      "success": "Przywrócono do „{{name}}”",
+      "attachmentsMissing": "W archiwum brakowało {{missing}} plików załączników; zostały pominięte.",
+      "openWorkspace": "Otwórz przestrzeń roboczą",
+      "close": "Zamknij",
+      "counts": {
+        "accounts": "Konta",
+        "transactions": "Transakcje",
+        "categories": "Kategorie",
+        "rules": "Reguły",
+        "attachments": "Załączniki"
+      }
+    },
     "button": "Kopia zapasowa",
     "downloading": "Pobieranie...",
     "success": "Pomyślnie pobrano kopię zapasową",

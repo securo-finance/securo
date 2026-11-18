@@ -2830,6 +2830,30 @@
     "brandPrivate": "Súkromie od základu"
   },
   "backup": {
+    "restore": {
+      "button": "Obnoviť zo zálohy",
+      "title": "Obnoviť zálohu",
+      "description": "Vyberte súbor zálohy, ktorý sa skopíruje do nového pracovného priestoru.",
+      "fileLabel": "Súbor zálohy",
+      "passwordLabel": "Heslo",
+      "passwordPlaceholder": "Iba ak má záloha heslo",
+      "newWorkspaceNote": "Záloha sa obnoví do nového pracovného priestoru a nič z toho, čo máte dnes otvorené, sa nezmení. Po dokončení naň môžete prepnúť.",
+      "submit": "Obnoviť",
+      "restoring": "Obnovuje sa...",
+      "error": "Túto zálohu sa nepodarilo obnoviť",
+      "successToast": "„{{name}}“ obnovené",
+      "success": "Obnovené do „{{name}}“",
+      "attachmentsMissing": "V archíve chýbalo {{missing}} súborov príloh a boli preskočené.",
+      "openWorkspace": "Otvoriť pracovný priestor",
+      "close": "Zavrieť",
+      "counts": {
+        "accounts": "Účty",
+        "transactions": "Transakcie",
+        "categories": "Kategórie",
+        "rules": "Pravidlá",
+        "attachments": "Prílohy"
+      }
+    },
     "button": "Zálohovať",
     "downloading": "Sťahuje sa...",
     "success": "Záloha úspešne stiahnutá",

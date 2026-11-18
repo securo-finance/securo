@@ -2686,6 +2686,30 @@
     "brandPrivate": "プライバシー重視設計"
   },
   "backup": {
+    "restore": {
+      "button": "バックアップから復元",
+      "title": "バックアップを復元",
+      "description": "新しいワークスペースにコピーするバックアップファイルを選択してください。",
+      "fileLabel": "バックアップファイル",
+      "passwordLabel": "パスワード",
+      "passwordPlaceholder": "バックアップにパスワードがある場合のみ",
+      "newWorkspaceNote": "バックアップは新しいワークスペースに復元され、現在開いているものは何も変わりません。完了後にそちらへ切り替えられます。",
+      "submit": "復元",
+      "restoring": "復元中...",
+      "error": "このバックアップを復元できませんでした",
+      "successToast": "「{{name}}」を復元しました",
+      "success": "「{{name}}」に復元しました",
+      "attachmentsMissing": "アーカイブに {{missing}} 件の添付ファイルが見つからず、スキップしました。",
+      "openWorkspace": "ワークスペースを開く",
+      "close": "閉じる",
+      "counts": {
+        "accounts": "口座",
+        "transactions": "取引",
+        "categories": "カテゴリ",
+        "rules": "ルール",
+        "attachments": "添付ファイル"
+      }
+    },
     "button": "バックアップ",
     "downloading": "ダウンロード中...",
     "success": "バックアップをダウンロードしました",

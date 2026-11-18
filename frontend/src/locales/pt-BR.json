@@ -2690,6 +2690,30 @@
     "brandPrivate": "Privado por padrão"
   },
   "backup": {
+    "restore": {
+      "button": "Restaurar backup",
+      "title": "Restaurar backup",
+      "description": "Escolha um arquivo de backup para copiar em um novo workspace.",
+      "fileLabel": "Arquivo de backup",
+      "passwordLabel": "Senha",
+      "passwordPlaceholder": "Só se o backup tiver uma",
+      "newWorkspaceNote": "O backup é restaurado em um novo workspace e nada do que você tem aberto hoje é alterado. Ao terminar, você pode alternar para ele.",
+      "submit": "Restaurar",
+      "restoring": "Restaurando...",
+      "error": "Não foi possível restaurar este backup",
+      "successToast": "“{{name}}” restaurado",
+      "success": "Restaurado em “{{name}}”",
+      "attachmentsMissing": "{{missing}} arquivos de anexo estavam faltando no arquivo e foram ignorados.",
+      "openWorkspace": "Abrir workspace",
+      "close": "Fechar",
+      "counts": {
+        "accounts": "Contas",
+        "transactions": "Transações",
+        "categories": "Categorias",
+        "rules": "Regras",
+        "attachments": "Anexos"
+      }
+    },
     "button": "Backup",
     "downloading": "Baixando...",
     "success": "Backup baixado com sucesso",

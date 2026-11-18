@@ -2687,6 +2687,30 @@
     "brandPrivate": "Privatsphäre standardmäßig"
   },
   "backup": {
+    "restore": {
+      "button": "Aus Backup wiederherstellen",
+      "title": "Backup wiederherstellen",
+      "description": "Wähle eine Backup-Datei, die in einen neuen Workspace kopiert wird.",
+      "fileLabel": "Backup-Datei",
+      "passwordLabel": "Passwort",
+      "passwordPlaceholder": "Nur wenn das Backup eines hat",
+      "newWorkspaceNote": "Das Backup wird in einen neuen Workspace wiederhergestellt, und nichts, was du heute geöffnet hast, ändert sich. Danach kannst du dorthin wechseln.",
+      "submit": "Wiederherstellen",
+      "restoring": "Wird wiederhergestellt...",
+      "error": "Dieses Backup konnte nicht wiederhergestellt werden",
+      "successToast": "„{{name}}“ wiederhergestellt",
+      "success": "Wiederhergestellt in „{{name}}“",
+      "attachmentsMissing": "{{missing}} Anhangsdateien fehlten im Archiv und wurden übersprungen.",
+      "openWorkspace": "Workspace öffnen",
+      "close": "Schließen",
+      "counts": {
+        "accounts": "Konten",
+        "transactions": "Transaktionen",
+        "categories": "Kategorien",
+        "rules": "Regeln",
+        "attachments": "Anhänge"
+      }
+    },
     "button": "Backup",
     "downloading": "Wird heruntergeladen...",
     "success": "Backup erfolgreich heruntergeladen",

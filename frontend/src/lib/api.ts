@@ -123,6 +123,7 @@ import type {
   ReconciliationRulePatch,
   ReconciliationSuggestion,
   ReconciliationHistoryEvent,
+  BackupRestoreResult,
 } from '@/types'
 
 const api = axios.create({
@@ -1829,6 +1830,18 @@ export const backup = {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
+  },
+  /**
+   * Send an archive back to the server, which copies it into a new workspace
+   * owned by the caller. The file goes up as a multipart body, so a large
+   * archive streams instead of being held in memory here.
+   */
+  restore: async (file: File, password?: string): Promise<BackupRestoreResult> => {
+    const form = new FormData()
+    form.append('file', file)
+    if (password) form.append('password', password)
+    const { data } = await api.post('/export/restore', form)
+    return data
   },
 }
 

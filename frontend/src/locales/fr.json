@@ -2690,6 +2690,30 @@
     "brandPrivate": "Confidentiel par conception"
   },
   "backup": {
+    "restore": {
+      "button": "Restaurer depuis une sauvegarde",
+      "title": "Restaurer une sauvegarde",
+      "description": "Choisissez un fichier de sauvegarde à copier dans un nouvel espace de travail.",
+      "fileLabel": "Fichier de sauvegarde",
+      "passwordLabel": "Mot de passe",
+      "passwordPlaceholder": "Uniquement si la sauvegarde en a un",
+      "newWorkspaceNote": "La sauvegarde est restaurée dans un nouvel espace de travail et rien de ce que vous avez ouvert aujourd'hui n'est modifié. Une fois terminé, vous pouvez y basculer.",
+      "submit": "Restaurer",
+      "restoring": "Restauration...",
+      "error": "Impossible de restaurer cette sauvegarde",
+      "successToast": "« {{name}} » restauré",
+      "success": "Restauré dans « {{name}} »",
+      "attachmentsMissing": "{{missing}} fichiers joints manquaient dans l'archive et ont été ignorés.",
+      "openWorkspace": "Ouvrir l'espace de travail",
+      "close": "Fermer",
+      "counts": {
+        "accounts": "Comptes",
+        "transactions": "Transactions",
+        "categories": "Catégories",
+        "rules": "Règles",
+        "attachments": "Pièces jointes"
+      }
+    },
     "button": "Sauvegarde",
     "downloading": "Téléchargement...",
     "success": "Sauvegarde téléchargée avec succès",

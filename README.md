@@ -161,6 +161,38 @@ SECURO_S3_TEST_SECRET_KEY=test-secret \
 uv run --directory backend --extra dev pytest tests/test_s3_storage_integration.py -v
 ```
 
+## Backup and restore
+
+**Backup**, in the account menu, downloads a zip with one workspace's data as
+plain JSON together with every attachment file. Give it a password and the
+archive is encrypted with AES-256; leave it empty and you get a plain zip that
+any archiver opens.
+
+**Restore from backup**, right below it, reads such an archive back. The
+restore always creates a new workspace, owned by the person who ran it, and
+copies the data into that one. Nothing you already have is touched, including
+when you restore the same archive twice: you get two workspaces. That is why
+the screen asks no "overwrite everything?" confirmation — the code has no path
+that overwrites, so there is nothing to confirm. It also means a restore is
+safe on a busy instance and needs no maintenance window.
+
+Every row gets a fresh id, and the ids a rule keeps inside its own JSON are
+rewritten too, so a restored rule still points at the restored category instead
+of at an id the new workspace never had. Attachments are written through the
+configured storage provider under keys that start with the new workspace id.
+
+The archive records the database schema revision of the instance that wrote it.
+An instance refuses a backup made with a newer schema, and one in the older 1.0
+format (it predates the tables its foreign keys need), naming the reason on
+screen. A file missing from the archive — a torn zip, an attachment lost by the
+storage — is counted in the result and skipped: the rest of the restore goes
+through, because the archive is still the best copy of everything else.
+
+The in-app archive covers one workspace at a time and is the copy you can carry
+to another instance. It does not replace backing up PostgreSQL and the bucket
+(see [Attachment Storage](#attachment-storage)): a database-only restore does
+not recover attachment contents either.
+
 ## AI-Assisted Development
 
 Parts of this codebase were built with help of AI. All code is human-reviewed and no data leaves your environment.

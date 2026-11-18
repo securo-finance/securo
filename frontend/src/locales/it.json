@@ -2690,6 +2690,30 @@
     "brandPrivate": "Privato per progettazione"
   },
   "backup": {
+    "restore": {
+      "button": "Ripristina da backup",
+      "title": "Ripristina un backup",
+      "description": "Scegli un file di backup da copiare in un nuovo workspace.",
+      "fileLabel": "File di backup",
+      "passwordLabel": "Password",
+      "passwordPlaceholder": "Solo se il backup ne ha una",
+      "newWorkspaceNote": "Il backup viene ripristinato in un nuovo workspace e nulla di ciò che hai aperto oggi cambia. Al termine puoi passare a quello.",
+      "submit": "Ripristina",
+      "restoring": "Ripristino...",
+      "error": "Impossibile ripristinare questo backup",
+      "successToast": "«{{name}}» ripristinato",
+      "success": "Ripristinato in «{{name}}»",
+      "attachmentsMissing": "{{missing}} file allegati mancavano dall'archivio e sono stati saltati.",
+      "openWorkspace": "Apri workspace",
+      "close": "Chiudi",
+      "counts": {
+        "accounts": "Conti",
+        "transactions": "Transazioni",
+        "categories": "Categorie",
+        "rules": "Regole",
+        "attachments": "Allegati"
+      }
+    },
     "button": "Backup",
     "downloading": "Download...",
     "success": "Backup scaricato con successo",

@@ -2846,6 +2846,30 @@
     "brandPrivate": "Soukromí od základu"
   },
   "backup": {
+    "restore": {
+      "button": "Obnovit ze zálohy",
+      "title": "Obnovit zálohu",
+      "description": "Vyberte soubor zálohy, který se zkopíruje do nového pracovního prostoru.",
+      "fileLabel": "Soubor zálohy",
+      "passwordLabel": "Heslo",
+      "passwordPlaceholder": "Pouze pokud ji záloha má",
+      "newWorkspaceNote": "Záloha se obnoví do nového pracovního prostoru a nic z toho, co máte dnes otevřené, se nezmění. Po dokončení na něj můžete přepnout.",
+      "submit": "Obnovit",
+      "restoring": "Obnovuji...",
+      "error": "Zálohu se nepodařilo obnovit",
+      "successToast": "„{{name}}“ obnoveno",
+      "success": "Obnoveno do „{{name}}“",
+      "attachmentsMissing": "V archivu chybělo {{missing}} souborů příloh a byly přeskočeny.",
+      "openWorkspace": "Otevřít pracovní prostor",
+      "close": "Zavřít",
+      "counts": {
+        "accounts": "Účty",
+        "transactions": "Transakce",
+        "categories": "Kategorie",
+        "rules": "Pravidla",
+        "attachments": "Přílohy"
+      }
+    },
     "button": "Zálohovat",
     "downloading": "Stahuje se...",
     "success": "Záloha úspěšně stažena",

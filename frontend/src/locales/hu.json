@@ -2686,6 +2686,30 @@
     "brandPrivate": "Alapjaiban privát"
   },
   "backup": {
+    "restore": {
+      "button": "Visszaállítás biztonsági mentésből",
+      "title": "Biztonsági mentés visszaállítása",
+      "description": "Válassz egy biztonsági mentés fájlt, amely egy új munkaterületre másolódik.",
+      "fileLabel": "Biztonsági mentés fájlja",
+      "passwordLabel": "Jelszó",
+      "passwordPlaceholder": "Csak ha a mentésnek van jelszava",
+      "newWorkspaceNote": "A mentés egy új munkaterületre áll vissza, és semmi sem változik meg abból, ami ma nyitva van nálad. Ha elkészült, átválthatsz rá.",
+      "submit": "Visszaállítás",
+      "restoring": "Visszaállítás...",
+      "error": "Ezt a biztonsági mentést nem sikerült visszaállítani",
+      "successToast": "„{{name}}” visszaállítva",
+      "success": "Visszaállítva ide: „{{name}}”",
+      "attachmentsMissing": "{{missing}} mellékletfájl hiányzott az archívumból, ezek kimaradtak.",
+      "openWorkspace": "Munkaterület megnyitása",
+      "close": "Bezárás",
+      "counts": {
+        "accounts": "Számlák",
+        "transactions": "Tranzakciók",
+        "categories": "Kategóriák",
+        "rules": "Szabályok",
+        "attachments": "Mellékletek"
+      }
+    },
     "button": "Biztonsági mentés",
     "downloading": "Letöltés...",
     "success": "A biztonsági mentés sikeresen letöltve",

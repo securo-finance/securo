@@ -55,6 +55,7 @@ function renderSwitcher() {
       onTwoFactor={vi.fn()}
       onPasskeys={vi.fn()}
       onBackup={vi.fn()}
+      onRestore={vi.fn()}
       onUpdateAvailable={vi.fn()}
       agentsEnabled={false}
       localAuthEnabled
@@ -71,6 +72,7 @@ it('opens the help documentation in a new tab from the account menu', async () =
       onTwoFactor={vi.fn()}
       onPasskeys={vi.fn()}
       onBackup={vi.fn()}
+      onRestore={vi.fn()}
       onUpdateAvailable={vi.fn()}
       agentsEnabled={false}
       localAuthEnabled

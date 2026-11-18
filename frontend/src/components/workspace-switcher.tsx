@@ -38,6 +38,7 @@ import {
   ChevronsUpDown,
   Download,
   HardDriveDownload,
+  HardDriveUpload,
   KeyRound,
   Languages,
   LogOut,
@@ -88,6 +89,8 @@ interface AccountMenuProps {
   onPasskeys: () => void
   /** Trigger a backup download. */
   onBackup: () => void
+  /** Open the restore dialog. */
+  onRestore: () => void
   /** Open the "Update available" dialog. */
   onUpdateAvailable: () => void
   /** True when the AGENTS_ENABLED env flag is on. */
@@ -112,6 +115,7 @@ export function WorkspaceSwitcher({
   onTwoFactor,
   onPasskeys,
   onBackup,
+  onRestore,
   onUpdateAvailable,
   agentsEnabled,
   localAuthEnabled,
@@ -285,6 +289,13 @@ export function WorkspaceSwitcher({
           >
             <HardDriveDownload size={14} />
             {t('backup.button')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={onRestore}
+            className="flex items-center gap-2"
+          >
+            <HardDriveUpload size={14} />
+            {t('backup.restore.button')}
           </DropdownMenuItem>
 
           {agentsEnabled && (

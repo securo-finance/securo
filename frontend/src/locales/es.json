@@ -2690,6 +2690,30 @@
     "brandPrivate": "Privado por diseño"
   },
   "backup": {
+    "restore": {
+      "button": "Restaurar desde copia de seguridad",
+      "title": "Restaurar una copia de seguridad",
+      "description": "Elige un archivo de copia de seguridad para copiarlo en un espacio de trabajo nuevo.",
+      "fileLabel": "Archivo de copia de seguridad",
+      "passwordLabel": "Contraseña",
+      "passwordPlaceholder": "Solo si la copia tiene una",
+      "newWorkspaceNote": "La copia se restaura en un espacio de trabajo nuevo y nada de lo que tienes abierto hoy cambia. Al terminar, puedes cambiar a él.",
+      "submit": "Restaurar",
+      "restoring": "Restaurando...",
+      "error": "No se pudo restaurar esta copia de seguridad",
+      "successToast": "«{{name}}» restaurado",
+      "success": "Restaurado en «{{name}}»",
+      "attachmentsMissing": "Faltaban {{missing}} archivos adjuntos en el archivo y se omitieron.",
+      "openWorkspace": "Abrir espacio de trabajo",
+      "close": "Cerrar",
+      "counts": {
+        "accounts": "Cuentas",
+        "transactions": "Transacciones",
+        "categories": "Categorías",
+        "rules": "Reglas",
+        "attachments": "Adjuntos"
+      }
+    },
     "button": "Copia de seguridad",
     "downloading": "Descargando...",
     "success": "Copia de seguridad descargada correctamente",

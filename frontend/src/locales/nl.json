@@ -2688,6 +2688,30 @@
     "brandPrivate": "Privé door ontwerp"
   },
   "backup": {
+    "restore": {
+      "button": "Herstellen uit back-up",
+      "title": "Een back-up herstellen",
+      "description": "Kies een back-upbestand dat naar een nieuwe werkruimte wordt gekopieerd.",
+      "fileLabel": "Back-upbestand",
+      "passwordLabel": "Wachtwoord",
+      "passwordPlaceholder": "Alleen als de back-up er een heeft",
+      "newWorkspaceNote": "De back-up wordt hersteld naar een nieuwe werkruimte en niets van wat je vandaag open hebt, verandert. Als het klaar is, kun je erheen schakelen.",
+      "submit": "Herstellen",
+      "restoring": "Bezig met herstellen...",
+      "error": "Deze back-up kon niet worden hersteld",
+      "successToast": "‘{{name}}’ hersteld",
+      "success": "Hersteld naar ‘{{name}}’",
+      "attachmentsMissing": "{{missing}} bijlagebestanden ontbraken in het archief en zijn overgeslagen.",
+      "openWorkspace": "Werkruimte openen",
+      "close": "Sluiten",
+      "counts": {
+        "accounts": "Rekeningen",
+        "transactions": "Transacties",
+        "categories": "Categorieën",
+        "rules": "Regels",
+        "attachments": "Bijlagen"
+      }
+    },
     "button": "Back-up",
     "downloading": "Downloaden...",
     "success": "Back-up succesvol gedownload",

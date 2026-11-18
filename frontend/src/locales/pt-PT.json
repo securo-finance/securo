@@ -2690,6 +2690,30 @@
     "brandPrivate": "Privado por padrão"
   },
   "backup": {
+    "restore": {
+      "button": "Restaurar cópia de segurança",
+      "title": "Restaurar cópia de segurança",
+      "description": "Escolha um ficheiro de cópia de segurança para copiar para um novo espaço de trabalho.",
+      "fileLabel": "Ficheiro de cópia de segurança",
+      "passwordLabel": "Palavra-passe",
+      "passwordPlaceholder": "Apenas se a cópia tiver uma",
+      "newWorkspaceNote": "A cópia é restaurada num novo espaço de trabalho e nada do que tem aberto hoje é alterado. Quando terminar, pode mudar para ele.",
+      "submit": "Restaurar",
+      "restoring": "A restaurar...",
+      "error": "Não foi possível restaurar esta cópia de segurança",
+      "successToast": "«{{name}}» restaurado",
+      "success": "Restaurado em «{{name}}»",
+      "attachmentsMissing": "Faltavam {{missing}} ficheiros de anexo no arquivo e foram ignorados.",
+      "openWorkspace": "Abrir espaço de trabalho",
+      "close": "Fechar",
+      "counts": {
+        "accounts": "Contas",
+        "transactions": "Transações",
+        "categories": "Categorias",
+        "rules": "Regras",
+        "attachments": "Anexos"
+      }
+    },
     "button": "Backup",
     "downloading": "A transferir...",
     "success": "Backup baixado com sucesso",

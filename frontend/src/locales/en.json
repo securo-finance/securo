@@ -2686,6 +2686,30 @@
     "brandPrivate": "Private by design"
   },
   "backup": {
+    "restore": {
+      "button": "Restore from backup",
+      "title": "Restore a backup",
+      "description": "Choose a backup file to copy into a new workspace.",
+      "fileLabel": "Backup file",
+      "passwordLabel": "Password",
+      "passwordPlaceholder": "Only if the backup has one",
+      "newWorkspaceNote": "The backup is restored into a new workspace and nothing you have open today is changed. When it finishes, you can switch to it.",
+      "submit": "Restore",
+      "restoring": "Restoring...",
+      "error": "Could not restore this backup",
+      "successToast": "“{{name}}” restored",
+      "success": "Restored into “{{name}}”",
+      "attachmentsMissing": "{{missing}} attachment files were missing from the archive and were skipped.",
+      "openWorkspace": "Open workspace",
+      "close": "Close",
+      "counts": {
+        "accounts": "Accounts",
+        "transactions": "Transactions",
+        "categories": "Categories",
+        "rules": "Rules",
+        "attachments": "Attachments"
+      }
+    },
     "button": "Backup",
     "downloading": "Downloading...",
     "success": "Backup downloaded successfully",

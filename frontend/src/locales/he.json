@@ -2702,6 +2702,30 @@
     "brandPrivate": "פרטיות מובנית"
   },
   "backup": {
+    "restore": {
+      "button": "שחזור מגיבוי",
+      "title": "שחזור גיבוי",
+      "description": "בחרו קובץ גיבוי שיועתק לסביבת עבודה חדשה.",
+      "fileLabel": "קובץ גיבוי",
+      "passwordLabel": "סיסמה",
+      "passwordPlaceholder": "רק אם לגיבוי יש סיסמה",
+      "newWorkspaceNote": "הגיבוי משוחזר לסביבת עבודה חדשה ושום דבר ממה שפתוח אצלכם היום לא משתנה. בסיום תוכלו לעבור אליה.",
+      "submit": "שחזור",
+      "restoring": "משחזר...",
+      "error": "לא ניתן היה לשחזר את הגיבוי הזה",
+      "successToast": "„{{name}}” שוחזרה",
+      "success": "שוחזר אל „{{name}}”",
+      "attachmentsMissing": "{{missing}} קבצי מצורפים היו חסרים בארכיון ודולגו.",
+      "openWorkspace": "פתיחת סביבת העבודה",
+      "close": "סגירה",
+      "counts": {
+        "accounts": "חשבונות",
+        "transactions": "תנועות",
+        "categories": "קטגוריות",
+        "rules": "כללים",
+        "attachments": "מצורפים"
+      }
+    },
     "button": "גיבוי",
     "downloading": "מוריד...",
     "success": "הגיבוי הורד בהצלחה",

@@ -186,6 +186,15 @@ export interface SyncResult extends BankConnection {
   sync_outcome: 'refreshed' | 'partial' | 'rate_limited'
 }
 
+/** What a restore put back, counted per table, into a brand-new workspace. */
+export interface BackupRestoreResult {
+  workspace_id: string
+  workspace_name: string
+  entity_counts: Record<string, number>
+  attachments_restored: number
+  attachments_missing: number
+}
+
 export type AccountType = 'checking' | 'savings' | 'credit_card' | 'loan' | 'investment' | 'wallet'
 
 export interface Account {
