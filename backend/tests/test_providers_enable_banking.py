@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from typing import Any
 from unittest.mock import patch
 
 import httpx
@@ -1069,7 +1070,7 @@ def test_date_choice_keeps_the_external_id_of_both_id_recipes():
     next sync still finds it by id instead of importing a second copy.
     """
     provider = EnableBankingProvider()
-    fallback_raw = {
+    fallback_raw: dict[str, Any] = {
         "transaction_amount": {"amount": "12.00", "currency": "EUR"},
         "credit_debit_indicator": "DBIT",
         "booking_date": "2026-09-02",
@@ -1082,7 +1083,7 @@ def test_date_choice_keeps_the_external_id_of_both_id_recipes():
     assert tx is not None
     assert tx.external_id == _txn_fingerprint("acc-1", fallback_raw)
 
-    reference_raw = {
+    reference_raw: dict[str, Any] = {
         **fallback_raw,
         "entry_reference": "auth-1",
     }
