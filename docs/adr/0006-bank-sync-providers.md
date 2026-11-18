@@ -14,6 +14,7 @@ Bank aggregators differ by country, flow (OAuth redirect, connect widget, token 
 - `backend/app/providers/__init__.py` lists `KNOWN_PROVIDERS` and imports a provider's module only when `credentials.is_configured(name, settings)` is true. Availability is computed per call, not registered once at startup.
 - Credentials come from the environment or from the admin screen. `resolve_settings` in `backend/app/services/provider_settings.py` overlays saved values on the environment field by field; saved secrets are encrypted and need a `SECRET_KEY` of at least 32 characters. Details in `docs/provider-settings.md`.
 - Today: Pluggy and Enable Banking (on when their credentials are present) and SimpleFIN (`SIMPLEFIN_ENABLED`).
+- Extended by [0023](0023-new-bank-providers-are-plugins.md): a new provider is a plugin that returns records for this same pipeline; the providers above stay in the core.
 
 ## Consequences
 

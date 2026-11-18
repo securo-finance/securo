@@ -10,6 +10,7 @@ import pytest
 
 from app.plugins import contract
 from app.plugins.contract import PayloadError, parse_payload
+from app.providers.base import ReservedBalanceData
 
 ALL = ["accounts", "transactions", "bills", "holdings", "trades"]
 
@@ -67,6 +68,32 @@ def test_a_payload_becomes_the_provider_dataclasses():
     assert payload.kinds() == {"accounts", "transactions", "holdings", "trades"}
 
 
+def test_reserved_balances_become_provider_data():
+    balances = [
+        {"external_id": "emergency-fund", "name": "Emergency fund", "currency": "BRL", "amount": "2000"},
+        {"external_id": "emergency-fund", "name": None, "currency": "USD", "amount": "0"},
+    ]
+    payload = parse_payload(_payload(lambda d: d["accounts"][0].update(reserved_balances=balances)), ALL)
+    assert payload is not None and payload.accounts
+    data = payload.accounts[0].to_data()
+    assert data.reserved_balances == [
+        ReservedBalanceData(
+            external_id="emergency-fund", name="Emergency fund", currency="BRL", amount=Decimal("2000")
+        ),
+        ReservedBalanceData(external_id="emergency-fund", name=None, currency="USD", amount=Decimal("0")),
+    ]
+
+
+def test_reserved_balances_unreported_and_empty_are_different():
+    omitted = parse_payload(_payload(), ALL)
+    assert omitted is not None and omitted.accounts
+    assert omitted.accounts[0].to_data().reserved_balances is None
+
+    empty = parse_payload(_payload(lambda d: d["accounts"][0].update(reserved_balances=[])), ALL)
+    assert empty is not None and empty.accounts
+    assert empty.accounts[0].to_data().reserved_balances == []
+
+
 def test_a_bill_keeps_its_raw_data_but_not_what_only_a_native_provider_may_say():
     bill = {"external_id": "b1", "due_date": "2026-12-10", "total_amount": "150", "currency": "USD",
             "raw_data": {"cycle": "2026-11", "financeCharges": [{"id": "c1", "amount": 9e99}]}}
@@ -100,6 +127,22 @@ def test_null_lists_are_not_fetched_and_empty_lists_are():
         (lambda d: d["accounts"][0]["transactions"][0].update(type="transfer"), "type"),
         (lambda d: d["accounts"][0]["transactions"][1].update(external_id="t1"), "unique"),
         (lambda d: d["accounts"].append(copy.deepcopy(d["accounts"][0])), "unique"),
+        (lambda d: d["accounts"][0].update(reserved_balances=[
+            {"external_id": "pocket", "currency": "BRL", "amount": "1"},
+            {"external_id": "pocket", "currency": "BRL", "amount": "2"},
+        ]), "unique"),
+        (lambda d: d["accounts"][0].update(reserved_balances=[
+            {"external_id": "pocket", "currency": "BRL", "amount": 1.5},
+        ]), "floats"),
+        (lambda d: d["accounts"][0].update(reserved_balances=[
+            {"external_id": "pocket", "currency": "BRL", "amount": "-1"},
+        ]), "amount"),
+        (lambda d: d["accounts"][0].update(reserved_balances=[
+            {"external_id": "pocket", "currency": "brl", "amount": "1"},
+        ]), "currency"),
+        (lambda d: d["accounts"][0].update(reserved_balances=[
+            {"external_id": "pocket", "currency": "BRL", "balance": "1"},
+        ]), "not permitted"),
         (lambda d: d["holdings"][0]["trades"][0].update(quantity="0"), "quantity"),
         (lambda d: d["holdings"][0]["trades"][0].update(kind="short"), "kind"),
         (lambda d: d["holdings"][0]["trades"].append(dict(d["holdings"][0]["trades"][0])), "unique"),
@@ -115,7 +158,9 @@ def test_null_lists_are_not_fetched_and_empty_lists_are():
         (lambda d: d["holdings"][0]["trades"][0].update(price="999999999999.9999995"), "price"),
     ],
     ids=["contract", "unknown-field", "account-type", "float", "currency", "full-number", "negative-amount",
-         "transaction-type", "duplicate-transaction", "duplicate-account", "zero-quantity", "trade-kind",
+         "transaction-type", "duplicate-transaction", "duplicate-account", "duplicate-reserved-balance",
+         "reserved-amount-as-float", "negative-reserved-amount", "reserved-currency", "reserved-unknown-field",
+         "zero-quantity", "trade-kind",
          "duplicate-trade", "insecure-logo", "holding-type", "units-too-large", "money-too-large",
          "ticker-too-long", "trade-price-too-large", "units-round-past-the-column",
          "money-rounds-past-the-column", "trade-price-rounds-past-the-column"],
@@ -143,6 +188,31 @@ def test_replies_over_the_caps_are_refused(monkeypatch):
     monkeypatch.setattr(contract, "MAX_TRANSACTIONS", 1)
     with pytest.raises(PayloadError, match="2 transactions in one reply"):
         parse_payload(_payload(), ALL)
+
+
+def test_the_reserved_balance_cap_counts_the_reply_and_says_it_cannot_be_split():
+    """The cap is the reply's total, and its message must not send the author to
+    a next sync: a reported list is the account's whole set, so what is left out
+    of it is deleted."""
+
+    def spread(data):
+        first = data["accounts"][0]
+        first["reserved_balances"] = [
+            {"external_id": f"first-{i}", "currency": "BRL", "amount": "1.00"} for i in range(1_000)
+        ]
+        second = copy.deepcopy(first)
+        second["external_id"] = "A2"
+        second["reserved_balances"] = [
+            {"external_id": f"second-{i}", "currency": "BRL", "amount": "1.00"} for i in range(1_001)
+        ]
+        data["accounts"].append(second)
+
+    with pytest.raises(PayloadError, match="2001 reserved_balances in one reply") as caught:
+        parse_payload(_payload(spread), ALL)
+    message = str(caught.value)
+    assert "the most is 2000, and a reply over that is refused whole" in message
+    assert "whole set" in message and "can't be split across syncs" in message
+    assert "next sync" not in message
 
 
 def test_data_must_be_an_object():

@@ -27,14 +27,35 @@ from typing import Annotated, Any, Literal
 from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, ValidationError, model_validator
 
 from app.plugins.manifest import KEY_PATTERN
-from app.providers.base import AccountData, BillData, HoldingData, HoldingTradeData, TransactionData
+from app.providers.base import (
+    AccountData,
+    BillData,
+    HoldingData,
+    HoldingTradeData,
+    ReservedBalanceData,
+    TransactionData,
+)
 
 CONTRACT_VERSION = 1
 MAX_ACCOUNTS = 500
 MAX_TRANSACTIONS = 20_000
 MAX_BILLS = 2_000
+MAX_RESERVED_BALANCES = 2_000
 MAX_HOLDINGS = 5_000
 MAX_TRADES = 20_000
+
+#: What the author has to know past the cap for a kind whose reported list
+#: replaces what is stored: paying the excess over two syncs would lose it.
+_OVER_CAP_NOTES = {
+    "reserved_balances": (
+        ". A reported list is the account's whole set, so it can't be split across syncs;"
+        " reserves left out of it are deleted"
+    ),
+    "holdings": (
+        ". A reported list is the whole set, so it can't be split across syncs;"
+        " holdings left out of it are archived"
+    ),
+}
 
 AccountType = Literal["checking", "savings", "credit_card", "loan", "investment", "wallet"]
 #: The asset types a holding may name; they pick its icon on the Assets page.
@@ -144,6 +165,24 @@ class Bill(_Model):
         return data
 
 
+class ReservedBalance(_Model):
+    """Funds an institution holds reserved inside an account (ADR 0022).
+
+    Cofrinhos, "saldo reservado", judicial holds. Shown beside the account's
+    balance and never added to it: the provider doesn't guarantee whether the
+    balance already includes them. One record per currency; `(external_id,
+    currency)` is the identity the sync upserts on.
+    """
+
+    external_id: ExternalId
+    name: str | None = Field(default=None, max_length=255)
+    currency: Currency
+    amount: PositiveMoney
+
+    def to_data(self) -> ReservedBalanceData:
+        return ReservedBalanceData(**self.model_dump())
+
+
 class Account(_Model):
     external_id: ExternalId
     name: str = Field(min_length=1, max_length=255)
@@ -167,6 +206,8 @@ class Account(_Model):
     institution_logo_url: str | None = Field(default=None, max_length=500, pattern=r"^https://[^\s]+$")
     """Or an image on a host the manifest declares in `network`, for a plugin that reaches many institutions."""
     auto_invested_balance: PositiveMoney = Decimal(0)
+    reserved_balances: list[ReservedBalance] | None = None
+    """Unreported reserves are `None`, which keeps what Securo stored; `[]` says there are none (ADR 0022)."""
     transactions: list[Transaction] | None = None
     bills: list[Bill] | None = None
 
@@ -174,13 +215,20 @@ class Account(_Model):
     def _unique(self) -> Account:
         _check_unique("transactions", self.transactions)
         _check_unique("bills", self.bills)
+        _check_unique("reserved_balances", self.reserved_balances, ("external_id", "currency"))
         return self
 
     def to_data(self, logos: dict[str, str] | None = None) -> AccountData:
         """The provider dataclass; `logos` maps the manifest's logo keys to where Securo serves them."""
-        data = AccountData(**self.model_dump(exclude={"transactions", "bills", "institution_logo"}))
+        data = AccountData(
+            **self.model_dump(
+                exclude={"transactions", "bills", "reserved_balances", "institution_logo"}
+            )
+        )
         if self.institution_logo:
             data.institution_logo_url = (logos or {}).get(self.institution_logo)
+        if self.reserved_balances is not None:
+            data.reserved_balances = [item.to_data() for item in self.reserved_balances]
         return data
 
 
@@ -245,12 +293,19 @@ class Payload(_Model):
             "accounts": (len(accounts), MAX_ACCOUNTS),
             "transactions": (sum(len(a.transactions or []) for a in accounts), MAX_TRANSACTIONS),
             "bills": (sum(len(a.bills or []) for a in accounts), MAX_BILLS),
+            "reserved_balances": (
+                sum(len(a.reserved_balances or []) for a in accounts),
+                MAX_RESERVED_BALANCES,
+            ),
             "holdings": (len(holdings), MAX_HOLDINGS),
             "trades": (sum(len(h.trades or []) for h in holdings), MAX_TRADES),
         }
         for kind, (count, cap) in counts.items():
             if count > cap:
-                raise ValueError(f"{count} {kind} in one reply; the most is {cap}, send the rest on the next sync")
+                raise ValueError(
+                    f"{count} {kind} in one reply; the most is {cap}, and a reply over that is"
+                    f" refused whole{_OVER_CAP_NOTES.get(kind, '')}"
+                )
         return self
 
     def kinds(self) -> set[str]:
@@ -270,10 +325,10 @@ class Payload(_Model):
         return found
 
 
-def _check_unique(kind: str, records: list | None) -> None:
-    ids = [r.external_id for r in records or []]
-    if len(ids) != len(set(ids)):
-        raise ValueError(f"{kind}: external_id must be unique")
+def _check_unique(kind: str, records: list | None, keys: tuple[str, ...] = ("external_id",)) -> None:
+    seen = [tuple(getattr(record, key) for key in keys) for record in records or []]
+    if len(seen) != len(set(seen)):
+        raise ValueError(f"{kind}: {' and '.join(keys)} must be unique")
 
 
 def parse_payload(
