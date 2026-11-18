@@ -1369,8 +1369,10 @@ export const recurring = {
 
 // Budgets
 export const budgets = {
-  list: async (month?: string): Promise<Budget[]> => {
-    const { data } = await api.get('/budgets', { params: { month } })
+  // `workspaceId` pins the read to one workspace, for a screen that must not
+  // follow the active one when another tab switches it.
+  list: async (month?: string, workspaceId?: string | null): Promise<Budget[]> => {
+    const { data } = await api.get('/budgets', { params: { month }, ...workspaceHeader(workspaceId) })
     return data
   },
   create: async (budget: { category_id: string; amount: number; month: string; is_recurring?: boolean }): Promise<Budget> => {
@@ -1398,6 +1400,17 @@ export const budgets = {
     items: { category_id: string; amount: number }[]
   }): Promise<Budget[]> => {
     const { data } = await api.post('/budgets/batch', payload)
+    return data
+  },
+  // Pinned to the workspace the preview was built from: the active one can
+  // change under an open dialog when another tab switches it.
+  copyMonth: async (payload: {
+    source_month: string
+    target_month: string
+    adjustment_percentage?: number
+    overwrite_existing?: boolean
+  }, workspaceId?: string | null): Promise<Budget[]> => {
+    const { data } = await api.post('/budgets/copy-month', payload, workspaceHeader(workspaceId))
     return data
   },
 }
