@@ -329,23 +329,26 @@ async def _load_asset(
     return result.scalar_one_or_none()
 
 
-async def _load_asset_for_write(
+async def _lock_asset(
     session: AsyncSession, asset_id: uuid.UUID, workspace_id: uuid.UUID
 ) -> Optional[Asset]:
-    """Load the holding and lock it for the rest of the transaction.
+    """Load the holding under FOR UPDATE, for callers that write its ledger.
 
-    Every path that checks this holding's ledger and then writes to it takes
-    this lock, including the order import: two of them landing together would
-    otherwise each pass on the ledger they read and the later one would commit
-    over the other's units.
+    Every ledger write takes the Asset lock before touching transaction rows,
+    the same order delete_asset uses: a refresh holding the Asset cannot end up
+    in a lock cycle with an edit or a delete of one of its entries, which would
+    make PostgreSQL abort one of them. The order import takes it too: two
+    writers landing together would otherwise each pass on the ledger they read
+    and the later one would commit over the other's units.
+
+    `populate_existing` because, after waiting for the lock, the row is what is
+    stored now, not the copy this session loaded before.
     """
     result = await session.execute(
         select(Asset)
         .where(Asset.id == asset_id, Asset.workspace_id == workspace_id)
-        # After waiting for the lock, the row is what is stored now, not the
-        # copy this session loaded before.
-        .execution_options(populate_existing=True)
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
     return result.scalar_one_or_none()
 
@@ -470,7 +473,7 @@ async def add_transaction(
     workspace_id: uuid.UUID,
     data: AssetTransactionCreate,
 ) -> Optional[AssetRead]:
-    asset = await _load_asset_for_write(session, asset_id, workspace_id)
+    asset = await _lock_asset(session, asset_id, workspace_id)
     if asset is None:
         return None
     _validate(
@@ -531,7 +534,7 @@ async def update_transaction(
     # so a later commit in the same request would persist an update we reported
     # failed. The lock is taken before the ledger is read, so nothing lands
     # between the checks and the write.
-    asset = await _load_asset_for_write(session, tx.asset_id, workspace_id)
+    asset = await _lock_asset(session, tx.asset_id, workspace_id)
     if asset is None:
         return None
     # The row and the ledger it is measured against, as they stand once the
@@ -596,7 +599,7 @@ async def delete_transaction(
     tx = result.scalar_one_or_none()
     if tx is None:
         return None
-    asset = await _load_asset_for_write(session, tx.asset_id, workspace_id)
+    asset = await _lock_asset(session, tx.asset_id, workspace_id)
     if asset is None:
         return None
     # What is deleted and what the delete is measured against, as they stand
