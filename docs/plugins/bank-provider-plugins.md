@@ -50,8 +50,15 @@ repository.
 
 ### In a workspace
 
-1. The workspace owner installs the plugin from the catalog. The preview lists
-   every host in `network` with its `purpose`.
+1. The workspace owner installs the plugin from the catalog; only the owner
+   or a workspace manager can add, update or remove a plugin with code.
+   Before anything is applied, the preview shows what the owner agrees to: every host in `network` and
+   every scope in `api_scopes`, each with its `purpose`, the integrations that
+   provide records, with the kinds they provide, and the connections a change
+   would remove. On an update it also names the hosts and scopes the
+   installed version didn't have. Confirming applies that exact commit; if
+   the catalog moved, or anything the preview showed changed in the workspace
+   (the plugin's items or its connections), nothing is applied.
 2. Someone adds a connection: they fill in the integration's `fields` (or sign
    in, with `auth: "oauth"`). Secret fields are sealed by
    `backend/app/plugins/vault.py`; they never go into
@@ -86,9 +93,45 @@ An integration becomes a bank provider by declaring `provides` in
 | `trades` | `holdings` | Buys and sells that make up a position |
 
 `provides` can't be empty or repeat a kind. A payload that carries a kind the
-integration doesn't declare is refused. The rest of the integration is as for
-any plugin with code: `key`, `name`, `auth`, `fields`, `sync_minutes` (15 to
-10080). See `examples/plugins/demo-bank/securo-plugin.json`.
+integration doesn't declare is refused.
+
+### Manifest: the rest
+
+`securo-plugin.json` is checked whole when the plugin is installed
+(`backend/app/plugins/manifest.py`, `Manifest`); an unknown key is refused,
+not ignored. What a provider plugin sets:
+
+| Key | What it is |
+|-----|------------|
+| `id` | `owner/name`, lower case. It keys the install and its connections, so it never changes |
+| `name`, `description` | Translated text: one plain string (read as English) or a map of locale to text with at least `en` |
+| `version`, `min_securo_version` | Versions `MAJOR.MINOR.PATCH`, digits only (`1.4.0`); no pre-release or build suffix, no leading zeros |
+| `repository`, `license` | The plugin's GitHub repository (`https://github.com/owner/repo`) and its license |
+| `workspaces` | `personal`, `business` or both; both when left out |
+| `contributes.integrations` | What a person connects: `key`, `name`, optional `description`, `auth`, `fields`, `sync_minutes`, `provides` |
+| `runtime` | `entrypoint` (`module:attribute`) and an optional `lockfile`, a requirements file with a hash for every package. Required with an integration |
+| `network` | Each host the plugin may reach, with a `purpose`; at most 100. A plain host name with an optional port, never a wildcard or an IP address |
+| `api_scopes` | Only for a plugin that also calls the Securo API: each scope with a `purpose`. A provider that only returns records needs none |
+| `logos` | Institution logos shipped in the package, key to a PNG or WebP path inside it; at most 50 |
+
+In an integration:
+
+- `auth` is `credentials` (the default: the person fills in `fields`),
+  `oauth` (the person signs in at the service) or `none`.
+- `fields` is the connection form, at most 20, with unique keys. Each has a
+  `key`, a translated `label`, `required` (true by default) and `secret`
+  (false by default).
+- A `secret` field is sealed and reaches the plugin in `context.secrets`; it
+  is never shown again. Every other field goes to `context.config` and stays
+  readable, so anything sensitive, an account number included, belongs in a
+  secret field.
+- `sync_minutes` is 15 to 10080 (a week) and sets the periodic sync.
+  Without it, the plugin still syncs after the connection is created or
+  signed in, and when someone presses **Sync now**, but it never syncs on a
+  schedule.
+
+`network`, `api_scopes` and `logos` are only for a plugin with a `runtime`.
+See `examples/plugins/demo-bank/securo-plugin.json` for a complete one.
 
 ### `sync(params, context)`
 
