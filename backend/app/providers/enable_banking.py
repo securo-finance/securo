@@ -83,6 +83,10 @@ TRANSACTION_PAGE_LIMIT = 50  # safety cap
 TERMINAL_SESSION_STATUSES = frozenset(
     {"EXPIRED", "REVOKED", "CLOSED", "CANCELLED", "INVALID"}
 )
+# Statuses of a flat transaction list. A cancelled or rejected entry never
+# moved money, and a held or scheduled one has not settled yet.
+SKIPPED_TRANSACTION_STATUSES = frozenset({"CNCL", "RJCT"})
+PENDING_TRANSACTION_STATUSES = frozenset({"PDNG", "PENDING", "HOLD", "SCHD"})
 
 
 def _map_cash_account_type(eb_type: Optional[str]) -> str:
@@ -255,6 +259,18 @@ def _entry_reference_external_id(entry_ref: str, amount_obj: dict, raw: dict) ->
         _counterparty_identity(raw, "debtor"),
     ]
     digest = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+    return digest[:32]
+
+
+def _repeat_external_id(external_id: str, occurrence: int) -> str:
+    """Id of the `occurrence`-th repeat (1, 2, ...) of an identical entry.
+
+    Two same-amount purchases on one day that the bank lists with nothing
+    else (a pending card purchase carries only amount, direction and date)
+    hash to the same id. Each repeat within a page gets its own id; the
+    first keeps the plain one, so rows already stored keep theirs.
+    """
+    digest = hashlib.sha256(f"{external_id}#{occurrence}".encode("utf-8")).hexdigest()
     return digest[:32]
 
 
@@ -1219,14 +1235,26 @@ class EnableBankingProvider(BankProvider):
                 f"/accounts/{account_external_id}/transactions",
                 params=params,
             )
+            page_occurrences: dict[str, int] = {}
             for raw_txn, status in self._iter_transactions(page):
                 parsed = self._build_transaction(
                     account_external_id, raw_txn, status, payee_source
                 )
+                if not parsed:
+                    continue
+                # Identical entries within one page are distinct transactions.
+                # Counting per page, not per fetch, keeps the ids stable when
+                # a broken cursor repeats a page.
+                occurrence = page_occurrences.get(parsed.external_id, 0)
+                page_occurrences[parsed.external_id] = occurrence + 1
+                if occurrence:
+                    parsed.external_id = _repeat_external_id(
+                        parsed.external_id, occurrence
+                    )
                 # A broken pagination cursor can make Enable Banking return a
                 # page we have already consumed. Keep the result idempotent
                 # even before the repeated cursor is detected below.
-                if not parsed or parsed.external_id in seen_transaction_ids:
+                if parsed.external_id in seen_transaction_ids:
                     continue
                 key = _settlement_key(raw_txn)
                 if key is not None:
@@ -1286,7 +1314,11 @@ class EnableBankingProvider(BankProvider):
         elif isinstance(body, list):
             for raw in body:
                 raw_status = (raw.get("status") or "").upper()
-                yield raw, "pending" if raw_status in {"PDNG", "PENDING"} else "posted"
+                if raw_status in SKIPPED_TRANSACTION_STATUSES:
+                    continue
+                yield raw, (
+                    "pending" if raw_status in PENDING_TRANSACTION_STATUSES else "posted"
+                )
 
     def _build_transaction(
         self,

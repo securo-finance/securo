@@ -1903,6 +1903,34 @@ async def _eb_fetch(booked: list[dict], pending: list[dict]) -> list[Transaction
 
 
 @pytest.mark.asyncio
+async def test_sync_connection_enable_banking_keeps_identical_pending_purchases(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Two pending purchases of the same amount on one day, listed with only
+    the amount, the direction and the date, land as two rows and stay two on
+    the next sync (#1232)."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    coffee = {
+        "transaction_amount": {"amount": "3.20", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": "2026-08-30",
+    }
+
+    for _ in range(2):
+        await _sync_eb(
+            session, conn, test_workspace.id, test_user.id,
+            await _eb_fetch([], [dict(coffee), dict(coffee)]),
+        )
+        rows = await _account_rows(session, account_id)
+        assert [(row.amount, row.status) for row in rows] == [
+            (Decimal("3.20"), "pending"),
+            (Decimal("3.20"), "pending"),
+        ]
+
+
+@pytest.mark.asyncio
 async def test_sync_connection_enable_banking_pending_and_booked_in_one_fetch(
     session: AsyncSession, test_user, test_workspace,
 ):
