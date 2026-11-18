@@ -717,6 +717,7 @@ async def apply_rules_to_settled_transaction(
     transaction: Transaction,
     *,
     manual_description: bool,
+    synced_payee_id: uuid.UUID | None = None,
 ) -> None:
     """Run the rules again on a row whose pending entry just posted.
 
@@ -728,19 +729,32 @@ async def apply_rules_to_settled_transaction(
     (`manual_description`, from `description_is_manual` before the merge).
     The rules run with those fields pinned, so a later rule never acts on a
     value the row will not keep. A row the user ignored is left alone.
+    `synced_payee_id` is a payee the sync itself linked to a row that had
+    none: the rules may replace it, and it stays when none does.
     """
     if transaction.is_ignored:
         return
-    # Read the notes under a row lock, so a note the user saved since the
-    # sync loaded the row is the one the rules append to.
-    await session.refresh(transaction, ["notes"], with_for_update=True)
+    # Write the sync's own changes first, since a refresh would drop them,
+    # then read what the rules check under a row lock: a category, payee or
+    # note the user saved since the sync loaded the row is the one kept.
+    await session.flush()
+    await session.refresh(
+        transaction,
+        ["notes", "category_id", "payee_id", "is_ignored"],
+        with_for_update=True,
+    )
+    if transaction.is_ignored:
+        return
     preview = await preview_rules_for_transaction(
         session,
         user_id,
         transaction,
         skip_category_rules=transaction.has_category_lines,
         skip_description=manual_description,
-        skip_payee=transaction.payee_id is not None,
+        skip_payee=(
+            transaction.payee_id is not None
+            and transaction.payee_id != synced_payee_id
+        ),
     )
     transaction.category_id = preview.category_id
     transaction.payee_id = preview.payee_id

@@ -1938,7 +1938,8 @@ async def _eb_fetch(booked: list[dict], pending: list[dict]) -> list[Transaction
 
 async def _settle_held_pending(
     session, conn, account, user_id, workspace_id, path: str,
-    notes_saved_meanwhile: str | None = None, **held_fields,
+    notes_saved_meanwhile: str | None = None,
+    category_saved_meanwhile: uuid.UUID | None = None, **held_fields,
 ) -> uuid.UUID:
     """Hold a pending row, then sync the posted entry that settles it.
 
@@ -1946,8 +1947,9 @@ async def _settle_held_pending(
     merchant text. `rekeyed`: it books under a new id, next to its pending
     spelling, and the sync re-keys the row it holds.
 
-    `notes_saved_meanwhile` is written to the database behind the session's
-    back after the row is loaded, as a user saving a note while a sync runs.
+    `notes_saved_meanwhile` and `category_saved_meanwhile` are written to
+    the database behind the session's back after the row is loaded, as a user
+    saving a note or a category while a sync runs.
     """
     if path == "same-id":
         pending = _eb_txn(_eb_payload("auth-5", "4.50", remittance="Transaction"), "pending")
@@ -1968,12 +1970,20 @@ async def _settle_held_pending(
     session.add(held)
     await session.commit()
     held_id = held.id
-    if notes_saved_meanwhile is not None:
+    saved_meanwhile = {
+        field: value
+        for field, value in (
+            ("notes", notes_saved_meanwhile),
+            ("category_id", category_saved_meanwhile),
+        )
+        if value is not None
+    }
+    if saved_meanwhile:
         await session.refresh(held)
         await session.execute(
             update(Transaction)
             .where(Transaction.id == held_id)
-            .values(notes=notes_saved_meanwhile)
+            .values(**saved_meanwhile)
             .execution_options(synchronize_session=False)
         )
     await _sync_eb(session, conn, workspace_id, user_id, incoming)
@@ -2121,13 +2131,45 @@ async def test_sync_connection_rules_skip_an_ignored_twin(
         {"op": "append_notes", "value": "#groceries"},
     ]))
 
-    await _settle_held_pending(
+    held_id = await _settle_held_pending(
         session, conn, account, test_user.id, test_workspace.id, "rekeyed",
         is_ignored=True,
     )
 
     rows = await _account_rows(session, account_id)
-    assert [(row.category_id, row.notes) for row in rows] == [(None, None)]
+    assert [
+        (row.id, row.status, row.is_ignored, row.category_id, row.notes) for row in rows
+    ] == [(held_id, "posted", True, None, None)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["same-id", "rekeyed"])
+async def test_sync_connection_rules_on_a_posted_row_keep_a_category_saved_meanwhile(
+    session: AsyncSession, test_user, test_workspace, path,
+):
+    """A category the user saved after the sync loaded the row is read under
+    the row lock, so the rules do not see the row as uncategorized."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    mine, rules = (
+        Category(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            name=name, icon="tag", color="#000000", is_system=False,
+        )
+        for name in ("Mine", "Rule")
+    )
+    session.add_all([mine, rules])
+    session.add(_supermarket_rule(test_user.id, test_workspace.id, [
+        {"op": "set_category", "value": str(rules.id)},
+    ]))
+
+    await _settle_held_pending(
+        session, conn, account, test_user.id, test_workspace.id, path,
+        category_saved_meanwhile=mine.id,
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert [(row.status, row.category_id) for row in rows] == [("posted", mine.id)]
 
 
 @pytest.mark.asyncio
@@ -9199,6 +9241,62 @@ async def _simplefin_resync(session, conn, workspace_id, user_id, raw_txn: dict)
          patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock), \
          _patched_client(handler):
         await sync_connection(session, conn.id, workspace_id, user_id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rule_names_a_payee", [True, False])
+async def test_simplefin_hold_without_payee_takes_the_rule_payee_when_it_posts(
+    session: AsyncSession, test_user, test_workspace, rule_names_a_payee,
+):
+    """A hold with no payee posts under the same id and names the merchant.
+    The payee the sync links from that name does not stop a rule's
+    `set_payee`, as it would not on a charge that arrived posted; with no
+    such rule, the merchant's payee stays."""
+    from app.models.payee import Payee
+    from app.models.rule import Rule
+
+    conn = await _make_connection(session, test_user.id, "Citi")
+    conn.provider = "simplefin"
+    conn.credentials = {"access_url": "https://u:p@bridge.example/simplefin"}
+    chosen = Payee(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Groceries Co",
+    )
+    session.add(chosen)
+    actions = [{"op": "append_notes", "value": "#groceries"}]
+    if rule_names_a_payee:
+        actions.append({"op": "set_payee", "value": str(chosen.id)})
+    session.add(Rule(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="Corner",
+        conditions=[{"field": "description", "op": "contains", "value": "CORNER"}],
+        actions=actions,
+    ))
+    await session.commit()
+    chosen_id = chosen.id
+
+    posted = int(datetime.now(timezone.utc).timestamp()) - 86400
+    hold = {
+        "id": "TRN-HOLD", "posted": posted, "amount": "-12.00",
+        "description": "PENDING", "pending": True,
+    }
+    await _simplefin_resync(session, conn, test_workspace.id, test_user.id, hold)
+    booked = {
+        **hold, "description": "CORNER MARKET 42", "payee": "Corner Market",
+        "pending": False,
+    }
+    await _simplefin_resync(session, conn, test_workspace.id, test_user.id, booked)
+
+    tx = (await session.execute(
+        select(Transaction).where(Transaction.external_id == "TRN-HOLD")
+    )).scalar_one()
+    await session.refresh(tx)
+    merchant = (await session.execute(
+        select(Payee).where(
+            Payee.workspace_id == test_workspace.id, Payee.name == "Corner Market"
+        )
+    )).scalar_one()
+    expected = chosen_id if rule_names_a_payee else merchant.id
+    assert (tx.status, tx.payee_id, tx.notes) == ("posted", expected, "#groceries")
 
 
 @pytest.mark.asyncio

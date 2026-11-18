@@ -3681,6 +3681,7 @@ async def sync_connection(
                     if existing_tx.is_ignored:
                         continue
                     manual_description = description_is_manual(existing_tx)
+                    payee_was_empty = existing_tx.payee_id is None
                     await _refresh_provider_values(
                         session,
                         provider,
@@ -3696,6 +3697,9 @@ async def sync_connection(
                         await apply_rules_to_settled_transaction(
                             session, user_id, existing_tx,
                             manual_description=manual_description,
+                            synced_payee_id=(
+                                existing_tx.payee_id if payee_was_empty else None
+                            ),
                         )
                     # Self-heal bill linkage: a tx that pre-dates the bills
                     # feature (or whose bill we hadn't ingested last time)
