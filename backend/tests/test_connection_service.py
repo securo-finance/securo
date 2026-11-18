@@ -784,7 +784,7 @@ async def test_delete_connection_deletes_orphan_payees(session: AsyncSession, te
         balance=Decimal("0"),
         currency="BRL",
     )
-    payee = Payee(id=uuid.uuid4(), user_id=test_user.id, name="Ghost Payee")
+    payee = Payee(id=uuid.uuid4(), user_id=test_user.id, name="Ghost Payee", source="sync")
     session.add_all([account, payee])
     await session.flush()
 
@@ -889,6 +889,81 @@ async def _connected_payee(session: AsyncSession, user_id, name: str):
         )
     )
     return conn, account, payee
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"source": "manual"},
+        {"source": "sync", "is_favorite": True},
+        {"source": "sync", "notes": "Landlord"},
+        {"source": "sync", "email": "billing@example.com"},
+    ],
+    ids=["created-by-user", "favorite", "notes", "contact"],
+)
+async def test_delete_connection_keeps_a_payee_the_user_made_or_filled_in(
+    session: AsyncSession, test_user, test_workspace, fields,
+):
+    """Deleting a bank with its accounts only clears the payees its sync left
+    behind; one the user created or filled in is theirs (#1018)."""
+    from app.models.payee import Payee
+
+    conn, _account, payee = await _connected_payee(session, test_user.id, "Kept Payee")
+    for key, value in fields.items():
+        setattr(payee, key, value)
+    await session.commit()
+
+    assert await delete_connection(session, conn.id, test_workspace.id) is True
+
+    refreshed = (await session.execute(select(Payee).where(Payee.id == payee.id))).scalar_one_or_none()
+    assert refreshed is not None
+
+
+@pytest.mark.asyncio
+async def test_delete_connection_keeps_a_payee_with_a_tax_id(
+    session: AsyncSession, test_user, test_workspace,
+):
+    from app.models.payee import Payee, PayeeTaxId
+
+    conn, _account, payee = await _connected_payee(session, test_user.id, "Tax Payee")
+    payee.source = "sync"
+    session.add(PayeeTaxId(payee_id=payee.id, workspace_id=test_workspace.id, kind="cpf", value="11144477735"))
+    await session.commit()
+
+    assert await delete_connection(session, conn.id, test_workspace.id) is True
+
+    refreshed = (await session.execute(select(Payee).where(Payee.id == payee.id))).scalar_one_or_none()
+    assert refreshed is not None
+
+
+@pytest.mark.asyncio
+async def test_delete_connection_keeps_its_recurrings_paused(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A recurring charged to a deleted connection's account survives,
+    paused and without an account, for the user to point elsewhere (#1018)."""
+    from app.models.recurring_transaction import RecurringTransaction
+
+    conn, account, _payee = await _connected_payee(session, test_user.id, "Rent Payee")
+    recurring_id = uuid.uuid4()
+    recurring = RecurringTransaction(
+        id=recurring_id, user_id=test_user.id, workspace_id=test_workspace.id, account_id=account.id,
+        description="Rent", amount=Decimal("1200.00"), currency="BRL", type="debit",
+        frequency="monthly", start_date=date(2026, 1, 5), next_occurrence=date(2026, 12, 5),
+    )
+    session.add(recurring)
+    await session.commit()
+
+    assert await delete_connection(session, conn.id, test_workspace.id) is True
+
+    session.expire_all()
+    kept = (
+        await session.execute(select(RecurringTransaction).where(RecurringTransaction.id == recurring_id))
+    ).scalar_one()
+    assert kept.account_id is None
+    assert kept.is_active is False
+    assert kept.description == "Rent"
 
 
 @pytest.mark.asyncio

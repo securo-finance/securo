@@ -30,7 +30,8 @@ from app.models.invoice_schedule import InvoiceSchedule
 from app.models.goal import Goal
 from app.models.collection import collection_asset_groups
 from app.models.credit_card_bill import CreditCardBill
-from app.models.payee import Payee, PayeeMapping
+from app.models.payee import Payee, PayeeMapping, PayeeTaxId
+from app.models.recurring_transaction import RecurringTransaction
 from app.models.rule import Rule
 from app.models.transaction import Transaction
 from app.models.transaction_category_line import TransactionCategoryLine
@@ -4185,6 +4186,21 @@ async def delete_connection(
         .values(transfer_pair_id=None)
     )
 
+    # A recurring is the user's plan, not something the bank synced: it
+    # outlives the account it was charged to, paused and without an account
+    # until the user points it at another one. Otherwise the account's
+    # ON DELETE CASCADE takes it along.
+    await session.execute(
+        update(RecurringTransaction)
+        .where(
+            RecurringTransaction.workspace_id == workspace_id,
+            RecurringTransaction.account_id.in_(
+                select(Account.id).where(Account.connection_id == connection.id)
+            ),
+        )
+        .values(account_id=None, is_active=False)
+    )
+
     await session.delete(connection)
     await session.flush()
 
@@ -4204,10 +4220,21 @@ async def delete_connection(
         has_invoice_schedules = exists(
             select(InvoiceSchedule.id).where(InvoiceSchedule.payee_id == Payee.id)
         )
+        has_tax_ids = exists(select(PayeeTaxId.id).where(PayeeTaxId.payee_id == Payee.id))
         await session.execute(
             delete(Payee).where(
                 Payee.workspace_id == workspace_id,
                 Payee.id.in_(affected_payee_ids),
+                # Only the sync's own leftovers go: a payee the user created,
+                # or filled in, is theirs to keep (#1018).
+                Payee.source == "sync",
+                Payee.is_favorite.is_(False),
+                Payee.notes.is_(None),
+                Payee.email.is_(None),
+                Payee.phone.is_(None),
+                Payee.address.is_(None),
+                Payee.website.is_(None),
+                ~has_tax_ids,
                 ~has_transactions,
                 ~has_external_mappings,
                 ~has_invoices,

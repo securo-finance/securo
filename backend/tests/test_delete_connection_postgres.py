@@ -14,6 +14,7 @@ from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.invoice import Invoice
 from app.models.payee import Payee
+from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 
 pytestmark = pytest.mark.asyncio
@@ -76,3 +77,57 @@ async def test_disconnect_keeps_a_payee_an_invoice_names(
 
     assert response.status_code == 204, response.text
     assert (await session.execute(select(Payee.id).where(Payee.id == payee.id))).scalar_one()
+
+
+async def test_deleting_a_bank_with_its_accounts_keeps_recurrings_and_user_payees(
+    client, auth_headers, session, test_user, test_workspace,
+):
+    """The accounts' ON DELETE CASCADE took their recurrings along, and the
+    payee cleanup took the payees the user had made (#1018)."""
+    connection = BankConnection(
+        id=uuid.uuid4(), user_id=test_user.id, provider="test", external_id="ext-pg-2",
+        institution_name="PG Bank", credentials={"token": "fake"}, status="active",
+    )
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, connection_id=connection.id,
+        name="Connected", type="checking", balance=Decimal("0"), currency="BRL",
+    )
+    mine = Payee(id=uuid.uuid4(), user_id=test_user.id, name="Landlord", source="manual")
+    synced = Payee(id=uuid.uuid4(), user_id=test_user.id, name="UBER *TRIP", source="sync")
+    recurring_id = uuid.uuid4()
+    session.add_all([connection, account, mine, synced])
+    await session.flush()
+    session.add_all([
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, account_id=account.id,
+            description=payee.name, amount=Decimal("100"), date=date(2026, 9, 1),
+            type="debit", source="sync", payee_id=payee.id,
+            created_at=datetime.now(timezone.utc),
+        )
+        for payee in (mine, synced)
+    ])
+    session.add(RecurringTransaction(
+        id=recurring_id, user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=account.id, description="Rent", amount=Decimal("1200.00"),
+        currency="BRL", type="debit", frequency="monthly",
+        start_date=date(2026, 1, 5), next_occurrence=date(2026, 12, 5),
+    ))
+    await session.commit()
+
+    response = await client.delete(
+        f"/api/connections/{connection.id}",
+        params={"keep_accounts": "false"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 204, response.text
+    assert (await session.execute(select(Account.id).where(Account.id == account.id))).first() is None
+    payees = set((await session.execute(
+        select(Payee.id).where(Payee.id.in_([mine.id, synced.id]))
+    )).scalars())
+    assert payees == {mine.id}
+    recurring = (await session.execute(
+        select(RecurringTransaction.account_id, RecurringTransaction.is_active)
+        .where(RecurringTransaction.id == recurring_id)
+    )).one()
+    assert tuple(recurring) == (None, False)
