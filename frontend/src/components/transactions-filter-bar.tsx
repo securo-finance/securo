@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Coins,
   EyeClosed,
+  Inbox,
   ListChecks,
   ListFilter,
   Search,
@@ -72,6 +73,8 @@ interface TransactionsFilterBarProps {
   onStatusChange: (value: string) => void
   hideIgnored: boolean
   onHideIgnoredChange: (value: boolean) => void
+  onlyUnread: boolean
+  onOnlyUnreadChange: (value: boolean) => void
   filterFrom: string
   filterTo: string
   onDateRangeChange: (from: string, to: string) => void
@@ -115,6 +118,8 @@ export function TransactionsFilterBar({
   onStatusChange,
   hideIgnored,
   onHideIgnoredChange,
+  onlyUnread,
+  onOnlyUnreadChange,
   filterFrom,
   filterTo,
   onDateRangeChange,
@@ -210,6 +215,7 @@ export function TransactionsFilterBar({
     !!filterType ||
     !!filterStatus ||
     hideIgnored ||
+    onlyUnread ||
     !!filterFrom ||
     !!filterTo ||
     !!filterMinAmount ||
@@ -435,6 +441,7 @@ export function TransactionsFilterBar({
                   type: typeLabel,
                   status: statusLabel,
                   ignored: hideIgnored ? t('transactions.ignoredHide') : undefined,
+                unread: onlyUnread ? t('transactions.onlyUnreadShort') : undefined,
                   date: dateLabel,
                   amount: amountLabel,
                 }}
@@ -450,6 +457,8 @@ export function TransactionsFilterBar({
                 onStatusChange={onStatusChange}
                 hideIgnored={hideIgnored}
                 onHideIgnoredChange={onHideIgnoredChange}
+                onlyUnread={onlyUnread}
+                onOnlyUnreadChange={onOnlyUnreadChange}
                 onDateRangeChange={onDateRangeChange}
                 onAmountRangeChange={onAmountRangeChange}
                 onApplyAmountRange={applyAmountRange}
@@ -822,6 +831,20 @@ export function TransactionsFilterBar({
                   {hideIgnored && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
 
+                {/* Review queue of issue #636: same shape as the ignored
+                    switch, a reading mode rather than a filter value. */}
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault()
+                    onOnlyUnreadChange(!onlyUnread)
+                  }}
+                  className="gap-2 text-[13px]"
+                >
+                  <Inbox size={14} className="text-muted-foreground" />
+                  <span className="flex-1">{t('transactions.onlyUnread')}</span>
+                  {onlyUnread && <Check size={13} className="text-primary" />}
+                </DropdownMenuItem>
+
                 {/* Date range submenu with presets */}
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger className="gap-2 text-[13px]">
@@ -1091,6 +1114,14 @@ export function TransactionsFilterBar({
                 label={t('transactions.hideIgnored')}
                 value={t('transactions.ignoredHiddenValue')}
                 onRemove={() => onHideIgnoredChange(false)}
+              />
+            )}
+            {onlyUnread && (
+              <FilterChip
+                icon={<Inbox size={12} />}
+                label={t('transactions.unreadRows')}
+                value={t('transactions.onlyUnreadShort')}
+                onRemove={() => onOnlyUnreadChange(false)}
               />
             )}
             {dateLabel && (

@@ -123,6 +123,14 @@ export function MobileTransactionRow({
               {tx.is_shared && tx.parent_owner_name ? tx.parent_owner_name : t('splitGroups.ownerRowBadge', { group: groupName ?? '' })}
             </span>
           )}
+          {tx.is_read === false && (
+            <span
+              className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500"
+              title={t('transactions.newBadge')}
+              role="img"
+              aria-label={t('transactions.newBadge')}
+            />
+          )}
           {isSplitByCategory(tx) && <CategorySplitBadge tx={tx} compact className="shrink-0 text-[9px] px-1" />}
           {isTransferTransaction(tx) && (
             <ArrowLeftRight

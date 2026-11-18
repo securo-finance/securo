@@ -254,6 +254,10 @@ class TransactionRead(TransactionBase):
     parent_owner_name: Optional[str] = None
     is_ignored: bool = False
     exclude_from_pnl: bool = False
+    #: False until the person has seen this row: set for transactions that
+    #: sync or an import creates (issue #636), cleared when they open it or
+    #: mark everything as read.
+    is_read: bool = True
     # Account balance right after this row, set only when the list asked for
     # it on one non-credit-card account's unfiltered ledger (#1202). The
     # primary-currency value is null when the account is already in it, or

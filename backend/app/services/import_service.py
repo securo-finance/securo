@@ -1230,6 +1230,9 @@ async def import_transactions(
             type=txn_data.type,
             status="posted",
             source=source,
+            # Imported rows are new to the person until they review them
+            # (issue #636).
+            is_read=False,
             import_id=import_log.id,
             external_id=txn_data.external_id,
             currency=txn_currency,
