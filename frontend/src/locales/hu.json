@@ -819,7 +819,7 @@
     "greetingAfternoon": "Jó napot",
     "greetingEvening": "Jó estét",
     "availableBalance": "Elérhető egyenleg",
-    "cashBalance": "Készpénz",
+    "cashBalance": "Likvid eszközök",
     "investmentAccounts": "Befektetési számlák",
     "netWorth": "Nettó vagyon",
     "netWorthTooltip": "Számlák + befektetések, mínusz a nyitott hitelkártya-számlák.",

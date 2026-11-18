@@ -820,7 +820,7 @@
     "greetingEvening": "Guten Abend",
     "availableBalance": "Verfügbarer Kontostand",
     "netWorth": "Nettovermögen",
-    "netWorthTooltip": "Bargeld + Anlagekonten + investiertes Vermögen, abzüglich offener Kreditkartenrechnungen. Anlagen gelten nicht als verfügbares Geld.",
+    "netWorthTooltip": "Liquide Mittel + Anlagekonten + investiertes Vermögen, abzüglich offener Kreditkartenrechnungen. Anlagen gelten nicht als verfügbares Geld.",
     "creditCardBalance": "Offene Kreditkartenrechnungen",
     "loanBalance": "Kredite und Finanzierungen",
     "pendingSharesOwe": "Netto {{net}} nach Gruppenschulden ({{owed}} ausstehend)",
@@ -890,7 +890,7 @@
     "refreshRates": "Wechselkurse aktualisieren",
     "ratesRefreshed": "Wechselkurse aktualisiert",
     "ratesError": "Fehler beim Aktualisieren der Wechselkurse",
-    "cashBalance": "Bargeld",
+    "cashBalance": "Liquide Mittel",
     "investmentAccounts": "Anlagekonten"
   },
   "transactions": {
