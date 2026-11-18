@@ -51,8 +51,8 @@ repository.
 ### In a workspace
 
 1. The workspace owner installs the plugin from the catalog; only the owner
-   can add, update or remove a plugin with code. Before anything is applied,
-   the preview shows what the owner agrees to: every host in `network` and
+   or a workspace manager can add, update or remove a plugin with code.
+   Before anything is applied, the preview shows what the owner agrees to: every host in `network` and
    every scope in `api_scopes`, each with its `purpose`, the integrations that
    provide records, with the kinds they provide, and the connections a change
    would remove. On an update it also names the hosts and scopes the
@@ -125,8 +125,10 @@ In an integration:
   is never shown again. Every other field goes to `context.config` and stays
   readable, so anything sensitive, an account number included, belongs in a
   secret field.
-- `sync_minutes` is 15 to 10080 (a week). Without it the plugin syncs only
-  when someone presses **Sync now**.
+- `sync_minutes` is 15 to 10080 (a week) and sets the periodic sync.
+  Without it, the plugin still syncs after the connection is created or
+  signed in, and when someone presses **Sync now**, but it never syncs on a
+  schedule.
 
 `network`, `api_scopes` and `logos` are only for a plugin with a `runtime`.
 See `examples/plugins/demo-bank/securo-plugin.json` for a complete one.
