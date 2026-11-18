@@ -2104,6 +2104,8 @@
     "exchangeRateSetupAskAdmin": "{{from}}から{{to}}への換算には為替レートが必要です。管理者に設定を依頼してください。",
     "noFxRate": "為替レートなし",
     "noFxRateTitle": "この通貨の為替レートが利用できません。資産は元通貨で表示され、合計から除外されます。",
+    "providerValueStale": "{{date}} 以降未更新",
+    "providerValueStaleTitle": "プロバイダーはこのポジションをまだ報告していますが、この日付以降評価額を更新していません。償還済みか、接続が投資データを更新できていない可能性があります。銀行で確認してください。",
     "fxRateMissing": "{{currencies}} の為替レートが利用できません。これらの資産は元通貨で表示され、合計から除外されます。",
     "colAsset": "資産",
     "colQuantity": "数量",

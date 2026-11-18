@@ -2106,6 +2106,8 @@
     "exchangeRateSetupAskAdmin": "Az átváltáshoz ({{from}} → {{to}}) árfolyamok kellenek. Kérd meg az adminisztrátort, hogy állítsa be őket.",
     "noFxRate": "nincs árfolyam",
     "noFxRateTitle": "Ehhez a pénznemhez nincs elérhető árfolyam. Az eszköz az eredeti pénznemében jelenik meg, és kimarad az összesítőkből.",
+    "providerValueStale": "nem frissült {{date}} óta",
+    "providerValueStaleTitle": "A szolgáltató még jelenti ezt a pozíciót, de ettől a dátumtól nem frissítette az értékét. Lehet, hogy visszaváltották, vagy a kapcsolat nem frissíti a befektetéseket. Ellenőrizze a bankjánál.",
     "fxRateMissing": "{{currencies}} esetén nincs elérhető árfolyam. Ezek az eszközök az eredeti pénznemükben jelennek meg, és kimaradnak az összesítőkből.",
     "colAsset": "Eszköz",
     "colQuantity": "Menny.",

@@ -2108,6 +2108,8 @@
     "exchangeRateSetupAskAdmin": "A conversão de {{from}} para {{to}} precisa de taxas de câmbio. Pede a um administrador para as configurar.",
     "noFxRate": "sem cotação",
     "noFxRateTitle": "Não existe cotação disponível para esta moeda. O ativo é mostrado na moeda original e fica fora dos totais.",
+    "providerValueStale": "sem atualização desde {{date}}",
+    "providerValueStaleTitle": "O fornecedor ainda indica esta posição, mas não atualiza o valor desde esta data. Pode ter sido resgatada ou a ligação pode estar a falhar ao atualizar investimentos. Confirme com o seu banco.",
     "fxRateMissing": "Não existe cotação disponível para {{currencies}}. Estes ativos são mostrados na moeda original e ficam fora dos totais.",
     "colAsset": "Ativo",
     "colQuantity": "Qtd.",

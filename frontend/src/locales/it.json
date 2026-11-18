@@ -2108,6 +2108,8 @@
     "exchangeRateSetupAskAdmin": "La conversione da {{from}} a {{to}} richiede i tassi di cambio. Chiedi a un amministratore di configurarli.",
     "noFxRate": "nessun tasso di cambio",
     "noFxRateTitle": "Non è disponibile un tasso di cambio per questa valuta. L'attivo viene mostrato nella valuta originale e escluso dai totali.",
+    "providerValueStale": "non aggiornato dal {{date}}",
+    "providerValueStaleTitle": "Il fornitore riporta ancora questa posizione ma non ne aggiorna il valore da questa data. Potrebbe essere stata riscattata o la connessione potrebbe non riuscire ad aggiornare gli investimenti. Verifica con la tua banca.",
     "fxRateMissing": "Non è disponibile un tasso di cambio per {{currencies}}. Questi attivi sono mostrati nella valuta originale e esclusi dai totali.",
     "colAsset": "Attività",
     "colQuantity": "Qtà",

@@ -2246,6 +2246,8 @@
     "exchangeRateSetupAskAdmin": "Převod {{from}} na {{to}} vyžaduje směnné kurzy. Požádejte správce o jejich nastavení.",
     "noFxRate": "nemá kurz",
     "noFxRateTitle": "Pro tuto měnu není k dispozici kurz měny. Aktiva se zobrazují v původní měně a jsou vynečány z celků.",
+    "providerValueStale": "neaktualizováno od {{date}}",
+    "providerValueStaleTitle": "Poskytovatel tuto pozici stále uvádí, ale od tohoto data neaktualizoval její hodnotu. Mohla být odkoupena nebo připojení neobnovuje investice. Ověřte to u své banky.",
     "fxRateMissing": "Pro {{currencies}} není k dispozici kurz měny. Tyto aktiva se zobrazují v původní měně a jsou vynečány z celků.",
     "colAsset": "Aktivum",
     "colQuantity": "Množ.",

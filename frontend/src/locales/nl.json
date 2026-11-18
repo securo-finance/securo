@@ -2106,6 +2106,8 @@
     "exchangeRateSetupAskAdmin": "Voor de omrekening van {{from}} naar {{to}} zijn wisselkoersen nodig. Vraag een beheerder om deze in te stellen.",
     "noFxRate": "geen wisselkoers",
     "noFxRateTitle": "Voor deze munt is geen wisselkoers beschikbaar. Het vermogen wordt in de oorspronkelijke munt getoond en blijft buiten de totalen.",
+    "providerValueStale": "niet bijgewerkt sinds {{date}}",
+    "providerValueStaleTitle": "De provider meldt deze positie nog, maar heeft de waarde sinds deze datum niet bijgewerkt. Mogelijk is ze afgelost, of de koppeling ververst beleggingen niet. Controleer het bij je bank.",
     "fxRateMissing": "Voor {{currencies}} is geen wisselkoers beschikbaar. Deze activa worden in de oorspronkelijke munt getoond en blijven buiten de totalen.",
     "colAsset": "Aanwinst",
     "colQuantity": "Aantal",

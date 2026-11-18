@@ -2201,6 +2201,8 @@
     "exchangeRateSetupAskAdmin": "Przeliczenie z {{from}} na {{to}} wymaga kursów walut. Poproś administratora o ich skonfigurowanie.",
     "noFxRate": "brak kursu",
     "noFxRateTitle": "Dla tej waluty nie ma dostępnego kursu wymiany. Aktywo jest wyświetlane w oryginalnej walucie i pomijane w sumach.",
+    "providerValueStale": "bez aktualizacji od {{date}}",
+    "providerValueStaleTitle": "Dostawca nadal raportuje tę pozycję, ale nie aktualizuje jej wartości od tej daty. Mogła zostać umorzona lub połączenie nie odświeża inwestycji. Sprawdź to w swoim banku.",
     "fxRateMissing": "Dla {{currencies}} nie ma dostępnego kursu wymiany. Te aktywa są wyświetlane w oryginalnej walucie i pomijane w sumach.",
     "colAsset": "Aktywo",
     "colQuantity": "Ilość",

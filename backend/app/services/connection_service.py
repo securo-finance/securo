@@ -16,7 +16,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.app_clock import app_today
 from app.core.config import get_settings
-from app.models.asset import Asset
+from app.models.asset import PROVIDER_VALUE_DATE_METADATA_KEY, Asset
 from app.models.asset_group import AssetGroup
 from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
@@ -909,9 +909,13 @@ async def _sync_holdings(
                 if previous_marker == existing.sell_date.isoformat():
                     provider_sell_date = previous_marker
             # Keep descriptive fields fresh in case the provider still
-            # updates them post-closure, but don't touch valuation.
+            # updates them post-closure, but don't touch valuation. The
+            # position is closed, so no value date is stamped, and the
+            # reserved key is stripped like on the active path: the last
+            # valuation is older than the closure and the payload must not
+            # date it.
             existing.name = holding.name
-            withdrawn_metadata = dict(holding.metadata or {})
+            withdrawn_metadata = dict(_provider_metadata(holding) or {})
             if provider_sell_date is not None:
                 withdrawn_metadata[_PROVIDER_SELL_DATE_METADATA_KEY] = provider_sell_date
             existing.external_metadata = withdrawn_metadata or None
@@ -1168,6 +1172,32 @@ async def _sync_holding_trades(
             await _upsert_asset_value_for_today(session, asset, holding.current_value, app_today())
 
 
+def _provider_metadata(holding: HoldingData) -> Optional[dict]:
+    """The provider's metadata snapshot, without the keys Securo owns.
+
+    A provider can send anything, including the reserved value date key, so
+    the payload is never taken at its word for the markers Securo writes.
+    """
+    return {
+        key: value
+        for key, value in (holding.metadata or {}).items()
+        if key != PROVIDER_VALUE_DATE_METADATA_KEY
+    } or None
+
+
+def _holding_metadata(holding: HoldingData) -> Optional[dict]:
+    """The holding's metadata snapshot, stamped with its provider value date.
+
+    The blob is replaced on every sync, so the marker travels with it: when a
+    provider stops reporting a date, the old marker goes with the snapshot
+    instead of lingering next to a value it no longer describes.
+    """
+    metadata = _provider_metadata(holding) or {}
+    if holding.value_date is not None:
+        metadata[PROVIDER_VALUE_DATE_METADATA_KEY] = holding.value_date.isoformat()
+    return metadata or None
+
+
 async def _upsert_asset_from_holding(
     session: AsyncSession,
     asset: Optional[Asset],
@@ -1201,7 +1231,7 @@ async def _upsert_asset_from_holding(
             isin=holding.isin,
             ticker=holding.ticker,
             maturity_date=holding.maturity_date,
-            external_metadata=holding.metadata,
+            external_metadata=_holding_metadata(holding),
             valuation_method="manual",
         )
         session.add(asset)
@@ -1217,7 +1247,7 @@ async def _upsert_asset_from_holding(
     asset.currency = holding.currency
     asset.user_id = user_id
     # external_metadata is a snapshot blob: we want the latest every time.
-    asset.external_metadata = holding.metadata
+    asset.external_metadata = _holding_metadata(holding)
     previous_connection_id = asset.connection_id
     asset.connection_id = connection_id
     # Only auto-unarchive when the holding moved to a different connection
