@@ -2244,7 +2244,7 @@
       "oversell": "prodej většího množství, než pozice obsahuje",
       "no_fx_rate": "chybí směnný kurz k datu pokynu",
       "possible_duplicate": "může už být v této pozici z dřívějšího importu",
-      "invalid_split": "nečitelný poměr splitu, nebo poměr u nákupu či prodeje",
+      "invalid_split": "nečitelný poměr splitu, nebo split s množstvím, cenou nebo poplatkem",
       "split_not_allowed": "split nelze zaznamenat u pozice synchronizované s bankou",
       "split_in_future": "split nemůže mít budoucí datum",
       "nothing_held_before_split": "před splitem nejsou drženy žádné kusy",

@@ -2201,7 +2201,7 @@
       "oversell": "sprzedaż większa niż pozycja",
       "no_fx_rate": "brak kursu wymiany na datę zlecenia",
       "possible_duplicate": "może już być w tej pozycji z wcześniejszego importu",
-      "invalid_split": "nieczytelny współczynnik podziału lub współczynnik przy kupnie lub sprzedaży",
+      "invalid_split": "nieczytelny współczynnik podziału lub podział z ilością, ceną lub opłatą",
       "split_not_allowed": "nie można zapisać podziału dla pozycji synchronizowanej z bankiem",
       "split_in_future": "podział nie może mieć daty z przyszłości",
       "nothing_held_before_split": "brak jednostek przed podziałem",

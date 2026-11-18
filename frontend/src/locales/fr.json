@@ -2108,7 +2108,7 @@
       "oversell": "vente supérieure à la position",
       "no_fx_rate": "aucun taux de change pour la date de l'ordre",
       "possible_duplicate": "figure peut-être déjà dans cette position via un import précédent",
-      "invalid_split": "ratio de division illisible, ou ratio sur un achat ou une vente",
+      "invalid_split": "ratio de division illisible, ou division avec une quantité, un prix ou des frais",
       "split_not_allowed": "impossible d’enregistrer une division sur une position synchronisée avec la banque",
       "split_in_future": "une division ne peut pas être datée dans le futur",
       "nothing_held_before_split": "aucune unité détenue avant la division",

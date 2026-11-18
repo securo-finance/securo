@@ -2108,7 +2108,7 @@
       "oversell": "venda maior do que a posição",
       "no_fx_rate": "sem taxa de câmbio na data da ordem",
       "possible_duplicate": "pode já estar nesta posição por uma importação anterior",
-      "invalid_split": "rácio do desdobramento ilegível, ou rácio numa compra ou venda",
+      "invalid_split": "rácio do desdobramento ilegível, ou desdobramento com quantidade, preço ou taxa",
       "split_not_allowed": "não é possível registar desdobramentos num ativo sincronizado com o banco",
       "split_in_future": "o desdobramento não pode ter data futura",
       "nothing_held_before_split": "nenhuma unidade detida antes do desdobramento",

@@ -2108,7 +2108,7 @@
       "oversell": "venta mayor que la posición",
       "no_fx_rate": "no hay tipo de cambio para la fecha de la orden",
       "possible_duplicate": "puede que ya esté en esta posición por una importación anterior",
-      "invalid_split": "proporción del split ilegible, o proporción en una compra o venta",
+      "invalid_split": "proporción del split ilegible, o split con cantidad, precio o comisión",
       "split_not_allowed": "no se pueden registrar splits en un activo sincronizado con el banco",
       "split_in_future": "un split no puede tener fecha futura",
       "nothing_held_before_split": "no hay unidades antes del split",

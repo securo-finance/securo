@@ -2104,7 +2104,7 @@
       "oversell": "selling more units than the position holds",
       "no_fx_rate": "no exchange rate for the order's date",
       "possible_duplicate": "may already be in this holding from an earlier import",
-      "invalid_split": "unreadable split ratio, or a ratio on a buy or sell",
+      "invalid_split": "unreadable split ratio, or a split with a quantity, price or fee",
       "split_not_allowed": "splits can't be recorded on a holding synced from a bank",
       "split_in_future": "a split can't be dated in the future",
       "nothing_held_before_split": "no units held before the split",

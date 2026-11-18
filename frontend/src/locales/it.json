@@ -2108,7 +2108,7 @@
       "oversell": "vendita superiore alla posizione",
       "no_fx_rate": "nessun tasso di cambio per la data dell'ordine",
       "possible_duplicate": "potrebbe essere già in questa posizione da un'importazione precedente",
-      "invalid_split": "rapporto di frazionamento illeggibile, o rapporto su un acquisto o una vendita",
+      "invalid_split": "rapporto di frazionamento illeggibile, o frazionamento con quantità, prezzo o commissione",
       "split_not_allowed": "non si possono registrare frazionamenti su una posizione sincronizzata con la banca",
       "split_in_future": "un frazionamento non può avere una data futura",
       "nothing_held_before_split": "nessuna unità detenuta prima del frazionamento",

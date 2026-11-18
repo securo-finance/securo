@@ -2106,7 +2106,7 @@
       "oversell": "meer eenheden verkopen dan de positie bevat",
       "no_fx_rate": "geen wisselkoers voor de orderdatum",
       "possible_duplicate": "staat mogelijk al in deze positie door een eerdere import",
-      "invalid_split": "splitverhouding onleesbaar, of een verhouding bij een aankoop of verkoop",
+      "invalid_split": "splitverhouding onleesbaar, of een split met een hoeveelheid, prijs of kosten",
       "split_not_allowed": "splits kunnen niet worden vastgelegd op een positie die met de bank wordt gesynchroniseerd",
       "split_in_future": "een split kan niet in de toekomst liggen",
       "nothing_held_before_split": "geen eenheden in bezit vóór de split",

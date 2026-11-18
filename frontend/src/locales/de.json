@@ -2105,7 +2105,7 @@
       "oversell": "Verkauf größer als die Position",
       "no_fx_rate": "kein Wechselkurs für das Orderdatum",
       "possible_duplicate": "ist möglicherweise schon aus einem früheren Import in dieser Position",
-      "invalid_split": "Split-Verhältnis unlesbar oder Verhältnis bei Kauf oder Verkauf",
+      "invalid_split": "Split-Verhältnis unlesbar oder Split mit Menge, Preis oder Gebühr",
       "split_not_allowed": "Splits können bei einer mit der Bank synchronisierten Position nicht erfasst werden",
       "split_in_future": "ein Split kann nicht in der Zukunft liegen",
       "nothing_held_before_split": "vor dem Split werden keine Stücke gehalten",

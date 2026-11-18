@@ -2104,7 +2104,7 @@
       "oversell": "保有数を超える売却",
       "no_fx_rate": "注文日の為替レートがありません",
       "possible_duplicate": "以前のインポートでこの保有銘柄に登録済みの可能性があります",
-      "invalid_split": "分割比率を読み取れない、または売買の行に比率がある",
+      "invalid_split": "分割比率を読み取れない、または数量・価格・手数料のある分割",
       "split_not_allowed": "銀行と同期している保有には分割を記録できません",
       "split_in_future": "分割の日付を未来にすることはできません",
       "nothing_held_before_split": "分割前に保有数量がありません",
