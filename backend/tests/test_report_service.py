@@ -986,7 +986,51 @@ async def test_net_worth_with_credit_card(session: AsyncSession, test_user, test
     assert dp.value == 4000.0
 
 
-# --- reserved balances (ADR 0022) -----------------------------------------
+@pytest.mark.parametrize("mode", ["cash", "accrual"])
+@pytest.mark.asyncio
+async def test_net_worth_keeps_future_installments_in_connected_card_debt(
+    session: AsyncSession, test_user, test_workspace: User, mode,
+):
+    """#473: the provider's card balance already includes the installments
+    still to come, so rows dated after today must not be taken off it."""
+    conn = BankConnection(
+        id=uuid.uuid4(), user_id=test_user.id, provider="pluggy",
+        external_id="ext-cc-installments", institution_name="CC",
+        credentials={}, status="active",
+        last_sync_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn)
+    await session.flush()
+    cc = Account(
+        id=uuid.uuid4(), user_id=test_user.id, connection_id=conn.id,
+        name="CC", type="credit_card", balance=Decimal("1500"), currency="BRL",
+    )
+    session.add(cc)
+    await session.commit()
+    today = date.today()
+    await _add_txn(session, test_user.id, cc.id, 300, "debit", today - timedelta(days=5))
+    for months_ahead in (1, 2, 3):
+        await _add_txn(
+            session, test_user.id, cc.id, 300, "debit",
+            today + timedelta(days=30 * months_ahead),
+        )
+
+    with patch(
+        "app.services.report_service.get_credit_card_accounting_mode",
+        new=AsyncMock(return_value=mode),
+    ):
+        now = await _net_worth_at(session, test_workspace.id, today, "BRL")
+        before = await _net_worth_at(
+            session, test_workspace.id, today - timedelta(days=10), "BRL"
+        )
+
+    assert now.breakdowns["liabilities"] == pytest.approx(1500.0)
+    # Only the installment billed between the cutoff and today comes off.
+    assert before.breakdowns["liabilities"] == pytest.approx(1200.0)
+
+
+# --- reserved balances (ADR 0022)-----------------------------------------
 
 
 async def _add_reserved_balance(
