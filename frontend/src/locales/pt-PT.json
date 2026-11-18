@@ -3496,7 +3496,7 @@
       "new": "novo",
       "read": "Ler {{what}}",
       "write": "Ler e alterar {{what}}",
-      "ownerOnly": "Só o proprietário do espaço de trabalho pode adicionar, atualizar ou remover um plugin que executa código.",
+      "ownerOnly": "Só o proprietário do espaço de trabalho ou um gestor pode adicionar, atualizar ou remover um plugin que executa código.",
       "removeConnections": "As ligações dele neste espaço de trabalho ({{count}}) são removidas, juntamente com as chaves guardadas e os acessos.",
       "unlinks": "As ligações bancárias dele ({{count}}) deixam de sincronizar. As contas e transações ficam, como contas manuais.",
       "removeNothing": "O código do plugin sai do seu servidor quando nenhum espaço de trabalho o usar.",

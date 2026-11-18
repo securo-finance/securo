@@ -3492,7 +3492,7 @@
       "new": "new",
       "read": "Read {{what}}",
       "write": "Read and change {{what}}",
-      "ownerOnly": "Only the workspace owner can add, update or remove a plugin that runs code.",
+      "ownerOnly": "Only the workspace owner or a manager can add, update or remove a plugin that runs code.",
       "removeConnections": "Its connections in this workspace ({{count}}) are removed, along with their saved keys and access.",
       "unlinks": "Its bank connections ({{count}}) stop syncing. Their accounts and transactions stay, as manual accounts.",
       "removeNothing": "The plugin's code is removed from your server once no workspace uses it.",

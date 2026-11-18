@@ -3492,7 +3492,7 @@
       "new": "új",
       "read": "Olvasás: {{what}}",
       "write": "Olvasás és módosítás: {{what}}",
-      "ownerOnly": "Kódot futtató bővítményt csak a munkaterület tulajdonosa adhat hozzá, frissíthet vagy távolíthat el.",
+      "ownerOnly": "Kódot futtató bővítményt csak a munkaterület tulajdonosa vagy kezelője adhat hozzá, frissíthet vagy távolíthat el.",
       "removeConnections": "A kapcsolatai ebben a munkaterületben ({{count}}) törlődnek a mentett kulcsokkal és hozzáférésekkel együtt.",
       "unlinks": "A bankkapcsolatai ({{count}}) nem szinkronizálnak tovább. A számlák és tranzakciók megmaradnak, kézi számlaként.",
       "removeNothing": "A bővítmény kódja lekerül a szerveredről, amint egyetlen munkaterület sem használja.",

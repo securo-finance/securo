@@ -3493,7 +3493,7 @@
       "new": "neu",
       "read": "{{what}} lesen",
       "write": "{{what}} lesen und ändern",
-      "ownerOnly": "Nur der Eigentümer des Arbeitsbereichs kann ein Plugin, das Code ausführt, hinzufügen, aktualisieren oder entfernen.",
+      "ownerOnly": "Nur der Eigentümer des Arbeitsbereichs oder ein Manager kann ein Plugin, das Code ausführt, hinzufügen, aktualisieren oder entfernen.",
       "removeConnections": "Seine Verbindungen in diesem Arbeitsbereich ({{count}}) werden entfernt, samt gespeicherter Schlüssel und Zugriffe.",
       "unlinks": "Seine Bankverbindungen ({{count}}) werden nicht mehr synchronisiert. Ihre Konten und Transaktionen bleiben als manuelle Konten erhalten.",
       "removeNothing": "Der Code des Plugins wird von deinem Server entfernt, sobald ihn kein Arbeitsbereich mehr nutzt.",
