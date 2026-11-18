@@ -996,6 +996,53 @@ def test_build_transaction_description_falls_back_to_generic_transaction():
     assert tx.description == "Transaction"
 
 
+# ----- payee comes from the counterparty only (issue #1042) -----
+
+
+def _payee_raw(indicator: str, creditor: str | None, debtor: str | None) -> dict:
+    return {
+        "transaction_amount": {"amount": "7.12", "currency": "EUR"},
+        "credit_debit_indicator": indicator,
+        "booking_date": "2026-09-28",
+        "remittance_information": ["SUP BTC"],
+        "creditor": {"name": creditor} if creditor else None,
+        "debtor": {"name": debtor} if debtor else None,
+    }
+
+
+@pytest.mark.parametrize(
+    ("indicator", "creditor", "debtor", "expected"),
+    [
+        # The #1042 payloads: the bank fills the holder's side and leaves
+        # the counterparty out, so there is no payee to take.
+        ("DBIT", None, "HOLDER", None),
+        ("CRDT", "HOLDER", None, None),
+        # With the counterparty present, it is the payee.
+        ("DBIT", "MUZEUM NEONOW", "HOLDER", "MUZEUM NEONOW"),
+        ("CRDT", "HOLDER", "Employer Inc", "Employer Inc"),
+    ],
+)
+def test_build_transaction_payee_reads_only_the_counterparty(
+    indicator, creditor, debtor, expected
+):
+    provider = EnableBankingProvider()
+    tx = provider._build_transaction(
+        "acc-1", _payee_raw(indicator, creditor, debtor), "posted", "auto"
+    )
+    assert tx is not None
+    assert tx.payee == expected
+
+
+@pytest.mark.parametrize("source", ["none", "description"])
+def test_build_transaction_payee_off_when_the_connection_says_so(source):
+    provider = EnableBankingProvider()
+    tx = provider._build_transaction(
+        "acc-1", _payee_raw("DBIT", "MUZEUM NEONOW", "HOLDER"), "posted", source
+    )
+    assert tx is not None
+    assert tx.payee is None
+
+
 def test_build_transaction_falls_back_to_transaction_date():
     provider = EnableBankingProvider()
     raw = {
