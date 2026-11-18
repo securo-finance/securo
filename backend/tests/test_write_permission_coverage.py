@@ -83,6 +83,10 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     # A read that has to be a POST: the backup password belongs in a body,
     # not in a query string. Same read permission as GET /api/export/backup.
     ("POST", "/api/export/backup"): "exports the workspace it can already read; writes nothing",
+    # Same shape: the archive has to be a body, and the workspace it lands in
+    # is one the caller is about to own — there is no membership to gate on.
+    # The same reason `POST /api/workspaces` is here.
+    ("POST", "/api/export/restore"): "creates the workspace there is no membership in yet",
     # The agents surface, mounted only when AGENTS_ENABLED is on (the test
     # suite turns it on so these are always covered). An LLM connection is
     # the requester's own credential — scoped by `user.id`, never by

@@ -17,6 +17,7 @@ from app.models.category import Category
 from app.models.rule import Rule
 from app.models.transaction import Transaction
 from app.models.user import User
+from app.services.backup_service import EXPORTED_ENTITIES
 
 
 @pytest.mark.asyncio
@@ -39,7 +40,7 @@ async def test_backup_empty(client: AsyncClient, auth_headers):
         assert "transactions.json" in names
 
         metadata = json.loads(zf.read("metadata.json"))
-        assert metadata["format_version"] == "1.0"
+        assert metadata["format_version"] == "1.1"
         assert "export_date" in metadata
         for count in metadata["entity_counts"].values():
             assert count == 0
@@ -67,14 +68,24 @@ async def test_backup_with_data(
         expected_files = [
             "accounts.json",
             "transactions.json",
+            "transaction_category_lines.json",
+            "transaction_splits.json",
+            "transaction_attachments.json",
             "categories.json",
             "category_groups.json",
+            "payees.json",
+            "payee_tax_ids.json",
             "rules.json",
             "recurring_transactions.json",
             "budgets.json",
+            "goals.json",
+            "collections.json",
             "assets.json",
+            "asset_groups.json",
             "asset_values.json",
+            "credit_card_bills.json",
             "import_logs.json",
+            "workspace.json",
             "metadata.json",
         ]
         for fname in expected_files:
@@ -141,7 +152,7 @@ async def test_backup_metadata_structure(client: AsyncClient, auth_headers):
         assert "metadata.json" in names
         meta = json.loads(zf.read("metadata.json"))
         assert "export_date" in meta
-        assert meta["format_version"] == "1.0"
+        assert meta["format_version"] == "1.1"
         assert "entity_counts" in meta
 
 
@@ -154,7 +165,7 @@ async def test_backup_post_without_password_is_a_plain_zip(client: AsyncClient, 
 
     with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
         assert "metadata.json" in zf.namelist()
-        assert json.loads(zf.read("metadata.json"))["format_version"] == "1.0"
+        assert json.loads(zf.read("metadata.json"))["format_version"] == "1.1"
 
 
 @pytest.mark.asyncio
@@ -203,3 +214,18 @@ async def test_backup_post_rejects_a_short_password(client: AsyncClient, auth_he
 async def test_backup_post_unauthenticated(client: AsyncClient):
     resp = await client.post("/api/export/backup", json={"password": "correct horse battery"})
     assert resp.status_code == 401
+
+
+def test_every_exported_entity_is_workspace_scoped():
+    """The export filters on `workspace_id`; a table without it must fail here.
+
+    Silently exporting a table whole would put every workspace's rows in one
+    person's archive (ADR 0002). This is the check that turns that into a red
+    test instead of a data leak.
+    """
+    missing = [
+        entity.name
+        for entity in EXPORTED_ENTITIES
+        if "workspace_id" not in getattr(entity.model, "__table__").columns.keys()
+    ]
+    assert missing == []

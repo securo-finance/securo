@@ -1,127 +1,17 @@
-from datetime import date, datetime, timezone
-from decimal import Decimal
-from uuid import UUID
-
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
+from app.core.auth import current_active_user
 from app.core.database import get_async_session
 from app.core.workspace_context import WorkspaceContext, current_workspace
-from app.models.account import Account
-from app.models.account_reserved_balance import AccountReservedBalance
-from app.models.asset import Asset
-from app.models.asset_value import AssetValue
-from app.models.budget import Budget
-from app.models.category import Category
-from app.models.category_group import CategoryGroup
-from app.models.import_log import ImportLog
-from app.models.recurring_transaction import RecurringTransaction
-from app.models.recurring_transaction_category_line import RecurringTransactionCategoryLine
-from app.models.rule import Rule
-from app.models.transaction import Transaction
-from app.models.transaction_category_line import TransactionCategoryLine
-from app.schemas.export import BackupRequest
-from app.services.backup_service import build_backup_archive
+from app.models.user import User
+from app.schemas.export import BackupRequest, RestoreResult
+from app.services.backup_service import build_backup_archive, collect_workspace_export
+from app.services.restore_service import RestoreError, open_archive, restore_workspace
 
 router = APIRouter(prefix="/api/export", tags=["export"])
-
-
-def _serialize(obj) -> dict:
-    """Convert a SQLAlchemy model instance to a JSON-serializable dict."""
-    d = {}
-    for col in obj.__table__.columns:
-        val = getattr(obj, col.key)
-        if isinstance(val, UUID):
-            val = str(val)
-        elif isinstance(val, (datetime, date)):
-            val = val.isoformat()
-        elif isinstance(val, Decimal):
-            val = str(val)
-        d[col.key] = val
-    return d
-
-
-async def _collect(ctx: WorkspaceContext, session: AsyncSession) -> dict[str, object]:
-    """Every entity in the workspace, keyed by the file it becomes."""
-    ws_id = ctx.workspace.id
-
-    accounts = (await session.execute(select(Account).where(Account.workspace_id == ws_id))).scalars().all()
-    transactions = (await session.execute(select(Transaction).where(Transaction.workspace_id == ws_id))).scalars().all()
-    # How each split transaction's amount is spread across categories; a
-    # split row's own category_id is null, so without these the backup
-    # would lose its categories.
-    category_lines = (
-        await session.execute(
-            select(TransactionCategoryLine)
-            .where(TransactionCategoryLine.workspace_id == ws_id)
-            .order_by(TransactionCategoryLine.transaction_id, TransactionCategoryLine.position)
-        )
-    ).scalars().all()
-    # The same for split recurring bills: the template's own category_id is
-    # null while it is split.
-    recurring_category_lines = (
-        await session.execute(
-            select(RecurringTransactionCategoryLine)
-            .where(RecurringTransactionCategoryLine.workspace_id == ws_id)
-            .order_by(
-                RecurringTransactionCategoryLine.recurring_transaction_id,
-                RecurringTransactionCategoryLine.position,
-            )
-        )
-    ).scalars().all()
-    categories = (await session.execute(select(Category).where(Category.workspace_id == ws_id))).scalars().all()
-    category_groups = (await session.execute(select(CategoryGroup).where(CategoryGroup.workspace_id == ws_id))).scalars().all()
-    rules = (await session.execute(select(Rule).where(Rule.workspace_id == ws_id))).scalars().all()
-    recurring_transactions = (await session.execute(select(RecurringTransaction).where(RecurringTransaction.workspace_id == ws_id))).scalars().all()
-    budgets = (await session.execute(select(Budget).where(Budget.workspace_id == ws_id))).scalars().all()
-    assets = (await session.execute(select(Asset).where(Asset.workspace_id == ws_id))).scalars().all()
-    import_logs = (await session.execute(select(ImportLog).where(ImportLog.workspace_id == ws_id))).scalars().all()
-    reserved_balance_rows = (
-        await session.execute(
-            select(AccountReservedBalance).where(AccountReservedBalance.workspace_id == ws_id)
-        )
-    ).scalars().all()
-
-    asset_ids = [a.id for a in assets]
-    if asset_ids:
-        asset_values = (await session.execute(select(AssetValue).where(AssetValue.asset_id.in_(asset_ids)))).scalars().all()
-    else:
-        asset_values = []
-
-    entities = {
-        "accounts": accounts,
-        "transactions": transactions,
-        "transaction_category_lines": category_lines,
-        "categories": categories,
-        "category_groups": category_groups,
-        "rules": rules,
-        "recurring_transactions": recurring_transactions,
-        "recurring_transaction_category_lines": recurring_category_lines,
-        "budgets": budgets,
-        "assets": assets,
-        "asset_values": asset_values,
-        "account_reserved_balances": reserved_balance_rows,
-        "import_logs": import_logs,
-    }
-
-    files: dict[str, object] = {}
-    entity_counts = {}
-    for name, rows in entities.items():
-        serialized = [_serialize(r) for r in rows]
-        entity_counts[name] = len(serialized)
-        files[f"{name}.json"] = serialized
-
-    files["metadata.json"] = {
-        "export_date": datetime.now(timezone.utc).isoformat(),
-        "format_version": "1.0",
-        "workspace_id": str(ws_id),
-        "workspace_name": ctx.workspace.name,
-        "entity_counts": entity_counts,
-    }
-    return files
 
 
 def _as_download(archive: bytes) -> StreamingResponse:
@@ -144,7 +34,8 @@ async def backup(
     workspaces back each one up separately. AssetValue inherits its
     workspace from its Asset and is filtered transitively.
     """
-    return _as_download(build_backup_archive(await _collect(ctx, session)))
+    payload = await collect_workspace_export(ctx, session)
+    return _as_download(build_backup_archive(payload.files, attachments=payload.attachments))
 
 
 @router.post("/backup")
@@ -160,4 +51,38 @@ async def backup_protected(
     the password and cannot recover the archive without it.
     """
     password = body.password.get_secret_value() if body.password else None
-    return _as_download(build_backup_archive(await _collect(ctx, session), password))
+    payload = await collect_workspace_export(ctx, session)
+    return _as_download(
+        build_backup_archive(payload.files, password, attachments=payload.attachments)
+    )
+
+
+@router.post("/restore", response_model=RestoreResult, status_code=status.HTTP_201_CREATED)
+async def restore(
+    file: UploadFile = File(...),
+    password: str | None = Form(None),
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Restore an archive into a **new** workspace owned by the caller.
+
+    Deliberately not workspace-gated: the whole point is a workspace that does
+    not exist yet. The archive is never merged into an existing workspace, so
+    there is no path that overwrites data the user still has — stronger than a
+    confirmation dialog, and the reason the route takes no `X-Workspace-Id`.
+
+    The upload is read through Starlette's spooled file, so a large archive is
+    not held in memory, and every row is written in one transaction: a file
+    that fails halfway leaves nothing behind.
+    """
+    try:
+        contents = open_archive(file.file, password or None)
+        result = await restore_workspace(session, user, contents)
+    except RestoreError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception:
+        await session.rollback()
+        raise
+    await session.commit()
+    return RestoreResult(**result.__dict__)

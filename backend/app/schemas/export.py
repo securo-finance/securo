@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from pydantic import BaseModel, Field, SecretStr
 
 
@@ -11,3 +13,15 @@ class BackupRequest(BaseModel):
     """
 
     password: SecretStr | None = Field(default=None, min_length=8, max_length=256)
+
+
+class RestoreResult(BaseModel):
+    """What a restore created, so the caller can open it and check the counts."""
+
+    workspace_id: UUID
+    workspace_name: str
+    #: Rows written per table. `transaction_attachments` counts the files that
+    #: were actually stored; the rest are reported in `attachments_missing`.
+    entity_counts: dict[str, int]
+    attachments_restored: int
+    attachments_missing: int
