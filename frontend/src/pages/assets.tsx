@@ -1137,6 +1137,25 @@ export default function AssetsPage() {
     return (walletsList ?? []).slice().sort((a, b) => a.position - b.position || a.name.localeCompare(b.name))
   }, [walletsList])
 
+  // Performance tells a deleted wallet or holding (dropped from a saved or
+  // remembered selection) from one the collection hides or that is archived
+  // (kept), so it needs the whole workspace, archived holdings included.
+  const { data: inventoryAssets } = useQuery({
+    queryKey: ['assets', 'including-archived'],
+    queryFn: () => assets.list(true),
+    enabled: activeTab === 'performance',
+  })
+  const performanceInventory = useMemo(
+    () =>
+      inventoryAssets && rawWalletsList
+        ? {
+            walletIds: rawWalletsList.map((wallet) => wallet.id),
+            assetIds: inventoryAssets.map((asset) => asset.id),
+          }
+        : null,
+    [inventoryAssets, rawWalletsList],
+  )
+
   const ungroupedAssets = assetsByGroup.get(null) ?? []
 
   function toggleWalletCollapse(id: string) {
@@ -1359,6 +1378,7 @@ export default function AssetsPage() {
           assetGroupIds={activeWalletIds}
           holdings={performanceHoldings}
           wallets={sortedWallets}
+          inventory={performanceInventory}
           locale={locale}
           dateLocale={dateLocale}
           mask={mask}

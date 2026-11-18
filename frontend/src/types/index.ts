@@ -1410,7 +1410,8 @@ export type PortfolioPerformancePeriod = '3m' | '6m' | 'ytd' | '1y' | '3y' | '5y
 export interface PortfolioPerformancePoint {
   date: string
   portfolio: number
-  benchmark: number
+  benchmark: number | null
+  // A benchmark is absent on dates before its own start_date.
   benchmarks: Record<string, number>
 }
 
@@ -1421,6 +1422,9 @@ export interface BenchmarkPerformance {
   benchmark_return: number | null
   excess_return: number | null
   source_error?: 'unavailable' | 'rate_limited' | 'no_data' | 'no_fx_rate' | null
+  // First date this benchmark is compared from. Later than the response's
+  // start_date when the benchmark's history begins after the portfolio's.
+  start_date: string | null
 }
 
 export interface HoldingTradeImport {

@@ -487,11 +487,20 @@ export const connections = {
   },
   // retryTradeImport asks the provider again for holdings whose trade
   // history didn't add up last time, even if no position moved.
-  sync: async (id: string, options?: { retryTradeImport?: boolean }): Promise<SyncResult> => {
+  // workspaceId pins the request to the workspace it was started in, so a
+  // batch that outlives a workspace switch keeps syncing the same one.
+  sync: async (
+    id: string,
+    options?: { retryTradeImport?: boolean; workspaceId?: string | null },
+  ): Promise<SyncResult> => {
+    const config = {
+      ...workspaceHeader(options?.workspaceId),
+      ...(options?.retryTradeImport ? { params: { retry_trade_import: true } } : {}),
+    }
     const { data } = await api.post(
       `/connections/${id}/sync`,
       undefined,
-      options?.retryTradeImport ? { params: { retry_trade_import: true } } : undefined,
+      Object.keys(config).length ? config : undefined,
     )
     return data
   },
@@ -1580,9 +1589,11 @@ export const assets = {
     assetGroupIds?: string[] | null,
     selectedAssetGroupIds?: string[],
     assetIds?: string[],
+    workspaceId?: string | null,
   ): Promise<PortfolioPerformance> => {
     const hasGroups = assetGroupIds != null && assetGroupIds.length > 0
     const { data } = await api.get('/assets/performance', {
+      ...workspaceHeader(workspaceId),
       params: {
         ...(benchmarks.length
           ? {
@@ -1601,12 +1612,16 @@ export const assets = {
     })
     return data
   },
-  tradeImport: async (): Promise<HoldingTradeImport> => {
-    const { data } = await api.get('/assets/performance/trade-import')
+  tradeImport: async (workspaceId?: string | null): Promise<HoldingTradeImport> => {
+    const { data } = await api.get('/assets/performance/trade-import', workspaceHeader(workspaceId))
     return data
   },
-  enableTradeImport: async (): Promise<HoldingTradeImport> => {
-    const { data } = await api.post('/assets/performance/trade-import')
+  enableTradeImport: async (workspaceId?: string | null): Promise<HoldingTradeImport> => {
+    const { data } = await api.post(
+      '/assets/performance/trade-import',
+      undefined,
+      workspaceHeader(workspaceId),
+    )
     return data
   },
   marketSearch: async (q: string, limit = 15): Promise<MarketSymbolMatch[]> => {
