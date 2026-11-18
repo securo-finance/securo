@@ -1289,6 +1289,53 @@ async def test_sync_opening_balance_ignores_future_and_ignored_rows(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("balance", "expected"),
+    [("600.00", Decimal("100.00")), ("500.00", None)],
+    ids=["keeps-newest", "drops-all-when-balanced"],
+)
+async def test_sync_opening_balance_tolerates_duplicate_openings(
+    session, test_user, test_workspace, test_connection, balance, expected
+):
+    """Two synthetic openings on one account must not break the sync (#1317)."""
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+
+    account = await _make_account(
+        session, test_user.id, "Duplicate Openings", balance=balance,
+        connection_id=test_connection.id,
+    )
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 500, "credit", today - timedelta(days=5))
+    older = await _add_txn(
+        session, test_user.id, account.id, 40, "credit", today - timedelta(days=30),
+        source="opening_balance",
+    )
+    newer = await _add_txn(
+        session, test_user.id, account.id, 70, "debit", today - timedelta(days=6),
+        source="opening_balance",
+    )
+    older.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    newer.created_at = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    await session.commit()
+
+    await sync_opening_balance_for_connected_account(session, account)
+    await session.commit()
+
+    openings = (await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == account.id,
+            Transaction.source == "opening_balance",
+        )
+    )).scalars().all()
+
+    if expected is None:
+        assert openings == []
+    else:
+        assert [(o.id, o.type, o.amount) for o in openings] == [(newer.id, "credit", expected)]
+
+
+@pytest.mark.asyncio
 async def test_sync_opening_balance_ignores_unconverted_foreign_rows(
     session, test_user, test_workspace, test_connection
 ):
