@@ -882,6 +882,10 @@ export default function DashboardPage() {
               type: 'credit',
               from: monthStart,
               to: monthEnd,
+              // The card counts only the user's share of a split unless a
+              // collection scopes it to some accounts.
+              ownShare: !acctIds,
+              ownShareCredits: !acctIds,
             })}
           >
             <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center">{t('dashboard.monthlyIncome')}</p>
@@ -910,6 +914,7 @@ export default function DashboardPage() {
               type: 'debit',
               from: monthStart,
               to: monthEnd,
+              ownShare: !acctIds,
             })}
           >
             <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center">{t('dashboard.monthlyExpenses')}</p>
