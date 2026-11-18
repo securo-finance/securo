@@ -1754,6 +1754,7 @@
     "fieldPayee": "Bénéficiaire",
     "fieldDate": "Date",
     "fieldStatus": "Statut",
+    "fieldProviderCategory": "Catégorie du fournisseur",
     "opContains": "contient",
     "opNotContains": "ne contient pas",
     "opEquals": "est égal à",

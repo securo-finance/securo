@@ -1829,6 +1829,7 @@
     "fieldPayee": "Odbiorca",
     "fieldDate": "Data",
     "fieldStatus": "Status",
+    "fieldProviderCategory": "Kategoria dostawcy",
     "opContains": "zawiera",
     "opNotContains": "nie zawiera",
     "opEquals": "równa się",

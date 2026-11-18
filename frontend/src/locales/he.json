@@ -1766,6 +1766,7 @@
     "fieldPayee": "מוטב",
     "fieldDate": "תאריך",
     "fieldStatus": "סטטוס",
+    "fieldProviderCategory": "קטגוריית הספק",
     "opContains": "מכיל",
     "opNotContains": "לא מכיל",
     "opEquals": "שווה ל",

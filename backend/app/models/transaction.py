@@ -137,6 +137,12 @@ class Transaction(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
+    @property
+    def provider_category(self) -> Optional[str]:
+        if not isinstance(self.raw_data, dict):
+            return None
+        return self.raw_data.get("category")
+
     account: Mapped["Account"] = relationship(back_populates="transactions")
     category: Mapped[Optional["Category"]] = relationship()
     bill: Mapped[Optional["CreditCardBill"]] = relationship()

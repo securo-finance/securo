@@ -1750,6 +1750,7 @@
     "fieldPayee": "Partner",
     "fieldDate": "Dátum",
     "fieldStatus": "Állapot",
+    "fieldProviderCategory": "Szolgáltató kategóriája",
     "opContains": "tartalmazza",
     "opNotContains": "nem tartalmazza",
     "opEquals": "egyenlő",

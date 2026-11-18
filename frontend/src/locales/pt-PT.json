@@ -1754,6 +1754,7 @@
     "fieldPayee": "Entidade",
     "fieldDate": "Data",
     "fieldStatus": "Estado",
+    "fieldProviderCategory": "Categoria do provedor",
     "opContains": "contém",
     "opNotContains": "não contém",
     "opEquals": "é igual a",
