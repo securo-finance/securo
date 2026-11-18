@@ -8806,3 +8806,84 @@ async def test_reserved_balance_in_another_currency_is_stored_but_not_summed(
     payload = serialize_account(account, None, None)
     assert [r["currency"] for r in payload["reserved_balances"]] == ["USD"]
     assert payload["reserved_total"] == 0.0
+
+
+async def _simplefin_resync(session, conn, workspace_id, user_id, raw_txn: dict) -> None:
+    """Run one sync of a SimpleFIN card account whose feed holds `raw_txn`."""
+    import httpx
+
+    from app.providers.simplefin import SimpleFinProvider
+    from tests.test_providers_simplefin import _patched_client
+
+    bridge = {"conn_id": "C-CITI", "name": "Citi", "org_id": "CITI"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        account = {
+            "id": "acc-card", "name": "Citi Card", "currency": "USD",
+            "balance": "-25.00", "balance-date": raw_txn["posted"],
+        }
+        if request.url.params.get("account") == "acc-card":
+            account = {**account, "transactions": [raw_txn]}
+        return httpx.Response(
+            200, json={"errlist": [], "connections": [bridge], "accounts": [account]}
+        )
+
+    with patch("app.services.connection_service.get_provider", return_value=SimpleFinProvider()), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock), \
+         _patched_client(handler):
+        await sync_connection(session, conn.id, workspace_id, user_id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("user_renamed_payee", [False, True])
+async def test_simplefin_resync_takes_the_corrected_charge_under_the_same_id(
+    session: AsyncSession, test_user, test_workspace, user_renamed_payee,
+):
+    """A provisional card charge corrected under the same id (#1398).
+
+    Citi first sends a purchase as a positive amount under a category label,
+    then corrects it to a negative charge with the merchant name. The stored
+    row must follow the correction where the user never changed it, so the
+    purchase stops counting as income, and keep what the user did change.
+    """
+    conn = await _make_connection(session, test_user.id, "Citi")
+    conn.provider = "simplefin"
+    conn.credentials = {"access_url": "https://u:p@bridge.example/simplefin"}
+    await session.commit()
+
+    posted = int(datetime.now(timezone.utc).timestamp()) - 86400
+    provisional = {
+        "id": "TRN-1398", "posted": posted, "amount": "25.00",
+        "description": "FAST FOOD RESTAURANTS", "payee": "Fast Food Restaurants",
+        "pending": True,
+    }
+    await _simplefin_resync(session, conn, test_workspace.id, test_user.id, provisional)
+    tx = (await session.execute(
+        select(Transaction).where(Transaction.external_id == "TRN-1398")
+    )).scalar_one()
+    assert (tx.type, tx.amount, tx.payee) == ("credit", Decimal("25.00"), "Fast Food Restaurants")
+    if user_renamed_payee:
+        tx.payee = "My Burger Place"
+        await session.commit()
+
+    corrected = {
+        **provisional, "amount": "-25.00",
+        "description": "MERCHANT 1234 CITYNAME ST", "payee": "Merchant",
+    }
+    await _simplefin_resync(session, conn, test_workspace.id, test_user.id, corrected)
+    await session.refresh(tx)
+
+    rows = (await session.execute(
+        select(Transaction).where(Transaction.external_id == "TRN-1398")
+    )).scalars().all()
+    assert len(rows) == 1
+    assert tx.type == "debit"
+    assert tx.amount == Decimal("25.00")
+    assert tx.description == "MERCHANT 1234 CITYNAME ST"
+    if user_renamed_payee:
+        assert tx.payee == "My Burger Place"
+    else:
+        assert tx.payee == "Merchant"
+        assert tx.payee_id is not None

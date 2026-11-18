@@ -449,6 +449,20 @@ class BankProvider(ABC):
         """
         return []
 
+    def parse_raw_transaction(
+        self, raw: dict, payee_source: str = "auto"
+    ) -> Optional[TransactionData]:
+        """Rebuild a transaction from the payload this provider stores in
+        ``raw_data``, or None when it can't.
+
+        A re-sync reads it on the payload stored before the new one is merged
+        in: where a row still holds what that payload gave, the user never
+        changed it, so a provider correction under the same id may replace
+        it. Providers whose ``raw_data`` is the whole entry override this;
+        the default leaves a known row's amount, type and payee as they are.
+        """
+        return None
+
     @abstractmethod
     async def refresh_credentials(self, credentials: dict) -> dict:
         """Refresh access token if needed."""

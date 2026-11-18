@@ -633,6 +633,11 @@ class SimpleFinProvider(BankProvider):
             cursor = chunk_end
         return transactions
 
+    def parse_raw_transaction(
+        self, raw: dict, payee_source: str = "auto"
+    ) -> Optional[TransactionData]:
+        return self._build_transaction(raw, payee_source)
+
     @staticmethod
     def _build_transaction(raw: dict, payee_source: str) -> Optional[TransactionData]:
         txn_id = str(raw.get("id") or "")

@@ -72,7 +72,7 @@ from app.services.rule_service import (
 )
 from app.services.transfer_detection_service import detect_transfer_pairs
 from app.services.fx_rate_service import stamp_primary_amount
-from app.services.payee_service import get_or_create_payee
+from app.services.payee_service import find_payee_by_name, get_or_create_payee
 from app.services.transaction_match_service import find_unique_transaction_match
 
 logger = logging.getLogger(__name__)
@@ -2117,6 +2117,71 @@ def _merge_sync_metadata(
         transaction.payee = txn_data.payee
 
 
+async def _refresh_provider_values(
+    session: AsyncSession,
+    provider,
+    transaction: Transaction,
+    txn_data,
+    *,
+    payee_source: str,
+    account_currency: str,
+    user_currency: str,
+) -> None:
+    """Take a provider's correction of a known transaction (#1398).
+
+    Some issuers send a card charge in a provisional form first (a credit
+    under a category label) and correct it later under the same id. The
+    stored payload, before the new one is merged in, says what the provider
+    sent last: a field that still holds what that payload gave was never
+    changed by the user, so the corrected value replaces it. A field that
+    differs is the user's and stays. Must run before `_merge_sync_metadata`,
+    which merges the new payload into ``raw_data``.
+    """
+    if transaction.source != "sync" or not isinstance(transaction.raw_data, dict):
+        return
+    if not isinstance(provider, BankProvider):
+        return
+    previous = provider.parse_raw_transaction(transaction.raw_data, payee_source)
+    if previous is None:
+        return
+
+    stored = (Decimal(str(transaction.amount)), transaction.type)
+    incoming = (txn_data.amount, txn_data.type)
+    if stored == (previous.amount, previous.type) and incoming != stored:
+        old_amount = transaction.amount
+        transaction.amount = txn_data.amount
+        transaction.type = txn_data.type
+        converted = _bank_converted_amount(txn_data, account_currency, user_currency)
+        await _stamp_synced_primary_amount(
+            session, transaction.user_id, transaction, converted
+        )
+        await category_line_service.rescale_lines(session, transaction, old_amount)
+
+    if transaction.payee == previous.payee and txn_data.payee != previous.payee:
+        transaction.payee = txn_data.payee
+        # The linked payee follows only while it is still the one the old
+        # name gave; one a rule or the user picked stays.
+        previous_entity = (
+            await find_payee_by_name(session, transaction.workspace_id, previous.payee)
+            if previous.payee
+            else None
+        )
+        previous_id = previous_entity.id if previous_entity else None
+        if transaction.payee_id == previous_id:
+            transaction.payee_id = (
+                (
+                    await get_or_create_payee(
+                        session,
+                        transaction.user_id,
+                        txn_data.payee,
+                        workspace_id=transaction.workspace_id,
+                    )
+                ).id
+                if txn_data.payee
+                else None
+            )
+
+
 #: How many days an Enable Banking card hold can precede the booked entry that
 #: settles it. PayPal books the charge a day after the hold; banks take one to
 #: three banking days, which a weekend stretches to five calendar days.
@@ -3507,6 +3572,15 @@ async def sync_connection(
                     # a re-sync can't revive a transaction the user hid.
                     if existing_tx.is_ignored:
                         continue
+                    await _refresh_provider_values(
+                        session,
+                        provider,
+                        existing_tx,
+                        txn_data,
+                        payee_source=payee_source,
+                        account_currency=acc_data.currency or user_currency,
+                        user_currency=user_currency,
+                    )
                     _merge_sync_metadata(existing_tx, txn_data)
                     if existing_tx.status == "pending" and txn_data.status == "posted":
                         existing_tx.status = "posted"
