@@ -40,6 +40,7 @@ vi.mock('@/contexts/auth-context', () => ({
 vi.mock('@/contexts/workspace-context', () => ({
   useWorkspace: () => ({ canWrite: workspace.canWrite, current: { id: workspace.id } }),
 }))
+vi.mock('@/hooks/use-timezone', () => ({ useEffectiveTimezone: () => 'UTC' }))
 vi.mock('@/contexts/collection-filter-context', () => ({
   useCollectionFilter: () => ({ activeWalletIds: null }),
 }))
@@ -56,6 +57,7 @@ function asset(lastPrice = 10): Asset {
     current_value: 100, current_value_primary: 100, gain_loss: null, gain_loss_primary: null,
     value_count: 0, source: 'manual', connection_id: null, isin: null, maturity_date: null,
     group_id: null, ticker: 'AAPL', ticker_exchange: null, last_price: lastPrice, last_price_at: null,
+    provider_value_date: null,
     logo_url: null, average_price: null, total_invested: null, realized_gain: null,
     transaction_count: 0,
   }

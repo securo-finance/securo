@@ -630,11 +630,11 @@ async def test_provider_receives_stable_conversation_session_id(
 # --- the model is shown.
 
 
-def _calls_tool(name: str) -> list[list[ChatChunk]]:
+def _calls_tool(name: str, args: str = "{}") -> list[list[ChatChunk]]:
     return [
         [
             ChatChunk(type="tool_call_start", tool_call_id="t1", tool_name=name),
-            ChatChunk(type="tool_call_args_delta", tool_call_id="t1", args_delta="{}"),
+            ChatChunk(type="tool_call_args_delta", tool_call_id="t1", args_delta=args),
             ChatChunk(type="tool_call_end", tool_call_id="t1"),
             ChatChunk(type="finish", finish_reason="tool_calls"),
         ],
@@ -646,13 +646,34 @@ def _handles(*names: str) -> list[ToolHandle]:
     return [ToolHandle(server="securo", name=n, description="", parameters={"type": "object"}) for n in names]
 
 
-async def _run(session, test_user, agent, conversation, mcp, tool_name):
-    provider = _ScriptedProvider(_calls_tool(tool_name))
+async def _run(session, test_user, agent, conversation, mcp, tool_name, args="{}"):
+    provider = _ScriptedProvider(_calls_tool(tool_name, args))
     with _patch_provider(provider):
         return await _drain(
             AgentExecutor(mcp=mcp), session=session, agent=agent, user_id=test_user.id,
             conversation_id=conversation.id, user_message="go",
         )
+
+
+@pytest.mark.parametrize("args", ['{"months":12}{}', '{"months":'])
+async def test_tool_is_not_called_with_arguments_that_are_not_one_object(
+    session, test_user, test_agent, test_conversation, args
+):
+    """Two glued calls (#1318) or a cut-off object used to reach the tool as
+    `{"_raw": ...}` and fail inside it. The model gets the reason instead."""
+    from app.agents.services import agent_service
+
+    await agent_service.replace_tool_enablement(session, test_agent.id, [("securo", "list_accounts", True)])
+    mcp = _FakeMCP(tools=_handles("list_accounts"))
+    await _run(session, test_user, test_agent, test_conversation, mcp, "securo__list_accounts", args)
+
+    assert mcp.calls == []
+    rows = (await session.execute(
+        select(Message).where(Message.conversation_id == test_conversation.id, Message.role == "tool")
+    )).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].tool_result["ok"] is False
+    assert "must be one JSON object" in rows[0].content
 
 
 @pytest.mark.parametrize("name", ["securo__delete_account", "delete_account"])
