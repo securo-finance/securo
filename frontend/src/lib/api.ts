@@ -1341,7 +1341,11 @@ export const recurring = {
     const { data } = await api.get('/recurring-transactions')
     return data
   },
-  create: async (rt: Partial<RecurringTransaction>): Promise<RecurringTransaction> => {
+  // `skip_first` is write-only: it moves the first occurrence one period ahead
+  // when the transaction that would cover it already exists.
+  create: async (
+    rt: Partial<RecurringTransaction> & { skip_first?: boolean },
+  ): Promise<RecurringTransaction> => {
     const { data } = await api.post('/recurring-transactions', rt)
     return data
   },

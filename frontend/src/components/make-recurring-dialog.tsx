@@ -4,6 +4,9 @@ import { toast } from 'sonner'
 
 import { RecurringForm, type RecurringInitialValues } from '@/pages/recurring'
 import { recurring as recurringApi } from '@/lib/api'
+import { extractApiError } from '@/lib/api-errors'
+import { isSplitByCategory } from '@/lib/category-lines'
+import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import {
   Dialog,
   DialogContent,
@@ -16,7 +19,8 @@ import type { Category, CategoryGroup, RecurringTransaction, Transaction } from 
  *
  * The description is what `recurring_match_service` compares a later charge
  * against, so the transaction's own wording goes in — not the payee alone.
- * The amount is stored unsigned, with the direction kept in `type`.
+ * The amount is stored unsigned, with the direction kept in `type`, and a
+ * split across categories travels with its parts.
  */
 function recurringInitialValues(tx: Transaction): RecurringInitialValues {
   const day = Number(tx.date.slice(8, 10))
@@ -30,6 +34,7 @@ function recurringInitialValues(tx: Transaction): RecurringInitialValues {
     start_date: tx.date,
     category_id: tx.category_id ?? '',
     account_id: tx.account_id ?? '',
+    category_lines: isSplitByCategory(tx) ? tx.category_lines : undefined,
   }
 }
 
@@ -49,13 +54,23 @@ export function MakeRecurringDialog({
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+
   const createMutation = useMutation({
-    mutationFn: (data: Partial<RecurringTransaction>) => recurringApi.create(data),
-    onSuccess: () => {
+    mutationFn: ({ data }: { id: string; data: Partial<RecurringTransaction> }) =>
+      recurringApi.create({
+        ...data,
+        // The source transaction already covers the first occurrence.
+        skip_first: true,
+      }),
+    onSuccess: (_created, { id }) => {
+      invalidateFinancialQueries(queryClient)
       queryClient.invalidateQueries({ queryKey: ['recurring'] })
       toast.success(t('recurring.created'))
-      onClose()
+      // A save that finishes after the user moved on to another transaction
+      // must not close the one now on screen.
+      if (transaction?.id === id) onClose()
     },
+    onError: (error: unknown) => toast.error(extractApiError(error, t('common.error'))),
   })
 
   if (!transaction) return null
@@ -73,9 +88,13 @@ export function MakeRecurringDialog({
           initial={initial}
           categories={categories}
           categoryGroups={categoryGroups}
-          currentCategory={categories.find((category) => category.id === initial.category_id)}
+          currentCategory={
+            categories.find((category) => category.id === initial.category_id)
+            ?? transaction.category
+            ?? undefined
+          }
           accounts={accounts}
-          onSave={(data) => createMutation.mutate(data)}
+          onSave={(data) => createMutation.mutate({ id: transaction.id, data })}
           onCancel={onClose}
           loading={createMutation.isPending}
         />

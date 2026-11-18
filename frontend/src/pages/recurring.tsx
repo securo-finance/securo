@@ -19,7 +19,14 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import type { Category, CategoryGroup, CategoryLineShareType, RecurringPriceChange, RecurringTransaction } from '@/types'
+import type {
+  Category,
+  CategoryGroup,
+  CategoryLineShareType,
+  RecurringPriceChange,
+  RecurringTransaction,
+  TransactionCategoryLine,
+} from '@/types'
 import { CategorySplitBadge } from '@/components/category-lines-display'
 import { TransactionCategoryLinesSection } from '@/components/transaction-category-lines-section'
 import {
@@ -514,7 +521,13 @@ export type RecurringInitialValues = Partial<
     | 'is_active'
     | 'auto_generate'
   >
->
+> & {
+  /**
+   * The source transaction's split across categories (issue #429), carried as
+   * read lines so the form opens with the same parts it will save.
+   */
+  category_lines?: TransactionCategoryLine[]
+}
 
 export function RecurringForm({
   recurring,
@@ -552,17 +565,31 @@ export function RecurringForm({
   // silently drops. The field is text and goes through parseAmountInput, the
   // same path the transaction dialog uses.
   const displayLocale = useDisplayLocale()
+  // The draft text is written once, with the locale in effect when the form
+  // mounts. Parsing it with that same locale keeps "12.34" at 12.34 even when
+  // the number-format query resolves afterwards to a comma-decimal format.
+  const [amountLocale] = useState(displayLocale)
   const [description, setDescription] = useState(recurring?.description ?? initial?.description ?? '')
   const [amount, setAmount] = useState(
     recurring?.amount != null
-      ? formatAmountInput(Number(recurring.amount), displayLocale)
+      ? formatAmountInput(Number(recurring.amount), amountLocale)
       : initial?.amount != null
-        ? formatAmountInput(Number(initial.amount), displayLocale)
+        ? formatAmountInput(Number(initial.amount), amountLocale)
         : '',
   )
-  const parsedAmount = parseAmountInput(amount, displayLocale)
+  const parsedAmount = parseAmountInput(amount, amountLocale)
   const amountInvalid = amount !== '' && parsedAmount == null
   const [currency, setCurrency] = useState(recurring?.currency ?? initial?.currency ?? userCurrency)
+  // The selector always shows the currency Save submits: a transaction in a
+  // currency the list does not carry (or before it loads) keeps its option.
+  const currencyOptions = useMemo(() => {
+    const list = supportedCurrencies?.length
+      ? supportedCurrencies
+      : [{ code: userCurrency, symbol: userCurrency, name: userCurrency, flag: '' }]
+    return list.some((option) => option.code === currency)
+      ? list
+      : [{ code: currency, symbol: currency, name: currency, flag: '' }, ...list]
+  }, [supportedCurrencies, userCurrency, currency])
   const [type, setType] = useState<'debit' | 'credit'>(recurring?.type ?? initial?.type ?? 'debit')
   const [frequency, setFrequency] = useState(recurring?.frequency ?? initial?.frequency ?? 'monthly')
   const [weekendAdjustment, setWeekendAdjustment] = useState<RecurringTransaction['weekend_adjustment']>(
@@ -579,13 +606,18 @@ export function RecurringForm({
   const [autoGenerate, setAutoGenerate] = useState(recurring?.auto_generate ?? initial?.auto_generate ?? true)
   // Split across categories, as in the transaction dialog: every occurrence
   // the schedule generates starts with these parts.
-  const [lineRows, setLineRows] = useState<CategoryLineRow[] | null>(() =>
-    recurring && isSplitByCategory(recurring) && recurring.category_lines
-      ? rowsFromLines(recurring.category_lines, (v) => formatAmountInput(v, displayLocale))
-      : null,
-  )
+  const [lineRows, setLineRows] = useState<CategoryLineRow[] | null>(() => {
+    if (recurring && isSplitByCategory(recurring) && recurring.category_lines) {
+      return rowsFromLines(recurring.category_lines, (v) => formatAmountInput(v, amountLocale))
+    }
+    // Creating a bill from a split transaction starts with its parts.
+    if (initial?.category_lines?.length) {
+      return rowsFromLines(initial.category_lines, (v) => formatAmountInput(v, amountLocale))
+    }
+    return null
+  })
   const [lineShareType, setLineShareType] = useState<CategoryLineShareType>(
-    () => recurring?.category_lines?.[0]?.share_type ?? 'exact',
+    () => recurring?.category_lines?.[0]?.share_type ?? initial?.category_lines?.[0]?.share_type ?? 'exact',
   )
   const hadInitialLines = !!recurring && isSplitByCategory(recurring)
   const linesValid = !lineRows || checkLines(lineRows, lineShareType, parsedAmount ?? 0, displayLocale).valid
@@ -659,7 +691,7 @@ export function RecurringForm({
         <div className="space-y-2">
           <Label>{t('recurring.currency')}</Label>
           <select className={selectClass} value={currency} onChange={(e) => setCurrency(e.target.value)}>
-            {(supportedCurrencies ?? [{ code: userCurrency, symbol: userCurrency, name: userCurrency, flag: '' }]).map((c) => (
+            {currencyOptions.map((c) => (
               <option key={c.code} value={c.code}>{c.flag} {c.name}</option>
             ))}
           </select>
