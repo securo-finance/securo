@@ -1398,8 +1398,6 @@ async def refresh_all_market_prices(
         logger.warning("Batch price fetch failed, falling back to per-asset: %s", e)
         closes = {}
 
-    last_split = await _last_split_dates(session, [a.id for a in assets])
-
     # Per-asset fallback: the batch missed a symbol (delisted ticker, one-off
     # provider error, etc.). These quote calls happen before anything is
     # locked: a slow fallback would otherwise keep FOR UPDATE on every
@@ -1444,6 +1442,13 @@ async def refresh_all_market_prices(
         .execution_options(populate_existing=True)
     )
     current_by_id = {asset.id: asset for asset in locked.scalars().all()}
+
+    # Split dates are read only now, after the holdings are locked: a split
+    # recorded while the provider was answering must be seen by this write,
+    # or a 2-for-1 would store the pre-split close under today and multiply
+    # it by the units after the split (issue #1357). Reading them before the
+    # lock kept the pre-split view and valued the holding ten times over.
+    last_split = await _last_split_dates(session, list(current_by_id))
 
     refreshed = 0
     skipped = 0
