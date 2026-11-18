@@ -1139,3 +1139,100 @@ async def test_pocket_migration_upgrade_constraints_and_downgrade(session, pocke
     )
     await connection.run_sync(_migrate, "upgrade")
     assert await _pocket_current_amount(session, goal.id) == 0
+
+
+async def test_credit_card_conversion_checks_pockets_under_the_account_lock(
+    session, postgres_sessions, pocket_state
+):
+    """A pocket created while the conversion waits must still block it."""
+    from app.schemas.account import AccountUpdate
+    from app.services.account_service import update_account
+    from app.services.goal_service import _lock_pocket_account
+
+    user, workspace, account, goal, _ = pocket_state
+    await session.delete(await session.get(Goal, goal.id))
+    await session.commit()
+
+    async with postgres_sessions() as creator, postgres_sessions() as converter, \
+            postgres_sessions() as observer:
+        await _lock_pocket_account(creator, workspace.id, account.id)
+        pid = await _backend_pid(converter)
+
+        async def convert():
+            with pytest.raises(ValueError, match="pockets"):
+                await update_account(
+                    converter, account.id, workspace.id, AccountUpdate(type="credit_card")
+                )
+            await converter.rollback()
+
+        async with asyncio.timeout(20):
+            async with asyncio.TaskGroup() as tasks:
+                tasks.create_task(convert())
+                await _wait_for_lock(observer, pid)
+                creator.add(
+                    Goal(
+                        user_id=user.id,
+                        workspace_id=workspace.id,
+                        name="Created while converting",
+                        target_amount=Decimal("100"),
+                        currency=account.currency,
+                        tracking_type="pocket",
+                        account_id=account.id,
+                    )
+                )
+                await creator.commit()
+    async with postgres_sessions() as fresh:
+        assert await fresh.scalar(select(Account.type).where(Account.id == account.id)) != "credit_card"
+
+
+async def test_transaction_edit_waits_for_running_manual_account_delete(
+    session, postgres_sessions, pocket_state, edit_targets
+):
+    """The delete holds the account before it touches rows, so an edit that
+    arrives while it runs waits on the account instead of deadlocking."""
+    from sqlalchemy.sql.dml import Update
+
+    from app.services.account_service import delete_account
+
+    user, workspace, account, goal, transaction = pocket_state
+    await session.execute(
+        update(Account).where(Account.id == account.id).values(connection_id=None)
+    )
+    await session.commit()
+    holding, release = asyncio.Event(), asyncio.Event()
+
+    class PausedDeleteSession(AsyncSession):
+        async def execute(self, statement, *args, **kwargs):
+            result = await super().execute(statement, *args, **kwargs)
+            if (
+                isinstance(statement, Update)
+                and statement.table.name == "transactions"
+                and not holding.is_set()
+            ):
+                holding.set()
+                await release.wait()
+            return result
+
+    paused = async_sessionmaker(
+        postgres_sessions.kw["bind"], class_=PausedDeleteSession, expire_on_commit=False
+    )
+    async with paused() as deleter, postgres_sessions() as editor, \
+            postgres_sessions() as observer:
+        pid = await _backend_pid(editor)
+
+        async def edit():
+            # The row is gone once the edit gets its turn.
+            with pytest.raises(ValueError):
+                await _edit(editor, "update", workspace, user, transaction, edit_targets)
+            await editor.rollback()
+
+        async with asyncio.timeout(20):
+            async with asyncio.TaskGroup() as tasks:
+                tasks.create_task(delete_account(deleter, account.id, workspace.id))
+                await holding.wait()
+                tasks.create_task(edit())
+                await _wait_for_lock(observer, pid)
+                release.set()
+    async with postgres_sessions() as fresh:
+        assert await fresh.get(Account, account.id) is None
+        assert await fresh.get(Goal, goal.id) is None

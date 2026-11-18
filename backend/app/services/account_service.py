@@ -535,10 +535,18 @@ async def update_account(
     # renormalizes the balance to the new type on its next run.
     if new_type == "credit_card" and account.type != "credit_card":
         from app.models.goal import Goal
+        from app.services.goal_service import _lock_pocket_account
 
+        # Under the lock pocket creation takes, so a pocket cannot be created
+        # between this check and the type change.
+        account = await _lock_pocket_account(session, workspace_id, account_id)
         has_pocket = await session.scalar(
             select(Goal.id)
-            .where(Goal.account_id == account.id, Goal.tracking_type == "pocket")
+            .where(
+                Goal.workspace_id == workspace_id,
+                Goal.account_id == account.id,
+                Goal.tracking_type == "pocket",
+            )
             .limit(1)
         )
         if has_pocket is not None:
@@ -1028,6 +1036,11 @@ async def delete_account(session: AsyncSession, account_id: uuid.UUID, workspace
     # Only allow deleting manual accounts
     if account.connection_id is not None:
         raise ValueError("Cannot delete bank-connected accounts")
+    # Account before its transaction rows, as edits lock them, so a delete
+    # racing an edit cannot deadlock after its attachment files are gone.
+    from app.services.goal_service import _lock_pocket_account
+
+    account = await _lock_pocket_account(session, workspace_id, account_id)
     if await _has_mortgage_allocations(session, account):
         raise ValueError("Remove this loan's mortgage payment breakdowns before deleting it")
 
