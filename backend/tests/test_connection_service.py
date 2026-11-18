@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.models.account import Account
 from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.asset import Asset
@@ -1902,6 +1903,114 @@ async def _eb_fetch(booked: list[dict], pending: list[dict]) -> list[Transaction
         )
 
 
+def _blank_hold(days_ago: int, amount: str = "12.50") -> dict:
+    """A pending card purchase as some banks list it: amount, direction, date."""
+    return {
+        "status": "PDNG",
+        "transaction_amount": {"amount": amount, "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": (app_today() - timedelta(days=days_ago)).isoformat(),
+    }
+
+
+async def _hold_blank_holds(session, user_id, workspace_id, account, holds, **fields):
+    """Store each hold as the pending row a sync would have made of it."""
+    rows = []
+    for raw in holds:
+        parsed = _eb_txn(raw, "pending")
+        row = _eb_row(
+            user_id, workspace_id, account, parsed.external_id, raw, str(parsed.amount),
+            status="pending", date=parsed.date, description="Transaction", **fields,
+        )
+        session.add(row)
+        rows.append(row)
+    await session.commit()
+    return [(row.id, row.raw_data) for row in rows]
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_expires_cancelled_hold(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A hold the bank dropped from a complete feed, past the days a booked
+    entry could still claim it, was cancelled: its row goes (#1232). A hold
+    still in the feed, or one that left it too recently, stays."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    _cancelled, live, recent = await _hold_blank_holds(
+        session, test_user.id, test_workspace.id, account,
+        [_blank_hold(10, "1.00"), _blank_hold(10, "2.00"), _blank_hold(3, "3.00")],
+    )
+
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id,
+        await _eb_fetch([], [live[1]]),
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert [row.id for row in rows] == [live[0], recent[0]]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "case", ["incomplete", "truncated", "before-window", "ignored", "paired", "attached"],
+)
+async def test_sync_connection_enable_banking_keeps_hold_without_evidence(
+    session: AsyncSession, test_user, test_workspace, case,
+):
+    """A fetch cut short, or a hold dated before the window the feed covered,
+    says nothing about it. A row the user hid, paired or attached a file to
+    is the user's, and stays too."""
+    from app.models.transaction_attachment import TransactionAttachment
+
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    if case == "before-window":
+        # The sync reads from 14 days before the last one.
+        conn.last_sync_at = datetime.now(timezone.utc) - timedelta(days=10)
+    fields: dict = {}
+    if case == "ignored":
+        fields["is_ignored"] = True
+    if case == "paired":
+        fields["transfer_pair_id"] = uuid.uuid4()
+    [(held_id, _raw)] = await _hold_blank_holds(
+        session, test_user.id, test_workspace.id, account,
+        [_blank_hold(30 if case == "before-window" else 10)], **fields,
+    )
+    if case == "attached":
+        session.add(TransactionAttachment(
+            id=uuid.uuid4(), transaction_id=held_id, user_id=test_user.id,
+            workspace_id=test_workspace.id, filename="receipt.pdf",
+            content_type="application/pdf", size=1, storage_key="k",
+        ))
+        await session.commit()
+
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, [],
+        incomplete=case == "incomplete", truncated=case == "truncated",
+    )
+
+    assert [row.id for row in await _account_rows(session, account_id)] == [held_id]
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_other_provider_keeps_hold_gone_from_feed(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Other providers stop listing a pending row they still hold (Pluggy
+    re-reads them by date), so only Enable Banking rows expire."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    conn.provider = "test"
+    account_id = account.id
+    [(held_id, _raw)] = await _hold_blank_holds(
+        session, test_user.id, test_workspace.id, account, [_blank_hold(10)],
+    )
+
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [])
+
+    assert [row.id for row in await _account_rows(session, account_id)] == [held_id]
+
+
 @pytest.mark.asyncio
 async def test_sync_connection_enable_banking_pending_and_booked_in_one_fetch(
     session: AsyncSession, test_user, test_workspace,
@@ -2384,12 +2493,22 @@ _PAYPAL_PURCHASES = [
 ]
 
 
+@pytest.fixture
+def _paypal_week(monkeypatch):
+    """Sync on the day after the last PayPal charge, so a hold these tests
+    leave alone is not yet old enough to count as cancelled."""
+    monkeypatch.setattr(
+        "app.services.connection_service.app_today", lambda: date(2026, 11, 8),
+    )
+
+
 async def _sync_paypal_holds(session, conn, workspace_id, user_id, holds: list[dict]):
     """First sync: the provider returns only the holds, which land as pending rows."""
     await _sync_eb(session, conn, workspace_id, user_id, await _eb_fetch([], holds))
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("_paypal_week")
 async def test_sync_connection_enable_banking_booked_charge_claims_paypal_hold(
     session: AsyncSession, test_user, test_workspace,
 ):
@@ -2441,6 +2560,7 @@ async def test_sync_connection_enable_banking_booked_charge_claims_paypal_hold(
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("_paypal_week")
 @pytest.mark.parametrize("import_pending", [True, False], ids=["import", "skip-pending"])
 async def test_sync_connection_enable_banking_hold_still_returned_is_not_claimed(
     session: AsyncSession, test_user, test_workspace, import_pending,
@@ -2470,6 +2590,7 @@ async def test_sync_connection_enable_banking_hold_still_returned_is_not_claimed
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("_paypal_week")
 @pytest.mark.parametrize("partial", ["incomplete", "truncated"])
 async def test_sync_connection_enable_banking_hold_not_claimed_after_partial_fetch(
     session: AsyncSession, test_user, test_workspace, partial,
@@ -2494,6 +2615,7 @@ async def test_sync_connection_enable_banking_hold_not_claimed_after_partial_fet
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("_paypal_week")
 async def test_sync_connection_enable_banking_two_matching_holds_claims_none(
     session: AsyncSession, test_user, test_workspace,
 ):
@@ -2534,6 +2656,7 @@ async def test_sync_connection_enable_banking_two_matching_holds_claims_none(
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("_paypal_week")
 async def test_sync_connection_enable_banking_hold_claimed_once_per_sync(
     session: AsyncSession, test_user, test_workspace,
 ):
@@ -2581,6 +2704,7 @@ async def test_sync_connection_enable_banking_hold_claimed_once_per_sync(
     ],
     ids=["same-day", "five-days-before", "six-days-before", "day-after"],
 )
+@pytest.mark.usefixtures("_paypal_week")
 async def test_sync_connection_enable_banking_hold_claim_date_window(
     session: AsyncSession, test_user, test_workspace, hold_date, claimed,
 ):
@@ -2617,6 +2741,7 @@ async def test_sync_connection_enable_banking_hold_claim_date_window(
     ],
     ids=["other-merchant", "other-amount", "other-currency", "ignored"],
 )
+@pytest.mark.usefixtures("_paypal_week")
 async def test_sync_connection_enable_banking_charge_leaves_other_hold_alone(
     session: AsyncSession, test_user, test_workspace, hold_fields,
 ):
@@ -2683,6 +2808,7 @@ async def test_sync_connection_enable_banking_charge_leaves_other_hold_alone(
         "remittance-on-charge-only",
     ],
 )
+@pytest.mark.usefixtures("_paypal_week")
 async def test_sync_connection_enable_banking_hold_claim_compares_like_fields(
     session: AsyncSession, test_user, test_workspace, hold_fields, charge_fields, claimed,
 ):
@@ -2714,6 +2840,7 @@ async def test_sync_connection_enable_banking_hold_claim_compares_like_fields(
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("_paypal_week")
 async def test_sync_connection_hold_claim_is_enable_banking_only(
     session: AsyncSession, test_user, test_workspace,
 ):
@@ -2740,6 +2867,7 @@ async def test_sync_connection_hold_claim_is_enable_banking_only(
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("_paypal_week")
 async def test_sync_connection_enable_banking_claimed_hold_rekeys_by_booked_date(
     session: AsyncSession, test_user, test_workspace,
 ):

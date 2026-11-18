@@ -33,6 +33,7 @@ from app.models.credit_card_bill import CreditCardBill
 from app.models.payee import Payee, PayeeMapping
 from app.models.rule import Rule
 from app.models.transaction import Transaction
+from app.models.transaction_attachment import TransactionAttachment
 from app.models.transaction_category_line import TransactionCategoryLine
 from app.models.user import User
 from app.plugins.provider import is_plugin_provider
@@ -2682,6 +2683,52 @@ async def _promote_settled_pending(
     return transaction.external_id
 
 
+#: How old a pending Enable Banking row has to be before its absence from a
+#: complete feed means the bank cancelled it. Past the hold settle window, no
+#: booked entry can claim it any more.
+_EB_CANCELLED_HOLD_DAYS = _EB_HOLD_SETTLE_DAYS + 2
+
+#: Days back an Enable Banking feed always covers. A bank that refuses an
+#: older `since` is asked for the last 90 days instead; two days less leaves
+#: room for the provider counting in UTC.
+_EB_SURE_FEED_DAYS = 88
+
+
+async def _expire_cancelled_holds(
+    session: AsyncSession,
+    account_id: uuid.UUID,
+    live_external_ids: set[str],
+    since: date,
+) -> None:
+    """Delete the pending Enable Banking rows the bank dropped without booking.
+
+    A card authorization the merchant cancels or lets expire leaves the feed
+    and never books, so its row would stay pending, and counted, for good.
+    Only a complete feed is evidence: the caller passes every id it returned,
+    pending ones included, and a row counts as gone only when its date falls
+    inside the window that feed surely covered. Rows the user hid, paired as
+    a transfer or attached a file to are left alone.
+    """
+    today = app_today()
+    window_start = max(since, today - timedelta(days=_EB_SURE_FEED_DAYS))
+    cutoff = today - timedelta(days=_EB_CANCELLED_HOLD_DAYS)
+    result = await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == account_id,
+            Transaction.source == "sync",
+            Transaction.status == "pending",
+            Transaction.is_ignored.is_(False),
+            Transaction.transfer_pair_id.is_(None),
+            Transaction.date >= window_start,
+            Transaction.date <= cutoff,
+            ~exists().where(TransactionAttachment.transaction_id == Transaction.id),
+        )
+    )
+    for tx in result.scalars().all():
+        if tx.external_id not in live_external_ids:
+            await session.delete(tx)
+
+
 async def _cleanup_phantom_duplicates(
     session: AsyncSession,
     connection_id: uuid.UUID,
@@ -3797,6 +3844,13 @@ async def sync_connection(
                         )
                         if promoted_id:
                             promoted_ids.add(promoted_id)
+
+            # A hold that left a complete feed and that no booked entry claimed
+            # above was cancelled. The first sync has no rows to expire.
+            if claims_holds and since is not None:
+                await _expire_cancelled_holds(
+                    session, account.id, live_txn_external_ids[account.id], since
+                )
 
             # Reconcile the opening balance after any new transactions land so
             # SUM(all txs) keeps matching account.balance from the provider.
