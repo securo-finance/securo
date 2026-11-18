@@ -1165,3 +1165,43 @@ async def test_custom_income_expenses_only_include_in_range_actuals(
     }
     for item in report.category_trend:
         assert sum(point.value for point in item.series) == item.total
+
+
+async def test_this_month_income_expenses_keep_the_month_projections(
+    session, test_user, test_workspace, monkeypatch,
+):
+    """Issue #1408: "This month" shows the same projections as 1Y for that month."""
+    today = date(2026, 11, 8)
+    monkeypatch.setattr("app.services.report_service.app_today", lambda: today)
+    monkeypatch.setattr("app.services.dashboard_service.app_today", lambda: today)
+    currency = test_user.primary_currency
+    account = await _make_account(session, test_user.id, "This month", currency=currency)
+    category = await _make_category(session, test_user.id, "This month category")
+    for amount, kind, day, status in [
+        (2347, "credit", date(2026, 11, 2), "posted"),
+        (-891.18, "debit", date(2026, 11, 3), "posted"),
+        (-479.45, "debit", date(2026, 11, 7), "pending"),
+        (2000, "credit", date(2026, 11, 13), "pending"),
+    ]:
+        await _add_txn(session, test_user.id, account.id, amount, kind, day,
+                       status=status, category_id=category.id, currency=currency)
+    recurring = await _make_recurring(
+        session, test_user.id, account.id, 35, "debit",
+        next_occurrence=date(2026, 11, 20), category_id=category.id, currency=currency,
+    )
+    recurring.start_date = date(2026, 1, 20)
+    await session.commit()
+
+    month = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id, months=1, period="month",
+    )
+    year = await get_income_expenses_report(session, test_workspace.id, test_user.id, months=12)
+
+    totals = {item.key: item.value for item in month.summary.breakdowns}
+    assert totals["income"] == pytest.approx(2347)
+    assert totals["expenses"] == pytest.approx(891.18)
+    assert totals["projectedIncome"] == pytest.approx(2000)
+    assert totals["projectedExpenses"] == pytest.approx(514.45)
+    assert [point.date for point in month.trend] == ["2026-11"]
+    year_point = next(point for point in year.trend if point.date == "2026-11")
+    assert month.trend[0].breakdowns == year_point.breakdowns

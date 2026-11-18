@@ -1683,7 +1683,7 @@ export const reports = {
     months = 12,
     interval = 'monthly',
     accountIds?: string[],
-    period?: 'ytd',
+    period?: 'ytd' | 'month',
     days?: number,
     startDate?: string,
     endDate?: string,

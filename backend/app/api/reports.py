@@ -140,7 +140,7 @@ async def get_income_expenses(
     months: int = Query(12, ge=1, le=24),
     interval: str = Query("monthly", pattern="^(daily|weekly|monthly|yearly)$"),
     account_ids: Optional[list[uuid.UUID]] = Query(None),
-    period: str | None = Query(None, pattern="^ytd$"),
+    period: str | None = Query(None, pattern="^(ytd|month)$"),
     days: Optional[int] = Query(None, ge=1, le=730),
     start_date: date | None = Query(None),
     end_date: date | None = Query(None),
@@ -149,7 +149,8 @@ async def get_income_expenses(
 ):
     """`days` overrides `months` with an exact rolling window ending today.
 
-    Alternatively `start_date`/`end_date` (both required together) pin the
+    `period=month` is the current calendar month up to today, with the same
+    estimates the month gets inside a longer preset. Alternatively `start_date`/`end_date` (both required together) pin the
     window to an explicit historical calendar range, overriding `months`,
     `period`, and `days`. Custom ranges include actuals only, without estimates.
     """

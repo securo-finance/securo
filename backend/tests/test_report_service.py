@@ -190,6 +190,11 @@ def test_report_start_date_month_range_aligns_to_month_start():
     assert _report_start_date(date(2025, 6, 15), 6) == date(2024, 12, 1)
 
 
+def test_report_start_date_month_period_starts_on_the_first():
+    assert _report_start_date(date(2026, 11, 8), 1, period="month") == date(2026, 11, 1)
+    assert _report_start_date(date(2026, 11, 1), 12, period="month") == date(2026, 11, 1)
+
+
 def test_report_start_date_ytd_uses_current_year_start():
     assert _report_start_date(date(2025, 6, 15), 24, period="ytd") == date(2025, 1, 1)
 
@@ -605,6 +610,46 @@ async def test_income_expenses_api_forwards_days_window(client, auth_headers, mo
         "/api/reports/income-expenses",
         params={"days": 0},
         headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_income_expenses_api_forwards_this_month_period(client, auth_headers, monkeypatch):
+    """GET /reports/income-expenses passes period=month to the service (#1408)."""
+    seen: dict = {}
+
+    async def fake_report(
+        session, workspace_id, user_id, months, interval, currency,
+        account_ids=None, period=None, days=None, financial_year_start_month=1,
+        start_date=None, end_date=None,
+    ):
+        seen.update(period=period, start_date=start_date, end_date=end_date)
+        return ReportResponse(
+            summary=ReportSummary(primary_value=0, change_amount=0, change_percent=None, breakdowns=[]),
+            trend=[],
+            meta=ReportMeta(
+                type="income_expenses",
+                series_keys=["income", "expenses", "projectedIncome", "projectedExpenses"],
+                currency=currency,
+                interval=interval,
+            ),
+            composition=[],
+            category_trend=[],
+        )
+
+    monkeypatch.setattr(report_service, "get_income_expenses_report", fake_report)
+
+    resp = await client.get(
+        "/api/reports/income-expenses",
+        params={"months": 1, "interval": "monthly", "period": "month"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert seen == {"period": "month", "start_date": None, "end_date": None}
+
+    resp = await client.get(
+        "/api/reports/net-worth", params={"period": "month"}, headers=auth_headers,
     )
     assert resp.status_code == 422
 

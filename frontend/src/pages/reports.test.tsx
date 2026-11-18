@@ -185,6 +185,29 @@ it.each([
   expect(custom).toHaveTextContent(t('reports.customRange'))
 })
 
+it('asks for This Month as a preset, so income vs expenses keeps its projections (#1408)', async () => {
+  const { user } = renderWithProviders(<ReportsPage />)
+  await user.click(screen.getByRole('button', { name: t('reports.incomeExpenses') }))
+  await user.click(screen.getByRole('button', { name: t('reports.rangeThisMonth') }))
+  await waitFor(() => {
+    const [months, , , period, days, startDate, endDate] = api.reports.incomeExpenses.mock.calls.at(-1)!
+    expect([months, period, days, startDate, endDate]).toEqual([1, 'month', undefined, undefined, undefined])
+  })
+
+  // A month stepped back is a whole past month, sent as explicit dates.
+  await user.click(screen.getByRole('button', { name: 'Previous period' }))
+  await waitFor(() => {
+    const last = api.reports.incomeExpenses.mock.calls.at(-1)!
+    expect([last[3], ...last.slice(-2)]).toEqual([undefined, '2026-08-01', '2026-08-31'])
+  })
+
+  // Net Worth has no estimates and keeps the dated window for This Month.
+  await user.click(screen.getByRole('button', { name: t('reports.netWorth') }))
+  await user.click(screen.getByRole('button', { name: t('reports.rangeThisMonth') }))
+  await waitFor(() => expect(api.reports.netWorth.mock.calls.at(-1)?.slice(-2))
+    .toEqual(['2026-09-01', '2026-09-12']))
+})
+
 it('preserves saved custom dates across supported tabs and preset dismissal', async () => {
   const { user } = renderWithProviders(<ReportsPage />)
   const custom = screen.getByRole('button', { name: t('reports.customRange') })

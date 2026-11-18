@@ -83,13 +83,16 @@ def _report_start_date(
     An explicit ``start_date`` wins over every other selector so a caller can
     pin the window to a calendar range. `days` requests an exact rolling window
     ending today (inclusive), instead of the month-aligned window the `months`
-    ranges use.
+    ranges use. ``period="month"`` starts on the first day of the current month.
     """
     if start_date is not None:
         return start_date
 
     if days:
         return today - timedelta(days=days - 1)
+
+    if period == "month":
+        return today.replace(day=1)
 
     if period == "ytd":
         if not 1 <= financial_year_start_month <= 12:

@@ -344,8 +344,14 @@ export default function ReportsPage() {
   const months = navWindow ? windowMonths(navWindow) : isCustomRange ? customMonths : selectedRange.months
   const period = navWindow || isCustomRange ? undefined : selectedRange.period
   const days = navWindow || isCustomRange ? undefined : selectedRange.days
-  const apiStart = navWindow ? navWindow.from : hasCustomRange ? customFrom : undefined
-  const apiEnd = navWindow ? navWindow.to : hasCustomRange ? customTo : undefined
+  // This Month as it stands today is a preset, not a custom range: the
+  // income/expenses API keeps its estimates under `period=month` (issue
+  // #1408), while explicit dates report actuals only.
+  const thisMonthToDate =
+    (activeTab === 'income_expenses' || isMoneyMap) &&
+    periodPreset.kind === 'month' && periodPreset.anchorDelta === 0 && periodOffset === 0
+  const apiStart = thisMonthToDate ? undefined : navWindow ? navWindow.from : hasCustomRange ? customFrom : undefined
+  const apiEnd = thisMonthToDate ? undefined : navWindow ? navWindow.to : hasCustomRange ? customTo : undefined
   // Label for the period being viewed: the month name for the month presets,
   // the covered span when the window has been stepped back or is custom, and
   // the preset's own name while the window still ends today.
@@ -442,12 +448,12 @@ export default function ReportsPage() {
   }
 
   const { data, isLoading: reportLoading, isError, error, refetch } = useQuery<ReportResponse>({
-    queryKey: ['reports', activeTab, rangeKey, months, period ?? null, days ?? null, interval, isCashFlow ? cashFlowBaseline : false, activeAccountIds, activeWalletIds, apiStart ?? null, apiEnd ?? null],
+    queryKey: ['reports', activeTab, rangeKey, months, thisMonthToDate ? 'month' : period ?? null, days ?? null, interval, isCashFlow ? cashFlowBaseline : false, activeAccountIds, activeWalletIds, apiStart ?? null, apiEnd ?? null],
     queryFn: () =>
       isCashFlow
         ? reports.cashFlow(months, interval, cashFlowBaseline, acctIds)
         : activeTab === 'income_expenses' || isMoneyMap
-          ? reports.incomeExpenses(months, interval, acctIds, period, days, apiStart, apiEnd)
+          ? reports.incomeExpenses(months, interval, acctIds, thisMonthToDate ? 'month' : period, days, apiStart, apiEnd)
           : reports.netWorth(months, interval, acctIds, walletIds, period, apiStart, apiEnd),
     // Only request a custom report with both committed endpoints.
     enabled: currentTab.enabled && reportsLayout.ready && activeShown && !isStatement && !(noAccounts && activeTab !== 'net_worth') && (!isCustomRange || hasCustomRange),
