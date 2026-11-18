@@ -1013,7 +1013,7 @@
     "unreadRows": "Transações novas",
     "unreadCount_one": "{{count}} transação para revisão",
     "unreadCount_other": "{{count}} transações para revisão",
-    "markAllRead": "Marcar todas como lidas",
+    "markAllRead": "Marcar todas como lidas neste espaço de trabalho",
     "markAllReadPending": "A marcar como lidas",
     "markAllReadDone": "Todas as transações foram marcadas como lidas",
     "statusCleared": "Compensada",

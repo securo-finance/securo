@@ -1030,7 +1030,7 @@
     "unreadCount_few": "{{count}} transakcje do przejrzenia",
     "unreadCount_many": "{{count}} transakcji do przejrzenia",
     "unreadCount_other": "{{count}} transakcji do przejrzenia",
-    "markAllRead": "Oznacz wszystkie jako przeczytane",
+    "markAllRead": "Oznacz wszystko jako przeczytane w tym obszarze roboczym",
     "markAllReadPending": "Oznaczanie jako przeczytane",
     "markAllReadDone": "Wszystkie transakcje są oznaczone jako przeczytane",
     "statusCleared": "Rozliczona",

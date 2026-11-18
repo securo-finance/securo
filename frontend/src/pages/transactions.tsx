@@ -115,7 +115,7 @@ export default function TransactionsPage() {
   const isMobile = useIsMobile()
   const { user } = useAuth()
   const { activeAccountIds } = useCollectionFilter()
-  const { canWrite, hasModule } = useWorkspace()
+  const { current: currentWorkspace, canWrite, hasModule } = useWorkspace()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
@@ -462,6 +462,31 @@ export default function TransactionsPage() {
       return kept.size === prev.size ? prev : kept
     })
   }, [data?.items])
+  // A fresh page can hold fewer pages than the one being shown: clearing the
+  // last rows of the review queue is the usual way it happens. Clamp only
+  // against a response that actually arrived, never while a refetch is in
+  // flight, so a stale total cannot move the page (issue #636).
+  useEffect(() => {
+    if (!data) return
+    const lastPage = Math.max(1, Math.ceil(data.total / limit))
+    if (page > lastPage) setPage(lastPage)
+  }, [data, limit, page])
+
+  // A selected row can leave the visible page without the page or the filters
+  // changing: opening an unread row in the review queue clears its marker and
+  // the row drops out of the result. Reconcile the selection against the
+  // latest successful response, so a bulk action never touches a row the
+  // person can no longer see (issue #636).
+  useEffect(() => {
+    if (!data) return
+    const visible = new Set(data.items.map((tx) => tx.id))
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev
+      const next = new Set([...prev].filter((id) => visible.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+    setLastSelectedId((prev) => (prev && visible.has(prev) ? prev : null))
+  }, [data])
 
   const calendarMonth = steppedMonth
   const calendarAccountIds = filterAccountIds.length === 1 ? filterAccountIds : []
@@ -632,14 +657,18 @@ export default function TransactionsPage() {
 
   // Issue #636: opening a row is what clears its "new" marker. The badge is
   // a review hint, so a failure here must not stop the dialog from opening:
-  // the row simply keeps the badge.
+  // the row simply keeps the badge, and the toast says so.
   const markReadMutation = useMutation({
-    mutationFn: (id: string) => transactions.markRead(id),
+    mutationFn: ({ id, workspaceId }: { id: string; workspaceId?: string }) =>
+      transactions.markRead(id, workspaceId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['transactions'] }),
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
   })
 
   const markAllReadMutation = useMutation({
-    mutationFn: () => transactions.markAllRead(),
+    mutationFn: (workspaceId?: string) => transactions.markAllRead(workspaceId),
     onSuccess: () => {
       invalidateAfterTxMutation()
       toast.success(t('transactions.markAllReadDone'))
@@ -650,7 +679,12 @@ export default function TransactionsPage() {
   })
 
   const openTransaction = (tx: Transaction) => {
-    if (tx.is_read === false) markReadMutation.mutate(tx.id)
+    // A viewer can open the row but cannot clear its marker, and a shared row
+    // belongs to another workspace: skip a write that is bound to fail and
+    // keep the dialog opening as before (issue #636).
+    if (tx.is_read === false && canWrite && !tx.is_shared) {
+      markReadMutation.mutate({ id: tx.id, workspaceId: currentWorkspace?.id })
+    }
     setEditingTx(tx)
     setDialogOpen(true)
   }
@@ -1600,6 +1634,9 @@ export default function TransactionsPage() {
         onFlaggedChange={(v) => { setFilterFlagged(v); setPage(1) }}
         onlyUnread={onlyUnread}
         onOnlyUnreadChange={handleOnlyUnreadChange}
+        // The calendar does not apply the review queue, so it is not offered
+        // there; the state survives so the list gets it back.
+        showUnreadFilter={viewMode === 'list'}
         filterFrom={filterFrom}
         filterTo={filterTo}
         onDateRangeChange={(from, to) => { setFilterFrom(from); setFilterTo(to); setPage(1) }}
@@ -1700,7 +1737,7 @@ export default function TransactionsPage() {
           <Button
             size="sm"
             variant="outline"
-            onClick={() => markAllReadMutation.mutate()}
+            onClick={() => markAllReadMutation.mutate(currentWorkspace?.id)}
             disabled={!canWrite || markAllReadMutation.isPending || (data?.total ?? 0) === 0}
           >
             <CheckCheck className="me-1.5 h-4 w-4" />
@@ -1744,6 +1781,7 @@ export default function TransactionsPage() {
                     locale={locale}
                     dateLocale={dateLocale}
                     userCurrency={userCurrency}
+                    showUnread
                     onSelect={toggleSelect}
                     onClick={(t) => {
                       if (t.is_shared) {

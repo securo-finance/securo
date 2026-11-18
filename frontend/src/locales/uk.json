@@ -1021,7 +1021,7 @@
     "unreadCount_few": "{{count}} транзакції на перевірку",
     "unreadCount_many": "{{count}} транзакцій на перевірку",
     "unreadCount_other": "{{count}} транзакції на перевірку",
-    "markAllRead": "Позначити всі як прочитані",
+    "markAllRead": "Позначити все як прочитане в цьому робочому просторі",
     "markAllReadPending": "Позначаємо як прочитані",
     "markAllReadDone": "Усі транзакції позначено як прочитані",
     "statusCleared": "Проведена",

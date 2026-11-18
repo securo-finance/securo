@@ -1011,7 +1011,7 @@
     "unreadRows": "Új tranzakciók",
     "unreadCount_one": "{{count}} tranzakció átnézésre",
     "unreadCount_other": "{{count}} tranzakció átnézésre",
-    "markAllRead": "Összes megjelölése olvasottként",
+    "markAllRead": "Minden megjelölése olvasottként ebben a munkaterületen",
     "markAllReadPending": "Megjelölés olvasottként",
     "markAllReadDone": "Minden tranzakció olvasottként van megjelölve",
     "statusCleared": "Elszámolt",

@@ -1011,7 +1011,7 @@
     "unreadRows": "नए लेन-देन",
     "unreadCount_one": "{{count}} लेन-देन समीक्षा के लिए",
     "unreadCount_other": "{{count}} लेन-देन समीक्षा के लिए",
-    "markAllRead": "सभी को पढ़ा हुआ चिह्नित करें",
+    "markAllRead": "इस वर्कस्पेस में सभी को पढ़ा हुआ चिह्नित करें",
     "markAllReadPending": "पढ़ा हुआ चिह्नित कर रहे हैं",
     "markAllReadDone": "सभी लेन-देन पढ़े हुए चिह्नित कर दिए गए",
     "statusCleared": "क्लियर",

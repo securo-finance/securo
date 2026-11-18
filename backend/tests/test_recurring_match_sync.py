@@ -185,6 +185,49 @@ async def test_sync_links_and_advances_bill(session, test_user, test_workspace, 
 
 
 @pytest.mark.asyncio
+async def test_sync_marks_a_filled_placeholder_unread(
+    session, test_user, test_workspace, conn_account
+):
+    """The person knows the generated placeholder, not the bank charge that
+    replaced it, so the row rejoins the review queue (issue #636)."""
+    conn, account = conn_account
+    conn_id, account_id = conn.id, account.id
+    bill = await _make_bill(
+        session, test_workspace, test_user, account, start_date=date(2025, 1, 10)
+    )
+    placeholder = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account_id,
+        description="Netflix Subscription",
+        amount=Decimal("39.90"),
+        currency="BRL",
+        date=date(2025, 1, 10),
+        type="debit",
+        source="recurring",
+        status="posted",
+        recurring_transaction_id=bill.id,
+        is_read=True,
+    )
+    session.add(placeholder)
+    await session.commit()
+    placeholder_id = placeholder.id
+    provider = _provider([_tx(
+        external_id="read-state-1",
+        description="NETFLIX SUBSCRIPTION",
+        amount=Decimal("39.90"),
+        date=date(2025, 1, 12),
+    )])
+
+    await _run_sync(session, conn_id, test_workspace, test_user, provider)
+
+    txs = await _all_txs(session, account_id)
+    assert len(txs) == 1  # merged into the placeholder, no duplicate
+    assert txs[0].id == placeholder_id
+    assert txs[0].is_read is False
+
+
+@pytest.mark.asyncio
 async def test_sync_normalizes_before_active_recurring_match(
     session,
     test_user,

@@ -4378,6 +4378,12 @@ async def sync_connection(
                     placeholder.source = "sync"
                     placeholder.status = txn_data.status
                     placeholder.raw_data = txn_data.raw_data
+                    # The person knows the generated placeholder, not the bank
+                    # charge that replaced it, so the row rejoins the review
+                    # queue (issue #636). This runs once, on the transition:
+                    # later syncs find the row by external_id above and leave
+                    # its read state alone.
+                    placeholder.is_read = False
                     # Same shape as the import path: fold in the `preview` the
                     # rules already produced from the incoming charge instead of
                     # re-running them against the placeholder, whose description

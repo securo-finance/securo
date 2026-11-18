@@ -1013,7 +1013,7 @@
     "unreadRows": "Transazioni nuove",
     "unreadCount_one": "{{count}} transazione da rivedere",
     "unreadCount_other": "{{count}} transazioni da rivedere",
-    "markAllRead": "Segna tutte come lette",
+    "markAllRead": "Segna tutto come letto in questa area di lavoro",
     "markAllReadPending": "Segnalazione in corso",
     "markAllReadDone": "Tutte le transazioni sono segnate come lette",
     "statusCleared": "Contabilizzata",

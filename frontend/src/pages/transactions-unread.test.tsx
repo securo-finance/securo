@@ -52,6 +52,13 @@ vi.mock('@/lib/api', () => ({
   currencies: api.currencies,
   settings: api.settings,
 }))
+const toast = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+  warning: vi.fn(),
+  info: vi.fn(),
+}))
+vi.mock('sonner', () => ({ toast }))
 vi.mock('@/hooks/use-mobile', () => ({ useIsMobile: () => false }))
 vi.mock('@/hooks/use-display-locale', () => ({
   useDisplayLocale: () => 'en-US',
@@ -63,9 +70,17 @@ vi.mock('@/hooks/use-privacy-mode', () => ({
 vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => ({ user: { id: 'user-1', preferences: { currency_display: 'BRL' } } }),
 }))
+const workspace = vi.hoisted(() => ({ canWrite: true }))
 vi.mock('@/contexts/workspace-context', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/contexts/workspace-context')>()
-  return { ...actual, useWorkspace: () => ({ canWrite: true, hasModule: () => true }) }
+  return {
+    ...actual,
+    useWorkspace: () => ({
+      canWrite: workspace.canWrite,
+      hasModule: () => true,
+      current: { id: 'ws-1' },
+    }),
+  }
 })
 vi.mock('@/contexts/collection-filter-context', () => ({
   useCollectionFilter: () => ({
@@ -97,8 +112,24 @@ function listOnce(items: Transaction[]) {
   api.transactions.list.mockResolvedValue({ items, total: items.length, page: 1, limit: 50 })
 }
 
+/**
+ * The list as it comes back while `items()` says whether rows were seen. The
+ * review queue really narrows server-side, so an unread filter drops the rows
+ * the test has already flipped to read.
+ */
+function listFromRows(items: () => Transaction[]) {
+  api.transactions.list.mockImplementation(
+    async (params?: { unread_only?: boolean }) => {
+      const all = items()
+      const rows = params?.unread_only ? all.filter((tx) => tx.is_read === false) : all
+      return { items: rows, total: rows.length, page: 1, limit: 50 }
+    },
+  )
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
+  workspace.canWrite = true
   vi.setSystemTime(new Date('2026-10-20T12:00:00'))
   api.categories.list.mockResolvedValue([])
   api.categories.listIncludingHidden.mockResolvedValue([])
@@ -136,13 +167,39 @@ describe('review state of a transaction row', () => {
   })
 
   it('opening an unread row clears its marker', async () => {
+    let seen = false
+    listFromRows(() => [row({ id: 'tx-new', description: 'MARKET PURCHASE', is_read: seen })])
+    api.transactions.markRead.mockImplementation(async () => {
+      seen = true
+      return row({ id: 'tx-new', is_read: true })
+    })
+
+    renderWithProviders(<TransactionsPage />, { route: '/transactions', path: '/transactions' })
+
+    await screen.findByTitle(NEW_TOOLTIP)
+    fireEvent.click(await screen.findByText('MARKET PURCHASE'))
+
+    await waitFor(() => expect(api.transactions.markRead).toHaveBeenCalledWith('tx-new', 'ws-1'))
+    // The dialog opens and the badge is gone from the row that was refetched.
+    await screen.findByRole('dialog')
+    await waitFor(() => expect(screen.queryByTitle(NEW_TOOLTIP)).toBeNull())
+  })
+
+  it('keeps the row in the queue and says so when the write fails', async () => {
     listOnce([row({ id: 'tx-new', description: 'MARKET PURCHASE' })])
+    api.transactions.markRead.mockRejectedValue(new Error('offline'))
 
     renderWithProviders(<TransactionsPage />, { route: '/transactions', path: '/transactions' })
 
     fireEvent.click(await screen.findByText('MARKET PURCHASE'))
 
-    await waitFor(() => expect(api.transactions.markRead).toHaveBeenCalledWith('tx-new'))
+    // Opening the row never waits on the write; the failure is only reported,
+    // and the marker stays because nothing was persisted.
+    await screen.findByRole('dialog')
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('An unexpected error occurred'),
+    )
+    expect(screen.getByTitle(NEW_TOOLTIP)).toBeTruthy()
   })
 
   it('marks an already read row without calling the server', async () => {
@@ -172,7 +229,14 @@ describe('review state of a transaction row', () => {
   })
 
   it('marks every row as read from the queue', async () => {
-    listOnce([row({ id: 'tx-new', description: 'MARKET PURCHASE' })])
+    let cleared = false
+    listFromRows(() =>
+      cleared ? [] : [row({ id: 'tx-new', description: 'MARKET PURCHASE' })],
+    )
+    api.transactions.markAllRead.mockImplementation(async () => {
+      cleared = true
+      return { updated: 1 }
+    })
 
     renderWithProviders(<TransactionsPage />, {
       route: '/transactions?unread_only=true',
@@ -182,10 +246,48 @@ describe('review state of a transaction row', () => {
     // The bar renders before the list resolves, and its button stays disabled
     // until the queue has rows: wait for the count before clicking (issue #636).
     await screen.findByText('1 transaction to review')
-    const button = await screen.findByRole('button', { name: 'Mark all as read' })
+    const button = await screen.findByRole('button', {
+      name: 'Mark all as read in this workspace',
+    })
     await waitFor(() => expect(button).not.toBeDisabled())
     fireEvent.click(button)
 
-    await waitFor(() => expect(api.transactions.markAllRead).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(api.transactions.markAllRead).toHaveBeenCalledWith('ws-1'),
+    )
+    // The queue really empties, not just the request going out.
+    await waitFor(() => expect(screen.queryByText('MARKET PURCHASE')).toBeNull())
+    await screen.findByText('0 transactions to review')
+  })
+
+  it('drops a selected row that leaves the review queue', async () => {
+    let seen = false
+    listFromRows(() => [
+      row({ id: 'tx-open', description: 'OPEN ME', is_read: seen }),
+      row({ id: 'tx-stay', description: 'STAY HERE' }),
+    ])
+    api.transactions.markRead.mockImplementation(async () => {
+      seen = true
+      return row({ id: 'tx-open', is_read: true })
+    })
+
+    renderWithProviders(<TransactionsPage />, {
+      route: '/transactions?unread_only=true',
+      path: '/transactions',
+    })
+
+    // Select the row through its checkbox, then open it: the refetch brings
+    // the queue without it, and the selection must not keep a hidden id.
+    await screen.findByText('2 transactions to review')
+    const checkboxes = screen.getAllByRole('checkbox')
+    fireEvent.click(checkboxes[1])
+    await screen.findByText('selected')
+
+    fireEvent.click(screen.getByText('OPEN ME'))
+
+    // The queue really lost the row (the dialog keeps its own copy of the
+    // description), and the selection bar goes with it.
+    await screen.findByText('1 transaction to review')
+    await waitFor(() => expect(screen.queryByText('selected')).toBeNull())
   })
 })
