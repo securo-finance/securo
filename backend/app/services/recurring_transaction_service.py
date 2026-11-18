@@ -1,17 +1,23 @@
 import calendar
 import uuid
 from datetime import date, timedelta
+from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.app_clock import app_today, get_workspace_timezone, today_in
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
-from app.schemas.recurring_transaction import RecurringTransactionCreate, RecurringTransactionUpdate
+from app.schemas.recurring_transaction import (
+    RecurringMonthSummary,
+    RecurringTransactionCreate,
+    RecurringTransactionUpdate,
+)
 from app.services import category_line_service, recurring_match_service
 from app.services.business_days import (
     next_banking_day,
@@ -19,7 +25,8 @@ from app.services.business_days import (
     previous_banking_day,
 )
 from app.services.credit_card_service import apply_effective_date
-from app.services.fx_rate_service import stamp_primary_amount
+from app.services.fx_rate_service import convert_or_none, stamp_primary_amount
+from app.services.rule_service import apply_rules_to_transaction
 
 
 async def _verify_account_in_workspace(
@@ -471,6 +478,201 @@ def get_occurrences_in_range(
     return occurrences
 
 
+async def _charged_occurrences(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    month_start: date,
+    month_end: date,
+) -> dict[uuid.UUID, set[date]]:
+    """The month's occurrences each stopped definition charged.
+
+    A linked charge belongs to the occurrence it fulfills, not to the month
+    of its own date: generation links a charge up to the policy's reach
+    before or after the occurrence, so a December 1 occurrence can be paid
+    by a November 30 charge and must still count in December.
+
+    Generation walks occurrences in order and stops at the pointer, so the
+    occurrences it reached are exactly those before ``next_occurrence``. The
+    hand-out walks them backwards from the pointer, each taking the nearest
+    charge in its reach that a later one did not take: a later occurrence
+    holds its own charge first, and an occurrence generation skipped, such as
+    a first one left out on creation, never takes a charge.
+    """
+    stopped = (await session.execute(
+        select(RecurringTransaction).where(
+            RecurringTransaction.workspace_id == workspace_id,
+            RecurringTransaction.is_active == False,
+        )
+    )).scalars().all()
+    if not stopped:
+        return {}
+    reach = {
+        frequency: await recurring_match_service.occurrence_reach(
+            session, workspace_id, frequency
+        )
+        for frequency in {rec.frequency for rec in stopped}
+    }
+    # A charge sits at most `before` days ahead of its occurrence or `after`
+    # days behind it. The walk covers one reach on each side of the month, so
+    # the occurrences around it take their own charges first.
+    widest = max(before + after for before, after in reach.values())
+    walk_start = month_start - timedelta(days=widest)
+    walk_end = month_end + timedelta(days=widest)
+    linked = (await session.execute(
+        select(Transaction.recurring_transaction_id, Transaction.date).where(
+            # An account moved to another workspace keeps its charges' links.
+            Transaction.workspace_id == workspace_id,
+            Transaction.recurring_transaction_id.in_([rec.id for rec in stopped]),
+            Transaction.date >= walk_start - timedelta(days=widest),
+            Transaction.date < walk_end + timedelta(days=widest),
+        )
+    )).all()
+    charges: dict[uuid.UUID, list[date]] = {}
+    for rec_id, charge_date in linked:
+        charges.setdefault(rec_id, []).append(charge_date)
+
+    charged: dict[uuid.UUID, set[date]] = {}
+    for rec in stopped:
+        pending = charges.get(rec.id, [])
+        if not pending:
+            continue
+        before, after = reach[rec.frequency]
+        # Nominal dates past the pointer were never generated.
+        reached_until = rec.next_occurrence - timedelta(days=1)
+        if rec.end_date and rec.end_date < reached_until:
+            reached_until = rec.end_date
+        for occurrence in reversed(get_occurrences_in_range(
+            start=rec.start_date,
+            frequency=rec.frequency,
+            end_date=reached_until,
+            range_start=walk_start,
+            range_end=walk_end,
+            intended_day=rec.day_of_month or rec.start_date.day,
+            weekend_adjustment=rec.weekend_adjustment,
+        )):
+            in_reach = [
+                day for day in pending
+                if occurrence - timedelta(days=before) <= day <= occurrence + timedelta(days=after)
+            ]
+            if not in_reach:
+                continue
+            taken = min(in_reach, key=lambda day: (abs((day - occurrence).days), day))
+            pending.remove(taken)
+            if month_start <= occurrence < month_end:
+                charged.setdefault(rec.id, set()).add(occurrence)
+    return charged
+
+
+async def get_month_summary(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    month: date,
+    primary_currency: str,
+) -> RecurringMonthSummary:
+    """Income, expenses and net the definitions expect in ``month``.
+
+    A stopped definition, paused or completed by generation, counts only the
+    occurrences it charged in the month, so a completed one keeps its last
+    month and a paused one adds nothing it never charged.
+
+    Each definition counts once per occurrence in the month, from its own
+    schedule (start date, frequency, day, end date, weekend adjustment), so a
+    weekly one counts four or five times and a yearly one only in its month.
+    Occurrences already generated count too: this is the month's plan, not
+    what is still to come. Ignored categories are left out, and so are
+    transfer-like ones, which are only counted. An amount in another
+    currency converts from its native amount at the month's first-day rate,
+    not from the stamped primary amount, which was taken in the currency of
+    whoever created the definition; without a rate, it is left out and
+    counted, never read 1:1.
+    """
+    month_start = month.replace(day=1)
+    month_end = _advance_months(month_start, 1, 1)
+    # Neither is_active nor the pointer tells a paused definition from one
+    # generation completed: an edit can move the pointer of a paused one past
+    # its end date. What a stopped definition really charged, through the
+    # occurrences linked to it, is what counts for it.
+    charged = await _charged_occurrences(session, workspace_id, month_start, month_end)
+    result = await session.execute(
+        select(RecurringTransaction)
+        .outerjoin(Account, RecurringTransaction.account_id == Account.id)
+        .where(
+            RecurringTransaction.workspace_id == workspace_id,
+            or_(
+                RecurringTransaction.is_active == True,
+                RecurringTransaction.id.in_(list(charged)),
+            ),
+            RecurringTransaction.start_date < month_end + timedelta(days=2),
+            or_(Account.id.is_(None), Account.is_closed == False),
+        )
+        .options(selectinload(RecurringTransaction.category))
+    )
+
+    income = expenses = Decimal("0")
+    transfer_count = unconverted_count = 0
+    rates: dict[str, Optional[Decimal]] = {}
+    for rec in result.scalars().all():
+        occurrences = get_occurrences_in_range(
+            start=rec.start_date,
+            frequency=rec.frequency,
+            end_date=rec.end_date,
+            range_start=month_start,
+            range_end=month_end,
+            intended_day=rec.day_of_month or rec.start_date.day,
+            weekend_adjustment=rec.weekend_adjustment,
+        )
+        if not rec.is_active:
+            occurrences = [day for day in occurrences if day in charged[rec.id]]
+        if not occurrences:
+            continue
+        template = abs(rec.amount)
+        if rec.has_category_lines and rec.category_lines:
+            parts = [(line.category, abs(line.amount)) for line in rec.category_lines]
+        else:
+            parts = [(rec.category, template)]
+        counted = sum(
+            (amount for category, amount in parts
+             if not (category and (category.is_ignored or category.treat_as_transfer))),
+            Decimal("0"),
+        )
+        if any(category and category.treat_as_transfer
+               and not category.is_ignored for category, _ in parts):
+            transfer_count += len(occurrences)
+        if not counted or not template:
+            continue
+
+        currency = (rec.currency or "").upper()
+        if currency == primary_currency.upper():
+            primary = template
+        else:
+            if currency not in rates:
+                # The unrounded rate: the total is rounded once, at the end.
+                rates[currency] = (await convert_or_none(
+                    session, Decimal("1"), currency, primary_currency.upper(),
+                    month_start,
+                ))[1]
+            rate = rates[currency]
+            if rate is None:
+                unconverted_count += len(occurrences)
+                continue
+            primary = template * rate
+        total = (primary * counted / template * len(occurrences)).quantize(Decimal("0.01"))
+        if rec.type == "credit":
+            income += total
+        else:
+            expenses += total
+
+    return RecurringMonthSummary(
+        month=month_start,
+        currency=primary_currency,
+        income=income,
+        expenses=expenses,
+        net=income - expenses,
+        transfer_count=transfer_count,
+        unconverted_count=unconverted_count,
+    )
+
+
 async def generate_pending(
     session: AsyncSession,
     user_id: uuid.UUID,
@@ -546,6 +748,12 @@ async def generate_pending(
         # constraint — the user should edit the recurring to fix it.
         if recurring.account_id is None:
             continue
+        account = await session.get(Account, recurring.account_id)
+        # Sync can move the account to another workspace. Nothing this bill
+        # generates may land there, so it waits, pointer untouched, until the
+        # account is back or the user points the bill at another one.
+        if account is not None and account.workspace_id != recurring.workspace_id:
+            continue
         cutoff = up_to or cutoffs.get(recurring.workspace_id) or app_today()
         if not (include_manual or recurring.auto_generate):
             await _link_due_charges(session, recurring, cutoff)
@@ -576,7 +784,6 @@ async def generate_pending(
                 # A split bill hands its parts to an uncategorized charge.
                 await category_line_service.apply_template_split(session, existing_real, recurring)
             else:
-                account = await session.get(Account, recurring.account_id)
                 # Only occurrences that already came due reach this point, so
                 # the row is a charge that happened rather than a forecast.
                 # Whether to trust that depends on who else writes to the
@@ -616,6 +823,16 @@ async def generate_pending(
                 session.add(transaction)
                 await session.flush()
                 await stamp_primary_amount(session, user_id, transaction)
+                # A new row reads the rules like any other (#568). The
+                # template's category is already set, so category rules
+                # leave it alone.
+                await apply_rules_to_transaction(session, user_id, transaction)
+                if transaction.status == "pending":
+                    # The matcher skips ignored placeholders, so an ignored
+                    # one would leave its bank charge to land beside it.
+                    # Sync and import carry the rule's ignore over when the
+                    # charge is folded in.
+                    transaction.is_ignored = False
                 count += 1
 
             # Advance to next occurrence

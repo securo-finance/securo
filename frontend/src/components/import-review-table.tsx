@@ -194,7 +194,7 @@ export function ImportReviewTable({
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent bg-transparent border-b border-border">
-              <TableHead className="text-xs font-medium text-muted-foreground py-3 pl-4 w-[40px]">
+              <TableHead className="text-xs font-medium text-muted-foreground py-3 ps-4 w-[40px]">
                 <input
                   ref={selectAllRef}
                   type="checkbox"
@@ -214,13 +214,13 @@ export function ImportReviewTable({
               <TableHead className="text-xs font-medium text-muted-foreground py-3">
                 {t('transactions.description')}
               </TableHead>
-              <TableHead className="text-xs font-medium text-muted-foreground py-3 text-right w-[120px]">
+              <TableHead className="text-xs font-medium text-muted-foreground py-3 text-end w-[120px]">
                 {t('transactions.amount')}
               </TableHead>
               <TableHead className="text-xs font-medium text-muted-foreground py-3 w-[160px]">
                 {t('import.category')}
               </TableHead>
-              <TableHead className="text-xs font-medium text-muted-foreground py-3 pr-4 w-[90px]">
+              <TableHead className="text-xs font-medium text-muted-foreground py-3 pe-4 w-[90px]">
                 {t('transactions.status')}
               </TableHead>
             </TableRow>
@@ -232,7 +232,7 @@ export function ImportReviewTable({
                   key={tx._id}
                   className={`border-b border-border last:border-0 hover:bg-muted ${tx.excluded ? 'opacity-50' : ''}`}
                 >
-                  <TableCell className="py-2.5 pl-4">
+                  <TableCell className="py-2.5 ps-4">
                     <input
                       type="checkbox"
                       checked={!tx.excluded}
@@ -246,8 +246,8 @@ export function ImportReviewTable({
                   <TableCell className={`py-2.5 text-sm ${tx.excluded ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
                     {tx.description}
                   </TableCell>
-                  <TableCell className={`py-2.5 text-right text-sm font-bold tabular-nums ${tx.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
-                    {tx.type === 'credit' ? '+' : '−'}{formatCurrency(Math.abs(Number(tx.amount)), userCurrency, locale)}
+                  <TableCell className={`py-2.5 text-end text-sm font-bold tabular-nums ${tx.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
+                    <span dir="ltr">{tx.type === 'credit' ? '+' : '−'}{formatCurrency(Math.abs(Number(tx.amount)), userCurrency, locale)}</span>
                   </TableCell>
                   <TableCell className="py-2.5">
                     {tx.category_lines?.length ? (
@@ -294,7 +294,7 @@ export function ImportReviewTable({
                     />
                     )}
                   </TableCell>
-                  <TableCell className="py-2.5 pr-4">
+                  <TableCell className="py-2.5 pe-4">
                     {tx.excluded ? (
                       <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded">
                         {t('import.excluded')}
@@ -322,7 +322,7 @@ export function ImportReviewTable({
                 disabled={safePage <= 1}
                 onClick={() => onPageChange(safePage - 1)}
               >
-                ← {t('common.previous', 'Previous')}
+                <span aria-hidden="true" className="rtl-mirror">←</span> {t('common.previous', 'Previous')}
               </button>
               <span className="text-xs text-muted-foreground">
                 {t('import.page', { current: safePage, total: totalPages })}
@@ -332,7 +332,7 @@ export function ImportReviewTable({
                 disabled={safePage >= totalPages}
                 onClick={() => onPageChange(safePage + 1)}
               >
-                {t('common.next', 'Next')} →
+                {t('common.next', 'Next')} <span aria-hidden="true" className="rtl-mirror">→</span>
               </button>
             </div>
           ) : (

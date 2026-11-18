@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import copy
 import re
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
 from app.core.access_token_scopes import ALL_SCOPES
+from app.models.workspace import WORKSPACE_KINDS, WorkspaceKind
 from app.services.category_defaults import DEFAULT_CATEGORIES, DEFAULT_GROUPS
 from app.services.rule_engine import compile_rule_regex
 
@@ -35,11 +36,45 @@ NAME_MAX = 100
 DATA_KINDS = frozenset({"category_groups", "categories", "rules"})
 #: Contributions that run the plugin's code, in the plugin runner.
 CODE_KINDS = frozenset({"integrations"})
-ALL_KINDS = DATA_KINDS | CODE_KINDS
+#: Contributions to the interface, drawn by Securo's own components: nothing runs.
+UI_KINDS = frozenset({"themes"})
+ALL_KINDS = DATA_KINDS | CODE_KINDS | UI_KINDS
+#: Design tokens a theme may color; the same list as the frontend's THEME_TOKENS.
+THEME_TOKENS = frozenset(
+    {"background", "foreground", "card", "primary", "primary-foreground", "muted", "muted-foreground", "border"}
+    | {f"chart-{n}" for n in range(1, 13)}
+    | {"chart-muted", "chart-income", "chart-expense"}
+)
+#: Text pairs a theme must keep readable (WCAG AA, 4.5:1), when it sets both colors.
+READABLE_PAIRS = (
+    ("foreground", "background"),
+    ("foreground", "card"),
+    ("muted-foreground", "background"),
+    ("muted-foreground", "card"),
+    ("primary-foreground", "primary"),
+)
+MIN_CONTRAST = 4.5
+#: Securo's own colors (frontend SECURO_COLORS and index.css), which a
+#: theme's unset tokens keep: contrast is checked against these too.
+DEFAULT_THEME_COLORS = {
+    "light": {"background": "#F8F9FB", "foreground": "#0F172A", "card": "#FFFFFF", "primary": "#6366F1",
+              "primary-foreground": "#FFFFFF", "muted-foreground": "#64748B"},
+    "dark": {"background": "#0C0D12", "foreground": "#F0F0F5", "card": "#16171F", "primary": "#818CF8",
+             "primary-foreground": "#FFFFFF", "muted-foreground": "#8A8F9E"},
+}
 #: A plain host name, optionally with a port; never a wildcard or an address.
 HOST_PATTERN = r"^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(:[0-9]{1,5})?$"
 ENTRYPOINT_PATTERN = r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$"
 PATH_PATTERN = r"^[A-Za-z0-9._-][A-Za-z0-9._/-]{0,199}$"
+#: A logo in the plugin's package: a PNG or WebP file.
+LOGO_PATH_PATTERN = r"^[A-Za-z0-9._-][A-Za-z0-9._/-]{0,199}\.(png|webp)$"
+MAX_LOGOS = 50
+
+#: Records an integration can return from `sync` for the core to write
+#: through the bank sync pipeline, under a bank connection of its own.
+ProvidedKind = Literal["accounts", "transactions", "bills", "holdings", "trades"]
+#: What each kind needs alongside it.
+PROVIDES_NEEDS: dict[str, str] = {"transactions": "accounts", "bills": "accounts", "trades": "holdings"}
 
 #: Condition fields a plugin rule may use. Account and payee ids are a
 #: workspace's own data, so a plugin can't know them.
@@ -196,6 +231,8 @@ class Integration(_Model):
     `oauth`: the person signs in at the service; the plugin builds the sign-in
     link and trades the code for a token. `none`: nothing to fill in.
     With `sync_minutes`, Securo calls the plugin's `sync` on that schedule.
+    With `provides`, `sync` returns those records as data and Securo writes
+    them as it does for a connected bank (see `app.plugins.contract`).
     """
 
     key: str = Field(pattern=KEY_PATTERN)
@@ -204,6 +241,7 @@ class Integration(_Model):
     auth: Literal["credentials", "oauth", "none"] = "credentials"
     fields: list[FormField] = Field(default=[], max_length=20)
     sync_minutes: int | None = Field(default=None, ge=15, le=7 * 24 * 60)
+    provides: list[ProvidedKind] | None = None
 
     @model_validator(mode="after")
     def _unique_fields(self) -> Integration:
@@ -211,6 +249,25 @@ class Integration(_Model):
         if len(keys) != len(set(keys)):
             raise ValueError(f"integration {self.key}: field keys must be unique")
         return self
+
+    @model_validator(mode="after")
+    def _provides_what_it_needs(self) -> Integration:
+        if self.provides is None:
+            return self
+        if not self.provides:
+            raise ValueError(f"integration {self.key}: provides can't be empty")
+        if len(self.provides) != len(set(self.provides)):
+            raise ValueError(f"integration {self.key}: provides must be unique")
+        for kind in self.provides:
+            needed = PROVIDES_NEEDS.get(kind)
+            if needed and needed not in self.provides:
+                raise ValueError(f"integration {self.key}: {kind} needs {needed}")
+        return self
+
+    @property
+    def is_provider(self) -> bool:
+        """Its records go through the bank sync pipeline."""
+        return bool(self.provides)
 
 
 class Runtime(_Model):
@@ -241,17 +298,82 @@ class ApiScope(_Model):
         return self
 
 
+def _luminance(hex_color: str) -> float:
+    def channel(value: int) -> float:
+        c = value / 255
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    n = int(hex_color[1:], 16)
+    return 0.2126 * channel((n >> 16) & 255) + 0.7152 * channel((n >> 8) & 255) + 0.0722 * channel(n & 255)
+
+
+def contrast_ratio(a: str, b: str) -> float:
+    hi, lo = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _theme_colors(colors: dict[str, str]) -> dict[str, str]:
+    unknown = set(colors) - THEME_TOKENS
+    if unknown:
+        raise ValueError(f"unknown theme tokens: {', '.join(sorted(unknown))}")
+    for token, value in colors.items():
+        # Colors only: anything else (`url(...)`, `var(...)`) could make the
+        # browser fetch from elsewhere or reach past the theme's tokens.
+        if not isinstance(value, str) or not re.fullmatch(COLOR_PATTERN, value):
+            raise ValueError(f"{token} must be a #RRGGBB color")
+    return {token: value.upper() for token, value in colors.items()}
+
+
+ThemeColors = Annotated[dict[str, str], AfterValidator(_theme_colors)]
+
+
+class Theme(_Model):
+    """A look for Securo: colors for its tokens in light and dark, drawn by Securo itself.
+
+    No CSS, no images and no fonts to download: `font` picks one of the
+    device's own families.
+    """
+
+    key: str = Field(pattern=KEY_PATTERN)
+    name: Name
+    light: ThemeColors = {}
+    dark: ThemeColors = {}
+    radius: float | None = Field(default=None, ge=0, le=1)
+    """Corner radius in rem; Securo's own is 0.625."""
+    font: Literal["sans", "mono", "serif"] | None = None
+
+    @model_validator(mode="after")
+    def _readable(self) -> Theme:
+        if not (self.light or self.dark):
+            raise ValueError(f"theme {self.key}: colors nothing")
+        for mode, own in (("light", self.light), ("dark", self.dark)):
+            if not own:
+                continue  # that mode keeps Securo's look
+            colors = {**DEFAULT_THEME_COLORS[mode], **own}
+            for text, background in READABLE_PAIRS:
+                # A pair the theme leaves alone is Securo's own, already readable.
+                if text in own or background in own:
+                    ratio = contrast_ratio(colors[text], colors[background])
+                    if ratio < MIN_CONTRAST:
+                        raise ValueError(
+                            f"theme {self.key}: {text} on {background} ({mode}) is hard to read "
+                            f"(contrast {ratio:.1f}, needs {MIN_CONTRAST})"
+                        )
+        return self
+
+
 class Contributes(_Model):
     category_groups: list[CategoryGroup] = []
     categories: list[Category] = []
     rules: list[Rule] = []
     integrations: list[Integration] = []
+    themes: list[Theme] = Field(default=[], max_length=50)
 
     @model_validator(mode="after")
     def _well_formed(self) -> Contributes:
-        if not (self.category_groups or self.categories or self.rules or self.integrations):
+        if not (self.category_groups or self.categories or self.rules or self.integrations or self.themes):
             raise ValueError("contributes nothing")
-        for kind in ("category_groups", "categories", "rules", "integrations"):
+        for kind in ("category_groups", "categories", "rules", "integrations", "themes"):
             keys = [item.key for item in getattr(self, kind)]
             if len(keys) != len(set(keys)):
                 raise ValueError(f"{kind}: keys must be unique")
@@ -271,6 +393,10 @@ class Contributes(_Model):
         return self
 
 
+def _every_workspace_kind() -> list[WorkspaceKind]:
+    return [cast(WorkspaceKind, kind) for kind in WORKSPACE_KINDS]
+
+
 class Manifest(_Model):
     id: str = Field(pattern=ID_PATTERN)
     name: Text
@@ -283,6 +409,14 @@ class Manifest(_Model):
     runtime: Runtime | None = None
     network: list[NetworkHost] = Field(default=[], max_length=100)
     api_scopes: list[ApiScope] = Field(default=[], max_length=len(ALL_SCOPES))
+    #: The workspace types it's meant for: personal, business, or both when left out.
+    workspaces: list[WorkspaceKind] = Field(default_factory=lambda: _every_workspace_kind(), min_length=1)
+    #: Logos shipped in the package, by key, for a provider's accounts to name
+    #: as their institution's. Securo serves them itself, so showing one never
+    #: reaches a host the plugin didn't declare.
+    logos: dict[
+        Annotated[str, Field(pattern=KEY_PATTERN)], Annotated[str, Field(pattern=LOGO_PATH_PATTERN)]
+    ] = Field(default={}, max_length=MAX_LOGOS)
 
     @property
     def has_code(self) -> bool:
@@ -292,10 +426,14 @@ class Manifest(_Model):
     def _code_is_declared(self) -> Manifest:
         if self.contributes.integrations and self.runtime is None:
             raise ValueError("integrations need a runtime")
-        if self.runtime is None and (self.network or self.api_scopes):
-            raise ValueError("network and api_scopes are only for plugins with a runtime")
+        if self.runtime is None and (self.network or self.api_scopes or self.logos):
+            raise ValueError("network, api_scopes and logos are only for plugins with a runtime")
+        if any(".." in path.split("/") for path in self.logos.values()):
+            raise ValueError("logos must be paths inside the package")
         if self.runtime is not None and not self.contributes.integrations:
             raise ValueError("a runtime needs something to run: add an integration")
+        if len(self.workspaces) != len(set(self.workspaces)):
+            raise ValueError("workspaces must be unique")
         hosts = [h.host for h in self.network]
         scopes = [s.scope for s in self.api_scopes]
         if len(hosts) != len(set(hosts)) or len(scopes) != len(set(scopes)):

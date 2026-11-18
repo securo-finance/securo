@@ -74,6 +74,40 @@ def counts_in_current_balance(as_of: date):
     )
 
 
+def amount_in_account_currency(account_currency):
+    """SQL expression: a row's amount in its account's currency.
+
+    A row in another currency only has a usable account-currency value once
+    ``amount_primary`` was stamped; an unconverted one contributes zero
+    instead of being read 1:1 (#353, #1263). Falling back to the native amount
+    there is how a 700,000 CLP purchase became 700,000 BRL in the ledger.
+
+    The codes are compared upper-cased on both sides: a row and its account can
+    name the same currency in different cases, because imports store whatever
+    the file or adapter sent (OFX ``Ccy`` included) and the account keeps the
+    code as given, while the transaction schema upper-cases what it accepts.
+
+    Pass a currency code, or ``Account.currency`` from a query that joins the
+    account, so a correlated aggregate uses each row's own account.
+    """
+    return case(
+        (
+            func.upper(Transaction.currency) == func.upper(account_currency),
+            Transaction.amount,
+        ),
+        else_=func.coalesce(Transaction.amount_primary, 0),
+    )
+
+
+def signed_amount_expr(account_currency):
+    """`amount_in_account_currency`, signed: credit → +, debit → −."""
+    amount = amount_in_account_currency(account_currency)
+    return case(
+        (Transaction.type == "credit", amount),
+        else_=-amount,
+    )
+
+
 def reporting_date_col(accounting_mode: str):
     """Return the SQL date expression used for period attribution.
 
@@ -435,6 +469,114 @@ def counts_as_user_pnl_row():
     )
 
 
+def _viewer_member_ids(user_id: uuid.UUID):
+    """The user's own member entries: linked_user_id matches OR is_self=true
+    in a group they own. The first form covers groups they're invited to;
+    the second covers their own groups (where is_self=true marks the owner)."""
+    from app.models.group import Group, GroupMember
+
+    return (
+        select(GroupMember.id)
+        .outerjoin(Group, Group.id == GroupMember.group_id)
+        .where(
+            or_(
+                GroupMember.linked_user_id == user_id,
+                and_(GroupMember.is_self == True, Group.user_id == user_id),
+            )
+        )
+    )
+
+
+async def _owner_split_rows(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    month_start: date,
+    month_end: date,
+    use_effective_date: bool,
+    workspace_id: Optional[uuid.UUID],
+    extra_filters: tuple = (),
+):
+    """One row per posted split transaction of the user's: the non-owner
+    shares summed in the row's own currency, next to what is needed to
+    bring them into the primary currency."""
+    from app.models.transaction_split import TransactionSplit
+
+    date_col = reporting_date_col("accrual" if use_effective_date else "cash")
+    columns = (
+        Transaction.id,
+        Transaction.category_id,
+        Transaction.type,
+        Transaction.currency,
+        Transaction.amount,
+        Transaction.amount_primary,
+        Transaction.date,
+    )
+    result = await session.execute(
+        select(*columns, func.sum(TransactionSplit.share_amount))
+        .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
+        .where(
+            Transaction.user_id == user_id,
+            *(
+                [Transaction.workspace_id == workspace_id]
+                if workspace_id is not None
+                else []
+            ),
+            *extra_filters,
+            TransactionSplit.group_member_id.notin_(_viewer_member_ids(user_id)),
+            Transaction.source != "opening_balance",
+            date_col >= month_start,
+            date_col < month_end,
+            date_col <= app_today(),
+            Transaction.status == "posted",
+            counts_as_user_pnl(Transaction.category_id),
+        )
+        .group_by(*columns)
+    )
+    return result.all()
+
+
+async def _others_share_in_primary(
+    session: AsyncSession,
+    row,
+    primary_currency: Optional[str],
+    rates: dict[tuple[str, date], Optional[Decimal]],
+) -> Optional[Decimal]:
+    """The non-owner shares of one row, in the primary currency.
+
+    The shares are scaled by the row's own ``amount_primary / amount``, so
+    they come off the total at the rate stored on the row, the same value
+    the totals they are subtracted from were built with (#1337). A row with
+    no stored conversion is converted at its date, and a missing rate gives
+    ``None``: the 1:1 fallback would turn a foreign share into the same
+    number in the primary currency. ``rates`` keeps each currency and date
+    the aggregation resolved, found or not, so a day with no rate is looked
+    up once rather than once per row.
+    """
+    _id, _cat, _type, currency, amount, amount_primary, tx_date, others = row
+    others = Decimal(str(others or 0))
+    if not others:
+        return None
+    if primary_currency is None:
+        return others
+    full = abs(Decimal(str(amount or 0)))
+    if amount_primary is not None and full:
+        return others * abs(Decimal(str(amount_primary))) / full
+    if (currency or "").upper() == primary_currency.upper():
+        return others
+
+    from app.services import fx_rate_service
+
+    key = (currency, tx_date)
+    if key not in rates:
+        rates[key] = await fx_rate_service._resolve_rate(
+            session, currency, primary_currency, tx_date
+        )
+    rate = rates[key]
+    if rate is None:
+        return None
+    return (others * rate).quantize(Decimal("0.01"))
+
+
 async def owner_split_offset_pnl(
     session: AsyncSession,
     user_id: uuid.UUID,
@@ -448,83 +590,26 @@ async def owner_split_offset_pnl(
     from the owner's full-amount aggregations so only their own share
     remains. We sum every split share that belongs to a non-owner
     member; subtracting that from the parent's full amount leaves the
-    owner's share."""
-    from app.models.group import Group, GroupMember
-    from app.models.transaction_split import TransactionSplit
+    owner's share.
 
-    # The user's own member entries: linked_user_id matches OR is_self=true
-    # in a group they own. The first form covers groups they're invited to;
-    # the second covers their own groups (where is_self=true marks the owner).
-    viewer_member_ids = (
-        select(GroupMember.id)
-        .outerjoin(Group, Group.id == GroupMember.group_id)
-        .where(
-            or_(
-                GroupMember.linked_user_id == user_id,
-                and_(GroupMember.is_self == True, Group.user_id == user_id),
-            )
-        )
+    Without ``primary_currency`` the shares are summed as stored, in each
+    row's own currency; with it they are brought into that currency by
+    :func:`_others_share_in_primary`."""
+    rows = await _owner_split_rows(
+        session, user_id, month_start, month_end, use_effective_date, workspace_id
     )
-    date_col = reporting_date_col("accrual" if use_effective_date else "cash")
-
-    result = await session.execute(
-        select(
-            Transaction.currency,
-            func.sum(
-                case(
-                    (Transaction.type == "credit", TransactionSplit.share_amount),
-                    else_=0,
-                )
-            ),
-            func.sum(
-                case(
-                    (Transaction.type == "debit", TransactionSplit.share_amount),
-                    else_=0,
-                )
-            ),
-        )
-        .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
-        .where(
-            Transaction.user_id == user_id,
-            *(
-                [Transaction.workspace_id == workspace_id]
-                if workspace_id is not None
-                else []
-            ),
-            TransactionSplit.group_member_id.notin_(viewer_member_ids),
-            Transaction.source != "opening_balance",
-            date_col >= month_start,
-            date_col < month_end,
-            date_col <= app_today(),
-            Transaction.status == "posted",
-            counts_as_user_pnl(Transaction.category_id),
-        )
-        .group_by(Transaction.currency)
-    )
-
-    if primary_currency is None:
-        income_total = 0.0
-        expense_total = 0.0
-        for row in result.all():
-            income_total += float(row[1] or 0)
-            expense_total += float(row[2] or 0)
-        return income_total, expense_total
-
-    from decimal import Decimal as _Decimal
-
-    from app.services.fx_rate_service import convert as _convert
-
-    income_total = 0.0
-    expense_total = 0.0
-    for row in result.all():
-        cur, inc_raw, exp_raw = row[0], row[1] or 0, row[2] or 0
-        if inc_raw:
-            inc_pri, _ = await _convert(session, _Decimal(str(inc_raw)), cur, primary_currency)
-            income_total += float(inc_pri)
-        if exp_raw:
-            exp_pri, _ = await _convert(session, _Decimal(str(exp_raw)), cur, primary_currency)
-            expense_total += float(exp_pri)
-    return income_total, expense_total
+    rates: dict[tuple[str, date], Optional[Decimal]] = {}
+    income_total = Decimal("0")
+    expense_total = Decimal("0")
+    for row in rows:
+        share = await _others_share_in_primary(session, row, primary_currency, rates)
+        if share is None:
+            continue
+        if row.type == "credit":
+            income_total += share
+        elif row.type == "debit":
+            expense_total += share
+    return float(income_total), float(expense_total)
 
 
 async def owner_split_offset_by_category(
@@ -537,64 +622,25 @@ async def owner_split_offset_by_category(
     workspace_id: Optional[uuid.UUID] = None,
 ) -> dict:
     """Per-category, sum of non-owner shares on owner-side debit splits —
-    subtract from full owner debits to get the owner's category share."""
-    from app.models.group import Group, GroupMember
-    from app.models.transaction_split import TransactionSplit
-
-    viewer_member_ids = (
-        select(GroupMember.id)
-        .outerjoin(Group, Group.id == GroupMember.group_id)
-        .where(
-            or_(
-                GroupMember.linked_user_id == user_id,
-                and_(GroupMember.is_self == True, Group.user_id == user_id),
-            )
-        )
+    subtract from full owner debits to get the owner's category share.
+    Currency handling as in :func:`owner_split_offset_pnl`."""
+    rows = await _owner_split_rows(
+        session,
+        user_id,
+        month_start,
+        month_end,
+        use_effective_date,
+        workspace_id,
+        extra_filters=(Transaction.type == "debit",),
     )
-    date_col = reporting_date_col("accrual" if use_effective_date else "cash")
-
-    result = await session.execute(
-        select(
-            Transaction.category_id,
-            Transaction.currency,
-            func.sum(TransactionSplit.share_amount),
-        )
-        .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
-        .where(
-            Transaction.user_id == user_id,
-            *(
-                [Transaction.workspace_id == workspace_id]
-                if workspace_id is not None
-                else []
-            ),
-            Transaction.type == "debit",
-            TransactionSplit.group_member_id.notin_(viewer_member_ids),
-            Transaction.source != "opening_balance",
-            date_col >= month_start,
-            date_col < month_end,
-            date_col <= app_today(),
-            Transaction.status == "posted",
-            counts_as_user_pnl(Transaction.category_id),
-        )
-        .group_by(Transaction.category_id, Transaction.currency)
-    )
-
-    out: dict = {}
-    if primary_currency is None:
-        for cat_id, _cur, total in result.all():
-            out[cat_id] = out.get(cat_id, 0.0) + float(total or 0)
-        return out
-
-    from decimal import Decimal as _Decimal
-
-    from app.services.fx_rate_service import convert as _convert
-
-    for cat_id, cur, total in result.all():
-        if not total:
+    rates: dict[tuple[str, date], Optional[Decimal]] = {}
+    totals: dict = {}
+    for row in rows:
+        share = await _others_share_in_primary(session, row, primary_currency, rates)
+        if share is None:
             continue
-        converted, _ = await _convert(session, _Decimal(str(total)), cur, primary_currency)
-        out[cat_id] = out.get(cat_id, 0.0) + float(converted)
-    return out
+        totals[row.category_id] = totals.get(row.category_id, Decimal("0")) + share
+    return {cat_id: float(total) for cat_id, total in totals.items()}
 
 
 async def forecast_owner_share_fractions(

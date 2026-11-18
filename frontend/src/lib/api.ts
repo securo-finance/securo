@@ -55,6 +55,9 @@ import type {
   InvoiceSummary,
   RecurringTransaction,
   HolidayCalendarCountry,
+  RecurringPriceChange,
+  RecurringPriceChangeHistory,
+  RecurringMonthSummary,
   ProjectedTransaction,
   TransactionCalendarResponse,
   Budget,
@@ -88,6 +91,7 @@ import type {
   AssetImportPreview,
   AssetImportResult,
   AssetOrderImport,
+  AssetPriceRefreshResult,
   AssetTransaction,
   AssetValue,
   MarketSymbolMatch,
@@ -493,8 +497,10 @@ export const connections = {
     const { data } = await api.patch(`/connections/${id}/settings`, settings)
     return data
   },
-  delete: async (id: string): Promise<void> => {
-    await api.delete(`/connections/${id}`)
+  // Disconnecting keeps the accounts and their history unless the caller
+  // asks for them to be deleted too.
+  delete: async (id: string, { keepAccounts = true }: { keepAccounts?: boolean } = {}): Promise<void> => {
+    await api.delete(`/connections/${id}`, { params: { keep_accounts: keepAccounts } })
   },
 }
 
@@ -1121,6 +1127,8 @@ export type { TransactionSplitsInput }
 export interface UserLookupResult {
   id: string
   email: string
+  /** The name the person set for themselves; null when they never set one. */
+  display_name: string | null
 }
 
 export const users = {
@@ -1335,7 +1343,11 @@ export const recurring = {
     const { data } = await api.get('/recurring-transactions')
     return data
   },
-  create: async (rt: Partial<RecurringTransaction>): Promise<RecurringTransaction> => {
+  // `skip_first` is write-only: it moves the first occurrence one period ahead
+  // when the transaction that would cover it already exists.
+  create: async (
+    rt: Partial<RecurringTransaction> & { skip_first?: boolean },
+  ): Promise<RecurringTransaction> => {
     const { data } = await api.post('/recurring-transactions', rt)
     return data
   },
@@ -1354,12 +1366,33 @@ export const recurring = {
     const { data } = await api.get('/recurring-transactions/holiday-calendars')
     return data
   },
+  // Read-only price-change projections. Explicit methods keep the
+  // wire paths visible; both are plain GETs with no optimistic mutation.
+  recentPriceChanges: async (limit = 20): Promise<RecurringPriceChange[]> => {
+    const { data } = await api.get('/recurring-transactions/price-changes/recent', {
+      params: { limit },
+    })
+    return data
+  },
+  priceHistory: async (id: string): Promise<RecurringPriceChangeHistory> => {
+    const { data } = await api.get(`/recurring-transactions/${id}/price-changes`)
+    return data
+  },
+  /** `month` is `"YYYY-MM"`; totals come in the primary currency. */
+  monthSummary: async (month: string): Promise<RecurringMonthSummary> => {
+    const { data } = await api.get('/recurring-transactions/summary', {
+      params: { month: `${month}-01` },
+    })
+    return data
+  },
 }
 
 // Budgets
 export const budgets = {
-  list: async (month?: string): Promise<Budget[]> => {
-    const { data } = await api.get('/budgets', { params: { month } })
+  // `workspaceId` pins the read to one workspace, for a screen that must not
+  // follow the active one when another tab switches it.
+  list: async (month?: string, workspaceId?: string | null): Promise<Budget[]> => {
+    const { data } = await api.get('/budgets', { params: { month }, ...workspaceHeader(workspaceId) })
     return data
   },
   create: async (budget: { category_id: string; amount: number; month: string; is_recurring?: boolean }): Promise<Budget> => {
@@ -1387,6 +1420,17 @@ export const budgets = {
     items: { category_id: string; amount: number }[]
   }): Promise<Budget[]> => {
     const { data } = await api.post('/budgets/batch', payload)
+    return data
+  },
+  // Pinned to the workspace the preview was built from: the active one can
+  // change under an open dialog when another tab switches it.
+  copyMonth: async (payload: {
+    source_month: string
+    target_month: string
+    adjustment_percentage?: number
+    overwrite_existing?: boolean
+  }, workspaceId?: string | null): Promise<Budget[]> => {
+    const { data } = await api.post('/budgets/copy-month', payload, workspaceHeader(workspaceId))
     return data
   },
 }
@@ -1533,6 +1577,22 @@ export const assets = {
     const { data } = await api.post(`/assets/${id}/refresh-price`)
     return data
   },
+  refreshPrices: async (workspaceId?: string | null): Promise<AssetPriceRefreshResult> => {
+    try {
+      const { data } = await api.post('/assets/refresh-prices', undefined, workspaceHeader(workspaceId))
+      return data
+    } catch (error) {
+      // A 429 can arrive after the provider answered for part of the portfolio
+      // and the service committed those prices. The response interceptor only
+      // signals on success, so tell the other tabs here; the tab that asked
+      // still gets the error and refetches with its own counters.
+      const response = (error as { response?: { status?: number; data?: { detail?: { refreshed?: number } } } }).response
+      if (response?.status === 429 && Number(response.data?.detail?.refreshed ?? 0) > 0) {
+        markDataChanged()
+      }
+      throw error
+    }
+  },
   // Transaction ledger (issue #235)
   transactions: async (id: string): Promise<AssetTransaction[]> => {
     const { data } = await api.get(`/assets/${id}/transactions`)
@@ -1544,14 +1604,16 @@ export const assets = {
   },
   addTransaction: async (
     id: string,
-    tx: { kind: 'buy' | 'sell'; quantity: number; price: number; fee?: number; date: string; notes?: string },
+    tx:
+      | { kind: 'buy' | 'sell'; quantity: number; price: number; fee?: number; date: string; notes?: string }
+      | { kind: 'split'; old_units: number; new_units: number; date: string; notes?: string },
   ): Promise<Asset> => {
     const { data } = await api.post(`/assets/${id}/transactions`, tx)
     return data
   },
   updateTransaction: async (
     txId: string,
-    tx: Partial<{ kind: 'buy' | 'sell'; quantity: number; price: number; fee: number; date: string; notes: string }>,
+    tx: Partial<{ kind: 'buy' | 'sell' | 'split'; quantity: number; price: number; fee: number; old_units: number; new_units: number; date: string; notes: string }>,
   ): Promise<Asset> => {
     const { data } = await api.patch(`/assets/transactions/${txId}`, tx)
     return data
@@ -1674,12 +1736,17 @@ export const reports = {
     days?: number,
     startDate?: string,
     endDate?: string,
+    // A preset sent as explicit dates (This Month, a window stepped back)
+    // keeps its projections; a custom range is actuals only.
+    includeForecasts = false,
   ): Promise<ReportResponse> => {
     const extra = acctIdsParam(accountIds)
     const { data } = await api.get('/reports/income-expenses', {
       params: {
         months, interval, period, days,
-        ...(startDate && endDate ? { start_date: startDate, end_date: endDate } : {}),
+        ...(startDate && endDate
+          ? { start_date: startDate, end_date: endDate, ...(includeForecasts ? { include_forecasts: true } : {}) }
+          : {}),
         ...(extra.params ?? {}),
       },
       ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}),
@@ -1981,6 +2048,14 @@ export const plugins = {
     values: Record<string, string>
   }): Promise<{ connection: PluginConnection; authorize_url: string | null }> => {
     const { data } = await api.post('/plugins/connections', body)
+    return data
+  },
+  /** New form values; fields left blank keep what they had. Then it syncs afresh. */
+  updateValues: async (
+    connectionId: string,
+    body: { name?: string; values: Record<string, string> },
+  ): Promise<PluginConnection> => {
+    const { data } = await api.put(`/plugins/connections/${connectionId}/values`, body)
     return data
   },
   authorize: async (connectionId: string): Promise<{ authorize_url: string; redirect_uri: string }> => {

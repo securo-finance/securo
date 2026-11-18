@@ -78,10 +78,15 @@ export function OnboardingTour({ onComplete }: Props) {
       }
     : { display: 'none' }
 
-  // If tooltip would go off screen right, put it below instead
+  // If tooltip would go off screen right, put it to the left of the target
+  // (right-to-left layouts, where the sidebar is on the right) or below it.
   if (rect && rect.right + 16 + tooltipWidth > window.innerWidth) {
-    tooltipStyle.left = Math.max(8, Math.min(rect.left, window.innerWidth - tooltipWidth - 8))
-    tooltipStyle.top = rect.bottom + 12
+    if (rect.left - 16 - tooltipWidth >= 8) {
+      tooltipStyle.left = rect.left - 16 - tooltipWidth
+    } else {
+      tooltipStyle.left = Math.max(8, Math.min(rect.left, window.innerWidth - tooltipWidth - 8))
+      tooltipStyle.top = Math.max(8, Math.min(rect.bottom + 12, window.innerHeight - 220))
+    }
   }
 
   return (
@@ -146,7 +151,7 @@ export function OnboardingTour({ onComplete }: Props) {
             <Button variant="ghost" size="sm" onClick={onComplete} className="text-muted-foreground">
               {t('onboarding.skip')}
             </Button>
-            <div className="ml-auto flex gap-2">
+            <div className="ms-auto flex gap-2">
               {current > 0 && (
                 <Button variant="outline" size="sm" onClick={back}>
                   {t('onboarding.back')}

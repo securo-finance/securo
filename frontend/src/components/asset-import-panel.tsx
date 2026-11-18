@@ -22,6 +22,8 @@ const MAPPABLE_FIELDS = [
   { key: 'kind', required: false },
   { key: 'currency', required: false },
   { key: 'notes', required: false },
+  { key: 'old_units', required: false },
+  { key: 'new_units', required: false },
 ] as const
 
 const SELECT_CLASS =
@@ -223,7 +225,7 @@ export function AssetImportPanel() {
             type="button"
             onClick={() => setMappingOpen((open) => !open)}
             aria-expanded={needsMapping || mappingOpen}
-            className="flex w-full items-center gap-2 border-b border-border bg-muted/30 px-5 py-4 text-left"
+            className="flex w-full items-center gap-2 border-b border-border bg-muted/30 px-5 py-4 text-start"
           >
             <Settings2 size={14} className="shrink-0 text-muted-foreground" />
             <span className="text-xs font-medium text-muted-foreground">
@@ -236,7 +238,7 @@ export function AssetImportPanel() {
             )}
             <ChevronDown
               size={16}
-              className={`ml-auto shrink-0 text-muted-foreground transition-transform ${
+              className={`ms-auto shrink-0 text-muted-foreground transition-transform ${
                 needsMapping || mappingOpen ? 'rotate-180' : ''
               }`}
             />
@@ -366,12 +368,12 @@ export function AssetImportPanel() {
               <table className="w-full text-sm">
                 <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
                   <tr>
-                    <th className="px-3 py-2 text-left sm:px-5">{t('assetImport.field.ticker')}</th>
-                    <th className="px-3 py-2 text-left">{t('assetImport.field.date')}</th>
-                    <th className="px-3 py-2 text-left">{t('assetImport.field.kind')}</th>
-                    <th className="px-3 py-2 text-right">{t('assetImport.field.quantity')}</th>
-                    <th className="px-3 py-2 text-right">{t('assetImport.field.price')}</th>
-                    <th className="px-3 py-2 text-right sm:px-5">{t('assetImport.field.fee')}</th>
+                    <th className="px-3 py-2 text-start sm:px-5">{t('assetImport.field.ticker')}</th>
+                    <th className="px-3 py-2 text-start">{t('assetImport.field.date')}</th>
+                    <th className="px-3 py-2 text-start">{t('assetImport.field.kind')}</th>
+                    <th className="px-3 py-2 text-end">{t('assetImport.field.quantity')}</th>
+                    <th className="px-3 py-2 text-end">{t('assetImport.field.price')}</th>
+                    <th className="px-3 py-2 text-end sm:px-5">{t('assetImport.field.fee')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -380,13 +382,29 @@ export function AssetImportPanel() {
                       <td className="px-3 py-1.5 font-medium sm:px-5">{order.ticker}</td>
                       <td className="px-3 py-1.5">{order.date}</td>
                       <td className="px-3 py-1.5">
-                        <span className={order.kind === 'sell' ? 'text-rose-500' : 'text-emerald-500'}>
+                        <span
+                          className={
+                            order.kind === 'split'
+                              ? 'text-muted-foreground'
+                              : order.kind === 'sell'
+                                ? 'text-rose-500'
+                                : 'text-emerald-500'
+                          }
+                        >
                           {t(`assetImport.kind.${order.kind}`)}
                         </span>
                       </td>
-                      <td className="px-3 py-1.5 text-right tabular-nums">{order.quantity}</td>
-                      <td className="px-3 py-1.5 text-right tabular-nums">{order.price}</td>
-                      <td className="px-3 py-1.5 text-right tabular-nums sm:px-5">{order.fee}</td>
+                      {order.kind === 'split' ? (
+                        <td colSpan={3} className="px-3 py-1.5 text-end tabular-nums sm:pe-5">
+                          {t('assetImport.splitRatio', { old: order.old_units, new: order.new_units })}
+                        </td>
+                      ) : (
+                        <>
+                          <td className="px-3 py-1.5 text-end tabular-nums">{order.quantity}</td>
+                          <td className="px-3 py-1.5 text-end tabular-nums">{order.price}</td>
+                          <td className="px-3 py-1.5 text-end tabular-nums sm:px-5">{order.fee}</td>
+                        </>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -410,7 +428,7 @@ export function AssetImportPanel() {
             )}
             <div className="flex gap-2">
               <Button variant="outline" onClick={handleReset}>
-                <X size={14} className="mr-1" />
+                <X size={14} className="me-1" />
                 {t('common.cancel')}
               </Button>
               <Button onClick={handleImport} disabled={importing || loading || importable === 0} className="gap-2">

@@ -31,7 +31,12 @@ class AgentSettings(BaseSettings):
 
     # Shared secret used to mint short-lived JWTs for MCP calls. Distinct
     # from the main app secret so revocation is independent.
-    mcp_jwt_secret: str = "change-me-in-production"
+    #
+    # Empty means "derive from SECRET_KEY" (see app/agents/mcp/keys.py).
+    # There is deliberately no default value: a public one would let any
+    # caller forge a token for any user. Known public defaults are refused
+    # at startup, and so is deriving from a public or short SECRET_KEY.
+    mcp_jwt_secret: str = ""
     mcp_jwt_ttl_seconds: int = 600
 
     # TTL for long-lived tokens minted via the UI for external agents

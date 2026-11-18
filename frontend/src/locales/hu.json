@@ -819,6 +819,8 @@
     "greetingAfternoon": "Jó napot",
     "greetingEvening": "Jó estét",
     "availableBalance": "Elérhető egyenleg",
+    "cashBalance": "Likvid eszközök",
+    "investmentAccounts": "Befektetési számlák",
     "netWorth": "Nettó vagyon",
     "netWorthTooltip": "Számlák + befektetések, mínusz a nyitott hitelkártya-számlák.",
     "creditCardBalance": "Nyitott hitelkártya-számlák",
@@ -1102,6 +1104,7 @@
     "createCounterpartConfirm": "Létrehozás",
     "unlinkTransfer": "Átvezetés szétválasztása",
     "unlinkTransferConfirm": "Szétválasztod ezt az átvezetést? Mindkét tranzakció ismét normál tranzakcióként fog szerepelni.",
+    "unlinkTransferReportWarning": "Hacsak a kategóriájuk már ki nem zárja őket, mindkét tranzakció újra beleszámít a bevételi és kiadási kimutatásokba: a kimenő kiadásként, a bejövő bevételként. Ha valamelyiket ki szeretnéd hagyni, tedd egy átvezetésként kezelt kategóriába, például az Átvezetések közé.",
     "unlinkTransferSuccess": "Átvezetés szétválasztva",
     "confirmTransferCategoryTitle": "Az átvezetés párjára is alkalmazod ezt a kategóriát?",
     "confirmTransferCategoryDesc": "Az átvezetések párban léteznek. Frissítheted csak ezt a tranzakciót, vagy mindkét oldalon módosíthatod a kategóriát.",
@@ -1278,14 +1281,28 @@
     "deleted": "Számla törölve",
     "syncDone": "Szinkronizálás kész",
     "syncRateLimited": "Elérted a bank napi korlátját, nem érkeztek új adatok. Próbáld újra később.",
+    "syncPartial": "Néhány számla frissült, de a többinél elérted a bank napi korlátját. Ezeket később újra megpróbáljuk.",
     "syncError": "Sikertelen szinkronizálás",
+    "syncFailure": {
+      "failedAt": "Az utolsó szinkronizálás sikertelen volt: {{when}}.",
+      "psu_present_required": "A bank ezeket az adatokat csak akkor adja ki, amíg Ön a Securót használja.",
+      "consent_expired": "A bank kéri, hogy engedélyezze újra a hozzáférést.",
+      "reauthorize_at_provider": "Engedélyezze újra ezt a bankot a SimpleFIN Bridge-fiókjában, majd szinkronizáljon.",
+      "provider_error": "A bank hibát adott vissza.",
+      "syncNow": "Szinkronizálás most"
+    },
     "connected": "Bank sikeresen csatlakoztatva",
+    "connectedImportFailed": "A bank csatlakozott, de az első import nem sikerült. Fejezze be a szinkronizálás megismétlésével.",
     "connectError": "Nem sikerült csatlakoztatni a bankot",
     "disconnected": "Kapcsolat eltávolítva",
     "confirmDisconnectTitle": "Leválasztod a bankkapcsolatot?",
     "confirmDisconnectDesc": "Ez leválasztja a következőt: {{institution}}, és eltávolítja a szinkronizált számlákat és tranzakciókat az alkalmazásból. Ez a művelet nem vonható vissza.",
     "viewTransactions": "Tranzakciók megtekintése",
     "currentBalance": "Aktuális egyenleg",
+    "reservedBalances": "Fenntartott egyenlegek",
+    "reservedBalanceFallback": "Fenntartott egyenleg",
+    "reservedTotal": "Fenntartott",
+    "reservedBalancesHint": "A szolgáltató által erre a számlára jelentett fenntartott összegek.",
     "income": "Bevétel",
     "expenses": "Kiadások",
     "projectedBalance": "Várható egyenleg",
@@ -1367,8 +1384,16 @@
     "connectionStatus": {
       "active": "Aktív",
       "error": "Hiba",
-      "expired": "Lejárt"
-    }
+      "expired": "Lejárt",
+      "disconnected": "Leválasztva"
+    },
+    "pluginConnectors": "A bővítményeidből",
+    "pluginUnavailable": "A kapcsolat bővítménye már nincs telepítve vagy nem érhető el.",
+    "confirmDisconnectKeepDesc": "A(z) {{institution}} szinkronizálása leáll. A számlák és a tranzakciós előzmények az alkalmazásban maradnak, és később újra csatlakoztathatod.",
+    "disconnectAlsoDelete": "A számlák és tranzakciók törlése is",
+    "disconnectedKept": "Bank leválasztva. A számlák és az előzmények megmaradtak.",
+    "removeConnection": "Kapcsolat eltávolítása",
+    "connectionDisconnected": "Leválasztva. Csatlakoztasd újra a szinkronizáláshoz"
   },
   "loans": {
     "title": "Hitelszerződés",
@@ -1481,7 +1506,26 @@
     "suggestEmpty": "Nincs kiadási előzmény a kiválasztott időszakban.",
     "suggestError": "Nem sikerült betölteni a javaslatokat. Próbáld újra egy kicsit később.",
     "hiddenCategory": "Rejtett",
-    "average": "usually {{amount}}"
+    "average": "usually {{amount}}",
+    "copyAction": "Előző hónap másolása",
+    "copyTitle": "Költségvetések másolása",
+    "copyDescription": "Másold a forráshónap költségvetéseit ide: {{month}}.",
+    "copySource": "Forráshónap",
+    "copyExisting": "Meglévő költségvetések",
+    "copyOverwrite": "Cseréld le őket a forráshónap összegeire",
+    "copyMissing": "Tartsd meg őket, és csak a hiányzó kategóriákat másold",
+    "copyAdjustment": "Korrekció (%)",
+    "copyAdjustmentHint": "Nem kötelező, -100 és 1000 között. Az 5 hozzáad 5%-ot, a -10 levon 10%-ot.",
+    "copyPreviewCount": "Másolandó kategóriák: {{count}}",
+    "copyPreviewTotal": "Másolandó összeg: {{amount}}",
+    "copyPreviewEmpty": "A kiválasztott hónapban nincs másolható költségvetés.",
+    "copyPreviewError": "A forráshónapot nem sikerült betölteni.",
+    "copyAmountTooLarge": "A módosított összeg meghaladja a költségvetési limitet. Csökkentse a százalékos módosítást.",
+    "copyConfirm": "Költségvetések másolása",
+    "copySuccess": "Másolt költségvetések: {{count}}",
+    "copyNothing": "Nem másolódott költségvetés.",
+    "copyError": "A költségvetéseket nem sikerült másolni.",
+    "copyEmptyHint": "Másold egy előző hónap költségvetéseit, hogy azokból indulj."
   },
   "goals": {
     "title": "Célok",
@@ -1542,6 +1586,7 @@
     "walletHint": "A cél követése a kiválasztott tárcában lévő összes eszköz együttes értéke alapján."
   },
   "recurring": {
+    "makeFromTransaction": "Új ismétlődő tranzakció ebből a tranzakcióból",
     "title": "Ismétlődő tranzakciók",
     "add": "Ismétlődő hozzáadása",
     "edit": "Ismétlődő szerkesztése",
@@ -1602,7 +1647,24 @@
     "autoGenerate": "Tranzakciók automatikus létrehozása",
     "autoGenerateHelp": "Minden esedékességkor létrejön egy tranzakció. Kapcsold ki, ha inkább megvárnád a tényleges terhelést (pl. banki szinkronizálásból) – addig csak közelgő tételként jelenik meg.",
     "fxEstimate": "Becslés a legutóbbi árfolyam ({{rate}}) alapján. A végleges összeg eltérhet.",
-    "confirmDeleteDescription": "Az ismétlődő tétel („{{description}}”) véglegesen törlődik. A meglévő tranzakciók megmaradnak, de elveszítik az ismétlődő kapcsolatukat. Ez a művelet nem vonható vissza."
+    "confirmDeleteDescription": "Az ismétlődő tétel („{{description}}”) véglegesen törlődik. A meglévő tranzakciók megmaradnak, de elveszítik az ismétlődő kapcsolatukat. Ez a művelet nem vonható vissza.",
+    "priceHistory": "Price history",
+    "viewPriceHistory": "View price history",
+    "priceChangesTitle": "Recent price changes (elmúlt 30 nap)",
+    "priceChangesEmpty": "No stable price changes detected",
+    "priceChangeBadge": "Price changed",
+    "priceChangeIncrease": "Price increased",
+    "priceChangeDecrease": "Price decreased",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "After a {{days}}-day gap",
+    "priceChangeInsufficient": "At least 3 matched posted charges are needed before Securo reports a stable price change.",
+    "summaryIncome": "Bevételek",
+    "summaryExpenses": "Kiadások",
+    "summaryNet": "Nettó",
+    "summaryTransfers": "Kihagyott átvezetések: {{count}}",
+    "summaryUnconverted": "Árfolyam nélkül, kihagyva: {{count}}",
+    "summaryFailed": "Nem sikerült betölteni a hónap összesítőit"
   },
   "rules": {
     "searchPlaceholder": "Szabályok keresése...",
@@ -1708,6 +1770,7 @@
     "fieldPayee": "Partner",
     "fieldDate": "Dátum",
     "fieldStatus": "Állapot",
+    "fieldProviderCategory": "Szolgáltató kategóriája",
     "opContains": "tartalmazza",
     "opNotContains": "nem tartalmazza",
     "opEquals": "egyenlő",
@@ -1861,6 +1924,39 @@
     "sparkles": "Különleges",
     "circle-help": "Egyéb / Nem meghatározott"
   },
+  "categoryEmojis": {
+    "burger": "Hamburger",
+    "fries": "Sültkrumpli",
+    "sandwich": "Szendvics",
+    "wine": "Bor",
+    "cocktail": "Koktél",
+    "juice": "Gyümölcslé",
+    "money-bag": "Pénzeszsák",
+    "spending": "Kiadások",
+    "soccer": "Futball",
+    "basketball": "Kosárlabda",
+    "tennis": "Tenisz",
+    "yoga": "Jóga",
+    "art": "Művészet",
+    "headphones": "Fejhallgató",
+    "plug": "Konnektor",
+    "tools": "Szerszámok",
+    "soap": "Szappan",
+    "shower": "Zuhany",
+    "shoes": "Cipő",
+    "makeup": "Smink",
+    "toys": "Játékok",
+    "flowers": "Virágok",
+    "luck": "Szerencse",
+    "birthday": "Születésnap",
+    "christmas": "Karácsony",
+    "protection": "Védelem",
+    "map": "Térkép",
+    "beach": "Strand",
+    "launch": "Indulás",
+    "investment": "Befektetés",
+    "construction": "Építkezés"
+  },
   "groups": {
     "title": "Kategóriacsoportok",
     "add": "Csoport hozzáadása",
@@ -1941,6 +2037,8 @@
     "undoImport": "Visszavonod az importálást?",
     "undoOrdersDescription": "Ez törli a fájlból ({{filename}}) importált {{count}} megbízást, és újraszámolja az érintett pozíciókat. Az importálás során létrehozott pozíciók is törlődnek.",
     "undone": "Importálás visszavonva",
+    "undoOversell": "Ez az import nem vonható vissza: egy bent maradó tétel {{attempted}} egységet ad el, miközben {{available}} van a birtokban. Előbb szerkessze vagy törölje azt a tételt.",
+    "undoTooLarge": "Ez az import nem vonható vissza: a visszamaradó pozíció túl nagy a tároláshoz.",
     "undoDescription": "Ez törli a fájlból ({{filename}}) importált {{count}} tranzakciót. Ez a művelet nem vonható vissza.",
     "deleting": "Törlés...",
     "deleteAll": "Összes törlése",
@@ -2012,7 +2110,9 @@
       "fee": "Díj",
       "kind": "Vétel/eladás",
       "currency": "Pénznem",
-      "notes": "Jegyzetek"
+      "notes": "Jegyzetek",
+      "old_units": "Darab előtte",
+      "new_units": "Darab utána"
     },
     "walletWarningTitle": "Már szerepel a portfóliódban",
     "warning": {
@@ -2021,7 +2121,8 @@
     },
     "kind": {
       "buy": "Vétel",
-      "sell": "Eladás"
+      "sell": "Eladás",
+      "split": "Felosztás"
     },
     "reason": {
       "missing_ticker": "hiányzó ticker",
@@ -2031,8 +2132,17 @@
       "invalid_fee": "olvashatatlan díj",
       "invalid_kind": "ismeretlen vétel/eladás érték",
       "unknown_ticker": "az árfolyam-szolgáltató nem ismeri a tickert",
-      "oversell": "több egységet adnál el, mint amennyi a pozícióban van"
-    }
+      "oversell": "több egységet adnál el, mint amennyi a pozícióban van",
+      "no_fx_rate": "nincs árfolyam a megbízás dátumára",
+      "possible_duplicate": "lehet, hogy egy korábbi importból már szerepel ebben a pozícióban",
+      "invalid_split": "olvashatatlan felosztási arány, vagy felosztás mennyiséggel, árral vagy díjjal",
+      "split_not_allowed": "bankkal szinkronizált pozíciónál nem rögzíthető felosztás",
+      "split_in_future": "a felosztás nem lehet jövőbeli dátumú",
+      "nothing_held_before_split": "a felosztás előtt nincs darab a pozícióban",
+      "too_large": "a pozíció túl nagy lenne a mentéshez",
+      "holding_moved": "a pozíció az import közben átnevezésre került vagy másik pénztárcába került"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Eszközök",
@@ -2049,6 +2159,8 @@
     "exchangeRateSetupAskAdmin": "Az átváltáshoz ({{from}} → {{to}}) árfolyamok kellenek. Kérd meg az adminisztrátort, hogy állítsa be őket.",
     "noFxRate": "nincs árfolyam",
     "noFxRateTitle": "Ehhez a pénznemhez nincs elérhető árfolyam. Az eszköz az eredeti pénznemében jelenik meg, és kimarad az összesítőkből.",
+    "providerValueStale": "nem frissült {{date}} óta",
+    "providerValueStaleTitle": "A szolgáltató még jelenti ezt a pozíciót, de ettől a dátumtól nem frissítette az értékét. Lehet, hogy visszaváltották, vagy a kapcsolat nem frissíti a befektetéseket. Ellenőrizze a bankjánál.",
     "fxRateMissing": "{{currencies}} esetén nincs elérhető árfolyam. Ezek az eszközök az eredeti pénznemükben jelennek meg, és kimaradnak az összesítőkből.",
     "colAsset": "Eszköz",
     "colQuantity": "Menny.",
@@ -2069,6 +2181,7 @@
     "noTransactions": "Még nincs tranzakció",
     "txBuy": "Vétel",
     "txSell": "Eladás",
+    "txSplit": "Split",
     "txFee": "Díj",
     "txSaved": "Tranzakció mentve",
     "txDeleted": "Tranzakció törölve",
@@ -2079,6 +2192,10 @@
     "unitPrice": "Egységár",
     "fee": "Díj",
     "txTotal": "Összesen",
+    "splitOldUnits": "Egységek a split előtt",
+    "splitNewUnits": "Egységek a split után",
+    "splitHint": "Add meg, hány egységed volt a split előtt, és mennyi lett belőlük utána: a 100:1 arányú split 1 → 100, az 1:10 arányú fordított split pedig 10 → 1. Dátumnak azt az első napot add meg, amikor az eszközzel már az új áron kereskednek.",
+    "splitInvalid": "Adj meg két különböző egész számot 1 és 1 000 000 között.",
     "confirmDeleteTxTitle": "Törlöd a tranzakciót?",
     "confirmDeleteTx": "Ez eltávolítja a tételt, és újraszámolja a pozíció átlagárát.",
     "editAsset": "Eszköz szerkesztése",
@@ -2105,6 +2222,10 @@
     "marketPriceSourceTooltip": "Az ár automatikusan frissül a piaci adatokból",
     "lastUpdated": "Frissítve: {{when}}",
     "refreshPrice": "Ár frissítése",
+    "refreshAllPrices": "Árak frissítése",
+    "refreshAllPricesDone": "{{refreshed}} ár frissítve, {{skipped}} új jegyzés nélkül",
+    "refreshAllPricesNone": "Nincs piaci árazású eszköz a frissítéshez",
+    "refreshAllPricesRateLimited": "A piaci adatszolgáltató most korlátozza a kéréseket. {{refreshed}} ár frissült és {{skipped}} maradt ki a leállás előtt. Próbálja újra egy perc múlva.",
     "priceRefreshed": "Ár frissítve",
     "purchaseDate": "Vásárlás dátuma",
     "purchasePrice": "Vételár",
@@ -2130,6 +2251,7 @@
     "updated": "Eszköz frissítve",
     "deleted": "Eszköz törölve",
     "confirmDelete": "Biztosan törlöd ezt az eszközt és a teljes értéktörténetét?",
+    "confirmDeleteSynced": "Ha ennél a kapcsolatnál be van kapcsolva az eszközök importálása, a következő szinkronizálás visszahozza ezt az eszközt. Kapcsold ki az eszközimportot a kapcsolat beállításaiban, hogy törölve maradjon.",
     "confirmDeleteTitle": "Törlöd az eszközt?",
     "addValue": "Érték hozzáadása",
     "valueHistory": "Értéktörténet",
@@ -2255,6 +2377,7 @@
     "baseline": "Becslés",
     "surplus": "Többlet",
     "deficit": "Hiány",
+    "investmentWithdrawals": "Befektetési kivétek",
     "cashFlowNode": "Pénzforgalom",
     "flowChartAria": "Pénzforgalmi diagram: a bevételi források áramlása a kiadások felé",
     "category": "Kategória",
@@ -2421,8 +2544,13 @@
     "retry": "Újrapróbálás",
     "error": "Hiba",
     "success": "Siker",
-    "searchIcon": "Ikon keresése...",
     "noIconsFound": "Nem található ikon",
+    "searchIconOrEmoji": "Ikon vagy emoji keresése...",
+    "iconPickerIcons": "Ikonok",
+    "iconPickerEmojis": "Emodzsik",
+    "useEmoji": "Ennek az emojinak a használata",
+    "noEmojisFound": "Nem található emoji",
+    "seeMatchingEmojis": "Illeszkedő emojik megtekintése ({{count}})",
     "primaryCurrency": "Elsődleges pénznem",
     "showLess": "Kevesebb",
     "showMore": "+{{count}} további",
@@ -2433,7 +2561,8 @@
     "preview": "Előnézet",
     "download": "Letöltés",
     "closePreview": "Előnézet bezárása",
-    "remove": "Eltávolítás"
+    "remove": "Eltávolítás",
+    "invalidAmount": "Adjon meg egy érvényes összeget, például {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "Csoportok keresése...",
@@ -2837,6 +2966,8 @@
       "saveFailed": "Nem sikerült menteni az eszközválasztást",
       "empty": "Nem található eszköz. Fut az MCP-szerver? Dockerrel: `docker compose --profile agents up -d`.",
       "proposeBadge": "javaslat",
+      "enabledCount": "{{enabled}} / {{total}} bekapcsolva",
+      "enableAll": "Összes bekapcsolása",
       "loading": "Eszközök betöltése…"
     },
     "chat": {
@@ -2888,7 +3019,13 @@
         "deleteBudget": "{{category}}: {{amount}} – {{month}}",
         "deleteRecurringBudget": "{{category}}: {{amount}} havonta, {{month}} kezdettel",
         "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
-        "createCategoryGroup": "„{{name}}”"
+        "createCategoryGroup": "„{{name}}”",
+        "createManualAccount": "{{name}} · {{type}} · {{currentBalance}} · {{openingBalance}}{{balanceDate}}",
+        "updateManualAccount": "{{name}}. {{currentBalance}}. {{changes}}",
+        "manualAccountMoney": "{{label}}: {{amount}}",
+        "manualAccountDate": "{{label}}: {{date}}",
+        "manualAccountChange": "{{field}}: {{before}} → {{after}}",
+        "manualAccountNoChanges": "Nincs változás"
       }
     },
     "conversation": {
@@ -2936,6 +3073,7 @@
       "baseUrl": "Végpont URL-je",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "Ennél a szolgáltatónál kötelező megadni a végpont URL-jét",
+      "baseUrlInvalid": "Adjon meg érvényes http vagy https végpont URL-t",
       "ollamaHint": "Ha az Ollama a gazdagépeden fut, használd a http://host.docker.internal:11434 címet (Mac/Windows) vagy a gazdagéped IP-címét (Linux).",
       "openaiCompatHint": "Csak illeszd be a host:port párost (pl. http://192.168.1.142:1234). A /v1 útvonal automatikusan hozzáadódik. Mac/Windows alatt Dockerből a localhost helyett a host.docker.internal címet használd.",
       "apiKey": "API-kulcs / token",
@@ -3310,7 +3448,7 @@
   },
   "plugins": {
     "title": "Bővítmények",
-    "hint": "A közösség által készített kategóriák, szabályok és integrációk. Minden változást átnézhetsz, mielőtt életbe lép.",
+    "hint": "A közösség által készített kategóriák, szabályok, témák és integrációk. Minden változást átnézhetsz, mielőtt életbe lép.",
     "browse": "Katalógus böngészése",
     "noneInstalled": "Ebben a munkaterületben nincs telepített bővítmény.",
     "remove": "Bővítmény eltávolítása",
@@ -3363,7 +3501,10 @@
       "existing": "Kihagyja, ami már megvan: {{items}}:",
       "unresolved": "Kihagyja a kategória nélküli szabályokat: {{items}}:",
       "defaults_one": "Létrehoz {{count}} alapértelmezett kategóriát is a szabályokhoz",
-      "defaults_other": "Létrehoz {{count}} alapértelmezett kategóriát is a szabályokhoz"
+      "defaults_other": "Létrehoz {{count}} alapértelmezett kategóriát is a szabályokhoz",
+      "themes": "Témákat ad a könyvtárhoz: {{names}}",
+      "themesRemove": "Eltávolítja ezeket a témákat a könyvtárból: {{names}}",
+      "themeInUse": "A(z) {{name}} témát használod: visszaállsz a Securo saját témájára."
     },
     "page": {
       "section": "Katalógus",
@@ -3403,7 +3544,8 @@
         "type": "Típus",
         "content": "Tartalom",
         "language": "Nyelv",
-        "status": "Állapot"
+        "status": "Állapot",
+        "workspace": "Munkaterület"
       },
       "view": {
         "all": "Összes",
@@ -3428,7 +3570,8 @@
       "parsers": "Fájlolvasók",
       "price_providers": "Árszolgáltatók",
       "agent_tools": "Ügynökeszközök",
-      "integrations": "Integrációk"
+      "integrations": "Integrációk",
+      "themes": "Témák"
     },
     "detail": {
       "overview": "Áttekintés",
@@ -3449,7 +3592,9 @@
       "type": "Típus",
       "added": "Hozzáadva",
       "connections": "Kapcsolatok",
-      "codeNote": "A telepítés megmutatja, mit érhet el és mit módosíthat, mielőtt bármi futna."
+      "codeNote": "A telepítés megmutatja, mit érhet el és mit módosíthat, mielőtt bármi futna.",
+      "workspaces": "Munkaterületek",
+      "anyWorkspace": "Személyes és üzleti"
     },
     "installedFailed": "Nem sikerült betölteni a telepített bővítményeket.",
     "planRecordOnly": {
@@ -3466,8 +3611,9 @@
       "new": "új",
       "read": "Olvasás: {{what}}",
       "write": "Olvasás és módosítás: {{what}}",
-      "ownerOnly": "Kódot futtató bővítményt csak a munkaterület tulajdonosa adhat hozzá, frissíthet vagy távolíthat el.",
+      "ownerOnly": "Kódot futtató bővítményt csak a munkaterület tulajdonosa vagy kezelője adhat hozzá, frissíthet vagy távolíthat el.",
       "removeConnections": "A kapcsolatai ebben a munkaterületben ({{count}}) törlődnek a mentett kulcsokkal és hozzáférésekkel együtt.",
+      "unlinks": "A bankkapcsolatai ({{count}}) nem szinkronizálnak tovább. A számlák és tranzakciók megmaradnak, kézi számlaként.",
       "removeNothing": "A bővítmény kódja lekerül a szerveredről, amint egyetlen munkaterület sem használja.",
       "auth": {
         "credentials": "Kulcs vagy jelszó",
@@ -3492,6 +3638,15 @@
         "install": "Ez a bővítmény nem hoz adatot. Nézd át, mit tehet a kódja:",
         "update": "Nézd át, mit tehet az új verzió:",
         "remove": "A kódja ebben a munkaterületben többé nem fut."
+      },
+      "provides": "Összekapcsolt bankként szinkronizál",
+      "providesHint": "A Securo hozzáadja ezeket az adatokat ehhez a munkaterülethez, és naprakészen tartja őket, mint egy összekapcsolt banknál. Minden kapcsolat a Bankkapcsolatok között jelenik meg.",
+      "kinds": {
+        "accounts": "Számlák",
+        "transactions": "tranzakciók",
+        "bills": "kártyaszámlák",
+        "holdings": "befektetések",
+        "trades": "vételek és eladások"
       }
     },
     "connections": {
@@ -3529,8 +3684,13 @@
       "added": "{{name}} csatlakoztatva",
       "removeTitle": "Eltávolítod: {{name}}?",
       "removeHint": "A mentett kulcsok és a munkaterülethez való hozzáférés törlődik. Amit már behozott, megmarad.",
+      "removeBankHint": "Csatlakoztatott bankként szinkronizál: eltávolítása leválasztja ezt a bankot, és törli a szinkronizált számlákat a tranzakcióikkal együtt.",
       "removed": "{{name}} eltávolítva",
-      "copyFailed": "Nem sikerült másolni. Jelöld ki a címet, és másold kézzel."
+      "copyFailed": "Nem sikerült másolni. Jelöld ki a címet, és másold kézzel.",
+      "editTitle": "{{name}} újracsatlakoztatása",
+      "editHint": "Frissítsd, ami megváltozott, például egy új jelszót vagy tokent. Utána a kapcsolat újra szinkronizál.",
+      "keepBlank": "Hagyd üresen a mezőt, hogy megmaradjon a jelenlegi értéke.",
+      "updated": "{{name}} frissítve"
     },
     "oauth": {
       "title": "Bejelentkezés befejezése",
@@ -3539,7 +3699,9 @@
       "failed": "Nem sikerült befejezni a bejelentkezést. Próbáld újra.",
       "missing": "A szolgáltatás nem küldte vissza a bejelentkezést. Próbáld újra.",
       "serviceError": "A szolgáltatás hibát jelzett: {{message}}"
-    }
+    },
+    "onlyForBusiness": "Csak üzleti munkaterületek",
+    "onlyForPersonal": "Csak személyes munkaterületek"
   },
   "library": {
     "title": "Könyvtár",
@@ -3618,7 +3780,8 @@
     "needs": {
       "assistant": "Bekapcsolt AI-ügynököket igényel.",
       "invoices": "Vállalkozás típusú munkaterületeken érhető el."
-    }
+    },
+    "fromPlugin": "Forrás: {{name}}"
   },
   "widgets": {
     "budgets": "Költségvetések",

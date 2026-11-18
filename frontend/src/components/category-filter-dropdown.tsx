@@ -60,7 +60,7 @@ export function CategoryFilterDropdown({
           }
         >
           <Tag size={13} className="text-muted-foreground" />
-          <span className={`flex-1 text-left ${hasFilter ? 'text-foreground' : 'text-muted-foreground'}`}>
+          <span className={`flex-1 text-start ${hasFilter ? 'text-foreground' : 'text-muted-foreground'}`}>
             {summary || displayLabel}
           </span>
           <ChevronDown size={12} className="text-muted-foreground" />

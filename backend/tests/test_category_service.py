@@ -126,7 +126,7 @@ async def test_create_default_categories_english(session: AsyncSession, test_use
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "lang", ["es", "it", "pl", "ru", "uk", "nl", "sk", "hu", "cs", "el", "hi", "ja"]
+    "lang", ["es", "it", "pl", "ru", "uk", "nl", "sk", "hu", "cs", "el", "hi", "ja", "he"]
 )
 async def test_create_default_categories_localized(session: AsyncSession, test_user, test_workspace, lang):
     categories = await create_default_categories(session, test_user.id, lang=lang)

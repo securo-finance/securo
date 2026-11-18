@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Globe, KeyRound, RefreshCw, ShieldAlert, ShieldCheck, Trash2 } from 'lucide-react'
+import { Globe, KeyRound, Landmark, RefreshCw, ShieldAlert, ShieldCheck, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -12,7 +12,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { plugins as pluginsApi } from '@/lib/api'
+import { auth as authApi, plugins as pluginsApi } from '@/lib/api'
+import { useAuth } from '@/contexts/auth-context'
+import { pluginThemeId } from '@/lib/themes'
 import { useDescribe } from '@/hooks/use-describe-plugin-items'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { localized } from '@/lib/localized-text'
@@ -31,10 +33,11 @@ const NAMES_SHOWN = 5
 
 /** The preview of installing, updating or removing a plugin, and its confirmation. */
 export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; onClose: () => void }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const describe = useDescribe()
   const queryClient = useQueryClient()
   const { canManage } = useWorkspace()
+  const { user, updateUser } = useAuth()
 
   const { data: plan, isFetching, isError, refetch } = useQuery({
     queryKey: ['plugins', 'plan', target.id, target.action],
@@ -46,11 +49,13 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
 
   const applyMutation = useMutation({
     mutationFn: (confirmed: PluginPlan) => pluginsApi.apply(target.id, confirmed),
-    onSuccess: () => {
+    onSuccess: (_result, confirmed) => {
       // Both group keys are in use across pages; refresh every view of what changed.
       for (const key of ['plugins', 'plugin-connections', 'categories', 'category-groups', 'categoryGroups', 'rules']) {
         queryClient.invalidateQueries({ queryKey: [key] })
       }
+      // Someone using a theme that left the library is back on Securo's own: pick that up.
+      if (confirmed.themes?.removed.length) authApi.me().then(updateUser).catch(() => {})
       toast.success(t(`plugins.done.${target.action}`, { name: target.name }))
       onClose()
     },
@@ -73,8 +78,13 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
   // that plan is exactly what the server would refuse, so it isn't shown.
   const failed = isError && !isFetching
   const shown = !failed ? plan : undefined
+  const addedThemes = (shown?.themes?.added ?? []).map((theme) => localized(theme.name, i18n.language))
+  const removedThemes = shown?.themes?.removed ?? []
+  // The theme this person uses leaves the library: they go back to Securo's own.
+  const themeInUse = removedThemes.find((theme) => user?.theme === pluginThemeId(target.id, theme.key))
   const changes = shown
-    ? shown.create.length + shown.update.length + shown.delete.length + shown.release.length > 0
+    ? shown.create.length + shown.update.length + shown.delete.length + shown.release.length +
+        addedThemes.length + removedThemes.length > 0
     : false
   // A plan that touches no item still records something: the installed version
   // moves, or an installation whose items are all gone is taken off the list.
@@ -115,6 +125,22 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
 
         {/* Long consent lists scroll; the buttons below always stay in reach. */}
         <div className="-mx-1 max-h-[55vh] space-y-4 overflow-y-auto px-1">
+
+        {addedThemes.length > 0 && (
+          <p className="text-sm">{t('plugins.plan.themes', { names: addedThemes.join(', ') })}</p>
+        )}
+        {removedThemes.length > 0 && (
+          <p className="text-sm">
+            {t('plugins.plan.themesRemove', {
+              names: removedThemes.map((theme) => localized(theme.name, i18n.language)).join(', '),
+            })}
+          </p>
+        )}
+        {themeInUse && (
+          <p className="rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            {t('plugins.plan.themeInUse', { name: localized(themeInUse.name, i18n.language) })}
+          </p>
+        )}
 
         {lines.length > 0 && (
           <ul className="space-y-2 text-sm">
@@ -157,7 +183,7 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
           </Button>
           {failed ? (
             <Button variant="outline" onClick={() => void refetch()} disabled={isFetching}>
-              <RefreshCw size={14} className="mr-1" />
+              <RefreshCw size={14} className="me-1" />
               {t('common.retry')}
             </Button>
           ) : (
@@ -166,7 +192,7 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
               onClick={() => shown && applyMutation.mutate(shown)}
               disabled={pending || !confirmable}
             >
-              {target.action === 'remove' && <Trash2 size={14} className="mr-1" />}
+              {target.action === 'remove' && <Trash2 size={14} className="me-1" />}
               {t(`plugins.confirm.${target.action}`)}
             </Button>
           )}
@@ -190,14 +216,16 @@ function CodeConsent({ code, action }: { code: PluginCodeConsent; action: Plugin
           {code.connections > 0
             ? t('plugins.code.removeConnections', { count: code.connections })
             : t('plugins.code.removeNothing')}
+          {(code.unlinks ?? 0) > 0 && <> {t('plugins.code.unlinks', { count: code.unlinks })}</>}
         </span>
       </div>
     )
   }
 
+  const providers = code.integrations.filter((integration) => integration.provides?.length)
   const isNew = (value: string, list: string[]) =>
     list.includes(value) && (
-      <span className="ml-1.5 rounded bg-amber-100 px-1 py-px text-[10px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+      <span className="ms-1.5 rounded bg-amber-100 px-1 py-px text-[10px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
         {t('plugins.code.new')}
       </span>
     )
@@ -208,6 +236,13 @@ function CodeConsent({ code, action }: { code: PluginCodeConsent; action: Plugin
         <ShieldAlert size={14} className="mt-0.5 shrink-0" />
         <span>{t('plugins.code.runsCode')}</span>
       </div>
+
+      {(code.unlinks ?? 0) > 0 && (
+        <div className="flex items-start gap-2 rounded-lg border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
+          <Landmark size={14} className="mt-0.5 shrink-0" />
+          <span>{t('plugins.code.unlinks', { count: code.unlinks })}</span>
+        </div>
+      )}
 
       <section className="space-y-1.5">
         <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -230,6 +265,26 @@ function CodeConsent({ code, action }: { code: PluginCodeConsent; action: Plugin
           </ul>
         )}
       </section>
+
+      {providers.length > 0 && (
+        <section className="space-y-1.5">
+          <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <Landmark size={12} />
+            {t('plugins.code.provides')}
+          </h3>
+          <ul className="space-y-1.5">
+            {providers.map((integration) => (
+              <li key={integration.key}>
+                <p className="text-xs font-medium">{localized(integration.name, lang)}</p>
+                <p className="text-xs text-muted-foreground">
+                  {(integration.provides ?? []).map((kind) => t(`plugins.code.kinds.${kind}`)).join(', ')}
+                </p>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-muted-foreground">{t('plugins.code.providesHint')}</p>
+        </section>
+      )}
 
       <section className="space-y-1.5">
         <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">

@@ -3,6 +3,15 @@ import type { PluginCatalogEntry } from '@/types'
 export type PluginType = 'data' | 'interface' | 'code'
 export type PluginSort = 'popular' | 'trending' | 'updated' | 'newest' | 'name'
 export type PluginStatus = 'installed' | 'updates'
+export type WorkspaceType = 'personal' | 'business'
+
+export const WORKSPACE_TYPES: WorkspaceType[] = ['personal', 'business']
+
+/** The one workspace type a plugin is limited to, or null when it's for both. */
+export function onlyFor(entry: PluginCatalogEntry): WorkspaceType | null {
+  const types = WORKSPACE_TYPES.filter((type) => entry.workspaces.includes(type))
+  return types.length === 1 ? types[0] : null
+}
 
 /** What each contribution kind makes a plugin: data, interface, or code. */
 export const KIND_TYPE: Record<string, PluginType> = {
@@ -15,6 +24,7 @@ export const KIND_TYPE: Record<string, PluginType> = {
   widgets: 'interface',
   reports: 'interface',
   dashboard_layouts: 'interface',
+  themes: 'interface',
   connectors: 'code',
   integrations: 'code',
   parsers: 'code',
@@ -30,12 +40,13 @@ export interface PluginFilters {
   kind: string | null
   locale: string | null
   status: PluginStatus | null
+  workspace: WorkspaceType | null
 }
 
-export const NO_FILTERS: PluginFilters = { query: '', type: null, kind: null, locale: null, status: null }
+export const NO_FILTERS: PluginFilters = { query: '', type: null, kind: null, locale: null, status: null, workspace: null }
 
 export function hasFilters(filters: PluginFilters): boolean {
-  return Boolean(filters.query.trim() || filters.type || filters.kind || filters.locale || filters.status)
+  return Boolean(filters.query.trim() || filters.type || filters.kind || filters.locale || filters.status || filters.workspace)
 }
 
 /** The contribution kinds a plugin actually brings. */
@@ -87,7 +98,8 @@ export function filterPlugins(entries: PluginCatalogEntry[], filters: PluginFilt
       (!filters.kind || contributedKinds(entry).includes(filters.kind)) &&
       (!filters.locale || pluginLocales(entry).includes(filters.locale)) &&
       (filters.status !== 'installed' || entry.installed_version !== null) &&
-      (filters.status !== 'updates' || entry.update_available),
+      (filters.status !== 'updates' || entry.update_available) &&
+      (!filters.workspace || entry.workspaces.includes(filters.workspace)),
   )
 }
 

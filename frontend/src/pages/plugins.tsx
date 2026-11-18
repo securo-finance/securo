@@ -19,12 +19,14 @@ import { localized } from '@/lib/localized-text'
 import {
   NO_FILTERS,
   PLUGIN_TYPES,
+  WORKSPACE_TYPES,
   type PluginFilters,
   type PluginSort,
   contributedKinds,
   filterPlugins,
   hasFilters,
   newPlugins,
+  onlyFor,
   pluginLocales,
   sortPlugins,
   trendingPlugins,
@@ -34,7 +36,7 @@ import { cn } from '@/lib/utils'
 import type { PluginAction, PluginCatalogEntry } from '@/types'
 
 type View = 'all' | 'trending' | 'new'
-type FacetKey = 'type' | 'kind' | 'locale' | 'status'
+type FacetKey = 'type' | 'kind' | 'locale' | 'status' | 'workspace'
 
 const SORTS: PluginSort[] = ['popular', 'trending', 'updated', 'newest', 'name']
 const STATUSES = ['installed', 'updates'] as const
@@ -105,6 +107,15 @@ export default function PluginsPage() {
         .sort((a, b) => a.label.localeCompare(b.label)),
     },
     {
+      key: 'workspace',
+      title: t('plugins.page.facet.workspace'),
+      options: WORKSPACE_TYPES.map((workspace) => ({
+        value: workspace,
+        label: t(workspace === 'business' ? 'workspace.kindBusiness' : 'workspace.kindPersonal'),
+        count: countWith({ workspace }),
+      })),
+    },
+    {
       key: 'status',
       title: t('plugins.page.facet.status'),
       options: STATUSES.map((status) => ({ value: status, label: t(`plugins.page.status.${status}`), count: countWith({ status }) })),
@@ -147,26 +158,26 @@ export default function PluginsPage() {
       />
 
       <div className="relative mb-8">
-        <Search size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <Search size={18} className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <Input
           ref={searchRef}
           value={filters.query}
           onChange={(event) => update({ query: event.target.value })}
           placeholder={t('plugins.page.search')}
           aria-label={t('plugins.page.search')}
-          className="h-11 rounded-xl bg-card pl-11 pr-11 text-base shadow-xs md:text-sm"
+          className="h-11 rounded-xl bg-card ps-11 pe-11 text-base shadow-xs md:text-sm"
         />
         {filters.query ? (
           <button
             type="button"
             onClick={() => update({ query: '' })}
             aria-label={t('plugins.page.clearSearch')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="absolute end-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <X size={16} />
           </button>
         ) : (
-          <kbd className="pointer-events-none absolute right-3.5 top-1/2 hidden -translate-y-1/2 rounded-md border bg-muted px-1.5 font-mono text-xs leading-5 text-muted-foreground sm:block">
+          <kbd className="pointer-events-none absolute end-3.5 top-1/2 hidden -translate-y-1/2 rounded-md border bg-muted px-1.5 font-mono text-xs leading-5 text-muted-foreground sm:block">
             /
           </kbd>
         )}
@@ -178,7 +189,7 @@ export default function PluginsPage() {
             {facets.map((facet) => (facet.options.length ? <FacetList key={facet.key} facet={facet} value={filters[facet.key]} onChoose={choose} /> : null))}
             {facetsActive && (
               <Button variant="ghost" size="sm" className="h-8 px-2 text-muted-foreground" onClick={clearFacets}>
-                <X size={14} className="mr-1" />
+                <X size={14} className="me-1" />
                 {t('plugins.page.clear')}
               </Button>
             )}
@@ -232,7 +243,7 @@ export default function PluginsPage() {
             )}
             {facetsActive && (
               <Button variant="ghost" size="sm" className="h-8 shrink-0 rounded-full text-muted-foreground" onClick={clearFacets}>
-                <X size={14} className="mr-1" />
+                <X size={14} className="me-1" />
                 {t('plugins.page.clear')}
               </Button>
             )}
@@ -248,7 +259,7 @@ export default function PluginsPage() {
             <Empty>
               {t('plugins.catalogFailed')}
               <Button variant="outline" size="sm" onClick={() => void refetch()}>
-                <RefreshCw size={14} className="mr-1" />
+                <RefreshCw size={14} className="me-1" />
                 {t('common.retry')}
               </Button>
             </Empty>
@@ -316,7 +327,7 @@ function FacetList({ facet, value, onChoose }: { facet: Facet; value: string | n
                 disabled={!active && option.count === 0}
                 onClick={() => onChoose(facet.key, active ? null : option.value)}
                 className={cn(
-                  'flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+                  'flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-start text-sm transition-colors',
                   active ? 'bg-accent font-medium text-accent-foreground' : 'text-foreground/80 hover:bg-muted hover:text-foreground',
                   'disabled:pointer-events-none disabled:opacity-40',
                 )}
@@ -381,17 +392,18 @@ function PluginRow({
   const lang = i18n.language
   const summary = usePluginSummary()
   const name = localized(entry.name, lang)
-  const installable = canWrite && !entry.revoked && entry.compatible && entry.supported
+  const installable = canWrite && !entry.revoked && entry.compatible && entry.supported && entry.fits_workspace
+  const only = onlyFor(entry)
   const action: PluginAction | null = !installable ? null : entry.update_available ? 'update' : entry.installed_version ? null : 'install'
 
   return (
     <li className={cn('relative flex gap-4 px-4 py-4 transition-colors hover:bg-muted/40 sm:px-5', entry.revoked && 'opacity-60')}>
       {rank !== undefined && (
-        <span className="hidden w-4 shrink-0 pt-2.5 text-right text-sm font-medium tabular-nums text-muted-foreground sm:block">
+        <span className="hidden w-4 shrink-0 pt-2.5 text-end text-sm font-medium tabular-nums text-muted-foreground sm:block">
           {rank}
         </span>
       )}
-      <PluginAvatar seed={entry.id} label={name} className="size-10 text-sm" />
+      <PluginAvatar seed={entry.id} label={name} src={entry.icon_url} className="size-10 text-sm" />
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
           <h3 className="min-w-0 truncate text-[15px] font-semibold leading-6">
@@ -409,6 +421,8 @@ function PluginRow({
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <PluginTypes entry={entry} />
           <span>{summary(entry)}</span>
+          {/* When it doesn't fit, the status pill already says so. */}
+          {only && entry.fits_workspace && <span>{t(only === 'business' ? 'plugins.onlyForBusiness' : 'plugins.onlyForPersonal')}</span>}
           <span className="tabular-nums">v{entry.version}</span>
           {entry.updated_at && <span>{t('plugins.page.updated', { when: relativeDate(entry.updated_at, lang) })}</span>}
         </div>

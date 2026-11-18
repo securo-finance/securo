@@ -39,12 +39,25 @@ export const THEME_TOKENS = [
 export type ThemeToken = (typeof THEME_TOKENS)[number]
 export type ThemeColors = Partial<Record<ThemeToken, string>>
 
+/** Font families a theme may pick: the device's own, nothing is downloaded. */
+export type ThemeFont = 'sans' | 'mono' | 'serif'
+
+const FONT_STACKS: Record<Exclude<ThemeFont, 'sans'>, string> = {
+  mono: 'ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, "Liberation Mono", monospace',
+  serif: 'ui-serif, "Iowan Old Style", "Palatino Linotype", Georgia, Cambria, serif',
+}
+
 export interface Theme {
   id: string
   light: ThemeColors
   dark: ThemeColors
   /** Corner radius in rem, 0 to 1. Securo's own is 0.625. */
   radius?: number
+  /** The family text is set in; Securo's own is its sans. */
+  font?: ThemeFont
+  /** For a plugin's theme: its name, and the plugin's. Built-in themes are named by id. */
+  name?: Record<string, string>
+  plugin?: { id: string; name: Record<string, string> }
 }
 
 /** Securo's own look: what index.css defines, plus the instance's accent colors. */
@@ -353,6 +366,7 @@ export function themeVars(theme: Theme, mode: ThemeMode, accent?: AccentColors):
   const primary = colors.primary ?? (theme.id === DEFAULT_THEME_ID ? accent?.[mode] : null)
   if (primary) Object.assign(vars, accentVars(primary, mode, !colors.muted))
   if (theme.radius !== undefined) vars['--radius'] = `${theme.radius}rem`
+  if (theme.font && theme.font !== 'sans') vars['--app-font'] = FONT_STACKS[theme.font]
   return vars
 }
 
@@ -392,3 +406,36 @@ export const READABLE_PAIRS: [ThemeToken, ThemeToken][] = [
   ['muted-foreground', 'card'],
   ['primary-foreground', 'primary'],
 ]
+
+const HEX = /^#[0-9A-Fa-f]{6}$/
+
+function onlyColors(colors: Record<string, string> | undefined): ThemeColors {
+  const out: ThemeColors = {}
+  for (const token of THEME_TOKENS) {
+    const value = colors?.[token]
+    // The server checks this too; a value that isn't a plain color never reaches the page.
+    if (typeof value === 'string' && HEX.test(value)) out[token] = value
+  }
+  return out
+}
+
+/** The library id of a plugin's theme: `plugin:owner/name:key`. */
+export function pluginThemeId(pluginId: string, key: string): string {
+  return `plugin:${pluginId}:${key}`
+}
+
+/** A theme an installed plugin brings, in the shape the library uses. */
+export function pluginTheme(
+  plugin: { plugin_id: string; name: Record<string, string> },
+  theme: { key: string; name: Record<string, string>; light?: Record<string, string>; dark?: Record<string, string>; radius?: number | null; font?: ThemeFont | null },
+): Theme {
+  return {
+    id: pluginThemeId(plugin.plugin_id, theme.key),
+    light: onlyColors(theme.light),
+    dark: onlyColors(theme.dark),
+    ...(typeof theme.radius === 'number' && theme.radius >= 0 && theme.radius <= 1 ? { radius: theme.radius } : {}),
+    ...(theme.font === 'mono' || theme.font === 'serif' ? { font: theme.font } : {}),
+    name: theme.name,
+    plugin: { id: plugin.plugin_id, name: plugin.name },
+  }
+}

@@ -1,0 +1,699 @@
+name: fast lane
+
+# Merges a low/medium-risk pull request as soon as a reviewer has left an
+# approving verdict and CI is green, without a maintainer pressing the button.
+#
+# Why a workflow and not a bot account: every tool an agent here has for
+# merging asks a person to approve that single call, so automating through the
+# agent would keep one click per pull request — the exact cost this is meant to
+# remove. Merging from inside the repository, with the workflow token, is the
+# only path that is actually unattended.
+#
+# The gates, all of which must hold:
+#   1. the PR is against main, not a draft, and has no standing CHANGES_REQUESTED
+#   2. it carries `risk: low` or `risk: medium`
+#   3. none of its code files match BLOCKED below; documentation never does
+#   4. the three required checks are green on the exact head being merged
+#   5. a trusted reviewer other than its author left a verdict comment naming
+#      that same head SHA
+#   6. no unresolved CodeRabbit `Major` or `Critical` thread is left on it
+#
+# A refusal is also said on the pull request itself, in one comment this
+# workflow rewrites in place and deletes once the pull request merges, but only
+# when the head being evaluated already carries an approval. That is the one
+# case where somebody is waiting on the lane and the log is the only place
+# saying why. An open pull request nobody has approved yet is not commented on
+# at all: a sweep looks at every open pull request, and saying "no approval
+# yet" under each of them, every hour, is noise on other people's work. This is
+# visibility only, never a looser gate.
+#
+# Gate 5 is a comment and not a GitHub review on purpose: posting a review is
+# one of the calls that needs a human approval, posting a comment is not. Both
+# the marker and the SHA line are HTML comments, so neither renders:
+#   <!-- fast-lane: approve -->
+#   <!-- sha: <40-hex head SHA> -->
+# Nothing internal (SHA included) belongs in visible text: contributors read
+# these comments. The SHA is required so a verdict can never carry over to a
+# later push, and an edited comment is not a verdict (created_at must equal
+# updated_at), so an open PR gets a new comment rather than an edit.
+#
+# pull_request_target-style events are avoided for the merge itself; this job
+# never checks out the pull request's code, it only reads its file list and
+# calls the API. Nothing from a contribution is executed here.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  issue_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted, dismissed]
+  # Resolving a review thread is a webhook event, not an Actions event:
+  # `pull_request_review_thread` is rejected by actionlint and makes this whole
+  # file invalid, so it cannot be used. Gate 3b below is a review thread, and
+  # resolving one starts no run at all; this hourly sweep re-evaluates every
+  # open pull request instead, which also covers any event GitHub did not
+  # deliver. `workflow_dispatch` takes one PR number by hand, or none to sweep.
+  #
+  # The sweep has two clocks. The cron below is the older one and it does fire,
+  # but late: it passed over two of its first three slots on main and delivered
+  # the third 33 minutes after the fact (17 Nov, 23:50Z for the 23:17 one). A
+  # clock that late cannot be what makes the lane timely, so it stays the
+  # fallback. What opens the slot in practice is the first CI run after :00 on
+  # main, below in step 0: every merge to main starts one, so it is the one
+  # event this repository is guaranteed to deliver. That holds for a merge made
+  # by a person, which is a push, and for a merge made by this lane, which
+  # dispatches `ci.yml` because a push made with the workflow token starts no
+  # run — and the lane's own merge is the one that leaves a resolved thread
+  # behind. A slot is swept once even when the lane merges several pull
+  # requests inside it: the claim in step 0 covers that.
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: pull request number to evaluate, empty to sweep every open one
+        required: false
+
+# Is the sweep alive? A scheduled trigger that does not fire leaves no failed
+# run, only a run that is not there, so silence is its failure mode. What it says
+# is in the log, not in the trigger list: a sweep logs `sweep started by ...`,
+# and the answer has to change from one hour to the next. Look at the runs whose
+# log carries a sweep, newest first:
+#   gh api "repos/{owner}/{repo}/actions/workflows/fast-lane.yml/runs?per_page=20"
+# The run started by a CI run on main is a `workflow_run` one, the same event as
+# an ordinary pull request evaluation; only the log tells them apart. No sweep in
+# the last hour a merge landed is the symptom. The `event=schedule` filter is no
+# longer the check: it answers a question nobody depends on any more, since the
+# cron is the fallback and not the clock.
+#
+# A sweep is not one run per merge. Only a CI run on main queued in the first ten
+# minutes of the hour opens the slot, and only the first of those does: the rest
+# find the slot taken and log `sweep not opened by this run`, so an hour with six
+# merges still sweeps once. That matters because the lane's own merges dispatch
+# `ci.yml`, so without the claim a sweep would start the next one. The cost of a
+# sweep is every open pull request through the gates (~250 calls today), and that
+# guard is what keeps the workflow token's hourly budget for the
+# per-pull-request runs somebody is actually waiting on.
+#
+# A manual run proves the other half, that the sweep itself works. Its log
+# carries `sweeping N open pull requests` and then one line per pull request: the
+# gate that refused it (`#N: not merging, ...`) or the merge. A pull request that
+# could not be read logs `#N: <message>` there instead of stopping the sweep, so
+# every number in the list has to be accounted for — that, not the count alone,
+# is what says the sweep evaluated them all.
+#   gh workflow run fast-lane.yml        # no `pr` input: every open pull request
+# Both triggers run the same code, so a run's log names which one started it.
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  checks: read
+  actions: write
+
+concurrency:
+  group: fast-lane-${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.id || github.event.inputs.pr || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    # One variable turns the whole thing off without touching this file.
+    # A comment can only matter when it carries the verdict marker, so the
+    # ordinary conversation on a pull request does not start a run.
+    if: >-
+      vars.FAST_LANE != 'off' &&
+      (github.event_name != 'issue_comment' ||
+       contains(github.event.comment.body, '<!-- fast-lane: approve -->'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const OWNER = context.repo.owner, REPO = context.repo.repo;
+
+            // Who may leave a verdict. Two identities: the account that pushes
+            // (an agent commits as its owner, so its comment is
+            // indistinguishable from the owner's) and the `securo-review` App,
+            // installed on this repository only. The App is what makes a
+            // second reviewer identity possible at all.
+            const VERDICT_AUTHORS = ['tassionoronha', 'securo-review[bot]'];
+            // The App's slug as GitHub reports it on the comment itself. The
+            // field only exists for a token minted by an installation, and a
+            // user token cannot set it, so this is checked as well as the login.
+            const REVIEWER_APP = 'securo-review';
+            const VERDICT = '<!-- fast-lane: approve -->';
+            // A verdict only counts from someone other than the pull request's
+            // author. `pulls.get` cannot tell an agent's comment from the
+            // owner's, so a verdict the author's own identity left would let
+            // code approve itself. Before the App existed the two sides were
+            // one login and this was a list of authors never merged by the
+            // lane; the comparison below says the same thing and also covers
+            // the case that list could not: our pull request, the App's verdict.
+
+            const REQUIRED = ['Backend Tests', 'Frontend Checks', 'Helm Checks'];
+
+            // Stricter than `risk: low/medium` on purpose. The label comes from
+            // file names, and two of the open medium PRs are a new auth endpoint
+            // and a runner that executes plugin code — a path rule that reads
+            // only the top directory would wave both through.
+            const BLOCKED = [
+              [/^backend\/app\/core\/(auth|auth_policy|webauthn|secrets?)/i, 'auth or secrets'],
+              [/^backend\/app\/api\/[^/]*auth/i,                      'auth API'],
+              // The patterns above only catch a file named *auth* in two
+              // directories. Access tokens, passkeys, the MCP server's own
+              // auth and the OAuth state are credentials too, and none of
+              // them carry "auth" in the name at the right place.
+              [/(^|\/)[^/]*(auth|token|secret|credential|passkey|webauthn|oidc|password|login|permission)[^/]*\.(py|ts|tsx|js|jsx)$/i,
+                                                                      'auth or credentials'],
+              // CI and the repository configuration are not application code:
+              // a pull request that can edit them can edit this file and take
+              // the gates with it.
+              [/^\.github\//,                                         'CI or repository configuration'],
+              [/^backend\/alembic\//,                                 'schema migration'],
+              [/^backend\/app\/providers\//,                          'bank provider'],
+              [/^backend\/app\/services\/.*(sync|plugin)/i,           'sync or plugin'],
+              [/^(charts|k8s|helm)\//i,                               'deployment'],
+              [/(^|\/)(Dockerfile|docker-compose[^/]*\.(yml|yaml)|install\.sh)$/, 'deployment'],
+              [/(^|\/)\.env/,                                         'environment file'],
+              [/plugin[-_]runner|runtime\.py$/i,                      'executes third-party code'],
+            ];
+
+            // Documentation is text no process executes: a README beside the
+            // chart or a page under docs/ describes a deployment, it does not
+            // perform one, so it is not matched against the rules above at all.
+            // Two green, medium-risk pull requests (#1545 and #1465) waited for
+            // a person only because `charts/securo/README.md` matched the
+            // `deployment` rule. Every path that is code keeps matching: a
+            // rename still reports its previous name, so moving a blocked file
+            // into a documentation path does not hide it.
+            const isDocumentation = (p) =>
+              /\.(md|mdx)$/i.test(p) || /(^|\/)docs\//i.test(p);
+
+            // A refusal used to exist only in this run's log, and a log expires:
+            // the pull request a person had already approved looked exactly as
+            // if nobody had evaluated it, so whoever was watching the queue had
+            // to guess which gate held. It is said on the pull request instead,
+            // in one comment per pull request, rewritten in place.
+            //
+            // Only an approved head gets it. An open pull request nobody has
+            // approved yet is not a refusal anyone can act on, and describing it
+            // that way under a sweep of every open pull request is noise on
+            // someone else's work. `tryMerge` marks a skip reportable only when
+            // that head carries a valid verdict, and the caller obeys the mark.
+            //
+            // Creating it only when none exists is not enough to keep it one: a
+            // sweep and a hand-run of the same pull request sit in different
+            // concurrency groups, so both can list the comments before either
+            // writes, and two appear. Everything that reads or writes the refusal
+            // goes through every comment carrying the marker, so two converge
+            // back to one instead of one keeping a stale text forever.
+            //
+            // Visibility only: nothing here makes a gate more permissive. A pull
+            // request that merges loses the refusal comment and keeps the merge
+            // one, and every skip keeps its log line above.
+            const REFUSAL = '<!-- fast-lane: refused -->';
+
+            async function refusalComments(number) {
+              const comments = await github.paginate(github.rest.issues.listComments,
+                { owner: OWNER, repo: REPO, issue_number: number, per_page: 100 });
+              // Only the lane's own comments, and only this marker: the verdict
+              // comments and the merge comment are a different thing entirely.
+              return comments.filter((c) => c.user
+                && c.user.login === 'github-actions[bot]'
+                && (c.body || '').trimStart().startsWith(REFUSAL));
+            }
+
+            // Written for a contributor who has never read this workflow: no
+            // SHA, no gate names, no raw API error. It says what the automatic
+            // merge decided and that nothing is being asked of them.
+            async function reportRefusal(number, why) {
+              const body =
+                `${REFUSAL}\n\n` +
+                `This pull request was not merged automatically: ${why}.\n\n` +
+                `That is only a note about the automatic merge. It does not ask ` +
+                `for any change, and it does not stop a maintainer from merging ` +
+                `it by hand. The note is rewritten in place, so it always ` +
+                `describes the most recent check.`;
+              try {
+                const mine = await refusalComments(number);
+                if (!mine.length) {
+                  await github.rest.issues.createComment(
+                    { owner: OWNER, repo: REPO, issue_number: number, body });
+                  return;
+                }
+                // Every copy is updated, not just the newest: two runs can each
+                // have created one before seeing the other, and a pass that
+                // updated only one would leave the other saying something old.
+                for (const c of mine) {
+                  if ((c.body || '').trim() === body.trim()) continue;
+                  try {
+                    await github.rest.issues.updateComment(
+                      { owner: OWNER, repo: REPO, comment_id: c.id, body });
+                  } catch (e) {
+                    core.info(`#${number}: could not update a repeated refusal: ${e.message}`);
+                  }
+                }
+              } catch (e) {
+                // A fork head the token cannot comment on still gets its log
+                // line: the refusal is not lost, only less visible.
+                core.info(`#${number}: could not report the refusal: ${e.message}`);
+              }
+            }
+
+            // A pull request that merged must not also say why it did not: the
+            // sweep and a hand-run can disagree about the same head, and after
+            // the merge only the merge comment is the truth. Best effort on
+            // purpose: nothing here fails a merge that already happened.
+            async function clearRefusal(number) {
+              try {
+                for (const c of await refusalComments(number)) {
+                  try {
+                    await github.rest.issues.deleteComment(
+                      { owner: OWNER, repo: REPO, comment_id: c.id });
+                  } catch (e) {
+                    core.info(`#${number}: could not delete the refusal: ${e.message}`);
+                  }
+                }
+              } catch (e) {
+                core.info(`#${number}: could not read the refusal comment: ${e.message}`);
+              }
+            }
+
+            // Everything below runs for one pull request. It returns the refusal
+            // ({ why, report }) when a gate does not hold, and the caller says it
+            // on the pull request only when `report` is true: the head carries an
+            // approval, so somebody is waiting on the lane for it. It returns
+            // null when it merged or when there is nothing worth saying there.
+            async function tryMerge(number) {
+              let head = null;
+              // The verdict for this head, read before the gates only so a skip
+              // can tell whether a person already approved it. Gate 4 below is
+              // where the verdict actually decides the merge.
+              let verdict = null;
+              // A closed, draft or wrong-base pull request is refused before the
+              // lane would consider it at all, and the pull request itself
+              // already shows that: a comment there would be noise, so these
+              // three return null. Every gate below them can be reported, but
+              // only when the head is approved.
+              //
+              // `why` reaches contributors as the visible sentence of the
+              // comment, so it is plain text; anything technical goes in
+              // `detail`, which stays in the log.
+              const skip = (why, report = true, detail = '') => {
+                core.info(`#${number}: not merging, ${why}${detail ? `: ${detail}` : ''}`);
+                if (!head) return null;
+                return { why, report: report && Boolean(verdict) };
+              };
+
+              let pr;
+              try {
+                ({ data: pr } = await github.rest.pulls.get(
+                  { owner: OWNER, repo: REPO, pull_number: number }));
+              } catch (e) { return skip('cannot read the pull request'); }
+
+              if (pr.state !== 'open')      return skip('it is not open');
+              if (pr.draft)                 return skip('it is a draft');
+              if (pr.base.ref !== 'main')   return skip(`it targets ${pr.base.ref}`);
+
+              head = pr.head.sha;
+
+              try {
+                const comments = await github.paginate(github.rest.issues.listComments,
+                  { owner: OWNER, repo: REPO, issue_number: number, per_page: 100 });
+                // The marker must open the comment, so quoting a verdict in the
+                // conversation cannot pass as one; an edited comment never counts,
+                // because a verdict is a statement about one head, written once.
+                verdict = comments.filter((c) => {
+                  const body = c.body || '';
+                  if (!c.user || !VERDICT_AUTHORS.includes(c.user.login)) return false;
+                  // The author's own verdict is not a verdict. It is dropped
+                  // here, not only at the gate, so that it cannot shadow a real
+                  // one written before it: an author's identity commenting its
+                  // own approval after the App's would otherwise take the merge
+                  // away from a pull request the App had approved.
+                  if (c.user.login === pr.user.login) return false;
+                  // A verdict attributed to the App must come from an
+                  // installation of it: the login alone is a string a fork
+                  // cannot forge, but the field is the proof GitHub signs.
+                  if (c.user.login === `${REVIEWER_APP}[bot]`
+                      && (c.performed_via_github_app || {}).slug !== REVIEWER_APP) {
+                    core.info(`#${number}: ignoring a verdict whose app slug is not ` +
+                      REVIEWER_APP);
+                    return false;
+                  }
+                  return body.trimStart().startsWith(VERDICT)
+                    && (!c.updated_at || c.created_at === c.updated_at)
+                    && new RegExp(`sha:\\s*${head}\\b`).test(body);
+                }).pop() || null;
+              } catch (e) {
+                // No readable approval means nothing to report either way; the
+                // gates below still run and gate 4 names the missing verdict.
+                core.info(`#${number}: could not read the comments: ${e.message}`);
+              }
+
+              const labels = pr.labels.map((l) => l.name);
+              const risk = labels.filter((l) => l.startsWith('risk: ')).map((l) => l.slice(6));
+              if (risk.length !== 1 || !['low', 'medium'].includes(risk[0])) {
+                const carried = risk.length
+                  ? risk.map((r) => `\`risk: ${r}\``).join(' and ')
+                  : 'no `risk:` label';
+                return skip(`it carries ${carried}, and only \`risk: low\` and ` +
+                  `\`risk: medium\` are merged automatically`);
+              }
+
+              // ---- 2. files that never take the fast lane -------------------
+              const files = await github.paginate(github.rest.pulls.listFiles,
+                { owner: OWNER, repo: REPO, pull_number: number, per_page: 100 });
+              // GitHub caps this list at 3,000 files even with pagination, so a blocked
+              // file past that cut would be invisible. `changed_files` is the count the
+              // pull request reports: when the two differ, files went unread.
+              if (files.length !== pr.changed_files) {
+                return skip(`only ${files.length} of its ${pr.changed_files} ` +
+                  `changed files could be read`);
+              }
+              // A rename reports the new path in `filename` and the old one in
+              // `previous_filename`: moving a migration, an auth file or this
+              // workflow out of its directory would otherwise pass the list.
+              for (const f of files) {
+                for (const p of [f.filename, f.previous_filename].filter(Boolean)) {
+                  if (isDocumentation(p)) continue;
+                  for (const [re, what] of BLOCKED) {
+                    if (re.test(p)) {
+                      return skip(`\`${p}\` is in a part of the repository that is ` +
+                        `never merged automatically (${what})`);
+                    }
+                  }
+                }
+              }
+
+              // ---- 3. a standing request for changes blocks the merge -------
+              const reviews = await github.paginate(github.rest.pulls.listReviews,
+                { owner: OWNER, repo: REPO, pull_number: number, per_page: 100 });
+              const latest = new Map();
+              // GitHub keeps a CHANGES_REQUESTED standing until it is dismissed,
+              // even if the same reviewer later leaves a plain comment. Storing
+              // every state would let a COMMENTED review clear the block.
+              for (const r of reviews) {
+                if (r.user && ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(r.state)) {
+                  latest.set(r.user.login, r.state);
+                }
+              }
+              const blocked = [...latest].filter(([, s]) => s === 'CHANGES_REQUESTED');
+              if (blocked.length) {
+                return skip(`changes were requested by ${blocked.map(([u]) => u).join(', ')}`);
+              }
+
+              // ---- 3b. an unresolved CodeRabbit major thread blocks the merge
+              // CodeRabbit only ever leaves a COMMENTED review, so the check
+              // above never sees its findings. A thread counts as triaged when
+              // someone resolves it; only `Major` and `Critical` hold the merge.
+              {
+                const query = `query($owner: String!, $repo: String!, $number: Int!) {
+                  repository(owner: $owner, name: $repo) {
+                    pullRequest(number: $number) {
+                      reviewThreads(first: 100) {
+                        pageInfo { hasNextPage }
+                        nodes {
+                          isResolved
+                          isOutdated
+                          comments(first: 100) {
+                            pageInfo { hasNextPage }
+                            nodes { author { login } body }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }`;
+                let threads = null;
+                try {
+                  const data = await github.graphql(query,
+                    { owner: OWNER, repo: REPO, number });
+                  threads = (data.repository.pullRequest || {}).reviewThreads || null;
+                } catch (e) {
+                  return skip('its review threads could not be read', true, e.message);
+                }
+                // A gate that needs every thread must fail closed when it can
+                // only read some of them: a blocker past the first 100 threads,
+                // or past the hundredth comment of one, would otherwise be
+                // invisible.
+                //
+                // A hundred is GraphQL's page size, and it is read in full on
+                // purpose: a thread that collects a few CodeRabbit
+                // back-and-forths passes five comments, and at five the lane
+                // refused it as unreadable for good — resolving the thread does
+                // not shorten it, so nothing cleared it (#1596, #1553). The
+                // severity marker sits in the thread's first comment, so a
+                // narrower read could decide too, but reading the page whole
+                // keeps every comment the gate looks at, and the fail-closed
+                // branch below is left for the thread that outgrows a page.
+                if (!threads) return skip('its review threads came back empty');
+                if (threads.pageInfo && threads.pageInfo.hasNextPage) {
+                  return skip('it has more review threads than this check can read');
+                }
+                const truncated = (threads.nodes || []).some((t) =>
+                  t.comments && t.comments.pageInfo && t.comments.pageInfo.hasNextPage);
+                if (truncated) {
+                  return skip('one of its review threads has more comments than ' +
+                    'this check can read');
+                }
+                const open = (threads.nodes || [])
+                  .filter((t) => !t.isResolved && !t.isOutdated)
+                  .filter((t) => (t.comments.nodes || []).some((c) =>
+                    c.author && c.author.login === 'coderabbitai'
+                    && /\b(major|critical)\b/i.test(c.body || '')));
+                if (open.length) {
+                  return skip(`it has ${open.length} unresolved CodeRabbit major thread(s)`);
+                }
+              }
+
+              // ---- 4. the verdict names the head we are about to merge ------
+              // The selection above already left out the author's own comments,
+              // so any verdict still here is a second opinion and a missing one
+              // is the refusal. Nothing about a pull request the author opened
+              // is ever said on it: a comment there would only spell out the rule.
+              if (!verdict) {
+                return skip('it carries no approval from an identity other than ' +
+                  'its author', false);
+              }
+
+              // ---- 5. green, on that exact head ----------------------------
+              const { data: checks } = await github.rest.checks.listForRef(
+                { owner: OWNER, repo: REPO, ref: head, per_page: 100 });
+              // A re-run leaves several entries per name: keep the newest one.
+              const byName = new Map();
+              for (const c of checks.check_runs) {
+                const seen = byName.get(c.name);
+                if (!seen || (c.started_at || '') > (seen.started_at || '')) {
+                  byName.set(c.name, c);
+                }
+              }
+              for (const name of REQUIRED) {
+                const c = byName.get(name);
+                if (!c) {
+                  return skip(`the ${name} check never ran on this commit`);
+                }
+                if (c.status !== 'completed') {
+                  return skip(`the ${name} check is still ${c.status}`);
+                }
+                if (c.conclusion !== 'success') {
+                  return skip(`the ${name} check ended as ${c.conclusion}`);
+                }
+              }
+
+              // ---- merge, pinned to the head the verdict was given for -----
+              // Passing `sha` makes GitHub refuse if the branch moved after the
+              // checks above, which is the race a plain merge would have.
+              try {
+                await github.rest.pulls.merge({
+                  owner: OWNER, repo: REPO, pull_number: number,
+                  sha: head, merge_method: 'squash',
+                });
+              } catch (e) {
+                return skip('GitHub refused the merge', true, e.message);
+              }
+
+              // A push made with GITHUB_TOKEN starts no workflow run, so the
+              // `push` run on main that ci.yml describes never fires here. The
+              // head was verified before the merge; this validates the squash
+              // commit itself, and a failure is visible in Actions.
+              try {
+                await github.rest.actions.createWorkflowDispatch({
+                  owner: OWNER, repo: REPO, workflow_id: 'ci.yml',
+                  ref: 'main',
+                });
+              } catch (e) {
+                core.warning(`could not dispatch CI on main: ${e.message}`);
+              }
+
+              // An earlier evaluation may have refused this pull request and be
+              // still on it; that comment is now false. Cleared before the merge
+              // comment so a failure posting the latter cannot leave it behind.
+              await clearRefusal(number);
+
+              // The merged commit stays in a hidden marker rather than in the
+              // sentence: the SHA is internal, and contributors read this.
+              await github.rest.issues.createComment({
+                owner: OWNER, repo: REPO, issue_number: number,
+                body: `Merged by the fast lane: \`risk: ${risk[0]}\`, ` +
+                      `approved by ${verdict.user.login} ` +
+                      `(${verdict.html_url}), ${REQUIRED.join(', ')} green.\n\n` +
+                      `<!-- sha: ${head} -->\n` +
+                      `Anything touching auth, secrets, migrations, bank sync, ` +
+                      `plugins or deployment still waits for a maintainer.`,
+              });
+
+              return null;
+            }
+
+            // ---- 0a. the slot belongs to its first run on main -------------
+            // A merge by this lane dispatches `ci.yml`, so a slot in which the
+            // lane merges k pull requests starts k CI runs on main, and each of
+            // them used to open the slot again: the sweep merged, the merges
+            // started the next sweeps, and the cost of one slot grew with the
+            // number of pull requests it merged — each sweep costing every open
+            // pull request through the gates (~250 calls) against the token's
+            // 1,000 an hour, the same budget the per-pull-request runs somebody
+            // is waiting on draw from.
+            //
+            // So the slot is claimed by its earliest CI run on main, and no
+            // state is written to say so: the run list is the claim, one call
+            // wide. A run asks whether an earlier run in the same slot exists
+            // that has not failed, and if one does, bows out. A run still going
+            // counts, because `ci.yml` never cancels a run on main and it will
+            // finish; a failed or cancelled one does not, or its slot would be
+            // lost with it. Ordering is by when the attempt started, then by run
+            // id, so exactly one attempt per slot finds nothing to bow to. The
+            // start time and not the id, because a re-run keeps its id and gets
+            // a new attempt: rerun at :05, the run created at :00 would come
+            // back as the oldest id in the slot and open a second sweep over a
+            // slot already swept. The one cost is that a slot can be lost when
+            // every earlier attempt fails only after a later one has already
+            // bowed out — the next hour's cron picks it up, which is a delay,
+            // not a gate: nothing here decides a merge.
+            const SLOT_MINUTES = 10;
+            const inSlot = (iso) => {
+              const t = new Date(iso);
+              // A run whose start time cannot be read opens nothing: the slot
+              // is what bounds a sweep's cost, and guessing it would not.
+              return !Number.isNaN(t.getTime()) && t.getUTCMinutes() < SLOT_MINUTES;
+            };
+            async function slotIsTaken(run) {
+              let runs = [];
+              try {
+                const { data } = await github.rest.actions.listWorkflowRuns({
+                  owner: OWNER, repo: REPO, workflow_id: 'ci.yml',
+                  branch: 'main', per_page: 50,
+                });
+                runs = data.workflow_runs || [];
+              } catch (e) {
+                // Without the list, sweeping is the behaviour before this
+                // claim: the cost is bounded by the slot's own ten minutes.
+                core.info(`could not read the runs on main: ${e.message}`);
+                return false;
+              }
+              // Same hour by the string itself: `run_started_at` is UTC and
+              // slicing it cannot drift through a time zone. A slot with more
+              // than 50 runs is beyond what a page can say, and the only
+              // consequence of missing one is an extra sweep, never a merge.
+              const slot = String(run.run_started_at).slice(0, 13);
+              const mineAt = String(run.run_started_at);
+              const earlier = runs.filter((r) => {
+                const at = String(r.run_started_at || '');
+                if ((r.event !== 'push' && r.event !== 'workflow_dispatch')
+                    || at.slice(0, 13) !== slot || !inSlot(at)) return false;
+                // Earlier by when this attempt started, not by id: a re-run
+                // keeps its id and starts now. Two attempts on the same second
+                // fall back to the id, so the order is still total.
+                if (!(at < mineAt || (at === mineAt && r.id < run.id))) return false;
+                return !(r.status === 'completed' && r.conclusion !== 'success');
+              });
+              if (!earlier.length) return false;
+              const openedBy = earlier.reduce((a, b) =>
+                String(b.run_started_at) < String(a.run_started_at)
+                  || (String(b.run_started_at) === String(a.run_started_at) && b.id < a.id)
+                  ? b : a);
+              core.info(`sweep not opened by this run: run ` +
+                `${openedBy.id} opened this slot`);
+              return true;
+            }
+
+            // ---- 0. which pull request is this event about? ----------------
+            const ev = context.eventName;
+            let number = null;
+            let sweep = false;
+            if (ev === 'workflow_run') {
+              const run = context.payload.workflow_run;
+              if (run.conclusion !== 'success') return;
+              // A CI run on main is the one event this repository delivers
+              // every time: each merge to main starts one. There are two ways
+              // it starts, and both have to open the slot. A person's merge is
+              // a push. A merge by this lane is not — a push made with the
+              // workflow token starts no run, so `tryMerge` dispatches `ci.yml`
+              // on main — and that is the merge that leaves a resolved thread
+              // behind, so a clock a person's merge alone opens would miss
+              // exactly the case the sweep exists for.
+              //
+              // The first ten minutes of the hour are the slot the cron was
+              // meant to open. `run_started_at` and not the clock: a CI run
+              // queued at :06 and finishing at :20 opens the slot it was queued
+              // in. Of the runs in that slot only the first sweeps (0a above).
+              const onMain = run.head_branch === 'main'
+                && (run.event === 'push' || run.event === 'workflow_dispatch');
+              if (onMain) {
+                if (!inSlot(run.run_started_at)) return;
+                if (await slotIsTaken(run)) return;
+                sweep = true;
+              } else {
+                if (run.event !== 'pull_request') return;
+                const prs = run.pull_requests || [];
+                // GitHub does not always fill `pull_requests` for fork heads, so
+                // fall back to looking the branch up. It must be unambiguous.
+                if (prs.length === 1) {
+                  number = prs[0].number;
+                } else {
+                  const own = run.head_repository && run.head_repository.owner
+                    ? run.head_repository.owner.login : OWNER;
+                  const { data: open } = await github.rest.pulls.list({
+                    owner: OWNER, repo: REPO, state: 'open',
+                    head: `${own}:${run.head_branch}`, per_page: 5,
+                  });
+                  if (open.length !== 1) return;
+                  number = open[0].number;
+                }
+              }
+            } else if (ev === 'issue_comment') {
+              if (!context.payload.issue.pull_request) return;
+              number = context.payload.issue.number;
+            } else if (context.payload.pull_request) {
+              number = context.payload.pull_request.number;
+            } else if (ev === 'workflow_dispatch') {
+              number = Number(context.payload.inputs && context.payload.inputs.pr) || null;
+            }
+
+            if (number) {
+              const refusal = await tryMerge(number);
+              if (refusal && refusal.report) await reportRefusal(number, refusal.why);
+            } else if (sweep || ev === 'schedule' || ev === 'workflow_dispatch') {
+              // The sweep: every open pull request goes through the same gates,
+              // so a thread resolved with no other event still gets merged.
+              const open = await github.paginate(github.rest.pulls.list,
+                { owner: OWNER, repo: REPO, state: 'open', per_page: 100 });
+              // Which trigger this is: a run started by the hourly slot and one
+              // started by hand look the same in a list of runs, and the log is
+              // where the difference is read.
+              const by = sweep ? 'the hourly slot (a CI run on main)'
+                : (ev === 'schedule' ? 'the hourly schedule' : 'a manual run');
+              core.info(`sweep started by ${by}`);
+              core.info(`sweeping ${open.length} open pull requests`);
+              for (const p of open) {
+                try {
+                  const refusal = await tryMerge(p.number);
+                  if (refusal && refusal.report) await reportRefusal(p.number, refusal.why);
+                } catch (e) {
+                  core.info(`#${p.number}: ${e.message}`);
+                }
+              }
+            }

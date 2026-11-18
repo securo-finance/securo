@@ -828,7 +828,7 @@
     "greetingEvening": "Dobry wieczór",
     "availableBalance": "Dostępne saldo na kontach",
     "netWorth": "Majątek netto",
-    "netWorthTooltip": "Konta + inwestycje, pomniejszone o otwarte rachunki karty kredytowej.",
+    "netWorthTooltip": "Gotówka + konta inwestycyjne + zainwestowane aktywa, pomniejszone o otwarte rachunki karty kredytowej. Inwestycje nie liczą się jako dostępna gotówka.",
     "creditCardBalance": "Otwarte rachunki karty kredytowej",
     "loanBalance": "Kredyty i finansowania",
     "pendingSharesOwe": "Netto {{net}} po długach grupowych ({{owed}} oczekuje)",
@@ -903,7 +903,9 @@
     "fxRateUsed": "Kurs FX: {{rate}}",
     "refreshRates": "Odśwież kursy FX",
     "ratesRefreshed": "Zaktualizowano kursy FX",
-    "ratesError": "Nie udało się zaktualizować kursów FX"
+    "ratesError": "Nie udało się zaktualizować kursów FX",
+    "cashBalance": "Gotówka",
+    "investmentAccounts": "Konta inwestycyjne"
   },
   "transactions": {
     "title": "Transakcje",
@@ -1136,6 +1138,7 @@
     "createCounterpartConfirm": "Utwórz",
     "unlinkTransfer": "Odłącz transfer",
     "unlinkTransferConfirm": "Odłączyć ten transfer? Obie transakcje znów będą traktowane jako zwykłe.",
+    "unlinkTransferReportWarning": "O ile ich kategoria już ich nie wyklucza, obie transakcje znów będą liczone w raportach przychodów i wydatków: wychodząca jako wydatek, przychodząca jako przychód. Aby wykluczyć jedną z nich, przypisz jej kategorię traktowaną jak transfer, np. Przelewy.",
     "unlinkTransferSuccess": "Odłączono transfer",
     "confirmTransferCategoryTitle": "Zastosować tę kategorię także do powiązanego transferu?",
     "confirmTransferCategoryDesc": "Transfery występują parami. Możesz zaktualizować tylko tę transakcję albo zastosować tę samą zmianę kategorii do obu stron.",
@@ -1328,14 +1331,28 @@
     "deleted": "Usunięto konto",
     "syncDone": "Synchronizacja zakończona",
     "syncRateLimited": "Osiągnięto dzienny limit banku, nie pobrano nowych danych. Spróbuj ponownie później.",
+    "syncPartial": "Część kont została zaktualizowana, ale dla pozostałych osiągnięto dzienny limit banku. Zostaną ponowione później.",
     "syncError": "Synchronizacja nie powiodła się",
+    "syncFailure": {
+      "failedAt": "Ostatnia synchronizacja nie powiodła się {{when}}.",
+      "psu_present_required": "Bank udostępnia te dane tylko wtedy, gdy korzystasz z Securo.",
+      "consent_expired": "Bank wymaga ponownej autoryzacji dostępu.",
+      "reauthorize_at_provider": "Ponownie autoryzuj ten bank na koncie SimpleFIN Bridge, a następnie zsynchronizuj.",
+      "provider_error": "Bank zwrócił błąd.",
+      "syncNow": "Synchronizuj teraz"
+    },
     "connected": "Pomyślnie połączono bank",
+    "connectedImportFailed": "Bank połączony, ale pierwszy import nie powiódł się. Powtórz synchronizację, aby dokończyć.",
     "connectError": "Nie udało się połączyć banku",
     "disconnected": "Usunięto połączenie",
     "confirmDisconnectTitle": "Odłączyć połączenie bankowe?",
     "confirmDisconnectDesc": "Spowoduje to odłączenie {{institution}} oraz usunięcie z aplikacji zsynchronizowanych kont i transakcji. Ta operacja jest nieodwracalna.",
     "viewTransactions": "Zobacz transakcje",
     "currentBalance": "Bieżące saldo",
+    "reservedBalances": "Zarezerwowane salda",
+    "reservedBalanceFallback": "Zarezerwowane saldo",
+    "reservedTotal": "Zarezerwowane",
+    "reservedBalancesHint": "Zarezerwowane środki zgłoszone przez dostawcę dla tego konta.",
     "income": "Przychody",
     "expenses": "Wydatki",
     "projectedBalance": "Saldo prognozowane",
@@ -1420,8 +1437,16 @@
     "connectionStatus": {
       "active": "Aktywne",
       "error": "Błąd",
-      "expired": "Wygasłe"
-    }
+      "expired": "Wygasłe",
+      "disconnected": "Odłączone"
+    },
+    "pluginConnectors": "Z twoich wtyczek",
+    "pluginUnavailable": "Wtyczka tego połączenia nie jest już zainstalowana ani dostępna.",
+    "confirmDisconnectKeepDesc": "{{institution}} przestanie się synchronizować. Konta i historia transakcji zostaną w aplikacji, a połączenie można później przywrócić.",
+    "disconnectAlsoDelete": "Usuń też konta i transakcje",
+    "disconnectedKept": "Bank odłączony. Konta i historia zostały zachowane.",
+    "removeConnection": "Usuń połączenie",
+    "connectionDisconnected": "Odłączone. Połącz ponownie, aby znów synchronizować"
   },
   "loans": {
     "title": "Umowa kredytu",
@@ -1534,7 +1559,26 @@
     "suggestEmpty": "Brak historii wydatków w wybranym okresie.",
     "suggestError": "Nie udało się wczytać sugestii. Spróbuj ponownie za chwilę.",
     "hiddenCategory": "Ukryta",
-    "average": "zwykle {{amount}}"
+    "average": "zwykle {{amount}}",
+    "copyAction": "Kopiuj poprzedni miesiąc",
+    "copyTitle": "Kopiuj budżety",
+    "copyDescription": "Skopiuj budżety miesiąca źródłowego do {{month}}.",
+    "copySource": "Miesiąc źródłowy",
+    "copyExisting": "Istniejące budżety",
+    "copyOverwrite": "Zastąp je kwotami z miesiąca źródłowego",
+    "copyMissing": "Zachowaj je i kopiuj tylko brakujące kategorie",
+    "copyAdjustment": "Korekta (%)",
+    "copyAdjustmentHint": "Opcjonalnie, od -100 do 1000. 5 dodaje 5%, -10 odejmuje 10%.",
+    "copyPreviewCount": "Kategorie do skopiowania: {{count}}",
+    "copyPreviewTotal": "Suma do skopiowania: {{amount}}",
+    "copyPreviewEmpty": "Wybrany miesiąc nie ma budżetów do skopiowania.",
+    "copyPreviewError": "Nie udało się wczytać miesiąca źródłowego.",
+    "copyAmountTooLarge": "Skorygowana kwota przekracza limit budżetu. Zmniejsz korektę procentową.",
+    "copyConfirm": "Kopiuj budżety",
+    "copySuccess": "Skopiowano budżety: {{count}}",
+    "copyNothing": "Nie skopiowano żadnych budżetów.",
+    "copyError": "Nie udało się skopiować budżetów.",
+    "copyEmptyHint": "Skopiuj budżety z poprzedniego miesiąca, aby od nich zacząć."
   },
   "goals": {
     "title": "Cele",
@@ -1601,6 +1645,7 @@
     "walletHint": "Śledź ten cel według łącznej wartości wszystkich aktywów w wybranym portfelu."
   },
   "recurring": {
+    "makeFromTransaction": "Nowa cykliczna z tej transakcji",
     "title": "Transakcje cykliczne",
     "add": "Dodaj cykliczną",
     "edit": "Edytuj cykliczną",
@@ -1664,7 +1709,24 @@
     "autoGenerate": "Automatycznie generuj transakcje",
     "autoGenerateHelp": "Tworzy transakcję za każdym razem, gdy ten rachunek jest wymagalny. Wyłącz, aby poczekać na rzeczywiste obciążenie (np. z synchronizacji bankowej) i do tego czasu pokazywać je tylko jako nadchodzące.",
     "fxEstimate": "Szacunek na podstawie najnowszego kursu wymiany ({{rate}}). Ostateczna kwota może się zmienić.",
-    "confirmDeleteDescription": "Definicja transakcji cyklicznej „{{description}}” zostanie trwale usunięta. Istniejące transakcje pozostaną, ale utracą powiązanie z transakcją cykliczną. Tej operacji nie można cofnąć."
+    "confirmDeleteDescription": "Definicja transakcji cyklicznej „{{description}}” zostanie trwale usunięta. Istniejące transakcje pozostaną, ale utracą powiązanie z transakcją cykliczną. Tej operacji nie można cofnąć.",
+    "priceHistory": "Historia cen",
+    "viewPriceHistory": "Zobacz historię cen",
+    "priceChangesTitle": "Ostatnie zmiany cen (ostatnie 30 dni)",
+    "priceChangesEmpty": "Nie wykryto stabilnych zmian cen",
+    "priceChangeBadge": "Cena zmieniona",
+    "priceChangeIncrease": "Cena wzrosła",
+    "priceChangeDecrease": "Cena spadła",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "Po przerwie wynoszącej {{days}} dni",
+    "priceChangeInsufficient": "Przed zgłoszeniem stabilnej zmiany ceny przez Securo potrzebne są co najmniej 3 powiązane zaksięgowane obciążenia.",
+    "summaryIncome": "Przychody",
+    "summaryExpenses": "Wydatki",
+    "summaryNet": "Netto",
+    "summaryTransfers": "Pominięte przelewy: {{count}}",
+    "summaryUnconverted": "Bez kursu wymiany, pominięte: {{count}}",
+    "summaryFailed": "Nie udało się wczytać sum miesiąca"
   },
   "rules": {
     "searchPlaceholder": "Szukaj reguł...",
@@ -1787,6 +1849,7 @@
     "fieldPayee": "Odbiorca",
     "fieldDate": "Data",
     "fieldStatus": "Status",
+    "fieldProviderCategory": "Kategoria dostawcy",
     "opContains": "zawiera",
     "opNotContains": "nie zawiera",
     "opEquals": "równa się",
@@ -1940,6 +2003,39 @@
     "sparkles": "Specjalne",
     "circle-help": "Inne / Nieokreślone"
   },
+  "categoryEmojis": {
+    "burger": "Burger",
+    "fries": "Frytki",
+    "sandwich": "Kanapka",
+    "wine": "Wino",
+    "cocktail": "Koktajl",
+    "juice": "Sok",
+    "money-bag": "Worek pieniędzy",
+    "spending": "Wydatki",
+    "soccer": "Piłka nożna",
+    "basketball": "Koszykówka",
+    "tennis": "Tenis",
+    "yoga": "Joga",
+    "art": "Sztuka",
+    "headphones": "Słuchawki",
+    "plug": "Wtyczka",
+    "tools": "Narzędzia",
+    "soap": "Mydło",
+    "shower": "Prysznic",
+    "shoes": "Obuwie",
+    "makeup": "Makijaż",
+    "toys": "Zabawki",
+    "flowers": "Kwiaty",
+    "luck": "Szczęście",
+    "birthday": "Urodziny",
+    "christmas": "Boże Narodzenie",
+    "protection": "Ochrona",
+    "map": "Mapa",
+    "beach": "Plaża",
+    "launch": "Start",
+    "investment": "Inwestycja",
+    "construction": "Budowa"
+  },
   "groups": {
     "title": "Grupy kategorii",
     "add": "Dodaj grupę",
@@ -2031,6 +2127,8 @@
     "undoOrdersDescription_many": "Usunie to {{count}} zleceń zaimportowanych z {{filename}} i przeliczy zmienione pozycje. Walory utworzone przez ten import zostaną usunięte razem z nimi.",
     "undoOrdersDescription_other": "Usunie to {{count}} zleceń zaimportowanych z {{filename}} i przeliczy zmienione pozycje. Walory utworzone przez ten import zostaną usunięte razem z nimi.",
     "undone": "Import cofnięty",
+    "undoOversell": "Nie można cofnąć tego importu: pozostający zapis sprzedaje {{attempted}} jednostek, a w posiadaniu jest {{available}}. Najpierw edytuj lub usuń ten zapis.",
+    "undoTooLarge": "Nie można cofnąć tego importu: pozostała pozycja jest zbyt duża do zapisania.",
     "undoImport": "Cofnąć import?",
     "undoDescription_one": "Spowoduje to usunięcie {{count}} zaimportowanej transakcji z pliku {{filename}}. Tej operacji nie można cofnąć.",
     "undoDescription_few": "Spowoduje to usunięcie {{count}} zaimportowanych transakcji z pliku {{filename}}. Tej operacji nie można cofnąć.",
@@ -2109,7 +2207,9 @@
       "fee": "Prowizja",
       "kind": "Kupno/Sprzedaż",
       "currency": "Waluta",
-      "notes": "Notatki"
+      "notes": "Notatki",
+      "old_units": "Jednostki przed",
+      "new_units": "Jednostki po"
     },
     "walletWarningTitle": "Już w Twoim portfelu",
     "warning": {
@@ -2118,7 +2218,8 @@
     },
     "kind": {
       "buy": "Kupno",
-      "sell": "Sprzedaż"
+      "sell": "Sprzedaż",
+      "split": "Podział"
     },
     "reason": {
       "missing_ticker": "brak tickera",
@@ -2128,8 +2229,17 @@
       "invalid_fee": "nieczytelna prowizja",
       "invalid_kind": "nierozpoznane kupno/sprzedaż",
       "unknown_ticker": "ticker nieznany dostawcy notowań",
-      "oversell": "sprzedaż większa niż pozycja"
-    }
+      "oversell": "sprzedaż większa niż pozycja",
+      "no_fx_rate": "brak kursu wymiany na datę zlecenia",
+      "possible_duplicate": "może już być w tej pozycji z wcześniejszego importu",
+      "invalid_split": "nieczytelny współczynnik podziału lub podział z ilością, ceną lub opłatą",
+      "split_not_allowed": "nie można zapisać podziału dla pozycji synchronizowanej z bankiem",
+      "split_in_future": "podział nie może mieć daty z przyszłości",
+      "nothing_held_before_split": "brak jednostek przed podziałem",
+      "too_large": "pozycja byłaby zbyt duża, aby ją zapisać",
+      "holding_moved": "pozycja została zmieniona lub przeniesiona do innego portfela w trakcie importu"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Aktywa",
@@ -2144,6 +2254,8 @@
     "exchangeRateSetupAskAdmin": "Przeliczenie z {{from}} na {{to}} wymaga kursów walut. Poproś administratora o ich skonfigurowanie.",
     "noFxRate": "brak kursu",
     "noFxRateTitle": "Dla tej waluty nie ma dostępnego kursu wymiany. Aktywo jest wyświetlane w oryginalnej walucie i pomijane w sumach.",
+    "providerValueStale": "bez aktualizacji od {{date}}",
+    "providerValueStaleTitle": "Dostawca nadal raportuje tę pozycję, ale nie aktualizuje jej wartości od tej daty. Mogła zostać umorzona lub połączenie nie odświeża inwestycji. Sprawdź to w swoim banku.",
     "fxRateMissing": "Dla {{currencies}} nie ma dostępnego kursu wymiany. Te aktywa są wyświetlane w oryginalnej walucie i pomijane w sumach.",
     "colAsset": "Aktywo",
     "colQuantity": "Ilość",
@@ -2164,6 +2276,7 @@
     "noTransactions": "Brak transakcji",
     "txBuy": "Kupno",
     "txSell": "Sprzedaż",
+    "txSplit": "Split",
     "txFee": "Opłata",
     "txSaved": "Transakcja zapisana",
     "txDeleted": "Transakcja usunięta",
@@ -2174,6 +2287,10 @@
     "unitPrice": "Cena jednostkowa",
     "fee": "Opłata",
     "txTotal": "Razem",
+    "splitOldUnits": "Jednostki przed splitem",
+    "splitNewUnits": "Jednostki po splicie",
+    "splitHint": "Wpisz liczbę jednostek przed splitem i po nim: split 100:1 to 1 → 100, a reverse split (scalenie) 1:10 to 10 → 1. Jako datę podaj pierwszy dzień notowania po nowej cenie.",
+    "splitInvalid": "Wpisz dwie różne liczby całkowite od 1 do 1 000 000.",
     "confirmDeleteTxTitle": "Usunąć transakcję?",
     "confirmDeleteTx": "Usuwa wpis i przelicza średnią cenę pozycji.",
     "editAsset": "Edytuj aktywo",
@@ -2200,6 +2317,10 @@
     "marketPriceSourceTooltip": "Cena odświeżana automatycznie z danych rynkowych",
     "lastUpdated": "Zaktualizowano {{when}}",
     "refreshPrice": "Odśwież cenę",
+    "refreshAllPrices": "Odśwież ceny",
+    "refreshAllPricesDone": "Zaktualizowano {{refreshed}} cen, {{skipped}} bez nowej wyceny",
+    "refreshAllPricesNone": "Brak aktywów wycenianych rynkowo do odświeżenia",
+    "refreshAllPricesRateLimited": "Dostawca danych rynkowych ogranicza teraz liczbę zapytań. Zaktualizowano {{refreshed}} cen, a {{skipped}} pominięto przed zatrzymaniem. Spróbuj ponownie za minutę.",
     "priceRefreshed": "Odświeżono cenę",
     "purchaseDate": "Data zakupu",
     "purchasePrice": "Cena zakupu",
@@ -2225,6 +2346,7 @@
     "updated": "Zaktualizowano aktywo",
     "deleted": "Usunięto aktywo",
     "confirmDelete": "Czy na pewno usunąć to aktywo i całą jego historię wartości?",
+    "confirmDeleteSynced": "Jeśli import aktywów jest włączony dla tego połączenia, następna synchronizacja przywróci to aktywo. Wyłącz import aktywów w ustawieniach połączenia, aby pozostało usunięte.",
     "confirmDeleteTitle": "Usunąć aktywo?",
     "addValue": "Dodaj wartość",
     "valueHistory": "Historia wartości",
@@ -2352,6 +2474,7 @@
     "baseline": "Szacunek",
     "surplus": "Nadwyżka",
     "deficit": "Deficyt",
+    "investmentWithdrawals": "Wypłaty z inwestycji",
     "cashFlowNode": "Przepływ pieniędzy",
     "flowChartAria": "Diagram przepływu pieniędzy: przychody przepływające do wydatków",
     "category": "Kategoria",
@@ -2524,8 +2647,13 @@
     "retry": "Ponów",
     "error": "Błąd",
     "success": "Sukces",
-    "searchIcon": "Szukaj ikony...",
     "noIconsFound": "Nie znaleziono ikon",
+    "searchIconOrEmoji": "Szukaj ikony lub emoji...",
+    "iconPickerIcons": "Ikony",
+    "iconPickerEmojis": "Emoji",
+    "useEmoji": "Użyj tego emoji",
+    "noEmojisFound": "Nie znaleziono emoji",
+    "seeMatchingEmojis": "Pokaż pasujące emoji ({{count}})",
     "primaryCurrency": "Waluta główna",
     "showLess": "Pokaż mniej",
     "showMore_one": "+{{count}} więcej",
@@ -2539,7 +2667,8 @@
     "preview": "Podgląd",
     "download": "Pobierz",
     "closePreview": "Zamknij podgląd",
-    "remove": "Usuń"
+    "remove": "Usuń",
+    "invalidAmount": "Podaj prawidłową kwotę, na przykład {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "Szukaj grup...",
@@ -2936,6 +3065,8 @@
       "saveFailed": "Nie udało się zapisać wyboru narzędzi",
       "empty": "Nie wykryto narzędzi. Czy serwer MCP działa? W Dockerze: `docker compose --profile agents up -d`.",
       "proposeBadge": "propozycja",
+      "enabledCount": "Włączone: {{enabled}} z {{total}}",
+      "enableAll": "Włącz wszystkie",
       "loading": "Wczytywanie narzędzi…"
     },
     "chat": {
@@ -2990,7 +3121,13 @@
         "deleteBudget": "{{category}}: {{amount}} na {{month}}",
         "deleteRecurringBudget": "{{category}}: {{amount}} co miesiąc od {{month}}",
         "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
-        "createCategoryGroup": "„{{name}}”"
+        "createCategoryGroup": "„{{name}}”",
+        "createManualAccount": "{{name}} · {{type}} · {{currentBalance}} · {{openingBalance}}{{balanceDate}}",
+        "updateManualAccount": "{{name}}. {{currentBalance}}. {{changes}}",
+        "manualAccountMoney": "{{label}}: {{amount}}",
+        "manualAccountDate": "{{label}}: {{date}}",
+        "manualAccountChange": "{{field}}: {{before}} → {{after}}",
+        "manualAccountNoChanges": "Brak zmian"
       }
     },
     "conversation": {
@@ -3016,6 +3153,7 @@
       "baseUrl": "Adres URL endpointu",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "Adres URL endpointu jest wymagany dla tego dostawcy",
+      "baseUrlInvalid": "Podaj prawidłowy adres URL endpointu http lub https",
       "ollamaHint": "Jeśli Ollama działa na Twoim hoście, użyj http://host.docker.internal:11434 (Mac/Windows) lub adresu IP hosta (Linux).",
       "openaiCompatHint": "Wklej po prostu host:port (np. http://192.168.1.142:1234). Ścieżka /v1 jest dodawana automatycznie. Z wnętrza Dockera na Macu/Windowsie zamień localhost na host.docker.internal.",
       "apiKey": "Klucz API / token",
@@ -3432,7 +3570,7 @@
   },
   "plugins": {
     "title": "Wtyczki",
-    "hint": "Kategorie, reguły i integracje tworzone przez społeczność. Każdą zmianę sprawdzasz przed zastosowaniem.",
+    "hint": "Kategorie, reguły, motywy i integracje tworzone przez społeczność. Każdą zmianę sprawdzasz przed zastosowaniem.",
     "browse": "Przeglądaj katalog",
     "noneInstalled": "W tym obszarze roboczym nie zainstalowano wtyczek.",
     "remove": "Usuń wtyczkę",
@@ -3493,7 +3631,10 @@
       "defaults_one": "Tworzy też {{count}} domyślną kategorię potrzebną regułom",
       "defaults_few": "Tworzy też {{count}} domyślne kategorie potrzebne regułom",
       "defaults_many": "Tworzy też {{count}} domyślnych kategorii potrzebnych regułom",
-      "defaults_other": "Tworzy też {{count}} domyślnych kategorii potrzebnych regułom"
+      "defaults_other": "Tworzy też {{count}} domyślnych kategorii potrzebnych regułom",
+      "themes": "Dodaje motywy do biblioteki: {{names}}",
+      "themesRemove": "Usuwa te motywy z biblioteki: {{names}}",
+      "themeInUse": "Używasz motywu {{name}}: wrócisz do motywu Securo."
     },
     "page": {
       "section": "Katalog",
@@ -3539,7 +3680,8 @@
         "type": "Typ",
         "content": "Zawartość",
         "language": "Język",
-        "status": "Status"
+        "status": "Status",
+        "workspace": "Obszar roboczy"
       },
       "view": {
         "all": "Wszystkie",
@@ -3564,7 +3706,8 @@
       "parsers": "Czytniki plików",
       "price_providers": "Dostawcy cen",
       "agent_tools": "Narzędzia agenta",
-      "integrations": "Integracje"
+      "integrations": "Integracje",
+      "themes": "Motywy"
     },
     "detail": {
       "overview": "Przegląd",
@@ -3585,7 +3728,9 @@
       "type": "Typ",
       "added": "Dodano",
       "connections": "Połączenia",
-      "codeNote": "Instalacja pokazuje, z czym wtyczka może się łączyć i co może zmieniać, zanim cokolwiek się uruchomi."
+      "codeNote": "Instalacja pokazuje, z czym wtyczka może się łączyć i co może zmieniać, zanim cokolwiek się uruchomi.",
+      "workspaces": "Obszary robocze",
+      "anyWorkspace": "Osobiste i firmowe"
     },
     "installedFailed": "Nie udało się wczytać zainstalowanych wtyczek.",
     "planRecordOnly": {
@@ -3602,8 +3747,9 @@
       "new": "nowe",
       "read": "Odczyt: {{what}}",
       "write": "Odczyt i zmiana: {{what}}",
-      "ownerOnly": "Tylko właściciel obszaru roboczego może dodać, zaktualizować lub usunąć wtyczkę uruchamiającą kod.",
+      "ownerOnly": "Tylko właściciel obszaru roboczego lub menedżer może dodać, zaktualizować lub usunąć wtyczkę uruchamiającą kod.",
       "removeConnections": "Jej połączenia w tym obszarze roboczym ({{count}}) zostaną usunięte razem z zapisanymi kluczami i dostępem.",
+      "unlinks": "Jego połączenia bankowe ({{count}}) przestają się synchronizować. Konta i transakcje zostają jako konta ręczne.",
       "removeNothing": "Kod wtyczki zostanie usunięty z serwera, gdy żaden obszar roboczy nie będzie jej używał.",
       "auth": {
         "credentials": "Klucz lub hasło",
@@ -3628,6 +3774,15 @@
         "install": "Ta wtyczka nie dodaje danych. Sprawdź, co może robić jej kod:",
         "update": "Sprawdź, co może robić nowa wersja:",
         "remove": "Jej kod przestaje działać w tym obszarze roboczym."
+      },
+      "provides": "Synchronizuje jak połączony bank",
+      "providesHint": "Securo dodaje te dane do tego obszaru roboczego i aktualizuje je, jak w przypadku połączonego banku. Każde połączenie pojawia się w sekcji „Połączenia bankowe”.",
+      "kinds": {
+        "accounts": "Konta",
+        "transactions": "transakcje",
+        "bills": "rachunki kart",
+        "holdings": "inwestycje",
+        "trades": "kupno i sprzedaż"
       }
     },
     "connections": {
@@ -3665,8 +3820,13 @@
       "added": "Połączono: {{name}}",
       "removeTitle": "Usunąć {{name}}?",
       "removeHint": "Zapisane klucze i dostęp do tego obszaru roboczego zostaną usunięte. To, co już zostało pobrane, zostaje.",
+      "removeBankHint": "Synchronizuje się jak połączony bank: usunięcie odłącza ten bank i usuwa zsynchronizowane konta wraz z transakcjami.",
       "removed": "Usunięto: {{name}}",
-      "copyFailed": "Nie udało się skopiować. Zaznacz adres i skopiuj go ręcznie."
+      "copyFailed": "Nie udało się skopiować. Zaznacz adres i skopiuj go ręcznie.",
+      "editTitle": "Połącz ponownie {{name}}",
+      "editHint": "Zaktualizuj to, co się zmieniło, np. nowe hasło lub token. Potem połączenie zsynchronizuje się ponownie.",
+      "keepBlank": "Zostaw pole puste, aby zachować obecną wartość.",
+      "updated": "Zaktualizowano {{name}}"
     },
     "oauth": {
       "title": "Kończenie logowania",
@@ -3675,7 +3835,9 @@
       "failed": "Nie udało się dokończyć logowania. Spróbuj ponownie.",
       "missing": "Usługa nie zwróciła logowania. Spróbuj ponownie.",
       "serviceError": "Usługa zgłosiła błąd: {{message}}"
-    }
+    },
+    "onlyForBusiness": "Tylko firmowe obszary robocze",
+    "onlyForPersonal": "Tylko osobiste obszary robocze"
   },
   "library": {
     "title": "Biblioteka",
@@ -3754,7 +3916,8 @@
     "needs": {
       "assistant": "Wymaga włączenia agentów AI.",
       "invoices": "Dostępne w przestrzeniach typu Firmowy."
-    }
+    },
+    "fromPlugin": "Z: {{name}}"
   },
   "widgets": {
     "budgets": "Budżety",

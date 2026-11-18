@@ -1,6 +1,6 @@
 [project]
 name = "securo-backend"
-version = "0.18.0"
+version = "0.20.0"
 description = "Securo API - Personal Finance Manager"
 requires-python = ">=3.11"
 # These ranges express intent; the resolved versions live in uv.lock, which is
@@ -52,6 +52,9 @@ dependencies = [
     # business day). Computed offline for ~250 countries and their
     # subdivisions, so no holiday API is called and nothing needs a key.
     "holidays>=0.80",
+    # S3-compatible attachment storage. Only imported when STORAGE_PROVIDER=s3,
+    # so installs on local storage pay nothing at runtime (ADR 0019).
+    "aiobotocore>=2.21.0",
 ]
 
 [project.optional-dependencies]
@@ -60,6 +63,8 @@ dev = [
     "pytest-asyncio>=1.0",
     "pytest-cov>=4.1.0",
     "pytest-xdist>=3.6.1",
+    # CI splits the suite across parallel jobs, balanced by .test_durations.
+    "pytest-split>=0.11.0",
     "httpx>=0.26.0",
     "aiosqlite>=0.19.0",
     # Upper-bounded so CI lint stays deterministic: ruff 0.16 reformats the
@@ -70,7 +75,7 @@ dev = [
     # 0.0.x release can add new checks, so letting it float would turn a green
     # CI red on an unrelated PR. Bump deliberately, together with whatever
     # annotations the new release asks for.
-    "ty==0.0.94",
+    "ty==0.0.105",
 ]
 
 [tool.setuptools.packages.find]

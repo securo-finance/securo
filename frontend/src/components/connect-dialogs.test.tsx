@@ -1,4 +1,4 @@
-import { act, screen } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/test/utils'
 import { ConnectorSelectDialog } from './connector-select-dialog'
@@ -46,6 +46,9 @@ it('ignores provider responses from a closed session when reopened', async () =>
   rerender(<ConnectorSelectDialog open={false} {...props} />)
   rerender(<ConnectorSelectDialog open {...props} />)
   await screen.findByText('New provider')
+  // `finish` is only set once the pending request has started: wait for it
+  // before settling, or a slow run settles an undefined resolve.
+  await waitFor(() => expect(api.getProviders).toHaveBeenCalledTimes(2))
   await act(async () => { finish([{ name: 'old', display_name: 'Old provider', configured: true }]) })
   expect(screen.queryByText('Old provider')).not.toBeInTheDocument()
   expect(screen.getByText('New provider')).toBeInTheDocument()
@@ -61,6 +64,7 @@ it('ignores an earlier country request after back navigation and another selecti
   await user.click(screen.getByRole('button', { name: 'Back' }))
   await user.click(screen.getByText('GB'))
   await screen.findByText('New bank')
+  await waitFor(() => expect(api.listInstitutions).toHaveBeenCalledTimes(3))
   await act(async () => { finish({ institutions: [{ country: 'DE', name: 'old', display_name: 'Old bank' }] }) })
   expect(screen.queryByText('Old bank')).not.toBeInTheDocument()
   expect(screen.getByText('New bank')).toBeInTheDocument()
@@ -73,6 +77,9 @@ it('waits for banks in the remembered country instead of showing an empty result
     .mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
   renderWithProviders(<OAuthConnectDialog open provider="synthetic" onClose={vi.fn()} />)
   await screen.findByRole('button', { name: 'Back' })
+  // The Back button shows up with the country list, before the remembered
+  // country's banks are requested; `finish` is only set by that second call.
+  await waitFor(() => expect(api.listInstitutions).toHaveBeenCalledTimes(2))
   expect(screen.queryByText('No institutions found.')).not.toBeInTheDocument()
   await act(async () => { finish({ institutions: [{ country: 'DE', name: 'bank', display_name: 'Remembered bank' }] }) })
   expect(screen.getByText('Remembered bank')).toBeInTheDocument()
@@ -85,7 +92,7 @@ it('uses the latest close callback without restarting a bank token request', asy
   const latestClose = vi.fn()
   const { rerender } = renderWithProviders(<BankConnectDialog open reconnectConnectionId="synthetic" onClose={firstClose} />)
   rerender(<BankConnectDialog open reconnectConnectionId="synthetic" onClose={latestClose} />)
-  expect(api.getReconnectToken).toHaveBeenCalledTimes(1)
+  await waitFor(() => expect(api.getReconnectToken).toHaveBeenCalledTimes(1))
   await act(async () => { reject(new Error('synthetic failure')) })
   expect(firstClose).not.toHaveBeenCalled()
   expect(latestClose).toHaveBeenCalledOnce()
@@ -98,7 +105,29 @@ it('ignores token failures after the bank dialog closes', async () => {
   const onClose = vi.fn()
   const { rerender } = renderWithProviders(<BankConnectDialog open reconnectConnectionId="synthetic" onClose={onClose} />)
   rerender(<BankConnectDialog open={false} reconnectConnectionId="synthetic" onClose={onClose} />)
+  await waitFor(() => expect(api.getReconnectToken).toHaveBeenCalledTimes(1))
   await act(async () => { reject(new Error('late failure')) })
   expect(onClose).not.toHaveBeenCalled()
   expect(api.toastError).not.toHaveBeenCalled()
 })
+
+it('offers the installed plugins that sync as a bank, after the providers', async () => {
+  api.getProviders.mockResolvedValue([{ name: 'pluggy', display_name: 'Pluggy', description: 'Bank connection', configured: true }])
+  const integration = {
+    key: 'keys', name: { en: 'Ledger (API key)' }, description: { en: 'Your payouts' }, auth: 'credentials' as const,
+    fields: [], sync_minutes: 60, provides: ['accounts' as const],
+  }
+  const plugin = {
+    plugin_id: 'acme/ledger', name: { en: 'Ledger' }, version: '1.0.0', commit: '1'.repeat(40),
+    installed_at: '2026-11-12T00:00:00Z', integrations: [integration], network: [], api_scopes: [], redirect_uri: null,
+  }
+  const onSelectPlugin = vi.fn()
+  const { user } = renderWithProviders(
+    <ConnectorSelectDialog open onClose={vi.fn()} onSelect={vi.fn()} plugins={[{ plugin, integration }]} onSelectPlugin={onSelectPlugin} />,
+  )
+  await screen.findByText('Pluggy')
+  expect(screen.getByText('From your plugins')).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: /Ledger \(API key\)/ }))
+  expect(onSelectPlugin).toHaveBeenCalledWith({ plugin, integration })
+})
+

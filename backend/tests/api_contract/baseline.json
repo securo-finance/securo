@@ -169,6 +169,9 @@
   "GET /api/reconciliation/suggestions": 401,
   "GET /api/recurring-transactions": 401,
   "GET /api/recurring-transactions/holiday-calendars": 401,
+  "GET /api/recurring-transactions/price-changes/recent": 401,
+  "GET /api/recurring-transactions/summary": 401,
+  "GET /api/recurring-transactions/{recurring_id}/price-changes": 401,
   "GET /api/reports/cash-flow": 401,
   "GET /api/reports/category-statement": 401,
   "GET /api/reports/data-range": 401,
@@ -262,6 +265,7 @@
   "POST /api/assets/buy": 401,
   "POST /api/assets/import": 401,
   "POST /api/assets/import/preview": 401,
+  "POST /api/assets/refresh-prices": 401,
   "POST /api/assets/{asset_id}/refresh-price": 401,
   "POST /api/assets/{asset_id}/transactions": 401,
   "POST /api/assets/{asset_id}/values": 401,
@@ -355,6 +359,7 @@
   "POST /api/workspaces/{workspace_id}/members": 401,
   "PUT /api/agents/{agent_id}/tools": 401,
   "PUT /api/mortgage-payments/{payment_id}": 401,
+  "PUT /api/plugins/connections/{connection_id}/values": 404,
   "PUT /api/reconciliation/rules/{node}/order": 401,
   "PUT /api/ui/layouts/{surface}": 401
  },
@@ -604,6 +609,9 @@
   "GET /api/reconciliation/suggestions": 200,
   "GET /api/recurring-transactions": 200,
   "GET /api/recurring-transactions/holiday-calendars": 200,
+  "GET /api/recurring-transactions/price-changes/recent": 200,
+  "GET /api/recurring-transactions/summary": 200,
+  "GET /api/recurring-transactions/{recurring_id}/price-changes": 200,
   "GET /api/reports/cash-flow": 200,
   "GET /api/reports/category-statement": 200,
   "GET /api/reports/data-range": 200,
@@ -696,6 +704,7 @@
   "POST /api/assets/buy": 502,
   "POST /api/assets/import": 200,
   "POST /api/assets/import/preview": 200,
+  "POST /api/assets/refresh-prices": 200,
   "POST /api/assets/{asset_id}/refresh-price": 422,
   "POST /api/assets/{asset_id}/transactions": 201,
   "POST /api/assets/{asset_id}/values": 201,
@@ -789,6 +798,7 @@
   "POST /api/workspaces/{workspace_id}/members": 400,
   "PUT /api/agents/{agent_id}/tools": 200,
   "PUT /api/mortgage-payments/{payment_id}": 404,
+  "PUT /api/plugins/connections/{connection_id}/values": 404,
   "PUT /api/reconciliation/rules/{node}/order": 400,
   "PUT /api/ui/layouts/{surface}": 200
  },
@@ -878,6 +888,7 @@
   "GET /api/plugins/{owner}/{name}": 404,
   "GET /api/plugins/{owner}/{name}/plan": 404,
   "GET /api/products/{product_id}": 404,
+  "GET /api/recurring-transactions/{recurring_id}/price-changes": 404,
   "GET /api/transactions/{transaction_id}": 404,
   "GET /api/transactions/{transaction_id}/attachments": 404,
   "GET /api/transactions/{transaction_id}/attachments/{attachment_id}": 404,
@@ -964,7 +975,8 @@
   "POST /api/workspaces/{workspace_id}/archive": 404,
   "POST /api/workspaces/{workspace_id}/members": 404,
   "PUT /api/agents/{agent_id}/tools": 404,
-  "PUT /api/mortgage-payments/{payment_id}": 422
+  "PUT /api/mortgage-payments/{payment_id}": 422,
+  "PUT /api/plugins/connections/{connection_id}/values": 404
  },
  "viewer": {
   "DELETE /api/access-tokens/{token_id}": 404,
@@ -1070,6 +1082,7 @@
   "POST /api/assets/buy": 403,
   "POST /api/assets/import": 403,
   "POST /api/assets/import/preview": 200,
+  "POST /api/assets/refresh-prices": 403,
   "POST /api/assets/{asset_id}/refresh-price": 403,
   "POST /api/assets/{asset_id}/transactions": 403,
   "POST /api/assets/{asset_id}/values": 403,
@@ -1163,6 +1176,7 @@
   "POST /api/workspaces/{workspace_id}/members": 403,
   "PUT /api/agents/{agent_id}/tools": 403,
   "PUT /api/mortgage-payments/{payment_id}": 403,
+  "PUT /api/plugins/connections/{connection_id}/values": 404,
   "PUT /api/reconciliation/rules/{node}/order": 403,
   "PUT /api/ui/layouts/{surface}": 200
  }

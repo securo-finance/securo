@@ -12,6 +12,7 @@ import hashlib
 import logging
 import uuid
 from dataclasses import dataclass
+from collections.abc import Sequence
 from typing import Any, Literal
 
 from sqlalchemy import func, select
@@ -23,7 +24,7 @@ from app.models.rule import Rule
 from app.models.workspace import Workspace
 from app.models.plugin_connection import PluginConnection
 from app.models.workspace_plugin import WorkspacePlugin
-from app.plugins import connections, index, runner, sync
+from app.plugins import connections, index, logos, runner, sync
 from app.plugins.manifest import Manifest, parse_manifest
 from app.services.category_defaults import DEFAULT_CATEGORIES, DEFAULT_GROUPS
 from app.services.rule_packs import built_in_packs
@@ -53,6 +54,11 @@ class PluginChanged(Exception):
 class CatalogItem:
     entry: index.IndexEntry
     installed: WorkspacePlugin | None
+    workspace_kind: str | None = None
+
+    @property
+    def fits_workspace(self) -> bool:
+        return self.workspace_kind is None or self.entry.fits(self.workspace_kind)
 
     @property
     def update_available(self) -> bool:
@@ -81,6 +87,8 @@ class CodeConsent:
     """Connections in this workspace (removed along with the plugin)."""
     drops_code: bool = False
     """An update to a version without code: its connections go, as on removal."""
+    unlinks: int = 0
+    """Bank connections this change ends: their accounts stay, as manual ones."""
 
 
 @dataclass(frozen=True)
@@ -91,6 +99,8 @@ class PluginPlan:
     """The commit the plan installs; None when removing."""
     sync: sync.SyncPlan
     code: CodeConsent | None = None
+    themes: dict[str, list[dict[str, Any]]] | None = None
+    """Themes the action adds to the library (`added`) and takes out of it (`removed`)."""
 
 
 async def installed_plugins(session: AsyncSession, workspace_id: uuid.UUID) -> dict[str, WorkspacePlugin]:
@@ -103,7 +113,18 @@ async def catalog(session: AsyncSession, workspace_id: uuid.UUID) -> list[Catalo
     installed = await installed_plugins(session, workspace_id)
     async with index.http_client() as client:
         entries = await index.fetch_index(client)
-    return [CatalogItem(entry, installed.get(entry.id)) for entry in entries]
+    kind = await _workspace_kind(session, workspace_id)
+    return [CatalogItem(entry, installed.get(entry.id), kind) for entry in entries]
+
+
+async def icon(name: str) -> index.Icon | None:
+    """A plugin's icon, by its file name in the catalog; None when there's no such icon."""
+    try:
+        async with index.http_client() as client:
+            return await index.fetch_icon(client, name)
+    except index.PluginIndexError as exc:
+        logger.info("Plugin icon not served: %s", exc)
+        return None
 
 
 async def details(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str) -> PluginDetails:
@@ -120,7 +141,8 @@ async def details(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str
             raise PluginNotFound
         readme = await _optional(index.fetch_readme(client, entry))
         manifest = await _optional(index.fetch_manifest(client, entry)) if entry.supported else None
-    return PluginDetails(CatalogItem(entry, installed), readme, contents(manifest) if manifest else None)
+    item = CatalogItem(entry, installed, await _workspace_kind(session, workspace_id))
+    return PluginDetails(item, readme, contents(manifest) if manifest else None)
 
 
 async def _optional(call):
@@ -162,6 +184,7 @@ def contents(manifest: Manifest) -> dict[str, list[dict[str, Any]]]:
             for rule in manifest.contributes.rules
         ],
         "integrations": [i.model_dump() for i in manifest.contributes.integrations],
+        "themes": [t.model_dump() for t in manifest.contributes.themes],
         "network": [h.model_dump() for h in manifest.network],
         "api_scopes": [a.model_dump() for a in manifest.api_scopes],
     }
@@ -175,7 +198,63 @@ async def plan(
     plan = await sync.plan_sync(
         session, workspace_id, plugin_id, manifest, lang=lang, create_default_categories=True, fingerprint=fingerprint
     )
-    return PluginPlan(action, plugin_id, commit, plan, await _consent(session, workspace_id, plugin_id, manifest))
+    return PluginPlan(
+        action, plugin_id, commit, plan,
+        await _consent(session, workspace_id, plugin_id, manifest),
+        await _themes(session, workspace_id, plugin_id, manifest),
+    )
+
+
+async def _themes(
+    session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str, manifest: Manifest | None
+) -> dict[str, list[dict[str, Any]]] | None:
+    """Themes the action adds to the library and takes out of it."""
+    current = _installed_manifest((await installed_plugins(session, workspace_id)).get(plugin_id))
+    before = {t.key: t for t in current.contributes.themes} if current else {}
+    after = {t.key: t for t in manifest.contributes.themes} if manifest else {}
+    added = [{"key": k, "name": t.name} for k, t in after.items() if k not in before]
+    removed = [{"key": k, "name": t.name} for k, t in before.items() if k not in after]
+    if not added and not removed:
+        return None
+    return {"added": added, "removed": removed}
+
+
+def theme_id(plugin_id: str, key: str) -> str:
+    """How the library names a plugin's theme, as saved in `users.theme`."""
+    return f"plugin:{plugin_id}:{key}"
+
+
+async def _release_themes(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str, keys: set[str]) -> None:
+    """Members using a theme that leaves the library go back to Securo's own (not committed).
+
+    Unless the same plugin is still installed in another workspace of theirs,
+    where the theme keeps showing.
+    """
+    if not keys:
+        return
+    from app.models.user import User
+    from app.models.workspace import WorkspaceMember
+
+    ids = {theme_id(plugin_id, key) for key in keys}
+    # Ids first, then rows by id: users.id and workspace_members.user_id
+    # use different column types, so they're compared as values, not joined.
+    member_ids = list((await session.scalars(
+        select(WorkspaceMember.user_id).where(WorkspaceMember.workspace_id == workspace_id)
+    )).all())
+    users = (await session.scalars(select(User).where(User.id.in_(member_ids), User.theme.in_(ids)))).all()
+    for user in users:
+        theirs = list((await session.scalars(
+            select(WorkspaceMember.workspace_id).where(
+                WorkspaceMember.user_id == user.id, WorkspaceMember.workspace_id != workspace_id
+            )
+        )).all())
+        elsewhere = await session.scalar(
+            select(WorkspacePlugin.id)
+            .where(WorkspacePlugin.plugin_id == plugin_id, WorkspacePlugin.workspace_id.in_(theirs))
+            .limit(1)
+        ) if theirs else None
+        if elsewhere is None:
+            user.theme = None
 
 
 async def _fingerprint(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str, checksum: str | None) -> str | None:
@@ -220,16 +299,31 @@ async def _consent(
             PluginConnection.plugin_id == plugin_id,
         )
     )
+    linked = (
+        await session.scalars(
+            select(PluginConnection.integration).where(
+                PluginConnection.workspace_id == workspace_id,
+                PluginConnection.plugin_id == plugin_id,
+                PluginConnection.bank_connection_id.is_not(None),
+            )
+        )
+    ).all()
+    providing = {i.key for i in manifest.contributes.integrations if i.is_provider} if manifest else set()
+    unlinks = sum(1 for integration in linked if integration not in providing)
     old_hosts = {h.host for h in current.network} if current and manifest else set()
     old_scopes = {a.scope for a in current.api_scopes} if current and manifest else set()
     return CodeConsent(
         network=[h.model_dump() for h in shown.network],
         api_scopes=[a.model_dump() for a in shown.api_scopes],
-        integrations=[{"key": i.key, "name": i.name, "auth": i.auth} for i in shown.contributes.integrations],
+        integrations=[
+            {"key": i.key, "name": i.name, "auth": i.auth, "provides": i.provides}
+            for i in shown.contributes.integrations
+        ],
         new_hosts=sorted({h.host for h in shown.network} - old_hosts) if current and manifest else [],
         new_scopes=sorted({a.scope for a in shown.api_scopes} - old_scopes) if current and manifest else [],
         connections=int(count or 0),
         drops_code=drops_code,
+        unlinks=unlinks,
     )
 
 
@@ -268,6 +362,8 @@ async def apply(
         # If the runner can't take it, nothing changes here.
         installed_now = await _install_code(entry, manifest)
     try:
+        if manifest is not None and entry is not None and target_commit is not None:
+            await _store_logos(session, entry, target_commit, manifest)
         consent = await _consent(session, workspace_id, plugin_id, manifest)
         # One plugin change per workspace at a time: two confirmations of the same
         # first install would otherwise both find nothing to lock and both create.
@@ -285,6 +381,10 @@ async def apply(
             fingerprint=await _fingerprint(session, workspace_id, plugin_id, checksum),
         )
         record = (await installed_plugins(session, workspace_id)).get(plugin_id)
+        gone_themes = {t.key for t in current.contributes.themes} - (
+            {t.key for t in manifest.contributes.themes} if manifest else set()
+        ) if current else set()
+        await _release_themes(session, workspace_id, plugin_id, gone_themes)
         drops_code = current is not None and current.has_code and not (manifest and manifest.has_code)
         if drops_code:
             # A version without code (or removing): its connections and their tokens go too.
@@ -297,7 +397,9 @@ async def apply(
                 record = WorkspacePlugin(workspace_id=workspace_id, plugin_id=plugin_id, installed_by=user_id)
                 session.add(record)
             record.name, record.version, record.commit = manifest.name, manifest.version, target_commit
-            record.manifest = manifest.model_dump(mode="json") if manifest.has_code else None
+            # Kept for every plugin: connections need the integrations, the
+            # library the themes, and neither should depend on the catalog.
+            record.manifest = manifest.model_dump(mode="json")
             if action == "update" and manifest.has_code:
                 await connections.follow_manifest(session, workspace_id, manifest, lang=lang)
         await session.commit()
@@ -308,7 +410,20 @@ async def apply(
         raise
     if current is not None and current.has_code and previous_commit and previous_commit != target_commit:
         await _release_code(session, plugin_id, previous_commit)
-    return PluginPlan(action, plugin_id, target_commit, result.plan, consent)
+    return PluginPlan(action, plugin_id, target_commit, result.plan, consent, None)
+
+
+async def _store_logos(session: AsyncSession, entry: index.IndexEntry, commit: str, manifest: Manifest) -> None:
+    """Keep the logos the package ships, served by Securo itself."""
+
+    async def fetch() -> bytes:
+        async with index.http_client() as http:
+            return (await index.fetch_archive(http, entry))[0]
+
+    try:
+        await logos.store(session, entry.id, commit, manifest, fetch)
+    except logos.LogoError as exc:
+        raise PluginUnavailable(str(exc)) from exc
 
 
 async def _install_code(entry: index.IndexEntry, manifest: Manifest) -> bool:
@@ -341,7 +456,9 @@ async def install_on_runner(entry: index.IndexEntry, manifest: Manifest) -> bool
 
 
 async def _release_code(session: AsyncSession, plugin_id: str, commit: str) -> None:
-    """Take a commit off the runner once no workspace runs it."""
+    """Take a commit off the runner, and drop its logos, once no workspace runs it."""
+    await logos.release(session, plugin_id, commit)
+    await session.commit()
     still_used = await session.scalar(
         select(WorkspacePlugin.id)
         .where(WorkspacePlugin.plugin_id == plugin_id, WorkspacePlugin.commit == commit)
@@ -381,13 +498,26 @@ async def _target(
             raise PluginUnavailable(f"needs Securo {entry.min_securo_version} or newer")
         if not entry.supported:
             raise PluginUnavailable("contributes something this Securo version can't apply")
+        kind = await _workspace_kind(session, workspace_id)
+        if not entry.fits(kind):
+            raise PluginUnavailable(_not_for(entry.workspaces))
         manifest = await index.fetch_manifest(client, entry)
     # The index's copy of the minimum is a summary; the verified manifest decides.
     if not index.is_compatible(manifest.min_securo_version):
         raise PluginUnavailable(f"needs Securo {manifest.min_securo_version} or newer")
+    if kind not in manifest.workspaces:
+        raise PluginUnavailable(_not_for(manifest.workspaces))
     if action == "update" and installed is not None and installed.commit == entry.commit:
         raise PluginUnavailable("already up to date")
     return entry.commit, manifest, entry.manifest_sha256, entry
+
+
+async def _workspace_kind(session: AsyncSession, workspace_id: uuid.UUID) -> str:
+    return await session.scalar(select(Workspace.kind).where(Workspace.id == workspace_id)) or "personal"
+
+
+def _not_for(kinds: Sequence[str]) -> str:
+    return f"only for {' and '.join(kinds)} workspaces"
 
 
 async def _has_items(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str) -> bool:
