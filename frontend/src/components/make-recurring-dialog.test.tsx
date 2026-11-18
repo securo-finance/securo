@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { MakeRecurringDialog } from '@/components/make-recurring-dialog'
@@ -289,5 +289,39 @@ describe('MakeRecurringDialog', () => {
     expect(vi.mocked(recurringApi.create).mock.calls[0][0]).toEqual(
       expect.objectContaining({ start_date: '2026-04-15', skip_first: false }),
     )
+  })
+
+  it('leaves a reopened dialog alone when an earlier save lands', async () => {
+    let resolveCreate: (value: unknown) => void = () => {}
+    vi.mocked(recurringApi.create).mockReturnValue(
+      new Promise((resolve) => { resolveCreate = resolve }) as never,
+    )
+
+    const onClose = vi.fn()
+    const tx = schoolFee({ id: 'tx-6' })
+    const { user, rerender } = renderDialog(tx, onClose)
+    await screen.findByLabelText(t('recurring.description'))
+
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+    expect(recurringApi.create).toHaveBeenCalledTimes(1)
+
+    // The user closed that form and opened the same transaction again; the
+    // first save now belongs to a session that is no longer on screen.
+    const dialog = (transaction: Transaction | null) => (
+      <MakeRecurringDialog
+        transaction={transaction}
+        accounts={[account]}
+        categories={[category]}
+        categoryGroups={[]}
+        onClose={onClose}
+      />
+    )
+    rerender(dialog(null))
+    rerender(dialog(tx))
+    await screen.findByLabelText(t('recurring.description'))
+
+    await act(async () => { resolveCreate({}) })
+
+    expect(onClose).not.toHaveBeenCalled()
   })
 })

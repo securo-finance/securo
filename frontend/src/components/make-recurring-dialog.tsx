@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -54,9 +55,24 @@ export function MakeRecurringDialog({
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  // One session is one opening of the dialog. A save that lands after the user
+  // closed this opening and opened another one — even over the same
+  // transaction — must not close the form now on screen.
+  const sessionRef = useRef(0)
+  const openTransactionRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (transaction && transaction.id !== openTransactionRef.current) {
+      openTransactionRef.current = transaction.id
+      sessionRef.current += 1
+    }
+    if (!transaction) openTransactionRef.current = null
+  }, [transaction])
 
   const createMutation = useMutation({
-    mutationFn: ({ data, sourceDate }: { id: string; data: Partial<RecurringTransaction>; sourceDate: string }) =>
+    mutationFn: ({
+      data,
+      sourceDate,
+    }: { id: string; data: Partial<RecurringTransaction>; sourceDate: string; session: number }) =>
       recurringApi.create({
         ...data,
         // The source transaction covers the start-date occurrence only while
@@ -64,13 +80,11 @@ export function MakeRecurringDialog({
         // that first occurrence one no transaction covers, so it must happen.
         skip_first: data.start_date === sourceDate,
       }),
-    onSuccess: (_created, { id }) => {
+    onSuccess: (_created, { session }) => {
       invalidateFinancialQueries(queryClient)
       queryClient.invalidateQueries({ queryKey: ['recurring'] })
       toast.success(t('recurring.created'))
-      // A save that finishes after the user moved on to another transaction
-      // must not close the one now on screen.
-      if (transaction?.id === id) onClose()
+      if (session === sessionRef.current) onClose()
     },
     onError: (error: unknown) => toast.error(extractApiError(error, t('common.error'))),
   })
@@ -96,7 +110,12 @@ export function MakeRecurringDialog({
             ?? undefined
           }
           accounts={accounts}
-          onSave={(data) => createMutation.mutate({ id: transaction.id, sourceDate: transaction.date, data })}
+          onSave={(data) => createMutation.mutate({
+            id: transaction.id,
+            sourceDate: transaction.date,
+            session: sessionRef.current,
+            data,
+          })}
           onCancel={onClose}
           loading={createMutation.isPending}
         />
