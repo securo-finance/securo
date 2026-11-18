@@ -69,7 +69,7 @@ def database_url():
 
 
 def test_long_names_are_recorded_and_survive_a_rollback(database_url):
-    _alembic(database_url, "upgrade", "head")
+    _alembic(database_url, "upgrade", "heads")
     user_id, ws_id, agent_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     asyncio.run(_execute(
         database_url,

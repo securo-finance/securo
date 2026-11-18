@@ -92,14 +92,14 @@ def migrated_database_url():
     asyncio.run(admin(f'CREATE DATABASE "{name}"'))
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "alembic", "upgrade", "head"],
+            [sys.executable, "-m", "alembic", "upgrade", "heads"],
             cwd=BACKEND,
             env={**os.environ, "DATABASE_URL": target},
             capture_output=True,
             text=True,
             timeout=300,
         )
-        assert result.returncode == 0, f"alembic upgrade head failed:\n{result.stderr[-4000:]}"
+        assert result.returncode == 0, f"alembic upgrade heads failed:\n{result.stderr[-4000:]}"
         yield target
     finally:
         asyncio.run(admin(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))

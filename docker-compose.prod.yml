@@ -161,7 +161,7 @@ services:
     # Replaces the anchor's schema check and migrate gate, which would make
     # migrate wait on itself. YAML merge is shallow, so db/redis are restated.
     entrypoint: ["alembic"]
-    command: upgrade head
+    command: upgrade heads
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
