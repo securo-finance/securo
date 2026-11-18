@@ -1285,6 +1285,7 @@
     "syncPartial": "Alcuni conti sono stati aggiornati, ma per gli altri è stato raggiunto il limite giornaliero della banca. Verranno riprovati più tardi.",
     "syncError": "Sincronizzazione fallita",
     "connected": "Banca collegata con successo",
+    "connectedImportFailed": "Banca collegata, ma la prima importazione non è riuscita. Ripeti la sincronizzazione per completare.",
     "connectError": "Impossibile collegare la banca",
     "disconnected": "Connessione rimossa",
     "confirmDisconnectTitle": "Disconnettere la connessione bancaria?",

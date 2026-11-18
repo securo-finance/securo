@@ -1356,6 +1356,89 @@ async def test_handle_oauth_callback_with_payee(session: AsyncSession, test_user
     assert conn.institution_name == "Payee Bank"
 
 
+@pytest.mark.asyncio
+async def test_first_import_refused_keeps_connection_and_accounts(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A refused first import must not spend the bank authorization (#1406).
+
+    The connection, its credentials and its accounts are committed before the
+    import, so the retry the accounts page offers uses the same consent
+    instead of sending the user through the bank's login again.
+    """
+    account_data = AccountData(
+        external_id="acc-refused", name="Checking",
+        type="checking", balance=Decimal("500.00"), currency="BRL",
+    )
+    mock_provider = AsyncMock()
+    mock_provider.handle_oauth_callback = AsyncMock(return_value=ConnectionData(
+        external_id="ext-refused",
+        institution_name="Refusing Bank",
+        credentials={"token": "kept"},
+        accounts=[account_data],
+    ))
+    mock_provider.get_holdings = AsyncMock(return_value=[])
+    mock_provider.get_transactions = AsyncMock(
+        side_effect=RuntimeError("transactions refused")
+    )
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        connection = await handle_oauth_callback(
+            session, test_workspace.id, test_user.id, "auth-code", "pluggy"
+        )
+
+    assert connection.status == "error"
+    assert connection.last_sync_at is None
+    stored = await session.get(BankConnection, connection.id)
+    assert stored is not None
+    assert stored.credentials == {"token": "kept"}
+    account = (
+        await session.execute(
+            select(Account).where(Account.connection_id == connection.id)
+        )
+    ).scalar_one()
+    assert account.external_id == "acc-refused"
+    # The half-import was rolled back whole.
+    transactions = (
+        await session.execute(
+            select(Transaction).where(Transaction.account_id == account.id)
+        )
+    ).scalars().all()
+    assert transactions == []
+
+    # The retry syncs the stored connection: no new bank login, no new row.
+    mock_provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id="tx-after-retry", description="GROCERY",
+            amount=Decimal("80"), date=date.today(), type="debit", currency="BRL",
+        ),
+    ])
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "kept"})
+    mock_provider.get_accounts = AsyncMock(return_value=[account_data])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        retried, _merged, _outcome = await sync_connection(
+            session, connection.id, test_workspace.id, test_user.id
+        )
+
+    assert retried.id == connection.id
+    assert retried.status == "active"
+    assert retried.last_sync_at is not None
+    imported = await session.scalar(
+        select(Transaction).where(Transaction.external_id == "tx-after-retry")
+    )
+    assert imported is not None
+    accounts = (
+        await session.execute(
+            select(Account).where(Account.connection_id == connection.id)
+        )
+    ).scalars().all()
+    assert [a.external_id for a in accounts] == ["acc-refused"]
+
+
 # ---------------------------------------------------------------------------
 # sync_connection
 # ---------------------------------------------------------------------------

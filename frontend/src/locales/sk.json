@@ -1345,6 +1345,7 @@
     "syncPartial": "Niektoré účty boli aktualizované, ale pri ostatných bol dosiahnutý denný limit banky. Skúsime ich znova neskôr.",
     "syncError": "Synchronizácia zlyhala",
     "connected": "Banka úspešne prepojená",
+    "connectedImportFailed": "Banka je pripojená, ale prvý import zlyhal. Zopakujte synchronizáciu na dokončenie.",
     "connectError": "Nepodarilo sa prepojiť banku",
     "disconnected": "Prepojenie odstránené",
     "confirmDisconnectTitle": "Odpojiť prepojenie banky?",

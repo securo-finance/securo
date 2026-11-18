@@ -1662,7 +1662,6 @@ async def handle_oauth_callback(
 
     user = await session.get(User, user_id)
     user_currency = user.primary_currency if user else get_settings().default_currency
-    new_tx_ids: list[uuid.UUID] = []
 
     use_provider_cats = await admin_service.use_provider_categories(session)
 
@@ -1680,6 +1679,7 @@ async def handle_oauth_callback(
     )
 
     institution_cache: dict[str, Institution] = {}
+    synced_accounts: list[tuple[Account, AccountData]] = []
     for acc_data in connection_data.accounts:
         is_cc = acc_data.type == "credit_card"
         institution = await _resolve_institution(
@@ -1712,14 +1712,73 @@ async def handle_oauth_callback(
         await session.flush()
 
         await _sync_reserved_balances(session, account, acc_data)
+        synced_accounts.append((account, acc_data))
 
+    # The connection, the session it stores and its accounts are committed
+    # before anything is read from the bank. A first import the provider
+    # refuses must never take the authorization with it: a rollback would
+    # spend the consent the user just gave and send them through the bank's
+    # login again (issue #1406, the same problem #1400 fixed on a reconnect).
+    await session.commit()
+
+    try:
+        await _run_first_import(
+            session,
+            connection=connection,
+            accounts=synced_accounts,
+            provider=provider,
+            credentials=connection_data.credentials,
+            user_id=user_id,
+            workspace_id=workspace_id,
+            user_currency=user_currency,
+            use_provider_cats=use_provider_cats,
+            holdings=holdings,
+        )
+        connection.last_sync_at = datetime.now(timezone.utc)
+        await session.commit()
+    except Exception as exc:
+        # The first import is one unit: undo whatever it half-imported, keep
+        # the connection and its accounts, and leave it errored so the retry
+        # the accounts page offers syncs the stored credentials.
+        await session.rollback()
+        await _mark_initial_import_failed(session, connection.id, exc)
+        await session.refresh(connection)
+        return connection
+
+    await session.refresh(connection)
+    return connection
+
+
+async def _run_first_import(
+    session: AsyncSession,
+    *,
+    connection: BankConnection,
+    accounts: list[tuple[Account, AccountData]],
+    provider: BankProvider,
+    credentials: dict,
+    user_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    user_currency: str,
+    use_provider_cats: bool,
+    holdings: Optional[list[HoldingData]],
+) -> None:
+    """Read the first history of a newly authorized connection.
+
+    Runs inside the OAuth callback's request on purpose: the provider treats
+    these reads as user-present, which is what its PSU headers and the wider
+    allowance depend on (issue #1400). The caller has already persisted the
+    connection and its accounts, so a failure here costs the import, never
+    the authorization.
+    """
+    new_tx_ids: list[uuid.UUID] = []
+    for account, acc_data in accounts:
         bills_by_external_id = await _sync_credit_card_bills(
-            session, user_id, account, provider, connection_data.credentials
+            session, user_id, account, provider, credentials
         )
 
         # Fetch initial transactions (since=None fetches all available history)
         transactions_data = await provider.get_transactions(
-            connection_data.credentials, acc_data.external_id, None
+            credentials, acc_data.external_id, None
         )
         incoming_external_ids = {txn.external_id for txn in transactions_data}
         seen_external_ids: set[str] = set()
@@ -1871,19 +1930,14 @@ async def handle_oauth_callback(
         )
         await reconciliation_service.match_incoming(session, workspace_id, landed)
 
-    # Investment holdings live on /investments — separate endpoint from
-    # /accounts. Fetched before the account loop and stored here once the
-    # accounts exist, so holdings are available on the Assets page
+    # Investment holdings live on /investments, a separate endpoint from
+    # /accounts. Fetched before the accounts were created and stored here
+    # once they exist, so holdings are available on the Assets page
     # immediately after the widget closes.
     if holdings is not None:
         await _sync_holdings(
-            session, user_id, connection, connection_data.credentials, holdings
+            session, user_id, connection, credentials, holdings
         )
-
-    connection.last_sync_at = datetime.now(timezone.utc)
-    await session.commit()
-    await session.refresh(connection)
-    return connection
 
 
 def _normalized_account_name(name: str | None) -> str:
@@ -4049,6 +4103,25 @@ async def _mark_failed_sync(
             conn.status = status
         if retry_after is not None:
             conn.settings = _with_retry_after(conn.settings, retry_after)
+
+
+async def _mark_initial_import_failed(
+    session: AsyncSession, connection_id: uuid.UUID, error: Exception
+) -> None:
+    """Leave a new connection usable after its first import was refused.
+
+    The connection, its credentials and its accounts were committed before
+    the import began, so nothing about the bank authorization is lost: the
+    retry the accounts page offers syncs the stored credentials instead of
+    sending the user back to the bank's login. The provider's own reason is
+    logged here and not stored yet; that is where it will be recorded.
+    """
+    logger.warning(
+        "First import failed for connection %s; keeping it for a retry",
+        connection_id,
+        exc_info=error,
+    )
+    await _mark_failed_sync(session, connection_id, "error")
 
 
 class ConnectionDisconnectedError(Exception):

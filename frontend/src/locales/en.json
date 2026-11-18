@@ -1281,6 +1281,7 @@
     "syncPartial": "Some accounts were updated, but the bank's daily limit was reached for the others. They will be retried later.",
     "syncError": "Sync failed",
     "connected": "Bank connected successfully",
+    "connectedImportFailed": "Bank connected, but the first import failed. Retry the sync to finish.",
     "connectError": "Failed to connect bank",
     "disconnected": "Connection removed",
     "confirmDisconnectTitle": "Disconnect bank connection?",

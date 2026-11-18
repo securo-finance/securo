@@ -1282,6 +1282,7 @@
     "syncPartial": "Sommige rekeningen zijn bijgewerkt, maar voor de andere is het dagelijkse banklimiet bereikt. Die worden later opnieuw geprobeerd.",
     "syncError": "Synchronisatie mislukt",
     "connected": "Bank succesvol verbonden",
+    "connectedImportFailed": "Bank gekoppeld, maar de eerste import is mislukt. Herhaal de synchronisatie om af te ronden.",
     "connectError": "Kan geen verbinding maken met de bank",
     "disconnected": "Verbinding verwijderd",
     "confirmDisconnectTitle": "Bankverbinding verbreken?",
