@@ -196,6 +196,76 @@ async def test_chat_limit_is_shared_by_every_agent(client: AsyncClient):
     assert refused.status_code == 429
 
 
+async def test_two_requests_in_the_same_instant_each_spend_a_slot(client: AsyncClient):
+    """The window is a sorted set, so each request needs its own member: a
+    member named after the timestamp would let two posts that share a float
+    collapse into one, and a third would pass on a ceiling of two."""
+    windows: dict[str, dict[str, float]] = {}
+
+    def make_pipeline():
+        pending: list[tuple] = []
+        pipe = MagicMock()
+
+        def zremrangebyscore(key, low, high):
+            pending.append(("trim", key, low, high))
+            return pipe
+
+        def zcard(key):
+            pending.append(("card", key))
+            return pipe
+
+        def zadd(key, mapping):
+            pending.append(("add", key, dict(mapping)))
+            return pipe
+
+        def expire(key, seconds):
+            pending.append(("expire", key, seconds))
+            return pipe
+
+        async def execute():
+            results = []
+            for op in pending:
+                if op[0] == "trim":
+                    _, key, low, high = op
+                    window = windows.setdefault(key, {})
+                    for member, score in list(window.items()):
+                        if low <= score <= high:
+                            del window[member]
+                    results.append(None)
+                elif op[0] == "card":
+                    results.append(len(windows.setdefault(op[1], {})))
+                elif op[0] == "add":
+                    _, key, mapping = op
+                    windows.setdefault(key, {}).update(mapping)
+                    results.append(True)
+                else:
+                    results.append(True)
+            return results
+
+        pipe.zremrangebyscore = zremrangebyscore
+        pipe.zcard = zcard
+        pipe.zadd = zadd
+        pipe.expire = expire
+        pipe.execute = execute
+        return pipe
+
+    honest_redis = MagicMock()
+    honest_redis.pipeline = make_pipeline
+
+    async def _honest_get_redis():
+        return honest_redis
+
+    with patch("app.core.rate_limit.get_redis", _honest_get_redis), \
+         patch("app.core.rate_limit.time.time", return_value=1_000.0), \
+         patch("app.core.rate_limit.get_settings", lambda: _settings(limit=2)):
+        first = await client.post(_chat_url(), json={"content": "hi"})
+        second = await client.post(_chat_url(), json={"content": "hi"})
+        refused = await client.post(_chat_url(), json={"content": "hi"})
+
+    assert (first.status_code, second.status_code) == (401, 401)
+    assert refused.status_code == 429
+
+
 async def test_zero_disables_the_chat_limit(client: AsyncClient):
     """More requests than the shipped default, so a zero that quietly fell back
     to the default would be refused on the surplus instead of passing here."""

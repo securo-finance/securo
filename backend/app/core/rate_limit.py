@@ -1,5 +1,6 @@
 import time
 from collections.abc import Callable
+from uuid import uuid4
 
 from fastapi import HTTPException, Request
 from redis.exceptions import RedisError
@@ -80,7 +81,10 @@ class RateLimiter:
             pipe = r.pipeline()
             pipe.zremrangebyscore(key, 0, window_start)
             pipe.zcard(key)
-            pipe.zadd(key, {str(now): now})
+            # A unique member per request: keyed by the timestamp, two requests
+            # that share a float value would land on the same member and the
+            # window would count them as one.
+            pipe.zadd(key, {uuid4().hex: now})
             pipe.expire(key, self.window_seconds)
             results = await pipe.execute()
         except RedisError as exc:
