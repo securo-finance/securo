@@ -177,15 +177,33 @@ async def test_zero_disables_the_chat_limit(client: AsyncClient):
     assert {r.status_code for r in responses} == {401}
 
 
+@pytest.mark.parametrize("where_it_breaks", ["acquiring the connection", "pipeline"])
 async def test_chat_refuses_with_503_when_the_limit_cannot_be_counted(
-    client: AsyncClient,
+    client: AsyncClient, where_it_breaks: str
 ):
-    """A Redis restart must not turn into a bare 500 the client cannot read."""
+    """A Redis restart must not turn into a bare 500 the client cannot read,
+    whether it fails when the connection is taken or in the middle of the
+    pipeline. The ceiling is pinned so a developer's `0` cannot skip Redis."""
+
+    def _broken_pipeline():
+        pipe = MagicMock()
+        for step in ("zremrangebyscore", "zcard", "zadd", "expire"):
+            setattr(pipe, step, lambda *a, **kw: pipe)
+        pipe.execute = AsyncMock(side_effect=RedisConnectionError("redis went away"))
+        return pipe
 
     async def _unreachable():
         raise RedisConnectionError("redis is down")
 
-    with patch("app.core.rate_limit.get_redis", _unreachable):
+    async def _connected_but_broken():
+        redis = AsyncMock()
+        redis.pipeline = _broken_pipeline
+        return redis
+
+    stub = _unreachable if where_it_breaks == "acquiring the connection" else _connected_but_broken
+
+    with patch("app.core.rate_limit.get_settings", lambda: _settings(limit=_shipped_default())), \
+         patch("app.core.rate_limit.get_redis", stub):
         response = await client.post(_chat_url(), json={"content": "hi"})
 
     assert response.status_code == 503

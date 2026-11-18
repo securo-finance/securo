@@ -53,7 +53,11 @@ x-backend-env: &backend-env
   PLUGINS_RUNNER_TOKEN: ${PLUGINS_RUNNER_TOKEN:-}
   # The backend is reached through the bundled nginx frontend below, so rate
   # limiting needs to trust exactly one reverse-proxy hop to key by real
-  # client IP instead of nginx's own container address.
+  # client IP instead of nginx's own container address. With
+  # TRAEFIK_ENABLE=true there is a second proxy ahead of nginx, so the
+  # visitor's address is two hops from the right: set this to 2, and keep the
+  # frontend port unreachable directly, or that hop is an entry the client
+  # wrote itself.
   TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-1}
   REDIS_URL: redis://redis:6379/0
   BANK_SYNC_MIN_INTERVAL_HOURS: ${BANK_SYNC_MIN_INTERVAL_HOURS:-4}
