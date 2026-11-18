@@ -494,7 +494,7 @@ _AUTO_INVEST_MATCH_ABSOLUTE = Decimal("1")
 
 def _mirrors_auto_invested(holding: _CountedHolding, acc: AccountData) -> bool:
     """Whether an unattributed holding looks like this account's auto-invested money."""
-    if holding.currency != acc.currency:
+    if holding.currency != acc.currency or not holding.value.is_finite():
         return False
     tolerance = max(
         acc.auto_invested_balance * _AUTO_INVEST_MATCH_RELATIVE,

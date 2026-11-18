@@ -5077,6 +5077,26 @@ async def test_sync_two_unattributed_holdings_in_window_do_not_deduct(
     assert balances["acc-checking"] == Decimal("1000")
 
 
+def test_unattributed_non_finite_holding_is_never_a_mirror():
+    """A NaN or infinite holding value is skipped before the value match
+    (an ordering comparison on NaN raises), so it neither breaks the sync
+    nor counts as a second match next to the real one."""
+    from app.services.connection_service import (
+        _CountedHolding,
+        _auto_invested_deductions,
+    )
+
+    accounts = [_auto_invest_account("acc-checking", "1000", "400")]
+    counted = [
+        _CountedHolding(None, Decimal("NaN"), "BRL"),
+        _CountedHolding(None, Decimal("Infinity"), "BRL"),
+        _CountedHolding(None, Decimal("400"), "BRL"),
+    ]
+    assert _auto_invested_deductions(accounts, counted) == {
+        "acc-checking": Decimal("400")
+    }
+
+
 @pytest.mark.asyncio
 async def test_sync_unattributed_holding_in_another_currency_does_not_deduct(
     session: AsyncSession, test_user, test_workspace
