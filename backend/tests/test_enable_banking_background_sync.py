@@ -188,6 +188,7 @@ async def test_a_refused_background_window_is_cut_and_kept_for_later(
     assert windows == [(since, TODAY), (OLDEST_SERVED, TODAY)]
     # The sync keeps last_sync_at, so the cut range is asked for again.
     assert provider.incomplete_account_ids == {"acc-1"}
+    assert provider.presence_required_account_ids == {"acc-1"}
 
 
 @pytest.mark.asyncio
@@ -197,6 +198,7 @@ async def test_a_window_refused_with_the_user_present_is_cut_for_good(eb_keys):
     windows, provider = await _fetch_since(since, context=USER, refuse_before=WRONG_PERIOD)
     assert windows == [(since, TODAY), (OLDEST_SERVED, TODAY)]
     assert provider.incomplete_account_ids == set()
+    assert provider.presence_required_account_ids == set()
 
 
 @pytest.mark.asyncio
@@ -262,25 +264,42 @@ async def test_a_cut_window_keeps_last_sync_at(
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/transactions"):
-            if _window(request)[0] < OLDEST_SERVED:
+            present = "Psu-Ip-Address" in request.headers
+            if _window(request)[0] < OLDEST_SERVED and not present:
                 return PRESENCE_REFUSAL
             return httpx.Response(200, json={"transactions": {"booked": [], "pending": []}})
         return _bank([])(request)
 
-    provider = EnableBankingProvider()
-    with _patch_client(provider, handler), \
-         patch("app.services.connection_service.get_provider", return_value=provider), \
-         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
-         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
-         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
-        _, _, outcome = await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+    async def sync(context=None):
+        provider = EnableBankingProvider()
+        with _patch_client(provider, handler), psu_present(context), \
+             patch("app.services.connection_service.get_provider", return_value=provider), \
+             patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+             patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+             patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+            _, _, outcome = await sync_connection(session, conn_id, test_workspace.id, test_user.id)
+        session.expunge_all()
+        stored = await session.get(BankConnection, conn_id)
+        assert stored is not None
+        return outcome, stored
+
+    conn_id = conn.id
+    outcome, stored = await sync()
 
     assert outcome == "refreshed"
-    session.expunge_all()
-    stored = await session.get(BankConnection, conn.id)
-    assert stored is not None and stored.status == "active"
+    assert stored.status == "active"
     assert stored.last_sync_at is not None
     assert stored.last_sync_at.replace(tzinfo=timezone.utc) == last_sync
+    # The card keeps asking for a sync with the user there (issue #1405).
+    assert stored.last_sync_failure is not None
+    assert stored.last_sync_failure["code"] == "psu_present_required"
+
+    # That sync reads the whole window, and the notice goes.
+    outcome, stored = await sync(USER)
+    assert outcome == "refreshed"
+    assert stored.last_sync_failure is None
+    assert stored.last_sync_at is not None
+    assert stored.last_sync_at.replace(tzinfo=timezone.utc) > last_sync
 
 
 @pytest.mark.asyncio

@@ -32,6 +32,7 @@ from app.schemas.asset_import import (
 from app.schemas.asset import (
     AssetBuyCreate,
     AssetCreate,
+    AssetPriceRefreshResult,
     AssetRead,
     AssetTransactionCreate,
     AssetTransactionRead,
@@ -292,6 +293,35 @@ async def refresh_asset_price(
     if refreshed.currency != primary_currency:
         await asset_service.stamp_primary_values(session, refreshed, primary_currency)
     return refreshed
+
+
+@router.post("/refresh-prices", response_model=AssetPriceRefreshResult)
+async def refresh_all_asset_prices(
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+) -> AssetPriceRefreshResult:
+    """Re-quote every market-priced asset of the current workspace (issue #778).
+
+    Same work the daily task does, on demand and narrowed to one workspace —
+    the scheduled sweep covers every tenant, so it must never be reused here
+    as-is. ``skipped`` counts holdings the provider had no price for (delisted
+    tickers, a failed per-symbol fallback); those keep their last known price.
+    """
+    summary = await asset_service.refresh_all_market_prices(
+        session, workspace_id=ctx.workspace.id
+    )
+    if summary["rate_limited"]:
+        # The service commits whatever it refreshed before the provider
+        # refused, so the counters are real: the caller refetches and can say
+        # how many prices already changed instead of losing that information.
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "message": "Market data provider is currently rate-limiting. Try again in a minute.",
+                **AssetPriceRefreshResult(**summary).model_dump(),
+            },
+        )
+    return AssetPriceRefreshResult(**summary)
 
 
 @router.get("", response_model=list[AssetRead])

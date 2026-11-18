@@ -4,7 +4,8 @@ import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRegisterPageChatContext } from '@/lib/page-chat-context'
 import { accounts as accountsApi, assets, assetGroups, currencies as currenciesApi } from '@/lib/api'
-import { localDateString } from '@/lib/date-utils'
+import { localDateString, todayInTimezone } from '@/lib/date-utils'
+import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -64,6 +65,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { getAssetProfit } from '@/lib/asset-profit'
+import { getStaleProviderValueDate } from '@/lib/asset-provider-freshness'
 import { getAssetValuePrimary, getPortfolioShare, getPortfolioTotalPrimary } from '@/lib/asset-portfolio-share'
 import { formatTransactionTotal, getTransactionTotalCurrency } from '@/lib/asset-transaction-total'
 import { MAX_SPLIT_UNITS, canRecordSplit, formatSplitRatio, parseSplitUnits } from '@/lib/asset-split'
@@ -212,6 +214,30 @@ function assetErrorMessage(e: unknown, fallback: string): string {
   return resp?.status ? `${fallback} (${resp.status})` : fallback
 }
 
+/** What a rate-limited portfolio refresh already wrote before it stopped. */
+interface RateLimitedRefresh {
+  refreshed: number
+  skipped: number
+  rate_limited: number
+}
+
+/**
+ * The refresh counters carried by a 429, or null when the request failed for
+ * another reason. The service commits the prices it got before the provider
+ * refused, so these counts are what the page must show and refetch.
+ */
+function rateLimitedRefresh(e: unknown): RateLimitedRefresh | null {
+  const resp = (e as { response?: { data?: { detail?: unknown }; status?: number } })?.response
+  if (resp?.status !== 429) return null
+  const detail = resp.data?.detail
+  const summary = (detail && typeof detail === 'object' ? detail : {}) as Partial<RateLimitedRefresh>
+  return {
+    refreshed: Number(summary.refreshed ?? 0),
+    skipped: Number(summary.skipped ?? 0),
+    rate_limited: Number(summary.rate_limited ?? 1),
+  }
+}
+
 // Badge label and color per ledger kind. A split takes the indigo the value
 // chart already uses for its mixed markers.
 const TX_KIND_CONFIG: Record<AssetTransaction['kind'], { labelKey: string; tone: string }> = {
@@ -250,7 +276,13 @@ export default function AssetsPage() {
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
-  const { canWrite, canManage, current: currentWorkspace } = useWorkspace()
+  const { canWrite, canManage, current: workspace } = useWorkspace()
+  // The day the server keeps the books in, so the staleness badge agrees with
+  // the dates it writes, not the browser's clock. Until that timezone is known
+  // there is no day to compare against, so the badge waits for it instead of
+  // guessing with the browser's.
+  const effectiveTimezone = useEffectiveTimezone()
+  const today = effectiveTimezone ? todayInTimezone(effectiveTimezone) : null
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
 
@@ -467,6 +499,48 @@ export default function AssetsPage() {
       toast.success(t('assets.priceRefreshed'))
     },
     onError: (e) => toast.error(assetErrorMessage(e, t('common.error'))),
+  })
+
+  // Portfolio-wide refresh (issue #778): one provider call for every
+  // market-priced holding instead of opening each asset and refreshing it.
+  const refreshAllPricesMutation = useMutation({
+    // The workspace comes from the click, not from the context when the
+    // request finally runs: a mutation paused while offline resumes later,
+    // and the interceptor would then stamp whichever workspace is selected
+    // by then (the app does not pin the mutation to online).
+    mutationFn: (workspaceId: string | null) => assets.refreshPrices(workspaceId),
+    onSuccess: (summary, requestedWorkspaceId) => {
+      // The answer belongs to the workspace that asked. If the user moved to
+      // another one while the provider was working, the counts are not this
+      // page's to show, and its data is not what the refetch would touch.
+      if (requestedWorkspaceId !== (workspace?.id ?? null)) return
+      refetchAssetViews()
+      if (summary.refreshed === 0 && summary.skipped === 0) {
+        toast.info(t('assets.refreshAllPricesNone'))
+        return
+      }
+      toast.success(
+        t('assets.refreshAllPricesDone', {
+          refreshed: summary.refreshed,
+          skipped: summary.skipped,
+        }),
+      )
+    },
+    onError: (e, requestedWorkspaceId) => {
+      const limited = rateLimitedRefresh(e)
+      if (requestedWorkspaceId !== (workspace?.id ?? null)) return
+      // A 429 here can come after some prices were written and committed, so
+      // the list and the charts are refetched on this path too.
+      if (limited) refetchAssetViews()
+      toast.error(
+        limited
+          ? t('assets.refreshAllPricesRateLimited', {
+              refreshed: limited.refreshed,
+              skipped: limited.skipped,
+            })
+          : assetErrorMessage(e, t('common.error')),
+      )
+    },
   })
 
   const { data: rawWalletsList } = useQuery({
@@ -844,6 +918,10 @@ export default function AssetsPage() {
     const pctOfPortfolio = asset.sell_date ? null : getPortfolioShare(asset, portfolioTotalPrimary, userCurrency)
     const needsBuys = isMarketPriced && !hasCost && !asset.sell_date
     const needsExchangeRate = exchangeRatesNeedSetup && needsConversion(asset, userCurrency)
+    // The API only fills the date while the provider's own figure is on
+    // screen, so the row just asks how old it is.
+    const staleValueDate =
+      isSynced && today ? getStaleProviderValueDate(asset, today) : null
 
     return (
       <div key={asset.id} className="border-b border-border last:border-b-0">
@@ -856,7 +934,7 @@ export default function AssetsPage() {
           <div className="flex items-center gap-2.5 min-w-0">
             <AssetIcon logoUrl={asset.logo_url} Icon={Icon} colorClass={config.color} bgClass={config.bg} size={16} tile="w-8 h-8" />
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <span className="font-semibold text-foreground truncate">{asset.ticker && !asset.ticker.startsWith('TD:') ? asset.ticker : asset.name}</span>
                 {needsBuys && (
                   <Badge
@@ -876,6 +954,18 @@ export default function AssetsPage() {
                   >
                     <AlertTriangle size={9} />
                     {t('assets.noFxRate')}
+                  </Badge>
+                )}
+                {staleValueDate && (
+                  <Badge
+                    variant="outline"
+                    className="text-[9px] px-1 py-0 text-amber-600 border-amber-300 bg-amber-50 dark:bg-amber-950/30 gap-0.5 shrink-0"
+                    title={t('assets.providerValueStaleTitle')}
+                  >
+                    <AlertTriangle size={9} />
+                    {t('assets.providerValueStale', {
+                      date: new Date(staleValueDate + 'T00:00:00').toLocaleDateString(dateLocale),
+                    })}
                   </Badge>
                 )}
                 {asset.sell_date && (
@@ -955,7 +1045,7 @@ export default function AssetsPage() {
                 <button onClick={(e) => { e.stopPropagation(); if (!isProviderOwned) openEdit(asset) }} disabled={isProviderOwned} title={isProviderOwned ? t('assets.syncedReadOnly') : t('common.edit')} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                   <Pencil size={13} />
                 </button>
-                <button onClick={(e) => { e.stopPropagation(); if (!isProviderOwned) setDeletingId(asset.id) }} disabled={isProviderOwned} title={isProviderOwned ? t('assets.syncedReadOnly') : t('common.delete')} className="p-1 rounded text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                <button onClick={(e) => { e.stopPropagation(); setDeletingId(asset.id) }} title={t('common.delete')} aria-label={t('common.delete')} className="p-1 rounded text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-colors">
                   <Trash2 size={13} />
                 </button>
               </>
@@ -1195,7 +1285,20 @@ export default function AssetsPage() {
         title={t('assets.title')}
         action={
           canWrite ? (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                onClick={() => refreshAllPricesMutation.mutate(workspace?.id ?? null)}
+                variant="outline"
+                className="gap-1.5"
+                disabled={refreshAllPricesMutation.isPending}
+                title={t('assets.refreshAllPrices')}
+              >
+                <RefreshCw
+                  size={16}
+                  className={refreshAllPricesMutation.isPending ? 'animate-spin' : ''}
+                />
+                {t('assets.refreshAllPrices')}
+              </Button>
               <Button onClick={() => navigate('/import?tab=investments')} variant="outline" className="gap-1.5">
                 <Upload size={16} />
                 {t('assetImport.action')}
@@ -1249,10 +1352,10 @@ export default function AssetsPage() {
           canWrite={canWrite}
           onChanged={refetchAssetViews}
         />
-      ) : activeTab === 'performance' && currentWorkspace ? (
+      ) : activeTab === 'performance' && workspace ? (
         <PortfolioPerformance
-          key={currentWorkspace.id}
-          workspaceId={currentWorkspace.id}
+          key={workspace.id}
+          workspaceId={workspace.id}
           assetGroupIds={activeWalletIds}
           holdings={performanceHoldings}
           wallets={sortedWallets}
@@ -1760,6 +1863,9 @@ export default function AssetsPage() {
             <DialogTitle>{t('assets.confirmDeleteTitle')}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">{t('assets.confirmDelete')}</p>
+          {assetsList?.find(a => a.id === deletingId)?.connection_id && (
+            <p className="text-sm text-amber-600 dark:text-amber-400">{t('assets.confirmDeleteSynced')}</p>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeletingId(null)}>
               {t('common.cancel')}

@@ -175,6 +175,14 @@ class Settings(BaseSettings):
     # (app.providers.psu), which only sends it when it is a public address.
     trusted_proxy_hops: int = 0
 
+    # Per-IP ceiling on the assistant chat endpoint, in requests per minute.
+    # Every message spends provider tokens, so a public demo should keep it
+    # low (for example 5); on a self-hosted instance one person uses, normal
+    # use stays well below the default. A turn that runs several tools is
+    # still one request, so the ceiling counts questions, not tool calls.
+    # 0 turns the limiter off.
+    agents_chat_rate_limit_per_minute: int = 30
+
     # Logo size for market-priced asset icons. The logo URL is built from
     # the company website we get from the market-price provider; no API
     # key or third-party account is required. Defaults to 128×128 which

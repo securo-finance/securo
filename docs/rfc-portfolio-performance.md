@@ -290,7 +290,7 @@ a reinvested dividend") so the owner can see it and undo it.
 
 | Migration | Change |
 |---|---|
-| `119_asset_value_gross_amount` | nullable `asset_values.gross_amount`; backfills exact anchors for Pluggy holdings |
-| `120_asset_transaction_price_precision` | `asset_transactions.price` from `Numeric(18,6)` to `Numeric(28,12)` |
+| `122_asset_value_gross_amount` | nullable `asset_values.gross_amount`; backfills exact anchors for Pluggy holdings |
+| `123_asset_transaction_price_precision` | `asset_transactions.price` from `Numeric(18,6)` to `Numeric(28,12)` |
 
 Both are additive. `downgrade()` reverses each.

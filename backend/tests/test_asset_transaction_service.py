@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 import pytest
 import pytest_asyncio
 from fastapi import HTTPException
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_timezone, app_today, use_resolved_timezone
@@ -21,7 +21,7 @@ from app.models.asset import Asset
 from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
 from app.models.user import User
-from app.providers.market_price import MarketPriceProvider
+from app.providers.market_price import LatestClose, MarketPriceProvider
 from app.schemas.asset import (
     AssetBuyCreate,
     AssetCreate,
@@ -32,6 +32,7 @@ from app.schemas.asset import (
 )
 from app.services import asset_import_service, asset_service, asset_transaction_service
 from app.services.asset_transaction_service import _detect_oversell, _recompute
+from tests.conftest import TestSessionLocal
 
 
 # ---------------------------------------------------------------------------
@@ -291,6 +292,26 @@ async def test_add_buys_sets_units_average_and_cost_basis(session, test_workspac
 
 
 @pytest.mark.asyncio
+async def test_a_quantity_with_more_decimals_than_the_column_is_stored_rounded(
+    session, test_workspace, market_asset
+):
+    """The column keeps six decimals. Rounding before the checks and the insert
+    means the ledger that was validated is the ledger that is stored, on any
+    database."""
+    await asset_transaction_service.add_transaction(
+        session, market_asset.id, test_workspace.id,
+        AssetTransactionCreate(
+            kind="buy", quantity=Decimal("0.1234567"), price=Decimal("20"),
+            date=date(2026, 1, 1),
+        ),
+    )
+    row = (await session.execute(select(AssetTransaction))).scalar_one()
+    assert row.quantity == Decimal("0.123457")
+    await session.refresh(market_asset)
+    assert market_asset.units == Decimal("0.123457")
+
+
+@pytest.mark.asyncio
 async def test_sell_records_realized_gain(session, test_workspace, market_asset):
     await asset_transaction_service.add_transaction(
         session, market_asset.id, test_workspace.id,
@@ -337,6 +358,90 @@ async def test_update_transaction_recomputes(session, test_workspace, market_ass
     assert read.units == 20
     assert read.average_price is not None
     assert round(read.average_price, 2) == 20.00
+
+
+@pytest.mark.asyncio
+async def test_an_edit_validates_against_the_row_as_it_is_once_the_holding_is_locked(
+    session, test_workspace, market_asset
+):
+    """A notes-only edit must not pass its checks on the values it loaded.
+
+    Another request took the buy down from 10 to 3 while this one waited for
+    the holding lock, and a sale of 4 is now short against it. The row this
+    session already holds comes back at 10 unless the read after the lock
+    refreshes it, and the edit is validated — and allowed — on units that are
+    no longer stored.
+    """
+    await asset_transaction_service.add_transaction(
+        session, market_asset.id, test_workspace.id,
+        AssetTransactionCreate(kind="buy", quantity=Decimal("10"), price=Decimal("20"), date=date(2026, 1, 1)),
+    )
+    txs = await asset_transaction_service.list_asset_transactions(session, market_asset.id, test_workspace.id)
+    assert txs is not None
+    stale = await session.get(AssetTransaction, txs[0].id)
+    assert stale.quantity == Decimal("10")
+    # The other request, committed after this one loaded the row.
+    async with TestSessionLocal() as writer:
+        await writer.execute(
+            update(AssetTransaction)
+            .where(AssetTransaction.id == txs[0].id)
+            .values(quantity=Decimal("3"))
+        )
+        writer.add(AssetTransaction(
+            asset_id=market_asset.id, workspace_id=test_workspace.id, kind="sell",
+            quantity=Decimal("4"), price=Decimal("30"), fee=Decimal("0"),
+            date=date(2026, 3, 1), source="manual",
+        ))
+        await writer.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        await asset_transaction_service.update_transaction(
+            session, txs[0].id, test_workspace.id, AssetTransactionUpdate(notes="edited"),
+        )
+
+    assert exc.value.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["update", "delete"])
+async def test_an_entry_removed_while_the_lock_is_taken_answers_not_found(
+    session, test_workspace, market_asset, monkeypatch, operation
+):
+    """The row was there on the first read and gone by the time the holding
+    lock came through, as another request's delete leaves it.
+
+    That is a not-found (`None`), not the 500 a `session.refresh` of a row that
+    no longer exists would raise.
+    """
+    await asset_transaction_service.add_transaction(
+        session, market_asset.id, test_workspace.id,
+        AssetTransactionCreate(kind="buy", quantity=Decimal("10"), price=Decimal("20"), date=date(2026, 1, 1)),
+    )
+    txs = await asset_transaction_service.list_asset_transactions(session, market_asset.id, test_workspace.id)
+    assert txs is not None
+    tx_id = txs[0].id
+
+    real_lock = asset_transaction_service._lock_asset
+
+    async def lock_after_the_delete(session_, asset_id, workspace_id):
+        await session_.execute(
+            delete(AssetTransaction)
+            .where(AssetTransaction.id == tx_id)
+            .execution_options(synchronize_session=False)
+        )
+        return await real_lock(session_, asset_id, workspace_id)
+
+    monkeypatch.setattr(asset_transaction_service, "_lock_asset", lock_after_the_delete)
+
+    if operation == "delete":
+        read = await asset_transaction_service.delete_transaction(
+            session, tx_id, test_workspace.id,
+        )
+    else:
+        read = await asset_transaction_service.update_transaction(
+            session, tx_id, test_workspace.id, AssetTransactionUpdate(notes="edited"),
+        )
+    assert read is None
 
 
 @pytest.mark.asyncio
@@ -1083,6 +1188,59 @@ async def test_a_second_split_is_judged_on_the_holding_it_leaves(session, test_w
     assert len(await _ledger(session, test_workspace, market_asset)) == 2
 
 
+@pytest.mark.asyncio
+async def test_a_split_with_a_fraction_of_a_unit_is_still_refused(
+    session, test_workspace, market_asset
+):
+    """The column rounds to six decimals, but the check on a split's quantity
+    reads what was entered: 0.0000004 is not the zero "no quantity" looks like."""
+    await _buy(session, test_workspace, market_asset, "10", "100", date(2026, 1, 1))
+
+    with pytest.raises(HTTPException) as exc:
+        await _add_split(
+            session, test_workspace, market_asset, 1, 2, date(2026, 2, 1),
+            quantity=Decimal("0.0000004"),
+        )
+
+    assert exc.value.status_code == 422
+    assert exc.value.detail == _NO_MONEY
+    assert len(await _ledger(session, test_workspace, market_asset)) == 1
+
+
+@pytest.mark.asyncio
+async def test_editing_a_split_to_a_fraction_of_a_unit_is_refused(
+    session, test_workspace, market_asset
+):
+    await _buy(session, test_workspace, market_asset, "10", "100", date(2026, 1, 1))
+    await _add_split(session, test_workspace, market_asset, 1, 2, date(2026, 2, 1))
+    split = next(tx for tx in await _ledger(session, test_workspace, market_asset) if tx.kind == "split")
+
+    with pytest.raises(HTTPException) as exc:
+        await asset_transaction_service.update_transaction(
+            session, split.id, test_workspace.id,
+            AssetTransactionUpdate(quantity=Decimal("0.0000004")),
+        )
+
+    assert exc.value.status_code == 422
+    assert exc.value.detail == _NO_MONEY
+    assert not session.dirty
+    assert await _split_ratio(session, split.id) == (1, 2)
+
+
+@pytest.mark.asyncio
+async def test_a_quantity_too_large_to_round_is_a_validation_error(
+    session, test_workspace, market_asset
+):
+    """1e23 has more digits than the column: rounding it raises, so the request
+    has to answer 422 instead of failing with a 500."""
+    with pytest.raises(HTTPException) as exc:
+        await _buy(session, test_workspace, market_asset, "1e23", "100", date(2026, 1, 1))
+
+    assert exc.value.status_code == 422
+    assert exc.value.detail == _TOO_LARGE
+    assert not session.new
+
+
 async def _too_large(call) -> None:
     with pytest.raises(HTTPException) as exc:
         await call
@@ -1301,6 +1459,141 @@ async def test_deleting_the_split_values_today_at_the_quote_again(session, test_
     assert stored is not None
     assert stored.price == Decimal("500")
     assert stored.amount == pytest.approx(Decimal("1500"))
+
+
+class _DatedCloses(_FakeProvider):
+    """A batch feed that says which trading day each close is from."""
+
+    def __init__(self, closes: dict[str, LatestClose]):
+        super().__init__({s: _quote(s, float(c.price)) for s, c in closes.items()})
+        self._closes = closes
+
+    async def get_latest_closes(self, symbols: list[str]) -> dict[str, Optional[LatestClose]]:
+        return {s.upper(): self._closes.get(s.upper()) for s in symbols}
+
+
+class _SplitDuringTheFallback(_FakeProvider):
+    """A feed that records a split while the sweep waits on another symbol."""
+
+    def __init__(
+        self,
+        *,
+        closes: dict[str, LatestClose],
+        quotes: dict[str, MarketSymbolQuote],
+        session: AsyncSession,
+        workspace,
+        asset: Asset,
+        split_on: date,
+    ) -> None:
+        super().__init__(quotes)
+        self._closes = closes
+        self._session = session
+        self._workspace = workspace
+        self._asset = asset
+        self._split_on = split_on
+
+    async def get_latest_closes(self, symbols: list[str]) -> dict[str, Optional[LatestClose]]:
+        return {s.upper(): self._closes.get(s.upper()) for s in symbols}
+
+    async def get_quote(self, symbol: str) -> Optional[MarketSymbolQuote]:
+        # The editor records the split while this fallback quote is in flight,
+        # after the batch answered and before the sweep takes its locks.
+        await _add_split(self._session, self._workspace, self._asset, 1, 2, self._split_on)
+        return await super().get_quote(symbol)
+
+
+@pytest.mark.asyncio
+async def test_the_refresh_skips_a_close_from_before_the_split(session, test_workspace, market_asset):
+    # Issue #1357: before the market opens on the split day, the feed's latest
+    # close is yesterday's, per pre-split unit.
+    quoted_at = await _holding_quoted_yesterday(session, test_workspace, market_asset)
+    today = app_today()
+    await _add_split(session, test_workspace, market_asset, 1, 100, today)
+    feed = _DatedCloses({"PETR4.SA": LatestClose(Decimal("500"), today - timedelta(days=1))})
+
+    result = await asset_service.refresh_all_market_prices(session, market_provider=feed)
+
+    assert result == {"refreshed": 0, "skipped": 1, "rate_limited": 0}
+    assert await _today_value(session, market_asset) is None
+    await session.refresh(market_asset)
+    assert market_asset.last_price == Decimal("500")
+    assert market_asset.last_price_at.replace(tzinfo=None) == quoted_at.replace(tzinfo=None)
+    assert (await _trend(session, test_workspace, market_asset))[today.isoformat()] == pytest.approx(1500)
+
+
+@pytest.mark.asyncio
+async def test_the_refresh_stores_a_close_from_the_split_day(session, test_workspace, market_asset):
+    await _holding_quoted_yesterday(session, test_workspace, market_asset)
+    today = app_today()
+    await _add_split(session, test_workspace, market_asset, 1, 100, today)
+    feed = _DatedCloses({"PETR4.SA": LatestClose(Decimal("5.05"), today)})
+
+    result = await asset_service.refresh_all_market_prices(session, market_provider=feed)
+
+    assert result == {"refreshed": 1, "skipped": 0, "rate_limited": 0}
+    stored = await _today_value(session, market_asset)
+    assert stored is not None
+    assert stored.price == Decimal("5.05")
+    assert stored.amount == pytest.approx(Decimal("1515"))
+
+
+@pytest.mark.asyncio
+async def test_the_refresh_stores_an_older_close_when_no_split_followed(session, test_workspace, market_asset):
+    # A weekend or holiday close is still the latest price when no split came after it.
+    await _holding_quoted_yesterday(session, test_workspace, market_asset)
+    today = app_today()
+    await _add_split(session, test_workspace, market_asset, 1, 100, today - timedelta(days=10))
+    feed = _DatedCloses({"PETR4.SA": LatestClose(Decimal("5.10"), today - timedelta(days=3))})
+
+    result = await asset_service.refresh_all_market_prices(session, market_provider=feed)
+
+    assert result["refreshed"] == 1
+    stored = await _today_value(session, market_asset)
+    assert stored is not None
+    assert stored.amount == pytest.approx(Decimal("1530"))
+
+
+@pytest.mark.asyncio
+async def test_the_refresh_reads_split_dates_after_locking_the_holdings(
+    session, test_workspace, test_user, market_asset
+):
+    # The split lands during the sweep, not before it: the batch answered with
+    # yesterday's close and the editor recorded the split while another
+    # symbol's fallback quote was pending. Read before the locks, the split
+    # dates would miss it and the pre-split close would be stored for the
+    # units after the split.
+    quoted_at = await _holding_quoted_yesterday(session, test_workspace, market_asset)
+    other = Asset(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Vale", type="stock", currency="BRL",
+        valuation_method="market_price", ticker="VALE3.SA",
+        last_price=Decimal("60"),
+    )
+    session.add(other)
+    await session.commit()
+
+    today = app_today()
+    feed = _SplitDuringTheFallback(
+        closes={"PETR4.SA": LatestClose(Decimal("500"), today - timedelta(days=1))},
+        quotes={"VALE3.SA": _quote("VALE3.SA", 61.0)},
+        session=session, workspace=test_workspace, asset=market_asset, split_on=today,
+    )
+
+    result = await asset_service.refresh_all_market_prices(
+        session, market_provider=feed, workspace_id=test_workspace.id
+    )
+
+    # The split holding keeps yesterday's quote instead of today's pre-split
+    # close valued over the units after the split...
+    assert result == {"refreshed": 1, "skipped": 1, "rate_limited": 0}
+    assert await _today_value(session, market_asset) is None
+    await session.refresh(market_asset)
+    assert market_asset.last_price == Decimal("500")
+    assert market_asset.last_price_at.replace(tzinfo=None) == quoted_at.replace(tzinfo=None)
+    assert (await _trend(session, test_workspace, market_asset))[today.isoformat()] == pytest.approx(1500)
+    # ...and the holding that needed the fallback still gets its quote.
+    await session.refresh(other)
+    assert other.last_price == Decimal("61")
 
 
 @pytest.mark.asyncio

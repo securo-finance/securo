@@ -54,7 +54,11 @@ x-backend-env: &backend-env
   PLUGINS_RUNNER_TOKEN: ${PLUGINS_RUNNER_TOKEN:-}
   # The backend is reached through the bundled nginx frontend below, so rate
   # limiting needs to trust exactly one reverse-proxy hop to key by real
-  # client IP instead of nginx's own container address.
+  # client IP instead of nginx's own container address. With
+  # TRAEFIK_ENABLE=true there is a second proxy ahead of nginx, so the
+  # visitor's address is two hops from the right: set this to 2, and keep the
+  # frontend port unreachable directly, or that hop is an entry the client
+  # wrote itself.
   TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-1}
   REDIS_URL: redis://redis:6379/0
   BANK_SYNC_MIN_INTERVAL_HOURS: ${BANK_SYNC_MIN_INTERVAL_HOURS:-4}
@@ -75,6 +79,10 @@ x-backend-env: &backend-env
   AGENTS_ENABLED: ${AGENTS_ENABLED:-false}
   AGENTS_BUILTIN_MCP_URL: ${AGENTS_BUILTIN_MCP_URL:-http://mcp-server:8765/mcp}
   AGENTS_EXTRA_MCP_SERVERS: ${AGENTS_EXTRA_MCP_SERVERS:-}
+  # Per-IP ceiling on assistant chat messages, in requests per minute. Every
+  # message spends provider tokens, so lower it (5, for example) on a public
+  # demo. A turn that runs several tools is still one request. 0 turns off.
+  AGENTS_CHAT_RATE_LIMIT_PER_MINUTE: ${AGENTS_CHAT_RATE_LIMIT_PER_MINUTE:-30}
   # Signs the MCP server's JWTs. Empty derives it from SECRET_KEY, so an
   # install with a random SECRET_KEY needs no extra configuration. There is no
   # default value on purpose: a public one would let anyone mint a token for

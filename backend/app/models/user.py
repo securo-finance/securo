@@ -57,6 +57,22 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     passkeys: Mapped[list["UserPasskey"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
     @property
+    def display_name(self) -> Optional[str]:
+        """The name this person chose, when they set one.
+
+        Callers that show a person anywhere the email is the only other
+        identifier fall back to the email themselves; anything offered by
+        an API that names people should carry this.
+        """
+        prefs = self.preferences or {}
+        # Preferences is a JSON column, so the value is only a string because
+        # the writers put one there; anything else is not a name.
+        name = prefs.get("display_name")
+        if not isinstance(name, str):
+            return None
+        return name.strip() or None
+
+    @property
     def primary_currency(self) -> str:
         """Return the user's configured primary currency."""
         from app.core.config import get_settings

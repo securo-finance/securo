@@ -106,6 +106,9 @@ class AssetRead(BaseModel):
     last_price: Optional[float] = None
     last_price_at: Optional[datetime] = None
     logo_url: Optional[str] = None
+    # Date the sync provider says current_value refers to. Lets the UI flag a
+    # synced position whose provider stopped updating the value.
+    provider_value_date: Optional[_date] = None
     # Ledger-derived fields (issue #235). average_price = weighted-average cost
     # per unit (preço médio); total_invested = cost basis of the held units;
     # realized_gain = cumulative gain/loss from sells; transaction_count lets
@@ -189,6 +192,18 @@ class MarketSymbolQuote(BaseModel):
     # Fully-formed logo URL if the provider can derive one. Caller stores
     # this verbatim on the asset; no further processing required.
     logo_url: Optional[str] = None
+
+
+class AssetPriceRefreshResult(BaseModel):
+    """Outcome of a portfolio-wide price refresh (issue #778).
+
+    Same counters the scheduled task returns, so the UI can say how many
+    holdings actually got a new quote instead of claiming success blindly.
+    """
+
+    refreshed: int
+    skipped: int
+    rate_limited: int
 
 
 class MarketSymbolMatch(BaseModel):

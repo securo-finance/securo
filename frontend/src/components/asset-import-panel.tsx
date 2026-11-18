@@ -22,6 +22,8 @@ const MAPPABLE_FIELDS = [
   { key: 'kind', required: false },
   { key: 'currency', required: false },
   { key: 'notes', required: false },
+  { key: 'old_units', required: false },
+  { key: 'new_units', required: false },
 ] as const
 
 const SELECT_CLASS =
@@ -381,13 +383,29 @@ export function AssetImportPanel() {
                       <td className="px-3 py-1.5 font-medium sm:px-5">{order.ticker}</td>
                       <td className="px-3 py-1.5">{order.date}</td>
                       <td className="px-3 py-1.5">
-                        <span className={order.kind === 'sell' ? 'text-rose-500' : 'text-emerald-500'}>
+                        <span
+                          className={
+                            order.kind === 'split'
+                              ? 'text-muted-foreground'
+                              : order.kind === 'sell'
+                                ? 'text-rose-500'
+                                : 'text-emerald-500'
+                          }
+                        >
                           {t(`assetImport.kind.${order.kind}`)}
                         </span>
                       </td>
-                      <td className="px-3 py-1.5 text-end tabular-nums">{order.quantity}</td>
-                      <td className="px-3 py-1.5 text-end tabular-nums">{order.price}</td>
-                      <td className="px-3 py-1.5 text-end tabular-nums sm:px-5">{order.fee}</td>
+                      {order.kind === 'split' ? (
+                        <td colSpan={3} className="px-3 py-1.5 text-end tabular-nums sm:pe-5">
+                          {t('assetImport.splitRatio', { old: order.old_units, new: order.new_units })}
+                        </td>
+                      ) : (
+                        <>
+                          <td className="px-3 py-1.5 text-end tabular-nums">{order.quantity}</td>
+                          <td className="px-3 py-1.5 text-end tabular-nums">{order.price}</td>
+                          <td className="px-3 py-1.5 text-end tabular-nums sm:px-5">{order.fee}</td>
+                        </>
+                      )}
                     </tr>
                   ))}
                 </tbody>

@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { History, Trash2 } from 'lucide-react'
 
 import { importLogs as importLogsApi } from '@/lib/api'
+import { extractApiError } from '@/lib/api-errors'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { formatCurrency } from '@/lib/format'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
@@ -60,7 +61,7 @@ export function ImportHistory({ entity }: ImportHistoryProps) {
       setDeleteTarget(null)
       toast.success(t('import.undone'))
     },
-    onError: () => toast.error(t('common.error')),
+    onError: (error) => toast.error(extractApiError(error, t('common.error'))),
   })
 
   const rows = logs.filter((log) => (log.entity ?? 'transactions') === entity)

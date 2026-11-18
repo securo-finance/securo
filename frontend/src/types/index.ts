@@ -154,6 +154,8 @@ export interface BankConnection {
   status: string
   settings: ConnectionSettings | null
   last_sync_at: string | null
+  /** Why the last sync failed, until a sync succeeds. */
+  last_sync_failure?: SyncFailure | null
   created_at: string
   // Institutions this link spans (issue #345). Empty for one-institution
   // providers — institution_name covers those.
@@ -162,6 +164,19 @@ export interface BankConnection {
   plugin_connection_id?: string | null
   plugin_id?: string | null
   integration?: string | null
+}
+
+export type SyncFailureCode =
+  | 'psu_present_required'
+  | 'consent_expired'
+  | 'reauthorize_at_provider'
+  | 'rate_limited'
+  | 'provider_error'
+
+export interface SyncFailure {
+  code: SyncFailureCode
+  at: string
+  detail: string | null
 }
 
 export interface ConnectionSettings {
@@ -351,6 +366,10 @@ export interface Transaction {
   // Optional period-attribution override. The bank-provided `date` remains
   // unchanged; null restores automatic cash/accrual bucketing.
   reporting_date_override: string | null
+  // The date the paginated list filtered and ordered this row by (#1386):
+  // the override, a manual bill date or, in accrual mode, a card's bill due
+  // date. Absent outside the list.
+  reporting_date?: string | null
   // The recurring bill this transaction fulfills, if any (issue #116).
   recurring_transaction_id?: string | null
   splits: TransactionSplit[]
@@ -1032,6 +1051,17 @@ export interface RecurringPriceChangeHistory {
   changes: RecurringPriceChange[]
 }
 
+/** What the active recurring definitions expect in one month (#532). */
+export interface RecurringMonthSummary {
+  month: string
+  currency: string
+  income: string
+  expenses: string
+  net: string
+  transfer_count: number
+  unconverted_count: number
+}
+
 export interface ProjectedTransaction {
   recurring_id: string
   account_id: string | null
@@ -1131,6 +1161,12 @@ export interface DashboardSummary {
   pending_categorization_amount: number
   assets_value: Record<string, number>
   assets_value_primary: number
+  /** Checking + savings + wallet (spendable / near-liquid). */
+  cash_balance?: Record<string, number>
+  cash_balance_primary?: number
+  /** Accounts with type=investment (brokerage cash), distinct from assets_value. */
+  investment_accounts?: Record<string, number>
+  investment_accounts_primary?: number
   primary_currency: string
   // At least one currency bucket had no real FX rate, so the *_primary
   // totals sum it at 1:1 and are an estimate, not a conversion (issue #1165).
@@ -1263,6 +1299,9 @@ export interface Asset {
   last_price: number | null
   last_price_at: string | null
   logo_url: string | null
+  // Date the sync provider says current_value refers to (YYYY-MM-DD), when it
+  // reports one. A stale date is the sign that a position stopped updating.
+  provider_value_date: string | null
   // Ledger-derived (issue #235): weighted-average cost per unit (preço médio),
   // cost basis of held units, cumulative realized gain, and whether the holding
   // is driven by the transactions ledger.
@@ -1277,7 +1316,8 @@ export interface AssetOrderImport {
   row: number
   ticker: string
   date: string
-  kind: 'buy' | 'sell'
+  kind: 'buy' | 'sell' | 'split'
+  /** 0 on a split, which carries its ratio in old_units → new_units. */
   quantity: number
   price: number
   fee: number
@@ -1285,6 +1325,8 @@ export interface AssetOrderImport {
   name: string | null
   notes: string | null
   external_id: string | null
+  old_units?: number | null
+  new_units?: number | null
 }
 
 export interface AssetImportRowError {
@@ -1409,6 +1451,12 @@ export interface PortfolioPerformance {
   excess_return: number | null
   benchmarks: BenchmarkPerformance[]
   points: PortfolioPerformancePoint[]
+}
+
+export interface AssetPriceRefreshResult {
+  refreshed: number
+  skipped: number
+  rate_limited: number
 }
 
 export interface AssetGroup {
