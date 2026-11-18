@@ -19,9 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.providers as providers_module
 from app.core.config import get_settings
+from app.services import restore_service
 from app.models.account import Account
 from app.models.asset import Asset
 from app.models.asset_group import AssetGroup
+from app.models.asset_transaction import AssetTransaction
 from app.models.budget import Budget
 from app.models.category import Category
 from app.models.collection import Collection, collection_accounts
@@ -92,6 +94,33 @@ def _rewrite_archive(
     return out.getvalue()
 
 
+def _patch_entity_rows(
+    content: bytes,
+    entity: str,
+    *,
+    patch_first: dict | None = None,
+    copy_first_with: dict | None = None,
+) -> bytes:
+    """Rebuild a plain zip with one entity file's rows edited."""
+    out = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(content)) as source, zipfile.ZipFile(out, "w") as target:
+        for name in source.namelist():
+            payload = source.read(name)
+            if name == f"{entity}.json":
+                rows = json.loads(payload)
+                if patch_first and rows:
+                    rows[0].update(patch_first)
+                if copy_first_with is not None and rows:
+                    rows.append({**rows[0], "id": str(uuid.uuid4()), **copy_first_with})
+                payload = json.dumps(rows).encode()
+            target.writestr(name, payload)
+    return out.getvalue()
+
+
+def _stored_files(root) -> list:
+    return sorted(path for path in root.rglob("*") if path.is_file())
+
+
 async def _seed_rich_workspace(session: AsyncSession, client: AsyncClient, headers: dict, user, account, transactions, categories):
     """Everything format 1.1 carries, so the round trip has something to check."""
     workspace_id = account.workspace_id
@@ -149,18 +178,17 @@ async def _seed_rich_workspace(session: AsyncSession, client: AsyncClient, heade
     asset_group = AssetGroup(id=uuid.uuid4(), user_id=user.id, workspace_id=workspace_id, name="Ações")
     session.add(asset_group)
     await session.flush()
-    session.add(
-        Asset(
-            id=uuid.uuid4(),
-            user_id=user.id,
-            workspace_id=workspace_id,
-            name="PETR4",
-            type="investment",
-            currency="BRL",
-            group_id=asset_group.id,
-            purchase_price=Decimal("100.00"),
-        )
+    asset = Asset(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        workspace_id=workspace_id,
+        name="PETR4",
+        type="investment",
+        currency="BRL",
+        group_id=asset_group.id,
+        purchase_price=Decimal("100.00"),
     )
+    session.add(asset)
     session.add(
         Goal(
             id=uuid.uuid4(),
@@ -208,6 +236,23 @@ async def _seed_rich_workspace(session: AsyncSession, client: AsyncClient, heade
     session.add(log)
     await session.flush()
     transactions[2].import_id = log.id
+
+    # The investment ledger: the buy/sell entries the holding's units and cost
+    # basis are replayed from. One of them points at the import that wrote it.
+    session.add(
+        AssetTransaction(
+            id=uuid.uuid4(),
+            asset_id=asset.id,
+            workspace_id=workspace_id,
+            kind="buy",
+            quantity=Decimal("10.000000"),
+            price=Decimal("100.000000"),
+            fee=Decimal("2.50"),
+            date=date.today(),
+            source="import",
+            import_id=log.id,
+        )
+    )
 
     session.add(
         RecurringTransaction(
@@ -286,6 +331,7 @@ async def test_round_trip_carries_every_entity_and_its_ids(
     assert counts["group_settlements"] == 1
     assert counts["collections"] == 1
     assert counts["transaction_attachments"] == 1
+    assert counts["asset_transactions"] == 1
 
     # The workspace itself: settings carried, caller is its owner.
     workspace = await session.get(Workspace, new_workspace)
@@ -344,6 +390,22 @@ async def test_round_trip_carries_every_entity_and_its_ids(
         await session.execute(select(PayeeTaxId).where(PayeeTaxId.workspace_id == new_workspace))
     ).scalar_one()
     assert tax_id.payee_id == payee.id
+
+    # The investment ledger survives, re-pointed at the restored holding and
+    # the restored import rather than at rows that stayed behind.
+    restored_asset = (
+        await session.execute(select(Asset).where(Asset.workspace_id == new_workspace))
+    ).scalar_one()
+    ledger_entry = (
+        await session.execute(
+            select(AssetTransaction).where(AssetTransaction.workspace_id == new_workspace)
+        )
+    ).scalar_one()
+    assert ledger_entry.asset_id == restored_asset.id
+    assert ledger_entry.kind == "buy"
+    assert ledger_entry.quantity == Decimal("10.000000")
+    restored_log = await session.get(ImportLog, ledger_entry.import_id)
+    assert restored_log is not None and restored_log.workspace_id == new_workspace
 
     # The shared-expense cluster: split, member and settlement all on new ids.
     split = (
@@ -566,3 +628,111 @@ async def test_restore_writes_nothing_when_the_file_is_refused(
     assert response.status_code == 400
     after = (await session.execute(select(Workspace))).scalars().all()
     assert len(after) == len(before)
+
+
+@pytest.mark.asyncio
+async def test_restore_nulls_a_receiver_credit_that_lives_in_another_workspace(
+    client: AsyncClient,
+    session: AsyncSession,
+    auth_headers,
+    test_user: User,
+    test_account: Account,
+    test_transactions: list[Transaction],
+    test_categories: list[Category],
+    storage,
+):
+    """A settlement's mirror credit may sit in a workspace the archive does not carry.
+
+    `settlement_service` credits the receiver's first account in any workspace
+    they belong to, so this pointer can name a transaction outside the export.
+    That link is optional: the settlement still comes back, with the pointer
+    null, instead of the whole restore being refused.
+    """
+    await _seed_rich_workspace(
+        session, client, auth_headers, test_user, test_account, test_transactions, test_categories
+    )
+    exported = await client.get("/api/export/backup", headers=auth_headers)
+    outside = str(uuid.uuid4())
+    content = _patch_entity_rows(
+        exported.content, "group_settlements", patch_first={"receiver_transaction_id": outside}
+    )
+
+    restored = await _restore(client, auth_headers, content)
+    assert restored.status_code == 201, restored.text
+
+    new_workspace = uuid.UUID(restored.json()["workspace_id"])
+    settlement = (
+        await session.execute(
+            select(GroupSettlement).where(GroupSettlement.workspace_id == new_workspace)
+        )
+    ).scalar_one()
+    assert settlement.receiver_transaction_id is None
+    assert settlement.amount == Decimal("5.00")
+
+
+@pytest.mark.asyncio
+async def test_restore_refuses_an_archive_that_expands_past_the_entry_limit(
+    client: AsyncClient, auth_headers, monkeypatch
+):
+    """A small upload must not be able to make the worker allocate a huge entry."""
+    monkeypatch.setattr(restore_service, "_MAX_ENTRY_BYTES", 1024)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("metadata.json", json.dumps({"pad": "x" * 4096}))
+
+    response = await _restore(client, auth_headers, buf.getvalue())
+
+    assert response.status_code == 400
+    assert "larger than" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_restore_refuses_an_archive_that_expands_past_the_total_limit(
+    client: AsyncClient, auth_headers, monkeypatch
+):
+    monkeypatch.setattr(restore_service, "_MAX_TOTAL_BYTES", 1024)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("metadata.json", json.dumps({"pad": "x" * 4096}))
+
+    response = await _restore(client, auth_headers, buf.getvalue())
+
+    assert response.status_code == 400
+    assert "expands to more than" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_restore_removes_uploaded_objects_when_it_fails(
+    client: AsyncClient,
+    session: AsyncSession,
+    auth_headers,
+    test_account: Account,
+    test_transactions: list[Transaction],
+    storage,
+):
+    """A failure after the first upload must not leave an orphan in storage.
+
+    The rewritten archive carries the real attachment and a second row that
+    points at a transaction the archive does not hold. The first blob is
+    uploaded, the second row aborts the copy, and the object already written
+    would be unreachable: the row that pointed at it never commits.
+    """
+    upload = await client.post(
+        f"/api/transactions/{test_transactions[0].id}/attachments",
+        headers=auth_headers,
+        files={"file": ("recibo.png", TINY_PNG, "image/png")},
+    )
+    assert upload.status_code == 201, upload.text
+
+    exported = await client.get("/api/export/backup", headers=auth_headers)
+    broken = _patch_entity_rows(
+        exported.content,
+        "transaction_attachments",
+        copy_first_with={"transaction_id": str(uuid.uuid4())},
+    )
+    before = _stored_files(storage)
+
+    response = await _restore(client, auth_headers, broken)
+
+    assert response.status_code == 400
+    assert _stored_files(storage) == before

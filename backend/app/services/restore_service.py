@@ -57,6 +57,15 @@ _METADATA_FILE = "metadata"
 _WORKSPACE_FILE = "workspace"
 _ATTACHMENTS_ENTITY = "transaction_attachments"
 _ATTACHMENTS_MISSING = "attachment file is missing from the archive"
+
+#: How far an archive may expand. The zip's central directory states every
+#: entry's uncompressed size before anything is decompressed, and `read` never
+#: returns more than that, so checking the declared sizes bounds the memory a
+#: crafted upload can make the worker allocate. A backup larger than this is a
+#: different conversation (streaming the restore), not something to accept
+#: quietly.
+_MAX_ENTRY_BYTES = 100 * 1024 * 1024
+_MAX_TOTAL_BYTES = 512 * 1024 * 1024
 #: Everything a broken, truncated or wrongly-encrypted file can raise.
 #: `pyzipper` ships its own `BadZipFile`, a different class from the stdlib
 #: one, so both are named: catching only the stdlib one lets an upload that is
@@ -101,6 +110,7 @@ _REFERENCES: dict[str, dict[str, str]] = {
     "payee_mapping": {"target_id": "payees"},
     "assets": {"group_id": "asset_groups"},
     "asset_values": {"asset_id": "assets"},
+    "asset_transactions": {"asset_id": "assets", "import_id": "import_logs"},
     "accounts": {"secured_asset_id": "assets"},
     "account_reserved_balances": {"account_id": "accounts"},
     "credit_card_bills": {"account_id": "accounts"},
@@ -133,6 +143,17 @@ _REFERENCES: dict[str, dict[str, str]] = {
     "goals": {"account_id": "accounts", "asset_id": "assets", "asset_group_id": "asset_groups"},
 }
 
+#: Links a restore may drop instead of refusing the archive. A settlement's
+#: receiver credit can land in another workspace — `settlement_service` credits
+#: the receiver's first account in any workspace they belong to — and the
+#: archive carries only the exported workspace's transactions. The settlement
+#: keeps its amount, members and date; the pointer is left null, the shape it
+#: already has when the receiver has no linked account. Every other reference
+#: stays required: a missing one means the archive is damaged.
+_OPTIONAL_REFERENCES: dict[str, frozenset[str]] = {
+    "group_settlements": frozenset({"receiver_transaction_id"}),
+}
+
 #: Columns filled after every row exists, because they point at a row of their
 #: own table: a transfer's other leg, and the series an installment belongs to.
 #: Both are plain UUIDs with no foreign key, so a naive copy would leave them
@@ -153,6 +174,30 @@ _JSON_ID_FIELDS: dict[str, str] = {
 _COLUMN_USER = "user_id"
 
 
+def _check_expansion(archive: zipfile.ZipFile) -> None:
+    """Refuse an archive that would expand past the worker's budget.
+
+    Runs before the first entry is read: the sizes come from the central
+    directory, so refusing here costs one pass over the header, not the
+    decompression the check exists to prevent.
+    """
+    total = 0
+    for info in archive.infolist():
+        if info.is_dir():
+            continue
+        if info.file_size > _MAX_ENTRY_BYTES:
+            raise RestoreError(
+                f"This backup holds an entry larger than {_MAX_ENTRY_BYTES // (1024 * 1024)} MB; "
+                "it is not a Securo backup or it is damaged."
+            )
+        total += info.file_size
+        if total > _MAX_TOTAL_BYTES:
+            raise RestoreError(
+                f"This backup expands to more than {_MAX_TOTAL_BYTES // (1024 * 1024)} MB; "
+                "restoring it would exhaust the server's memory."
+            )
+
+
 def open_archive(stream: BinaryIO, password: str | None = None) -> ArchiveContents:
     """Read the zip into its parts. Raises `RestoreError` on anything unreadable."""
     attachments: dict[str, bytes] = {}
@@ -161,6 +206,7 @@ def open_archive(stream: BinaryIO, password: str | None = None) -> ArchiveConten
         with pyzipper.AESZipFile(stream) as archive:
             if password:
                 archive.setpassword(password.encode("utf-8"))
+            _check_expansion(archive)
             for name in archive.namelist():
                 if name.startswith(ATTACHMENTS_PREFIX):
                     attachments[name[len(ATTACHMENTS_PREFIX):]] = archive.read(name)
@@ -263,6 +309,11 @@ def _mapped(id_map: dict[tuple[str, str], uuid.UUID], target: str, old_value: An
     return new_id
 
 
+def _mapped_or_none(id_map: dict[tuple[str, str], uuid.UUID], target: str, old_value: Any) -> uuid.UUID | None:
+    """A link this table may point outside the archive (`_OPTIONAL_REFERENCES`)."""
+    return id_map.get((target, str(old_value))) if old_value not in (None, "") else None
+
+
 def _remap_rule_json(node: Any, id_map: dict[tuple[str, str], uuid.UUID]) -> Any:
     """Rewrite every category/payee/account id a rule keeps inside its JSON."""
     if isinstance(node, list):
@@ -293,6 +344,7 @@ def _insert_entity(
     """Add one table's rows; returns the instances and old rows by old id."""
     columns = {column.key: column for column in getattr(model, "__table__").columns}
     references = _REFERENCES.get(entity_name, {})
+    optional = _OPTIONAL_REFERENCES.get(entity_name, frozenset())
     instances: list[Any] = []
     by_old_id: dict[str, Any] = {}
 
@@ -321,7 +373,8 @@ def _insert_entity(
                 # new workspace instead of stealing the original's identity.
                 values[key] = f"restored:{workspace.id}:{row[key]}"[:255]
             elif key in references:
-                values[key] = _mapped(id_map, references[key], row.get(key))
+                lookup = _mapped_or_none if key in optional else _mapped
+                values[key] = lookup(id_map, references[key], row.get(key))
             elif key in row:
                 values[key] = _coerce(column, row[key])
 
@@ -358,11 +411,14 @@ async def _restore_attachments(
     rows: list[dict[str, Any]],
     blobs: dict[str, bytes],
     id_map: dict[tuple[str, str], uuid.UUID],
+    uploaded_keys: list[str],
 ) -> tuple[int, int]:
     """Write the archived bytes through the storage provider under fresh keys.
 
     A missing blob is counted and skipped, never fatal: a backup whose storage
     lost a file is still the best copy of everything else the user has.
+    Every key stored is appended to `uploaded_keys`, so the caller can remove
+    the objects when the transaction that points at them never commits.
     """
     restored = missing = 0
     storage = get_storage_provider()
@@ -382,6 +438,7 @@ async def _restore_attachments(
             logger.warning("Restore: could not store attachment %s", row.get("id"), exc_info=True)
             missing += 1
             continue
+        uploaded_keys.append(stored.storage_key)
         session.add(
             TransactionAttachment(
                 id=id_map[(_ATTACHMENTS_ENTITY, str(row["id"]))],
@@ -398,10 +455,35 @@ async def _restore_attachments(
     return restored, missing
 
 
+async def discard_uploads(storage_keys: list[str]) -> None:
+    """Remove objects a restore stored while the transaction that would own them fails.
+
+    Without this the object is unreachable: the row that pointed at it was
+    rolled back, so no route can ever find it to delete it. Cleanup never
+    raises — it runs while another error is on its way out, and masking that
+    error would hide the actual reason the restore failed.
+    """
+    if not storage_keys:
+        return
+    storage = get_storage_provider()
+    for key in storage_keys:
+        try:
+            await storage.delete(key)
+        except Exception:  # noqa: BLE001 - cleanup must not mask the restore's own error
+            logger.warning("Restore: could not remove orphaned object %s", key, exc_info=True)
+
+
 async def restore_workspace(
-    session: AsyncSession, user: User, contents: ArchiveContents
+    session: AsyncSession,
+    user: User,
+    contents: ArchiveContents,
+    uploaded_keys: list[str] | None = None,
 ) -> RestoreResult:
-    """Copy the archive into a workspace owned by `user`. Caller commits."""
+    """Copy the archive into a workspace owned by `user`. Caller commits.
+
+    `uploaded_keys` collects the storage objects written along the way, so the
+    caller can discard them if its commit fails (see `discard_uploads`).
+    """
     _check_versions(contents.metadata)
     _check_recurring_duplicates(contents)
 
@@ -469,7 +551,13 @@ async def restore_workspace(
 
     attachment_rows = contents.entities.get(_ATTACHMENTS_ENTITY, [])
     restored, missing = await _restore_attachments(
-        session, workspace, user, attachment_rows, contents.attachments, id_map
+        session,
+        workspace,
+        user,
+        attachment_rows,
+        contents.attachments,
+        id_map,
+        uploaded_keys if uploaded_keys is not None else [],
     )
     counts[_ATTACHMENTS_ENTITY] = restored
     await session.flush()

@@ -9,7 +9,12 @@ from app.core.workspace_context import WorkspaceContext, current_workspace
 from app.models.user import User
 from app.schemas.export import BackupRequest, RestoreResult
 from app.services.backup_service import build_backup_archive, collect_workspace_export
-from app.services.restore_service import RestoreError, open_archive, restore_workspace
+from app.services.restore_service import (
+    RestoreError,
+    discard_uploads,
+    open_archive,
+    restore_workspace,
+)
 
 router = APIRouter(prefix="/api/export", tags=["export"])
 
@@ -75,14 +80,20 @@ async def restore(
     not held in memory, and every row is written in one transaction: a file
     that fails halfway leaves nothing behind.
     """
+    # Attachment objects go to storage before the transaction commits, and the
+    # commit is what makes them reachable. Anything written stays listed here
+    # until the commit succeeds, so a failure at any step can remove it.
+    uploaded_keys: list[str] = []
     try:
         contents = open_archive(file.file, password or None)
-        result = await restore_workspace(session, user, contents)
+        result = await restore_workspace(session, user, contents, uploaded_keys=uploaded_keys)
+        await session.commit()
     except RestoreError as exc:
         await session.rollback()
+        await discard_uploads(uploaded_keys)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except Exception:
         await session.rollback()
+        await discard_uploads(uploaded_keys)
         raise
-    await session.commit()
     return RestoreResult(**result.__dict__)

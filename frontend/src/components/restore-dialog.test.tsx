@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 
@@ -29,6 +30,23 @@ const restored = {
 
 function renderDialog() {
   return renderWithProviders(<RestoreDialog open onClose={vi.fn()} />)
+}
+
+/**
+ * Owns `open` the way the account menu does, so a test can tell a dialog that
+ * closed itself from one that is still on screen. It also offers a way back
+ * in, which is how the "dismissed mid-restore" case is observed.
+ */
+function Harness() {
+  const [open, setOpen] = useState(true)
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>
+        reopen restore
+      </button>
+      <RestoreDialog open={open} onClose={() => setOpen(false)} />
+    </>
+  )
 }
 
 async function submitBackup(
@@ -80,9 +98,9 @@ describe('RestoreDialog', () => {
     )
   })
 
-  it('switches to the restored workspace when the result offers it', async () => {
+  it('switches to the restored workspace and closes the dialog', async () => {
     ;(backupApi.restore as Mock).mockResolvedValue(restored)
-    const { user } = renderDialog()
+    const { user } = renderWithProviders(<Harness />)
     await submitBackup(user)
 
     await user.click(
@@ -90,6 +108,34 @@ describe('RestoreDialog', () => {
     )
 
     expect(workspace.switchWorkspace).toHaveBeenCalledWith('ws-restored')
+    // The result screen must not stay behind the workspace it just opened:
+    // without `handleClose()` in `handleOpenWorkspace` this stays on screen.
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('does not bring back a restore the user dismissed while it was running', async () => {
+    let finish: (value: typeof restored) => void = () => {}
+    ;(backupApi.restore as Mock).mockReturnValue(
+      new Promise<typeof restored>((resolve) => {
+        finish = resolve
+      }),
+    )
+    const { user } = renderWithProviders(<Harness />)
+    await submitBackup(user)
+
+    // The user gives up waiting and closes the dialog.
+    await user.click(screen.getByRole('button', { name: t('common.cancel') }))
+    finish(restored)
+    // The workspace list is still refreshed: the restore did happen.
+    await waitFor(() => expect(workspace.refresh).toHaveBeenCalled())
+
+    await user.click(screen.getByRole('button', { name: 'reopen restore' }))
+    // Reopening must show the upload form, not the success screen of a
+    // session the user already closed.
+    expect(screen.getByRole('button', { name: t('backup.restore.submit') })).toBeInTheDocument()
+    expect(
+      screen.queryByText(t('backup.restore.success', { name: 'Restored books' })),
+    ).not.toBeInTheDocument()
   })
 
   it('shows the reason the server gave for refusing the file', async () => {

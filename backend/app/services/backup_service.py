@@ -34,6 +34,7 @@ from app.models.account import Account
 from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.asset import Asset
 from app.models.asset_group import AssetGroup
+from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
 from app.models.budget import Budget
 from app.models.category import Category
@@ -105,6 +106,11 @@ EXPORTED_ENTITIES: tuple[ExportedEntity, ...] = (
     ExportedEntity("account_reserved_balances", AccountReservedBalance),
     ExportedEntity("credit_card_bills", CreditCardBill),
     ExportedEntity("import_logs", ImportLog),
+    # The holding's buy/sell/split ledger. Without it a restored asset keeps
+    # its cached balance and cost fields but loses the entries those numbers
+    # are recomputed from. It sits after `import_logs` because each entry may
+    # point at the import that wrote it.
+    ExportedEntity("asset_transactions", AssetTransaction),
     ExportedEntity("recurring_transactions", RecurringTransaction),
     ExportedEntity("recurring_transaction_category_lines", RecurringTransactionCategoryLine),
     ExportedEntity("groups", Group),

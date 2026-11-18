@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { HardDriveUpload, Info } from 'lucide-react'
@@ -42,32 +42,41 @@ export function RestoreDialog({ open, onClose }: RestoreDialogProps) {
   const [restoring, setRestoring] = useState(false)
   const [result, setResult] = useState<BackupRestoreResult | null>(null)
   const [error, setError] = useState('')
+  // Each dialog session is numbered. Closing bumps the number, so a restore
+  // that finishes after the user dismissed the dialog cannot repaint it: the
+  // result screen they closed does not come back the next time they open it.
+  const session = useRef(0)
 
   const handleClose = () => {
+    session.current += 1
     setFile(null)
     setPassword('')
     setResult(null)
     setError('')
+    setRestoring(false)
     onClose()
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!file || restoring) return
+    const current = ++session.current
     setError('')
     setRestoring(true)
     try {
       const restored = await backupApi.restore(file, password || undefined)
-      setResult(restored)
-      // The new workspace has to show up in the switcher right away, whether
-      // or not the user presses "Open workspace".
+      // The new workspace exists either way, so the switcher learns about it
+      // even when the dialog that asked for it is already gone.
       await refresh()
+      if (session.current !== current) return
+      setResult(restored)
       toast.success(t('backup.restore.successToast', { name: restored.workspace_name }))
     } catch (err: unknown) {
+      if (session.current !== current) return
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       setError(detail || t('backup.restore.error'))
     } finally {
-      setRestoring(false)
+      if (session.current === current) setRestoring(false)
     }
   }
 
