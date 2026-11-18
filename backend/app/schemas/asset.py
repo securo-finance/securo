@@ -253,6 +253,10 @@ class BenchmarkPerformanceRead(BaseModel):
     key: str
     symbol: str
     provider: str
+    #: First date this benchmark is compared from: the portfolio's start, or
+    #: the benchmark's first close when its history begins later. None when
+    #: it has no usable data. Its return and excess cover this date to the end.
+    start_date: Optional[_date] = None
     benchmark_return: Optional[float] = None
     excess_return: Optional[float] = None
     source_error: Optional[BenchmarkSourceError] = None
@@ -261,7 +265,9 @@ class BenchmarkPerformanceRead(BaseModel):
 class PortfolioPerformancePoint(BaseModel):
     date: _date
     portfolio: float
-    benchmark: float
+    #: The first requested benchmark's value; None before its start or when it failed.
+    benchmark: Optional[float] = None
+    #: Only benchmarks that have started by this date, rebased to 0 on their start.
     benchmarks: dict[str, float] = Field(default_factory=dict)
 
 

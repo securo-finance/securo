@@ -59,7 +59,10 @@ index, and it is the standard figure brokers report.
   another +10% would show about 11% instead of 21%.
 - **Buys sold again the same day** (a day trade, matched per holding by
   share count) were held through part of the day, so that share of the buys
-  counts from the start of the day instead.
+  counts from the start of the day instead. A sale is matched against the
+  shares held that morning first: only what it sells beyond them is a day
+  trade. Selling ten shares held overnight and buying ten back at the close
+  is a sale and a new purchase, not a round trip.
 - **A synced purchase only the next snapshot shows** was made at the earlier
   snapshot's price, so it is exposed to the move between the two and also
   counts from the start.
@@ -111,7 +114,8 @@ the broker reported.
   tried in order, so one outage does not break it: BCB SGS SOAP
   (`www3.bcb.gov.br`), the BCB SGS JSON API, then Ipeadata's mirror of the same
   series. A source returning fewer than two observations falls through to the
-  next.
+  next. When none has two and one of them failed, the failure is reported
+  (`unavailable`), since that source may have had the history.
 - Histories are cached for an hour, searches for fifteen minutes. Failed
   requests and histories too short to compare are never cached.
 - Each benchmark reports `source_error` (`unavailable`, `rate_limited`,
@@ -121,6 +125,15 @@ the broker reported.
 The benchmark line is the index's own change since the period start: a
 time-weighted portfolio return is independent of cash flows, so it is compared
 with the index itself rather than with a shadow portfolio.
+
+A benchmark never moves the portfolio's own period. The portfolio is measured
+from the period start (or its first valuation, if later); a benchmark whose
+history begins after that is compared from its own first close, reported as
+that benchmark's `start_date`. Its line starts there at 0, its return covers
+that date to the end, and its excess is the portfolio's time-weighted return
+over the same dates minus the benchmark's. A benchmark with no close after its
+start (only look-back closes before the period, say) reports `no_data`
+rather than a flat 0%.
 
 An index quoted in another currency (Yahoo reports each symbol's; the Índice
 DI is in reais) is converted to the portfolio's currency at each day's stored

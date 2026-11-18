@@ -133,6 +133,7 @@ async def test_performance_endpoint_returns_aligned_metrics(
             "benchmark_return": pytest.approx(10.0),
             "excess_return": pytest.approx(0.0),
             "source_error": None,
+            "start_date": data["start_date"],
         }
     ]
     assert data["points"][-1]["benchmarks"]["yahoo:^TEST"] == pytest.approx(10.0)
@@ -300,7 +301,7 @@ async def test_performance_keeps_healthy_benchmarks_when_another_source_fails(
     assert set(data["points"][-1]["benchmarks"]) == {healthy["key"]}
     if failed_symbol == "^FIRST":
         assert data["benchmark_return"] is None
-        assert all(point["benchmark"] == 0 for point in data["points"])
+        assert all(point["benchmark"] is None for point in data["points"])
 
 
 @pytest.mark.asyncio

@@ -1358,3 +1358,169 @@ async def test_custom_scope_unites_whole_wallets_and_individual_assets(
     )
 
     assert result.portfolio_return == pytest.approx(20.0)
+
+
+@pytest.mark.asyncio
+async def test_selling_and_buying_back_the_same_day_keeps_the_days_move(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """A sale of shares held that morning is not a day trade of that day's buy."""
+    end = date.today()
+    day0 = end - timedelta(days=20)
+    day1 = day0 + timedelta(days=1)
+    asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Round trip",
+        type="stock",
+        currency="BRL",
+        valuation_method="market_price",
+        ticker="RTRP3",
+    )
+    session.add(asset)
+    await session.flush()
+    for kind, when, price in (("buy", day0, "100"), ("sell", day1, "110"), ("buy", day1, "110")):
+        session.add(
+            AssetTransaction(
+                asset_id=asset.id,
+                workspace_id=test_workspace.id,
+                kind=kind,
+                quantity=Decimal("10"),
+                price=Decimal(price),
+                date=when,
+            )
+        )
+    for when, price in ((day0, "100"), (day1, "110")):
+        session.add(
+            AssetValue(
+                asset_id=asset.id,
+                workspace_id=test_workspace.id,
+                amount=Decimal(price) * 10,
+                price=Decimal(price),
+                date=when,
+                source="market",
+            )
+        )
+    await session.commit()
+
+    result = await get_portfolio_performance_multi(
+        session, test_workspace.id, test_user.id, "BRL", [], "3m", end_date=end
+    )
+    # The ten shares held overnight rose 10% before they were sold; the ten
+    # bought back at the close have not moved since.
+    assert result.portfolio_return == pytest.approx(10.0)
+
+
+async def _fund_up_in_january(session: AsyncSession, user: User, workspace) -> None:
+    asset = Asset(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        workspace_id=workspace.id,
+        name="Manual fund",
+        type="fund",
+        currency="BRL",
+        valuation_method="manual",
+    )
+    session.add(asset)
+    await session.flush()
+    session.add_all(
+        AssetValue(
+            asset_id=asset.id,
+            workspace_id=workspace.id,
+            amount=Decimal(amount),
+            date=when,
+            source="manual",
+        )
+        for when, amount in (
+            (date(2026, 1, 1), "100"),
+            (date(2026, 1, 31), "120"),
+            (date(2026, 6, 30), "120"),
+        )
+    )
+    await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_a_benchmark_with_a_later_history_does_not_move_the_portfolio_start(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    await _fund_up_in_january(session, test_user, test_workspace)
+    end = date(2026, 6, 30)
+    late_start = date(2026, 2, 2)
+    provider = MultiHistoryProvider(
+        {
+            "^LATE": [
+                BenchmarkHistoryPoint(late_start, 100.0),
+                BenchmarkHistoryPoint(date(2026, 4, 1), 105.0),
+                BenchmarkHistoryPoint(end, 110.0),
+            ]
+        }
+    )
+
+    alone = await get_portfolio_performance_multi(
+        session, test_workspace.id, test_user.id, "BRL", [], "ytd", end_date=end
+    )
+    compared = await get_portfolio_performance_multi(
+        session,
+        test_workspace.id,
+        test_user.id,
+        "BRL",
+        [("yahoo", "^LATE")],
+        "ytd",
+        end_date=end,
+        provider=provider,
+    )
+
+    for result in (alone, compared):
+        assert result.start_date == date(2026, 1, 1)
+        assert result.portfolio_return == pytest.approx(20.0)
+        assert result.points[0].date == date(2026, 1, 1)
+    metric = compared.benchmarks[0]
+    assert metric.start_date == late_start
+    assert metric.source_error is None
+    assert metric.benchmark_return == pytest.approx(10.0)
+    # The portfolio was flat from Feb 2 to Jun 30, so it trails by the full 10%.
+    assert metric.excess_return == pytest.approx(-10.0)
+    assert compared.benchmark_return == pytest.approx(10.0)
+    assert compared.excess_return == pytest.approx(-10.0)
+    key = "yahoo:^LATE"
+    before = [point for point in compared.points if point.date < late_start]
+    assert before and all(key not in point.benchmarks for point in before)
+    assert all(point.benchmark is None for point in before)
+    on_start = next(point for point in compared.points if point.date == late_start)
+    assert on_start.benchmarks[key] == 0.0
+    assert on_start.benchmark == 0.0
+    assert compared.points[-1].benchmarks[key] == pytest.approx(10.0)
+
+
+@pytest.mark.asyncio
+async def test_a_benchmark_with_only_look_back_closes_has_no_data(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    await _fund_up_in_january(session, test_user, test_workspace)
+    provider = MultiHistoryProvider(
+        {
+            "^GONE": [
+                BenchmarkHistoryPoint(date(2025, 12, 29), 100.0),
+                BenchmarkHistoryPoint(date(2025, 12, 30), 101.0),
+            ]
+        }
+    )
+    result = await get_portfolio_performance_multi(
+        session,
+        test_workspace.id,
+        test_user.id,
+        "BRL",
+        [("yahoo", "^GONE")],
+        "ytd",
+        end_date=date(2026, 6, 30),
+        provider=provider,
+    )
+    metric = result.benchmarks[0]
+    assert metric.source_error == "no_data"
+    assert metric.benchmark_return is None
+    assert metric.excess_return is None
+    assert metric.start_date is None
+    assert result.portfolio_return == pytest.approx(20.0)
+    assert all(point.benchmarks == {} for point in result.points)

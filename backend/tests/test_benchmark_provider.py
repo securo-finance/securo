@@ -149,6 +149,21 @@ def test_yahoo_history_check_failure_keeps_results_unchecked(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_yahoo_history_check_rate_limit_from_yfinance_fails_the_search(monkeypatch):
+    from yfinance.exceptions import YFRateLimitError
+
+    def rate_limited(symbols: list[str]) -> set[str]:
+        # yfinance raises this itself when Yahoo keeps answering 429.
+        raise YFRateLimitError()
+
+    monkeypatch.setattr(
+        YahooBenchmarkProvider, "_symbols_with_history_sync", staticmethod(rate_limited)
+    )
+    with pytest.raises(BenchmarkRateLimitedError):
+        await YahooBenchmarkProvider(FakeMarketProvider()).search("acme")
+
+
+@pytest.mark.asyncio
 async def test_yahoo_history_check_rate_limit_fails_the_search(monkeypatch):
     def rate_limited(symbols: list[str]) -> set[str]:
         raise BenchmarkRateLimitedError("slow down")
@@ -302,6 +317,28 @@ async def test_composite_cache_avoids_duplicate_provider_calls():
     await provider.history("yahoo", "^TEST", start, end)
     await provider.history("yahoo", "^TEST", start, end)
     assert yahoo.history_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_search_cache_tells_apart_queries_in_non_latin_scripts():
+    class EchoProvider(BenchmarkProvider):
+        def __init__(self) -> None:
+            self.queries: list[str] = []
+
+        async def search(self, query: str, limit: int = 15) -> list[BenchmarkMatch]:
+            self.queries.append(query)
+            return [BenchmarkMatch(symbol=query, name=query, provider="yahoo")]
+
+    yahoo = EchoProvider()
+    provider = CompositeBenchmarkProvider(yahoo=yahoo, di_b3=EchoProvider())
+    toyota = await provider.search("トヨタ")
+    sony = await provider.search("ソニー")
+    assert [match.symbol for match in toyota] == ["トヨタ"]
+    assert [match.symbol for match in sony] == ["ソニー"]
+    assert yahoo.queries == ["トヨタ", "ソニー"]
+    # The same text, differing only in case and spacing, is still one entry.
+    await provider.search(" ソニー ")
+    assert yahoo.queries == ["トヨタ", "ソニー"]
 
 
 def test_ttl_cache_is_bounded_lru():
@@ -496,22 +533,81 @@ async def test_history_reports_error_when_all_sources_fail(failure):
             await rate_history_loader(client).history(date(2026, 1, 2), date(2026, 1, 3))
 
 
+def _out_of_range_fallback(request):
+    return httpx.Response(
+        200,
+        json={
+            "observations": [
+                {"timestamp": "1986-03-06T00:00:00-03:00", "percentage": 0.1},
+            ]
+        },
+    )
+
+
 @pytest.mark.asyncio
 async def test_history_returns_empty_for_dates_without_observations():
+    # Every source answers, and none has an observation in the dates asked.
+    def respond(request):
+        if request.url.host == "primary.example":
+            return httpx.Response(200, json=[])
+        return _out_of_range_fallback(request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        assert await rate_history_loader(client).history(date(2026, 1, 2), date(2026, 1, 3)) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fallback_points", [0, 1])
+async def test_history_keeps_the_source_error_when_the_fallback_has_no_usable_history(
+    fallback_points,
+):
     def respond(request):
         if request.url.host == "primary.example":
             raise httpx.ConnectError("DNS failed", request=request)
+        if fallback_points:
+            return httpx.Response(
+                200,
+                json={
+                    "observations": [{"timestamp": "2026-01-02T00:00:00-03:00", "percentage": 0.1}]
+                },
+            )
+        return _out_of_range_fallback(request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        # The failed source may have had the history: unavailable, not no data.
+        with pytest.raises(BenchmarkProviderError) as raised:
+            await rate_history_loader(client).history(date(2026, 1, 2), date(2026, 1, 3))
+    assert not isinstance(raised.value, BenchmarkRateLimitedError)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("huge_rate", ["1E+999999999", "1E+400"])
+async def test_history_falls_back_when_a_rate_overflows_the_index(huge_rate):
+    def respond(request):
+        if request.url.host == "primary.example":
+            return httpx.Response(
+                200,
+                json=[
+                    {"date": "02/01/2026", "rate": huge_rate},
+                    {"date": "03/01/2026", "rate": huge_rate},
+                ],
+            )
         return httpx.Response(
             200,
             json={
                 "observations": [
-                    {"timestamp": "1986-03-06T00:00:00-03:00", "percentage": 0.1},
+                    {"timestamp": "2026-01-02T00:00:00-03:00", "percentage": 0.1},
+                    {"timestamp": "2026-01-03T00:00:00-03:00", "percentage": 0.2},
                 ]
             },
         )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
-        assert await rate_history_loader(client).history(date(2026, 1, 2), date(2026, 1, 3)) == []
+        loader = rate_history_loader(client)
+        points = await loader.history(date(2026, 1, 2), date(2026, 1, 3))
+        assert [point.value for point in points] == pytest.approx([100.1, 100.3002])
+        with pytest.raises(BenchmarkProviderError):
+            await loader._load(loader.sources[0], client, date(2026, 1, 2), date(2026, 1, 3))
 
 
 @pytest.mark.asyncio
@@ -536,6 +632,70 @@ async def test_incomplete_history_can_be_retried_after_source_recovers(initial_c
     assert len(await provider.history("yahoo", "^TEST", start, end)) == initial_count
     assert len(await provider.history("yahoo", "^TEST", start, end)) == 2
     assert calls == 2
+
+
+def test_yahoo_history_raise_errors_option_exists_in_the_installed_yfinance():
+    import inspect
+
+    from yfinance.scrapers.history import PriceHistory
+
+    assert "raise_errors" in inspect.signature(PriceHistory.history).parameters
+
+
+@pytest.mark.asyncio
+async def test_yahoo_history_reports_a_transport_failure_instead_of_no_data(monkeypatch):
+    calls: list[dict] = []
+
+    class FailingTicker:
+        def __init__(self, symbol):
+            pass
+
+        def history(self, **kwargs):
+            calls.append(kwargs)
+            if not kwargs.get("raise_errors"):
+                # yfinance's default: log the failure, return an empty frame.
+                import pandas as pd
+
+                return pd.DataFrame()
+            raise TimeoutError("chart request timed out")
+
+    monkeypatch.setattr("yfinance.Ticker", FailingTicker)
+    with pytest.raises(BenchmarkProviderError) as raised:
+        await YahooBenchmarkProvider().history("^GSPC", date(2026, 1, 1), date(2026, 1, 5))
+    assert not isinstance(raised.value, BenchmarkRateLimitedError)
+    assert calls and calls[0]["raise_errors"] is True
+
+
+@pytest.mark.asyncio
+async def test_yahoo_history_rate_limit_is_reported_as_rate_limited(monkeypatch):
+    from yfinance.exceptions import YFRateLimitError
+
+    class ThrottledTicker:
+        def __init__(self, symbol):
+            pass
+
+        def history(self, **kwargs):
+            raise YFRateLimitError()
+
+    monkeypatch.setattr("yfinance.Ticker", ThrottledTicker)
+    with pytest.raises(BenchmarkRateLimitedError):
+        await YahooBenchmarkProvider().history("^GSPC", date(2026, 1, 1), date(2026, 1, 5))
+
+
+@pytest.mark.asyncio
+async def test_yahoo_history_without_prices_is_empty(monkeypatch):
+    from yfinance.exceptions import YFPricesMissingError
+
+    class EmptyTicker:
+        def __init__(self, symbol):
+            pass
+
+        def history(self, **kwargs):
+            raise YFPricesMissingError("^SPBTCFU", " (1d 2026-01-01 -> 2026-01-06)")
+
+    monkeypatch.setattr("yfinance.Ticker", EmptyTicker)
+    points = await YahooBenchmarkProvider().history("^SPBTCFU", date(2026, 1, 1), date(2026, 1, 5))
+    assert points == []
 
 
 def test_yahoo_history_carries_the_quote_currency_in_major_units(monkeypatch):

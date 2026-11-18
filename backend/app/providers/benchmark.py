@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import re
 import time
 import unicodedata
@@ -139,7 +140,9 @@ class YahooBenchmarkProvider(BenchmarkProvider):
             batch = candidates[offset : offset + YAHOO_SPARK_BATCH_SIZE]
             try:
                 charted = cls._symbols_with_history_sync([match.symbol for match in batch])
-            except BenchmarkRateLimitedError:
+            except (BenchmarkRateLimitedError, *_rate_limit_exception_types()):
+                # yfinance raises its own error on a persistent 429 before
+                # returning a response; search reports it like an HTTP 429.
                 raise
             except Exception as exc:
                 logger.warning("Yahoo history check failed; keeping results unchecked: %s", exc)
@@ -265,16 +268,26 @@ class YahooBenchmarkProvider(BenchmarkProvider):
     @staticmethod
     def _history_sync(symbol: str, start_date: date, end_date: date) -> list[BenchmarkHistoryPoint]:
         import yfinance as yf
+        from yfinance.exceptions import YFPricesMissingError
 
         # ``end`` is exclusive. Ticker.history gives flat OHLC columns for one
         # symbol and auto_adjust uses the provider's split/dividend adjustment.
         ticker = yf.Ticker(symbol)
-        frame = ticker.history(
-            start=start_date.isoformat(),
-            end=(end_date + timedelta(days=1)).isoformat(),
-            interval="1d",
-            auto_adjust=True,
-        )
+        try:
+            # By default yfinance logs a failed request and returns an empty
+            # frame, which would read as "no data" rather than a source to
+            # retry. raise_errors makes this one call raise instead, without
+            # changing yfinance's process-wide hide_exceptions setting.
+            frame = ticker.history(
+                start=start_date.isoformat(),
+                end=(end_date + timedelta(days=1)).isoformat(),
+                interval="1d",
+                auto_adjust=True,
+                raise_errors=True,
+            )
+        except YFPricesMissingError:
+            # Yahoo answered, with no prices for these dates.
+            return []
         if frame is None or frame.empty or "Close" not in frame.columns:
             return []
         try:
@@ -434,7 +447,6 @@ class DailyRateHistoryLoader:
             for source in self.sources:
                 try:
                     points = await self._load(source, client, start_date, end_date)
-                    last_error = None
                     # A single observation cannot form a return, so let a
                     # later source with a usable history take precedence.
                     if len(points) >= 2:
@@ -443,11 +455,12 @@ class DailyRateHistoryLoader:
                 except BenchmarkProviderError as exc:
                     last_error = exc
                     logger.warning("Benchmark history source %s failed: %s", source.name, exc)
-            if partial:
-                return partial
+            # No source had a usable history. If one of them failed, it may
+            # have had one: report the failure so the request can be retried,
+            # rather than a short answer from another source as "no data".
             if last_error is not None:
                 raise last_error
-            return []
+            return partial
         finally:
             if owns_client:
                 await client.aclose()
@@ -485,10 +498,14 @@ class DailyRateHistoryLoader:
                 if not rate.is_finite() or rate <= -100:
                     raise BenchmarkProviderError(f"Invalid daily rate from {source.name}")
                 rates.append((point_date, rate))
-            return accumulate_daily_rates(rates)
+            points = accumulate_daily_rates(rates)
+            if not all(math.isfinite(point.value) for point in points):
+                raise BenchmarkProviderError(f"Daily rates from {source.name} overflow the index")
+            return points
         except BenchmarkProviderError:
             raise
-        except (httpx.HTTPError, ValueError, ET.ParseError) as exc:
+        # ArithmeticError: a rate large enough to overflow while compounding.
+        except (httpx.HTTPError, ValueError, ArithmeticError, ET.ParseError) as exc:
             raise BenchmarkProviderError(f"Could not load history from {source.name}") from exc
 
 
@@ -625,7 +642,9 @@ class CompositeBenchmarkProvider:
         self._history_cache = _BoundedTTLCache[list[BenchmarkHistoryPoint]](ttl_seconds=60 * 60)
 
     async def search(self, query: str, limit: int = 15) -> list[BenchmarkMatch]:
-        key = (_normalize_search(query), limit)
+        # Keyed on the text the sources receive: normalizing would drop
+        # non-Latin letters and let unrelated searches share an entry.
+        key = ((query or "").strip().casefold(), limit)
         cached = self._search_cache.get(key)
         if cached is not None:
             return list(cached)
