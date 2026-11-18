@@ -527,7 +527,7 @@ async def test_income_expenses_api_accepts_ytd_period(client, auth_headers, monk
     async def fake_report(
         session, workspace_id, user_id, months, interval, currency,
         account_ids=None, period=None, days=None, financial_year_start_month=1,
-        start_date=None, end_date=None,
+        start_date=None, end_date=None, include_forecasts=False,
     ):
         assert months == 12
         assert interval == "monthly"
@@ -570,7 +570,7 @@ async def test_income_expenses_api_forwards_days_window(client, auth_headers, mo
     async def fake_report(
         session, workspace_id, user_id, months, interval, currency,
         account_ids=None, period=None, days=None, financial_year_start_month=1,
-        start_date=None, end_date=None,
+        start_date=None, end_date=None, include_forecasts=False,
     ):
         seen["days"] = days
         return ReportResponse(
@@ -617,10 +617,11 @@ async def test_income_expenses_api_forwards_custom_range(client, auth_headers, m
     async def fake_report(
         session, workspace_id, user_id, months, interval, currency,
         account_ids=None, period=None, days=None, financial_year_start_month=1,
-        start_date=None, end_date=None,
+        start_date=None, end_date=None, include_forecasts=False,
     ):
         seen["start"] = start_date
         seen["end"] = end_date
+        seen["forecasts"] = include_forecasts
         return ReportResponse(
             summary=ReportSummary(primary_value=0, change_amount=0, change_percent=None, breakdowns=[]),
             trend=[],
@@ -639,6 +640,16 @@ async def test_income_expenses_api_forwards_custom_range(client, auth_headers, m
     assert resp.status_code == 200
     assert seen["start"] == date(2022, 1, 1)
     assert seen["end"] == date(2022, 6, 30)
+    assert seen["forecasts"] is False
+
+    # A preset sent as explicit dates (This Month) asks for its estimates.
+    resp = await client.get(
+        "/api/reports/income-expenses",
+        params={"start_date": "2022-01-01", "end_date": "2022-01-31", "include_forecasts": "true"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert seen["forecasts"] is True
 
 
 @pytest.mark.asyncio
@@ -960,6 +971,52 @@ async def test_net_worth_counts_asset_sold_after_the_cutoff(
 
 
 @pytest.mark.asyncio
+async def test_net_worth_counts_account_closed_after_the_cutoff(
+    session: AsyncSession, test_user, test_workspace: User,
+):
+    """A snapshot taken before an account was closed still counts it."""
+    account = await _create_manual_account(session, test_user.id, "Closed Later")
+    await _create_transaction(
+        session, test_user.id, account.id, 3000, "credit", date(2025, 1, 10), source="opening_balance"
+    )
+    account.is_closed = True
+    account.closed_at = datetime(2025, 3, 15, 12, 0, tzinfo=timezone.utc)
+    await session.commit()
+
+    before = await _net_worth_at(session, test_workspace.id, date(2025, 2, 28), "BRL")
+    assert before.breakdowns["accounts"] == 3000.0
+
+    # From the day it is closed, the account is gone from net worth.
+    on_close = await _net_worth_at(session, test_workspace.id, date(2025, 3, 15), "BRL")
+    assert on_close.breakdowns["accounts"] == 0.0
+
+    report = await get_net_worth_report(
+        session, test_workspace.id, test_user.id, interval="monthly", currency="BRL",
+        start_date=date(2025, 1, 1), end_date=date(2025, 4, 30),
+    )
+    assert [p.value for p in report.trend] == [3000.0, 3000.0, 0.0, 0.0]
+
+
+@pytest.mark.asyncio
+async def test_net_worth_reads_the_closing_day_in_the_workspace_timezone(
+    session: AsyncSession, test_user, test_workspace: User,
+):
+    """An account closed in the evening is gone from that local day's snapshot."""
+    account = await _create_manual_account(session, test_user.id, "Closed In LA")
+    await _create_transaction(
+        session, test_user.id, account.id, 3000, "credit", date(2025, 1, 10), source="opening_balance"
+    )
+    account.is_closed = True
+    # 20:00 on March 15 in Los Angeles is already March 16 in UTC.
+    account.closed_at = datetime(2025, 3, 16, 3, 0, tzinfo=timezone.utc)
+    await session.commit()
+
+    with use_resolved_timezone(ZoneInfo("America/Los_Angeles")):
+        dp = await _net_worth_at(session, test_workspace.id, date(2025, 3, 15), "BRL")
+    assert dp.breakdowns["accounts"] == 0.0
+
+
+@pytest.mark.asyncio
 async def test_net_worth_with_credit_card(session: AsyncSession, test_user, test_workspace: User):
     checking = await _make_manual_account(session, test_user.id, "NW Check")
     await _add_txn(session, test_user.id, checking.id, 5000, "credit", date.today())
@@ -986,7 +1043,51 @@ async def test_net_worth_with_credit_card(session: AsyncSession, test_user, test
     assert dp.value == 4000.0
 
 
-# --- reserved balances (ADR 0022) -----------------------------------------
+@pytest.mark.parametrize("mode", ["cash", "accrual"])
+@pytest.mark.asyncio
+async def test_net_worth_keeps_future_installments_in_connected_card_debt(
+    session: AsyncSession, test_user, test_workspace: User, mode,
+):
+    """#473: the provider's card balance already includes the installments
+    still to come, so rows dated after today must not be taken off it."""
+    conn = BankConnection(
+        id=uuid.uuid4(), user_id=test_user.id, provider="pluggy",
+        external_id="ext-cc-installments", institution_name="CC",
+        credentials={}, status="active",
+        last_sync_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn)
+    await session.flush()
+    cc = Account(
+        id=uuid.uuid4(), user_id=test_user.id, connection_id=conn.id,
+        name="CC", type="credit_card", balance=Decimal("1500"), currency="BRL",
+    )
+    session.add(cc)
+    await session.commit()
+    today = date.today()
+    await _add_txn(session, test_user.id, cc.id, 300, "debit", today - timedelta(days=5))
+    for months_ahead in (1, 2, 3):
+        await _add_txn(
+            session, test_user.id, cc.id, 300, "debit",
+            today + timedelta(days=30 * months_ahead),
+        )
+
+    with patch(
+        "app.services.report_service.get_credit_card_accounting_mode",
+        new=AsyncMock(return_value=mode),
+    ):
+        now = await _net_worth_at(session, test_workspace.id, today, "BRL")
+        before = await _net_worth_at(
+            session, test_workspace.id, today - timedelta(days=10), "BRL"
+        )
+
+    assert now.breakdowns["liabilities"] == pytest.approx(1500.0)
+    # Only the installment billed between the cutoff and today comes off.
+    assert before.breakdowns["liabilities"] == pytest.approx(1200.0)
+
+
+# --- reserved balances (ADR 0022)-----------------------------------------
 
 
 async def _add_reserved_balance(
@@ -1105,6 +1206,30 @@ async def test_net_worth_backtracks_shared_credit_line_across_all_cards(
     dp = await _net_worth_at(session, test_workspace.id, date.today() - timedelta(days=1), "BRL")
 
     assert dp.breakdowns["liabilities"] == 225.0
+
+
+@pytest.mark.asyncio
+async def test_net_worth_leaves_out_a_closed_card_on_a_shared_line(
+    session: AsyncSession, test_user, test_workspace: User,
+):
+    """A closed card's frozen balance is not mixed into the line's live one."""
+    today = date.today()
+    open_card, closed_card = await _make_shared_credit_cards(
+        session, test_user.id, test_workspace.id, "60"
+    )
+    # The line owed 100 until today's 40 payment; the closed card stopped
+    # syncing before it and still reports 100.
+    await _add_txn(session, test_user.id, open_card.id, 40, "credit", today)
+    closed_card.balance = Decimal("100")
+    closed_card.is_closed = True
+    closed_card.closed_at = datetime.now(timezone.utc)
+    await session.commit()
+
+    dp = await _net_worth_at(session, test_workspace.id, today - timedelta(days=1), "BRL")
+
+    assert dp.breakdowns["liabilities"] == 100.0
+    liabilities = [c for c in dp.composition if c.group == "liabilities"]
+    assert [c.label for c in liabilities] == ["Shared Visa"]
 
 
 @pytest.mark.asyncio

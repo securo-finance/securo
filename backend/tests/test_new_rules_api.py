@@ -1450,3 +1450,46 @@ async def test_preview_rule_skips_a_hidden_category_like_the_save_path(
         await client.get(f"/api/transactions/{item['id']}", headers=auth_headers)
     ).json()
     assert txn["category_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_preview_rule_keeps_a_transfer_leg_in_balances_like_the_save_path(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_categories,
+    test_transactions,
+):
+    """Preview reads rows through a column subset; it has to carry the pair id
+    so it skips `ignore` and an ignored category exactly as saving does."""
+    ignored = test_categories[0]
+    ignored.is_ignored = True
+    txn = test_transactions[4]  # NETFLIX, uncategorized
+    txn.transfer_pair_id = uuid.uuid4()
+    txn.is_ignored = False
+    txn_id = str(txn.id)
+    await session.commit()
+    session.expunge(txn)  # make the preview load the row itself
+
+    body = {
+        "conditions_op": "and",
+        "conditions": [{"field": "description", "op": "equals", "value": "NETFLIX"}],
+        "actions": [
+            {"op": "ignore", "value": True},
+            {"op": "set_category", "value": str(ignored.id)},
+        ],
+    }
+    data = (await client.post("/api/rules/preview", json=body, headers=auth_headers)).json()
+    assert data["matched"] == 1
+    assert data["will_change"] == 0
+    assert data["sample"][0]["new_category_id"] is None
+
+    created = await client.post(
+        "/api/rules",
+        json={**body, "name": "Unsafe on a leg", "apply_to_existing": True},
+        headers=auth_headers,
+    )
+    assert created.status_code == 201
+    saved = (await client.get(f"/api/transactions/{txn_id}", headers=auth_headers)).json()
+    assert saved["is_ignored"] is False
+    assert saved["category_id"] is None

@@ -733,6 +733,30 @@ class TestSyncRates:
         mock_session.commit.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_sync_rates_reads_a_spaced_supported_list(self):
+        """`SUPPORTED_CURRENCIES=USD, EUR, RSD` keeps every code (#1474).
+
+        The list was split on commas only, so " RSD" never matched the
+        provider's "RSD" and its rate was never stored.
+        """
+        from app.services.fx_rate_service import sync_rates
+
+        mock_provider = MagicMock()
+        mock_provider.name = "test_provider"
+        mock_provider.fetch_latest = AsyncMock(return_value={
+            "EUR": Decimal("0.86"),
+            "RSD": Decimal("100.7"),
+        })
+        mock_session = AsyncMock()
+        settings = MagicMock(supported_currencies="USD, EUR, rsd ")
+
+        with patch("app.services.fx_rate_service.OpenExchangeRatesProvider", return_value=mock_provider), \
+                patch("app.services.fx_rate_service.get_settings", return_value=settings):
+            count = await sync_rates(mock_session, date.today())
+
+        assert count == 2
+
+    @pytest.mark.asyncio
     async def test_sync_rates_calls_provider_historical(self):
         from app.services.fx_rate_service import sync_rates
 

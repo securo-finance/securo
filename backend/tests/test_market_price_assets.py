@@ -22,9 +22,11 @@ from app.models.asset import Asset
 from app.models.asset_value import AssetValue
 from app.models.user import User
 from app.providers.market_price import (
+    LatestClose,
     MarketPriceProvider,
     MarketPriceRateLimitedError,
     YFinanceProvider,
+    _last_decimal_close,
 )
 from app.schemas.asset import (
     AssetCreate,
@@ -429,6 +431,52 @@ async def test_refresh_all_halts_on_rate_limit(
 # ---- YFinanceProvider batch refresh: minor-unit normalization ----
 
 
+_CLOSE_DAY = date(2026, 11, 17)
+
+
+def _close(price: str) -> LatestClose:
+    return LatestClose(Decimal(price), _CLOSE_DAY)
+
+
+@pytest.mark.asyncio
+async def test_yfinance_batch_closes_keep_their_trading_day():
+    provider = YFinanceProvider()
+    with (
+        patch.object(
+            YFinanceProvider,
+            "_download_closes_sync",
+            return_value={"EQQQ.L": _close("38450"), "AAPL": _close("181.25")},
+        ),
+        patch.object(YFinanceProvider, "_get_currencies_sync", return_value={"EQQQ.L": "GBp"}),
+    ):
+        closes = await provider.get_latest_closes(["EQQQ.L", "AAPL"])
+
+    assert closes == {
+        "EQQQ.L": LatestClose(Decimal("384.50"), _CLOSE_DAY),
+        "AAPL": LatestClose(Decimal("181.25"), _CLOSE_DAY),
+    }
+
+
+def test_last_close_reads_the_day_of_the_last_trading_row():
+    import pandas as pd
+
+    series = pd.Series(
+        [180.0, 181.25, float("nan")],
+        index=pd.to_datetime(["2026-11-13", "2026-11-17", "2026-11-18"]),
+    )
+
+    assert _last_decimal_close(series) == LatestClose(Decimal("181.25"), _CLOSE_DAY)
+
+
+@pytest.mark.asyncio
+async def test_default_latest_closes_have_no_day():
+    provider = FakeMarketProvider({"AAPL": _quote("AAPL", 180.0)})
+
+    assert await provider.get_latest_closes(["aapl"]) == {
+        "AAPL": LatestClose(Decimal("180.0"), None),
+    }
+
+
 @pytest.mark.asyncio
 async def test_yfinance_batch_normalizes_gbp_pence_to_pounds():
     # yf.download reports LSE tickers in pence; the batch path must scale
@@ -437,8 +485,8 @@ async def test_yfinance_batch_normalizes_gbp_pence_to_pounds():
     with (
         patch.object(
             YFinanceProvider,
-            "_download_prices_sync",
-            return_value={"EQQQ.L": Decimal("38450")},
+            "_download_closes_sync",
+            return_value={"EQQQ.L": _close("38450")},
         ),
         patch.object(
             YFinanceProvider,
@@ -458,8 +506,8 @@ async def test_yfinance_batch_normalizes_zac_cents_to_rand():
     with (
         patch.object(
             YFinanceProvider,
-            "_download_prices_sync",
-            return_value={"NPN.JO": Decimal("612300")},
+            "_download_closes_sync",
+            return_value={"NPN.JO": _close("612300")},
         ),
         patch.object(
             YFinanceProvider,
@@ -479,8 +527,8 @@ async def test_yfinance_batch_leaves_usd_ticker_unchanged():
     with (
         patch.object(
             YFinanceProvider,
-            "_download_prices_sync",
-            return_value={"AAPL": Decimal("181.25")},
+            "_download_closes_sync",
+            return_value={"AAPL": _close("181.25")},
         ),
         patch.object(YFinanceProvider, "_get_currencies_sync") as currencies,
     ):
@@ -496,8 +544,8 @@ async def test_yfinance_batch_keeps_decimal_precision_when_scaling():
     with (
         patch.object(
             YFinanceProvider,
-            "_download_prices_sync",
-            return_value={"EQQQ.L": Decimal("123.45678901234567")},
+            "_download_closes_sync",
+            return_value={"EQQQ.L": _close("123.45678901234567")},
         ),
         patch.object(
             YFinanceProvider,
@@ -517,8 +565,8 @@ async def test_yfinance_batch_leaves_major_unit_lse_ticker_unchanged():
     with (
         patch.object(
             YFinanceProvider,
-            "_download_prices_sync",
-            return_value={"CSPX.L": Decimal("612.40")},
+            "_download_closes_sync",
+            return_value={"CSPX.L": _close("612.40")},
         ),
         patch.object(
             YFinanceProvider,
@@ -540,11 +588,11 @@ async def test_yfinance_batch_drops_price_when_currency_unknown():
     with (
         patch.object(
             YFinanceProvider,
-            "_download_prices_sync",
+            "_download_closes_sync",
             return_value={
-                "EQQQ.L": Decimal("38450"),
-                "SGLN.L": Decimal("5120"),
-                "AAPL": Decimal("181.25"),
+                "EQQQ.L": _close("38450"),
+                "SGLN.L": _close("5120"),
+                "AAPL": _close("181.25"),
             },
         ),
         patch.object(
