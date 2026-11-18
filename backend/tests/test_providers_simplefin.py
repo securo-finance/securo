@@ -1015,3 +1015,75 @@ def test_parse_accounts_skips_non_finite_market_values():
     ])
     _, accounts = SimpleFinProvider._parse_accounts(payload)
     assert accounts[0].auto_invested_balance == Decimal("50.25")
+
+
+def _type_payload(*accounts: dict) -> dict:
+    return {
+        "connections": [{"conn_id": "CON-1", "name": "A Bank"}],
+        "accounts": [
+            {"id": f"a{index}", "currency": "USD", "conn_id": "CON-1", **account}
+            for index, account in enumerate(accounts)
+        ],
+    }
+
+
+def test_parse_accounts_reads_a_card_from_its_name():
+    """SimpleFIN exposes no account type, so every account lands as "checking"
+    and the user has to fix each non-cash one by hand (issue #352). A name
+    that says card is enough to type it right on the first import."""
+    _, accounts = SimpleFinProvider._parse_accounts(
+        _type_payload(
+            {"name": "Everyday Visa", "balance": "0"},
+            {"name": "Mastercard Gold", "balance": "-10"},
+            {"name": "Amex Platinum", "balance": "0"},
+            {"name": "Credit Card -1234", "balance": "0"},
+        )
+    )
+    assert [account.type for account in accounts] == ["credit_card"] * 4
+
+
+def test_parse_accounts_reads_a_savings_account_from_its_name():
+    _, accounts = SimpleFinProvider._parse_accounts(
+        _type_payload(
+            {"name": "High Yield Savings", "balance": "100"},
+            {"name": "Poupança", "balance": "50"},
+        )
+    )
+    assert [account.type for account in accounts] == ["savings", "savings"]
+
+
+def test_parse_accounts_reads_a_card_from_a_negative_balance():
+    """A card reports what it owes as a negative balance on this protocol, so
+    the sign places one whose name says nothing."""
+    _, accounts = SimpleFinProvider._parse_accounts(
+        _type_payload(
+            {"name": "-1234", "balance": "-25.40"},
+            {"name": "Brokerage", "balance": "1000"},
+        )
+    )
+    assert [account.type for account in accounts] == ["credit_card", "checking"]
+
+
+def test_parse_accounts_does_not_read_a_credit_union_or_a_debit_card_as_a_card():
+    """Credit union and debit card both carry a word a credit card is named
+    with; neither is one, and a wrong type is kept across syncs, so it would
+    have to be fixed by hand anyway."""
+    _, accounts = SimpleFinProvider._parse_accounts(
+        _type_payload(
+            {"name": "Credit Union Checking", "balance": "100"},
+            {"name": "Debit Card", "balance": "100"},
+        )
+    )
+    assert [account.type for account in accounts] == ["checking", "checking"]
+
+
+def test_parse_accounts_does_not_read_an_overdrawn_checking_as_a_card():
+    """A checking account short of cash is still checking: the name is read
+    before the sign, so the overdraft does not turn it into a card."""
+    _, accounts = SimpleFinProvider._parse_accounts(
+        _type_payload(
+            {"name": "Main Checking", "balance": "-12.00"},
+            {"name": "Emergency Savings", "balance": "-1.00"},
+        )
+    )
+    assert [account.type for account in accounts] == ["checking", "savings"]
