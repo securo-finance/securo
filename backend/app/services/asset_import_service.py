@@ -1104,6 +1104,13 @@ async def import_orders(
             errors.append(AssetImportRowError(row=order.row, reason='too_large', ticker=order.ticker))
             continue
 
+        if order.kind != 'split' and order.quantity == 0:
+            # Fewer units than the column keeps (0.0000004) round to none: the
+            # row would book its fee and move no units, and its fingerprint
+            # would match any other trade that rounds away.
+            errors.append(AssetImportRowError(row=order.row, reason='invalid_quantity', ticker=order.ticker))
+            continue
+
         stated = _order_currency(order.currency)
         asset = holdings.get(order.ticker)
         # A ledger row is in the holding's currency. An order paid in another

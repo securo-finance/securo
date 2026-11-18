@@ -1900,6 +1900,23 @@ async def test_a_quantity_too_large_for_the_column_is_reported_against_its_row(
 
 
 @pytest.mark.asyncio
+async def test_a_trade_that_rounds_to_no_units_is_reported_against_its_row(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    """0.0000004 units round to none in the column: booking the row would take
+    its fee and no units, so it is named like any other bad quantity."""
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,fee",
+        "AAPL,2026-01-15,0.0000004,100.00,1",
+        "AAPL,2026-02-15,5,100.00,",
+    ), provider)
+
+    assert [(e.row, e.reason) for e in summary["errors"]] == [(2, "invalid_quantity")]
+    assert summary["imported"] == 1
+    assert (await _only_asset(session, test_workspace)).units == Decimal("5")
+
+
+@pytest.mark.asyncio
 async def test_undo_is_refused_when_the_position_left_would_be_too_large(
     session: AsyncSession, test_user: User, test_workspace: Workspace, provider
 ):
