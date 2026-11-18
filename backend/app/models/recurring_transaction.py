@@ -21,7 +21,16 @@ if TYPE_CHECKING:
 class RecurringTransaction(Base):
     __tablename__ = "recurring_transactions"
     __table_args__ = (
-        UniqueConstraint("user_id", "description", "frequency", "start_date", name="uq_recurring_tx"),
+        # Scoped inside the workspace: two of a person's books can hold the
+        # same rent bill, and a restore into a new workspace has to be able to
+        # recreate one that already exists in the original. `workspace_id`
+        # alone would not do — a workspace can hold two members' identical
+        # bills, which the old per-user guard allowed and this one must keep
+        # allowing.
+        UniqueConstraint(
+            "workspace_id", "user_id", "description", "frequency", "start_date",
+            name="uq_recurring_tx",
+        ),
         CheckConstraint(
             "weekend_adjustment IN ('none', 'previous_friday', 'next_monday')",
             name="ck_recurring_transactions_weekend_adjustment",

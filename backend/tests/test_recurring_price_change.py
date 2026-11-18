@@ -778,8 +778,10 @@ async def test_recent_projection_matches_full_history_without_loading_entities(
         ["39.90", "39.90", "39.91"],
         ["10.00", "11.00"],
     ]
-    for amounts in vectors:
-        series = _series(workspace_id=workspace_id)
+    for index, amounts in enumerate(vectors):
+        # One bill per series: the same description and schedule twice in one
+        # workspace is what the duplicate guard refuses, by design.
+        series = _series(workspace_id=workspace_id, description=f"Netflix {index}")
         rows = _monthly_rows(series, amounts)
         # Conflicting same-date rows reset the chain; identical rows collapse.
         if len(rows) == 5:
