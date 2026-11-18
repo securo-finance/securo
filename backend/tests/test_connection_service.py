@@ -1390,6 +1390,257 @@ async def test_handle_oauth_callback_with_payee(session: AsyncSession, test_user
     assert conn.institution_name == "Payee Bank"
 
 
+@pytest.mark.asyncio
+async def test_first_import_refused_keeps_connection_and_accounts(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A refused first import must not spend the bank authorization (#1406).
+
+    The connection, its credentials and its accounts are committed before the
+    import, so the retry the accounts page offers uses the same consent
+    instead of sending the user through the bank's login again.
+    """
+    account_data = AccountData(
+        external_id="acc-refused", name="Checking",
+        type="checking", balance=Decimal("500.00"), currency="BRL",
+    )
+    mock_provider = AsyncMock()
+    mock_provider.handle_oauth_callback = AsyncMock(return_value=ConnectionData(
+        external_id="ext-refused",
+        institution_name="Refusing Bank",
+        credentials={"token": "kept"},
+        accounts=[account_data],
+    ))
+    mock_provider.get_holdings = AsyncMock(return_value=[])
+    mock_provider.get_transactions = AsyncMock(
+        side_effect=RuntimeError("transactions refused")
+    )
+
+    # The failed import's rollback expires every object in the session, the
+    # fixtures included, so their ids are read before it.
+    workspace_id, user_id = test_workspace.id, test_user.id
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        connection = await handle_oauth_callback(
+            session, workspace_id, user_id, "auth-code", "pluggy"
+        )
+
+    assert connection.status == "error"
+    assert connection.last_sync_at is None
+    stored = await session.get(BankConnection, connection.id)
+    assert stored is not None
+    assert stored.credentials == {"token": "kept"}
+    account = (
+        await session.execute(
+            select(Account).where(Account.connection_id == connection.id)
+        )
+    ).scalar_one()
+    assert account.external_id == "acc-refused"
+    # The half-import was rolled back whole.
+    transactions = (
+        await session.execute(
+            select(Transaction).where(Transaction.account_id == account.id)
+        )
+    ).scalars().all()
+    assert transactions == []
+
+    # The retry syncs the stored connection: no new bank login, no new row.
+    mock_provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id="tx-after-retry", description="GROCERY",
+            amount=Decimal("80"), date=date.today(), type="debit", currency="BRL",
+        ),
+    ])
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "kept"})
+    mock_provider.get_accounts = AsyncMock(return_value=[account_data])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        retried, _merged, _outcome = await sync_connection(
+            session, connection.id, workspace_id, user_id
+        )
+
+    assert retried.id == connection.id
+    assert retried.status == "active"
+    assert retried.last_sync_at is not None
+    imported = await session.scalar(
+        select(Transaction).where(Transaction.external_id == "tx-after-retry")
+    )
+    assert imported is not None
+    accounts = (
+        await session.execute(
+            select(Account).where(Account.connection_id == connection.id)
+        )
+    ).scalars().all()
+    assert [a.external_id for a in accounts] == ["acc-refused"]
+
+
+def _first_import_provider(accounts, transactions) -> AsyncMock:
+    """A provider for a new connection. ``transactions`` maps an account's
+    external id to its transactions, or to an exception its fetch raises."""
+    provider = AsyncMock()
+    provider.handle_oauth_callback = AsyncMock(return_value=ConnectionData(
+        external_id=f"ext-{uuid.uuid4().hex[:8]}",
+        institution_name="First Import Bank",
+        credentials={"token": "kept"},
+        accounts=accounts,
+    ))
+    provider.refresh_credentials = AsyncMock(return_value={"token": "kept"})
+    provider.get_institution_logo = AsyncMock(return_value=None)
+    provider.get_accounts = AsyncMock(return_value=accounts)
+    provider.get_holdings = AsyncMock(return_value=[_AUTO_INVEST_HOLDING])
+
+    async def get_transactions(_credentials, account_external_id, _since, **_options):
+        found = transactions[account_external_id]
+        if isinstance(found, Exception):
+            raise found
+        return found
+
+    provider.get_transactions = AsyncMock(side_effect=get_transactions)
+    return provider
+
+
+def _first_import_patches(provider):
+    from contextlib import ExitStack
+
+    stack = ExitStack()
+    stack.enter_context(patch(
+        "app.services.connection_service.get_provider", return_value=provider
+    ))
+    for name in ("detect_transfer_pairs", "stamp_primary_amount", "apply_rules_to_transaction"):
+        stack.enter_context(patch(
+            f"app.services.connection_service.{name}", new_callable=AsyncMock
+        ))
+    return stack
+
+
+@pytest.mark.asyncio
+async def test_first_import_refused_keeps_full_balance(
+    session: AsyncSession, test_user, test_workspace
+):
+    """The balance committed before the first import counts the auto-invested
+    money: the holding that would replace it is stored only by the import, so
+    a refused import must not leave the account at 600 with no asset."""
+    provider = _first_import_provider(
+        [_auto_invested_account_data()],
+        {"auto-inv-acc-1": RuntimeError("transactions refused")},
+    )
+    with _first_import_patches(provider):
+        connection = await handle_oauth_callback(
+            session, test_workspace.id, test_user.id, "code", "pluggy"
+        )
+
+    assert connection.status == "error"
+    account = (
+        await session.execute(select(Account).where(Account.connection_id == connection.id))
+    ).scalar_one()
+    assert account.balance == Decimal("1000")
+    assets = (
+        await session.execute(select(Asset).where(Asset.connection_id == connection.id))
+    ).scalars().all()
+    assert assets == []
+
+
+@pytest.mark.asyncio
+async def test_first_import_deducts_auto_invested_with_its_holding(
+    session: AsyncSession, test_user, test_workspace
+):
+    """When the first import succeeds the holding is stored and the account
+    balance loses that part in the same commit (issue #843)."""
+    provider = _first_import_provider([_auto_invested_account_data()], {"auto-inv-acc-1": []})
+    with _first_import_patches(provider):
+        connection = await handle_oauth_callback(
+            session, test_workspace.id, test_user.id, "code", "pluggy"
+        )
+
+    assert connection.status == "active"
+    account = (
+        await session.execute(select(Account).where(Account.connection_id == connection.id))
+    ).scalar_one()
+    assert account.balance == Decimal("600")
+    asset = (
+        await session.execute(select(Asset).where(Asset.connection_id == connection.id))
+    ).scalar_one()
+    assert asset.external_id == "auto-inv-holding-1"
+
+
+@pytest.mark.asyncio
+async def test_first_import_refused_on_second_account_records_error(
+    session: AsyncSession, test_user, test_workspace
+):
+    """One account imports, the next is refused: the rollback expires the
+    connection, and recording the failure must not read it lazily."""
+    first = AccountData(
+        external_id="acc-ok", name="Checking", type="checking",
+        balance=Decimal("100"), currency="BRL",
+    )
+    second = AccountData(
+        external_id="acc-refused-2", name="Savings", type="savings",
+        balance=Decimal("200"), currency="BRL",
+    )
+    provider = _first_import_provider([first, second], {
+        "acc-ok": [TransactionData(
+            external_id="tx-ok", description="COFFEE", amount=Decimal("5"),
+            date=date.today(), type="debit", currency="BRL",
+        )],
+        "acc-refused-2": RuntimeError("transactions refused"),
+    })
+    with _first_import_patches(provider):
+        connection = await handle_oauth_callback(
+            session, test_workspace.id, test_user.id, "code", "pluggy"
+        )
+
+    assert connection.status == "error"
+    assert connection.last_sync_at is None
+    assert await session.scalar(
+        select(Transaction).where(Transaction.external_id == "tx-ok")
+    ) is None
+
+
+@pytest.mark.asyncio
+async def test_first_import_skipped_when_a_sync_finished_first(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A sync that runs on the newly committed connection before the first
+    import gets its lock imports the history; the first import must then not
+    insert the same transaction again."""
+    from app.services import connection_service
+    from tests.conftest import TestSessionLocal
+
+    acc = AccountData(
+        external_id="acc-race", name="Checking", type="checking",
+        balance=Decimal("100"), currency="BRL",
+    )
+    provider = _first_import_provider([acc], {"acc-race": [TransactionData(
+        external_id="tx-race", description="RENT", amount=Decimal("900"),
+        date=date.today(), type="debit", currency="BRL",
+    )]})
+    real_claim = connection_service._claim_first_import
+
+    async def sync_wins_the_lock(claim_session, connection_id):
+        async with TestSessionLocal() as other:
+            await sync_connection(other, connection_id, test_workspace.id, test_user.id)
+        return await real_claim(claim_session, connection_id)
+
+    with _first_import_patches(provider), patch(
+        "app.services.connection_service._claim_first_import",
+        side_effect=sync_wins_the_lock,
+    ):
+        connection = await handle_oauth_callback(
+            session, test_workspace.id, test_user.id, "code", "pluggy"
+        )
+
+    assert connection.status == "active"
+    assert connection.last_sync_at is not None
+    rows = (
+        await session.execute(
+            select(Transaction).where(Transaction.external_id == "tx-race")
+        )
+    ).scalars().all()
+    assert len(rows) == 1
+
+
 # ---------------------------------------------------------------------------
 # sync_connection
 # ---------------------------------------------------------------------------

@@ -1292,6 +1292,7 @@
       "syncNow": "Szinkronizálás most"
     },
     "connected": "Bank sikeresen csatlakoztatva",
+    "connectedImportFailed": "A bank csatlakozott, de az első import nem sikerült. Fejezze be a szinkronizálás megismétlésével.",
     "connectError": "Nem sikerült csatlakoztatni a bankot",
     "disconnected": "Kapcsolat eltávolítva",
     "confirmDisconnectTitle": "Leválasztod a bankkapcsolatot?",
