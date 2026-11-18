@@ -5,7 +5,9 @@ import { listDate, type DatedTransaction } from '@/lib/list-date'
 /** Keep both dates readable on touch screens and by assistive technology. */
 export function ReportingDateBadge({ tx, locale }: { tx: DatedTransaction; locale: string }) {
   const { t } = useTranslation()
-  const reportingDate = listDate(tx)
+  // The user's own reporting date wins. The card statement view files a
+  // row by its bill date, so its `reporting_date` leaves the override out.
+  const reportingDate = tx.reporting_date_override ?? listDate(tx)
   if (reportingDate === tx.date) return null
 
   return (

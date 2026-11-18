@@ -737,12 +737,25 @@ async def _recompute_effective_dates(session: AsyncSession, account: Account) ->
 
     Called when an account's CC cycle metadata (statement_close_day,
     payment_due_day) changes, so historical transactions get rebucketed into
-    the correct bill. Cheap: a few hundred rows per account at most."""
+    the correct bill. Cheap: a few hundred rows per account at most.
+
+    A row linked to a bank bill keeps that bill's due date, as the sync set
+    it: the sync only refiles a row when its `bill_id` changes, so dropping
+    it here would leave the row on the cycle-math date for good."""
     result = await session.execute(
         select(Transaction).where(Transaction.account_id == account.id)
     )
-    for tx in result.scalars():
-        apply_effective_date(tx, account)
+    transactions = list(result.scalars())
+    bill_ids = {tx.bill_id for tx in transactions if tx.bill_id is not None}
+    due_dates: dict[uuid.UUID, _Date] = {}
+    if bill_ids:
+        rows = await session.execute(
+            select(CreditCardBill.id, CreditCardBill.due_date).where(CreditCardBill.id.in_(bill_ids))
+        )
+        due_dates = {bill_id: due_date for bill_id, due_date in rows.all()}
+    for tx in transactions:
+        bill_due_date = due_dates.get(tx.bill_id) if tx.bill_id is not None else None
+        apply_effective_date(tx, account, bill_due_date=bill_due_date)
 
 
 async def sync_opening_balance_for_connected_account(

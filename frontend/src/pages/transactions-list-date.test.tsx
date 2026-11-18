@@ -138,4 +138,16 @@ describe('listDate', () => {
     )
     expect(container).toBeEmptyDOMElement()
   })
+
+  it('the badge keeps the override on a card statement row filed by its bank date', () => {
+    // The statement view sends `reporting_date` as the bill/bank date and
+    // leaves the override out of it.
+    renderWithProviders(
+      <ReportingDateBadge
+        tx={{ date: '2026-03-30', reporting_date_override: '2026-04-15', reporting_date: '2026-03-30' }}
+        locale="en-US"
+      />,
+    )
+    expect(screen.getByText(new RegExp(new Date('2026-04-15T00:00:00').toLocaleDateString('en-US')))).toBeInTheDocument()
+  })
 })
