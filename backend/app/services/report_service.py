@@ -504,8 +504,13 @@ async def get_income_expenses_report(
     financial_year_start_month: int = 1,
     start_date: date | None = None,
     end_date: date | None = None,
+    include_forecasts: bool = False,
 ) -> ReportResponse:
-    """Build income/expenses; explicit custom windows include actuals only."""
+    """Build income/expenses; explicit custom windows include actuals only.
+
+    ``include_forecasts`` keeps the estimates for an explicit window that
+    comes from a preset (This Month, Last Month, a window stepped back).
+    """
     filtered = account_ids is not None
     acct_filter = [Transaction.account_id.in_(account_ids)] if filtered else []
     real_today = app_today()
@@ -693,15 +698,18 @@ async def get_income_expenses_report(
         )
 
     # Custom windows report only actuals, including when they end today.
-    # Presets retain their existing full-month estimates.
-    include_forecasts = start_date is None and end_date is None
+    # Presets retain their existing full-month estimates, also when the page
+    # sends them as explicit dates (issue #1408).
+    include_forecasts = include_forecasts or (start_date is None and end_date is None)
     forecast_map: dict[str, tuple[float, float]] = {}
 
     # Add recurring projections for each month in the range (consistent with dashboard)
     from app.services.dashboard_service import _month_range, _get_recurring_projections
 
+    # Months up to the window's end: a window stepped back ends before today,
+    # and its summary must not pick up the months after it.
     cursor = start
-    while include_forecasts and cursor <= real_today:
+    while include_forecasts and cursor <= axis_end:
         m_start, m_end = _month_range(cursor)
         # A day-window range can start mid-month: only project occurrences that
         # fall inside the requested window.
@@ -1060,7 +1068,7 @@ async def get_income_expenses_report(
     # Add recurring projections to composition and category trend
     cat_cache: dict[str, dict] = {}
     cursor2 = start
-    while include_forecasts and cursor2 <= real_today:
+    while include_forecasts and cursor2 <= axis_end:
         m_start, m_end = _month_range(cursor2)
         projections = await _get_recurring_projections(session, workspace_id, m_start, m_end, account_ids)
         period_label = _format_date_label(cursor2, interval)

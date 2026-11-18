@@ -527,7 +527,7 @@ async def test_income_expenses_api_accepts_ytd_period(client, auth_headers, monk
     async def fake_report(
         session, workspace_id, user_id, months, interval, currency,
         account_ids=None, period=None, days=None, financial_year_start_month=1,
-        start_date=None, end_date=None,
+        start_date=None, end_date=None, include_forecasts=False,
     ):
         assert months == 12
         assert interval == "monthly"
@@ -570,7 +570,7 @@ async def test_income_expenses_api_forwards_days_window(client, auth_headers, mo
     async def fake_report(
         session, workspace_id, user_id, months, interval, currency,
         account_ids=None, period=None, days=None, financial_year_start_month=1,
-        start_date=None, end_date=None,
+        start_date=None, end_date=None, include_forecasts=False,
     ):
         seen["days"] = days
         return ReportResponse(
@@ -617,10 +617,11 @@ async def test_income_expenses_api_forwards_custom_range(client, auth_headers, m
     async def fake_report(
         session, workspace_id, user_id, months, interval, currency,
         account_ids=None, period=None, days=None, financial_year_start_month=1,
-        start_date=None, end_date=None,
+        start_date=None, end_date=None, include_forecasts=False,
     ):
         seen["start"] = start_date
         seen["end"] = end_date
+        seen["forecasts"] = include_forecasts
         return ReportResponse(
             summary=ReportSummary(primary_value=0, change_amount=0, change_percent=None, breakdowns=[]),
             trend=[],
@@ -639,6 +640,16 @@ async def test_income_expenses_api_forwards_custom_range(client, auth_headers, m
     assert resp.status_code == 200
     assert seen["start"] == date(2022, 1, 1)
     assert seen["end"] == date(2022, 6, 30)
+    assert seen["forecasts"] is False
+
+    # A preset sent as explicit dates (This Month) asks for its estimates.
+    resp = await client.get(
+        "/api/reports/income-expenses",
+        params={"start_date": "2022-01-01", "end_date": "2022-01-31", "include_forecasts": "true"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert seen["forecasts"] is True
 
 
 @pytest.mark.asyncio

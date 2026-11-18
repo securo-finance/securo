@@ -1165,3 +1165,62 @@ async def test_custom_income_expenses_only_include_in_range_actuals(
     }
     for item in report.category_trend:
         assert sum(point.value for point in item.series) == item.total
+
+
+async def test_preset_month_window_keeps_projections(
+    session, test_user, test_workspace, monkeypatch,
+):
+    """Issue #1408: "This month" is sent as explicit dates, yet it is a
+    preset, so it projects the same pending and recurring rows as the
+    month does inside the rolling 1Y preset."""
+    from app.services import report_service
+
+    today = date(2026, 11, 8)
+    monkeypatch.setattr(report_service, 'app_today', lambda: today)
+    currency = test_user.primary_currency
+    account = await _make_account(session, test_user.id, 'This month', currency=currency)
+    await _add_txn(session, test_user.id, account.id, 100, 'credit', date(2026, 11, 2),
+                   currency=currency)
+    await _add_txn(session, test_user.id, account.id, 2000, 'credit', date(2026, 11, 13),
+                   status='pending', currency=currency)
+    await _add_txn(session, test_user.id, account.id, 480, 'debit', date(2026, 11, 7),
+                   status='pending', currency=currency)
+    # Pending in the month before: in the 1Y view, but not in this month's window.
+    await _add_txn(session, test_user.id, account.id, 999, 'debit', date(2026, 10, 20),
+                   status='pending', currency=currency)
+    recurring = await _make_recurring(
+        session, test_user.id, account.id, 35, 'debit',
+        next_occurrence=date(2026, 11, 20), currency=currency,
+    )
+    recurring.start_date = date(2026, 1, 1)
+    await session.commit()
+
+    async def totals(**kwargs):
+        report = await get_income_expenses_report(
+            session, test_workspace.id, test_user.id, interval='monthly', **kwargs,
+        )
+        return report, {item.key: item.value for item in report.summary.breakdowns}
+
+    month, month_totals = await totals(
+        months=1, start_date=date(2026, 11, 1), end_date=today, include_forecasts=True,
+    )
+    year, _ = await totals(months=12)
+
+    assert month_totals['income'] == 100
+    assert month_totals['projectedIncome'] == 2000
+    assert month_totals['projectedExpenses'] == 515
+    november = next(point for point in year.trend if point.date == '2026-11')
+    assert month.trend[-1].breakdowns == november.breakdowns
+
+    # A window that ends before today stops projecting at its own end: the
+    # months after it (November here) stay out of its summary.
+    _, october = await totals(
+        months=1, start_date=date(2026, 10, 1), end_date=date(2026, 10, 31),
+        include_forecasts=True,
+    )
+    assert october['projectedExpenses'] == 999
+    assert october['projectedIncome'] == 0
+
+    # Custom ranges stay actual-only.
+    _, custom = await totals(months=1, start_date=date(2026, 11, 1), end_date=today)
+    assert custom['projectedIncome'] == custom['projectedExpenses'] == 0
