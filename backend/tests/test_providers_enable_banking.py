@@ -1419,3 +1419,34 @@ async def test_get_transactions_keeps_identical_entries_of_one_day(eb_keys):
             {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
         )
     assert [t.external_id for t in again] == [t.external_id for t in txns]
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_cancelled_entry_keeps_its_slot(eb_keys):
+    """A cancelled entry is not imported, but it keeps its place among the
+    identical entries of its page, so the one still listed keeps the id it had
+    while both were pending, and its id is reported as still listed (#1232)."""
+    provider = EnableBankingProvider()
+    coffee = {
+        "transaction_amount": {"amount": "3.20", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": "2026-05-10",
+    }
+    both_pending = [{**coffee, "status": "PDNG"}, {**coffee, "status": "PDNG"}]
+    one_cancelled = [{**coffee, "status": "CNCL"}, {**coffee, "status": "PDNG"}]
+    fetched = []
+    for entries in (both_pending, one_cancelled):
+        page = {"transactions": entries, "continuation_key": ""}
+
+        def handler(request: httpx.Request, page=page) -> httpx.Response:
+            return httpx.Response(200, json=page)
+
+        with _patch_client(provider, handler):
+            fetched.append(await provider.get_transactions(
+                {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
+            ))
+
+    before, after = fetched
+    assert [t.status for t in after] == ["pending"]
+    assert after[0].external_id == before[1].external_id
+    assert provider.cancelled_transaction_ids == {"acc-1": {before[0].external_id}}

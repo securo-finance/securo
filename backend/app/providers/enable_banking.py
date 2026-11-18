@@ -87,6 +87,8 @@ TERMINAL_SESSION_STATUSES = frozenset(
 # moved money, and a held or scheduled one has not settled yet.
 SKIPPED_TRANSACTION_STATUSES = frozenset({"CNCL", "RJCT"})
 PENDING_TRANSACTION_STATUSES = frozenset({"PDNG", "PENDING", "HOLD", "SCHD"})
+# What `_iter_transactions` yields for a skipped entry: it is never imported.
+CANCELLED_STATUS = "cancelled"
 
 
 def _map_cash_account_type(eb_type: Optional[str]) -> str:
@@ -465,6 +467,10 @@ class EnableBankingProvider(BankProvider):
         # imported, but it is not the whole feed, so the sync layer must not
         # take an entry missing from it as one the bank stopped listing.
         self.truncated_account_ids: set[str] = set()
+        # Ids of the entries each account lists as cancelled or rejected. They
+        # are not imported, but the bank still lists them: a hold stored under
+        # one of them has not left the feed, so no booking may claim it.
+        self.cancelled_transaction_ids: dict[str, set[str]] = {}
 
     def _use_credentials(self, credentials: dict) -> None:
         aspsp = credentials.get("aspsp") if isinstance(credentials, dict) else None
@@ -1226,6 +1232,7 @@ class EnableBankingProvider(BankProvider):
         continuation_key: Optional[str] = None
         seen_continuation_keys: set[str] = set()
         seen_transaction_ids: set[str] = set()
+        self.cancelled_transaction_ids.pop(account_external_id, None)
         for _ in range(TRANSACTION_PAGE_LIMIT):
             params: dict[str, Any] = {"date_from": date_from, "date_to": date_to}
             if continuation_key:
@@ -1251,6 +1258,13 @@ class EnableBankingProvider(BankProvider):
                     parsed.external_id = _repeat_external_id(
                         parsed.external_id, occurrence
                     )
+                # A cancelled entry took its slot above, so an identical live
+                # one next to it keeps the id it had while both were listed.
+                if status == CANCELLED_STATUS:
+                    self.cancelled_transaction_ids.setdefault(
+                        account_external_id, set()
+                    ).add(parsed.external_id)
+                    continue
                 # A broken pagination cursor can make Enable Banking return a
                 # page we have already consumed. Keep the result idempotent
                 # even before the repeated cursor is detected below.
@@ -1315,10 +1329,11 @@ class EnableBankingProvider(BankProvider):
             for raw in body:
                 raw_status = (raw.get("status") or "").upper()
                 if raw_status in SKIPPED_TRANSACTION_STATUSES:
-                    continue
-                yield raw, (
-                    "pending" if raw_status in PENDING_TRANSACTION_STATUSES else "posted"
-                )
+                    yield raw, CANCELLED_STATUS
+                elif raw_status in PENDING_TRANSACTION_STATUSES:
+                    yield raw, "pending"
+                else:
+                    yield raw, "posted"
 
     def _build_transaction(
         self,

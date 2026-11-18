@@ -3467,6 +3467,13 @@ async def sync_connection(
             live_txn_external_ids[account.id] = {
                 txn.external_id for txn in transactions_data
             }
+            # Entries the bank lists as cancelled are not imported, but they
+            # are still listed: a hold stored under one has not settled.
+            cancelled = getattr(provider, "cancelled_transaction_ids", None)
+            if isinstance(cancelled, dict):
+                live_txn_external_ids[account.id] |= cancelled.get(
+                    acc_data.external_id, set()
+                )
             incomplete = getattr(provider, "incomplete_account_ids", None)
             if isinstance(incomplete, set) and acc_data.external_id in incomplete:
                 incomplete_fetch_account_ids.add(account.id)
