@@ -80,6 +80,11 @@ def _match_condition(condition: dict, tx: "Transaction") -> bool:
 
     tx_val = getattr(tx, field, None)
 
+    # A row the provider never labelled cannot satisfy a condition on its
+    # label, and negated ops would otherwise match every such row.
+    if field == "provider_category" and not tx_val:
+        return False
+
     # A blank value matches everything: "" is a substring of any string, every
     # string starts/ends with it, an empty regex always matches, and numeric
     # comparisons fall back to 0. Creation now rejects these, but rules saved

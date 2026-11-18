@@ -384,6 +384,17 @@ def test_provider_category_condition_without_category_does_not_match():
     assert evaluate_conditions("and", conditions, tx) is False
 
 
+def test_provider_category_negated_conditions_do_not_match_without_category():
+    tx = make_tx(source="manual", raw_data=None)
+    conditions = [
+        {"field": "provider_category", "op": "not_equals", "value": "Eating out"},
+        {"field": "provider_category", "op": "not_contains", "value": "eating"},
+    ]
+
+    for condition in conditions:
+        assert evaluate_conditions("and", [condition], tx) is False
+
+
 # --- Edge-case: evaluate_conditions ---
 
 
