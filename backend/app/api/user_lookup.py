@@ -14,6 +14,7 @@ when introducing org boundaries.
 """
 
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, EmailStr
@@ -30,6 +31,9 @@ router = APIRouter(prefix="/api/users", tags=["users"])
 class UserLookupResult(BaseModel):
     id: uuid.UUID
     email: EmailStr
+    # The name the person set for themselves, so a form that links them can
+    # show it instead of guessing one from the address.
+    display_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
