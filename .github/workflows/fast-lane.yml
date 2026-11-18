@@ -513,11 +513,15 @@ jobs:
             // that has not failed, and if one does, bows out. A run still going
             // counts, because `ci.yml` never cancels a run on main and it will
             // finish; a failed or cancelled one does not, or its slot would be
-            // lost with it. Ordering is by run id, which grows with creation, so
-            // exactly one run per slot finds nothing to bow to. The one cost is
-            // that a slot can be lost when every earlier run fails only after a
-            // later one has already bowed out — the next hour's cron picks it up,
-            // which is a delay, not a gate: nothing here decides a merge.
+            // lost with it. Ordering is by when the attempt started, then by run
+            // id, so exactly one attempt per slot finds nothing to bow to. The
+            // start time and not the id, because a re-run keeps its id and gets
+            // a new attempt: rerun at :05, the run created at :00 would come
+            // back as the oldest id in the slot and open a second sweep over a
+            // slot already swept. The one cost is that a slot can be lost when
+            // every earlier attempt fails only after a later one has already
+            // bowed out — the next hour's cron picks it up, which is a delay,
+            // not a gate: nothing here decides a merge.
             const SLOT_MINUTES = 10;
             const inSlot = (iso) => {
               const t = new Date(iso);
@@ -544,14 +548,24 @@ jobs:
               // than 50 runs is beyond what a page can say, and the only
               // consequence of missing one is an extra sweep, never a merge.
               const slot = String(run.run_started_at).slice(0, 13);
-              const earlier = runs.filter((r) => r.id < run.id
-                && (r.event === 'push' || r.event === 'workflow_dispatch')
-                && String(r.run_started_at || '').slice(0, 13) === slot
-                && inSlot(r.run_started_at)
-                && !(r.status === 'completed' && r.conclusion !== 'success'));
+              const mineAt = String(run.run_started_at);
+              const earlier = runs.filter((r) => {
+                const at = String(r.run_started_at || '');
+                if ((r.event !== 'push' && r.event !== 'workflow_dispatch')
+                    || at.slice(0, 13) !== slot || !inSlot(at)) return false;
+                // Earlier by when this attempt started, not by id: a re-run
+                // keeps its id and starts now. Two attempts on the same second
+                // fall back to the id, so the order is still total.
+                if (!(at < mineAt || (at === mineAt && r.id < run.id))) return false;
+                return !(r.status === 'completed' && r.conclusion !== 'success');
+              });
               if (!earlier.length) return false;
+              const openedBy = earlier.reduce((a, b) =>
+                String(b.run_started_at) < String(a.run_started_at)
+                  || (String(b.run_started_at) === String(a.run_started_at) && b.id < a.id)
+                  ? b : a);
               core.info(`sweep not opened by this run: run ` +
-                `${Math.min(...earlier.map((r) => r.id))} opened this slot`);
+                `${openedBy.id} opened this slot`);
               return true;
             }
 
