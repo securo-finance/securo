@@ -181,9 +181,15 @@ async def refresh_all_asset_prices(
         session, workspace_id=ctx.workspace.id
     )
     if summary["rate_limited"]:
+        # The service commits whatever it refreshed before the provider
+        # refused, so the counters are real: the caller refetches and can say
+        # how many prices already changed instead of losing that information.
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Market data provider is currently rate-limiting. Try again in a minute.",
+            detail={
+                "message": "Market data provider is currently rate-limiting. Try again in a minute.",
+                **AssetPriceRefreshResult(**summary).model_dump(),
+            },
         )
     return AssetPriceRefreshResult(**summary)
 

@@ -1331,6 +1331,18 @@ async def refresh_all_market_prices(
         logger.warning("Batch price fetch failed, falling back to per-asset: %s", e)
         prices = {}
 
+    # An editor can delete a holding while the provider is answering. Writing
+    # to a row that is gone raises StaleDataError on flush, which would roll
+    # back the prices already refreshed in this batch; re-read and lock the
+    # rows that still exist under the same predicate, and drop the rest.
+    surviving = await session.execute(
+        select(Asset.id)
+        .where(Asset.id.in_([asset.id for asset in assets]), *conditions)
+        .with_for_update()
+    )
+    surviving_ids = set(surviving.scalars().all())
+    assets = [asset for asset in assets if asset.id in surviving_ids]
+
     refreshed = 0
     skipped = 0
 

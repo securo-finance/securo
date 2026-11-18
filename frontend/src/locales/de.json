@@ -2116,6 +2116,7 @@
     "refreshAllPrices": "Preise aktualisieren",
     "refreshAllPricesDone": "{{refreshed}} Preise aktualisiert, {{skipped}} ohne neuen Kurs",
     "refreshAllPricesNone": "Keine marktbewerteten Anlagen zum Aktualisieren",
+    "refreshAllPricesRateLimited": "Der Marktdatenanbieter drosselt gerade die Anfragen. {{refreshed}} Preise wurden vor dem Stopp aktualisiert – bitte in einer Minute erneut versuchen.",
     "priceRefreshed": "Kurs aktualisiert",
     "purchaseDate": "Kaufdatum",
     "purchasePrice": "Kaufpreis",

@@ -15,7 +15,7 @@ from typing import Optional
 from unittest.mock import patch
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset import Asset
@@ -424,6 +424,76 @@ async def test_refresh_all_halts_on_rate_limit(
     # skipped bucket, no per-asset fallback was attempted.
     assert result["refreshed"] == 0
     assert result["skipped"] == 2
+
+
+class DeletingBatchProvider(FakeMarketProvider):
+    """A batch that answers while an editor deletes one holding."""
+
+    def __init__(
+        self,
+        quotes: dict[str, MarketSymbolQuote],
+        session: AsyncSession,
+        doomed_id,
+    ) -> None:
+        super().__init__(quotes)
+        self._session = session
+        self._doomed_id = doomed_id
+
+    async def get_latest_prices(self, symbols: list[str]) -> dict[str, Optional[Decimal]]:
+        prices = await super().get_latest_prices(symbols)
+        # `synchronize_session=False` keeps the ORM object in the identity map,
+        # which is how a row removed by another session looks to this one:
+        # still loaded, already gone from the table, so an UPDATE reaching it
+        # matches no row.
+        await self._session.execute(
+            delete(Asset)
+            .where(Asset.id == self._doomed_id)
+            .execution_options(synchronize_session=False)
+        )
+        await self._session.commit()
+        return prices
+
+
+@pytest.mark.asyncio
+async def test_refresh_all_skips_a_holding_deleted_while_the_provider_answers(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    creator = FakeMarketProvider(
+        {"AAPL": _quote("AAPL", 180.0), "MSFT": _quote("MSFT", 400.0)}
+    )
+    created: dict[str, Asset] = {}
+    for ticker in ("AAPL", "MSFT"):
+        created[ticker] = await asset_service.create_asset(
+            session,
+            test_workspace.id,
+            test_user.id,
+            AssetCreate(
+                name=ticker,
+                type="investment",
+                valuation_method="market_price",
+                ticker=ticker,
+                units=Decimal("1"),
+            ),
+            market_provider=creator,
+        )
+
+    deleting = DeletingBatchProvider(
+        {"AAPL": _quote("AAPL", 181.0), "MSFT": _quote("MSFT", 401.0)},
+        session,
+        created["MSFT"].id,
+    )
+
+    result = await refresh_all_market_prices(
+        session, market_provider=deleting, workspace_id=test_workspace.id
+    )
+
+    # The holding that vanished is dropped from the batch instead of aborting
+    # it with StaleDataError, and the other one keeps its new price.
+    assert result == {"refreshed": 1, "skipped": 0, "rate_limited": 0}
+    keeper = (
+        await session.execute(select(Asset).where(Asset.id == created["AAPL"].id))
+    ).scalar_one()
+    assert keeper.last_price == Decimal("181.0")
 
 
 # ---- YFinanceProvider batch refresh: minor-unit normalization ----

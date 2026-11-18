@@ -191,6 +191,30 @@ function assetErrorMessage(e: unknown, fallback: string): string {
   return resp?.status ? `${fallback} (${resp.status})` : fallback
 }
 
+/** What a rate-limited portfolio refresh already wrote before it stopped. */
+interface RateLimitedRefresh {
+  refreshed: number
+  skipped: number
+  rate_limited: number
+}
+
+/**
+ * The refresh counters carried by a 429, or null when the request failed for
+ * another reason. The service commits the prices it got before the provider
+ * refused, so these counts are what the page must show and refetch.
+ */
+function rateLimitedRefresh(e: unknown): RateLimitedRefresh | null {
+  const resp = (e as { response?: { data?: { detail?: unknown }; status?: number } })?.response
+  if (resp?.status !== 429) return null
+  const detail = resp.data?.detail
+  const summary = (detail && typeof detail === 'object' ? detail : {}) as Partial<RateLimitedRefresh>
+  return {
+    refreshed: Number(summary.refreshed ?? 0),
+    skipped: Number(summary.skipped ?? 0),
+    rate_limited: Number(summary.rate_limited ?? 1),
+  }
+}
+
 // Badge label and color per ledger kind. A split takes the indigo the value
 // chart already uses for its mixed markers.
 const TX_KIND_CONFIG: Record<AssetTransaction['kind'], { labelKey: string; tone: string }> = {
@@ -213,7 +237,7 @@ export default function AssetsPage() {
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
-  const { canWrite } = useWorkspace()
+  const { canWrite, current: workspace } = useWorkspace()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
 
@@ -425,7 +449,11 @@ export default function AssetsPage() {
   // Portfolio-wide refresh (issue #778): one provider call for every
   // market-priced holding instead of opening each asset and refreshing it.
   const refreshAllPricesMutation = useMutation({
-    mutationFn: () => assets.refreshPrices(),
+    // The workspace comes from the click, not from the context when the
+    // request finally runs: a mutation paused while offline resumes later,
+    // and the interceptor would then stamp whichever workspace is selected
+    // by then (the app does not pin the mutation to online).
+    mutationFn: (workspaceId: string | null) => assets.refreshPrices(workspaceId),
     onSuccess: (summary) => {
       refetchAssetViews()
       if (summary.refreshed === 0 && summary.skipped === 0) {
@@ -439,7 +467,17 @@ export default function AssetsPage() {
         }),
       )
     },
-    onError: (e) => toast.error(assetErrorMessage(e, t('common.error'))),
+    onError: (e) => {
+      const limited = rateLimitedRefresh(e)
+      // A 429 here can come after some prices were written and committed, so
+      // the list and the charts are refetched on this path too.
+      if (limited) refetchAssetViews()
+      toast.error(
+        limited
+          ? t('assets.refreshAllPricesRateLimited', { refreshed: limited.refreshed })
+          : assetErrorMessage(e, t('common.error')),
+      )
+    },
   })
 
   const { data: rawWalletsList } = useQuery({
@@ -1166,7 +1204,7 @@ export default function AssetsPage() {
           canWrite ? (
             <div className="flex flex-wrap items-center gap-2">
               <Button
-                onClick={() => refreshAllPricesMutation.mutate()}
+                onClick={() => refreshAllPricesMutation.mutate(workspace?.id ?? null)}
                 variant="outline"
                 className="gap-1.5"
                 disabled={refreshAllPricesMutation.isPending}

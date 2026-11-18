@@ -1545,8 +1545,8 @@ export const assets = {
     const { data } = await api.post(`/assets/${id}/refresh-price`)
     return data
   },
-  refreshPrices: async (): Promise<AssetPriceRefreshResult> => {
-    const { data } = await api.post('/assets/refresh-prices')
+  refreshPrices: async (workspaceId?: string | null): Promise<AssetPriceRefreshResult> => {
+    const { data } = await api.post('/assets/refresh-prices', undefined, workspaceHeader(workspaceId))
     return data
   },
   // Transaction ledger (issue #235)

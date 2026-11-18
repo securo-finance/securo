@@ -17,6 +17,7 @@ from unittest.mock import patch
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset import Asset
@@ -36,11 +37,23 @@ class FakeMarketProvider(MarketPriceProvider):
         self.batch_calls = 0
         self.requested: list[str] = []
         self.rate_limited = False
+        # Overrides what the batch answers, so a test can send every symbol
+        # through the per-asset fallback.
+        self.batch_prices: Optional[dict[str, Optional[Decimal]]] = None
+        # Throttle the per-asset fallback after this many quote calls.
+        self.rate_limited_after_quotes: Optional[int] = None
+        self.quote_calls = 0
 
     async def search(self, query: str, limit: int = 20):
         return []
 
     async def get_quote(self, symbol: str) -> Optional[MarketSymbolQuote]:
+        self.quote_calls += 1
+        if (
+            self.rate_limited_after_quotes is not None
+            and self.quote_calls > self.rate_limited_after_quotes
+        ):
+            raise MarketPriceRateLimitedError("slow down")
         price = self._prices.get(symbol.upper())
         if price is None:
             return None
@@ -56,6 +69,8 @@ class FakeMarketProvider(MarketPriceProvider):
         self.requested = [s.upper() for s in symbols]
         if self.rate_limited:
             raise MarketPriceRateLimitedError("slow down")
+        if self.batch_prices is not None:
+            return dict(self.batch_prices)
         return {s.upper(): self._prices.get(s.upper()) for s in symbols}
 
 
@@ -165,6 +180,60 @@ async def test_refresh_prices_rate_limited_429(
     with patch("app.services.asset_service.get_market_price_provider", return_value=provider):
         resp = await client.post("/api/assets/refresh-prices", headers=auth_headers)
     assert resp.status_code == 429
+    # Throttled before any write, but the caller still gets the counters: the
+    # UI shows what actually happened instead of a bare status.
+    detail = resp.json()["detail"]
+    assert detail["message"]
+    assert detail["refreshed"] == 0
+    assert detail["skipped"] == 1
+    assert detail["rate_limited"] == 1
+
+
+@pytest.mark.asyncio
+async def test_refresh_prices_rate_limited_after_one_write_still_reports_it(
+    client: AsyncClient,
+    auth_headers: dict,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace: Workspace,
+):
+    # Both holdings miss the batch, so both go through the per-asset fallback:
+    # the first quote refreshes, the second is throttled. Whichever holding
+    # comes first, exactly one price was written and committed before the halt.
+    await _market_asset(
+        session,
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Apple",
+        ticker="AAPL",
+    )
+    await _market_asset(
+        session,
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Legacy",
+        ticker="LEGACY",
+    )
+    provider = FakeMarketProvider(
+        {"AAPL": Decimal("180.00"), "LEGACY": Decimal("5.00")}
+    )
+    provider.batch_prices = {"AAPL": None, "LEGACY": None}
+    provider.rate_limited_after_quotes = 1
+
+    with patch("app.services.asset_service.get_market_price_provider", return_value=provider):
+        resp = await client.post("/api/assets/refresh-prices", headers=auth_headers)
+
+    assert resp.status_code == 429, resp.text
+    detail = resp.json()["detail"]
+    assert detail["refreshed"] == 1
+    assert detail["skipped"] == 1
+    assert detail["rate_limited"] == 1
+    # The refresh that did happen was committed, so it is visible to the next
+    # read instead of being lost with the error.
+    prices = await session.execute(
+        select(Asset.last_price).where(Asset.workspace_id == test_workspace.id)
+    )
+    assert sum(1 for price in prices.scalars() if price is not None) == 1
 
 
 @pytest.mark.asyncio

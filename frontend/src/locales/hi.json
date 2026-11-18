@@ -2115,6 +2115,7 @@
     "refreshAllPrices": "कीमतें रीफ़्रेश करें",
     "refreshAllPricesDone": "{{refreshed}} कीमतें अपडेट हुईं, {{skipped}} बिना नई कीमत",
     "refreshAllPricesNone": "रीफ़्रेश करने के लिए कोई बाज़ार-मूल्य संपत्ति नहीं",
+    "refreshAllPricesRateLimited": "मार्केट डेटा प्रदाता अभी अनुरोध सीमित कर रहा है। रुकने से पहले {{refreshed}} कीमतें अपडेट हुईं — एक मिनट बाद फिर कोशिश करें।",
     "priceRefreshed": "मूल्य रीफ़्रेश हुआ",
     "purchaseDate": "खरीद तिथि",
     "purchasePrice": "खरीद मूल्य",

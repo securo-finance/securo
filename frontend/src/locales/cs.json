@@ -2257,6 +2257,7 @@
     "refreshAllPrices": "Obnovit ceny",
     "refreshAllPricesDone": "Aktualizováno {{refreshed}} cen, {{skipped}} bez nové ceny",
     "refreshAllPricesNone": "Žádná aktiva s tržní cenou k obnovení",
+    "refreshAllPricesRateLimited": "Poskytovatel tržních dat nyní omezuje požadavky. Před zastavením se aktualizovalo {{refreshed}} cen — zkuste to znovu za minutu.",
     "priceRefreshed": "Cena obnovena",
     "purchaseDate": "Datum nákupu",
     "purchasePrice": "Nákupní cena",
