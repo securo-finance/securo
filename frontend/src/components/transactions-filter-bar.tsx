@@ -452,7 +452,6 @@ export function TransactionsFilterBar({
                   status: statusLabel,
                   ignored: hideIgnored ? t('transactions.ignoredHide') : undefined,
                   flagged: filterFlagged ? t('transactions.flaggedOnly') : undefined,
-                unread: onlyUnread ? t('transactions.onlyUnreadShort') : undefined,
                   unread: onlyUnread ? t('transactions.onlyUnreadShort') : undefined,
                   date: dateLabel,
                   amount: amountLabel,
@@ -1154,7 +1153,6 @@ export function TransactionsFilterBar({
                 onRemove={() => onFlaggedChange(false)}
               />
             )}
-            {onlyUnread && (
             {showUnreadFilter && onlyUnread && (
               <FilterChip
                 icon={<Inbox size={12} />}
