@@ -210,9 +210,14 @@ async def test_transaction_cash_flows_include_fees_and_historical_fx(
         start,
         start + timedelta(days=2),
     )
-    assert set(flows.contributions) == {transaction_date}
-    assert flows.contributions[transaction_date] == pytest.approx(202.0)
-    assert flows.fees == {transaction_date: pytest.approx(2.0)}
+    # A market-priced buy is recorded at its own price, split from its fee.
+    [trade] = flows.trades[transaction_date]
+    assert trade.asset_key == str(asset.id)
+    assert trade.mark == pytest.approx(0.0)
+    assert trade.amount == pytest.approx(200.0)
+    assert trade.fee == pytest.approx(2.0)
+    assert flows.contributions == {}
+    assert flows.fees == {}
     assert flows.withdrawals == {}
     assert flows.opening == {}
     assert flows.dates == {transaction_date}

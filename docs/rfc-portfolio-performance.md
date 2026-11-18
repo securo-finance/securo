@@ -50,24 +50,32 @@ index, and it is the standard figure brokers report.
 
 ### When money in and out counts
 
-- **Contributions (buys)** are made at the price the day is valued at, so
-  the day's move up to that price belongs to what was already held. The
-  interval is measured on the earlier holdings, and the new money joins the
-  base only after it. A buy's commission bought nothing: it is a loss on the
-  whole portfolio at the moment of the buy, `value / (value + fee)`.
-  Otherwise 10 shares that gain 10%, a large buy at the new price and
-  another +10% would show about 11% instead of 21%.
-- **Buys sold again the same day** (a day trade, matched per holding by
-  share count) were held through part of the day, so that share of the buys
-  counts from the start of the day instead. A sale is matched against the
-  shares held that morning first: only what it sells beyond them is a day
-  trade. Selling ten shares held overnight and buying ten back at the close
-  is a sale and a new purchase, not a round trip.
+- **Trades in market-priced holdings** split their day at each trade's own
+  price, in ledger order. What was held is marked to the trade's price, the
+  trade then joins or leaves the base at that price, and the rest of the day
+  up to the close is measured on what is left. A commission bought nothing:
+  it is a loss on the whole portfolio at the moment of the trade,
+  `value / (value + fee)`. With one holding and no fees the day therefore
+  reads its price move, whatever was traded in it: holding ten shares at
+  100, buying ten at 105 and selling ten at 110 with the close at 110 is
+  100 → 105 on ten shares, 105 → 110 on twenty and 110 → 110 on ten, +10%.
+  Taking that buy at the open reads 7.3%, at the close 15%. Other holdings
+  have no price between closes, so they stay at their last valuation until
+  the day's close. Trades saved together (an import) share a timestamp and
+  have no order of their own: sales of other holdings go first, as they
+  fund the buys, and a holding's buys precede its own sales.
+- **Contributions** from holdings without trade prices (a manual asset's
+  first value, a synced purchase seen in the share count) are made at the
+  price the day is valued at, so the day's move up to that price belongs to
+  what was already held. The interval is measured on the earlier holdings,
+  and the new money joins the base only after it.
 - **A synced purchase only the next snapshot shows** was made at the earlier
   snapshot's price, so it is exposed to the move between the two and also
   counts from the start.
-- **Withdrawals (sales)** count at the end of the day. Sale proceeds are the
-  *result* of that day's price move, so they belong in the outcome.
+- **Withdrawals** without a trade price (a redemption seen in a balance, a
+  manual asset's sale) count at the end of the day. Sale proceeds are the
+  *result* of that day's price move, so they belong in the outcome. A sale
+  with a price gets the same result from its own sub-period.
 
 Same-day buys and sales are kept apart rather than netted, so a day trade is
 measured on what was put in, not on the net difference.
@@ -98,11 +106,11 @@ telling *money moved* apart from *market moved*:
 | Manual assets (property, private funds…) | user-entered values | first appearance is a contribution; a sale returns `sell_price` the day after `sell_date`, or the last value when no price was entered (an explicit 0 writes it off) |
 
 **Gross values.** Performance uses pre-tax values: income tax withheld on a
-redemption is not an investment loss. Migration `109` stores the provider's
+redemption is not an investment loss. Migration `122` stores the provider's
 gross value next to the net (withdrawable) one. Holdings totals keep using net.
 
 **Exact trade cash.** Synced fixed-income trades carry unit prices such as
-`0.01007794` on quantities in the hundreds of thousands. Migration `110`
+`0.01007794` on quantities in the hundreds of thousands. Migration `123`
 widens `asset_transactions.price` so `quantity × price` reproduces the cash
 the broker reported.
 

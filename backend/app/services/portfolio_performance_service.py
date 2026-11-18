@@ -10,7 +10,7 @@ import logging
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Optional, TypeVar
+from typing import NamedTuple, Optional, TypeVar
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -337,6 +337,19 @@ def _initial_observation_boundary(
     return boundary
 
 
+class IntradayTrade(NamedTuple):
+    """A trade at a known price, splitting its day into sub-periods.
+
+    ``revalue`` is the portfolio's move from the last mark up to the trade's
+    price, ``amount`` the value bought (positive) or sold (negative) at that
+    price, and ``fee`` the commission, all in the primary currency.
+    """
+
+    revalue: float
+    amount: float
+    fee: float = 0.0
+
+
 def time_weighted_returns(
     values: list[tuple[date, float]],
     contributions: dict[date, float],
@@ -344,6 +357,7 @@ def time_weighted_returns(
     *,
     fees: Optional[dict[date, float]] = None,
     opening: Optional[dict[date, float]] = None,
+    intraday: Optional[dict[date, list[IntradayTrade]]] = None,
 ) -> list[tuple[date, float]]:
     """Cumulative time-weighted return, the standard measure brokers report.
 
@@ -363,12 +377,18 @@ def time_weighted_returns(
     day's price move, so selling everything below the last valuation is a
     loss on what was sold, not a total loss. Without ``withdrawals``,
     negative ``contributions`` are taken as the withdrawals.
+
+    ``intraday`` lists trades made at a known price, in the order they were
+    made. Each one ends a sub-period: what was held is marked to the trade's
+    price, and the trade then joins or leaves the base at that price. The
+    rest of the day, up to the valuation, is measured on what is left.
     """
     if withdrawals is None:
         withdrawals = {d: -flow for d, flow in contributions.items() if flow < 0}
         contributions = {d: flow for d, flow in contributions.items() if flow > 0}
     fees = fees or {}
     opening = opening or {}
+    intraday = intraday or {}
     if not values:
         return []
     growth = 1.0
@@ -380,6 +400,20 @@ def time_weighted_returns(
         fee = min(fees.get(point_date, 0.0), cash)
         bought = cash - fee
         held = previous_value + opening.get(point_date, 0.0)
+        for trade in intraday.get(point_date, ()):
+            marked = max(held + trade.revalue, 0.0)
+            if held > 0 and marked > 0:
+                growth *= marked / held
+            held = marked
+            if trade.amount >= 0:
+                held += trade.amount
+                if trade.fee > 0 and held > 0:
+                    # A commission bought nothing: a loss on everything held.
+                    growth *= held / (held + trade.fee)
+            else:
+                if trade.fee > 0 and held > 0:
+                    growth *= max(held - trade.fee, 0.0) / held
+                held = max(held + trade.amount, 0.0)
         if held > 0 and ending >= bought:
             growth *= (ending - bought) / held
             if fee > 0 and ending > 0:
@@ -575,6 +609,19 @@ def _fill_aligned_series_multi(
     return points
 
 
+class MarketTrade(NamedTuple):
+    """A trade in a market-priced holding, in the primary currency.
+
+    ``mark`` is the holding marked to the trade's price just before it, and
+    ``amount`` the value bought (positive) or sold (negative) at that price.
+    """
+
+    asset_key: str
+    mark: float
+    amount: float
+    fee: float
+
+
 @dataclass
 class CashFlows:
     """Money moved into and out of the holdings, per date.
@@ -582,13 +629,16 @@ class CashFlows:
     All amounts are positive and in the primary currency; see
     ``time_weighted_returns`` for how each kind is timed. Contributions and
     withdrawals are kept apart rather than netted so a same-day buy and
-    sale still each count at their own end of the day.
+    sale still each count at their own end of the day. ``trades`` holds the
+    market-priced trades in ledger order, which split their day at each
+    trade's price instead.
     """
 
     contributions: dict[date, float] = field(default_factory=dict)
     withdrawals: dict[date, float] = field(default_factory=dict)
     fees: dict[date, float] = field(default_factory=dict)
     opening: dict[date, float] = field(default_factory=dict)
+    trades: dict[date, list[MarketTrade]] = field(default_factory=dict)
     dates: set[date] = field(default_factory=set)
 
 
@@ -609,7 +659,7 @@ async def _cash_flows(
             await session.execute(
                 select(AssetTransaction)
                 .where(AssetTransaction.asset_id.in_(asset_ids))
-                .order_by(AssetTransaction.date, AssetTransaction.created_at)
+                .order_by(AssetTransaction.date, AssetTransaction.created_at, AssetTransaction.id)
             )
         )
         .scalars()
@@ -667,18 +717,30 @@ async def _cash_flows(
             add(flows.withdrawals, -amount)
         flows.dates.add(point_date)
 
-    # Market-priced holdings are valued from the ledger itself, so a trade
-    # moves the valuation on its own date. Synced holdings are valued from
-    # provider snapshots; their trades are aligned to those below.
+    # Market-priced holdings are valued from the ledger itself, and each
+    # trade has its own price, so a trade splits its day there (see
+    # ``time_weighted_returns``). Synced holdings are valued from provider
+    # snapshots; their trades are aligned to those below.
     snapshot_ledger_trades: dict[uuid.UUID, list[tuple[date, Decimal, Decimal]]] = {}
     snapshot_ledger_fees: dict[tuple[uuid.UUID, date], Decimal] = {}
-    # (bought, cost incl. fees, fees, sold) per market-priced holding and day.
-    market_days: dict[tuple[uuid.UUID, date], list[Decimal]] = {}
-    # Shares of each market-priced holding at the start of a trading day.
-    opening_positions: dict[tuple[uuid.UUID, date], Decimal] = {}
     positions: dict[uuid.UUID, Decimal] = {}
-    # Replay in ledger order: a day's split before that day's trades.
-    tx_rows.sort(key=lambda tx: (tx.date, tx.kind != "split"))
+    # Replay in ledger order: a day's split before that day's trades. Trades
+    # saved together (an import) share a timestamp and have no order of
+    # their own. There, sales of other holdings go first, as they fund the
+    # buys, and a holding's own buys precede its sales, so a sale never
+    # comes before the buy that gave it the shares.
+    batch_buys = {(tx.asset_id, tx.date, tx.created_at) for tx in tx_rows if tx.kind == "buy"}
+
+    def ledger_order(tx: AssetTransaction) -> tuple:
+        if tx.kind == "buy":
+            rank = 1
+        elif (tx.asset_id, tx.date, tx.created_at) in batch_buys:
+            rank = 2
+        else:
+            rank = 0
+        return (tx.date, tx.kind != "split", tx.created_at is None, tx.created_at, rank)
+
+    tx_rows.sort(key=ledger_order)
     for tx in tx_rows:
         asset = asset_by_id.get(tx.asset_id)
         if asset is None:
@@ -697,43 +759,29 @@ async def _cash_flows(
         # A sale's fee already comes off its proceeds.
         buy_fee = fee if tx.kind == "buy" else Decimal("0")
         if asset.valuation_method == "market_price":
-            day_key = (asset.id, tx.date)
-            if day_key not in market_days:
-                market_days[day_key] = [Decimal("0")] * 4
-                opening_positions[day_key] = positions.get(asset.id, Decimal("0"))
-            day_totals = market_days[day_key]
-            positions[asset.id] = positions.get(asset.id, Decimal("0")) + (
-                quantity if tx.kind == "buy" else -quantity
-            )
-            if tx.kind == "buy":
-                day_totals[0] += quantity
-                day_totals[1] += native_flow
-                day_totals[2] += fee
-            else:
-                day_totals[3] += quantity
-                await add_flow(asset, tx.date, native_flow)
+            held_before = positions.get(asset.id, Decimal("0"))
+            positions[asset.id] = held_before + (quantity if tx.kind == "buy" else -quantity)
+            if start_date < tx.date <= end_date:
+                price = Decimal(str(tx.price))
+                mark = await in_primary(
+                    max(held_before, Decimal("0")) * price, asset.currency, tx.date
+                )
+                amount = await in_primary(gross, asset.currency, tx.date)
+                converted_fee = await in_primary(fee, asset.currency, tx.date) if fee else 0.0
+                flows.trades.setdefault(tx.date, []).append(
+                    MarketTrade(
+                        str(asset.id),
+                        mark,
+                        amount if tx.kind == "buy" else -amount,
+                        converted_fee,
+                    )
+                )
+                flows.dates.add(tx.date)
         else:
             signed = quantity if tx.kind == "buy" else -quantity
             snapshot_ledger_trades.setdefault(asset.id, []).append((tx.date, signed, native_flow))
             key = (asset.id, tx.date)
             snapshot_ledger_fees[key] = snapshot_ledger_fees.get(key, Decimal("0")) + buy_fee
-    for (asset_id, trade_date), (bought, cost, fees, sold) in market_days.items():
-        if not bought:
-            continue
-        # A sale is matched against the shares held that morning first: only
-        # what it sells beyond them was bought and sold again the same day.
-        # Those shares were held through part of the day, so that share of
-        # the buys counts from the start of the day. The rest is still held
-        # at the close and was bought at the day's price.
-        held_at_open = max(opening_positions[(asset_id, trade_date)], Decimal("0"))
-        round_trip = min(bought, max(Decimal("0"), sold - held_at_open)) / bought
-        asset = asset_by_id[asset_id]
-        if round_trip:
-            await add_flow(asset, trade_date, cost * round_trip, at_open=True)
-        if round_trip < 1:
-            kept = 1 - round_trip
-            await add_flow(asset, trade_date, cost * kept, fee=fees * kept)
-
     snapshot_ledger_assets = [asset for asset in assets if asset.id in snapshot_ledger_trades]
     ledger_values = await asset_service._load_asset_native_values(
         session,
@@ -998,32 +1046,47 @@ async def get_portfolio_performance_multi(
 
     rows_by_date = {date.fromisoformat(str(row["date"])): row for row in raw_trend}
 
-    def snapshot(target: date) -> float:
+    def asset_value(asset: Asset, target: date) -> float:
         # The trend's dates are ascending: use its last row on or before target.
         index = bisect_right(trend_dates, target)
         if index == 0:
             return 0.0
+        if asset.sell_date is not None and target > asset.sell_date:
+            return 0.0
         row = rows_by_date[trend_dates[index - 1]]
-        total = 0.0
-        for asset in assets:
-            value = float(row.get(str(asset.id), 0.0) or 0.0)
-            if asset.sell_date is not None and target > asset.sell_date:
-                value = 0.0
-            total += value
-        return total
+        return float(row.get(str(asset.id), 0.0) or 0.0)
+
+    def snapshot(target: date) -> float:
+        return sum(asset_value(asset, target) for asset in assets)
 
     portfolio_dates = (
         {portfolio_start, observation_boundary, last_date}
         | {d for d in trend_dates if observation_boundary < d <= last_date}
         | {d for d in flows.dates if portfolio_start < d <= last_date}
     )
-    portfolio_values = [(d, snapshot(d)) for d in sorted(portfolio_dates)]
+    sorted_dates = sorted(portfolio_dates)
+    portfolio_values = [(d, snapshot(d)) for d in sorted_dates]
+    asset_by_key = {str(asset.id): asset for asset in assets}
+    intraday: dict[date, list[IntradayTrade]] = {}
+    for previous_date, point_date in zip(sorted_dates, sorted_dates[1:]):
+        # Each holding starts the day at its previous valuation and is then
+        # marked at each of its trades' prices, in ledger order.
+        marks: dict[str, float] = {}
+        for trade in flows.trades.get(point_date, ()):
+            last_mark = marks.get(trade.asset_key)
+            if last_mark is None:
+                last_mark = asset_value(asset_by_key[trade.asset_key], previous_date)
+            intraday.setdefault(point_date, []).append(
+                IntradayTrade(trade.mark - last_mark, trade.amount, trade.fee)
+            )
+            marks[trade.asset_key] = trade.mark + trade.amount
     portfolio_returns = time_weighted_returns(
         portfolio_values,
         flows.contributions,
         flows.withdrawals,
         fees=flows.fees,
         opening=flows.opening,
+        intraday=intraday,
     )
     benchmark_returns: dict[str, list[tuple[date, float]]] = {}
     benchmark_starts: dict[str, date] = {}

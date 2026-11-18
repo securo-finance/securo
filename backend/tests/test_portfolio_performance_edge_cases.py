@@ -9,7 +9,7 @@ the start value plus anything contributed.
 from __future__ import annotations
 
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -252,6 +252,71 @@ async def test_day_trade_profit_counts_even_when_netted_on_one_date(
     # 1001 in and 1049 out on the same day, alongside 1000 that did nothing.
     expected = ((1000 + 1049) / (1000 + 1001) - 1) * 100
     assert await portfolio_return(session, test_user, test_workspace) == pytest.approx(expected)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("buy_price", ["100", "105"])
+async def test_buying_and_selling_on_a_day_reads_the_price_move(
+    session: AsyncSession, test_user: User, test_workspace, buy_price
+):
+    """Ten held at 100, ten more bought, ten sold at 110, closed at 110: +10%.
+
+    The day is split at each trade's own price: 100 to the buy price on ten
+    shares, the buy price to 110 on twenty, and 110 to the close on ten.
+    Taking the buy at the open or at the close instead reads 7.3% or 15%
+    for a buy at 105.
+    """
+    held = await stock(session, test_user, test_workspace, "MIDB3")
+    session.add_all(
+        [
+            trade(held, "buy", day(0), "10", "100"),
+            close(held, day(0), "100"),
+            trade(held, "buy", day(1), "10", buy_price),
+            trade(held, "sell", day(1), "10", "110"),
+            close(held, day(1), "110"),
+        ]
+    )
+    assert await portfolio_return(session, test_user, test_workspace) == pytest.approx(10.0)
+
+
+@pytest.mark.asyncio
+async def test_a_sale_before_a_buy_in_ledger_order_is_not_a_day_trade(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """Sold at 110 first, then bought back at 105: the drop after the sale is not held."""
+    held = await stock(session, test_user, test_workspace, "SELL3")
+    sale = trade(held, "sell", day(1), "10", "110")
+    sale.created_at = datetime(2026, 1, 1, 10, 0)
+    buy_back = trade(held, "buy", day(1), "10", "105")
+    buy_back.created_at = datetime(2026, 1, 1, 15, 0)
+    session.add_all(
+        [
+            trade(held, "buy", day(0), "10", "100"),
+            close(held, day(0), "100"),
+            sale,
+            buy_back,
+            close(held, day(1), "105"),
+        ]
+    )
+    # 100 to 110 on ten shares, then the ten bought at 105 close at 105.
+    assert await portfolio_return(session, test_user, test_workspace) == pytest.approx(10.0)
+
+
+@pytest.mark.asyncio
+async def test_a_buy_between_closes_counts_from_its_own_price(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    held = await stock(session, test_user, test_workspace, "BUYM3")
+    session.add_all(
+        [
+            trade(held, "buy", day(0), "10", "100"),
+            close(held, day(0), "100"),
+            trade(held, "buy", day(1), "10", "105"),
+            close(held, day(1), "110", quantity="20"),
+        ]
+    )
+    # One holding, no fees: the return is its price move, 100 to 110.
+    assert await portfolio_return(session, test_user, test_workspace) == pytest.approx(10.0)
 
 
 async def sold_manual_asset(
