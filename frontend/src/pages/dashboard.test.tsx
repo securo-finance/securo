@@ -4,7 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 
 import DashboardPage from '@/pages/dashboard'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { formatCurrency } from '@/lib/format'
+import { formatCompactCurrency, formatCurrency } from '@/lib/format'
 import { monthLabel } from '@/lib/month-utils'
 import { renderWithProviders, t } from '@/test/utils'
 import type { Account, DashboardSummary } from '@/types'
@@ -369,6 +369,26 @@ describe('Dashboard balance comparisons', () => {
     })
     return chart
   }
+
+  it('keeps the balance axis labels compact so a four digit amount fits', async () => {
+    // A full amount outgrew the axis gutter and the browser clipped its leading
+    // characters (#1051). The ticks are compact; the tooltip keeps the exact sum.
+    mockHistory({ current: [{ day: 1, balance: 2500 }] })
+
+    const { container } = renderDashboard('/?month=2026-04')
+
+    const chart = await waitFor(() => balanceChart(container))
+    const labels = await waitFor(() => {
+      const texts = Array.from(chart.querySelectorAll('.recharts-yAxis-tick-labels text'))
+        .map((text) => text.textContent ?? '')
+      expect(texts).not.toHaveLength(0)
+      return texts
+    })
+
+    expect(labels).toContain(formatCompactCurrency(1500, 'USD', 'en-US'))
+    // The previous full amounts read "$1,125" or "$1,500", which no longer fit.
+    expect(labels.filter((label) => label.includes(','))).toEqual([])
+  })
 
   it('labels a single comparison month in the selector, legend and footer', async () => {
     api.dashboard.balanceHistoryMonths.mockResolvedValue(['2026-01', '2026-02', '2026-03'])
