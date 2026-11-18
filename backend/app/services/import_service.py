@@ -1283,6 +1283,14 @@ async def import_transactions(
                 # actually charged, not for what the bill expected.
                 expected_amount = placeholder.amount
                 placeholder.amount = txn_data.amount
+                if currency_changed:
+                    # The stamp on the row was made from the bill's currency.
+                    # Keeping it through a rate lookup that finds nothing
+                    # would publish a conversion of an amount that never
+                    # moved (#1073); clearing it leaves an honest "not
+                    # converted" until a rate lands.
+                    placeholder.amount_primary = None
+                    placeholder.fx_rate_used = None
                 if txn_data.fx_rate:
                     placeholder.fx_rate_used = txn_data.fx_rate
                     placeholder.amount_primary = txn_data.amount * txn_data.fx_rate

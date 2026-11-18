@@ -43,6 +43,7 @@ banks do not post charges of zero, but it is a difference rather than an
 identity.
 """
 import uuid
+from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Optional
@@ -55,28 +56,31 @@ from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.services import reconciliation_policy, reconciliation_rule_service
 from app.services.reconciliation_engine import Expectation, Movement, evaluate
-from app.services.text_similarity import token_overlap
 
 # Real-transaction sources a recurring charge can arrive under. Excludes
 # "recurring" itself: that is the generated placeholder, handled separately.
 _REAL_SOURCES = ("sync", "import", "ofx", "csv", "manual")
 
-# A bill kept in a foreign currency (a USD subscription on a VND card) is
-# charged in the account's currency at that month's rate, so its amount can
-# never be compared (#1073). Such a charge is recognised by what is left:
-# the account, the direction, the window and the description, at the same
-# similarity the shipped recurring rule asks for. Only a single fit counts;
-# two candidates stay unlinked rather than guessed.
-_FOREIGN_MIN_SIMILARITY = 0.6
+
+def _at_the_charge(
+    promise: Expectation, amount: Decimal, currency: str
+) -> Expectation:
+    """The same promise, read in the money the charge actually moved.
+
+    A bill kept in a foreign currency (a USD subscription on a VND or BRL
+    card) is charged in the account's currency at that month's rate, so both
+    its amount and its currency move every month and the engine, which never
+    converts, refuses it on both counts (#1073). The promise is therefore
+    offered under the charge's own amount and currency. Every other
+    condition the workspace's rule carries still decides: whether the rule
+    is enabled at all, the window, the description similarity, the account
+    and the direction.
+    """
+    return replace(promise, amount=amount, currency=currency)
 
 
-def _only_foreign_fit(candidates, description: Optional[str]) -> Optional[Transaction]:
-    fits = [
-        candidate
-        for candidate in candidates
-        if not candidate.is_ignored
-        and token_overlap(candidate.description, description) >= _FOREIGN_MIN_SIMILARITY
-    ]
+def _only_fit(fits: list) -> Optional[Any]:
+    """One candidate or none: a rate-blind match is not worth guessing at."""
     return fits[0] if len(fits) == 1 else None
 
 
@@ -193,7 +197,8 @@ async def find_real_tx_for_occurrence(
         result.scalars(),
         key=lambda tx: (abs((tx.date - occurrence_date).days), tx.date, tx.id),
     )
-    found = _best_movement(nearest, _as_occurrence(recurring, occurrence_date), policy)
+    occurrence = _as_occurrence(recurring, occurrence_date)
+    found = _best_movement(nearest, occurrence, policy)
     if found is not None:
         return found
 
@@ -213,7 +218,24 @@ async def find_real_tx_for_occurrence(
             Transaction.date <= occurrence_date + timedelta(days=after),
         )
     )
-    return _only_foreign_fit(result.scalars(), recurring.description)
+    fits = []
+    for charge in result.scalars():
+        if charge.is_ignored:
+            continue
+        decision = evaluate(
+            _as_movement(charge),
+            [
+                _at_the_charge(
+                    occurrence,
+                    Decimal(charge.amount or 0),
+                    charge.currency or "",
+                )
+            ],
+            policy,
+        )
+        if decision.port == "linked":
+            fits.append(charge)
+    return _only_fit(fits)
 
 
 async def find_placeholder_for_incoming(
@@ -298,21 +320,34 @@ async def find_placeholder_for_incoming(
         description=description,
         account_id=account_id,
     )
+    charge = Movement(
+        amount=amount,
+        currency=currency,
+        direction=tx_type,
+        when=tx_date,
+        description=description,
+        account_id=account_id,
+    )
     found = _best_movement([row[0] for row in rows], incoming, policy)
     if found is None and rows:
-        found = _placeholder_under_workspace_rule(
-            rows, composed, amount, currency, tx_type, tx_date, description, account_id
-        )
+        found = _placeholder_under_workspace_rule(rows, charge, composed)
     if found is not None:
         return found
 
     # A placeholder for a bill kept in another currency, answered by a
     # charge in the account's own currency (#1073). The caller takes the
-    # charge's amount and currency onto the row.
+    # charge's amount and currency onto the row. The placeholder is offered
+    # to the workspace's rule in the charge's currency, so a disabled rule
+    # still links nothing.
     if not account.currency or currency != account.currency:
         return None
     result = await session.execute(
-        select(Transaction).where(
+        select(Transaction, RecurringTransaction.frequency)
+        .join(
+            RecurringTransaction,
+            RecurringTransaction.id == Transaction.recurring_transaction_id,
+        )
+        .where(
             Transaction.account_id == account_id,
             Transaction.source == "recurring",
             Transaction.recurring_transaction_id.is_not(None),
@@ -323,40 +358,46 @@ async def find_placeholder_for_incoming(
             Transaction.date <= tx_date + timedelta(days=max(p_after, r_before)),
         )
     )
-    return _only_foreign_fit(result.scalars(), description)
+    fits = []
+    for placeholder, frequency in result.all():
+        if placeholder.is_ignored:
+            continue
+        decision = evaluate(
+            charge,
+            [_at_the_charge(_as_placeholder(placeholder), amount, currency)],
+            reconciliation_rule_service.narrow_for_frequency(composed, frequency),
+        )
+        if decision.port == "linked":
+            fits.append(placeholder)
+    return _only_fit(fits)
+
+
+def _as_placeholder(placeholder: Transaction) -> Expectation:
+    """A generated row as the promise it stands for."""
+    return Expectation(
+        kind="recurring",
+        id=placeholder.id,
+        amount=Decimal(placeholder.amount or 0),
+        currency=placeholder.currency,
+        direction=placeholder.type,
+        when=placeholder.date,
+        description=placeholder.description,
+        account_id=placeholder.account_id,
+    )
 
 
 def _placeholder_under_workspace_rule(
-    rows, composed, amount, currency, tx_type, tx_date, description, account_id
+    rows, charge: Movement, composed: dict
 ) -> Optional[Transaction]:
     """The second pass of `find_placeholder_for_incoming`: the charge is the
     movement and each placeholder the occurrence it answers."""
-    charge = Movement(
-        amount=amount,
-        currency=currency,
-        direction=tx_type,
-        when=tx_date,
-        description=description,
-        account_id=account_id,
-    )
     linked = []
     for placeholder, frequency in rows:
         if placeholder.is_ignored:
             continue
         decision = evaluate(
             charge,
-            [
-                Expectation(
-                    kind="recurring",
-                    id=placeholder.id,
-                    amount=Decimal(placeholder.amount or 0),
-                    currency=placeholder.currency,
-                    direction=placeholder.type,
-                    when=placeholder.date,
-                    description=placeholder.description,
-                    account_id=placeholder.account_id,
-                )
-            ],
+            [_as_placeholder(placeholder)],
             reconciliation_rule_service.narrow_for_frequency(composed, frequency),
         )
         if decision.port == "linked":
