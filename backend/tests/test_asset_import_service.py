@@ -746,6 +746,35 @@ async def test_a_ticker_without_a_usable_quote_is_refused_in_the_preview(
     assert [(e.row, e.reason) for e in summary["errors"]] == [(2, "unknown_ticker")]
 
 
+class ResolvesButCannotQuote(FakeProvider):
+    """The batch check finds the ticker; the quote needed to create the
+    holding never comes."""
+
+    async def get_latest_prices(self, symbols):
+        self.latest_price_calls += 1
+        return {s.upper(): Decimal("100") for s in symbols}
+
+    async def get_quotes(self, symbols):
+        self.quote_calls += 1
+        return {}
+
+
+@pytest.mark.asyncio
+async def test_a_new_holding_without_a_quote_is_refused_in_the_preview(
+    session: AsyncSession, test_user: User, test_workspace: Workspace
+):
+    """The confirmation cannot create a holding without a quote, so the
+    preview must not count those rows as importable."""
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price",
+        "AAPL,2026-01-15,10,100.00",
+    ), ResolvesButCannotQuote(), dry_run=True)
+
+    assert summary["imported"] == 0
+    assert summary["holdings_created"] == 0
+    assert [(e.row, e.reason) for e in summary["errors"]] == [(2, "unknown_ticker")]
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("written", ["GBp", "GBX"])
 async def test_a_price_in_pence_is_stored_in_pounds(
@@ -937,6 +966,42 @@ async def test_undo_leaves_a_pre_existing_holding_alone(
     assert survivor.units == Decimal("2")
 
 
+@pytest.mark.asyncio
+async def test_undoing_an_import_a_later_sell_depends_on_is_refused(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    """Deleting the imported buy would leave the later sell without the units
+    it sold: a position the ledger itself would have refused. The undo is
+    refused before anything is taken back."""
+    from fastapi import HTTPException
+
+    from app.models.import_log import ImportLog
+    from app.schemas.asset import AssetTransactionCreate
+    from app.services import asset_transaction_service
+
+    await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price",
+        "AAPL,2026-01-15,10,100.00",
+    ), provider)
+    asset = await _only_asset(session, test_workspace)
+    await asset_transaction_service.add_transaction(
+        session, asset.id, test_workspace.id,
+        AssetTransactionCreate(
+            kind="sell", quantity=Decimal("8"), price=Decimal("120"),
+            date=date(2026, 3, 1),
+        ),
+    )
+
+    log = (await session.execute(select(ImportLog))).scalars().one()
+    with pytest.raises(HTTPException) as exc:
+        await asset_import_service.undo_import(session, test_workspace.id, log)
+
+    assert exc.value.status_code == 409
+    assert (await session.execute(select(ImportLog))).scalars().first() is not None
+    remaining = (await session.execute(select(AssetTransaction))).scalars().all()
+    assert sorted(tx.kind for tx in remaining) == ["buy", "sell"]
+
+
 class FlakyBatchProvider(FakeProvider):
     """The bulk endpoint answers empty even for tickers it knows.
 
@@ -1088,7 +1153,7 @@ def test_a_split_row_is_validated_like_a_manual_split(row):
     assert [(e.row, e.reason) for e in errors] == [(2, "invalid_split")]
 
 
-@pytest.mark.parametrize("cell", ["unknown", "1,00abc", "-"])
+@pytest.mark.parametrize("cell", ["unknown", '"1,a00"', "-"])
 def test_a_split_row_with_an_unreadable_money_cell_is_refused(cell):
     """A blank cell and an unreadable one both read as None, and only the
     blank one is allowed: a file that states a fee on a split is wrong even
@@ -1134,6 +1199,29 @@ async def test_a_sell_after_an_imported_split_counts_the_split_units(
         select(AssetTransaction).where(AssetTransaction.kind == "split")
     )).scalar_one()
     assert (split.old_units, split.new_units, split.source) == (1, 4, "import")
+
+
+@pytest.mark.asyncio
+async def test_a_split_replays_before_a_trade_of_its_own_date_in_the_file(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    """The split is the day's first row of the ledger even when the file lists
+    it after the sell, as entering one by hand does: 10 units become 20 before
+    the same day's 20 are sold, instead of the sell being short."""
+    await _holding_with_ledger(
+        session, test_user, test_workspace,
+        ("buy", date(2026, 1, 10), "10", "100", None),
+    )
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,kind,old_units,new_units",
+        "AAPL,2026-03-01,-20,50.00,sell,,",
+        "AAPL,2026-03-01,,,split,1,2",
+    ), provider)
+
+    assert summary["errors"] == []
+    assert summary["imported"] == 2
+    stored = await _only_asset(session, test_workspace)
+    assert stored.units == Decimal("0")
 
 
 @pytest.mark.asyncio
@@ -1584,3 +1672,133 @@ async def test_a_split_another_confirmation_wrote_meanwhile_is_not_written_twice
         select(AssetTransaction).where(AssetTransaction.kind == "split")
     )).scalars().all()
     assert len(splits) == 1
+
+
+class AnotherOrderAtTheConvertedPriceWhileTheQuotesArrive(FakeProvider):
+    """Records an unrelated buy that lands exactly on the converted price."""
+
+    def __init__(self, session: AsyncSession, asset: Asset, workspace: Workspace):
+        super().__init__(known=("AAPL", "MSFT"))
+        self._session = session
+        self._asset = asset
+        self._workspace = workspace
+
+    async def get_quotes(self, symbols):
+        self._session.add(AssetTransaction(
+            asset_id=self._asset.id, workspace_id=self._workspace.id, kind="buy",
+            quantity=Decimal("5"), price=Decimal("200"), fee=Decimal("0"),
+            date=date(2026, 3, 1), source="manual",
+        ))
+        await self._session.flush()
+        return await super().get_quotes(symbols)
+
+
+@pytest.mark.asyncio
+async def test_a_row_at_the_converted_price_is_named_not_taken_for_the_order(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, monkeypatch
+):
+    """A converted order is only known by what its file said.
+
+    Another buy of the same date, kind and units landed on the converted price
+    (200 USD) while the quotes were fetched. Matching the order on that price
+    would drop it as a repeat of that unrelated row; it is named instead, the
+    way the check before the lock already does.
+    """
+
+    async def fetch(_session, on):
+        return {"EUR": Decimal("0.5")}
+
+    monkeypatch.setattr(asset_import_service.fx_rate_service, "fetch_rates", fetch)
+    asset = await _apple_in_usd(session, test_user, test_workspace)
+    session.add(AssetTransaction(
+        asset_id=asset.id, workspace_id=test_workspace.id, kind="buy",
+        quantity=Decimal("10"), price=Decimal("100"), fee=Decimal("0"),
+        date=date(2026, 1, 15), source="manual",
+    ))
+    await session.commit()
+
+    provider = AnotherOrderAtTheConvertedPriceWhileTheQuotesArrive(session, asset, test_workspace)
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,currency",
+        "AAPL,2026-03-01,5,100,EUR",
+        "MSFT,2026-01-10,1,100,",
+    ), provider)
+
+    assert summary["imported"] == 1
+    assert [(e.row, e.reason) for e in summary["errors"]] == [(2, "possible_duplicate")]
+    on_that_date = (await session.execute(
+        select(AssetTransaction).where(
+            AssetTransaction.asset_id == asset.id,
+            AssetTransaction.date == date(2026, 3, 1),
+        )
+    )).scalars().all()
+    assert [(tx.price, tx.source) for tx in on_that_date] == [(Decimal("200"), "manual")]
+
+
+class RepricingTheHoldingWhileTheQuotesArrive(FakeProvider):
+    """Moves the holding's stored price far above what its columns hold."""
+
+    def __init__(self, session: AsyncSession, asset: Asset):
+        super().__init__(known=("AAPL", "MSFT"))
+        self._session = session
+        self._asset = asset
+
+    async def get_quotes(self, symbols):
+        await self._session.execute(
+            update(Asset)
+            .where(Asset.id == self._asset.id)
+            .values(last_price=Decimal("10000000000"))
+            .execution_options(synchronize_session=False)
+        )
+        await self._session.flush()
+        return await super().get_quotes(symbols)
+
+
+@pytest.mark.asyncio
+async def test_the_size_check_reads_the_price_stored_under_the_lock(
+    session: AsyncSession, test_user: User, test_workspace: Workspace
+):
+    """The holding is already in this session's identity map, so the locked
+    read has to refresh it.
+
+    Its price was 100 when the replay measured the row and 1e10 by the write:
+    on the second one the position does not fit the columns, and the row is
+    refused instead of failing in the database and taking the file with it.
+    """
+    asset = await _apple_in_usd(session, test_user, test_workspace)
+    asset.last_price = Decimal("100")
+    session.add(AssetTransaction(
+        asset_id=asset.id, workspace_id=test_workspace.id, kind="buy",
+        quantity=Decimal("10"), price=Decimal("100"), fee=Decimal("0"),
+        date=date(2026, 1, 15), source="manual",
+    ))
+    await session.commit()
+
+    provider = RepricingTheHoldingWhileTheQuotesArrive(session, asset)
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price",
+        "AAPL,2026-03-01,1000,100.00",
+        "MSFT,2026-01-10,1,100.00",
+    ), provider)
+
+    assert summary["imported"] == 1
+    assert [(e.row, e.reason) for e in summary["errors"]] == [(2, "too_large")]
+
+
+@pytest.mark.asyncio
+async def test_a_quantity_with_more_decimals_than_the_column_is_stored_rounded(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    """`asset_transactions.quantity` keeps six decimals, so the ledger the
+    import checks is the one the database stores: a seventh is rounded here,
+    not by whichever database the code happens to run on."""
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price",
+        "AAPL,2026-01-15,0.1234567,100.00",
+    ), provider)
+
+    assert summary["imported"] == 1
+    stored = await _only_asset(session, test_workspace)
+    assert stored.units == Decimal("0.123457")
+    row = (await session.execute(select(AssetTransaction))).scalar_one()
+    assert row.quantity == Decimal("0.123457")

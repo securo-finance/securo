@@ -292,6 +292,26 @@ async def test_add_buys_sets_units_average_and_cost_basis(session, test_workspac
 
 
 @pytest.mark.asyncio
+async def test_a_quantity_with_more_decimals_than_the_column_is_stored_rounded(
+    session, test_workspace, market_asset
+):
+    """The column keeps six decimals. Rounding before the checks and the insert
+    means the ledger that was validated is the ledger that is stored, on any
+    database."""
+    await asset_transaction_service.add_transaction(
+        session, market_asset.id, test_workspace.id,
+        AssetTransactionCreate(
+            kind="buy", quantity=Decimal("0.1234567"), price=Decimal("20"),
+            date=date(2026, 1, 1),
+        ),
+    )
+    row = (await session.execute(select(AssetTransaction))).scalar_one()
+    assert row.quantity == Decimal("0.123457")
+    await session.refresh(market_asset)
+    assert market_asset.units == Decimal("0.123457")
+
+
+@pytest.mark.asyncio
 async def test_sell_records_realized_gain(session, test_workspace, market_asset):
     await asset_transaction_service.add_transaction(
         session, market_asset.id, test_workspace.id,
@@ -380,6 +400,48 @@ async def test_an_edit_validates_against_the_row_as_it_is_once_the_holding_is_lo
         )
 
     assert exc.value.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["update", "delete"])
+async def test_an_entry_removed_while_the_lock_is_taken_answers_not_found(
+    session, test_workspace, market_asset, monkeypatch, operation
+):
+    """The row was there on the first read and gone by the time the holding
+    lock came through, as another request's delete leaves it.
+
+    That is a not-found (`None`), not the 500 a `session.refresh` of a row that
+    no longer exists would raise.
+    """
+    await asset_transaction_service.add_transaction(
+        session, market_asset.id, test_workspace.id,
+        AssetTransactionCreate(kind="buy", quantity=Decimal("10"), price=Decimal("20"), date=date(2026, 1, 1)),
+    )
+    txs = await asset_transaction_service.list_asset_transactions(session, market_asset.id, test_workspace.id)
+    assert txs is not None
+    tx_id = txs[0].id
+
+    real_lock = asset_transaction_service._lock_asset
+
+    async def lock_after_the_delete(session_, asset_id, workspace_id):
+        await session_.execute(
+            delete(AssetTransaction)
+            .where(AssetTransaction.id == tx_id)
+            .execution_options(synchronize_session=False)
+        )
+        return await real_lock(session_, asset_id, workspace_id)
+
+    monkeypatch.setattr(asset_transaction_service, "_lock_asset", lock_after_the_delete)
+
+    if operation == "delete":
+        read = await asset_transaction_service.delete_transaction(
+            session, tx_id, test_workspace.id,
+        )
+    else:
+        read = await asset_transaction_service.update_transaction(
+            session, tx_id, test_workspace.id, AssetTransactionUpdate(notes="edited"),
+        )
+    assert read is None
 
 
 @pytest.mark.asyncio

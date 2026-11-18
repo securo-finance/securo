@@ -15,7 +15,7 @@ alone, so the average price moves by the inverse ratio (issue #944).
 import logging
 import uuid
 from datetime import date, datetime, timezone
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Optional
 
 from fastapi import HTTPException, status
@@ -52,6 +52,18 @@ _MAX_STORED_PRICE = Decimal("999999999999.999999")
 
 def _d(value) -> Decimal:
     return Decimal(str(value or 0))
+
+
+# What `asset_transactions.quantity` stores: Numeric(18, 6). A broker file can
+# state more decimals than that, and PostgreSQL would round on the way in, so
+# the number the ledger is checked on has to be the one that lands there. See
+# `stored_quantity`.
+_QUANTITY_QUANTUM = Decimal("0.000001")
+
+
+def stored_quantity(value: Decimal) -> Decimal:
+    """The quantity as the ledger stores it, so checks and storage agree."""
+    return value.quantize(_QUANTITY_QUANTUM, rounding=ROUND_HALF_UP)
 
 
 def _created(tx: AssetTransaction) -> datetime:
@@ -152,6 +164,25 @@ async def _load_txs(
         statement = statement.execution_options(populate_existing=True)
     result = await session.execute(statement)
     return list(result.scalars().all())
+
+
+async def _reload_transaction(
+    session: AsyncSession, tx_id: uuid.UUID, workspace_id: uuid.UUID
+) -> Optional[AssetTransaction]:
+    """The row as it stands in the database, or None when it is no longer there.
+
+    A reselect rather than `session.refresh`: if another request deleted this
+    entry while this one waited for the holding lock, `refresh` raises and the
+    request answers 500 where the row is simply gone.
+    """
+    result = await session.execute(
+        select(AssetTransaction)
+        .where(
+            AssetTransaction.id == tx_id, AssetTransaction.workspace_id == workspace_id
+        )
+        .execution_options(populate_existing=True)
+    )
+    return result.scalar_one_or_none()
 
 
 def _raise_if_oversell(transactions: list[AssetTransaction]) -> None:
@@ -476,8 +507,9 @@ async def add_transaction(
     asset = await _lock_asset(session, asset_id, workspace_id)
     if asset is None:
         return None
+    quantity = None if data.quantity is None else stored_quantity(data.quantity)
     _validate(
-        data.kind, data.quantity, data.price,
+        data.kind, quantity, data.price,
         fee=data.fee, old_units=data.old_units, new_units=data.new_units,
     )
     is_split = data.kind == "split"
@@ -488,7 +520,7 @@ async def add_transaction(
         asset_id=asset.id,
         workspace_id=workspace_id,
         kind=data.kind,
-        quantity=Decimal("0") if is_split else data.quantity,
+        quantity=Decimal("0") if is_split else quantity,
         price=Decimal("0") if is_split else data.price,
         fee=Decimal("0") if is_split else (data.fee or Decimal("0")),
         date=data.date,
@@ -540,8 +572,14 @@ async def update_transaction(
     # The row and the ledger it is measured against, as they stand once the
     # holding is locked (`populate_existing`): an instance already in the
     # identity map would otherwise come back with the values it had then.
-    await session.refresh(tx)
+    tx = await _reload_transaction(session, tx_id, workspace_id)
+    if tx is None:
+        return None
     fields = data.model_dump(exclude_unset=True)
+    if fields.get("quantity") is not None:
+        # The checks below and the row that is written have to hold the same
+        # number: the column rounds to six decimals, so this does too.
+        fields["quantity"] = stored_quantity(fields["quantity"])
     kind = fields.get("kind", tx.kind)
     if (kind == "split") != (tx.kind == "split"):
         raise HTTPException(
@@ -607,7 +645,9 @@ async def delete_transaction(
     # What is deleted and what the delete is measured against, as they stand
     # once the holding is locked: the row this session loaded may have been
     # edited into (or out of) a split since.
-    await session.refresh(tx)
+    tx = await _reload_transaction(session, tx_id, workspace_id)
+    if tx is None:
+        return None
     others = [t for t in await _load_txs(session, tx.asset_id, refresh=True) if t.id != tx.id]
     # The recompute would clamp a sell that needed the split's units, and that
     # can close the holding.
@@ -637,7 +677,8 @@ async def buy_into_holding(
 ) -> AssetRead:
     """Record a buy, consolidating onto the existing ticker holding in the
     chosen wallet (`group_id`) or creating a new market-priced holding."""
-    _validate("buy", data.quantity, data.price)
+    quantity = stored_quantity(data.quantity)
+    _validate("buy", quantity, data.price)
     await ensure_group_in_workspace(session, data.group_id, workspace_id)
     ticker = data.ticker.upper()
 
@@ -683,7 +724,7 @@ async def buy_into_holding(
     new_tx = AssetTransaction(
         workspace_id=workspace_id,
         kind="buy",
-        quantity=data.quantity,
+        quantity=quantity,
         price=data.price,
         fee=data.fee or Decimal("0"),
         date=data.date,

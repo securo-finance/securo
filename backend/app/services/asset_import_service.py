@@ -28,7 +28,8 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Optional
 
-from sqlalchemy import desc, select
+from fastapi import HTTPException, status
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
@@ -502,6 +503,31 @@ async def resolve_tickers(
     return resolved
 
 
+async def _lock_imported_tickers(
+    session: AsyncSession, workspace_id: uuid.UUID, tickers: list[str]
+) -> None:
+    """Make two imports of the same holding take turns, before either reads.
+
+    A holding the file creates does not exist yet, so the holdings' own rows
+    cannot order this: two imports of a new ticker would both find it missing
+    and both create it, leaving two holdings of one position. The lock is taken
+    on the ticker, in sorted order so two imports covering several tickers
+    cannot take each other's, and lasts to the end of the transaction — which
+    includes the decisions made from that first read.
+
+    PostgreSQL only, in the same shape as the price-cache lock in
+    `plugins/logos.py`: SQLite, which the tests use, serialises writers itself.
+    """
+    if session.bind is None or session.bind.dialect.name != 'postgresql':
+        return
+    for ticker in tickers:
+        await session.execute(
+            select(func.pg_advisory_xact_lock(
+                func.hashtext(f'asset-import:{workspace_id}:{ticker}')
+            ))
+        )
+
+
 async def _existing_holdings(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -635,14 +661,16 @@ def _appearance_keys(
 
     The mirror of `_fingerprints`, for one order: whatever the ledger gained
     under these keys since the replay read it is this order, written by
-    somebody else. ``stated`` is what the file said for a converted row.
+    somebody else. ``stated`` is what the file said for a converted row, and
+    then it is the only fingerprint that counts: another order of the ledger
+    may well sit at the converted price, and taking that one for this would drop
+    a real order instead of naming the coincidence.
     """
     keys: list[tuple] = []
     external_id = order.external_id or None
     if external_id:
         keys.append(('external', asset_id, external_id))
     base = _order_key(asset_id, entry)
-    keys.append(_row_key(asset_id, entry))
     if stated is not None:
         keys.append(('source', *base, stated[0], stated[1]))
     else:
@@ -791,6 +819,8 @@ def _created_holding(quote: Optional[MarketSymbolQuote]) -> Asset:
         valuation_method='market_price',
         last_price=Decimal(str(quote.price)) if quote is not None else None,
         last_price_at=datetime.now(timezone.utc) if quote is not None else None,
+        # Only so a message naming the converted price names its currency.
+        currency=quote.currency if quote is not None else None,
     )
 
 
@@ -806,6 +836,9 @@ def _measure_created_holdings(
     fetched yet, so a split that does not fit the columns at the real price
     would be listed as importable and then dropped at confirmation. Measured
     here, in the preview too, against the same quote the write uses.
+
+    A ticker whose quote came back empty is reported the way the write reports
+    it, so the preview does not promise rows the confirmation cannot create.
     """
     ledgers: dict[str, list[AssetTransaction]] = {}
     kept: list[tuple[AssetOrderImport, AssetTransaction]] = []
@@ -813,8 +846,14 @@ def _measure_created_holdings(
         if order.ticker in holdings:
             kept.append((order, entry))
             continue
+        quote = quotes.get(order.ticker)
+        if quote is None:
+            errors.append(AssetImportRowError(
+                row=order.row, reason='unknown_ticker', ticker=order.ticker,
+            ))
+            continue
         ledger = ledgers.setdefault(order.ticker, [])
-        problem = _ledger_problem(ledger, entry, _created_holding(quotes.get(order.ticker)))
+        problem = _ledger_problem(ledger, entry, _created_holding(quote))
         if problem is not None:
             reason, detail = problem
             errors.append(AssetImportRowError(
@@ -850,7 +889,10 @@ async def _recheck_before_write(
     Duplicate detection ran before the same window, so it is run again on the
     rows that appeared since: a second confirmation of the same file, or the
     same order entered by hand, must not be written a second time. Those rows
-    are counted as skipped, the way the replay already treats a repeat.
+    are counted as skipped, the way the replay already treats a repeat. A
+    converted order is only known by what its file said — a row that appeared
+    at the converted price is another order that happens to land on the same
+    number, and is named as a possible duplicate rather than skipped.
 
     A row that no longer holds is reported against its line and left out,
     rather than aborting an import whose other rows are fine.
@@ -861,13 +903,18 @@ async def _recheck_before_write(
     settled = 0
     appeared: set[tuple] = set()
     if asset_ids:
-        await session.execute(
-            select(Asset.id)
+        by_id = {asset.id: ticker for ticker, asset in holdings.items() if ticker in tickers}
+        # The refreshed row is what the size check below has to see: a refresh
+        # of the price may have landed since this session loaded the holding.
+        locked = await session.execute(
+            select(Asset)
             .where(Asset.id.in_(asset_ids))
             .order_by(Asset.id)
+            .execution_options(populate_existing=True)
             .with_for_update()
         )
-        by_id = {asset.id: ticker for ticker, asset in holdings.items() if ticker in tickers}
+        for asset in locked.scalars().all():
+            holdings[by_id[asset.id]] = asset
         stored: list[AssetTransaction] = []
         for row in await _ledger_rows(session, asset_ids, refresh=True):
             ledgers[by_id[row.asset_id]].append(row)
@@ -879,13 +926,25 @@ async def _recheck_before_write(
     kept: list[tuple[AssetOrderImport, AssetTransaction]] = []
     for order, entry in accepted:
         asset = holdings.get(order.ticker) or created[order.ticker]
-        if appeared and any(
-            key in appeared
-            for key in _appearance_keys(asset.id, order, entry, origin.get(order.row))
-        ):
-            # Somebody wrote this very order between the replay and the lock.
-            settled += 1
-            continue
+        if appeared:
+            if any(
+                key in appeared
+                for key in _appearance_keys(asset.id, order, entry, origin.get(order.row))
+            ):
+                # Somebody wrote this very order between the replay and the lock.
+                settled += 1
+                continue
+            if origin.get(order.row) is not None and (
+                ('plain', *_order_key(asset.id, entry), entry.price) in appeared
+            ):
+                # The same coincidence the replay names when it meets it before
+                # the lock: a row stored at this order's converted price, which
+                # may be another order. Adding it could count the shares twice.
+                errors.append(AssetImportRowError(
+                    row=order.row, reason='possible_duplicate', ticker=order.ticker,
+                    detail=f'{entry.price} {asset.currency}',
+                ))
+                continue
         ledger = ledgers.setdefault(order.ticker, [])
         problem = _ledger_problem(ledger, entry, asset)
         if problem is not None:
@@ -917,8 +976,18 @@ async def import_orders(
     do instead of guessing.
     """
     await ensure_group_in_workspace(session, group_id, workspace_id)
-    ordered = sorted(orders, key=lambda o: (o.date, o.row))
+    # The order the ledger replays in (`_replay_order`): by date, a split
+    # before that day's trades, then the file's own order. Checking the rows in
+    # any other order would measure a same-day sell against a split the file
+    # states on a later line, and the stored ledger would replay it otherwise.
+    ordered = sorted(
+        orders, key=lambda o: (o.date, 0 if o.kind == 'split' else 1, o.row)
+    )
     tickers = [o.ticker for o in ordered]
+    if not dry_run:
+        # Before anything is read: a second import of the same ticker has to
+        # see what this one writes, not the holdings as they were.
+        await _lock_imported_tickers(session, workspace_id, sorted({t.upper() for t in tickers}))
 
     holdings = await _existing_holdings(session, workspace_id, group_id, tickers)
     existing_rows = await _ledger_rows(session, [a.id for a in holdings.values()])
@@ -981,10 +1050,9 @@ async def import_orders(
     # A holding the file creates has no quote yet, so only its units and
     # average price are measured.
     unquoted = Asset(valuation_method='market_price')
-    # Rows on the same date replay in the order they were entered, so the
-    # file's trades go after the ledger's and keep the file's order. A split
-    # is the exception, as everywhere else: it replays before that date's
-    # trades (`_replay_order`), which is what entering one by hand does.
+    # Same-date rows go in the order the ledger replays them (`ordered`): a
+    # split first, then the file's own order, after whatever the ledger
+    # already held. The entry time keeps that order for the rows written here.
     entered_at = datetime.now(timezone.utc)
     today = app_today()
 
@@ -1084,7 +1152,9 @@ async def import_orders(
 
         entry = AssetTransaction(
             kind=order.kind,
-            quantity=order.quantity,
+            # The quantity the column stores, so the replay below checks the
+            # same number the row will hold (a file may state more decimals).
+            quantity=asset_transaction_service.stored_quantity(order.quantity),
             price=order.price,
             fee=order.fee or Decimal('0'),
             date=order.date,
@@ -1251,6 +1321,27 @@ async def undo_import(
     rows = list(result.scalars().all())
     asset_ids = {row.asset_id for row in rows}
 
+    # A later entry may sell the units this import supplied, and taking those
+    # rows back would leave a position the ledger itself would have refused —
+    # the recompute can only clamp it. Checked before anything is deleted, so
+    # a refused undo leaves the ledger as it was.
+    remaining: dict[uuid.UUID, list[AssetTransaction]] = {asset_id: [] for asset_id in asset_ids}
+    for tx in await _ledger_rows(session, sorted(asset_ids)):
+        if tx.import_id != log.id:
+            remaining[tx.asset_id].append(tx)
+    for ledger in remaining.values():
+        over = asset_transaction_service._detect_oversell(ledger)
+        if over is not None:
+            attempted, available = over
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"This import can't be undone: an entry that stays in the ledger "
+                    f"sells {attempted} units with {available} held. Edit or delete "
+                    "that entry first."
+                ),
+            )
+
     for row in rows:
         await session.delete(row)
     await session.flush()
@@ -1259,10 +1350,10 @@ async def undo_import(
         asset = await session.get(Asset, asset_id)
         if asset is None or asset.workspace_id != workspace_id:
             continue
-        remaining = await session.execute(
+        left = await session.execute(
             select(AssetTransaction.id).where(AssetTransaction.asset_id == asset_id).limit(1)
         )
-        if remaining.scalar_one_or_none() is None:
+        if left.scalar_one_or_none() is None:
             await session.delete(asset)
         else:
             await asset_transaction_service.recompute_and_cache(session, asset)
