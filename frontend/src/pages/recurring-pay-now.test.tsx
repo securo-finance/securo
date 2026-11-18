@@ -14,8 +14,8 @@ const api = vi.hoisted(() => ({
     update: vi.fn(),
     delete: vi.fn(),
     generate: vi.fn(),
-    pay: vi.fn(),
   },
+  recurringPayments: { pay: vi.fn() },
   categories: { list: vi.fn(), listIncludingHidden: vi.fn() },
   categoryGroups: { list: vi.fn() },
   accounts: { list: vi.fn() },
@@ -63,7 +63,7 @@ beforeEach(() => {
     bill('rec-1', 'Internet Fibra'),
     bill('rec-2', 'Old Gym', { is_active: false }),
   ])
-  api.recurring.pay.mockResolvedValue({ transaction: {}, recurring: bill('rec-1', 'Internet Fibra') })
+  api.recurringPayments.pay.mockResolvedValue({ transaction: {}, recurring: bill('rec-1', 'Internet Fibra') })
   api.categories.list.mockResolvedValue([])
   api.categoryGroups.list.mockResolvedValue([])
   api.currencies.list.mockResolvedValue([])
@@ -91,7 +91,7 @@ describe('pay now', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Pay now' }))
 
     await waitFor(() =>
-      expect(api.recurring.pay).toHaveBeenCalledWith('rec-1', {
+      expect(api.recurringPayments.pay).toHaveBeenCalledWith('rec-1', {
         date: '2026-09-08',
         account_id: 'acc-2',
         amount: 99.9,
