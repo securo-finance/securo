@@ -8,6 +8,7 @@ import {
   normalizeGoal,
   normalizeGoalAllocation,
   normalizeGoalSummary,
+  normalizeTransactionGoalAllocations,
   type ApiGoal,
   type ApiGoalAllocation,
   type ApiGoalSummary,
@@ -657,7 +658,7 @@ export const transactions = {
       params,
       paramsSerializer: { indexes: null },
     })
-    return data
+    return { ...data, items: data.items.map(normalizeTransactionGoalAllocations) }
   },
   calendar: async (params?: {
     month?: string
@@ -673,7 +674,7 @@ export const transactions = {
   },
   get: async (id: string): Promise<Transaction> => {
     const { data } = await api.get(`/transactions/${id}`)
-    return data
+    return normalizeTransactionGoalAllocations(data)
   },
   descriptionSuggestions: async (q: string, limit = 8): Promise<DescriptionSuggestion[]> => {
     const { data } = await api.get('/transactions/description-suggestions', { params: { q, limit } })
@@ -681,11 +682,11 @@ export const transactions = {
   },
   create: async (transaction: TransactionEditPayload): Promise<Transaction> => {
     const { data } = await api.post('/transactions', transaction)
-    return data
+    return normalizeTransactionGoalAllocations(data)
   },
   createInstallments: async (payload: InstallmentSeriesInput): Promise<Transaction[]> => {
     const { data } = await api.post('/transactions/installments', payload)
-    return data
+    return data.map(normalizeTransactionGoalAllocations)
   },
   update: async (
     id: string,
@@ -695,22 +696,22 @@ export const transactions = {
     },
   ): Promise<Transaction> => {
     const { data } = await api.patch(`/transactions/${id}`, transaction)
-    return data
+    return normalizeTransactionGoalAllocations(data)
   },
   delete: async (id: string, applyTo: TransactionApplyScope = 'this'): Promise<void> => {
     await api.delete(`/transactions/${id}`, { params: { apply_to: applyTo } })
   },
   toggleIgnore: async (id: string): Promise<Transaction> => {
     const { data } = await api.patch(`/transactions/${id}/ignore`)
-    return data
+    return normalizeTransactionGoalAllocations(data)
   },
   unlinkRecurring: async (id: string): Promise<Transaction> => {
     const { data } = await api.patch(`/transactions/${id}/unlink-recurring`)
-    return data
+    return normalizeTransactionGoalAllocations(data)
   },
   postToday: async (id: string): Promise<Transaction> => {
     const { data } = await api.post(`/transactions/${id}/post-today`)
-    return data
+    return normalizeTransactionGoalAllocations(data)
   },
   createTransfer: async (transfer: {
     from_account_id: string
@@ -724,7 +725,11 @@ export const transactions = {
     to_goal_allocations?: GoalAllocationInput[]
   }): Promise<{ debit: Transaction; credit: Transaction; transfer_pair_id: string }> => {
     const { data } = await api.post('/transactions/transfer', transfer)
-    return data
+    return {
+      ...data,
+      debit: normalizeTransactionGoalAllocations(data.debit),
+      credit: normalizeTransactionGoalAllocations(data.credit),
+    }
   },
   bulkCategorize: async (transactionIds: string[], categoryId: string | null): Promise<{ updated: number; skipped_split?: number }> => {
     const { data } = await api.patch('/transactions/bulk-categorize', {
@@ -1126,7 +1131,7 @@ export const groups = {
     const { data } = await api.get(`/groups/${groupId}/transactions`, {
       params: { limit },
     })
-    return data
+    return data.map(normalizeTransactionGoalAllocations)
   },
 }
 

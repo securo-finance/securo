@@ -4,6 +4,7 @@ import {
   normalizeGoal,
   normalizeGoalAllocation,
   normalizeGoalSummary,
+  normalizeTransactionGoalAllocations,
   type ApiGoal,
   type ApiGoalAllocation,
   type ApiGoalSummary,
@@ -89,6 +90,26 @@ describe('goal API normalization', () => {
 
     expect(summary).toMatchObject({ target_amount: 500, current_amount: 100 })
     expect(allocation.amount).toBe(25)
+  })
+
+  it('normalizes the pocket assignments nested in a transaction', () => {
+    const allocation = {
+      id: 'allocation-1',
+      goal_id: 'goal-1',
+      goal_name: 'Emergency fund',
+      transaction_id: 'tx-1',
+      amount: '25.00',
+      source: 'transaction',
+      created_at: '2026-09-20T00:00:00Z',
+      updated_at: '2026-09-20T00:00:00Z',
+    } satisfies ApiGoalAllocation
+    const transaction = normalizeTransactionGoalAllocations({
+      id: 'tx-1',
+      goal_allocations: [allocation, { ...allocation, id: 'allocation-2', amount: '15.50' }],
+    })
+
+    expect(transaction.goal_allocations?.map(item => item.amount)).toEqual([25, 15.5])
+    expect(normalizeTransactionGoalAllocations({ id: 'tx-2', goal_allocations: null })).toEqual({ id: 'tx-2', goal_allocations: null })
   })
 
   it('rejects an invalid decimal instead of leaking NaN into the UI', () => {

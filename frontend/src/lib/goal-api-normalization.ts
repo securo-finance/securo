@@ -84,3 +84,14 @@ export function normalizeGoalAllocation(allocation: ApiGoalAllocation): GoalAllo
     amount: normalizeDecimal(allocation.amount, 'goalAllocation.amount'),
   }
 }
+
+/** Transactions carry their Pocket assignments with decimal-string amounts. */
+export function normalizeTransactionGoalAllocations<
+  T extends { goal_allocations?: ApiGoalAllocation[] | GoalAllocation[] | null },
+>(transaction: T): T {
+  if (!transaction.goal_allocations) return transaction
+  return {
+    ...transaction,
+    goal_allocations: transaction.goal_allocations.map(normalizeGoalAllocation),
+  }
+}
