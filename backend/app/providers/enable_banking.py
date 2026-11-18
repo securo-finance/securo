@@ -174,30 +174,56 @@ def _card_balance(
 
     The debt is `limit - available` when both are known, which is what the
     bank's own app shows whatever the bank calls its booked figure. Without a
-    limit the available figure goes back to the sync, which still has the limit
-    stored on the account row. A card with only a booked balance is read by its
-    sign, like any other EB account. Nothing usable reads as zero.
+    limit that subtraction cannot be made here: the free credit goes back to
+    the sync, which holds the limit stored on the account row, and a booked
+    figure EB signs as money owed still states the debt. A card with only a
+    booked balance is read by its sign, like any other EB account.
+
+    A balance entry without a usable amount counts as absent, never as zero:
+    a missing figure must not read as the whole limit spent, and it does not
+    hide a later entry of another type that does carry one.
     """
-    available = _balance_of_type(balances, CARD_AVAILABLE_BALANCE_TYPES)
-    if available is not None:
-        free_credit = _balance_decimal(available)
-        if credit_limit is None:
-            return Decimal("0"), free_credit, available
-        return credit_limit - free_credit, free_credit, available
-    booked = _balance_of_type(balances, CARD_BOOKED_BALANCE_TYPES)
-    if booked is not None:
-        return -_balance_decimal(booked), None, booked
+    available, free_credit = _card_figure(balances, CARD_AVAILABLE_BALANCE_TYPES)
+    booked, booked_amount = _card_figure(balances, CARD_BOOKED_BALANCE_TYPES)
+    if free_credit is not None:
+        if credit_limit is not None:
+            return credit_limit - free_credit, free_credit, available
+        if booked_amount is not None and booked_amount < 0:
+            return -booked_amount, free_credit, booked
+        return Decimal("0"), free_credit, available
+    if booked_amount is not None:
+        return -booked_amount, None, booked
     return Decimal("0"), None, None
 
 
-def _balance_decimal(balance: Optional[dict]) -> Decimal:
+def _card_figure(
+    balances: list[dict], types: tuple[str, ...]
+) -> tuple[Optional[dict], Optional[Decimal]]:
+    """The first balance of ``types``, in the order given, that carries a
+    usable amount, and that amount."""
+    by_type = {b.get("balance_type") or b.get("type"): b for b in balances if isinstance(b, dict)}
+    for key in types:
+        entry = by_type.get(key)
+        amount = _balance_amount(entry)
+        if amount is not None:
+            return entry, amount
+    return None, None
+
+
+def _balance_amount(balance: Optional[dict]) -> Optional[Decimal]:
+    """The figure inside a balance entry, or None when it carries none."""
     if not balance:
-        return Decimal("0")
+        return None
     amount = balance.get("balance_amount") or balance.get("amount") or {}
     try:
-        return Decimal(str(amount.get("amount", "0")))
-    except (InvalidOperation, AttributeError):
-        return Decimal("0")
+        return Decimal(str(amount.get("amount")))
+    except (InvalidOperation, AttributeError, TypeError, ValueError):
+        return None
+
+
+def _balance_decimal(balance: Optional[dict]) -> Decimal:
+    amount = _balance_amount(balance)
+    return amount if amount is not None else Decimal("0")
 
 
 def _balance_currency(balance: Optional[dict], fallback: str) -> str:
@@ -380,15 +406,11 @@ def _details_summary(raw: dict) -> dict[str, Optional[str]]:
     holds nothing the account row does not already show.
     """
     name = raw.get("display_name") or raw.get("product") or raw.get("name")
-    limit = _credit_limit_decimal(raw)
     return {
         "name": name if isinstance(name, str) else None,
         "cash_account_type": raw.get("cash_account_type"),
         "currency": raw.get("currency"),
         "masked_number": mask_last4(_account_identifier(raw)),
-        # A card's balance can only be read against its limit (issue #624),
-        # and a background sync has no /details call to ask again.
-        "credit_limit": str(limit) if limit is not None else None,
     }
 
 
@@ -977,15 +999,19 @@ class EnableBankingProvider(BankProvider):
     async def _build_cached_account(
         self, uid: str, cached: dict, stable_external_id: Optional[str]
     ) -> AccountData:
-        """An account named from cached details; only its balance is fetched."""
+        """An account named from cached details; only its balance is fetched.
+
+        No credit limit is claimed here on purpose: the sync reads a card's
+        debt against the limit stored on the account row, and a figure cached
+        from an earlier /details call must not overwrite a limit the row
+        already holds (issue #624).
+        """
         account = await self._build_account(
             {
                 "uid": uid,
                 "currency": cached.get("currency"),
                 "display_name": cached.get("name"),
                 "cash_account_type": cached.get("cash_account_type"),
-                # Kept so a card reads the same off the cache as off /details.
-                "credit_limit": cached.get("credit_limit"),
             },
             stable_external_id,
             require_balance=True,
