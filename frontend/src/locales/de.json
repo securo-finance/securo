@@ -1744,6 +1744,7 @@
     "fieldPayee": "Zahlungsempfänger",
     "fieldDate": "Datum",
     "fieldStatus": "Status",
+    "fieldProviderCategory": "Anbieterkategorie",
     "opContains": "enthält",
     "opNotContains": "enthält nicht",
     "opEquals": "ist gleich",

@@ -1738,6 +1738,7 @@
     "fieldPayee": "Δικαιούχος",
     "fieldDate": "Ημερομηνία",
     "fieldStatus": "Κατάσταση",
+    "fieldProviderCategory": "Κατηγορία παρόχου",
     "opContains": "περιέχει",
     "opNotContains": "δεν περιέχει",
     "opEquals": "ισούται με",

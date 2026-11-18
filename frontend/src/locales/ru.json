@@ -1768,6 +1768,7 @@
     "fieldPayee": "Получатель",
     "fieldDate": "Дата",
     "fieldStatus": "Статус",
+    "fieldProviderCategory": "Категория провайдера",
     "opContains": "содержит",
     "opNotContains": "не содержит",
     "opEquals": "равно",

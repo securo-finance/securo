@@ -1859,6 +1859,7 @@
     "fieldPayee": "Příjemce",
     "fieldDate": "Datum",
     "fieldStatus": "Stav",
+    "fieldProviderCategory": "Kategorie poskytovatele",
     "opContains": "obsahuje",
     "opNotContains": "neobsahuje",
     "opEquals": "rovná se",

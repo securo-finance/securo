@@ -1743,6 +1743,7 @@
     "fieldPayee": "Payee",
     "fieldDate": "Date",
     "fieldStatus": "Status",
+    "fieldProviderCategory": "Provider category",
     "opContains": "contains",
     "opNotContains": "does not contain",
     "opEquals": "equals",

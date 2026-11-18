@@ -42,7 +42,7 @@ class DuplicateRuleError(Exception):
 
 _ALLOWED_CONDITION_FIELDS = {
     "description", "payee", "notes", "amount", "type", "account_id", "payee_id", "date",
-    "status",
+    "status", "provider_category",
 }
 # Status is a closed set, so only equality makes sense and the value must be one
 # of the statuses a transaction can carry.
@@ -613,7 +613,8 @@ async def existing_rule_names(
 # Exactly the columns `_rule_preview` copies. Anything reading a column that is
 # not here off a transaction loaded with `load_only(*_PREVIEW_COLUMNS)` would
 # trigger a lazy refresh — which raises under async — so the two lists move
-# together.
+# together. `raw_data` joins this list only for conditions that read the
+# provider category, since the payload dwarfs the rest of the row.
 _PREVIEW_COLUMNS = (
     Transaction.user_id,
     Transaction.workspace_id,
@@ -637,7 +638,7 @@ _PREVIEW_COLUMNS = (
 )
 
 
-def _rule_preview(transaction: Transaction) -> Transaction:
+def _rule_preview(transaction: Transaction, *, include_raw_data: bool = True) -> Transaction:
     """Build a detached transaction-shaped object for side-effect-free rule evaluation."""
     return Transaction(
         user_id=transaction.user_id,
@@ -658,6 +659,7 @@ def _rule_preview(transaction: Transaction) -> Transaction:
         notes=transaction.notes,
         is_ignored=transaction.is_ignored,
         transfer_pair_id=transaction.transfer_pair_id,
+        raw_data=transaction.raw_data if include_raw_data else None,
     )
 
 
@@ -952,13 +954,22 @@ async def preview_rule(
     will_apply = is_active and apply_to_existing
     await validate_rule_definition(session, workspace_id, conditions, actions or [])
 
+    needs_raw_data = any(
+        _rule_item_value(leaf, "field") == "provider_category"
+        for leaf in _flatten_conditions(conditions or [])
+    )
     # Every transaction is evaluated in Python, so only the columns the engine
-    # reads and `_rule_preview` copies are worth fetching — notably not
-    # `raw_data`, whose provider payloads dwarf the rest of the row and which
-    # no condition or action can see.
+    # reads and `_rule_preview` copies are worth fetching. Provider payloads in
+    # `raw_data` dwarf the rest of the row, so it comes along only when a
+    # condition can see it.
+    preview_columns = (
+        (*_PREVIEW_COLUMNS, Transaction.raw_data)
+        if needs_raw_data
+        else _PREVIEW_COLUMNS
+    )
     result = await session.execute(
         select(Transaction)
-        .options(load_only(*_PREVIEW_COLUMNS))
+        .options(load_only(*preview_columns))
         .where(
             Transaction.workspace_id == workspace_id,
             Transaction.source != "opening_balance",
@@ -995,7 +1006,7 @@ async def preview_rule(
         # A rule that renamed this row before should still recognise it, so a
         # miss is retried against the original text — same as apply_single_rule.
         if not matches and tx.original_description is not None:
-            original_target = _rule_preview(tx)
+            original_target = _rule_preview(tx, include_raw_data=needs_raw_data)
             original_target.description = tx.original_description
             matches = evaluate_conditions(conditions_op, conditions or [], original_target)
         if not matches:
@@ -1003,7 +1014,7 @@ async def preview_rule(
         matched += 1
         # An untouched copy when nothing is applied, so `new_category_*` below
         # simply mirrors what the transaction already has.
-        draft = _rule_preview(tx)
+        draft = _rule_preview(tx, include_raw_data=needs_raw_data)
         will_change = False
         if will_apply:
             before = _rule_effect_state(draft)

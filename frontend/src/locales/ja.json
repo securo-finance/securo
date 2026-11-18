@@ -1738,6 +1738,7 @@
     "fieldPayee": "取引相手",
     "fieldDate": "日付",
     "fieldStatus": "ステータス",
+    "fieldProviderCategory": "プロバイダーのカテゴリ",
     "opContains": "次を含む",
     "opNotContains": "次を含まない",
     "opEquals": "次に等しい",

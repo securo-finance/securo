@@ -1843,6 +1843,7 @@
     "fieldPayee": "Príjemca",
     "fieldDate": "Dátum",
     "fieldStatus": "Stav",
+    "fieldProviderCategory": "Kategória poskytovateľa",
     "opContains": "obsahuje",
     "opNotContains": "neobsahuje",
     "opEquals": "rovná sa",

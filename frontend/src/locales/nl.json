@@ -1743,6 +1743,7 @@
     "fieldPayee": "Begunstigde",
     "fieldDate": "Datum",
     "fieldStatus": "Status",
+    "fieldProviderCategory": "Categorie van de provider",
     "opContains": "bevat",
     "opNotContains": "bevat niet",
     "opEquals": "gelijk aan",

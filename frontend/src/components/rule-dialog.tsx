@@ -41,6 +41,7 @@ const CONDITION_FIELDS = [
   { value: 'payee_id', label: 'rules.fieldPayee' },
   { value: 'date', label: 'rules.fieldDate' },
   { value: 'status', label: 'rules.fieldStatus' },
+  { value: 'provider_category', label: 'rules.fieldProviderCategory' },
 ] as const
 
 const STRING_OPS = [

@@ -19,7 +19,8 @@ from mcp_server.tools.proposals import _APPLY_FIELD, _PROPOSAL_PREFACE, _can_app
 
 _RULE_CAPABILITIES = (
     " Conditions combine with AND/OR and filter description, payee, notes, "
-    "amount, type, account_id, payee_id, date, or status (pending/posted). "
+    "amount, type, account_id, payee_id, date, status (pending/posted), or "
+    "provider_category (the bank or provider's own category, when reported). "
     "A condition is an object with field, op, and value. The accepted ops are "
     "contains, not_contains, equals, not_equals, starts_with, ends_with, "
     "regex, gt, gte, lt, lte, and status accepts only equals and not_equals. "

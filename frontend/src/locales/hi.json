@@ -1738,6 +1738,7 @@
     "fieldPayee": "प्राप्तकर्ता",
     "fieldDate": "तिथि",
     "fieldStatus": "स्थिति",
+    "fieldProviderCategory": "प्रदाता श्रेणी",
     "opContains": "शामिल है",
     "opNotContains": "शामिल नहीं है",
     "opEquals": "बराबर है",

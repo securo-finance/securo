@@ -1747,6 +1747,7 @@
     "fieldPayee": "Pessoa",
     "fieldDate": "Data",
     "fieldStatus": "Status",
+    "fieldProviderCategory": "Categoria do provedor",
     "opContains": "contém",
     "opNotContains": "não contém",
     "opEquals": "é igual a",

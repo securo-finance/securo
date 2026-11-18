@@ -5322,6 +5322,110 @@ async def test_sync_connection_with_category_mapping(session: AsyncSession, test
 
 
 @pytest.mark.asyncio
+async def test_sync_saves_pluggy_category_in_raw_data(
+    session: AsyncSession, test_user, test_workspace
+):
+    conn = await _make_connection(session, test_user.id, "Raw Category Bank")
+    category = await _make_category(session, test_user.id, "Alimentação")
+    raw_payload = {
+        "id": "raw-cat-tx-1",
+        "description": "RESTAURANT",
+        "amount": -50.0,
+        "category": "Eating out",
+    }
+
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="raw-cat-acc-1", name="Checking",
+            type="checking", balance=Decimal("100"), currency="BRL",
+        ),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id="raw-cat-tx-1", description="RESTAURANT",
+            amount=Decimal("50"), date=date.today(), type="debit",
+            currency="BRL", pluggy_category="Eating out", raw_data=raw_payload,
+        ),
+    ])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    transaction = (
+        await session.execute(
+            select(Transaction).where(Transaction.external_id == "raw-cat-tx-1")
+        )
+    ).scalar_one()
+    assert transaction.raw_data == raw_payload
+    assert transaction.raw_data["category"] == "Eating out"
+    assert transaction.provider_category == "Eating out"
+    assert transaction.category_id == category.id
+
+
+@pytest.mark.asyncio
+async def test_resync_updates_pluggy_category_in_raw_data(
+    session: AsyncSession, test_user, test_workspace
+):
+    conn = await _make_connection(session, test_user.id, "Raw Category Resync Bank")
+
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="raw-cat-resync-acc-1", name="Checking",
+            type="checking", balance=Decimal("100"), currency="BRL",
+        ),
+    ])
+
+    def _pluggy_transaction(category: str) -> TransactionData:
+        return TransactionData(
+            external_id="raw-cat-resync-tx-1", description="RESTAURANT",
+            amount=Decimal("50"), date=date.today(), type="debit",
+            currency="BRL", pluggy_category=category,
+            raw_data={
+                "id": "raw-cat-resync-tx-1",
+                "description": "RESTAURANT",
+                "amount": -50.0,
+                "category": category,
+            },
+        )
+
+    provider_patch = patch(
+        "app.services.connection_service.get_provider", return_value=mock_provider
+    )
+
+    async def _sync():
+        with provider_patch, \
+             patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+             patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+             patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+            await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    mock_provider.get_transactions = AsyncMock(
+        return_value=[_pluggy_transaction("Eating out")]
+    )
+    await _sync()
+
+    mock_provider.get_transactions = AsyncMock(
+        return_value=[_pluggy_transaction("Groceries")]
+    )
+    await _sync()
+
+    transaction = (
+        await session.execute(
+            select(Transaction).where(Transaction.external_id == "raw-cat-resync-tx-1")
+        )
+    ).scalar_one()
+    assert transaction.raw_data is not None
+    assert transaction.raw_data["category"] == "Groceries"
+    assert transaction.provider_category == "Groceries"
+
+
+@pytest.mark.asyncio
 async def test_sync_keeps_provider_category_while_normalizing_description(
     session: AsyncSession, test_user, test_workspace
 ):
