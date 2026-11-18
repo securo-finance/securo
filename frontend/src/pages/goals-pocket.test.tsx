@@ -109,6 +109,17 @@ describe('GoalsPage pockets', () => {
     expect(screen.getByText(/Free on account:.*-€100\.00/)).toBeInTheDocument()
   })
 
+  it('lists every status when a pocket badge names a paused pocket', async () => {
+    api.goals.list.mockImplementation(async (status?: string) =>
+      status ? [] : [{ ...pocket, status: 'paused' }],
+    )
+    renderWithProviders(<GoalsPage />, { route: '/goals?goal=pocket' })
+
+    expect(await screen.findByText('Monitor')).toBeInTheDocument()
+    expect(api.goals.list).toHaveBeenCalledWith(undefined)
+    expect(api.goals.list).not.toHaveBeenCalledWith('active')
+  })
+
   it('counts remaining calendar days in the workspace timezone across a DST change', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-24T22:30:00Z'))

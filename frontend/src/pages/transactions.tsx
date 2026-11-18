@@ -1211,7 +1211,7 @@ export default function TransactionsPage() {
             {(tx.goal_allocations ?? []).map((allocation) => (
               <Link
                 key={allocation.id}
-                to="/goals"
+                to={`/goals?goal=${allocation.goal_id}`}
                 onClick={(event) => event.stopPropagation()}
                 title={t('goals.transactionAllocation')}
                 className="inline-flex items-center gap-1 text-[10px] font-semibold text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1.5 py-0.5 rounded-full hover:bg-violet-100 transition-colors"

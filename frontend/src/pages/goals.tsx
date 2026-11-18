@@ -1,4 +1,6 @@
 import { useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { cn } from '@/lib/utils'
 import { differenceInCalendarDays, parseISO } from 'date-fns'
 import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
@@ -142,7 +144,17 @@ export default function GoalsPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Goal | null>(null)
   const [trackingType, setTrackingType] = useState('manual')
-  const [statusFilter, setStatusFilter] = useState<string>('active')
+  // A pocket badge links here with `?goal=<id>`; show every status so the
+  // named goal is listed even when it is paused, completed or archived.
+  const [searchParams] = useSearchParams()
+  const focusedGoalId = searchParams.get('goal')
+  const [statusFilter, setStatusFilter] = useState<string>(focusedGoalId ? '' : 'active')
+  const scrolledToGoalRef = useRef(false)
+  const scrollToFocusedGoal = (node: HTMLDivElement | null) => {
+    if (!node || scrolledToGoalRef.current) return
+    scrolledToGoalRef.current = true
+    node.scrollIntoView?.({ block: 'center' })
+  }
   const [deletingGoal, setDeletingGoal] = useState<Goal | null>(null)
   const [selectedIcon, setSelectedIcon] = useState('target')
   const [selectedColor, setSelectedColor] = useState('#3B82F6')
@@ -335,7 +347,15 @@ export default function GoalsPage() {
                     : 'bg-muted-foreground/30'
 
               return (
-                <div key={goal.id} className="px-4 sm:px-5 py-4 hover:bg-muted/50 transition-colors">
+                <div
+                  key={goal.id}
+                  ref={goal.id === focusedGoalId ? scrollToFocusedGoal : undefined}
+                  aria-current={goal.id === focusedGoalId ? 'true' : undefined}
+                  className={cn(
+                    'px-4 sm:px-5 py-4 hover:bg-muted/50 transition-colors',
+                    goal.id === focusedGoalId && 'bg-muted/50',
+                  )}
+                >
                   <div className="flex items-start gap-4">
                     {/* Icon */}
                     <CategoryIcon icon={goal.icon} color={goal.color} size="lg" />
