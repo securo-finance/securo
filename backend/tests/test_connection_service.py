@@ -5955,6 +5955,134 @@ async def test_sync_removes_orphaned_finance_charges_on_resync(
     assert "fc-keep" in rows[0].external_id
 
 
+def _charges_bill() -> BillData:
+    """A bill whose finance charges the card also lists as transactions, as
+    in #1258: the synthetic descriptions are Pluggy's `additionalInfo`."""
+    return BillData(
+        external_id="bill-twins",
+        due_date=date(2026, 4, 15),
+        total_amount=Decimal("200"),
+        currency="BRL",
+        raw_data={
+            "id": "bill-twins",
+            "financeCharges": [
+                {"id": "fc-iof", "type": "IOF", "amount": 1.37,
+                 "additionalInfo": "financial_interest_iof"},
+                {"id": "fc-int", "type": "OTHER", "amount": 18.42,
+                 "additionalInfo": "financial_interest"},
+                {"id": "fc-late", "type": "LATE_PAYMENT_INTEREST", "amount": 2.10,
+                 "additionalInfo": "late_fee"},
+                {"id": "fc-pen", "type": "LATE_PAYMENT_FEE", "amount": 4.50,
+                 "additionalInfo": "late_penalty"},
+            ],
+        },
+    )
+
+
+def _charge_txns() -> list[TransactionData]:
+    """The same four charges as regular card transactions on that bill."""
+    return [
+        TransactionData(
+            external_id=f"tx-{key}", description=description, amount=Decimal(amount),
+            date=date(2026, 4, 8), type="debit", currency="BRL",
+            bill_external_id="bill-twins",
+        )
+        for key, description, amount in [
+            ("iof", "IOF do rotativo", "1.37"),
+            ("int", "Juros do rotativo", "18.42"),
+            ("late", "Juros por atraso", "2.10"),
+            ("pen", "Multa por atraso", "4.50"),
+        ]
+    ]
+
+
+async def _cc_rows(session, user_id) -> list[Transaction]:
+    return list((await session.execute(
+        select(Transaction)
+        .where(
+            Transaction.user_id == user_id,
+            Transaction.source != "opening_balance",
+        )
+        .order_by(Transaction.amount, Transaction.external_id)
+    )).scalars().all())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("first_sync_has_txns", [True, False], ids=["together", "txns-later"])
+async def test_sync_skips_finance_charges_the_card_lists_as_transactions(
+    session: AsyncSession, test_user, test_workspace, first_sync_has_txns,
+):
+    """A finance charge the card already lists as a transaction on the bill
+    is not materialized again, whether the transaction arrives in the same
+    sync as the bill or in a later one, and repeated syncs keep it that way
+    (#1258)."""
+    conn = await _make_connection(session, test_user.id, "Twins Bank")
+    mock_provider = _cc_provider_mock(
+        bills=[_charges_bill()],
+        transactions=_charge_txns() if first_sync_has_txns else [],
+    )
+    p1, p2, p3 = _patch_sync_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         p1, p2, p3:
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+    mock_provider.get_transactions = AsyncMock(return_value=_charge_txns())
+    for _ in range(2):
+        with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+             p1, p2, p3:
+            await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    rows = await _cc_rows(session, test_user.id)
+    assert [(row.external_id, row.amount) for row in rows] == [
+        ("tx-iof", Decimal("1.37")),
+        ("tx-late", Decimal("2.10")),
+        ("tx-pen", Decimal("4.50")),
+        ("tx-int", Decimal("18.42")),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sync_keeps_finance_charges_the_card_does_not_list(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Only the charges with a transaction lose their synthetic row. A
+    charge with none, a purchase of the same amount that is no finance
+    charge, and a charge transaction the user ignored all leave the
+    synthetic row in place."""
+    conn = await _make_connection(session, test_user.id, "Partial Bank")
+    txns = [
+        _charge_txns()[0],  # IOF do rotativo, 1.37
+        TransactionData(
+            external_id="tx-shop", description="Padaria Central", amount=Decimal("18.42"),
+            date=date(2026, 4, 8), type="debit", currency="BRL",
+            bill_external_id="bill-twins",
+        ),
+        _charge_txns()[3],  # Multa por atraso, 4.50
+    ]
+    mock_provider = _cc_provider_mock(bills=[_charges_bill()], transactions=txns)
+    p1, p2, p3 = _patch_sync_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         p1, p2, p3:
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+    penalty = next(
+        row for row in await _cc_rows(session, test_user.id) if row.external_id == "tx-pen"
+    )
+    penalty.is_ignored = True
+    await session.commit()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         p1, p2, p3:
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    rows = await _cc_rows(session, test_user.id)
+    assert [row.external_id for row in rows] == [
+        "tx-iof",
+        "bill_charge:bill-twins:fc-late",
+        "bill_charge:bill-twins:fc-pen",
+        "tx-pen",
+        "bill_charge:bill-twins:fc-int",
+        "tx-shop",
+    ]
+
+
 @pytest.mark.asyncio
 async def test_sync_does_not_overwrite_manual_effective_bill_date(
     session: AsyncSession, test_user, test_workspace,
