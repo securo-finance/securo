@@ -317,8 +317,12 @@ async def _charged_occurrences(
     A linked charge belongs to the occurrence it fulfills, not to the month
     of its own date: generation links a charge up to the policy's reach
     before or after the occurrence, so a December 1 occurrence can be paid
-    by a November 30 charge and must still count in December. Each charge is
-    given to the nearest occurrence within that reach.
+    by a November 30 charge and must still count in December.
+
+    Charges are handed out as generation links them: occurrences in date
+    order, each taking the nearest charge in its reach that an earlier one
+    did not take. A charge goes to the first occurrence that reached it, even
+    when a later one sits nearer, because generation never got that far.
     """
     stopped = (await session.execute(
         select(RecurringTransaction).where(
@@ -335,36 +339,46 @@ async def _charged_occurrences(
         for frequency in {rec.frequency for rec in stopped}
     }
     # A charge sits at most `before` days ahead of its occurrence or `after`
-    # days behind it.
-    earliest = month_start - timedelta(days=max(before for before, _ in reach.values()))
-    latest = month_end + timedelta(days=max(after for _, after in reach.values()))
+    # days behind it. The walk starts one reach before the month's own reach,
+    # so the occurrences just before the month take their charges first.
+    widest = max(before + after for before, after in reach.values())
+    walk_start = month_start - timedelta(days=widest)
     linked = (await session.execute(
         select(Transaction.recurring_transaction_id, Transaction.date).where(
             Transaction.recurring_transaction_id.in_([rec.id for rec in stopped]),
-            Transaction.date >= earliest,
-            Transaction.date < latest,
+            Transaction.date >= walk_start - timedelta(days=widest),
+            Transaction.date < month_end + timedelta(days=widest),
         )
     )).all()
-
-    by_id = {rec.id: rec for rec in stopped}
-    charged: dict[uuid.UUID, set[date]] = {}
+    charges: dict[uuid.UUID, list[date]] = {}
     for rec_id, charge_date in linked:
-        rec = by_id[rec_id]
+        charges.setdefault(rec_id, []).append(charge_date)
+
+    charged: dict[uuid.UUID, set[date]] = {}
+    for rec in stopped:
+        pending = sorted(charges.get(rec.id, []))
+        if not pending:
+            continue
         before, after = reach[rec.frequency]
-        candidates = get_occurrences_in_range(
+        for occurrence in get_occurrences_in_range(
             start=rec.start_date,
             frequency=rec.frequency,
             end_date=rec.end_date,
-            range_start=charge_date - timedelta(days=after),
-            range_end=charge_date + timedelta(days=before + 1),
+            range_start=walk_start,
+            range_end=month_end,
             intended_day=rec.day_of_month or rec.start_date.day,
             weekend_adjustment=rec.weekend_adjustment,
-        )
-        if not candidates:
-            continue
-        occurrence = min(candidates, key=lambda day: (abs((day - charge_date).days), day))
-        if month_start <= occurrence < month_end:
-            charged.setdefault(rec_id, set()).add(occurrence)
+        ):
+            in_reach = [
+                day for day in pending
+                if occurrence - timedelta(days=before) <= day <= occurrence + timedelta(days=after)
+            ]
+            if not in_reach:
+                continue
+            taken = min(in_reach, key=lambda day: (abs((day - occurrence).days), day))
+            pending.remove(taken)
+            if occurrence >= month_start:
+                charged.setdefault(rec.id, set()).add(occurrence)
     return charged
 
 

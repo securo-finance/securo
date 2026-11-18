@@ -11,6 +11,7 @@ from app.models.category import Category
 from app.models.fx_rate import FxRate
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
+from app.services import reconciliation_policy, reconciliation_rule_service
 from app.services.recurring_transaction_service import generate_pending, get_month_summary
 
 
@@ -213,6 +214,48 @@ async def test_a_completed_schedule_keeps_its_month_when_paid_the_day_before(
 
 
 @pytest.mark.asyncio
+async def test_a_paused_schedule_keeps_a_late_charge_on_the_occurrence_it_paid(
+    session, test_user, test_workspace, test_account,
+):
+    """A slow bank's December 20 charge paid December 1, not January 1.
+
+    With a 20-day window both ways, generation links it to December 1, the
+    first occurrence it reached. January 1 is nearer (12 days against 19), but
+    generation never reached it, so the paused definition keeps the charge in
+    December.
+    """
+    await reconciliation_rule_service.upsert_override(
+        session, test_workspace.id, test_user.id,
+        reconciliation_policy.MATCH_RECURRING["node"], "same_account_exact",
+        {"when": {"date": {"before_days": 20, "after_days": 20}}},
+    )
+    _recurring(session, test_user, test_workspace, test_account,
+               "Gym", "80", "debit", "monthly", date(2026, 12, 1), auto_generate=True)
+    charge = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=test_account.id, description="Gym", amount=Decimal("80"),
+        currency="BRL", date=date(2026, 12, 20), type="debit", source="manual",
+        status="posted",
+    )
+    session.add(charge)
+    await session.commit()
+
+    await generate_pending(
+        session, test_user.id, up_to=date(2026, 12, 20), workspace_id=test_workspace.id,
+    )
+    await session.refresh(charge)
+    gym = (await session.execute(
+        select(RecurringTransaction).where(RecurringTransaction.description == "Gym")
+    )).scalar_one()
+    assert charge.recurring_transaction_id == gym.id
+    gym.is_active = False
+    await session.commit()
+
+    assert (await _summary(session, test_workspace, date(2026, 12, 1))).expenses == Decimal("80.00")
+    assert (await _summary(session, test_workspace, date(2027, 1, 1))).expenses == Decimal("0")
+
+
+@pytest.mark.asyncio
 async def test_a_paused_schedule_after_a_frequency_edit_stays_out(
     session, test_user, test_workspace, test_account,
 ):
@@ -343,3 +386,12 @@ async def test_summary_route(client, auth_headers, test_account, session, test_u
     assert Decimal(data["income"]) == Decimal("3000")
     assert Decimal(data["expenses"]) == Decimal("1000")
     assert Decimal(data["net"]) == Decimal("2000")
+
+
+@pytest.mark.asyncio
+async def test_summary_route_rejects_a_month_out_of_range(client, auth_headers):
+    resp = await client.get(
+        "/api/recurring-transactions/summary", params={"month": "9999-12-01"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422

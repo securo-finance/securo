@@ -58,10 +58,18 @@ async def recurring_month_summary(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Income, expenses and net the active definitions expect in one month."""
+    month = month or app_today()
+    # The summary reads a little before and past the month, so the first and
+    # last years of the calendar have nothing to read into.
+    if not date.min.year < month.year < date.max.year:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Month is out of the supported range",
+        )
     return await recurring_transaction_service.get_month_summary(
         session,
         ctx.workspace.id,
-        month or app_today(),
+        month,
         ctx.user.primary_currency or get_settings().default_currency,
     )
 
