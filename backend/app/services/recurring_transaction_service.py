@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import and_, or_, select, true
+from sqlalchemy import and_, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -314,8 +314,9 @@ async def get_month_summary(
 ) -> RecurringMonthSummary:
     """Income, expenses and net the definitions expect in ``month``.
 
-    Paused definitions stay out; one that generation completed (past its end
-    date) keeps the occurrences it had in range.
+    A stopped definition, paused or completed by generation, counts only the
+    occurrences it charged in the month, so a completed one keeps its last
+    month and a paused one adds nothing it never charged.
 
     Each definition counts once per occurrence in the month, from its own
     schedule (start date, frequency, day, end date, weekend adjustment), so a
@@ -330,6 +331,22 @@ async def get_month_summary(
     """
     month_start = month.replace(day=1)
     month_end = _advance_months(month_start, 1, 1)
+    # Neither is_active nor the pointer tells a paused definition from one
+    # generation completed: an edit can move the pointer of a paused one past
+    # its end date. What a stopped definition really charged in the month,
+    # through the occurrences linked to it, is what counts for it.
+    charged = dict((await session.execute(
+        select(Transaction.recurring_transaction_id, func.count())
+        .join(RecurringTransaction,
+              Transaction.recurring_transaction_id == RecurringTransaction.id)
+        .where(
+            RecurringTransaction.workspace_id == workspace_id,
+            RecurringTransaction.is_active == False,
+            Transaction.date >= month_start,
+            Transaction.date < month_end,
+        )
+        .group_by(Transaction.recurring_transaction_id)
+    )).all())
     result = await session.execute(
         select(RecurringTransaction)
         .outerjoin(Account, RecurringTransaction.account_id == Account.id)
@@ -337,9 +354,7 @@ async def get_month_summary(
             RecurringTransaction.workspace_id == workspace_id,
             or_(
                 RecurringTransaction.is_active == True,
-                # Generating the last occurrence turns is_active off and moves
-                # next_occurrence past end_date; a paused definition never does.
-                RecurringTransaction.next_occurrence > RecurringTransaction.end_date,
+                RecurringTransaction.id.in_(list(charged)),
             ),
             RecurringTransaction.start_date < month_end + timedelta(days=2),
             or_(Account.id.is_(None), Account.is_closed == False),
@@ -360,6 +375,8 @@ async def get_month_summary(
             intended_day=rec.day_of_month or rec.start_date.day,
             weekend_adjustment=rec.weekend_adjustment,
         )
+        if not rec.is_active:
+            occurrences = occurrences[:charged[rec.id]]
         if not occurrences:
             continue
         template = abs(rec.amount)

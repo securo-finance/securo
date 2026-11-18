@@ -10,6 +10,7 @@ from app.models.account import Account
 from app.models.category import Category
 from app.models.fx_rate import FxRate
 from app.models.recurring_transaction import RecurringTransaction
+from app.models.transaction import Transaction
 from app.services.recurring_transaction_service import generate_pending, get_month_summary
 
 
@@ -24,11 +25,12 @@ def _category(session, user, workspace, name, **flags):
 
 def _recurring(session, user, workspace, account, description, amount, kind, frequency,
                start, **fields):
+    next_occurrence = fields.pop("next_occurrence_override", start)
     rec = RecurringTransaction(
         id=uuid.uuid4(), user_id=user.id, workspace_id=workspace.id,
         account_id=account.id if account else None, description=description,
         amount=Decimal(amount), currency=fields.pop("currency", "BRL"), type=kind,
-        frequency=frequency, start_date=start, next_occurrence=start, **fields,
+        frequency=frequency, start_date=start, next_occurrence=next_occurrence, **fields,
     )
     session.add(rec)
     return rec
@@ -136,6 +138,60 @@ async def test_a_schedule_completed_by_generation_keeps_its_last_month(
     after = await _summary(session, test_workspace, date(2026, 12, 1))
     assert after.expenses == Decimal("500.00")
     assert (await _summary(session, test_workspace, date(2027, 1, 1))).expenses == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_a_paused_schedule_with_an_edited_end_date_stays_out(
+    session, test_user, test_workspace, test_account,
+):
+    """Paused before December's charge, then given an end date: December is empty.
+
+    The pointer already sits past the new end date, as on a completed schedule,
+    but nothing was charged in December.
+    """
+    _recurring(session, test_user, test_workspace, test_account,
+               "Paused", "30", "debit", "monthly", date(2026, 1, 10),
+               end_date=date(2026, 12, 31), next_occurrence_override=date(2027, 1, 10),
+               is_active=False)
+    await session.commit()
+
+    assert (await _summary(session, test_workspace, date(2026, 12, 1))).expenses == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_a_schedule_paused_after_its_charge_keeps_that_month(
+    session, test_user, test_workspace, test_account,
+):
+    """Paused after December's charge was linked: December keeps that one charge."""
+    rec = _recurring(session, test_user, test_workspace, test_account,
+                     "Paused late", "30", "debit", "weekly", date(2026, 11, 6),
+                     next_occurrence_override=date(2026, 12, 11), is_active=False)
+    session.add(Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=test_account.id, description="Paused late", amount=Decimal("30"),
+        currency="BRL", date=date(2026, 12, 4), type="debit", source="recurring",
+        status="posted", recurring_transaction_id=rec.id,
+    ))
+    await session.commit()
+
+    assert (await _summary(session, test_workspace, date(2026, 12, 1))).expenses == Decimal("30.00")
+
+
+@pytest.mark.asyncio
+async def test_a_paused_schedule_after_a_frequency_edit_stays_out(
+    session, test_user, test_workspace, test_account,
+):
+    """A paused monthly turned quarterly moves its pointer past the end date.
+
+    October falls on the new schedule but was never charged, so it stays out.
+    """
+    _recurring(session, test_user, test_workspace, test_account,
+               "Paused", "500", "debit", "quarterly", date(2026, 1, 10),
+               end_date=date(2026, 12, 10), next_occurrence_override=date(2027, 1, 10),
+               is_active=False)
+    await session.commit()
+
+    assert (await _summary(session, test_workspace, date(2026, 10, 1))).expenses == Decimal("0")
 
 
 @pytest.mark.asyncio
