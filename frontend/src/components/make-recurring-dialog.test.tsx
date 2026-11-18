@@ -278,6 +278,20 @@ describe('MakeRecurringDialog', () => {
     )
   })
 
+  it('opens the form on the fallback format when the setting cannot load', async () => {
+    // The gate treats a failed setting as settled, so the form opens. But an
+    // errored query with no data is fetched again whenever a new observer
+    // mounts, and that fetch puts the query back to pending: the fields mount,
+    // go back to loading, mount again, forever. The user never gets a form.
+    vi.mocked(admin.numberFormat).mockRejectedValue(new Error('offline'))
+
+    await openDialog(schoolFee({ id: 'tx-7' }))
+
+    expect(screen.getByLabelText(t('recurring.amount'))).toHaveValue('350')
+    // A setting that already failed is not asked for again on every mount.
+    expect(vi.mocked(admin.numberFormat)).toHaveBeenCalledTimes(1)
+  })
+
   it('skips the first occurrence only while the bill starts on the transaction date', async () => {
     const { user } = await openDialog(schoolFee({ id: 'tx-5' }))
 
