@@ -132,8 +132,10 @@ unknown fields are refused. The rules that catch people out:
   left alone. `[]` means fetched and empty. `"data": null` means nothing was
   fetched yet.
 - At most 500 accounts, 20,000 transactions, 2,000 bills, 2,000 reserved
-  balances, 5,000 holdings and 20,000 trades per reply; send the rest on the
-  next sync.
+  balances, 5,000 holdings and 20,000 trades per reply. Each limit counts the
+  whole reply, summed across accounts, and a reply over any of them is
+  refused whole. Reserved balances can't be split across syncs: a reported
+  list is the account's whole set, and reserves missing from it are deleted.
 - `masked_number` is the last four characters only.
 - An account's logo is either `institution_logo` (a key of the manifest's
   `logos`) or `institution_logo_url` (https, on a host declared in
@@ -170,9 +172,10 @@ without reserves.
 - They come with accounts, so `provides` needs only `accounts`; there is no
   separate kind.
 
-The account page lists each reserve in its own currency. The subtotal it
-shows adds only the reserves in the account's currency; no reserve is
-converted.
+A bank account's page lists each reserve in its own currency, with a
+subtotal that adds only the reserves in the account's currency; no reserve is
+converted. A credit card's page doesn't show reserves, though the contract
+accepts and stores them.
 
 ### Errors
 
