@@ -342,6 +342,10 @@ export interface Transaction {
   // Optional period-attribution override. The bank-provided `date` remains
   // unchanged; null restores automatic cash/accrual bucketing.
   reporting_date_override: string | null
+  // The date the paginated list filtered and ordered this row by (#1386):
+  // the override, a manual bill date or, in accrual mode, a card's bill due
+  // date. Absent outside the list.
+  reporting_date?: string | null
   // The recurring bill this transaction fulfills, if any (issue #116).
   recurring_transaction_id?: string | null
   splits: TransactionSplit[]
