@@ -1692,21 +1692,22 @@ async def test_preview_rule_matches_provider_category(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["description", "payee", "notes", "provider_category"])
 @pytest.mark.parametrize("op", ["gt", "gte", "lt", "lte"])
-async def test_create_rule_rejects_numeric_op_on_provider_category(
-    session: AsyncSession, test_user, test_workspace, op
+async def test_create_rule_rejects_numeric_op_on_text_field(
+    session: AsyncSession, test_user, test_workspace, field, op
 ):
     with pytest.raises(
         ValueError,
-        match=f"unsupported op '{op}' for field 'provider_category'",
+        match=f"unsupported op '{op}' for field '{field}'",
     ):
         await create_rule(
             session,
             test_workspace.id,
             test_user.id,
             RuleCreate(
-                name=f"Provider category {op}",
-                conditions=[RuleCondition(field="provider_category", op=op, value=0)],
+                name=f"{field} {op}",
+                conditions=[RuleCondition(field=field, op=op, value=0)],
                 actions=[RuleAction(op="ignore", value=True)],
             ),
         )
