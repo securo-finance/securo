@@ -189,10 +189,19 @@ async def delete_user(
     # Pockets go with the accounts deleted below. Pocket assignments on the
     # user's transactions in other members' accounts are removed together,
     # and rejected when a pocket's spending still depends on them.
-    await goal_service.delete_account_pockets(
-        session,
-        list((await session.scalars(select(Account.id).where(Account.user_id == user_id))).all()),
+    # Account locks first, in ID order, as pocket writers take them, so this
+    # cannot deadlock with an assignment being saved on one of these accounts.
+    user_account_ids = list(
+        (
+            await session.scalars(
+                select(Account.id)
+                .where(Account.user_id == user_id)
+                .order_by(Account.id)
+                .with_for_update(key_share=True)
+            )
+        ).all()
     )
+    await goal_service.delete_account_pockets(session, user_account_ids)
     allocated = (
         await session.scalars(
             select(Transaction).where(
