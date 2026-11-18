@@ -156,6 +156,34 @@ async def test_foreign_currency_converts_from_its_native_amount(
 
 
 @pytest.mark.asyncio
+async def test_two_foreign_currencies_each_convert_at_their_own_rate(
+    session, test_user, test_workspace, test_account,
+):
+    """100 USD at 5 plus 50 EUR at 10 is 1000 BRL, whatever the stamps say.
+
+    Rates are stored USD-based, so EUR -> BRL is the cross rate 5 / 0.5.
+    """
+    for quote, rate in (("BRL", "5.0"), ("EUR", "0.5")):
+        session.add(FxRate(
+            id=uuid.uuid4(), base_currency="USD", quote_currency=quote,
+            date=date(2026, 10, 1), rate=Decimal(rate), source="test",
+        ))
+    _recurring(session, test_user, test_workspace, test_account,
+               "Cloud", "100", "debit", "monthly", date(2026, 1, 1),
+               currency="USD", amount_primary=Decimal("100.00"))
+    _recurring(session, test_user, test_workspace, test_account,
+               "Streaming", "50", "debit", "monthly", date(2026, 1, 1),
+               currency="EUR", amount_primary=Decimal("54.00"))
+    _recurring(session, test_user, test_workspace, test_account,
+               "Rent", "1000", "debit", "monthly", date(2026, 1, 1))
+    await session.commit()
+
+    summary = await _summary(session, test_workspace, date(2026, 10, 15))
+    assert summary.expenses == Decimal("2000.00")  # 500 + 500 + 1000
+    assert summary.unconverted_count == 0
+
+
+@pytest.mark.asyncio
 async def test_currency_without_a_rate_stays_out_never_1_to_1(
     session, test_user, test_workspace, test_account,
 ):
