@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
@@ -102,6 +102,17 @@ async def _get_payment(
         # the same payment must take turns, or both insert the same loan part.
         # The save also deletes the payment's principal entries, so take them
         # with the payment in ID order, the order rule application locks in.
+        # A save waiting behind another would miss the principal entries that
+        # one inserts, so saves of one payment queue on an advisory lock first
+        # and find those entries only once the earlier save has committed.
+        if session.bind.dialect.name == "postgresql":
+            await session.execute(
+                select(
+                    func.pg_advisory_xact_lock(
+                        func.hashtext(f"mortgage-breakdown:{workspace_id}:{payment_id}")
+                    )
+                )
+            )
         await session.execute(
             select(Transaction.id)
             .where(

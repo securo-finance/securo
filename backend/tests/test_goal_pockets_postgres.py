@@ -11,8 +11,8 @@ import pytest
 import pytest_asyncio
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from sqlalchemy import inspect, select, text, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import delete, inspect, select, text, update
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.mortgage_payments import _get_payment
@@ -862,6 +862,78 @@ async def test_mortgage_breakdown_takes_principal_entry_before_higher_payment(
 
         assert save.result() is not None
         await saver.rollback()
+
+
+async def test_waiting_mortgage_breakdown_locks_principal_entry_of_earlier_save(
+    session, postgres_sessions, pocket_state
+):
+    """A save queued behind another must lock the principal entry that one inserts."""
+    user, workspace, account, _, _ = pocket_state
+    old_principal_id = uuid.UUID(int=1)
+    new_principal_id = uuid.UUID(int=3)
+    payment_id = uuid.UUID(int=2**128 - 1)
+
+    def entry(transaction_id, description):
+        return Transaction(
+            id=transaction_id,
+            user_id=user.id,
+            workspace_id=workspace.id,
+            account_id=account.id,
+            description=description,
+            amount=Decimal("50"),
+            currency=account.currency,
+            date=date(2026, 1, 1),
+            type="debit",
+            source="manual",
+        )
+
+    def breakdown(principal_id):
+        return MortgagePaymentAllocation(
+            workspace_id=workspace.id,
+            payment_transaction_id=payment_id,
+            loan_account_id=account.id,
+            principal_amount=Decimal("40"),
+            interest_amount=Decimal("10"),
+            loan_transaction_id=principal_id,
+        )
+
+    session.add_all([entry(old_principal_id, "Principal"), entry(payment_id, "Payment")])
+    await session.flush()
+    session.add(breakdown(old_principal_id))
+    await session.commit()
+
+    async with (
+        postgres_sessions() as first,
+        postgres_sessions() as second,
+        postgres_sessions() as probe,
+    ):
+        pid = await second.scalar(text("SELECT pg_backend_pid()"))
+        assert await _get_payment(first, payment_id, workspace.id, lock=True) is not None
+        await first.execute(
+            delete(MortgagePaymentAllocation).where(
+                MortgagePaymentAllocation.payment_transaction_id == payment_id
+            )
+        )
+        await first.execute(delete(Transaction).where(Transaction.id == old_principal_id))
+        first.add(entry(new_principal_id, "New principal"))
+        await first.flush()
+        first.add(breakdown(new_principal_id))
+        await first.flush()
+
+        async with asyncio.TaskGroup() as tasks:
+            save = tasks.create_task(_get_payment(second, payment_id, workspace.id, lock=True))
+            await _wait_for_lock(probe, pid)
+            await first.commit()
+
+        assert save.result() is not None
+        with pytest.raises(DBAPIError):
+            await probe.execute(
+                select(Transaction.id)
+                .where(Transaction.id == new_principal_id)
+                .with_for_update(nowait=True)
+            )
+        await probe.rollback()
+        await second.rollback()
 
 
 async def test_deleting_allocation_actor_preserves_reservations(
