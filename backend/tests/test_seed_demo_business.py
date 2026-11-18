@@ -347,7 +347,14 @@ async def test_second_company_sits_between_the_studio_and_the_personal_wallet(
             state = invoice_service.derive_state(invoice, TODAY)
             states[state] = states.get(state, 0) + 1
         assert states == summary["states"]
-        assert sorted(invoice.number for invoice in invoices) == [1, 2, 3, 4]
+        numbers = [invoice.number for invoice in invoices]
+        assert None not in numbers
+        assert sorted(number for number in numbers if isinstance(number, int)) == [
+            1,
+            2,
+            3,
+            4,
+        ]
 
         # Its own issuer identity, separate from the studio's.
         tax_ids = list(
