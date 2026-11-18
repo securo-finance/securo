@@ -222,14 +222,21 @@ async def test_restamp_never_fetches_and_the_fetch_runs_once(
 
 
 @pytest.mark.asyncio
-async def test_failed_restamp_puts_the_old_display_currency_back(
-    client: AsyncClient, session: AsyncSession, auth_headers, test_user: User, brl_rows
+@pytest.mark.parametrize("failing", ["rate lookup", "restamp"])
+async def test_failed_currency_switch_commits_nothing_and_a_retry_restamps(
+    client: AsyncClient, session: AsyncSession, auth_headers, test_user: User, brl_rows,
+    failing,
 ):
+    # The preference and the restamp commit together: whichever step fails,
+    # neither is kept, and the same request later does the whole switch.
+    target = (
+        "app.services.primary_restamp_service.fetch_missing_today_rates"
+        if failing == "rate lookup"
+        else "app.services.primary_restamp_service.restamp_user_primary_amounts"
+    )
     prefs = {**(test_user.preferences or {}), "currency_display": "USD"}
-    with patch(
-        "app.services.primary_restamp_service.restamp_user_primary_amounts",
-        new=AsyncMock(side_effect=RuntimeError("boom")),
-    ), pytest.raises(RuntimeError):
+    with patch(target, new=AsyncMock(side_effect=RuntimeError("boom"))), \
+            pytest.raises(RuntimeError):
         await client.patch("/api/users/me", headers=auth_headers, json={"preferences": prefs})
 
     await session.refresh(test_user)
@@ -237,9 +244,9 @@ async def test_failed_restamp_puts_the_old_display_currency_back(
     await _reload(session, brl_rows)
     assert brl_rows["usd"].amount_primary == Decimal("50.00")
 
-    # The retry sees a change again and restamps.
     response = await client.patch("/api/users/me", headers=auth_headers, json={"preferences": prefs})
     assert response.status_code == 200
+    assert response.json()["preferences"]["currency_display"] == "USD"
     await _reload(session, brl_rows)
     _assert_in_usd(brl_rows)
 
