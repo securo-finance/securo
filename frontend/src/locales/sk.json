@@ -2160,7 +2160,8 @@
       "invalid_kind": "nerozpoznaná hodnota nákup/predaj",
       "unknown_ticker": "poskytovateľ cien ticker nenašiel",
       "oversell": "predaj väčšieho množstva, než pozícia obsahuje",
-      "no_fx_rate": "chýba výmenný kurz k dátumu pokynu"
+      "no_fx_rate": "chýba výmenný kurz k dátumu pokynu",
+      "possible_duplicate": "môže už byť v tejto pozícii z predchádzajúceho importu"
     }
   },
   "assets": {

@@ -2037,7 +2037,8 @@
       "invalid_kind": "Kauf/Verkauf nicht erkannt",
       "unknown_ticker": "Ticker beim Kursanbieter nicht gefunden",
       "oversell": "Verkauf größer als die Position",
-      "no_fx_rate": "kein Wechselkurs für das Orderdatum"
+      "no_fx_rate": "kein Wechselkurs für das Orderdatum",
+      "possible_duplicate": "ist möglicherweise schon aus einem früheren Import in dieser Position"
     }
   },
   "assets": {

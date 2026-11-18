@@ -459,25 +459,50 @@ async def _holdings_in_other_wallets(
 async def _already_imported(
     session: AsyncSession,
     asset_ids: list[uuid.UUID],
-) -> set[tuple]:
-    """Fingerprints of the ledger rows these holdings already carry.
+) -> dict[tuple, set[Optional[str]]]:
+    """Fingerprints of the ledger rows these holdings already carry, each with
+    the broker ids of the rows behind it (None for a row without one).
 
     Re-uploading the same file is the normal way people fix a mapping mistake,
     so a repeat run should add nothing rather than double the position.
+
+    ``row`` is the stored ledger price, for every row. ``plain`` is the same
+    for rows stored at the file's own price (no conversion recorded: same
+    currency, or imported before #1358). ``source`` is what a converted row's
+    file said.
     """
     if not asset_ids:
-        return set()
+        return {}
     result = await session.execute(
         select(AssetTransaction).where(AssetTransaction.asset_id.in_(asset_ids))
     )
-    seen = set()
+    seen: dict[tuple, set[Optional[str]]] = {}
+
+    def add(key: tuple, external_id: Optional[str]) -> None:
+        seen.setdefault(key, set()).add(external_id)
+
     for tx in result.scalars().all():
-        if tx.external_id:
-            seen.add(('external', tx.asset_id, tx.external_id))
-        seen.add(('row', tx.asset_id, tx.date, tx.kind, tx.quantity, tx.price))
+        ext = tx.external_id or None
+        if ext:
+            add(('external', tx.asset_id, ext), ext)
+        add(('row', tx.asset_id, tx.date, tx.kind, tx.quantity, tx.price), ext)
         if tx.source_currency and tx.source_price is not None:
-            seen.add(('source', tx.asset_id, tx.date, tx.kind, tx.quantity, tx.source_currency, tx.source_price))
+            add(('source', tx.asset_id, tx.date, tx.kind, tx.quantity, tx.source_currency, tx.source_price), ext)
+        else:
+            add(('plain', tx.asset_id, tx.date, tx.kind, tx.quantity, tx.price), ext)
     return seen
+
+
+def _same_order(seen: dict[tuple, set[Optional[str]]], key: tuple, external_id: Optional[str]) -> bool:
+    """Whether a stored row with this fingerprint can be this order.
+
+    A row with another broker id is another order that happens to look the
+    same, so only a row without an id, or with this one, counts.
+    """
+    ids = seen.get(key)
+    if not ids:
+        return False
+    return external_id is None or None in ids or external_id in ids
 
 
 # Minor units a file may state prices in, named as the market feed names them:
@@ -554,7 +579,9 @@ class _OrderRates:
             .where(
                 FxRate.base_currency == 'USD',
                 FxRate.quote_currency.in_(codes),
-                FxRate.date >= on - _FX_LOOKBACK,
+                # Bounded so a row dated near 0001-01-01 gets no_fx_rate
+                # instead of an OverflowError that sinks the whole preview.
+                FxRate.date >= max(on, date_type.min + _FX_LOOKBACK) - _FX_LOOKBACK,
                 FxRate.date <= on,
             )
             .order_by(desc(FxRate.date))
@@ -666,27 +693,38 @@ async def import_orders(
 
         stated = _order_currency(order.currency)
         asset = holdings.get(order.ticker)
-        if asset is not None:
-            # Matched on what the file says, before any conversion: the same
-            # file again is skipped whatever the rates say by now, and so is
-            # an order an earlier import stored unconverted.
-            known = [('row', asset.id, order.date, order.kind, order.quantity, order.price)]
-            if order.external_id:
-                known.append(('external', asset.id, order.external_id))
-            if stated:
-                known.append(('source', asset.id, order.date, order.kind, order.quantity, stated[0], order.price))
-            if any(k in seen for k in known):
-                skipped += 1
-                continue
-
         # A ledger row is in the holding's currency. An order paid in another
         # one is converted at its own date's rate, and refused when there is
         # no rate rather than read 1:1 (#1358).
         target = priced_in.get(order.ticker)
+        converts = bool(stated and target and (stated[1] != target or stated[2] != 1))
+        if asset is not None:
+            # Matched on what the file says, before any conversion: the same
+            # file again is skipped whatever the rates say by now.
+            ext = order.external_id or None
+            fingerprint = (asset.id, order.date, order.kind, order.quantity)
+            if (
+                (ext and ('external', asset.id, ext) in seen)
+                or (stated and _same_order(seen, ('source', *fingerprint, stated[0], order.price), ext))
+                or (not converts and ('row', *fingerprint, order.price) in seen)
+            ):
+                skipped += 1
+                continue
+            if converts and _same_order(seen, ('plain', *fingerprint, order.price), ext):
+                # A row stored at this very number in the holding's currency:
+                # either this order from an import made before conversion
+                # existed, or a different order at that price. Adding it could
+                # count the shares twice, so it is left out and named.
+                errors.append(AssetImportRowError(
+                    row=order.row, reason='possible_duplicate', ticker=order.ticker,
+                    detail=f'{order.price} {target}',
+                ))
+                continue
+
         if stated and target is None and asset is None:
             errors.append(AssetImportRowError(row=order.row, reason='unknown_ticker', ticker=order.ticker))
             continue
-        if stated and target and (stated[1] != target or stated[2] != 1):
+        if converts and stated is not None and target is not None:
             written, source, unit = stated
             rate = Decimal('1') if source == target else await rates.rate(source, target, order.date)
             if rate is None:
@@ -701,7 +739,9 @@ async def import_orders(
                 'fee': (order.fee * rate * unit).quantize(Decimal('0.01')),
                 'currency': target,
             })
-            if asset is not None and ('row', asset.id, order.date, order.kind, order.quantity, order.price) in seen:
+            if asset is not None and _same_order(
+                seen, ('row', asset.id, order.date, order.kind, order.quantity, order.price), order.external_id or None,
+            ):
                 skipped += 1
                 continue
 

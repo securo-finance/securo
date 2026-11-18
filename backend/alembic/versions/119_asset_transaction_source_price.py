@@ -23,7 +23,9 @@ def upgrade() -> None:
     op.add_column("asset_transactions", sa.Column("source_currency", sa.String(3), nullable=True))
     op.add_column(
         "asset_transactions",
-        sa.Column("source_price", sa.Numeric(precision=18, scale=6), nullable=True),
+        # No scale: the file's price is kept exactly as written, so a re-upload
+        # compares equal; only the converted ledger price is rounded.
+        sa.Column("source_price", sa.Numeric(), nullable=True),
     )
 
 

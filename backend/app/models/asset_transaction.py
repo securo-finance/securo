@@ -57,7 +57,9 @@ class AssetTransaction(Base):
     # the file said before conversion, so importing the same file again finds
     # it whatever the exchange table says by then (#1358). NULL otherwise.
     source_currency: Mapped[Optional[str]] = mapped_column(String(3), nullable=True)
-    source_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=18, scale=6), nullable=True)
+    # Unbounded on purpose: this is the file's own price, compared exactly on a
+    # re-upload, so it must not be rounded the way the ledger price is.
+    source_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(), nullable=True)
     # Split only: the `old_units` held before the split became `new_units` after
     # it, so a 100-for-1 split is 1 → 100 and a 1-for-10 reverse split is 10 → 1.
     # NULL on buys and sells. A split itself stores 0 quantity, price and fee.
