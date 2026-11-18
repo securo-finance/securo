@@ -2208,6 +2208,7 @@
     "updated": "Ativo atualizado",
     "deleted": "Ativo excluído",
     "confirmDelete": "Tem certeza que deseja excluir este ativo e todo o histórico de valores?",
+    "confirmDeleteSynced": "Se a importação de ativos estiver ligada nesta conexão, a próxima sincronização traz este ativo de volta. Desligue a importação de ativos nas configurações da conexão para que ele continue excluído.",
     "confirmDeleteTitle": "Excluir ativo?",
     "addValue": "Adicionar Valor",
     "valueHistory": "Histórico de Valores",

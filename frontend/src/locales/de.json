@@ -2205,6 +2205,7 @@
     "updated": "Vermögenswert aktualisiert",
     "deleted": "Vermögenswert gelöscht",
     "confirmDelete": "Möchtest du diesen Vermögenswert und seinen gesamten Wertverlauf wirklich löschen?",
+    "confirmDeleteSynced": "Wenn für diese Verbindung der Import von Vermögenswerten aktiv ist, holt die nächste Synchronisierung diesen Vermögenswert zurück. Schalte den Import in den Verbindungseinstellungen aus, damit er gelöscht bleibt.",
     "confirmDeleteTitle": "Vermögenswert löschen?",
     "addValue": "Wert hinzufügen",
     "valueHistory": "Wertverlauf",

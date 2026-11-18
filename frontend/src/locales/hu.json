@@ -2206,6 +2206,7 @@
     "updated": "Eszköz frissítve",
     "deleted": "Eszköz törölve",
     "confirmDelete": "Biztosan törlöd ezt az eszközt és a teljes értéktörténetét?",
+    "confirmDeleteSynced": "Ha ennél a kapcsolatnál be van kapcsolva az eszközök importálása, a következő szinkronizálás visszahozza ezt az eszközt. Kapcsold ki az eszközimportot a kapcsolat beállításaiban, hogy törölve maradjon.",
     "confirmDeleteTitle": "Törlöd az eszközt?",
     "addValue": "Érték hozzáadása",
     "valueHistory": "Értéktörténet",

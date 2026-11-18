@@ -2346,6 +2346,7 @@
     "updated": "Aktivum aktualizováno",
     "deleted": "Aktivum smazáno",
     "confirmDelete": "Opravdu chcete smazat toto aktivum a celou jeho historii hodnot?",
+    "confirmDeleteSynced": "Pokud má toto připojení zapnutý import aktiv, další synchronizace toto aktivum vrátí zpět. Vypnutím importu aktiv v nastavení připojení zůstane smazané.",
     "confirmDeleteTitle": "Smazat aktivum?",
     "addValue": "Přidat hodnotu",
     "valueHistory": "Historie hodnot",

@@ -2328,6 +2328,7 @@
     "updated": "Aktívum aktualizované",
     "deleted": "Aktívum vymazané",
     "confirmDelete": "Naozaj chceš vymazať toto aktívum a celú jeho históriu hodnôt?",
+    "confirmDeleteSynced": "Ak má toto pripojenie zapnutý import aktív, ďalšia synchronizácia toto aktívum vráti späť. Vypni import aktív v nastaveniach pripojenia, aby zostalo vymazané.",
     "confirmDeleteTitle": "Vymazať aktívum?",
     "addValue": "Pridať hodnotu",
     "valueHistory": "História hodnôt",

@@ -2204,6 +2204,7 @@
     "updated": "Asset updated",
     "deleted": "Asset deleted",
     "confirmDelete": "Are you sure you want to delete this asset and all its value history?",
+    "confirmDeleteSynced": "If asset import is on for this connection, the next sync brings this asset back. Turn asset import off in the connection settings to keep it deleted.",
     "confirmDeleteTitle": "Delete asset?",
     "addValue": "Add Value",
     "valueHistory": "Value History",
