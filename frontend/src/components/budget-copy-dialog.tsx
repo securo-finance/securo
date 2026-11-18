@@ -37,6 +37,19 @@ function capitalize(label: string) {
 }
 
 /**
+ * `amount` in cents with the percentage adjustment applied, rounded the way
+ * the copy endpoint rounds it before saving (Decimal ROUND_HALF_UP: on a tie,
+ * away from zero). Summing these cent amounts keeps the preview equal to the
+ * total the copy writes.
+ */
+function adjustedCents(amount: number | string, adjustmentPercent: number): number {
+  const cents = Number(amount) * 100 * (1 + adjustmentPercent / 100)
+  // Drop the float noise a fractional percentage leaves before rounding.
+  const rounded = Number(cents.toFixed(6))
+  return rounded < 0 ? -Math.round(-rounded) : Math.round(rounded)
+}
+
+/**
  * Copies the budgets of an earlier month into the selected one.
  *
  * The source is read with the same endpoint the page uses, so the preview
@@ -63,7 +76,12 @@ export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudget
   const [monthPickerOpen, setMonthPickerOpen] = useState(false)
 
   const sourceParam = `${sourceMonth}-01`
-  const { data: sourceBudgets, isPending: sourcePending, isError: sourceError } = useQuery({
+  const {
+    data: sourceBudgets,
+    isPending: sourcePending,
+    isFetching: sourceFetching,
+    isError: sourceError,
+  } = useQuery({
     queryKey: ['budgets', sourceParam],
     queryFn: () => budgetsApi.list(sourceParam),
     enabled: open,
@@ -71,17 +89,23 @@ export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudget
 
   const parsedAdjustment = adjustment.trim() === '' ? 0 : parseAmountInput(adjustment, locale)
   const adjustmentValid = parsedAdjustment !== null && parsedAdjustment >= MIN_ADJUSTMENT && parsedAdjustment <= MAX_ADJUSTMENT
-
-  const targetCategoryIds = useMemo(
-    () => new Set(targetBudgets.map((budget) => budget.category_id)),
-    [targetBudgets],
-  )
-  const rowsToCopy = useMemo(
-    () => (sourceBudgets ?? []).filter((budget) => overwriteExisting || !targetCategoryIds.has(budget.category_id)),
-    [sourceBudgets, overwriteExisting, targetCategoryIds],
-  )
   const adjustmentPercent = adjustmentValid ? (parsedAdjustment ?? 0) : 0
-  const copiedTotal = rowsToCopy.reduce((sum, budget) => sum + Number(budget.amount) * (1 + adjustmentPercent / 100), 0)
+
+  // Same rule as the service: skip a category the target month already
+  // resolves to, and in replace mode also one already at the copied amount.
+  // The preview therefore counts what the copy writes, not every source row.
+  const rowsToCopy = useMemo(() => {
+    const targetCents = new Map(
+      targetBudgets.map((budget) => [budget.category_id, adjustedCents(budget.amount, 0)]),
+    )
+    return (sourceBudgets ?? []).flatMap((budget) => {
+      const copiedCents = adjustedCents(budget.amount, adjustmentPercent)
+      const existingCents = targetCents.get(budget.category_id)
+      if (existingCents !== undefined && (!overwriteExisting || existingCents === copiedCents)) return []
+      return [copiedCents]
+    })
+  }, [sourceBudgets, targetBudgets, overwriteExisting, adjustmentPercent])
+  const copiedTotal = rowsToCopy.reduce((sum, cents) => sum + cents, 0) / 100
 
   const copyMutation = useMutation({
     mutationFn: () => budgetsApi.copyMonth({
@@ -91,15 +115,19 @@ export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudget
       overwrite_existing: overwriteExisting,
     }),
     onSuccess: (copied) => {
-      queryClient.invalidateQueries({ queryKey: ['budgets'] })
       toast.success(copied.length > 0 ? t('budgets.copySuccess', { count: copied.length }) : t('budgets.copyNothing'))
       onOpenChange(false)
     },
     onError: (error: unknown) => toast.error(extractApiError(error, t('budgets.copyError'))),
+    // The service may commit before failing while building the response, so
+    // refresh the page's data even when the copy reports an error.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['budgets'] }),
   })
 
   const sameMonth = sourceMonth === targetMonth
-  const canSubmit = !sameMonth && !sourcePending && !sourceError && rowsToCopy.length > 0 && adjustmentValid && !copyMutation.isPending
+  // A background refetch keeps the cached rows on screen; wait for it, since
+  // the copy itself reads the source month on the server.
+  const canSubmit = !sameMonth && !sourceFetching && !sourceError && rowsToCopy.length > 0 && adjustmentValid && !copyMutation.isPending
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!copyMutation.isPending) onOpenChange(next) }}>

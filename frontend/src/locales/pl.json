@@ -1558,7 +1558,7 @@
     "copyAdjustment": "Korekta (%)",
     "copyAdjustmentHint": "Opcjonalnie, od -100 do 1000. 5 dodaje 5%, -10 odejmuje 10%.",
     "copyPreviewCount": "Kategorie do skopiowania: {{count}}",
-    "copyPreviewTotal": "Nowa suma miesięczna: {{amount}}",
+    "copyPreviewTotal": "Suma do skopiowania: {{amount}}",
     "copyPreviewEmpty": "Wybrany miesiąc nie ma budżetów do skopiowania.",
     "copyPreviewError": "Nie udało się wczytać miesiąca źródłowego.",
     "copyConfirm": "Kopiuj budżety",

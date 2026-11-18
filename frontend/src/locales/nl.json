@@ -1507,7 +1507,7 @@
     "copyAdjustment": "Aanpassing (%)",
     "copyAdjustmentHint": "Optioneel, tussen -100 en 1000. 5 voegt 5% toe, -10 haalt 10% af.",
     "copyPreviewCount": "Te kopiëren categorieën: {{count}}",
-    "copyPreviewTotal": "Nieuw maandtotaal: {{amount}}",
+    "copyPreviewTotal": "Te kopiëren totaal: {{amount}}",
     "copyPreviewEmpty": "De gekozen maand heeft geen budgetten om te kopiëren.",
     "copyPreviewError": "De bronmaand kon niet worden geladen.",
     "copyConfirm": "Budgetten kopiëren",

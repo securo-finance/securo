@@ -1517,7 +1517,7 @@
     "copyAdjustment": "התאמה (%)",
     "copyAdjustmentHint": "אופציונלי, בין 100- ל-1000. 5 מוסיף 5%, 10- מוריד 10%.",
     "copyPreviewCount": "קטגוריות להעתקה: {{count}}",
-    "copyPreviewTotal": "סכום חודשי חדש: {{amount}}",
+    "copyPreviewTotal": "סכום להעתקה: {{amount}}",
     "copyPreviewEmpty": "לחודש הנבחר אין תקציבים להעתקה.",
     "copyPreviewError": "לא ניתן היה לטעון את חודש המקור.",
     "copyConfirm": "העתקת תקציבים",

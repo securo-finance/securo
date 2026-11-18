@@ -61,9 +61,11 @@ describe('Budget copy dialog', () => {
 
     await screen.findByText(t('budgets.copyPreviewCount', { count: 1 }))
     await user.click(screen.getByRole('radio', { name: t('budgets.copyOverwrite') }))
-    expect(screen.getByText(t('budgets.copyPreviewCount', { count: 2 }))).toBeInTheDocument()
+    // Rent already is $900 in October, so replacing it would write nothing.
+    expect(screen.getByText(t('budgets.copyPreviewCount', { count: 1 }))).toBeInTheDocument()
 
     await user.type(screen.getByLabelText(t('budgets.copyAdjustment')), '10')
+    expect(screen.getByText(t('budgets.copyPreviewCount', { count: 2 }))).toBeInTheDocument()
     expect(screen.getByText(t('budgets.copyPreviewTotal', { amount: '$1,320.00' }))).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: t('budgets.copyConfirm') }))
@@ -76,6 +78,37 @@ describe('Budget copy dialog', () => {
         overwrite_existing: true,
       })
     })
+  })
+
+  it('leaves out a category the target month already resolves to at the copied amount', async () => {
+    const { user } = renderWithProviders(
+      <BudgetCopyDialog open onOpenChange={vi.fn()} targetMonth="2026-10" targetBudgets={[budget('b-rent-oct', 'rent', 990, '2026-10-01')]} />,
+    )
+
+    await screen.findByText(t('budgets.copyPreviewCount', { count: 1 }))
+    await user.click(screen.getByRole('radio', { name: t('budgets.copyOverwrite') }))
+    await user.type(screen.getByLabelText(t('budgets.copyAdjustment')), '10')
+
+    // Rent already is $990 in October, so replacing it would write nothing.
+    expect(screen.getByText(t('budgets.copyPreviewCount', { count: 1 }))).toBeInTheDocument()
+    expect(screen.getByText(t('budgets.copyPreviewTotal', { amount: '$330.00' }))).toBeInTheDocument()
+  })
+
+  it('rounds each adjusted amount to cents before summing them', async () => {
+    api.budgets.list.mockResolvedValue([
+      budget('b-1', 'rent', 100.05),
+      budget('b-2', 'food', 100.05),
+    ])
+    const { user } = renderWithProviders(
+      <BudgetCopyDialog open onOpenChange={vi.fn()} targetMonth="2026-10" targetBudgets={[]} />,
+    )
+
+    await screen.findByText(t('budgets.copyPreviewCount', { count: 2 }))
+    await user.type(screen.getByLabelText(t('budgets.copyAdjustment')), '10')
+
+    // The API saves $110.06 for each category, so the preview adds cents, not
+    // the unrounded $220.11 the raw product would give.
+    expect(screen.getByText(t('budgets.copyPreviewTotal', { amount: '$220.12' }))).toBeInTheDocument()
   })
 
   it('copies nothing, and cannot be confirmed, when the source month has no budgets', async () => {

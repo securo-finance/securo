@@ -1522,7 +1522,7 @@
     "copyAdjustment": "Коригування (%)",
     "copyAdjustmentHint": "Необов’язково, від -100 до 1000. 5 додає 5 %, -10 знімає 10 %.",
     "copyPreviewCount": "Категорій для копіювання: {{count}}",
-    "copyPreviewTotal": "Нова сума за місяць: {{amount}}",
+    "copyPreviewTotal": "Разом до копіювання: {{amount}}",
     "copyPreviewEmpty": "У вибраному місяці немає бюджетів для копіювання.",
     "copyPreviewError": "Не вдалося завантажити вихідний місяць.",
     "copyConfirm": "Копіювати бюджети",

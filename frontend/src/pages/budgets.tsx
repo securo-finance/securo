@@ -267,7 +267,15 @@ export default function BudgetsPage() {
         action={
           <div className="flex flex-wrap items-center gap-2">
             {canWrite && (
-              <Button variant="outline" size="sm" className="gap-1.5 h-8" onClick={() => setCopyOpen(true)}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 h-8"
+                // Without the month's budgets the dialog cannot tell which
+                // categories are missing, so it would overstate the copy.
+                disabled={budgetsLoading || budgetsError || !budgetsList}
+                onClick={() => setCopyOpen(true)}
+              >
                 <CopyIcon size={13} /> {t('budgets.copyAction')}
               </Button>
             )}

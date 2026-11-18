@@ -1509,7 +1509,7 @@
     "copyAdjustment": "Ajustement (%)",
     "copyAdjustmentHint": "Facultatif, entre -100 et 1000. 5 ajoute 5 %, -10 retire 10 %.",
     "copyPreviewCount": "Catégories à copier : {{count}}",
-    "copyPreviewTotal": "Nouveau total mensuel : {{amount}}",
+    "copyPreviewTotal": "Total à copier : {{amount}}",
     "copyPreviewEmpty": "Le mois sélectionné n'a aucun budget à copier.",
     "copyPreviewError": "Impossible de charger le mois source.",
     "copyConfirm": "Copier les budgets",

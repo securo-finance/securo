@@ -541,9 +541,32 @@ describe('Copying the previous month', () => {
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
   })
 
-  it('hides the copy action from a viewer', async () => {
-    api.canWrite = false
+  it('keeps the header copy action disabled until the month has loaded', async () => {
+    let resolveTable: (budgets: Budget[]) => void = () => {}
+    api.budgets.list.mockImplementation((month?: string) => (
+      month === '2026-10-01'
+        ? new Promise<Budget[]>((resolve) => { resolveTable = resolve })
+        : Promise.resolve([rent])
+    ))
     renderWithProviders(<BudgetsPage />)
+
+    const button = await screen.findByRole('button', { name: t('budgets.copyAction') })
+    expect(button).toBeDisabled()
+
+    await act(async () => { resolveTable([rent]) })
+    await waitFor(() => expect(button).toBeEnabled())
+  })
+
+  it('hides the copy action from a viewer, with and without budgets in the month', async () => {
+    api.canWrite = false
+    const { unmount } = renderWithProviders(<BudgetsPage />)
+    await screen.findByRole('textbox', { name: t('budgets.budgetFor', { category: 'Rent' }) })
+    expect(screen.queryByRole('button', { name: t('budgets.copyAction') })).not.toBeInTheDocument()
+    unmount()
+
+    api.budgets.list.mockImplementation(async (month?: string) => (month === '2026-10-01' ? [] : [rent]))
+    renderWithProviders(<BudgetsPage />)
+    await waitFor(() => expect(api.budgets.list).toHaveBeenCalledWith('2026-10-01'))
     await screen.findByRole('textbox', { name: t('budgets.budgetFor', { category: 'Rent' }) })
 
     expect(screen.queryByRole('button', { name: t('budgets.copyAction') })).not.toBeInTheDocument()

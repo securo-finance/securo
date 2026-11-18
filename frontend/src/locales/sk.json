@@ -1573,7 +1573,7 @@
     "copyAdjustment": "Úprava (%)",
     "copyAdjustmentHint": "Voliteľné, medzi -100 a 1000. 5 pridá 5 %, -10 uberie 10 %.",
     "copyPreviewCount": "Kategórie na skopírovanie: {{count}}",
-    "copyPreviewTotal": "Nový mesačný súčet: {{amount}}",
+    "copyPreviewTotal": "Celkom na kopírovanie: {{amount}}",
     "copyPreviewEmpty": "Vybraný mesiac nemá žiadne rozpočty na skopírovanie.",
     "copyPreviewError": "Zdrojový mesiac sa nepodarilo načítať.",
     "copyConfirm": "Kopírovať rozpočty",

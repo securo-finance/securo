@@ -1505,7 +1505,7 @@
     "copyAdjustment": "समायोजन (%)",
     "copyAdjustmentHint": "वैकल्पिक, -100 से 1000 के बीच। 5 से 5% जुड़ता है, -10 से 10% घटता है।",
     "copyPreviewCount": "कॉपी करने के लिए कैटेगरी: {{count}}",
-    "copyPreviewTotal": "नया मासिक कुल: {{amount}}",
+    "copyPreviewTotal": "कॉपी करने योग्य कुल: {{amount}}",
     "copyPreviewEmpty": "चुने गए महीने में कॉपी करने के लिए कोई बजट नहीं है।",
     "copyPreviewError": "स्रोत महीना लोड नहीं हो सका।",
     "copyConfirm": "बजट कॉपी करें",

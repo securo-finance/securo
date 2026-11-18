@@ -1505,7 +1505,7 @@
     "copyAdjustment": "Adjustment (%)",
     "copyAdjustmentHint": "Optional, between -100 and 1000. 5 adds 5%, -10 takes 10% off.",
     "copyPreviewCount": "Categories to copy: {{count}}",
-    "copyPreviewTotal": "New monthly total: {{amount}}",
+    "copyPreviewTotal": "Total to copy: {{amount}}",
     "copyPreviewEmpty": "The selected month has no budgets to copy.",
     "copyPreviewError": "Could not load the source month.",
     "copyConfirm": "Copy budgets",

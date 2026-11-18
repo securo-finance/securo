@@ -1509,7 +1509,7 @@
     "copyAdjustment": "Ajuste (%)",
     "copyAdjustmentHint": "Opcional, entre -100 e 1000. 5 acrescenta 5%, -10 reduz 10%.",
     "copyPreviewCount": "Categorias a copiar: {{count}}",
-    "copyPreviewTotal": "Novo total mensal: {{amount}}",
+    "copyPreviewTotal": "Total a copiar: {{amount}}",
     "copyPreviewEmpty": "O mês selecionado não tem orçamentos para copiar.",
     "copyPreviewError": "Não foi possível carregar o mês de origem.",
     "copyConfirm": "Copiar orçamentos",
