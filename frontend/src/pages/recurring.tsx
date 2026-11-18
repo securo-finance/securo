@@ -620,14 +620,17 @@ export function RecurringForm({
     () => recurring?.category_lines?.[0]?.share_type ?? initial?.category_lines?.[0]?.share_type ?? 'exact',
   )
   const hadInitialLines = !!recurring && isSplitByCategory(recurring)
-  const linesValid = !lineRows || checkLines(lineRows, lineShareType, parsedAmount ?? 0, displayLocale).valid
+  // Everything that reads or writes the draft amounts uses `amountLocale`, the
+  // one the text was written with: checking the split under a locale that
+  // resolves mid-form would read "200.5" as 2005 and leave Save disabled.
+  const linesValid = !lineRows || checkLines(lineRows, lineShareType, parsedAmount ?? 0, amountLocale).valid
   const undoSplit = () => {
     const kept = largestLineCategoryId(
       (lineRows ?? []).map((row, position) => ({
         id: row.key, category_id: row.categoryId, position, share_type: lineShareType,
         share_pct: null, notes: null,
         amount: lineShareType === 'exact'
-          ? rowCents(row.amount, displayLocale) ?? 0
+          ? rowCents(row.amount, amountLocale) ?? 0
           : rowBasisPoints(row.percent) ?? 0,
       })),
     )
@@ -657,7 +660,7 @@ export function RecurringForm({
           is_active: isActive,
           auto_generate: autoGenerate,
           ...(lineRows
-            ? { category_lines: buildLinesPayload(lineRows, lineShareType, displayLocale) }
+            ? { category_lines: buildLinesPayload(lineRows, lineShareType, amountLocale) }
             : hadInitialLines
               ? { category_lines: { share_type: 'exact', lines: [] } }
               : {}),
@@ -684,7 +687,7 @@ export function RecurringForm({
           />
           {amountInvalid && (
             <p id="recurring-amount-error" role="alert" className="text-xs text-destructive">
-              {t('common.invalidAmount', { example: formatAmountInput(1234.56, displayLocale) })}
+              {t('common.invalidAmount', { example: formatAmountInput(1234.56, amountLocale) })}
             </p>
           )}
         </div>

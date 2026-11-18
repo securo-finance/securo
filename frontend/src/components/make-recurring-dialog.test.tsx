@@ -1,8 +1,8 @@
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { MakeRecurringDialog } from '@/components/make-recurring-dialog'
-import { currencies, recurring as recurringApi } from '@/lib/api'
+import { admin, currencies, recurring as recurringApi } from '@/lib/api'
 import { renderWithProviders, t } from '@/test/utils'
 import type { Category, Transaction } from '@/types'
 
@@ -12,6 +12,7 @@ vi.mock('@/contexts/auth-context', () => ({
 
 vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/api')>()),
+  admin: { numberFormat: vi.fn() },
   currencies: { list: vi.fn() },
   recurring: { create: vi.fn() },
 }))
@@ -90,6 +91,10 @@ function renderDialog(
 }
 
 beforeEach(() => {
+  vi.mocked(admin.numberFormat).mockReset()
+  // Dot decimal, as the USD preference alone already implies: the format the
+  // dialog mounts with before the admin setting lands.
+  vi.mocked(admin.numberFormat).mockResolvedValue({ format: 'comma_dot' })
   vi.mocked(currencies.list).mockResolvedValue([])
   vi.mocked(recurringApi.create).mockReset()
   vi.mocked(recurringApi.create).mockResolvedValue({} as never)
@@ -183,6 +188,60 @@ describe('MakeRecurringDialog', () => {
           lines: [
             { category_id: category.id, amount: 200 },
             { category_id: books.id, amount: 150 },
+          ],
+        },
+      }),
+    )
+  })
+
+  it('keeps a split saveable when the workspace format lands after the form opened', async () => {
+    // A workspace on the European format: the dialog opens with the dot-decimal
+    // preference format already written into the split rows, and the admin
+    // setting arrives while it is open. Reading those rows under the new
+    // separators turns "200.5" into 2005, the parts stop adding up to the
+    // total, and Save stays disabled with nothing for the user to fix.
+    let resolveFormat: (value: { format: 'dot_comma' }) => void = () => {}
+    vi.mocked(admin.numberFormat).mockReturnValue(
+      new Promise((resolve) => { resolveFormat = resolve }),
+    )
+
+    const { user, queryClient } = renderDialog(
+      schoolFee({
+        id: 'tx-4',
+        category_id: null,
+        has_category_lines: true,
+        category_lines: [
+          {
+            id: 'line-1', category_id: category.id, amount: 200.5,
+            share_type: 'exact', share_pct: null, position: 0, notes: null,
+          },
+          {
+            id: 'line-2', category_id: books.id, amount: 149.5,
+            share_type: 'exact', share_pct: null, position: 1, notes: null,
+          },
+        ],
+      }),
+      vi.fn(),
+      [category, books],
+    )
+
+    resolveFormat({ format: 'dot_comma' })
+    await waitFor(() => {
+      expect(queryClient.getQueryState(['admin', 'number-format'])?.status).toBe('success')
+    })
+
+    const save = screen.getByRole('button', { name: t('common.save') })
+    await waitFor(() => expect(save).toBeEnabled())
+    await user.click(save)
+
+    expect(vi.mocked(recurringApi.create).mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        amount: 350,
+        category_lines: {
+          share_type: 'exact',
+          lines: [
+            { category_id: category.id, amount: 200.5 },
+            { category_id: books.id, amount: 149.5 },
           ],
         },
       }),
