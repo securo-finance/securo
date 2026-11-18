@@ -1939,7 +1939,9 @@ async def _eb_fetch(booked: list[dict], pending: list[dict]) -> list[Transaction
 async def _settle_held_pending(
     session, conn, account, user_id, workspace_id, path: str,
     notes_saved_meanwhile: str | None = None,
-    category_saved_meanwhile: uuid.UUID | None = None, **held_fields,
+    category_saved_meanwhile: uuid.UUID | None = None,
+    split_saved_meanwhile: bool = False,
+    **held_fields,
 ) -> uuid.UUID:
     """Hold a pending row, then sync the posted entry that settles it.
 
@@ -1947,9 +1949,9 @@ async def _settle_held_pending(
     merchant text. `rekeyed`: it books under a new id, next to its pending
     spelling, and the sync re-keys the row it holds.
 
-    `notes_saved_meanwhile` and `category_saved_meanwhile` are written to
-    the database behind the session's back after the row is loaded, as a user
-    saving a note or a category while a sync runs.
+    `notes_saved_meanwhile`, `category_saved_meanwhile` and
+    `split_saved_meanwhile` are written to the database behind the session's
+    back after the row is loaded, as a user saving an edit while a sync runs.
     """
     if path == "same-id":
         pending = _eb_txn(_eb_payload("auth-5", "4.50", remittance="Transaction"), "pending")
@@ -1970,14 +1972,13 @@ async def _settle_held_pending(
     session.add(held)
     await session.commit()
     held_id = held.id
-    saved_meanwhile = {
-        field: value
-        for field, value in (
-            ("notes", notes_saved_meanwhile),
-            ("category_id", category_saved_meanwhile),
-        )
-        if value is not None
-    }
+    saved_meanwhile = {}
+    if notes_saved_meanwhile is not None:
+        saved_meanwhile["notes"] = notes_saved_meanwhile
+    if category_saved_meanwhile is not None:
+        saved_meanwhile["category_id"] = category_saved_meanwhile
+    if split_saved_meanwhile:
+        saved_meanwhile["has_category_lines"] = True
     if saved_meanwhile:
         await session.refresh(held)
         await session.execute(
@@ -2170,6 +2171,35 @@ async def test_sync_connection_rules_on_a_posted_row_keep_a_category_saved_meanw
 
     rows = await _account_rows(session, account_id)
     assert [(row.status, row.category_id) for row in rows] == [("posted", mine.id)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["same-id", "rekeyed"])
+async def test_sync_connection_rules_keep_a_split_saved_meanwhile(
+    session: AsyncSession, test_user, test_workspace, path,
+):
+    """A row the user split after the sync loaded it keeps its category empty:
+    the rules read the split under the row lock, not the uncategorized row."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    rule_category = Category(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Rule", icon="tag", color="#000000", is_system=False,
+    )
+    session.add(rule_category)
+    session.add(_supermarket_rule(test_user.id, test_workspace.id, [
+        {"op": "set_category", "value": str(rule_category.id)},
+    ]))
+
+    await _settle_held_pending(
+        session, conn, account, test_user.id, test_workspace.id, path,
+        split_saved_meanwhile=True,
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert [(row.status, row.has_category_lines, row.category_id) for row in rows] == [
+        ("posted", True, None),
+    ]
 
 
 @pytest.mark.asyncio

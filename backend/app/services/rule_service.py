@@ -735,12 +735,18 @@ async def apply_rules_to_settled_transaction(
     if transaction.is_ignored:
         return
     # Write the sync's own changes first, since a refresh would drop them,
-    # then read what the rules check under a row lock: a category, payee or
-    # note the user saved since the sync loaded the row is the one kept.
+    # then read what the rules check under a row lock: a category, split,
+    # payee or note the user saved since the sync loaded the row is kept.
     await session.flush()
     await session.refresh(
         transaction,
-        ["notes", "category_id", "payee_id", "is_ignored"],
+        [
+            "notes",
+            "category_id",
+            "has_category_lines",
+            "payee_id",
+            "is_ignored",
+        ],
         with_for_update=True,
     )
     if transaction.is_ignored:
