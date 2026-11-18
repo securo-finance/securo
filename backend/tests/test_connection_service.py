@@ -1940,10 +1940,11 @@ def _eb_late_ref_payload(
     *,
     remittance: str = "COMPRA TARJ. 5540XXXXXXXX1234 TIENDA CENTRO",
     currency: str = "EUR",
+    transaction_date: str | None = None,
 ) -> dict:
     """A booked card purchase, as returned before and after the bank fills in
     its reference."""
-    return {
+    raw = {
         "entry_reference": entry_ref,
         "transaction_amount": {"currency": currency, "amount": "149.90"},
         "credit_debit_indicator": "DBIT",
@@ -1952,6 +1953,9 @@ def _eb_late_ref_payload(
         "value_date": "2026-09-03",
         "remittance_information": [remittance],
     }
+    if transaction_date is not None:
+        raw["transaction_date"] = transaction_date
+    return raw
 
 
 def _eb_late_ref_row(
@@ -1991,6 +1995,37 @@ async def test_sync_connection_enable_banking_rekeys_row_whose_reference_arrived
     raw_data = rows[0].raw_data
     assert raw_data is not None
     assert raw_data["entry_reference"] == "2026-09-03.1"
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_adopts_a_row_stored_with_the_booking_date(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """#790: a row stored before the date order changed carries the booking
+    date, while its payload names an earlier transaction date. The reference
+    arrives on a later fetch, and the held row takes the new id instead of
+    gaining a twin, because the payload still gives that entry's date."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    stored_raw = _eb_late_ref_payload(None, transaction_date="2026-09-01")
+    first = _eb_txn(stored_raw)
+    held = _eb_late_ref_row(test_user.id, test_workspace.id, account, first)
+    # The row was dated the way the provider read the payload before #790.
+    held.date = date(2026, 9, 3)
+    session.add(held)
+    await session.commit()
+    held_id = held.id
+
+    refetched = _eb_txn(
+        _eb_late_ref_payload("2026-09-02.1", transaction_date="2026-09-01")
+    )
+    assert refetched.date == date(2026, 9, 1)
+    assert refetched.external_id != first.external_id
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [refetched])
+
+    rows = await _account_rows(session, account_id)
+    assert [row.id for row in rows] == [held_id]
+    assert rows[0].external_id == refetched.external_id
 
 
 @pytest.mark.asyncio

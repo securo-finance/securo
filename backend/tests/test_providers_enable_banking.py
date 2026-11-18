@@ -1010,6 +1010,89 @@ def test_build_transaction_falls_back_to_transaction_date():
     assert tx.description == "Coffee Shop"
 
 
+def test_build_transaction_prefers_transaction_date_over_booking_date():
+    """#790: a card purchase belongs to the day it happened, not the day it booked.
+
+    The fixture mirrors the reported card entry: the purchase on 4 June was
+    booked on 2 September, so booking first moved three months of spending
+    onto a single statement date.
+    """
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "46.88", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-09-02",
+        "value_date": "2026-09-01",
+        "transaction_date": "2026-06-04",
+        "remittance_information": ["CARD PURCHASE"],
+        "creditor": {"name": "Shop"},
+    }
+    tx = provider._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.date == date(2026, 6, 4)
+    # The booking date stays in the stored payload, it is only not the date.
+    assert tx.raw_data is not None
+    assert tx.raw_data["booking_date"] == "2026-09-02"
+
+
+def test_build_transaction_falls_back_to_booking_date_without_transaction_date():
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "20.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-09-02",
+        "value_date": "2026-09-01",
+    }
+    tx = provider._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.date == date(2026, 9, 2)
+
+
+def test_build_transaction_falls_back_to_value_date_without_the_other_two():
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "20.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": None,
+        "value_date": "2026-09-01",
+        "transaction_date": None,
+    }
+    tx = provider._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.date == date(2026, 9, 1)
+
+
+def test_date_choice_keeps_the_external_id_of_both_id_recipes():
+    """The id hashes the three dates, so choosing another one moves no row.
+
+    A row stored before this change was keyed from the same payload, so the
+    next sync still finds it by id instead of importing a second copy.
+    """
+    provider = EnableBankingProvider()
+    fallback_raw = {
+        "transaction_amount": {"amount": "12.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-09-02",
+        "value_date": "2026-09-01",
+        "transaction_date": "2026-06-04",
+        "remittance_information": ["CARD PURCHASE"],
+        "creditor_account": {"iban": "PT50000201231234567890154"},
+    }
+    tx = provider._build_transaction("acc-1", fallback_raw, "posted", "auto")
+    assert tx is not None
+    assert tx.external_id == _txn_fingerprint("acc-1", fallback_raw)
+
+    reference_raw = {
+        **fallback_raw,
+        "entry_reference": "auth-1",
+    }
+    referenced = provider._build_transaction("acc-1", reference_raw, "posted", "auto")
+    assert referenced is not None
+    assert referenced.external_id == _entry_reference_external_id(
+        "auth-1", reference_raw["transaction_amount"], reference_raw
+    )
+
+
 def test_build_transaction_ignores_non_string_transaction_date():
     provider = EnableBankingProvider()
     raw = {

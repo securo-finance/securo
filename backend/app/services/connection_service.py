@@ -2240,9 +2240,9 @@ def _eb_exact_twin_in_batch(
 
 def _eb_entry_date(raw: dict) -> Optional[date]:
     """The date an Enable Banking payload gives its entry, read the way the
-    provider reads it: the booking date, else the value date, else the
-    transaction date."""
-    for key in ("booking_date", "value_date", "transaction_date"):
+    provider reads it: the transaction date, else the booking date, else the
+    value date."""
+    for key in ("transaction_date", "booking_date", "value_date"):
         value = raw.get(key)
         if isinstance(value, str):
             try:
@@ -2513,7 +2513,14 @@ async def _find_synced_duplicate(
                 candidate_ref in (None, "", "0")
                 and candidate.source == "sync"
                 and candidate.currency == txn_data.currency
-                and candidate.date == txn_data.date
+                # A row stored before the provider preferred the transaction
+                # date keeps the booking date it was given. Its payload still
+                # names the entry's date, so it is adopted rather than
+                # imported a second time.
+                and (
+                    candidate.date == txn_data.date
+                    or stored_date == txn_data.date
+                )
                 and candidate.status == txn_data.status
                 and (
                     token_overlap(
