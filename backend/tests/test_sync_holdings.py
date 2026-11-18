@@ -879,3 +879,37 @@ async def test_manual_valuation_on_a_synced_asset_hides_the_provider_date(
     assert read is not None
     assert read.current_value == 1200.0
     assert read.provider_value_date is None
+
+
+@pytest.mark.asyncio
+async def test_market_priced_holding_keeps_the_provider_date_until_it_has_a_quote(
+    session: AsyncSession, test_user: User, mock_connection: BankConnection
+):
+    """A market-priced holding shows units times its quote once there is one;
+    before that the sync's amount is what the row displays, so the date that
+    describes it stays.
+    """
+    assert mock_connection.credentials is not None
+    frozen = date(2026, 3, 17)
+    _MockProvider._holdings = [_holding(value_date=frozen)]
+    await _sync_holdings(
+        session, test_user.id, mock_connection, mock_connection.credentials
+    )
+    asset = (await _assets_for(session, test_user))[0]
+    asset.valuation_method = "market_price"
+    asset.units = Decimal("100")
+    await session.commit()
+
+    # No cached quote yet: the displayed value is still the provider's amount.
+    read = await get_asset(session, asset.id, asset.workspace_id)
+    assert read is not None
+    assert read.current_value == 1000.0
+    assert read.provider_value_date == frozen
+
+    # With a quote, the row shows units times that quote instead.
+    asset.last_price = Decimal("12")
+    await session.commit()
+    read = await get_asset(session, asset.id, asset.workspace_id)
+    assert read is not None
+    assert read.current_value == 1200.0
+    assert read.provider_value_date is None

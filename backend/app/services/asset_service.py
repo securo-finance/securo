@@ -131,11 +131,17 @@ def _provider_value_date(
     """The date the sync provider says the value on screen refers to, if any.
 
     Only while the displayed figure is the provider's own. A manual valuation
-    dated after the last sync replaces it, and a market-priced asset shows
-    units times its last quote; warning about the connection in either case
-    would point at a number the user isn't looking at.
+    dated after the last sync replaces it, and once a quote is cached a
+    market-priced asset shows units times that quote; warning about the
+    connection in either case would point at a number the user isn't looking
+    at. The quote condition mirrors `_compute_current_value`, so a holding
+    waiting for its first quote keeps the date of the amount actually shown.
     """
-    if asset.valuation_method == "market_price":
+    if (
+        asset.valuation_method == "market_price"
+        and asset.last_price is not None
+        and asset.units is not None
+    ):
         return None
     if latest_value is None or latest_value.source != "sync":
         return None

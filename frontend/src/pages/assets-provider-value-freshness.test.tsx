@@ -21,7 +21,8 @@ vi.mock('@/hooks/use-display-locale', () => ({
 vi.mock('@/hooks/use-privacy-mode', () => ({
   usePrivacyMode: () => ({ mask: (value: string) => value, privacyMode: false }),
 }))
-vi.mock('@/hooks/use-timezone', () => ({ useEffectiveTimezone: () => 'UTC' }))
+const timezone = vi.hoisted(() => ({ value: 'UTC' as string | undefined }))
+vi.mock('@/hooks/use-timezone', () => ({ useEffectiveTimezone: () => timezone.value }))
 vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => ({ user: { is_superuser: true, preferences: { currency_display: 'USD' } } }),
 }))
@@ -52,6 +53,7 @@ function syncedAsset(overrides: Partial<Asset> = {}): Asset {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  timezone.value = 'UTC'
   api.assets.portfolioTrend.mockResolvedValue({ assets: [], trend: [], total: 0 })
   api.assetGroups.list.mockResolvedValue([])
   api.currencies.list.mockResolvedValue([])
@@ -88,20 +90,12 @@ describe('Assets provider value freshness badge', () => {
     expect(screen.queryByTitle(t('assets.providerValueStaleTitle'))).not.toBeInTheDocument()
   })
 
-  it('does not flag a market-priced holding, whose value comes from its quote', async () => {
-    api.assets.list.mockResolvedValue([
-      syncedAsset({
-        name: 'Apple',
-        ticker: 'AAPL',
-        valuation_method: 'market_price',
-        units: 100,
-        last_price: 10,
-        provider_value_date: '2026-06-17',
-      }),
-    ])
+  it('waits for the effective timezone before comparing days', async () => {
+    timezone.value = undefined
+    api.assets.list.mockResolvedValue([syncedAsset({ provider_value_date: '2026-06-17' })])
     renderWithProviders(<AssetsPage />)
 
-    expect(await screen.findByText('AAPL')).toBeVisible()
+    await screen.findByText('Frozen CDB')
     expect(screen.queryByTitle(t('assets.providerValueStaleTitle'))).not.toBeInTheDocument()
   })
 })

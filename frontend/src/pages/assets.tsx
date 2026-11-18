@@ -217,8 +217,11 @@ export default function AssetsPage() {
   const { user } = useAuth()
   const { canWrite } = useWorkspace()
   // The day the server keeps the books in, so the staleness badge agrees with
-  // the dates it writes, not the browser's clock.
-  const today = todayInTimezone(useEffectiveTimezone())
+  // the dates it writes, not the browser's clock. Until that timezone is known
+  // there is no day to compare against, so the badge waits for it instead of
+  // guessing with the browser's.
+  const effectiveTimezone = useEffectiveTimezone()
+  const today = effectiveTimezone ? todayInTimezone(effectiveTimezone) : null
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
 
@@ -798,9 +801,10 @@ export default function AssetsPage() {
     const pctOfPortfolio = asset.sell_date ? null : getPortfolioShare(asset, portfolioTotalPrimary, userCurrency)
     const needsBuys = isMarketPriced && !hasCost && !asset.sell_date
     const needsExchangeRate = exchangeRatesNeedSetup && needsConversion(asset, userCurrency)
-    // Only where the provider's own figure is on screen: a market-priced
-    // holding shows units times its last quote instead.
-    const staleValueDate = isProviderOwned ? getStaleProviderValueDate(asset, today) : null
+    // The API only fills the date while the provider's own figure is on
+    // screen, so the row just asks how old it is.
+    const staleValueDate =
+      isSynced && today ? getStaleProviderValueDate(asset, today) : null
 
     return (
       <div key={asset.id} className="border-b border-border last:border-b-0">
