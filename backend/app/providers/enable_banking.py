@@ -1315,9 +1315,16 @@ class EnableBankingProvider(BankProvider):
         txn_type = "debit" if indicator == "DBIT" else "credit"
         amount = amount.copy_abs()
         currency = amount_obj.get("currency") or "EUR"
+        # The date the operation happened wins over the dates the bank adds
+        # while processing it: a card purchase made on the 1st and booked on
+        # the 3rd belongs to the 1st. Booking then value date are the fallback
+        # for the institutions that fill only those. The identity below still
+        # hashes all three, so this choice does not move any row's id.
         booking = _parse_iso_date(raw.get("booking_date"))
         value = _parse_iso_date(raw.get("value_date"))
-        txn_date = booking or value or _parse_iso_date(raw.get("transaction_date"))
+        txn_date = (
+            _parse_iso_date(raw.get("transaction_date")) or booking or value
+        )
         if not txn_date:
             return None
         additional_value = raw.get("additional_information")
