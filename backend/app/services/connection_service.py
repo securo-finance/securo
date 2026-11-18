@@ -72,7 +72,7 @@ from app.services.rule_service import (
 )
 from app.services.transfer_detection_service import detect_transfer_pairs
 from app.services.fx_rate_service import stamp_primary_amount
-from app.services.payee_service import get_or_create_payee
+from app.services.payee_service import find_payee_by_name, get_or_create_payee
 from app.services.transaction_match_service import find_unique_transaction_match
 
 logger = logging.getLogger(__name__)
@@ -1726,7 +1726,15 @@ async def handle_oauth_callback(
             display_name=institution.name if institution else None,
             masked_number=acc_data.masked_number,
             type=acc_data.type,
-            balance=_account_balance(acc_data, auto_invested_deducted),
+            # Signed like every later sync stores it, so a card does not read
+            # as credit until the second sync.
+            balance=_provider_to_internal_balance(
+                connection.provider,
+                acc_data.type,
+                _account_balance(acc_data, auto_invested_deducted),
+                available_credit=acc_data.available_credit,
+                credit_limit=acc_data.credit_limit if is_cc else None,
+            ),
             currency=acc_data.currency,
             credit_limit=acc_data.credit_limit if is_cc else None,
             statement_close_day=acc_data.statement_close_day if is_cc else None,
@@ -2149,6 +2157,71 @@ def _merge_sync_metadata(
         transaction.payee = txn_data.payee
 
 
+async def _refresh_provider_values(
+    session: AsyncSession,
+    provider,
+    transaction: Transaction,
+    txn_data,
+    *,
+    payee_source: str,
+    account_currency: str,
+    user_currency: str,
+) -> None:
+    """Take a provider's correction of a known transaction (#1398).
+
+    Some issuers send a card charge in a provisional form first (a credit
+    under a category label) and correct it later under the same id. The
+    stored payload, before the new one is merged in, says what the provider
+    sent last: a field that still holds what that payload gave was never
+    changed by the user, so the corrected value replaces it. A field that
+    differs is the user's and stays. Must run before `_merge_sync_metadata`,
+    which merges the new payload into ``raw_data``.
+    """
+    if transaction.source != "sync" or not isinstance(transaction.raw_data, dict):
+        return
+    if not isinstance(provider, BankProvider):
+        return
+    previous = provider.parse_raw_transaction(transaction.raw_data, payee_source)
+    if previous is None:
+        return
+
+    stored = (Decimal(str(transaction.amount)), transaction.type)
+    incoming = (txn_data.amount, txn_data.type)
+    if stored == (previous.amount, previous.type) and incoming != stored:
+        old_amount = transaction.amount
+        transaction.amount = txn_data.amount
+        transaction.type = txn_data.type
+        converted = _bank_converted_amount(txn_data, account_currency, user_currency)
+        await _stamp_synced_primary_amount(
+            session, transaction.user_id, transaction, converted
+        )
+        await category_line_service.rescale_lines(session, transaction, old_amount)
+
+    if transaction.payee == previous.payee and txn_data.payee != previous.payee:
+        transaction.payee = txn_data.payee
+        # The linked payee follows only while it is still the one the old
+        # name gave; one a rule or the user picked stays.
+        previous_entity = (
+            await find_payee_by_name(session, transaction.workspace_id, previous.payee)
+            if previous.payee
+            else None
+        )
+        previous_id = previous_entity.id if previous_entity else None
+        if transaction.payee_id == previous_id:
+            transaction.payee_id = (
+                (
+                    await get_or_create_payee(
+                        session,
+                        transaction.user_id,
+                        txn_data.payee,
+                        workspace_id=transaction.workspace_id,
+                    )
+                ).id
+                if txn_data.payee
+                else None
+            )
+
+
 #: How many days an Enable Banking card hold can precede the booked entry that
 #: settles it. PayPal books the charge a day after the hold; banks take one to
 #: three banking days, which a weekend stretches to five calendar days.
@@ -2272,9 +2345,9 @@ def _eb_exact_twin_in_batch(
 
 def _eb_entry_date(raw: dict) -> Optional[date]:
     """The date an Enable Banking payload gives its entry, read the way the
-    provider reads it: the booking date, else the value date, else the
-    transaction date."""
-    for key in ("booking_date", "value_date", "transaction_date"):
+    provider reads it: the transaction date, else the booking date, else the
+    value date."""
+    for key in ("transaction_date", "booking_date", "value_date"):
         value = raw.get(key)
         if isinstance(value, str):
             try:
@@ -2545,7 +2618,14 @@ async def _find_synced_duplicate(
                 candidate_ref in (None, "", "0")
                 and candidate.source == "sync"
                 and candidate.currency == txn_data.currency
-                and candidate.date == txn_data.date
+                # A row stored before the provider preferred the transaction
+                # date keeps the booking date it was given. Its payload still
+                # names the entry's date, so it is adopted rather than
+                # imported a second time.
+                and (
+                    candidate.date == txn_data.date
+                    or stored_date == txn_data.date
+                )
                 and candidate.status == txn_data.status
                 and (
                     token_overlap(
@@ -3411,6 +3491,15 @@ async def sync_connection(
                     connection.provider,
                     account.type,
                     _account_balance(acc_data, auto_invested_deducted),
+                    available_credit=acc_data.available_credit,
+                    # The limit the row will hold after this sync: a card that
+                    # only reports its free credit needs it to state the debt
+                    # (issue #624).
+                    credit_limit=(
+                        acc_data.credit_limit
+                        if acc_data.credit_limit is not None
+                        else account.credit_limit
+                    ),
                 )
                 account.name = acc_data.name
                 # Backfills existing accounts on their next sync. Only written
@@ -3470,6 +3559,8 @@ async def sync_connection(
                         connection.provider,
                         acc_data.type,
                         _account_balance(acc_data, auto_invested_deducted),
+                        available_credit=acc_data.available_credit,
+                        credit_limit=acc_data.credit_limit if is_cc else None,
                     ),
                     currency=acc_data.currency,
                     credit_limit=acc_data.credit_limit if is_cc else None,
@@ -3579,6 +3670,15 @@ async def sync_connection(
                     # a re-sync can't revive a transaction the user hid.
                     if existing_tx.is_ignored:
                         continue
+                    await _refresh_provider_values(
+                        session,
+                        provider,
+                        existing_tx,
+                        txn_data,
+                        payee_source=payee_source,
+                        account_currency=acc_data.currency or user_currency,
+                        user_currency=user_currency,
+                    )
                     _merge_sync_metadata(existing_tx, txn_data)
                     if existing_tx.status == "pending" and txn_data.status == "posted":
                         existing_tx.status = "posted"

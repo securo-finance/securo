@@ -68,16 +68,34 @@ def get_account_name(account: Account) -> str:
 LIABILITY_ACCOUNT_TYPES = frozenset({"credit_card", "loan"})
 
 
-def _provider_to_internal_balance(provider: str, account_type: str, balance: Decimal) -> Decimal:
+def _provider_to_internal_balance(
+    provider: str,
+    account_type: str,
+    balance: Decimal,
+    *,
+    available_credit: Optional[Decimal] = None,
+    credit_limit: Optional[Decimal] = None,
+) -> Decimal:
     """Normalize provider balances to positive-for-debt for liabilities.
 
     A loan's balance is always debt, whichever type the provider reported and
     whatever sign it used, so the magnitude is the whole answer. SimpleFIN
     reports credit card debt as a negative value and exposes no account type,
     so only that combination needs a sign flip.
+
+    A card whose provider reports the credit still free instead of the debt
+    (Enable Banking, issue #624) owes what is missing from the limit. The limit
+    is the provider's when it sends one, else the one already stored on the
+    account; with neither, the provider's own reading is kept.
     """
     if account_type == "loan":
         return abs(balance)
+    if (
+        account_type == "credit_card"
+        and available_credit is not None
+        and credit_limit is not None
+    ):
+        return credit_limit - available_credit
     if provider == "simplefin" and account_type == "credit_card":
         return -balance
     return balance
