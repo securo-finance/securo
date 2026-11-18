@@ -496,8 +496,29 @@ function RecurringTab() {
   )
 }
 
+/** The fields a caller may fill in before the form opens (issue #429). */
+export type RecurringInitialValues = Partial<
+  Pick<
+    RecurringTransaction,
+    | 'description'
+    | 'amount'
+    | 'currency'
+    | 'type'
+    | 'frequency'
+    | 'weekend_adjustment'
+    | 'day_of_month'
+    | 'start_date'
+    | 'end_date'
+    | 'category_id'
+    | 'account_id'
+    | 'is_active'
+    | 'auto_generate'
+  >
+>
+
 export function RecurringForm({
   recurring,
+  initial,
   categories,
   categoryGroups,
   currentCategory,
@@ -507,6 +528,8 @@ export function RecurringForm({
   loading,
 }: {
   recurring: RecurringTransaction | null
+  /** What the form starts with when it is not editing an existing bill. */
+  initial?: RecurringInitialValues | null
   categories: Category[]
   categoryGroups: CategoryGroup[]
   currentCategory?: Category
@@ -529,25 +552,31 @@ export function RecurringForm({
   // silently drops. The field is text and goes through parseAmountInput, the
   // same path the transaction dialog uses.
   const displayLocale = useDisplayLocale()
-  const [description, setDescription] = useState(recurring?.description ?? '')
+  const [description, setDescription] = useState(recurring?.description ?? initial?.description ?? '')
   const [amount, setAmount] = useState(
-    recurring?.amount != null ? formatAmountInput(Number(recurring.amount), displayLocale) : '',
+    recurring?.amount != null
+      ? formatAmountInput(Number(recurring.amount), displayLocale)
+      : initial?.amount != null
+        ? formatAmountInput(Number(initial.amount), displayLocale)
+        : '',
   )
   const parsedAmount = parseAmountInput(amount, displayLocale)
   const amountInvalid = amount !== '' && parsedAmount == null
-  const [currency, setCurrency] = useState(recurring?.currency ?? userCurrency)
-  const [type, setType] = useState<'debit' | 'credit'>(recurring?.type ?? 'debit')
-  const [frequency, setFrequency] = useState(recurring?.frequency ?? 'monthly')
+  const [currency, setCurrency] = useState(recurring?.currency ?? initial?.currency ?? userCurrency)
+  const [type, setType] = useState<'debit' | 'credit'>(recurring?.type ?? initial?.type ?? 'debit')
+  const [frequency, setFrequency] = useState(recurring?.frequency ?? initial?.frequency ?? 'monthly')
   const [weekendAdjustment, setWeekendAdjustment] = useState<RecurringTransaction['weekend_adjustment']>(
-    recurring?.weekend_adjustment ?? 'none'
+    recurring?.weekend_adjustment ?? initial?.weekend_adjustment ?? 'none'
   )
-  const [dayOfMonth, setDayOfMonth] = useState(recurring?.day_of_month?.toString() ?? '')
-  const [startDate, setStartDate] = useState(recurring?.start_date ?? localDateString())
-  const [endDate, setEndDate] = useState(recurring?.end_date ?? '')
-  const [categoryId, setCategoryId] = useState(recurring?.category_id ?? '')
-  const [accountId, setAccountId] = useState(recurring?.account_id ?? '')
-  const [isActive, setIsActive] = useState(recurring?.is_active ?? true)
-  const [autoGenerate, setAutoGenerate] = useState(recurring?.auto_generate ?? true)
+  const [dayOfMonth, setDayOfMonth] = useState(
+    recurring?.day_of_month?.toString() ?? initial?.day_of_month?.toString() ?? ''
+  )
+  const [startDate, setStartDate] = useState(recurring?.start_date ?? initial?.start_date ?? localDateString())
+  const [endDate, setEndDate] = useState(recurring?.end_date ?? initial?.end_date ?? '')
+  const [categoryId, setCategoryId] = useState(recurring?.category_id ?? initial?.category_id ?? '')
+  const [accountId, setAccountId] = useState(recurring?.account_id ?? initial?.account_id ?? '')
+  const [isActive, setIsActive] = useState(recurring?.is_active ?? initial?.is_active ?? true)
+  const [autoGenerate, setAutoGenerate] = useState(recurring?.auto_generate ?? initial?.auto_generate ?? true)
   // Split across categories, as in the transaction dialog: every occurrence
   // the schedule generates starts with these parts.
   const [lineRows, setLineRows] = useState<CategoryLineRow[] | null>(() =>

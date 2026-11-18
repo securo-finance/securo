@@ -1586,6 +1586,7 @@
     "walletHint": "Track this goal with the combined value of all assets in the selected wallet."
   },
   "recurring": {
+    "makeFromTransaction": "New recurring from this transaction",
     "title": "Recurring Transactions",
     "add": "Add Recurring",
     "edit": "Edit Recurring",

@@ -1586,6 +1586,7 @@
     "walletHint": "A cél követése a kiválasztott tárcában lévő összes eszköz együttes értéke alapján."
   },
   "recurring": {
+    "makeFromTransaction": "Új ismétlődő tranzakció ebből a tranzakcióból",
     "title": "Ismétlődő tranzakciók",
     "add": "Ismétlődő hozzáadása",
     "edit": "Ismétlődő szerkesztése",

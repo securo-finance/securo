@@ -1590,6 +1590,7 @@
     "walletHint": "Suivez cet objectif avec la valeur combinée de tous les actifs du portefeuille sélectionné."
   },
   "recurring": {
+    "makeFromTransaction": "Nouvelle récurrence à partir de cette transaction",
     "title": "Transactions récurrentes",
     "add": "Ajouter une récurrente",
     "edit": "Modifier la récurrente",

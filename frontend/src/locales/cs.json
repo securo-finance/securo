@@ -1678,6 +1678,7 @@
     "walletHint": "Sledujte tento cíl podle celkové hodnoty všech aktiv ve vybrané peněžence."
   },
   "recurring": {
+    "makeFromTransaction": "Nová opakovaná transakce z této transakce",
     "title": "Opakované transakce",
     "add": "Přidat opakovanou",
     "edit": "Upravit opakovanou",

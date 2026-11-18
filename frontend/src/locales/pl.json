@@ -1645,6 +1645,7 @@
     "walletHint": "Śledź ten cel według łącznej wartości wszystkich aktywów w wybranym portfelu."
   },
   "recurring": {
+    "makeFromTransaction": "Nowa cykliczna z tej transakcji",
     "title": "Transakcje cykliczne",
     "add": "Dodaj cykliczną",
     "edit": "Edytuj cykliczną",

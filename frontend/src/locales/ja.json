@@ -1586,6 +1586,7 @@
     "walletHint": "選択したウォレット内の全資産の合計値でこの目標を追跡します。"
   },
   "recurring": {
+    "makeFromTransaction": "この取引から定期取引を作成",
     "title": "定期取引",
     "add": "定期取引を追加",
     "edit": "定期取引を編集",
