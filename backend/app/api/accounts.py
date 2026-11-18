@@ -24,6 +24,7 @@ from app.schemas.account import (
     AccountSummary,
     AccountUpdate,
     CreditCardBillRead,
+    DefaultAccount,
 )
 from app.services import account_service
 from app.services.fx_rate_service import _resolve_rate
@@ -45,7 +46,28 @@ async def list_accounts(
     accounts = await account_service.get_accounts(session, ctx.workspace.id, include_closed=include_closed)
     for acc in accounts:
         await _convert_to_primary(session, acc, ctx.user.primary_currency)
+    account_service.mark_default(accounts, account_service.get_default_account_id(ctx.user, ctx.workspace.id))
     return accounts
+
+
+@router.put("/default", response_model=DefaultAccount)
+async def set_default_account(
+    data: DefaultAccount,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Choose the account new transactions start on, or clear it (issue #460).
+
+    A preference of the current user in the current workspace; other members
+    keep their own.
+    """
+    try:
+        account_id = await account_service.set_default_account(session, ctx.user, ctx.workspace.id, data.account_id)
+    except LookupError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return DefaultAccount(account_id=account_id)
 
 
 async def _convert_to_primary(session: AsyncSession, acc: dict, primary_currency: str) -> None:
@@ -231,6 +253,7 @@ async def get_account(
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
     await _convert_to_primary(session, account, ctx.user.primary_currency)
+    account_service.mark_default([account], account_service.get_default_account_id(ctx.user, ctx.workspace.id))
     return account
 
 

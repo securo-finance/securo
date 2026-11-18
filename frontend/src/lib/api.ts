@@ -564,6 +564,11 @@ export const accounts = {
     const { data } = await api.post(`/accounts/${id}/reopen`)
     return data
   },
+  // The account new transactions start on; null clears it (issue #460).
+  setDefault: async (accountId: string | null): Promise<{ account_id: string | null }> => {
+    const { data } = await api.put('/accounts/default', { account_id: accountId })
+    return data
+  },
 }
 
 export interface MortgagePaymentAllocation {

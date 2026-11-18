@@ -1042,3 +1042,99 @@ async def test_account_without_opening_balance_has_no_balance_date(
     )
     fetched = await client.get(f"/api/accounts/{created.json()['id']}", headers=auth_headers)
     assert fetched.json()["balance_date"] is None
+
+
+async def _new_account(client: AsyncClient, headers: dict, name: str) -> str:
+    resp = await client.post(
+        "/api/accounts",
+        headers=headers,
+        json={"name": name, "type": "checking", "balance": "0", "currency": "BRL"},
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["id"]
+
+
+def _defaults(accounts: list[dict]) -> set[str]:
+    return {a["name"] for a in accounts if a["is_default"]}
+
+
+@pytest.mark.asyncio
+async def test_default_account_is_flagged_and_can_be_cleared(client: AsyncClient, auth_headers):
+    """Issue #460: the user picks the account new transactions start on."""
+    await _new_account(client, auth_headers, "Checking")
+    savings = await _new_account(client, auth_headers, "Savings")
+
+    listed = await client.get("/api/accounts", headers=auth_headers)
+    assert _defaults(listed.json()) == set()
+
+    resp = await client.put("/api/accounts/default", headers=auth_headers, json={"account_id": savings})
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"account_id": savings}
+
+    listed = await client.get("/api/accounts", headers=auth_headers)
+    assert _defaults(listed.json()) == {"Savings"}
+    single = await client.get(f"/api/accounts/{savings}", headers=auth_headers)
+    assert single.json()["is_default"] is True
+
+    resp = await client.put("/api/accounts/default", headers=auth_headers, json={"account_id": None})
+    assert resp.status_code == 200
+    listed = await client.get("/api/accounts", headers=auth_headers)
+    assert _defaults(listed.json()) == set()
+
+
+@pytest.mark.asyncio
+async def test_default_account_keeps_other_preferences(client: AsyncClient, auth_headers):
+    me = await client.get("/api/users/me", headers=auth_headers)
+    before = me.json()["preferences"] or {}
+    account = await _new_account(client, auth_headers, "Checking")
+
+    await client.put("/api/accounts/default", headers=auth_headers, json={"account_id": account})
+
+    after = (await client.get("/api/users/me", headers=auth_headers)).json()["preferences"]
+    assert {k: v for k, v in after.items() if k != "default_account_ids"} == before
+
+
+@pytest.mark.asyncio
+async def test_default_account_is_per_workspace(client: AsyncClient, auth_headers):
+    home = await _new_account(client, auth_headers, "Home checking")
+    await client.put("/api/accounts/default", headers=auth_headers, json={"account_id": home})
+
+    other = await client.post(
+        "/api/workspaces",
+        headers=auth_headers,
+        json={"name": "Business", "kind": "business", "self_membership": True},
+    )
+    assert other.status_code == 201, other.text
+    other_headers = {**auth_headers, "X-Workspace-Id": other.json()["id"]}
+    business = await _new_account(client, other_headers, "Business checking")
+
+    # An account of another workspace can't be this workspace's default.
+    resp = await client.put("/api/accounts/default", headers=other_headers, json={"account_id": home})
+    assert resp.status_code == 404
+
+    await client.put("/api/accounts/default", headers=other_headers, json={"account_id": business})
+    assert _defaults((await client.get("/api/accounts", headers=other_headers)).json()) == {"Business checking"}
+    assert _defaults((await client.get("/api/accounts", headers=auth_headers)).json()) == {"Home checking"}
+
+
+@pytest.mark.asyncio
+async def test_closed_account_is_not_offered_as_default(client: AsyncClient, auth_headers):
+    account = await _new_account(client, auth_headers, "Old card")
+    await client.put("/api/accounts/default", headers=auth_headers, json={"account_id": account})
+    await client.post(f"/api/accounts/{account}/close", headers=auth_headers)
+
+    closed = await client.get("/api/accounts?include_closed=true", headers=auth_headers)
+    assert _defaults(closed.json()) == set()
+
+    resp = await client.put("/api/accounts/default", headers=auth_headers, json={"account_id": account})
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_viewer_cannot_set_default_account(
+    client: AsyncClient, test_account: Account, viewer_auth_headers
+):
+    resp = await client.put(
+        "/api/accounts/default", headers=viewer_auth_headers, json={"account_id": str(test_account.id)}
+    )
+    assert resp.status_code == 403

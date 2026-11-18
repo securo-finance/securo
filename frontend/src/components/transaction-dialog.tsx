@@ -128,7 +128,7 @@ export function TransactionDialog({
   transaction: Transaction | null
   categories: Category[]
   categoryGroups: CategoryGroup[]
-  accounts: { id: string; name: string; display_name?: string | null; type?: string; currency?: string; secured_asset_id?: string | null }[]
+  accounts: { id: string; name: string; display_name?: string | null; type?: string; currency?: string; secured_asset_id?: string | null; is_default?: boolean }[]
   recurringMatch?: RecurringTransaction
   onSave: (data: TransactionSavePayload, recurringData?: { frequency: string; end_date?: string }, installmentData?: InstallmentSeriesInput, pendingFiles?: File[], action?: SaveAction) => void
   onDelete?: () => void
@@ -417,7 +417,7 @@ function TransactionForm({
   defaultAccountId?: string
   categories: Category[]
   categoryGroups: CategoryGroup[]
-  accounts: { id: string; name: string; display_name?: string | null; type?: string; currency?: string; secured_asset_id?: string | null }[]
+  accounts: { id: string; name: string; display_name?: string | null; type?: string; currency?: string; secured_asset_id?: string | null; is_default?: boolean }[]
   recurringMatch?: RecurringTransaction
   onSave: (data: TransactionEditPayload, recurringData?: { frequency: string; end_date?: string }, installmentData?: InstallmentSeriesInput, pendingFiles?: File[], action?: SaveAction) => void
   onDelete?: () => void
@@ -465,15 +465,18 @@ function TransactionForm({
   const [date, setDate] = useState(seed?.date ?? localDateString())
   const [type, setType] = useState<'debit' | 'credit'>(seed?.type ?? 'debit')
   const [status, setStatus] = useState<'posted' | 'pending'>(seed?.status ?? 'posted')
-  // Opened from an account page, start in that account's currency.
+  // Opened from an account page, start on that account; otherwise on the
+  // account the user chose as their default (issue #460), if any.
+  const startAccountId = defaultAccountId ?? accounts.find(a => a.is_default)?.id
+  // Start in the starting account's currency.
   const [currency, setCurrency] = useState(
     seed?.currency
-      ?? (defaultAccountId ? accounts.find(a => a.id === defaultAccountId)?.currency : undefined)
+      ?? (startAccountId ? accounts.find(a => a.id === startAccountId)?.currency : undefined)
       ?? userCurrency
   )
   const [categoryId, setCategoryId] = useState(seed?.category_id ?? '')
   const [payeeId, setPayeeId] = useState(seed?.payee_id ?? '')
-  const [accountId, setAccountId] = useState(seed?.account_id ?? defaultAccountId ?? '')
+  const [accountId, setAccountId] = useState(seed?.account_id ?? startAccountId ?? '')
   const [notes, setNotes] = useState(seed?.notes ?? '')
   // Manual CC bucketing override (issue #92). Empty = auto. Visible only
   // when the selected account is a credit card.

@@ -234,6 +234,8 @@ export interface Account {
   open_bill_total_primary?: number | null
   is_closed: boolean
   closed_at: string | null
+  // The current user's default account for new transactions (issue #460).
+  is_default?: boolean
 }
 
 export interface CreditCardBill {

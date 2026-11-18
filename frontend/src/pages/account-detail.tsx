@@ -16,7 +16,7 @@ import { toast } from 'sonner'
 import type { CreditCardBill, ProjectedTransaction, Transaction } from '@/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Clock, EyeClosed, HelpCircle, Paperclip, Pencil, Plus, X } from 'lucide-react'
+import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Clock, EyeClosed, HelpCircle, Paperclip, Pencil, Plus, Star, X } from 'lucide-react'
 import { MobileTransactionRow } from '@/components/mobile-transaction-row'
 import { transactionDescription } from '@/lib/transaction-description'
 import { ReportingDateBadge } from '@/components/reporting-date-badge'
@@ -674,6 +674,15 @@ export default function AccountDetailPage() {
     onError: () => toast.error(t('common.error')),
   })
 
+  const defaultAccountMutation = useMutation({
+    mutationFn: (makeDefault: boolean) => accounts.setDefault(makeDefault ? id! : null),
+    onSuccess: (_data, makeDefault) => {
+      queryClient.invalidateQueries({ queryKey: ['accounts'] })
+      toast.success(t(makeDefault ? 'accounts.defaultAccountSet' : 'accounts.defaultAccountCleared'))
+    },
+    onError: (error) => toast.error(extractApiError(error)),
+  })
+
   const [ccSettingsOpen, setCcSettingsOpen] = useState(false)
   const ccSettingsMutation = useMutation({
     mutationFn: (data: { credit_limit?: number | null; statement_close_day?: number | null; payment_due_day?: number | null }) =>
@@ -1001,6 +1010,18 @@ export default function AccountDetailPage() {
           </div>
           {!account.is_closed && canWrite && (
             <div className="flex shrink-0 items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label={t('accounts.defaultAccount')}
+                aria-pressed={!!account.is_default}
+                title={t('accounts.defaultAccountHint')}
+                onClick={() => defaultAccountMutation.mutate(!account.is_default)}
+                disabled={defaultAccountMutation.isPending}
+              >
+                <Star className={`h-4 w-4 sm:me-1 ${account.is_default ? 'fill-current' : ''}`} />
+                <span className="hidden sm:inline">{t('accounts.defaultAccount')}</span>
+              </Button>
               <Button
                 variant="outline"
                 size="sm"

@@ -22,6 +22,7 @@ from app.models.bank_connection import BankConnection
 from app.models.credit_card_bill import CreditCardBill
 from app.models.mortgage_payment_allocation import MortgagePaymentAllocation
 from app.models.transaction import Transaction
+from app.models.user import User
 from app.schemas.account import AccountCreate, AccountUpdate, LoanBalanceUpdate
 from app.services._query_filters import (
     amount_in_account_currency,
@@ -988,6 +989,61 @@ async def reopen_account(
     await session.commit()
     await session.refresh(account)
     return account
+
+
+# The account a user's new transactions start on (issue #460), one per
+# workspace, kept in the user's preferences: each member picks their own.
+DEFAULT_ACCOUNTS_PREFERENCE = "default_account_ids"
+
+
+def get_default_account_id(user: User, workspace_id: uuid.UUID) -> Optional[str]:
+    defaults = (user.preferences or {}).get(DEFAULT_ACCOUNTS_PREFERENCE)
+    if not isinstance(defaults, dict):
+        return None
+    value = defaults.get(str(workspace_id))
+    return value if isinstance(value, str) else None
+
+
+async def set_default_account(
+    session: AsyncSession,
+    user: User,
+    workspace_id: uuid.UUID,
+    account_id: Optional[uuid.UUID],
+) -> Optional[uuid.UUID]:
+    """Make `account_id` the user's default in the workspace, or clear it.
+
+    The account has to be an open account of the workspace. A default that
+    is later closed or deleted is simply not flagged, so nothing has to
+    clean the preference up.
+    """
+    if account_id is not None:
+        account = await get_account(session, account_id, workspace_id)
+        if account is None:
+            raise LookupError("Account not found")
+        if account.is_closed:
+            raise ValueError("A closed account can't be the default account")
+    prefs = dict(user.preferences or {})
+    current = prefs.get(DEFAULT_ACCOUNTS_PREFERENCE)
+    defaults = dict(current) if isinstance(current, dict) else {}
+    if account_id is None:
+        defaults.pop(str(workspace_id), None)
+    else:
+        defaults[str(workspace_id)] = str(account_id)
+    prefs[DEFAULT_ACCOUNTS_PREFERENCE] = defaults
+    # A new dict, so the JSON column sees the change.
+    user.preferences = prefs
+    session.add(user)
+    await session.commit()
+    return account_id
+
+
+def mark_default(accounts: list[dict], default_account_id: Optional[str]) -> None:
+    for acc in accounts:
+        acc["is_default"] = (
+            default_account_id is not None
+            and str(acc["id"]) == default_account_id
+            and not acc.get("is_closed")
+        )
 
 
 async def get_account_summary(

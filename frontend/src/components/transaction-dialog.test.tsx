@@ -99,7 +99,7 @@ const accountFixtures = [
   { id: 'acc-a', name: 'Alpha Card', type: 'checking', currency: 'USD' },
 ] as Account[]
 
-function renderNewTransaction(defaultAccountId?: string) {
+function renderNewTransaction(defaultAccountId?: string, accounts: Account[] = accountFixtures) {
   vi.spyOn(currencies, 'list').mockResolvedValue([])
   vi.spyOn(payees, 'list').mockResolvedValue([])
   vi.spyOn(groups, 'list').mockResolvedValue([])
@@ -110,7 +110,7 @@ function renderNewTransaction(defaultAccountId?: string) {
       transaction={null}
       categories={[]}
       categoryGroups={[]}
-      accounts={accountFixtures}
+      accounts={accounts}
       defaultAccountId={defaultAccountId}
       onSave={vi.fn()}
       loading={false}
@@ -137,6 +137,28 @@ it('keeps preselecting the account the form was opened from', () => {
 
   expect(accountSelect).toHaveValue('acc-z')
   expect(screen.queryByText(t('transactions.createCounterpartSelectAccount'))).not.toBeInTheDocument()
+})
+
+describe('the default account (issue #460)', () => {
+  const withDefault = [
+    accountFixtures[0],
+    { id: 'acc-eur', name: 'Euro Card', type: 'checking', currency: 'EUR', is_default: true },
+    accountFixtures[1],
+  ] as Account[]
+
+  it('starts a new transaction on the account the user chose, in its currency', () => {
+    const accountSelect = renderNewTransaction(undefined, withDefault)
+
+    expect(accountSelect).toHaveValue('acc-eur')
+    // A EUR account under a USD user asks for the converted amount.
+    expect(screen.getByText(t('transactions.convertedAmount', { currency: 'USD' }))).toBeInTheDocument()
+  })
+
+  it('gives way to the account the form was opened from', () => {
+    const accountSelect = renderNewTransaction('acc-a', withDefault)
+
+    expect(accountSelect).toHaveValue('acc-a')
+  })
 })
 
 it('forgets a save variant the browser blocked, so a later plain Save just saves', async () => {

@@ -132,6 +132,9 @@ class AccountRead(AccountBase):
     open_bill_total_primary: Optional[float] = None
     is_closed: bool = False
     closed_at: Optional[datetime] = None
+    # The current user's default account for new transactions in this
+    # workspace (issue #460).
+    is_default: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -231,3 +234,8 @@ class LoanBalanceAdjustment(BaseModel):
     adjustment: float
     current_debt: float
     transaction_id: Optional[uuid.UUID] = None
+
+
+class DefaultAccount(BaseModel):
+    # Null clears the default.
+    account_id: Optional[uuid.UUID] = None
