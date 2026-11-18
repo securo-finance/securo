@@ -2019,6 +2019,8 @@
     "undoImport": "Desfazer importação?",
     "undoOrdersDescription": "Isso vai apagar as {{count}} ordens importadas de {{filename}} e recalcular as posições afetadas. Os ativos criados por essa importação são removidos junto.",
     "undone": "Importação desfeita",
+    "undoOversell": "Não é possível desfazer esta importação: um lançamento que permanece vende {{attempted}} unidades com {{available}} em carteira. Edite ou exclua esse lançamento primeiro.",
+    "undoTooLarge": "Não é possível desfazer esta importação: a posição que sobra sem ela é grande demais para armazenar.",
     "undoDescription": "Isso vai excluir {{count}} transações importadas de {{filename}}. Esta ação não pode ser desfeita.",
     "deleting": "Excluindo...",
     "deleteAll": "Excluir tudo",
@@ -2090,7 +2092,9 @@
       "fee": "Taxas",
       "kind": "Compra/Venda",
       "currency": "Moeda",
-      "notes": "Observações"
+      "notes": "Observações",
+      "old_units": "Unidades antes",
+      "new_units": "Unidades depois"
     },
     "walletWarningTitle": "Já está no seu patrimônio",
     "warning": {
@@ -2099,7 +2103,8 @@
     },
     "kind": {
       "buy": "Compra",
-      "sell": "Venda"
+      "sell": "Venda",
+      "split": "Desdobramento"
     },
     "reason": {
       "missing_ticker": "sem ativo",
@@ -2111,8 +2116,15 @@
       "unknown_ticker": "ativo não encontrado no provedor de cotações",
       "oversell": "venda maior do que a posição",
       "no_fx_rate": "sem cotação de câmbio na data da ordem",
-      "possible_duplicate": "pode já estar neste ativo por uma importação anterior"
-    }
+      "possible_duplicate": "pode já estar neste ativo por uma importação anterior",
+      "invalid_split": "proporção do desdobramento ilegível, ou desdobramento com quantidade, preço ou taxa",
+      "split_not_allowed": "não é possível registrar desdobramento em ativo sincronizado com o banco",
+      "split_in_future": "o desdobramento não pode ter data futura",
+      "nothing_held_before_split": "nenhuma unidade na carteira antes do desdobramento",
+      "too_large": "deixaria o ativo grande demais para guardar",
+      "holding_moved": "a posição foi renomeada ou mudou de carteira enquanto a importação corria"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Patrimônio",

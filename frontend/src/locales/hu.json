@@ -2015,6 +2015,8 @@
     "undoImport": "Visszavonod az importálást?",
     "undoOrdersDescription": "Ez törli a fájlból ({{filename}}) importált {{count}} megbízást, és újraszámolja az érintett pozíciókat. Az importálás során létrehozott pozíciók is törlődnek.",
     "undone": "Importálás visszavonva",
+    "undoOversell": "Ez az import nem vonható vissza: egy bent maradó tétel {{attempted}} egységet ad el, miközben {{available}} van a birtokban. Előbb szerkessze vagy törölje azt a tételt.",
+    "undoTooLarge": "Ez az import nem vonható vissza: a visszamaradó pozíció túl nagy a tároláshoz.",
     "undoDescription": "Ez törli a fájlból ({{filename}}) importált {{count}} tranzakciót. Ez a művelet nem vonható vissza.",
     "deleting": "Törlés...",
     "deleteAll": "Összes törlése",
@@ -2086,7 +2088,9 @@
       "fee": "Díj",
       "kind": "Vétel/eladás",
       "currency": "Pénznem",
-      "notes": "Jegyzetek"
+      "notes": "Jegyzetek",
+      "old_units": "Darab előtte",
+      "new_units": "Darab utána"
     },
     "walletWarningTitle": "Már szerepel a portfóliódban",
     "warning": {
@@ -2095,7 +2099,8 @@
     },
     "kind": {
       "buy": "Vétel",
-      "sell": "Eladás"
+      "sell": "Eladás",
+      "split": "Felosztás"
     },
     "reason": {
       "missing_ticker": "hiányzó ticker",
@@ -2107,8 +2112,15 @@
       "unknown_ticker": "az árfolyam-szolgáltató nem ismeri a tickert",
       "oversell": "több egységet adnál el, mint amennyi a pozícióban van",
       "no_fx_rate": "nincs árfolyam a megbízás dátumára",
-      "possible_duplicate": "lehet, hogy egy korábbi importból már szerepel ebben a pozícióban"
-    }
+      "possible_duplicate": "lehet, hogy egy korábbi importból már szerepel ebben a pozícióban",
+      "invalid_split": "olvashatatlan felosztási arány, vagy felosztás mennyiséggel, árral vagy díjjal",
+      "split_not_allowed": "bankkal szinkronizált pozíciónál nem rögzíthető felosztás",
+      "split_in_future": "a felosztás nem lehet jövőbeli dátumú",
+      "nothing_held_before_split": "a felosztás előtt nincs darab a pozícióban",
+      "too_large": "a pozíció túl nagy lenne a mentéshez",
+      "holding_moved": "a pozíció az import közben átnevezésre került vagy másik pénztárcába került"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Eszközök",

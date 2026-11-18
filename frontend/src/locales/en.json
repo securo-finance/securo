@@ -2015,6 +2015,8 @@
     "undoImport": "Undo import?",
     "undoOrdersDescription": "This will delete the {{count}} orders imported from {{filename}} and recalculate the positions they touched. Holdings this import created are removed with them.",
     "undone": "Import undone",
+    "undoOversell": "This import can't be undone: an entry that stays in the ledger sells {{attempted}} units with {{available}} held. Edit or delete that entry first.",
+    "undoTooLarge": "This import can't be undone: the holding left without it is too large to store.",
     "undoDescription": "This will delete {{count}} imported transactions from {{filename}}. This action cannot be undone.",
     "deleting": "Deleting...",
     "deleteAll": "Delete all",
@@ -2086,7 +2088,9 @@
       "fee": "Fee",
       "kind": "Buy/Sell",
       "currency": "Currency",
-      "notes": "Notes"
+      "notes": "Notes",
+      "old_units": "Old units",
+      "new_units": "New units"
     },
     "walletWarningTitle": "Already in your portfolio",
     "warning": {
@@ -2095,7 +2099,8 @@
     },
     "kind": {
       "buy": "Buy",
-      "sell": "Sell"
+      "sell": "Sell",
+      "split": "Split"
     },
     "reason": {
       "missing_ticker": "no ticker",
@@ -2107,8 +2112,15 @@
       "unknown_ticker": "ticker not found by the price provider",
       "oversell": "selling more units than the position holds",
       "no_fx_rate": "no exchange rate for the order's date",
-      "possible_duplicate": "may already be in this holding from an earlier import"
-    }
+      "possible_duplicate": "may already be in this holding from an earlier import",
+      "invalid_split": "unreadable split ratio, or a split with a quantity, price or fee",
+      "split_not_allowed": "splits can't be recorded on a holding synced from a bank",
+      "split_in_future": "a split can't be dated in the future",
+      "nothing_held_before_split": "no units held before the split",
+      "too_large": "would leave the holding too large to store",
+      "holding_moved": "the holding was renamed or moved to another wallet while the import ran"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Assets",

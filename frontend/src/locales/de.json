@@ -2016,6 +2016,8 @@
     "undoImport": "Import rückgängig machen?",
     "undoOrdersDescription": "Damit werden die {{count}} aus {{filename}} importierten Orders gelöscht und die betroffenen Positionen neu berechnet. Von diesem Import angelegte Werte werden mit entfernt.",
     "undone": "Import rückgängig gemacht",
+    "undoOversell": "Dieser Import kann nicht rückgängig gemacht werden: Ein verbleibender Eintrag verkauft {{attempted}} Einheiten, während {{available}} gehalten werden. Bearbeite oder lösche diesen Eintrag zuerst.",
+    "undoTooLarge": "Dieser Import kann nicht rückgängig gemacht werden: Die verbleibende Position ist zu groß zum Speichern.",
     "undoDescription": "Dadurch werden {{count}} importierte Transaktionen aus {{filename}} gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
     "deleting": "Wird gelöscht...",
     "deleteAll": "Alle löschen",
@@ -2087,7 +2089,9 @@
       "fee": "Gebühr",
       "kind": "Kauf/Verkauf",
       "currency": "Währung",
-      "notes": "Notizen"
+      "notes": "Notizen",
+      "old_units": "Stück vorher",
+      "new_units": "Stück nachher"
     },
     "walletWarningTitle": "Bereits im Portfolio",
     "warning": {
@@ -2096,7 +2100,8 @@
     },
     "kind": {
       "buy": "Kauf",
-      "sell": "Verkauf"
+      "sell": "Verkauf",
+      "split": "Split"
     },
     "reason": {
       "missing_ticker": "kein Ticker",
@@ -2108,8 +2113,15 @@
       "unknown_ticker": "Ticker beim Kursanbieter nicht gefunden",
       "oversell": "Verkauf größer als die Position",
       "no_fx_rate": "kein Wechselkurs für das Orderdatum",
-      "possible_duplicate": "ist möglicherweise schon aus einem früheren Import in dieser Position"
-    }
+      "possible_duplicate": "ist möglicherweise schon aus einem früheren Import in dieser Position",
+      "invalid_split": "Split-Verhältnis unlesbar oder Split mit Menge, Preis oder Gebühr",
+      "split_not_allowed": "Splits können bei einer mit der Bank synchronisierten Position nicht erfasst werden",
+      "split_in_future": "ein Split kann nicht in der Zukunft liegen",
+      "nothing_held_before_split": "vor dem Split werden keine Stücke gehalten",
+      "too_large": "die Position würde zu groß zum Speichern",
+      "holding_moved": "die Position wurde während des Imports umbenannt oder in eine andere Wallet verschoben"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Vermögenswerte",

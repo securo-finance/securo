@@ -2131,6 +2131,8 @@
     "undoOrdersDescription_many": "Vymaže sa {{count}} pokynu importovaného z {{filename}} a prepočítajú sa pozície, ktorých sa týkal. Aktíva, ktoré tento import vytvoril, sa odstránia spolu s ním.",
     "undoOrdersDescription_other": "Vymaže sa {{count}} pokynov importovaných z {{filename}} a prepočítajú sa pozície, ktorých sa týkali. Aktíva, ktoré tento import vytvoril, sa odstránia spolu s nimi.",
     "undone": "Import vrátený späť",
+    "undoOversell": "Tento import nie je možné vrátiť späť: zostávajúci záznam predáva {{attempted}} jednotiek, pričom je držaných {{available}}. Najprv tento záznam upravte alebo odstráňte.",
+    "undoTooLarge": "Tento import nie je možné vrátiť späť: zostávajúca pozícia je príliš veľká na uloženie.",
     "undoDescription": "Vymaže sa {{count}} importovaných transakcií z {{filename}}. Túto akciu nie je možné vrátiť späť.",
     "undoDescription_one": "Vymaže sa {{count}} importovaná transakcia z {{filename}}. Túto akciu nie je možné vrátiť späť.",
     "undoDescription_few": "Vymažú sa {{count}} importované transakcie z {{filename}}. Túto akciu nie je možné vrátiť späť.",
@@ -2210,7 +2212,9 @@
       "fee": "Poplatok",
       "kind": "Nákup/predaj",
       "currency": "Mena",
-      "notes": "Poznámka"
+      "notes": "Poznámka",
+      "old_units": "Kusy pred",
+      "new_units": "Kusy po"
     },
     "walletWarningTitle": "Už je v tvojom portfóliu",
     "warning": {
@@ -2219,7 +2223,8 @@
     },
     "kind": {
       "buy": "Nákup",
-      "sell": "Predaj"
+      "sell": "Predaj",
+      "split": "Split"
     },
     "reason": {
       "missing_ticker": "chýba ticker",
@@ -2231,8 +2236,15 @@
       "unknown_ticker": "poskytovateľ cien ticker nenašiel",
       "oversell": "predaj väčšieho množstva, než pozícia obsahuje",
       "no_fx_rate": "chýba výmenný kurz k dátumu pokynu",
-      "possible_duplicate": "môže už byť v tejto pozícii z predchádzajúceho importu"
-    }
+      "possible_duplicate": "môže už byť v tejto pozícii z predchádzajúceho importu",
+      "invalid_split": "nečitateľný pomer splitu alebo split s množstvom, cenou alebo poplatkom",
+      "split_not_allowed": "split nemožno zaznamenať pri pozícii synchronizovanej s bankou",
+      "split_in_future": "split nemôže mať budúci dátum",
+      "nothing_held_before_split": "pred splitom nie sú držané žiadne kusy",
+      "too_large": "pozícia by bola príliš veľká na uloženie",
+      "holding_moved": "pozícia bola počas importu premenovaná alebo presunutá do inej peňaženky"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Aktíva",

@@ -2019,6 +2019,8 @@
     "undoImport": "Annuler l'import ?",
     "undoOrdersDescription": "Cela supprimera les {{count}} ordres importés de {{filename}} et recalculera les positions concernées. Les actifs créés par cet import sont supprimés avec eux.",
     "undone": "Import annulé",
+    "undoOversell": "Impossible d'annuler cet import : une écriture qui reste vend {{attempted}} unités alors que {{available}} sont détenues. Modifiez ou supprimez cette écriture d'abord.",
+    "undoTooLarge": "Impossible d'annuler cet import : la position restante est trop grande pour être enregistrée.",
     "undoDescription": "Cela supprimera {{count}} transactions importées depuis {{filename}}. Cette action est irréversible.",
     "deleting": "Suppression...",
     "deleteAll": "Tout supprimer",
@@ -2090,7 +2092,9 @@
       "fee": "Frais",
       "kind": "Achat/Vente",
       "currency": "Devise",
-      "notes": "Notes"
+      "notes": "Notes",
+      "old_units": "Unités avant",
+      "new_units": "Unités après"
     },
     "walletWarningTitle": "Déjà dans votre portefeuille",
     "warning": {
@@ -2099,7 +2103,8 @@
     },
     "kind": {
       "buy": "Achat",
-      "sell": "Vente"
+      "sell": "Vente",
+      "split": "Division"
     },
     "reason": {
       "missing_ticker": "aucun ticker",
@@ -2111,8 +2116,15 @@
       "unknown_ticker": "ticker introuvable chez le fournisseur de cours",
       "oversell": "vente supérieure à la position",
       "no_fx_rate": "aucun taux de change pour la date de l'ordre",
-      "possible_duplicate": "figure peut-être déjà dans cette position via un import précédent"
-    }
+      "possible_duplicate": "figure peut-être déjà dans cette position via un import précédent",
+      "invalid_split": "ratio de division illisible, ou division avec une quantité, un prix ou des frais",
+      "split_not_allowed": "impossible d’enregistrer une division sur une position synchronisée avec la banque",
+      "split_in_future": "une division ne peut pas être datée dans le futur",
+      "nothing_held_before_split": "aucune unité détenue avant la division",
+      "too_large": "rendrait la position trop grande pour être enregistrée",
+      "holding_moved": "la position a été renommée ou a changé de portefeuille pendant l’import"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Actifs",

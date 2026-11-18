@@ -2131,6 +2131,8 @@
     "undoImport": "Vrátit import zpět?",
     "undoOrdersDescription": "Smaže se {{count}} pokynů importovaných z {{filename}} a přepočítají se pozice, kterých se týkaly. Aktiva, která tento import vytvořil, se odstraní spolu s nimi.",
     "undone": "Import vrácen zpět",
+    "undoOversell": "Tento import nelze vrátit zpět: zbývající záznam prodává {{attempted}} jednotek, přičemž je drženo {{available}}. Nejprve tento záznam upravte nebo smažte.",
+    "undoTooLarge": "Tento import nelze vrátit zpět: zbývající pozice je příliš velká pro uložení.",
     "undoDescription": "Smaže se {{count}} importovaných transakcí z {{filename}}. Tuto akci nelze vrátit zpět.",
     "deleting": "Maže se...",
     "deleteAll": "Smazat vše",
@@ -2226,7 +2228,9 @@
       "fee": "Poplatek",
       "kind": "Nákup/prodej",
       "currency": "Měna",
-      "notes": "Poznámka"
+      "notes": "Poznámka",
+      "old_units": "Kusy před",
+      "new_units": "Kusy po"
     },
     "walletWarningTitle": "Už je ve vašem portfoliu",
     "warning": {
@@ -2235,7 +2239,8 @@
     },
     "kind": {
       "buy": "Nákup",
-      "sell": "Prodej"
+      "sell": "Prodej",
+      "split": "Split"
     },
     "reason": {
       "missing_ticker": "chybí ticker",
@@ -2247,8 +2252,15 @@
       "unknown_ticker": "poskytovatel cen ticker nenašel",
       "oversell": "prodej většího množství, než pozice obsahuje",
       "no_fx_rate": "chybí směnný kurz k datu pokynu",
-      "possible_duplicate": "může už být v této pozici z dřívějšího importu"
-    }
+      "possible_duplicate": "může už být v této pozici z dřívějšího importu",
+      "invalid_split": "nečitelný poměr splitu, nebo split s množstvím, cenou nebo poplatkem",
+      "split_not_allowed": "split nelze zaznamenat u pozice synchronizované s bankou",
+      "split_in_future": "split nemůže mít budoucí datum",
+      "nothing_held_before_split": "před splitem nejsou drženy žádné kusy",
+      "too_large": "pozice by byla příliš velká na uložení",
+      "holding_moved": "pozice byla během importu přejmenována nebo přesunuta do jiné peněženky"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Aktiva",

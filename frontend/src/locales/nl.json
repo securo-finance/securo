@@ -2010,6 +2010,8 @@
     "undoImport": "Importeren ongedaan maken?",
     "undoOrdersDescription": "Hierdoor worden de {{count}} orders geïmporteerd uit {{filename}} verwijderd en worden de posities die ze hebben aangeraakt opnieuw berekend. De holdings die door deze import zijn aangemaakt, worden samen met deze verwijderd.",
     "undone": "Importeren ongedaan gemaakt",
+    "undoOversell": "Deze import kan niet ongedaan worden gemaakt: een blijvende boeking verkoopt {{attempted}} eenheden terwijl er {{available}} in bezit zijn. Bewerk of verwijder die boeking eerst.",
+    "undoTooLarge": "Deze import kan niet ongedaan worden gemaakt: de resterende positie is te groot om op te slaan.",
     "undoDescription": "Hiermee worden geïmporteerde {{count}} transacties uit {{filename}} verwijderd. Deze actie kan niet ongedaan worden gemaakt.",
     "deleting": "Verwijderen...",
     "deleteAll": "Alles verwijderen",
@@ -2088,7 +2090,9 @@
       "fee": "Vergoeding",
       "kind": "Kopen/verkopen",
       "currency": "Valuta",
-      "notes": "Opmerkingen"
+      "notes": "Opmerkingen",
+      "old_units": "Eenheden voor",
+      "new_units": "Eenheden na"
     },
     "walletWarningTitle": "Al in uw portefeuille",
     "warning": {
@@ -2097,7 +2101,8 @@
     },
     "kind": {
       "buy": "Koop",
-      "sell": "Verkopen"
+      "sell": "Verkopen",
+      "split": "Split"
     },
     "reason": {
       "missing_ticker": "geen tikker",
@@ -2109,8 +2114,15 @@
       "unknown_ticker": "ticker niet gevonden door de prijsaanbieder",
       "oversell": "meer eenheden verkopen dan de positie bevat",
       "no_fx_rate": "geen wisselkoers voor de orderdatum",
-      "possible_duplicate": "staat mogelijk al in deze positie door een eerdere import"
-    }
+      "possible_duplicate": "staat mogelijk al in deze positie door een eerdere import",
+      "invalid_split": "splitverhouding onleesbaar, of een split met een hoeveelheid, prijs of kosten",
+      "split_not_allowed": "splits kunnen niet worden vastgelegd op een positie die met de bank wordt gesynchroniseerd",
+      "split_in_future": "een split kan niet in de toekomst liggen",
+      "nothing_held_before_split": "geen eenheden in bezit vóór de split",
+      "too_large": "zou de positie te groot maken om op te slaan",
+      "holding_moved": "de positie is tijdens de import hernoemd of naar een andere portefeuille verplaatst"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Activa",

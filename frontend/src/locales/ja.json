@@ -2015,6 +2015,8 @@
     "undoImport": "インポートを取り消しますか?",
     "undoOrdersDescription": "{{filename}}からインポートした{{count}}件の注文を削除し、影響した保有位置を再計算します。このインポートで作成された保有も一緒に削除されます。",
     "undone": "インポートを取り消しました",
+    "undoOversell": "このインポートは元に戻せません: 残る取引が {{attempted}} 単位を売却しますが、保有は {{available}} です。先にその取引を編集または削除してください。",
+    "undoTooLarge": "このインポートは元に戻せません: 残る保有数量が大きすぎて保存できません。",
     "undoDescription": "{{filename}}からインポートした{{count}}件の取引を削除します。この操作は取り消せません。",
     "deleting": "削除中...",
     "deleteAll": "すべて削除",
@@ -2086,7 +2088,9 @@
       "fee": "手数料",
       "kind": "買付/売却",
       "currency": "通貨",
-      "notes": "メモ"
+      "notes": "メモ",
+      "old_units": "分割前の数量",
+      "new_units": "分割後の数量"
     },
     "walletWarningTitle": "すでにポートフォリオに存在します",
     "warning": {
@@ -2095,7 +2099,8 @@
     },
     "kind": {
       "buy": "買付",
-      "sell": "売却"
+      "sell": "売却",
+      "split": "株式分割"
     },
     "reason": {
       "missing_ticker": "ティッカーなし",
@@ -2107,8 +2112,15 @@
       "unknown_ticker": "価格プロバイダーがティッカーを検出できません",
       "oversell": "保有数を超える売却",
       "no_fx_rate": "注文日の為替レートがありません",
-      "possible_duplicate": "以前のインポートでこの保有銘柄に登録済みの可能性があります"
-    }
+      "possible_duplicate": "以前のインポートでこの保有銘柄に登録済みの可能性があります",
+      "invalid_split": "分割比率を読み取れない、または数量・価格・手数料のある分割",
+      "split_not_allowed": "銀行と同期している保有には分割を記録できません",
+      "split_in_future": "分割の日付を未来にすることはできません",
+      "nothing_held_before_split": "分割前に保有数量がありません",
+      "too_large": "保有が大きすぎて保存できません",
+      "holding_moved": "インポート中に保有資産の名前が変更されたか、別のウォレットに移動されました"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "資産",

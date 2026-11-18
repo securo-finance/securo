@@ -2019,6 +2019,8 @@
     "undoImport": "Annullare l'importazione?",
     "undoOrdersDescription": "Verranno eliminati i {{count}} ordini importati da {{filename}} e ricalcolate le posizioni interessate. I titoli creati da questa importazione vengono rimossi con essi.",
     "undone": "Importazione annullata",
+    "undoOversell": "Impossibile annullare questa importazione: un movimento che resta vende {{attempted}} unità con {{available}} possedute. Modifica o elimina prima quel movimento.",
+    "undoTooLarge": "Impossibile annullare questa importazione: la posizione che resta è troppo grande da salvare.",
     "undoDescription": "Questo eliminerà {{count}} transazioni importate da {{filename}}. Questa azione non può essere annullata.",
     "deleting": "Eliminazione...",
     "deleteAll": "Elimina tutto",
@@ -2090,7 +2092,9 @@
       "fee": "Commissioni",
       "kind": "Acquisto/Vendita",
       "currency": "Valuta",
-      "notes": "Note"
+      "notes": "Note",
+      "old_units": "Unità prima",
+      "new_units": "Unità dopo"
     },
     "walletWarningTitle": "Già nel tuo portafoglio",
     "warning": {
@@ -2099,7 +2103,8 @@
     },
     "kind": {
       "buy": "Acquisto",
-      "sell": "Vendita"
+      "sell": "Vendita",
+      "split": "Frazionamento"
     },
     "reason": {
       "missing_ticker": "nessun ticker",
@@ -2111,8 +2116,15 @@
       "unknown_ticker": "ticker non trovato dal fornitore di prezzi",
       "oversell": "vendita superiore alla posizione",
       "no_fx_rate": "nessun tasso di cambio per la data dell'ordine",
-      "possible_duplicate": "potrebbe essere già in questa posizione da un'importazione precedente"
-    }
+      "possible_duplicate": "potrebbe essere già in questa posizione da un'importazione precedente",
+      "invalid_split": "rapporto di frazionamento illeggibile, o frazionamento con quantità, prezzo o commissione",
+      "split_not_allowed": "non si possono registrare frazionamenti su una posizione sincronizzata con la banca",
+      "split_in_future": "un frazionamento non può avere una data futura",
+      "nothing_held_before_split": "nessuna unità detenuta prima del frazionamento",
+      "too_large": "renderebbe la posizione troppo grande da salvare",
+      "holding_moved": "la posizione è stata rinominata o spostata in un altro portafoglio durante l’importazione"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Beni",

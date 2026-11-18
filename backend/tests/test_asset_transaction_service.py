@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 import pytest
 import pytest_asyncio
 from fastapi import HTTPException
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_timezone, app_today, use_resolved_timezone
@@ -32,6 +32,7 @@ from app.schemas.asset import (
 )
 from app.services import asset_import_service, asset_service, asset_transaction_service
 from app.services.asset_transaction_service import _detect_oversell, _recompute
+from tests.conftest import TestSessionLocal
 
 
 # ---------------------------------------------------------------------------
@@ -291,6 +292,26 @@ async def test_add_buys_sets_units_average_and_cost_basis(session, test_workspac
 
 
 @pytest.mark.asyncio
+async def test_a_quantity_with_more_decimals_than_the_column_is_stored_rounded(
+    session, test_workspace, market_asset
+):
+    """The column keeps six decimals. Rounding before the checks and the insert
+    means the ledger that was validated is the ledger that is stored, on any
+    database."""
+    await asset_transaction_service.add_transaction(
+        session, market_asset.id, test_workspace.id,
+        AssetTransactionCreate(
+            kind="buy", quantity=Decimal("0.1234567"), price=Decimal("20"),
+            date=date(2026, 1, 1),
+        ),
+    )
+    row = (await session.execute(select(AssetTransaction))).scalar_one()
+    assert row.quantity == Decimal("0.123457")
+    await session.refresh(market_asset)
+    assert market_asset.units == Decimal("0.123457")
+
+
+@pytest.mark.asyncio
 async def test_sell_records_realized_gain(session, test_workspace, market_asset):
     await asset_transaction_service.add_transaction(
         session, market_asset.id, test_workspace.id,
@@ -337,6 +358,90 @@ async def test_update_transaction_recomputes(session, test_workspace, market_ass
     assert read.units == 20
     assert read.average_price is not None
     assert round(read.average_price, 2) == 20.00
+
+
+@pytest.mark.asyncio
+async def test_an_edit_validates_against_the_row_as_it_is_once_the_holding_is_locked(
+    session, test_workspace, market_asset
+):
+    """A notes-only edit must not pass its checks on the values it loaded.
+
+    Another request took the buy down from 10 to 3 while this one waited for
+    the holding lock, and a sale of 4 is now short against it. The row this
+    session already holds comes back at 10 unless the read after the lock
+    refreshes it, and the edit is validated — and allowed — on units that are
+    no longer stored.
+    """
+    await asset_transaction_service.add_transaction(
+        session, market_asset.id, test_workspace.id,
+        AssetTransactionCreate(kind="buy", quantity=Decimal("10"), price=Decimal("20"), date=date(2026, 1, 1)),
+    )
+    txs = await asset_transaction_service.list_asset_transactions(session, market_asset.id, test_workspace.id)
+    assert txs is not None
+    stale = await session.get(AssetTransaction, txs[0].id)
+    assert stale.quantity == Decimal("10")
+    # The other request, committed after this one loaded the row.
+    async with TestSessionLocal() as writer:
+        await writer.execute(
+            update(AssetTransaction)
+            .where(AssetTransaction.id == txs[0].id)
+            .values(quantity=Decimal("3"))
+        )
+        writer.add(AssetTransaction(
+            asset_id=market_asset.id, workspace_id=test_workspace.id, kind="sell",
+            quantity=Decimal("4"), price=Decimal("30"), fee=Decimal("0"),
+            date=date(2026, 3, 1), source="manual",
+        ))
+        await writer.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        await asset_transaction_service.update_transaction(
+            session, txs[0].id, test_workspace.id, AssetTransactionUpdate(notes="edited"),
+        )
+
+    assert exc.value.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["update", "delete"])
+async def test_an_entry_removed_while_the_lock_is_taken_answers_not_found(
+    session, test_workspace, market_asset, monkeypatch, operation
+):
+    """The row was there on the first read and gone by the time the holding
+    lock came through, as another request's delete leaves it.
+
+    That is a not-found (`None`), not the 500 a `session.refresh` of a row that
+    no longer exists would raise.
+    """
+    await asset_transaction_service.add_transaction(
+        session, market_asset.id, test_workspace.id,
+        AssetTransactionCreate(kind="buy", quantity=Decimal("10"), price=Decimal("20"), date=date(2026, 1, 1)),
+    )
+    txs = await asset_transaction_service.list_asset_transactions(session, market_asset.id, test_workspace.id)
+    assert txs is not None
+    tx_id = txs[0].id
+
+    real_lock = asset_transaction_service._lock_asset
+
+    async def lock_after_the_delete(session_, asset_id, workspace_id):
+        await session_.execute(
+            delete(AssetTransaction)
+            .where(AssetTransaction.id == tx_id)
+            .execution_options(synchronize_session=False)
+        )
+        return await real_lock(session_, asset_id, workspace_id)
+
+    monkeypatch.setattr(asset_transaction_service, "_lock_asset", lock_after_the_delete)
+
+    if operation == "delete":
+        read = await asset_transaction_service.delete_transaction(
+            session, tx_id, test_workspace.id,
+        )
+    else:
+        read = await asset_transaction_service.update_transaction(
+            session, tx_id, test_workspace.id, AssetTransactionUpdate(notes="edited"),
+        )
+    assert read is None
 
 
 @pytest.mark.asyncio
@@ -1081,6 +1186,59 @@ async def test_a_second_split_is_judged_on_the_holding_it_leaves(session, test_w
     assert exc.value.status_code == 422
     assert exc.value.detail == _TOO_LARGE
     assert len(await _ledger(session, test_workspace, market_asset)) == 2
+
+
+@pytest.mark.asyncio
+async def test_a_split_with_a_fraction_of_a_unit_is_still_refused(
+    session, test_workspace, market_asset
+):
+    """The column rounds to six decimals, but the check on a split's quantity
+    reads what was entered: 0.0000004 is not the zero "no quantity" looks like."""
+    await _buy(session, test_workspace, market_asset, "10", "100", date(2026, 1, 1))
+
+    with pytest.raises(HTTPException) as exc:
+        await _add_split(
+            session, test_workspace, market_asset, 1, 2, date(2026, 2, 1),
+            quantity=Decimal("0.0000004"),
+        )
+
+    assert exc.value.status_code == 422
+    assert exc.value.detail == _NO_MONEY
+    assert len(await _ledger(session, test_workspace, market_asset)) == 1
+
+
+@pytest.mark.asyncio
+async def test_editing_a_split_to_a_fraction_of_a_unit_is_refused(
+    session, test_workspace, market_asset
+):
+    await _buy(session, test_workspace, market_asset, "10", "100", date(2026, 1, 1))
+    await _add_split(session, test_workspace, market_asset, 1, 2, date(2026, 2, 1))
+    split = next(tx for tx in await _ledger(session, test_workspace, market_asset) if tx.kind == "split")
+
+    with pytest.raises(HTTPException) as exc:
+        await asset_transaction_service.update_transaction(
+            session, split.id, test_workspace.id,
+            AssetTransactionUpdate(quantity=Decimal("0.0000004")),
+        )
+
+    assert exc.value.status_code == 422
+    assert exc.value.detail == _NO_MONEY
+    assert not session.dirty
+    assert await _split_ratio(session, split.id) == (1, 2)
+
+
+@pytest.mark.asyncio
+async def test_a_quantity_too_large_to_round_is_a_validation_error(
+    session, test_workspace, market_asset
+):
+    """1e23 has more digits than the column: rounding it raises, so the request
+    has to answer 422 instead of failing with a 500."""
+    with pytest.raises(HTTPException) as exc:
+        await _buy(session, test_workspace, market_asset, "1e23", "100", date(2026, 1, 1))
+
+    assert exc.value.status_code == 422
+    assert exc.value.detail == _TOO_LARGE
+    assert not session.new
 
 
 async def _too_large(call) -> None:
