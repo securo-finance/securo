@@ -371,11 +371,16 @@ def _category_parts(tx: Transaction) -> list[tuple[Optional[Category], float]]:
 
 
 def _is_transfer_part(tx: Transaction, category: Optional[Category]) -> bool:
-    return (
-        bool(tx.transfer_pair_id)
-        or tx.source == "transfer"
-        or bool(category and category.treat_as_transfer)
-    )
+    """Whether one part of the row moves money between two accounts.
+
+    The same rule as `_query_filters.is_transfer`: a linked pair leg or a
+    transfer category. `source == "transfer"` alone is not one. A transfer is
+    always written as two legs, so a `source` row with no pair is a leg whose
+    pair was unlinked or whose other side was deleted, and the profit and loss
+    figures count it as income or expense. Badging it as a transfer here would
+    make the calendar disagree with the totals of the same screen.
+    """
+    return bool(tx.transfer_pair_id) or bool(category and category.treat_as_transfer)
 
 
 def _all_parts_are_transfers(
@@ -395,16 +400,13 @@ def _all_parts_are_transfers(
 def _is_transfer_item(tx: Transaction, parts: list[tuple[Optional[Category], float]]) -> bool:
     """Whether the row itself is badged as a transfer.
 
-    A linked pair leg and a row the app created as a transfer (`source`) are
-    transfers on their own. A split is one only when every part of it is: a
-    row with a transfer part and an expense part is not a transfer row, it
-    simply lands part by part in the day's buckets (issue #993).
+    A linked pair leg is a transfer on its own, and so is a split whose every
+    counted part sits in a transfer category. A row with a transfer part and
+    an expense part is not a transfer row: it simply lands part by part in the
+    day's buckets. `source == "transfer"` without a pair is not enough, since
+    the totals count that row as income or expense (issue #993).
     """
-    return (
-        bool(tx.transfer_pair_id)
-        or tx.source == "transfer"
-        or _all_parts_are_transfers(parts)
-    )
+    return bool(tx.transfer_pair_id) or _all_parts_are_transfers(parts)
 
 
 def _activity_date(

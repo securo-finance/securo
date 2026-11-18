@@ -79,8 +79,8 @@ describe('isTransferTransaction', () => {
     expect(isTransferTransaction(makeTx())).toBe(false)
   })
 
-  it('reads a row the app created as a transfer even without the pair (#993)', () => {
-    expect(isTransferTransaction(makeTx({ source: 'transfer' }))).toBe(true)
+  it('does not read an unlinked source transfer row as a transfer (#993)', () => {
+    expect(isTransferTransaction(makeTx({ source: 'transfer' }))).toBe(false)
   })
 
   it('reads a split whose lines are all transfer categories as a transfer (#993)', () => {

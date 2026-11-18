@@ -1253,11 +1253,13 @@ async def test_transaction_calendar_split_with_all_lines_ignored_is_not_a_transf
 
 
 @pytest.mark.asyncio
-async def test_transaction_calendar_badges_an_unlinked_source_transfer_row(
+async def test_transaction_calendar_does_not_badge_an_unlinked_source_transfer_row(
     session: AsyncSession, test_user, test_workspace
 ):
-    """Issue #993: the row the app created as a transfer keeps the badge even
-    once its pair is gone, matching the bucket its amount lands in."""
+    """Issue #993: a `source="transfer"` row with no pair is a leg whose pair
+    was unlinked or whose other side was deleted. The profit and loss figures
+    count it as income, so the calendar does too: no badge, no transfer
+    bucket. Same rule as `_query_filters.is_transfer`."""
     account = Account(
         id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
         name="Person", type="checking", balance=Decimal("0"), currency="BRL",
@@ -1276,9 +1278,10 @@ async def test_transaction_calendar_badges_an_unlinked_source_transfer_row(
     )
 
     july_8 = next(day for day in calendar.days if day.date == date(2026, 7, 8))
-    assert july_8.items[0].is_transfer is True
-    assert july_8.has_transfer is True
-    assert july_8.actual_income == 0.0
+    assert july_8.items[0].is_transfer is False
+    assert july_8.has_transfer is False
+    assert july_8.actual_income == 80.0
+    assert july_8.actual_transfer_net == 0.0
 
 
 @pytest.mark.asyncio
