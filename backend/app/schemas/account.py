@@ -65,6 +65,19 @@ class AccountUpdate(BaseModel):
     loan_amortization: Optional[LoanAmortization] = None
 
 
+class AccountReservedBalanceRead(BaseModel):
+    """Provider-held reserved funds inside an account (cofrinhos). Read-only:
+    the sync owns these rows, so they are absent from Create/Update."""
+
+    id: uuid.UUID
+    external_id: str
+    name: Optional[str] = None
+    currency: str
+    amount: float
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class AccountRead(AccountBase):
     id: uuid.UUID
     user_id: uuid.UUID
@@ -80,6 +93,11 @@ class AccountRead(AccountBase):
     institution_name: Optional[str] = None
     institution_logo_url: Optional[str] = None
     current_balance: float = 0.0
+    # Provider-owned reserves are a separate display-only breakdown. Their
+    # relationship to the provider's balance is not guaranteed (ADR 0022).
+    reserved_balances: list[AccountReservedBalanceRead] = []
+    # Sum of the same-currency reservations, in the account's currency.
+    reserved_total: float = 0.0
     previous_balance: Optional[float] = None
     # Date of the opening-balance transaction; null when there is none.
     balance_date: Optional[date] = None

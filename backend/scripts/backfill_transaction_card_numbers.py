@@ -67,7 +67,7 @@ async def main(apply: bool, workspace_id: UUID | None) -> int:
     has_target_column = await _has_target_column()
     has_linked_cards_table = await _has_linked_cards_table()
     if apply and (not has_target_column or not has_linked_cards_table):
-        print("Refusing --apply: migrations 114 and 115 have not been applied.")
+        print("Refusing --apply: migrations 119 and 120 have not been applied.")
         return 2
 
     async with async_session_maker() as session:
@@ -128,7 +128,7 @@ async def main(apply: bool, workspace_id: UUID | None) -> int:
         if has_target_column:
             print(f"already backfilled: {totals['already_backfilled']}")
         else:
-            print("migration 114: not applied (preview is still read-only and valid)")
+            print("migration 119: not applied (preview is still read-only and valid)")
         print(f"would backfill: {totals['would_backfill']}")
 
         if candidates_by_account:
@@ -189,7 +189,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--apply",
         action="store_true",
-        help="write masked tails after migrations 114 and 115; omit for a read-only preview",
+        help="write masked tails after migrations 119 and 120; omit for a read-only preview",
     )
     parser.add_argument(
         "--workspace-id",

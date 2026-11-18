@@ -22,7 +22,7 @@ class BankConnection(Base):
     workspace_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
     )
-    provider: Mapped[str] = mapped_column(String(50))  # "pluggy", "belvo", etc.
+    provider: Mapped[str] = mapped_column(String(128))  # "pluggy", "belvo", "plugin:<plugin id>", etc.
     external_id: Mapped[str] = mapped_column(String(255))  # Provider's item ID
     institution_name: Mapped[str] = mapped_column(String(255))
     display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)

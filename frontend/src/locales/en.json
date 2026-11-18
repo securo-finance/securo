@@ -1103,6 +1103,7 @@
     "createCounterpartConfirm": "Create",
     "unlinkTransfer": "Unlink transfer",
     "unlinkTransferConfirm": "Unlink this transfer? Both transactions will be treated as regular transactions again.",
+    "unlinkTransferReportWarning": "Unless their category already keeps them out, both transactions start counting in income and expense reports again: the outgoing one as an expense, the incoming one as income. To keep one out, give it a category treated as a transfer, such as Transfers.",
     "unlinkTransferSuccess": "Transfer unlinked",
     "confirmTransferCategoryTitle": "Apply this category to the paired transfer too?",
     "confirmTransferCategoryDesc": "Transfers come in pairs. You can update only this transaction or apply the same category change to both sides.",
@@ -1285,6 +1286,7 @@
     "deleted": "Account deleted",
     "syncDone": "Sync completed",
     "syncRateLimited": "Bank daily limit reached, no new data was fetched. Try again later.",
+    "syncPartial": "Some accounts were updated, but the bank's daily limit was reached for the others. They will be retried later.",
     "syncError": "Sync failed",
     "connected": "Bank connected successfully",
     "connectError": "Failed to connect bank",
@@ -1293,6 +1295,10 @@
     "confirmDisconnectDesc": "This will unlink {{institution}} and remove synced accounts and transactions from the app. This action is irreversible.",
     "viewTransactions": "View transactions",
     "currentBalance": "Current balance",
+    "reservedBalances": "Reserved balances",
+    "reservedBalanceFallback": "Reserved balance",
+    "reservedTotal": "Reserved",
+    "reservedBalancesHint": "Reserved funds reported by the provider for this account.",
     "income": "Income",
     "expenses": "Expenses",
     "projectedBalance": "Projected Balance",
@@ -1374,8 +1380,16 @@
     "connectionStatus": {
       "active": "Active",
       "error": "Error",
-      "expired": "Expired"
-    }
+      "expired": "Expired",
+      "disconnected": "Disconnected"
+    },
+    "pluginConnectors": "From your plugins",
+    "pluginUnavailable": "The plugin behind this connection isn't installed or available anymore.",
+    "confirmDisconnectKeepDesc": "{{institution}} will stop syncing. Its accounts and transaction history stay in the app, and you can reconnect it later.",
+    "disconnectAlsoDelete": "Also delete accounts and transactions",
+    "disconnectedKept": "Bank disconnected. Accounts and history were kept.",
+    "removeConnection": "Remove connection",
+    "connectionDisconnected": "Disconnected. Reconnect to sync again"
   },
   "loans": {
     "title": "Loan contract",
@@ -1488,7 +1502,26 @@
     "suggestEmpty": "No spending history in the selected period to suggest from.",
     "suggestError": "Could not load suggestions. Try again in a moment.",
     "hiddenCategory": "Hidden",
-    "average": "usually {{amount}}"
+    "average": "usually {{amount}}",
+    "copyAction": "Copy previous month",
+    "copyTitle": "Copy budgets",
+    "copyDescription": "Copy the budgets of a source month into {{month}}.",
+    "copySource": "Source month",
+    "copyExisting": "Existing budgets",
+    "copyOverwrite": "Replace them with the source month amounts",
+    "copyMissing": "Keep them and copy only missing categories",
+    "copyAdjustment": "Adjustment (%)",
+    "copyAdjustmentHint": "Optional, between -100 and 1000. 5 adds 5%, -10 takes 10% off.",
+    "copyPreviewCount": "Categories to copy: {{count}}",
+    "copyPreviewTotal": "Total to copy: {{amount}}",
+    "copyPreviewEmpty": "The selected month has no budgets to copy.",
+    "copyPreviewError": "Could not load the source month.",
+    "copyAmountTooLarge": "The adjusted amount is too large for the budget limit. Lower the percentage adjustment.",
+    "copyConfirm": "Copy budgets",
+    "copySuccess": "Budgets copied: {{count}}",
+    "copyNothing": "No budgets were copied.",
+    "copyError": "Could not copy the budgets.",
+    "copyEmptyHint": "Copy a previous month's budgets to start from them."
   },
   "goals": {
     "title": "Goals",
@@ -1589,7 +1622,18 @@
     "autoGenerate": "Generate transactions automatically",
     "autoGenerateHelp": "Create a transaction each time this bill is due. Turn off to wait for the real charge (e.g. from bank sync) and only show it as upcoming until then.",
     "fxEstimate": "Estimate based on latest exchange rate ({{rate}}). Final amount may change.",
-    "confirmDeleteDescription": "The recurring definition \"{{description}}\" will be permanently deleted. Existing transactions will remain but lose their recurring link. This action cannot be undone."
+    "confirmDeleteDescription": "The recurring definition \"{{description}}\" will be permanently deleted. Existing transactions will remain but lose their recurring link. This action cannot be undone.",
+    "priceHistory": "Price history",
+    "viewPriceHistory": "View price history",
+    "priceChangesTitle": "Recent price changes (last 30 days)",
+    "priceChangesEmpty": "No stable price changes detected",
+    "priceChangeBadge": "Price changed",
+    "priceChangeIncrease": "Price increased",
+    "priceChangeDecrease": "Price decreased",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "After a {{days}}-day gap",
+    "priceChangeInsufficient": "At least 3 matched posted charges are needed before Securo reports a stable price change."
   },
   "rules": {
     "searchPlaceholder": "Search rules...",
@@ -1848,6 +1892,39 @@
     "sparkles": "Special",
     "circle-help": "Other / Undefined"
   },
+  "categoryEmojis": {
+    "burger": "Burger",
+    "fries": "Fries",
+    "sandwich": "Sandwich",
+    "wine": "Wine",
+    "cocktail": "Cocktail",
+    "juice": "Juice",
+    "money-bag": "Money bag",
+    "spending": "Spending",
+    "soccer": "Soccer",
+    "basketball": "Basketball",
+    "tennis": "Tennis",
+    "yoga": "Yoga",
+    "art": "Art",
+    "headphones": "Headphones",
+    "plug": "Plug",
+    "tools": "Tools",
+    "soap": "Soap",
+    "shower": "Shower",
+    "shoes": "Shoes",
+    "makeup": "Makeup",
+    "toys": "Toys",
+    "flowers": "Flowers",
+    "luck": "Luck",
+    "birthday": "Birthday",
+    "christmas": "Christmas",
+    "protection": "Protection",
+    "map": "Map",
+    "beach": "Beach",
+    "launch": "Launch",
+    "investment": "Investment",
+    "construction": "Construction"
+  },
   "groups": {
     "title": "Category Groups",
     "add": "Add Group",
@@ -2054,6 +2131,7 @@
     "noTransactions": "No transactions yet",
     "txBuy": "Buy",
     "txSell": "Sell",
+    "txSplit": "Split",
     "txFee": "Fee",
     "txSaved": "Transaction saved",
     "txDeleted": "Transaction deleted",
@@ -2064,6 +2142,10 @@
     "unitPrice": "Unit price",
     "fee": "Fee",
     "txTotal": "Total",
+    "splitOldUnits": "Units before",
+    "splitNewUnits": "Units after",
+    "splitHint": "Enter the units you held before the split and what they became: a 100-for-1 split is 1 → 100, a 1-for-10 reverse split is 10 → 1. Date it on the first day the holding trades at the new price.",
+    "splitInvalid": "Enter two different whole numbers from 1 to 1,000,000.",
     "confirmDeleteTxTitle": "Delete transaction?",
     "confirmDeleteTx": "This removes the entry and recalculates the holding's average price.",
     "editAsset": "Edit Asset",
@@ -2408,8 +2490,13 @@
     "retry": "Retry",
     "error": "Error",
     "success": "Success",
-    "searchIcon": "Search icon...",
     "noIconsFound": "No icons found",
+    "searchIconOrEmoji": "Search icon or emoji...",
+    "iconPickerIcons": "Icons",
+    "iconPickerEmojis": "Emojis",
+    "useEmoji": "Use this emoji",
+    "noEmojisFound": "No emojis found",
+    "seeMatchingEmojis": "See matching emojis ({{count}})",
     "primaryCurrency": "Primary Currency",
     "showLess": "Show less",
     "showMore": "+{{count}} more",
@@ -2420,7 +2507,8 @@
     "preview": "Preview",
     "download": "Download",
     "closePreview": "Close preview",
-    "remove": "Remove"
+    "remove": "Remove",
+    "invalidAmount": "Enter a valid amount, like {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "Search groups...",
@@ -2824,6 +2912,8 @@
       "saveFailed": "Failed to save tool selection",
       "empty": "No tools discovered. Is the MCP server running? With Docker: `docker compose --profile agents up -d`.",
       "proposeBadge": "propose",
+      "enabledCount": "{{enabled}} of {{total}} enabled",
+      "enableAll": "Enable all",
       "loading": "Loading tools…"
     },
     "chat": {
@@ -2875,7 +2965,13 @@
         "deleteBudget": "{{category}}: {{amount}} for {{month}}",
         "deleteRecurringBudget": "{{category}}: {{amount}} every month from {{month}}",
         "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
-        "createCategoryGroup": "“{{name}}”"
+        "createCategoryGroup": "“{{name}}”",
+        "createManualAccount": "{{name}} · {{type}} · {{currentBalance}} · {{openingBalance}}{{balanceDate}}",
+        "updateManualAccount": "{{name}}. {{currentBalance}}. {{changes}}",
+        "manualAccountMoney": "{{label}}: {{amount}}",
+        "manualAccountDate": "{{label}}: {{date}}",
+        "manualAccountChange": "{{field}}: {{before}} → {{after}}",
+        "manualAccountNoChanges": "No changes"
       }
     },
     "conversation": {
@@ -2923,6 +3019,7 @@
       "baseUrl": "Endpoint URL",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "Endpoint URL is required for this provider",
+      "baseUrlInvalid": "Enter a valid http or https endpoint URL",
       "ollamaHint": "If Ollama runs on your host machine, use http://host.docker.internal:11434 (Mac/Windows) or your host IP (Linux).",
       "openaiCompatHint": "Just paste the host:port (e.g. http://192.168.1.142:1234). The /v1 path is added automatically. From inside Docker on Mac/Windows, replace localhost with host.docker.internal.",
       "apiKey": "API key / token",
@@ -3460,8 +3557,9 @@
       "new": "new",
       "read": "Read {{what}}",
       "write": "Read and change {{what}}",
-      "ownerOnly": "Only the workspace owner can add, update or remove a plugin that runs code.",
+      "ownerOnly": "Only the workspace owner or a manager can add, update or remove a plugin that runs code.",
       "removeConnections": "Its connections in this workspace ({{count}}) are removed, along with their saved keys and access.",
+      "unlinks": "Its bank connections ({{count}}) stop syncing. Their accounts and transactions stay, as manual accounts.",
       "removeNothing": "The plugin's code is removed from your server once no workspace uses it.",
       "auth": {
         "credentials": "Key or password",
@@ -3486,6 +3584,15 @@
         "install": "This plugin brings no data. Review what its code may do:",
         "update": "Review what the new version may do:",
         "remove": "Its code stops running in this workspace."
+      },
+      "provides": "Syncs as a connected bank",
+      "providesHint": "Securo adds these records to this workspace and keeps them up to date, as for a connected bank. Each connection appears under Bank Connections.",
+      "kinds": {
+        "accounts": "Accounts",
+        "transactions": "transactions",
+        "bills": "card bills",
+        "holdings": "investments",
+        "trades": "buys and sells"
       }
     },
     "connections": {
@@ -3523,8 +3630,13 @@
       "added": "{{name}} connected",
       "removeTitle": "Remove {{name}}?",
       "removeHint": "Its saved keys and its access to this workspace are deleted. What it already brought in stays.",
+      "removeBankHint": "It syncs as a connected bank: removing it disconnects that bank and removes the accounts it synced, with their transactions.",
       "removed": "{{name}} removed",
-      "copyFailed": "Couldn't copy. Select the address and copy it by hand."
+      "copyFailed": "Couldn't copy. Select the address and copy it by hand.",
+      "editTitle": "Reconnect {{name}}",
+      "editHint": "Update what changed, such as a new password or token. The connection syncs again afterwards.",
+      "keepBlank": "Leave a field blank to keep its current value.",
+      "updated": "{{name}} updated"
     },
     "oauth": {
       "title": "Finishing the sign in",

@@ -1103,6 +1103,7 @@
     "createCounterpartConfirm": "Erstellen",
     "unlinkTransfer": "Verknüpfung aufheben",
     "unlinkTransferConfirm": "Verknüpfung dieser Umbuchung aufheben? Beide Transaktionen werden danach wieder als reguläre Transaktionen behandelt.",
+    "unlinkTransferReportWarning": "Sofern ihre Kategorie sie nicht schon ausschließt, zählen beide Transaktionen wieder in den Einnahmen- und Ausgabenberichten: die ausgehende als Ausgabe, die eingehende als Einnahme. Um eine davon auszuschließen, gib ihr eine Kategorie, die als Umbuchung behandelt wird, zum Beispiel Umbuchungen.",
     "unlinkTransferSuccess": "Verknüpfung aufgehoben",
     "confirmTransferCategoryTitle": "Diese Kategorie auch auf die verknüpfte Umbuchung anwenden?",
     "confirmTransferCategoryDesc": "Umbuchungen treten paarweise auf. Du kannst nur diese Transaktion aktualisieren oder die gleiche Kategorieänderung auf beide Seiten anwenden.",
@@ -1286,6 +1287,7 @@
     "deleted": "Konto gelöscht",
     "syncDone": "Synchronisierung abgeschlossen",
     "syncRateLimited": "Tägliches Banklimit erreicht, es wurden keine neuen Daten geladen. Bitte später erneut versuchen.",
+    "syncPartial": "Einige Konten wurden aktualisiert, für die übrigen wurde jedoch das tägliche Banklimit erreicht. Sie werden später erneut versucht.",
     "syncError": "Synchronisierung fehlgeschlagen",
     "connected": "Bank erfolgreich verbunden",
     "connectError": "Verbindung zur Bank fehlgeschlagen",
@@ -1294,6 +1296,10 @@
     "confirmDisconnectDesc": "Dadurch wird die Verknüpfung mit {{institution}} aufgehoben und die synchronisierten Konten und Transaktionen werden aus der App gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
     "viewTransactions": "Transaktionen anzeigen",
     "currentBalance": "Aktueller Saldo",
+    "reservedBalances": "Reservierte Guthaben",
+    "reservedBalanceFallback": "Reserviertes Guthaben",
+    "reservedTotal": "Reserviert",
+    "reservedBalancesHint": "Vom Anbieter für dieses Konto gemeldete reservierte Gelder.",
     "income": "Einnahmen",
     "expenses": "Ausgaben",
     "projectedBalance": "Prognostizierter Saldo",
@@ -1375,8 +1381,16 @@
     "connectionStatus": {
       "active": "Aktiv",
       "error": "Fehler",
-      "expired": "Abgelaufen"
-    }
+      "expired": "Abgelaufen",
+      "disconnected": "Getrennt"
+    },
+    "pluginConnectors": "Aus deinen Plugins",
+    "pluginUnavailable": "Das Plugin dieser Verbindung ist nicht mehr installiert oder verfügbar.",
+    "confirmDisconnectKeepDesc": "{{institution}} wird nicht mehr synchronisiert. Die Konten und der Transaktionsverlauf bleiben in der App, und du kannst die Bank später wieder verbinden.",
+    "disconnectAlsoDelete": "Auch Konten und Transaktionen löschen",
+    "disconnectedKept": "Bank getrennt. Konten und Verlauf wurden behalten.",
+    "removeConnection": "Verbindung entfernen",
+    "connectionDisconnected": "Getrennt. Erneut verbinden, um wieder zu synchronisieren"
   },
   "loans": {
     "title": "Kreditvertrag",
@@ -1489,7 +1503,26 @@
     "suggestEmpty": "Keine Ausgaben im gewählten Zeitraum, aus denen vorgeschlagen werden kann.",
     "suggestError": "Vorschläge konnten nicht geladen werden. Versuche es gleich noch einmal.",
     "hiddenCategory": "Ausgeblendet",
-    "average": "meist {{amount}}"
+    "average": "meist {{amount}}",
+    "copyAction": "Vormonat kopieren",
+    "copyTitle": "Budgets kopieren",
+    "copyDescription": "Kopiere die Budgets eines Quellmonats nach {{month}}.",
+    "copySource": "Quellmonat",
+    "copyExisting": "Vorhandene Budgets",
+    "copyOverwrite": "Durch die Beträge des Quellmonats ersetzen",
+    "copyMissing": "Behalten und nur fehlende Kategorien kopieren",
+    "copyAdjustment": "Anpassung (%)",
+    "copyAdjustmentHint": "Optional, zwischen -100 und 1000. 5 erhöht um 5 %, -10 senkt um 10 %.",
+    "copyPreviewCount": "Zu kopierende Kategorien: {{count}}",
+    "copyPreviewTotal": "Zu kopierender Gesamtbetrag: {{amount}}",
+    "copyPreviewEmpty": "Der gewählte Monat hat keine Budgets zum Kopieren.",
+    "copyPreviewError": "Der Quellmonat konnte nicht geladen werden.",
+    "copyAmountTooLarge": "Der angepasste Betrag überschreitet die Budgetgrenze. Verringere die prozentuale Anpassung.",
+    "copyConfirm": "Budgets kopieren",
+    "copySuccess": "Budgets kopiert: {{count}}",
+    "copyNothing": "Es wurden keine Budgets kopiert.",
+    "copyError": "Die Budgets konnten nicht kopiert werden.",
+    "copyEmptyHint": "Kopiere die Budgets eines früheren Monats, um damit zu starten."
   },
   "goals": {
     "title": "Ziele",
@@ -1590,7 +1623,18 @@
     "autoGenerate": "Transaktionen automatisch erstellen",
     "autoGenerateHelp": "Erstellt bei jeder Fälligkeit dieser Rechnung eine Transaktion. Deaktivieren, um auf die tatsächliche Belastung (z. B. aus der Banksynchronisierung) zu warten und sie bis dahin nur als anstehend anzuzeigen.",
     "fxEstimate": "Schätzung basierend auf dem aktuellsten Wechselkurs ({{rate}}). Der endgültige Betrag kann abweichen.",
-    "confirmDeleteDescription": "Die wiederkehrende Transaktion \"{{description}}\" wird dauerhaft gelöscht. Vorhandene Transaktionen bleiben bestehen, verlieren jedoch ihre Verknüpfung zur wiederkehrenden Transaktion. Diese Aktion kann nicht rückgängig gemacht werden."
+    "confirmDeleteDescription": "Die wiederkehrende Transaktion \"{{description}}\" wird dauerhaft gelöscht. Vorhandene Transaktionen bleiben bestehen, verlieren jedoch ihre Verknüpfung zur wiederkehrenden Transaktion. Diese Aktion kann nicht rückgängig gemacht werden.",
+    "priceHistory": "Preisverlauf",
+    "viewPriceHistory": "Preisverlauf anzeigen",
+    "priceChangesTitle": "Letzte Preisänderungen (letzte 30 Tage)",
+    "priceChangesEmpty": "Keine stabilen Preisänderungen erkannt",
+    "priceChangeBadge": "Preis geändert",
+    "priceChangeIncrease": "Preis gestiegen",
+    "priceChangeDecrease": "Preis gesunken",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "Nach einer Pause von {{days}} Tagen",
+    "priceChangeInsufficient": "Es werden mindestens 3 zugeordnete gebuchte Abbuchungen benötigt, bevor Securo eine stabile Preisänderung meldet."
   },
   "rules": {
     "searchPlaceholder": "Regeln suchen...",
@@ -1849,6 +1893,39 @@
     "sparkles": "Besonderes",
     "circle-help": "Sonstiges / Unklar"
   },
+  "categoryEmojis": {
+    "burger": "Burger",
+    "fries": "Pommes",
+    "sandwich": "Sandwich",
+    "wine": "Wein",
+    "cocktail": "Cocktail",
+    "juice": "Saft",
+    "money-bag": "Geldsack",
+    "spending": "Ausgaben",
+    "soccer": "Fußball",
+    "basketball": "Basketball",
+    "tennis": "Tennis",
+    "yoga": "Yoga",
+    "art": "Kunst",
+    "headphones": "Kopfhörer",
+    "plug": "Stecker",
+    "tools": "Werkzeuge",
+    "soap": "Seife",
+    "shower": "Dusche",
+    "shoes": "Schuhe",
+    "makeup": "Make-up",
+    "toys": "Spielzeug",
+    "flowers": "Blumen",
+    "luck": "Glück",
+    "birthday": "Geburtstag",
+    "christmas": "Weihnachten",
+    "protection": "Schutz",
+    "map": "Karte",
+    "beach": "Strand",
+    "launch": "Start",
+    "investment": "Investition",
+    "construction": "Bau"
+  },
   "groups": {
     "title": "Kategoriegruppen",
     "add": "Gruppe hinzufügen",
@@ -2055,6 +2132,7 @@
     "noTransactions": "Noch keine Transaktionen",
     "txBuy": "Kauf",
     "txSell": "Verkauf",
+    "txSplit": "Split",
     "txFee": "Gebühr",
     "txSaved": "Transaktion gespeichert",
     "txDeleted": "Transaktion gelöscht",
@@ -2065,6 +2143,10 @@
     "unitPrice": "Preis pro Einheit",
     "fee": "Gebühr",
     "txTotal": "Gesamt",
+    "splitOldUnits": "Einheiten vorher",
+    "splitNewUnits": "Einheiten nachher",
+    "splitHint": "Gib ein, wie viele Einheiten du vor dem Split hattest und wie viele daraus geworden sind: Ein Split 100:1 ist 1 → 100, ein Reverse Split 1:10 ist 10 → 1. Trage als Datum den ersten Tag ein, an dem das Wertpapier zum neuen Kurs gehandelt wird.",
+    "splitInvalid": "Gib zwei verschiedene ganze Zahlen von 1 bis 1.000.000 ein.",
     "confirmDeleteTxTitle": "Transaktion löschen?",
     "confirmDeleteTx": "Dies entfernt den Eintrag und berechnet den durchschnittlichen Einstandspreis neu.",
     "editAsset": "Vermögenswert bearbeiten",
@@ -2409,8 +2491,13 @@
     "retry": "Erneut versuchen",
     "error": "Fehler",
     "success": "Erfolgreich",
-    "searchIcon": "Symbol suchen...",
     "noIconsFound": "Keine Symbole gefunden",
+    "searchIconOrEmoji": "Symbol oder Emoji suchen...",
+    "iconPickerIcons": "Symbole",
+    "iconPickerEmojis": "Emojis",
+    "useEmoji": "Dieses Emoji verwenden",
+    "noEmojisFound": "Keine Emojis gefunden",
+    "seeMatchingEmojis": "Passende Emojis anzeigen ({{count}})",
     "primaryCurrency": "Primärwährung",
     "showLess": "Weniger anzeigen",
     "showMore": "+{{count}} weitere",
@@ -2421,7 +2508,8 @@
     "preview": "Vorschau",
     "download": "Herunterladen",
     "closePreview": "Vorschau schließen",
-    "remove": "Entfernen"
+    "remove": "Entfernen",
+    "invalidAmount": "Geben Sie einen gültigen Betrag ein, zum Beispiel {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "Gruppen suchen...",
@@ -2825,6 +2913,8 @@
       "saveFailed": "Fehler beim Speichern der Werkzeugauswahl",
       "empty": "Keine Werkzeuge gefunden. Läuft der MCP-Server? Mit Docker: `docker compose --profile agents up -d`.",
       "proposeBadge": "vorschlagen",
+      "enabledCount": "{{enabled}} von {{total}} aktiviert",
+      "enableAll": "Alle aktivieren",
       "loading": "Werkzeuge werden geladen…"
     },
     "chat": {
@@ -2876,7 +2966,13 @@
         "deleteBudget": "{{category}}: {{amount}} für {{month}}",
         "deleteRecurringBudget": "{{category}}: {{amount}} monatlich ab {{month}}",
         "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
-        "createCategoryGroup": "“{{name}}”"
+        "createCategoryGroup": "“{{name}}”",
+        "createManualAccount": "{{name}} · {{type}} · {{currentBalance}} · {{openingBalance}}{{balanceDate}}",
+        "updateManualAccount": "{{name}}. {{currentBalance}}. {{changes}}",
+        "manualAccountMoney": "{{label}}: {{amount}}",
+        "manualAccountDate": "{{label}}: {{date}}",
+        "manualAccountChange": "{{field}}: {{before}} → {{after}}",
+        "manualAccountNoChanges": "Keine Änderungen"
       }
     },
     "conversation": {
@@ -2924,6 +3020,7 @@
       "baseUrl": "Endpunkt-URL",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "Endpunkt-URL ist für diesen Anbieter erforderlich",
+      "baseUrlInvalid": "Gib eine gültige http- oder https-Endpunkt-URL ein",
       "ollamaHint": "Wenn Ollama auf deinem Host-Rechner läuft, verwende http://host.docker.internal:11434 (Mac/Windows) oder deine Host-IP (Linux).",
       "openaiCompatHint": "Füge einfach Host:Port ein (z.B. http://192.168.1.142:1234). Der Pfad /v1 wird automatisch hinzugefügt. Ersetze unter Mac/Windows innerhalb von Docker 'localhost' durch 'host.docker.internal'.",
       "apiKey": "API-Schlüssel / Token",
@@ -3461,8 +3558,9 @@
       "new": "neu",
       "read": "{{what}} lesen",
       "write": "{{what}} lesen und ändern",
-      "ownerOnly": "Nur der Eigentümer des Arbeitsbereichs kann ein Plugin, das Code ausführt, hinzufügen, aktualisieren oder entfernen.",
+      "ownerOnly": "Nur der Eigentümer des Arbeitsbereichs oder ein Manager kann ein Plugin, das Code ausführt, hinzufügen, aktualisieren oder entfernen.",
       "removeConnections": "Seine Verbindungen in diesem Arbeitsbereich ({{count}}) werden entfernt, samt gespeicherter Schlüssel und Zugriffe.",
+      "unlinks": "Seine Bankverbindungen ({{count}}) werden nicht mehr synchronisiert. Ihre Konten und Transaktionen bleiben als manuelle Konten erhalten.",
       "removeNothing": "Der Code des Plugins wird von deinem Server entfernt, sobald ihn kein Arbeitsbereich mehr nutzt.",
       "auth": {
         "credentials": "Schlüssel oder Passwort",
@@ -3487,6 +3585,15 @@
         "install": "Dieses Plugin bringt keine Daten. Prüfe, was sein Code tun darf:",
         "update": "Prüfe, was die neue Version tun darf:",
         "remove": "Sein Code läuft in diesem Arbeitsbereich nicht mehr."
+      },
+      "provides": "Synchronisiert wie eine verbundene Bank",
+      "providesHint": "Securo fügt diese Daten diesem Workspace hinzu und hält sie aktuell, wie bei einer verbundenen Bank. Jede Verbindung erscheint unter Bankverbindungen.",
+      "kinds": {
+        "accounts": "Konten",
+        "transactions": "Transaktionen",
+        "bills": "Kartenabrechnungen",
+        "holdings": "Anlagen",
+        "trades": "Käufe und Verkäufe"
       }
     },
     "connections": {
@@ -3524,8 +3631,13 @@
       "added": "{{name}} verbunden",
       "removeTitle": "{{name}} entfernen?",
       "removeHint": "Die gespeicherten Schlüssel und der Zugriff auf diesen Arbeitsbereich werden gelöscht. Was bereits übernommen wurde, bleibt.",
+      "removeBankHint": "Sie wird wie eine verbundene Bank synchronisiert: Beim Entfernen wird diese Bank getrennt und die synchronisierten Konten samt Transaktionen werden entfernt.",
       "removed": "{{name}} entfernt",
-      "copyFailed": "Kopieren nicht möglich. Markiere die Adresse und kopiere sie von Hand."
+      "copyFailed": "Kopieren nicht möglich. Markiere die Adresse und kopiere sie von Hand.",
+      "editTitle": "{{name}} neu verbinden",
+      "editHint": "Aktualisiere, was sich geändert hat, etwa ein neues Passwort oder Token. Danach wird die Verbindung erneut synchronisiert.",
+      "keepBlank": "Lass ein Feld leer, um den aktuellen Wert zu behalten.",
+      "updated": "{{name}} aktualisiert"
     },
     "oauth": {
       "title": "Anmeldung wird abgeschlossen",

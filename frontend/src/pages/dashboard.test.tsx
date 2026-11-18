@@ -4,7 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 
 import DashboardPage from '@/pages/dashboard'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { formatCurrency } from '@/lib/format'
+import { formatCompactCurrency, formatCurrency } from '@/lib/format'
 import { monthLabel } from '@/lib/month-utils'
 import { renderWithProviders, t } from '@/test/utils'
 import type { Account, DashboardSummary } from '@/types'
@@ -269,6 +269,37 @@ it('shows the mortgage breakdown editor for a payment opened from the dashboard'
   expect(screen.getByLabelText(t('transactions.mortgageInterest'))).toBeInTheDocument()
 })
 
+describe('Dashboard available balance with reserves', () => {
+  it.each([
+    { currency: 'USD', current_balance: 1000, balance_primary: null, expected: 1000 },
+    { currency: 'BRL', current_balance: 1000, balance_primary: 200, expected: 200 },
+    { currency: 'BRL', current_balance: 0, balance_primary: 0, expected: 0 },
+    { currency: 'EUR', current_balance: 1000, balance_primary: null, expected: 1000, fx_fallback: true },
+  ])('keeps reserves out of the headline, chip and breakdown: $currency / $current_balance', async (values) => {
+    collectionFilter.activeAccountIds = ['reserved', 'card']
+    api.accounts.list.mockResolvedValue([
+      account({ id: 'reserved', name: 'Reserved account', reserved_total: 4000, ...values }),
+      account({ id: 'outside', current_balance: 90000, reserved_total: 10000 }),
+      account({ id: 'card', type: 'credit_card', current_balance: -500 }),
+    ])
+    const { user } = renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+    )
+
+    const chip = (await screen.findByText('Reserved account')).closest('a')!
+    const currency = values.balance_primary == null ? values.currency : 'USD'
+    expect(chip).toHaveTextContent(formatCurrency(values.expected, currency, 'en-US'))
+    const heading = screen.getByText(t('dashboard.availableBalance'))
+    expect(heading.nextElementSibling).toHaveTextContent(formatCurrency(values.expected, 'USD', 'en-US'))
+    await user.hover(screen.getByRole('button', { name: 'i' }))
+    const tooltip = await screen.findByRole('tooltip')
+    const row = within(tooltip).getByText(t('dashboard.availableBalance')).parentElement!
+    expect(row).toHaveTextContent(formatCurrency(values.expected, 'USD', 'en-US'))
+  })
+})
+
 describe('Dashboard available balance without an FX rate', () => {
   const renderDashboard = () => renderWithProviders(
     <TooltipProvider delayDuration={0}>
@@ -338,6 +369,26 @@ describe('Dashboard balance comparisons', () => {
     })
     return chart
   }
+
+  it('keeps the balance axis labels compact so a four digit amount fits', async () => {
+    // A full amount outgrew the axis gutter and the browser clipped its leading
+    // characters (#1051). The ticks are compact; the tooltip keeps the exact sum.
+    mockHistory({ current: [{ day: 1, balance: 2500 }] })
+
+    const { container } = renderDashboard('/?month=2026-04')
+
+    const chart = await waitFor(() => balanceChart(container))
+    const labels = await waitFor(() => {
+      const texts = Array.from(chart.querySelectorAll('.recharts-yAxis-tick-labels text'))
+        .map((text) => text.textContent ?? '')
+      expect(texts).not.toHaveLength(0)
+      return texts
+    })
+
+    expect(labels).toContain(formatCompactCurrency(1500, 'USD', 'en-US'))
+    // The previous full amounts read "$1,125" or "$1,500", which no longer fit.
+    expect(labels.filter((label) => label.includes(','))).toEqual([])
+  })
 
   it('labels a single comparison month in the selector, legend and footer', async () => {
     api.dashboard.balanceHistoryMonths.mockResolvedValue(['2026-01', '2026-02', '2026-03'])

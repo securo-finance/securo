@@ -10,6 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 if TYPE_CHECKING:
+    from app.models.account_reserved_balance import AccountReservedBalance
     from app.models.bank_connection import BankConnection
     from app.models.institution import Institution
     from app.models.transaction import Transaction
@@ -84,4 +85,10 @@ class Account(Base):
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="account", cascade="all, delete-orphan")
     linked_cards: Mapped[list["AccountCard"]] = relationship(
         back_populates="account", cascade="all, delete-orphan"
+    )
+    # Provider-owned reserved funds held inside this account (Pluggy
+    # `bankData.reservedBalances`). Eager (selectin) because serialization
+    # reads them in an async session, like `institution`.
+    reserved_balances: Mapped[list["AccountReservedBalance"]] = relationship(
+        back_populates="account", cascade="all, delete-orphan", lazy="selectin"
     )

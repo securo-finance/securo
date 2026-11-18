@@ -56,6 +56,24 @@ def mask_last4(value: Optional[str]) -> Optional[str]:
 
 
 @dataclass
+class ReservedBalanceData:
+    """Funds an institution holds reserved/earmarked inside an account.
+
+    Mercado Pago cofrinhos, "saldo reservado", caixinhas. Providers report
+    these beside the account balance without guaranteeing whether they are
+    included, so they are stored and shown without changing totals (ADR 0022).
+    `external_id` is the provider's identification, stable across syncs and
+    scoped to its account. One instance per currency: `amount` sums the
+    reservation's remuneration bands in that currency.
+    """
+
+    external_id: str
+    name: Optional[str]
+    currency: str
+    amount: Decimal
+
+
+@dataclass
 class AccountData:
     # The provider's identifier for this account. It is expected to be stable
     # across re-syncs, and the sync matches an incoming account on it first. A
@@ -101,6 +119,10 @@ class AccountData:
     # money is counted once: as the asset when one mirrors it, as cash
     # otherwise.
     auto_invested_balance: Decimal = Decimal(0)
+    # Provider-owned reserves, shown separately and never added to totals
+    # (ADR 0022). None = unreported or incomplete; keep stored rows.
+    # [] = explicitly reported, none active.
+    reserved_balances: Optional[list[ReservedBalanceData]] = None
 
 
 @dataclass
@@ -199,6 +221,28 @@ class HoldingData:
     # providers whose holdings aren't attributable to an account.
     account_external_id: Optional[str] = None
     account_name: Optional[str] = None
+    # Buys and sells of this holding, for providers that report them (plugin
+    # contract 1). None: not reported, the stored ledger is left alone.
+    trades: Optional[list["HoldingTradeData"]] = None
+    # What kind of investment it is ("stock", "etf", "fund", "crypto"), for
+    # providers that know. None: the generic "investment".
+    asset_type: Optional[str] = None
+
+
+@dataclass
+class HoldingTradeData:
+    """One buy or sell the provider reports for a holding.
+
+    `quantity` is always positive; `kind` gives the direction. `price` is per
+    unit in the asset's currency, and `fee` what executing the trade cost.
+    """
+
+    external_id: str
+    kind: Literal["buy", "sell"]
+    date: date
+    quantity: Decimal
+    price: Decimal
+    fee: Decimal = Decimal("0")
 
 
 @dataclass
@@ -247,7 +291,14 @@ class ProviderRateLimited(Exception):
     access (commonly ~4/day per resource), so a burst of syncs returns HTTP
     429. The connection is healthy; callers should skip this run and retry
     later rather than flag it as errored.
+
+    ``retry_after`` is the wait the provider asked for, in seconds, when it
+    sent one (``Retry-After``); None when it did not.
     """
+
+    def __init__(self, message: str = "", retry_after: Optional[float] = None):
+        super().__init__(message)
+        self.retry_after = retry_after
 
 
 class ProviderNotConfiguredError(Exception):

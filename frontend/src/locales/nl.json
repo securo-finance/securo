@@ -1103,6 +1103,7 @@
     "createCounterpartConfirm": "Creëer",
     "unlinkTransfer": "Overdracht ontkoppelen",
     "unlinkTransferConfirm": "Deze overdracht ontkoppelen? Beide transacties worden weer als reguliere transacties behandeld.",
+    "unlinkTransferReportWarning": "Tenzij hun categorie ze al uitsluit, tellen beide transacties weer mee in de inkomsten- en uitgavenrapporten: de uitgaande als uitgave, de inkomende als inkomsten. Wil je er een uitsluiten, geef hem dan een categorie die als overboeking wordt behandeld, zoals Overboekingen.",
     "unlinkTransferSuccess": "Overdracht ontkoppeld",
     "confirmTransferCategoryTitle": "Deze categorie ook toepassen op de gepaarde overdracht?",
     "confirmTransferCategoryDesc": "Overdrachten gebeuren in paren. U kunt alleen deze transactie bijwerken of dezelfde categoriewijziging op beide zijden toepassen.",
@@ -1286,6 +1287,7 @@
     "deleted": "Account verwijderd",
     "syncDone": "Synchronisatie voltooid",
     "syncRateLimited": "Dagelijks banklimiet bereikt, er is geen nieuwe data opgehaald. Probeer het later opnieuw.",
+    "syncPartial": "Sommige rekeningen zijn bijgewerkt, maar voor de andere is het dagelijkse banklimiet bereikt. Die worden later opnieuw geprobeerd.",
     "syncError": "Synchronisatie mislukt",
     "connected": "Bank succesvol verbonden",
     "connectError": "Kan geen verbinding maken met de bank",
@@ -1294,6 +1296,10 @@
     "confirmDisconnectDesc": "Hierdoor wordt {{institution}} ontkoppeld en worden gesynchroniseerde accounts en transacties uit de app verwijderd. Deze actie is onomkeerbaar.",
     "viewTransactions": "Transacties bekijken",
     "currentBalance": "Huidig saldo",
+    "reservedBalances": "Gereserveerde saldi",
+    "reservedBalanceFallback": "Gereserveerd saldo",
+    "reservedTotal": "Gereserveerd",
+    "reservedBalancesHint": "Gereserveerde bedragen die de provider voor deze rekening meldt.",
     "income": "Inkomen",
     "expenses": "Kosten",
     "projectedBalance": "Geprojecteerd saldo",
@@ -1376,8 +1382,16 @@
     "connectionStatus": {
       "active": "Actief",
       "error": "Fout",
-      "expired": "Verlopen"
-    }
+      "expired": "Verlopen",
+      "disconnected": "Losgekoppeld"
+    },
+    "pluginConnectors": "Uit je plugins",
+    "pluginUnavailable": "De plugin van deze koppeling is niet meer geïnstalleerd of beschikbaar.",
+    "confirmDisconnectKeepDesc": "{{institution}} wordt niet meer gesynchroniseerd. De rekeningen en transactiegeschiedenis blijven in de app, en je kunt later opnieuw verbinden.",
+    "disconnectAlsoDelete": "Ook rekeningen en transacties verwijderen",
+    "disconnectedKept": "Bank losgekoppeld. Rekeningen en geschiedenis zijn bewaard.",
+    "removeConnection": "Verbinding verwijderen",
+    "connectionDisconnected": "Losgekoppeld. Verbind opnieuw om weer te synchroniseren"
   },
   "loans": {
     "title": "Leningcontract",
@@ -1490,7 +1504,26 @@
     "suggestEmpty": "Geen uitgavenhistoriek in de geselecteerde periode.",
     "suggestError": "Suggesties konden niet worden geladen. Probeer het zo opnieuw.",
     "hiddenCategory": "Verborgen",
-    "average": "meestal {{amount}}"
+    "average": "meestal {{amount}}",
+    "copyAction": "Vorige maand kopiëren",
+    "copyTitle": "Budgetten kopiëren",
+    "copyDescription": "Kopieer de budgetten van een bronmaand naar {{month}}.",
+    "copySource": "Bronmaand",
+    "copyExisting": "Bestaande budgetten",
+    "copyOverwrite": "Vervang ze door de bedragen van de bronmaand",
+    "copyMissing": "Bewaar ze en kopieer alleen ontbrekende categorieën",
+    "copyAdjustment": "Aanpassing (%)",
+    "copyAdjustmentHint": "Optioneel, tussen -100 en 1000. 5 voegt 5% toe, -10 haalt 10% af.",
+    "copyPreviewCount": "Te kopiëren categorieën: {{count}}",
+    "copyPreviewTotal": "Te kopiëren totaal: {{amount}}",
+    "copyPreviewEmpty": "De gekozen maand heeft geen budgetten om te kopiëren.",
+    "copyPreviewError": "De bronmaand kon niet worden geladen.",
+    "copyAmountTooLarge": "Het aangepaste bedrag overschrijdt de budgetlimiet. Verlaag de procentuele aanpassing.",
+    "copyConfirm": "Budgetten kopiëren",
+    "copySuccess": "Budgetten gekopieerd: {{count}}",
+    "copyNothing": "Er zijn geen budgetten gekopieerd.",
+    "copyError": "De budgetten konden niet worden gekopieerd.",
+    "copyEmptyHint": "Kopieer de budgetten van een vorige maand om ermee te beginnen."
   },
   "goals": {
     "title": "Doelen",
@@ -1591,7 +1624,18 @@
     "autoGenerateHelp": "Maak een transactie aan elke keer dat deze rekening moet worden betaald. Schakel uit om te wachten op de werkelijke afschrijving (bijvoorbeeld via banksynchronisatie) en toon deze tot die tijd alleen als aankomend.",
     "fxEstimate": "Schatting gebaseerd op de laatste wisselkoers ({{rate}}). Het eindbedrag kan veranderen.",
     "confirmDeleteTitle": "Terugkerende transactie verwijderen?",
-    "confirmDeleteDescription": "De terugkerende definitie \"{{description}}\" wordt permanent verwijderd. Bestaande transacties blijven bestaan, maar verliezen hun koppeling met de terugkerende transactie. Deze actie kan niet ongedaan worden gemaakt."
+    "confirmDeleteDescription": "De terugkerende definitie \"{{description}}\" wordt permanent verwijderd. Bestaande transacties blijven bestaan, maar verliezen hun koppeling met de terugkerende transactie. Deze actie kan niet ongedaan worden gemaakt.",
+    "priceHistory": "Prijshistorie",
+    "viewPriceHistory": "Prijshistorie bekijken",
+    "priceChangesTitle": "Recente prijswijzigingen (afgelopen 30 dagen)",
+    "priceChangesEmpty": "Geen stabiele prijswijzigingen gedetecteerd",
+    "priceChangeBadge": "Prijs gewijzigd",
+    "priceChangeIncrease": "Prijs is gestegen",
+    "priceChangeDecrease": "Prijs is gedaald",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "Na een onderbreking van {{days}} dagen",
+    "priceChangeInsufficient": "Er zijn minstens 3 gekoppelde geboekte afschrijvingen nodig voordat Securo een stabiele prijswijziging meldt."
   },
   "rules": {
     "searchPlaceholder": "Regels zoeken...",
@@ -1850,6 +1894,39 @@
     "sparkles": "Speciaal",
     "circle-help": "Overig / Ongebruikt"
   },
+  "categoryEmojis": {
+    "burger": "Burger",
+    "fries": "Friet",
+    "sandwich": "Sandwich",
+    "wine": "Wijn",
+    "cocktail": "Cocktail",
+    "juice": "Sap",
+    "money-bag": "Geldzak",
+    "spending": "Uitgaven",
+    "soccer": "Voetbal",
+    "basketball": "Basketbal",
+    "tennis": "Tennis",
+    "yoga": "Yoga",
+    "art": "Kunst",
+    "headphones": "Hoofdtelefoon",
+    "plug": "Stekker",
+    "tools": "Gereedschap",
+    "soap": "Zeep",
+    "shower": "Douche",
+    "shoes": "Schoenen",
+    "makeup": "Make-up",
+    "toys": "Speelgoed",
+    "flowers": "Bloemen",
+    "luck": "Geluk",
+    "birthday": "Verjaardag",
+    "christmas": "Kerst",
+    "protection": "Bescherming",
+    "map": "Kaart",
+    "beach": "Strand",
+    "launch": "Lancering",
+    "investment": "Investering",
+    "construction": "Bouw"
+  },
   "groups": {
     "title": "Categoriegroepen",
     "add": "Groep toevoegen",
@@ -2056,6 +2133,7 @@
     "noTransactions": "Nog geen transacties",
     "txBuy": "Koop",
     "txSell": "Verkopen",
+    "txSplit": "Splitsing",
     "txFee": "Vergoeding",
     "txSaved": "Transactie opgeslagen",
     "txDeleted": "Transactie verwijderd",
@@ -2066,6 +2144,10 @@
     "unitPrice": "Eenheidsprijs",
     "fee": "Vergoeding",
     "txTotal": "Totaal",
+    "splitOldUnits": "Eenheden vóór splitsing",
+    "splitNewUnits": "Eenheden na splitsing",
+    "splitHint": "Voer in hoeveel eenheden u vóór de splitsing had en hoeveel het er daarna zijn: een splitsing van 100 voor 1 is 1 → 100, een omgekeerde splitsing van 1 voor 10 is 10 → 1. Gebruik als datum de eerste dag waarop de belegging tegen de nieuwe koers wordt verhandeld.",
+    "splitInvalid": "Voer twee verschillende gehele getallen van 1 tot 1.000.000 in.",
     "confirmDeleteTxTitle": "Transactie verwijderen?",
     "confirmDeleteTx": "Hierdoor wordt de vermelding verwijderd en wordt de gemiddelde prijs van het bedrijf opnieuw berekend.",
     "editAsset": "Activa bewerken",
@@ -2410,8 +2492,13 @@
     "retry": "Opnieuw proberen",
     "error": "Fout",
     "success": "Succes",
-    "searchIcon": "Zoekpictogram...",
     "noIconsFound": "Geen iconen gevonden",
+    "searchIconOrEmoji": "Pictogram of emoji zoeken...",
+    "iconPickerIcons": "Pictogrammen",
+    "iconPickerEmojis": "Emoji's",
+    "useEmoji": "Dit emoji gebruiken",
+    "noEmojisFound": "Geen emoji's gevonden",
+    "seeMatchingEmojis": "Bijpassende emoji's bekijken ({{count}})",
     "primaryCurrency": "Primaire valuta",
     "showLess": "Laat minder zien",
     "showMore": "+{{count}} meer",
@@ -2422,7 +2509,8 @@
     "preview": "Voorbeeld",
     "download": "Downloaden",
     "closePreview": "Voorbeeld sluiten",
-    "remove": "Verwijderen"
+    "remove": "Verwijderen",
+    "invalidAmount": "Voer een geldig bedrag in, bijvoorbeeld {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "Groepen zoeken...",
@@ -2826,6 +2914,8 @@
       "saveFailed": "Kan de gereedschapsselectie niet opslaan",
       "empty": "Geen gereedschap gevonden. Is de MCP-server actief? Met Docker: `docker compose --profile agents up -d`.",
       "proposeBadge": "voorstellen",
+      "enabledCount": "{{enabled}} van {{total}} ingeschakeld",
+      "enableAll": "Alles inschakelen",
       "loading": "Gereedschappen laden…"
     },
     "chat": {
@@ -2877,7 +2967,13 @@
         "deleteBudget": "{{category}}: {{amount}} voor {{month}}",
         "deleteRecurringBudget": "{{category}}: {{amount}} per maand vanaf {{month}}",
         "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
-        "createCategoryGroup": "“{{name}}”"
+        "createCategoryGroup": "“{{name}}”",
+        "createManualAccount": "{{name}} · {{type}} · {{currentBalance}} · {{openingBalance}}{{balanceDate}}",
+        "updateManualAccount": "{{name}}. {{currentBalance}}. {{changes}}",
+        "manualAccountMoney": "{{label}}: {{amount}}",
+        "manualAccountDate": "{{label}}: {{date}}",
+        "manualAccountChange": "{{field}}: {{before}} → {{after}}",
+        "manualAccountNoChanges": "Geen wijzigingen"
       }
     },
     "conversation": {
@@ -2925,6 +3021,7 @@
       "baseUrl": "Endpoint-URL",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "Endpoint-URL is vereist voor deze provider",
+      "baseUrlInvalid": "Voer een geldige http- of https-endpoint-URL in",
       "ollamaHint": "Als Ollama op uw hostcomputer draait, gebruik dan http://host.docker.internal:11434 (Mac/Windows) of uw host-IP (Linux).",
       "openaiCompatHint": "Plak gewoon de host:port (bijvoorbeeld http://192.168.1.142:1234).). Het /v1 pad wordt automatisch toegevoegd. Vanuit Docker op Mac/Windows vervangt u localhost door host.docker.internal.",
       "apiKey": "API-sleutel/token",
@@ -3462,8 +3559,9 @@
       "new": "nieuw",
       "read": "{{what}} lezen",
       "write": "{{what}} lezen en wijzigen",
-      "ownerOnly": "Alleen de eigenaar van de werkruimte kan een plugin die code uitvoert toevoegen, bijwerken of verwijderen.",
+      "ownerOnly": "Alleen de eigenaar van de werkruimte of een beheerder kan een plugin die code uitvoert toevoegen, bijwerken of verwijderen.",
       "removeConnections": "De koppelingen in deze werkruimte ({{count}}) worden verwijderd, samen met de opgeslagen sleutels en toegang.",
+      "unlinks": "De bankkoppelingen ({{count}}) stoppen met synchroniseren. Hun rekeningen en transacties blijven, als handmatige rekeningen.",
       "removeNothing": "De code van de plugin wordt van je server verwijderd zodra geen werkruimte hem nog gebruikt.",
       "auth": {
         "credentials": "Sleutel of wachtwoord",
@@ -3488,6 +3586,15 @@
         "install": "Deze plugin brengt geen gegevens mee. Bekijk wat de code mag doen:",
         "update": "Bekijk wat de nieuwe versie mag doen:",
         "remove": "De code draait niet meer in deze werkruimte."
+      },
+      "provides": "Synchroniseert als een gekoppelde bank",
+      "providesHint": "Securo voegt deze gegevens aan deze werkruimte toe en houdt ze bij, zoals bij een gekoppelde bank. Elke koppeling staat onder Bankverbindingen.",
+      "kinds": {
+        "accounts": "Rekeningen",
+        "transactions": "transacties",
+        "bills": "kaartafrekeningen",
+        "holdings": "beleggingen",
+        "trades": "aan- en verkopen"
       }
     },
     "connections": {
@@ -3525,8 +3632,13 @@
       "added": "{{name}} gekoppeld",
       "removeTitle": "{{name}} verwijderen?",
       "removeHint": "De opgeslagen sleutels en de toegang tot deze werkruimte worden gewist. Wat al is binnengehaald, blijft.",
+      "removeBankHint": "Deze synchroniseert als een gekoppelde bank: verwijderen koppelt die bank los en verwijdert de gesynchroniseerde rekeningen, met hun transacties.",
       "removed": "{{name}} verwijderd",
-      "copyFailed": "Kopiëren lukte niet. Selecteer het adres en kopieer het zelf."
+      "copyFailed": "Kopiëren lukte niet. Selecteer het adres en kopieer het zelf.",
+      "editTitle": "{{name}} opnieuw koppelen",
+      "editHint": "Werk bij wat er veranderd is, zoals een nieuw wachtwoord of token. Daarna synchroniseert de koppeling opnieuw.",
+      "keepBlank": "Laat een veld leeg om de huidige waarde te houden.",
+      "updated": "{{name}} bijgewerkt"
     },
     "oauth": {
       "title": "Inloggen afronden",

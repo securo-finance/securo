@@ -29,6 +29,19 @@ from app.services._query_filters import reporting_date_value
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
+# A spreadsheet evaluates any cell that starts with one of these as a formula,
+# so a description like "=HYPERLINK(...)" runs as live content when the export
+# is opened in Excel or Sheets (CSV injection, CWE-1236). Text columns go
+# through _csv_safe(); the amounts, dates and codes below are written by this
+# endpoint and cannot carry a payload.
+_FORMULA_LEADERS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value: object) -> str:
+    """`value` as text that a spreadsheet reads literally, never as a formula."""
+    text = "" if value is None else str(value)
+    return f"'{text}" if text[:1] in _FORMULA_LEADERS else text
+
 
 async def _attach_invoice_links(session, ctx, items: list) -> None:
     """Mark the rows on this page that settle an invoice.
@@ -316,15 +329,15 @@ async def export_transactions(
         for amount, amount_primary, category, split_group, split_index in csv_export_parts(tx):
             writer.writerow([
                 tx.date.isoformat(),
-                tx.description,
+                _csv_safe(tx.description),
                 str(amount),
                 tx.type,
                 tx.currency,
-                category.name if category else "",
-                tx.account.name if tx.account else "",
-                tx.payee or "",
-                getattr(tx, "payee_name", "") or "",
-                tx.notes or "",
+                _csv_safe(category.name if category else ""),
+                _csv_safe(tx.account.name if tx.account else ""),
+                _csv_safe(tx.payee),
+                _csv_safe(getattr(tx, "payee_name", "")),
+                _csv_safe(tx.notes),
                 tx.status,
                 tx.source,
                 str(amount_primary) if amount_primary is not None else "",

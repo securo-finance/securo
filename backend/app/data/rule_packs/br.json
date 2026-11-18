@@ -8,7 +8,7 @@
     "en": "Common merchants and transfer patterns, mapped to the default categories.",
     "pt-BR": "Estabelecimentos e padrões de transferência comuns, mapeados para as categorias padrão."
   },
-  "version": "1.0.0",
+  "version": "1.1.0",
   "repository": "https://github.com/securo-finance/securo",
   "license": "AGPL-3.0-only",
   "min_securo_version": "0.19.0",
@@ -554,6 +554,240 @@
           {
             "op": "set_category",
             "value": "education"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "energia-eletrica",
+        "name": "Energia elétrica",
+        "conditions_op": "and",
+        "conditions": [
+          {
+            "field": "type",
+            "op": "equals",
+            "value": "debit"
+          },
+          {
+            "field": "description",
+            "op": "regex",
+            "value": "\\b(LIGHT|ENEL|CPFL|NEOENERGIA|COPEL|CELESC|EQUATORIAL|EDP|CEMIG)\\b"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "housing"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "agua-saneamento",
+        "name": "Água / Saneamento",
+        "conditions_op": "and",
+        "conditions": [
+          {
+            "field": "type",
+            "op": "equals",
+            "value": "debit"
+          },
+          {
+            "field": "description",
+            "op": "regex",
+            "value": "\\b(SABESP|CEDAE|AGUAS DO RIO|IGUA|BRK AMBIENTAL|SANEPAR|COPASA|EMBASA|COMPESA|CORSAN|CAGECE|SANEAGO)\\b"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "housing"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "gas-encanado",
+        "name": "Gás encanado",
+        "conditions_op": "and",
+        "conditions": [
+          {
+            "field": "type",
+            "op": "equals",
+            "value": "debit"
+          },
+          {
+            "field": "description",
+            "op": "regex",
+            "value": "\\b(CEG|COMGAS|NATURGY)\\b"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "housing"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "tarifas-encargos",
+        "name": "Tarifas / IOF / Juros / Encargos",
+        "conditions_op": "and",
+        "conditions": [
+          {
+            "field": "type",
+            "op": "equals",
+            "value": "debit"
+          },
+          {
+            "field": "description",
+            "op": "regex",
+            "value": "\\b(IOF|TARIFAS?|CUSTAS|MULTAS?|JUROS|ENCARGOS?)\\b"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "taxes"
+          }
+        ],
+        "priority": 5
+      },
+      {
+        "key": "saque",
+        "name": "Saque",
+        "conditions_op": "and",
+        "conditions": [
+          {
+            "field": "type",
+            "op": "equals",
+            "value": "debit"
+          },
+          {
+            "field": "description",
+            "op": "regex",
+            "value": "\\bSAQUES?\\b"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "transfers"
+          }
+        ],
+        "priority": 90
+      },
+      {
+        "key": "ze-delivery",
+        "name": "Zé Delivery",
+        "conditions_op": "and",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "regex",
+            "value": "\\bZE ?DELIVERY\\b"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "food"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "combustivel",
+        "name": "Combustível (Ipiranga / Petrobras)",
+        "conditions_op": "and",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "regex",
+            "value": "\\b(IPIRANGA|PETROBRAS)\\b"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "transport"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "tag-pedagio",
+        "name": "Tag de pedágio (Veloe / ConectCar)",
+        "conditions_op": "and",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "regex",
+            "value": "\\b(VELOE|CONECTCAR)\\b"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "transport"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "atacadao-pao-de-acucar",
+        "name": "Atacadão / Pão de Açúcar",
+        "conditions_op": "and",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "regex",
+            "value": "\\b(ATACADAO|PAO DE ACUCAR)\\b"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "groceries"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "farmacias-pacheco-pague-menos",
+        "name": "Drogarias Pacheco / Pague Menos",
+        "conditions_op": "and",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "regex",
+            "value": "\\b(DROGARIAS ?PACHECO|PAGUEMENOS)\\b"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "health"
+          }
+        ],
+        "priority": 10
+      },
+      {
+        "key": "ticketmaster-steam",
+        "name": "Ticketmaster / Steam",
+        "conditions_op": "and",
+        "conditions": [
+          {
+            "field": "description",
+            "op": "regex",
+            "value": "\\b(TICKETMASTER|STEAM(GAMES|POWERED)?)\\b"
+          }
+        ],
+        "actions": [
+          {
+            "op": "set_category",
+            "value": "leisure"
           }
         ],
         "priority": 10

@@ -1,0 +1,15 @@
+{
+  "recurring_id": "00000000-0000-0000-0000-000000001376",
+  "previous_transaction_id": "00000000-0000-0000-0000-000000000101",
+  "current_transaction_id": "00000000-0000-0000-0000-000000000102",
+  "previous_date": "2026-10-01",
+  "current_date": "2026-11-01",
+  "previous_amount": "10.00",
+  "current_amount": "12.00",
+  "currency": "BRL",
+  "direction": "increase",
+  "absolute_delta": "2.00",
+  "percent_delta": "20.00",
+  "gap_days": 31,
+  "baseline_occurrence_count": 2
+}

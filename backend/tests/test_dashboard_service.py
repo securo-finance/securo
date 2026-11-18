@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
 from app.models.account import Account
+from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.category import Category
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
@@ -58,12 +59,13 @@ async def _add_txn(
     amount: float, txn_type: str, txn_date: date,
     source: str = "manual", transfer_pair_id: uuid.UUID | None = None,
     category_id: uuid.UUID | None = None, status: str = "posted",
+    currency: str = "BRL",
 ) -> Transaction:
     from datetime import datetime, timezone
     txn = Transaction(
         id=uuid.uuid4(), user_id=user_id, account_id=account_id,
         description=f"Test {txn_type} {amount}", amount=Decimal(str(amount)),
-        date=txn_date, type=txn_type, source=source, currency="BRL",
+        date=txn_date, type=txn_type, source=source, currency=currency,
         transfer_pair_id=transfer_pair_id, category_id=category_id,
         status=status,
         created_at=datetime.now(timezone.utc),
@@ -303,11 +305,36 @@ async def test_total_balance_by_currency(session: AsyncSession, test_user, test_
     today = date.today()
 
     await _add_txn(session, test_user.id, brl_acc.id, 1000, "credit", today, source="opening_balance")
-    await _add_txn(session, test_user.id, usd_acc.id, 500, "credit", today, source="opening_balance")
+    await _add_txn(
+        session, test_user.id, usd_acc.id, 500, "credit", today,
+        source="opening_balance", currency="USD",
+    )
 
     totals = await _total_balance_by_currency(session, test_workspace.id, today)
     assert totals.get("BRL", 0) == pytest.approx(1000.0)
     assert totals.get("USD", 0) == pytest.approx(500.0)
+
+
+@pytest.mark.asyncio
+async def test_balance_series_ignore_unconverted_foreign_rows(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A manual account's series must skip rows with no FX stamp (#1263)."""
+    account = await _make_account(session, test_user.id, "Manual BRL", currency="BRL")
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 100, "credit", today - timedelta(days=2))
+    await _add_txn(
+        session, test_user.id, account.id, 700000, "credit", today - timedelta(days=1),
+        currency="CLP",
+    )
+
+    totals = await _total_balance_by_currency(session, test_workspace.id, today)
+    assert totals.get("BRL", 0) == pytest.approx(100.0)
+    assert await _balance_at(session, test_workspace.id, today) == pytest.approx(100.0)
+
+    history = await get_balance_history(session, test_workspace.id, test_user.id)
+    today_point = next(p for p in history.current if p.day == today.day)
+    assert today_point.balance == pytest.approx(100.0)
 
 
 @pytest.mark.asyncio
@@ -359,6 +386,77 @@ async def test_total_balance_backtracks_shared_credit_balance_across_all_cards(
     )
 
     assert totals["BRL"] == pytest.approx(-225.0)
+
+
+# --- reserved balances (ADR 0022) -----------------------------------------
+
+
+async def _add_reserved(
+    session, workspace_id, account_id, external_id, amount, currency="BRL",
+):
+    row = AccountReservedBalance(
+        id=uuid.uuid4(), workspace_id=workspace_id, account_id=account_id,
+        external_id=external_id, name=None, currency=currency, amount=Decimal(amount),
+    )
+    session.add(row)
+    await session.commit()
+    return row
+
+
+async def _connected_account(session, test_user, test_workspace, balance, pockets):
+    from datetime import datetime, timezone
+
+    conn = BankConnection(
+        id=uuid.uuid4(), user_id=test_user.id, provider="pluggy",
+        external_id=f"ext-{uuid.uuid4().hex[:8]}", institution_name="Mercado Pago",
+        credentials={}, status="active",
+        last_sync_at=datetime.now(timezone.utc), created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn)
+    await session.flush()
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn.id, name="Mercado Pago", type="checking",
+        balance=Decimal(balance), currency="BRL",
+    )
+    session.add(account)
+    await session.commit()
+    for external_id, amount in pockets:
+        await _add_reserved(session, test_workspace.id, account.id, external_id, amount)
+    return account
+
+
+@pytest.mark.asyncio
+async def test_account_balance_at_ignores_reserved_balances(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Reserves never change current or historical account totals (ADR 0022)."""
+    with_pockets = await _connected_account(
+        session, test_user, test_workspace, "1000.00",
+        [("emergency-fund", "0"), ("round-up", "2000"), ("marketplace", "2000")],
+    )
+    without = await _connected_account(session, test_user, test_workspace, "1000.00", [])
+    today = date.today()
+
+    assert await _account_balance_at(session, with_pockets, today) == pytest.approx(1000.00)
+    assert await _account_balance_at(session, without, today) == pytest.approx(1000.00)
+    assert await _account_balance_at(session, with_pockets, today - timedelta(days=1)) == pytest.approx(1000.00)
+
+
+@pytest.mark.asyncio
+async def test_total_balance_by_currency_ignores_reserved_balances(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Neither same-currency nor foreign reserves enter dashboard totals."""
+    account = await _connected_account(
+        session, test_user, test_workspace, "1000.00",
+        [("round-up", "2000"), ("marketplace", "2000")],
+    )
+    await _add_reserved(session, test_workspace.id, account.id, "usd", "75", currency="USD")
+
+    totals = await _total_balance_by_currency(session, test_workspace.id, date.today())
+
+    assert totals == {"BRL": pytest.approx(1000.00)}
 
 
 # ---------------------------------------------------------------------------

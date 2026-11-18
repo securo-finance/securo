@@ -1151,6 +1151,7 @@
     "createCounterpartConfirm": "Vytvoriť",
     "unlinkTransfer": "Odpojiť prevod",
     "unlinkTransferConfirm": "Odpojiť tento prevod? Obe transakcie sa opäť budú považovať za bežné transakcie.",
+    "unlinkTransferReportWarning": "Ak ich kategória už nevylučuje, obe transakcie sa znova začnú počítať do prehľadov príjmov a výdavkov: odchádzajúca ako výdavok, prichádzajúca ako príjem. Ak chcete niektorú vynechať, dajte jej kategóriu, ktorá sa považuje za prevod, napríklad Prevody.",
     "unlinkTransferSuccess": "Prevod odpojený",
     "confirmTransferCategoryTitle": "Použiť túto kategóriu aj na spárovaný prevod?",
     "confirmTransferCategoryDesc": "Prevody sú vo dvojiciach. Môžeš upraviť len túto transakciu alebo zmeniť kategóriu na oboch stranách.",
@@ -1349,6 +1350,7 @@
     "deleted": "Účet vymazaný",
     "syncDone": "Synchronizácia dokončená",
     "syncRateLimited": "Dosiahnutý denný limit banky, žiadne nové údaje neboli stiahnuté. Skúste to prosím neskôr.",
+    "syncPartial": "Niektoré účty boli aktualizované, ale pri ostatných bol dosiahnutý denný limit banky. Skúsime ich znova neskôr.",
     "syncError": "Synchronizácia zlyhala",
     "connected": "Banka úspešne prepojená",
     "connectError": "Nepodarilo sa prepojiť banku",
@@ -1357,6 +1359,10 @@
     "confirmDisconnectDesc": "Odpojí sa {{institution}} a z aplikácie sa odstránia synchronizované účty a transakcie. Táto akcia je nezvratná.",
     "viewTransactions": "Zobraziť transakcie",
     "currentBalance": "Aktuálny zostatok",
+    "reservedBalances": "Rezervované zostatky",
+    "reservedBalanceFallback": "Rezervovaný zostatok",
+    "reservedTotal": "Rezervované",
+    "reservedBalancesHint": "Rezervované prostriedky hlásené poskytovateľom pre tento účet.",
     "income": "Príjmy",
     "expenses": "Výdavky",
     "projectedBalance": "Predpokladaný zostatok",
@@ -1442,8 +1448,16 @@
     "connectionStatus": {
       "active": "Aktívne",
       "error": "Chyba",
-      "expired": "Vypršané"
-    }
+      "expired": "Vypršané",
+      "disconnected": "Odpojené"
+    },
+    "pluginConnectors": "Z vašich pluginov",
+    "pluginUnavailable": "Plugin tohto pripojenia už nie je nainštalovaný ani dostupný.",
+    "confirmDisconnectKeepDesc": "{{institution}} sa prestane synchronizovať. Účty a história transakcií zostanú v aplikácii a banku môžete neskôr znova pripojiť.",
+    "disconnectAlsoDelete": "Zmazať aj účty a transakcie",
+    "disconnectedKept": "Banka odpojená. Účty a história zostali zachované.",
+    "removeConnection": "Odstrániť pripojenie",
+    "connectionDisconnected": "Odpojené. Pripojte znova pre synchronizáciu"
   },
   "loans": {
     "title": "Úverová zmluva",
@@ -1556,7 +1570,26 @@
     "suggestEmpty": "Vo vybranom období nie je história výdavkov.",
     "suggestError": "Návrhy sa nepodarilo načítať. Skúste to znova o chvíľu.",
     "hiddenCategory": "Skrytá",
-    "average": "zvyčajne {{amount}}"
+    "average": "zvyčajne {{amount}}",
+    "copyAction": "Kopírovať predchádzajúci mesiac",
+    "copyTitle": "Kopírovať rozpočty",
+    "copyDescription": "Skopírujte rozpočty zdrojového mesiaca do {{month}}.",
+    "copySource": "Zdrojový mesiac",
+    "copyExisting": "Existujúce rozpočty",
+    "copyOverwrite": "Nahradiť ich sumami zo zdrojového mesiaca",
+    "copyMissing": "Ponechať ich a skopírovať len chýbajúce kategórie",
+    "copyAdjustment": "Úprava (%)",
+    "copyAdjustmentHint": "Voliteľné, medzi -100 a 1000. 5 pridá 5 %, -10 uberie 10 %.",
+    "copyPreviewCount": "Kategórie na skopírovanie: {{count}}",
+    "copyPreviewTotal": "Celkom na kopírovanie: {{amount}}",
+    "copyPreviewEmpty": "Vybraný mesiac nemá žiadne rozpočty na skopírovanie.",
+    "copyPreviewError": "Zdrojový mesiac sa nepodarilo načítať.",
+    "copyAmountTooLarge": "Upravená suma prekračuje limit rozpočtu. Znížte percentuálnu úpravu.",
+    "copyConfirm": "Kopírovať rozpočty",
+    "copySuccess": "Skopírované rozpočty: {{count}}",
+    "copyNothing": "Neboli skopírované žiadne rozpočty.",
+    "copyError": "Rozpočty sa nepodarilo skopírovať.",
+    "copyEmptyHint": "Skopírujte rozpočty z predchádzajúceho mesiaca, aby ste z nich začali."
   },
   "goals": {
     "title": "Ciele",
@@ -1669,7 +1702,18 @@
     "autoGenerate": "Generovať transakcie automaticky",
     "autoGenerateHelp": "Vytvorí transakciu vždy, keď je táto platba splatná. Vypni, ak chceš počkať na skutočnú platbu (napr. zo synchronizácie banky) a dovtedy ju zobrazovať len ako nadchádzajúcu.",
     "fxEstimate": "Odhad podľa posledného výmenného kurzu ({{rate}}). Konečná suma sa môže zmeniť.",
-    "confirmDeleteDescription": "Opakovaná definícia „{{description}}“ bude natrvalo vymazaná. Existujúce transakcie zostanú, ale stratia prepojenie na opakovanie. Túto akciu nie je možné vrátiť späť."
+    "confirmDeleteDescription": "Opakovaná definícia „{{description}}“ bude natrvalo vymazaná. Existujúce transakcie zostanú, ale stratia prepojenie na opakovanie. Túto akciu nie je možné vrátiť späť.",
+    "priceHistory": "História cien",
+    "viewPriceHistory": "Zobraziť históriu cien",
+    "priceChangesTitle": "Nedávne zmeny cien (posledných 30 dní)",
+    "priceChangesEmpty": "Neboli zistené stabilné zmeny cien",
+    "priceChangeBadge": "Cena sa zmenila",
+    "priceChangeIncrease": "Cena vzrástla",
+    "priceChangeDecrease": "Cena klesla",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "Po prestávke {{days}} dní",
+    "priceChangeInsufficient": "Predtým, ako Securo oznámi stabilnú zmenu ceny, sú potrebné aspoň 3 prepojené zaúčtované poplatky."
   },
   "rules": {
     "searchPlaceholder": "Hľadať pravidlá...",
@@ -1948,6 +1992,39 @@
     "sparkles": "Špeciálne",
     "circle-help": "Iné / Nešpecifikované"
   },
+  "categoryEmojis": {
+    "burger": "Burger",
+    "fries": "Hranolky",
+    "sandwich": "Sendvič",
+    "wine": "Víno",
+    "cocktail": "Koktail",
+    "juice": "Džús",
+    "money-bag": "Vrece peňazí",
+    "spending": "Výdavky",
+    "soccer": "Futbal",
+    "basketball": "Basketbal",
+    "tennis": "Tenis",
+    "yoga": "Joga",
+    "art": "Umenie",
+    "headphones": "Slúchadlá",
+    "plug": "Zásuvka",
+    "tools": "Náradie",
+    "soap": "Mydlo",
+    "shower": "Sprcha",
+    "shoes": "Obuv",
+    "makeup": "Makeup",
+    "toys": "Hračky",
+    "flowers": "Kvety",
+    "luck": "Šťastie",
+    "birthday": "Narodeniny",
+    "christmas": "Vianoce",
+    "protection": "Ochrana",
+    "map": "Mapa",
+    "beach": "Pláž",
+    "launch": "Spustenie",
+    "investment": "Investícia",
+    "construction": "Stavba"
+  },
   "groups": {
     "title": "Skupiny kategórií",
     "add": "Pridať skupinu",
@@ -2178,6 +2255,7 @@
     "noTransactions": "Zatiaľ žiadne transakcie",
     "txBuy": "Nákup",
     "txSell": "Predaj",
+    "txSplit": "Split",
     "txFee": "Poplatok",
     "txSaved": "Transakcia uložená",
     "txDeleted": "Transakcia vymazaná",
@@ -2188,6 +2266,10 @@
     "unitPrice": "Jednotková cena",
     "fee": "Poplatok",
     "txTotal": "Spolu",
+    "splitOldUnits": "Kusov pred splitom",
+    "splitNewUnits": "Kusov po splite",
+    "splitHint": "Zadaj počet kusov pred splitom a po ňom: split 100:1 je 1 → 100, reverzný split 1:10 je 10 → 1. Ako dátum uveď prvý deň, keď sa už obchoduje za novú cenu.",
+    "splitInvalid": "Zadaj dve rôzne celé čísla od 1 do 1 000 000.",
     "confirmDeleteTxTitle": "Vymazať transakciu?",
     "confirmDeleteTx": "Záznam sa odstráni a priemerná cena pozície sa prepočíta.",
     "editAsset": "Upraviť aktívum",
@@ -2540,8 +2622,13 @@
     "retry": "Skúsiť znova",
     "error": "Chyba",
     "success": "Hotovo",
-    "searchIcon": "Hľadať ikonu...",
     "noIconsFound": "Nenašli sa žiadne ikony",
+    "searchIconOrEmoji": "Hľadať ikonu alebo emoji...",
+    "iconPickerIcons": "Ikony",
+    "iconPickerEmojis": "Emoji",
+    "useEmoji": "Použiť toto emoji",
+    "noEmojisFound": "Nenašli sa žiadne emoji",
+    "seeMatchingEmojis": "Zobraziť zodpovedajúce emoji ({{count}})",
     "primaryCurrency": "Hlavná mena",
     "showLess": "Zobraziť menej",
     "showMore": "+{{count}} ďalších",
@@ -2556,7 +2643,8 @@
     "preview": "Náhľad",
     "download": "Stiahnuť",
     "closePreview": "Zavrieť náhľad",
-    "remove": "Odstrániť"
+    "remove": "Odstrániť",
+    "invalidAmount": "Zadajte platnú sumu, napríklad {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "Hľadať skupiny...",
@@ -2972,6 +3060,8 @@
       "saveFailed": "Výber nástrojov sa nepodarilo uložiť",
       "empty": "Nenašli sa žiadne nástroje. Beží MCP server? S Dockerom: `docker compose --profile agents up -d`.",
       "proposeBadge": "navrhuje",
+      "enabledCount": "Zapnuté {{enabled}} z {{total}}",
+      "enableAll": "Zapnúť všetko",
       "loading": "Načítavajú sa nástroje…"
     },
     "chat": {
@@ -3027,7 +3117,13 @@
         "deleteBudget": "{{category}}: {{amount}} na {{month}}",
         "deleteRecurringBudget": "{{category}}: {{amount}} každý mesiac od {{month}}",
         "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
-        "createCategoryGroup": "„{{name}}“"
+        "createCategoryGroup": "„{{name}}“",
+        "createManualAccount": "{{name}} · {{type}} · {{currentBalance}} · {{openingBalance}}{{balanceDate}}",
+        "updateManualAccount": "{{name}}. {{currentBalance}}. {{changes}}",
+        "manualAccountMoney": "{{label}}: {{amount}}",
+        "manualAccountDate": "{{label}}: {{date}}",
+        "manualAccountChange": "{{field}}: {{before}} → {{after}}",
+        "manualAccountNoChanges": "Žiadne zmeny"
       }
     },
     "conversation": {
@@ -3075,6 +3171,7 @@
       "baseUrl": "URL endpointu",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "Pre tohto poskytovateľa je URL endpointu povinná",
+      "baseUrlInvalid": "Zadajte platnú URL endpointu http alebo https",
       "ollamaHint": "Ak Ollama beží na tvojom hostiteľskom počítači, použi http://host.docker.internal:11434 (Mac/Windows) alebo IP adresu hostiteľa (Linux).",
       "openaiCompatHint": "Stačí vložiť host:port (napr. http://192.168.1.142:1234). Cesta /v1 sa pridá automaticky. Z Dockeru na Mac/Windows nahraď localhost za host.docker.internal.",
       "apiKey": "API kľúč / token",
@@ -3630,8 +3727,9 @@
       "new": "nové",
       "read": "Čítanie: {{what}}",
       "write": "Čítanie a zmeny: {{what}}",
-      "ownerOnly": "Plugin, ktorý spúšťa kód, môže pridať, aktualizovať alebo odstrániť len vlastník pracovného priestoru.",
+      "ownerOnly": "Plugin, ktorý spúšťa kód, môže pridať, aktualizovať alebo odstrániť len vlastník pracovného priestoru alebo správca.",
       "removeConnections": "Jeho pripojenia v tomto pracovnom priestore ({{count}}) sa odstránia aj s uloženými kľúčmi a prístupmi.",
+      "unlinks": "Jeho bankové pripojenia ({{count}}) sa prestanú synchronizovať. Účty a transakcie zostanú ako manuálne účty.",
       "removeNothing": "Kód pluginu sa z vášho servera odstráni, keď ho žiadny pracovný priestor nepoužíva.",
       "auth": {
         "credentials": "Kľúč alebo heslo",
@@ -3656,6 +3754,15 @@
         "install": "Tento plugin neprináša údaje. Skontrolujte, čo smie robiť jeho kód:",
         "update": "Skontrolujte, čo smie robiť nová verzia:",
         "remove": "Jeho kód v tomto pracovnom priestore prestane bežať."
+      },
+      "provides": "Synchronizuje sa ako pripojená banka",
+      "providesHint": "Securo pridá tieto záznamy do tohto pracovného priestoru a udržiava ich aktuálne, ako pri pripojenej banke. Každé pripojenie sa zobrazí v sekcii „Prepojenia bánk“.",
+      "kinds": {
+        "accounts": "Účty",
+        "transactions": "transakcie",
+        "bills": "vyúčtovania kariet",
+        "holdings": "investície",
+        "trades": "nákupy a predaje"
       }
     },
     "connections": {
@@ -3693,8 +3800,13 @@
       "added": "{{name}}: pripojené",
       "removeTitle": "Odstrániť {{name}}?",
       "removeHint": "Uložené kľúče a prístup k tomuto pracovnému priestoru sa vymažú. Čo už bolo načítané, zostane.",
+      "removeBankHint": "Synchronizuje sa ako pripojená banka: odstránením sa táto banka odpojí a odstránia sa synchronizované účty aj s transakciami.",
       "removed": "{{name}}: odstránené",
-      "copyFailed": "Kopírovanie zlyhalo. Označte adresu a skopírujte ju ručne."
+      "copyFailed": "Kopírovanie zlyhalo. Označte adresu a skopírujte ju ručne.",
+      "editTitle": "Znovu pripojiť {{name}}",
+      "editHint": "Aktualizujte, čo sa zmenilo, napríklad nové heslo alebo token. Potom sa pripojenie znova synchronizuje.",
+      "keepBlank": "Nechajte pole prázdne, aby sa zachovala jeho súčasná hodnota.",
+      "updated": "{{name}} aktualizované"
     },
     "oauth": {
       "title": "Dokončuje sa prihlásenie",

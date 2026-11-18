@@ -40,6 +40,7 @@ describe('resolveDisplayLocale', () => {
     expect(resolveDisplayLocale('auto', 'TWD')).toBe('zh-TW')
     expect(resolveDisplayLocale('auto', 'ZAR')).toBe('en-ZA')
     expect(resolveDisplayLocale('auto', 'GEL')).toBe('en-GE')
+    expect(resolveDisplayLocale('auto', 'ILS')).toBe('en-IL')
   })
 
   it('treats a missing number format like auto', () => {
@@ -276,6 +277,12 @@ describe('formatCompactCurrency', () => {
     for (const value of [-1_500_000, -340_000, -1_200, -5]) {
       expect(normalize(formatCompactCurrency(value, 'USD', 'en-US')).startsWith('-')).toBe(true)
     }
+  })
+
+  it('leaves a whole amount without a zero decimal', () => {
+    // Node 22 pads this to "R$20.0K" by default and Node 24 does not.
+    expect(normalize(formatCompactCurrency(20000, 'BRL', 'en-US'))).toBe('R$20K')
+    expect(normalize(formatCompactCurrency(20500, 'BRL', 'en-US'))).toBe('R$20.5K')
   })
 
   it('renders a null value as the empty-value glyph', () => {

@@ -164,6 +164,7 @@ def catalog(monkeypatch) -> Catalog:
     fake = Catalog()
     monkeypatch.setattr(index, "http_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(fake.handle)))
     index._manifests.clear()
+    monkeypatch.setattr(index, "_last_archive", None)
     monkeypatch.setenv("PLUGINS_ENABLED", "true")
     return fake
 
@@ -594,6 +595,35 @@ async def test_api_connections(client: AsyncClient, auth_headers: dict, catalog,
     assert bad.status_code == 422
     assert (await client.delete(f"/api/plugins/connections/{connection['id']}", headers=auth_headers)).status_code == 204
     assert (await client.get("/api/plugins/connections", headers=auth_headers)).json() == []
+
+
+@pytest.mark.asyncio
+async def test_api_a_manager_installs_code(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user, catalog, plugin_runner
+):
+    """`is_owner` covers the manager (ADR 0003), so a managed workspace installs code too."""
+    from app.models.workspace import Workspace
+
+    managed = Workspace(
+        id=uuid.uuid4(),
+        name="Managed",
+        kind="personal",
+        created_by_user_id=test_user.id,
+        managed_by_user_id=test_user.id,
+        default_currency="USD",
+        locale="en",
+    )
+    session.add(managed)
+    await session.commit()
+
+    headers = {**auth_headers, "X-Workspace-Id": str(managed.id)}
+    plan = (await client.get(f"/api/plugins/{PLUGIN}/plan", params={"action": "install"}, headers=headers)).json()
+    assert plan["commit"] == V1
+    body = {"action": "install", "commit": plan["commit"], "token": plan["token"]}
+    resp = await client.post(f"/api/plugins/{PLUGIN}/apply", json=body, headers=headers)
+    assert resp.status_code == 200, resp.text
+    installed = (await client.get("/api/plugins", headers=headers)).json()
+    assert [i["plugin_id"] for i in installed] == [PLUGIN]
 
 
 @pytest.mark.asyncio

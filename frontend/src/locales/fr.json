@@ -1105,6 +1105,7 @@
     "createCounterpartConfirm": "Créer",
     "unlinkTransfer": "Dissocier le virement",
     "unlinkTransferConfirm": "Dissocier ce virement ? Les deux transactions seront de nouveau traitées comme des transactions normales.",
+    "unlinkTransferReportWarning": "Sauf si leur catégorie les exclut déjà, les deux transactions sont de nouveau comptées dans les rapports de revenus et de dépenses : la sortante comme dépense, l'entrante comme revenu. Pour en exclure une, attribuez-lui une catégorie traitée comme un virement, par exemple Virements.",
     "unlinkTransferSuccess": "Virement dissocié",
     "confirmTransferCategoryTitle": "Appliquer aussi cette catégorie au virement lié ?",
     "confirmTransferCategoryDesc": "Les virements vont par paires. Vous pouvez mettre à jour uniquement cette transaction ou appliquer le même changement de catégorie aux deux côtés.",
@@ -1289,6 +1290,7 @@
     "deleted": "Compte supprimé",
     "syncDone": "Synchronisation terminée",
     "syncRateLimited": "Limite journalier de la banque atteint, aucune donnée nouvelle n'a été récupérée. Réessayez plus tard.",
+    "syncPartial": "Certains comptes ont été mis à jour, mais la limite journalière de la banque a été atteinte pour les autres. Ils seront réessayés plus tard.",
     "syncError": "Échec de la synchronisation",
     "connected": "Banque connectée avec succès",
     "connectError": "Échec de la connexion à la banque",
@@ -1297,6 +1299,10 @@
     "confirmDisconnectDesc": "Cela dissociera {{institution}} et supprimera de l'application les comptes et transactions synchronisés. Cette action est irréversible.",
     "viewTransactions": "Voir les transactions",
     "currentBalance": "Solde actuel",
+    "reservedBalances": "Soldes réservés",
+    "reservedBalanceFallback": "Solde réservé",
+    "reservedTotal": "Réservé",
+    "reservedBalancesHint": "Fonds réservés signalés par le fournisseur pour ce compte.",
     "income": "Revenus",
     "expenses": "Dépenses",
     "projectedBalance": "Solde projeté",
@@ -1378,8 +1384,16 @@
     "connectionStatus": {
       "active": "Active",
       "error": "Erreur",
-      "expired": "Expirée"
-    }
+      "expired": "Expirée",
+      "disconnected": "Déconnectée"
+    },
+    "pluginConnectors": "De vos plugins",
+    "pluginUnavailable": "Le plugin de cette connexion n'est plus installé ou disponible.",
+    "confirmDisconnectKeepDesc": "{{institution}} ne sera plus synchronisé. Ses comptes et l'historique des transactions restent dans l'app, et vous pourrez le reconnecter plus tard.",
+    "disconnectAlsoDelete": "Supprimer aussi les comptes et les transactions",
+    "disconnectedKept": "Banque déconnectée. Les comptes et l'historique ont été conservés.",
+    "removeConnection": "Supprimer la connexion",
+    "connectionDisconnected": "Déconnectée. Reconnectez pour synchroniser à nouveau"
   },
   "loans": {
     "title": "Contrat de prêt",
@@ -1492,7 +1506,26 @@
     "suggestEmpty": "Aucun historique de dépenses sur la période sélectionnée pour suggérer.",
     "suggestError": "Impossible de charger les suggestions. Réessayez dans un instant.",
     "hiddenCategory": "Masquée",
-    "average": "d'habitude {{amount}}"
+    "average": "d'habitude {{amount}}",
+    "copyAction": "Copier le mois précédent",
+    "copyTitle": "Copier les budgets",
+    "copyDescription": "Copiez les budgets d'un mois source vers {{month}}.",
+    "copySource": "Mois source",
+    "copyExisting": "Budgets existants",
+    "copyOverwrite": "Les remplacer par les montants du mois source",
+    "copyMissing": "Les conserver et ne copier que les catégories manquantes",
+    "copyAdjustment": "Ajustement (%)",
+    "copyAdjustmentHint": "Facultatif, entre -100 et 1000. 5 ajoute 5 %, -10 retire 10 %.",
+    "copyPreviewCount": "Catégories à copier : {{count}}",
+    "copyPreviewTotal": "Total à copier : {{amount}}",
+    "copyPreviewEmpty": "Le mois sélectionné n'a aucun budget à copier.",
+    "copyPreviewError": "Impossible de charger le mois source.",
+    "copyAmountTooLarge": "Le montant ajusté dépasse la limite de budget. Réduisez l'ajustement en pourcentage.",
+    "copyConfirm": "Copier les budgets",
+    "copySuccess": "Budgets copiés : {{count}}",
+    "copyNothing": "Aucun budget n'a été copié.",
+    "copyError": "Impossible de copier les budgets.",
+    "copyEmptyHint": "Copiez les budgets d'un mois précédent pour partir de ceux-ci."
   },
   "goals": {
     "title": "Objectifs",
@@ -1593,7 +1626,18 @@
     "autoGenerate": "Générer les transactions automatiquement",
     "autoGenerateHelp": "Créer une transaction à chaque échéance de cette facture. Désactivez pour attendre le prélèvement réel (ex. via la synchronisation bancaire) et l'afficher uniquement comme à venir jusque-là.",
     "fxEstimate": "Estimation basée sur le dernier taux de change ({{rate}}). Le montant final peut varier.",
-    "confirmDeleteDescription": "La définition récurrente « {{description}} » sera définitivement supprimée. Les transactions existantes resteront, mais perdront leur lien récurrent. Cette action est irréversible."
+    "confirmDeleteDescription": "La définition récurrente « {{description}} » sera définitivement supprimée. Les transactions existantes resteront, mais perdront leur lien récurrent. Cette action est irréversible.",
+    "priceHistory": "Historique des prix",
+    "viewPriceHistory": "Voir l'historique des prix",
+    "priceChangesTitle": "Variations de prix récentes (30 derniers jours)",
+    "priceChangesEmpty": "Aucune variation de prix stable détectée",
+    "priceChangeBadge": "Prix modifié",
+    "priceChangeIncrease": "Le prix a augmenté",
+    "priceChangeDecrease": "Le prix a diminué",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "Après un intervalle de {{days}} jours",
+    "priceChangeInsufficient": "Au moins 3 frais publiés et liés sont nécessaires avant que Securo ne signale une variation de prix stable."
   },
   "rules": {
     "searchPlaceholder": "Rechercher des règles...",
@@ -1852,6 +1896,39 @@
     "sparkles": "Spécial",
     "circle-help": "Autres / Non défini"
   },
+  "categoryEmojis": {
+    "burger": "Burger",
+    "fries": "Frites",
+    "sandwich": "Sandwich",
+    "wine": "Vin",
+    "cocktail": "Cocktail",
+    "juice": "Jus",
+    "money-bag": "Sac d'argent",
+    "spending": "Dépenses",
+    "soccer": "Football",
+    "basketball": "Basket-ball",
+    "tennis": "Tennis",
+    "yoga": "Yoga",
+    "art": "Art",
+    "headphones": "Casque",
+    "plug": "Prise",
+    "tools": "Outils",
+    "soap": "Savon",
+    "shower": "Douche",
+    "shoes": "Chaussures",
+    "makeup": "Maquillage",
+    "toys": "Jouets",
+    "flowers": "Fleurs",
+    "luck": "Chance",
+    "birthday": "Anniversaire",
+    "christmas": "Noël",
+    "protection": "Protection",
+    "map": "Carte",
+    "beach": "Plage",
+    "launch": "Lancement",
+    "investment": "Investissement",
+    "construction": "Construction"
+  },
   "groups": {
     "title": "Groupes de catégories",
     "add": "Ajouter un groupe",
@@ -2058,6 +2135,7 @@
     "noTransactions": "Aucune transaction pour l'instant",
     "txBuy": "Achat",
     "txSell": "Vente",
+    "txSplit": "Split",
     "txFee": "Frais",
     "txSaved": "Transaction enregistrée",
     "txDeleted": "Transaction supprimée",
@@ -2068,6 +2146,10 @@
     "unitPrice": "Prix unitaire",
     "fee": "Frais",
     "txTotal": "Total",
+    "splitOldUnits": "Unités avant",
+    "splitNewUnits": "Unités après",
+    "splitHint": "Saisissez les unités que vous déteniez avant le split et ce qu'elles sont devenues : un split 100 pour 1 s'écrit 1 → 100, un regroupement 1 pour 10 s'écrit 10 → 1. Datez l'opération du premier jour où le titre est coté au nouveau cours.",
+    "splitInvalid": "Saisissez deux nombres entiers différents compris entre 1 et 1 000 000.",
     "confirmDeleteTxTitle": "Supprimer la transaction ?",
     "confirmDeleteTx": "Cela supprime l'écriture et recalcule le prix moyen de la position.",
     "editAsset": "Modifier l'actif",
@@ -2412,8 +2494,13 @@
     "retry": "Réessayer",
     "error": "Erreur",
     "success": "Succès",
-    "searchIcon": "Rechercher une icône...",
     "noIconsFound": "Aucune icône trouvée",
+    "searchIconOrEmoji": "Rechercher une icône ou un emoji...",
+    "iconPickerIcons": "Icônes",
+    "iconPickerEmojis": "Emojis",
+    "useEmoji": "Utiliser cet emoji",
+    "noEmojisFound": "Aucun emoji trouvé",
+    "seeMatchingEmojis": "Voir les emojis correspondants ({{count}})",
     "primaryCurrency": "Devise principale",
     "showLess": "Afficher moins",
     "showMore": "+{{count}} de plus",
@@ -2424,7 +2511,8 @@
     "preview": "Aperçu",
     "download": "Télécharger",
     "closePreview": "Fermer l'aperçu",
-    "remove": "Supprimer"
+    "remove": "Supprimer",
+    "invalidAmount": "Saisissez un montant valide, par exemple {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "Rechercher des groupes...",
@@ -2828,6 +2916,8 @@
       "saveFailed": "Échec de l'enregistrement de la sélection d'outils",
       "empty": "Aucun outil découvert. Le serveur MCP est-il en cours d'exécution ? Avec Docker : `docker compose --profile agents up -d`.",
       "proposeBadge": "proposer",
+      "enabledCount": "{{enabled}} sur {{total}} activés",
+      "enableAll": "Tout activer",
       "loading": "Chargement des outils…"
     },
     "chat": {
@@ -2879,7 +2969,13 @@
         "deleteBudget": "{{category}} : {{amount}} pour {{month}}",
         "deleteRecurringBudget": "{{category}} : {{amount}} chaque mois à partir de {{month}}",
         "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
-        "createCategoryGroup": "« {{name}} »"
+        "createCategoryGroup": "« {{name}} »",
+        "createManualAccount": "{{name}} · {{type}} · {{currentBalance}} · {{openingBalance}}{{balanceDate}}",
+        "updateManualAccount": "{{name}}. {{currentBalance}}. {{changes}}",
+        "manualAccountMoney": "{{label}} : {{amount}}",
+        "manualAccountDate": "{{label}} : {{date}}",
+        "manualAccountChange": "{{field}} : {{before}} → {{after}}",
+        "manualAccountNoChanges": "Aucune modification"
       }
     },
     "conversation": {
@@ -2927,6 +3023,7 @@
       "baseUrl": "URL du point de terminaison",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "L'URL du point de terminaison est requise pour ce fournisseur",
+      "baseUrlInvalid": "Saisissez une URL de point de terminaison http ou https valide",
       "ollamaHint": "Si Ollama tourne sur votre machine hôte, utilisez http://host.docker.internal:11434 (Mac/Windows) ou l'IP de votre hôte (Linux).",
       "openaiCompatHint": "Collez simplement l'hôte:port (ex. http://192.168.1.142:1234). Le chemin /v1 est ajouté automatiquement. Depuis Docker sur Mac/Windows, remplacez localhost par host.docker.internal.",
       "apiKey": "Clé API / jeton",
@@ -3464,8 +3561,9 @@
       "new": "nouveau",
       "read": "Lire {{what}}",
       "write": "Lire et modifier {{what}}",
-      "ownerOnly": "Seul le propriétaire de l'espace de travail peut ajouter, mettre à jour ou retirer un plugin qui exécute du code.",
+      "ownerOnly": "Seul le propriétaire de l'espace de travail ou un gestionnaire peut ajouter, mettre à jour ou retirer un plugin qui exécute du code.",
       "removeConnections": "Ses connexions dans cet espace de travail ({{count}}) sont supprimées, avec leurs clés enregistrées et leurs accès.",
+      "unlinks": "Ses connexions bancaires ({{count}}) cessent de se synchroniser. Leurs comptes et transactions restent, comme comptes manuels.",
       "removeNothing": "Le code du plugin est retiré de votre serveur dès qu'aucun espace de travail ne l'utilise.",
       "auth": {
         "credentials": "Clé ou mot de passe",
@@ -3490,6 +3588,15 @@
         "install": "Ce plugin n'apporte pas de données. Vérifiez ce que son code peut faire :",
         "update": "Vérifiez ce que la nouvelle version peut faire :",
         "remove": "Son code cesse de s'exécuter dans cet espace de travail."
+      },
+      "provides": "Se synchronise comme une banque connectée",
+      "providesHint": "Securo ajoute ces données à cet espace de travail et les tient à jour, comme pour une banque connectée. Chaque connexion apparaît dans Connexions bancaires.",
+      "kinds": {
+        "accounts": "Comptes",
+        "transactions": "transactions",
+        "bills": "relevés de carte",
+        "holdings": "placements",
+        "trades": "achats et ventes"
       }
     },
     "connections": {
@@ -3527,8 +3634,13 @@
       "added": "{{name}} connectée",
       "removeTitle": "Retirer {{name}} ?",
       "removeHint": "Ses clés enregistrées et son accès à cet espace de travail sont supprimés. Ce qu'elle a déjà importé reste.",
+      "removeBankHint": "Elle se synchronise comme une banque connectée : la supprimer déconnecte cette banque et supprime les comptes synchronisés, avec leurs transactions.",
       "removed": "{{name}} retirée",
-      "copyFailed": "Impossible de copier. Sélectionnez l'adresse et copiez-la à la main."
+      "copyFailed": "Impossible de copier. Sélectionnez l'adresse et copiez-la à la main.",
+      "editTitle": "Reconnecter {{name}}",
+      "editHint": "Mettez à jour ce qui a changé, comme un nouveau mot de passe ou jeton. La connexion se synchronise ensuite à nouveau.",
+      "keepBlank": "Laissez un champ vide pour garder sa valeur actuelle.",
+      "updated": "{{name}} mise à jour"
     },
     "oauth": {
       "title": "Finalisation de la connexion",

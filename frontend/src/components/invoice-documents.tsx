@@ -160,7 +160,7 @@ export function InvoiceDocumentBrowser({
     <SectionCard>
       <div className="flex flex-col lg:flex-row">
         {/* The shelf */}
-        <div className="lg:w-72 xl:w-80 shrink-0 border-b lg:border-b-0 lg:border-r border-border flex flex-col">
+        <div className="lg:w-72 xl:w-80 shrink-0 border-b lg:border-b-0 lg:border-e border-border flex flex-col">
           <div className="px-3 py-3 border-b border-border flex items-center gap-2">
             {canWrite ? (
               <>
@@ -186,7 +186,7 @@ export function InvoiceDocumentBrowser({
                   disabled={uploadMutation.isPending}
                   onClick={() => fileInput.current?.click()}
                 >
-                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  <Plus className="h-3.5 w-3.5 me-1" />
                   {t('invoices.documents.add')}
                 </Button>
                 <input
@@ -361,7 +361,7 @@ function ShelfItem({
         active ? 'bg-primary/5 ring-1 ring-primary/20' : 'hover:bg-muted',
       )}
     >
-      <button onClick={onSelect} className="flex items-start gap-2 min-w-0 flex-1 text-left">
+      <button onClick={onSelect} className="flex items-start gap-2 min-w-0 flex-1 text-start">
         <span className={cn('mt-0.5 shrink-0', active ? 'text-primary' : 'text-muted-foreground')}>
           {icon}
         </span>
@@ -454,7 +454,7 @@ function AttachmentView({
       {url && (
         <div className="mt-3 text-center">
           <Button size="sm" variant="outline" onClick={() => window.open(url, '_blank', 'noopener')}>
-            <FileText className="h-3.5 w-3.5 mr-1.5" />
+            <FileText className="h-3.5 w-3.5 me-1.5" />
             {t('invoices.documents.openOriginal')}
           </Button>
         </div>
