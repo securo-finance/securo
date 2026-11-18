@@ -1509,6 +1509,7 @@
     "copyPreviewTotal": "Zu kopierender Gesamtbetrag: {{amount}}",
     "copyPreviewEmpty": "Der gewählte Monat hat keine Budgets zum Kopieren.",
     "copyPreviewError": "Der Quellmonat konnte nicht geladen werden.",
+    "copyAmountTooLarge": "Der angepasste Betrag überschreitet die Budgetgrenze. Verringere die prozentuale Anpassung.",
     "copyConfirm": "Budgets kopieren",
     "copySuccess": "Budgets kopiert: {{count}}",
     "copyNothing": "Es wurden keine Budgets kopiert.",

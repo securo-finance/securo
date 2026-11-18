@@ -123,7 +123,7 @@ export default function BudgetsPage() {
 
   const fmt = (amount: number) => mask(formatCurrency(amount, userCurrency, locale))
 
-  const { data: budgetsList, isLoading: budgetsLoading, isError: budgetsError, error: budgetsLoadError, refetch: refetchBudgets } = useQuery({
+  const { data: budgetsList, isLoading: budgetsLoading, isFetching: budgetsFetching, isError: budgetsError, error: budgetsLoadError, refetch: refetchBudgets } = useQuery({
     queryKey: ['budgets', selectedMonth],
     queryFn: () => budgetsApi.list(monthParam),
   })
@@ -272,8 +272,9 @@ export default function BudgetsPage() {
                 size="sm"
                 className="gap-1.5 h-8"
                 // Without the month's budgets the dialog cannot tell which
-                // categories are missing, so it would overstate the copy.
-                disabled={budgetsLoading || budgetsError || !budgetsList}
+                // categories are missing, so it would overstate the copy —
+                // and a refetch still in flight is just as stale.
+                disabled={budgetsLoading || budgetsFetching || budgetsError || !budgetsList}
                 onClick={() => setCopyOpen(true)}
               >
                 <CopyIcon size={13} /> {t('budgets.copyAction')}
@@ -320,7 +321,7 @@ export default function BudgetsPage() {
           ) : undefined}
         />
 
-        {canWrite && budgetsList?.length === 0 && allCategories.length > 0 && (
+        {canWrite && !budgetsFetching && budgetsList?.length === 0 && allCategories.length > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/20 px-4 py-3 sm:px-5">
             <div className="min-w-0">
               <p className="text-sm font-medium text-foreground">{t('budgets.empty')}</p>
@@ -503,6 +504,7 @@ export default function BudgetsPage() {
         onOpenChange={setCopyOpen}
         targetMonth={selectedMonth}
         targetBudgets={budgetsList ?? []}
+        targetRefreshing={budgetsFetching}
       />
 
       {/* Save bar: same fixed placement as the transactions bulk-action bar, so it

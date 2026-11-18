@@ -1508,6 +1508,7 @@
     "copyPreviewTotal": "コピーする合計: {{amount}}",
     "copyPreviewEmpty": "選択した月にはコピーできる予算がありません。",
     "copyPreviewError": "コピー元の月を読み込めませんでした。",
+    "copyAmountTooLarge": "調整後の金額が予算の上限を超えています。パーセント調整を下げてください。",
     "copyConfirm": "予算をコピー",
     "copySuccess": "コピーした予算: {{count}}",
     "copyNothing": "コピーされた予算はありません。",

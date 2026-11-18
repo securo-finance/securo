@@ -1508,6 +1508,7 @@
     "copyPreviewTotal": "Total to copy: {{amount}}",
     "copyPreviewEmpty": "The selected month has no budgets to copy.",
     "copyPreviewError": "Could not load the source month.",
+    "copyAmountTooLarge": "The adjusted amount is too large for the budget limit. Lower the percentage adjustment.",
     "copyConfirm": "Copy budgets",
     "copySuccess": "Budgets copied: {{count}}",
     "copyNothing": "No budgets were copied.",

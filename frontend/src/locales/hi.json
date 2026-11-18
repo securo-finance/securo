@@ -1508,6 +1508,7 @@
     "copyPreviewTotal": "कॉपी करने योग्य कुल: {{amount}}",
     "copyPreviewEmpty": "चुने गए महीने में कॉपी करने के लिए कोई बजट नहीं है।",
     "copyPreviewError": "स्रोत महीना लोड नहीं हो सका।",
+    "copyAmountTooLarge": "समायोजित राशि बजट सीमा से अधिक है। प्रतिशत समायोजन कम करें।",
     "copyConfirm": "बजट कॉपी करें",
     "copySuccess": "कॉपी किए गए बजट: {{count}}",
     "copyNothing": "कोई बजट कॉपी नहीं हुआ।",

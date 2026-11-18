@@ -6,6 +6,7 @@ import { CalendarIcon } from 'lucide-react'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
+import { useWorkspace } from '@/contexts/workspace-context'
 import { monthLabel, shiftMonth } from '@/lib/month-utils'
 import { formatCurrency, parseAmountInput } from '@/lib/format'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
@@ -22,6 +23,8 @@ import type { Budget } from '@/types'
 /** The smallest and largest adjustment the copy endpoint accepts. */
 const MIN_ADJUSTMENT = -100
 const MAX_ADJUSTMENT = 1000
+/** `_MAX_BUDGET_AMOUNT` in the service, in cents: a copy at or above it is rejected. */
+const MAX_BUDGET_CENTS = 1e15
 
 interface BudgetCopyDialogProps {
   open: boolean
@@ -30,23 +33,51 @@ interface BudgetCopyDialogProps {
   targetMonth: string
   /** Budgets the target month already resolves to, for the missing-only preview. */
   targetBudgets: Budget[]
+  /** True while the page is refetching the target month: its rows are stale. */
+  targetRefreshing: boolean
 }
 
 function capitalize(label: string) {
   return label.replace(/^\p{L}/u, (letter) => letter.toLocaleUpperCase())
 }
 
+/** Cents of a budget amount, which the API stores with two decimals. */
+function amountToCents(amount: number | string): number {
+  return Math.round(Number(amount) * 100)
+}
+
+/** `value` as an exact fraction, read from the shortest decimal text it has. */
+function toFraction(value: number): { numerator: bigint; denominator: bigint } {
+  const text = Math.abs(value).toString()
+  const [mantissa, exponentText] = text.split('e')
+  const exponent = exponentText ? Number(exponentText) : 0
+  const [whole, fraction = ''] = mantissa.split('.')
+  let numerator = BigInt(`${whole}${fraction}`)
+  let denominator = 10n ** BigInt(fraction.length)
+  if (exponent > 0) numerator *= 10n ** BigInt(exponent)
+  if (exponent < 0) denominator *= 10n ** BigInt(-exponent)
+  return { numerator: value < 0 ? -numerator : numerator, denominator }
+}
+
 /**
- * `amount` in cents with the percentage adjustment applied, rounded the way
- * the copy endpoint rounds it before saving (Decimal ROUND_HALF_UP: on a tie,
- * away from zero). Summing these cent amounts keeps the preview equal to the
- * total the copy writes.
+ * `amount` in cents with the percentage adjustment applied, rounded to cents
+ * the way the copy endpoint rounds it before saving (Decimal ROUND_HALF_UP:
+ * on a tie, away from zero). The arithmetic is exact, so a value just below
+ * the tie is never rounded up into one, and summing these keeps the preview
+ * equal to what the copy writes.
  */
 function adjustedCents(amount: number | string, adjustmentPercent: number): number {
-  const cents = Number(amount) * 100 * (1 + adjustmentPercent / 100)
-  // Drop the float noise a fractional percentage leaves before rounding.
-  const rounded = Number(cents.toFixed(6))
-  return rounded < 0 ? -Math.round(-rounded) : Math.round(rounded)
+  const cents = BigInt(amountToCents(amount))
+  if (adjustmentPercent === 0) return Number(cents)
+  // multiplier = 1 + adjustmentPercent / 100, as the fraction below.
+  const { numerator, denominator } = toFraction(adjustmentPercent)
+  const scale = 100n * denominator
+  const scaled = cents * (scale + numerator)
+  const negative = scaled < 0n
+  const magnitude = negative ? -scaled : scaled
+  let rounded = magnitude / scale
+  if ((magnitude % scale) * 2n >= scale) rounded += 1n
+  return Number(negative ? -rounded : rounded)
 }
 
 /**
@@ -57,12 +88,16 @@ function adjustedCents(amount: number | string, adjustmentPercent: number): numb
  * inherited recurring defaults) and leaves out the ones the target month
  * already has when the user keeps existing budgets.
  */
-export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudgets }: BudgetCopyDialogProps) {
+export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudgets, targetRefreshing }: BudgetCopyDialogProps) {
   const { t, i18n } = useTranslation()
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
+  const { current: workspace } = useWorkspace()
   const locale = useDisplayLocale()
   const queryClient = useQueryClient()
+  // The source read and the copy are pinned to this workspace, so a switch in
+  // another tab cannot send one workspace's amounts into another.
+  const workspaceId = workspace?.id ?? null
   const uiLocale = i18n.resolvedLanguage ?? i18n.language
   const dateFnsLocale = resolveDateFnsLocale(uiLocale)
   const currency = user?.preferences?.currency_display ?? 'USD'
@@ -83,8 +118,13 @@ export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudget
     isError: sourceError,
   } = useQuery({
     queryKey: ['budgets', sourceParam],
-    queryFn: () => budgetsApi.list(sourceParam),
+    queryFn: () => budgetsApi.list(sourceParam, workspaceId),
     enabled: open,
+    // The app keeps queries fresh for five minutes and this dialog is
+    // remounted on every opening, so without this a source changed on another
+    // device would be previewed from the cache while the copy reads the
+    // current amounts.
+    refetchOnMount: 'always',
   })
 
   const parsedAdjustment = adjustment.trim() === '' ? 0 : parseAmountInput(adjustment, locale)
@@ -94,17 +134,30 @@ export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudget
   // Same rule as the service: skip a category the target month already
   // resolves to, and in replace mode also one already at the copied amount.
   // The preview therefore counts what the copy writes, not every source row.
-  const rowsToCopy = useMemo(() => {
+  const preview = useMemo(() => {
     const targetCents = new Map(
       targetBudgets.map((budget) => [budget.category_id, adjustedCents(budget.amount, 0)]),
     )
-    return (sourceBudgets ?? []).flatMap((budget) => {
+    // Two people can each hold an override for the same category; the service
+    // keeps one entry per category, so the preview does too instead of
+    // counting both rows.
+    const sourceByCategory = new Map<string, Budget>()
+    for (const budget of sourceBudgets ?? []) sourceByCategory.set(budget.category_id, budget)
+
+    const rows: number[] = []
+    let overLimit = false
+    for (const [categoryId, budget] of sourceByCategory) {
       const copiedCents = adjustedCents(budget.amount, adjustmentPercent)
-      const existingCents = targetCents.get(budget.category_id)
-      if (existingCents !== undefined && (!overwriteExisting || existingCents === copiedCents)) return []
-      return [copiedCents]
-    })
+      // The service rejects the whole request over the limit, even for a
+      // category it would otherwise skip.
+      if (copiedCents >= MAX_BUDGET_CENTS) overLimit = true
+      const existingCents = targetCents.get(categoryId)
+      if (existingCents !== undefined && (!overwriteExisting || existingCents === copiedCents)) continue
+      rows.push(copiedCents)
+    }
+    return { rows, overLimit }
   }, [sourceBudgets, targetBudgets, overwriteExisting, adjustmentPercent])
+  const rowsToCopy = preview.rows
   const copiedTotal = rowsToCopy.reduce((sum, cents) => sum + cents, 0) / 100
 
   const copyMutation = useMutation({
@@ -113,7 +166,7 @@ export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudget
       target_month: `${targetMonth}-01`,
       adjustment_percentage: parsedAdjustment ?? 0,
       overwrite_existing: overwriteExisting,
-    }),
+    }, workspaceId),
     onSuccess: (copied) => {
       toast.success(copied.length > 0 ? t('budgets.copySuccess', { count: copied.length }) : t('budgets.copyNothing'))
       onOpenChange(false)
@@ -125,9 +178,11 @@ export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudget
   })
 
   const sameMonth = sourceMonth === targetMonth
-  // A background refetch keeps the cached rows on screen; wait for it, since
-  // the copy itself reads the source month on the server.
-  const canSubmit = !sameMonth && !sourceFetching && !sourceError && rowsToCopy.length > 0 && adjustmentValid && !copyMutation.isPending
+  // A refresh keeps the cached rows on screen; wait for both queries, since
+  // the copy itself reads the source month on the server and the target rows
+  // decide what it skips.
+  const canSubmit = !sameMonth && !sourceFetching && !sourceError && !targetRefreshing
+    && !preview.overLimit && rowsToCopy.length > 0 && adjustmentValid && !copyMutation.isPending
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!copyMutation.isPending) onOpenChange(next) }}>
@@ -213,6 +268,8 @@ export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudget
               <p className="text-muted-foreground">{t('common.loading')}</p>
             ) : sourceError ? (
               <p role="alert" className="text-destructive">{t('budgets.copyPreviewError')}</p>
+            ) : preview.overLimit ? (
+              <p role="alert" className="text-destructive">{t('budgets.copyAmountTooLarge')}</p>
             ) : rowsToCopy.length === 0 ? (
               <p className="text-muted-foreground">{t('budgets.copyPreviewEmpty')}</p>
             ) : (

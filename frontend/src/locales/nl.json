@@ -1510,6 +1510,7 @@
     "copyPreviewTotal": "Te kopiëren totaal: {{amount}}",
     "copyPreviewEmpty": "De gekozen maand heeft geen budgetten om te kopiëren.",
     "copyPreviewError": "De bronmaand kon niet worden geladen.",
+    "copyAmountTooLarge": "Het aangepaste bedrag overschrijdt de budgetlimiet. Verlaag de procentuele aanpassing.",
     "copyConfirm": "Budgetten kopiëren",
     "copySuccess": "Budgetten gekopieerd: {{count}}",
     "copyNothing": "Er zijn geen budgetten gekopieerd.",

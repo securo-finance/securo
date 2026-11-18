@@ -1592,6 +1592,7 @@
     "copyPreviewTotal": "Celkem ke kopírování: {{amount}}",
     "copyPreviewEmpty": "Vybraný měsíc nemá žádné rozpočty ke zkopírování.",
     "copyPreviewError": "Zdrojový měsíc se nepodařilo načíst.",
+    "copyAmountTooLarge": "Upravená částka překračuje limit rozpočtu. Snižte procentní úpravu.",
     "copyConfirm": "Kopírovat rozpočty",
     "copySuccess": "Zkopírované rozpočty: {{count}}",
     "copyNothing": "Nebyly zkopírovány žádné rozpočty.",

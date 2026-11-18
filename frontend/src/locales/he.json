@@ -1520,6 +1520,7 @@
     "copyPreviewTotal": "סכום להעתקה: {{amount}}",
     "copyPreviewEmpty": "לחודש הנבחר אין תקציבים להעתקה.",
     "copyPreviewError": "לא ניתן היה לטעון את חודש המקור.",
+    "copyAmountTooLarge": "הסכום המותאם עולה על מגבלת התקציב. יש להקטין את ההתאמה באחוזים.",
     "copyConfirm": "העתקת תקציבים",
     "copySuccess": "תקציבים הועתקו: {{count}}",
     "copyNothing": "לא הועתקו תקציבים.",

@@ -1576,6 +1576,7 @@
     "copyPreviewTotal": "Celkom na kopírovanie: {{amount}}",
     "copyPreviewEmpty": "Vybraný mesiac nemá žiadne rozpočty na skopírovanie.",
     "copyPreviewError": "Zdrojový mesiac sa nepodarilo načítať.",
+    "copyAmountTooLarge": "Upravená suma prekračuje limit rozpočtu. Znížte percentuálnu úpravu.",
     "copyConfirm": "Kopírovať rozpočty",
     "copySuccess": "Skopírované rozpočty: {{count}}",
     "copyNothing": "Neboli skopírované žiadne rozpočty.",

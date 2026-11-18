@@ -1561,6 +1561,7 @@
     "copyPreviewTotal": "Suma do skopiowania: {{amount}}",
     "copyPreviewEmpty": "Wybrany miesiąc nie ma budżetów do skopiowania.",
     "copyPreviewError": "Nie udało się wczytać miesiąca źródłowego.",
+    "copyAmountTooLarge": "Skorygowana kwota przekracza limit budżetu. Zmniejsz korektę procentową.",
     "copyConfirm": "Kopiuj budżety",
     "copySuccess": "Skopiowano budżety: {{count}}",
     "copyNothing": "Nie skopiowano żadnych budżetów.",

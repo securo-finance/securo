@@ -1508,6 +1508,7 @@
     "copyPreviewTotal": "Másolandó összeg: {{amount}}",
     "copyPreviewEmpty": "A kiválasztott hónapban nincs másolható költségvetés.",
     "copyPreviewError": "A forráshónapot nem sikerült betölteni.",
+    "copyAmountTooLarge": "A módosított összeg meghaladja a költségvetési limitet. Csökkentse a százalékos módosítást.",
     "copyConfirm": "Költségvetések másolása",
     "copySuccess": "Másolt költségvetések: {{count}}",
     "copyNothing": "Nem másolódott költségvetés.",
