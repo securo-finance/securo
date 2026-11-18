@@ -44,6 +44,11 @@ x-backend-env: &backend-env
   AGENTS_ENABLED: "false"
   AGENTS_MCP_JWT_SECRET: ${AGENTS_MCP_JWT_SECRET:-unused-in-demo}
 
+  # The Dokploy Traefik and the frontend nginx are two proxies, each adding
+  # one X-Forwarded-For entry; with 1 the rate-limit key stays on the Traefik
+  # IP and every visitor shares one bucket.
+  TRUSTED_PROXY_HOPS: "2"
+
 x-backend-base: &backend-base
   build:
     context: ./backend
