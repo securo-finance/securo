@@ -34,7 +34,23 @@ function readScript() {
 }
 
 const HEAD = 'a'.repeat(40);
+const OLD_HEAD = 'b'.repeat(40);
 const REQUIRED = ['Backend Tests', 'Frontend Checks', 'Helm Checks'];
+const GREEN = REQUIRED.map((name) => ({
+  name, status: 'completed', conclusion: 'success',
+  started_at: '2026-01-01T00:00:00Z',
+}));
+// CodeRabbit's own check run. Under a rate limit it still comes back
+// `completed`, only with `neutral` (rate limited) or `skipped` (paused) and a
+// title that says so: nothing but the title tells the two apart from a review.
+const coderabbitCheck = (conclusion, title) => ({
+  name: 'CodeRabbit', status: 'completed', conclusion,
+  output: { title }, started_at: '2026-01-01T00:00:01Z',
+});
+// What a review looks like: the commit it judged is on the review itself.
+const coderabbitReview = (commitId = HEAD) => ({
+  user: { login: 'coderabbitai[bot]' }, state: 'COMMENTED', commit_id: commitId,
+});
 const VERDICT = [
   '<!-- fast-lane: approve -->',
   '',
@@ -76,8 +92,9 @@ function answerThreads(query, threads) {
 
 // Everything the script needs from GitHub, for one pull request that would
 // merge if no gate refused it: open, `risk: low`, a documentation file only,
-// an approving verdict naming the head, and the three required checks green.
-async function evaluate({ threads, comments }) {
+// an approving verdict naming the head, the three required checks green, and a
+// CodeRabbit review of that same head.
+async function evaluate({ threads, comments, reviews, checks }) {
   const log = [];
   const merged = [];
   const posted = [];
@@ -92,11 +109,8 @@ async function evaluate({ threads, comments }) {
       changed_files: 1,
     },
     files: [{ filename: 'docs/notes.md' }],
-    reviews: [],
-    checks: REQUIRED.map((name) => ({
-      name, status: 'completed', conclusion: 'success',
-      started_at: '2026-01-01T00:00:00Z',
-    })),
+    reviews: reviews || [coderabbitReview()],
+    checks: checks || GREEN,
     comments: comments || [{
       user: { login: 'tassionoronha' },
       body: VERDICT,
@@ -191,6 +205,67 @@ scenario('a thread past a full page keeps refusing', async () => {
 scenario('a resolved thread of six comments with a Major merges', async () => {
   const { merged, log } = await evaluate({
     threads: [{ comments: [major(), plain(), plain(), plain(), plain(), plain()], resolved: true }],
+  });
+  assert.ok(merged, `expected a merge, got: ${log}`);
+});
+
+// The bug of #183: an empty thread list is what a pull request looks like both
+// after a clean review and after one the bot never opened. With no review on
+// this head, "no open thread" says nothing, so the lane refuses — and says it
+// on the pull request, where the head already carries an approval (#1553).
+scenario('a head the CodeRabbit never reviewed refuses, and the pull request says why',
+  async () => {
+    const { merged, log, posted } = await evaluate({ threads: [], reviews: [] });
+    assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+    assert.match(log, /CodeRabbit has no review of this commit/, log);
+    assert.equal(posted.length, 1, `the refusal belongs in one comment: ${log}`);
+    assert.match(posted[0].body, /CodeRabbit has no review of this commit/, posted[0].body);
+  });
+
+// The case that actually happened: the bot was rate limited on this head. Its
+// check run is `completed` and `neutral`, so a gate reading the conclusion
+// would call it done; only the title says no review was made (`#1553`).
+scenario('a head the CodeRabbit skipped as rate limited refuses, and names it', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    reviews: [coderabbitReview(OLD_HEAD)],
+    checks: [...GREEN, coderabbitCheck('neutral', 'Review rate limited')],
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.match(log,
+    /CodeRabbit has no review of this commit: its check says "Review rate limited"/, log);
+});
+
+// The same hole with the other title it uses: a paused review ends `skipped`,
+// and the review it names is the previous head's (`#1568`).
+scenario('a head with its review paused refuses too', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    reviews: [coderabbitReview(OLD_HEAD)],
+    checks: [...GREEN, coderabbitCheck('skipped', 'Review paused')],
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.match(log, /"Review paused"/, log);
+});
+
+// The happy case: CodeRabbit did review this head, so the lane still merges
+// without anybody pressing a button.
+scenario('a head the CodeRabbit reviewed merges', async () => {
+  const { merged, log } = await evaluate({
+    threads: [{ comments: [plain()] }],
+    checks: [...GREEN, coderabbitCheck('success', 'Review completed')],
+  });
+  assert.ok(merged, `expected a merge, got: ${log}`);
+  assert.doesNotMatch(log, /CodeRabbit has no review/, log);
+});
+
+// A stale check run from an earlier attempt must not outweigh a review that
+// does name this head: the review is the evidence, the check is only the
+// explanation for its absence.
+scenario('a review on the head wins over a stale rate-limit check', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    checks: [...GREEN, coderabbitCheck('neutral', 'Review rate limited')],
   });
   assert.ok(merged, `expected a merge, got: ${log}`);
 });
