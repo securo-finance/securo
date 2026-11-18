@@ -16,6 +16,7 @@ from sqlalchemy.pool import StaticPool
 
 import app.models  # noqa: F401  (register every table for create_all)
 from app.core.database import Base
+from app.models.account import Account
 from app.models.invoice import Invoice
 from app.models.invoice_schedule import InvoiceSchedule
 from app.models.payee import Payee, PayeeTaxId
@@ -236,3 +237,178 @@ async def test_business_seed_lists_first_and_covers_every_invoice_state(demo_dat
 
         workspaces = await _workspaces(session, user.id)
         assert [row.kind for row in workspaces] == ["business", "personal"]
+
+
+async def test_second_company_sits_between_the_studio_and_the_personal_wallet(
+    demo_database,
+):
+    """Two businesses list before the household, in the order the demo shows.
+
+    The second company exists so a screenshot can show two companies'
+    records apart; it needs its own identity, account and receivables,
+    and it must not disturb the studio's ledger or the personal wallet.
+    """
+    session_maker = demo_database
+    demo = _load("seed_demo")
+    seed = demo.business_seed
+
+    async with session_maker() as session:
+        user = User(
+            email="demo@example.test",
+            hashed_password="not-used-here",
+            is_active=True,
+            is_verified=True,
+            is_superuser=False,
+            preferences={"language": "pt-BR", "currency_display": "BRL"},
+        )
+        session.add(user)
+        await session.commit()
+
+        personal = await demo._ensure_personal_workspace(session, user)
+        studio = await seed.ensure_business_workspace(
+            session, user, before=personal.created_at
+        )
+        second = await seed.ensure_second_workspace(
+            session, user, before=personal.created_at, exclude=(studio.id,)
+        )
+
+        workspaces = await _workspaces(session, user.id)
+        assert [row.kind for row in workspaces] == [
+            "business",
+            "business",
+            "personal",
+        ]
+        assert [row.id for row in workspaces] == [
+            studio.id,
+            second.id,
+            personal.id,
+        ]
+        assert [row.name for row in workspaces] == [
+            "Aurora Studio",
+            "Ponte Norte Consultoria",
+            "Pessoal",
+        ]
+        assert (
+            workspaces[0].created_at
+            < workspaces[1].created_at
+            < workspaces[2].created_at
+        )
+
+        studio_summary = await seed.seed_business(
+            session, user, studio, months=6, today=TODAY
+        )
+        summary = await seed.seed_second_company(session, user, second, today=TODAY)
+
+        # The short ledger: two settled, one open, one overdue.
+        assert summary["invoices"] == 4
+        assert summary["states"] == {"paid": 2, "open": 1, "overdue": 1}
+        assert summary["receivable"] == "6200.00"
+        assert summary["number_from"] == 1
+        assert summary["number_to"] == 4
+        assert summary["products"] == 2
+        assert summary["payees"] == 2
+
+        invoices = await _invoices(session, second.id)
+        states: dict[str, int] = {}
+        for invoice in invoices:
+            state = invoice_service.derive_state(invoice, TODAY)
+            states[state] = states.get(state, 0) + 1
+        assert states == summary["states"]
+        assert sorted(invoice.number for invoice in invoices) == [1, 2, 3, 4]
+
+        # Its own issuer identity, separate from the studio's.
+        tax_ids = list(
+            (
+                await session.execute(
+                    select(WorkspaceTaxId).where(WorkspaceTaxId.workspace_id == second.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert [(row.kind, row.value) for row in tax_ids] == [
+            ("cnpj", "48291537000184")
+        ]
+        settings = await invoice_service.get_settings(session, second.id)
+        assert settings.issuer_display_name == "Ponte Norte Consultoria"
+        assert settings.number_prefix == "PNO-"
+        assert settings.next_number == 5
+        assert settings.default_payment_terms_days == 20
+
+        # Its own account and movement.
+        assert (
+            await session.scalar(
+                select(func.count())
+                .select_from(Account)
+                .where(Account.workspace_id == second.id)
+            )
+            == 1
+        )
+        assert (
+            await session.scalar(
+                select(func.count())
+                .select_from(Transaction)
+                .where(Transaction.workspace_id == second.id)
+            )
+            > 0
+        )
+
+        # The studio's ledger and the personal wallet are untouched by it.
+        assert len(await _invoices(session, studio.id)) == studio_summary["invoices"]
+        assert studio_summary["states"] == {
+            "paid": 14,
+            "partial": 1,
+            "overdue": 1,
+            "open": 1,
+            "draft": 1,
+        }
+        assert studio_summary["receivable"] == "14000.00"
+        assert (
+            await session.scalar(
+                select(func.count())
+                .select_from(Invoice)
+                .where(Invoice.workspace_id == personal.id)
+            )
+            == 0
+        )
+        assert (
+            await session.scalar(
+                select(func.count())
+                .select_from(Account)
+                .where(Account.workspace_id == personal.id)
+            )
+            == 0
+        )
+
+        # Running it again rewrites the same numbers, invoices included.
+        again = await seed.seed_second_company(session, user, second, today=TODAY)
+        assert again["states"] == summary["states"]
+        assert again["receivable"] == summary["receivable"]
+        assert again["number_from"] == summary["number_from"]
+        assert again["number_to"] == summary["number_to"]
+        assert len(await _invoices(session, second.id)) == 4
+
+        # The reset keeps all three wallets and archives anything else.
+        stray = Workspace(
+            name="Workspace do visitante",
+            kind="business",
+            created_by_user_id=user.id,
+        )
+        session.add(stray)
+        await session.flush()
+        session.add(
+            WorkspaceMember(workspace_id=stray.id, user_id=user.id, role="owner")
+        )
+        await session.commit()
+
+        archived = await seed.archive_other_workspaces(
+            session, user, keep=[studio.id, second.id, personal.id]
+        )
+        assert archived == 1
+        await session.refresh(stray)
+        assert stray.is_archived
+        assert [row.id for row in await _workspaces(session, user.id)] == [
+            studio.id,
+            second.id,
+            personal.id,
+        ]

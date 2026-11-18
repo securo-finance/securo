@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """Seed the business side of the public demo.
 
-The demo account owns two workspaces: "Aurora Studio" (kind `business`)
-and "Pessoal" (kind `personal`). `seed_demo.py` fills the personal one
-and calls this module at the end of the same run, so one reset rewrites
-both wallets.
+The demo account owns three workspaces: "Aurora Studio" and "Ponte Norte
+Consultoria" (both kind `business`) and "Pessoal" (kind `personal`).
+`seed_demo.py` fills the personal one and calls this module at the end of
+the same run, so one reset rewrites all three wallets.
 
-The business workspace is created first, with an earlier `created_at`,
-on purpose: a visitor with no workspace selected lands on the first one
-the API lists, and the B2B story is the one the landing has to show.
+Two companies, not one, on purpose: the B2B page promises separation by
+company, and a screenshot only shows it with two business workspaces side
+by side in the switcher. The companies are created with earlier
+`created_at` values than the personal one, the studio first, so a visitor
+with no workspace selected lands on the studio and the two businesses
+list before the personal wallet.
 
-What this module builds, all inside the business workspace:
+What this module builds, all inside the studio's workspace:
 
 * the studio's identity: legal name, address, CNPJ and the issuer block
   an invoice document prints;
@@ -23,6 +26,11 @@ What this module builds, all inside the business workspace:
   were invoiced, and one that ended with a reason;
 * budgets, a goal, recurring bills and rules, so the business workspace
   does not look empty next to the personal one.
+
+The second company is deliberately small: its own identity and CNPJ, one
+checking account, a couple of services and clients, and four invoices --
+two settled, one open and one overdue -- which is enough to show two
+companies' receivables apart.
 
 It also deletes what it wrote before writing again, so running it twice
 keeps the same numbers and does not duplicate a single row.
@@ -103,6 +111,8 @@ COMPANY = {
     # Valid under the mod-11 rule the fiscal pack applies, so the issuer
     # block and the invoice form accept it.
     "cnpj": "11222333000181",
+    "icon": "briefcase",
+    "color": "#0f766e",
 }
 
 INVOICE_SETTINGS = {
@@ -124,6 +134,133 @@ INVOICE_SETTINGS = {
     ),
     "accent_color": "#0f766e",
 }
+
+#: The second company the demo account runs. Its job in the demo is to
+#: make "separated by company" visible: a different name, a different
+#: CNPJ, its own account and its own receivables. Fictional like the
+#: studio, and its CNPJ is valid under the same mod-11 rule.
+SECOND_COMPANY = {
+    "name": "Ponte Norte Consultoria",
+    "legal_name": "Ponte Norte Consultoria Ltda",
+    "address": "Av. Rio Branco, 155, Centro, Rio de Janeiro, RJ",
+    "tax_jurisdiction": "BR",
+    "cnpj": "48291537000184",
+    "icon": "building-2",
+    "color": "#7c3aed",
+}
+
+SECOND_INVOICE_SETTINGS = {
+    "preset": "tracking",
+    "default_payment_terms_days": 20,
+    "number_prefix": "PNO-",
+    "series": "A",
+    "issuer_display_name": SECOND_COMPANY["name"],
+    "footer_note": "Ponte Norte Consultoria Ltda, CNPJ 48.291.537/0001-84.",
+    "payment_details": (
+        "Pix CNPJ 48.291.537/0001-84, banco digital, "
+        "agência 0001, conta 7654321-0"
+    ),
+    "accent_color": "#7c3aed",
+}
+
+SECOND_ACCOUNT: dict[str, Any] = {
+    "name": "Conta PJ Ponte Norte",
+    "type": "checking",
+    "opening": Decimal("12000.00"),
+}
+
+SECOND_CATEGORIES = (
+    ("Receita de Serviços", "#7c3aed", "briefcase"),
+    ("Serviços de Terceiros", "#0d9488", "briefcase"),
+    ("Contas e Escritório", "#64748b", "building-2"),
+    ("Impostos", "#b91c1c", "landmark"),
+)
+
+SECOND_CLIENTS: tuple[dict[str, Any], ...] = (
+    {
+        "name": "Metalúrgica Andrade Ltda",
+        "cnpj": "37510482000130",
+        "email": "financeiro@andrade.example",
+        "favorite": True,
+    },
+    {
+        "name": "Transportes Litoral Ltda",
+        "cnpj": "60923817000163",
+        "email": "contato@litoral.example",
+    },
+)
+
+SECOND_PRODUCTS: tuple[dict[str, Any], ...] = (
+    {
+        "key": "diagnostico",
+        "name": "Diagnóstico operacional",
+        "kind": "service",
+        "unit": "projeto",
+        "price": Decimal("3800.00"),
+        "billing": "one_time",
+        "description": "Mapeamento de processos e plano de melhoria.",
+        "fiscal_refs": {"service_code": "17.01", "municipal_service_code": "1701"},
+    },
+    {
+        "key": "mensal",
+        "name": "Acompanhamento mensal",
+        "kind": "service",
+        "unit": "mês",
+        "price": Decimal("2400.00"),
+        "billing": "recurring",
+        "interval": "monthly",
+        "description": "Reuniões quinzenais e relatório de indicadores.",
+        "fiscal_refs": {"service_code": "17.06", "municipal_service_code": "1706"},
+    },
+)
+
+#: Numbered by issue date, oldest first: two settled notes, one overdue
+#: and one still inside its payment window. `due_days_ago` is how far the
+#: due date is in the past; `due_in_days` how far it is ahead.
+SECOND_INVOICES: tuple[dict[str, Any], ...] = (
+    {
+        "client": 0,
+        "product": "diagnostico",
+        "description": "Diagnóstico operacional, Metalúrgica Andrade",
+        "amount": Decimal("3800.00"),
+        "issue_days_ago": 62,
+        "due_days_ago": 42,
+        "status": "paid",
+    },
+    {
+        "client": 0,
+        "product": "diagnostico",
+        "description": "Diagnóstico operacional, filial Campinas",
+        "amount": Decimal("3800.00"),
+        "issue_days_ago": 40,
+        "due_days_ago": 25,
+        "status": "open",
+    },
+    {
+        "client": 1,
+        "product": "mensal",
+        "description": "Acompanhamento mensal, Transportes Litoral",
+        "amount": Decimal("2400.00"),
+        "issue_days_ago": 33,
+        "due_days_ago": 13,
+        "status": "paid",
+    },
+    {
+        "client": 1,
+        "product": "mensal",
+        "description": "Acompanhamento mensal, Transportes Litoral",
+        "amount": Decimal("2400.00"),
+        "issue_days_ago": 5,
+        "due_in_days": 15,
+        "status": "open",
+    },
+)
+
+#: Fixed monthly costs of the second company: (day, category, amount).
+SECOND_COSTS = (
+    (12, "Impostos", Decimal("540.00")),
+    (18, "Contas e Escritório", Decimal("350.00")),
+)
 
 ACCOUNTS: tuple[dict[str, Any], ...] = (
     {
@@ -480,36 +617,37 @@ async def _wipe_business(session: AsyncSession, workspace_id: uuid.UUID) -> None
 # ---------------------------------------------------------------------------
 # The workspace
 # ---------------------------------------------------------------------------
-def _stamp_workspace(workspace: Workspace) -> None:
+def _stamp_workspace(workspace: Workspace, company: dict[str, Any]) -> None:
     """Force the identity the demo screenshots were reviewed against."""
-    workspace.name = COMPANY["name"]
-    workspace.legal_name = COMPANY["legal_name"]
-    workspace.address = COMPANY["address"]
-    workspace.tax_jurisdiction = COMPANY["tax_jurisdiction"]
+    workspace.name = company["name"]
+    workspace.legal_name = company["legal_name"]
+    workspace.address = company["address"]
+    workspace.tax_jurisdiction = company["tax_jurisdiction"]
     workspace.default_currency = BRL
     workspace.locale = "pt-BR"
     workspace.timezone = DEMO_TIMEZONE
-    workspace.icon = "briefcase"
-    workspace.color = "#0f766e"
+    workspace.icon = company["icon"]
+    workspace.color = company["color"]
 
 
-async def ensure_business_workspace(
+async def _ensure_company_workspace(
     session: AsyncSession,
     user: User,
+    company: dict[str, Any],
     *,
-    before: Optional[datetime] = None,
+    created_at: Optional[datetime] = None,
+    exclude_ids: tuple[uuid.UUID, ...] = (),
 ) -> Workspace:
-    """The business workspace of the demo, creating it if it is missing.
+    """The workspace of `company`, creating it if it is missing.
 
-    `before` is the personal workspace's `created_at`: the business one
-    is moved ten minutes earlier than it, because the frontend opens the
-    first workspace the API lists when a visitor has no saved selection,
-    and the B2B landing has to be that one. The value is deterministic,
-    so every reset puts it back in the same place.
+    It is looked up by name first, which is stable because every reset
+    stamps the name back. A visitor's workspace, with a name the demo
+    never wrote, is reused only when nothing better is around -- the way
+    the studio has always been -- and never one already claimed by
+    another company (`exclude_ids`).
 
-    A visitor may have created business workspaces of their own on the
-    public demo. They are archived here: two business wallets in the
-    switcher tell a story nobody reviewed.
+    Strays are archived by `archive_other_workspaces` at the end of the
+    reset, not here: it is the only place that knows all three wallets.
     """
     rows = (
         (
@@ -527,12 +665,18 @@ async def ensure_business_workspace(
         .scalars()
         .all()
     )
-    live = [row for row in rows if not row.is_archived]
-    workspace = live[0] if live else (rows[0] if rows else None)
+    named = [row for row in rows if row.name == company["name"]]
+    candidates = [row for row in rows if row.id not in exclude_ids]
+    live = [row for row in candidates if not row.is_archived]
+    workspace = (
+        named[0]
+        if named
+        else (live[0] if live else (candidates[0] if candidates else None))
+    )
 
     if workspace is None:
         workspace = Workspace(
-            name=COMPANY["name"],
+            name=company["name"],
             kind="business",
             created_by_user_id=user.id,
             default_currency=BRL,
@@ -556,17 +700,57 @@ async def ensure_business_workspace(
         membership.role = "owner"
 
     workspace.is_archived = False
-    _stamp_workspace(workspace)
-    if before is not None:
-        workspace.created_at = before - timedelta(minutes=10)
-
-    for stray in rows:
-        if stray.id != workspace.id and not stray.is_archived:
-            stray.is_archived = True
+    _stamp_workspace(workspace, company)
+    if created_at is not None:
+        workspace.created_at = created_at
 
     await session.flush()
     await session.commit()
     return workspace
+
+
+async def ensure_business_workspace(
+    session: AsyncSession,
+    user: User,
+    *,
+    before: Optional[datetime] = None,
+) -> Workspace:
+    """The studio's workspace, creating it if it is missing.
+
+    `before` is the personal workspace's `created_at`. The studio is
+    placed twenty minutes earlier than it and the second company ten
+    minutes earlier, so the API lists studio, second company, personal,
+    and a visitor with no saved selection lands on the studio. The
+    values are deterministic, so every reset restores the same order.
+    """
+    created_at = before - timedelta(minutes=20) if before is not None else None
+    return await _ensure_company_workspace(
+        session, user, COMPANY, created_at=created_at
+    )
+
+
+async def ensure_second_workspace(
+    session: AsyncSession,
+    user: User,
+    *,
+    before: Optional[datetime] = None,
+    exclude: tuple[uuid.UUID, ...] = (),
+) -> Workspace:
+    """The second company's workspace, creating it if it is missing.
+
+    `exclude` carries the ids already claimed by the studio and the
+    personal wallet, so a visitor's stray workspace is only adopted when
+    there is no demo company to reuse. Its `created_at` lands between
+    the studio's and the personal one.
+    """
+    created_at = before - timedelta(minutes=10) if before is not None else None
+    return await _ensure_company_workspace(
+        session,
+        user,
+        SECOND_COMPANY,
+        created_at=created_at,
+        exclude_ids=tuple(exclude),
+    )
 
 
 async def archive_other_workspaces(
@@ -575,9 +759,9 @@ async def archive_other_workspaces(
     """Archive every other live workspace of the demo account.
 
     Visitors create workspaces on the public demo and nothing removes
-    them; they pile up in the switcher. Only the two the demo seeds are
-    kept, and both are passed in `keep`, so one run never archives the
-    other wallet.
+    them; they pile up in the switcher. Only the three the demo seeds are
+    kept, and all of them are passed in `keep`, so one run never archives
+    another of the demo's wallets.
     """
     rows = (
         (
@@ -715,7 +899,7 @@ async def seed_business(
     uid = user.id
     months = max(months, 3)
 
-    _stamp_workspace(workspace)
+    _stamp_workspace(workspace, COMPANY)
     await session.flush()
     await _wipe_business(session, wsid)
     await session.commit()
@@ -1214,6 +1398,194 @@ async def seed_business(
     }
 
 
+async def seed_second_company(
+    session: AsyncSession,
+    user: User,
+    workspace: Workspace,
+    *,
+    today: Optional[date] = None,
+) -> dict[str, Any]:
+    """Rewrite the second company and return what it now holds.
+
+    A short version of the studio's: its identity and issuer block, one
+    checking account, two services and two clients, four invoices (two
+    settled, one open and one overdue) and a couple of monthly costs. It
+    exists so a screenshot can show two companies' records apart, so it
+    carries only what that screenshot needs.
+    """
+    today = today or app_today()
+    wsid = workspace.id
+    uid = user.id
+
+    _stamp_workspace(workspace, SECOND_COMPANY)
+    await session.flush()
+    await _wipe_business(session, wsid)
+    await session.commit()
+
+    # 1. The issuer block ------------------------------------------------
+    await invoice_service.update_settings(session, wsid, dict(SECOND_INVOICE_SETTINGS))
+    await invoice_service.set_issuer_tax_ids(
+        session, wsid, [{"kind": "cnpj", "value": SECOND_COMPANY["cnpj"]}]
+    )
+    await session.commit()
+
+    # 2. Account and categories ------------------------------------------
+    account = Account(
+        user_id=uid,
+        workspace_id=wsid,
+        name=SECOND_ACCOUNT["name"],
+        type=SECOND_ACCOUNT["type"],
+        currency=BRL,
+        balance=Decimal("0.00"),
+    )
+    session.add(account)
+
+    categories: dict[str, Category] = {}
+    for name, color, icon in SECOND_CATEGORIES:
+        row = Category(user_id=uid, workspace_id=wsid, name=name, color=color, icon=icon)
+        session.add(row)
+        categories[name] = row
+    await session.flush()
+
+    # 3. Clients ---------------------------------------------------------
+    payees: list[Payee] = []
+    for spec in SECOND_CLIENTS:
+        payee = Payee(
+            user_id=uid,
+            workspace_id=wsid,
+            name=spec["name"],
+            type="company",
+            source="manual",
+            is_favorite=spec.get("favorite", False),
+            email=spec.get("email"),
+        )
+        session.add(payee)
+        payee.tax_ids = [PayeeTaxId(kind="cnpj", value=spec["cnpj"])]
+        payees.append(payee)
+    await session.flush()
+
+    # 4. The catalog -----------------------------------------------------
+    products: dict[str, tuple[Product, ProductPrice]] = {}
+    for spec in SECOND_PRODUCTS:
+        product = await product_service.create_product(
+            session,
+            wsid,
+            uid,
+            {
+                "name": spec["name"],
+                "kind": spec.get("kind", "service"),
+                "unit": spec.get("unit"),
+                "description": spec.get("description"),
+                "fiscal_refs": spec.get("fiscal_refs"),
+                "prices": [
+                    {
+                        "currency": BRL,
+                        "unit_price": spec["price"],
+                        "billing": spec.get("billing", "one_time"),
+                        "interval": spec.get("interval"),
+                        "nickname": "Tabela 2026",
+                    }
+                ],
+            },
+        )
+        products[spec["key"]] = (product, product.prices[0])
+    await session.commit()
+
+    # 5. The short ledger ------------------------------------------------
+    created: list[Invoice] = []
+    for spec in sorted(
+        SECOND_INVOICES, key=lambda row: row["issue_days_ago"], reverse=True
+    ):
+        issue = today - timedelta(days=spec["issue_days_ago"])
+        if "due_days_ago" in spec:
+            due = today - timedelta(days=spec["due_days_ago"])
+        else:
+            due = today + timedelta(days=spec["due_in_days"])
+        product, price = products[spec["product"]]
+        invoice = await invoice_service.create_invoice(
+            session,
+            wsid,
+            uid,
+            {
+                "payee_id": payees[spec["client"]].id,
+                "issue_date": issue,
+                "due_date": due,
+                "currency": BRL,
+                "direction": "receivable",
+                "lines": [
+                    _invoice_line(product, price, spec["description"], spec["amount"])
+                ],
+            },
+        )
+        created.append(invoice)
+
+        if spec["status"] == "paid":
+            await _receive(
+                session,
+                user_id=uid,
+                workspace_id=wsid,
+                account=account,
+                category=categories["Receita de Serviços"],
+                payee=payees[spec["client"]],
+                invoice=invoice,
+                amount=spec["amount"],
+                day=min(issue + timedelta(days=5), today),
+            )
+    await session.commit()
+
+    # 6. Cash movement ---------------------------------------------------
+    _add_transaction(
+        session,
+        user_id=uid,
+        workspace_id=wsid,
+        account=account,
+        day=_month_start(today, 1),
+        description="Saldo inicial",
+        amount=SECOND_ACCOUNT["opening"],
+        kind="credit",
+        exclude_from_pnl=True,
+    )
+    for months_ago in range(2):
+        for day_number, category_name, amount in SECOND_COSTS:
+            day = _month_day(today, months_ago, day_number)
+            if day > today:
+                continue
+            _add_transaction(
+                session,
+                user_id=uid,
+                workspace_id=wsid,
+                account=account,
+                day=day,
+                description=category_name,
+                amount=amount,
+                kind="debit",
+                category=categories[category_name],
+            )
+    await session.commit()
+
+    # 7. What the caller and the reset log want to know ------------------
+    states: dict[str, int] = {}
+    receivable = Decimal("0.00")
+    for invoice in created:
+        state = invoice_service.derive_state(invoice, today)
+        states[state] = states.get(state, 0) + 1
+        if state in ("open", "partial", "overdue"):
+            receivable += invoice_service.balance(invoice)
+    numbers = sorted(invoice.number for invoice in created if invoice.number)
+
+    return {
+        "workspace_id": str(wsid),
+        "workspace_name": workspace.name,
+        "invoices": len(created),
+        "states": states,
+        "receivable": str(receivable.quantize(CENT)),
+        "number_from": numbers[0] if numbers else None,
+        "number_to": numbers[-1] if numbers else None,
+        "products": len(products),
+        "payees": len(payees),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Entry points
 # ---------------------------------------------------------------------------
@@ -1229,13 +1601,49 @@ async def seed(email: str, password: str, months: int) -> dict[str, Any]:
                 user = await session.scalar(select(User).where(User.email == email))
             await session.commit()
         assert user is not None
-        workspace = await ensure_business_workspace(session, user)
-        return await seed_business(session, user, workspace, months=months)
+        business = await ensure_business_workspace(session, user)
+        second = await ensure_second_workspace(session, user, exclude=(business.id,))
+
+        # Running this script on its own must not archive the personal
+        # wallet the reset created: every live personal workspace of the
+        # user stays, and only stray business ones go.
+        keep = [business.id, second.id]
+        keep.extend(
+            (
+                await session.execute(
+                    select(Workspace.id)
+                    .join(
+                        WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id
+                    )
+                    .where(
+                        WorkspaceMember.user_id == user.id,
+                        Workspace.kind == "personal",
+                        Workspace.is_archived.is_(False),
+                    )
+                )
+            )
+            .unique()
+            .scalars()
+            .all()
+        )
+        await archive_other_workspaces(session, user, keep)
+
+        return {
+            "business": await seed_business(session, user, business, months=months),
+            "second": await seed_second_company(session, user, second),
+        }
+
+
+def _print_summary(label: str, summary: dict[str, Any]) -> None:
+    print(f"  {label}: {summary['workspace_name']} ({summary['workspace_id']})")
+    print(f"    invoices  : {summary['invoices']} {summary['states']}")
+    print(f"    receivable: {summary['receivable']}")
+    print(f"    numbering : {summary['number_from']} to {summary['number_to']}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Seed the business workspace of the public demo"
+        description="Seed the business workspaces of the public demo"
     )
     parser.add_argument("--email", default="demo@securo.app")
     parser.add_argument("--password", default="DemoSecuro1!")
@@ -1246,12 +1654,10 @@ def main() -> None:
         help="How many months of history to seed (default: 6)",
     )
     args = parser.parse_args()
-    summary = asyncio.run(seed(args.email, args.password, args.months))
+    summaries = asyncio.run(seed(args.email, args.password, args.months))
     print("\nBusiness demo seed complete.")
-    print(f"  Workspace : {summary['workspace_name']} ({summary['workspace_id']})")
-    print(f"  Invoices  : {summary['invoices']} {summary['states']}")
-    print(f"  Receivable: {summary['receivable']}")
-    print(f"  Numbering : {summary['number_from']} to {summary['number_to']}")
+    _print_summary("Studio", summaries["business"])
+    _print_summary("Second company", summaries["second"])
 
 
 if __name__ == "__main__":

@@ -279,30 +279,35 @@ async def seed(email: str, password: str, months: int) -> None:
         uid = user.id
         print(f"  user {uid}")
 
-        # 1b. The two workspaces ---------------------------------------------
+        # 1b. The three workspaces -------------------------------------------
         # Every financial entity (Account, Category, Transaction, ...) has a
         # NOT NULL workspace_id, and every insert below passes it explicitly.
         #
-        # The business workspace is created first, with an earlier
-        # `created_at` than the personal one: a visitor with no saved
-        # selection lands on the first workspace the API lists, and the B2B
-        # landing is the one the demo has to show. The personal wallet comes
-        # second and keeps every row this script writes.
+        # The demo has two companies and one household. The studio and the
+        # second company are placed with earlier `created_at` values than the
+        # personal wallet, studio first: a visitor with no saved selection
+        # lands on the first workspace the API lists, and the two companies
+        # show up side by side in the switcher. The personal wallet comes
+        # last and keeps every row this script writes.
         personal = await _ensure_personal_workspace(session, user)
         business = await business_seed.ensure_business_workspace(
             session, user, before=personal.created_at
         )
+        second = await business_seed.ensure_second_workspace(
+            session, user, before=personal.created_at, exclude=(business.id,)
+        )
         wsid = personal.id
-        print(f"  business workspace {business.id} ({business.name})")
+        print(f"  studio workspace {business.id} ({business.name})")
+        print(f"  second company workspace {second.id} ({second.name})")
         print(f"  personal workspace {wsid} ({personal.name})")
 
         # Visitors on the public demo can create workspaces, and nothing ever
         # removed them: they pile up in the switcher. Archive everything
-        # except the two the demo seeds, so each reset returns it to a clean
-        # pair. Both ids go in `keep`: archiving "everything but the personal
-        # one" would delete the business workspace on the very next reset.
+        # except the three the demo seeds, so each reset returns it to a clean
+        # trio. All three ids go in `keep`: archiving "everything but one"
+        # would delete the other wallets on the very next reset.
         stray = await business_seed.archive_other_workspaces(
-            session, user, keep=[personal.id, business.id]
+            session, user, keep=[personal.id, business.id, second.id]
         )
         if stray:
             print(f"  {stray} stray workspaces archived")
@@ -764,8 +769,8 @@ async def seed(email: str, password: str, months: int) -> None:
         # 12. The business wallet --------------------------------------------
         # `_wipe` deleted by user across every workspace, so the business
         # side is gone too and is rewritten here. One call builds the whole
-        # second wallet: identity, catalog, clients, invoices in every
-        # derived state, the recurring agreements and their own budgets.
+        # studio: identity, catalog, clients, invoices in every derived
+        # state, the recurring agreements and its own budgets.
         summary = await business_seed.seed_business(
             session, user, business, months=months
         )
@@ -773,6 +778,17 @@ async def seed(email: str, password: str, months: int) -> None:
         print(
             f"  {summary['receivable']} BRL receivable, "
             f"numbering {summary['number_from']} to {summary['number_to']}"
+        )
+
+        # The second company: its own identity, account and short ledger, so
+        # the switcher and the reports can show two businesses apart.
+        second_summary = await business_seed.seed_second_company(
+            session, user, second
+        )
+        print(
+            f"  {second_summary['invoices']} second-company invoices "
+            f"{second_summary['states']}, "
+            f"{second_summary['receivable']} BRL receivable"
         )
 
     print("\nDemo seed complete.")
