@@ -165,6 +165,9 @@ with the expected return worked out by hand:
 | Half the wallet goes bankrupt (close → 0), the rest gains 10% | −45% |
 | Delisted holding written off by selling at 0 | −50% |
 | Day trade with fees next to a flat holding | +2.40% |
+| Ten held at 100, ten bought at 100 or 105, ten sold at 110, close 110 | +10% |
+| Sold at 110 then bought back at 105 in ledger order, close 105 | +10% |
+| Ten held at 100, ten bought at 105, close 110 | +10% |
 | 2:1 split recorded as free shares (buy at price 0) | +10% |
 | Manual asset sold above / at its purchase value | +30% / 0% |
 | Manual asset sold without a price, last valued 20% up | +20% |
@@ -175,15 +178,21 @@ with the expected return worked out by hand:
 - **Dividends are not counted** (see below). On the ex-date the price drop
   shows as a loss and the cash paid out never appears, so dividend payers
   look worse than they did.
-- **Splits** have no transaction kind. Recording the new shares as a buy at
-  price 0 gives the right result, as tested above.
+- **Splits** recorded as a `split` transaction change the shares held
+  without moving money. Older ledgers that recorded the new shares as a buy
+  at price 0 give the same result, as tested above.
+- **Manual assets without trades.** Only an asset's first value counts as
+  money put in. A later value raised because money was added reads as a
+  gain; recording that money as a buy on the asset avoids it.
 - **Delisted tickers** keep their last price until written off with a sale at 0.
 - **Total wipeout.** Once the whole scope reaches zero, the time-weighted
   return stays at −100% even if new money arrives later. That is the
   definition of a compounded return, not a bug, but the UI could explain it.
 - **Benchmark fairness.** The Ibovespa is a total-return index (dividends
-  reinvested), so comparing it with a price-only portfolio is unfair to the
-  portfolio until dividends land. `^GSPC` is price-only.
+  reinvested), and the Índice DI compounds all of its income, so comparing
+  either with a price-only portfolio is unfair to the portfolio until
+  dividends land. `^GSPC` is price-only. For a portfolio of FIIs paying
+  about 0.7–1% a month, the gap is roughly 8–12 points a year.
 
 ## Future work: dividends and other income
 
