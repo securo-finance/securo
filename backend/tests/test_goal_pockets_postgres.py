@@ -462,13 +462,60 @@ async def test_concurrent_opposite_pocket_transfers_do_not_deadlock(
             assert await _pocket_current_amount(fresh, pocket.id) == 500
 
 
+def _import_rows(account, day, index):
+    return [
+        TransactionImport(
+            description=f"Concurrent import {index}",
+            amount=Decimal("10"),
+            type="credit",
+            currency=account.currency,
+            date=day,
+        )
+    ]
+
+
+async def _run_import(worker, user, workspace, account, day, index):
+    return await import_service.import_transactions(
+        worker,
+        workspace.id,
+        user.id,
+        account.id,
+        _import_rows(account, day, index),
+        "csv",
+        detected_format="csv",
+        detect_duplicates=False,
+    )
+
+
+def _import_paused_after_log(postgres_sessions, holding, release):
+    """A session that stops right after the ImportLog INSERT, locks held."""
+
+    class PausedImportSession(AsyncSession):
+        async def flush(self, objects=None):
+            has_import_log = any(isinstance(row, ImportLog) for row in self.new)
+            await super().flush(objects)
+            if has_import_log:
+                holding.set()
+                await release.wait()
+
+    return async_sessionmaker(
+        postgres_sessions.kw["bind"], class_=PausedImportSession, expire_on_commit=False
+    )
+
+
+async def _backend_pid(session):
+    return await session.scalar(text("SELECT pg_backend_pid()"))
+
+
 @pytest.mark.parametrize("connected", [False, True], ids=["manual", "connected"])
-async def test_concurrent_import_logs_do_not_deadlock_on_account_fk(
+async def test_concurrent_imports_into_one_account_serialize(
     session,
     postgres_sessions,
     pocket_state,
     connected,
 ):
+    """The second import waits for the first, and neither deadlocks on the
+    KEY SHARE that the ImportLog foreign key takes on the account."""
     user, workspace, account, goal, transaction = pocket_state
     if not connected:
         account.connection_id = None
@@ -482,49 +529,285 @@ async def test_concurrent_import_logs_do_not_deadlock_on_account_fk(
         )
     )
     await session.commit()
-    barrier = asyncio.Barrier(2)
+    holding, release = asyncio.Event(), asyncio.Event()
+    paused = _import_paused_after_log(postgres_sessions, holding, release)
 
-    class ImportSession(AsyncSession):
-        async def flush(self, objects=None):
-            has_import_log = any(isinstance(row, ImportLog) for row in self.new)
-            await super().flush(objects)
-            if has_import_log:
-                # Both INSERTs hold KEY SHARE via import_logs.account_id.
-                await barrier.wait()
-
-    workers = async_sessionmaker(
-        postgres_sessions.kw["bind"], class_=ImportSession, expire_on_commit=False
-    )
-
-    async def import_one(index):
-        async with workers() as worker:
-            return await import_service.import_transactions(
-                worker,
-                workspace.id,
-                user.id,
-                account.id,
-                [
-                    TransactionImport(
-                        description=f"Concurrent import {index}",
-                        amount=Decimal("10"),
-                        type="credit",
-                        currency=account.currency,
-                        date=transaction.date,
-                    )
-                ],
-                "csv",
-                detected_format="csv",
-                detect_duplicates=False,
-            )
-
-    async with asyncio.timeout(20):
-        results = await asyncio.gather(import_one(0), import_one(1))
-    assert [result[:3] for result in results] == [(1, 0, 0), (1, 0, 0)]
+    async with paused() as first, postgres_sessions() as second, postgres_sessions() as observer:
+        pid = await _backend_pid(second)
+        async with asyncio.timeout(20):
+            async with asyncio.TaskGroup() as tasks:
+                first_run = tasks.create_task(
+                    _run_import(first, user, workspace, account, transaction.date, 0)
+                )
+                await holding.wait()
+                second_run = tasks.create_task(
+                    _run_import(second, user, workspace, account, transaction.date, 1)
+                )
+                await _wait_for_lock(observer, pid)
+                release.set()
+    assert [first_run.result()[:3], second_run.result()[:3]] == [(1, 0, 0), (1, 0, 0)]
     async with postgres_sessions() as fresh:
         rows = list(await fresh.scalars(select(Transaction).where(Transaction.source == "csv")))
         assert len(rows) == 2
         assert all(row.import_id is not None for row in rows)
         assert await _pocket_current_amount(fresh, goal.id) == 100
+
+
+@pytest_asyncio.fixture
+async def edit_targets(session, pocket_state):
+    """A pocket-funded row to edit and an unassigned row to delete."""
+    user, workspace, account, goal, transaction = pocket_state
+    await replace_transaction_allocations(
+        session,
+        workspace.id,
+        user.id,
+        await session.get(Transaction, transaction.id),
+        [GoalAllocationInput(goal_id=goal.id, amount=100)],
+    )
+    spare = Transaction(
+        user_id=user.id,
+        workspace_id=workspace.id,
+        account_id=account.id,
+        description="Unassigned row",
+        amount=Decimal("30"),
+        currency=account.currency,
+        date=transaction.date,
+        type="debit",
+        source="manual",
+    )
+    session.add(spare)
+    await session.commit()
+    return spare
+
+
+async def _edit(session, operation, workspace, user, transaction, spare):
+    if operation == "update":
+        await update_transaction(
+            session, transaction.id, workspace.id, user.id, TransactionUpdate(amount=150)
+        )
+    else:
+        assert await delete_transaction(session, spare.id, workspace.id)
+    await session.commit()
+
+
+async def _assert_edit_and_import_landed(postgres_sessions, operation, goal, transaction, spare):
+    async with postgres_sessions() as fresh:
+        assert len(list(await fresh.scalars(
+            select(Transaction).where(Transaction.source == "csv")
+        ))) == 1
+        if operation == "update":
+            assert await fresh.scalar(
+                select(Transaction.amount).where(Transaction.id == transaction.id)
+            ) == 150
+        else:
+            assert await fresh.get(Transaction, spare.id) is None
+        assert await _pocket_current_amount(fresh, goal.id) == 100
+
+
+@pytest.mark.parametrize("operation", ["update", "delete"])
+async def test_transaction_edit_waits_for_running_import(
+    postgres_sessions, pocket_state, edit_targets, operation
+):
+    user, workspace, account, goal, transaction = pocket_state
+    holding, release = asyncio.Event(), asyncio.Event()
+    paused = _import_paused_after_log(postgres_sessions, holding, release)
+
+    async with paused() as importer, postgres_sessions() as editor, postgres_sessions() as observer:
+        pid = await _backend_pid(editor)
+        async with asyncio.timeout(20):
+            async with asyncio.TaskGroup() as tasks:
+                tasks.create_task(
+                    _run_import(importer, user, workspace, account, transaction.date, 0)
+                )
+                await holding.wait()
+                tasks.create_task(
+                    _edit(editor, operation, workspace, user, transaction, edit_targets)
+                )
+                await _wait_for_lock(observer, pid)
+                release.set()
+    await _assert_edit_and_import_landed(
+        postgres_sessions, operation, goal, transaction, edit_targets
+    )
+
+
+def _pause_after_edit_locks(monkeypatch, holding, release):
+    """Stop update/delete right after they took their account and row locks."""
+    from app.services import transaction_service
+
+    original = transaction_service._lock_mutated_transactions
+
+    async def locked_then_paused(*args, **kwargs):
+        rows = await original(*args, **kwargs)
+        holding.set()
+        await release.wait()
+        return rows
+
+    monkeypatch.setattr(transaction_service, "_lock_mutated_transactions", locked_then_paused)
+
+
+@pytest.mark.parametrize("operation", ["update", "delete"])
+async def test_import_waits_for_running_transaction_edit(
+    monkeypatch, postgres_sessions, pocket_state, edit_targets, operation
+):
+    user, workspace, account, goal, transaction = pocket_state
+    holding, release = asyncio.Event(), asyncio.Event()
+    _pause_after_edit_locks(monkeypatch, holding, release)
+
+    async with postgres_sessions() as editor, postgres_sessions() as importer, postgres_sessions() as observer:
+        pid = await _backend_pid(importer)
+        async with asyncio.timeout(20):
+            async with asyncio.TaskGroup() as tasks:
+                tasks.create_task(
+                    _edit(editor, operation, workspace, user, transaction, edit_targets)
+                )
+                await holding.wait()
+                tasks.create_task(
+                    _run_import(importer, user, workspace, account, transaction.date, 0)
+                )
+                await _wait_for_lock(observer, pid)
+                release.set()
+    await _assert_edit_and_import_landed(
+        postgres_sessions, operation, goal, transaction, edit_targets
+    )
+
+
+SYNCED_EXTERNAL_ID = "pocket-sync-1"
+
+
+@pytest_asyncio.fixture
+async def synced_row(session, pocket_state):
+    """A pending synced row the next sync will post, in the pocket's account."""
+    user, workspace, account, goal, _ = pocket_state
+    row = Transaction(
+        user_id=user.id,
+        workspace_id=workspace.id,
+        account_id=account.id,
+        external_id=SYNCED_EXTERNAL_ID,
+        description="CARD PURCHASE",
+        amount=Decimal("40"),
+        currency=account.currency,
+        date=date.today(),
+        type="debit",
+        source="sync",
+        status="pending",
+    )
+    session.add(row)
+    await session.commit()
+    return row
+
+
+def _sync_provider(account):
+    from unittest.mock import AsyncMock
+
+    from app.providers.base import AccountData, TransactionData
+
+    provider = AsyncMock()
+    provider.rereads_by_date = False
+    provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    provider.get_institution_logo = AsyncMock(return_value=None)
+    provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id=account.external_id, name=account.name, type=account.type,
+            balance=Decimal("1500"), currency=account.currency,
+        ),
+    ])
+    provider.get_bills = AsyncMock(return_value=[])
+    provider.get_holdings = AsyncMock(return_value=[])
+    provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id=SYNCED_EXTERNAL_ID, description="CARD PURCHASE",
+            amount=Decimal("40"), date=date.today(), type="debit",
+            currency=account.currency, status="posted",
+        ),
+        TransactionData(
+            external_id="pocket-sync-2", description="NEW PURCHASE",
+            amount=Decimal("5"), date=date.today(), type="debit",
+            currency=account.currency, status="posted",
+        ),
+    ])
+    provider.get_transactions_by_date = AsyncMock(return_value=[])
+    return provider
+
+
+async def _run_sync(worker, account, workspace, user):
+    from unittest.mock import AsyncMock, patch
+
+    from app.services.connection_service import sync_connection
+
+    with patch("app.services.connection_service.get_provider", return_value=_sync_provider(account)), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await sync_connection(worker, account.connection_id, workspace.id, user.id)
+
+
+async def _edit_synced(editor, workspace, user, row):
+    await update_transaction(
+        editor, row.id, workspace.id, user.id, TransactionUpdate(notes="edited during sync")
+    )
+    await editor.commit()
+
+
+async def _assert_edit_and_sync_landed(postgres_sessions, goal, row):
+    async with postgres_sessions() as fresh:
+        stored = await fresh.get(Transaction, row.id)
+        assert stored.notes == "edited during sync"
+        assert stored.status == "posted"
+        assert await fresh.scalar(
+            select(Transaction.id).where(Transaction.external_id == "pocket-sync-2")
+        ) is not None
+        assert await _pocket_current_amount(fresh, goal.id) == 100
+
+
+async def test_sync_waits_for_running_transaction_edit(
+    monkeypatch, postgres_sessions, pocket_state, edit_targets, synced_row
+):
+    user, workspace, account, goal, _ = pocket_state
+    holding, release = asyncio.Event(), asyncio.Event()
+    _pause_after_edit_locks(monkeypatch, holding, release)
+
+    async with postgres_sessions() as editor, postgres_sessions() as syncer, postgres_sessions() as observer:
+        pid = await _backend_pid(syncer)
+        async with asyncio.timeout(30):
+            async with asyncio.TaskGroup() as tasks:
+                tasks.create_task(_edit_synced(editor, workspace, user, synced_row))
+                await holding.wait()
+                tasks.create_task(_run_sync(syncer, account, workspace, user))
+                await _wait_for_lock(observer, pid)
+                release.set()
+    await _assert_edit_and_sync_landed(postgres_sessions, goal, synced_row)
+
+
+async def test_transaction_edit_waits_for_running_sync(
+    postgres_sessions, pocket_state, edit_targets, synced_row
+):
+    user, workspace, account, goal, _ = pocket_state
+    holding, release = asyncio.Event(), asyncio.Event()
+
+    class PausedSyncSession(AsyncSession):
+        async def flush(self, objects=None):
+            posts_row = any(
+                isinstance(row, Transaction) and row.id == synced_row.id and row.status == "posted"
+                for row in self.dirty
+            )
+            await super().flush(objects)
+            if posts_row and not holding.is_set():
+                holding.set()
+                await release.wait()
+
+    paused = async_sessionmaker(
+        postgres_sessions.kw["bind"], class_=PausedSyncSession, expire_on_commit=False
+    )
+    async with paused() as syncer, postgres_sessions() as editor, postgres_sessions() as observer:
+        pid = await _backend_pid(editor)
+        async with asyncio.timeout(30):
+            async with asyncio.TaskGroup() as tasks:
+                tasks.create_task(_run_sync(syncer, account, workspace, user))
+                await holding.wait()
+                tasks.create_task(_edit_synced(editor, workspace, user, synced_row))
+                await _wait_for_lock(observer, pid)
+                release.set()
+    await _assert_edit_and_sync_landed(postgres_sessions, goal, synced_row)
 
 
 async def test_mortgage_breakdown_takes_principal_entry_before_higher_payment(

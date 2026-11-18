@@ -1084,6 +1084,28 @@ async def import_transactions(
     total_credit = sum(t.amount for t in included if t.type == "credit")
     total_debit = sum(t.amount for t in included if t.type == "debit")
 
+    # Look up account currency for fallback
+    account_result = await session.execute(select(Account).where(Account.id == account_id))
+    account = account_result.scalar_one_or_none()
+    if account and account.connection_id:
+        await session.execute(
+            select(BankConnection.id)
+            .where(BankConnection.id == account.connection_id)
+            .with_for_update()
+        )
+    if account:
+        # Imports into one account serialize on this lock. Take it before the
+        # ImportLog INSERT: that INSERT holds KEY SHARE on the account through
+        # its foreign key, and two imports that each held KEY SHARE and then
+        # asked for FOR UPDATE would deadlock.
+        account_result = await session.execute(
+            select(Account)
+            .where(Account.id == account_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        account = account_result.scalar_one()
+
     # Create import log first to get its ID
     import_log = ImportLog(
         user_id=user_id,
@@ -1098,24 +1120,6 @@ async def import_transactions(
     session.add(import_log)
     await session.flush()  # Get the import_log.id
 
-    # Look up account currency for fallback
-    account_result = await session.execute(select(Account).where(Account.id == account_id))
-    account = account_result.scalar_one_or_none()
-    if account and account.connection_id:
-        await session.execute(
-            select(BankConnection.id)
-            .where(BankConnection.id == account.connection_id)
-            .with_for_update()
-        )
-    if account:
-        # ImportLog's FK holds KEY SHARE; avoid two imports upgrading it to FOR UPDATE.
-        account_result = await session.execute(
-            select(Account)
-            .where(Account.id == account_id)
-            .with_for_update(key_share=True)
-            .execution_options(populate_existing=True)
-        )
-        account = account_result.scalar_one()
     account_currency = account.currency if account else get_settings().default_currency
 
     # Build category name → id map scoped to the workspace, on the same terms
