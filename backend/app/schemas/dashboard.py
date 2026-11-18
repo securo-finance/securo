@@ -24,6 +24,12 @@ class DashboardSummary(BaseModel):
     pending_categorization_amount: float
     assets_value: dict[str, float] = Field(default_factory=dict)  # currency -> total asset value
     assets_value_primary: float = 0.0
+    # Liquid / near-liquid cash (checking + savings + wallet). Not investments.
+    cash_balance: dict[str, float] = Field(default_factory=dict)
+    cash_balance_primary: float = 0.0
+    # Brokerage / investment *accounts* (type=investment). Distinct from assets_value.
+    investment_accounts: dict[str, float] = Field(default_factory=dict)
+    investment_accounts_primary: float = 0.0
     primary_currency: str = "USD"
     # No real FX rate for at least one currency bucket: the *_primary totals
     # sum that bucket at 1:1, so they are an estimate, not a conversion.

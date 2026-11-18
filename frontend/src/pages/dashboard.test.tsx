@@ -210,7 +210,7 @@ describe('Dashboard net worth breakdown', () => {
     expect(cardRow).toHaveTextContent(formatCurrency(-500, 'USD', 'en-US'))
   })
 
-  it('lists mortgage debt as its own row instead of available balance', async () => {
+  it('lists mortgage debt as its own row instead of cash', async () => {
     api.accounts.list.mockResolvedValue([
       ...accounts,
       account({ id: 'mortgage', name: 'Mortgage', type: 'loan', current_balance: -40000 }),
@@ -225,10 +225,36 @@ describe('Dashboard net worth breakdown', () => {
     await user.hover(screen.getByRole('button', { name: 'i' }))
 
     const tooltip = await screen.findByRole('tooltip')
-    const availableRow = within(tooltip).getByText(t('dashboard.availableBalance')).parentElement!
-    expect(availableRow).toHaveTextContent(formatCurrency(1000, 'USD', 'en-US'))
+    const cashRow = within(tooltip).getByText(t('dashboard.cashBalance')).parentElement!
+    expect(cashRow).toHaveTextContent(formatCurrency(1000, 'USD', 'en-US'))
     const loanRow = within(tooltip).getByText(t('dashboard.loanBalance')).parentElement!
     expect(loanRow).toHaveTextContent(formatCurrency(-40000, 'USD', 'en-US'))
+  })
+
+  it('shows cash and investment accounts as separate rows from the summary', async () => {
+    api.accounts.list.mockResolvedValue([
+      account({ id: 'checking', name: 'Checking', current_balance: 1000 }),
+      account({ id: 'broker', name: 'Broker', type: 'investment', current_balance: 8000 }),
+    ])
+    api.dashboard.summary.mockResolvedValue({
+      ...summary,
+      cash_balance_primary: 1000,
+      investment_accounts_primary: 8000,
+    })
+    const { user } = renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+    )
+
+    await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
+    await user.hover(screen.getByRole('button', { name: 'i' }))
+
+    const tooltip = await screen.findByRole('tooltip')
+    const cashRow = within(tooltip).getByText(t('dashboard.cashBalance')).parentElement!
+    expect(cashRow).toHaveTextContent(formatCurrency(1000, 'USD', 'en-US'))
+    const investmentRow = within(tooltip).getByText(t('dashboard.investmentAccounts')).parentElement!
+    expect(investmentRow).toHaveTextContent(formatCurrency(8000, 'USD', 'en-US'))
   })
 })
 
@@ -295,7 +321,7 @@ describe('Dashboard available balance with reserves', () => {
     expect(heading.nextElementSibling).toHaveTextContent(formatCurrency(values.expected, 'USD', 'en-US'))
     await user.hover(screen.getByRole('button', { name: 'i' }))
     const tooltip = await screen.findByRole('tooltip')
-    const row = within(tooltip).getByText(t('dashboard.availableBalance')).parentElement!
+    const row = within(tooltip).getByText(t('dashboard.cashBalance')).parentElement!
     expect(row).toHaveTextContent(formatCurrency(values.expected, 'USD', 'en-US'))
   })
 })

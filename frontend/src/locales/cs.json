@@ -843,6 +843,8 @@
     "greetingAfternoon": "Dobré odpoledne",
     "greetingEvening": "Dobrý večer",
     "availableBalance": "Dostupný zůstatek na účtech",
+    "cashBalance": "Hotovost",
+    "investmentAccounts": "Investiční účty",
     "netWorth": "Čisté jmění",
     "netWorthTooltip": "Účty + investice, po odečtení otevřených výpisů kreditní karty.",
     "creditCardBalance": "Otevřené výpisy kreditní karty",

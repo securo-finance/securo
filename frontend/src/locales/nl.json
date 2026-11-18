@@ -820,7 +820,7 @@
     "greetingEvening": "Goedenavond",
     "availableBalance": "Beschikbaar saldo op rekeningen",
     "netWorth": "Nettovermogen",
-    "netWorthTooltip": "Rekeningen + beleggingen, min openstaande creditcardafschriften.",
+    "netWorthTooltip": "Contant + beleggingsrekeningen + geïnvesteerde activa, min openstaande creditcardafschriften. Beleggingen tellen niet als beschikbaar geld.",
     "creditCardBalance": "Openstaande creditcardafschriften",
     "loanBalance": "Leningen en financieringen",
     "pendingSharesOwe": "Netto {{net}} na groepsschulden ({{owed}} in behandeling)",
@@ -889,7 +889,9 @@
     "fxRateUsed": "Wisselkoers: {{rate}}",
     "refreshRates": "Vernieuw de wisselkoersen",
     "ratesRefreshed": "FX-tarieven bijgewerkt",
-    "ratesError": "Kan de valutakoersen niet updaten"
+    "ratesError": "Kan de valutakoersen niet updaten",
+    "cashBalance": "Contant",
+    "investmentAccounts": "Beleggingsrekeningen"
   },
   "transactions": {
     "title": "Transacties",

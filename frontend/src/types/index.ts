@@ -1122,6 +1122,12 @@ export interface DashboardSummary {
   pending_categorization_amount: number
   assets_value: Record<string, number>
   assets_value_primary: number
+  /** Checking + savings + wallet (spendable / near-liquid). */
+  cash_balance?: Record<string, number>
+  cash_balance_primary?: number
+  /** Accounts with type=investment (brokerage cash), distinct from assets_value. */
+  investment_accounts?: Record<string, number>
+  investment_accounts_primary?: number
   primary_currency: string
   // At least one currency bucket had no real FX rate, so the *_primary
   // totals sum it at 1:1 and are an estimate, not a conversion (issue #1165).
