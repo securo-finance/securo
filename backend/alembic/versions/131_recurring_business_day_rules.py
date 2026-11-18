@@ -40,13 +40,7 @@ def _snap(pointer: date, frequency: str, intended_day: int) -> date:
 
 
 def upgrade() -> None:
-    # Installs that ran this while it was numbered 099 or 102 already have the columns;
-    # there only the repairs below rerun, and they leave fixed rows alone.
-    columns = {
-        c["name"] for c in sa.inspect(op.get_bind()).get_columns("recurring_transactions")
-    }
-    if "business_day" not in columns:
-        _add_columns()
+    _add_columns()
     _repair_rows()
 
 

@@ -20,7 +20,6 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Already dropped where this ran as 100 or 103 before the renumbering.
     op.execute(
         "ALTER TABLE recurring_transactions "
         "DROP CONSTRAINT IF EXISTS ck_recurring_transactions_holiday_calendar"
