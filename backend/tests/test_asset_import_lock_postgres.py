@@ -7,14 +7,17 @@ red.
 """
 import asyncio
 import uuid
+from datetime import date
 from decimal import Decimal
 
 import pytest
 import pytest_asyncio
+from fastapi import HTTPException
 from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError
 
 from app.models.asset import Asset
+from app.models.asset_transaction import AssetTransaction
 from app.providers.market_price import MarketPriceProvider
 from app.schemas.asset import MarketSymbolQuote
 from app.services import asset_import_service, asset_transaction_service
@@ -174,9 +177,11 @@ async def test_undo_waits_for_the_holding_lock(
 ):
     """The undo locks the holdings before it checks what the ledger keeps.
 
-    A write that holds the lock has to finish first: otherwise a sale could
-    land between the check and the delete and be left without the units it
-    sold. Without the lock in `undo_import`, this undo would succeed here.
+    A sale that lands while the undo waits has to be part of the ledger it
+    checks: otherwise the undo takes back the units that sale sold and leaves
+    a position the ledger itself would have refused. The sale is written and
+    committed while the undo is blocked here, so only a ledger re-read under
+    the lock sees it — and the undo refuses instead of deleting.
     """
     from app.models.import_log import ImportLog
 
@@ -190,14 +195,36 @@ async def test_undo_waits_for_the_holding_lock(
     log = (await session.execute(select(ImportLog))).scalars().one()
 
     async with postgres_sessions() as other:
-        await other.execute(text("SET LOCAL lock_timeout = '250ms'"))
         await other.execute(
             select(Asset.id).where(Asset.id == market_asset.id).with_for_update()
         )
-        with pytest.raises(DBAPIError) as exc:
-            await asset_import_service.undo_import(session, test_workspace.id, log)
+        undo = asyncio.create_task(
+            asset_import_service.undo_import(session, test_workspace.id, log)
+        )
+        # Bounded on purpose, and shielded so the timeout only stops waiting:
+        # the undo has to still be waiting while the lock is held, and run to
+        # the end once it is released. `lock_timeout` cannot bound this side —
+        # it belongs to the session that holds the lock, not to the one that
+        # waits on it, and an unbounded wait here hung the suite in CI.
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(asyncio.shield(undo), timeout=2)
 
-    assert "lock timeout" in str(exc.value).lower()
+        # The one unit the import bought, sold before the undo could read the
+        # ledger. Committing is what releases the lock.
+        other.add(AssetTransaction(
+            asset_id=market_asset.id, workspace_id=test_workspace.id, kind="sell",
+            quantity=Decimal("1"), price=Decimal("120"), fee=Decimal("0"),
+            date=date(2026, 2, 1), source="manual",
+        ))
+        await other.commit()
 
+    with pytest.raises(HTTPException) as exc:
+        await asyncio.wait_for(undo, timeout=30)
+    assert exc.value.status_code == 409
+    detail = exc.value.detail
+    assert isinstance(detail, dict)
+    assert detail["code"] == "import_undo_oversell"
+
+    # Refused before anything was deleted, so the import is still there to undo.
     async with postgres_sessions() as fresh:
         assert (await fresh.execute(select(ImportLog))).scalars().first() is not None
