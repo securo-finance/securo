@@ -7,7 +7,7 @@ from typing import Optional
 from sqlalchemy import String, and_, case, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.app_clock import app_today
+from app.core.app_clock import app_timezone, app_today
 from app.core.config import get_settings
 from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
 from app.models.account import Account
@@ -160,10 +160,16 @@ async def _net_worth_at(
     """
     if accounts is None:
         accounts = await _get_open_accounts(session, workspace_id, account_ids, closed_after=cutoff)
-    # An account closed after the cutoff was still open on it.
+    # An account closed after the cutoff was still open on it. A closed card on
+    # a shared credit line stays out: its frozen balance can't be reconciled
+    # with the line's live one, and the open cards already carry that debt.
     accounts = [
         a for a in accounts
-        if not a.is_closed or (a.closed_at is not None and a.closed_at.date() > cutoff)
+        if not a.is_closed or (
+            a.closed_at is not None
+            and a.closed_at.astimezone(app_timezone()).date() > cutoff
+            and not (a.type == "credit_card" and a.shared_balance_group)
+        )
     ]
 
     accounts_total = 0.0
