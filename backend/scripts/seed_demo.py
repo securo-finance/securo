@@ -19,8 +19,10 @@ import sys
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from typing import Any
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -42,9 +44,13 @@ from app.models.transaction_split import TransactionSplit
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
 from app.schemas.user import UserCreate
-from app.services.workspace_service import create_personal_workspace_for_user
 from fastapi_users.db import SQLAlchemyUserDatabase
 from fastapi_users.exceptions import UserAlreadyExists
+
+# The business half of the demo lives in its own script, called at the end
+# of this one: the reset runs a single command, and both wallets come back
+# together.
+import seed_demo_business as business_seed  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +68,7 @@ def _logo(domain: str) -> str:
 # computed current-balance reflects the intended starting amount even on
 # accounts with little/no other activity (the app calculates balances
 # from transactions, not from the Account.balance field).
-ACCOUNTS = [
+ACCOUNTS: list[dict[str, Any]] = [
     {"name": "Conta Nubank",        "type": "checking",    "currency": "BRL", "opening": Decimal("0.00")},
     {"name": "Poupança Itaú",       "type": "savings",     "currency": "BRL", "opening": Decimal("6000.00")},
     {"name": "Cartão Nubank",       "type": "credit_card", "currency": "BRL", "opening": Decimal("0.00"), "credit_limit": Decimal("3000.00")},
@@ -124,7 +130,7 @@ CREDIT_MERCHANTS: dict[str, list[tuple[str, float, float]]] = {
 # Market-priced holdings — mix of B3 (Brazilian) tickers and one US stock
 # so the FX side of the product also shows up. last_price + logo_url are
 # pre-baked so the UI matches what a fresh yfinance fetch would produce.
-TICKER_ASSETS = [
+TICKER_ASSETS: list[dict[str, Any]] = [
     {"name": "Itaú Unibanco",     "ticker": "ITUB4.SA", "units": Decimal("250"),    "last_price": Decimal("32.40"),    "currency": "BRL", "daily_pct": Decimal("0.00100"), "logo": _logo("itau.com.br")},
     {"name": "Petrobras",         "ticker": "PETR4.SA", "units": Decimal("150"),    "last_price": Decimal("38.20"),    "currency": "BRL", "daily_pct": Decimal("0.00080"), "logo": _logo("petrobras.com.br")},
     {"name": "Magazine Luiza",    "ticker": "MGLU3.SA", "units": Decimal("400"),    "last_price": Decimal("8.95"),     "currency": "BRL", "daily_pct": Decimal("0.00200"), "logo": _logo("magazineluiza.com.br")},
@@ -132,7 +138,7 @@ TICKER_ASSETS = [
     {"name": "Bitcoin",           "ticker": "BTC-USD",  "units": Decimal("0.02"),   "last_price": Decimal("92500.00"), "currency": "USD", "daily_pct": Decimal("0.00400"), "logo": None},
 ]
 
-MANUAL_ASSETS = [
+MANUAL_ASSETS: list[dict[str, Any]] = [
     {"name": "Apartamento próprio", "type": "real_estate", "currency": "BRL",
      "purchase": Decimal("260000"), "current": Decimal("320000"), "daily_pct": Decimal("0.00040")},
 ]
@@ -177,33 +183,59 @@ async def _wipe(session, user_id: uuid.UUID) -> None:
     await session.commit()
 
 
-async def _resolve_demo_workspace(session, user: User) -> uuid.UUID:
-    """The workspace every seeded row belongs to.
+async def _ensure_personal_workspace(session, user: User) -> Workspace:
+    """The personal wallet the demo reads, created if it is missing.
 
-    Mirrors app.core.workspace_autostamp._resolve_workspace_for_user: the
-    user's oldest non-archived workspace. Falls back to creating the personal
-    workspace on a fresh database.
+    Scoped to `kind` on purpose. `create_personal_workspace_for_user`
+    matches any workspace the user created, without looking at the kind,
+    and the business workspace is created first so that the frontend
+    lands on it: calling that helper here would hand back the business
+    workspace and the personal data would be seeded into it.
     """
-    row = (await session.execute(
-        select(Workspace.id)
+    rows = (await session.execute(
+        select(Workspace)
         .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
         .where(
             WorkspaceMember.user_id == user.id,
-            Workspace.is_archived.is_(False),
+            Workspace.kind == "personal",
         )
         .order_by(Workspace.created_at.asc())
-        .limit(1)
-    )).first()
-    if row:
-        # A visitor may have renamed it; put it back so the demo reads right.
-        await session.execute(
-            Workspace.__table__.update()
-            .where(Workspace.id == row[0])
-            .values(name="Pessoal", kind="personal")
+    )).unique().scalars().all()
+    live = [row for row in rows if not row.is_archived]
+    workspace = live[0] if live else (rows[0] if rows else None)
+
+    if workspace is None:
+        prefs = user.preferences or {}
+        workspace = Workspace(
+            name="Pessoal",
+            kind="personal",
+            created_by_user_id=user.id,
+            default_currency=prefs.get("currency_display", "USD"),
+            locale=prefs.get("language"),
         )
-        return row[0]
-    workspace = await create_personal_workspace_for_user(session, user)
-    return workspace.id
+        session.add(workspace)
+        await session.flush()
+
+    membership = await session.scalar(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace.id,
+            WorkspaceMember.user_id == user.id,
+        )
+    )
+    if membership is None:
+        session.add(
+            WorkspaceMember(workspace_id=workspace.id, user_id=user.id, role="owner")
+        )
+    elif membership.role != "owner":
+        membership.role = "owner"
+
+    # A visitor may have renamed or archived it; put it back so the demo
+    # reads and lists right.
+    workspace.name = "Pessoal"
+    workspace.is_archived = False
+    await session.flush()
+    await session.commit()
+    return workspace
 
 
 # ---------------------------------------------------------------------------
@@ -231,6 +263,9 @@ async def seed(email: str, password: str, months: int) -> None:
                 user = await session.scalar(select(User).where(User.email == email))
             await session.commit()
 
+        if user is None:  # pragma: no cover - one of the two paths above made it
+            raise RuntimeError(f"could not create or load the user {email}")
+
         # Force Brazilian preferences regardless of whether the user
         # already existed — keeps demo behaviour stable across resets.
         user.preferences = {
@@ -244,43 +279,33 @@ async def seed(email: str, password: str, months: int) -> None:
         uid = user.id
         print(f"  user {uid}")
 
-        # 1b. Personal workspace ---------------------------------------------
+        # 1b. The two workspaces ---------------------------------------------
         # Every financial entity (Account, Category, Transaction, ...) has a
-        # NOT NULL workspace_id, and this script now passes it explicitly on
-        # every insert. It used to rely on the autostamp listener for ORM
-        # `session.add()` rows while passing `wsid` only to the bulk
-        # pg_insert() calls, and the two resolve the workspace differently:
-        # the listener takes the user's OLDEST non-archived workspace, while
-        # create_personal_workspace_for_user() has no ORDER BY at all. On a
-        # single-workspace database they agree, so this looked fine. On the
-        # public demo, where visitors create workspaces that are never
-        # cleaned up, they diverged and accounts landed in one workspace
-        # while transactions went to another, leaving the dashboard empty.
+        # NOT NULL workspace_id, and every insert below passes it explicitly.
         #
-        # Pick the same workspace the listener would, so the two can never
-        # disagree again even if an insert is added without workspace_id.
-        wsid = await _resolve_demo_workspace(session, user)
-        await session.commit()
-        print(f"  workspace {wsid}")
+        # The business workspace is created first, with an earlier
+        # `created_at` than the personal one: a visitor with no saved
+        # selection lands on the first workspace the API lists, and the B2B
+        # landing is the one the demo has to show. The personal wallet comes
+        # second and keeps every row this script writes.
+        personal = await _ensure_personal_workspace(session, user)
+        business = await business_seed.ensure_business_workspace(
+            session, user, before=personal.created_at
+        )
+        wsid = personal.id
+        print(f"  business workspace {business.id} ({business.name})")
+        print(f"  personal workspace {wsid} ({personal.name})")
 
         # Visitors on the public demo can create workspaces, and nothing ever
-        # removed them: they pile up in the switcher and, worse, the oldest of
-        # them can win the autostamp lookup. Archive everything except the one
-        # we seed so each reset returns the demo to a single clean workspace.
-        stray = (await session.execute(
-            select(Workspace.id)
-            .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
-            .where(WorkspaceMember.user_id == uid, Workspace.id != wsid,
-                   Workspace.is_archived.is_(False))
-        )).scalars().all()
+        # removed them: they pile up in the switcher. Archive everything
+        # except the two the demo seeds, so each reset returns it to a clean
+        # pair. Both ids go in `keep`: archiving "everything but the personal
+        # one" would delete the business workspace on the very next reset.
+        stray = await business_seed.archive_other_workspaces(
+            session, user, keep=[personal.id, business.id]
+        )
         if stray:
-            await session.execute(
-                Workspace.__table__.update()
-                .where(Workspace.id.in_(stray))
-                .values(is_archived=True)
-            )
-            await session.commit()
-            print(f"  {len(stray)} stray workspaces archived")
+            print(f"  {stray} stray workspaces archived")
 
         # 2. Accounts --------------------------------------------------------
         accounts: list[Account] = []
@@ -735,6 +760,20 @@ async def seed(email: str, password: str, months: int) -> None:
                 ))
         await session.commit()
         print(f"  {len(budget_targets) * len(budget_months)} budgets ({len(budget_targets)} cats × {len(budget_months)} months)")
+
+        # 12. The business wallet --------------------------------------------
+        # `_wipe` deleted by user across every workspace, so the business
+        # side is gone too and is rewritten here. One call builds the whole
+        # second wallet: identity, catalog, clients, invoices in every
+        # derived state, the recurring agreements and their own budgets.
+        summary = await business_seed.seed_business(
+            session, user, business, months=months
+        )
+        print(f"  {summary['invoices']} business invoices {summary['states']}")
+        print(
+            f"  {summary['receivable']} BRL receivable, "
+            f"numbering {summary['number_from']} to {summary['number_to']}"
+        )
 
     print("\nDemo seed complete.")
     print(f"  Login : {email}")
