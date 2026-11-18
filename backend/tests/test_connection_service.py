@@ -1941,6 +1941,7 @@ async def _settle_held_pending(
     notes_saved_meanwhile: str | None = None,
     category_saved_meanwhile: uuid.UUID | None = None,
     split_saved_meanwhile: bool = False,
+    description_saved_meanwhile: str | None = None,
     **held_fields,
 ) -> uuid.UUID:
     """Hold a pending row, then sync the posted entry that settles it.
@@ -1949,9 +1950,9 @@ async def _settle_held_pending(
     merchant text. `rekeyed`: it books under a new id, next to its pending
     spelling, and the sync re-keys the row it holds.
 
-    `notes_saved_meanwhile`, `category_saved_meanwhile` and
-    `split_saved_meanwhile` are written to the database behind the session's
-    back after the row is loaded, as a user saving an edit while a sync runs.
+    The `*_saved_meanwhile` values are written to the database behind the
+    session's back after the row is loaded, as a user saving an edit while a
+    sync runs.
     """
     if path == "same-id":
         pending = _eb_txn(_eb_payload("auth-5", "4.50", remittance="Transaction"), "pending")
@@ -1979,6 +1980,8 @@ async def _settle_held_pending(
         saved_meanwhile["category_id"] = category_saved_meanwhile
     if split_saved_meanwhile:
         saved_meanwhile["has_category_lines"] = True
+    if description_saved_meanwhile is not None:
+        saved_meanwhile["description"] = description_saved_meanwhile
     if saved_meanwhile:
         await session.refresh(held)
         await session.execute(
@@ -2171,6 +2174,31 @@ async def test_sync_connection_rules_on_a_posted_row_keep_a_category_saved_meanw
 
     rows = await _account_rows(session, account_id)
     assert [(row.status, row.category_id) for row in rows] == [("posted", mine.id)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["same-id", "rekeyed"])
+async def test_sync_connection_settling_keeps_a_description_saved_meanwhile(
+    session: AsyncSession, test_user, test_workspace, path,
+):
+    """A rename the user saved after the sync loaded the row is read under the
+    row lock before the merge: neither the bank's text nor a rename rule
+    replaces it."""
+    session.add(_supermarket_rule(test_user.id, test_workspace.id, [
+        {"op": "set_description", "value": "Supermarket"},
+    ]))
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+
+    await _settle_held_pending(
+        session, conn, account, test_user.id, test_workspace.id, path,
+        description_saved_meanwhile="Lunch with Ana",
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert [(row.status, row.description) for row in rows] == [
+        ("posted", "Lunch with Ana"),
+    ]
 
 
 @pytest.mark.asyncio

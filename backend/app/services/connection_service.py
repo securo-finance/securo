@@ -70,6 +70,7 @@ from app.services.rule_service import (
     apply_rules_to_transaction,
     description_is_manual,
     preview_rules_for_transaction,
+    read_description_is_manual,
     rule_payee_ids,
 )
 from app.services.transfer_detection_service import detect_transfer_pairs
@@ -1782,10 +1783,14 @@ async def handle_oauth_callback(
                 session, account.id, txn_data, incoming_external_ids
             )
             if synced_dup:
-                manual_description = description_is_manual(synced_dup)
+                settles = synced_dup.status == "pending" and txn_data.status == "posted"
+                if settles:
+                    manual_description = await read_description_is_manual(
+                        session, synced_dup
+                    )
                 if synced_dup.original_description is None:
                     synced_dup.original_description = txn_data.description
-                if synced_dup.status == "pending" and txn_data.status == "posted":
+                if settles:
                     synced_dup.status = "posted"
                     _merge_sync_metadata(
                         synced_dup,
@@ -2794,7 +2799,7 @@ async def _promote_settled_pending(
         or transaction.external_id not in unseen_pending
     ):
         return None
-    manual_description = description_is_manual(transaction)
+    manual_description = await read_description_is_manual(session, transaction)
     transaction.status = "posted"
     _merge_sync_metadata(transaction, txn_data, replace_external_id=rekeyed)
     await apply_rules_to_settled_transaction(
@@ -3680,7 +3685,12 @@ async def sync_connection(
                     # a re-sync can't revive a transaction the user hid.
                     if existing_tx.is_ignored:
                         continue
-                    manual_description = description_is_manual(existing_tx)
+                    if existing_tx.status == "pending" and txn_data.status == "posted":
+                        manual_description = await read_description_is_manual(
+                            session, existing_tx
+                        )
+                    else:
+                        manual_description = description_is_manual(existing_tx)
                     payee_was_empty = existing_tx.payee_id is None
                     await _refresh_provider_values(
                         session,
@@ -3734,10 +3744,14 @@ async def sync_connection(
                     incoming_batch=transactions_data,
                 )
                 if synced_dup:
-                    manual_description = description_is_manual(synced_dup)
+                    settles = synced_dup.status == "pending" and txn_data.status == "posted"
+                    if settles:
+                        manual_description = await read_description_is_manual(
+                            session, synced_dup
+                        )
                     if synced_dup.original_description is None:
                         synced_dup.original_description = txn_data.description
-                    if synced_dup.status == "pending" and txn_data.status == "posted":
+                    if settles:
                         # Posted truth wins: swap in the new id so subsequent
                         # syncs match by external_id and update raw_data.
                         synced_dup.status = "posted"

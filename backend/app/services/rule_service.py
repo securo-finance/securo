@@ -711,6 +711,25 @@ def description_is_manual(transaction: Transaction) -> bool:
     )
 
 
+async def read_description_is_manual(
+    session: AsyncSession, transaction: Transaction,
+) -> bool:
+    """Lock a settling row, re-read its description and say if it is the user's.
+
+    Call it before the sync merges the provider's text: a rename the user
+    saved after the sync loaded the row would otherwise look like provider
+    text, so the merge would write over it and a rule could rename it.
+    """
+    # Write the sync's own changes first, since a refresh would drop them.
+    await session.flush()
+    await session.refresh(
+        transaction,
+        ["description", "original_description", "description_is_rule_managed"],
+        with_for_update=True,
+    )
+    return description_is_manual(transaction)
+
+
 async def apply_rules_to_settled_transaction(
     session: AsyncSession,
     user_id: uuid.UUID,
