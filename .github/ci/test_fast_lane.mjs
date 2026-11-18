@@ -222,7 +222,8 @@ scenario('the closing keywords of the description reach the squash commit',
 
 // No keyword in the description means there is nothing to carry: the call
 // stays as it was and GitHub builds its default message, which already covers
-// a keyword written in a commit.
+// a keyword written in a commit. Neither field may be sent: passing either one
+// replaces that message instead of appending to it.
 scenario('a description with no closing keyword leaves the default message',
   async () => {
     const { merged, mergeParams, log } = await evaluate({
@@ -230,6 +231,8 @@ scenario('a description with no closing keyword leaves the default message',
       body: '## Summary\n\nA cleanup with nothing to close.',
     });
     assert.ok(merged, `expected a merge, got: ${log}`);
+    assert.equal(mergeParams.commit_title, undefined,
+      'the title is not sent alone: it would replace the default message');
     assert.equal(mergeParams.commit_message, undefined,
       'no closing keyword means GitHub builds the message as before');
   });
