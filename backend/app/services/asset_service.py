@@ -11,7 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
 from app.models.account import Account
-from app.models.asset import ASSET_PRICE_DECIMALS, LOAN_COLLATERAL_TYPES, Asset
+from app.models.asset import (
+    ASSET_PRICE_DECIMALS,
+    LOAN_COLLATERAL_TYPES,
+    PROVIDER_VALUE_DATE_METADATA_KEY,
+    Asset,
+)
 from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
 from app.models.user import User
@@ -120,6 +125,35 @@ def _generate_growth_values(
     return values
 
 
+def _provider_value_date(
+    asset: Asset, latest_value: Optional[AssetValue]
+) -> Optional[date]:
+    """The date the sync provider says the value on screen refers to, if any.
+
+    Only while the displayed figure is the provider's own. A manual valuation
+    dated after the last sync replaces it, and once a quote is cached a
+    market-priced asset shows units times that quote; warning about the
+    connection in either case would point at a number the user isn't looking
+    at. The quote condition mirrors `_compute_current_value`, so a holding
+    waiting for its first quote keeps the date of the amount actually shown.
+    """
+    if (
+        asset.valuation_method == "market_price"
+        and asset.last_price is not None
+        and asset.units is not None
+    ):
+        return None
+    if latest_value is None or latest_value.source != "sync":
+        return None
+    raw = (asset.external_metadata or {}).get(PROVIDER_VALUE_DATE_METADATA_KEY)
+    if not isinstance(raw, str):
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
 def _asset_to_read(
     asset: Asset,
     latest_value: Optional[AssetValue],
@@ -174,6 +208,7 @@ def _asset_to_read(
         last_price=float(asset.last_price) if asset.last_price is not None else None,
         last_price_at=asset.last_price_at,
         logo_url=asset.logo_url,
+        provider_value_date=_provider_value_date(asset, latest_value),
         average_price=float(asset.average_price) if asset.average_price is not None else None,
         total_invested=total_invested,
         realized_gain=float(asset.realized_gain) if asset.realized_gain is not None else None,
@@ -1279,6 +1314,24 @@ async def refresh_market_price_asset(
     return True
 
 
+async def _last_split_dates(
+    session: AsyncSession, asset_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, date]:
+    """Date of each holding's latest split up to today, in one query."""
+    if not asset_ids:
+        return {}
+    rows = await session.execute(
+        select(AssetTransaction.asset_id, func.max(AssetTransaction.date))
+        .where(
+            AssetTransaction.asset_id.in_(asset_ids),
+            AssetTransaction.kind == "split",
+            AssetTransaction.date <= app_today(),
+        )
+        .group_by(AssetTransaction.asset_id)
+    )
+    return {aid: d for aid, d in rows.all()}
+
+
 async def refresh_all_market_prices(
     session: AsyncSession,
     *,
@@ -1286,11 +1339,12 @@ async def refresh_all_market_prices(
 ) -> dict[str, int]:
     """Refresh every non-archived market-priced asset in the database.
 
-    Uses the provider's batch ``get_latest_prices`` endpoint when possible —
+    Uses the provider's batch ``get_latest_closes`` endpoint when possible —
     one HTTP request covers the whole portfolio via ``yfinance.download``
     instead of one call per asset. Falls back silently to per-asset refresh
     if the batch returns nothing (provider without bulk support, or a hard
-    failure on Yahoo's end).
+    failure on Yahoo's end). A close from before the holding's latest
+    recorded split is skipped, not stored.
 
     Returns a summary counting successes, skips, and rate-limit halts —
     surfaced as the Celery task's return payload for observability.
@@ -1311,17 +1365,19 @@ async def refresh_all_market_prices(
     provider = market_provider or get_market_price_provider()
     tickers = [a.ticker for a in assets if a.ticker]
 
-    # Batch path: one request → dict[SYMBOL, price]. On rate-limit we halt
+    # Batch path: one request → dict[SYMBOL, close]. On rate-limit we halt
     # immediately — retrying within the same task would just pile on 429s
     # and risk an IP-level cookie ban.
     try:
-        prices = await provider.get_latest_prices(tickers)
+        closes = await provider.get_latest_closes(tickers)
     except MarketPriceRateLimitedError:
         logger.warning("Yahoo rate-limited the batch fetch; skipping this cycle")
         return {"refreshed": 0, "skipped": len(assets), "rate_limited": 1}
     except Exception as e:
         logger.warning("Batch price fetch failed, falling back to per-asset: %s", e)
-        prices = {}
+        closes = {}
+
+    last_split = await _last_split_dates(session, [a.id for a in assets])
 
     refreshed = 0
     skipped = 0
@@ -1330,7 +1386,16 @@ async def refresh_all_market_prices(
         if not asset.ticker:
             skipped += 1
             continue
-        price = prices.get(asset.ticker.upper()) if prices else None
+        close = closes.get(asset.ticker.upper()) if closes else None
+        split_on = last_split.get(asset.id)
+        if close is not None and close.on is not None and split_on is not None and close.on < split_on:
+            # Before the market opens on a split day, the latest close is the
+            # previous session's, per pre-split unit. Stored under today it
+            # would be multiplied by the units after the split (issue #1357),
+            # so wait for a close from the split day on.
+            skipped += 1
+            continue
+        price = close.price if close is not None else None
         if price is None:
             # Per-asset fallback: the batch missed this symbol (delisted
             # ticker, one-off provider error, etc.). Try the full quote

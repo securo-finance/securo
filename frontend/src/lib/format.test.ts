@@ -279,6 +279,12 @@ describe('formatCompactCurrency', () => {
     }
   })
 
+  it('leaves a whole amount without a zero decimal', () => {
+    // Node 22 pads this to "R$20.0K" by default and Node 24 does not.
+    expect(normalize(formatCompactCurrency(20000, 'BRL', 'en-US'))).toBe('R$20K')
+    expect(normalize(formatCompactCurrency(20500, 'BRL', 'en-US'))).toBe('R$20.5K')
+  })
+
   it('renders a null value as the empty-value glyph', () => {
     expect(formatCompactCurrency(null)).toBe('\u2014')
   })
