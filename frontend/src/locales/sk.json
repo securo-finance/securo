@@ -3662,7 +3662,7 @@
       "new": "nové",
       "read": "Čítanie: {{what}}",
       "write": "Čítanie a zmeny: {{what}}",
-      "ownerOnly": "Plugin, ktorý spúšťa kód, môže pridať, aktualizovať alebo odstrániť len vlastník pracovného priestoru.",
+      "ownerOnly": "Plugin, ktorý spúšťa kód, môže pridať, aktualizovať alebo odstrániť len vlastník pracovného priestoru alebo správca.",
       "removeConnections": "Jeho pripojenia v tomto pracovnom priestore ({{count}}) sa odstránia aj s uloženými kľúčmi a prístupmi.",
       "unlinks": "Jeho bankové pripojenia ({{count}}) sa prestanú synchronizovať. Účty a transakcie zostanú ako manuálne účty.",
       "removeNothing": "Kód pluginu sa z vášho servera odstráni, keď ho žiadny pracovný priestor nepoužíva.",

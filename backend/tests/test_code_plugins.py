@@ -598,6 +598,35 @@ async def test_api_connections(client: AsyncClient, auth_headers: dict, catalog,
 
 
 @pytest.mark.asyncio
+async def test_api_a_manager_installs_code(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user, catalog, plugin_runner
+):
+    """`is_owner` covers the manager (ADR 0003), so a managed workspace installs code too."""
+    from app.models.workspace import Workspace
+
+    managed = Workspace(
+        id=uuid.uuid4(),
+        name="Managed",
+        kind="personal",
+        created_by_user_id=test_user.id,
+        managed_by_user_id=test_user.id,
+        default_currency="USD",
+        locale="en",
+    )
+    session.add(managed)
+    await session.commit()
+
+    headers = {**auth_headers, "X-Workspace-Id": str(managed.id)}
+    plan = (await client.get(f"/api/plugins/{PLUGIN}/plan", params={"action": "install"}, headers=headers)).json()
+    assert plan["commit"] == V1
+    body = {"action": "install", "commit": plan["commit"], "token": plan["token"]}
+    resp = await client.post(f"/api/plugins/{PLUGIN}/apply", json=body, headers=headers)
+    assert resp.status_code == 200, resp.text
+    installed = (await client.get("/api/plugins", headers=headers)).json()
+    assert [i["plugin_id"] for i in installed] == [PLUGIN]
+
+
+@pytest.mark.asyncio
 async def test_api_viewers_cannot_connect(
     client: AsyncClient, auth_headers: dict, viewer_auth_headers: dict, catalog, plugin_runner
 ):

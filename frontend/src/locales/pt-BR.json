@@ -3496,7 +3496,7 @@
       "new": "novo",
       "read": "Ler {{what}}",
       "write": "Ler e alterar {{what}}",
-      "ownerOnly": "Só o dono do workspace pode adicionar, atualizar ou remover um plugin que roda código.",
+      "ownerOnly": "Só o dono do workspace ou um gerente pode adicionar, atualizar ou remover um plugin que roda código.",
       "removeConnections": "As conexões dele neste workspace ({{count}}) são removidas, junto com as chaves salvas e os acessos.",
       "unlinks": "As conexões bancárias dele ({{count}}) param de sincronizar. As contas e transações ficam, como contas manuais.",
       "removeNothing": "O código do plugin sai do seu servidor quando nenhum workspace o usar mais.",

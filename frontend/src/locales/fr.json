@@ -3496,7 +3496,7 @@
       "new": "nouveau",
       "read": "Lire {{what}}",
       "write": "Lire et modifier {{what}}",
-      "ownerOnly": "Seul le propriétaire de l'espace de travail peut ajouter, mettre à jour ou retirer un plugin qui exécute du code.",
+      "ownerOnly": "Seul le propriétaire de l'espace de travail ou un gestionnaire peut ajouter, mettre à jour ou retirer un plugin qui exécute du code.",
       "removeConnections": "Ses connexions dans cet espace de travail ({{count}}) sont supprimées, avec leurs clés enregistrées et leurs accès.",
       "unlinks": "Ses connexions bancaires ({{count}}) cessent de se synchroniser. Leurs comptes et transactions restent, comme comptes manuels.",
       "removeNothing": "Le code du plugin est retiré de votre serveur dès qu'aucun espace de travail ne l'utilise.",
