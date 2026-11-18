@@ -53,6 +53,11 @@ class AssetTransaction(Base):
     source: Mapped[str] = mapped_column(String(128), default="manual")  # manual, import, or the connection's provider
     external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    # An imported order paid in another currency than the holding's keeps what
+    # the file said before conversion, so importing the same file again finds
+    # it whatever the exchange table says by then (#1358). NULL otherwise.
+    source_currency: Mapped[Optional[str]] = mapped_column(String(3), nullable=True)
+    source_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=18, scale=6), nullable=True)
     # Split only: the `old_units` held before the split became `new_units` after
     # it, so a 100-for-1 split is 1 → 100 and a 1-for-10 reverse split is 10 → 1.
     # NULL on buys and sells. A split itself stores 0 quantity, price and fee.
