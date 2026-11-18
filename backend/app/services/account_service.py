@@ -887,7 +887,9 @@ async def sync_opening_balance_for_connected_account(
         .with_for_update(key_share=True)
         .execution_options(populate_existing=True)
     )
-    existing_tx, *duplicates = existing.scalars().all() or [None]
+    openings = list(existing.scalars().all())
+    existing_tx = openings[0] if openings else None
+    duplicates = openings[1:]
     from app.services import goal_allocation_service
 
     if duplicates:

@@ -1034,7 +1034,7 @@ async def test_deleting_user_cannot_leave_pocket_funded_by_their_deposit_negativ
         assert await _pocket_current_amount(fresh, goal_id) == 40
 
     await session.execute(
-        GoalAllocation.__table__.delete().where(GoalAllocation.transaction_id == spending_id)
+        delete(GoalAllocation).where(GoalAllocation.transaction_id == spending_id)
     )
     await session.commit()
     assert await delete_user(session, editor_id, owner_id)
