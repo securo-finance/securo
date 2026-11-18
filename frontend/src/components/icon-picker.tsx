@@ -5,6 +5,7 @@ import {
   CATEGORY_EMOJIS,
   CATEGORY_ICONS,
   extractFirstEmoji,
+  getCategoryEmojiLabel,
   getCategoryIconLabel,
   isEmoji,
 } from '@/lib/category-icons'
@@ -56,16 +57,16 @@ export function IconPicker({ value, color, onChange }: IconPickerProps) {
     () =>
       CATEGORY_EMOJIS.map((entry) => {
         const pt = entry.icon ? (ICON_PT_LABELS[entry.icon] ?? '') : ''
+        const label = getCategoryEmojiLabel(t, entry)
         return {
           ...entry,
-          label: entry.icon
-            ? getCategoryIconLabel(t, entry.icon)
-            : (entry.keywords[0] ?? entry.emoji),
+          label,
           haystack: normalize(
             [
               entry.emoji,
+              label,
               ...entry.keywords,
-              ...(entry.icon ? [entry.icon, getCategoryIconLabel(t, entry.icon), pt] : []),
+              ...(entry.icon ? [entry.icon, pt] : []),
             ].join(' ')
           ),
         }
@@ -125,6 +126,15 @@ export function IconPicker({ value, color, onChange }: IconPickerProps) {
           </span>
           <span className="flex-1">{t('common.useEmoji')}</span>
           {value === typedEmoji && <Check size={16} className="text-primary" />}
+        </button>
+      )}
+      {mode === 'icons' && query && filteredEmojis.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setMode('emojis')}
+          className="w-full text-xs text-start text-primary hover:underline px-1"
+        >
+          {t('common.seeMatchingEmojis', { count: filteredEmojis.length })}
         </button>
       )}
       {mode === 'icons' ? (

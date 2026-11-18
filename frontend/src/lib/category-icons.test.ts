@@ -10,6 +10,7 @@ import {
   CATEGORY_ICONS,
   EMOJI_TO_LUCIDE,
   extractFirstEmoji,
+  getCategoryEmojiLabel,
   getCategoryIconLabel,
   ICON_MAP,
   isEmoji,
@@ -228,5 +229,48 @@ describe('CATEGORY_EMOJIS', () => {
     for (const entry of CATEGORY_EMOJIS.filter((item) => item.icon === null)) {
       expect(entry.keywords.length, entry.emoji).toBeGreaterThan(0)
     }
+  })
+
+  it('names every extra preset in every shipped locale', () => {
+    // The preset tooltip is user-facing copy, so it cannot fall back to an
+    // English keyword the way the search words do.
+    const keys = CATEGORY_EMOJIS.filter((entry) => entry.icon === null)
+      .map((entry) => entry.key)
+      .sort()
+    expect(keys.every(Boolean), 'every extra has a key').toBe(true)
+
+    const files = readdirSync(LOCALES_DIR)
+      .filter((file) => file.endsWith('.json'))
+      .sort()
+    for (const file of files) {
+      const data = JSON.parse(readFileSync(path.join(LOCALES_DIR, file), 'utf-8'))
+      const block = data.categoryEmojis
+      expect(block, `${file}: categoryEmojis block`).toBeDefined()
+      expect(Object.keys(block).sort(), `${file}: emoji keys`).toEqual(keys)
+      for (const [key, label] of Object.entries(block)) {
+        expect(String(label).trim(), `${file}: ${key}`).not.toBe('')
+      }
+    }
+  })
+})
+
+describe('getCategoryEmojiLabel', () => {
+  it('borrows the icon label when the emoji has a Lucide twin', () => {
+    const t = makeT('en', { en: { translation: en } })
+    const heart = CATEGORY_EMOJIS.find((entry) => entry.icon === 'heart')
+    expect(getCategoryEmojiLabel(t, heart!)).toBe('Health / Wellbeing')
+  })
+
+  it('translates an extra preset instead of showing its keyword', () => {
+    const t = makeT('pt-BR', { 'pt-BR': { translation: ptBR } })
+    const wine = CATEGORY_EMOJIS.find((entry) => entry.key === 'wine')
+    expect(getCategoryEmojiLabel(t, wine!)).toBe('Vinho')
+  })
+
+  it('falls back to the first keyword, then the glyph, without the key', () => {
+    const t = makeT('de', { de: { translation: {} } })
+    const wine = CATEGORY_EMOJIS.find((entry) => entry.key === 'wine')
+    expect(getCategoryEmojiLabel(t, wine!)).toBe('wine')
+    expect(getCategoryEmojiLabel(t, { emoji: '🦄', icon: null, keywords: [] })).toBe('🦄')
   })
 })

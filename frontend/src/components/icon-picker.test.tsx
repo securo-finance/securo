@@ -137,7 +137,41 @@ describe('IconPicker', () => {
       'wine'
     )
 
-    expect(screen.getByTitle('wine')).toHaveTextContent('🍷')
+    expect(screen.getByTitle(i18n.t('categoryEmojis.wine'))).toHaveTextContent('🍷')
+  })
+
+  it('names the extra emoji in the active language', async () => {
+    // A preset with no Lucide twin used to show its raw English keyword as
+    // the tooltip in every language.
+    await i18n.changeLanguage('pt-BR')
+    const { user } = renderWithProviders(
+      <IconPicker value="" color="" onChange={() => {}} />
+    )
+
+    await user.click(screen.getByRole('button', { name: i18n.t('common.iconPickerEmojis') }))
+
+    expect(screen.getByTitle('Vinho')).toHaveTextContent('🍷')
+    expect(screen.queryByTitle('wine')).not.toBeInTheDocument()
+  })
+
+  it('points to the emoji that matches a search from the icon tab', async () => {
+    await i18n.changeLanguage('en')
+    const { user } = renderWithProviders(
+      <IconPicker value="" color="" onChange={() => {}} />
+    )
+
+    await user.type(
+      screen.getByPlaceholderText(i18n.t('common.searchIconOrEmoji')),
+      'wine'
+    )
+    await user.click(
+      screen.getByRole('button', { name: i18n.t('common.seeMatchingEmojis', { count: 1 }) })
+    )
+
+    expect(
+      screen.getByRole('button', { name: i18n.t('common.iconPickerEmojis') })
+    ).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTitle(i18n.t('categoryEmojis.wine'))).toHaveTextContent('🍷')
   })
 
   it('finds emoji by the Portuguese label while the UI is in English', async () => {

@@ -296,6 +296,8 @@ export interface CategoryEmoji {
   emoji: string
   /** Lucide name this emoji is the equivalent of, when there is one. */
   icon: string | null
+  /** Translation key suffix under `categoryEmojis` for an emoji with no twin. */
+  key?: string
   /** Search words beyond the icon's own name and label. */
   keywords: string[]
 }
@@ -304,38 +306,52 @@ export interface CategoryEmoji {
 // has no drawing for. Keywords are English and Portuguese, the two languages
 // the catalogue labels are written in.
 const EXTRA_EMOJIS: CategoryEmoji[] = [
-  { emoji: '🍔', icon: null, keywords: ['burger', 'hamburger', 'lanche'] },
-  { emoji: '🍟', icon: null, keywords: ['fries', 'batata frita', 'fast food'] },
-  { emoji: '🥪', icon: null, keywords: ['sandwich', 'sanduíche'] },
-  { emoji: '🍷', icon: null, keywords: ['wine', 'vinho'] },
-  { emoji: '🍸', icon: null, keywords: ['cocktail', 'drink', 'drinque'] },
-  { emoji: '🧃', icon: null, keywords: ['juice', 'suco'] },
-  { emoji: '💰', icon: null, keywords: ['money bag', 'savings', 'dinheiro', 'poupança'] },
-  { emoji: '💸', icon: null, keywords: ['spending', 'expense', 'gasto', 'despesa'] },
-  { emoji: '⚽', icon: null, keywords: ['soccer', 'football', 'futebol'] },
-  { emoji: '🏀', icon: null, keywords: ['basketball', 'basquete'] },
-  { emoji: '🎾', icon: null, keywords: ['tennis', 'tênis'] },
-  { emoji: '🧘', icon: null, keywords: ['yoga', 'meditation', 'meditação'] },
-  { emoji: '🎨', icon: null, keywords: ['art', 'hobby', 'arte'] },
-  { emoji: '🎧', icon: null, keywords: ['headphones', 'fone de ouvido'] },
-  { emoji: '🔌', icon: null, keywords: ['plug', 'charger', 'tomada', 'carregador'] },
-  { emoji: '🛠️', icon: null, keywords: ['tools', 'ferramentas'] },
-  { emoji: '🧼', icon: null, keywords: ['soap', 'sabonete', 'higiene'] },
-  { emoji: '🚿', icon: null, keywords: ['shower', 'banho'] },
-  { emoji: '👟', icon: null, keywords: ['shoes', 'sneakers', 'calçado'] },
-  { emoji: '💄', icon: null, keywords: ['makeup', 'maquiagem', 'beleza'] },
-  { emoji: '🧸', icon: null, keywords: ['toys', 'brinquedos', 'criança'] },
-  { emoji: '🌷', icon: null, keywords: ['flowers', 'flores', 'jardim'] },
-  { emoji: '🍀', icon: null, keywords: ['luck', 'sorte'] },
-  { emoji: '🎂', icon: null, keywords: ['birthday', 'aniversário'] },
-  { emoji: '🎄', icon: null, keywords: ['christmas', 'natal'] },
-  { emoji: '🛡️', icon: null, keywords: ['insurance', 'seguro', 'proteção'] },
-  { emoji: '🗺️', icon: null, keywords: ['map', 'travel', 'mapa', 'viagem'] },
-  { emoji: '🏖️', icon: null, keywords: ['beach', 'holiday', 'praia', 'férias'] },
-  { emoji: '🚀', icon: null, keywords: ['launch', 'startup', 'lançamento'] },
-  { emoji: '💎', icon: null, keywords: ['investment', 'luxury', 'investimento', 'luxo'] },
-  { emoji: '🏗️', icon: null, keywords: ['construction', 'obra', 'construção'] },
+  { emoji: '🍔', icon: null, key: 'burger', keywords: ['burger', 'hamburger', 'lanche'] },
+  { emoji: '🍟', icon: null, key: 'fries', keywords: ['fries', 'batata frita', 'fast food'] },
+  { emoji: '🥪', icon: null, key: 'sandwich', keywords: ['sandwich', 'sanduíche'] },
+  { emoji: '🍷', icon: null, key: 'wine', keywords: ['wine', 'vinho'] },
+  { emoji: '🍸', icon: null, key: 'cocktail', keywords: ['cocktail', 'drink', 'drinque'] },
+  { emoji: '🧃', icon: null, key: 'juice', keywords: ['juice', 'suco'] },
+  { emoji: '💰', icon: null, key: 'money-bag', keywords: ['money bag', 'savings', 'dinheiro', 'poupança'] },
+  { emoji: '💸', icon: null, key: 'spending', keywords: ['spending', 'expense', 'gasto', 'despesa'] },
+  { emoji: '⚽', icon: null, key: 'soccer', keywords: ['soccer', 'football', 'futebol'] },
+  { emoji: '🏀', icon: null, key: 'basketball', keywords: ['basketball', 'basquete'] },
+  { emoji: '🎾', icon: null, key: 'tennis', keywords: ['tennis', 'tênis'] },
+  { emoji: '🧘', icon: null, key: 'yoga', keywords: ['yoga', 'meditation', 'meditação'] },
+  { emoji: '🎨', icon: null, key: 'art', keywords: ['art', 'hobby', 'arte'] },
+  { emoji: '🎧', icon: null, key: 'headphones', keywords: ['headphones', 'fone de ouvido'] },
+  { emoji: '🔌', icon: null, key: 'plug', keywords: ['plug', 'charger', 'tomada', 'carregador'] },
+  { emoji: '🛠️', icon: null, key: 'tools', keywords: ['tools', 'ferramentas'] },
+  { emoji: '🧼', icon: null, key: 'soap', keywords: ['soap', 'sabonete', 'higiene'] },
+  { emoji: '🚿', icon: null, key: 'shower', keywords: ['shower', 'banho'] },
+  { emoji: '👟', icon: null, key: 'shoes', keywords: ['shoes', 'sneakers', 'calçado'] },
+  { emoji: '💄', icon: null, key: 'makeup', keywords: ['makeup', 'maquiagem', 'beleza'] },
+  { emoji: '🧸', icon: null, key: 'toys', keywords: ['toys', 'brinquedos', 'criança'] },
+  { emoji: '🌷', icon: null, key: 'flowers', keywords: ['flowers', 'flores', 'jardim'] },
+  { emoji: '🍀', icon: null, key: 'luck', keywords: ['luck', 'sorte'] },
+  { emoji: '🎂', icon: null, key: 'birthday', keywords: ['birthday', 'aniversário'] },
+  { emoji: '🎄', icon: null, key: 'christmas', keywords: ['christmas', 'natal'] },
+  { emoji: '🛡️', icon: null, key: 'protection', keywords: ['insurance', 'protection', 'seguro', 'proteção'] },
+  { emoji: '🗺️', icon: null, key: 'map', keywords: ['map', 'travel', 'mapa', 'viagem'] },
+  { emoji: '🏖️', icon: null, key: 'beach', keywords: ['beach', 'holiday', 'praia', 'férias'] },
+  { emoji: '🚀', icon: null, key: 'launch', keywords: ['launch', 'startup', 'lançamento'] },
+  { emoji: '💎', icon: null, key: 'investment', keywords: ['investment', 'luxury', 'investimento', 'luxo'] },
+  { emoji: '🏗️', icon: null, key: 'construction', keywords: ['construction', 'obra', 'construção'] },
 ]
+
+// An emoji's name follows the active language, the same way an icon's does.
+// The extras have no icon to borrow a label from, so each carries its own
+// translation key; the first keyword is the fallback and the glyph itself the
+// last resort, so a locale missing the key never blanks the tooltip.
+export function getCategoryEmojiLabel(t: TFunction, entry: CategoryEmoji): string {
+  if (entry.icon) return getCategoryIconLabel(t, entry.icon)
+  if (entry.key) {
+    const key = `categoryEmojis.${entry.key}`
+    const translated = t(key)
+    if (typeof translated === 'string' && translated && translated !== key) return translated
+  }
+  return entry.keywords[0] ?? entry.emoji
+}
 
 /** Every emoji the picker offers: one per catalogue icon, plus the extras. */
 export const CATEGORY_EMOJIS: CategoryEmoji[] = [
