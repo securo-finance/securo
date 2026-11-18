@@ -1324,6 +1324,14 @@ async def refresh_all_market_prices(
     provider = market_provider or get_market_price_provider()
     tickers = [a.ticker for a in assets if a.ticker]
 
+    # Quotes carry no observation time, so the moment this sweep starts asking
+    # is the only reference for "older than what is stored". A workspace
+    # refresh, or the scheduled sweep, can commit a newer price for the same
+    # holding while this one waits on the provider; the write loop compares
+    # `last_price_at` against this mark so that price is not overwritten by the
+    # older quote in hand (and stamped as if it were fresh).
+    fetch_started_at = datetime.now(timezone.utc)
+
     # Batch path: one request → dict[SYMBOL, price]. On rate-limit we halt
     # immediately — retrying within the same task would just pile on 429s
     # and risk an IP-level cookie ban.
@@ -1406,6 +1414,17 @@ async def refresh_all_market_prices(
         if price is None:
             skipped += 1
             continue
+
+        # A newer price landed while this sweep was waiting on the provider:
+        # the quote in hand is older than what the row already has, so writing
+        # it would go backwards and stamp the old price as today's.
+        if current.last_price_at is not None:
+            stored_at = current.last_price_at
+            if stored_at.tzinfo is None:
+                stored_at = stored_at.replace(tzinfo=timezone.utc)
+            if stored_at >= fetch_started_at:
+                skipped += 1
+                continue
 
         await _apply_price_to_asset(session, current, price)
         if logo_url and not current.logo_url:

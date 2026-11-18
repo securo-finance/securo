@@ -9,7 +9,7 @@ short-circuit.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Optional
 from unittest.mock import patch
@@ -569,6 +569,82 @@ async def test_refresh_all_uses_the_ticker_the_holding_has_when_it_writes(
     ).one()
     assert ticker == "MSFT"
     assert last_price == Decimal("401.0")
+
+
+class NewerPriceBatchProvider(FakeMarketProvider):
+    """A batch that answers after another refresh committed a newer quote."""
+
+    def __init__(
+        self,
+        quotes: dict[str, MarketSymbolQuote],
+        session: AsyncSession,
+        asset_id,
+        newer_price: Decimal,
+    ) -> None:
+        super().__init__(quotes)
+        self._session = session
+        self._asset_id = asset_id
+        self._newer_price = newer_price
+
+    async def get_latest_prices(self, symbols: list[str]) -> dict[str, Optional[Decimal]]:
+        prices = await super().get_latest_prices(symbols)
+        # A workspace refresh (or the scheduled sweep) finished while this one
+        # waited on the provider: the row now holds a fresher price.
+        await self._session.execute(
+            update(Asset)
+            .where(Asset.id == self._asset_id)
+            .values(
+                last_price=self._newer_price,
+                last_price_at=datetime.now(timezone.utc),
+            )
+            .execution_options(synchronize_session=False)
+        )
+        await self._session.commit()
+        return prices
+
+
+@pytest.mark.asyncio
+async def test_refresh_all_keeps_a_price_committed_while_it_asked_the_provider(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    creator = FakeMarketProvider({"AAPL": _quote("AAPL", 180.0)})
+    created = await asset_service.create_asset(
+        session,
+        test_workspace.id,
+        test_user.id,
+        AssetCreate(
+            name="AAPL",
+            type="investment",
+            valuation_method="market_price",
+            ticker="AAPL",
+            units=Decimal("2"),
+        ),
+        market_provider=creator,
+    )
+
+    newer = NewerPriceBatchProvider(
+        {"AAPL": _quote("AAPL", 181.0)}, session, created.id, Decimal("199.0")
+    )
+
+    result = await refresh_all_market_prices(
+        session, market_provider=newer, workspace_id=test_workspace.id
+    )
+
+    # The quote in hand was fetched before the newer price landed, so the
+    # sweep leaves the row alone instead of going backwards and stamping the
+    # older quote with a fresh `last_price_at`.
+    assert result == {"refreshed": 0, "skipped": 1, "rate_limited": 0}
+    last_price, amount = (
+        await session.execute(
+            select(Asset.last_price, AssetValue.amount)
+            .join(AssetValue, AssetValue.asset_id == Asset.id)
+            .where(Asset.id == created.id, AssetValue.date == date.today())
+        )
+    ).one()
+    assert last_price == Decimal("199.0")
+    # Today's value still comes from the price that was committed meanwhile
+    # (180 × 2 from creation), not from the older 181 quote.
+    assert amount == Decimal("360.0")
 
 
 # ---- YFinanceProvider batch refresh: minor-unit normalization ----

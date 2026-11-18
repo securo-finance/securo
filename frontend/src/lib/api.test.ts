@@ -75,14 +75,22 @@ describe('api data-change signal on a rate-limited price refresh (issue #778)', 
   it('bumps when the provider stopped after some prices were committed', async () => {
     // The other tabs never see that partial write otherwise: the response
     // interceptor only signals on success.
-    reject429({ message: 'slow down', refreshed: 2, skipped: 1, rate_limited: 1 })
-    await expect(assets.refreshPrices('ws-1')).rejects.toThrow()
+    const detail = { message: 'slow down', refreshed: 2, skipped: 1, rate_limited: 1 }
+    reject429(detail)
+    // The caller still gets the real 429 and its counters: the page reads
+    // `detail.refreshed` to refetch and to say how many prices came in.
+    await expect(assets.refreshPrices('ws-1')).rejects.toMatchObject({
+      response: { status: 429, data: { detail } },
+    })
     expect(localStorage.getItem(DATA_CHANGED_KEY)).toBeTruthy()
   })
 
   it('leaves the signal alone when nothing was written before the 429', async () => {
-    reject429({ message: 'slow down', refreshed: 0, skipped: 3, rate_limited: 1 })
-    await expect(assets.refreshPrices('ws-1')).rejects.toThrow()
+    const detail = { message: 'slow down', refreshed: 0, skipped: 3, rate_limited: 1 }
+    reject429(detail)
+    await expect(assets.refreshPrices('ws-1')).rejects.toMatchObject({
+      response: { status: 429, data: { detail } },
+    })
     expect(localStorage.getItem(DATA_CHANGED_KEY)).toBeNull()
   })
 })
