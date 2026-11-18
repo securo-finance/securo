@@ -77,3 +77,15 @@ Compute the default OAuth Redirect URI
 {{- define "securo.oauthRedirectUri" -}}
 {{ include "securo.frontendUrl" . }}/oauth/callback
 {{- end -}}
+
+{{/*
+Name of the claim the attachment mounts use: the one the operator already has
+when `persistence.attachments.existingClaim` is set, the chart's own otherwise.
+*/}}
+{{- define "securo.attachmentsClaimName" -}}
+{{- if .Values.persistence.attachments.existingClaim -}}
+{{- .Values.persistence.attachments.existingClaim | quote -}}
+{{- else -}}
+{{- printf "%s-attachments" (include "securo.fullname" .) -}}
+{{- end -}}
+{{- end -}}

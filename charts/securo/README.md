@@ -95,6 +95,57 @@ before disabling their PVC. Consult the repository README's Attachment Storage
 section for permissions, migration, and integration testing. S3 mode does not
 move AI knowledge files to object storage.
 
+### Extra environment variables, volumes and volume mounts
+
+`backend`, `celeryWorker`, `celeryBeat` and `migration` each accept `extraEnv`,
+`extraEnvFrom`, `extraVolumes` and `extraVolumeMounts`, empty by default. The
+entries keep the Kubernetes shapes (`EnvVar`, `EnvFromSource`, `Volume`,
+`VolumeMount`) and are rendered untouched, so `valueFrom` and every volume type
+work. `extraEnv` is read after the ConfigMap and the Secret and therefore wins
+over both, as `env` does over `envFrom` in Kubernetes. `migration` configures
+the post-install/post-upgrade Job, which reaches the database before the pods do.
+
+This is what an external PostgreSQL with TLS client-certificate authentication
+needs, for example:
+
+```yaml
+backend:
+  extraEnv:
+    - name: PGSSLMODE
+      value: verify-full
+    - name: PGSSLCERT
+      value: /etc/pg-tls/tls.crt
+    - name: PGSSLKEY
+      value: /etc/pg-tls/tls.key
+    - name: PGSSLROOTCERT
+      value: /etc/pg-tls/ca.crt
+  extraVolumes:
+    - name: pg-client-tls
+      secret:
+        secretName: pg-client-tls
+  extraVolumeMounts:
+    - name: pg-client-tls
+      mountPath: /etc/pg-tls
+      readOnly: true
+```
+
+Repeat the block under `celeryWorker`, `celeryBeat` and `migration` if those
+pods connect to the same database.
+
+To mount a PersistentVolumeClaim you already have instead of letting the chart
+create one, set `persistence.attachments.existingClaim`. Keep
+`persistence.attachments.enabled` true so the pods mount it; the chart then
+renders no PVC and leaves your claim untouched on uninstall.
+
+On a release that is already running, do not set it in the same upgrade that
+follows the first install. The chart's PVC leaves the release when the value is
+set, Helm deletes resources that leave the release, and with a `Delete` reclaim
+policy that takes the attachments with it. Hand it over in two steps: annotate
+the chart's PVC with `helm.sh/resource-policy: keep` and upgrade, then set
+`persistence.attachments.existingClaim` and upgrade again. The claim then also
+survives `helm uninstall`, so delete it by hand when you really want it gone. A
+claim you created yourself, outside the release, needs no handoff.
+
 ### AI Agents and the MCP server
 
 `mcpServer.enabled` runs the built-in MCP server inside the cluster. It is not added to the Ingress or the HTTPRoute unless you also set `mcpServer.publicRoute: true`, so publishing it to your public entry point is a deliberate step; when you do, set `config.agentsExternalMcpUrl` to the URL clients should use. Tokens are signed with `secret.agentsMcpJwtSecret` when it is set, or with a key derived from `secretKey` otherwise, so a random `secretKey` is enough. A known public value is ignored and the derived key used instead, since anyone holding the signing key could mint a token for any user.
