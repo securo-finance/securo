@@ -31,7 +31,8 @@ def _use(monkeypatch, error: Exception) -> None:
 
 async def test_missing_file_is_silent(monkeypatch, caplog):
     _use(monkeypatch, FileNotFoundError("File not found: logo"))
-    with caplog.at_level(logging.WARNING):
+    # DEBUG and above, so a missing logo logged at INFO would fail the test too.
+    with caplog.at_level(logging.DEBUG, logger="app.services.invoice_logo_service"):
         assert await invoice_logo_service.read(uuid.uuid4(), uuid.uuid4()) is None
     assert caplog.records == []
 
