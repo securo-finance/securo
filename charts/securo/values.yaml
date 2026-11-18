@@ -130,6 +130,16 @@ backend:
     requests:
       cpu: 100m
       memory: 256Mi
+  # Anything the chart does not model, such as an external database reached
+  # with a client certificate or a private CA bundle. Entries keep the
+  # Kubernetes shapes (EnvVar, EnvFromSource, Volume, VolumeMount) and are
+  # passed through untouched. All four are empty by default, so rendering is
+  # unchanged, and extraEnv is read after the ConfigMap and the Secret, so it
+  # wins over both, as `env` does over `envFrom` in Kubernetes.
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumes: []
+  extraVolumeMounts: []
 
 # Frontend configuration
 frontend:
@@ -163,6 +173,11 @@ celeryWorker:
     requests:
       cpu: 100m
       memory: 256Mi
+  # Same four keys as `backend`, for the worker pods.
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumes: []
+  extraVolumeMounts: []
 
 # Celery Beat configuration
 celeryBeat:
@@ -176,6 +191,20 @@ celeryBeat:
     requests:
       cpu: 50m
       memory: 64Mi
+  # Same four keys as `backend`, for the beat pod.
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumes: []
+  extraVolumeMounts: []
+
+# Database migration Job, a Helm post-install/post-upgrade hook that runs the
+# backend image. It reaches the database before the pods do, so it needs the
+# same extras when the connection uses a client certificate or a private CA.
+migration:
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumes: []
+  extraVolumeMounts: []
 
 # Built-in MCP Server configuration
 mcpServer:
@@ -209,6 +238,10 @@ persistence:
   attachments:
     # Set false when using S3; migrate existing files before disabling this PVC.
     enabled: true
+    # Mount a claim you already have instead of creating one. Keep `enabled`
+    # true so the pods still mount it; the chart then renders no PVC and
+    # leaves that claim alone on uninstall.
+    existingClaim: ""
     size: 5Gi
     storageClass: ""
     accessMode: ReadWriteOnce
