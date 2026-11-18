@@ -61,10 +61,6 @@ function toReviewTransactions(txns: ImportPreviewTransaction[]): ImportReviewTra
 function TransactionImportPanel() {
   const { t } = useTranslation()
   const { user } = useAuth()
-  const { demoMode } = useFeatureFlags()
-  // Disabled in demo mode — uploads survive only until the hourly reset
-  // and the unbounded parser would let a visitor crash the worker.
-  if (demoMode) return <Navigate to="/" replace />
   const { canWrite } = useWorkspace()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const locale = useDisplayLocale()
@@ -652,8 +648,15 @@ function TransactionImportPanel() {
     should not have to know first whether it holds transactions or orders. */
 export default function ImportPage() {
   const { t } = useTranslation()
+  const { demoMode } = useFeatureFlags()
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = searchParams.get('tab') === 'investments' ? 'investments' : 'transactions'
+
+  // Import is off in demo mode — uploads survive only until the hourly
+  // reset (confusing UX) and the unbounded parser would let a visitor
+  // crash the worker with a giant CSV. Guarding the page, not the panel,
+  // keeps every hook in the panel unconditional.
+  if (demoMode) return <Navigate to="/" replace />
 
   function selectTab(next: 'transactions' | 'investments') {
     const params = new URLSearchParams(searchParams)
