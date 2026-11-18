@@ -56,6 +56,7 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     ("PATCH", "/{id}"): "fastapi-users' own user router, superuser-gated",
     ("DELETE", "/{id}"): "fastapi-users' own user router, superuser-gated",
     ("POST", "/api/setup/create-admin"): "first-run bootstrap, refuses once a user exists",
+    ("POST", "/api/auth/demo-login"): "public demo sign-in: mints a token for the seeded demo user and writes no rows",
     # Instance administration: gated by `current_superuser`, not by workspace.
     ("POST", "/api/admin/users"): "superuser-gated instance administration",
     ("PATCH", "/api/admin/users/{user_id}"): "superuser-gated instance administration",
@@ -117,6 +118,7 @@ PUBLIC_ROUTES = {
         "/login", "/logout", "/register", "/forgot-password", "/reset-password",
         "/2fa/verify", "/passkeys/authenticate/options", "/passkeys/authenticate/verify",
         "/passkeys/2fa/options", "/passkeys/2fa/verify", "/api/setup/create-admin",
+        "/api/auth/demo-login",
     )
 }
 WORKSPACE_READ_ROUTES = {
