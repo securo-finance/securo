@@ -1519,6 +1519,39 @@ def test_provider_to_internal_balance_other_provider_unchanged():
     ) == Decimal("500.00")
 
 
+def test_provider_to_internal_balance_reads_a_card_from_its_available_credit():
+    """Enable Banking can report a card's free credit instead of the debt;
+    what the card owes is the rest of the limit (issue #624)."""
+    assert _provider_to_internal_balance(
+        "enable_banking",
+        "credit_card",
+        Decimal("0"),
+        available_credit=Decimal("4900.00"),
+        credit_limit=Decimal("5000.00"),
+    ) == Decimal("100.00")
+
+
+def test_provider_to_internal_balance_needs_a_limit_for_available_credit():
+    """Without a limit there is no debt to derive; the provider's reading stays."""
+    assert _provider_to_internal_balance(
+        "enable_banking",
+        "credit_card",
+        Decimal("0"),
+        available_credit=Decimal("4900.00"),
+    ) == Decimal("0")
+
+
+def test_provider_to_internal_balance_ignores_available_credit_on_other_types():
+    """Only a card reads free credit as debt; another type keeps its balance."""
+    assert _provider_to_internal_balance(
+        "enable_banking",
+        "checking",
+        Decimal("4900.00"),
+        available_credit=Decimal("4900.00"),
+        credit_limit=Decimal("5000.00"),
+    ) == Decimal("4900.00")
+
+
 @pytest.mark.asyncio
 async def test_update_simplefin_account_to_credit_card_flips_balance(
     session: AsyncSession, test_user, test_workspace,

@@ -633,6 +633,7 @@ _PREVIEW_COLUMNS = (
     Transaction.notes,
     Transaction.is_ignored,
     Transaction.has_category_lines,
+    Transaction.transfer_pair_id,
 )
 
 
@@ -656,6 +657,7 @@ def _rule_preview(transaction: Transaction) -> Transaction:
         payee_id=transaction.payee_id,
         notes=transaction.notes,
         is_ignored=transaction.is_ignored,
+        transfer_pair_id=transaction.transfer_pair_id,
     )
 
 
@@ -720,6 +722,29 @@ async def get_existing_rule_payee_ids(
     return set(result.scalars().all())
 
 
+async def get_transfer_unsafe_category_ids(
+    session: AsyncSession,
+    workspace_id: uuid.UUID | None,
+    transactions: Iterable[Transaction],
+) -> set[uuid.UUID]:
+    """Ignored categories a rule must not put a transfer leg in.
+
+    An ignored category drops the row from its account's balance, so filing
+    only one leg there unbalances the transfer. Empty when none of
+    `transactions` is a transfer leg, which spares the query on the common path.
+    """
+    if workspace_id is None or not any(
+        tx.transfer_pair_id is not None for tx in transactions
+    ):
+        return set()
+    result = await session.execute(
+        select(Category.id).where(
+            Category.workspace_id == workspace_id, Category.is_ignored.is_(True)
+        )
+    )
+    return set(result.scalars().all())
+
+
 async def apply_rules_to_transaction(
     session: AsyncSession, user_id: uuid.UUID, transaction: Transaction,
     skip_category_rules: bool = False,
@@ -756,6 +781,9 @@ async def apply_rules_to_transaction(
         if getattr(transaction, "workspace_id", None) is not None
         else None
     )
+    transfer_unsafe_categories = await get_transfer_unsafe_category_ids(
+        session, getattr(transaction, "workspace_id", None), [transaction]
+    )
 
     for rule in rules:
         conditions = rule.conditions or []
@@ -767,6 +795,7 @@ async def apply_rules_to_transaction(
                 category_set,
                 assignable_category_ids=assignable_categories,
                 existing_payee_ids=existing_payees,
+                ignored_category_ids=transfer_unsafe_categories,
             )
 
 
@@ -849,6 +878,9 @@ async def preview_rule(
     # The save path skips `set_category` at an unavailable target, so a preview that
     # did not would promise a move that saving never makes.
     assignable_categories = await get_assignable_category_ids(session, workspace_id)
+    transfer_unsafe_categories = await get_transfer_unsafe_category_ids(
+        session, workspace_id, transactions
+    )
 
     matched = 0
     changed = 0
@@ -879,6 +911,7 @@ async def preview_rule(
                 or (tx.category_id is not None and not overwrite_existing_categories),
                 skip_description=_has_manual_description(tx),
                 assignable_category_ids=assignable_categories,
+                ignored_category_ids=transfer_unsafe_categories,
             )
             will_change = _rule_effect_state(draft) != before
             if will_change:
@@ -944,6 +977,9 @@ async def apply_single_rule(
 
     assignable_categories = await get_assignable_category_ids(session, workspace_id)
     existing_payees = await get_existing_rule_payee_ids(session, [rule])
+    transfer_unsafe_categories = await get_transfer_unsafe_category_ids(
+        session, workspace_id, transactions
+    )
     count = 0
     for tx in transactions:
         matches = evaluate_conditions(rule.conditions_op, conditions, tx)
@@ -974,6 +1010,7 @@ async def apply_single_rule(
             skip_description=_has_manual_description(tx),
             assignable_category_ids=assignable_categories,
             existing_payee_ids=existing_payees,
+            ignored_category_ids=transfer_unsafe_categories,
         )
         after = (
             tx.category_id,
@@ -1010,6 +1047,9 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
 
     assignable_categories = await get_assignable_category_ids(session, workspace_id)
     existing_payees = await get_existing_rule_payee_ids(session, rules)
+    transfer_unsafe_categories = await get_transfer_unsafe_category_ids(
+        session, workspace_id, transactions
+    )
     count = 0
     for tx in transactions:
         preserve_manual_description = _has_manual_description(tx)
@@ -1045,6 +1085,7 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
                     skip_description=preserve_manual_description,
                     assignable_category_ids=assignable_categories,
                     existing_payee_ids=existing_payees,
+                    ignored_category_ids=transfer_unsafe_categories,
                 )
 
         after = (

@@ -22,6 +22,22 @@ describe('CategoryIcon', () => {
     expect(screen.getByText('🍔')).toBeInTheDocument()
   })
 
+  it('draws a compound emoji in one piece', () => {
+    // The old length check cut a ZWJ family short and rendered a question
+    // mark instead of the glyph the user chose.
+    renderWithProviders(<CategoryIcon icon="👨‍👩‍👧‍👦" color="#f97316" />)
+
+    expect(screen.getByText('👨‍👩‍👧‍👦')).toBeInTheDocument()
+  })
+
+  it('scales the emoji with the badge size', () => {
+    const { container } = renderWithProviders(
+      <CategoryIcon icon="🍔" color="#f97316" size="xl" />,
+    )
+
+    expect(container.querySelector('span')).toHaveStyle({ fontSize: '22px' })
+  })
+
   it('falls back to a placeholder icon for an unknown name', () => {
     // A renamed icon in a future lucide release must not blank the row.
     const { container } = renderWithProviders(

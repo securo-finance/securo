@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatAccountMask, getAccountLabel, getAccountName } from '@/lib/account-utils'
 import { getConnectionName } from '@/lib/connection-utils'
+import { SYNC_FAILURE_MESSAGE_KEY, syncFailureAction, syncFailureCodeFromResponse } from '@/lib/sync-failure'
 import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
@@ -229,9 +230,19 @@ export default function AccountsPage() {
     },
     onError: (err) => {
       queryClient.invalidateQueries({ queryKey: ['connections'] })
-      const detail = axios.isAxiosError(err)
-        ? err.response?.data?.detail
-        : null
+      // The same translated message the connection card shows, never the
+      // server's English detail; that stays only for an operator problem.
+      const response = axios.isAxiosError(err) ? err.response : undefined
+      const detail = response?.data?.detail
+      const code = syncFailureCodeFromResponse(response?.status, detail)
+      if (code) {
+        toast.error(t(SYNC_FAILURE_MESSAGE_KEY[code]))
+        return
+      }
+      if (response?.status === 409) {
+        toast.error(t('accounts.connectionDisconnected'))
+        return
+      }
       const message = typeof detail === 'string' ? detail : detail?.message
       toast.error(message || t('accounts.syncError'))
     },
@@ -466,6 +477,35 @@ export default function AccountsPage() {
                               {t('accounts.lastSync')}: {new Date(conn.last_sync_at).toLocaleString(dateLocale)}
                             </p>
                           )}
+                          {conn.last_sync_failure && conn.status !== 'disconnected' && (() => {
+                            const failure = conn.last_sync_failure
+                            const action = syncFailureAction(failure.code)
+                            return (
+                              <p
+                                className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5"
+                                data-testid="sync-failure"
+                              >
+                                {t('accounts.syncFailure.failedAt', {
+                                  when: new Date(failure.at).toLocaleString(dateLocale),
+                                })}
+                                {' '}
+                                {t(SYNC_FAILURE_MESSAGE_KEY[failure.code])}
+                                {canWrite && action !== 'wait' && (
+                                  <>
+                                    {' '}
+                                    <button
+                                      type="button"
+                                      className="font-medium underline underline-offset-2 hover:text-amber-800 dark:hover:text-amber-200 disabled:opacity-50"
+                                      disabled={syncPending}
+                                      onClick={() => action === 'reconnect' ? handleReconnectClick(conn) : syncMutation.mutate(conn.id)}
+                                    >
+                                      {action === 'reconnect' ? t('accounts.reconnect') : t('accounts.syncFailure.syncNow')}
+                                    </button>
+                                  </>
+                                )}
+                              </p>
+                            )
+                          })()}
                         </div>
                       </div>
                       {canWrite && (

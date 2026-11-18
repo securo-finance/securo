@@ -17,6 +17,12 @@ from app.services.provider_settings import resolve_settings
 
 logger = logging.getLogger(__name__)
 
+
+def _code(currency: str) -> str:
+    """A currency code as rates are stored: no spaces, upper case (#1474)."""
+    return currency.strip().upper()
+
+
 async def sync_rates(
     session: AsyncSession, target_date: Optional[date] = None
 ) -> int:
@@ -32,15 +38,13 @@ async def sync_rates(
     # happened yet. Treat a future request as a request for today's latest
     # published rate and store it under today's date.
     target = min(requested_target, app_today())
-    supported = set(get_settings().supported_currencies.split(","))
+    supported = {_code(c) for c in get_settings().supported_currencies.split(",") if c.strip()}
 
-    if target == app_today():
-        rates = await provider.fetch_latest()
-    else:
-        rates = await provider.fetch_historical(target)
+    rates = await _fetch(provider, target)
 
     count = 0
     for currency_code, rate in rates.items():
+        currency_code = _code(currency_code)
         if currency_code not in supported:
             continue
         stmt = pg_insert(FxRate).values(
@@ -62,6 +66,23 @@ async def sync_rates(
     return count
 
 
+async def _fetch(provider: OpenExchangeRatesProvider, target: date) -> dict[str, Decimal]:
+    if target == app_today():
+        return await provider.fetch_latest()
+    return await provider.fetch_historical(target)
+
+
+async def fetch_rates(session: AsyncSession, target_date: date) -> dict[str, Decimal]:
+    """The provider's USD-based rates for a day, without storing them.
+
+    For a caller that must not write, such as an import preview. Raises when
+    the provider is not configured or the request fails, like
+    :func:`sync_rates`. A future date reads today's latest rates.
+    """
+    provider = OpenExchangeRatesProvider(await resolve_settings(session))
+    return await _fetch(provider, min(target_date, app_today()))
+
+
 async def _resolve_rate(
     session: AsyncSession,
     from_currency: str,
@@ -78,7 +99,11 @@ async def _resolve_rate(
     persist a conversion can honestly leave it NULL instead of storing a wrong
     amount (issue #353). Pass ``allow_fetch=False`` to skip the on-demand
     provider call and rely only on already-stored rates.
+
+    The codes are compared as stored (``_code``): an account can keep the code
+    as it was typed, and a literal "rsd" used to miss its rate (#1474).
     """
+    from_currency, to_currency = _code(from_currency), _code(to_currency)
     if from_currency == to_currency:
         return Decimal("1")
 
