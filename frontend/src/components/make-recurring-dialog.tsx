@@ -56,11 +56,13 @@ export function MakeRecurringDialog({
   const queryClient = useQueryClient()
 
   const createMutation = useMutation({
-    mutationFn: ({ data }: { id: string; data: Partial<RecurringTransaction> }) =>
+    mutationFn: ({ data, sourceDate }: { id: string; data: Partial<RecurringTransaction>; sourceDate: string }) =>
       recurringApi.create({
         ...data,
-        // The source transaction already covers the first occurrence.
-        skip_first: true,
+        // The source transaction covers the start-date occurrence only while
+        // the bill still starts on its own date: moving the start date makes
+        // that first occurrence one no transaction covers, so it must happen.
+        skip_first: data.start_date === sourceDate,
       }),
     onSuccess: (_created, { id }) => {
       invalidateFinancialQueries(queryClient)
@@ -94,7 +96,7 @@ export function MakeRecurringDialog({
             ?? undefined
           }
           accounts={accounts}
-          onSave={(data) => createMutation.mutate({ id: transaction.id, data })}
+          onSave={(data) => createMutation.mutate({ id: transaction.id, sourceDate: transaction.date, data })}
           onCancel={onClose}
           loading={createMutation.isPending}
         />

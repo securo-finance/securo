@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { MakeRecurringDialog } from '@/components/make-recurring-dialog'
@@ -15,6 +15,24 @@ vi.mock('@/lib/api', async (importOriginal) => ({
   admin: { numberFormat: vi.fn() },
   currencies: { list: vi.fn() },
   recurring: { create: vi.fn() },
+}))
+
+// A plain date field, so a test can move the bill's start date.
+vi.mock('@/components/ui/date-picker-input', () => ({
+  DatePickerInput: ({
+    value,
+    onChange,
+  }: {
+    value: string
+    onChange: (value: string) => void
+  }) => (
+    <input
+      type="date"
+      value={value}
+      aria-label="date"
+      onChange={(event) => onChange(event.target.value)}
+    />
+  ),
 }))
 
 const account = { id: 'acct-1', name: 'Checking' }
@@ -90,10 +108,20 @@ function renderDialog(
   return { ...result, onClose }
 }
 
+/** The form writes its draft amounts in the workspace number format, so it
+ * mounts only after that setting has settled. */
+async function openDialog(
+  transaction: Transaction,
+  onClose = vi.fn(),
+  categories: Category[] = [category],
+) {
+  const result = renderDialog(transaction, onClose, categories)
+  await screen.findByLabelText(t('recurring.description'))
+  return result
+}
+
 beforeEach(() => {
   vi.mocked(admin.numberFormat).mockReset()
-  // Dot decimal, as the USD preference alone already implies: the format the
-  // dialog mounts with before the admin setting lands.
   vi.mocked(admin.numberFormat).mockResolvedValue({ format: 'comma_dot' })
   vi.mocked(currencies.list).mockResolvedValue([])
   vi.mocked(recurringApi.create).mockReset()
@@ -101,8 +129,8 @@ beforeEach(() => {
 })
 
 describe('MakeRecurringDialog', () => {
-  it('opens the bill form filled from the transaction', () => {
-    renderDialog(schoolFee())
+  it('opens the bill form filled from the transaction', async () => {
+    await openDialog(schoolFee())
 
     expect(screen.getByText(t('recurring.makeFromTransaction'))).toBeInTheDocument()
     expect(screen.getByLabelText(t('recurring.description'))).toHaveValue('School fee')
@@ -120,7 +148,7 @@ describe('MakeRecurringDialog', () => {
   })
 
   it('saves the bill with the transaction data and the monthly default', async () => {
-    const { user, onClose } = renderDialog(schoolFee())
+    const { user, onClose } = await openDialog(schoolFee())
 
     await user.click(screen.getByRole('button', { name: t('common.save') }))
 
@@ -144,7 +172,7 @@ describe('MakeRecurringDialog', () => {
   })
 
   it('keeps the direction of an income transaction and its unsigned amount', async () => {
-    const { user } = renderDialog(
+    const { user } = await openDialog(
       schoolFee({ id: 'tx-2', type: 'credit', amount: 1200, description: 'Salary' }),
     )
 
@@ -156,7 +184,7 @@ describe('MakeRecurringDialog', () => {
   })
 
   it('carries a split across categories into the bill', async () => {
-    const { user } = renderDialog(
+    const { user } = await openDialog(
       schoolFee({
         id: 'tx-3',
         category_id: null,
@@ -194,18 +222,18 @@ describe('MakeRecurringDialog', () => {
     )
   })
 
-  it('keeps a split saveable when the workspace format lands after the form opened', async () => {
-    // A workspace on the European format: the dialog opens with the dot-decimal
-    // preference format already written into the split rows, and the admin
-    // setting arrives while it is open. Reading those rows under the new
-    // separators turns "200.5" into 2005, the parts stop adding up to the
-    // total, and Save stays disabled with nothing for the user to fix.
+  it('waits for the workspace format before writing the draft amounts', async () => {
+    // A workspace on the European format: the admin setting is still in flight
+    // when the dialog opens. Writing the split rows under the interim format
+    // would leave "200.5" in them, and the format landing under them would
+    // read it as 2005 — the parts stop adding up and Save stays disabled with
+    // nothing for the user to fix. The form waits for the format instead.
     let resolveFormat: (value: { format: 'dot_comma' }) => void = () => {}
     vi.mocked(admin.numberFormat).mockReturnValue(
       new Promise((resolve) => { resolveFormat = resolve }),
     )
 
-    const { user, queryClient } = renderDialog(
+    const { user } = renderDialog(
       schoolFee({
         id: 'tx-4',
         category_id: null,
@@ -225,12 +253,14 @@ describe('MakeRecurringDialog', () => {
       [category, books],
     )
 
-    resolveFormat({ format: 'dot_comma' })
-    await waitFor(() => {
-      expect(queryClient.getQueryState(['admin', 'number-format'])?.status).toBe('success')
-    })
+    // Nothing is written under the interim format.
+    expect(screen.queryByLabelText(t('recurring.amount'))).not.toBeInTheDocument()
+    expect(screen.getByText(t('common.loading'))).toBeInTheDocument()
 
-    const save = screen.getByRole('button', { name: t('common.save') })
+    resolveFormat({ format: 'dot_comma' })
+
+    const save = await screen.findByRole('button', { name: t('common.save') })
+    // The rows were written with the settled format, so they keep their cents.
     await waitFor(() => expect(save).toBeEnabled())
     await user.click(save)
 
@@ -245,6 +275,19 @@ describe('MakeRecurringDialog', () => {
           ],
         },
       }),
+    )
+  })
+
+  it('skips the first occurrence only while the bill starts on the transaction date', async () => {
+    const { user } = await openDialog(schoolFee({ id: 'tx-5' }))
+
+    // Moving the start date makes the first occurrence one the source
+    // transaction no longer covers, so generation has to create it.
+    fireEvent.change(screen.getAllByLabelText('date')[0], { target: { value: '2026-04-15' } })
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(vi.mocked(recurringApi.create).mock.calls[0][0]).toEqual(
+      expect.objectContaining({ start_date: '2026-04-15', skip_first: false }),
     )
   })
 })

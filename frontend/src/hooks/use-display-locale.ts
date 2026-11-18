@@ -33,6 +33,23 @@ export function useDisplayLocale(): string {
 }
 
 /**
+ * Whether the admin number-format setting has settled (loaded or failed).
+ *
+ * A form that writes draft text in the workspace format must not mount before
+ * this is true: the locale it formats with would otherwise be the fallback,
+ * and the setting landing later would leave that text under a different one.
+ */
+export function useDisplayLocaleSettled(): boolean {
+  const { isPending } = useQuery({
+    queryKey: ['admin', 'number-format'],
+    queryFn: () => admin.numberFormat(),
+    staleTime: Infinity,
+    retry: false,
+  })
+  return !isPending
+}
+
+/**
  * Resolve the locale used for displaying *dates*. Month/day words follow the
  * user's app language; only the field order (day-first vs month-first) follows
  * the admin number/date format setting. Pair currency rendering with

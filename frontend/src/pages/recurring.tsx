@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
-import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
+import { useDisplayLocale, useDisplayLocaleSettled, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { categories as categoriesApi, categoryGroups as categoryGroupsApi, recurring as recurringApi, accounts as accountsApi, currencies as currenciesApi } from '@/lib/api'
 import { extractApiError } from '@/lib/api-errors'
@@ -529,17 +529,7 @@ export type RecurringInitialValues = Partial<
   category_lines?: TransactionCategoryLine[]
 }
 
-export function RecurringForm({
-  recurring,
-  initial,
-  categories,
-  categoryGroups,
-  currentCategory,
-  accounts,
-  onSave,
-  onCancel,
-  loading,
-}: {
+type RecurringFormProps = {
   recurring: RecurringTransaction | null
   /** What the form starts with when it is not editing an existing bill. */
   initial?: RecurringInitialValues | null
@@ -550,7 +540,37 @@ export function RecurringForm({
   onSave: (data: Partial<RecurringTransaction>) => void
   onCancel: () => void
   loading: boolean
-}) {
+}
+
+/**
+ * The recurring bill form.
+ *
+ * Its draft amounts are text written in the workspace number format, so it
+ * waits for that format to settle before it mounts: a setting that lands while
+ * the form is open would leave the written text and the parsers (the amount,
+ * the split check, the payload and the split editor) under different
+ * separators, turning "12.34" into 1234.
+ */
+export function RecurringForm(props: RecurringFormProps) {
+  const { t } = useTranslation()
+  const settled = useDisplayLocaleSettled()
+  if (!settled) {
+    return <p className="py-6 text-center text-sm text-muted-foreground">{t('common.loading')}</p>
+  }
+  return <RecurringFormFields {...props} />
+}
+
+function RecurringFormFields({
+  recurring,
+  initial,
+  categories,
+  categoryGroups,
+  currentCategory,
+  accounts,
+  onSave,
+  onCancel,
+  loading,
+}: RecurringFormProps) {
   const { t } = useTranslation()
   const { user } = useAuth()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
@@ -565,19 +585,15 @@ export function RecurringForm({
   // silently drops. The field is text and goes through parseAmountInput, the
   // same path the transaction dialog uses.
   const displayLocale = useDisplayLocale()
-  // The draft text is written once, with the locale in effect when the form
-  // mounts. Parsing it with that same locale keeps "12.34" at 12.34 even when
-  // the number-format query resolves afterwards to a comma-decimal format.
-  const [amountLocale] = useState(displayLocale)
   const [description, setDescription] = useState(recurring?.description ?? initial?.description ?? '')
   const [amount, setAmount] = useState(
     recurring?.amount != null
-      ? formatAmountInput(Number(recurring.amount), amountLocale)
+      ? formatAmountInput(Number(recurring.amount), displayLocale)
       : initial?.amount != null
-        ? formatAmountInput(Number(initial.amount), amountLocale)
+        ? formatAmountInput(Number(initial.amount), displayLocale)
         : '',
   )
-  const parsedAmount = parseAmountInput(amount, amountLocale)
+  const parsedAmount = parseAmountInput(amount, displayLocale)
   const amountInvalid = amount !== '' && parsedAmount == null
   const [currency, setCurrency] = useState(recurring?.currency ?? initial?.currency ?? userCurrency)
   // The selector always shows the currency Save submits: a transaction in a
@@ -608,11 +624,11 @@ export function RecurringForm({
   // the schedule generates starts with these parts.
   const [lineRows, setLineRows] = useState<CategoryLineRow[] | null>(() => {
     if (recurring && isSplitByCategory(recurring) && recurring.category_lines) {
-      return rowsFromLines(recurring.category_lines, (v) => formatAmountInput(v, amountLocale))
+      return rowsFromLines(recurring.category_lines, (v) => formatAmountInput(v, displayLocale))
     }
     // Creating a bill from a split transaction starts with its parts.
     if (initial?.category_lines?.length) {
-      return rowsFromLines(initial.category_lines, (v) => formatAmountInput(v, amountLocale))
+      return rowsFromLines(initial.category_lines, (v) => formatAmountInput(v, displayLocale))
     }
     return null
   })
@@ -620,17 +636,14 @@ export function RecurringForm({
     () => recurring?.category_lines?.[0]?.share_type ?? initial?.category_lines?.[0]?.share_type ?? 'exact',
   )
   const hadInitialLines = !!recurring && isSplitByCategory(recurring)
-  // Everything that reads or writes the draft amounts uses `amountLocale`, the
-  // one the text was written with: checking the split under a locale that
-  // resolves mid-form would read "200.5" as 2005 and leave Save disabled.
-  const linesValid = !lineRows || checkLines(lineRows, lineShareType, parsedAmount ?? 0, amountLocale).valid
+  const linesValid = !lineRows || checkLines(lineRows, lineShareType, parsedAmount ?? 0, displayLocale).valid
   const undoSplit = () => {
     const kept = largestLineCategoryId(
       (lineRows ?? []).map((row, position) => ({
         id: row.key, category_id: row.categoryId, position, share_type: lineShareType,
         share_pct: null, notes: null,
         amount: lineShareType === 'exact'
-          ? rowCents(row.amount, amountLocale) ?? 0
+          ? rowCents(row.amount, displayLocale) ?? 0
           : rowBasisPoints(row.percent) ?? 0,
       })),
     )
@@ -660,7 +673,7 @@ export function RecurringForm({
           is_active: isActive,
           auto_generate: autoGenerate,
           ...(lineRows
-            ? { category_lines: buildLinesPayload(lineRows, lineShareType, amountLocale) }
+            ? { category_lines: buildLinesPayload(lineRows, lineShareType, displayLocale) }
             : hadInitialLines
               ? { category_lines: { share_type: 'exact', lines: [] } }
               : {}),
@@ -687,7 +700,7 @@ export function RecurringForm({
           />
           {amountInvalid && (
             <p id="recurring-amount-error" role="alert" className="text-xs text-destructive">
-              {t('common.invalidAmount', { example: formatAmountInput(1234.56, amountLocale) })}
+              {t('common.invalidAmount', { example: formatAmountInput(1234.56, displayLocale) })}
             </p>
           )}
         </div>

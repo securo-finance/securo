@@ -41,6 +41,7 @@ vi.mock('@/lib/api', () => api)
 vi.mock('@/hooks/use-display-locale', () => ({
   useDisplayLocale: () => display.locale,
   useDateLocale: () => 'en-US',
+  useDisplayLocaleSettled: () => true,
 }))
 
 vi.mock('@/contexts/auth-context', () => ({
