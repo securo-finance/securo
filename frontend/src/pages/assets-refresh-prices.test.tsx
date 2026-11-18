@@ -177,7 +177,7 @@ describe('Assets price refresh for the whole portfolio (issue #778)', () => {
     api.assets.refreshPrices.mockImplementation((workspaceId: string | null) =>
       actual.assets.refreshPrices(workspaceId),
     )
-    renderWithProviders(<AssetsPage />)
+    const { rerender } = renderWithProviders(<AssetsPage />)
 
     expect(await screen.findByText('$10.00')).toBeInTheDocument()
     onlineManager.setOnline(false)
@@ -190,6 +190,11 @@ describe('Assets price refresh for the whole portfolio (issue #778)', () => {
     // stamp ws-2 on anything that did not name its own workspace.
     workspace.id = 'ws-2'
     localStorage.setItem(actual.WORKSPACE_STORAGE_KEY, 'ws-2')
+    // A real switch remounts the page in the new workspace while the request
+    // is still paused. Rerender here too: without it a mutation that reads
+    // the workspace from its render closure would keep the ws-1 it captured
+    // and this test would pass even though the app sends ws-2.
+    rerender(<AssetsPage />)
     await act(async () => {
       onlineManager.setOnline(true)
     })
