@@ -927,14 +927,16 @@ async def get_income_expenses_report(
     # we surface them as their own "investments" group — money set aside, distinct
     # from spending and from leftover surplus (mirrors how Sure shows an
     # "Investment Contributions" node). Paired account transfers stay excluded via
-    # the transfer_pair_id filter, so only one-sided movements (contributions)
-    # appear here.
+    # the transfer_pair_id filter, so only one-sided movements appear here:
+    # debits are contributions, credits are withdrawals, which the Sankey draws
+    # as a source of money beside income (#1418).
     inv_result = await session.execute(
         with_category_lines(
             select(
                 Category.id,
                 Category.name,
                 Category.color,
+                Transaction.type,
                 func.sum(amount_expr),
             ).select_from(Transaction)
         )
@@ -944,7 +946,6 @@ async def get_income_expenses_report(
             report_date >= start,
             report_date <= axis_end,
             Transaction.source != "opening_balance",
-            Transaction.type == "debit",
             Transaction.status == "posted",
             Transaction.transfer_pair_id.is_(None),
             Transaction.is_ignored.is_(False),
@@ -953,13 +954,14 @@ async def get_income_expenses_report(
             Category.is_ignored.is_(False),
             *acct_filter,
         )
-        .group_by(Category.id, Category.name, Category.color)
+        .group_by(Category.id, Category.name, Category.color, Transaction.type)
     )
-    for cat_id, cat_name, cat_color, total_amount in inv_result.all():
+    for cat_id, cat_name, cat_color, txn_type, total_amount in inv_result.all():
         amount = abs(float(total_amount or 0))
         if amount <= 0:
             continue
-        comp_map[(str(cat_id), "investments")] = {
+        group = "withdrawals" if txn_type == "credit" else "investments"
+        comp_map[(str(cat_id), group)] = {
             "label": cat_name or "Investments",
             "color": cat_color or "#0EA5E9",
             "value": amount,

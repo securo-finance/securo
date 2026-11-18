@@ -2264,6 +2264,7 @@
     "baseline": "推計",
     "surplus": "黒字",
     "deficit": "赤字",
+    "investmentWithdrawals": "投資の取り崩し",
     "cashFlowNode": "キャッシュフロー",
     "flowChartAria": "キャッシュフロー図: 収入源から支出への流れ",
     "category": "カテゴリ",

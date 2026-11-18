@@ -2268,6 +2268,7 @@
     "baseline": "Stima",
     "surplus": "Avanzo",
     "deficit": "Disavanzo",
+    "investmentWithdrawals": "Disinvestimenti",
     "cashFlowNode": "Flusso di cassa",
     "flowChartAria": "Diagramma del flusso di cassa: entrate che confluiscono nelle spese",
     "category": "Categoria",

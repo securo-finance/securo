@@ -2264,6 +2264,7 @@
     "baseline": "Estimate",
     "surplus": "Surplus",
     "deficit": "Deficit",
+    "investmentWithdrawals": "Investment withdrawals",
     "cashFlowNode": "Cash Flow",
     "flowChartAria": "Cashflow diagram: income sources flowing through to expenses",
     "category": "Category",
