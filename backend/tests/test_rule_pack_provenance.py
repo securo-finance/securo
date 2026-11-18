@@ -468,3 +468,82 @@ async def test_api_refuses_a_stale_or_foreign_preview(
     for headers in (auth_headers, other):
         packs = {p["code"]: p for p in (await client.get("/api/rules/packs", headers=headers)).json()}
         assert packs["BR"]["rules_from_pack"] == total
+
+
+# --- What the BR pack's utility, fee and brand rules categorize (issue #285) ---------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("description", "txn_type", "category"),
+    [
+        # Utilities: energy, water and gas concessionaires are housing.
+        ("ENEL DISTRIBUICAO SAO PAULO", "debit", "housing"),
+        ("LIGHT SERVICOS DE ELETRICIDADE", "debit", "housing"),
+        ("CPFL PAULISTA", "debit", "housing"),
+        ("SABESP CONTA 0123", "debit", "housing"),
+        ("ÁGUAS DO RIO", "debit", "housing"),
+        ("IGUA SANEAMENTO", "debit", "housing"),
+        ("COMGAS", "debit", "housing"),
+        ("CEG RIO", "debit", "housing"),
+        # A word that only contains a utility's name is not that utility.
+        ("SPOTLIGHT CINEMAS", "debit", None),
+        ("SHOPPING IGUATEMI", "debit", None),
+        # Bank fees and charges are taxes, before any merchant in the line.
+        ("IOF COMPRA INTERNACIONAL STEAM", "debit", "taxes"),
+        ("TARIFA PACOTE SERVICOS", "debit", "taxes"),
+        ("JUROS ROTATIVO", "debit", "taxes"),
+        ("ENCARGOS ATRASO", "debit", "taxes"),
+        ("TARIFA SAQUE", "debit", "taxes"),
+        # Interest the bank pays is income, not a charge.
+        ("JUROS S/ CAPITAL", "credit", None),
+        # A cash withdrawal moves the user's own money, like the pack's transfers.
+        ("SAQUE BANCO24HORAS", "debit", "transfers"),
+        # Brands.
+        ("ZÉ DELIVERY", "debit", "food"),
+        ("POSTO IPIRANGA", "debit", "transport"),
+        ("PETROBRAS BR", "debit", "transport"),
+        ("VELOE", "debit", "transport"),
+        ("CONECTCAR", "debit", "transport"),
+        ("ATACADAO SA", "debit", "groceries"),
+        ("PÃO DE AÇÚCAR 1234", "debit", "groceries"),
+        ("DROGARIASPACHECO", "debit", "health"),
+        ("PAGUEMENOS 0987", "debit", "health"),
+        ("TICKETMASTER BRASIL", "debit", "leisure"),
+        ("STEAMGAMES.COM", "debit", "leisure"),
+        # A surname is not a pharmacy chain.
+        ("BOLETO JOAO PACHECO", "debit", None),
+    ],
+)
+async def test_br_pack_categorizes_utilities_fees_and_brands(
+    session: AsyncSession, ids, description, txn_type, category,
+):
+    from app.services.rule_service import apply_rules_to_transaction
+
+    workspace_id, user_id = ids
+    manifest = json.loads((PACKS_DIR / "br.json").read_text(encoding="utf-8"))
+    category_key_by_rule = {
+        r["key"]: a["value"]
+        for r in manifest["contributes"]["rules"] for a in r["actions"] if a["op"] == "set_category"
+    }
+    rules = (await install_rule_pack(session, workspace_id, user_id, "BR", "pt-BR", create_missing_categories=True)).rules
+    category_ids = {
+        category_key_by_rule[r.source_key]: uuid.UUID(a["value"])
+        for r in rules for a in r.actions if a["op"] == "set_category"
+    }
+    account = Account(
+        user_id=user_id, workspace_id=workspace_id, name="Conta", type="checking",
+        balance=Decimal("0"), currency="BRL",
+    )
+    session.add(account)
+    await session.flush()
+    txn = Transaction(
+        user_id=user_id, workspace_id=workspace_id, account_id=account.id, description=description,
+        amount=Decimal("120"), date=date(2026, 11, 3), type=txn_type, currency="BRL", source="manual",
+    )
+
+    await apply_rules_to_transaction(session, user_id, txn)
+
+    expected = category_ids.get(category) if category else None
+    assert category is None or expected is not None, f"no BR rule files into {category}"
+    assert txn.category_id == expected
