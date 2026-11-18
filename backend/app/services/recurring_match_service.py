@@ -174,6 +174,15 @@ def _evaluate_candidate(
     return decision
 
 
+async def occurrence_reach(
+    session: AsyncSession, workspace_id: uuid.UUID, frequency: str,
+) -> tuple[int, int]:
+    """Days a charge may sit before and after an occurrence it fulfills."""
+    return _date_reach(
+        await reconciliation_rule_service.resolve_recurring(session, workspace_id, frequency)
+    )
+
+
 async def find_real_tx_for_occurrence(
     session: AsyncSession,
     recurring: RecurringTransaction,

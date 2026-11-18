@@ -178,6 +178,41 @@ async def test_a_schedule_paused_after_its_charge_keeps_that_month(
 
 
 @pytest.mark.asyncio
+async def test_a_completed_schedule_keeps_its_month_when_paid_the_day_before(
+    session, test_user, test_workspace, test_account,
+):
+    """December 1's last occurrence, paid by a November 30 charge, stays in December.
+
+    Generation links the charge and completes the definition; the charge
+    belongs to the December occurrence, not to November.
+    """
+    _recurring(session, test_user, test_workspace, test_account,
+               "Rent", "500", "debit", "monthly", date(2026, 12, 1),
+               end_date=date(2026, 12, 1), auto_generate=True)
+    charge = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=test_account.id, description="Rent", amount=Decimal("500"),
+        currency="BRL", date=date(2026, 11, 30), type="debit", source="manual",
+        status="posted",
+    )
+    session.add(charge)
+    await session.commit()
+
+    await generate_pending(
+        session, test_user.id, up_to=date(2026, 12, 31), workspace_id=test_workspace.id,
+    )
+    await session.refresh(charge)
+    rent = (await session.execute(
+        select(RecurringTransaction).where(RecurringTransaction.description == "Rent")
+    )).scalar_one()
+    assert charge.recurring_transaction_id == rent.id
+    assert rent.is_active is False
+
+    assert (await _summary(session, test_workspace, date(2026, 12, 1))).expenses == Decimal("500.00")
+    assert (await _summary(session, test_workspace, date(2026, 11, 1))).expenses == Decimal("0")
+
+
+@pytest.mark.asyncio
 async def test_a_paused_schedule_after_a_frequency_edit_stays_out(
     session, test_user, test_workspace, test_account,
 ):

@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import and_, func, or_, select, true
+from sqlalchemy import and_, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -306,6 +306,68 @@ def get_occurrences_in_range(
     return occurrences
 
 
+async def _charged_occurrences(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    month_start: date,
+    month_end: date,
+) -> dict[uuid.UUID, set[date]]:
+    """The month's occurrences each stopped definition charged.
+
+    A linked charge belongs to the occurrence it fulfills, not to the month
+    of its own date: generation links a charge up to the policy's reach
+    before or after the occurrence, so a December 1 occurrence can be paid
+    by a November 30 charge and must still count in December. Each charge is
+    given to the nearest occurrence within that reach.
+    """
+    stopped = (await session.execute(
+        select(RecurringTransaction).where(
+            RecurringTransaction.workspace_id == workspace_id,
+            RecurringTransaction.is_active == False,
+        )
+    )).scalars().all()
+    if not stopped:
+        return {}
+    reach = {
+        frequency: await recurring_match_service.occurrence_reach(
+            session, workspace_id, frequency
+        )
+        for frequency in {rec.frequency for rec in stopped}
+    }
+    # A charge sits at most `before` days ahead of its occurrence or `after`
+    # days behind it.
+    earliest = month_start - timedelta(days=max(before for before, _ in reach.values()))
+    latest = month_end + timedelta(days=max(after for _, after in reach.values()))
+    linked = (await session.execute(
+        select(Transaction.recurring_transaction_id, Transaction.date).where(
+            Transaction.recurring_transaction_id.in_([rec.id for rec in stopped]),
+            Transaction.date >= earliest,
+            Transaction.date < latest,
+        )
+    )).all()
+
+    by_id = {rec.id: rec for rec in stopped}
+    charged: dict[uuid.UUID, set[date]] = {}
+    for rec_id, charge_date in linked:
+        rec = by_id[rec_id]
+        before, after = reach[rec.frequency]
+        candidates = get_occurrences_in_range(
+            start=rec.start_date,
+            frequency=rec.frequency,
+            end_date=rec.end_date,
+            range_start=charge_date - timedelta(days=after),
+            range_end=charge_date + timedelta(days=before + 1),
+            intended_day=rec.day_of_month or rec.start_date.day,
+            weekend_adjustment=rec.weekend_adjustment,
+        )
+        if not candidates:
+            continue
+        occurrence = min(candidates, key=lambda day: (abs((day - charge_date).days), day))
+        if month_start <= occurrence < month_end:
+            charged.setdefault(rec_id, set()).add(occurrence)
+    return charged
+
+
 async def get_month_summary(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -333,20 +395,9 @@ async def get_month_summary(
     month_end = _advance_months(month_start, 1, 1)
     # Neither is_active nor the pointer tells a paused definition from one
     # generation completed: an edit can move the pointer of a paused one past
-    # its end date. What a stopped definition really charged in the month,
-    # through the occurrences linked to it, is what counts for it.
-    charged = dict((await session.execute(
-        select(Transaction.recurring_transaction_id, func.count())
-        .join(RecurringTransaction,
-              Transaction.recurring_transaction_id == RecurringTransaction.id)
-        .where(
-            RecurringTransaction.workspace_id == workspace_id,
-            RecurringTransaction.is_active == False,
-            Transaction.date >= month_start,
-            Transaction.date < month_end,
-        )
-        .group_by(Transaction.recurring_transaction_id)
-    )).all())
+    # its end date. What a stopped definition really charged, through the
+    # occurrences linked to it, is what counts for it.
+    charged = await _charged_occurrences(session, workspace_id, month_start, month_end)
     result = await session.execute(
         select(RecurringTransaction)
         .outerjoin(Account, RecurringTransaction.account_id == Account.id)
@@ -376,7 +427,7 @@ async def get_month_summary(
             weekend_adjustment=rec.weekend_adjustment,
         )
         if not rec.is_active:
-            occurrences = occurrences[:charged[rec.id]]
+            occurrences = [day for day in occurrences if day in charged[rec.id]]
         if not occurrences:
             continue
         template = abs(rec.amount)
