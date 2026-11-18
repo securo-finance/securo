@@ -37,6 +37,7 @@ from app.models.transaction_category_line import TransactionCategoryLine
 from app.models.user import User
 from app.plugins.provider import is_plugin_provider
 from app.providers import get_provider
+from app.providers.enable_banking import entry_identity as eb_entry_identity
 from app.providers.base import (
     AccountData,
     BankProvider,
@@ -2468,6 +2469,16 @@ async def _find_synced_duplicate(
     # Known gap: a held row the bank deleted, next to a new entry that agrees
     # on every field and on the ending of its text, is still taken for it.
     #
+    # Bankinter (PT) regenerates the reference of its recent entries on every
+    # call (#612), so the held row carries another reference and the same
+    # payload otherwise (`eb_entry_identity`). Such a row is taken only when
+    # the fetch was complete, its own id has left it, and it agrees on the
+    # currency, date and status. Two identical purchases on one day are both
+    # candidates for each entry; the oldest row goes first, and since a
+    # re-keyed row's id is then in the batch, each entry takes one row and
+    # the sync ends with as many rows as the bank lists. Known gap: a held
+    # row the bank deleted, next to an identical new entry, is taken for it.
+    #
     # A row that took over the pending hold it settled (Path 6) keeps the
     # hold's date, up to `_EB_HOLD_SETTLE_DAYS` before the booking. It is
     # compared by the date its stored booked payload carries as well, so a
@@ -2494,6 +2505,8 @@ async def _find_synced_duplicate(
         result = await session.execute(statement)
         rekey_matches = []
         late_ref_matches = []
+        rereferenced_matches = []
+        identity = eb_entry_identity(raw) if live_external_ids is not None else None
         for candidate in result.scalars():
             if candidate.external_id in incoming_external_ids:
                 continue
@@ -2530,10 +2543,26 @@ async def _find_synced_duplicate(
                 )
             ):
                 late_ref_matches.append(candidate)
+            elif (
+                identity is not None
+                and isinstance(candidate_ref, str)
+                and candidate_ref not in ("", "0")
+                and candidate.source == "sync"
+                and candidate.currency == txn_data.currency
+                and candidate.date == txn_data.date
+                and candidate.status == txn_data.status
+                and eb_entry_identity(candidate.raw_data) == identity
+            ):
+                rereferenced_matches.append(candidate)
         if len(rekey_matches) == 1:
             return rekey_matches[0]
         if not rekey_matches and len(late_ref_matches) == 1:
             return late_ref_matches[0]
+        if not rekey_matches and not late_ref_matches and rereferenced_matches:
+            return min(
+                rereferenced_matches,
+                key=lambda row: (row.created_at, str(row.id)),
+            )
 
     # Path 5: local import history from before the account was connected.
     # Posting lag and statement exports can shift the date or shorten the

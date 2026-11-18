@@ -258,6 +258,18 @@ def _entry_reference_external_id(entry_ref: str, amount_obj: dict, raw: dict) ->
     return digest[:32]
 
 
+def entry_identity(raw: dict) -> str:
+    """What an entry's id hashes besides its ``entry_reference``.
+
+    Two entries that agree on it differ only by the reference, which some
+    institutions regenerate on every call for recent entries (#612).
+    """
+    amount_obj = raw.get("transaction_amount")
+    return _entry_reference_external_id(
+        "", amount_obj if isinstance(amount_obj, dict) else {}, raw
+    )
+
+
 def _settlement_key(raw: dict) -> Optional[tuple[str, str, str, str]]:
     """Identity of one operation across its pending and booked spellings.
 

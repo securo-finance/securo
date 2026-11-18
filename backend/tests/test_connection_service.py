@@ -2115,6 +2115,143 @@ async def test_sync_connection_enable_banking_late_reference_yields_to_held_refe
     }
 
 
+def _eb_volatile_ref_payload(
+    entry_ref: str, *, remittance: str = "COMPRA CARTAO 1234 CONTINENTE LISBOA",
+) -> dict:
+    """A booked purchase as Bankinter (PT) returns it through Enable Banking
+    while it is recent: no transaction id, and an entry_reference whose suffix
+    changes on every call (#612)."""
+    return {
+        "entry_reference": entry_ref,
+        "transaction_amount": {"currency": "EUR", "amount": "80.00"},
+        "credit_debit_indicator": "DBIT",
+        "status": "BOOK",
+        "booking_date": "2026-08-14",
+        "value_date": "2026-08-14",
+        "remittance_information": [remittance],
+    }
+
+
+_VOLATILE_REFS = (
+    "000000000000948TAB040031669678",
+    "000000000000948TAB040031673544",
+    "000000000000948TAB040031677012",
+    "000000000000948TAB040031680455",
+)
+
+
+def _eb_volatile_row(user_id, workspace_id, account, txn: TransactionData):
+    return _eb_row(
+        user_id, workspace_id, account, txn.external_id, txn.raw_data, "80.00",
+        description=txn.description, original_description=txn.description,
+        date=txn.date,
+    )
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_volatile_reference_keeps_one_row(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Each sync returns the same purchase under a new entry_reference, so its
+    id changes every time. The held row takes the new id instead of a twin
+    landing on every sync (#612)."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+
+    for ref in _VOLATILE_REFS[:3]:
+        await _sync_eb(
+            session, conn, test_workspace.id, test_user.id,
+            [_eb_txn(_eb_volatile_ref_payload(ref))],
+        )
+
+    rows = await _account_rows(session, account_id)
+    assert len(rows) == 1
+    assert rows[0].external_id == _eb_txn(
+        _eb_volatile_ref_payload(_VOLATILE_REFS[2])
+    ).external_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "held_count,fetched_count", [(2, 2), (1, 2), (2, 1)],
+    ids=["two-held-two-fetched", "one-held-two-fetched", "two-held-one-fetched"],
+)
+async def test_sync_connection_enable_banking_volatile_reference_counts_same_day_twins(
+    session: AsyncSession, test_user, test_workspace, held_count, fetched_count,
+):
+    """Two identical purchases on one day are two rows. Each fetched entry
+    re-keys one held row at most, so the sync keeps as many rows as the bank
+    lists, and never fewer than it already held."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    session.add_all([
+        _eb_volatile_row(
+            test_user.id, test_workspace.id, account, _eb_txn(_eb_volatile_ref_payload(ref)),
+        )
+        for ref in _VOLATILE_REFS[:held_count]
+    ])
+    await session.commit()
+
+    fetched = [
+        _eb_txn(_eb_volatile_ref_payload(ref))
+        for ref in _VOLATILE_REFS[2:2 + fetched_count]
+    ]
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, fetched)
+
+    rows = await _account_rows(session, account_id)
+    assert len(rows) == max(held_count, fetched_count)
+    assert {txn.external_id for txn in fetched} <= {row.external_id for row in rows}
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_reference_still_listed_is_its_own_row(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A held row whose reference the bank still lists is its own purchase,
+    so an identical entry under another reference lands beside it."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    first = _eb_txn(_eb_volatile_ref_payload(_VOLATILE_REFS[0]))
+    session.add(_eb_volatile_row(test_user.id, test_workspace.id, account, first))
+    await session.commit()
+
+    second = _eb_txn(_eb_volatile_ref_payload(_VOLATILE_REFS[1]))
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [first, second])
+
+    rows = await _account_rows(session, account_id)
+    assert {row.external_id for row in rows} == {first.external_id, second.external_id}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ["other-merchant", "truncated", "incomplete"])
+async def test_sync_connection_enable_banking_new_reference_needs_same_entry_and_full_fetch(
+    session: AsyncSession, test_user, test_workspace, case,
+):
+    """A new reference re-keys a held row only when the rest of the entry is
+    the same and the fetch was complete: another merchant is another purchase,
+    and a fetch cut short cannot tell a held row that left the feed from one it
+    never reached."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    remittance = (
+        {"remittance": "COMPRA CARTAO 1234 PINGO DOCE PORTO"}
+        if case == "other-merchant" else {}
+    )
+    held = _eb_txn(_eb_volatile_ref_payload(_VOLATILE_REFS[0], **remittance))
+    session.add(_eb_volatile_row(test_user.id, test_workspace.id, account, held))
+    await session.commit()
+
+    fetched = _eb_txn(_eb_volatile_ref_payload(_VOLATILE_REFS[1]))
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, [fetched],
+        truncated=case == "truncated", incomplete=case == "incomplete",
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert {row.external_id for row in rows} == {held.external_id, fetched.external_id}
+
+
 _TRANSFER_FIRST_REMITTANCE = (
     "TRANSFERENCIA A FAVOR DE Cuenta Ahorro CONCEPTO cuota comunidad 2026 portal 3"
 )
