@@ -212,6 +212,23 @@ def _txn_fingerprint(account_uid: str, raw: dict) -> str:
     return digest[:32]
 
 
+def is_account_txn_id(account_uid: str, external_id: Optional[str], raw: Any) -> bool:
+    """Whether `external_id` is the id this account uid gives the entry in `raw`.
+
+    An entry without a reference is keyed by a fingerprint that includes the
+    account uid, and EB issues a new uid on every reauthorisation. A row
+    stored under the old uid then has an id the new feed never sends, so its
+    absence from that feed says nothing. An id from an entry reference does
+    not depend on the uid.
+    """
+    if not isinstance(raw, dict):
+        return False
+    entry_ref = (raw.get("entry_reference") or "").strip()
+    if entry_ref and entry_ref != "0":
+        return True
+    return external_id == _txn_fingerprint(account_uid, raw)
+
+
 def _canonical_amount(amount_obj: Any) -> str:
     """Canonical string for an EB amount.
 

@@ -8,7 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.app_clock import app_today
 from app.models.account import Account
 from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.asset import Asset
@@ -1903,24 +1902,49 @@ async def _eb_fetch(booked: list[dict], pending: list[dict]) -> list[Transaction
         )
 
 
+#: The day the hold tests sync on. The window a feed covers is read from
+#: `last_sync_at`, so both it and `app_today` are pinned to this day.
+_HOLD_TODAY = date(2026, 11, 5)
+
+
+@pytest.fixture
+def _hold_clock(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.connection_service.app_today", lambda: _HOLD_TODAY,
+    )
+
+
+async def _hold_account(session, user_id, workspace_id, *, last_sync_days_ago: int = 0):
+    conn, account = await _eb_account(session, user_id, workspace_id)
+    conn.last_sync_at = datetime(
+        _HOLD_TODAY.year, _HOLD_TODAY.month, _HOLD_TODAY.day, tzinfo=timezone.utc,
+    ) - timedelta(days=last_sync_days_ago)
+    return conn, account
+
+
 def _blank_hold(days_ago: int, amount: str = "12.50") -> dict:
     """A pending card purchase as some banks list it: amount, direction, date."""
     return {
         "status": "PDNG",
         "transaction_amount": {"amount": amount, "currency": "EUR"},
         "credit_debit_indicator": "DBIT",
-        "transaction_date": (app_today() - timedelta(days=days_ago)).isoformat(),
+        "transaction_date": (_HOLD_TODAY - timedelta(days=days_ago)).isoformat(),
     }
 
 
-async def _hold_blank_holds(session, user_id, workspace_id, account, holds, **fields):
+async def _hold_blank_holds(
+    session, user_id, workspace_id, account, holds, *, account_uid="eb-account", **fields,
+):
     """Store each hold as the pending row a sync would have made of it."""
     rows = []
     for raw in holds:
-        parsed = _eb_txn(raw, "pending")
+        parsed = EnableBankingProvider()._build_transaction(account_uid, raw, "pending", "auto")
+        assert parsed is not None
+        fields.setdefault("original_description", "Transaction")
         row = _eb_row(
             user_id, workspace_id, account, parsed.external_id, raw, str(parsed.amount),
-            status="pending", date=parsed.date, description="Transaction", **fields,
+            status="pending", date=parsed.date,
+            **{"description": "Transaction", **fields},
         )
         session.add(row)
         rows.append(row)
@@ -1929,13 +1953,14 @@ async def _hold_blank_holds(session, user_id, workspace_id, account, holds, **fi
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("_hold_clock")
 async def test_sync_connection_enable_banking_expires_cancelled_hold(
     session: AsyncSession, test_user, test_workspace,
 ):
     """A hold the bank dropped from a complete feed, past the days a booked
     entry could still claim it, was cancelled: its row goes (#1232). A hold
     still in the feed, or one that left it too recently, stays."""
-    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    conn, account = await _hold_account(session, test_user.id, test_workspace.id)
     account_id = account.id
     _cancelled, live, recent = await _hold_blank_holds(
         session, test_user.id, test_workspace.id, account,
@@ -1952,27 +1977,43 @@ async def test_sync_connection_enable_banking_expires_cancelled_hold(
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("_hold_clock")
 @pytest.mark.parametrize(
-    "case", ["incomplete", "truncated", "before-window", "ignored", "paired", "attached"],
+    "case",
+    [
+        "incomplete", "truncated", "before-window", "other-uid",
+        "ignored", "paired", "attached", "noted", "adopted-manual",
+    ],
 )
 async def test_sync_connection_enable_banking_keeps_hold_without_evidence(
     session: AsyncSession, test_user, test_workspace, case,
 ):
-    """A fetch cut short, or a hold dated before the window the feed covered,
-    says nothing about it. A row the user hid, paired or attached a file to
-    is the user's, and stays too."""
+    """A fetch cut short, a hold dated before the window the feed covered, or
+    one keyed under the uid of an earlier session (a reauthorisation changes
+    it) says nothing about it. A row the user hid, paired, attached a file
+    to, wrote a note on or typed themselves (a manual entry the sync
+    adopted) is the user's, and stays too."""
     from app.models.transaction_attachment import TransactionAttachment
 
-    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    # The sync reads from 14 days before the last one.
+    conn, account = await _hold_account(
+        session, test_user.id, test_workspace.id,
+        last_sync_days_ago=10 if case == "before-window" else 0,
+    )
     account_id = account.id
-    if case == "before-window":
-        # The sync reads from 14 days before the last one.
-        conn.last_sync_at = datetime.now(timezone.utc) - timedelta(days=10)
     fields: dict = {}
     if case == "ignored":
         fields["is_ignored"] = True
     if case == "paired":
         fields["transfer_pair_id"] = uuid.uuid4()
+    if case == "other-uid":
+        fields["account_uid"] = "eb-account-before-reauth"
+    if case == "noted":
+        fields["notes"] = "Hotel deposit, refund due"
+    if case == "adopted-manual":
+        # A manual entry the fuzzy match adopted: the text the user typed,
+        # the bank's text kept as provenance.
+        fields["description"] = "Dinner with Ana"
     [(held_id, _raw)] = await _hold_blank_holds(
         session, test_user.id, test_workspace.id, account,
         [_blank_hold(30 if case == "before-window" else 10)], **fields,
@@ -1994,12 +2035,13 @@ async def test_sync_connection_enable_banking_keeps_hold_without_evidence(
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("_hold_clock")
 async def test_sync_connection_other_provider_keeps_hold_gone_from_feed(
     session: AsyncSession, test_user, test_workspace,
 ):
     """Other providers stop listing a pending row they still hold (Pluggy
     re-reads them by date), so only Enable Banking rows expire."""
-    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    conn, account = await _hold_account(session, test_user.id, test_workspace.id)
     conn.provider = "test"
     account_id = account.id
     [(held_id, _raw)] = await _hold_blank_holds(

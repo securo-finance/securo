@@ -38,6 +38,7 @@ from app.models.transaction_category_line import TransactionCategoryLine
 from app.models.user import User
 from app.plugins.provider import is_plugin_provider
 from app.providers import get_provider
+from app.providers.enable_banking import is_account_txn_id
 from app.providers.base import (
     AccountData,
     BankProvider,
@@ -2694,9 +2695,29 @@ _EB_CANCELLED_HOLD_DAYS = _EB_HOLD_SETTLE_DAYS + 2
 _EB_SURE_FEED_DAYS = 88
 
 
+def _holds_user_work(tx: Transaction) -> bool:
+    """Whether a row carries something only the user put there.
+
+    A manual entry the sync adopted keeps the text the user typed beside the
+    bank's text in `original_description`, so an edited or typed description
+    shows as the two differing. A row whose provenance is unknown (no
+    `original_description`) counts as the user's too.
+    """
+    if (tx.notes or "").strip():
+        return True
+    if tx.reporting_date_override is not None or tx.recurring_transaction_id is not None:
+        return True
+    if tx.has_category_lines:
+        return True
+    if tx.original_description is None:
+        return True
+    return tx.description != tx.original_description and not tx.description_is_rule_managed
+
+
 async def _expire_cancelled_holds(
     session: AsyncSession,
     account_id: uuid.UUID,
+    account_uid: str,
     live_external_ids: set[str],
     since: date,
 ) -> None:
@@ -2706,14 +2727,20 @@ async def _expire_cancelled_holds(
     and never books, so its row would stay pending, and counted, for good.
     Only a complete feed is evidence: the caller passes every id it returned,
     pending ones included, and a row counts as gone only when its date falls
-    inside the window that feed surely covered. Rows the user hid, paired as
-    a transfer or attached a file to are left alone.
+    inside the window that feed surely covered, and its id is one this
+    account uid would send (a reauthorisation changes the uid, and with it
+    the id of an entry without a reference). Rows the user hid, paired as a
+    transfer, attached a file to or otherwise worked on are left alone.
     """
     today = app_today()
     window_start = max(since, today - timedelta(days=_EB_SURE_FEED_DAYS))
     cutoff = today - timedelta(days=_EB_CANCELLED_HOLD_DAYS)
+    # Lock the candidates before reading their attachments, so a file
+    # uploaded while the sync runs either lands first and keeps the row, or
+    # waits for the delete.
     result = await session.execute(
-        select(Transaction).where(
+        select(Transaction)
+        .where(
             Transaction.account_id == account_id,
             Transaction.source == "sync",
             Transaction.status == "pending",
@@ -2721,11 +2748,24 @@ async def _expire_cancelled_holds(
             Transaction.transfer_pair_id.is_(None),
             Transaction.date >= window_start,
             Transaction.date <= cutoff,
-            ~exists().where(TransactionAttachment.transaction_id == Transaction.id),
         )
+        .with_for_update()
     )
-    for tx in result.scalars().all():
-        if tx.external_id not in live_external_ids:
+    gone = [
+        tx for tx in result.scalars().all()
+        if tx.external_id not in live_external_ids
+        and is_account_txn_id(account_uid, tx.external_id, tx.raw_data)
+        and not _holds_user_work(tx)
+    ]
+    if not gone:
+        return
+    attached = set((await session.execute(
+        select(TransactionAttachment.transaction_id).where(
+            TransactionAttachment.transaction_id.in_([tx.id for tx in gone])
+        )
+    )).scalars())
+    for tx in gone:
+        if tx.id not in attached:
             await session.delete(tx)
 
 
@@ -3849,7 +3889,11 @@ async def sync_connection(
             # above was cancelled. The first sync has no rows to expire.
             if claims_holds and since is not None:
                 await _expire_cancelled_holds(
-                    session, account.id, live_txn_external_ids[account.id], since
+                    session,
+                    account.id,
+                    acc_data.external_id,
+                    live_txn_external_ids[account.id],
+                    since,
                 )
 
             # Reconcile the opening balance after any new transactions land so
