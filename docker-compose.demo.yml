@@ -1,4 +1,4 @@
-# Self-contained Compose stack for the public demo at kimi.usesecuro.com.
+# Self-contained Compose stack for the public demo at demo.usesecuro.com.
 # Deployed by Dokploy from the `demo` branch — no overlays or external
 # compose files referenced. Builds backend + frontend from this same
 # branch so the demo-only code (DEMO_MODE flag, auto-login, banner,
@@ -22,7 +22,9 @@ x-backend-env: &backend-env
   DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/securo
   SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set on the Dokploy side}
   DEBUG: "false"
-  FRONTEND_URL: https://kimi.usesecuro.com
+  # CORS allow-list and OAuth callback base: must be the demo's own host or
+  # the browser is told the origin is production.
+  FRONTEND_URL: https://demo.usesecuro.com
   REDIS_URL: redis://redis:6379/0
   STORAGE_LOCAL_PATH: /app/data/attachments
 
@@ -32,7 +34,7 @@ x-backend-env: &backend-env
   # Bank integration disabled in demo.
   PLUGGY_CLIENT_ID: ""
   PLUGGY_CLIENT_SECRET: ""
-  PLUGGY_OAUTH_REDIRECT_URI: https://kimi.usesecuro.com/oauth/callback
+  PLUGGY_OAUTH_REDIRECT_URI: https://demo.usesecuro.com/oauth/callback
 
   # FX provider disabled — seed_demo.py generates daily rates locally.
   OPENEXCHANGERATES_APP_ID: ""
@@ -112,7 +114,7 @@ services:
     restart: unless-stopped
     environment:
       BACKEND_URL: http://backend:8000
-      FRONTEND_URL: https://kimi.usesecuro.com
+      FRONTEND_URL: https://demo.usesecuro.com
     depends_on:
       - backend
     networks:
@@ -132,6 +134,6 @@ networks:
   securo-demo-network:
     driver: bridge
   # Dokploy ingress network — Traefik routes inbound HTTPS traffic for
-  # kimi.usesecuro.com through here to the frontend service.
+  # demo.usesecuro.com through here to the frontend service.
   dokploy-network:
     external: true
