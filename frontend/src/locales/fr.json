@@ -2689,6 +2689,15 @@
     "brandSelfHosted": "Auto-hébergé",
     "brandPrivate": "Confidentiel par conception"
   },
+  "accountantExport": {
+    "title": "Export pour le comptable",
+    "description": "Téléchargez les transactions catégorisées et le compte de résultat d'une période, dans le format que le logiciel de votre comptable ouvre directement. Les montants sont la valeur totale de la transaction, avant tout partage avec d'autres personnes.",
+    "startDate": "Date de début",
+    "endDate": "Date de fin",
+    "download": "Télécharger l'archive",
+    "error": "Impossible de générer l'export",
+    "formatHint": "Un zip avec transactions.csv et profit-and-loss.csv, avec les séparateurs et l'encodage que les tableurs et logiciels comptables lisent sans ajustement. Chaque montant est la valeur totale de la transaction, pas votre part d'un partage."
+  },
   "backup": {
     "restore": {
       "button": "Restaurer depuis une sauvegarde",
