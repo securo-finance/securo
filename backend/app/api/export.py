@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
@@ -111,7 +112,12 @@ async def backup(
     workspace from its Asset and is filtered transitively.
     """
     payload = await collect_workspace_export(ctx, session)
-    return _as_download(build_backup_archive(payload.files, attachments=payload.attachments))
+    # Zipping is CPU and disk work, so it runs off the event loop: a big
+    # workspace must not stall every other request on the worker.
+    archive = await asyncio.to_thread(
+        build_backup_archive, payload.files, attachments=payload.attachments
+    )
+    return _as_download(archive)
 
 
 @router.post("/backup")
@@ -128,9 +134,10 @@ async def backup_protected(
     """
     password = body.password.get_secret_value() if body.password else None
     payload = await collect_workspace_export(ctx, session)
-    return _as_download(
-        build_backup_archive(payload.files, password, attachments=payload.attachments)
+    archive = await asyncio.to_thread(
+        build_backup_archive, payload.files, password, attachments=payload.attachments
     )
+    return _as_download(archive)
 
 
 @router.post("/restore", response_model=RestoreResult, status_code=status.HTTP_201_CREATED)
@@ -156,7 +163,9 @@ async def restore(
     # until the commit succeeds, so a failure at any step can remove it.
     uploaded_keys: list[str] = []
     try:
-        contents = open_archive(file.file, password or None)
+        # Reading, decrypting and unzipping the whole upload blocks, so it runs
+        # in a worker thread and the loop keeps serving other requests.
+        contents = await asyncio.to_thread(open_archive, file.file, password or None)
         result = await restore_workspace(session, user, contents, uploaded_keys=uploaded_keys)
         await session.commit()
     except RestoreError as exc:
