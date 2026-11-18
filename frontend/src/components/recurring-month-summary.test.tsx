@@ -51,13 +51,21 @@ describe('RecurringMonthSummary', () => {
     expect(api.recurring.monthSummary).toHaveBeenCalledWith('2026-12')
   })
 
-  it('asks for the month the user steps to', async () => {
+  it('asks for the month the user steps to and shows its totals', async () => {
+    api.recurring.monthSummary.mockImplementation(async (month: string) =>
+      month === '2027-01'
+        ? summary(month, { income: '6100.00', expenses: '600.00', net: '5500.00' })
+        : summary(month),
+    )
     const { user } = renderWithProviders(<RecurringMonthSummary />)
     await screen.findByText(formatCurrency(5000, 'BRL', 'en-US'))
 
     await user.click(screen.getByRole('button', { name: 'Next' }))
 
     expect(api.recurring.monthSummary).toHaveBeenLastCalledWith('2027-01')
+    expect(await screen.findByText(formatCurrency(6100, 'BRL', 'en-US'))).toBeInTheDocument()
+    expect(screen.getByText(formatCurrency(5500, 'BRL', 'en-US'))).toBeInTheDocument()
+    expect(screen.queryByText(formatCurrency(5000, 'BRL', 'en-US'))).not.toBeInTheDocument()
   })
 
   it('says what was left out of the totals', async () => {

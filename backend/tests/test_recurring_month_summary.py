@@ -7,6 +7,7 @@ import pytest
 
 from app.models.account import Account
 from app.models.category import Category
+from app.models.fx_rate import FxRate
 from app.models.recurring_transaction import RecurringTransaction
 from app.services.recurring_transaction_service import get_month_summary
 
@@ -126,7 +127,36 @@ async def test_transfers_and_ignored_stay_out_of_the_totals(
 
 
 @pytest.mark.asyncio
-async def test_foreign_currency_uses_stamped_amount_and_never_1_to_1(
+async def test_foreign_currency_converts_from_its_native_amount(
+    session, test_user, test_workspace, test_account,
+):
+    """100 USD reads as ~500 BRL for a BRL viewer, not as the stamped 100.
+
+    ``amount_primary`` is stamped in the primary currency of whoever created
+    the definition (here USD, so it equals the native amount). The viewer's
+    primary is BRL, and the month's first-day rate is 5: the total has to be
+    500, not the 100 the stamp would give nor the 600 today's rate would.
+    """
+    session.add(FxRate(
+        id=uuid.uuid4(), base_currency="USD", quote_currency="BRL",
+        date=date(2026, 10, 1), rate=Decimal("5.0"), source="test",
+    ))
+    session.add(FxRate(
+        id=uuid.uuid4(), base_currency="USD", quote_currency="BRL",
+        date=date(2026, 11, 17), rate=Decimal("6.0"), source="test",
+    ))
+    _recurring(session, test_user, test_workspace, test_account,
+               "Stamped", "100", "debit", "monthly", date(2026, 1, 1),
+               currency="USD", amount_primary=Decimal("100.00"))
+    await session.commit()
+
+    summary = await _summary(session, test_workspace, date(2026, 10, 15))
+    assert summary.expenses == Decimal("500.00")
+    assert summary.unconverted_count == 0
+
+
+@pytest.mark.asyncio
+async def test_currency_without_a_rate_stays_out_never_1_to_1(
     session, test_user, test_workspace, test_account,
 ):
     _recurring(session, test_user, test_workspace, test_account,
@@ -136,9 +166,10 @@ async def test_foreign_currency_uses_stamped_amount_and_never_1_to_1(
                "No rate", "10", "debit", "monthly", date(2026, 1, 1), currency="EUR")
     await session.commit()
 
-    summary = await _summary(session, test_workspace, date(2026, 12, 1))
-    assert summary.expenses == Decimal("55.00")
-    assert summary.unconverted_count == 1
+    summary = await _summary(session, test_workspace, date(2026, 10, 1))
+    # Neither the USD stamp nor a 1:1 read of the EUR amount counts.
+    assert summary.expenses == Decimal("0")
+    assert summary.unconverted_count == 2
 
 
 @pytest.mark.asyncio

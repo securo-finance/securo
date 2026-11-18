@@ -320,8 +320,10 @@ async def get_month_summary(
     Occurrences already generated count too: this is the month's plan, not
     what is still to come. Ignored categories are left out, and so are
     transfer-like ones, which are only counted. An amount in another
-    currency uses its stamped primary amount, or the month's first-day rate;
-    with neither, it is left out and counted, never read 1:1.
+    currency converts from its native amount at the month's first-day rate,
+    not from the stamped primary amount, which was taken in the currency of
+    whoever created the definition; without a rate, it is left out and
+    counted, never read 1:1.
     """
     month_start = month.replace(day=1)
     month_end = _advance_months(month_start, 1, 1)
@@ -371,8 +373,6 @@ async def get_month_summary(
         currency = (rec.currency or "").upper()
         if currency == primary_currency.upper():
             primary = template
-        elif rec.amount_primary is not None:
-            primary = abs(rec.amount_primary)
         else:
             if currency not in rates:
                 rates[currency] = (await convert_or_none(
