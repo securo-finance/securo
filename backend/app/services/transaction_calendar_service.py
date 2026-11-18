@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Sequence
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Literal, Optional, cast
@@ -377,10 +378,32 @@ def _is_transfer_part(tx: Transaction, category: Optional[Category]) -> bool:
     )
 
 
-def _is_transfer_item(tx: Transaction, parts: list[tuple[Optional[Category], float]]) -> bool:
-    """The row reads as a transfer only when all of it is one."""
-    return bool(tx.transfer_pair_id) or all(
+def _all_parts_are_transfers(
+    parts: Sequence[tuple[Optional[Category], float]],
+) -> bool:
+    """Every part left to count is transfer-like, and at least one is left.
+
+    The empty case is the point: `all([])` is True, so a split whose lines
+    were all dropped (their categories are ignored) used to read as a
+    transfer even though nothing of it counts as a transfer at all.
+    """
+    return bool(parts) and all(
         bool(category and category.treat_as_transfer) for category, _ in parts
+    )
+
+
+def _is_transfer_item(tx: Transaction, parts: list[tuple[Optional[Category], float]]) -> bool:
+    """Whether the row itself is badged as a transfer.
+
+    A linked pair leg and a row the app created as a transfer (`source`) are
+    transfers on their own. A split is one only when every part of it is: a
+    row with a transfer part and an expense part is not a transfer row, it
+    simply lands part by part in the day's buckets (issue #993).
+    """
+    return (
+        bool(tx.transfer_pair_id)
+        or tx.source == "transfer"
+        or _all_parts_are_transfers(parts)
     )
 
 
@@ -587,12 +610,18 @@ async def _project_recurring_items(
         is_ignored = bool(category and category.is_ignored)
         template_total = abs(float(rec.amount or 0))
         if rec.has_category_lines and rec.category_lines and template_total:
-            parts = [
-                (bool(line.category and line.category.treat_as_transfer), float(line.amount) / template_total)
+            part_categories = [
+                (line.category, float(line.amount) / template_total)
                 for line in rec.category_lines
                 if not (line.category and line.category.is_ignored)
             ]
-            is_transfer = all(part_is_transfer for part_is_transfer, _ in parts)
+            parts = [
+                (bool(category and category.treat_as_transfer), ratio)
+                for category, ratio in part_categories
+            ]
+            # Same rule as a posted split: nothing left to count is not a
+            # transfer (issue #993).
+            is_transfer = _all_parts_are_transfers(part_categories)
         else:
             parts = [(is_transfer, 1.0)]
         if not is_ignored:

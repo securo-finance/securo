@@ -9,7 +9,11 @@ from app.models.account import Account
 from app.models.category import Category
 from app.models.fx_rate import FxRate
 from app.models.recurring_transaction import RecurringTransaction
+from app.models.recurring_transaction_category_line import (
+    RecurringTransactionCategoryLine,
+)
 from app.models.transaction import Transaction
+from app.models.transaction_category_line import TransactionCategoryLine
 from app.services.transaction_calendar_service import get_transaction_calendar
 
 
@@ -1133,3 +1137,229 @@ async def test_transaction_calendar_shows_closed_account_history_but_not_its_bal
     assert july_3.items[0].description == "Old fee"
     # The balance is what the open accounts hold; the closed account is not part of it.
     assert july_3.ending_balance == 1000.0
+
+
+@pytest.mark.asyncio
+async def test_transaction_calendar_keeps_a_plain_row_between_transfers_as_expense(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Issue #993: a common expense on the same day as two transfers must not
+    borrow the transfer badge or leave the expense bucket."""
+    checking = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Checking", type="checking", balance=Decimal("0"), currency="BRL",
+    )
+    savings = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Savings", type="savings", balance=Decimal("0"), currency="BRL",
+    )
+    groceries = Category(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Groceries", icon="shopping-cart", color="#f97316",
+    )
+    session.add_all([checking, savings, groceries])
+    await session.flush()
+
+    out_pair = uuid.uuid4()
+    back_pair = uuid.uuid4()
+    session.add_all([
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=checking.id, description="To savings", amount=Decimal("100"),
+            currency="BRL", date=date(2026, 7, 8), type="debit", source="manual",
+            transfer_pair_id=out_pair,
+        ),
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=savings.id, description="From checking", amount=Decimal("100"),
+            currency="BRL", date=date(2026, 7, 8), type="credit", source="manual",
+            transfer_pair_id=out_pair,
+        ),
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=checking.id, category_id=groceries.id, description="Market",
+            amount=Decimal("42"), currency="BRL", date=date(2026, 7, 8),
+            type="debit", source="manual",
+        ),
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=savings.id, description="Back to checking", amount=Decimal("30"),
+            currency="BRL", date=date(2026, 7, 8), type="debit", source="manual",
+            transfer_pair_id=back_pair,
+        ),
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=checking.id, description="Back from savings", amount=Decimal("30"),
+            currency="BRL", date=date(2026, 7, 8), type="credit", source="manual",
+            transfer_pair_id=back_pair,
+        ),
+    ])
+    await session.commit()
+
+    calendar = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 7, 1)
+    )
+
+    july_8 = next(day for day in calendar.days if day.date == date(2026, 7, 8))
+    items = {item.description: item for item in july_8.items}
+    assert items["Market"].is_transfer is False
+    assert items["To savings"].is_transfer is True
+    assert items["Back from savings"].is_transfer is True
+    assert july_8.actual_expense == 42.0
+    assert july_8.actual_income == 0.0
+    assert july_8.actual_transfer_net == 0.0
+
+
+@pytest.mark.asyncio
+async def test_transaction_calendar_split_with_all_lines_ignored_is_not_a_transfer(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Issue #993: a split whose lines all fell in ignored categories has no
+    part left to count, and that used to satisfy `all([])` as a transfer."""
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Person", type="checking", balance=Decimal("0"), currency="BRL",
+    )
+    ignored_category = Category(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Hidden", icon="eye-off", color="#6b7280", is_ignored=True,
+    )
+    session.add_all([account, ignored_category])
+    await session.flush()
+
+    split = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=account.id, description="Split hidden", amount=Decimal("50"),
+        currency="BRL", date=date(2026, 7, 8), type="debit", source="manual",
+        has_category_lines=True,
+    )
+    session.add(split)
+    await session.flush()
+    session.add(TransactionCategoryLine(
+        id=uuid.uuid4(), workspace_id=test_workspace.id, transaction_id=split.id,
+        category_id=ignored_category.id, amount=Decimal("50"), position=0,
+    ))
+    await session.commit()
+
+    calendar = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 7, 1)
+    )
+
+    july_8 = next(day for day in calendar.days if day.date == date(2026, 7, 8))
+    assert july_8.items[0].is_transfer is False
+    assert july_8.has_transfer is False
+    assert july_8.actual_expense == 0.0
+    assert july_8.actual_income == 0.0
+
+
+@pytest.mark.asyncio
+async def test_transaction_calendar_badges_an_unlinked_source_transfer_row(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Issue #993: the row the app created as a transfer keeps the badge even
+    once its pair is gone, matching the bucket its amount lands in."""
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Person", type="checking", balance=Decimal("0"), currency="BRL",
+    )
+    session.add(account)
+    await session.flush()
+    session.add(Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=account.id, description="Unlinked leg", amount=Decimal("80"),
+        currency="BRL", date=date(2026, 7, 8), type="credit", source="transfer",
+    ))
+    await session.commit()
+
+    calendar = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 7, 1)
+    )
+
+    july_8 = next(day for day in calendar.days if day.date == date(2026, 7, 8))
+    assert july_8.items[0].is_transfer is True
+    assert july_8.has_transfer is True
+    assert july_8.actual_income == 0.0
+
+
+@pytest.mark.asyncio
+async def test_transaction_calendar_badges_a_split_whose_lines_are_all_transfers(
+    session: AsyncSession, test_user, test_workspace
+):
+    """The reported row (#993): a split filed entirely under a transfer
+    category reads as a transfer, the same as the transactions list does."""
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Person", type="checking", balance=Decimal("0"), currency="BRL",
+    )
+    transfer_category = Category(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Umbuchungen", icon="repeat", color="#0ea5e9", treat_as_transfer=True,
+    )
+    session.add_all([account, transfer_category])
+    await session.flush()
+
+    split = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=account.id, description="Split transfer", amount=Decimal("184.80"),
+        currency="BRL", date=date(2026, 7, 8), type="credit", source="manual",
+        has_category_lines=True,
+    )
+    session.add(split)
+    await session.flush()
+    session.add(TransactionCategoryLine(
+        id=uuid.uuid4(), workspace_id=test_workspace.id, transaction_id=split.id,
+        category_id=transfer_category.id, amount=Decimal("184.80"), position=0,
+    ))
+    await session.commit()
+
+    calendar = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 7, 1)
+    )
+
+    july_8 = next(day for day in calendar.days if day.date == date(2026, 7, 8))
+    assert july_8.items[0].is_transfer is True
+    assert july_8.has_transfer is True
+    assert july_8.actual_income == 0.0
+
+
+@pytest.mark.asyncio
+async def test_transaction_calendar_projected_split_with_all_lines_ignored_is_not_a_transfer(
+    session: AsyncSession, test_user, test_workspace
+):
+    """The same `all([])` case on a recurring template (#993)."""
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Person", type="checking", balance=Decimal("0"), currency="BRL",
+    )
+    ignored_category = Category(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Hidden", icon="eye-off", color="#6b7280", is_ignored=True,
+    )
+    session.add_all([account, ignored_category])
+    await session.flush()
+
+    recurring = RecurringTransaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=account.id, description="Split hidden", amount=Decimal("50"),
+        currency="BRL", type="debit", frequency="monthly",
+        start_date=date(2026, 7, 10), next_occurrence=date(2026, 7, 10),
+        has_category_lines=True,
+    )
+    session.add(recurring)
+    await session.flush()
+    session.add(RecurringTransactionCategoryLine(
+        id=uuid.uuid4(), workspace_id=test_workspace.id,
+        recurring_transaction_id=recurring.id, category_id=ignored_category.id,
+        amount=Decimal("50"), position=0,
+    ))
+    await session.commit()
+
+    calendar = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 7, 1)
+    )
+
+    july_10 = next(day for day in calendar.days if day.date == date(2026, 7, 10))
+    assert july_10.items[0].is_transfer is False
+    assert july_10.has_transfer is False
+    assert july_10.projected_expense == 0.0
+    assert july_10.projected_income == 0.0
