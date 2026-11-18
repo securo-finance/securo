@@ -6,6 +6,7 @@ for every provider and for manual and scheduled syncs alike. The next sync
 that reads data clears it, and so does a reconnect.
 """
 
+import uuid
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
@@ -177,6 +178,22 @@ def test_a_malformed_stored_failure_is_not_returned():
     assert conn.last_sync_failure is None
     conn.settings = {LAST_SYNC_FAILURE_KEY: {"code": "rate_limited", "at": "not a date"}}
     assert conn.last_sync_failure is None
+
+
+@pytest.mark.parametrize("at", ["2011-W01-2T00:05:23.283", "2026-11-18"], ids=["iso-week", "date"])
+def test_a_stored_time_in_another_iso_form_still_reads(at):
+    """fromisoformat takes forms the API schema refuses; the read must not 500."""
+    conn = BankConnection(settings={LAST_SYNC_FAILURE_KEY: {"code": "rate_limited", "at": at}})
+    failure = conn.last_sync_failure
+    assert failure is not None
+    assert failure["at"] == datetime.fromisoformat(at).isoformat()
+    conn.id, conn.workspace_id, conn.user_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    for key in ("provider", "external_id", "institution_name", "status"):
+        setattr(conn, key, "x")
+    conn.created_at = datetime.now(timezone.utc)
+    read = BankConnectionRead.model_validate(conn)
+    assert read.last_sync_failure is not None
+    assert read.last_sync_failure.at == datetime.fromisoformat(at)
 
 
 def test_a_malformed_detail_does_not_break_the_connection_read():

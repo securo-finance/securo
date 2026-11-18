@@ -54,9 +54,12 @@ class BankConnection(Base):
         if not isinstance(value, dict) or value.get("code") not in SYNC_FAILURE_CODES:
             return None
         try:
-            datetime.fromisoformat(value["at"])
+            at = datetime.fromisoformat(value["at"])
         except (KeyError, TypeError, ValueError):
             return None
+        # fromisoformat takes forms (an ISO week date, a bare date) the API
+        # schema refuses; hand it one it reads.
+        value = {**value, "at": at.isoformat()}
         detail = value.get("detail")
         if detail is not None and not isinstance(detail, str):
             # A malformed detail must not take the whole connections list down.

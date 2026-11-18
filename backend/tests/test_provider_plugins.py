@@ -750,3 +750,62 @@ async def test_new_values_clear_the_reason_the_old_ones_left_on_the_bank(
 
     bank = await _bank(session, connection)
     assert bank.last_sync_failure is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "values", [{}, {"api_key": "sk_live_1"}, {"api_key": "  "}], ids=["rename", "same-key", "blank-key"]
+)
+async def test_a_rename_or_the_same_values_keep_the_reason_on_the_bank(
+    session: AsyncSession, ids, provider_catalog, plugin_runner, sync_locks, values
+):
+    """Nothing about the credentials changed, so the bank's notice still holds."""
+    connection = await _provider_connection(session, ids)
+    bank = await _bank(session, connection)
+    failure = {"code": "consent_expired", "at": datetime.now(timezone.utc).isoformat(), "detail": None}
+    bank.settings = {**(bank.settings or {}), "last_sync_failure": failure}
+    await session.commit()
+
+    await connections.update_values(session, connection, name="Renamed", values=values)
+
+    bank = await _bank(session, connection)
+    assert bank.display_name == "Renamed"
+    assert bank.last_sync_failure is not None
+    assert bank.last_sync_failure["code"] == "consent_expired"
+
+
+@pytest.mark.asyncio
+async def test_an_oauth_return_without_new_secrets_keeps_the_reason_on_the_bank(
+    session: AsyncSession, ids, provider_catalog, plugin_runner, sync_locks, monkeypatch
+):
+    connection = await _provider_connection(session, ids)
+    bank = await _bank(session, connection)
+    failure = {"code": "consent_expired", "at": datetime.now(timezone.utc).isoformat(), "detail": None}
+    bank.settings = {**(bank.settings or {}), "last_sync_failure": failure}
+    await session.commit()
+    workspace_id, user_id = ids
+
+    async def consume(state):
+        return {
+            "kind": "plugin",
+            "user_id": str(user_id),
+            "workspace_id": str(workspace_id),
+            "connection_id": str(connection.id),
+        }
+
+    async def exchange(session, connection, method, params):
+        return {"secrets": {}}, vault.unseal(connection.secrets)
+
+    monkeypatch.setattr(connections.oauth_state, "consume_state", consume)
+    monkeypatch.setattr(connections, "_call", exchange)
+    await connections.finish_oauth(session, workspace_id=workspace_id, user_id=user_id, code="c", state="s")
+    bank = await _bank(session, connection)
+    assert bank.last_sync_failure is not None
+
+    async def signed_in(session, connection, method, params):
+        return {"secrets": {"access_token": "t"}}, vault.unseal(connection.secrets)
+
+    monkeypatch.setattr(connections, "_call", signed_in)
+    await connections.finish_oauth(session, workspace_id=workspace_id, user_id=user_id, code="c", state="s")
+    bank = await _bank(session, connection)
+    assert bank.last_sync_failure is None

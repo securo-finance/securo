@@ -270,6 +270,7 @@ async def _update_values(
     if unknown:
         raise PluginConnectionError(f"unknown fields: {', '.join(sorted(unknown))}")
     kept = {**{k: v for k, v in config.items() if k in fields}, **{k: v for k, v in secrets.items() if k in fields}}
+    changed = any(kept.get(k) != v for k, v in given.items())
     new_config, new_secrets = _split(integration, {**kept, **given})
     connection.config = new_config
     # The form's secrets replace theirs; everything else the plugin or Securo stored stays.
@@ -284,7 +285,9 @@ async def _update_values(
         bank = await session.get(BankConnection, connection.bank_connection_id)
         if bank is not None:
             bank.display_name = connection.name
-    await _forget_bank_failure(session, connection)
+    if changed:
+        # Only new values end the reason the old ones left; a rename does not.
+        await _forget_bank_failure(session, connection)
     await _mirror_status(session, connection)
     await session.commit()
     return connection
@@ -437,10 +440,11 @@ async def finish_oauth(
         raise PluginConnectionError("this sign-in link expired or wasn't started here; try again")
     connection = await get_connection(session, workspace_id, uuid.UUID(payload["connection_id"]))
     result, secrets = await _call(session, connection, "oauth_exchange", {"code": code, "redirect_uri": redirect_uri()})
-    _keep(connection, result, secrets)
+    signed_in = _keep(connection, result, secrets)
     connection.status = "pending"
     connection.last_error = None
-    await _forget_bank_failure(session, connection)
+    if signed_in:
+        await _forget_bank_failure(session, connection)
     await _mirror_status(session, connection)
     await session.commit()
     return connection
@@ -456,17 +460,23 @@ async def _forget_bank_failure(session: AsyncSession, connection: PluginConnecti
         bank.settings = {k: v for k, v in settings.items() if k != LAST_SYNC_FAILURE_KEY}
 
 
-def _keep(connection: PluginConnection, result: Any, secrets: dict[str, Any]) -> None:
-    """Store what a call handed back: new secrets (merged) and a new cursor."""
+def _keep(connection: PluginConnection, result: Any, secrets: dict[str, Any]) -> bool:
+    """Store what a call handed back: new secrets (merged) and a new cursor.
+
+    True when the call handed back secrets of its own to store."""
     if not isinstance(result, dict):
-        return
+        return False
+    stored = False
     new_secrets = result.get("secrets")
-    if isinstance(new_secrets, dict) and new_secrets:
-        merged = {**secrets, **{k: v for k, v in new_secrets.items() if not str(k).startswith("__securo_")}}
-        connection.secrets = vault.seal(merged)
+    if isinstance(new_secrets, dict):
+        own = {k: v for k, v in new_secrets.items() if not str(k).startswith("__securo_")}
+        if own:
+            connection.secrets = vault.seal({**secrets, **own})
+            stored = True
     new_state = result.get("state")
     if isinstance(new_state, dict):
         connection.state = new_state
+    return stored
 
 
 async def sync(session: AsyncSession, connection: PluginConnection) -> PluginConnection:
