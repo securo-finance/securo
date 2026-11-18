@@ -50,9 +50,9 @@ repository.
 
 ### In a workspace
 
-1. The workspace owner installs the plugin from the catalog; only the owner
-   or a workspace manager can add, update or remove a plugin with code.
-   Before anything is applied, the preview shows what the owner agrees to: every host in `network` and
+1. The workspace owner or a manager installs the plugin from the catalog, and
+   only they can add, update or remove a plugin with code.
+   Before anything is applied, the preview shows what they agree to: every host in `network` and
    every scope in `api_scopes`, each with its `purpose`, the integrations that
    provide records, with the kinds they provide, and the connections a change
    would remove. On an update it also names the hosts and scopes the
