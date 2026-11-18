@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
+import { onlineManager } from '@tanstack/react-query'
 
 import { BudgetCopyDialog } from '@/components/budget-copy-dialog'
 import i18n from '@/lib/i18n'
@@ -29,7 +30,10 @@ beforeEach(() => {
   api.budgets.copyMonth.mockResolvedValue([food])
 })
 
-afterEach(async () => { await i18n.changeLanguage('en') })
+afterEach(async () => {
+  onlineManager.setOnline(true)
+  await i18n.changeLanguage('en')
+})
 
 describe('Budget copy dialog', () => {
   it('defaults to the previous month, previews only the missing categories and copies them', async () => {
@@ -79,6 +83,30 @@ describe('Budget copy dialog', () => {
         target_month: '2026-10-01',
         adjustment_percentage: 10,
         overwrite_existing: true,
+      }, 'ws-1')
+    })
+  })
+
+  it('copies with the options that were confirmed, not the ones the form holds when the request runs', async () => {
+    const { user } = renderWithProviders(
+      <BudgetCopyDialog open onOpenChange={vi.fn()} targetMonth="2026-10" targetBudgets={[]} targetRefreshing={false} />,
+    )
+
+    await screen.findByText(t('budgets.copyPreviewCount', { count: 2 }))
+    onlineManager.setOnline(false)
+    await user.click(screen.getByRole('button', { name: t('budgets.copyConfirm') }))
+    // Queued while offline, the request has not gone out yet.
+    expect(api.budgets.copyMonth).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('radio', { name: t('budgets.copyOverwrite') }))
+    await act(async () => { onlineManager.setOnline(true) })
+
+    await waitFor(() => {
+      expect(api.budgets.copyMonth).toHaveBeenCalledWith({
+        source_month: '2026-09-01',
+        target_month: '2026-10-01',
+        adjustment_percentage: 0,
+        overwrite_existing: false,
       }, 'ws-1')
     })
   })

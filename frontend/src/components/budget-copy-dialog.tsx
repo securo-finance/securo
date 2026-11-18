@@ -26,6 +26,19 @@ const MAX_ADJUSTMENT = 1000
 /** `_MAX_BUDGET_AMOUNT` in the service, in cents: a copy at or above it is rejected. */
 const MAX_BUDGET_CENTS = 1e15
 
+interface BudgetCopyPayload {
+  source_month: string
+  target_month: string
+  adjustment_percentage: number
+  overwrite_existing: boolean
+}
+
+/** What confirming sends, captured then rather than when the request runs. */
+interface BudgetCopyRequest {
+  payload: BudgetCopyPayload
+  workspaceId: string | null
+}
+
 interface BudgetCopyDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -161,12 +174,12 @@ export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudget
   const copiedTotal = rowsToCopy.reduce((sum, cents) => sum + cents, 0) / 100
 
   const copyMutation = useMutation({
-    mutationFn: () => budgetsApi.copyMonth({
-      source_month: sourceParam,
-      target_month: `${targetMonth}-01`,
-      adjustment_percentage: parsedAdjustment ?? 0,
-      overwrite_existing: overwriteExisting,
-    }, workspaceId),
+    // The options and the workspace come from the confirmation, not from the
+    // form when the request finally runs: a mutation queued while offline
+    // resumes with whatever the fields say by then, which may not be what the
+    // user confirmed.
+    mutationFn: ({ payload, workspaceId: targetWorkspaceId }: BudgetCopyRequest) =>
+      budgetsApi.copyMonth(payload, targetWorkspaceId),
     onSuccess: (copied) => {
       toast.success(copied.length > 0 ? t('budgets.copySuccess', { count: copied.length }) : t('budgets.copyNothing'))
       onOpenChange(false)
@@ -284,7 +297,19 @@ export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudget
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={copyMutation.isPending}>
             {t('common.cancel')}
           </Button>
-          <Button type="button" disabled={!canSubmit} onClick={() => copyMutation.mutate()}>
+          <Button
+            type="button"
+            disabled={!canSubmit}
+            onClick={() => copyMutation.mutate({
+              payload: {
+                source_month: sourceParam,
+                target_month: `${targetMonth}-01`,
+                adjustment_percentage: parsedAdjustment ?? 0,
+                overwrite_existing: overwriteExisting,
+              },
+              workspaceId,
+            })}
+          >
             {t('budgets.copyConfirm')}
           </Button>
         </DialogFooter>
