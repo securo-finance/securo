@@ -837,8 +837,13 @@ async def delete_asset(
     session: AsyncSession, asset_id: uuid.UUID, workspace_id: uuid.UUID
 ) -> bool:
     """Delete an asset (cascades to values)."""
+    # Take the holding's lock before its children: the cascading delete
+    # removes today's AssetValue first, and a price refresh holds the Asset
+    # lock while it rewrites that same value, so the opposite order deadlocks.
     result = await session.execute(
-        select(Asset).where(Asset.id == asset_id, Asset.workspace_id == workspace_id)
+        select(Asset)
+        .where(Asset.id == asset_id, Asset.workspace_id == workspace_id)
+        .with_for_update()
     )
     asset = result.scalar_one_or_none()
     if not asset:
@@ -1331,53 +1336,91 @@ async def refresh_all_market_prices(
         logger.warning("Batch price fetch failed, falling back to per-asset: %s", e)
         prices = {}
 
-    # An editor can delete a holding while the provider is answering. Writing
-    # to a row that is gone raises StaleDataError on flush, which would roll
-    # back the prices already refreshed in this batch; re-read and lock the
-    # rows that still exist under the same predicate, and drop the rest.
-    surviving = await session.execute(
-        select(Asset.id)
+    # Per-asset fallback: the batch missed a symbol (delisted ticker, one-off
+    # provider error, etc.). These quote calls happen before anything is
+    # locked: a slow fallback would otherwise keep FOR UPDATE on every
+    # selected holding, other workspaces included during the scheduled sweep.
+    fallback_quotes: dict[str, Decimal] = {}
+    fallback_logos: dict[str, Optional[str]] = {}
+    attempted: set[str] = set()
+    rate_limited = False
+
+    for asset in assets:
+        ticker = asset.ticker
+        if not ticker or ticker in attempted:
+            continue
+        if prices and prices.get(ticker.upper()) is not None:
+            continue
+        attempted.add(ticker)
+        try:
+            quote = await provider.get_quote(ticker)
+        except MarketPriceRateLimitedError:
+            logger.warning(
+                "Yahoo rate-limited the fallback quote for %s; halting", ticker
+            )
+            rate_limited = True
+            break
+        except Exception as e:
+            logger.warning("Market price fallback failed for %s: %s", ticker, e)
+            continue
+        if quote is None or quote.price is None:
+            continue
+        fallback_quotes[ticker] = Decimal(str(quote.price))
+        fallback_logos[ticker] = quote.logo_url
+
+    # An editor can delete a holding or change its ticker while the provider
+    # is answering. Re-read the rows that still match under the same
+    # predicate, lock them and use these rows for the write: an id-only
+    # recheck would still write the AAPL quote into a holding that became
+    # MSFT, and a write to a deleted row rolls back every price in the batch.
+    locked = await session.execute(
+        select(Asset)
         .where(Asset.id.in_([asset.id for asset in assets]), *conditions)
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
-    surviving_ids = set(surviving.scalars().all())
-    assets = [asset for asset in assets if asset.id in surviving_ids]
+    current_by_id = {asset.id: asset for asset in locked.scalars().all()}
 
     refreshed = 0
     skipped = 0
+    deleted = 0
 
     for asset in assets:
-        if not asset.ticker:
-            skipped += 1
-            continue
-        price = prices.get(asset.ticker.upper()) if prices else None
-        if price is None:
-            # Per-asset fallback: the batch missed this symbol (delisted
-            # ticker, one-off provider error, etc.). Try the full quote
-            # path which also populates name/currency if needed.
-            try:
-                ok = await refresh_market_price_asset(
-                    session, asset, market_provider=provider
-                )
-            except MarketPriceRateLimitedError:
-                logger.warning(
-                    "Yahoo rate-limited mid-refresh after %d assets; halting",
-                    refreshed,
-                )
-                await session.commit()
-                return {
-                    "refreshed": refreshed,
-                    "skipped": skipped + (len(assets) - refreshed - skipped),
-                    "rate_limited": 1,
-                }
-            if ok:
-                refreshed += 1
-            else:
-                skipped += 1
+        current = current_by_id.get(asset.id)
+        if current is None:
+            # Deleted while the provider answered: nothing to write, and the
+            # rest of the batch carries on. It is not "skipped" — the
+            # provider was never asked about a holding that no longer exists.
+            deleted += 1
             continue
 
-        await _apply_price_to_asset(session, asset, price)
+        price: Optional[Decimal] = None
+        logo_url: Optional[str] = None
+        if current.ticker:
+            price = prices.get(current.ticker.upper()) if prices else None
+            if price is None:
+                # Only a quote for the ticker the holding has now: one fetched
+                # for the ticker it used to have belongs to another holding.
+                price = fallback_quotes.get(current.ticker)
+                logo_url = fallback_logos.get(current.ticker)
+        if price is None:
+            skipped += 1
+            continue
+
+        await _apply_price_to_asset(session, current, price)
+        if logo_url and not current.logo_url:
+            current.logo_url = logo_url
         refreshed += 1
+
+    if rate_limited:
+        # Whatever was applied is committed: the caller keeps the counters and
+        # the next read sees the prices that did come in.
+        await session.commit()
+        return {
+            "refreshed": refreshed,
+            "skipped": max(len(assets) - refreshed - deleted, 0),
+            "rate_limited": 1,
+        }
 
     await session.commit()
     return {"refreshed": refreshed, "skipped": skipped, "rate_limited": 0}

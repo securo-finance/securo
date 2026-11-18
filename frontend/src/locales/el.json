@@ -2115,7 +2115,7 @@
     "refreshAllPrices": "Ανανέωση τιμών",
     "refreshAllPricesDone": "Ενημερώθηκαν {{refreshed}} τιμές, {{skipped}} χωρίς νέα τιμή",
     "refreshAllPricesNone": "Δεν υπάρχουν στοιχεία με τιμή αγοράς για ανανέωση",
-    "refreshAllPricesRateLimited": "Ο πάροχος δεδομένων αγοράς περιορίζει τώρα τα αιτήματα. Ενημερώθηκαν {{refreshed}} τιμές πριν σταματήσει. Δοκιμάστε ξανά σε ένα λεπτό.",
+    "refreshAllPricesRateLimited": "Ο πάροχος δεδομένων αγοράς περιορίζει τώρα τα αιτήματα. Ενημερώθηκαν {{refreshed}} τιμές και {{skipped}} παραλείφθηκαν πριν σταματήσει. Δοκιμάστε ξανά σε ένα λεπτό.",
     "priceRefreshed": "Η τιμή ανανεώθηκε",
     "purchaseDate": "Ημερομηνία αγοράς",
     "purchasePrice": "Τιμή αγοράς",

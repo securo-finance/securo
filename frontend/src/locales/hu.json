@@ -2117,7 +2117,7 @@
     "refreshAllPrices": "Árak frissítése",
     "refreshAllPricesDone": "{{refreshed}} ár frissítve, {{skipped}} új jegyzés nélkül",
     "refreshAllPricesNone": "Nincs piaci árazású eszköz a frissítéshez",
-    "refreshAllPricesRateLimited": "A piaci adatszolgáltató most korlátozza a kéréseket. {{refreshed}} ár frissült a leállás előtt – próbálja újra egy perc múlva.",
+    "refreshAllPricesRateLimited": "A piaci adatszolgáltató most korlátozza a kéréseket. {{refreshed}} ár frissült és {{skipped}} maradt ki a leállás előtt. Próbálja újra egy perc múlva.",
     "priceRefreshed": "Ár frissítve",
     "purchaseDate": "Vásárlás dátuma",
     "purchasePrice": "Vételár",

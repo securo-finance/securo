@@ -2119,7 +2119,7 @@
     "refreshAllPrices": "Atualizar preços",
     "refreshAllPricesDone": "{{refreshed}} preços atualizados, {{skipped}} sem cotação nova",
     "refreshAllPricesNone": "Nenhum ativo com preço de mercado para atualizar",
-    "refreshAllPricesRateLimited": "O provedor de cotações está limitando as requisições agora. {{refreshed}} preços foram atualizados antes de parar, tente de novo em um minuto.",
+    "refreshAllPricesRateLimited": "O provedor de cotações está limitando as requisições agora. {{refreshed}} preços foram atualizados e {{skipped}} ficaram de fora antes de parar, tente de novo em um minuto.",
     "priceRefreshed": "Cotação atualizada",
     "purchaseDate": "Data de Compra",
     "purchasePrice": "Preço de Compra",

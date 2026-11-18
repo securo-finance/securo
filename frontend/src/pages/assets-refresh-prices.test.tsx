@@ -149,17 +149,32 @@ describe('Assets price refresh for the whole portfolio (issue #778)', () => {
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
-        t('assets.refreshAllPricesRateLimited', { refreshed: 2 }),
+        t('assets.refreshAllPricesRateLimited', { refreshed: 2, skipped: 1 }),
       ),
     )
     expect(await screen.findByText('$11.00')).toBeInTheDocument()
   })
 
   it('sends the refresh to the workspace that was selected when the user clicked', async () => {
-    // A mutation the browser paused while offline resumes later; the request
-    // must still go to the workspace the user clicked in, not the one
-    // selected by then.
-    api.assets.refreshPrices.mockResolvedValue({ refreshed: 1, skipped: 0, rate_limited: 0 })
+    // A mutation the browser paused while offline resumes later. The real
+    // request path has to carry the workspace the user clicked in, not the
+    // one selected by then, so the header is checked on the wire instead of
+    // trusting the mock's argument.
+    const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api')
+    const sent: Array<{ url: string; workspace: unknown }> = []
+    actual.api.defaults.adapter = async (config) => {
+      sent.push({ url: config.url ?? '', workspace: config.headers['X-Workspace-Id'] })
+      return {
+        data: { refreshed: 1, skipped: 0, rate_limited: 0 },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      }
+    }
+    api.assets.refreshPrices.mockImplementation((workspaceId: string | null) =>
+      actual.assets.refreshPrices(workspaceId),
+    )
     renderWithProviders(<AssetsPage />)
 
     expect(await screen.findByText('$10.00')).toBeInTheDocument()
@@ -167,14 +182,44 @@ describe('Assets price refresh for the whole portfolio (issue #778)', () => {
     await act(async () => {
       screen.getByRole('button', { name: t('assets.refreshAllPrices') }).click()
     })
-    expect(api.assets.refreshPrices).not.toHaveBeenCalled()
+    expect(sent).toHaveLength(0)
 
+    // The switch lands while the request is paused: the interceptor would
+    // stamp ws-2 on anything that did not name its own workspace.
     workspace.id = 'ws-2'
+    localStorage.setItem(actual.WORKSPACE_STORAGE_KEY, 'ws-2')
     await act(async () => {
       onlineManager.setOnline(true)
     })
 
-    await waitFor(() => expect(api.assets.refreshPrices).toHaveBeenCalledWith('ws-1'))
+    await waitFor(() => expect(sent).toHaveLength(1))
+    expect(sent[0].url).toBe('/assets/refresh-prices')
+    expect(sent[0].workspace).toBe('ws-1')
+  })
+
+  it('does not show the result in a workspace the user moved to', async () => {
+    // The refresh belongs to the workspace it was asked in: switching while
+    // the provider answers must not report its counts over another portfolio.
+    let finish: ((value: { refreshed: number; skipped: number; rate_limited: number }) => void) | undefined
+    api.assets.refreshPrices.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+    )
+    const { rerender } = renderWithProviders(<AssetsPage />)
+
+    expect(await screen.findByText('$10.00')).toBeInTheDocument()
+    screen.getByRole('button', { name: t('assets.refreshAllPrices') }).click()
+    await waitFor(() => expect(api.assets.refreshPrices).toHaveBeenCalled())
+
+    workspace.id = 'ws-2'
+    rerender(<AssetsPage />)
+    await act(async () => {
+      finish?.({ refreshed: 3, skipped: 1, rate_limited: 0 })
+    })
+
+    expect(toast.success).not.toHaveBeenCalled()
+    expect(api.assets.list).toHaveBeenCalledTimes(1)
   })
 
   it('does not offer the refresh to a viewer', async () => {

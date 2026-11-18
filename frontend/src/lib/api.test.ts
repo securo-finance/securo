@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { InternalAxiosRequestConfig } from 'axios'
-import { api, rules } from '@/lib/api'
+import { api, assets, rules } from '@/lib/api'
 import { DATA_CHANGED_KEY } from '@/lib/data-changed'
 
 // The interceptor under test only looks at method + success, so a fake
@@ -52,6 +52,37 @@ describe('api data-change signal (issue #763)', () => {
         Object.assign(new Error('boom'), { config, response: { status: 500 } }),
       )
     await expect(api.post('/transactions', {})).rejects.toThrow()
+    expect(localStorage.getItem(DATA_CHANGED_KEY)).toBeNull()
+  })
+})
+
+describe('api data-change signal on a rate-limited price refresh (issue #778)', () => {
+  const reject429 = (detail: unknown) => {
+    api.defaults.adapter = (config: InternalAxiosRequestConfig) =>
+      Promise.reject(
+        Object.assign(new Error('rate limited'), {
+          config,
+          response: { status: 429, data: { detail } },
+        }),
+      )
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
+  it('bumps when the provider stopped after some prices were committed', async () => {
+    // The other tabs never see that partial write otherwise: the response
+    // interceptor only signals on success.
+    reject429({ message: 'slow down', refreshed: 2, skipped: 1, rate_limited: 1 })
+    await expect(assets.refreshPrices('ws-1')).rejects.toThrow()
+    expect(localStorage.getItem(DATA_CHANGED_KEY)).toBeTruthy()
+  })
+
+  it('leaves the signal alone when nothing was written before the 429', async () => {
+    reject429({ message: 'slow down', refreshed: 0, skipped: 3, rate_limited: 1 })
+    await expect(assets.refreshPrices('ws-1')).rejects.toThrow()
     expect(localStorage.getItem(DATA_CHANGED_KEY)).toBeNull()
   })
 })

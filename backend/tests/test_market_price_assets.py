@@ -15,7 +15,7 @@ from typing import Optional
 from unittest.mock import patch
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset import Asset
@@ -28,6 +28,7 @@ from app.providers.market_price import (
 )
 from app.schemas.asset import (
     AssetCreate,
+    AssetRead,
     MarketSymbolMatch,
     MarketSymbolQuote,
 )
@@ -461,7 +462,7 @@ async def test_refresh_all_skips_a_holding_deleted_while_the_provider_answers(
     creator = FakeMarketProvider(
         {"AAPL": _quote("AAPL", 180.0), "MSFT": _quote("MSFT", 400.0)}
     )
-    created: dict[str, Asset] = {}
+    created: dict[str, AssetRead] = {}
     for ticker in ("AAPL", "MSFT"):
         created[ticker] = await asset_service.create_asset(
             session,
@@ -494,6 +495,80 @@ async def test_refresh_all_skips_a_holding_deleted_while_the_provider_answers(
         await session.execute(select(Asset).where(Asset.id == created["AAPL"].id))
     ).scalar_one()
     assert keeper.last_price == Decimal("181.0")
+
+
+class RenamingBatchProvider(FakeMarketProvider):
+    """A batch that answers while an editor swaps one holding's ticker."""
+
+    def __init__(
+        self,
+        quotes: dict[str, MarketSymbolQuote],
+        session: AsyncSession,
+        asset_id,
+    ) -> None:
+        super().__init__(quotes)
+        self._session = session
+        self._asset_id = asset_id
+
+    async def get_latest_prices(self, symbols: list[str]) -> dict[str, Optional[Decimal]]:
+        prices = await super().get_latest_prices(symbols)
+        # The row changes after the batch read it: still there, now a
+        # different ticker, so the quote fetched for the old one no longer
+        # belongs to it.
+        await self._session.execute(
+            update(Asset)
+            .where(Asset.id == self._asset_id)
+            .values(ticker="MSFT")
+            .execution_options(synchronize_session=False)
+        )
+        await self._session.commit()
+        return prices
+
+
+@pytest.mark.asyncio
+async def test_refresh_all_uses_the_ticker_the_holding_has_when_it_writes(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    creator = FakeMarketProvider(
+        {"AAPL": _quote("AAPL", 180.0), "MSFT": _quote("MSFT", 400.0)}
+    )
+    created: dict[str, AssetRead] = {}
+    for ticker in ("AAPL", "MSFT"):
+        created[ticker] = await asset_service.create_asset(
+            session,
+            test_workspace.id,
+            test_user.id,
+            AssetCreate(
+                name=ticker,
+                type="investment",
+                valuation_method="market_price",
+                ticker=ticker,
+                units=Decimal("1"),
+            ),
+            market_provider=creator,
+        )
+
+    renaming = RenamingBatchProvider(
+        {"AAPL": _quote("AAPL", 181.0), "MSFT": _quote("MSFT", 401.0)},
+        session,
+        created["AAPL"].id,
+    )
+
+    result = await refresh_all_market_prices(
+        session, market_provider=renaming, workspace_id=test_workspace.id
+    )
+
+    assert result == {"refreshed": 2, "skipped": 0, "rate_limited": 0}
+    # The holding that became MSFT takes the MSFT quote, never the AAPL one
+    # the batch fetched before the edit. Read the columns, not the entity:
+    # the session still has the pre-edit object in its identity map.
+    ticker, last_price = (
+        await session.execute(
+            select(Asset.ticker, Asset.last_price).where(Asset.id == created["AAPL"].id)
+        )
+    ).one()
+    assert ticker == "MSFT"
+    assert last_price == Decimal("401.0")
 
 
 # ---- YFinanceProvider batch refresh: minor-unit normalization ----

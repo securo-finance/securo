@@ -2239,7 +2239,7 @@
     "refreshAllPrices": "Obnoviť ceny",
     "refreshAllPricesDone": "Aktualizovaných {{refreshed}} cien, {{skipped}} bez novej ceny",
     "refreshAllPricesNone": "Žiadne aktíva s trhovou cenou na obnovenie",
-    "refreshAllPricesRateLimited": "Poskytovateľ trhových dát teraz obmedzuje požiadavky. Pred zastavením sa aktualizovalo {{refreshed}} cien. Skúste to znova o minútu.",
+    "refreshAllPricesRateLimited": "Poskytovateľ trhových dát teraz obmedzuje požiadavky. Pred zastavením sa aktualizovalo {{refreshed}} cien a {{skipped}} bolo vynechaných. Skúste to znova o minútu.",
     "priceRefreshed": "Cena obnovená",
     "purchaseDate": "Dátum nákupu",
     "purchasePrice": "Nákupná cena",

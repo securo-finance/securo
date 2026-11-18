@@ -2115,7 +2115,7 @@
     "refreshAllPrices": "価格を更新",
     "refreshAllPricesDone": "{{refreshed}}件の価格を更新、{{skipped}}件は新しい価格なし",
     "refreshAllPricesNone": "更新する時価評価の資産がありません",
-    "refreshAllPricesRateLimited": "市場データプロバイダーが現在リクエストを制限しています。停止前に{{refreshed}}件の価格を更新しました。1分後にもう一度お試しください。",
+    "refreshAllPricesRateLimited": "市場データプロバイダーが現在リクエストを制限しています。停止前に{{refreshed}}件の価格を更新し、{{skipped}}件をスキップしました。1分後にもう一度お試しください。",
     "priceRefreshed": "価格を更新しました",
     "purchaseDate": "取得日",
     "purchasePrice": "取得価格",

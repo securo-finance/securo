@@ -2115,7 +2115,7 @@
     "refreshAllPrices": "Refresh prices",
     "refreshAllPricesDone": "{{refreshed}} prices updated, {{skipped}} without a new quote",
     "refreshAllPricesNone": "No market-priced assets to refresh",
-    "refreshAllPricesRateLimited": "Market data is rate-limiting right now. {{refreshed}} prices were updated before it stopped, try again in a minute.",
+    "refreshAllPricesRateLimited": "Market data is rate-limiting right now. {{refreshed}} prices were updated and {{skipped}} skipped before it stopped, try again in a minute.",
     "priceRefreshed": "Price refreshed",
     "purchaseDate": "Purchase Date",
     "purchasePrice": "Purchase Price",

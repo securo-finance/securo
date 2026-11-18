@@ -454,7 +454,11 @@ export default function AssetsPage() {
     // and the interceptor would then stamp whichever workspace is selected
     // by then (the app does not pin the mutation to online).
     mutationFn: (workspaceId: string | null) => assets.refreshPrices(workspaceId),
-    onSuccess: (summary) => {
+    onSuccess: (summary, requestedWorkspaceId) => {
+      // The answer belongs to the workspace that asked. If the user moved to
+      // another one while the provider was working, the counts are not this
+      // page's to show, and its data is not what the refetch would touch.
+      if (requestedWorkspaceId !== (workspace?.id ?? null)) return
       refetchAssetViews()
       if (summary.refreshed === 0 && summary.skipped === 0) {
         toast.info(t('assets.refreshAllPricesNone'))
@@ -467,14 +471,18 @@ export default function AssetsPage() {
         }),
       )
     },
-    onError: (e) => {
+    onError: (e, requestedWorkspaceId) => {
       const limited = rateLimitedRefresh(e)
+      if (requestedWorkspaceId !== (workspace?.id ?? null)) return
       // A 429 here can come after some prices were written and committed, so
       // the list and the charts are refetched on this path too.
       if (limited) refetchAssetViews()
       toast.error(
         limited
-          ? t('assets.refreshAllPricesRateLimited', { refreshed: limited.refreshed })
+          ? t('assets.refreshAllPricesRateLimited', {
+              refreshed: limited.refreshed,
+              skipped: limited.skipped,
+            })
           : assetErrorMessage(e, t('common.error')),
       )
     },
