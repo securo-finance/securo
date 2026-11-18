@@ -324,3 +324,152 @@ async def test_a_viewer_cannot_mark_rows_read(
 
     await session.refresh(unread)
     assert unread.is_read is False
+
+
+async def test_an_import_that_fills_a_placeholder_makes_it_unread(
+    session, test_user: User, test_workspace, test_account: Account
+):
+    """The generated placeholder was already known; the imported charge that
+    replaced it was not, so the row rejoins the review queue (issue #636)."""
+    from app.schemas.recurring_transaction import RecurringTransactionCreate
+    from app.schemas.transaction import TransactionImport
+    from app.services.recurring_transaction_service import create_recurring_transaction
+
+    bill = await create_recurring_transaction(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RecurringTransactionCreate(
+            description="Netflix Subscription",
+            amount=Decimal("39.90"),
+            currency="BRL",
+            type="debit",
+            frequency="monthly",
+            start_date=date(2026, 1, 10),
+            account_id=test_account.id,
+        ),
+    )
+    bill.next_occurrence = date(2026, 2, 10)
+    placeholder = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=test_account.id,
+        description="Netflix Subscription",
+        amount=Decimal("39.90"),
+        currency="BRL",
+        date=date(2026, 1, 10),
+        type="debit",
+        source="recurring",
+        status="posted",
+        recurring_transaction_id=bill.id,
+        is_read=True,
+    )
+    session.add(placeholder)
+    await session.commit()
+    placeholder_id = placeholder.id
+
+    with (
+        patch("app.services.import_service.stamp_primary_amount", new_callable=AsyncMock),
+        patch(
+            "app.services.import_service.apply_rules_to_transaction",
+            new_callable=AsyncMock,
+        ),
+    ):
+        imported, skipped, _, _ = await import_transactions(
+            session,
+            test_workspace.id,
+            test_user.id,
+            test_account.id,
+            [TransactionImport(
+                description="NETFLIX SUBSCRIPTION",
+                amount=Decimal("39.90"),
+                date=date(2026, 1, 11),
+                type="debit",
+                currency="BRL",
+            )],
+            "csv",
+        )
+
+    assert (imported, skipped) == (1, 0)
+    merged = await session.get(Transaction, placeholder_id)
+    await session.refresh(merged)
+    assert merged.is_read is False
+
+
+async def test_the_review_queue_skips_rows_shared_from_another_workspace(
+    client, auth_headers, test_workspace, test_user, session
+):
+    """The read endpoints clear rows of this workspace only, so a shared row
+    owned by another workspace must stay out of this queue (issue #636)."""
+    friend_email = "review-queue-friend@example.com"
+    registered = await client.post(
+        "/api/auth/register",
+        json={"email": friend_email, "password": "friendpassword12"},
+    )
+    assert registered.status_code in (200, 201), registered.text
+    logged = await client.post(
+        "/api/auth/login",
+        data={"username": friend_email, "password": "friendpassword12"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert logged.status_code == 200, logged.text
+    friend_headers = {"Authorization": f"Bearer {logged.json()['access_token']}"}
+
+    account = await _account(client, auth_headers)
+    group = (await client.post(
+        "/api/groups",
+        headers=auth_headers,
+        json={"name": "Trip", "kind": "social", "default_currency": "USD"},
+    )).json()
+    me = (await client.post(
+        f"/api/groups/{group['id']}/members",
+        headers=auth_headers,
+        json={"name": "Me", "is_self": True},
+    )).json()
+    friend = (await client.post(
+        f"/api/groups/{group['id']}/members",
+        headers=auth_headers,
+        json={"name": "Friend", "email": friend_email},
+    )).json()
+
+    created = await client.post(
+        "/api/transactions",
+        headers=auth_headers,
+        json={
+            "account_id": account["id"],
+            "description": "Concert Tickets",
+            "amount": 90,
+            "date": "2026-04-28",
+            "type": "debit",
+            "currency": "USD",
+            "splits": {
+                "share_type": "equal",
+                "splits": [
+                    {"group_member_id": me["id"]},
+                    {"group_member_id": friend["id"]},
+                ],
+            },
+        },
+    )
+    assert created.status_code == 201, created.text
+    parent = await session.get(Transaction, uuid.UUID(created.json()["id"]))
+    assert parent is not None
+    parent.is_read = False
+    await session.commit()
+
+    listed = await client.get("/api/transactions", headers=friend_headers)
+    assert listed.status_code == 200, listed.text
+    assert any(row["is_shared"] for row in listed.json()["items"])
+
+    queue = await client.get(
+        "/api/transactions", headers=friend_headers, params={"unread_only": "true"}
+    )
+    assert queue.status_code == 200, queue.text
+    assert queue.json()["total"] == 0
+    assert queue.json()["items"] == []
+
+    owned = await client.get(
+        "/api/transactions", headers=auth_headers, params={"unread_only": "true"}
+    )
+    assert owned.json()["total"] == 1
+    assert owned.json()["items"][0]["id"] == str(parent.id)

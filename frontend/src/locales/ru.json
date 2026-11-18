@@ -1012,7 +1012,7 @@
     "unreadCount_few": "{{count}} транзакции на проверку",
     "unreadCount_many": "{{count}} транзакций на проверку",
     "unreadCount_other": "{{count}} транзакции на проверку",
-    "markAllRead": "Отметить все как прочитанные",
+    "markAllRead": "Отметить все как прочитанные в этом рабочем пространстве",
     "markAllReadPending": "Отмечаем как прочитанные",
     "markAllReadDone": "Все транзакции отмечены как прочитанные",
     "statusCleared": "Проведена",

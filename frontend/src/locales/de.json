@@ -1002,7 +1002,7 @@
     "unreadRows": "Neue Transaktionen",
     "unreadCount_one": "{{count}} Transaktion zu prüfen",
     "unreadCount_other": "{{count}} Transaktionen zu prüfen",
-    "markAllRead": "Alle als gelesen markieren",
+    "markAllRead": "Alle in diesem Workspace als gelesen markieren",
     "markAllReadPending": "Wird als gelesen markiert",
     "markAllReadDone": "Alle Transaktionen sind als gelesen markiert",
     "statusCleared": "Abgewickelt",

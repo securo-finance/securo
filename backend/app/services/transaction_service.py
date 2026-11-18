@@ -321,7 +321,14 @@ async def get_transactions(
         base_query = base_query.where(is_not_ignored())
     if unread_only:
         # The review queue of issue #636: only rows nobody has looked at yet.
-        base_query = base_query.where(Transaction.is_read.is_(False))
+        # Scoped to this workspace on purpose. The default list also surfaces
+        # shared rows owned by another workspace, and the read endpoints only
+        # clear rows of this one, so counting a shared row here would leave a
+        # queue that never empties.
+        base_query = base_query.where(
+            Transaction.is_read.is_(False),
+            Transaction.workspace_id == workspace_id,
+        )
     if txn_type == "transfer":
         # Not a value of the `type` column: a transfer is still stored as a
         # credit or a debit, so this narrows to the transfer family instead.
@@ -2457,13 +2464,19 @@ async def mark_transaction_read(
     every guard the edit path has (mortgage breakdowns, provider rows) is
     not needed here.
     """
-    transaction = await get_transaction(session, transaction_id, workspace_id)
+    # The row lock makes a concurrent delete land on the not-found path
+    # instead of failing the UPDATE with StaleDataError. There is no refresh
+    # after the commit: the session does not expire on commit, so the object
+    # already carries is_read=True, and a refresh could race a delete into
+    # ObjectDeletedError.
+    transaction = await get_transaction(
+        session, transaction_id, workspace_id, for_update=True
+    )
     if not transaction:
         return None
     if not transaction.is_read:
         transaction.is_read = True
         await session.commit()
-        await session.refresh(transaction)
     return transaction
 
 

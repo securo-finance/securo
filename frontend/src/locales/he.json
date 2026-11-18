@@ -1015,7 +1015,7 @@
     "unreadCount_one": "{{count}} תנועה לבדיקה",
     "unreadCount_two": "{{count}} תנועות לבדיקה",
     "unreadCount_other": "{{count}} תנועות לבדיקה",
-    "markAllRead": "סימון הכול כנקרא",
+    "markAllRead": "סמן הכול כנקרא בסביבת העבודה הזו",
     "markAllReadPending": "מסמן כנקרא",
     "markAllReadDone": "כל התנועות סומנו כנקראו",
     "statusCleared": "נסגרה",

@@ -1040,7 +1040,7 @@
     "unreadCount_few": "{{count}} transakce ke kontrole",
     "unreadCount_many": "{{count}} transakce ke kontrole",
     "unreadCount_other": "{{count}} transakcí ke kontrole",
-    "markAllRead": "Označit vše jako přečtené",
+    "markAllRead": "Označit vše jako přečtené v tomto pracovním prostoru",
     "markAllReadPending": "Označování jako přečtené",
     "markAllReadDone": "Všechny transakce jsou označené jako přečtené",
     "statusCleared": "Zaúčtovaná",

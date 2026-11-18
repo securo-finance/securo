@@ -1002,7 +1002,7 @@
     "unreadRows": "新しい取引",
     "unreadCount_one": "確認する取引 {{count}} 件",
     "unreadCount_other": "確認する取引 {{count}} 件",
-    "markAllRead": "すべて既読にする",
+    "markAllRead": "このワークスペースのすべてを既読にする",
     "markAllReadPending": "既読にしています",
     "markAllReadDone": "すべての取引を既読にしました",
     "statusCleared": "清算済み",

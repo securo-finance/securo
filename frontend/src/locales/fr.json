@@ -1004,7 +1004,7 @@
     "unreadRows": "Transactions nouvelles",
     "unreadCount_one": "{{count}} transaction à vérifier",
     "unreadCount_other": "{{count}} transactions à vérifier",
-    "markAllRead": "Tout marquer comme lu",
+    "markAllRead": "Tout marquer comme lu dans cet espace de travail",
     "markAllReadPending": "Marquage en cours",
     "markAllReadDone": "Toutes les transactions sont marquées comme lues",
     "statusCleared": "Rapprochée",

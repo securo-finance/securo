@@ -66,6 +66,8 @@ interface MobileTransactionsFilterMenuProps {
   status: string
   hideIgnored: boolean
   onlyUnread: boolean
+  /** Offer the review-queue option at all; the calendar view passes false. */
+  showUnread?: boolean
   from: string
   to: string
   minAmount: string
@@ -438,8 +440,9 @@ function MobileAmountView({
 function buildRootOptions(
   labels: Record<Exclude<MobileFilterView, 'root'>, string>,
   summaries: MobileTransactionsFilterMenuProps['summaries'],
+  showUnread: boolean,
 ): RootOption[] {
-  return [
+  const options: RootOption[] = [
     { view: 'account', icon: Wallet, label: labels.account, summary: summaries.account },
     { view: 'category', icon: Tag, label: labels.category, summary: summaries.category },
     { view: 'payee', icon: Store, label: labels.payee, summary: summaries.payee },
@@ -447,10 +450,18 @@ function buildRootOptions(
     { view: 'type', icon: ArrowUpDown, label: labels.type, summary: summaries.type },
     { view: 'status', icon: ListChecks, label: labels.status, summary: summaries.status },
     { view: 'ignored', icon: EyeClosed, label: labels.ignored, summary: summaries.ignored },
-    { view: 'unread', icon: Inbox, label: labels.unread, summary: summaries.unread },
     { view: 'date', icon: CalendarIcon, label: labels.date, summary: summaries.date },
     { view: 'amount', icon: Coins, label: labels.amount, summary: summaries.amount },
   ]
+  if (!showUnread) return options
+  // The review queue sits next to the ignored switch, its sibling reading mode.
+  options.splice(7, 0, {
+    view: 'unread',
+    icon: Inbox,
+    label: labels.unread,
+    summary: summaries.unread,
+  })
+  return options
 }
 
 function buildLabels(
@@ -519,7 +530,7 @@ function MobileFilterDetail({
   if (menu.view === 'amount') {
     return <MobileAmountView minAmount={menu.minAmount} maxAmount={menu.maxAmount} setMinAmount={menu.setMinAmount} setMaxAmount={menu.setMaxAmount} onReset={() => resetAmount(menu)} onApply={menu.onApplyAmountRange} />
   }
-  return <MobileFilterRoot options={buildRootOptions(labels, menu.summaries)} hasAnyFilter={menu.hasAnyFilter} onSelect={(view) => openDetail(menu, view)} onClear={() => clearAll(menu)} />
+  return <MobileFilterRoot options={buildRootOptions(labels, menu.summaries, menu.showUnread !== false)} hasAnyFilter={menu.hasAnyFilter} onSelect={(view) => openDetail(menu, view)} onClear={() => clearAll(menu)} />
 }
 
 function openDetail(
