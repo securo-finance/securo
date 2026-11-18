@@ -47,6 +47,10 @@ x-backend-env: &backend-env
 x-backend-base: &backend-base
   build:
     context: ./backend
+    # Baked into the image and reported by /api/info, so the demo answers
+    # which commit it serves. Exported by the deploy: APP_REVISION=<sha>.
+    args:
+      APP_REVISION: ${APP_REVISION:-unknown}
   pull_policy: build
   environment: *backend-env
   depends_on:

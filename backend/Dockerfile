@@ -26,6 +26,12 @@ COPY . .
 # this layer from re-resolving anything outside the lock.
 RUN pip install --no-cache-dir --no-deps -e .
 
+# Source revision baked in by the build (`--build-arg APP_REVISION=<sha>`),
+# reported by GET /api/info so a running instance can be matched to a commit
+# without reading the checkout on the host. Empty when the builder omits it.
+ARG APP_REVISION=""
+ENV APP_REVISION=${APP_REVISION}
+
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
