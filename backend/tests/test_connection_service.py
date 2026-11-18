@@ -1683,8 +1683,13 @@ def _eb_txn(raw: dict, status: str = "posted") -> TransactionData:
 
 async def _sync_eb(
     session, conn, workspace_id, user_id, txns: list[TransactionData], *,
-    incomplete=False, truncated=False,
+    incomplete=False, truncated=False, rules=False,
 ):
+    """One Enable Banking sync of `txns`. The user's rules run only with
+    `rules=True`."""
+    import app.services.connection_service as connection_module
+
+    apply_rules = connection_module.apply_rules_to_transaction if rules else AsyncMock()
     mock_provider = AsyncMock()
     mock_provider.incomplete_account_ids = {"eb-account"} if incomplete else set()
     mock_provider.truncated_account_ids = {"eb-account"} if truncated else set()
@@ -1699,7 +1704,7 @@ async def _sync_eb(
     with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
          patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
          patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
-         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+         patch("app.services.connection_service.apply_rules_to_transaction", new=apply_rules):
         await sync_connection(session, conn.id, workspace_id, user_id)
 
 
@@ -1983,7 +1988,7 @@ async def test_sync_connection_enable_banking_expires_cancelled_hold(
     [
         "incomplete", "truncated", "before-window", "other-uid",
         "ignored", "paired", "attached", "noted", "adopted-manual",
-        "bill-cycle", "category",
+        "bill-cycle", "category", "category-a-rule-also-gives", "group-share",
     ],
 )
 async def test_sync_connection_enable_banking_keeps_hold_without_evidence(
@@ -2018,9 +2023,20 @@ async def test_sync_connection_enable_banking_keeps_hold_without_evidence(
     if case == "bill-cycle":
         # Moved to another bill by hand: only the cycle date is written.
         fields["effective_bill_date"] = _HOLD_TODAY + timedelta(days=20)
-    if case == "category":
-        # A category picked by hand (one row or in bulk), without parts.
-        fields["category_id"] = (await _make_category(session, test_user.id, "Travel")).id
+    if case in ("category", "category-a-rule-also-gives"):
+        # A category picked by hand (one row or in bulk), without parts: the
+        # sync recorded none when it stored the row.
+        travel = await _make_category(session, test_user.id, "Travel")
+        fields["category_id"] = travel.id
+        if case == "category-a-rule-also-gives":
+            # A rule made afterwards that gives the same category does not
+            # make the user's pick the rule's.
+            from app.models.rule import Rule
+            session.add(Rule(
+                user_id=test_user.id, workspace_id=test_workspace.id, name="Travel",
+                conditions=[{"field": "description", "op": "contains", "value": "Transaction"}],
+                actions=[{"op": "set_category", "value": str(travel.id)}],
+            ))
     [(held_id, _raw)] = await _hold_blank_holds(
         session, test_user.id, test_workspace.id, account,
         [_blank_hold(30 if case == "before-window" else 10)], **fields,
@@ -2030,6 +2046,28 @@ async def test_sync_connection_enable_banking_keeps_hold_without_evidence(
             id=uuid.uuid4(), transaction_id=held_id, user_id=test_user.id,
             workspace_id=test_workspace.id, filename="receipt.pdf",
             content_type="application/pdf", size=1, storage_key="k",
+        ))
+        await session.commit()
+    if case == "group-share":
+        # Split with a group: the shares go with the row, and the group's
+        # balance with them.
+        from app.models.group import Group, GroupMember
+        from app.models.transaction_split import TransactionSplit
+        group = Group(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            name="Trip", kind="shared", default_currency="EUR",
+        )
+        session.add(group)
+        await session.flush()
+        friend = GroupMember(
+            id=uuid.uuid4(), group_id=group.id, workspace_id=test_workspace.id,
+            name="Friend", is_self=False,
+        )
+        session.add(friend)
+        await session.flush()
+        session.add(TransactionSplit(
+            id=uuid.uuid4(), transaction_id=held_id, workspace_id=test_workspace.id,
+            group_member_id=friend.id, share_amount=Decimal("6.25"), share_type="exact",
         ))
         await session.commit()
 
@@ -2043,27 +2081,42 @@ async def test_sync_connection_enable_banking_keeps_hold_without_evidence(
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("_hold_clock")
+@pytest.mark.parametrize("rule_after", ["unchanged", "deleted", "gives-another"])
 async def test_sync_connection_enable_banking_expires_hold_categorised_by_rule(
-    session: AsyncSession, test_user, test_workspace,
+    session: AsyncSession, test_user, test_workspace, rule_after,
 ):
-    """A category the user's rules give the bank's text is not the user's
-    own work, so the cancelled hold still goes."""
-    from app.models.rule import Rule
-
+    """The category a rule gave the hold when the sync stored it is recorded
+    then, so it is not the user's own work and the cancelled hold still goes,
+    whatever became of the rule since."""
     conn, account = await _hold_account(session, test_user.id, test_workspace.id)
     account_id = account.id
     category = await _make_category(session, test_user.id, "Card holds")
-    session.add(Rule(
-        user_id=test_user.id, workspace_id=test_workspace.id, name="Holds",
-        conditions=[{"field": "description", "op": "contains", "value": "Transaction"}],
-        actions=[{"op": "set_category", "value": str(category.id)}],
-    ))
-    await _hold_blank_holds(
-        session, test_user.id, test_workspace.id, account, [_blank_hold(10)],
-        category_id=category.id,
+    other = await _make_category(session, test_user.id, "Shopping")
+    rule = await create_rule(
+        session, test_workspace.id, test_user.id,
+        RuleCreate(
+            name="Holds",
+            conditions=[RuleCondition(field="description", op="contains", value="Transaction")],
+            actions=[RuleAction(op="set_category", value=str(category.id))],
+            apply_to_existing=False,
+        ),
     )
+    await session.commit()
 
-    await _sync_eb(session, conn, test_workspace.id, test_user.id, [])
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id,
+        await _eb_fetch([], [_blank_hold(10)]), rules=True,
+    )
+    [held] = await _account_rows(session, account_id)
+    assert (held.status, held.category_id) == ("pending", category.id)
+
+    if rule_after == "deleted":
+        await session.delete(rule)
+    elif rule_after == "gives-another":
+        rule.actions = [{"op": "set_category", "value": str(other.id)}]
+    conn.last_sync_at = datetime(2026, 11, 5, tzinfo=timezone.utc)
+    await session.commit()
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [], rules=True)
 
     assert await _account_rows(session, account_id) == []
 
@@ -2401,17 +2454,24 @@ async def _hold_reworded_entry(session, user_id, workspace_id, account, raw: dic
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "securo_key", [None, "securo_adopted_manual", "securo_sync_category"],
+)
 async def test_sync_connection_enable_banking_late_reference_with_reworded_remittance(
-    session: AsyncSession, test_user, test_workspace,
+    session: AsyncSession, test_user, test_workspace, securo_key,
 ):
     """The bank filled in the reference on a later fetch and reworded the
     remittance text, so the descriptions share too few words to match. The
-    rest of the payload is the same, so the held row takes the new id."""
+    rest of the payload is the same, so the held row takes the new id. A key
+    Securo wrote into the held payload itself is not the bank's, and does
+    not count as a difference."""
     conn, account = await _eb_account(session, test_user.id, test_workspace.id)
     account_id = account.id
+    held_raw = _eb_reworded_payload(None, _TRANSFER_FIRST_REMITTANCE)
+    if securo_key is not None:
+        held_raw[securo_key] = True if securo_key == "securo_adopted_manual" else str(uuid.uuid4())
     _, held_id = await _hold_reworded_entry(
-        session, test_user.id, test_workspace.id, account,
-        _eb_reworded_payload(None, _TRANSFER_FIRST_REMITTANCE),
+        session, test_user.id, test_workspace.id, account, held_raw,
     )
 
     refetched = _eb_txn(_eb_reworded_payload("2026-11-11.5", _TRANSFER_REWORDED_REMITTANCE))

@@ -34,6 +34,7 @@ from app.models.payee import Payee, PayeeMapping
 from app.models.rule import Rule
 from app.models.transaction import Transaction
 from app.models.transaction_attachment import TransactionAttachment
+from app.models.transaction_split import TransactionSplit
 from app.models.transaction_category_line import TransactionCategoryLine
 from app.models.user import User
 from app.plugins.provider import is_plugin_provider
@@ -1842,6 +1843,7 @@ async def handle_oauth_callback(
                 )
             if transaction.category_id is None and not transaction.has_category_lines:
                 transaction.category_id = category_id
+            _record_sync_category(transaction)
 
             acct_currency = acc_data.currency or user_currency
             await _stamp_synced_primary_amount(
@@ -2180,6 +2182,22 @@ def _eb_same_merchant(held: dict, booked: dict) -> bool:
 #: Payload fields a bank may rewrite when it fills in a late entry_reference.
 _EB_LATE_REF_REWRITTEN = frozenset({"entry_reference", "remittance_information"})
 
+#: Key a manual entry the sync adopted carries in `raw_data`. Adoption sets
+#: `source = "sync"`, which the pending → posted promotion relies on, so the
+#: row's manual origin has to be kept apart from it. The sync only ever merges
+#: provider fields into `raw_data`, so the key outlives later syncs.
+ADOPTED_MANUAL_KEY = "securo_adopted_manual"
+
+#: Key a pending row the sync stored carries in `raw_data`: the category the
+#: sync itself gave it (its rules, or the provider's), recorded when it was
+#: given. A different category on the row was put there afterwards, by the
+#: user or a later bulk action, and is the user's.
+SYNC_CATEGORY_KEY = "securo_sync_category"
+
+#: Keys Securo writes into `raw_data` itself. They are not the provider's,
+#: so payload comparisons leave them out.
+_SECURO_RAW_KEYS = frozenset({ADOPTED_MANUAL_KEY, SYNC_CATEGORY_KEY})
+
 
 def _eb_reworded_entry(held: dict, booked: dict) -> bool:
     """Whether `booked` is `held` with a reference filled in and its
@@ -2199,7 +2217,9 @@ def _eb_reworded_entry(held: dict, booked: dict) -> bool:
     def rest(raw: dict) -> dict:
         return {
             key: value for key, value in raw.items()
-            if key not in _EB_LATE_REF_REWRITTEN and value is not None
+            if key not in _EB_LATE_REF_REWRITTEN
+            and key not in _SECURO_RAW_KEYS
+            and value is not None
         }
 
     if rest(held) != rest(booked):
@@ -2695,16 +2715,17 @@ _EB_CANCELLED_HOLD_DAYS = _EB_HOLD_SETTLE_DAYS + 2
 _EB_SURE_FEED_DAYS = 88
 
 
-#: Key a manual entry the sync adopted carries in `raw_data`. Adoption sets
-#: `source = "sync"`, which the pending → posted promotion relies on, so the
-#: row's manual origin has to be kept apart from it. The sync only ever merges
-#: provider fields into `raw_data`, so the key outlives later syncs.
-ADOPTED_MANUAL_KEY = "securo_adopted_manual"
-
-
 def _mark_adopted_manual(tx: Transaction) -> None:
     raw = tx.raw_data if isinstance(tx.raw_data, dict) else {}
     tx.raw_data = {**raw, ADOPTED_MANUAL_KEY: True}
+
+
+def _record_sync_category(tx: Transaction) -> None:
+    """Record on a pending row the category the sync gave it, if any."""
+    if tx.status != "pending" or tx.category_id is None:
+        return
+    raw = tx.raw_data if isinstance(tx.raw_data, dict) else {}
+    tx.raw_data = {**raw, SYNC_CATEGORY_KEY: str(tx.category_id)}
 
 
 def _holds_user_work(tx: Transaction) -> bool:
@@ -2713,10 +2734,15 @@ def _holds_user_work(tx: Transaction) -> bool:
     A manual entry the sync adopted is the user's whatever its text. An
     edited description shows as it differing from the bank's text in
     `original_description`; a row whose provenance is unknown (no
-    `original_description`) counts as the user's too. A category is checked
-    apart, in `_has_users_category`, because rules set one as well.
+    `original_description`) counts as the user's too. So does a category
+    other than the one the sync recorded when it stored the row
+    (`SYNC_CATEGORY_KEY`), a row stored before that was recorded included:
+    what today's rules would give says nothing about who set it.
     """
-    if isinstance(tx.raw_data, dict) and tx.raw_data.get(ADOPTED_MANUAL_KEY):
+    raw = tx.raw_data if isinstance(tx.raw_data, dict) else {}
+    if raw.get(ADOPTED_MANUAL_KEY):
+        return True
+    if tx.category_id is not None and raw.get(SYNC_CATEGORY_KEY) != str(tx.category_id):
         return True
     if (tx.notes or "").strip():
         return True
@@ -2731,37 +2757,6 @@ def _holds_user_work(tx: Transaction) -> bool:
     if tx.original_description is None:
         return True
     return tx.description != tx.original_description and not tx.description_is_rule_managed
-
-
-async def _has_users_category(session: AsyncSession, tx: Transaction) -> bool:
-    """Whether the row's category is one the user picked.
-
-    On an Enable Banking row only the rules set a category (the bank sends
-    none), so a category the rules would not give the bank's own text again
-    was chosen by hand, one at a time or in bulk.
-    """
-    if tx.category_id is None:
-        return False
-    bank_view = Transaction(
-        user_id=tx.user_id,
-        workspace_id=tx.workspace_id,
-        account_id=tx.account_id,
-        category_id=None,
-        description=tx.original_description or tx.description,
-        original_description=tx.original_description,
-        description_is_rule_managed=False,
-        amount=tx.amount,
-        currency=tx.currency,
-        date=tx.date,
-        type=tx.type,
-        source=tx.source,
-        status=tx.status,
-        payee=tx.payee,
-        payee_id=tx.payee_id,
-        is_ignored=False,
-    )
-    preview = await preview_rules_for_transaction(session, tx.user_id, bank_view)
-    return preview.category_id != tx.category_id
 
 
 async def _expire_cancelled_holds(
@@ -2780,7 +2775,8 @@ async def _expire_cancelled_holds(
     inside the window that feed surely covered, and its id is one this
     account uid would send (a reauthorisation changes the uid, and with it
     the id of an entry without a reference). Rows the user hid, paired as a
-    transfer, attached a file to or otherwise worked on are left alone.
+    transfer, attached a file to, shared with a group or otherwise worked on
+    are left alone.
     """
     today = app_today()
     window_start = max(since, today - timedelta(days=_EB_SURE_FEED_DAYS))
@@ -2806,17 +2802,23 @@ async def _expire_cancelled_holds(
         if tx.external_id not in live_external_ids
         and is_account_txn_id(account_uid, tx.external_id, tx.raw_data)
         and not _holds_user_work(tx)
-        and not await _has_users_category(session, tx)
     ]
     if not gone:
         return
-    attached = set((await session.execute(
+    gone_ids = [tx.id for tx in gone]
+    # A file or a group share hangs off the row and would go with it.
+    kept = set((await session.execute(
         select(TransactionAttachment.transaction_id).where(
-            TransactionAttachment.transaction_id.in_([tx.id for tx in gone])
+            TransactionAttachment.transaction_id.in_(gone_ids)
+        )
+    )).scalars())
+    kept.update((await session.execute(
+        select(TransactionSplit.transaction_id).where(
+            TransactionSplit.transaction_id.in_(gone_ids)
         )
     )).scalars())
     for tx in gone:
-        if tx.id not in attached:
+        if tx.id not in kept:
             await session.delete(tx)
 
 
@@ -3871,6 +3873,7 @@ async def sync_connection(
                     )
                 if transaction.category_id is None and not transaction.has_category_lines:
                     transaction.category_id = category_id
+                _record_sync_category(transaction)
 
                 await _stamp_synced_primary_amount(
                     session, user_id, transaction, converted
