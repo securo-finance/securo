@@ -164,6 +164,27 @@ async def test_find_placeholder_takes_a_foreign_placeholder_for_a_local_charge(
 
 
 @pytest.mark.asyncio
+async def test_find_placeholder_answers_to_the_wording_a_rule_replaced(
+    session, test_user, test_workspace, card
+):
+    """`set_description` rewrites the placeholder and keeps the bank's wording
+    in `original_description`; the charge still reads like the bill, so the
+    foreign-currency pass has to offer both, as the others do (#1550)."""
+    await _usd_bill(session, test_workspace, test_user, card)
+    await generate_pending(session, test_user.id, up_to=date(2025, 1, 20))
+    (placeholder,) = await _rows(session, card)
+    placeholder.original_description = placeholder.description
+    placeholder.description = "Anthropic Inc"
+    await session.commit()
+
+    found = await rms.find_placeholder_for_incoming(
+        session, card.id, Decimal("121.37"), "BRL", "debit", DUE, "Claude"
+    )
+
+    assert found is not None and found.id == placeholder.id
+
+
+@pytest.mark.asyncio
 async def test_import_turns_the_foreign_placeholder_into_the_local_charge(
     session, test_user, test_workspace, card
 ):

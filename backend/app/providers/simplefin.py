@@ -22,6 +22,7 @@ from __future__ import annotations
 import base64
 import binascii
 import logging
+import re
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
@@ -140,6 +141,60 @@ def _iso_currency(value: Any, fallback: Optional[str]) -> Optional[str]:
     if isinstance(value, str) and len(value) == 3 and value.isalpha():
         return value.upper()
     return fallback
+
+
+# Words that name a credit card, in the languages the bridge's connectors
+# carry. A bare "card" is not one of them: "debit card" and "credit union"
+# both contain a card word and neither is a card (issue #352).
+_CREDIT_CARD_WORDS = (
+    "credit card",
+    "creditcard",
+    "visa",
+    "mastercard",
+    "master card",
+    "amex",
+    "american express",
+    "carta di credito",
+    "carte de crédit",
+    "cartão de crédito",
+)
+_SAVINGS_WORDS = ("savings", "saving", "poupança", "poupanca")
+_CHECKING_WORDS = ("checking", "chequing", "conta corrente")
+# A word that reads like a card's but names something else; the card match is
+# skipped for these, so "Debit Card" stays a cash account.
+_NOT_A_CARD_WORDS = ("debit", "débito", "debito", "credit union")
+
+
+def _infer_account_type(name: str, balance: Decimal) -> str:
+    """The best default type for an account SimpleFIN does not type.
+
+    The protocol exposes no account-type field, so every account used to land
+    as ``checking`` and the user had to fix each card, savings and brokerage
+    one by hand after the first connect (issue #352). This is only a default:
+    the type override the user picks survives every later sync (#271 / #305),
+    so a wrong guess costs the one click it already cost for every account.
+
+    The name is read before the sign, so an overdrawn checking account is not
+    taken for a card. Only a name that says nothing leaves the sign to decide,
+    where a negative balance means what the account owes — how this protocol
+    reports a card.
+    """
+    lowered = " ".join((name or "").lower().split())
+
+    def says(words: tuple[str, ...]) -> bool:
+        # Whole words only: "Visalia Money Market" is not a Visa card.
+        return any(re.search(rf"(?<!\w){re.escape(word)}(?!\w)", lowered) for word in words)
+
+    is_cash = says(_SAVINGS_WORDS + _CHECKING_WORDS)
+    says_card = says(_CREDIT_CARD_WORDS)
+    says_not_a_card = says(_NOT_A_CARD_WORDS)
+    if says_card and not says_not_a_card and not is_cash:
+        return "credit_card"
+    if says(_SAVINGS_WORDS):
+        return "savings"
+    if is_cash:
+        return "checking"
+    return "credit_card" if balance < 0 else "checking"
 
 
 def _account_currency(raw_acc: dict) -> str:
@@ -497,7 +552,7 @@ class SimpleFinProvider(BankProvider):
                 AccountData(
                     external_id=account_id,
                     name=name,
-                    type="checking",  # SimpleFIN doesn't expose an account type
+                    type=_infer_account_type(name, balance),
                     balance=balance,
                     currency=currency,
                     institution_external_id=inst_ext,
@@ -632,6 +687,11 @@ class SimpleFinProvider(BankProvider):
                         transactions.append(parsed)
             cursor = chunk_end
         return transactions
+
+    def parse_raw_transaction(
+        self, raw: dict, payee_source: str = "auto"
+    ) -> Optional[TransactionData]:
+        return self._build_transaction(raw, payee_source)
 
     @staticmethod
     def _build_transaction(raw: dict, payee_source: str) -> Optional[TransactionData]:
