@@ -25,14 +25,14 @@ from app.models.account import Account
 from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.category import Category
 from app.models.institution import Institution
-from app.models.invoice import Invoice
+from app.models.invoice import Invoice, InvoiceAllocation
 from app.models.invoice_schedule import InvoiceSchedule
 from app.models.goal import Goal
 from app.models.collection import collection_asset_groups
 from app.models.credit_card_bill import CreditCardBill
 from app.models.payee import Payee, PayeeMapping
 from app.models.rule import Rule
-from app.models.transaction import Transaction
+from app.models.transaction import USER_EDITED_KEY, Transaction
 from app.models.transaction_attachment import TransactionAttachment
 from app.models.transaction_split import TransactionSplit
 from app.models.transaction_category_line import TransactionCategoryLine
@@ -2194,9 +2194,14 @@ ADOPTED_MANUAL_KEY = "securo_adopted_manual"
 #: user or a later bulk action, and is the user's.
 SYNC_CATEGORY_KEY = "securo_sync_category"
 
+#: The same record for the payee the sync gave a pending row.
+SYNC_PAYEE_KEY = "securo_sync_payee"
+
 #: Keys Securo writes into `raw_data` itself. They are not the provider's,
 #: so payload comparisons leave them out.
-_SECURO_RAW_KEYS = frozenset({ADOPTED_MANUAL_KEY, SYNC_CATEGORY_KEY})
+_SECURO_RAW_KEYS = frozenset(
+    {ADOPTED_MANUAL_KEY, SYNC_CATEGORY_KEY, SYNC_PAYEE_KEY, USER_EDITED_KEY}
+)
 
 
 def _eb_reworded_entry(held: dict, booked: dict) -> bool:
@@ -2721,28 +2726,53 @@ def _mark_adopted_manual(tx: Transaction) -> None:
 
 
 def _record_sync_category(tx: Transaction) -> None:
-    """Record on a pending row the category the sync gave it, if any."""
-    if tx.status != "pending" or tx.category_id is None:
+    """Record on a pending row the category and payee the sync gave it.
+
+    Both are recorded even when empty (as ""), so a value the user later
+    clears differs from the record as much as one they change.
+    """
+    if tx.status != "pending":
         return
     raw = tx.raw_data if isinstance(tx.raw_data, dict) else {}
-    tx.raw_data = {**raw, SYNC_CATEGORY_KEY: str(tx.category_id)}
+    tx.raw_data = {
+        **raw,
+        SYNC_CATEGORY_KEY: str(tx.category_id) if tx.category_id else "",
+        SYNC_PAYEE_KEY: str(tx.payee_id) if tx.payee_id else "",
+    }
+
+
+def _differs_from_sync(raw: dict, key: str, value: Optional[uuid.UUID]) -> bool:
+    """Whether a category or payee differs from the one the sync recorded.
+
+    A row stored before the record existed has none: any value on it counts
+    as the user's, since what today's rules would give says nothing about
+    who set it.
+    """
+    recorded = raw.get(key)
+    if recorded is None:
+        return value is not None
+    return recorded != (str(value) if value else "")
 
 
 def _holds_user_work(tx: Transaction) -> bool:
     """Whether a row carries something only the user put there.
 
-    A manual entry the sync adopted is the user's whatever its text. An
+    A manual entry the sync adopted is the user's whatever its text, and so
+    is a row whose category or payee the user edited (`USER_EDITED_KEY`,
+    set by the edit even when the value later went back to the sync's). An
     edited description shows as it differing from the bank's text in
     `original_description`; a row whose provenance is unknown (no
-    `original_description`) counts as the user's too. So does a category
-    other than the one the sync recorded when it stored the row
-    (`SYNC_CATEGORY_KEY`), a row stored before that was recorded included:
-    what today's rules would give says nothing about who set it.
+    `original_description`) counts as the user's too. So does a category or
+    payee other than the one the sync recorded when it stored the row
+    (`SYNC_CATEGORY_KEY`, `SYNC_PAYEE_KEY`), which also catches a bulk
+    recategorization and a cleared value.
     """
     raw = tx.raw_data if isinstance(tx.raw_data, dict) else {}
-    if raw.get(ADOPTED_MANUAL_KEY):
+    if raw.get(ADOPTED_MANUAL_KEY) or raw.get(USER_EDITED_KEY):
         return True
-    if tx.category_id is not None and raw.get(SYNC_CATEGORY_KEY) != str(tx.category_id):
+    if _differs_from_sync(raw, SYNC_CATEGORY_KEY, tx.category_id):
+        return True
+    if _differs_from_sync(raw, SYNC_PAYEE_KEY, tx.payee_id):
         return True
     if (tx.notes or "").strip():
         return True
@@ -2806,17 +2836,20 @@ async def _expire_cancelled_holds(
     if not gone:
         return
     gone_ids = [tx.id for tx in gone]
-    # A file or a group share hangs off the row and would go with it.
-    kept = set((await session.execute(
-        select(TransactionAttachment.transaction_id).where(
-            TransactionAttachment.transaction_id.in_(gone_ids)
+    # A file, a group share or an invoice payment hangs off the row and
+    # would go with it: deleting an allocated hold would reopen the invoice.
+    kept: set[uuid.UUID] = set()
+    for column in (
+        TransactionAttachment.transaction_id,
+        TransactionSplit.transaction_id,
+        InvoiceAllocation.transaction_id,
+    ):
+        kept.update(
+            tx_id for tx_id in (await session.execute(
+                select(column).where(column.in_(gone_ids))
+            )).scalars()
+            if tx_id is not None
         )
-    )).scalars())
-    kept.update((await session.execute(
-        select(TransactionSplit.transaction_id).where(
-            TransactionSplit.transaction_id.in_(gone_ids)
-        )
-    )).scalars())
     for tx in gone:
         if tx.id not in kept:
             await session.delete(tx)

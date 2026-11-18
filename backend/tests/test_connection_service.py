@@ -1989,6 +1989,7 @@ async def test_sync_connection_enable_banking_expires_cancelled_hold(
         "incomplete", "truncated", "before-window", "other-uid",
         "ignored", "paired", "attached", "noted", "adopted-manual",
         "bill-cycle", "category", "category-a-rule-also-gives", "group-share",
+        "invoice-allocated",
     ],
 )
 async def test_sync_connection_enable_banking_keeps_hold_without_evidence(
@@ -2070,11 +2071,98 @@ async def test_sync_connection_enable_banking_keeps_hold_without_evidence(
             group_member_id=friend.id, share_amount=Decimal("6.25"), share_type="exact",
         ))
         await session.commit()
+    if case == "invoice-allocated":
+        # Recorded as a payment on an invoice: deleting the row would
+        # cascade to the allocation and reopen the invoice.
+        from app.models.invoice import Invoice, InvoiceAllocation
+        invoice = Invoice(
+            id=uuid.uuid4(), workspace_id=test_workspace.id, status="open",
+            number="INV-1232", issue_date=_HOLD_TODAY - timedelta(days=20),
+            due_date=_HOLD_TODAY + timedelta(days=10),
+            currency="EUR", total=Decimal("12.50"),
+        )
+        session.add(invoice)
+        await session.flush()
+        session.add(InvoiceAllocation(
+            invoice_id=invoice.id, workspace_id=test_workspace.id,
+            transaction_id=held_id, amount=Decimal("12.50"),
+        ))
+        await session.commit()
 
     await _sync_eb(
         session, conn, test_workspace.id, test_user.id, [],
         incomplete=case == "incomplete", truncated=case == "truncated",
     )
+
+    assert [row.id for row in await _account_rows(session, account_id)] == [held_id]
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("_hold_clock")
+@pytest.mark.parametrize(
+    "edit",
+    [
+        "payee-set", "category-cleared", "category-changed-back",
+        "category-cleared-in-bulk", "category-changed-back-in-bulk",
+    ],
+)
+async def test_sync_connection_enable_banking_keeps_hold_the_user_edited(
+    session: AsyncSession, test_user, test_workspace, edit,
+):
+    """A rule gave the hold its category when the sync stored it. A payee
+    the user picked, a category they cleared, or one they changed and then
+    changed back is their work all the same, and the hold stays (#1232)."""
+    from app.schemas.transaction import TransactionUpdate
+    from app.services.payee_service import get_or_create_payee
+    from app.services.transaction_service import bulk_update_category, update_transaction
+
+    conn, account = await _hold_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    workspace_id, user_id = test_workspace.id, test_user.id
+    travel = await _make_category(session, user_id, "Travel")
+    shopping = await _make_category(session, user_id, "Shopping")
+    await create_rule(
+        session, workspace_id, user_id,
+        RuleCreate(
+            name="Holds",
+            conditions=[RuleCondition(field="description", op="contains", value="Transaction")],
+            actions=[RuleAction(op="set_category", value=str(travel.id))],
+            apply_to_existing=False,
+        ),
+    )
+    await session.commit()
+    await _sync_eb(
+        session, conn, workspace_id, user_id,
+        await _eb_fetch([], [_blank_hold(10)]), rules=True,
+    )
+    [held] = await _account_rows(session, account_id)
+    assert (held.status, held.category_id) == ("pending", travel.id)
+    held_id = held.id
+
+    async def edit_with(**fields):
+        await update_transaction(
+            session, held_id, workspace_id, user_id, TransactionUpdate(**fields),
+        )
+
+    if edit == "payee-set":
+        payee = await get_or_create_payee(session, user_id, "Hotel Alpenhof", workspace_id=workspace_id)
+        await edit_with(payee_id=payee.id)
+    elif edit == "category-cleared":
+        await edit_with(category_id=None)
+    elif edit == "category-changed-back":
+        await edit_with(category_id=shopping.id)
+        await edit_with(category_id=travel.id)
+    elif edit == "category-cleared-in-bulk":
+        await bulk_update_category(session, workspace_id, [held_id], None)
+        await session.commit()
+    else:
+        await bulk_update_category(session, workspace_id, [held_id], shopping.id)
+        await bulk_update_category(session, workspace_id, [held_id], travel.id)
+        await session.commit()
+
+    conn.last_sync_at = datetime(2026, 11, 5, tzinfo=timezone.utc)
+    await session.commit()
+    await _sync_eb(session, conn, workspace_id, user_id, [], rules=True)
 
     assert [row.id for row in await _account_rows(session, account_id)] == [held_id]
 
