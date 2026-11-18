@@ -14,7 +14,8 @@ name: fast lane
 #   2. it carries `risk: low` or `risk: medium`
 #   3. none of its code files match BLOCKED below; documentation never does
 #   4. the three required checks are green on the exact head being merged
-#   5. a trusted reviewer left a verdict comment naming that same head SHA
+#   5. a trusted reviewer other than its author left a verdict comment naming
+#      that same head SHA
 #   6. no unresolved CodeRabbit `Major` or `Critical` thread is left on it
 #
 # A refusal is also said on the pull request itself, in one comment this
@@ -132,15 +133,24 @@ jobs:
           script: |
             const OWNER = context.repo.owner, REPO = context.repo.repo;
 
-            // Who may leave a verdict. Same trust boundary as the label axes:
-            // an agent pushing through this repository commits as its owner.
-            const VERDICT_AUTHORS = ['tassionoronha'];
+            // Who may leave a verdict. Two identities: the account that pushes
+            // (an agent commits as its owner, so its comment is
+            // indistinguishable from the owner's) and the `securo-review` App,
+            // installed on this repository only. The App is what makes a
+            // second reviewer identity possible at all.
+            const VERDICT_AUTHORS = ['tassionoronha', 'securo-review[bot]'];
+            // The App's slug as GitHub reports it on the comment itself. The
+            // field only exists for a token minted by an installation, and a
+            // user token cannot set it, so this is checked as well as the login.
+            const REVIEWER_APP = 'securo-review';
             const VERDICT = '<!-- fast-lane: approve -->';
-            // A pull request opened by this login is never merged by the lane.
-            // Every agent pushes as the owner, so a verdict it could leave on
-            // its own code would let that code approve itself: `pulls.get`
-            // alone cannot tell an agent's comment from the owner's.
-            const SELF_APPROVAL_GUARD = ['tassionoronha'];
+            // A verdict only counts from someone other than the pull request's
+            // author. `pulls.get` cannot tell an agent's comment from the
+            // owner's, so a verdict the author's own identity left would let
+            // code approve itself. Before the App existed the two sides were
+            // one login and this was a list of authors never merged by the
+            // lane; the comparison below says the same thing and also covers
+            // the case that list could not: our pull request, the App's verdict.
 
             const REQUIRED = ['Backend Tests', 'Frontend Checks', 'Helm Checks'];
 
@@ -315,11 +325,28 @@ jobs:
                 // The marker must open the comment, so quoting a verdict in the
                 // conversation cannot pass as one; an edited comment never counts,
                 // because a verdict is a statement about one head, written once.
-                verdict = comments.filter((c) =>
-                  c.user && VERDICT_AUTHORS.includes(c.user.login)
-                  && (c.body || '').trimStart().startsWith(VERDICT)
-                  && (!c.updated_at || c.created_at === c.updated_at)
-                  && new RegExp(`sha:\\s*${head}\\b`).test(c.body || '')).pop() || null;
+                verdict = comments.filter((c) => {
+                  const body = c.body || '';
+                  if (!c.user || !VERDICT_AUTHORS.includes(c.user.login)) return false;
+                  // The author's own verdict is not a verdict. It is dropped
+                  // here, not only at the gate, so that it cannot shadow a real
+                  // one written before it: an author's identity commenting its
+                  // own approval after the App's would otherwise take the merge
+                  // away from a pull request the App had approved.
+                  if (c.user.login === pr.user.login) return false;
+                  // A verdict attributed to the App must come from an
+                  // installation of it: the login alone is a string a fork
+                  // cannot forge, but the field is the proof GitHub signs.
+                  if (c.user.login === `${REVIEWER_APP}[bot]`
+                      && (c.performed_via_github_app || {}).slug !== REVIEWER_APP) {
+                    core.info(`#${number}: ignoring a verdict whose app slug is not ` +
+                      REVIEWER_APP);
+                    return false;
+                  }
+                  return body.trimStart().startsWith(VERDICT)
+                    && (!c.updated_at || c.created_at === c.updated_at)
+                    && new RegExp(`sha:\\s*${head}\\b`).test(body);
+                }).pop() || null;
               } catch (e) {
                 // No readable approval means nothing to report either way; the
                 // gates below still run and gate 4 names the missing verdict.
@@ -432,13 +459,14 @@ jobs:
               }
 
               // ---- 4. the verdict names the head we are about to merge ------
-              if (SELF_APPROVAL_GUARD.includes(pr.user.login)) {
-                // Never said on the pull request: a comment under the author's
-                // own pull request explaining the rule only spells out the guard.
-                return skip(`opened by ${pr.user.login}, which is not merged ` +
-                  'automatically', false);
+              // The selection above already left out the author's own comments,
+              // so any verdict still here is a second opinion and a missing one
+              // is the refusal. Nothing about a pull request the author opened
+              // is ever said on it: a comment there would only spell out the rule.
+              if (!verdict) {
+                return skip('it carries no approval from an identity other than ' +
+                  'its author', false);
               }
-              if (!verdict) return skip('it carries no approval for the commit checked');
 
               // ---- 5. green, on that exact head ----------------------------
               const { data: checks } = await github.rest.checks.listForRef(
