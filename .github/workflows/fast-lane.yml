@@ -12,7 +12,7 @@ name: fast lane
 # The gates, all of which must hold:
 #   1. the PR is against main, not a draft, and has no standing CHANGES_REQUESTED
 #   2. it carries `risk: low` or `risk: medium`
-#   3. none of its files match BLOCKED_PATHS below
+#   3. none of its code files match BLOCKED below; documentation never does
 #   4. the three required checks are green on the exact head being merged
 #   5. a trusted reviewer left a verdict comment naming that same head SHA
 #   6. no unresolved CodeRabbit `Major` or `Critical` thread is left on it
@@ -169,6 +169,17 @@ jobs:
               [/(^|\/)\.env/,                                         'environment file'],
               [/plugin[-_]runner|runtime\.py$/i,                      'executes third-party code'],
             ];
+
+            // Documentation is text no process executes: a README beside the
+            // chart or a page under docs/ describes a deployment, it does not
+            // perform one, so it is not matched against the rules above at all.
+            // Two green, medium-risk pull requests (#1545 and #1465) waited for
+            // a person only because `charts/securo/README.md` matched the
+            // `deployment` rule. Every path that is code keeps matching: a
+            // rename still reports its previous name, so moving a blocked file
+            // into a documentation path does not hide it.
+            const isDocumentation = (p) =>
+              /\.(md|mdx)$/i.test(p) || /(^|\/)docs\//i.test(p);
 
             // A refusal used to exist only in this run's log, and a log expires:
             // the pull request a person had already approved looked exactly as
@@ -340,6 +351,7 @@ jobs:
               // workflow out of its directory would otherwise pass the list.
               for (const f of files) {
                 for (const p of [f.filename, f.previous_filename].filter(Boolean)) {
+                  if (isDocumentation(p)) continue;
                   for (const [re, what] of BLOCKED) {
                     if (re.test(p)) {
                       return skip(`\`${p}\` is in a part of the repository that is ` +
