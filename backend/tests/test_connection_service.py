@@ -6585,6 +6585,7 @@ async def test_sync_states_an_enable_banking_card_debt_from_the_stored_limit(
     from app.services.account_service import get_account_with_balances
 
     payload = await get_account_with_balances(session, account.id, test_workspace.id)
+    assert payload is not None
     assert payload["current_balance"] == pytest.approx(-100.0)
     assert payload["credit_limit"] == pytest.approx(5000.0)
     assert payload["available_credit"] == pytest.approx(4900.0)
