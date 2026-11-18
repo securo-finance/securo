@@ -6567,6 +6567,66 @@ async def test_sync_normalizes_simplefin_card_balance_to_positive_for_debt(
 
 
 @pytest.mark.asyncio
+async def test_sync_states_an_enable_banking_card_debt_from_the_stored_limit(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Enable Banking reports a card's free credit, and the bank may not send
+    the limit at all. The limit already stored on the account is what turns
+    that into the debt Securo keeps (issue #624)."""
+    conn = BankConnection(
+        id=uuid.uuid4(), user_id=test_user.id, provider="enable_banking",
+        external_id=f"ext-eb-{uuid.uuid4().hex[:8]}",
+        institution_name="mBank", credentials={"session_id": "sess"},
+        status="active", last_sync_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn)
+    await session.commit()
+
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn.id, external_id="card-1", name="mBank Card",
+        type="credit_card", balance=Decimal("0.00"), currency="PLN",
+        credit_limit=Decimal("5000.00"),
+    )
+    session.add(account)
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"session_id": "sess"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="card-1", name="mBank Card", type="credit_card",
+            balance=Decimal("0"), currency="PLN",
+            available_credit=Decimal("4900.00"),
+        ),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+    mock_provider.get_bills = AsyncMock(return_value=[])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    await session.refresh(account)
+    # 5000 of limit less 4900 still free: the card owes 100, which is what the
+    # account balance stores for a liability.
+    assert account.balance == Decimal("100.00")
+    assert account.credit_limit == Decimal("5000.00")
+
+    # And what the screens read: the same three numbers the bank's app shows.
+    from app.services.account_service import get_account_with_balances
+
+    payload = await get_account_with_balances(session, account.id, test_workspace.id)
+    assert payload is not None
+    assert payload["current_balance"] == pytest.approx(-100.0)
+    assert payload["credit_limit"] == pytest.approx(5000.0)
+    assert payload["available_credit"] == pytest.approx(4900.0)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("provider", ["simplefin", "pluggy", "enable_banking"])
 @pytest.mark.parametrize("account_type,provider_type,reported,stored", [
     # No override: a checking account keeps the provider's balance verbatim.

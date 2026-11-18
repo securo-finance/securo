@@ -135,26 +135,108 @@ def _account_identifier(raw: dict) -> Optional[str]:
     return None
 
 
+# Balance types EB reports for a card, split by what they mean. EB gives a
+# card's figures from the account holder's side: the available one is the
+# credit still free to spend, and a booked one is signed the same way (negative
+# while the card owes). Some banks report the credit limit as the booked figure
+# instead of the debt (mBank PL, issue #624), so a booked figure alone cannot
+# say what is owed and only `credit_limit - available` is exact.
+CARD_AVAILABLE_BALANCE_TYPES = ("ITAV", "CLAV")
+CARD_BOOKED_BALANCE_TYPES = ("CLBD", "ITBD", "XPCD", "OPBD", "PRCD")
+
+
+def _balance_of_type(
+    balances: list[dict], types: tuple[str, ...]
+) -> Optional[dict]:
+    """The first balance whose type is in ``types``, in the order given."""
+    by_type = {b.get("balance_type") or b.get("type"): b for b in balances if isinstance(b, dict)}
+    for key in types:
+        if key in by_type:
+            return by_type[key]
+    return None
+
+
 def _pick_balance(balances: list[dict]) -> Optional[dict]:
     """Pick the most useful balance from EB's list (prefer closing booked)."""
     if not balances:
         return None
-    priority = ["CLBD", "ITAV", "CLAV", "XPCD", "OPBD", "OPAV"]
-    by_type = {b.get("balance_type") or b.get("type"): b for b in balances if isinstance(b, dict)}
-    for key in priority:
-        if key in by_type:
-            return by_type[key]
+    picked = _balance_of_type(balances, ("CLBD", "ITAV", "CLAV", "XPCD", "OPBD", "OPAV"))
+    if picked is not None:
+        return picked
     return balances[0] if isinstance(balances[0], dict) else None
 
 
-def _balance_decimal(balance: Optional[dict]) -> Decimal:
+def _credit_limit_decimal(raw: dict) -> Optional[Decimal]:
+    """The card's credit limit from a details payload (`credit_limit` is an
+    amount object there; a cached summary keeps the bare number)."""
+    value = raw.get("credit_limit")
+    if isinstance(value, dict):
+        value = value.get("amount")
+    try:
+        limit = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return limit if limit > 0 else None
+
+
+def _card_balance(
+    balances: list[dict], credit_limit: Optional[Decimal]
+) -> tuple[Decimal, Optional[Decimal], Optional[dict]]:
+    """A card's debt (positive, as Securo stores it), its free credit, and the
+    figure the reading came from (issue #624).
+
+    The debt is `limit - available` when both are known, which is what the
+    bank's own app shows whatever the bank calls its booked figure. Without a
+    limit that subtraction cannot be made here: the free credit goes back to
+    the sync, which holds the limit stored on the account row, and a booked
+    figure EB signs as money owed still states the debt. A card with only a
+    booked balance is read by its sign, like any other EB account.
+
+    A balance entry without a usable amount counts as absent, never as zero:
+    a missing figure must not read as the whole limit spent, and it does not
+    hide a later entry of another type that does carry one.
+    """
+    available, free_credit = _card_figure(balances, CARD_AVAILABLE_BALANCE_TYPES)
+    booked, booked_amount = _card_figure(balances, CARD_BOOKED_BALANCE_TYPES)
+    if free_credit is not None:
+        if credit_limit is not None:
+            return credit_limit - free_credit, free_credit, available
+        if booked_amount is not None and booked_amount < 0:
+            return -booked_amount, free_credit, booked
+        return Decimal("0"), free_credit, available
+    if booked_amount is not None:
+        return -booked_amount, None, booked
+    return Decimal("0"), None, None
+
+
+def _card_figure(
+    balances: list[dict], types: tuple[str, ...]
+) -> tuple[Optional[dict], Optional[Decimal]]:
+    """The first balance of ``types``, in the order given, that carries a
+    usable amount, and that amount."""
+    by_type = {b.get("balance_type") or b.get("type"): b for b in balances if isinstance(b, dict)}
+    for key in types:
+        entry = by_type.get(key)
+        amount = _balance_amount(entry)
+        if amount is not None:
+            return entry, amount
+    return None, None
+
+
+def _balance_amount(balance: Optional[dict]) -> Optional[Decimal]:
+    """The figure inside a balance entry, or None when it carries none."""
     if not balance:
-        return Decimal("0")
+        return None
     amount = balance.get("balance_amount") or balance.get("amount") or {}
     try:
-        return Decimal(str(amount.get("amount", "0")))
-    except (InvalidOperation, AttributeError):
-        return Decimal("0")
+        return Decimal(str(amount.get("amount")))
+    except (InvalidOperation, AttributeError, TypeError, ValueError):
+        return None
+
+
+def _balance_decimal(balance: Optional[dict]) -> Decimal:
+    amount = _balance_amount(balance)
+    return amount if amount is not None else Decimal("0")
 
 
 def _balance_currency(balance: Optional[dict], fallback: str) -> str:
@@ -890,12 +972,20 @@ class EnableBankingProvider(BankProvider):
         `require_balance`, when the failure is raised to the caller instead."""
         uid = raw.get("uid") or raw.get("account_uid") or ""
         currency = raw.get("currency") or "EUR"
+        account_type = _map_cash_account_type(raw.get("cash_account_type"))
+        is_card = account_type == "credit_card"
+        credit_limit = _credit_limit_decimal(raw) if is_card else None
         # EB doesn't include balances in the session payload; fetch separately.
         balance = Decimal("0")
+        available_credit: Optional[Decimal] = None
         try:
             bal_resp = await self._request("GET", f"/accounts/{uid}/balances")
-            picked = _pick_balance(bal_resp.get("balances") or [])
-            balance = _balance_decimal(picked)
+            balances = bal_resp.get("balances") or []
+            if is_card:
+                balance, available_credit, picked = _card_balance(balances, credit_limit)
+            else:
+                picked = _pick_balance(balances)
+                balance = _balance_decimal(picked)
             currency = _balance_currency(picked, currency)
         except (httpx.HTTPError, SessionExpiredError) as exc:
             if require_balance:
@@ -918,9 +1008,11 @@ class EnableBankingProvider(BankProvider):
         return AccountData(
             external_id=uid,
             name=name,
-            type=_map_cash_account_type(raw.get("cash_account_type")),
+            type=account_type,
             balance=balance,
             currency=currency,
+            credit_limit=credit_limit,
+            available_credit=available_credit,
             masked_number=mask_last4(_account_identifier(raw)),
             # From the session payload: `uid` is scoped to one session, this
             # hash is what lets a later session find the same account again.
@@ -930,7 +1022,13 @@ class EnableBankingProvider(BankProvider):
     async def _build_cached_account(
         self, uid: str, cached: dict, stable_external_id: Optional[str]
     ) -> AccountData:
-        """An account named from cached details; only its balance is fetched."""
+        """An account named from cached details; only its balance is fetched.
+
+        No credit limit is claimed here on purpose: the sync reads a card's
+        debt against the limit stored on the account row, and a figure cached
+        from an earlier /details call must not overwrite a limit the row
+        already holds (issue #624).
+        """
         account = await self._build_account(
             {
                 "uid": uid,
