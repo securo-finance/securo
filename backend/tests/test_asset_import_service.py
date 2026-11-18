@@ -2018,6 +2018,8 @@ async def test_undo_is_refused_when_the_position_left_would_be_too_large(
         await asset_import_service.undo_import(session, test_workspace.id, log)
 
     assert exc.value.status_code == 409
-    assert exc.value.detail["code"] == "import_undo_too_large"
+    detail = exc.value.detail
+    assert isinstance(detail, dict)
+    assert detail["code"] == "import_undo_too_large"
     # Nothing was taken back.
     assert (await session.execute(select(ImportLog))).scalars().first() is not None
