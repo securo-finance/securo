@@ -739,10 +739,19 @@ async def import_orders(
                 'fee': (order.fee * rate * unit).quantize(Decimal('0.01')),
                 'currency': target,
             })
+            # A converted row that matches was already found above through
+            # what its file said; one from another currency or price is
+            # another order, even when both convert to the same number. Only
+            # a row stored at the converted price without a recorded origin
+            # could be this order, or another one: it is named, not dropped.
             if asset is not None and _same_order(
-                seen, ('row', asset.id, order.date, order.kind, order.quantity, order.price), order.external_id or None,
+                seen, ('plain', asset.id, order.date, order.kind, order.quantity, order.price),
+                order.external_id or None,
             ):
-                skipped += 1
+                errors.append(AssetImportRowError(
+                    row=order.row, reason='possible_duplicate', ticker=order.ticker,
+                    detail=f'{order.price} {target}',
+                ))
                 continue
 
         held = units.get(order.ticker, Decimal('0'))

@@ -599,6 +599,55 @@ async def test_a_distinct_order_at_a_converted_rows_price_is_imported(
 
 
 @pytest.mark.asyncio
+async def test_orders_from_two_currencies_at_one_converted_price_are_both_kept(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    """400 EUR and 500 GBP both convert to 500 USD that day; neither file says
+    the same thing, so the second order is not taken for the first."""
+    await _eur_rate(session, date(2026, 1, 15), "0.8")
+    session.add(FxRate(
+        base_currency="USD", quote_currency="GBP", date=date(2026, 1, 15),
+        rate=Decimal("1"), source="test",
+    ))
+    await session.commit()
+    await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,currency", "AAPL,2026-01-15,1,400,EUR",
+    ), provider)
+
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,currency", "AAPL,2026-01-15,1,500,GBP",
+    ), provider)
+
+    assert (summary["imported"], summary["skipped"], summary["errors"]) == (1, 0, [])
+    assert sorted((tx.source_currency, tx.price) for tx in await _ledger(session)) == [
+        ("EUR", Decimal("500")), ("GBP", Decimal("500")),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_row_without_origin_at_the_converted_price_is_named_not_skipped(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    """A 500 USD row with no recorded origin may be this 400 EUR order or
+    another one: the import holds it back and says so."""
+    asset = await _apple_in_usd(session, test_user, test_workspace)
+    session.add(AssetTransaction(
+        asset_id=asset.id, workspace_id=test_workspace.id, kind="buy",
+        quantity=Decimal("1"), price=Decimal("500"), fee=Decimal("0"),
+        date=date(2026, 1, 15), source="import",
+    ))
+    await _eur_rate(session, date(2026, 1, 15), "0.8")
+
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,currency", "AAPL,2026-01-15,1,400,EUR",
+    ), provider)
+
+    assert (summary["imported"], summary["skipped"]) == (0, 0)
+    assert [(e.row, e.reason) for e in summary["errors"]] == [(2, "possible_duplicate")]
+    assert len(await _ledger(session)) == 1
+
+
+@pytest.mark.asyncio
 async def test_a_converted_match_with_another_broker_id_is_a_new_order(
     session: AsyncSession, test_user: User, test_workspace: Workspace, provider
 ):
