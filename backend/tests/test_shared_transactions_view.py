@@ -155,6 +155,73 @@ async def test_linked_member_sees_shared_transaction_in_their_list(
 
 
 @pytest.mark.asyncio
+async def test_linked_member_of_source_workspace_sees_pocket_assignments(
+    client, auth_headers, session, test_workspace
+):
+    """A split member who also belongs to the workspace keeps its Pocket badges."""
+    import uuid
+
+    from app.models.workspace import WorkspaceMember
+
+    friend_email = "shared-tx-coworker@example.com"
+    friend = await _register(client, friend_email, "friendpassword12")
+    friend_headers = await _login(client, friend_email, "friendpassword12")
+    session.add(
+        WorkspaceMember(
+            workspace_id=test_workspace.id, user_id=uuid.UUID(friend["id"]), role="viewer"
+        )
+    )
+    await session.commit()
+
+    account = await _create_account(client, auth_headers, balance=100)
+    _, me_member, friend_member = await _create_group_with_self_and_friend(
+        client, auth_headers, friend_email
+    )
+    pocket = await client.post(
+        "/api/goals",
+        headers=auth_headers,
+        json={
+            "name": "Concert fund",
+            "target_amount": 100,
+            "tracking_type": "pocket",
+            "account_id": account["id"],
+            "initial_allocation": 50,
+        },
+    )
+    assert pocket.status_code == 201, pocket.text
+    resp = await client.post(
+        "/api/transactions",
+        headers=auth_headers,
+        json={
+            "account_id": account["id"],
+            "description": "Concert Tickets",
+            "amount": 90,
+            "date": "2026-04-28",
+            "type": "debit",
+            "currency": "USD",
+            "goal_allocations": [{"goal_id": pocket.json()["id"], "amount": 25}],
+            "splits": {
+                "share_type": "equal",
+                "splits": [
+                    {"group_member_id": me_member["id"]},
+                    {"group_member_id": friend_member["id"]},
+                ],
+            },
+        },
+    )
+    assert resp.status_code == 201, resp.text
+
+    in_source = await client.get(
+        "/api/transactions",
+        headers={**friend_headers, "X-Workspace-Id": str(test_workspace.id)},
+    )
+    assert in_source.status_code == 200, in_source.text
+    [row] = [t for t in in_source.json()["items"] if t["description"] == "Concert Tickets"]
+    assert row["is_shared"] is True
+    assert [a["goal_id"] for a in row["goal_allocations"]] == [pocket.json()["id"]]
+
+
+@pytest.mark.asyncio
 async def test_owner_does_not_see_shared_duplicate(client, auth_headers, test_user):
     """Owners see their own transaction once, never tagged as shared."""
     friend_email = "shared-tx-owner-test@example.com"

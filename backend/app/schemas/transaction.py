@@ -282,10 +282,11 @@ class TransactionRead(TransactionBase):
 
         A linked group member may see another user's transaction, but the
         owner's personal Pocket names and reservation amounts remain private
-        to the source workspace.
+        to the source workspace. A member of that workspace sees them even
+        when the row is also shared with them through a split.
         """
         item = cls.model_validate(transaction, from_attributes=True)
-        if item.is_shared or transaction.workspace_id != workspace_id:
+        if transaction.workspace_id != workspace_id:
             item.goal_allocations = []
         return item
 
