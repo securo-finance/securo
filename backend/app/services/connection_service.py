@@ -1694,7 +1694,10 @@ async def handle_oauth_callback(
             display_name=institution.name if institution else None,
             masked_number=acc_data.masked_number,
             type=acc_data.type,
-            balance=_account_balance(acc_data, auto_invested_deducted),
+            # The full reported balance until the holdings it would deduct
+            # are stored: the first import applies the deduction in the same
+            # transaction, so a failed import never leaves money uncounted.
+            balance=acc_data.balance,
             currency=acc_data.currency,
             credit_limit=acc_data.credit_limit if is_cc else None,
             statement_close_day=acc_data.statement_close_day if is_cc else None,
@@ -1720,8 +1723,22 @@ async def handle_oauth_callback(
     # spend the consent the user just gave and send them through the bank's
     # login again (issue #1406, the same problem #1400 fixed on a reconnect).
     await session.commit()
+    # Read before anything can roll back: a rollback expires the connection,
+    # and reading an expired attribute here would need I/O the async session
+    # cannot do implicitly.
+    connection_id = connection.id
 
     try:
+        # Once committed the connection is visible, so a sync can start on it
+        # while the bank is still being read here. Both paths take the
+        # connection's row lock; a sync that finished first already imported
+        # the history, and importing it again would duplicate it.
+        if not await _claim_first_import(session, connection_id):
+            await session.commit()
+            await session.refresh(connection)
+            return connection
+        for account, acc_data in synced_accounts:
+            account.balance = _account_balance(acc_data, auto_invested_deducted)
         await _run_first_import(
             session,
             connection=connection,
@@ -1741,12 +1758,35 @@ async def handle_oauth_callback(
         # the connection and its accounts, and leave it errored so the retry
         # the accounts page offers syncs the stored credentials.
         await session.rollback()
-        await _mark_initial_import_failed(session, connection.id, exc)
+        await _mark_initial_import_failed(session, connection_id, exc)
         await session.refresh(connection)
         return connection
 
     await session.refresh(connection)
     return connection
+
+
+async def _claim_first_import(
+    session: AsyncSession, connection_id: uuid.UUID
+) -> bool:
+    """Lock a new connection's row and say whether its first import is due.
+
+    ``sync_connection`` takes the same row lock, so the two never import at
+    once. The row is re-read (``populate_existing``) because a sync that ran
+    in another session left this session's copy stale. False when that sync
+    already imported the history, or the connection is gone or disconnected.
+    """
+    current = await session.scalar(
+        select(BankConnection)
+        .where(BankConnection.id == connection_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    return (
+        current is not None
+        and current.status != DISCONNECTED_STATUS
+        and current.last_sync_at is None
+    )
 
 
 async def _run_first_import(
