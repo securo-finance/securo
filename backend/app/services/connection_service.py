@@ -3670,7 +3670,16 @@ async def sync_connection(
                     # win, the charge fills the empty ones, and only its
                     # provenance is recorded outright.
                     placeholder.original_description = txn_data.description
-                    if placeholder.amount != txn_data.amount or converted is not None:
+                    # A bill kept in a foreign currency is answered by a
+                    # charge in the account's own (#1073): the row takes the
+                    # charged currency.
+                    currency_changed = placeholder.currency != incoming_currency
+                    placeholder.currency = incoming_currency
+                    if (
+                        placeholder.amount != txn_data.amount
+                        or converted is not None
+                        or currency_changed
+                    ):
                         # Matched under a tolerance, or the bank said what the
                         # charge cost in the primary currency: the row now
                         # stands for what was actually charged, not for what

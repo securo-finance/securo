@@ -55,10 +55,29 @@ from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.services import reconciliation_policy, reconciliation_rule_service
 from app.services.reconciliation_engine import Expectation, Movement, evaluate
+from app.services.text_similarity import token_overlap
 
 # Real-transaction sources a recurring charge can arrive under. Excludes
 # "recurring" itself: that is the generated placeholder, handled separately.
 _REAL_SOURCES = ("sync", "import", "ofx", "csv", "manual")
+
+# A bill kept in a foreign currency (a USD subscription on a VND card) is
+# charged in the account's currency at that month's rate, so its amount can
+# never be compared (#1073). Such a charge is recognised by what is left:
+# the account, the direction, the window and the description, at the same
+# similarity the shipped recurring rule asks for. Only a single fit counts;
+# two candidates stay unlinked rather than guessed.
+_FOREIGN_MIN_SIMILARITY = 0.6
+
+
+def _only_foreign_fit(candidates, description: Optional[str]) -> Optional[Transaction]:
+    fits = [
+        candidate
+        for candidate in candidates
+        if not candidate.is_ignored
+        and token_overlap(candidate.description, description) >= _FOREIGN_MIN_SIMILARITY
+    ]
+    return fits[0] if len(fits) == 1 else None
 
 
 def _date_reach(policy: dict[str, Any]) -> tuple[int, int]:
@@ -174,7 +193,27 @@ async def find_real_tx_for_occurrence(
         result.scalars(),
         key=lambda tx: (abs((tx.date - occurrence_date).days), tx.date, tx.id),
     )
-    return _best_movement(nearest, _as_occurrence(recurring, occurrence_date), policy)
+    found = _best_movement(nearest, _as_occurrence(recurring, occurrence_date), policy)
+    if found is not None:
+        return found
+
+    # A bill in a currency other than its account's is charged in the
+    # account's currency, which the policy never links (#1073).
+    account = await session.get(Account, recurring.account_id)
+    if account is None or not account.currency or account.currency == recurring.currency:
+        return None
+    result = await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == recurring.account_id,
+            Transaction.recurring_transaction_id.is_(None),
+            Transaction.source.in_(_REAL_SOURCES),
+            Transaction.currency == account.currency,
+            Transaction.type == recurring.type,
+            Transaction.date >= occurrence_date - timedelta(days=before),
+            Transaction.date <= occurrence_date + timedelta(days=after),
+        )
+    )
+    return _only_foreign_fit(result.scalars(), recurring.description)
 
 
 async def find_placeholder_for_incoming(
@@ -260,9 +299,38 @@ async def find_placeholder_for_incoming(
         account_id=account_id,
     )
     found = _best_movement([row[0] for row in rows], incoming, policy)
-    if found is not None or not rows:
+    if found is None and rows:
+        found = _placeholder_under_workspace_rule(
+            rows, composed, amount, currency, tx_type, tx_date, description, account_id
+        )
+    if found is not None:
         return found
 
+    # A placeholder for a bill kept in another currency, answered by a
+    # charge in the account's own currency (#1073). The caller takes the
+    # charge's amount and currency onto the row.
+    if not account.currency or currency != account.currency:
+        return None
+    result = await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == account_id,
+            Transaction.source == "recurring",
+            Transaction.recurring_transaction_id.is_not(None),
+            Transaction.external_id.is_(None),
+            Transaction.currency != currency,
+            Transaction.type == tx_type,
+            Transaction.date >= tx_date - timedelta(days=max(p_before, r_after)),
+            Transaction.date <= tx_date + timedelta(days=max(p_after, r_before)),
+        )
+    )
+    return _only_foreign_fit(result.scalars(), description)
+
+
+def _placeholder_under_workspace_rule(
+    rows, composed, amount, currency, tx_type, tx_date, description, account_id
+) -> Optional[Transaction]:
+    """The second pass of `find_placeholder_for_incoming`: the charge is the
+    movement and each placeholder the occurrence it answers."""
     charge = Movement(
         amount=amount,
         currency=currency,
