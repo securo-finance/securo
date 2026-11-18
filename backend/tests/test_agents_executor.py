@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.agents.mcp.client import MCPRegistry, ToolHandle
 from app.agents.models.agent import Agent
@@ -623,3 +624,210 @@ async def test_provider_receives_stable_conversation_session_id(
             user_message="hi",
         )
     assert provider.session_id == str(test_conversation.id)
+
+
+# --- Tool access: the agent's list is enforced on calls, not only on what
+# --- the model is shown.
+
+
+def _calls_tool(name: str, args: str = "{}") -> list[list[ChatChunk]]:
+    return [
+        [
+            ChatChunk(type="tool_call_start", tool_call_id="t1", tool_name=name),
+            ChatChunk(type="tool_call_args_delta", tool_call_id="t1", args_delta=args),
+            ChatChunk(type="tool_call_end", tool_call_id="t1"),
+            ChatChunk(type="finish", finish_reason="tool_calls"),
+        ],
+        [ChatChunk(type="text_delta", text="done"), ChatChunk(type="finish", finish_reason="stop")],
+    ]
+
+
+def _handles(*names: str) -> list[ToolHandle]:
+    return [ToolHandle(server="securo", name=n, description="", parameters={"type": "object"}) for n in names]
+
+
+async def _run(session, test_user, agent, conversation, mcp, tool_name, args="{}"):
+    provider = _ScriptedProvider(_calls_tool(tool_name, args))
+    with _patch_provider(provider):
+        return await _drain(
+            AgentExecutor(mcp=mcp), session=session, agent=agent, user_id=test_user.id,
+            conversation_id=conversation.id, user_message="go",
+        )
+
+
+@pytest.mark.parametrize("args", ['{"months":12}{}', '{"months":'])
+async def test_tool_is_not_called_with_arguments_that_are_not_one_object(
+    session, test_user, test_agent, test_conversation, args
+):
+    """Two glued calls (#1318) or a cut-off object used to reach the tool as
+    `{"_raw": ...}` and fail inside it. The model gets the reason instead."""
+    from app.agents.services import agent_service
+
+    await agent_service.replace_tool_enablement(session, test_agent.id, [("securo", "list_accounts", True)])
+    mcp = _FakeMCP(tools=_handles("list_accounts"))
+    await _run(session, test_user, test_agent, test_conversation, mcp, "securo__list_accounts", args)
+
+    assert mcp.calls == []
+    rows = (await session.execute(
+        select(Message).where(Message.conversation_id == test_conversation.id, Message.role == "tool")
+    )).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].tool_result["ok"] is False
+    assert "must be one JSON object" in rows[0].content
+
+
+@pytest.mark.parametrize("name", ["securo__delete_account", "delete_account"])
+async def test_disabled_tool_is_not_called_even_if_the_model_names_it(
+    session, test_user, test_agent, test_conversation, name
+):
+    from app.agents.services import agent_service
+
+    await agent_service.replace_tool_enablement(
+        session, test_agent.id,
+        [("securo", "list_accounts", True), ("securo", "delete_account", False)],
+    )
+    mcp = _FakeMCP(tools=_handles("list_accounts", "delete_account"))
+    events = await _run(session, test_user, test_agent, test_conversation, mcp, name)
+
+    assert mcp.calls == []
+    result = next(e for e in events if e.type == "tool_result")
+    assert result.tool_result["ok"] is False
+
+
+async def test_bare_tool_name_resolves_to_the_announced_tool(
+    session, test_user, test_agent, test_conversation
+):
+    from app.agents.services import agent_service
+
+    await agent_service.replace_tool_enablement(session, test_agent.id, [("securo", "list_accounts", True)])
+    mcp = _FakeMCP(tools=_handles("list_accounts"))
+    await _run(session, test_user, test_agent, test_conversation, mcp, "list_accounts")
+    assert mcp.calls == [("securo__list_accounts", {})]
+
+
+async def test_agent_created_with_no_tools_cannot_call_any(
+    session, test_user, test_workspace, test_conversation
+):
+    from app.agents.schemas.agent import AgentCreate
+    from app.agents.services import agent_service
+
+    agent = await agent_service.create_agent(
+        session, test_workspace.id, test_user.id,
+        AgentCreate(name="No tools", model="gpt-4o-mini", tools=[]),
+        discovered=[("securo", "list_accounts")],
+    )
+    test_conversation.agent_id = agent.id
+    await session.commit()
+    mcp = _FakeMCP(tools=_handles("list_accounts"))
+    await _run(session, test_user, agent, test_conversation, mcp, "securo__list_accounts")
+    assert mcp.calls == []
+
+
+async def test_tool_added_after_creation_is_not_callable(
+    session, test_user, test_workspace, test_conversation
+):
+    from app.agents.schemas.agent import AgentCreate
+    from app.agents.services import agent_service
+
+    agent = await agent_service.create_agent(
+        session, test_workspace.id, test_user.id,
+        AgentCreate(name="Early", model="gpt-4o-mini"),
+        discovered=[("securo", "list_accounts")],
+    )
+    test_conversation.agent_id = agent.id
+    await session.commit()
+    mcp = _FakeMCP(tools=_handles("list_accounts", "delete_account"))
+    await _run(session, test_user, agent, test_conversation, mcp, "securo__delete_account")
+    assert mcp.calls == []
+    assert await agent_service.allowed_tool_pairs(session, agent.id) == {("securo", "list_accounts")}
+
+
+async def test_agent_without_a_tool_list_keeps_every_tool(
+    session, test_user, test_agent, test_conversation
+):
+    """Agents from before tool lists were explicit (the migration leaves
+    them uninitialized) get every tool they could already use recorded on
+    their first turn."""
+    from app.agents.services import agent_service
+
+    assert test_agent.tools_initialized is False
+    mcp = _FakeMCP(tools=_handles("list_accounts", "list_budgets"))
+    await _run(session, test_user, test_agent, test_conversation, mcp, "securo__list_budgets")
+
+    assert mcp.calls == [("securo__list_budgets", {})]
+    assert test_agent.tools_initialized is True
+    assert await agent_service.allowed_tool_pairs(session, test_agent.id) == {
+        ("securo", "list_accounts"), ("securo", "list_budgets"),
+    }
+
+
+async def test_partial_discovery_is_not_recorded_as_the_tool_list(
+    session, test_user, test_agent, test_conversation
+):
+    """With a server down, an uninitialized agent still runs with what was
+    found, but nothing is written: the missing server's tools come back
+    enabled once it answers."""
+    from app.agents.services import agent_service
+
+    mcp = _FakeMCP(tools=_handles("list_accounts"))
+    mcp.unreachable = ("other",)
+    await _run(session, test_user, test_agent, test_conversation, mcp, "securo__list_accounts")
+
+    assert mcp.calls == [("securo__list_accounts", {})]
+    assert test_agent.tools_initialized is False
+    assert await agent_service.allowed_tool_pairs(session, test_agent.id) == set()
+
+
+async def test_initialization_seen_late_keeps_the_saved_list(session, test_user, test_agent):
+    """Two requests can discover at once, or the owner can save a list while
+    a turn is discovering. A request that still sees the agent as
+    uninitialized must not add rows over the list already written, nor fail
+    on rows that already exist."""
+    from sqlalchemy import update
+
+    from app.agents.services import agent_service
+
+    assert test_agent.tools_initialized is False
+    # The owner saves a list in another request; this request's copy of the
+    # agent still says uninitialized.
+    await session.execute(
+        update(Agent).where(Agent.id == test_agent.id).values(tools_initialized=True)
+        .execution_options(synchronize_session=False)
+    )
+    await session.commit()
+    await agent_service.replace_tool_enablement(
+        session, test_agent.id, [("securo", "list_accounts", False)]
+    )
+    # The stale copy: what this request loaded, without a pending write.
+    set_committed_value(test_agent, "tools_initialized", False)
+
+    await agent_service.initialize_tools(
+        session, test_agent, [("securo", "list_accounts"), ("securo", "list_budgets")]
+    )
+
+    assert test_agent.tools_initialized is True
+    rows = {(r.server, r.tool_name, r.enabled) for r in await agent_service.list_tools(session, test_agent.id)}
+    assert rows == {("securo", "list_accounts", False)}
+
+
+async def test_initialization_runs_once(session, test_user, test_agent):
+    from app.agents.services import agent_service
+
+    await agent_service.initialize_tools(session, test_agent, [("securo", "list_accounts")])
+    # A second request with a stale copy, without a pending write.
+    set_committed_value(test_agent, "tools_initialized", False)
+    await agent_service.initialize_tools(
+        session, test_agent, [("securo", "list_accounts"), ("securo", "list_budgets")]
+    )
+
+    assert await agent_service.allowed_tool_pairs(session, test_agent.id) == {("securo", "list_accounts")}
+
+
+async def test_tool_list_records_a_server_named_by_a_long_url(session, test_user, test_agent):
+    """An extra server registered without an alias is named by its URL."""
+    from app.agents.services import agent_service
+
+    server = "https://mcp.example.com/" + "a" * 100 + "/mcp"
+    await agent_service.initialize_tools(session, test_agent, [(server, "ping")])
+
+    assert await agent_service.allowed_tool_pairs(session, test_agent.id) == {(server, "ping")}

@@ -820,7 +820,7 @@
     "greetingEvening": "Goedenavond",
     "availableBalance": "Beschikbaar saldo op rekeningen",
     "netWorth": "Nettovermogen",
-    "netWorthTooltip": "Rekeningen + beleggingen, min openstaande creditcardafschriften.",
+    "netWorthTooltip": "Contant + beleggingsrekeningen + geïnvesteerde activa, min openstaande creditcardafschriften. Beleggingen tellen niet als beschikbaar geld.",
     "creditCardBalance": "Openstaande creditcardafschriften",
     "loanBalance": "Leningen en financieringen",
     "pendingSharesOwe": "Netto {{net}} na groepsschulden ({{owed}} in behandeling)",
@@ -871,6 +871,7 @@
     "drillDownSettledTotal": "Geboekt · samenvattingstotaal",
     "drillDownPendingTotal": "In afwachting van afrekening",
     "drillDownShownTotal": "Weergegeven totaal",
+    "drillDownError": "Transacties konden niet worden geladen. Probeer het opnieuw.",
     "drillDownEmpty": "Geen transacties gevonden",
     "drillDownClose": "Sluiten",
     "accrualNote": "Creditcardtransacties worden gegroepeerd op vervaldatum van de factuur (toerekeningsmodus).",
@@ -888,7 +889,9 @@
     "fxRateUsed": "Wisselkoers: {{rate}}",
     "refreshRates": "Vernieuw de wisselkoersen",
     "ratesRefreshed": "FX-tarieven bijgewerkt",
-    "ratesError": "Kan de valutakoersen niet updaten"
+    "ratesError": "Kan de valutakoersen niet updaten",
+    "cashBalance": "Contant",
+    "investmentAccounts": "Beleggingsrekeningen"
   },
   "transactions": {
     "title": "Transacties",
@@ -998,6 +1001,7 @@
     "sortAsc": "Sorteer oplopend",
     "sortDesc": "Sorteer aflopend",
     "syncedInfo": "Bankgesynchroniseerde transactie: bedrag, datum en rekening kunnen niet worden bewerkt",
+    "syncedAmountDateError": "Het bedrag of de datum van een gesynchroniseerde transactie kan niet worden gewijzigd",
     "uncategorized": "Niet gecategoriseerd",
     "selected": "geselecteerd",
     "summaryCount": "{{count}} transacties",
@@ -1059,7 +1063,7 @@
     "transferSameAccount": "Bron en bestemming moeten verschillend zijn",
     "transferDescription": "Beschrijving",
     "transferNotes": "Opmerkingen",
-    "transferInfo": "Dit is een overdracht. Wijzigingen in de beschrijving, datum en opmerkingen zijn van toepassing op beide partijen",
+    "transferInfo": "Dit is een overdracht: wijzigingen in de beschrijving en opmerkingen gelden voor beide kanten. Wijzigingen in bedrag en datum gelden ook voor de handmatig ingevoerde (niet-gesynchroniseerde) tegenboeking, nooit voor een gesynchroniseerde tegenboeking.",
     "transferLinkedTo": "Gekoppeld aan:",
     "transferOpenAccount": "Rekening {{account}} openen",
     "transferTooltip": "Overboekingen zijn uitgesloten van de rapport- en dashboardtotalen",
@@ -1068,6 +1072,11 @@
     "effectiveBillDate": "Effectieve factuurdatum",
     "effectiveBillDateHint": "handmatig, heft de automatische cyclus op",
     "effectiveBillDatePlaceholder": "Vervaldatum factuur (optioneel)",
+    "bankDate": "Bankdatum",
+    "reportingDate": "Rapportagedatum",
+    "reportingDateHint": "Wijzigt rapportageperioden in de hele app; de bankdatum blijft ongewijzigd.",
+    "reportingDatePlaceholder": "Datum kiezen (optioneel)",
+    "clearReportingDate": "Rapportagedatum herstellen",
     "clearOverride": "Overschrijving wissen",
     "linkAsTransfer": "Link als overdracht",
     "linkTransferTitle": "Link als overdracht",
@@ -1095,6 +1104,7 @@
     "createCounterpartConfirm": "Creëer",
     "unlinkTransfer": "Overdracht ontkoppelen",
     "unlinkTransferConfirm": "Deze overdracht ontkoppelen? Beide transacties worden weer als reguliere transacties behandeld.",
+    "unlinkTransferReportWarning": "Tenzij hun categorie ze al uitsluit, tellen beide transacties weer mee in de inkomsten- en uitgavenrapporten: de uitgaande als uitgave, de inkomende als inkomsten. Wil je er een uitsluiten, geef hem dan een categorie die als overboeking wordt behandeld, zoals Overboekingen.",
     "unlinkTransferSuccess": "Overdracht ontkoppeld",
     "confirmTransferCategoryTitle": "Deze categorie ook toepassen op de gepaarde overdracht?",
     "confirmTransferCategoryDesc": "Overdrachten gebeuren in paren. U kunt alleen deze transactie bijwerken of dezelfde categoriewijziging op beide zijden toepassen.",
@@ -1272,14 +1282,28 @@
     "deleted": "Account verwijderd",
     "syncDone": "Synchronisatie voltooid",
     "syncRateLimited": "Dagelijks banklimiet bereikt, er is geen nieuwe data opgehaald. Probeer het later opnieuw.",
+    "syncPartial": "Sommige rekeningen zijn bijgewerkt, maar voor de andere is het dagelijkse banklimiet bereikt. Die worden later opnieuw geprobeerd.",
     "syncError": "Synchronisatie mislukt",
+    "syncFailure": {
+      "failedAt": "Laatste synchronisatie mislukt op {{when}}.",
+      "psu_present_required": "De bank deelt deze gegevens alleen terwijl je Securo gebruikt.",
+      "consent_expired": "De bank vraagt je de toegang opnieuw te autoriseren.",
+      "reauthorize_at_provider": "Autoriseer deze bank opnieuw in je SimpleFIN Bridge-account en synchroniseer daarna opnieuw.",
+      "provider_error": "De bank gaf een fout terug.",
+      "syncNow": "Nu synchroniseren"
+    },
     "connected": "Bank succesvol verbonden",
+    "connectedImportFailed": "Bank gekoppeld, maar de eerste import is mislukt. Herhaal de synchronisatie om af te ronden.",
     "connectError": "Kan geen verbinding maken met de bank",
     "disconnected": "Verbinding verwijderd",
     "confirmDisconnectTitle": "Bankverbinding verbreken?",
     "confirmDisconnectDesc": "Hierdoor wordt {{institution}} ontkoppeld en worden gesynchroniseerde accounts en transacties uit de app verwijderd. Deze actie is onomkeerbaar.",
     "viewTransactions": "Transacties bekijken",
     "currentBalance": "Huidig saldo",
+    "reservedBalances": "Gereserveerde saldi",
+    "reservedBalanceFallback": "Gereserveerd saldo",
+    "reservedTotal": "Gereserveerd",
+    "reservedBalancesHint": "Gereserveerde bedragen die de provider voor deze rekening meldt.",
     "income": "Inkomen",
     "expenses": "Kosten",
     "projectedBalance": "Geprojecteerd saldo",
@@ -1306,6 +1330,7 @@
     "selectConnector": "Selecteer Connector",
     "selectConnectorDesc": "Kies een aanbieder van een bankverbinding",
     "connectorNotConfigured": "Deze connector vereist configuratie. Stel de vereiste inloggegevens in om dit in te schakelen.",
+    "connectorAskAdmin": "Deze connector is niet ingesteld. Vraag een beheerder om deze te configureren.",
     "noConnectorsAvailable": "Geen bankconnectoren aanwezig",
     "selectCountry": "Selecteer land",
     "selectCountryDesc": "Kies het land waar uw bank gevestigd is",
@@ -1361,8 +1386,16 @@
     "connectionStatus": {
       "active": "Actief",
       "error": "Fout",
-      "expired": "Verlopen"
-    }
+      "expired": "Verlopen",
+      "disconnected": "Losgekoppeld"
+    },
+    "pluginConnectors": "Uit je plugins",
+    "pluginUnavailable": "De plugin van deze koppeling is niet meer geïnstalleerd of beschikbaar.",
+    "confirmDisconnectKeepDesc": "{{institution}} wordt niet meer gesynchroniseerd. De rekeningen en transactiegeschiedenis blijven in de app, en je kunt later opnieuw verbinden.",
+    "disconnectAlsoDelete": "Ook rekeningen en transacties verwijderen",
+    "disconnectedKept": "Bank losgekoppeld. Rekeningen en geschiedenis zijn bewaard.",
+    "removeConnection": "Verbinding verwijderen",
+    "connectionDisconnected": "Losgekoppeld. Verbind opnieuw om weer te synchroniseren"
   },
   "loans": {
     "title": "Leningcontract",
@@ -1434,6 +1467,9 @@
     "darkMode": "Donkere modus"
   },
   "budgets": {
+    "spending": "Uitgaven",
+    "spendingDescription": "Inclusief openstaande en verwachte uitgaven.",
+    "spendingError": "Uitgaven konden niet worden geladen.",
     "title": "Budgetten",
     "add": "Budget toevoegen",
     "edit": "Budget bewerken",
@@ -1450,6 +1486,17 @@
     "confirmDeleteTitle": "Budget verwijderen?",
     "confirmDeleteDescription": "Het budget voor \"{{name}}\" wordt permanent verwijderd. Bestaande transacties worden niet beïnvloed. Deze actie kan niet ongedaan worden gemaakt.",
     "confirmDeleteRecurringDescription": "Het terugkerende budget voor \"{{name}}\" wordt permanent verwijderd. Deze definitie geldt niet meer voor latere maanden. Bestaande transacties worden niet beïnvloed. Deze actie kan niet ongedaan worden gemaakt.",
+    "settingsTitle": "Budget instellen",
+    "monthBudgets": "Budgetten {{month}}",
+    "otherCategories": "Overige categorieën",
+    "noCategories": "Nog geen categorieën",
+    "total": "Budget {{amount}}",
+    "saved": "Budgetten opgeslagen",
+    "budgetFor": "Budget voor {{category}}",
+    "invalidAmount": "Vul een geldig bedrag van nul of meer in.",
+    "repeatEveryMonthFor": "Budget voor {{category}} elke maand herhalen",
+    "previousMonth": "Vorige maand",
+    "nextMonth": "Volgende maand",
     "suggest": "Suggereer uit geschiedenis",
     "suggestTitle": "Budgetten suggereren",
     "suggestDescription": "Voorgestelde limieten op basis van je gemiddelde maandelijkse uitgaven van de laatste {{months}} maanden.",
@@ -1459,7 +1506,28 @@
     "suggestCreate": "Budgetten aanmaken",
     "suggestCreated": "{{count}} budgetten aangemaakt",
     "suggestEmpty": "Geen uitgavenhistoriek in de geselecteerde periode.",
-    "suggestError": "Suggesties konden niet worden geladen. Probeer het zo opnieuw."
+    "suggestError": "Suggesties konden niet worden geladen. Probeer het zo opnieuw.",
+    "hiddenCategory": "Verborgen",
+    "average": "meestal {{amount}}",
+    "copyAction": "Vorige maand kopiëren",
+    "copyTitle": "Budgetten kopiëren",
+    "copyDescription": "Kopieer de budgetten van een bronmaand naar {{month}}.",
+    "copySource": "Bronmaand",
+    "copyExisting": "Bestaande budgetten",
+    "copyOverwrite": "Vervang ze door de bedragen van de bronmaand",
+    "copyMissing": "Bewaar ze en kopieer alleen ontbrekende categorieën",
+    "copyAdjustment": "Aanpassing (%)",
+    "copyAdjustmentHint": "Optioneel, tussen -100 en 1000. 5 voegt 5% toe, -10 haalt 10% af.",
+    "copyPreviewCount": "Te kopiëren categorieën: {{count}}",
+    "copyPreviewTotal": "Te kopiëren totaal: {{amount}}",
+    "copyPreviewEmpty": "De gekozen maand heeft geen budgetten om te kopiëren.",
+    "copyPreviewError": "De bronmaand kon niet worden geladen.",
+    "copyAmountTooLarge": "Het aangepaste bedrag overschrijdt de budgetlimiet. Verlaag de procentuele aanpassing.",
+    "copyConfirm": "Budgetten kopiëren",
+    "copySuccess": "Budgetten gekopieerd: {{count}}",
+    "copyNothing": "Er zijn geen budgetten gekopieerd.",
+    "copyError": "De budgetten konden niet worden gekopieerd.",
+    "copyEmptyHint": "Kopieer de budgetten van een vorige maand om ermee te beginnen."
   },
   "goals": {
     "trackingPocket": "Pocket op rekening",
@@ -1561,6 +1629,7 @@
     "walletHint": "Volg dit doel met de gecombineerde waarde van alle activa in de geselecteerde portemonnee."
   },
   "recurring": {
+    "makeFromTransaction": "Nieuwe terugkerende transactie van deze transactie",
     "title": "Terugkerende transacties",
     "add": "Terugkerend toevoegen",
     "edit": "Bewerken Terugkerend",
@@ -1601,7 +1670,24 @@
     "autoGenerateHelp": "Maak een transactie aan elke keer dat deze rekening moet worden betaald. Schakel uit om te wachten op de werkelijke afschrijving (bijvoorbeeld via banksynchronisatie) en toon deze tot die tijd alleen als aankomend.",
     "fxEstimate": "Schatting gebaseerd op de laatste wisselkoers ({{rate}}). Het eindbedrag kan veranderen.",
     "confirmDeleteTitle": "Terugkerende transactie verwijderen?",
-    "confirmDeleteDescription": "De terugkerende definitie \"{{description}}\" wordt permanent verwijderd. Bestaande transacties blijven bestaan, maar verliezen hun koppeling met de terugkerende transactie. Deze actie kan niet ongedaan worden gemaakt."
+    "confirmDeleteDescription": "De terugkerende definitie \"{{description}}\" wordt permanent verwijderd. Bestaande transacties blijven bestaan, maar verliezen hun koppeling met de terugkerende transactie. Deze actie kan niet ongedaan worden gemaakt.",
+    "priceHistory": "Prijshistorie",
+    "viewPriceHistory": "Prijshistorie bekijken",
+    "priceChangesTitle": "Recente prijswijzigingen (afgelopen 30 dagen)",
+    "priceChangesEmpty": "Geen stabiele prijswijzigingen gedetecteerd",
+    "priceChangeBadge": "Prijs gewijzigd",
+    "priceChangeIncrease": "Prijs is gestegen",
+    "priceChangeDecrease": "Prijs is gedaald",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "Na een onderbreking van {{days}} dagen",
+    "priceChangeInsufficient": "Er zijn minstens 3 gekoppelde geboekte afschrijvingen nodig voordat Securo een stabiele prijswijziging meldt.",
+    "summaryIncome": "Inkomsten",
+    "summaryExpenses": "Uitgaven",
+    "summaryNet": "Netto",
+    "summaryTransfers": "Uitgesloten overboekingen: {{count}}",
+    "summaryUnconverted": "Zonder wisselkoers, uitgesloten: {{count}}",
+    "summaryFailed": "De totalen van deze maand konden niet worden geladen"
   },
   "rules": {
     "searchPlaceholder": "Regels zoeken...",
@@ -1705,6 +1791,7 @@
     "fieldPayee": "Begunstigde",
     "fieldDate": "Datum",
     "fieldStatus": "Status",
+    "fieldProviderCategory": "Categorie van de provider",
     "opContains": "bevat",
     "opNotContains": "bevat niet",
     "opEquals": "gelijk aan",
@@ -1860,6 +1947,39 @@
     "sparkles": "Speciaal",
     "circle-help": "Overig / Ongebruikt"
   },
+  "categoryEmojis": {
+    "burger": "Burger",
+    "fries": "Friet",
+    "sandwich": "Sandwich",
+    "wine": "Wijn",
+    "cocktail": "Cocktail",
+    "juice": "Sap",
+    "money-bag": "Geldzak",
+    "spending": "Uitgaven",
+    "soccer": "Voetbal",
+    "basketball": "Basketbal",
+    "tennis": "Tennis",
+    "yoga": "Yoga",
+    "art": "Kunst",
+    "headphones": "Hoofdtelefoon",
+    "plug": "Stekker",
+    "tools": "Gereedschap",
+    "soap": "Zeep",
+    "shower": "Douche",
+    "shoes": "Schoenen",
+    "makeup": "Make-up",
+    "toys": "Speelgoed",
+    "flowers": "Bloemen",
+    "luck": "Geluk",
+    "birthday": "Verjaardag",
+    "christmas": "Kerst",
+    "protection": "Bescherming",
+    "map": "Kaart",
+    "beach": "Strand",
+    "launch": "Lancering",
+    "investment": "Investering",
+    "construction": "Bouw"
+  },
   "groups": {
     "title": "Categoriegroepen",
     "add": "Groep toevoegen",
@@ -1933,6 +2053,8 @@
     "undoImport": "Importeren ongedaan maken?",
     "undoOrdersDescription": "Hierdoor worden de {{count}} orders geïmporteerd uit {{filename}} verwijderd en worden de posities die ze hebben aangeraakt opnieuw berekend. De holdings die door deze import zijn aangemaakt, worden samen met deze verwijderd.",
     "undone": "Importeren ongedaan gemaakt",
+    "undoOversell": "Deze import kan niet ongedaan worden gemaakt: een blijvende boeking verkoopt {{attempted}} eenheden terwijl er {{available}} in bezit zijn. Bewerk of verwijder die boeking eerst.",
+    "undoTooLarge": "Deze import kan niet ongedaan worden gemaakt: de resterende positie is te groot om op te slaan.",
     "undoDescription": "Hiermee worden geïmporteerde {{count}} transacties uit {{filename}} verwijderd. Deze actie kan niet ongedaan worden gemaakt.",
     "deleting": "Verwijderen...",
     "deleteAll": "Alles verwijderen",
@@ -2011,7 +2133,9 @@
       "fee": "Vergoeding",
       "kind": "Kopen/verkopen",
       "currency": "Valuta",
-      "notes": "Opmerkingen"
+      "notes": "Opmerkingen",
+      "old_units": "Eenheden voor",
+      "new_units": "Eenheden na"
     },
     "walletWarningTitle": "Al in uw portefeuille",
     "warning": {
@@ -2020,7 +2144,8 @@
     },
     "kind": {
       "buy": "Koop",
-      "sell": "Verkopen"
+      "sell": "Verkopen",
+      "split": "Split"
     },
     "reason": {
       "missing_ticker": "geen tikker",
@@ -2030,8 +2155,17 @@
       "invalid_fee": "onleesbare kosten",
       "invalid_kind": "onbekende koop-/verkoopwaarde",
       "unknown_ticker": "ticker niet gevonden door de prijsaanbieder",
-      "oversell": "meer eenheden verkopen dan de positie bevat"
-    }
+      "oversell": "meer eenheden verkopen dan de positie bevat",
+      "no_fx_rate": "geen wisselkoers voor de orderdatum",
+      "possible_duplicate": "staat mogelijk al in deze positie door een eerdere import",
+      "invalid_split": "splitverhouding onleesbaar, of een split met een hoeveelheid, prijs of kosten",
+      "split_not_allowed": "splits kunnen niet worden vastgelegd op een positie die met de bank wordt gesynchroniseerd",
+      "split_in_future": "een split kan niet in de toekomst liggen",
+      "nothing_held_before_split": "geen eenheden in bezit vóór de split",
+      "too_large": "zou de positie te groot maken om op te slaan",
+      "holding_moved": "de positie is tijdens de import hernoemd of naar een andere portefeuille verplaatst"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Activa",
@@ -2039,8 +2173,15 @@
     "oversellWarning": "U bezit alleen {{available}} eenheden; shortposities worden niet ondersteund.",
     "noPriceBadge": "geen kosten",
     "noPriceWarning": "Toegevoegd zonder aankoopprijs: voeg uw aankopen toe om de gemiddelde prijs en het rendement bij te houden.",
+    "exchangeRateSetupWarning": "Wisselkoersen zijn niet ingesteld. Totalen voor activa in een andere valuta kunnen onnauwkeurig zijn.",
+    "exchangeRateSetupLink": "Wisselkoersen instellen",
+    "exchangeRateSetupContactAdmin": "Vraag een beheerder om de wisselkoersen in te stellen.",
+    "exchangeRateSetupAction": "Wisselkoersen van {{from}} naar {{to}} instellen",
+    "exchangeRateSetupAskAdmin": "Voor de omrekening van {{from}} naar {{to}} zijn wisselkoersen nodig. Vraag een beheerder om deze in te stellen.",
     "noFxRate": "geen wisselkoers",
     "noFxRateTitle": "Voor deze munt is geen wisselkoers beschikbaar. Het vermogen wordt in de oorspronkelijke munt getoond en blijft buiten de totalen.",
+    "providerValueStale": "niet bijgewerkt sinds {{date}}",
+    "providerValueStaleTitle": "De provider meldt deze positie nog, maar heeft de waarde sinds deze datum niet bijgewerkt. Mogelijk is ze afgelost, of de koppeling ververst beleggingen niet. Controleer het bij je bank.",
     "fxRateMissing": "Voor {{currencies}} is geen wisselkoers beschikbaar. Deze activa worden in de oorspronkelijke munt getoond en blijven buiten de totalen.",
     "colAsset": "Aanwinst",
     "colQuantity": "Aantal",
@@ -2061,6 +2202,7 @@
     "noTransactions": "Nog geen transacties",
     "txBuy": "Koop",
     "txSell": "Verkopen",
+    "txSplit": "Splitsing",
     "txFee": "Vergoeding",
     "txSaved": "Transactie opgeslagen",
     "txDeleted": "Transactie verwijderd",
@@ -2071,6 +2213,10 @@
     "unitPrice": "Eenheidsprijs",
     "fee": "Vergoeding",
     "txTotal": "Totaal",
+    "splitOldUnits": "Eenheden vóór splitsing",
+    "splitNewUnits": "Eenheden na splitsing",
+    "splitHint": "Voer in hoeveel eenheden u vóór de splitsing had en hoeveel het er daarna zijn: een splitsing van 100 voor 1 is 1 → 100, een omgekeerde splitsing van 1 voor 10 is 10 → 1. Gebruik als datum de eerste dag waarop de belegging tegen de nieuwe koers wordt verhandeld.",
+    "splitInvalid": "Voer twee verschillende gehele getallen van 1 tot 1.000.000 in.",
     "confirmDeleteTxTitle": "Transactie verwijderen?",
     "confirmDeleteTx": "Hierdoor wordt de vermelding verwijderd en wordt de gemiddelde prijs van het bedrijf opnieuw berekend.",
     "editAsset": "Activa bewerken",
@@ -2097,6 +2243,10 @@
     "marketPriceSourceTooltip": "Prijs wordt automatisch vernieuwd op basis van marktgegevens",
     "lastUpdated": "{{when}} bijgewerkt",
     "refreshPrice": "Prijs vernieuwen",
+    "refreshAllPrices": "Prijzen vernieuwen",
+    "refreshAllPricesDone": "{{refreshed}} prijzen bijgewerkt, {{skipped}} zonder nieuwe koers",
+    "refreshAllPricesNone": "Geen activa met marktprijs om bij te werken",
+    "refreshAllPricesRateLimited": "De marktdata-aanbieder beperkt het aantal aanvragen. {{refreshed}} prijzen zijn bijgewerkt en {{skipped}} overgeslagen voordat dit begon; probeer het over een minuut opnieuw.",
     "priceRefreshed": "Prijs vernieuwd",
     "purchaseDate": "Aankoopdatum",
     "purchasePrice": "Aankoopprijs",
@@ -2122,6 +2272,7 @@
     "updated": "Item bijgewerkt",
     "deleted": "Item verwijderd",
     "confirmDelete": "Weet u zeker dat u dit item en de gehele waardegeschiedenis ervan wilt verwijderen?",
+    "confirmDeleteSynced": "Als het importeren van bezittingen voor deze koppeling aan staat, haalt de volgende synchronisatie dit item terug. Zet het importeren van bezittingen uit in de koppelingsinstellingen om het verwijderd te houden.",
     "confirmDeleteTitle": "Item verwijderen?",
     "addValue": "Voeg waarde toe",
     "valueHistory": "Waardegeschiedenis",
@@ -2249,6 +2400,7 @@
     "baseline": "Schatting",
     "surplus": "Overschot",
     "deficit": "Tekort",
+    "investmentWithdrawals": "Opnames uit beleggingen",
     "cashFlowNode": "Cashstroom",
     "flowChartAria": "Cashflowdiagram: inkomstenbronnen die doorstromen naar uitgaven",
     "category": "Categorie",
@@ -2258,7 +2410,21 @@
     "range30d": "30D",
     "customRange": "Aangepast bereik",
     "pickCustomRange": "Kies een start- en einddatum",
-    "loadError": "Rapport laden mislukt"
+    "loadError": "Rapport laden mislukt",
+    "statement": "Overzicht",
+    "statementIncomeTotal": "Totale inkomsten",
+    "statementExpenseTotal": "Totale uitgaven",
+    "statementSettings": "Rapportopties",
+    "statementSortBy": "Sorteren op",
+    "statementSortDefault": "Standaard",
+    "statementSortAsc": "Bedrag (laagste eerst)",
+    "statementSortDesc": "Bedrag (hoogste eerst)",
+    "statementColumns": "Aantal kolommen",
+    "statementShowChange": "Procentuele verandering tonen",
+    "statementViewTransactions": "Transacties bekijken",
+    "statementUncategorizedIncome": "Inkomsten zonder categorie",
+    "statementUncategorizedExpense": "Uitgaven zonder categorie",
+    "statementToggleGroup": "Categorieën van {{name}} tonen"
   },
   "payees": {
     "noPayeeFound": "Geen begunstigde gevonden.",
@@ -2401,8 +2567,13 @@
     "retry": "Opnieuw proberen",
     "error": "Fout",
     "success": "Succes",
-    "searchIcon": "Zoekpictogram...",
     "noIconsFound": "Geen iconen gevonden",
+    "searchIconOrEmoji": "Pictogram of emoji zoeken...",
+    "iconPickerIcons": "Pictogrammen",
+    "iconPickerEmojis": "Emoji's",
+    "useEmoji": "Dit emoji gebruiken",
+    "noEmojisFound": "Geen emoji's gevonden",
+    "seeMatchingEmojis": "Bijpassende emoji's bekijken ({{count}})",
     "primaryCurrency": "Primaire valuta",
     "showLess": "Laat minder zien",
     "showMore": "+{{count}} meer",
@@ -2413,7 +2584,8 @@
     "preview": "Voorbeeld",
     "download": "Downloaden",
     "closePreview": "Voorbeeld sluiten",
-    "remove": "Verwijderen"
+    "remove": "Verwijderen",
+    "invalidAmount": "Voer een geldig bedrag in, bijvoorbeeld {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "Groepen zoeken...",
@@ -2817,6 +2989,8 @@
       "saveFailed": "Kan de gereedschapsselectie niet opslaan",
       "empty": "Geen gereedschap gevonden. Is de MCP-server actief? Met Docker: `docker compose --profile agents up -d`.",
       "proposeBadge": "voorstellen",
+      "enabledCount": "{{enabled}} van {{total}} ingeschakeld",
+      "enableAll": "Alles inschakelen",
       "loading": "Gereedschappen laden…"
     },
     "chat": {
@@ -2868,7 +3042,13 @@
         "deleteBudget": "{{category}}: {{amount}} voor {{month}}",
         "deleteRecurringBudget": "{{category}}: {{amount}} per maand vanaf {{month}}",
         "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
-        "createCategoryGroup": "“{{name}}”"
+        "createCategoryGroup": "“{{name}}”",
+        "createManualAccount": "{{name}} · {{type}} · {{currentBalance}} · {{openingBalance}}{{balanceDate}}",
+        "updateManualAccount": "{{name}}. {{currentBalance}}. {{changes}}",
+        "manualAccountMoney": "{{label}}: {{amount}}",
+        "manualAccountDate": "{{label}}: {{date}}",
+        "manualAccountChange": "{{field}}: {{before}} → {{after}}",
+        "manualAccountNoChanges": "Geen wijzigingen"
       }
     },
     "conversation": {
@@ -2916,6 +3096,7 @@
       "baseUrl": "Endpoint-URL",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "Endpoint-URL is vereist voor deze provider",
+      "baseUrlInvalid": "Voer een geldige http- of https-endpoint-URL in",
       "ollamaHint": "Als Ollama op uw hostcomputer draait, gebruik dan http://host.docker.internal:11434 (Mac/Windows) of uw host-IP (Linux).",
       "openaiCompatHint": "Plak gewoon de host:port (bijvoorbeeld http://192.168.1.142:1234).). Het /v1 pad wordt automatisch toegevoegd. Vanuit Docker op Mac/Windows vervangt u localhost door host.docker.internal.",
       "apiKey": "API-sleutel/token",
@@ -3173,6 +3354,68 @@
       "recurringHint": "Hoe we bepalen dat een afschrijving de rekening is die je al verwachtte."
     }
   },
+  "providerSettings": {
+    "catalog": {
+      "setupGuide": "Installatiehandleiding",
+      "connectionsTitle": "Bankverbindingen",
+      "connectionsDescription": "Kies hoe bankrekeningen verbinding maken met deze instantie.",
+      "exchangeRatesTitle": "Wisselkoersen",
+      "exchangeRatesDescription": "Houd valutaomrekeningen actueel.",
+      "configure": "Instellen",
+      "manage": "Beheren",
+      "manageProvider": "{{provider}} beheren",
+      "configureProvider": "{{provider}} instellen",
+      "needsAttention": "Aandacht vereist",
+      "credentialsTitle": "Inloggegevens",
+      "credentialsDescription": "Voer alleen de waarden in die u wilt vervangen. Opgeslagen inloggegevens worden nooit weergegeven.",
+      "securityNote": "Inloggegevens worden versleuteld opgeslagen.",
+      "saveChanges": "Wijzigingen opslaan",
+      "saving": "Opslaan…",
+      "simplefinTitle": "SimpleFIN-verbindingen toestaan",
+      "simplefinDescription": "Sta gebruikers toe bankrekeningen te koppelen met hun eigen SimpleFIN-installatietoken.",
+      "notSet": "Niet ingesteld",
+      "savedValue": "Veilig opgeslagen",
+      "environmentValue": "Ingesteld via omgeving",
+      "replacementPlaceholder": "Voer een nieuwe waarde in om te vervangen",
+      "valuePlaceholder": "Voer inloggegevens in",
+      "empty": "Geen aanbieders beschikbaar.",
+      "pluggyDescription": "Koppel rekeningen via Pluggy Connect.",
+      "enableBankingDescription": "Koppel rekeningen met toestemming van de bank.",
+      "simplefinDescriptionShort": "Koppel rekeningen via SimpleFIN Bridge.",
+      "openExchangeRatesDescription": "Wisselkoersen voor valutaomrekeningen.",
+      "otherTitle": "Andere integraties",
+      "otherDescription": "Beheer aanvullende diensten voor deze instantie.",
+      "redirectTitle": "Redirect-URL",
+      "redirectHint": "Voeg deze URL toe aan je Enable Banking-applicatie voordat je de inloggegevens invult.",
+      "copyRedirect": "Redirect-URL kopiëren",
+      "redirectCopied": "Redirect-URL gekopieerd",
+      "copyFailed": "Kopiëren mislukt. Selecteer het adres en kopieer het handmatig."
+    },
+    "title": "Providerconfiguratie",
+    "description": "Opgeslagen inloggegevens hebben voorrang op omgevingswaarden. Wijzigingen gelden zonder herstart. ‘Geconfigureerd’ betekent dat de verplichte velden aanwezig zijn; de inloggegevens worden hier niet gecontroleerd.",
+    "configured": "Geconfigureerd",
+    "notConfigured": "Niet geconfigureerd",
+    "app": "Opgeslagen in de app",
+    "environment": "Uit de omgeving",
+    "none": "Niet ingesteld",
+    "invalid": "De opgeslagen inloggegevens zijn niet leesbaar. Vervang ze of gebruik de omgevingswaarde.",
+    "reset": "Omgevingswaarde gebruiken",
+    "remove": "Opgeslagen waarde verwijderen",
+    "removeTitle": "Opgeslagen waarde voor {{field}} verwijderen?",
+    "removeWithFallback": "De opgeslagen waarde wordt verwijderd. Nieuwe bewerkingen gebruiken de omgevingswaarde.",
+    "removeWithoutFallback": "Er is geen omgevingswaarde beschikbaar. Verwijderen schakelt de provider uit totdat deze opnieuw is geconfigureerd.",
+    "secretStorageUnavailable": "Stel op de server een unieke SECRET_KEY van minstens 32 tekens in voordat je inloggegevens opslaat. Bestaande omgevingsinstellingen blijven werken.",
+    "secretPlaceholder": "Voer een nieuwe waarde in om de opgeslagen inloggegevens te vervangen",
+    "simplefinHelp": "Schakel SimpleFIN hier in en voeg vervolgens elke verbinding met een eigen installatietoken toe op de rekeningenpagina.",
+    "fields": {
+      "openexchangerates_app_id": "App-ID",
+      "pluggy_client_id": "Client-ID",
+      "pluggy_client_secret": "Clientgeheim",
+      "enable_banking_app_id": "App-ID",
+      "enable_banking_private_key": "Privésleutel (PEM)",
+      "simplefin_enabled": "SimpleFIN inschakelen"
+    }
+  },
   "categoryLines": {
     "title": "Verdelen over categorieën",
     "start": "Verdelen over categorieën",
@@ -3224,6 +3467,412 @@
       "undoFirstMortgage": "Maak de verdeling ongedaan voordat je de hypotheek uitsplitst.",
       "categoryInUse": "Deze categorie bevat delen van verdeelde transacties. Pas die verdelingen eerst aan.",
       "destinationInvalid": "Delen van verdeelde transacties kunnen niet naar een genegeerde of verborgen categorie."
+    }
+  },
+  "plugins": {
+    "title": "Plugins",
+    "hint": "Categorieën, regels, thema's en integraties gemaakt door de community. Je bekijkt elke wijziging voordat die wordt toegepast.",
+    "browse": "Catalogus bekijken",
+    "noneInstalled": "Geen plugins geïnstalleerd in deze workspace.",
+    "remove": "Plugin verwijderen",
+    "removeAria": "{{name}} verwijderen",
+    "catalogFailed": "Kon de catalogus niet laden.",
+    "catalogEmpty": "De catalogus heeft nog geen plugins.",
+    "viewSource": "Broncode bekijken",
+    "revoked": "Ingetrokken",
+    "unavailable": "Niet beschikbaar",
+    "needsVersion": "Vereist Securo {{version}}",
+    "updateAvailable": "Update beschikbaar",
+    "installed": "Geïnstalleerd",
+    "install": "Installeren",
+    "update": "Bijwerken",
+    "andMore": "en nog {{count}}",
+    "planTitle": {
+      "install": "{{name}} installeren?",
+      "update": "{{name}} bijwerken?",
+      "remove": "{{name}} verwijderen?"
+    },
+    "planIntro": "Dit verandert er in deze workspace:",
+    "planFailed": "Kon niet laden wat dit zou veranderen.",
+    "planChanged": "Er is iets veranderd sinds dit voorbeeld. Bekijk het opnieuw.",
+    "privacy": "Deze plugin voegt alleen gegevens toe aan deze workspace. Er wordt niets verstuurd.",
+    "history": "Transacties houden de categorieën die ze al hebben.",
+    "confirm": {
+      "install": "Installeren",
+      "update": "Bijwerken",
+      "remove": "Verwijderen"
+    },
+    "done": {
+      "install": "{{name}} geïnstalleerd",
+      "update": "{{name}} bijgewerkt",
+      "remove": "{{name}} verwijderd"
+    },
+    "kind": {
+      "category_groups_one": "{{count}} groep",
+      "category_groups_other": "{{count}} groepen",
+      "categories_one": "{{count}} categorie",
+      "categories_other": "{{count}} categorieën",
+      "rules_one": "{{count}} regel",
+      "rules_other": "{{count}} regels"
+    },
+    "plan": {
+      "create": "Voegt {{items}} toe",
+      "update": "Werkt {{items}} bij",
+      "delete": "Verwijdert {{items}}",
+      "keep": "Laat {{items}} die je hebt bewerkt zoals ze zijn:",
+      "release": "Draagt {{items}} aan je over, bewerkt of nog in gebruik:",
+      "existing": "Slaat {{items}} over die je al hebt:",
+      "unresolved": "Slaat {{items}} over waarvan de categorie ontbreekt:",
+      "defaults_one": "Maakt ook {{count}} standaardcategorie die de regels nodig hebben",
+      "defaults_other": "Maakt ook {{count}} standaardcategorieën die de regels nodig hebben",
+      "themes": "Voegt thema's toe aan de bibliotheek: {{names}}",
+      "themesRemove": "Haalt deze thema's uit de bibliotheek: {{names}}",
+      "themeInUse": "Je gebruikt {{name}}: je gaat terug naar het thema van Securo."
+    },
+    "page": {
+      "section": "Catalogus",
+      "notice": "Plugins worden niet door Securo beoordeeld. Voordat er iets wordt toegepast zie je precies wat er verandert, en niets verlaat je server.",
+      "search": "Plugins zoeken",
+      "type": {
+        "data": "Gegevens",
+        "interface": "Interface",
+        "code": "Code"
+      },
+      "status": {
+        "installed": "Geïnstalleerd",
+        "updates": "Update beschikbaar"
+      },
+      "clear": "Filters wissen",
+      "trendingHint": "Snelst groeiend, naar verhouding van hun grootte",
+      "newestHint": "Toegevoegd in de laatste 30 dagen",
+      "sortBy": "Sorteren op",
+      "sort": {
+        "popular": "Populair",
+        "trending": "Trending",
+        "updated": "Recent bijgewerkt",
+        "newest": "Nieuwste",
+        "name": "Naam"
+      },
+      "noResults": "Geen plugins voldoen aan deze filters.",
+      "byOwner": "door {{owner}}",
+      "updated": "Bijgewerkt {{when}}",
+      "count_one": "{{count}} plugin",
+      "count_other": "{{count}} plugins",
+      "stars_one": "{{count}} ster",
+      "stars_other": "{{count}} sterren",
+      "authors_one": "{{count}} auteur",
+      "authors_other": "{{count}} auteurs",
+      "clearSearch": "Zoekopdracht wissen",
+      "facet": {
+        "type": "Type",
+        "content": "Inhoud",
+        "language": "Taal",
+        "status": "Status",
+        "workspace": "Workspace"
+      },
+      "view": {
+        "all": "Alle",
+        "trending": "Trending",
+        "new": "Nieuw"
+      },
+      "any": "Alle",
+      "trendingEmpty": "Geen plugin kreeg deze week sterren.",
+      "newEmpty": "Er kwam de afgelopen 30 dagen geen plugin bij."
+    },
+    "kindName": {
+      "category_groups": "Categoriegroepen",
+      "categories": "Categorieën",
+      "rules": "Regels",
+      "csv_presets": "CSV-sjablonen",
+      "fiscal_jurisdictions": "Fiscale rechtsgebieden",
+      "invoice_labels": "Factuurlabels",
+      "widgets": "Widgets",
+      "reports": "Rapporten",
+      "dashboard_layouts": "Dashboard-indelingen",
+      "connectors": "Bankkoppelingen",
+      "parsers": "Bestandslezers",
+      "price_providers": "Prijsaanbieders",
+      "agent_tools": "Agenttools",
+      "integrations": "Integraties",
+      "themes": "Thema's"
+    },
+    "detail": {
+      "overview": "Overzicht",
+      "inside": "Inhoud",
+      "insideHint": "Alles wat deze plugin aan een workspace toevoegt. Bij installatie zie je wat je al hebt.",
+      "noReadme": "De auteur heeft nog geen README voor deze plugin geschreven.",
+      "loadFailed": "De plugindetails konden niet worden geladen.",
+      "contentsUnavailable": "Deze versie van Securo kan de inhoud van deze plugin niet tonen.",
+      "version": "Versie",
+      "license": "Licentie",
+      "requires": "Vereist",
+      "updated": "Bijgewerkt",
+      "languages": "Talen",
+      "builtIn": "standaard",
+      "when": "Als",
+      "previewNote": "Bij installatie zie je elke wijziging voordat er iets wordt toegepast, en niets verlaat je server.",
+      "notFound": "Deze plugin staat niet in de catalogus.",
+      "type": "Type",
+      "added": "Toegevoegd",
+      "connections": "Koppelingen",
+      "codeNote": "Installeren toont wat de plugin mag bereiken en wijzigen voordat er iets draait.",
+      "workspaces": "Workspaces",
+      "anyWorkspace": "Persoonlijk en zakelijk"
+    },
+    "installedFailed": "De geïnstalleerde plugins konden niet worden geladen.",
+    "planRecordOnly": {
+      "install": "Deze workspace heeft al alles wat de plugin meebrengt. Installeren legt het vast, zodat je updates krijgt.",
+      "update": "Er verandert niets aan de items in deze workspace; de geïnstalleerde versie wordt {{version}}.",
+      "remove": "Geen van de items staat hier nog; verwijderen haalt het alleen van de lijst."
+    },
+    "code": {
+      "runsCode": "Deze plugin voert code uit op je server, afgeschermd van Securo en je gegevens. Plugins worden niet door Securo gecontroleerd: installeer alleen code die je vertrouwt.",
+      "network": "Bereikt",
+      "noNetwork": "Niets: er verlaten geen gegevens je server.",
+      "access": "Gebruikt in deze werkruimte",
+      "noAccess": "Niets: de plugin kan je gegevens niet lezen of wijzigen.",
+      "new": "nieuw",
+      "read": "{{what}} lezen",
+      "write": "{{what}} lezen en wijzigen",
+      "ownerOnly": "Alleen de eigenaar van de werkruimte of een beheerder kan een plugin die code uitvoert toevoegen, bijwerken of verwijderen.",
+      "removeConnections": "De koppelingen in deze werkruimte ({{count}}) worden verwijderd, samen met de opgeslagen sleutels en toegang.",
+      "unlinks": "De bankkoppelingen ({{count}}) stoppen met synchroniseren. Hun rekeningen en transacties blijven, als handmatige rekeningen.",
+      "removeNothing": "De code van de plugin wordt van je server verwijderd zodra geen werkruimte hem nog gebruikt.",
+      "auth": {
+        "credentials": "Sleutel of wachtwoord",
+        "oauth": "Inloggen",
+        "none": "Geen instellingen"
+      },
+      "resource": {
+        "accounts": "rekeningen",
+        "connections": "bankkoppelingen",
+        "transactions": "transacties",
+        "categories": "categorieën",
+        "payees": "begunstigden",
+        "rules": "regels",
+        "budgets": "budgetten",
+        "goals": "doelen",
+        "recurring": "terugkerende transacties",
+        "assets": "bezittingen",
+        "reports": "rapporten",
+        "invoices": "facturen"
+      },
+      "intro": {
+        "install": "Deze plugin brengt geen gegevens mee. Bekijk wat de code mag doen:",
+        "update": "Bekijk wat de nieuwe versie mag doen:",
+        "remove": "De code draait niet meer in deze werkruimte."
+      },
+      "provides": "Synchroniseert als een gekoppelde bank",
+      "providesHint": "Securo voegt deze gegevens aan deze werkruimte toe en houdt ze bij, zoals bij een gekoppelde bank. Elke koppeling staat onder Bankverbindingen.",
+      "kinds": {
+        "accounts": "Rekeningen",
+        "transactions": "transacties",
+        "bills": "kaartafrekeningen",
+        "holdings": "beleggingen",
+        "trades": "aan- en verkopen"
+      }
+    },
+    "connections": {
+      "title": "Koppelingen",
+      "hint": "Elke koppeling verbindt deze werkruimte met een account bij de dienst. Sleutels worden versleuteld opgeslagen en alleen naar deze plugin gestuurd.",
+      "add": "Koppeling toevoegen",
+      "loadFailed": "De koppelingen konden niet worden geladen.",
+      "none": "Nog geen koppelingen.",
+      "status": {
+        "pending": "Wacht",
+        "active": "Gekoppeld",
+        "error": "Mislukt",
+        "needs_auth": "Inloggen nodig",
+        "keysRefused": "Sleutel geweigerd"
+      },
+      "lastSync": "gesynchroniseerd {{when}}",
+      "neverSynced": "nog niet gesynchroniseerd",
+      "signIn": "Inloggen",
+      "syncNow": "Nu synchroniseren",
+      "remove": "Koppeling verwijderen",
+      "removeAria": "{{name}} verwijderen",
+      "synced": "{{name}} gesynchroniseerd",
+      "syncFailed": "De synchronisatie is mislukt.",
+      "addTitle": "{{name}} koppelen",
+      "addHint": "Vul in wat de dienst je gaf. Je kunt de koppeling altijd verwijderen.",
+      "integration": "Koppelen met",
+      "name": "Naam",
+      "optional": "optioneel",
+      "secretNote": "Geheime velden worden versleuteld opgeslagen en nooit meer getoond.",
+      "redirectHint": "Registreer dit terugkeeradres bij de dienst voordat je inlogt:",
+      "copy": "Kopiëren",
+      "copied": "Gekopieerd",
+      "continueSignIn": "Doorgaan naar inloggen",
+      "connect": "Koppelen",
+      "added": "{{name}} gekoppeld",
+      "removeTitle": "{{name}} verwijderen?",
+      "removeHint": "De opgeslagen sleutels en de toegang tot deze werkruimte worden gewist. Wat al is binnengehaald, blijft.",
+      "removeBankHint": "Deze synchroniseert als een gekoppelde bank: verwijderen koppelt die bank los en verwijdert de gesynchroniseerde rekeningen, met hun transacties.",
+      "removed": "{{name}} verwijderd",
+      "copyFailed": "Kopiëren lukte niet. Selecteer het adres en kopieer het zelf.",
+      "editTitle": "{{name}} opnieuw koppelen",
+      "editHint": "Werk bij wat er veranderd is, zoals een nieuw wachtwoord of token. Daarna synchroniseert de koppeling opnieuw.",
+      "keepBlank": "Laat een veld leeg om de huidige waarde te houden.",
+      "updated": "{{name}} bijgewerkt"
+    },
+    "oauth": {
+      "title": "Inloggen afronden",
+      "wait": "Securo slaat de koppeling op. Dit duurt even.",
+      "connected": "{{name}} gekoppeld",
+      "failed": "Het inloggen kon niet worden afgerond. Probeer het opnieuw.",
+      "missing": "De dienst gaf het inloggen niet terug. Probeer het opnieuw.",
+      "serviceError": "De dienst meldde een fout: {{message}}"
+    },
+    "onlyForBusiness": "Alleen zakelijke workspaces",
+    "onlyForPersonal": "Alleen persoonlijke workspaces"
+  },
+  "library": {
+    "title": "Bibliotheek",
+    "subtitle": "Kies wat het dashboard en de rapporten tonen, en hoe Securo eruitziet.",
+    "kind": {
+      "widgets": "Widgets",
+      "reports": "Rapporten",
+      "themes": "Thema's"
+    },
+    "moreHint": {
+      "widgets": "Plugins kunnen meer widgets toevoegen.",
+      "reports": "Plugins kunnen meer rapporten toevoegen.",
+      "themes": "Plugins kunnen meer thema's toevoegen."
+    },
+    "browseCatalog": "Plugins bekijken",
+    "lastReport": "Houd ten minste één rapport.",
+    "removeFrom": {
+      "dashboard": "{{name}} van het dashboard verwijderen",
+      "reports": "{{name}} uit de rapporten verwijderen"
+    },
+    "addTo": {
+      "dashboard": "{{name}} aan het dashboard toevoegen",
+      "reports": "{{name}} aan de rapporten toevoegen"
+    },
+    "remove": "Verwijderen",
+    "add": "Toevoegen",
+    "theme": {
+      "securo": "Securo",
+      "ocean": "Oceaan",
+      "forest": "Bos",
+      "sunset": "Zonsondergang",
+      "graphite": "Grafiet",
+      "high-contrast": "Hoog contrast",
+      "midnight": "Middernacht",
+      "terminal": "Terminal",
+      "nebula": "Nevel"
+    },
+    "saveFailed": "Je keuze kon niet worden opgeslagen. Probeer het opnieuw.",
+    "appearance": "Weergave",
+    "emptyDashboard": "Je dashboard is leeg",
+    "emptyDashboardHint": "Voeg widgets uit de bibliotheek toe om te kiezen wat je hier ziet.",
+    "addWidget": "Widget toevoegen",
+    "nothingToShow": "Nu niets te tonen",
+    "editingDashboard": "Widgets herschikken, verwijderen of toevoegen. Wijzigingen worden direct opgeslagen.",
+    "restoreDefault": "Standaard herstellen",
+    "done": "Klaar",
+    "customizeDashboard": "Dashboard aanpassen",
+    "manageReports": "Rapporten kiezen",
+    "manageReportsShort": "Beheren",
+    "widget": {
+      "overview": "Saldo en maand",
+      "overviewHint": "Beschikbaar saldo, inkomsten, uitgaven, nettovermogen en spaarquote.",
+      "uncategorized": "Zonder categorie",
+      "uncategorizedHint": "Transacties die nog op een categorie wachten.",
+      "spendingByCategoryHint": "Waar het geld van de maand heen ging, tegenover je budgetten.",
+      "balanceFlowHint": "Hoe je saldo deze maand liep, vergeleken met andere.",
+      "goalsHint": "De voortgang van je doelen.",
+      "transactionsHint": "De transacties van de maand, als lijst of kalender."
+    },
+    "report": {
+      "netWorthHint": "Rekeningen, bezittingen en schulden door de tijd.",
+      "incomeExpensesHint": "Geld in en uit, per categorie.",
+      "cashFlowHint": "Waar je saldo naartoe gaat.",
+      "moneyMapHint": "Hoe inkomsten verdeeld worden over uitgaven en sparen.",
+      "statementHint": "Inkomsten en uitgaven per categorie, maand voor maand."
+    },
+    "dragToMove": "Sleep om {{name}} te verplaatsen",
+    "widthOf": "Breedte van {{name}}",
+    "widthLabel": "Breedte",
+    "width": {
+      "4": "Een derde",
+      "6": "Helft",
+      "8": "Twee derde",
+      "12": "Volledige breedte"
+    },
+    "needs": {
+      "assistant": "Vereist ingeschakelde AI-agents.",
+      "invoices": "Beschikbaar in werkruimtes van het type Zakelijk."
+    },
+    "fromPlugin": "Van {{name}}"
+  },
+  "widgets": {
+    "budgets": "Budgetten",
+    "viewAll": "Alles bekijken",
+    "spendingPace": {
+      "title": "Uitgaven deze maand",
+      "hint": "De uitgaven van de maand tegenover je budgetten, en wat er per dag over is.",
+      "noBudget": "Stel budgetten in om te zien of je uitgaven het tempo houden.",
+      "used": "{{percent}}% van de budgetten gebruikt",
+      "paceMark": "de markering is waar een gelijkmatig tempo vandaag zou zijn",
+      "over": "{{amount}} boven budget",
+      "perDay": "Houd het bij {{amount}} per dag om binnen budget te blijven",
+      "left": "{{amount}} over in het budget"
+    },
+    "distribution": {
+      "title": "Uitgavenverdeling",
+      "hint": "Waar het geld van de maand naartoe ging, per categorie.",
+      "total": "Totaal uitgegeven"
+    },
+    "monthResult": {
+      "title": "Maandresultaat",
+      "hint": "Inkomsten min uitgaven deze maand, vergeleken met vorige maand.",
+      "previous": "{{amount}} vorige maand"
+    },
+    "upcoming": {
+      "title": "Binnenkort",
+      "hint": "Terugkerende transacties in de komende 30 dagen.",
+      "none": "Niets te betalen in de komende {{days}} dagen."
+    },
+    "cards": {
+      "title": "Creditcards",
+      "hint": "Wat je kaarten schuldig zijn, en het saldo na betaling.",
+      "none": "Geen open creditcards.",
+      "afterPaying": "{{amount}} over na betaling"
+    },
+    "assistant": {
+      "title": "Vraag het je agent",
+      "libraryHint": "Stuur een vraag naar je standaardagent zonder het dashboard te verlaten.",
+      "hint": "Vraag alles over je geld. Het antwoord opent in de chat.",
+      "placeholder": "Vraag het je agent…",
+      "suggestion1": "Hoeveel heb ik deze maand uitgegeven?",
+      "suggestion2": "Waar kan ik op besparen?",
+      "suggestion3": "Welke rekeningen komen eraan?",
+      "send": "Versturen",
+      "unavailable": "Zet AI-agents aan om hier vragen te stellen."
+    },
+    "loadFailed": "Deze widget kon niet worden geladen.",
+    "receivables": {
+      "title": "Te ontvangen",
+      "hint": "Wat klanten je verschuldigd zijn, wat te laat is en wat er deze maand binnenkwam."
+    },
+    "payables": {
+      "title": "Te betalen",
+      "hint": "Wat je leveranciers verschuldigd bent, wat te laat is en wat je deze maand betaalde."
+    },
+    "aging": {
+      "title": "Vorderingen naar ouderdom",
+      "hint": "Wat klanten verschuldigd zijn, verdeeld naar achterstand."
+    },
+    "invoicesDue": {
+      "title": "Binnenkort vervallende facturen",
+      "hint": "De volgende facturen die klanten moeten betalen.",
+      "none": "Geen facturen die vervallen.",
+      "noClient": "Geen klant"
+    },
+    "recurringRevenue": {
+      "title": "Terugkerende omzet",
+      "hint": "Wat terugkerende facturen per maand opleveren, en wat onlangs verloren ging."
     }
   }
 }

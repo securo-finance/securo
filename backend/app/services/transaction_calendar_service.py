@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.app_clock import app_today
 from app.core.config import get_settings
+from app.core.currency import same_currency
 from app.models.account import Account
 from app.models.category import Category
 from app.models.recurring_transaction import RecurringTransaction
@@ -24,6 +25,8 @@ from app.services.dashboard_service import (
     _daily_balance_deltas_by_date,
     _get_forecast_transactions,
 )
+from app.services._query_filters import reporting_date_col, reporting_date_value
+from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.fx_rate_service import convert as fx_convert
 from app.services.recurring_transaction_service import (
     adjust_weekend_date,
@@ -37,6 +40,7 @@ async def get_transaction_calendar(
     user_id: uuid.UUID,
     month: Optional[date] = None,
     account_ids: Optional[list[uuid.UUID]] = None,
+    date_basis: Literal["reporting", "bank"] = "reporting",
 ) -> TransactionCalendarResponse:
     """Build a read-only month-grid transaction calendar.
 
@@ -61,6 +65,16 @@ async def get_transaction_calendar(
 
     user = await session.get(User, user_id)
     primary_currency = user.primary_currency if user else get_settings().default_currency
+    accounting_mode = (
+        await get_credit_card_accounting_mode(session)
+        if date_basis == "reporting"
+        else "cash"
+    )
+    activity_date_col = (
+        reporting_date_col(accounting_mode)
+        if date_basis == "reporting"
+        else Transaction.date
+    )
 
     requested_account_ids = account_ids
     if requested_account_ids is not None and len(requested_account_ids) == 0:
@@ -102,7 +116,12 @@ async def get_transaction_calendar(
             )
 
     actual_rows = await _load_actual_transactions(
-        session, workspace_id, grid_start, grid_end, requested_account_ids
+        session,
+        workspace_id,
+        grid_start,
+        grid_end,
+        requested_account_ids,
+        activity_date_col,
     )
     balance_deltas = await _daily_balance_deltas_by_date(
         session,
@@ -113,9 +132,10 @@ async def get_transaction_calendar(
         account_ids=requested_account_ids,
     )
     for tx in actual_rows:
-        if tx.date not in days:
+        activity_date = _activity_date(tx, date_basis, accounting_mode)
+        if activity_date not in days:
             continue
-        day = days[tx.date]
+        day = days[activity_date]
         amount_primary = await _positive_primary_amount(
             session, tx.amount, tx.currency, primary_currency, tx.amount_primary
         )
@@ -146,16 +166,25 @@ async def get_transaction_calendar(
                         day.has_expense = True
 
         day.actual_count += 1
-        day.items.append(_actual_item(tx, amount_primary, is_transfer, ignored))
+        day.items.append(
+            _actual_item(tx, activity_date, amount_primary, is_transfer, ignored)
+        )
 
     forecast_rows = await _get_forecast_transactions(
-        session, workspace_id, grid_start, grid_end, requested_account_ids
+        session,
+        workspace_id,
+        grid_start,
+        grid_end,
+        requested_account_ids,
+        range_date_col=activity_date_col,
+        future_date_col=Transaction.date,
     )
     forecast_deltas: dict[date, float] = {}
     for tx in forecast_rows:
-        if tx.date not in days:
+        activity_date = _activity_date(tx, date_basis, accounting_mode)
+        if activity_date not in days:
             continue
-        day = days[tx.date]
+        day = days[activity_date]
         amount_primary = await _positive_primary_amount(
             session, tx.amount, tx.currency, primary_currency, tx.amount_primary
         )
@@ -180,7 +209,9 @@ async def get_transaction_calendar(
                     day.projected_expense += amount_primary * ratio
                     day.has_expense = True
         day.projected_count += 1
-        day.items.append(_forecast_item(tx, amount_primary, is_transfer, ignored))
+        day.items.append(
+            _forecast_item(tx, activity_date, amount_primary, is_transfer, ignored)
+        )
 
         # Forecast rows are excluded from actual deltas but included in the
         # projected walk. The seed already contains forecast rows before the
@@ -297,14 +328,15 @@ async def _load_actual_transactions(
     start: date,
     end: date,
     account_ids: Optional[list[uuid.UUID]],
+    activity_date_col,
 ) -> list[Transaction]:
     stmt = (
         select(Transaction)
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
             Transaction.workspace_id == workspace_id,
-            Transaction.date >= start,
-            Transaction.date < end,
+            activity_date_col >= start,
+            activity_date_col < end,
             Transaction.date <= app_today(),
             Transaction.status == "posted",
         )
@@ -313,7 +345,7 @@ async def _load_actual_transactions(
             selectinload(Transaction.category),
             selectinload(Transaction.payee_entity),
         )
-        .order_by(Transaction.date.asc(), Transaction.created_at.asc())
+        .order_by(activity_date_col.asc(), Transaction.created_at.asc())
     )
     if account_ids is not None:
         stmt = stmt.where(Transaction.account_id.in_(account_ids))
@@ -352,6 +384,16 @@ def _is_transfer_item(tx: Transaction, parts: list[tuple[Optional[Category], flo
     )
 
 
+def _activity_date(
+    tx: Transaction,
+    date_basis: Literal["reporting", "bank"],
+    accounting_mode: str,
+) -> date:
+    if date_basis == "bank":
+        return tx.date
+    return reporting_date_value(tx, accounting_mode)
+
+
 async def _positive_primary_amount(
     session: AsyncSession,
     amount: Decimal,
@@ -373,10 +415,13 @@ async def _signed_balance_delta_primary(
     primary_currency: str,
 ) -> float:
     account_currency = tx.account.currency if tx.account else tx.currency
+    # A cross-currency row counts only once its account-currency amount was
+    # stamped; reading it 1:1 is how 700,000 CLP became 700,000 BRL (#353).
+    # The codes can differ by case, so compare them normalized.
     effective = (
         tx.amount
-        if tx.currency == account_currency
-        else Decimal(str(tx.amount_primary or tx.amount))
+        if same_currency(tx.currency, account_currency)
+        else Decimal(str(tx.amount_primary or 0))
     )
     amount = abs(Decimal(str(effective)))
     if account_currency != primary_currency:
@@ -386,14 +431,18 @@ async def _signed_balance_delta_primary(
 
 
 def _actual_item(
-    tx: Transaction, amount_primary: float, is_transfer: bool, ignored: bool
+    tx: Transaction,
+    activity_date: date,
+    amount_primary: float,
+    is_transfer: bool,
+    ignored: bool,
 ) -> TransactionCalendarItem:
     category = tx.category
     account = tx.account
     return TransactionCalendarItem(
         kind="actual",
         id=tx.id,
-        date=tx.date,
+        date=activity_date,
         description=tx.description,
         amount=float(tx.amount),
         amount_primary=amount_primary,
@@ -416,14 +465,18 @@ def _actual_item(
 
 
 def _forecast_item(
-    tx: Transaction, amount_primary: float, is_transfer: bool, ignored: bool
+    tx: Transaction,
+    activity_date: date,
+    amount_primary: float,
+    is_transfer: bool,
+    ignored: bool,
 ) -> TransactionCalendarItem:
     category = tx.category
     account = tx.account
     return TransactionCalendarItem(
         kind="projected",
         id=tx.id,
-        date=tx.date,
+        date=activity_date,
         description=tx.description,
         amount=float(tx.amount),
         amount_primary=amount_primary,

@@ -1,3 +1,4 @@
+import { forwardArrow } from '@/lib/format'
 import { useRef, useState, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -17,11 +18,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import type { Category, Payee, Rule, RuleAction, RuleCondition, RuleConditionNode, RuleExportPayload, RulePack } from '@/types'
-import { isConditionGroup } from '@/lib/rule-conditions'
+import type { Category, Payee, Rule, RuleAction, RuleExportPayload, RulePack } from '@/types'
+import { conditionSummary } from '@/lib/rule-summary'
 import { normalizeRuleMatchValue, ruleSearchText } from '@/lib/rule-match-utils'
 import { Trash2, Plus, RefreshCw, Package, Check, ArrowUpDown, ArrowUp, ArrowDown, Download, Upload, Search, Power } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { localized } from '@/lib/localized-text'
 import { PageHeader } from '@/components/page-header'
 import { PageRefreshButton } from '@/components/page-refresh-button'
 import { useWorkspace } from '@/contexts/workspace-context'
@@ -65,92 +67,22 @@ function SectionHeader({
   )
 }
 
-const CONDITION_FIELDS = [
-  { value: 'description', label: 'rules.fieldDescription' },
-  { value: 'payee', label: 'rules.fieldRawPayee' },
-  { value: 'notes', label: 'rules.fieldNotes' },
-  { value: 'amount', label: 'rules.fieldAmount' },
-  { value: 'type', label: 'rules.fieldType' },
-  { value: 'account_id', label: 'rules.fieldAccount' },
-  { value: 'payee_id', label: 'rules.fieldPayee' },
-  { value: 'date', label: 'rules.fieldDate' },
-  { value: 'status', label: 'rules.fieldStatus' },
-] as const
-
-const STRING_OPS = [
-  { value: 'contains', label: 'rules.opContains' },
-  { value: 'not_contains', label: 'rules.opNotContains' },
-  { value: 'equals', label: 'rules.opEquals' },
-  { value: 'not_equals', label: 'rules.opNotEquals' },
-  { value: 'starts_with', label: 'rules.opStartsWith' },
-  { value: 'ends_with', label: 'rules.opEndsWith' },
-  { value: 'regex', label: 'rules.opRegex' },
-]
-
-const NUMERIC_OPS = [
-  { value: 'equals', label: '=' },
-  { value: 'gt', label: '>' },
-  { value: 'gte', label: '>=' },
-  { value: 'lt', label: '<' },
-  { value: 'lte', label: '<=' },
-]
-
-function getOpsForField(field: string) {
-  if (field === 'amount' || field === 'date') return NUMERIC_OPS
-  if (field === 'type') return [{ value: 'equals', label: 'rules.opIs' }]
-  if (field === 'payee_id' || field === 'account_id' || field === 'status') return [
-    { value: 'equals', label: 'rules.opIs' },
-    { value: 'not_equals', label: 'rules.opIsNot' },
-  ]
-  return STRING_OPS
-}
-
-function conditionSummary(conditions: RuleConditionNode[], conditionsOp: string, t: (key: string) => string, payeesList: Payee[]): string {
-  const fieldLabel = (f: string) => {
-    const key = CONDITION_FIELDS.find(x => x.value === f)?.label
-    return key ? t(key) : f
-  }
-  const opLabel = (f: string, op: string) => {
-    const key = getOpsForField(f).find(x => x.value === op)?.label
-    return key ? t(key) : op
-  }
-  const valueLabel = (c: RuleCondition) => {
-    if (c.field === 'payee_id') {
-      const p = payeesList.find(p => p.id === c.value)
-      return p ? p.name : String(c.value)
-    }
-    if (c.field === 'status') {
-      if (c.value === 'pending') return t('rules.statusPending')
-      if (c.value === 'posted') return t('rules.statusPosted')
-    }
-    return String(c.value)
-  }
-  const leafSummary = (c: RuleCondition) => `${fieldLabel(c.field)} ${opLabel(c.field, c.op)} "${valueLabel(c)}"`
-  const joiner = (op: string) => ` ${op === 'or' ? t('rules.orOp') : t('rules.andOp')} `
-  // Groups get parentheses so a mixed AND/OR rule reads unambiguously.
-  const parts = conditions.map(node => (
-    isConditionGroup(node)
-      ? `(${node.conditions.map(leafSummary).join(joiner(node.op))})`
-      : leafSummary(node)
-  ))
-  return parts.join(joiner(conditionsOp)) || t('rules.noConditions')
-}
-
 function actionSummary(actions: RuleAction[], categories: Category[], payeesList: Payee[], t: (key: string) => string): string {
+  const arrow = forwardArrow()
   return actions.map(a => {
     if (a.op === 'set_category') {
       const cat = findCategoryReference(categories, a.value)
-      return cat ? `→ ${cat.name}` : `→ ${t('transactions.category')}`
+      return cat ? `${arrow} ${cat.name}` : `${arrow} ${t('transactions.category')}`
     }
     if (a.op === 'set_payee') {
       const p = payeesList.find(p => p.id === a.value)
-      return p ? `→ ${t('payees.payee')}: ${p.name}` : `→ ${t('payees.payee')}`
+      return p ? `${arrow} ${t('payees.payee')}: ${p.name}` : `${arrow} ${t('payees.payee')}`
     }
     if (a.op === 'set_description') {
-      return `→ ${t('rules.fieldDescription')}: ${a.value}`
+      return `${arrow} ${t('rules.fieldDescription')}: ${a.value}`
     }
-    if (a.op === 'append_notes') return `→ ${t('rules.fieldNotes')}: ${a.value}`
-    if (a.op === 'ignore') return `→ ${t('rules.ignoreAction')}`
+    if (a.op === 'append_notes') return `${arrow} ${t('rules.fieldNotes')}: ${a.value}`
+    if (a.op === 'ignore') return `${arrow} ${t('rules.ignoreAction')}`
     return a.op
   }).join('  ') || t('rules.noActions')
 }
@@ -656,7 +588,7 @@ export default function RulesPage() {
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground font-mono truncate">
-                      {conditionSummary(rule.conditions, rule.conditions_op, t, payees)}
+                      {conditionSummary(rule.conditions, rule.conditions_op, t, (c) => c.field === 'payee_id' ? (payees.find(p => p.id === c.value)?.name ?? String(c.value)) : undefined)}
                     </p>
                     <p className="text-xs text-emerald-600 font-medium mt-0.5">
                       {actionSummary(rule.actions, displayCategories, payees, t)}
@@ -783,11 +715,6 @@ export default function RulesPage() {
   )
 }
 
-/** The pack's name in the UI language, falling back to English. */
-function packName(pack: RulePack, lang: string): string {
-  return pack.names[lang] ?? pack.names[lang.split('-')[0]] ?? pack.name
-}
-
 function RulePacksDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t, i18n } = useTranslation()
   const queryClient = useQueryClient()
@@ -857,7 +784,7 @@ function RulePacksDialog({ open, onClose }: { open: boolean; onClose: () => void
             >
               <span className="text-2xl">{pack.flag}</span>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-foreground">{packName(pack, i18n.language)}</p>
+                <p className="text-sm font-semibold text-foreground">{localized(pack.names, i18n.language)}</p>
                 <p className="text-xs text-muted-foreground">
                   {t('rules.packRuleCount', { count: pack.rule_count })}
                 </p>
@@ -885,7 +812,7 @@ function RulePacksDialog({ open, onClose }: { open: boolean; onClose: () => void
                   variant="ghost"
                   className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
                   onClick={() => setRemoving(pack)}
-                  aria-label={t('rules.removePackAria', { name: packName(pack, i18n.language) })}
+                  aria-label={t('rules.removePackAria', { name: localized(pack.names, i18n.language) })}
                   title={t('rules.removePack')}
                 >
                   <Trash2 size={13} />
@@ -954,7 +881,7 @@ function RemovePackDialog({ pack, onClose }: { pack: RulePack; onClose: () => vo
     <Dialog open onOpenChange={(open) => { if (!open && !pending) onClose() }}>
       <DialogContent className="sm:max-w-md" showCloseButton={!pending}>
         <DialogHeader>
-          <DialogTitle>{t('rules.removePackTitle', { name: packName(pack, i18n.language) })}</DialogTitle>
+          <DialogTitle>{t('rules.removePackTitle', { name: localized(pack.names, i18n.language) })}</DialogTitle>
           <DialogDescription>
             {failed
               ? t('rules.removePackPreviewFailed')
@@ -984,7 +911,7 @@ function RemovePackDialog({ pack, onClose }: { pack: RulePack; onClose: () => vo
           </Button>
           {failed ? (
             <Button variant="outline" onClick={() => void refetch()} disabled={isFetching}>
-              <RefreshCw size={14} className="mr-1" />
+              <RefreshCw size={14} className="me-1" />
               {t('common.retry')}
             </Button>
           ) : (
@@ -993,7 +920,7 @@ function RemovePackDialog({ pack, onClose }: { pack: RulePack; onClose: () => vo
               onClick={() => plan && removeMutation.mutate(plan.token)}
               disabled={pending || !confirmable}
             >
-              <Trash2 size={14} className="mr-1" />
+              <Trash2 size={14} className="me-1" />
               {t('rules.removePackConfirm')}
             </Button>
           )}

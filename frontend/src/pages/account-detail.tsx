@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button'
 import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Clock, EyeClosed, HelpCircle, Paperclip, Pencil, Plus, X } from 'lucide-react'
 import { MobileTransactionRow } from '@/components/mobile-transaction-row'
 import { transactionDescription } from '@/lib/transaction-description'
+import { ReportingDateBadge } from '@/components/reporting-date-badge'
 import { CategoryIcon } from '@/components/category-icon'
 import { CategorySplitBadge, TransactionCategoryIcon } from '@/components/category-lines-display'
 import { isSplitByCategory, projectedSplitSource } from '@/lib/category-lines'
@@ -777,6 +778,7 @@ export default function AccountDetailPage() {
       installment_purchase_date: null,
       bill_id: null,
       effective_bill_date: null,
+      reporting_date_override: null,
       recurring_transaction_id: p.recurring_id,
       splits: [],
       is_ignored: false,
@@ -895,7 +897,9 @@ export default function AccountDetailPage() {
   )
   const pocketReserved = accountPocketGoals.reduce((sum, goal) => sum + goal.current_amount, 0)
   const pocketFree = (summary?.current_balance ?? 0) - pocketReserved
-  const projectedBalance = displayRows.length > 0 ? displayRows[0].runningBalance : openingBalance
+  const projectedBalance = isCreditCard
+    ? (displayRows[0]?.runningBalance ?? openingBalance)
+    : (chartData.at(-1)?.balance ?? openingBalance)
 
   const actualIncome = (usePrimary ? summary?.monthly_income_primary : undefined) ?? summary?.monthly_income ?? 0
   const actualExpenses = (usePrimary ? summary?.monthly_expenses_primary : undefined) ?? summary?.monthly_expenses ?? 0
@@ -958,7 +962,7 @@ export default function AccountDetailPage() {
           to="/accounts"
           className="inline-flex items-center text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
         >
-          <ArrowLeft className="h-3.5 w-3.5 mr-1" />
+          <ArrowLeft className="h-3.5 w-3.5 me-1" />
           {t('accounts.backToAccounts')}
         </Link>
 
@@ -1014,11 +1018,11 @@ export default function AccountDetailPage() {
                 size="sm"
                 onClick={() => setTransferDialogOpen(true)}
               >
-                <ArrowLeftRight className="h-4 w-4 mr-1" />
+                <ArrowLeftRight className="h-4 w-4 me-1" />
                 {t('transactions.transfer')}
               </Button>
               <Button size="sm" onClick={openCreateDialog}>
-                <Plus className="h-4 w-4 mr-1" />
+                <Plus className="h-4 w-4 me-1" />
                 <span className="sm:hidden">{t('common.add')}</span>
                 <span className="hidden sm:inline">{t('transactions.addManual')}</span>
               </Button>
@@ -1120,12 +1124,12 @@ export default function AccountDetailPage() {
                 }
               }}
             >
-              <X className="h-3.5 w-3.5 sm:mr-1" />
+              <X className="h-3.5 w-3.5 sm:me-1" />
               <span className="hidden sm:inline">{t('transactions.clearFilters')}</span>
             </Button>
           )}
           {isForeignCurrency && (
-            <div className="ml-auto inline-flex rounded-lg border border-border bg-muted p-0.5 text-xs font-medium">
+            <div className="ms-auto inline-flex rounded-lg border border-border bg-muted p-0.5 text-xs font-medium">
               <button
                 onClick={() => setShowPrimary(false)}
                 className={`px-3 py-1.5 rounded-md transition-colors ${!primaryShown ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
@@ -1389,6 +1393,40 @@ export default function AccountDetailPage() {
                 {t('accounts.projectedExpenses')}: {mask(formatCurrency(projectedExpenses, displayCurrency, locale))}
               </p>
             )}
+          </div>
+        </div>
+      )}
+
+      {!isCreditCard && (account.reserved_balances?.length ?? 0) > 0 && (
+        <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-5 mb-6">
+          <p className="text-sm font-semibold text-foreground mb-1">
+            {t('accounts.reservedBalances')}
+          </p>
+          <p className="text-[10px] sm:text-xs text-muted-foreground mb-3">
+            {t('accounts.reservedBalancesHint')}
+          </p>
+          <ul className="space-y-2">
+            {account.reserved_balances!.map((reserved) => (
+              <li
+                key={reserved.id}
+                className="flex items-center justify-between gap-3 text-sm"
+              >
+                <span className="text-muted-foreground truncate">
+                  {reserved.name || t('accounts.reservedBalanceFallback')}
+                </span>
+                <span className="tabular-nums text-foreground shrink-0">
+                  {mask(formatCurrency(Number(reserved.amount), reserved.currency, locale))}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="flex items-center justify-between gap-3 mt-3 pt-3 border-t border-border text-sm">
+            <span className="font-medium text-muted-foreground">
+              {t('accounts.reservedTotal')}
+            </span>
+            <span className="font-bold tabular-nums text-foreground">
+              {mask(formatCurrency(Number(account.reserved_total ?? 0), account.currency, locale))}
+            </span>
           </div>
         </div>
       )}
@@ -1664,6 +1702,7 @@ export default function AccountDetailPage() {
                       canWrite={canWrite}
                       highlighted={false}
                       locale={locale}
+                      dateLocale={dateLocale}
                       userCurrency={userCurrency}
                       onSelect={() => {}}
                       showPayee
@@ -1687,11 +1726,11 @@ export default function AccountDetailPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b">
-                    <th className="px-2 sm:px-4 py-3 text-left font-medium whitespace-nowrap">{t('transactions.date')}</th>
-                    <th className="px-2 sm:px-4 py-3 text-left font-medium">{t('transactions.description')}</th>
-                    <th className="px-2 sm:px-4 py-3 text-left font-medium hidden md:table-cell">{t('transactions.category')}</th>
-                    <th className="px-2 sm:px-4 py-3 text-right font-medium whitespace-nowrap">{t('transactions.amount')}</th>
-                    <th className="px-2 sm:px-4 py-3 text-right font-medium hidden sm:table-cell whitespace-nowrap">{t('accounts.runningBalance')}</th>
+                    <th className="px-2 sm:px-4 py-3 text-start font-medium whitespace-nowrap">{t('transactions.date')}</th>
+                    <th className="px-2 sm:px-4 py-3 text-start font-medium">{t('transactions.description')}</th>
+                    <th className="px-2 sm:px-4 py-3 text-start font-medium hidden md:table-cell">{t('transactions.category')}</th>
+                    <th className="px-2 sm:px-4 py-3 text-end font-medium whitespace-nowrap">{t('transactions.amount')}</th>
+                    <th className="px-2 sm:px-4 py-3 text-end font-medium hidden sm:table-cell whitespace-nowrap">{t('accounts.runningBalance')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1713,20 +1752,21 @@ export default function AccountDetailPage() {
                       >
                         <td className="px-3 sm:px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
                           {formatDateStr(tx.date, dateLocale)}
+                          <div><ReportingDateBadge tx={tx} locale={dateLocale} /></div>
                         </td>
                         <td className="px-3 sm:px-4 py-3 w-full max-w-0">
                           <div className="flex items-center gap-1.5 min-w-0">
                             <span className="font-semibold text-foreground text-sm truncate">{transactionDescription(tx.description, tx.source, t)}</span>
                             <div className="flex items-center gap-1 shrink-0">
                             {isTransfer && (
-                              <span className="ml-2 inline-flex items-center gap-1 text-xs text-blue-600 font-normal bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5">
+                              <span className="ms-2 inline-flex items-center gap-1 text-xs text-blue-600 font-normal bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5">
                                 <ArrowLeftRight className="h-3 w-3" />
                                 {t('transactions.transfer')}
                                 <span title={t('transactions.transferTooltip')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
                               </span>
                             )}
                             {isIgnored && (
-                              <span className="ml-2 inline-flex items-center gap-1 text-xs text-gray-600 font-normal bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
+                              <span className="ms-2 inline-flex items-center gap-1 text-xs text-gray-600 font-normal bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
                                 <EyeClosed className="h-3 w-3" />
                                 {t('transactions.ignored')}
                                 <span title={t('transactions.ignoreTransferHint')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
@@ -1745,7 +1785,7 @@ export default function AccountDetailPage() {
                             )}
                             {tx.installment_number != null && tx.total_installments != null && (
                               <span
-                                className="ml-2 inline-flex items-center text-[10px] font-bold tabular-nums text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 px-1.5 py-0.5 rounded-full"
+                                className="ms-2 inline-flex items-center text-[10px] font-bold tabular-nums text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 px-1.5 py-0.5 rounded-full"
                                 title={tx.installment_total_amount != null
                                   ? t('transactions.installmentTooltip', { count: tx.total_installments, total: tx.installment_total_amount })
                                   : undefined}
@@ -1763,7 +1803,7 @@ export default function AccountDetailPage() {
                             )}
                             {tx.effective_bill_date && (
                               <span
-                                className="ml-2 inline-flex items-center gap-1 text-xs text-violet-600 dark:text-violet-400 font-normal bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/30 rounded px-1.5 py-0.5"
+                                className="ms-2 inline-flex items-center gap-1 text-xs text-violet-600 dark:text-violet-400 font-normal bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/30 rounded px-1.5 py-0.5"
                                 title={t('transactions.billOverrideTooltip', 'Movida para a fatura com vencimento em {{date}}', { date: formatDateStr(tx.effective_bill_date, dateLocale) })}
                               >
                                 <CalendarClock className="h-3 w-3" />
@@ -1771,7 +1811,7 @@ export default function AccountDetailPage() {
                               </span>
                             )}
                             {(tx.attachment_count ?? 0) > 0 && (
-                              <Paperclip size={12} className="ml-2 inline text-muted-foreground" />
+                              <Paperclip size={12} className="ms-2 inline text-muted-foreground" />
                             )}
                             </div>
                           </div>
@@ -1794,15 +1834,15 @@ export default function AccountDetailPage() {
                             <span className="text-muted-foreground">—</span>
                           )}
                         </td>
-                        <td className={`px-2 sm:px-4 py-3 text-right text-xs sm:text-sm font-semibold tabular-nums whitespace-nowrap ${tx.is_ignored ? 'text-gray-500' : tx.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
-                          {mask(`${tx.is_ignored ? ' ' : tx.type === 'credit' ? '+' : '-'}${formatCurrency(Math.abs(Number(tx.amount)), tx.currency, locale)}`)}
+                        <td className={`px-2 sm:px-4 py-3 text-end text-xs sm:text-sm font-semibold tabular-nums whitespace-nowrap ${tx.is_ignored ? 'text-gray-500' : tx.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
+                          <span dir="ltr">{mask(`${tx.is_ignored ? ' ' : tx.type === 'credit' ? '+' : '-'}${formatCurrency(Math.abs(Number(tx.amount)), tx.currency, locale)}`)}</span>
                           {tx.currency !== userCurrency && tx.amount_primary != null && (
                             <span className="block text-[10px] text-muted-foreground tabular-nums">
                               {mask(formatCurrency(Math.abs(tx.amount_primary), userCurrency, locale))}
                             </span>
                           )}
                         </td>
-                        <td className={`px-4 py-3 text-right tabular-nums text-sm hidden sm:table-cell whitespace-nowrap ${(account.type === 'credit_card' ? tx.runningBalance > 0 : tx.runningBalance < 0) ? 'text-rose-500' : 'text-muted-foreground'}`}>
+                        <td className={`px-4 py-3 text-end tabular-nums text-sm hidden sm:table-cell whitespace-nowrap ${(account.type === 'credit_card' ? tx.runningBalance > 0 : tx.runningBalance < 0) ? 'text-rose-500' : 'text-muted-foreground'}`}>
                           {mask(formatCurrency(tx.runningBalance, displayCurrency, locale))}
                         </td>
                       </tr>

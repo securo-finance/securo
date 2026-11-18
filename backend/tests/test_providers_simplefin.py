@@ -692,6 +692,47 @@ async def test_get_holdings_crypto_ticker_currency_falls_back_to_account_currenc
     assert holdings[0].ticker == "DOGE"
 
 
+@pytest.mark.parametrize(
+    ("account_currency", "expected"),
+    [("usd", "USD"), ("https://www.example.com/flight-miles.json", "USD"), (None, "USD")],
+)
+@pytest.mark.asyncio
+async def test_get_holdings_without_a_currency_takes_the_stored_account_currency(
+    account_currency, expected
+):
+    """A holding without its own currency takes its account's, as the
+    account is stored. The sync matches the two exactly before deducting the
+    holding from the balance, so a raw ``"usd"`` here counted the portfolio
+    twice (issue #343), and a custom-currency URL would overflow
+    ``assets.currency``."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "accounts": [
+                    {
+                        "id": "acc-1",
+                        "currency": account_currency,
+                        "balance": "500.00",
+                        "holdings": [
+                            {"id": "h-1", "symbol": "IVV", "market_value": "300.00"},
+                        ],
+                    }
+                ]
+            },
+        )
+
+    creds = {"access_url": "https://u:p@bridge.example/simplefin"}
+    with _patched_client(handler):
+        provider = SimpleFinProvider()
+        accounts = await provider.get_accounts(creds)
+        holdings = await provider.get_holdings(creds)
+    assert accounts[0].currency == expected
+    assert holdings[0].currency == expected
+    assert accounts[0].auto_invested_balance == Decimal("300.00")
+
+
 @pytest.mark.asyncio
 async def test_get_accounts_non_iso_currency_falls_back_to_usd():
     """The same connector quirk on an *account* would overflow accounts.currency.
@@ -882,3 +923,178 @@ async def test_get_holdings_carries_the_owning_account():
     assert by_id["h-1"].account_name == "Employer 401(k)"
     assert by_id["h-2"].account_external_id == "acc-2"
     assert by_id["h-2"].account_name == "Rollover IRA"
+
+
+# --- Brokerage balance vs. positions (issue #343) -------------------------
+
+
+def _brokerage_payload(**account_overrides):
+    account = {
+        "id": "brk-1", "name": "Brokerage", "currency": "USD", "balance": "1057.20",
+        "holdings": [
+            {"id": "h-1", "symbol": "MPC", "description": "Marathon Petroleum",
+             "currency": "USD", "shares": "1.011168", "market_value": "425.96"},
+            {"id": "h-2", "symbol": "BP", "description": "BP PLC",
+             "currency": "USD", "shares": "3.106678", "market_value": "147.64"},
+        ],
+    }
+    account.update(account_overrides)
+    return {"accounts": [account]}
+
+
+def test_parse_accounts_reports_positions_value_as_auto_invested():
+    """A SimpleFIN brokerage's balance is the whole portfolio and its
+    positions arrive as holdings, so the positions' value is the part the
+    sync may subtract once those holdings are counted as assets."""
+    _, accounts = SimpleFinProvider._parse_accounts(_brokerage_payload())
+    assert accounts[0].balance == Decimal("1057.20")
+    assert accounts[0].auto_invested_balance == Decimal("573.60")
+
+
+def test_parse_accounts_without_holdings_reports_nothing_to_deduct():
+    _, accounts = SimpleFinProvider._parse_accounts(
+        {"accounts": [{"id": "chk", "name": "Checking", "currency": "USD", "balance": "889.92"}]}
+    )
+    assert accounts[0].auto_invested_balance == Decimal("0")
+
+
+def test_parse_accounts_does_not_clamp_positions_to_the_balance():
+    """Positions worth more than the balance mean a margin debit. The full
+    positions value is reported so the sync stores the negative cash
+    residual, which the reports count as the liability; clamping would
+    overstate net worth by the debt."""
+    for balance in ("400", "0"):
+        _, accounts = SimpleFinProvider._parse_accounts(_brokerage_payload(balance=balance))
+        assert accounts[0].auto_invested_balance == Decimal("573.60"), balance
+
+
+def test_parse_accounts_ignores_malformed_holdings_entries():
+    """A null or non-object entry in holdings must not abort the accounts
+    sync; get_holdings skips it too, so nothing is counted for it."""
+    payload = _brokerage_payload(holdings=[
+        None,
+        "not-a-holding",
+        {"id": "h-ok", "symbol": "OK", "currency": "USD", "market_value": "50.25"},
+    ])
+    _, accounts = SimpleFinProvider._parse_accounts(payload)
+    assert accounts[0].auto_invested_balance == Decimal("50.25")
+
+
+def test_parse_accounts_skips_positions_get_holdings_would_not_import():
+    """No id or no market value means get_holdings never stores the position,
+    so nothing will be counted for it and nothing may be subtracted."""
+    payload = _brokerage_payload(holdings=[
+        {"symbol": "NOID", "currency": "USD", "market_value": "100"},
+        {"id": "h-nv", "symbol": "NOVAL", "currency": "USD"},
+        {"id": "h-neg", "symbol": "NEG", "currency": "USD", "market_value": "-5"},
+        {"id": "h-ok", "symbol": "OK", "currency": "USD", "market_value": "50.25"},
+    ])
+    _, accounts = SimpleFinProvider._parse_accounts(payload)
+    assert accounts[0].auto_invested_balance == Decimal("50.25")
+
+
+def test_parse_accounts_leaves_positions_in_another_currency_in_the_balance():
+    """A position quoted in another currency cannot be subtracted from this
+    balance, so it stays counted on the account side rather than guessed."""
+    payload = _brokerage_payload(holdings=[
+        {"id": "h-usd", "symbol": "VTI", "currency": "USD", "market_value": "506.17"},
+        {"id": "h-eur", "symbol": "VWCE", "currency": "EUR", "market_value": "100"},
+    ])
+    _, accounts = SimpleFinProvider._parse_accounts(payload)
+    assert accounts[0].auto_invested_balance == Decimal("506.17")
+
+
+def test_parse_accounts_skips_non_finite_market_values():
+    """NaN would raise on the sign check and abort the accounts sync;
+    Infinity is not a value. Both are skipped like a missing value."""
+    payload = _brokerage_payload(holdings=[
+        {"id": "h-nan", "symbol": "NAN", "currency": "USD", "market_value": "NaN"},
+        {"id": "h-snan", "symbol": "SNAN", "currency": "USD", "market_value": "sNaN"},
+        {"id": "h-inf", "symbol": "INF", "currency": "USD", "market_value": "Infinity"},
+        {"id": "h-ok", "symbol": "OK", "currency": "USD", "market_value": "50.25"},
+    ])
+    _, accounts = SimpleFinProvider._parse_accounts(payload)
+    assert accounts[0].auto_invested_balance == Decimal("50.25")
+
+
+def _type_payload(*accounts: dict) -> dict:
+    return {
+        "connections": [{"conn_id": "CON-1", "name": "A Bank"}],
+        "accounts": [
+            {"id": f"a{index}", "currency": "USD", "conn_id": "CON-1", **account}
+            for index, account in enumerate(accounts)
+        ],
+    }
+
+
+def test_parse_accounts_reads_a_card_from_its_name():
+    """SimpleFIN exposes no account type, so every account lands as "checking"
+    and the user has to fix each non-cash one by hand (issue #352). A name
+    that says card is enough to type it right on the first import."""
+    _, accounts = SimpleFinProvider._parse_accounts(
+        _type_payload(
+            {"name": "Everyday Visa", "balance": "0"},
+            {"name": "Mastercard Gold", "balance": "-10"},
+            {"name": "Amex Platinum", "balance": "0"},
+            {"name": "Credit Card -1234", "balance": "0"},
+        )
+    )
+    assert [account.type for account in accounts] == ["credit_card"] * 4
+
+
+def test_parse_accounts_reads_a_savings_account_from_its_name():
+    _, accounts = SimpleFinProvider._parse_accounts(
+        _type_payload(
+            {"name": "High Yield Savings", "balance": "100"},
+            {"name": "Poupança", "balance": "50"},
+        )
+    )
+    assert [account.type for account in accounts] == ["savings", "savings"]
+
+
+def test_parse_accounts_reads_a_card_from_a_negative_balance():
+    """A card reports what it owes as a negative balance on this protocol, so
+    the sign places one whose name says nothing."""
+    _, accounts = SimpleFinProvider._parse_accounts(
+        _type_payload(
+            {"name": "-1234", "balance": "-25.40"},
+            {"name": "Brokerage", "balance": "1000"},
+        )
+    )
+    assert [account.type for account in accounts] == ["credit_card", "checking"]
+
+
+def test_parse_accounts_does_not_read_a_credit_union_or_a_debit_card_as_a_card():
+    """Credit union and debit card both carry a word a credit card is named
+    with; neither is one, and a wrong type is kept across syncs, so it would
+    have to be fixed by hand anyway."""
+    _, accounts = SimpleFinProvider._parse_accounts(
+        _type_payload(
+            {"name": "Credit Union Checking", "balance": "100"},
+            {"name": "Debit Card", "balance": "100"},
+        )
+    )
+    assert [account.type for account in accounts] == ["checking", "checking"]
+
+
+def test_parse_accounts_reads_card_words_only_as_whole_words():
+    """"Visalia" holds "visa" and "Amexa" holds "amex"; neither names a card."""
+    _, accounts = SimpleFinProvider._parse_accounts(
+        _type_payload(
+            {"name": "Visalia Money Market", "balance": "100"},
+            {"name": "Amexa Brokerage", "balance": "100"},
+        )
+    )
+    assert [account.type for account in accounts] == ["checking", "checking"]
+
+
+def test_parse_accounts_does_not_read_an_overdrawn_checking_as_a_card():
+    """A checking account short of cash is still checking: the name is read
+    before the sign, so the overdraft does not turn it into a card."""
+    _, accounts = SimpleFinProvider._parse_accounts(
+        _type_payload(
+            {"name": "Main Checking", "balance": "-12.00"},
+            {"name": "Emergency Savings", "balance": "-1.00"},
+        )
+    )
+    assert [account.type for account in accounts] == ["checking", "savings"]

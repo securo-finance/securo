@@ -7,8 +7,13 @@ from app.models.category_group import CategoryGroup
 from app.models.bank_connection import BankConnection
 from app.models.institution import Institution
 from app.models.account import Account
+from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.transaction import Transaction
 from app.models.rule import Rule
+from app.models.workspace_plugin import WorkspacePlugin
+from app.models.plugin_connection import PluginConnection
+from app.models.plugin_logo import PluginLogo
+from app.models.ui_layout import UiLayout
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.budget import Budget
 from app.models.import_log import ImportLog
@@ -63,8 +68,13 @@ __all__ = [
     "BankConnection",
     "Institution",
     "Account",
+    "AccountReservedBalance",
     "Transaction",
     "Rule",
+    "WorkspacePlugin",
+    "PluginConnection",
+    "PluginLogo",
+    "UiLayout",
     "RecurringTransaction",
     "Budget",
     "ImportLog",

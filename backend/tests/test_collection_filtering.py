@@ -37,7 +37,8 @@ async def _txn(session, user, account, amount, typ):
         id=uuid.uuid4(), user_id=user.id, account_id=account.id,
         description="t", amount=Decimal(str(amount)),
         date=date.today().replace(day=min(5, date.today().day)),
-        type=typ, source="manual", created_at=datetime.now(timezone.utc),
+        type=typ, source="manual", currency=account.currency,
+        created_at=datetime.now(timezone.utc),
     ))
     await session.commit()
 

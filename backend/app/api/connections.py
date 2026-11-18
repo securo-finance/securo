@@ -1,20 +1,25 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
+from app.core.feature_flags import feature_flag
 from app.core.workspace_context import (
     WorkspaceContext,
     current_workspace,
     current_writable_workspace,
 )
+from app.plugins import connections as plugin_connections
+from app.plugins import runner as plugin_runner
+from app.plugins.provider import is_plugin_provider
 from app.providers import all_known_providers
 from app.providers.base import (
     ProviderNotConfiguredError,
     ProviderUserActionRequired,
     SessionExpiredError,
 )
+from app.providers.psu import psu_context_from_request, psu_present
 from app.schemas.bank_connection import (
     BankConnectionRead,
     ConnectionSettingsUpdate,
@@ -34,19 +39,26 @@ router = APIRouter(prefix="/api/connections", tags=["connections"])
 
 
 @router.get("/providers")
-async def get_available_providers():
+async def get_available_providers(
+    session: AsyncSession = Depends(get_async_session),
+):
     """List all known open finance providers with configuration status."""
-    return {"providers": all_known_providers()}
+    from app.services.provider_settings import resolve_settings
+
+    return {"providers": all_known_providers(await resolve_settings(session))}
 
 
 @router.post("/connect-token", response_model=ConnectTokenResponse)
 async def create_connect_token(
     data: ConnectTokenRequest,
     ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
 ):
     """Create a connect token for widget-based bank connection flows."""
     try:
-        token_data = await connection_service.create_connect_token(data.provider, ctx.user_id)
+        token_data = await connection_service.create_connect_token(
+            data.provider, ctx.user_id, session=session
+        )
         return ConnectTokenResponse(**token_data)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -62,17 +74,33 @@ async def list_connections(
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    return await connection_service.get_connections(session, ctx.workspace.id)
+    rows = await connection_service.get_connections(session, ctx.workspace.id)
+    plugins = {
+        c.bank_connection_id: c for c in await plugin_connections.list_connections(session, ctx.workspace.id)
+        if c.bank_connection_id is not None
+    }
+    reads = []
+    for row in rows:
+        read = BankConnectionRead.model_validate(row)
+        plugin = plugins.get(row.id)
+        if plugin is not None:
+            read = read.model_copy(
+                update={"plugin_connection_id": plugin.id, "plugin_id": plugin.plugin_id, "integration": plugin.integration}
+            )
+        reads.append(read)
+    return reads
 
 
 @router.post("/oauth/url", response_model=OAuthUrlResponse)
 async def get_oauth_url(
     data: OAuthUrlRequest,
     ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
 ):
     try:
         url = await connection_service.get_oauth_url(
-            data.provider, ctx.user_id, ctx.workspace.id, flow_params=data.flow_params
+            data.provider, ctx.user_id, ctx.workspace.id,
+            flow_params=data.flow_params, session=session,
         )
         return OAuthUrlResponse(url=url)
     except ValueError as e:
@@ -84,9 +112,10 @@ async def list_provider_institutions(
     provider: str,
     country: str | None = None,
     ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
 ):
     try:
-        return await connection_service.list_provider_institutions(provider, country)
+        return await connection_service.list_provider_institutions(provider, country, session=session)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
@@ -99,20 +128,24 @@ async def list_provider_institutions(
 @router.post("/oauth/callback", response_model=BankConnectionRead)
 async def oauth_callback(
     data: OAuthCallbackRequest,
+    request: Request,
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
-        connection = await connection_service.handle_oauth_callback(
-            session,
-            ctx.workspace.id,
-            ctx.user_id,
-            data.code,
-            provider_name=data.provider,
-            state=data.state,
-            sync_assets=data.sync_assets,
-            reconnect_connection_id=data.reconnect_connection_id,
-        )
+        # The user just came back from their bank and is waiting for the
+        # first import, so it is made as a user-present request.
+        with psu_present(psu_context_from_request(request)):
+            connection = await connection_service.handle_oauth_callback(
+                session,
+                ctx.workspace.id,
+                ctx.user_id,
+                data.code,
+                provider_name=data.provider,
+                state=data.state,
+                sync_assets=data.sync_assets,
+                reconnect_connection_id=data.reconnect_connection_id,
+            )
         return connection
     except ProviderUserActionRequired as e:
         raise HTTPException(
@@ -163,20 +196,26 @@ async def get_reauth_url(
 @router.post("/{connection_id}/sync")
 async def sync_connection(
     connection_id: uuid.UUID,
+    request: Request,
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
+    plugin_connection = await _plugin_connection(session, connection_id, ctx.workspace.id)
+    if plugin_connection is not None:
+        return await _sync_through_plugin(session, plugin_connection, connection_id)
     try:
         # Manual sync is user-initiated, so ask the provider to pull fresh
-        # data from the bank before we read. Scheduled syncs (Celery) keep
-        # the default behaviour: read whatever the provider already has.
-        connection, merged_count, sync_outcome = await connection_service.sync_connection(
-            session,
-            connection_id,
-            ctx.workspace.id,
-            ctx.user_id,
-            trigger_provider_refresh=True,
-        )
+        # data from the bank before we read, and tell the bank the user is
+        # present. Scheduled syncs (Celery) keep the default behaviour: read
+        # whatever the provider already has, as background requests.
+        with psu_present(psu_context_from_request(request)):
+            connection, merged_count, sync_outcome = await connection_service.sync_connection(
+                session,
+                connection_id,
+                ctx.workspace.id,
+                ctx.user_id,
+                trigger_provider_refresh=True,
+            )
         result = BankConnectionRead.model_validate(connection)
         return {
             **result.model_dump(mode="json"),
@@ -185,6 +224,8 @@ async def sync_connection(
         }
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except connection_service.ConnectionDisconnectedError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except ProviderUserActionRequired as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -222,6 +263,10 @@ async def get_reconnect_token(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
 
     item_id = connection.credentials.get("item_id") if connection.credentials else None
+    # A disconnected connection has no credentials left, but the widget item
+    # it was linked to is its external_id, so it can still be reopened.
+    if not item_id and connection.status == connection_service.DISCONNECTED_STATUS:
+        item_id = connection.external_id
     if not item_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -230,7 +275,7 @@ async def get_reconnect_token(
 
     try:
         token_data = await connection_service.create_connect_token(
-            connection.provider, ctx.user_id, item_id=item_id
+            connection.provider, ctx.user_id, item_id=item_id, session=session
         )
         return ReconnectTokenResponse(**token_data)
     except Exception as e:
@@ -258,10 +303,25 @@ async def update_settings(
 @router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_connection(
     connection_id: uuid.UUID,
+    keep_accounts: bool = True,
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    deleted = await connection_service.delete_connection(session, connection_id, ctx.workspace.id)
+    """Disconnect a bank.
+
+    By default the accounts and their history stay and the connection is
+    archived so it can be reconnected later. keep_accounts=false deletes the
+    connection with its accounts and transactions. A connection a plugin
+    syncs goes with the plugin's connection, which keeps the accounts.
+    """
+    plugin_connection = await _plugin_connection(session, connection_id, ctx.workspace.id)
+    if plugin_connection is not None:
+        # The plugin's connection goes with it: nothing would sync into it anymore.
+        await plugin_connections.delete(session, plugin_connection)
+        return
+    deleted = await connection_service.delete_connection(
+        session, connection_id, ctx.workspace.id, keep_accounts=keep_accounts
+    )
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
 
@@ -288,3 +348,37 @@ async def unlink_transfer(
     if not unlinked:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transfer pair not found")
     await session.commit()
+
+
+async def _plugin_connection(session: AsyncSession, connection_id: uuid.UUID, workspace_id: uuid.UUID):
+    """The plugin connection behind a bank connection a plugin syncs, or None for a native one."""
+    connection = await connection_service.get_connection(session, connection_id, workspace_id)
+    if connection is None or not is_plugin_provider(connection.provider):
+        return None
+    plugin_connection = await plugin_connections.for_bank_connection(session, workspace_id, connection_id)
+    if plugin_connection is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
+    return plugin_connection
+
+
+async def _sync_through_plugin(session: AsyncSession, plugin_connection, connection_id: uuid.UUID) -> dict:
+    """Sync now through the plugin, answering as the native sync does."""
+    if not feature_flag("PLUGINS_ENABLED") or not plugin_runner.configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Plugins are turned off on this server."
+        )
+    plugin_connection = await plugin_connections.sync(session, plugin_connection)
+    if plugin_connection.status == "needs_auth":
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail=plugin_connection.last_error or "Sign in again.")
+    if plugin_connection.status == "error":
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Sync failed: {plugin_connection.last_error or 'the plugin failed'}",
+        )
+    bank = await connection_service.get_connection(session, connection_id, plugin_connection.workspace_id)
+    result = BankConnectionRead.model_validate(bank)
+    return {
+        **result.model_dump(mode="json"),
+        "merged_count": 0,
+        "sync_outcome": "rate_limited" if plugin_connections.rate_limited(plugin_connection) else "refreshed",
+    }

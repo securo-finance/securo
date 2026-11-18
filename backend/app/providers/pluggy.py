@@ -20,6 +20,7 @@ from app.providers.base import (
     ConnectTokenData,
     HoldingData,
     RefreshOutcome,
+    ReservedBalanceData,
     TransactionData,
     mask_last4,
 )
@@ -319,6 +320,7 @@ def _build_holding_data(inv: dict) -> HoldingData:
         purchase_date=purchase_date,
         isin=inv.get("isin") or None,
         maturity_date=_date_or_none(inv.get("dueDate")),
+        value_date=_date_or_none(inv.get("date")),
         is_withdrawn=is_withdrawn,
         metadata=metadata or None,
     )
@@ -351,6 +353,85 @@ def _build_bill_data(raw: dict) -> Optional[BillData]:
         minimum_payment=_decimal_or_none(raw.get("minimumPaymentAmount")),
         raw_data=raw,
     )
+
+
+def _reserved_balances(account: dict) -> Optional[list[ReservedBalanceData]]:
+    """Reserved/earmarked funds the account holds, or None when unreported.
+
+    Pluggy exposes Mercado Pago cofrinhos and other "saldo reservado" in
+    ``bankData.reservedBalances`` without documenting whether they are inside
+    ``balance``. They are stored and shown separately, never added to a total
+    (ADR 0022).
+
+    None means the collection is unreported or cannot be read in full, so
+    stored rows stay as they are. Only an explicitly empty collection means
+    there are no active reservations. ``availableAmounts`` carries one entry
+    per remuneration band, summed per currency; any unreadable entry or band
+    makes the entire collection unknown rather than silently dropping money.
+    """
+    bank_data = account.get("bankData")
+    if not isinstance(bank_data, dict):
+        return None
+    if bank_data.get("hasReservedBalance") is False:
+        return []
+    raw = bank_data.get("reservedBalances")
+    if not isinstance(raw, list):
+        return None
+    if not raw:
+        return []
+
+    rows: list[ReservedBalanceData] = []
+    complete = True
+    for entry in raw:
+        if not isinstance(entry, dict):
+            complete = False
+            continue
+        identification = entry.get("identification")
+        if not isinstance(identification, (str, int)) or isinstance(identification, bool):
+            complete = False
+            continue
+        external_id = str(identification).strip()
+        if not external_id:
+            complete = False
+            continue
+        raw_name = entry.get("name")
+        name = raw_name.strip() if isinstance(raw_name, str) and raw_name.strip() else None
+        # One entry per remuneration band: sum them per currency. `remuneration`
+        # is display metadata and never adjusts the amount.
+        totals: dict[str, Decimal] = {}
+        bands = entry.get("availableAmounts")
+        if not isinstance(bands, list) or not bands:
+            complete = False
+            continue
+        for band in bands:
+            if not isinstance(band, dict):
+                complete = False
+                continue
+            currency = band.get("currencyCode")
+            if not isinstance(currency, str) or not currency:
+                complete = False
+                continue
+            amount = _decimal_or_none(band.get("amount"))
+            if amount is None or not amount.is_finite() or amount < 0:
+                complete = False
+                continue
+            totals[currency] = totals.get(currency, Decimal(0)) + amount
+        for currency, amount in totals.items():
+            rows.append(
+                ReservedBalanceData(
+                    external_id=external_id, name=name, currency=currency, amount=amount
+                )
+            )
+
+    if not complete or not rows:
+        logger.warning(
+            "Pluggy reported incomplete reserved balances for account %s; "
+            "keeping stored rows",
+            account.get("id"),
+        )
+        return None
+    rows.sort(key=lambda r: (r.external_id, r.currency))
+    return rows
 
 
 def _auto_invested_balance(account: dict) -> Decimal:
@@ -418,12 +499,14 @@ def _build_account_data(acc: dict, type_mapper) -> AccountData:
             credit_data, acc.get("balance"), acc.get("currencyCode") or "USD"
         )
 
+    account_currency = acc.get("currencyCode", "USD")
+
     return AccountData(
         external_id=acc["id"],
         name=acc["name"],
         type=account_type,
         balance=Decimal(str(acc.get("balance", 0))),
-        currency=acc.get("currencyCode", "USD"),
+        currency=account_currency,
         credit_limit=credit_limit,
         statement_close_day=statement_close_day,
         payment_due_day=payment_due_day,
@@ -437,6 +520,7 @@ def _build_account_data(acc: dict, type_mapper) -> AccountData:
         auto_invested_balance=(
             Decimal(0) if account_type == "credit_card" else _auto_invested_portion(acc)
         ),
+        reserved_balances=_reserved_balances(acc),
     )
 
 
@@ -451,10 +535,15 @@ class PluggyProvider(BankProvider):
 
     _api_key: Optional[str] = None
     _api_key_expires_at: float = 0
+    _credential_key: tuple[str, str] | None = None
 
     @property
     def name(self) -> str:
         return "pluggy"
+
+    @property
+    def rereads_by_date(self) -> bool:
+        return True
 
     @property
     def flow_type(self) -> str:
@@ -463,10 +552,11 @@ class PluggyProvider(BankProvider):
     async def _ensure_api_key(self) -> str:
         """Get a valid API key, refreshing if expired or about to expire (<5min remaining)."""
         now = time.time()
-        if self._api_key and (self._api_key_expires_at - now) > 300:
+        settings = self.settings
+        credential_key = (settings.pluggy_client_id, settings.pluggy_client_secret.get_secret_value())
+        if self._credential_key == credential_key and self._api_key and (self._api_key_expires_at - now) > 300:
             return self._api_key
 
-        settings = get_settings()
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
                 f"{PLUGGY_API_BASE}/auth",
@@ -479,9 +569,12 @@ class PluggyProvider(BankProvider):
             data = resp.json()
 
         PluggyProvider._api_key = data["apiKey"]
+        PluggyProvider._credential_key = credential_key
         # Pluggy API keys last 2 hours
         PluggyProvider._api_key_expires_at = now + 7200
-        return PluggyProvider._api_key
+        # Another credential rotation may finish authentication before this
+        # coroutine resumes; return the token from this request's credentials.
+        return data["apiKey"]
 
     async def _headers(self) -> dict:
         api_key = await self._ensure_api_key()
@@ -601,6 +694,33 @@ class PluggyProvider(BankProvider):
         self, credentials: dict, account_external_id: str,
         since: Optional[date] = None, payee_source: str = "auto",
     ) -> list[TransactionData]:
+        params: dict = {"accountId": account_external_id}
+        if since:
+            # Filter by Pluggy ingestion time, NOT transaction date.
+            # `dateFrom`/`dateTo` filter on `date` (when the txn
+            # happened), which silently drops transactions Pluggy
+            # ingests later but backdates — e.g. credit card bill
+            # payments dated to the bill close, or merchants that
+            # settle weeks late. `createdAtFrom` filters on Pluggy's
+            # row creation time, so any newly-ingested row is fetched
+            # regardless of date. v2 still supports it.
+            params["createdAtFrom"] = since.isoformat()
+        return await self._list_transactions(params, payee_source)
+
+    async def get_transactions_by_date(
+        self, credentials: dict, account_external_id: str,
+        date_from: date, payee_source: str = "auto",
+    ) -> list[TransactionData]:
+        # Rows keep their createdAt when they post, and v2 rejects updatedAtFrom,
+        # so the transaction date is the only way to find them again.
+        return await self._list_transactions(
+            {"accountId": account_external_id, "dateFrom": date_from.isoformat()},
+            payee_source,
+        )
+
+    async def _list_transactions(
+        self, base_params: dict, payee_source: str,
+    ) -> list[TransactionData]:
         headers = await self._headers()
         all_transactions: list[TransactionData] = []
         after: Optional[str] = None
@@ -612,17 +732,7 @@ class PluggyProvider(BankProvider):
                 # API keys (rolled out per key). /v2/transactions pages via an
                 # opaque `after` cursor (returned in `next`) instead of
                 # page/pageSize.
-                params: dict = {"accountId": account_external_id}
-                if since:
-                    # Filter by Pluggy ingestion time, NOT transaction date.
-                    # `dateFrom`/`dateTo` filter on `date` (when the txn
-                    # happened), which silently drops transactions Pluggy
-                    # ingests later but backdates — e.g. credit card bill
-                    # payments dated to the bill close, or merchants that
-                    # settle weeks late. `createdAtFrom` filters on Pluggy's
-                    # row creation time, so any newly-ingested row is fetched
-                    # regardless of date. v2 still supports it.
-                    params["createdAtFrom"] = since.isoformat()
+                params = dict(base_params)
                 if after:
                     params["after"] = after
 

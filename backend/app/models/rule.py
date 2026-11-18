@@ -1,17 +1,18 @@
 import uuid
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, ForeignKey, Index, Integer, JSON, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models.plugin_origin import PluginOrigin
 
 if TYPE_CHECKING:
     from app.models.user import User
 
 
-class Rule(Base):
+class Rule(Base, PluginOrigin):
     __tablename__ = "rules"
     __table_args__ = (Index("ix_rules_workspace_source", "workspace_id", "source"),)
 
@@ -26,11 +27,5 @@ class Rule(Base):
     actions: Mapped[list] = mapped_column(JSON, default=list)
     priority: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    # Set when the rule came from a pack: the pack's id, the rule's key in
-    # it, and a hash of the rule as installed. A rule whose content no
-    # longer matches the hash was edited and belongs to the user.
-    source: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
-    source_key: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    source_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
     user: Mapped["User"] = relationship()

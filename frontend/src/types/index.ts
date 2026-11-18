@@ -6,6 +6,8 @@ export interface User {
   is_verified: boolean
   is_2fa_enabled: boolean
   preferences: UserPreferences
+  /** The theme picked from the library; null is Securo's own look. */
+  theme?: string | null
 }
 
 export interface AdminUser {
@@ -143,10 +145,29 @@ export interface BankConnection {
   status: string
   settings: ConnectionSettings | null
   last_sync_at: string | null
+  /** Why the last sync failed, until a sync succeeds. */
+  last_sync_failure?: SyncFailure | null
   created_at: string
   // Institutions this link spans (issue #345). Empty for one-institution
   // providers — institution_name covers those.
   institutions: ConnectionInstitution[]
+  /** Set when a plugin syncs this connection: it is managed through that plugin connection. */
+  plugin_connection_id?: string | null
+  plugin_id?: string | null
+  integration?: string | null
+}
+
+export type SyncFailureCode =
+  | 'psu_present_required'
+  | 'consent_expired'
+  | 'reauthorize_at_provider'
+  | 'rate_limited'
+  | 'provider_error'
+
+export interface SyncFailure {
+  code: SyncFailureCode
+  at: string
+  detail: string | null
 }
 
 export interface ConnectionSettings {
@@ -158,9 +179,11 @@ export interface ConnectionSettings {
 // Response of POST /connections/{id}/sync: the connection plus what the run
 // actually did. "rate_limited" means the provider throttled the request
 // (429): nothing was pulled and last_sync_at was left untouched (issue #736).
+// "partial" means some accounts were throttled and skipped while the others
+// were imported.
 export interface SyncResult extends BankConnection {
   merged_count: number
-  sync_outcome: 'refreshed' | 'rate_limited'
+  sync_outcome: 'refreshed' | 'partial' | 'rate_limited'
 }
 
 export type AccountType = 'checking' | 'savings' | 'credit_card' | 'loan' | 'investment' | 'wallet'
@@ -190,7 +213,17 @@ export interface Account {
   loan_first_payment_date?: string | null
   loan_amortization?: LoanAmortization | null
   balance: number
+  // Provider balance as reported; reserves are a separate display-only breakdown.
   current_balance: number
+  reserved_balances?: {
+    id: string
+    external_id: string
+    name: string | null
+    currency: string
+    amount: number
+  }[]
+  // Sum of the same-currency reservations, in the account's currency.
+  reserved_total?: number
   previous_balance: number | null
   // Date of the opening-balance transaction; null when there is none.
   balance_date?: string | null
@@ -321,6 +354,13 @@ export interface Transaction {
   // available, cycle math otherwise). Setting it forces the tx into the
   // bill whose due_date matches.
   effective_bill_date: string | null
+  // Optional period-attribution override. The bank-provided `date` remains
+  // unchanged; null restores automatic cash/accrual bucketing.
+  reporting_date_override: string | null
+  // The date the paginated list filtered and ordered this row by (#1386):
+  // the override, a manual bill date or, in accrual mode, a card's bill due
+  // date. Absent outside the list.
+  reporting_date?: string | null
   // The recurring bill this transaction fulfills, if any (issue #116).
   recurring_transaction_id?: string | null
   splits: TransactionSplit[]
@@ -643,6 +683,220 @@ export interface RulePackRemoval {
   token: string
 }
 
+/** Text per locale; always has `en`. */
+export type LocalizedText = Record<string, string>
+
+export type PluginAction = 'install' | 'update' | 'remove'
+export type PluginItemKind = 'category_groups' | 'categories' | 'rules'
+
+/** One field of an integration's connection form. */
+export interface PluginField {
+  key: string
+  label: LocalizedText
+  /** Kept encrypted and never shown again. */
+  secret: boolean
+  required: boolean
+}
+
+/** A connection to an outside service that a plugin with code offers. */
+export interface PluginIntegration {
+  key: string
+  name: LocalizedText
+  description?: LocalizedText | null
+  auth: 'credentials' | 'oauth' | 'none'
+  fields: PluginField[]
+  /** How often Securo asks the plugin to sync; null for never. */
+  sync_minutes: number | null
+  /** Records it syncs as a connected bank; null for an integration that writes through the API. */
+  provides?: PluginProvidedKind[] | null
+}
+
+export type PluginProvidedKind = 'accounts' | 'transactions' | 'bills' | 'holdings' | 'trades'
+
+/** A host a plugin with code may reach, and why. */
+export interface PluginHost {
+  host: string
+  purpose: LocalizedText
+}
+
+/** What a plugin with code may read or change in the workspace, and why. */
+export interface PluginScope {
+  scope: string
+  purpose: LocalizedText
+}
+
+/** A theme a plugin adds to the library: colors for Securo's tokens, nothing else. */
+export interface PluginTheme {
+  key: string
+  name: LocalizedText
+  light: Record<string, string>
+  dark: Record<string, string>
+  radius?: number | null
+  font?: 'sans' | 'mono' | 'serif' | null
+}
+
+export interface InstalledPlugin {
+  plugin_id: string
+  name: LocalizedText
+  version: string
+  commit: string
+  installed_at: string
+  /** For plugins with code. */
+  integrations: PluginIntegration[]
+  network: PluginHost[]
+  api_scopes: PluginScope[]
+  /** For sign-in integrations: the address to register with the service. */
+  redirect_uri: string | null
+  /** Themes it adds to the library. */
+  themes?: PluginTheme[]
+}
+
+export type PluginConnectionStatus = 'pending' | 'active' | 'error' | 'needs_auth'
+
+/** A connection made through a plugin. Its secrets never come back. */
+export interface PluginConnection {
+  id: string
+  plugin_id: string
+  integration: string
+  name: string
+  status: PluginConnectionStatus
+  config: Record<string, string>
+  /** Secret fields that are set, by key. */
+  secret_fields: string[]
+  sync_minutes: number | null
+  last_sync_at: string | null
+  last_error: string | null
+  created_at: string
+}
+
+/** What the owner agrees to when adding, updating or removing a plugin with code. */
+export interface PluginCodeConsent {
+  network: PluginHost[]
+  api_scopes: PluginScope[]
+  integrations: {
+    key: string
+    name: LocalizedText
+    auth: PluginIntegration['auth']
+    provides?: PluginProvidedKind[] | null
+  }[]
+  /** On an update: hosts and scopes the installed version didn't have. */
+  new_hosts: string[]
+  new_scopes: string[]
+  /** Connections in this workspace, removed along with the plugin. */
+  connections: number
+  /** An update to a version without code: its connections go, as on removal. */
+  drops_code?: boolean
+  /** Bank connections the change ends: their accounts stay, as manual ones. */
+  unlinks?: number
+}
+
+export interface PluginCatalogEntry {
+  id: string
+  owner: string
+  repository: string
+  release: string
+  commit: string
+  name: LocalizedText
+  description: LocalizedText
+  version: string
+  license: string
+  min_securo_version: string
+  /** How many items of each kind the plugin brings, by contribution kind. */
+  contributes: Record<string, number>
+  locales: string[]
+  /** The repository's GitHub topics. */
+  topics: string[]
+  stars: number
+  /** Stars gained in the last 7 days. */
+  stars_7d: number
+  added_at: string | null
+  updated_at: string | null
+  revoked: boolean
+  revoked_reason: string | null
+  /** This Securo is at least min_securo_version. */
+  compatible: boolean
+  /** This Securo can apply everything the plugin contributes. */
+  supported: boolean
+  /** The workspace types it's meant for. */
+  workspaces: string[]
+  /** It's meant for this workspace's type. */
+  fits_workspace: boolean
+  /** Where Securo serves the plugin's icon; null draws the generated badge. */
+  icon_url: string | null
+  installed_version: string | null
+  update_available: boolean
+}
+
+/** An item a plugin points at: one of its own, or a built-in default. */
+export interface PluginRef {
+  key: string
+  name: LocalizedText
+  default: boolean
+}
+
+export interface PluginContents {
+  category_groups: { key: string; name: LocalizedText; icon: string; color: string }[]
+  categories: {
+    key: string
+    name: LocalizedText
+    icon: string
+    color: string
+    group: PluginRef | null
+    treat_as_transfer: boolean
+  }[]
+  rules: {
+    key: string
+    name: string
+    priority: number
+    conditions_op: 'and' | 'or'
+    conditions: RuleConditionNode[]
+    actions: { op: string; value?: string | boolean | null; category: PluginRef | null }[]
+  }[]
+  integrations?: PluginIntegration[]
+  network?: PluginHost[]
+  api_scopes?: PluginScope[]
+  themes?: PluginTheme[]
+}
+
+/** One plugin opened from the catalog. */
+export interface PluginDetail {
+  plugin: PluginCatalogEntry
+  /** Markdown, from the catalog's verified copy. */
+  readme: string | null
+  /** Null when this Securo can't read what the plugin contains. */
+  contents: PluginContents | null
+}
+
+export interface PluginItem {
+  kind: PluginItemKind
+  key: string
+  name: string
+}
+
+/** What installing, updating or removing a plugin does, item by item. */
+export interface PluginPlan {
+  action: PluginAction
+  plugin_id: string
+  version: string | null
+  commit: string | null
+  token: string
+  create: PluginItem[]
+  update: PluginItem[]
+  delete: PluginItem[]
+  /** Edited by the user: left as they are. */
+  keep: PluginItem[]
+  /** No longer the plugin's (edited, or still in use): handed over to the user. */
+  release: PluginItem[]
+  /** Already in the workspace by name: left alone. */
+  existing: PluginItem[]
+  unresolved: PluginItem[]
+  default_categories: string[]
+  /** For plugins with code: what the owner agrees to. */
+  code?: PluginCodeConsent | null
+  /** Themes it adds to the library and takes out of it (members using one go back to Securo's own). */
+  themes?: { added: { key: string; name: LocalizedText }[]; removed: { key: string; name: LocalizedText }[] } | null
+}
+
 export interface RuleExportPayload {
   format: 'securo-categorization-rules'
   version: number
@@ -759,6 +1013,48 @@ export interface RecurringTransaction {
   category_lines?: TransactionCategoryLine[]
 }
 
+// Read-only price-change projections. Derived from linked transaction
+// history on the backend; never written back and never mutated client-side.
+export type RecurringPriceChangeEligibility =
+  | 'insufficient_history'
+  | 'no_qualifying_change'
+  | 'changes_detected'
+
+export interface RecurringPriceChange {
+  recurring_id: string
+  previous_transaction_id: string
+  current_transaction_id: string
+  previous_date: string
+  current_date: string
+  // Exact two-decimal JSON strings; coerce only for display formatting.
+  previous_amount: string
+  current_amount: string
+  currency: string
+  direction: 'increase' | 'decrease'
+  absolute_delta: string
+  percent_delta: string
+  gap_days: number
+  baseline_occurrence_count: number
+}
+
+export interface RecurringPriceChangeHistory {
+  recurring_id: string
+  eligible_occurrence_count: number
+  eligibility: RecurringPriceChangeEligibility
+  changes: RecurringPriceChange[]
+}
+
+/** What the active recurring definitions expect in one month (#532). */
+export interface RecurringMonthSummary {
+  month: string
+  currency: string
+  income: string
+  expenses: string
+  net: string
+  transfer_count: number
+  unconverted_count: number
+}
+
 export interface ProjectedTransaction {
   recurring_id: string
   account_id: string | null
@@ -858,6 +1154,12 @@ export interface DashboardSummary {
   pending_categorization_amount: number
   assets_value: Record<string, number>
   assets_value_primary: number
+  /** Checking + savings + wallet (spendable / near-liquid). */
+  cash_balance?: Record<string, number>
+  cash_balance_primary?: number
+  /** Accounts with type=investment (brokerage cash), distinct from assets_value. */
+  investment_accounts?: Record<string, number>
+  investment_accounts_primary?: number
   primary_currency: string
   // At least one currency bucket had no real FX rate, so the *_primary
   // totals sum it at 1:1 and are an estimate, not a conversion (issue #1165).
@@ -990,6 +1292,9 @@ export interface Asset {
   last_price: number | null
   last_price_at: string | null
   logo_url: string | null
+  // Date the sync provider says current_value refers to (YYYY-MM-DD), when it
+  // reports one. A stale date is the sign that a position stopped updating.
+  provider_value_date: string | null
   // Ledger-derived (issue #235): weighted-average cost per unit (preço médio),
   // cost basis of held units, cumulative realized gain, and whether the holding
   // is driven by the transactions ledger.
@@ -1004,7 +1309,8 @@ export interface AssetOrderImport {
   row: number
   ticker: string
   date: string
-  kind: 'buy' | 'sell'
+  kind: 'buy' | 'sell' | 'split'
+  /** 0 on a split, which carries its ratio in old_units → new_units. */
   quantity: number
   price: number
   fee: number
@@ -1012,6 +1318,8 @@ export interface AssetOrderImport {
   name: string | null
   notes: string | null
   external_id: string | null
+  old_units?: number | null
+  new_units?: number | null
 }
 
 export interface AssetImportRowError {
@@ -1050,13 +1358,17 @@ export interface AssetImportResult {
 export interface AssetTransaction {
   id: string
   asset_id: string
-  kind: 'buy' | 'sell'
+  kind: 'buy' | 'sell' | 'split'
   quantity: number
   price: number
   fee: number
   date: string
   source: string
   notes: string | null
+  // Split only: the units held before the split became `new_units` after it
+  // (a 100-for-1 split is 1 → 100). Null on buys and sells.
+  old_units: number | null
+  new_units: number | null
   asset_name: string | null
   ticker: string | null
   currency: string | null
@@ -1077,6 +1389,12 @@ export interface MarketSymbolQuote {
   currency: string
   price: number
   quote_type: string | null
+}
+
+export interface AssetPriceRefreshResult {
+  refreshed: number
+  skipped: number
+  rate_limited: number
 }
 
 export interface AssetGroup {
@@ -1257,6 +1575,33 @@ export interface ReportResponse {
   meta: ReportMeta
   composition: ReportCompositionItem[]
   category_trend: CategoryTrendItem[]
+}
+
+// Income & expense statement: signed net amounts (credits positive, debits
+// negative) per category group, aligned with `CategoryStatementResponse.months`.
+export interface CategoryStatementRow {
+  key: string
+  kind: 'group' | 'category' | 'uncategorized'
+  label: string | null
+  icon: string | null
+  color: string | null
+  category_ids: string[]
+  txn_type: 'credit' | 'debit' | null
+  values: number[]
+  children: CategoryStatementRow[]
+}
+
+export interface CategoryStatementSection {
+  totals: number[]
+  rows: CategoryStatementRow[]
+}
+
+export interface CategoryStatementResponse {
+  currency: string
+  /** "YYYY-MM", newest first. */
+  months: string[]
+  income: CategoryStatementSection
+  expenses: CategoryStatementSection
 }
 
 // --- Invoices -------------------------------------------------------------

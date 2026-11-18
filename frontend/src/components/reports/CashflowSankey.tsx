@@ -1,3 +1,4 @@
+import { ltrAmount } from '@/lib/format'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -14,13 +15,13 @@ import type { ReportCompositionItem } from '@/types'
 // flow was invisible. Category identity is carried by the always-on labels
 // instead. Links fade from their source colour to their target colour, so an
 // expense flow visibly turns from green (cash flow) to red at the category.
-const INCOME_COLOR = '#10B981' // emerald — money in
-const EXPENSE_COLOR = '#F43F5E' // rose — money out
-const INVEST_COLOR = '#0EA5E9' // sky blue — money set aside (investments)
-const CENTER_COLOR = '#059669' // deeper emerald — the cash-flow hub
-const SURPLUS_COLOR = '#10B981' // emerald — leftover income
-const DEFICIT_COLOR = '#F59E0B' // amber — overspend drawn from reserves
-const NEUTRAL_COLOR = '#9CA3AF' // gray — uncategorised / folded long tail
+const INCOME_COLOR = 'var(--chart-income)' // emerald: money in
+const EXPENSE_COLOR = 'var(--chart-expense)' // rose: money out
+const INVEST_COLOR = 'var(--chart-5)' // sky blue: money set aside (investments)
+const CENTER_COLOR = 'color-mix(in srgb, var(--chart-income), black 18%)' // deeper emerald: the cash-flow hub
+const SURPLUS_COLOR = 'var(--chart-income)' // emerald: leftover income
+const DEFICIT_COLOR = 'var(--chart-2)' // amber: overspend drawn from reserves
+const NEUTRAL_COLOR = 'var(--chart-muted)' // gray: uncategorised / folded long tail
 
 // Keep the diagram legible: personal-finance Sankeys read best at ~a dozen
 // streams per side. Beyond this we fold the smallest categories into "Other".
@@ -56,12 +57,12 @@ type Hover =
   | { kind: 'surplus' }
 
 function formatMoney(value: number, currency: string, locale: string, compact: boolean) {
-  return new Intl.NumberFormat(locale, {
+  return ltrAmount(new Intl.NumberFormat(locale, {
     style: 'currency',
     currency,
     notation: compact ? 'compact' : 'standard',
     maximumFractionDigits: compact ? 1 : 0,
-  }).format(value)
+  }).format(value))
 }
 
 /** Sort largest-first, then fold everything past the cap into a single "Other". */
@@ -116,7 +117,16 @@ export function CashflowSankey({ composition, currency, locale }: CashflowSankey
       t('reports.other'),
     )
 
-    if (income.length === 0 && expense.length === 0 && investment.length === 0) {
+    // Money taken out of investments pays for the month without being income
+    // (#1418). It enters as one source beside income, so spending it shows as
+    // drawn from savings rather than as a deficit.
+    const totalWithdraw = composition
+      .filter((c) => c.group === 'withdrawals' && c.value > 0)
+      .reduce((s, c) => s + c.value, 0)
+
+    if (
+      income.length === 0 && expense.length === 0 && investment.length === 0 && totalWithdraw === 0
+    ) {
       return { nodes: [] as SankeyNodeDatum[], links: [] as SankeyLinkDatum[], hasData: false }
     }
 
@@ -125,7 +135,7 @@ export function CashflowSankey({ composition, currency, locale }: CashflowSankey
     const totalInvest = investment.reduce((s, c) => s + c.value, 0)
     // Surplus is what's left after BOTH spending and investing — so investing
     // shrinks surplus instead of silently inflating it.
-    const net = totalIncome - totalExpense - totalInvest
+    const net = totalIncome + totalWithdraw - totalExpense - totalInvest
 
     const nodes: SankeyNodeDatum[] = []
     const links: SankeyLinkDatum[] = []
@@ -150,6 +160,15 @@ export function CashflowSankey({ composition, currency, locale }: CashflowSankey
         side: 'income',
       }),
     )
+
+    if (totalWithdraw > 0) {
+      pushNode({
+        id: 'withdrawals',
+        name: t('reports.investmentWithdrawals'),
+        color: INVEST_COLOR,
+        side: 'income',
+      })
+    }
 
     // Deficit appears as an inflow on the income side so the centre balances.
     if (net < 0) {
@@ -190,6 +209,9 @@ export function CashflowSankey({ composition, currency, locale }: CashflowSankey
     income.forEach((c, i) =>
       links.push({ source: indexOf.get(`in-${c.key}-${i}`)!, target: centerIdx, value: c.value }),
     )
+    if (totalWithdraw > 0) {
+      links.push({ source: indexOf.get('withdrawals')!, target: centerIdx, value: totalWithdraw })
+    }
     if (net < 0) {
       links.push({ source: indexOf.get('deficit')!, target: centerIdx, value: -net })
     }

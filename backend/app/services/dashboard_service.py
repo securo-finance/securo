@@ -9,6 +9,8 @@ from sqlalchemy.orm import selectinload
 
 from app.core.app_clock import app_today
 from app.core.config import get_settings
+from app.core.currency import same_currency
+from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.transaction import Transaction
@@ -28,6 +30,8 @@ from app.services._query_filters import (
     owner_split_offset_by_category,
     owner_split_offset_pnl,
     reporting_date_col,
+    reporting_date_value,
+    signed_amount_expr,
     viewer_shared_pnl,
     viewer_shared_spending_by_category,
 )
@@ -184,6 +188,7 @@ async def _get_forecast_transactions(
     range_end: date,
     account_ids: Optional[list[uuid.UUID]] = None,
     range_date_col=None,
+    future_date_col=None,
 ) -> list[Transaction]:
     """Return real rows that belong to the forecast, not the current balance.
 
@@ -191,12 +196,17 @@ async def _get_forecast_transactions(
     today is also forecast: this is how future installments and generate-ahead
     recurring rows follow the same rule as bank pending rows without needing a
     source-specific branch at every consumer.
+
+    ``range_date_col`` controls period attribution. ``future_date_col`` may
+    keep actual-versus-forecast classification on the movement date when those
+    timelines differ.
     """
     if account_ids is not None and len(account_ids) == 0:
         return []
 
     today = app_today()
     bucket_date = range_date_col if range_date_col is not None else Transaction.date
+    future_date = future_date_col if future_date_col is not None else bucket_date
     stmt = (
         select(Transaction)
         .join(Account, Transaction.account_id == Account.id)
@@ -209,7 +219,7 @@ async def _get_forecast_transactions(
             Transaction.source != "opening_balance",
             or_(
                 Transaction.status == "pending",
-                bucket_date > today,
+                future_date > today,
             ),
         )
         .options(
@@ -348,14 +358,9 @@ async def get_summary(
             ):
                 continue
             account_currency = tx.account.currency if tx.account else tx.currency
-            amount = (
-                tx.amount
-                if tx.currency == account_currency
-                else (tx.amount_primary or tx.amount)
-            )
-            signed = amount if tx.type == "credit" else -amount
             projected_balance[account_currency] = (
-                projected_balance.get(account_currency, 0.0) + float(signed)
+                projected_balance.get(account_currency, 0.0)
+                + _signed_transaction_amount(tx)
             )
 
         # Money promised but not yet moved. An invoice is a claim rather
@@ -516,6 +521,16 @@ async def get_summary(
         group_ids=(asset_group_ids or []) if filtered else None,
     )
 
+    # Cash vs investment *accounts* (issue #959). Same cutoff / account filter
+    # as total_balance, but typed so the UI never labels brokerage cash as
+    # "available". Net worth (total_balance) still includes both + assets.
+    cash_balance = await _total_balance_by_currency(
+        session, workspace_id, cutoff, account_ids, account_types=_CASH_ACCOUNT_TYPES,
+    )
+    investment_accounts = await _total_balance_by_currency(
+        session, workspace_id, cutoff, account_ids, account_types=_INVESTMENT_ACCOUNT_TYPES,
+    )
+
     # Add asset values to total balance
     for currency, amount in assets_value.items():
         total_balance[currency] = total_balance.get(currency, 0.0) + amount
@@ -530,7 +545,18 @@ async def get_summary(
     projected_balance_primary, projected_fx_fallback = await _sum_to_primary(
         session, projected_balance, primary_currency, cutoff
     )
-    fx_fallback = fx_fallback or projected_fx_fallback
+    cash_balance_primary, cash_fx_fallback = await _sum_to_primary(
+        session, cash_balance, primary_currency, cutoff
+    )
+    investment_accounts_primary, investment_fx_fallback = await _sum_to_primary(
+        session, investment_accounts, primary_currency, cutoff
+    )
+    fx_fallback = (
+        fx_fallback
+        or projected_fx_fallback
+        or cash_fx_fallback
+        or investment_fx_fallback
+    )
 
     # Convert income/expenses to primary currency using amount_primary when available
     # Use real-only totals (without projections) to avoid double-counting;
@@ -585,13 +611,9 @@ async def get_summary(
     # Gated under a collection filter — those parent transactions live in
     # other users'/workspaces' accounts, outside the filtered account set.
     if not filtered:
-        from app.models.group import GroupMember
         from app.models.transaction_split import TransactionSplit
 
-        viewer_member_ids = select(GroupMember.id).where(
-            GroupMember.linked_user_id == user_id,
-            GroupMember.is_self.is_(False),
-        )
+        viewer_member_ids = invited_group_member_ids(user_id)
         shared_currency_rows = await session.execute(
             select(
                 Transaction.currency,
@@ -612,6 +634,7 @@ async def get_summary(
             .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
             .where(
                 TransactionSplit.group_member_id.in_(viewer_member_ids),
+                in_bound_workspace(Transaction.workspace_id),
                 Transaction.user_id != user_id,
                 Transaction.source != "opening_balance",
                 report_date >= month_start,
@@ -699,6 +722,10 @@ async def get_summary(
         pending_categorization_amount=pending_categorization_amount,
         assets_value=assets_value,
         assets_value_primary=round(assets_value_primary, 2),
+        cash_balance=cash_balance,
+        cash_balance_primary=round(cash_balance_primary, 2),
+        investment_accounts=investment_accounts,
+        investment_accounts_primary=round(investment_accounts_primary, 2),
         primary_currency=primary_currency,
         fx_fallback=fx_fallback,
         pending_shares_net=round(pending_shares_net, 2),
@@ -736,10 +763,15 @@ async def _compute_pending_shares_net(
         )
     )
     owned_ids = {row[0] for row in owned_q.all()}
+    # Bound to one workspace (an access token), only groups that live in it
+    # count, like the shared expenses above.
     linked_q = await session.execute(
-        select(GroupMember.group_id, GroupMember.id).where(
+        select(GroupMember.group_id, GroupMember.id)
+        .join(Group, Group.id == GroupMember.group_id)
+        .where(
             GroupMember.linked_user_id == user_id,
             GroupMember.is_self.is_(False),
+            in_bound_workspace(Group.workspace_id),
         )
     )
     linked_rows = list(linked_q.all())
@@ -1064,10 +1096,7 @@ async def get_monthly_trend(
         pnl_ratio = user_pnl_ratio(tx)
         if not pnl_ratio:
             continue
-        tx_report_date = (
-            tx.effective_bill_date
-            or (tx.effective_date if accounting_mode == "accrual" else tx.date)
-        )
+        tx_report_date = reporting_date_value(tx, accounting_mode)
         month_key = f"{tx_report_date.year:04d}-{tx_report_date.month:02d}"
         bucket = trend_map.setdefault(month_key, [0.0, 0.0])
         if tx.amount_primary is not None:
@@ -1271,29 +1300,17 @@ async def get_projected_transactions(
     return projections
 
 
-def _signed_balance_expr(account_currency: str = ""):
-    """Reusable SQL expression: credit → +amount, debit → −amount.
-    Uses amount_primary when tx currency differs from account currency."""
-    if account_currency:
-        effective = case(
-            (Transaction.currency == account_currency, Transaction.amount),
-            else_=func.coalesce(Transaction.amount_primary, Transaction.amount),
-        )
-    else:
-        effective = Transaction.amount
-    return case(
-        (Transaction.type == "credit", effective),
-        else_=-effective,
-    )
-
-
 def _signed_transaction_amount(tx: Transaction) -> float:
-    """Return a loaded transaction's signed amount in its account currency."""
+    """Return a loaded transaction's signed amount in its account currency.
+
+    An unconverted cross-currency row contributes zero rather than being read
+    1:1, for the same reason as ``signed_amount_expr`` (issue #353).
+    """
     account_currency = tx.account.currency if tx.account else tx.currency
     amount = (
         tx.amount
-        if tx.currency == account_currency
-        else (tx.amount_primary or tx.amount)
+        if same_currency(tx.currency, account_currency)
+        else (tx.amount_primary or 0)
     )
     signed = amount if tx.type == "credit" else -amount
     return float(signed)
@@ -1331,8 +1348,12 @@ async def _get_open_accounts(
     session: AsyncSession,
     workspace_id: uuid.UUID,
     account_ids: Optional[list[uuid.UUID]] = None,
+    closed_after: Optional[date] = None,
 ) -> list[Account]:
     """Get all non-closed accounts for a workspace.
+
+    ``closed_after`` also returns accounts closed after that date, for
+    snapshots taken while they were still open.
 
     When ``account_ids`` is provided (an active Collection filter, issue #105),
     restrict to that subset. An empty list returns no accounts — a collection
@@ -1348,7 +1369,8 @@ async def _get_open_accounts(
                 Account.workspace_id == workspace_id,
                 BankConnection.workspace_id == workspace_id,
             ),
-            Account.is_closed == False,
+            or_(Account.is_closed == False, Account.closed_at > closed_after)
+            if closed_after else Account.is_closed == False,
         )
     )
     if account_ids:
@@ -1388,7 +1410,7 @@ async def _account_balance_at(
         # Subtract activity after cutoff to get the balance AT cutoff
         # Exclude ignored transactions from balance calculation
         delta_after = await session.scalar(
-            select(func.coalesce(func.sum(_signed_balance_expr(account.currency)), 0))
+            select(func.coalesce(func.sum(signed_amount_expr(account.currency)), 0))
             .outerjoin(Category, Transaction.category_id == Category.id)
             .where(
                 Transaction.account_id == account.id,
@@ -1408,7 +1430,7 @@ async def _account_balance_at(
             # historical posted-only snapshots; the current snapshot above is
             # intentionally left untouched to preserve provider parity.
             pending_delta = await session.scalar(
-                select(func.coalesce(func.sum(_signed_balance_expr(account.currency)), 0))
+                select(func.coalesce(func.sum(signed_amount_expr(account.currency)), 0))
                 .outerjoin(Category, Transaction.category_id == Category.id)
                 .where(
                     Transaction.account_id == account.id,
@@ -1428,7 +1450,7 @@ async def _account_balance_at(
         # Exclude ignored transactions from balance calculation
         status_filter = [] if include_pending else [Transaction.status == "posted"]
         result = await session.scalar(
-            select(func.coalesce(func.sum(_signed_balance_expr(account.currency)), 0))
+            select(func.coalesce(func.sum(signed_amount_expr(account.currency)), 0))
             .outerjoin(Category, Transaction.category_id == Category.id)
             .where(
                 Transaction.account_id == account.id,
@@ -1444,14 +1466,27 @@ async def _account_balance_at(
         return float(result or 0)
 
 
+# Account types treated as spendable / near-liquid cash on the dashboard.
+# Investment brokerage accounts and credit cards are excluded on purpose.
+_CASH_ACCOUNT_TYPES = frozenset({"checking", "savings", "wallet"})
+_INVESTMENT_ACCOUNT_TYPES = frozenset({"investment"})
+
+
 async def _total_balance_by_currency(
     session: AsyncSession, workspace_id: uuid.UUID, cutoff: date,
     account_ids: Optional[list[uuid.UUID]] = None,
     *,
     include_pending: bool = False,
+    account_types: Optional[frozenset[str]] = None,
 ) -> dict[str, float]:
-    """Get total balance across all open accounts at a date, grouped by currency."""
+    """Get total balance across open accounts at a date, grouped by currency.
+
+    When ``account_types`` is set, only accounts whose ``type`` is in that set
+    are included (used to split cash vs investment without changing net worth).
+    """
     accounts = await _get_open_accounts(session, workspace_id, account_ids)
+    if account_types is not None:
+        accounts = [a for a in accounts if a.type in account_types]
     if not accounts:
         return {}
 
@@ -1464,14 +1499,7 @@ async def _total_balance_by_currency(
     # query per account. This matters especially for balance-history, which
     # asks for two historical cutoffs and used to multiply the round-trips by
     # the number of accounts.
-    effective = case(
-        (Transaction.currency == Account.currency, Transaction.amount),
-        else_=func.coalesce(Transaction.amount_primary, Transaction.amount),
-    )
-    signed = case(
-        (Transaction.type == "credit", effective),
-        else_=-effective,
-    )
+    signed = signed_amount_expr(Account.currency)
 
     async def grouped_sums(account_ids: list[uuid.UUID], *filters) -> dict[uuid.UUID, float]:
         if not account_ids:
@@ -1542,7 +1570,10 @@ async def _total_balance_by_currency(
             # Every card in the group carries the same shared debt, so `total`
             # counts it len(group) times; strip the duplicates.
             current_shared = await _account_balance_at(
-                session, group[0], today, include_pending=include_pending
+                session,
+                group[0],
+                today,
+                include_pending=include_pending,
             )
             total -= current_shared * (len(group) - 1)
         currency = group[0].currency
@@ -1593,19 +1624,12 @@ async def _daily_balance_deltas_by_date(
 ) -> dict[date, float]:
     """Get daily balance deltas for a date range [start, end), keyed by date.
 
-    Computes per-account in native currency (using amount_primary only for
-    foreign txs within an account), grouped by date and account currency,
-    then converts each currency to primary. This is consistent with
+    Computes per-account in native currency (a foreign row counts only once
+    ``amount_primary`` was stamped), grouped by date and account currency, then
+    converts each currency to primary. This is consistent with
     ``_balance_at`` and avoids per-transaction FX conversion loops.
     """
-    effective = case(
-        (Transaction.currency == Account.currency, Transaction.amount),
-        else_=func.coalesce(Transaction.amount_primary, Transaction.amount),
-    )
-    signed = case(
-        (Transaction.type == "credit", effective),
-        else_=-effective,
-    )
+    signed = signed_amount_expr(Account.currency)
     status_filter = [] if include_pending else [Transaction.status == "posted"]
     if month_starts is not None and not month_starts:
         return {}

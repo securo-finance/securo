@@ -19,11 +19,23 @@ from mcp_server.tools.proposals import _APPLY_FIELD, _PROPOSAL_PREFACE, _can_app
 
 _RULE_CAPABILITIES = (
     " Conditions combine with AND/OR and filter description, payee, notes, "
-    "amount, type, account_id, payee_id, date, or status (pending/posted). "
+    "amount, type, account_id, payee_id, date, status (pending/posted), or "
+    "provider_category (the bank or provider's own category, when reported). "
+    "A condition is an object with field, op, and value. The accepted ops are "
+    "contains, not_contains, equals, not_equals, starts_with, ends_with, "
+    "regex, gt, gte, lt, lte, and status accepts only equals and not_equals, "
+    "while provider_category accepts only the text ops (contains, not_contains, "
+    "equals, not_equals, starts_with, ends_with, regex). It reads the "
+    "provider's own payload, so it only matches connections whose provider "
+    "reports a category there (Pluggy today); plugin connections do not "
+    "persist one, and rows without a category never match, not even with "
+    "not_equals or not_contains. "
+    "Write numeric comparisons as {\"field\": \"amount\", \"op\": \"gt\", "
+    "\"value\": 0}; symbolic forms such as `amount > 0` are not accepted. "
     "Amount is signed in comparisons: credits are positive, debits negative, "
-    "so `amount > 0` selects income and `amount < 0` expenses. "
-    "Actions can set category, payee, or description, append notes, or ignore "
-    "the transaction."
+    "so op gt with value 0 selects income and op lt with value 0 selects "
+    "expenses. Actions can set category, payee, or description, append notes, "
+    "or ignore the transaction."
 )
 
 

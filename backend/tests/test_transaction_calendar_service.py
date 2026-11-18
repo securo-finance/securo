@@ -114,6 +114,65 @@ async def test_transaction_calendar_combines_actual_projected_and_balances(
 
 
 @pytest.mark.asyncio
+async def test_transaction_calendar_defaults_to_reporting_date_with_bank_date_option(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Reporting calendar",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
+    )
+    transaction = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        description="Month-end groceries",
+        amount=Decimal("100"),
+        amount_primary=Decimal("100"),
+        currency="BRL",
+        date=date(2026, 7, 10),
+        reporting_date_override=date(2026, 7, 3),
+        type="debit",
+        source="sync",
+        status="posted",
+    )
+    session.add_all([account, transaction])
+    await session.commit()
+
+    reporting_calendar = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 7, 1)
+    )
+    bank_calendar = await get_transaction_calendar(
+        session,
+        test_workspace.id,
+        test_user.id,
+        month=date(2026, 7, 1),
+        date_basis="bank",
+    )
+    reporting_days = {day.date: day for day in reporting_calendar.days}
+    bank_days = {day.date: day for day in bank_calendar.days}
+
+    assert [item.id for item in reporting_days[date(2026, 7, 3)].items] == [
+        transaction.id
+    ]
+    assert reporting_days[date(2026, 7, 3)].actual_expense == 100.0
+    assert reporting_days[date(2026, 7, 3)].ending_balance == 0.0
+    assert reporting_days[date(2026, 7, 10)].ending_balance == -100.0
+
+    assert bank_days[date(2026, 7, 3)].items == []
+    assert [item.id for item in bank_days[date(2026, 7, 10)].items] == [
+        transaction.id
+    ]
+    assert bank_days[date(2026, 7, 10)].actual_expense == 100.0
+    assert bank_days[date(2026, 7, 10)].ending_balance == -100.0
+
+
+@pytest.mark.asyncio
 async def test_transaction_calendar_respects_account_filter(
     session: AsyncSession, test_user, test_workspace
 ):
@@ -241,6 +300,113 @@ async def test_transaction_calendar_single_foreign_account_uses_primary_currency
     assert july_2.actual_expense == 50.0
     assert july_2.projected_expense == 0.0
     assert july_2.ending_balance == 450.0
+
+
+@pytest.mark.asyncio
+async def test_transaction_calendar_ignores_unconverted_foreign_forecast_rows(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A pending foreign row with no stamped amount must not read 1:1.
+
+    The projected walk is the dashboard's twin, so it follows the same rule:
+    an unconverted row contributes zero instead of 700,000 BRL (#1263)."""
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="BRL checking",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
+    )
+    session.add_all([
+        account,
+        # A rate exists, but nothing has stamped the row's amount_primary,
+        # which is the state #353 leaves a foreign row in until a sync or edit
+        # resolves one. The balance must not use the native amount meanwhile.
+        FxRate(
+            base_currency="CLP",
+            quote_currency="BRL",
+            date=date(2026, 7, 3),
+            rate=Decimal("0.006"),
+            source="test",
+        ),
+    ])
+    await session.flush()
+    session.add_all([
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=account.id, description="Salary", amount=Decimal("100"),
+            currency="BRL", date=date(2026, 7, 2), type="credit", source="manual",
+        ),
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=account.id, description="Santiago hotel", amount=Decimal("700000"),
+            currency="CLP", date=date(2026, 7, 3), type="debit", source="manual",
+            status="pending",
+        ),
+    ])
+    await session.commit()
+
+    calendar = await get_transaction_calendar(
+        session,
+        test_workspace.id,
+        test_user.id,
+        month=date(2026, 7, 1),
+        account_ids=[account.id],
+    )
+
+    july_3 = next(day for day in calendar.days if day.date == date(2026, 7, 3))
+    assert july_3.projected_count == 1
+    assert july_3.ending_balance == 100.0
+
+
+@pytest.mark.asyncio
+async def test_transaction_calendar_counts_a_forecast_row_stored_with_other_case(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A row imported as ``brl`` belongs to the ``BRL`` account.
+
+    OFX carries its own ``Ccy`` and the importer stores it as sent, so the
+    projected walk has to compare the codes normalized or the row reads as an
+    unconverted foreign one and moves nothing (#1263)."""
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="BRL checking",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
+    )
+    session.add(account)
+    await session.flush()
+    session.add_all([
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=account.id, description="Opening cash", amount=Decimal("100"),
+            currency="BRL", date=date(2026, 7, 1), type="credit", source="manual",
+        ),
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=account.id, description="Padaria", amount=Decimal("40"),
+            currency="brl", date=date(2026, 7, 3), type="debit", source="manual",
+            status="pending",
+        ),
+    ])
+    await session.commit()
+
+    calendar = await get_transaction_calendar(
+        session,
+        test_workspace.id,
+        test_user.id,
+        month=date(2026, 7, 1),
+        account_ids=[account.id],
+    )
+
+    july_3 = next(day for day in calendar.days if day.date == date(2026, 7, 3))
+    assert july_3.projected_count == 1
+    assert july_3.ending_balance == 60.0
 
 
 @pytest.mark.asyncio

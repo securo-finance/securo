@@ -3,8 +3,9 @@ from datetime import date as _Date
 from decimal import Decimal
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.core.currency import normalize_currency_code
 from app.schemas.category import CategoryRead
 from app.schemas.transaction_category_line import (
     TransactionCategoryLineRead,
@@ -27,6 +28,11 @@ class TransactionBase(BaseModel):
     currency: Optional[str] = None
     fx_rate: Optional[Decimal] = None
     payee_raw: Optional[str] = None  # raw payee string from import (OFX/QIF)
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def normalize_currency(cls, value: Optional[str]) -> Optional[str]:
+        return normalize_currency_code(value)
 
 
 class TransactionCreate(TransactionBase):
@@ -118,6 +124,9 @@ class TransactionUpdate(BaseModel):
     # CC bucketing override (issue #92). Empty string / explicit null clears
     # it back to auto. Only meaningful for credit-card accounts.
     effective_bill_date: Optional[_Date] = None
+    # Optional period-attribution correction. This intentionally does not alter
+    # bank-date/credit-card-cycle behavior without mutating provider truth.
+    reporting_date_override: Optional[_Date] = None
     # When provided, replaces the transaction's splits wholesale. Pass
     # an object with an empty `splits` list to clear them.
     splits: Optional[TransactionSplitsInput] = None
@@ -131,6 +140,11 @@ class TransactionUpdate(BaseModel):
     # same series; "all" touches every row in the series. Ignored when the
     # transaction has no installment fingerprint.
     apply_to: Literal["this", "future", "all"] = "this"
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def normalize_currency(cls, value: Optional[str]) -> Optional[str]:
+        return normalize_currency_code(value)
 
 
 class InstallmentSeriesCreate(BaseModel):
@@ -193,7 +207,9 @@ class TransactionRead(TransactionBase):
     #: payment can settle several — a payout net of fees is the
     #: ordinary case, not the exotic one.
     invoice_links: list[TransactionInvoiceLink] = []
-    currency: str = "USD"
+    # A stored transaction always has a currency, so the read model narrows
+    # the optional input field on purpose.
+    currency: str = "USD"  # ty: ignore[incompatible-mutable-override]
     source: str
     status: str = "posted"
     payee: Optional[str] = None
@@ -217,6 +233,11 @@ class TransactionRead(TransactionBase):
     installment_series_id: Optional[uuid.UUID] = None
     bill_id: Optional[uuid.UUID] = None
     effective_bill_date: Optional[_Date] = None
+    reporting_date_override: Optional[_Date] = None
+    # The date the list filtered and ordered this row by: the reporting
+    # override, a manual bill date or, in accrual mode, a card's bill due
+    # date, else `date` (#1386). Set by the list; null elsewhere.
+    reporting_date: Optional[_Date] = None
     recurring_transaction_id: Optional[uuid.UUID] = None
     splits: list[TransactionSplitRead] = []
     goal_allocations: list[GoalAllocationRead] = []

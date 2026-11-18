@@ -487,8 +487,11 @@ class TestFxRatesAPI:
     async def test_refresh_calls_sync(
         self, client: AsyncClient, auth_headers
     ):
+        from app.core.config import get_settings
+
         mock_sync = AsyncMock(return_value=150)
-        with patch("app.api.fx_rates.sync_rates", mock_sync):
+        with patch.object(get_settings(), "openexchangerates_app_id", "test-app-id"), \
+             patch("app.api.fx_rates.sync_rates", mock_sync):
             response = await client.post(
                 "/api/fx-rates/refresh", headers=auth_headers
             )
@@ -722,6 +725,14 @@ class TestOpenExchangeRatesProvider:
 class TestSyncRates:
     """Tests for fx_rate_service.sync_rates() with mocked provider."""
 
+    @pytest.fixture(autouse=True)
+    def _resolved_settings(self):
+        from app.core.config import get_settings
+
+        with patch("app.services.fx_rate_service.resolve_settings", new_callable=AsyncMock) as resolve:
+            resolve.return_value = get_settings()
+            yield
+
     @pytest.mark.asyncio
     async def test_sync_rates_calls_provider_latest(self):
         from app.services.fx_rate_service import sync_rates
@@ -737,13 +748,37 @@ class TestSyncRates:
         mock_session.execute = AsyncMock()
         mock_session.commit = AsyncMock()
 
-        with patch("app.services.fx_rate_service._provider", mock_provider):
+        with patch("app.services.fx_rate_service.OpenExchangeRatesProvider", return_value=mock_provider):
             count = await sync_rates(mock_session, date.today())
 
         mock_provider.fetch_latest.assert_awaited_once()
         assert count == 2
         assert mock_session.execute.await_count == 2
         mock_session.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_sync_rates_reads_a_spaced_supported_list(self):
+        """`SUPPORTED_CURRENCIES=USD, EUR, RSD` keeps every code (#1474).
+
+        The list was split on commas only, so " RSD" never matched the
+        provider's "RSD" and its rate was never stored.
+        """
+        from app.services.fx_rate_service import sync_rates
+
+        mock_provider = MagicMock()
+        mock_provider.name = "test_provider"
+        mock_provider.fetch_latest = AsyncMock(return_value={
+            "EUR": Decimal("0.86"),
+            "RSD": Decimal("100.7"),
+        })
+        mock_session = AsyncMock()
+        settings = MagicMock(supported_currencies="USD, EUR, rsd ")
+
+        with patch("app.services.fx_rate_service.OpenExchangeRatesProvider", return_value=mock_provider), \
+                patch("app.services.fx_rate_service.get_settings", return_value=settings):
+            count = await sync_rates(mock_session, date.today())
+
+        assert count == 2
 
     @pytest.mark.asyncio
     async def test_sync_rates_calls_provider_historical(self):
@@ -760,7 +795,7 @@ class TestSyncRates:
         mock_session.execute = AsyncMock()
         mock_session.commit = AsyncMock()
 
-        with patch("app.services.fx_rate_service._provider", mock_provider):
+        with patch("app.services.fx_rate_service.OpenExchangeRatesProvider", return_value=mock_provider):
             count = await sync_rates(mock_session, target)
 
         mock_provider.fetch_historical.assert_awaited_once_with(target)
@@ -778,7 +813,7 @@ class TestSyncRates:
         mock_session.execute = AsyncMock()
         mock_session.commit = AsyncMock()
 
-        with patch("app.services.fx_rate_service._provider", mock_provider):
+        with patch("app.services.fx_rate_service.OpenExchangeRatesProvider", return_value=mock_provider):
             await sync_rates(mock_session)
 
         # Should call fetch_latest (not fetch_historical) when no date given
@@ -797,7 +832,7 @@ class TestSyncRates:
         mock_session.execute = AsyncMock()
         mock_session.commit = AsyncMock()
 
-        with patch("app.services.fx_rate_service._provider", mock_provider):
+        with patch("app.services.fx_rate_service.OpenExchangeRatesProvider", return_value=mock_provider):
             await sync_rates(mock_session, date.today() + timedelta(days=10))
 
         mock_provider.fetch_latest.assert_awaited_once()

@@ -9,12 +9,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset import Asset
+from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
 from app.models.fx_rate import FxRate
 from app.models.user import User
 from app.schemas.asset import AssetCreate, AssetUpdate, AssetValueCreate
 from app.services import asset_service
 from app.services.asset_service import (
+    SplitRecord,
     TxRecord,
     ValueRecord,
     _compute_current_value,
@@ -94,6 +96,70 @@ def test_build_market_value_series_no_ledger_keeps_amounts():
     out = dict(build_market_value_series(rows, []))
     assert out[date(2026, 1, 1)] == 500.0
     assert out[date(2026, 2, 1)] == 600.0
+
+
+# Stored prices are never adjusted for a split (issue #944): they are what the
+# market quoted that day, ~500 before a 1 → 100 split and ~5 after it. The
+# series has to line up the quantity change with that price change.
+
+
+def test_build_market_value_series_split_keeps_value_with_unadjusted_prices():
+    rows: list[ValueRecord] = [
+        (date(2026, 10, 26), Decimal("5000"), Decimal("500")),
+        (date(2026, 10, 27), Decimal("5000"), Decimal("5")),     # first quote at the new price
+        (date(2026, 10, 28), Decimal("5050"), Decimal("5.05")),
+    ]
+    txs: list[TxRecord] = [(date(2026, 1, 5), "buy", Decimal("10"), Decimal("480"))]
+    splits: list[SplitRecord] = [(date(2026, 10, 27), 1, 100)]
+    out = dict(build_market_value_series(rows, txs, splits))
+    assert out[date(2026, 10, 26)] == 5000.0                  # 10 × 500
+    assert out[date(2026, 10, 27)] == 5000.0                  # 1,000 × 5: no drop at the split
+    assert out[date(2026, 10, 28)] == pytest.approx(5050.0)   # 1,000 × 5.05
+
+
+def test_build_market_value_series_split_converts_the_carried_price():
+    """No price is stored on the split day, so the one carried from before it is
+    per pre-split unit. Left as is, it would be multiplied by the new quantity."""
+    rows: list[ValueRecord] = [
+        (date(2026, 10, 26), Decimal("5000"), Decimal("500")),
+        (date(2026, 10, 28), Decimal("5100"), Decimal("5.1")),
+    ]
+    txs: list[TxRecord] = [(date(2026, 1, 5), "buy", Decimal("10"), Decimal("480"))]
+    splits: list[SplitRecord] = [(date(2026, 10, 27), 1, 100)]
+    out = dict(build_market_value_series(rows, txs, splits))
+    assert out[date(2026, 10, 27)] == 5000.0                  # 1,000 × (500 ÷ 100), not 1,000 × 500
+    assert out[date(2026, 10, 28)] == pytest.approx(5100.0)
+
+
+def test_build_market_value_series_split_before_any_market_price():
+    """A holding added today with old buys has no stored price before today, so the
+    points before it are valued at trade prices, which a split has to convert too."""
+    rows: list[ValueRecord] = [(date(2026, 10, 29), Decimal("5000"), Decimal("5"))]
+    txs: list[TxRecord] = [(date(2026, 6, 15), "buy", Decimal("10"), Decimal("480"))]
+    splits: list[SplitRecord] = [(date(2026, 10, 27), 1, 100)]
+    out = dict(build_market_value_series(rows, txs, splits))
+    assert out[date(2026, 6, 15)] == 4800.0                   # 10 × 480
+    assert out[date(2026, 10, 27)] == pytest.approx(4800.0)   # 1,000 × 4.80, not 1,000 × 480
+    assert out[date(2026, 10, 29)] == 5000.0                  # 1,000 × 5
+
+
+def test_build_market_value_series_split_lands_before_the_trades_of_its_day():
+    rows: list[ValueRecord] = [(date(2026, 10, 27), Decimal("5025"), Decimal("5"))]
+    txs: list[TxRecord] = [
+        (date(2026, 1, 5), "buy", Decimal("10"), Decimal("480")),
+        (date(2026, 10, 27), "buy", Decimal("5"), Decimal("5")),   # bought at the new price
+    ]
+    splits: list[SplitRecord] = [(date(2026, 10, 27), 1, 100)]
+    out = dict(build_market_value_series(rows, txs, splits))
+    # (10 × 100) + 5: the units bought that day are not multiplied.
+    assert out[date(2026, 10, 27)] == 5025.0
+
+
+def test_build_market_value_series_split_without_trades_keeps_amounts():
+    """A split alone means nothing: with no ledger the stored amounts stand."""
+    rows: list[ValueRecord] = [(date(2026, 1, 1), Decimal("500"), Decimal("5"))]
+    out = build_market_value_series(rows, [], [(date(2026, 1, 2), 1, 100)])
+    assert out == [(date(2026, 1, 1), 500.0)]
 
 
 @pytest_asyncio.fixture
@@ -366,6 +432,60 @@ async def test_get_asset_value_trend(session: AsyncSession, test_user: User, tes
     assert trend is not None
     assert len(trend) == 3
     assert trend[0]["date"] <= trend[1]["date"]  # ordered by date asc
+
+
+@pytest.mark.asyncio
+async def test_value_series_apply_a_recorded_split(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """The single-asset trend, the portfolio trend and the as-of totals all load
+    the ledger themselves; a split row read as a sell of 0 would leave the 10 units
+    in place and show the holding collapsing from 5,000 to 50."""
+    asset = Asset(
+        id=uuid.uuid4(), user_id=test_user.id, name="Apple", type="stock", currency="BRL",
+        valuation_method="market_price", ticker="AAPL", units=Decimal("1000"), position=0,
+    )
+    session.add(asset)
+    await session.flush()
+    session.add_all([
+        AssetTransaction(
+            asset_id=asset.id, workspace_id=test_workspace.id, kind="buy",
+            quantity=Decimal("10"), price=Decimal("480"), fee=Decimal("0"), date=date(2026, 1, 5),
+        ),
+        AssetTransaction(
+            asset_id=asset.id, workspace_id=test_workspace.id, kind="split",
+            quantity=Decimal("0"), price=Decimal("0"), fee=Decimal("0"),
+            old_units=1, new_units=100, date=date(2026, 10, 27),
+        ),
+        AssetValue(asset_id=asset.id, amount=Decimal("5000"), price=Decimal("500"),
+                   date=date(2026, 10, 26), source="sync"),
+        AssetValue(asset_id=asset.id, amount=Decimal("5000"), price=Decimal("5"),
+                   date=date(2026, 10, 27), source="sync"),
+        AssetValue(asset_id=asset.id, amount=Decimal("5100"), price=Decimal("5.1"),
+                   date=date(2026, 10, 28), source="sync"),
+    ])
+    await session.commit()
+
+    trend = await asset_service.get_asset_value_trend(session, asset.id, test_workspace.id)
+    assert trend is not None
+    by_date = {point["date"]: point["amount"] for point in trend}
+    assert by_date["2026-10-26"] == 5000.0
+    assert by_date["2026-10-27"] == 5000.0
+    assert by_date["2026-10-28"] == pytest.approx(5100.0)
+
+    portfolio = await get_portfolio_trend(session, test_workspace.id, test_user.id)
+    on_split_day = next(row for row in portfolio["trend"] if row["date"] == "2026-10-27")
+    assert on_split_day[str(asset.id)] == 5000.0
+    assert portfolio["total"] == pytest.approx(5100.0)
+
+    totals, _ = await asset_service.get_asset_values_at(
+        session, test_workspace.id, as_of_date=date(2026, 10, 27), by_workspace=True,
+    )
+    assert totals["BRL"] == 5000.0
+    totals, _ = await asset_service.get_asset_values_at(
+        session, test_workspace.id, as_of_date=date(2026, 10, 26), by_workspace=True,
+    )
+    assert totals["BRL"] == 5000.0  # before the split: 10 × 500
 
 
 @pytest.mark.asyncio
@@ -999,6 +1119,47 @@ async def test_portfolio_trend_total_consistent_with_get_asset_values_at(
     trend_at_mar = next(r for r in trend_result["trend"] if r["date"] == date_mar.isoformat())
     assert trend_at_mar["_total"] == pytest.approx(1600.0, rel=1e-2)
     assert trend_at_mar["_total"] == pytest.approx(values_at_total, rel=1e-2)
+
+
+@pytest.mark.asyncio
+async def test_values_at_past_date_counts_asset_sold_later(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """An asset sold after `as_of_date` was still held on it; the live view
+    and dates from the sale on leave it out."""
+    sold = Asset(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Sold Car", type="vehicle", currency="BRL", valuation_method="manual",
+        purchase_date=date(2025, 1, 10), purchase_price=Decimal("30000"),
+        sell_date=date(2025, 3, 15), sell_price=Decimal("28000"),
+    )
+    session.add(sold)
+    await session.flush()
+    session.add(AssetValue(
+        id=uuid.uuid4(), asset_id=sold.id,
+        amount=Decimal("29000"), date=date(2025, 2, 1), source="manual",
+    ))
+    await session.commit()
+
+    totals, primary = await asset_service.get_asset_values_at(
+        session, test_workspace.id, as_of_date=date(2025, 2, 28),
+        primary_currency="BRL", by_workspace=True,
+    )
+    assert totals == {"BRL": 29000.0}
+    assert primary == pytest.approx(29000.0)
+
+    for as_of in (date(2025, 3, 15), date(2025, 3, 31), None):
+        totals, primary = await asset_service.get_asset_values_at(
+            session, test_workspace.id, as_of_date=as_of,
+            primary_currency="BRL", by_workspace=True,
+        )
+        assert totals == {}
+        assert primary == 0.0
+
+    # The portfolio chart already counts it on that date.
+    trend = await get_portfolio_trend(session, test_workspace.id, test_user.id)
+    feb = next(r for r in trend["trend"] if r["date"] == "2025-02-01")
+    assert feb["_total"] == pytest.approx(29000.0)
 
 
 @pytest.mark.asyncio

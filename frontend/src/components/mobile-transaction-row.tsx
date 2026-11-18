@@ -6,10 +6,11 @@ import type { Transaction, Account } from '@/types'
 import { AlertTriangle, ArrowLeftRight, CalendarClock, ChartNoAxesColumn, Clock, EyeClosed, Paperclip, WalletCards } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useTranslation } from 'react-i18next'
-import { formatCurrency } from '@/lib/format'
+import { formatCurrency, ltrAmount } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { isTransferTransaction } from '@/lib/transaction-transfer'
 import { transactionDescription } from '@/lib/transaction-description'
+import { ReportingDateBadge } from '@/components/reporting-date-badge'
 
 /** Keep long merchant references on one line when there are no word breaks. */
 function hasWordBreaks(text: string): boolean {
@@ -26,6 +27,8 @@ interface MobileTransactionRowProps {
   highlighted: boolean
   highlightedRowRef?: React.Ref<HTMLDivElement>
   locale: string
+  /** Locale for dates (follows the date-format setting); defaults to `locale`. */
+  dateLocale?: string
   userCurrency: string
   onSelect: (id: string, shiftKey: boolean) => void
   onClick: (tx: Transaction) => void
@@ -45,6 +48,7 @@ export function MobileTransactionRow({
   highlighted,
   highlightedRowRef,
   locale,
+  dateLocale,
   userCurrency,
   onSelect,
   onClick,
@@ -72,7 +76,7 @@ export function MobileTransactionRow({
   return (
     <div
       ref={highlighted ? highlightedRowRef : undefined}
-      className={`flex items-center gap-3 pl-3 pr-3 py-3 border-b border-border last:border-0 transition-colors ${
+      className={`flex items-center gap-3 ps-3 pe-3 py-3 border-b border-border last:border-0 transition-colors ${
         selected ? 'bg-primary/5' : 'bg-card'
       } ${highlighted ? 'securo-highlight-flash' : ''} ${
         virtual ? 'opacity-80' : ''
@@ -195,17 +199,18 @@ export function MobileTransactionRow({
             </div>
           )
         )}
+        <ReportingDateBadge tx={tx} locale={dateLocale ?? locale} />
       </div>
 
       {/* Amount */}
-      <div className="shrink-0 text-right">
+      <div className="shrink-0 text-end">
         <span className={`text-sm font-bold tabular-nums ${amountColor}`}>
           {mask(
-            `${tx.is_ignored ? ' ' : tx.type === 'credit' ? '+' : '\u2212'}${formatCurrency(
+            ltrAmount(`${tx.is_ignored ? ' ' : tx.type === 'credit' ? '+' : '\u2212'}${formatCurrency(
               Math.abs(displayAmount),
               tx.currency,
               locale,
-            )}`,
+            )}`),
           )}
         </span>
         {tx.amount_primary != null && tx.currency !== userCurrency && (

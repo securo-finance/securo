@@ -73,3 +73,18 @@ class RecurringTransactionRead(BaseModel):
     category_lines: list[TransactionCategoryLineRead] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class RecurringMonthSummary(BaseModel):
+    """What the active recurring definitions add up to in one month, in the
+    primary currency, counting each occurrence that falls in it."""
+
+    month: _Date
+    currency: str
+    income: Decimal
+    expenses: Decimal
+    net: Decimal
+    # Occurrences of transfer-like categories, kept out of the totals.
+    transfer_count: int
+    # Occurrences left out because no exchange rate could be found.
+    unconverted_count: int

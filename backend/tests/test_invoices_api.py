@@ -13,6 +13,7 @@ import uuid
 from datetime import date, timedelta
 from decimal import Decimal
 from unittest.mock import patch
+from urllib.parse import quote
 
 import pytest
 import pytest_asyncio
@@ -20,6 +21,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.fx_rate import FxRate
 from app.models.payee import Payee
 from app.models.transaction import Transaction
 
@@ -898,6 +900,43 @@ async def test_the_summary_is_not_scoped_by_year(client: AsyncClient, biz_header
 
 
 @pytest.mark.asyncio
+async def test_summary_adds_invoices_in_the_reader_currency(
+    client: AsyncClient, biz_headers, session: AsyncSession, inflow: Transaction
+):
+    """A user reading in BRL bills one client in BRL and another in USD.
+    The summary is one figure in BRL, so the USD amounts are converted
+    before they are added, not summed as if they were BRL.
+
+    The only stored rate is a few days old, as on a day the provider has
+    not published yet: the summary uses the latest stored rate."""
+    session.add(FxRate(
+        base_currency="USD", quote_currency="BRL", date=date.today() - timedelta(days=3),
+        rate=Decimal("5"), source="test",
+    ))
+    await session.commit()
+    await client.patch("/api/invoices/settings", headers=biz_headers, json={"preset": "tracking"})
+    await _create(client, biz_headers, total="200.00", currency="BRL",
+                  due_date=str(date.today() + timedelta(days=5)))
+    await _create(client, biz_headers, total="100.00", currency="USD",
+                  issue_date=str(date.today() - timedelta(days=60)),
+                  due_date=str(date.today() - timedelta(days=45)))
+    paid = await _create(client, biz_headers, total="3000.00", currency="USD")
+    resp = await client.post(
+        f"/api/invoices/{paid['id']}/allocations",
+        headers=biz_headers,
+        json={"transaction_id": str(inflow.id)},
+    )
+    assert resp.status_code == 201, resp.text
+
+    summary = (await client.get("/api/invoices/summary", headers=biz_headers)).json()
+    assert summary["outstanding"] == "700.00"
+    assert summary["overdue_amount"] == "500.00"
+    assert summary["buckets"]["current"] == "200.00"
+    assert summary["buckets"]["d31_60"] == "500.00"
+    assert summary["received_this_month"] == "15000.00"
+
+
+@pytest.mark.asyncio
 async def test_facets_are_gated_like_every_other_route(
     client: AsyncClient, auth_headers, personal_ws
 ):
@@ -1666,3 +1705,57 @@ async def test_an_imported_document_is_never_given_a_page_we_wrote(
         f"/api/invoices/{imported['id']}/pdf", headers=biz_headers
     )
     assert served.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# Download filenames come from free text and must survive any script
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prefix", ["Τιμ-", "№", 'Q"1-'])
+async def test_pdf_downloads_survive_any_number_prefix(
+    client: AsyncClient, biz_headers, client_payee, prefix
+):
+    """The prefix is free text and the UI ships Greek, Cyrillic and CJK.
+    Header values go out as latin-1, so a raw `Τιμ-` used to turn every
+    download of the document into a 500, the client's public link included."""
+    await client.patch(
+        "/api/invoices/settings", headers=biz_headers, json={"number_prefix": prefix}
+    )
+    invoice = await _create(client, biz_headers, payee_id=str(client_payee.id))
+    assert invoice["number"], "created invoices are issued, which files a copy"
+    attachments_url = f"/api/invoices/{invoice['id']}/attachments"
+    filed = (await client.get(attachments_url, headers=biz_headers)).json()
+    primary = [a for a in filed if a["is_primary"]]
+    assert len(primary) == 1, filed
+    token = (
+        await client.post(f"/api/invoices/{invoice['id']}/share", headers=biz_headers)
+    ).json()["token"]
+
+    async def assert_downloads(url, headers):
+        resp = await client.get(url, headers=headers)
+        assert resp.status_code == 200, f"{url} -> {resp.status_code}"
+        assert resp.content.startswith(b"%PDF")
+        disposition = resp.headers["content-disposition"]
+        assert disposition.count('"') == 2, disposition
+        assert "filename*=UTF-8''" in disposition
+        return disposition
+
+    pdf_url = f"/api/invoices/{invoice['id']}/pdf"
+    # The rendered routes go first: they are the ones that raised on
+    # `main`, while `/pdf` serves the filed copy under an ASCII name.
+    for url, headers in [
+        (f"/api/invoices/{invoice['id']}/statement", biz_headers),
+        (f"/api/public/invoices/{token}/pdf", {}),
+    ]:
+        await assert_downloads(url, headers)
+
+    # `/pdf` serves the filed copy under that attachment's name.
+    filed_disposition = await assert_downloads(pdf_url, biz_headers)
+    served_name = quote(primary[0]["filename"], safe="")
+    assert f"filename*=UTF-8''{served_name}" in filed_disposition
+
+    # Without the filed copy the page is rendered live under the raw
+    # number, prefix and all.
+    for attachment in filed:
+        await client.delete(f"{attachments_url}/{attachment['id']}", headers=biz_headers)
+    await assert_downloads(pdf_url, biz_headers)

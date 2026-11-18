@@ -25,7 +25,7 @@ function CopyButton({ value }: { value: string }) {
           toast.error(t('agents.mcpExternal.copyFailed', 'Copy failed'))
         }
       }}
-      className="absolute top-2 right-2 inline-flex items-center gap-1 rounded-md border border-border bg-background/80 px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+      className="absolute top-2 end-2 inline-flex items-center gap-1 rounded-md border border-border bg-background/80 px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
     >
       {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
       {copied ? t('agents.mcpExternal.copied', 'Copied') : t('agents.mcpExternal.copy', 'Copy')}
@@ -34,9 +34,10 @@ function CopyButton({ value }: { value: string }) {
 }
 
 function CodeBlock({ value }: { value: string }) {
+  // Code and JSON read left to right in every language, copy button included.
   return (
-    <div className="relative">
-      <pre className="bg-muted/50 border border-border rounded-md p-3 pr-16 text-[12px] leading-relaxed overflow-x-auto whitespace-pre">
+    <div className="relative" dir="ltr">
+      <pre className="bg-muted/50 border border-border rounded-md p-3 pe-16 text-[12px] leading-relaxed overflow-x-auto whitespace-pre">
         <code>{value}</code>
       </pre>
       <CopyButton value={value} />

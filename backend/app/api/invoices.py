@@ -14,6 +14,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.content_disposition import content_disposition
 from app.core.database import get_async_session
 from app.models.invoice import Invoice
 from app.models.workspace import Workspace
@@ -48,6 +49,7 @@ from app.services import (
     reconciliation_service,
     reconciliation_suggestion_service,
 )
+from app.services.attachment_service import served_content_type
 from app.services.invoice_service import InvoiceError
 from app.services.module_service import ModuleId
 
@@ -143,8 +145,11 @@ async def read_summary(
     ctx: WorkspaceContext = Depends(read_ctx),
     session: AsyncSession = Depends(get_async_session),
 ):
+    # The page shows these figures in the reader's currency, so they are
+    # added up in it.
     data = await invoice_service.aging_summary(
-        session, ctx.workspace.id, direction=direction
+        session, ctx.workspace.id, direction=direction,
+        currency=ctx.user.primary_currency,
     )
     data["upcoming"] = [_serialize(inv) for inv in data["upcoming"]]
     return data
@@ -665,12 +670,20 @@ async def download_pdf(
     # be a page nobody issued.
     primary = await invoice_attachment_service.primary_for(session, invoice.id)
     if primary is not None:
-        data = await invoice_attachment_service.read_bytes(session, primary)
+        try:
+            data = await invoice_attachment_service.read_bytes(session, primary)
+        except FileNotFoundError:
+            # Filed in the ledger and gone from storage: the file the
+            # document is does not exist, so there is nothing to serve.
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Attachment file is missing from storage",
+            )
         return Response(
             content=data,
-            media_type=primary.content_type,
+            media_type=served_content_type(primary.filename),
             headers={
-                "Content-Disposition": f'attachment; filename="{primary.filename}"'
+                "Content-Disposition": content_disposition("attachment", primary.filename)
             },
         )
 
@@ -698,11 +711,11 @@ async def download_pdf(
         else None
     )
     pdf = invoice_pdf.render_pdf(document, logo_bytes)
-    filename = f"{document.number or 'draft'}.pdf".replace("/", "-")
+    filename = f"{document.number or 'draft'}.pdf"
     return Response(
         content=pdf,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": content_disposition("attachment", filename)},
     )
 
 
@@ -736,11 +749,11 @@ async def download_statement(
         else None
     )
     pdf = invoice_pdf.render_pdf(document, logo_bytes)
-    filename = f"{document.number or 'invoice'}-statement.pdf".replace("/", "-")
+    filename = f"{document.number or 'invoice'}-statement.pdf"
     return Response(
         content=pdf,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": content_disposition("attachment", filename)},
     )
 
 

@@ -9,6 +9,8 @@ import i18n from 'i18next'
  * to the English text instead of showing the wrong translation.
  */
 const KNOWN_MESSAGES: Record<string, string> = {
+  'Enter a valid http or https endpoint URL': 'agents.connections.baseUrlInvalid',
+  'Cannot change amount or date on a synchronized transaction': 'transactions.syncedAmountDateError',
   'A category split needs at least two lines': 'categoryLines.errors.tooFewLines',
   'Each category can appear only once in a split': 'categoryLines.errors.duplicateCategory',
   'Each line needs an amount': 'categoryLines.errors.invalidLines',
@@ -42,7 +44,36 @@ const KNOWN_MESSAGES: Record<string, string> = {
     'categoryLines.errors.destinationInvalid',
 }
 
+/**
+ * Codes whose message carries values the user has to see (the units an entry
+ * sells, the units the holding left). The English `message` spells those
+ * numbers into a sentence, so matching its text would only ever translate one
+ * pair of numbers: the code picks the sentence and the values fill it in.
+ */
+const KNOWN_CODES: Record<string, string> = {
+  import_undo_oversell: 'import.undoOversell',
+  import_undo_too_large: 'import.undoTooLarge',
+}
+
 export function translateApiMessage(message: string): string {
   const key = KNOWN_MESSAGES[message]
   return key && i18n.isInitialized && i18n.exists(key) ? i18n.t(key) : message
 }
+
+/**
+ * The text to show for a `{ code, message }` detail: the translation of its
+ * code when there is one, else its message (translated when a known one).
+ */
+export function translateApiDetail(detail: Record<string, unknown>): string | null {
+  const key = typeof detail.code === 'string' ? KNOWN_CODES[detail.code] : undefined
+  if (key && i18n.isInitialized && i18n.exists(key)) {
+    const values: Record<string, string> = {}
+    for (const [name, value] of Object.entries(detail)) {
+      if (typeof value === 'string' || typeof value === 'number') values[name] = String(value)
+    }
+    return i18n.t(key, values)
+  }
+  const message = detail.message
+  return typeof message === 'string' && message.trim() ? translateApiMessage(message) : null
+}
+

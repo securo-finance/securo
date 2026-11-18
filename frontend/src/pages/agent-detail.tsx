@@ -95,7 +95,7 @@ export default function AgentDetailPage() {
         {canWrite && (
           <>
             <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
-              <Edit2 className="h-3.5 w-3.5 mr-1.5" /> {t('agents.detail.edit')}
+              <Edit2 className="h-3.5 w-3.5 me-1.5" /> {t('agents.detail.edit')}
             </Button>
             <Button
               size="sm"
@@ -106,7 +106,7 @@ export default function AgentDetailPage() {
                 }
               }}
             >
-              <Trash2 className="h-3.5 w-3.5 mr-1.5" /> {t('agents.detail.delete')}
+              <Trash2 className="h-3.5 w-3.5 me-1.5" /> {t('agents.detail.delete')}
             </Button>
           </>
         )}
@@ -122,7 +122,7 @@ export default function AgentDetailPage() {
         </div>
 
         <TabsContent value="chat" className="flex-1 flex min-h-0 mt-3">
-          <aside className="hidden md:flex md:w-64 border-r flex-col min-h-0">
+          <aside className="hidden md:flex md:w-64 border-e flex-col min-h-0">
             <div className="px-3 pt-2 pb-1 flex items-center justify-between shrink-0">
               <span className="text-xs uppercase tracking-wider text-muted-foreground">{t('agents.detail.conversations')}</span>
               <Button size="icon" variant="ghost" onClick={() => pickConversation(null)} title={t('agents.detail.newConversation')}>
@@ -137,7 +137,7 @@ export default function AgentDetailPage() {
               {conversationId === null && (
                 <button
                   onClick={() => pickConversation(null)}
-                  className="w-full text-left px-3 py-2 text-sm bg-muted flex items-center gap-2 truncate text-muted-foreground italic"
+                  className="w-full text-start px-3 py-2 text-sm bg-muted flex items-center gap-2 truncate text-muted-foreground italic"
                 >
                   <MessageSquare className="h-3.5 w-3.5 shrink-0" />
                   <span className="truncate">{t('agents.detail.newConversation')}</span>

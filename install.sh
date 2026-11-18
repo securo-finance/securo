@@ -261,17 +261,22 @@ generate_env() {
 
   if command -v openssl &> /dev/null; then
     SECRET_KEY=$(openssl rand -hex 32)
+    MCP_JWT_SECRET=$(openssl rand -hex 32)
   else
     SECRET_KEY=$(head -c 32 /dev/urandom | xxd -p | tr -d '\n')
+    MCP_JWT_SECRET=$(head -c 32 /dev/urandom | xxd -p | tr -d '\n')
   fi
 
   cat > .env <<EOF
 SECRET_KEY=$SECRET_KEY
+# Signs the optional AI Agents MCP server's tokens. Generated now so enabling
+# Agents later needs no extra step. Rotating it invalidates MCP tokens.
+AGENTS_MCP_JWT_SECRET=$MCP_JWT_SECRET
 PLUGGY_CLIENT_ID=
 PLUGGY_CLIENT_SECRET=
 EOF
 
-  success ".env file created with a random SECRET_KEY"
+  success ".env file created with a random SECRET_KEY and MCP signing key"
 }
 
 # ── Start Services ───────────────────────────────────────────────────────────

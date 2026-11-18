@@ -22,6 +22,13 @@ if TYPE_CHECKING:
     from app.models.transaction_category_line import TransactionCategoryLine
 
 
+#: Key a pending synced row carries in `raw_data` once the user edited its
+#: category or payee. The bank sync reads it before expiring a hold it
+#: dropped: the edit is the user's work even when the value later went back
+#: to the one the sync gave.
+USER_EDITED_KEY = "securo_user_edited"
+
+
 class Transaction(Base):
     __tablename__ = "transactions"
 
@@ -46,6 +53,10 @@ class Transaction(Base):
     # the transaction belongs to — so accrual-mode aggregations count the
     # purchase when it hits the user's cash, not when it was made.
     effective_date: Mapped[_date] = mapped_column(Date, index=True)
+    # Optional user correction for report-period attribution. The provider
+    # `date` remains immutable bank truth; this field only affects reporting
+    # bucketing and is deliberately ignored by sync, balances, matching, and FX.
+    reporting_date_override: Mapped[Optional[_date]] = mapped_column(Date, nullable=True)
     type: Mapped[str] = mapped_column(String(10))  # debit, credit
     source: Mapped[str] = mapped_column(String(20))  # sync, ofx, csv, manual
     status: Mapped[str] = mapped_column(String(10), default="posted")  # posted, pending
@@ -127,6 +138,12 @@ class Transaction(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
+    @property
+    def provider_category(self) -> Optional[str]:
+        if not isinstance(self.raw_data, dict):
+            return None
+        return self.raw_data.get("category")
+
     account: Mapped["Account"] = relationship(back_populates="transactions")
     category: Mapped[Optional["Category"]] = relationship()
     bill: Mapped[Optional["CreditCardBill"]] = relationship()
@@ -165,6 +182,7 @@ class Transaction(Base):
     running_balance_primary = cast(Optional[float], None)
     matched_amount = cast(Optional[Decimal], None)
     matched_amount_primary = cast(Optional[Decimal], None)
+    reporting_date = cast(Optional[_date], None)
 
 
 # Safety net: `effective_date` is NOT NULL. For non-CC transactions it always

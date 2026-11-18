@@ -7,7 +7,7 @@ import { admin, dashboard, transactions } from '@/lib/api'
 import { renderWithProviders } from '@/test/utils'
 
 vi.mock('@/contexts/auth-context', () => ({
-  useAuth: () => ({ user: { preferences: { currency_display: 'USD' } } }),
+  useAuth: () => ({ user: { id: 'me', preferences: { currency_display: 'USD' } } }),
 }))
 
 vi.mock('@/lib/api', () => ({
@@ -51,6 +51,23 @@ describe('TransactionDrillDown', () => {
     vi.resetAllMocks()
   })
 
+  it('preserves the expense share of recurring category splits in the Overview panel', async () => {
+    vi.mocked(dashboard.projectedTransactions).mockResolvedValue([{
+      recurring_id: 'split-bill', account_id: 'account-1', description: 'Split recurring bill',
+      amount: 100, amount_primary: 200, currency: 'EUR', type: 'debit', date: '2026-11-10',
+      category_id: null, has_category_lines: true, category_lines: [
+        { category_id: 'food', category_name: 'Food', category_icon: null, category_color: null, amount: 80, treat_as_transfer: false },
+        { category_id: 'investment', category_name: 'Investment', category_icon: null, category_color: null, amount: 20, treat_as_transfer: true },
+      ],
+    }] as never)
+    renderWithProviders(<TransactionDrillDown filter={{ title: 'Expenses', type: 'debit', from: '2026-11-01', to: '2026-11-30' }} onClose={vi.fn()} />)
+    expect(await screen.findByText('Split recurring bill')).toBeInTheDocument()
+    expect(screen.getByText('-€80.00')).toBeInTheDocument()
+    expect(screen.getAllByText('$160.00').length).toBeGreaterThan(0)
+    expect(screen.queryByText('$200.00')).not.toBeInTheDocument()
+    expect(screen.getByText(/part of €100.00/)).toBeInTheDocument()
+  })
+
   it('closes on a click outside the panel', async () => {
     const { onClose } = renderPanel({ dialogOpen: false })
     await waitForOutsideClickListener()
@@ -84,5 +101,57 @@ describe('TransactionDrillDown', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
 
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+  })
+
+  it('totals only the user share of a split expense and asks for posted rows', async () => {
+    const tx = (overrides: Record<string, unknown>) => ({
+      id: 'tx', description: 'Dinner', date: '2026-09-05', type: 'debit', amount: 100,
+      amount_primary: 100, currency: 'USD', status: 'posted', category: null,
+      attachment_count: 0, splits: [], viewer_share: null, is_shared: false, user_id: 'me', ...overrides,
+    })
+    vi.mocked(transactions.list).mockResolvedValue({
+      items: [
+        // Owner of a 50/50 split keeps their half.
+        tx({ id: 'owned', splits: [{ share_amount: 50 }, { share_amount: 50 }], viewer_share: 50 }),
+        // A member sees only their own share of someone else's expense.
+        tx({ id: 'shared', amount: 80, amount_primary: 80, is_shared: true, viewer_share: 20 }),
+        tx({ id: 'refund', type: 'credit', amount: 10, amount_primary: 10 }),
+        // Another member's split the user is not part of counts in full.
+        tx({ id: 'other', amount: 30, amount_primary: 30, user_id: 'other', splits: [{ share_amount: 15 }] }),
+      ],
+      total: 4,
+    } as never)
+
+    renderWithProviders(
+      <TransactionDrillDown
+        filter={{ title: 'Food', from: '2026-09-01', to: '2026-09-12', realizedOnly: true, ownShare: true, netTotal: true }}
+        onClose={vi.fn()}
+      />,
+    )
+
+    expect((await screen.findAllByText('-$90.00')).length).toBeGreaterThan(0)
+    expect(transactions.list).toHaveBeenCalledWith(expect.objectContaining({ status: 'posted', to: '2026-09-12' }))
+  })
+
+  it('counts the owner share of a split credit only when asked, and shows the full amount', async () => {
+    vi.mocked(transactions.list).mockResolvedValue({
+      items: [{
+        id: 'owned', description: 'Group refund', date: '2026-11-05', type: 'credit', amount: 100,
+        amount_primary: 100, currency: 'USD', status: 'posted', category: null, attachment_count: 0,
+        splits: [{ share_amount: 50 }, { share_amount: 50 }], viewer_share: 50, is_shared: false, user_id: 'me',
+      }],
+      total: 1,
+    } as never)
+    const base = { title: 'Income', type: 'credit' as const, from: '2026-11-01', to: '2026-11-30', ownShare: true }
+
+    const { unmount } = renderWithProviders(<TransactionDrillDown filter={base} onClose={vi.fn()} />)
+    // The statement counts credits in full.
+    expect((await screen.findAllByText('$100.00')).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/part of/)).not.toBeInTheDocument()
+    unmount()
+
+    renderWithProviders(<TransactionDrillDown filter={{ ...base, ownShareCredits: true }} onClose={vi.fn()} />)
+    expect(await screen.findByText('+$50.00')).toBeInTheDocument()
+    expect(screen.getByText(/part of \$100\.00/)).toBeInTheDocument()
   })
 })

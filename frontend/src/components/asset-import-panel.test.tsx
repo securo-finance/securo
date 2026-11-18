@@ -196,3 +196,24 @@ describe('AssetImportPanel column mapping', () => {
     await waitFor(() => expect(confirm).toBeEnabled())
   })
 })
+
+describe('AssetImportPanel split rows', () => {
+  it('shows a split with its ratio instead of a quantity and price', async () => {
+    const split: AssetOrderImport = {
+      ...order(3, 'AAPL', '2026-03-01'),
+      kind: 'split',
+      quantity: 0,
+      price: 0,
+      fee: 0,
+      old_units: 1,
+      new_units: 4,
+    }
+    api.previewImport.mockResolvedValue({ ...successPreview, orders: [order(2, 'AAPL', '2026-01-15'), split] })
+    await uploadFile(renderWithProviders(<AssetImportPanel />))
+
+    const row = (await screen.findByText(t('assetImport.kind.split'))).closest('tr')
+    expect(row).not.toBeNull()
+    expect(row).toHaveTextContent(t('assetImport.splitRatio', { old: 1, new: 4 }))
+    expect(row?.querySelectorAll('td')).toHaveLength(4)
+  })
+})

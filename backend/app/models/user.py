@@ -42,6 +42,10 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         },
     )
 
+    # The appearance this person chose (a theme id from the library). None is
+    # Securo's own look, with the instance's accent colors if an admin set them.
+    theme: Mapped[Optional[str]] = mapped_column(String(160), nullable=True, default=None)
+
     totp_secret: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, default=None)
     is_2fa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     oidc_issuer: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
@@ -51,6 +55,22 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     category_groups: Mapped[list["CategoryGroup"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     bank_connections: Mapped[list["BankConnection"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     passkeys: Mapped[list["UserPasskey"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+
+    @property
+    def display_name(self) -> Optional[str]:
+        """The name this person chose, when they set one.
+
+        Callers that show a person anywhere the email is the only other
+        identifier fall back to the email themselves; anything offered by
+        an API that names people should carry this.
+        """
+        prefs = self.preferences or {}
+        # Preferences is a JSON column, so the value is only a string because
+        # the writers put one there; anything else is not a name.
+        name = prefs.get("display_name")
+        if not isinstance(name, str):
+            return None
+        return name.strip() or None
 
     @property
     def primary_currency(self) -> str:

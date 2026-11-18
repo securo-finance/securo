@@ -1,6 +1,7 @@
 import uuid
 from datetime import date
 from decimal import Decimal
+from unittest.mock import AsyncMock
 
 import pytest
 from httpx import AsyncClient, Response
@@ -706,7 +707,14 @@ async def test_incompatible_edit_requires_explicit_cleanup(
     test_account: Account,
     session: AsyncSession,
     changes: dict,
+    monkeypatch: pytest.MonkeyPatch,
 ):
+    # A currency change looks up FX rates, and a missing rate is synced in its
+    # own session. On the shared SQLite test connection that commit would also
+    # commit the rejected edit, which PostgreSQL keeps on its own connection.
+    monkeypatch.setattr(
+        "app.services.fx_rate_service.sync_rates", AsyncMock(return_value=0)
+    )
     changes = dict(changes)
     if "account_id" in changes:
         other = Account(
