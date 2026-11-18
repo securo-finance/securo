@@ -418,7 +418,7 @@ jobs:
                         nodes {
                           isResolved
                           isOutdated
-                          comments(first: 5) {
+                          comments(first: 100) {
                             pageInfo { hasNextPage }
                             nodes { author { login } body }
                           }
@@ -437,7 +437,18 @@ jobs:
                 }
                 // A gate that needs every thread must fail closed when it can
                 // only read some of them: a blocker past the first 100 threads,
-                // or past the fifth comment of one, would otherwise be invisible.
+                // or past the hundredth comment of one, would otherwise be
+                // invisible.
+                //
+                // A hundred is GraphQL's page size, and it is read in full on
+                // purpose: a thread that collects a few CodeRabbit
+                // back-and-forths passes five comments, and at five the lane
+                // refused it as unreadable for good — resolving the thread does
+                // not shorten it, so nothing cleared it (#1596, #1553). The
+                // severity marker sits in the thread's first comment, so a
+                // narrower read could decide too, but reading the page whole
+                // keeps every comment the gate looks at, and the fail-closed
+                // branch below is left for the thread that outgrows a page.
                 if (!threads) return skip('its review threads came back empty');
                 if (threads.pageInfo && threads.pageInfo.hasNextPage) {
                   return skip('it has more review threads than this check can read');
