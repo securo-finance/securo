@@ -1717,11 +1717,12 @@ def _eb_txn(raw: dict, status: str = "posted") -> TransactionData:
 
 async def _sync_eb(
     session, conn, workspace_id, user_id, txns: list[TransactionData], *,
-    incomplete=False, truncated=False,
+    incomplete=False, truncated=False, cancelled: set[str] | None = None,
 ):
     mock_provider = AsyncMock()
     mock_provider.incomplete_account_ids = {"eb-account"} if incomplete else set()
     mock_provider.truncated_account_ids = {"eb-account"} if truncated else set()
+    mock_provider.cancelled_transaction_ids = {"eb-account": cancelled or set()}
     mock_provider.refresh_credentials = AsyncMock(return_value={"token": "refreshed"})
     mock_provider.get_accounts = AsyncMock(return_value=[
         AccountData(
@@ -2245,6 +2246,61 @@ async def test_sync_connection_rules_append_to_a_note_saved_meanwhile(
 
 
 @pytest.mark.asyncio
+async def test_sync_connection_enable_banking_keeps_identical_pending_purchases(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Two pending purchases of the same amount on one day, listed with only
+    the amount, the direction and the date, land as two rows and stay two on
+    the next sync (#1232)."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    coffee = {
+        "transaction_amount": {"amount": "3.20", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": "2026-08-30",
+    }
+
+    for _ in range(2):
+        await _sync_eb(
+            session, conn, test_workspace.id, test_user.id,
+            await _eb_fetch([], [dict(coffee), dict(coffee)]),
+        )
+        rows = await _account_rows(session, account_id)
+        assert [(row.amount, row.status) for row in rows] == [
+            (Decimal("3.20"), "pending"),
+            (Decimal("3.20"), "pending"),
+        ]
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_booking_skips_a_cancelled_hold(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A hold the bank now lists as cancelled is still listed, so a booking at
+    the same merchant and amount is a purchase of its own, not its settlement."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    hold_raw = _eb_payload("hold-1", "4.50", remittance="SUPERMARKT 12 AT")
+    session.add(_eb_row(
+        test_user.id, test_workspace.id, account, "hold-1", hold_raw, "4.50",
+        status="pending", date=date(2026, 8, 30), description="SUPERMARKT 12 AT",
+    ))
+    await session.commit()
+    booking = _eb_txn(_eb_payload("charge-1", "4.50", remittance="SUPERMARKT 12 AT"))
+
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, [booking], cancelled={"hold-1"},
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert sorted((row.external_id, row.status) for row in rows) == [
+        (booking.external_id, "posted"),
+        ("hold-1", "pending"),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_sync_connection_enable_banking_pending_and_booked_in_one_fetch(
     session: AsyncSession, test_user, test_workspace,
 ):
@@ -2680,7 +2736,8 @@ async def test_sync_connection_enable_banking_reworded_remittance_needs_complete
 
     refetched = _eb_txn(_eb_reworded_payload("2026-11-11.5", _TRANSFER_REWORDED_REMITTANCE))
     await _sync_eb(
-        session, conn, test_workspace.id, test_user.id, [refetched], **{cut_short: True},
+        session, conn, test_workspace.id, test_user.id, [refetched],
+        incomplete=cut_short == "incomplete", truncated=cut_short == "truncated",
     )
 
     rows = await _account_rows(session, account_id)
@@ -2863,7 +2920,8 @@ async def test_sync_connection_enable_banking_hold_not_claimed_after_partial_fet
 
     await _sync_eb(
         session, conn, test_workspace.id, test_user.id,
-        await _eb_fetch([charge], []), **{partial: True},
+        await _eb_fetch([charge], []),
+        incomplete=partial == "incomplete", truncated=partial == "truncated",
     )
 
     rows = await _account_rows(session, account_id)
