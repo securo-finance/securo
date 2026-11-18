@@ -1284,6 +1284,7 @@
       "failedAt": "Az utolsó szinkronizálás sikertelen volt: {{when}}.",
       "psu_present_required": "A bank ezeket az adatokat csak akkor adja ki, amíg Ön a Securót használja.",
       "consent_expired": "A bank kéri, hogy engedélyezze újra a hozzáférést.",
+      "reauthorize_at_provider": "Engedélyezze újra ezt a bankot a SimpleFIN Bridge-fiókjában, majd szinkronizáljon.",
       "provider_error": "A bank hibát adott vissza.",
       "syncNow": "Szinkronizálás most"
     },

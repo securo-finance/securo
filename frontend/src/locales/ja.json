@@ -1284,6 +1284,7 @@
       "failedAt": "前回の同期は {{when}} に失敗しました。",
       "psu_present_required": "銀行はSecuroを利用中の間だけこのデータを共有します。",
       "consent_expired": "銀行へのアクセスを再度承認する必要があります。",
+      "reauthorize_at_provider": "SimpleFIN Bridge のアカウントでこの銀行を再度承認してから、もう一度同期してください。",
       "provider_error": "銀行からエラーが返されました。",
       "syncNow": "今すぐ同期"
     },

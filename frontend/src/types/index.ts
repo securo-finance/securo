@@ -160,6 +160,7 @@ export interface BankConnection {
 export type SyncFailureCode =
   | 'psu_present_required'
   | 'consent_expired'
+  | 'reauthorize_at_provider'
   | 'rate_limited'
   | 'provider_error'
 

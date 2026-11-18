@@ -239,6 +239,10 @@ export default function AccountsPage() {
         toast.error(t(SYNC_FAILURE_MESSAGE_KEY[code]))
         return
       }
+      if (response?.status === 409) {
+        toast.error(t('accounts.connectionDisconnected'))
+        return
+      }
       const message = typeof detail === 'string' ? detail : detail?.message
       toast.error(message || t('accounts.syncError'))
     },

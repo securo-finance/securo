@@ -61,7 +61,10 @@ vi.mock('@/hooks/use-display-locale', () => ({
 }))
 
 
-vi.mock('@/components/bank-connect-dialog', () => ({ BankConnectDialog: () => null }))
+vi.mock('@/components/bank-connect-dialog', () => ({
+  BankConnectDialog: ({ open, reconnectConnectionId }: { open: boolean; reconnectConnectionId?: string }) =>
+    open ? <div data-testid="reconnect-dialog" data-connection-id={reconnectConnectionId} /> : null,
+}))
 vi.mock('@/components/connector-select-dialog', () => ({ ConnectorSelectDialog: () => null }))
 vi.mock('@/components/oauth-connect-dialog', () => ({ OAuthConnectDialog: () => null }))
 vi.mock('@/components/token-connect-dialog', () => ({ TokenConnectDialog: () => null }))
@@ -206,18 +209,41 @@ describe('AccountsPage last sync failure', () => {
     expect(api.sync).toHaveBeenCalledWith('conn-psu')
   })
 
-  it('offers a reconnect when the consent expired', async () => {
+  it('reconnects that connection when the consent expired', async () => {
     api.connectionsList.mockResolvedValue([
       makeConnection({
+        id: 'conn-exp',
+        provider: 'pluggy',
         status: 'expired',
         last_sync_failure: { code: 'consent_expired', at: '2026-11-18T09:30:00Z', detail: null },
       }),
     ])
-    renderWithProviders(<AccountsPage />, { route: '/accounts' })
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
 
     const line = await screen.findByTestId('sync-failure')
     expect(line).toHaveTextContent(t('accounts.syncFailure.consent_expired'))
-    expect(within(line).getByRole('button', { name: t('accounts.reconnect') })).toBeInTheDocument()
+    expect(screen.queryByTestId('reconnect-dialog')).not.toBeInTheDocument()
+    await user.click(within(line).getByRole('button', { name: t('accounts.reconnect') }))
+
+    expect(await screen.findByTestId('reconnect-dialog')).toHaveAttribute('data-connection-id', 'conn-exp')
+    expect(api.sync).not.toHaveBeenCalled()
+  })
+
+  it('sends the user to the SimpleFIN Bridge and offers a sync afterwards', async () => {
+    api.connectionsList.mockResolvedValue([
+      makeConnection({
+        id: 'conn-sf',
+        status: 'error',
+        last_sync_failure: { code: 'reauthorize_at_provider', at: '2026-11-18T09:30:00Z', detail: 'action_required' },
+      }),
+    ])
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    const line = await screen.findByTestId('sync-failure')
+    expect(line).toHaveTextContent(t('accounts.syncFailure.reauthorize_at_provider'))
+    await user.click(within(line).getByRole('button', { name: t('accounts.syncFailure.syncNow') }))
+
+    expect(api.sync).toHaveBeenCalledWith('conn-sf')
   })
 
   it('only asks to wait when the bank throttled the sync', async () => {
@@ -233,17 +259,29 @@ describe('AccountsPage last sync failure', () => {
     expect(within(line).queryByRole('button')).not.toBeInTheDocument()
   })
 
-  it('shows nothing once a sync succeeded', async () => {
-    api.connectionsList.mockResolvedValue([makeConnection({ last_sync_failure: null })])
-    renderWithProviders(<AccountsPage />, { route: '/accounts' })
+  it('drops the notice once a sync succeeded', async () => {
+    const failed = makeConnection({
+      id: 'conn-1',
+      status: 'error',
+      last_sync_failure: { code: 'provider_error', at: '2026-11-18T09:30:00Z', detail: 'HTTP 502' },
+    })
+    api.connectionsList
+      .mockResolvedValueOnce([failed])
+      .mockResolvedValue([{ ...failed, status: 'active', last_sync_failure: null }])
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
 
-    await screen.findByRole('button', { name: t('accounts.sync') })
-    expect(screen.queryByTestId('sync-failure')).not.toBeInTheDocument()
+    const line = await screen.findByTestId('sync-failure')
+    await user.click(within(line).getByRole('button', { name: t('accounts.syncFailure.syncNow') }))
+
+    expect(api.sync).toHaveBeenCalledWith('conn-1')
+    await vi.waitFor(() => expect(screen.queryByTestId('sync-failure')).not.toBeInTheDocument())
   })
 
   it.each([
     [409, { message: 'Bank wants the PSU present', code: 'psu_present_required' }, 'accounts.syncFailure.psu_present_required'],
     [409, { message: 'Token revoked', code: 'credentials_invalid' }, 'accounts.syncFailure.consent_expired'],
+    [409, { message: 'Bridge wants it reauthorized', code: 'some_new_code' }, 'accounts.syncFailure.provider_error'],
+    [409, 'Connection was disconnected', 'accounts.connectionDisconnected'],
     [410, 'Session expired', 'accounts.syncFailure.consent_expired'],
     [500, 'Sync failed: HTTPStatusError 502 for IBAN-123', 'accounts.syncFailure.provider_error'],
   ])('shows the translated reason in the manual sync toast (%i)', async (status, detail, key) => {

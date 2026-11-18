@@ -3099,6 +3099,9 @@ def _sync_failure_for(exc: BaseException) -> dict:
     if isinstance(exc, ProviderRateLimited):
         return _sync_failure("rate_limited")
     status_code = getattr(getattr(exc, "response", None), "status_code", None)
+    if status_code == 429:
+        # A provider that does not raise ProviderRateLimited itself.
+        return _sync_failure("rate_limited", "HTTP 429")
     if isinstance(status_code, int):
         return _sync_failure("provider_error", f"HTTP {status_code}")
     return _sync_failure("provider_error", type(exc).__name__)
@@ -3986,6 +3989,12 @@ async def sync_connection(
         failure: Optional[dict] = (
             _sync_failure("rate_limited") if sync_outcome == "rate_limited" else None
         )
+        # A bank that took a shorter window, or skipped an account, because
+        # the user was not there still needs a sync with the user present:
+        # reading some data does not end that.
+        presence_required = getattr(provider, "presence_required_account_ids", None)
+        if failure is None and isinstance(presence_required, set) and presence_required:
+            failure = _sync_failure("psu_present_required", "partial")
         action_required_warnings = getattr(provider, "action_required_warnings", None)
         if isinstance(action_required_warnings, list) and action_required_warnings:
             logger.warning(
@@ -3995,7 +4004,9 @@ async def sync_connection(
                 connection.id,
             )
             connection.status = "error"
-            failure = _sync_failure("consent_expired", "action_required")
+            # The access URL is still good: the bank is reauthorized at the
+            # bridge, and a new setup token would only fail as already used.
+            failure = _sync_failure("reauthorize_at_provider", "action_required")
         else:
             connection.status = "active"
         connection.settings = _with_sync_failure(connection.settings, failure)

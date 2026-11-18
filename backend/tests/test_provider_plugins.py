@@ -732,3 +732,21 @@ async def test_new_values_keep_what_the_plugin_stored_and_wait_for_a_sync(
     await connections.update_values(session, connection, name=None, values={"api_key": "sk_live_2"})
     stored = vault.unseal(connection.secrets)
     assert stored["api_key"] == "sk_live_2" and stored["refresh_token"] == "kept-by-the-plugin"
+
+
+@pytest.mark.asyncio
+async def test_new_values_clear_the_reason_the_old_ones_left_on_the_bank(
+    session: AsyncSession, ids, provider_catalog, plugin_runner, sync_locks
+):
+    """Issue #1405: the bank card must not keep the old credentials' notice
+    until a sync that writes records."""
+    connection = await _provider_connection(session, ids)
+    bank = await _bank(session, connection)
+    failure = {"code": "consent_expired", "at": datetime.now(timezone.utc).isoformat(), "detail": None}
+    bank.settings = {**(bank.settings or {}), "last_sync_failure": failure}
+    await session.commit()
+
+    await connections.update_values(session, connection, name=None, values={"api_key": "sk_live_2"})
+
+    bank = await _bank(session, connection)
+    assert bank.last_sync_failure is None

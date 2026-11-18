@@ -1288,6 +1288,7 @@
       "failedAt": "A última sincronização falhou em {{when}}.",
       "psu_present_required": "O banco só libera esses dados enquanto você está usando o Securo.",
       "consent_expired": "O banco precisa que você autorize o acesso de novo.",
+      "reauthorize_at_provider": "Autorize este banco de novo na sua conta do SimpleFIN Bridge e sincronize outra vez.",
       "provider_error": "O banco devolveu um erro.",
       "syncNow": "Sincronizar agora"
     },

@@ -1348,6 +1348,7 @@
       "failedAt": "Posledná synchronizácia zlyhala {{when}}.",
       "psu_present_required": "Banka tieto údaje zdieľa len vtedy, keď používate Securo.",
       "consent_expired": "Banka potrebuje, aby ste prístup znova autorizovali.",
+      "reauthorize_at_provider": "Znova autorizujte túto banku vo svojom účte SimpleFIN Bridge a potom synchronizujte.",
       "provider_error": "Banka vrátila chybu.",
       "syncNow": "Synchronizovať teraz"
     },

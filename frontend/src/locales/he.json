@@ -1296,6 +1296,7 @@
       "failedAt": "הסנכרון האחרון נכשל ב־{{when}}.",
       "psu_present_required": "הבנק משתף את הנתונים האלה רק בזמן שאתם משתמשים ב־Securo.",
       "consent_expired": "הבנק מבקש שתאשרו שוב את הגישה.",
+      "reauthorize_at_provider": "אשרו שוב את הבנק הזה בחשבון SimpleFIN Bridge שלכם ואז סנכרנו שוב.",
       "provider_error": "הבנק החזיר שגיאה.",
       "syncNow": "סנכרון עכשיו"
     },

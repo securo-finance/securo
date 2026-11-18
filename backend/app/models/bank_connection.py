@@ -57,6 +57,10 @@ class BankConnection(Base):
             datetime.fromisoformat(value["at"])
         except (KeyError, TypeError, ValueError):
             return None
+        detail = value.get("detail")
+        if detail is not None and not isinstance(detail, str):
+            # A malformed detail must not take the whole connections list down.
+            return {**value, "detail": None}
         return value
 
 
@@ -65,6 +69,9 @@ LAST_SYNC_FAILURE_KEY = "last_sync_failure"
 SYNC_FAILURE_CODES = (
     "psu_present_required",
     "consent_expired",
+    # A bank linked through an aggregator the user manages (the SimpleFIN
+    # Bridge) needs reauthorizing there; the connection itself stays valid.
+    "reauthorize_at_provider",
     "rate_limited",
     "provider_error",
 )

@@ -34,7 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core import redis as redis_store
 from app.models.access_token import AccessToken
-from app.models.bank_connection import BankConnection
+from app.models.bank_connection import LAST_SYNC_FAILURE_KEY, BankConnection
 from app.models.plugin_connection import PluginConnection
 from app.models.workspace_plugin import WorkspacePlugin
 from app.plugins import logos, runner, vault
@@ -284,6 +284,7 @@ async def _update_values(
         bank = await session.get(BankConnection, connection.bank_connection_id)
         if bank is not None:
             bank.display_name = connection.name
+    await _forget_bank_failure(session, connection)
     await _mirror_status(session, connection)
     await session.commit()
     return connection
@@ -439,9 +440,20 @@ async def finish_oauth(
     _keep(connection, result, secrets)
     connection.status = "pending"
     connection.last_error = None
+    await _forget_bank_failure(session, connection)
     await _mirror_status(session, connection)
     await session.commit()
     return connection
+
+
+async def _forget_bank_failure(session: AsyncSession, connection: PluginConnection) -> None:
+    """New credentials end the reason the old ones left on the bank card (issue #1405)."""
+    if connection.bank_connection_id is None:
+        return
+    bank = await session.get(BankConnection, connection.bank_connection_id)
+    settings = (bank.settings if bank is not None else None) or {}
+    if bank is not None and LAST_SYNC_FAILURE_KEY in settings:
+        bank.settings = {k: v for k, v in settings.items() if k != LAST_SYNC_FAILURE_KEY}
 
 
 def _keep(connection: PluginConnection, result: Any, secrets: dict[str, Any]) -> None:

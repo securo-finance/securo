@@ -76,10 +76,11 @@ async def _failed_sync(session, conn, workspace_id, user_id, exc) -> BankConnect
             "accounts_unavailable",
         ),
         (ProviderRateLimited("429", retry_after=60), "rate_limited", None),
+        (_http_error(429), "rate_limited", "HTTP 429"),
         (_http_error(502), "provider_error", "HTTP 502"),
         (RuntimeError("Jane Doe IBAN-123"), "provider_error", "RuntimeError"),
     ],
-    ids=["psu", "expired", "credentials", "other-action", "429", "http", "crash"],
+    ids=["psu", "expired", "credentials", "other-action", "429", "http-429", "http", "crash"],
 )
 async def test_a_failed_sync_keeps_why_on_the_connection(
     session: AsyncSession, test_user, test_workspace, exc, code, detail
@@ -176,3 +177,51 @@ def test_a_malformed_stored_failure_is_not_returned():
     assert conn.last_sync_failure is None
     conn.settings = {LAST_SYNC_FAILURE_KEY: {"code": "rate_limited", "at": "not a date"}}
     assert conn.last_sync_failure is None
+
+
+def test_a_malformed_detail_does_not_break_the_connection_read():
+    at = datetime.now(timezone.utc).isoformat()
+    conn = BankConnection(
+        settings={LAST_SYNC_FAILURE_KEY: {"code": "provider_error", "at": at, "detail": {"x": 1}}}
+    )
+    failure = conn.last_sync_failure
+    assert failure is not None and failure["detail"] is None
+    assert failure["code"] == "provider_error"
+
+
+@pytest.mark.asyncio
+async def test_a_sync_that_still_needs_the_user_present_keeps_the_notice(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A bank that served a shorter window, or skipped an account, without the
+    user has not been read in full: reading some data does not end it."""
+    workspace_id, user_id = test_workspace.id, test_user.id
+    conn = await _make_connection(session, user_id, workspace_id)
+
+    provider = _mock_provider_two_accounts()
+    provider.presence_required_account_ids = {"rl-acc-a"}
+    with _sync_patches(provider):
+        conn, _, _ = await sync_connection(session, conn.id, workspace_id, user_id)
+
+    assert conn.last_sync_failure is not None
+    assert conn.last_sync_failure["code"] == "psu_present_required"
+    assert conn.last_sync_failure["detail"] == "partial"
+
+
+@pytest.mark.asyncio
+async def test_a_bank_to_reauthorize_at_the_bridge_is_not_an_expired_consent(
+    session: AsyncSession, test_user, test_workspace
+):
+    workspace_id, user_id = test_workspace.id, test_user.id
+    conn = await _make_connection(session, user_id, workspace_id)
+
+    provider = _mock_provider_two_accounts()
+    provider.action_required_warnings = [{"code": "con.auth", "msg": "Jane Doe's bank"}]
+    with _sync_patches(provider):
+        conn, _, _ = await sync_connection(session, conn.id, workspace_id, user_id)
+
+    assert conn.status == "error"
+    failure = BankConnectionRead.model_validate(conn).last_sync_failure
+    assert failure is not None
+    assert failure.code == "reauthorize_at_provider"
+    assert "Jane" not in str(conn.settings)

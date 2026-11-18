@@ -1364,6 +1364,7 @@
       "failedAt": "Poslední synchronizace selhala {{when}}.",
       "psu_present_required": "Banka tato data sdílí jen ve chvíli, kdy Securo používáte.",
       "consent_expired": "Banka potřebuje, abyste přístup znovu autorizovali.",
+      "reauthorize_at_provider": "Znovu autorizujte tuto banku ve svém účtu SimpleFIN Bridge a pak synchronizujte.",
       "provider_error": "Banka vrátila chybu.",
       "syncNow": "Synchronizovat nyní"
     },

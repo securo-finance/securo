@@ -26,7 +26,13 @@ class SyncFailureRead(BaseModel):
     message and the action the user is offered; `detail` is the provider's
     own code or HTTP status, never its free text."""
 
-    code: Literal["psu_present_required", "consent_expired", "rate_limited", "provider_error"]
+    code: Literal[
+        "psu_present_required",
+        "consent_expired",
+        "reauthorize_at_provider",
+        "rate_limited",
+        "provider_error",
+    ]
     at: datetime
     detail: Optional[str] = None
 
