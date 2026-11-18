@@ -1281,6 +1281,14 @@
     "syncRateLimited": "Elérted a bank napi korlátját, nem érkeztek új adatok. Próbáld újra később.",
     "syncPartial": "Néhány számla frissült, de a többinél elérted a bank napi korlátját. Ezeket később újra megpróbáljuk.",
     "syncError": "Sikertelen szinkronizálás",
+    "syncFailure": {
+      "failedAt": "Az utolsó szinkronizálás sikertelen volt: {{when}}.",
+      "psu_present_required": "A bank ezeket az adatokat csak akkor adja ki, amíg Ön a Securót használja.",
+      "consent_expired": "A bank kéri, hogy engedélyezze újra a hozzáférést.",
+      "reauthorize_at_provider": "Engedélyezze újra ezt a bankot a SimpleFIN Bridge-fiókjában, majd szinkronizáljon.",
+      "provider_error": "A bank hibát adott vissza.",
+      "syncNow": "Szinkronizálás most"
+    },
     "connected": "Bank sikeresen csatlakoztatva",
     "connectError": "Nem sikerült csatlakoztatni a bankot",
     "disconnected": "Kapcsolat eltávolítva",

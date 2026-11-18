@@ -1281,6 +1281,14 @@
     "syncRateLimited": "Bank daily limit reached, no new data was fetched. Try again later.",
     "syncPartial": "Some accounts were updated, but the bank's daily limit was reached for the others. They will be retried later.",
     "syncError": "Sync failed",
+    "syncFailure": {
+      "failedAt": "Last sync failed on {{when}}.",
+      "psu_present_required": "The bank only shares this data while you are using Securo.",
+      "consent_expired": "The bank needs you to authorize access again.",
+      "reauthorize_at_provider": "Reauthorize this bank in your SimpleFIN Bridge account, then sync again.",
+      "provider_error": "The bank returned an error.",
+      "syncNow": "Sync now"
+    },
     "connected": "Bank connected successfully",
     "connectError": "Failed to connect bank",
     "disconnected": "Connection removed",

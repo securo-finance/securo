@@ -1345,6 +1345,14 @@
     "syncRateLimited": "Dosiahnutý denný limit banky, žiadne nové údaje neboli stiahnuté. Skúste to prosím neskôr.",
     "syncPartial": "Niektoré účty boli aktualizované, ale pri ostatných bol dosiahnutý denný limit banky. Skúsime ich znova neskôr.",
     "syncError": "Synchronizácia zlyhala",
+    "syncFailure": {
+      "failedAt": "Posledná synchronizácia zlyhala {{when}}.",
+      "psu_present_required": "Banka tieto údaje zdieľa len vtedy, keď používate Securo.",
+      "consent_expired": "Banka potrebuje, aby ste prístup znova autorizovali.",
+      "reauthorize_at_provider": "Znova autorizujte túto banku vo svojom účte SimpleFIN Bridge a potom synchronizujte.",
+      "provider_error": "Banka vrátila chybu.",
+      "syncNow": "Synchronizovať teraz"
+    },
     "connected": "Banka úspešne prepojená",
     "connectError": "Nepodarilo sa prepojiť banku",
     "disconnected": "Prepojenie odstránené",
