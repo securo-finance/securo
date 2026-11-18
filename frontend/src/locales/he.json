@@ -1366,11 +1366,21 @@
         "title": "חיבור דרך SimpleFIN",
         "description": "SimpleFIN הוא פרוטוקול לקריאה בלבד של נתוני בנק. היכנסו ל-SimpleFIN Bridge, בחרו את הבנק והעתיקו לכאן את טוקן ההגדרה."
       },
+      "akahu": {
+        "title": "חיבור דרך Akahu",
+        "description": "Akahu מחבר בנקים בניו זילנד. צרו Personal App חינמי ב-my.akahu.nz, קשרו את הבנק והדביקו למטה גם את ה-App ID Token (app_token_…) וגם את ה-User Token (user_token_…), בכל סדר.",
+        "reconnectTitle": "חיבור מחדש דרך Akahu",
+        "reconnectDescription": "הדביקו את שני הטוקנים מעמוד המפתחים של Akahu כדי לרענן את החיבור. חשבונות, תנועות, קטגוריות וכללים קיימים נשמרים.",
+        "openBridge": "קבלת טוקנים מ-Akahu"
+      },
       "reconnectTitle": "חיבור מחדש עם טוקן חדש",
       "reconnectDescription": "הדביקו טוקן הגדרה חדש כדי לרענן את החיבור במקום. חשבונות, תנועות, קטגוריות וכללים קיימים נשמרים.",
       "reconnect": "חיבור מחדש"
     },
     "providers": {
+      "akahu": {
+        "description": "בנקים בניו זילנד דרך בנקאות פתוחה של Akahu"
+      },
       "pluggy": {
         "description": "ספק בנקאות פתוחה לבנקים בברזיל"
       },
