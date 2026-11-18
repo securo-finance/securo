@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class MessageRead(BaseModel):
@@ -34,7 +34,9 @@ class ConversationRead(BaseModel):
 
 
 class SendMessageRequest(BaseModel):
-    content: str
+    # A message longer than this is a mistake or an attempt to burn provider
+    # tokens, and either way it is refused before the stream opens.
+    content: str = Field(..., min_length=1, max_length=4000)
     conversation_id: Optional[uuid.UUID] = None
     channel: str = "web"
     # Where the user is in the app when this message was sent. The
