@@ -2088,7 +2088,9 @@
       "invalid_fee": "読み取れない手数料",
       "invalid_kind": "認識できない買付/売却値",
       "unknown_ticker": "価格プロバイダーがティッカーを検出できません",
-      "oversell": "保有数を超える売却"
+      "oversell": "保有数を超える売却",
+      "no_fx_rate": "注文日の為替レートがありません",
+      "possible_duplicate": "以前のインポートでこの保有銘柄に登録済みの可能性があります"
     }
   },
   "assets": {

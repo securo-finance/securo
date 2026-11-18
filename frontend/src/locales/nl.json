@@ -2090,7 +2090,9 @@
       "invalid_fee": "onleesbare kosten",
       "invalid_kind": "onbekende koop-/verkoopwaarde",
       "unknown_ticker": "ticker niet gevonden door de prijsaanbieder",
-      "oversell": "meer eenheden verkopen dan de positie bevat"
+      "oversell": "meer eenheden verkopen dan de positie bevat",
+      "no_fx_rate": "geen wisselkoers voor de orderdatum",
+      "possible_duplicate": "staat mogelijk al in deze positie door een eerdere import"
     }
   },
   "assets": {

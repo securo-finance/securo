@@ -2092,7 +2092,9 @@
       "invalid_fee": "commissione illeggibile",
       "invalid_kind": "acquisto/vendita non riconosciuto",
       "unknown_ticker": "ticker non trovato dal fornitore di prezzi",
-      "oversell": "vendita superiore alla posizione"
+      "oversell": "vendita superiore alla posizione",
+      "no_fx_rate": "nessun tasso di cambio per la data dell'ordine",
+      "possible_duplicate": "potrebbe essere già in questa posizione da un'importazione precedente"
     }
   },
   "assets": {

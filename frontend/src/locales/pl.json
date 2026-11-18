@@ -2185,7 +2185,9 @@
       "invalid_fee": "nieczytelna prowizja",
       "invalid_kind": "nierozpoznane kupno/sprzedaż",
       "unknown_ticker": "ticker nieznany dostawcy notowań",
-      "oversell": "sprzedaż większa niż pozycja"
+      "oversell": "sprzedaż większa niż pozycja",
+      "no_fx_rate": "brak kursu wymiany na datę zlecenia",
+      "possible_duplicate": "może już być w tej pozycji z wcześniejszego importu"
     }
   },
   "assets": {
