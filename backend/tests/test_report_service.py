@@ -1158,20 +1158,23 @@ async def test_net_worth_leaves_out_a_closed_card_on_a_shared_line(
     session: AsyncSession, test_user, test_workspace: User,
 ):
     """A closed card's frozen balance is not mixed into the line's live one."""
+    today = date.today()
     open_card, closed_card = await _make_shared_credit_cards(
         session, test_user.id, test_workspace.id, "60"
     )
     # The line owed 100 until today's 40 payment; the closed card stopped
     # syncing before it and still reports 100.
-    await _add_txn(session, test_user.id, open_card.id, 40, "credit", date.today())
+    await _add_txn(session, test_user.id, open_card.id, 40, "credit", today)
     closed_card.balance = Decimal("100")
     closed_card.is_closed = True
     closed_card.closed_at = datetime.now(timezone.utc)
     await session.commit()
 
-    dp = await _net_worth_at(session, test_workspace.id, date.today() - timedelta(days=1), "BRL")
+    dp = await _net_worth_at(session, test_workspace.id, today - timedelta(days=1), "BRL")
 
     assert dp.breakdowns["liabilities"] == 100.0
+    liabilities = [c for c in dp.composition if c.group == "liabilities"]
+    assert [c.label for c in liabilities] == ["Shared Visa"]
 
 
 @pytest.mark.asyncio
