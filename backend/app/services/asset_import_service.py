@@ -211,6 +211,28 @@ def _parse_split_units(raw: str) -> Optional[int]:
     return int(value)
 
 
+def _invalid_split(
+    old_units: Optional[int],
+    new_units: Optional[int],
+    quantity: Optional[Decimal],
+    price: Optional[Decimal],
+    fee: Optional[Decimal],
+) -> bool:
+    """Whether a split row's ratio and money fields are unusable.
+
+    Checked the way a split entered by hand is: a ratio that is in range and
+    changes something, and no money on the row. The confirmation endpoint
+    takes its rows from the request body, so this is checked there too and not
+    only while reading the file — a split without a ratio would otherwise
+    abort the replay instead of being reported against its line.
+    """
+    return (
+        not asset_transaction_service.split_ratio_in_range(old_units, new_units)
+        or old_units == new_units
+        or any(value is not None and value != 0 for value in (quantity, price, fee))
+    )
+
+
 def _decode(content: bytes) -> str:
     """Broker exports are not always UTF-8; fall back rather than blow up."""
     for encoding in ('utf-8-sig', 'latin-1'):
@@ -305,8 +327,15 @@ def parse_orders_csv(
     if not headers:
         raise ValueError('CSV has no header row')
 
-    mapping = {k: v for k, v in (column_mapping or {}).items() if v}
+    chosen = column_mapping or {}
+    # A field the user set to no column is an explicit Ignore, not a gap for
+    # the auto-detection to fill: a broker that also exports position
+    # balances must not have them read back as a split ratio after Ignore.
+    ignored = {field for field, header in chosen.items() if not header}
+    mapping = {field: header for field, header in chosen.items() if header}
     for field, header in _auto_mapping(headers).items():
+        if field in ignored:
+            continue
         mapping.setdefault(field, header)
 
     missing = [f for f in ASSET_CSV_REQUIRED_FIELDS if f not in mapping]
@@ -340,16 +369,12 @@ def parse_orders_csv(
         old_units = _parse_split_units(cell(row, 'old_units'))
         new_units = _parse_split_units(cell(row, 'new_units'))
         if kind_word in _SPLIT_WORDS:
-            # Checked like a split entered by hand: a ratio in range that
-            # changes something, and no money on the row.
-            moves_money = any(
-                (_parse_decimal(cell(row, field)) or Decimal('0')) != 0
-                for field in ('quantity', 'price', 'fee')
-            )
-            if (
-                not asset_transaction_service.split_ratio_in_range(old_units, new_units)
-                or old_units == new_units
-                or moves_money
+            if _invalid_split(
+                old_units,
+                new_units,
+                _parse_decimal(cell(row, 'quantity')),
+                _parse_decimal(cell(row, 'price')),
+                _parse_decimal(cell(row, 'fee')),
             ):
                 errors.append(AssetImportRowError(row=index, reason='invalid_split', ticker=ticker))
                 continue
@@ -714,6 +739,66 @@ def _ledger_problem(
     return None
 
 
+async def _recheck_before_write(
+    session: AsyncSession,
+    accepted: list[tuple[AssetOrderImport, AssetTransaction]],
+    holdings: dict[str, Asset],
+    quotes: dict[str, Optional[MarketSymbolQuote]],
+    errors: list[AssetImportRowError],
+) -> tuple[list[tuple[AssetOrderImport, AssetTransaction]], list[AssetImportRowError]]:
+    """Measure every accepted row again against the ledger as it is now.
+
+    The replay read the stored ledger before the quotes were fetched, and a
+    sale entered by hand while they were on their way would not be measured by
+    it: the file could commit a backdated split that leaves that sale short.
+    A holding the file creates was checked on units alone, because its price
+    was not known yet. Both are settled here, under a lock on the holdings
+    being written to — the manual entry paths take the same lock — and with
+    the price the holding is created at, so what is written has been checked
+    against what is stored and what is charged.
+
+    A row that no longer holds is reported against its line and left out,
+    rather than aborting an import whose other rows are fine.
+    """
+    tickers = {order.ticker for order, _ in accepted}
+    asset_ids = sorted(asset.id for ticker, asset in holdings.items() if ticker in tickers)
+    ledgers: dict[str, list[AssetTransaction]] = {ticker: [] for ticker in tickers if ticker in holdings}
+    if asset_ids:
+        await session.execute(
+            select(Asset.id)
+            .where(Asset.id.in_(asset_ids))
+            .order_by(Asset.id)
+            .with_for_update()
+        )
+        by_id = {asset.id: ticker for ticker, asset in holdings.items() if ticker in tickers}
+        for row in await _ledger_rows(session, asset_ids):
+            ledgers[by_id[row.asset_id]].append(row)
+
+    # Only what the size check reads: the units and the price they are worth at.
+    created: dict[str, Asset] = {}
+    for ticker in tickers - set(holdings):
+        quote = quotes.get(ticker)
+        created[ticker] = Asset(
+            valuation_method='market_price',
+            last_price=Decimal(str(quote.price)) if quote is not None else None,
+            last_price_at=datetime.now(timezone.utc) if quote is not None else None,
+        )
+
+    kept: list[tuple[AssetOrderImport, AssetTransaction]] = []
+    for order, entry in accepted:
+        ledger = ledgers.setdefault(order.ticker, [])
+        problem = _ledger_problem(ledger, entry, holdings.get(order.ticker) or created[order.ticker])
+        if problem is not None:
+            reason, detail = problem
+            errors.append(AssetImportRowError(
+                row=order.row, reason=reason, ticker=order.ticker, detail=detail,
+            ))
+            continue
+        ledger.append(entry)
+        kept.append((order, entry))
+    return kept, errors
+
+
 async def import_orders(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -871,6 +956,12 @@ async def import_orders(
                 ))
                 continue
 
+        if order.kind == 'split' and _invalid_split(
+            order.old_units, order.new_units, order.quantity, order.price, order.fee,
+        ):
+            errors.append(AssetImportRowError(row=order.row, reason='invalid_split', ticker=order.ticker))
+            continue
+
         if order.kind == 'split':
             if asset is not None and asset_transaction_service.split_not_allowed(asset):
                 errors.append(AssetImportRowError(row=order.row, reason='split_not_allowed', ticker=order.ticker))
@@ -911,6 +1002,25 @@ async def import_orders(
     if dry_run or not accepted:
         return summary
 
+    # A holding the file creates gets its quote here, before anything is
+    # written, so the rows checked below are measured against the price the
+    # holding will actually carry.
+    unquoted = [t for t in to_create if t not in quotes]
+    if unquoted:
+        provider = market_provider or get_market_price_provider()
+        quotes.update(await provider.get_quotes(unquoted))
+
+    accepted, errors = await _recheck_before_write(session, accepted, holdings, quotes, errors)
+    to_create = sorted({o.ticker for o, _ in accepted if o.ticker not in holdings})
+    summary.update({
+        'imported': len(accepted),
+        'holdings_created': len(to_create),
+        'holdings_matched': len({o.ticker for o, _ in accepted if o.ticker in holdings}),
+        'errors': errors,
+    })
+    if not accepted:
+        return summary
+
     # The log exists before the rows so they can point at it, and is removed
     # again if the run ends up writing nothing.
     log = ImportLog(
@@ -924,11 +1034,6 @@ async def import_orders(
     )
     session.add(log)
     await session.flush()
-
-    unquoted = [t for t in to_create if t not in quotes]
-    if unquoted:
-        provider = market_provider or get_market_price_provider()
-        quotes.update(await provider.get_quotes(unquoted))
 
     touched: dict[str, Asset] = {}
     written = 0

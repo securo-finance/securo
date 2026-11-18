@@ -322,6 +322,27 @@ async def _load_asset(
     return result.scalar_one_or_none()
 
 
+async def _load_asset_for_write(
+    session: AsyncSession, asset_id: uuid.UUID, workspace_id: uuid.UUID
+) -> Optional[Asset]:
+    """Load the holding and lock it for the rest of the transaction.
+
+    Every path that checks this holding's ledger and then writes to it takes
+    this lock, including the order import: two of them landing together would
+    otherwise each pass on the ledger they read and the later one would commit
+    over the other's units.
+    """
+    result = await session.execute(
+        select(Asset)
+        .where(Asset.id == asset_id, Asset.workspace_id == workspace_id)
+        # After waiting for the lock, the row is what is stored now, not the
+        # copy this session loaded before.
+        .execution_options(populate_existing=True)
+        .with_for_update()
+    )
+    return result.scalar_one_or_none()
+
+
 async def list_asset_transactions(
     session: AsyncSession, asset_id: uuid.UUID, workspace_id: uuid.UUID
 ) -> Optional[list[AssetTransactionRead]]:
@@ -442,7 +463,7 @@ async def add_transaction(
     workspace_id: uuid.UUID,
     data: AssetTransactionCreate,
 ) -> Optional[AssetRead]:
-    asset = await _load_asset(session, asset_id, workspace_id)
+    asset = await _load_asset_for_write(session, asset_id, workspace_id)
     if asset is None:
         return None
     _validate(
@@ -522,19 +543,20 @@ async def update_transaction(
         edited.kind, edited.quantity, edited.price,
         fee=edited.fee, old_units=edited.old_units, new_units=edited.new_units,
     )
+    # Resolve and lock the holding before mutating the row: bailing out after
+    # the setattr loop would leave the edits pending in the session, so a later
+    # commit in the same request would persist an update we reported failed.
+    # The lock is taken before the ledger is read, so nothing lands between
+    # the checks and the write.
+    asset = await _load_asset_for_write(session, tx.asset_id, workspace_id)
+    if asset is None:
+        return None
+
     others = [t for t in await _load_txs(session, tx.asset_id) if t.id != tx.id]
     if kind == "split":
         _raise_if_split_in_future(edited.date)
         _raise_if_nothing_held_before(others, edited.date)
     _raise_if_oversell(others + [edited])
-
-    # Resolve the asset before mutating the row: bailing out after the
-    # setattr loop would leave the edits pending in the session, so a later
-    # commit in the same request would persist an update we reported failed.
-    asset = await _load_asset(session, tx.asset_id, workspace_id)
-    if asset is None:
-        return None
-
     _raise_if_too_large_to_store(others + [edited], asset)
     if kind == "split":
         # These stay 0 on a split; validation let through a null, which the
@@ -560,7 +582,7 @@ async def delete_transaction(
     tx = result.scalar_one_or_none()
     if tx is None:
         return None
-    asset = await _load_asset(session, tx.asset_id, workspace_id)
+    asset = await _load_asset_for_write(session, tx.asset_id, workspace_id)
     if asset is None:
         return None
     others = [t for t in await _load_txs(session, tx.asset_id) if t.id != tx.id]
@@ -597,12 +619,16 @@ async def buy_into_holding(
     ticker = data.ticker.upper()
 
     result = await session.execute(
-        select(Asset).where(
+        select(Asset)
+        .where(
             Asset.workspace_id == workspace_id,
             Asset.ticker == ticker,
             Asset.valuation_method == "market_price",
             Asset.group_id == data.group_id,
         )
+        # Locked like the other ledger writes: its units are read below and
+        # written after the quote lookup.
+        .with_for_update()
     )
     asset = result.scalar_one_or_none()
     ledger = [] if asset is None else await _load_txs(session, asset.id)

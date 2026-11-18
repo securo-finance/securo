@@ -13,6 +13,7 @@ from app.models.fx_rate import FxRate
 from app.models.user import User
 from app.models.workspace import Workspace
 from app.providers.market_price import MarketSymbolQuote
+from app.schemas.asset_import import AssetOrderImport
 from app.services import asset_import_service
 
 
@@ -1244,6 +1245,14 @@ async def test_a_reimported_split_is_skipped(
     assert (await _only_asset(session, test_workspace)).units == Decimal("40")
 
 
+class TinyPriceProvider(FakeProvider):
+    """Quotes a fraction of a unit, so the units are what overflows, not the value."""
+
+    async def get_quote(self, symbol):
+        quote = await super().get_quote(symbol)
+        return None if quote is None else quote.model_copy(update={"price": 0.000001})
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "rows",
@@ -1255,12 +1264,12 @@ async def test_a_reimported_split_is_skipped(
     ],
 )
 async def test_a_row_that_would_overflow_the_holding_is_refused(
-    session: AsyncSession, test_user: User, test_workspace: Workspace, provider, rows
+    session: AsyncSession, test_user: User, test_workspace: Workspace, rows
 ):
     """The size check manual entries get, instead of failing in the database."""
     summary = await _import(session, test_workspace, test_user, _csv(
         "ticker,date,quantity,price,kind,old_units,new_units", *rows,
-    ), provider)
+    ), TinyPriceProvider())
 
     assert summary["imported"] == 1
     assert [(e.row, e.reason) for e in summary["errors"]] == [(3, "too_large")]
@@ -1276,3 +1285,137 @@ def test_explicit_date_format_parses_when_it_fits():
     )
     assert errors == []
     assert orders[0].date == date(2026, 2, 13)
+
+
+def test_an_ignored_column_is_not_mapped_back_by_auto_detection():
+    """A position-balance column named like a ratio stays ignored when asked.
+
+    The mapping sends an empty header for Ignore; auto-detection must not
+    fill it again, or the same file fails as if it carried a split ratio.
+    """
+    orders, errors, _ = asset_import_service.parse_orders_csv(
+        _csv(
+            "ticker,date,quantity,price,old units,new units",
+            "AAPL,2026-01-15,10,100.00,0,10",
+        ),
+        column_mapping={"old_units": "", "new_units": ""},
+    )
+
+    assert errors == []
+    assert (orders[0].kind, orders[0].old_units, orders[0].new_units) == ("buy", None, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "ratio",
+    [
+        (1, None),      # no ratio at all
+        (None, 4),
+        (1, 1),         # a ratio that changes nothing
+        (0, 4),         # out of range
+        (1, 2000000),
+    ],
+)
+async def test_a_split_sent_without_a_usable_ratio_is_reported_not_raised(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider, ratio
+):
+    """The confirmation endpoint takes rows from the body, not from the file.
+
+    A split without a ratio used to reach the replay and trip an assertion;
+    it is reported against its line, like the read-time check does.
+    """
+    old_units, new_units = ratio
+    orders = [
+        AssetOrderImport(
+            row=1, ticker="AAPL", date=date(2026, 1, 15), kind="buy",
+            quantity=Decimal("10"), price=Decimal("100"),
+        ),
+        AssetOrderImport(
+            row=2, ticker="AAPL", date=date(2026, 3, 1), kind="split",
+            quantity=Decimal("0"), price=Decimal("0"),
+            old_units=old_units, new_units=new_units,
+        ),
+    ]
+
+    summary = await asset_import_service.import_orders(
+        session, test_workspace.id, test_user.id, orders,
+        market_provider=provider, dry_run=True,
+    )
+
+    assert summary["imported"] == 1
+    assert [(e.row, e.reason) for e in summary["errors"]] == [(2, "invalid_split")]
+
+
+@pytest.mark.asyncio
+async def test_a_new_holding_is_measured_against_the_price_it_is_created_with(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    """The size check has to see the quote, not only the units.
+
+    1000 units at $100 through a 1 → 100000 split is a chart value the
+    columns don't hold; it is refused against its line instead of failing in
+    the database and taking the whole file with it.
+    """
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,kind,old_units,new_units",
+        "AAPL,2026-01-15,1000,100.00,buy,,",
+        "AAPL,2026-03-01,,,split,1,100000",
+    ), provider)
+
+    assert summary["imported"] == 1
+    assert [(e.row, e.reason) for e in summary["errors"]] == [(3, "too_large")]
+    assert (await _only_asset(session, test_workspace)).units == Decimal("1000")
+
+
+class SellingWhileTheQuotesArrive(FakeProvider):
+    """Records a sale on the holding while the import fetches another quote."""
+
+    def __init__(self, session: AsyncSession, asset: Asset, workspace: Workspace):
+        super().__init__(known=("AAPL", "MSFT"))
+        self._session = session
+        self._asset = asset
+        self._workspace = workspace
+
+    async def get_quotes(self, symbols):
+        self._session.add(AssetTransaction(
+            asset_id=self._asset.id, workspace_id=self._workspace.id, kind="sell",
+            quantity=Decimal("5"), price=Decimal("120"), fee=Decimal("0"),
+            date=date(2026, 2, 1), source="manual",
+        ))
+        await self._session.flush()
+        return await super().get_quotes(symbols)
+
+
+@pytest.mark.asyncio
+async def test_a_sale_that_lands_while_the_quotes_are_fetched_is_seen_before_the_write(
+    session: AsyncSession, test_user: User, test_workspace: Workspace
+):
+    """The replay read the ledger before the quote fetch; the write re-reads it.
+
+    Without the second check the import commits a sale of 8 units on a
+    position a concurrent sale has already taken down to 5.
+    """
+    asset = await _apple_in_usd(session, test_user, test_workspace)
+    session.add(AssetTransaction(
+        asset_id=asset.id, workspace_id=test_workspace.id, kind="buy",
+        quantity=Decimal("10"), price=Decimal("100"), fee=Decimal("0"),
+        date=date(2026, 1, 15), source="manual",
+    ))
+    await session.commit()
+
+    provider = SellingWhileTheQuotesArrive(session, asset, test_workspace)
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,kind,old_units,new_units",
+        "AAPL,2026-03-01,8,120.00,sell,,",
+        "MSFT,2026-01-10,1,100.00,buy,,",
+    ), provider)
+
+    assert summary["holdings_created"] == 1
+    assert summary["imported"] == 1
+    assert [(e.row, e.reason) for e in summary["errors"]] == [(2, "oversell")]
+    written = (await session.execute(
+        select(AssetTransaction).where(
+            AssetTransaction.asset_id == asset.id, AssetTransaction.kind == "sell",
+        )
+    )).scalars().all()
+    assert [(tx.quantity, tx.date) for tx in written] == [(Decimal("5"), date(2026, 2, 1))]
