@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Git merge driver for the frontend. The fork formats with oxfmt and upstream
+# does not, so a plain merge conflicts on style alone. Formatting all three
+# sides first leaves only the real conflicts.
+# Registered by scripts/git/setup as: merge-oxfmt %O %A %B %P %L %S %X %Y
+set -uo pipefail
+base=$1 ours=$2 theirs=$3 path=$4 marker_size=$5
+labels=(-L "$7" -L "$6" -L "$8")
+root=$(git rev-parse --show-toplevel)
+
+oxfmt=${OXFMT:-$root/frontend/node_modules/.bin/oxfmt}
+if [[ ! -x $oxfmt ]]; then
+  oxfmt=$(command -v oxfmt) || {
+    echo "merge-oxfmt: oxfmt not found, merging $path unformatted" >&2
+    exec git merge-file --marker-size="$marker_size" "${labels[@]}" "$ours" "$base" "$theirs"
+  }
+fi
+
+format() {
+  "$oxfmt" -c "$root/frontend/.oxfmtrc.json" --stdin-filepath="$path" 2>/dev/null
+}
+
+# A merge that is already clean only needs formatting. Formatting first can
+# turn a reindented block into a conflict the raw sides merge cleanly.
+if git merge-file -p --marker-size="$marker_size" "${labels[@]}" "$ours" "$base" "$theirs" >"$ours.raw"; then
+  format <"$ours.raw" >"$ours" || cp "$ours.raw" "$ours"
+  rm -f "$ours.raw"
+  exit 0
+fi
+rm -f "$ours.raw"
+
+for side in "$base" "$ours" "$theirs"; do
+  # A side that does not parse is merged as it is.
+  if format <"$side" >"$side.oxfmt"; then
+    mv "$side.oxfmt" "$side"
+  else
+    rm -f "$side.oxfmt"
+  fi
+done
+
+exec git merge-file --marker-size="$marker_size" "${labels[@]}" "$ours" "$base" "$theirs"
