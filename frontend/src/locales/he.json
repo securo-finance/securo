@@ -1649,7 +1649,13 @@
     "priceChangeAmount": "{{old}} ← {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "אחרי הפסקה של {{days}} ימים",
-    "priceChangeInsufficient": "נדרשים לפחות 3 חיובים תואמים שנרשמו לפני ש-Securo מדווח על שינוי מחיר יציב."
+    "priceChangeInsufficient": "נדרשים לפחות 3 חיובים תואמים שנרשמו לפני ש-Securo מדווח על שינוי מחיר יציב.",
+    "summaryIncome": "הכנסות",
+    "summaryExpenses": "הוצאות",
+    "summaryNet": "נטו",
+    "summaryTransfers": "העברות שלא נכללו: {{count}}",
+    "summaryUnconverted": "ללא שער חליפין, לא נכללו: {{count}}",
+    "summaryFailed": "לא ניתן לטעון את סיכומי החודש"
   },
   "rules": {
     "searchPlaceholder": "חיפוש כללים...",

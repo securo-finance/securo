@@ -1699,7 +1699,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "Po przerwie wynoszącej {{days}} dni",
-    "priceChangeInsufficient": "Przed zgłoszeniem stabilnej zmiany ceny przez Securo potrzebne są co najmniej 3 powiązane zaksięgowane obciążenia."
+    "priceChangeInsufficient": "Przed zgłoszeniem stabilnej zmiany ceny przez Securo potrzebne są co najmniej 3 powiązane zaksięgowane obciążenia.",
+    "summaryIncome": "Przychody",
+    "summaryExpenses": "Wydatki",
+    "summaryNet": "Netto",
+    "summaryTransfers": "Pominięte przelewy: {{count}}",
+    "summaryUnconverted": "Bez kursu wymiany, pominięte: {{count}}",
+    "summaryFailed": "Nie udało się wczytać sum miesiąca"
   },
   "rules": {
     "searchPlaceholder": "Szukaj reguł...",

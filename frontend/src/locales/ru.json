@@ -1654,7 +1654,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "После паузы в {{days}} дней",
-    "priceChangeInsufficient": "Прежде чем Securo сообщит об устойчивом изменении цены, нужно не менее 3 связанных проведённых списаний."
+    "priceChangeInsufficient": "Прежде чем Securo сообщит об устойчивом изменении цены, нужно не менее 3 связанных проведённых списаний.",
+    "summaryIncome": "Доходы",
+    "summaryExpenses": "Расходы",
+    "summaryNet": "Итого",
+    "summaryTransfers": "Исключено переводов: {{count}}",
+    "summaryUnconverted": "Без курса, исключено: {{count}}",
+    "summaryFailed": "Не удалось загрузить итоги месяца"
   },
   "rules": {
     "searchPlaceholder": "Поиск правил...",

@@ -1637,7 +1637,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "After a {{days}}-day gap",
-    "priceChangeInsufficient": "At least 3 matched posted charges are needed before Securo reports a stable price change."
+    "priceChangeInsufficient": "At least 3 matched posted charges are needed before Securo reports a stable price change.",
+    "summaryIncome": "Bevételek",
+    "summaryExpenses": "Kiadások",
+    "summaryNet": "Nettó",
+    "summaryTransfers": "Kihagyott átvezetések: {{count}}",
+    "summaryUnconverted": "Árfolyam nélkül, kihagyva: {{count}}",
+    "summaryFailed": "Nem sikerült betölteni a hónap összesítőit"
   },
   "rules": {
     "searchPlaceholder": "Szabályok keresése...",

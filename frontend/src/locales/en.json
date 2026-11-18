@@ -1637,7 +1637,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "After a {{days}}-day gap",
-    "priceChangeInsufficient": "At least 3 matched posted charges are needed before Securo reports a stable price change."
+    "priceChangeInsufficient": "At least 3 matched posted charges are needed before Securo reports a stable price change.",
+    "summaryIncome": "Income",
+    "summaryExpenses": "Expenses",
+    "summaryNet": "Net",
+    "summaryTransfers": "Transfers left out: {{count}}",
+    "summaryUnconverted": "No exchange rate, left out: {{count}}",
+    "summaryFailed": "Couldn't load this month's totals"
   },
   "rules": {
     "searchPlaceholder": "Search rules...",

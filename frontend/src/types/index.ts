@@ -1042,6 +1042,17 @@ export interface RecurringPriceChangeHistory {
   changes: RecurringPriceChange[]
 }
 
+/** What the active recurring definitions expect in one month (#532). */
+export interface RecurringMonthSummary {
+  month: string
+  currency: string
+  income: string
+  expenses: string
+  net: string
+  transfer_count: number
+  unconverted_count: number
+}
+
 export interface ProjectedTransaction {
   recurring_id: string
   account_id: string | null

@@ -1654,7 +1654,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "Після паузи в {{days}} днів",
-    "priceChangeInsufficient": "Перш ніж Securo повідомить про стабільну зміну ціни, потрібні щонайменше 3 пов'язані проведені списання."
+    "priceChangeInsufficient": "Перш ніж Securo повідомить про стабільну зміну ціни, потрібні щонайменше 3 пов'язані проведені списання.",
+    "summaryIncome": "Доходи",
+    "summaryExpenses": "Витрати",
+    "summaryNet": "Підсумок",
+    "summaryTransfers": "Виключено переказів: {{count}}",
+    "summaryUnconverted": "Без курсу, виключено: {{count}}",
+    "summaryFailed": "Не вдалося завантажити підсумки місяця"
   },
   "rules": {
     "searchPlaceholder": "Пошук правил...",

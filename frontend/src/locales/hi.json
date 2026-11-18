@@ -1637,7 +1637,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "{{days}} दिनों के अंतराल के बाद",
-    "priceChangeInsufficient": "Securo द्वारा स्थिर कीमत परिवर्तन रिपोर्ट करने से पहले कम से कम 3 लिंक किए गए पोस्ट किए गए चार्ज आवश्यक हैं।"
+    "priceChangeInsufficient": "Securo द्वारा स्थिर कीमत परिवर्तन रिपोर्ट करने से पहले कम से कम 3 लिंक किए गए पोस्ट किए गए चार्ज आवश्यक हैं।",
+    "summaryIncome": "आय",
+    "summaryExpenses": "खर्च",
+    "summaryNet": "शुद्ध",
+    "summaryTransfers": "शामिल नहीं किए गए ट्रांसफ़र: {{count}}",
+    "summaryUnconverted": "विनिमय दर नहीं, शामिल नहीं: {{count}}",
+    "summaryFailed": "इस महीने के कुल लोड नहीं हो सके"
   },
   "rules": {
     "searchPlaceholder": "नियम खोजें...",

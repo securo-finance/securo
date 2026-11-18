@@ -1641,7 +1641,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "Após uma lacuna de {{days}} dias",
-    "priceChangeInsufficient": "São necessárias pelo menos 3 cobranças publicadas e vinculadas para relatar uma alteração de preço estável."
+    "priceChangeInsufficient": "São necessárias pelo menos 3 cobranças publicadas e vinculadas para relatar uma alteração de preço estável.",
+    "summaryIncome": "Receitas",
+    "summaryExpenses": "Despesas",
+    "summaryNet": "Saldo",
+    "summaryTransfers": "Transferências excluídas: {{count}}",
+    "summaryUnconverted": "Sem taxa de câmbio, excluídas: {{count}}",
+    "summaryFailed": "Não foi possível carregar os totais do mês"
   },
   "rules": {
     "searchPlaceholder": "Procurar regras...",

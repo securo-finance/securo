@@ -56,6 +56,7 @@ import type {
   RecurringTransaction,
   RecurringPriceChange,
   RecurringPriceChangeHistory,
+  RecurringMonthSummary,
   ProjectedTransaction,
   TransactionCalendarResponse,
   Budget,
@@ -1366,6 +1367,13 @@ export const recurring = {
   },
   priceHistory: async (id: string): Promise<RecurringPriceChangeHistory> => {
     const { data } = await api.get(`/recurring-transactions/${id}/price-changes`)
+    return data
+  },
+  /** `month` is `"YYYY-MM"`; totals come in the primary currency. */
+  monthSummary: async (month: string): Promise<RecurringMonthSummary> => {
+    const { data } = await api.get('/recurring-transactions/summary', {
+      params: { month: `${month}-01` },
+    })
     return data
   },
 }

@@ -37,6 +37,7 @@ import { formatAmountInput, ltrAmount, parseAmountInput } from '@/lib/format'
 import { Pencil, Trash2, Plus, RefreshCw, Info, History, TrendingUp, TrendingDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/page-header'
+import { RecurringMonthSummary } from '@/components/recurring-month-summary'
 import { CategorySelect } from '@/components/category-select'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -281,6 +282,7 @@ function RecurringTab() {
             ) : undefined
           }
         />
+        {recurringList && recurringList.length > 0 && <RecurringMonthSummary />}
         {recurringList && recurringList.length > 0 ? (
           <table className="w-full">
             <thead>

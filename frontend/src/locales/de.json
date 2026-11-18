@@ -1638,7 +1638,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "Nach einer Pause von {{days}} Tagen",
-    "priceChangeInsufficient": "Es werden mindestens 3 zugeordnete gebuchte Abbuchungen benötigt, bevor Securo eine stabile Preisänderung meldet."
+    "priceChangeInsufficient": "Es werden mindestens 3 zugeordnete gebuchte Abbuchungen benötigt, bevor Securo eine stabile Preisänderung meldet.",
+    "summaryIncome": "Einnahmen",
+    "summaryExpenses": "Ausgaben",
+    "summaryNet": "Netto",
+    "summaryTransfers": "Ausgenommene Umbuchungen: {{count}}",
+    "summaryUnconverted": "Ohne Wechselkurs, ausgenommen: {{count}}",
+    "summaryFailed": "Die Summen des Monats konnten nicht geladen werden"
   },
   "rules": {
     "searchPlaceholder": "Regeln suchen...",

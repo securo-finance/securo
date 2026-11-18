@@ -1637,7 +1637,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "{{days}} 日間の間隔を経て",
-    "priceChangeInsufficient": "Securoが安定した価格変更を報告するには、リンクされた確定取引が最低 3 件必要です。"
+    "priceChangeInsufficient": "Securoが安定した価格変更を報告するには、リンクされた確定取引が最低 3 件必要です。",
+    "summaryIncome": "収入",
+    "summaryExpenses": "支出",
+    "summaryNet": "純額",
+    "summaryTransfers": "除外した振替: {{count}}",
+    "summaryUnconverted": "為替レートなしで除外: {{count}}",
+    "summaryFailed": "今月の合計を読み込めませんでした"
   },
   "rules": {
     "searchPlaceholder": "ルールを検索...",

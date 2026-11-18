@@ -1641,7 +1641,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "Después de un intervalo de {{days}} días",
-    "priceChangeInsufficient": "Se necesitan al menos 3 cargos publicados y vinculados antes de que Securo informe un cambio de precio estable."
+    "priceChangeInsufficient": "Se necesitan al menos 3 cargos publicados y vinculados antes de que Securo informe un cambio de precio estable.",
+    "summaryIncome": "Ingresos",
+    "summaryExpenses": "Gastos",
+    "summaryNet": "Neto",
+    "summaryTransfers": "Transferencias excluidas: {{count}}",
+    "summaryUnconverted": "Sin tipo de cambio, excluidas: {{count}}",
+    "summaryFailed": "No se pudieron cargar los totales del mes"
   },
   "rules": {
     "searchPlaceholder": "Buscar reglas...",
