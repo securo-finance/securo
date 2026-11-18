@@ -26,7 +26,7 @@ class AssetImportRowError(BaseModel):
     """A row that will not be imported, and why, named by its line number."""
 
     row: int
-    reason: str  # missing_ticker | invalid_date | invalid_quantity | invalid_price | invalid_kind | unknown_ticker | oversell
+    reason: str  # missing_ticker | invalid_date | invalid_quantity | invalid_price | invalid_kind | unknown_ticker | oversell | no_fx_rate | possible_duplicate
     ticker: Optional[str] = None
     detail: Optional[str] = None
 

@@ -1254,6 +1254,39 @@ async def test_handle_oauth_callback_creates_connection(session: AsyncSession, t
 
 
 @pytest.mark.asyncio
+async def test_handle_oauth_callback_stores_a_simplefin_card_as_debt(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """SimpleFIN reports a card's debt as negative; the first import stores it
+    positive, as every later sync does, so the card never reads as credit."""
+    mock_provider = AsyncMock()
+    mock_provider.handle_oauth_callback = AsyncMock(return_value=ConnectionData(
+        external_id="sfin-1",
+        institution_name="Test Bank",
+        credentials={"token": "abc"},
+        accounts=[
+            AccountData(
+                external_id="card-1", name="Everyday Visa",
+                type="credit_card", balance=Decimal("-250.00"), currency="USD",
+            ),
+        ],
+    ))
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock):
+        conn = await handle_oauth_callback(
+            session, test_workspace.id, test_user.id, "auth-code", "simplefin"
+        )
+
+    card = (
+        await session.execute(select(Account).where(Account.connection_id == conn.id))
+    ).scalar_one()
+    assert card.balance == Decimal("250.00")
+
+
+@pytest.mark.asyncio
 async def test_handle_oauth_callback_names_disambiguated_account_from_institution(
     session: AsyncSession, test_user, test_workspace,
 ):
@@ -2191,10 +2224,11 @@ def _eb_late_ref_payload(
     *,
     remittance: str = "COMPRA TARJ. 5540XXXXXXXX1234 TIENDA CENTRO",
     currency: str = "EUR",
+    transaction_date: str | None = None,
 ) -> dict:
     """A booked card purchase, as returned before and after the bank fills in
     its reference."""
-    return {
+    raw = {
         "entry_reference": entry_ref,
         "transaction_amount": {"currency": currency, "amount": "149.90"},
         "credit_debit_indicator": "DBIT",
@@ -2203,6 +2237,9 @@ def _eb_late_ref_payload(
         "value_date": "2026-09-03",
         "remittance_information": [remittance],
     }
+    if transaction_date is not None:
+        raw["transaction_date"] = transaction_date
+    return raw
 
 
 def _eb_late_ref_row(
@@ -2242,6 +2279,37 @@ async def test_sync_connection_enable_banking_rekeys_row_whose_reference_arrived
     raw_data = rows[0].raw_data
     assert raw_data is not None
     assert raw_data["entry_reference"] == "2026-09-03.1"
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_adopts_a_row_stored_with_the_booking_date(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """#790: a row stored before the date order changed carries the booking
+    date, while its payload names an earlier transaction date. The reference
+    arrives on a later fetch, and the held row takes the new id instead of
+    gaining a twin, because the payload still gives that entry's date."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    stored_raw = _eb_late_ref_payload(None, transaction_date="2026-09-01")
+    first = _eb_txn(stored_raw)
+    held = _eb_late_ref_row(test_user.id, test_workspace.id, account, first)
+    # The row was dated the way the provider read the payload before #790.
+    held.date = date(2026, 9, 3)
+    session.add(held)
+    await session.commit()
+    held_id = held.id
+
+    refetched = _eb_txn(
+        _eb_late_ref_payload("2026-09-02.1", transaction_date="2026-09-01")
+    )
+    assert refetched.date == date(2026, 9, 1)
+    assert refetched.external_id != first.external_id
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [refetched])
+
+    rows = await _account_rows(session, account_id)
+    assert [row.id for row in rows] == [held_id]
+    assert rows[0].external_id == refetched.external_id
 
 
 @pytest.mark.asyncio
@@ -6783,6 +6851,66 @@ async def test_sync_normalizes_simplefin_card_balance_to_positive_for_debt(
 
 
 @pytest.mark.asyncio
+async def test_sync_states_an_enable_banking_card_debt_from_the_stored_limit(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Enable Banking reports a card's free credit, and the bank may not send
+    the limit at all. The limit already stored on the account is what turns
+    that into the debt Securo keeps (issue #624)."""
+    conn = BankConnection(
+        id=uuid.uuid4(), user_id=test_user.id, provider="enable_banking",
+        external_id=f"ext-eb-{uuid.uuid4().hex[:8]}",
+        institution_name="mBank", credentials={"session_id": "sess"},
+        status="active", last_sync_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn)
+    await session.commit()
+
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn.id, external_id="card-1", name="mBank Card",
+        type="credit_card", balance=Decimal("0.00"), currency="PLN",
+        credit_limit=Decimal("5000.00"),
+    )
+    session.add(account)
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"session_id": "sess"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="card-1", name="mBank Card", type="credit_card",
+            balance=Decimal("0"), currency="PLN",
+            available_credit=Decimal("4900.00"),
+        ),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+    mock_provider.get_bills = AsyncMock(return_value=[])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    await session.refresh(account)
+    # 5000 of limit less 4900 still free: the card owes 100, which is what the
+    # account balance stores for a liability.
+    assert account.balance == Decimal("100.00")
+    assert account.credit_limit == Decimal("5000.00")
+
+    # And what the screens read: the same three numbers the bank's app shows.
+    from app.services.account_service import get_account_with_balances
+
+    payload = await get_account_with_balances(session, account.id, test_workspace.id)
+    assert payload is not None
+    assert payload["current_balance"] == pytest.approx(-100.0)
+    assert payload["credit_limit"] == pytest.approx(5000.0)
+    assert payload["available_credit"] == pytest.approx(4900.0)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("provider", ["simplefin", "pluggy", "enable_banking"])
 @pytest.mark.parametrize("account_type,provider_type,reported,stored", [
     # No override: a checking account keeps the provider's balance verbatim.
@@ -9057,3 +9185,84 @@ async def test_reserved_balance_in_another_currency_is_stored_but_not_summed(
     payload = serialize_account(account, None, None)
     assert [r["currency"] for r in payload["reserved_balances"]] == ["USD"]
     assert payload["reserved_total"] == 0.0
+
+
+async def _simplefin_resync(session, conn, workspace_id, user_id, raw_txn: dict) -> None:
+    """Run one sync of a SimpleFIN card account whose feed holds `raw_txn`."""
+    import httpx
+
+    from app.providers.simplefin import SimpleFinProvider
+    from tests.test_providers_simplefin import _patched_client
+
+    bridge = {"conn_id": "C-CITI", "name": "Citi", "org_id": "CITI"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        account = {
+            "id": "acc-card", "name": "Citi Card", "currency": "USD",
+            "balance": "-25.00", "balance-date": raw_txn["posted"],
+        }
+        if request.url.params.get("account") == "acc-card":
+            account = {**account, "transactions": [raw_txn]}
+        return httpx.Response(
+            200, json={"errlist": [], "connections": [bridge], "accounts": [account]}
+        )
+
+    with patch("app.services.connection_service.get_provider", return_value=SimpleFinProvider()), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock), \
+         _patched_client(handler):
+        await sync_connection(session, conn.id, workspace_id, user_id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("user_renamed_payee", [False, True])
+async def test_simplefin_resync_takes_the_corrected_charge_under_the_same_id(
+    session: AsyncSession, test_user, test_workspace, user_renamed_payee,
+):
+    """A provisional card charge corrected under the same id (#1398).
+
+    Citi first sends a purchase as a positive amount under a category label,
+    then corrects it to a negative charge with the merchant name. The stored
+    row must follow the correction where the user never changed it, so the
+    purchase stops counting as income, and keep what the user did change.
+    """
+    conn = await _make_connection(session, test_user.id, "Citi")
+    conn.provider = "simplefin"
+    conn.credentials = {"access_url": "https://u:p@bridge.example/simplefin"}
+    await session.commit()
+
+    posted = int(datetime.now(timezone.utc).timestamp()) - 86400
+    provisional = {
+        "id": "TRN-1398", "posted": posted, "amount": "25.00",
+        "description": "FAST FOOD RESTAURANTS", "payee": "Fast Food Restaurants",
+        "pending": True,
+    }
+    await _simplefin_resync(session, conn, test_workspace.id, test_user.id, provisional)
+    tx = (await session.execute(
+        select(Transaction).where(Transaction.external_id == "TRN-1398")
+    )).scalar_one()
+    assert (tx.type, tx.amount, tx.payee) == ("credit", Decimal("25.00"), "Fast Food Restaurants")
+    if user_renamed_payee:
+        tx.payee = "My Burger Place"
+        await session.commit()
+
+    corrected = {
+        **provisional, "amount": "-25.00",
+        "description": "MERCHANT 1234 CITYNAME ST", "payee": "Merchant",
+    }
+    await _simplefin_resync(session, conn, test_workspace.id, test_user.id, corrected)
+    await session.refresh(tx)
+
+    rows = (await session.execute(
+        select(Transaction).where(Transaction.external_id == "TRN-1398")
+    )).scalars().all()
+    assert len(rows) == 1
+    assert tx.type == "debit"
+    assert tx.amount == Decimal("25.00")
+    assert tx.description == "MERCHANT 1234 CITYNAME ST"
+    if user_renamed_payee:
+        assert tx.payee == "My Burger Place"
+    else:
+        assert tx.payee == "Merchant"
+        assert tx.payee_id is not None
