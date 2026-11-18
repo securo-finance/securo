@@ -1,7 +1,7 @@
 """recurring schedule rules: business day, holidays, grace, keywords, tolerance
 
-Revision ID: 114
-Revises: 113
+Revision ID: 126
+Revises: 125
 
 Adds the rules a salary paid on the fifth business day and a rent that may be
 paid a day late need, and repairs two kinds of rows the old API let through:
@@ -19,8 +19,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "114"
-down_revision = "113"
+revision = "126"
+down_revision = "125"
 branch_labels = None
 depends_on = None
 

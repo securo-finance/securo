@@ -1,7 +1,7 @@
 """recurring holiday calendars: any country, with subdivisions
 
-Revision ID: 115
-Revises: 114
+Revision ID: 127
+Revises: 126
 
 ``holiday_calendar`` held only ``BR``. It now takes any country the
 ``holidays`` package supports, optionally with a subdivision (``BR-SP``,
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "115"
-down_revision = "114"
+revision = "127"
+down_revision = "126"
 branch_labels = None
 depends_on = None
 
