@@ -53,11 +53,12 @@ repository.
 1. The workspace owner installs the plugin from the catalog; only the owner
    can add, update or remove a plugin with code. Before anything is applied,
    the preview shows what the owner agrees to: every host in `network` and
-   every scope in `api_scopes`, each with its `purpose`, the integrations with
-   their `auth` and `provides`, and the connections a change would remove.
-   On an update it also names the hosts and scopes the installed version
-   didn't have. Confirming applies that exact commit; if the catalog or the
-   workspace moved since the preview, nothing is applied.
+   every scope in `api_scopes`, each with its `purpose`, the integrations that
+   provide records, with the kinds they provide, and the connections a change
+   would remove. On an update it also names the hosts and scopes the
+   installed version didn't have. Confirming applies that exact commit; if
+   the catalog moved, or anything the preview showed changed in the workspace
+   (the plugin's items or its connections), nothing is applied.
 2. Someone adds a connection: they fill in the integration's `fields` (or sign
    in, with `auth: "oauth"`). Secret fields are sealed by
    `backend/app/plugins/vault.py`; they never go into
@@ -104,7 +105,7 @@ not ignored. What a provider plugin sets:
 |-----|------------|
 | `id` | `owner/name`, lower case. It keys the install and its connections, so it never changes |
 | `name`, `description` | Translated text: one plain string (read as English) or a map of locale to text with at least `en` |
-| `version`, `min_securo_version` | Semantic versions, `1.4.0` |
+| `version`, `min_securo_version` | Versions `MAJOR.MINOR.PATCH`, digits only (`1.4.0`); no pre-release or build suffix, no leading zeros |
 | `repository`, `license` | The plugin's GitHub repository (`https://github.com/owner/repo`) and its license |
 | `workspaces` | `personal`, `business` or both; both when left out |
 | `contributes.integrations` | What a person connects: `key`, `name`, optional `description`, `auth`, `fields`, `sync_minutes`, `provides` |
