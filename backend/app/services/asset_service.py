@@ -1279,6 +1279,24 @@ async def refresh_market_price_asset(
     return True
 
 
+async def _last_split_dates(
+    session: AsyncSession, asset_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, date]:
+    """Date of each holding's latest split up to today, in one query."""
+    if not asset_ids:
+        return {}
+    rows = await session.execute(
+        select(AssetTransaction.asset_id, func.max(AssetTransaction.date))
+        .where(
+            AssetTransaction.asset_id.in_(asset_ids),
+            AssetTransaction.kind == "split",
+            AssetTransaction.date <= app_today(),
+        )
+        .group_by(AssetTransaction.asset_id)
+    )
+    return {aid: d for aid, d in rows.all()}
+
+
 async def refresh_all_market_prices(
     session: AsyncSession,
     *,
@@ -1286,11 +1304,12 @@ async def refresh_all_market_prices(
 ) -> dict[str, int]:
     """Refresh every non-archived market-priced asset in the database.
 
-    Uses the provider's batch ``get_latest_prices`` endpoint when possible —
+    Uses the provider's batch ``get_latest_closes`` endpoint when possible —
     one HTTP request covers the whole portfolio via ``yfinance.download``
     instead of one call per asset. Falls back silently to per-asset refresh
     if the batch returns nothing (provider without bulk support, or a hard
-    failure on Yahoo's end).
+    failure on Yahoo's end). A close from before the holding's latest
+    recorded split is skipped, not stored.
 
     Returns a summary counting successes, skips, and rate-limit halts —
     surfaced as the Celery task's return payload for observability.
@@ -1311,17 +1330,19 @@ async def refresh_all_market_prices(
     provider = market_provider or get_market_price_provider()
     tickers = [a.ticker for a in assets if a.ticker]
 
-    # Batch path: one request → dict[SYMBOL, price]. On rate-limit we halt
+    # Batch path: one request → dict[SYMBOL, close]. On rate-limit we halt
     # immediately — retrying within the same task would just pile on 429s
     # and risk an IP-level cookie ban.
     try:
-        prices = await provider.get_latest_prices(tickers)
+        closes = await provider.get_latest_closes(tickers)
     except MarketPriceRateLimitedError:
         logger.warning("Yahoo rate-limited the batch fetch; skipping this cycle")
         return {"refreshed": 0, "skipped": len(assets), "rate_limited": 1}
     except Exception as e:
         logger.warning("Batch price fetch failed, falling back to per-asset: %s", e)
-        prices = {}
+        closes = {}
+
+    last_split = await _last_split_dates(session, [a.id for a in assets])
 
     refreshed = 0
     skipped = 0
@@ -1330,7 +1351,16 @@ async def refresh_all_market_prices(
         if not asset.ticker:
             skipped += 1
             continue
-        price = prices.get(asset.ticker.upper()) if prices else None
+        close = closes.get(asset.ticker.upper()) if closes else None
+        split_on = last_split.get(asset.id)
+        if close is not None and close.on is not None and split_on is not None and close.on < split_on:
+            # Before the market opens on a split day, the latest close is the
+            # previous session's, per pre-split unit. Stored under today it
+            # would be multiplied by the units after the split (issue #1357),
+            # so wait for a close from the split day on.
+            skipped += 1
+            continue
+        price = close.price if close is not None else None
         if price is None:
             # Per-asset fallback: the batch missed this symbol (delisted
             # ticker, one-off provider error, etc.). Try the full quote
