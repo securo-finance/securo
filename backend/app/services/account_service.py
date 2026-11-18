@@ -794,13 +794,21 @@ async def sync_opening_balance_for_connected_account(
 
     offset = Decimal(str(target)) - tx_sum
 
+    # An account should carry one synthetic opening, but duplicates exist in
+    # the wild (#1317). The offset above is computed from the other rows
+    # alone, so keep the newest opening and drop the rest: the kept one then
+    # takes the whole offset and the balance still reconciles.
     existing = await session.execute(
-        select(Transaction).where(
+        select(Transaction)
+        .where(
             Transaction.account_id == account.id,
             Transaction.source == "opening_balance",
         )
+        .order_by(Transaction.created_at.desc(), Transaction.id.desc())
     )
-    existing_tx = existing.scalar_one_or_none()
+    existing_tx, *duplicates = existing.scalars().all() or [None]
+    for duplicate in duplicates:
+        await session.delete(duplicate)
 
     # Offsets below one cent are rounding noise; drop any stale opening tx.
     if abs(offset) < Decimal("0.01"):
