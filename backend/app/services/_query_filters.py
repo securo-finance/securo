@@ -536,7 +536,10 @@ async def _owner_split_rows(
 
 
 async def _others_share_in_primary(
-    session: AsyncSession, row, primary_currency: Optional[str]
+    session: AsyncSession,
+    row,
+    primary_currency: Optional[str],
+    rates: dict[tuple[str, date], Optional[Decimal]],
 ) -> Optional[Decimal]:
     """The non-owner shares of one row, in the primary currency.
 
@@ -545,7 +548,9 @@ async def _others_share_in_primary(
     the totals they are subtracted from were built with (#1337). A row with
     no stored conversion is converted at its date, and a missing rate gives
     ``None``: the 1:1 fallback would turn a foreign share into the same
-    number in the primary currency.
+    number in the primary currency. ``rates`` keeps each currency and date
+    the aggregation resolved, found or not, so a day with no rate is looked
+    up once rather than once per row.
     """
     _id, _cat, _type, currency, amount, amount_primary, tx_date, others = row
     others = Decimal(str(others or 0))
@@ -559,12 +564,17 @@ async def _others_share_in_primary(
     if (currency or "").upper() == primary_currency.upper():
         return others
 
-    from app.services.fx_rate_service import convert_or_none
+    from app.services import fx_rate_service
 
-    converted, _ = await convert_or_none(
-        session, others, currency, primary_currency, tx_date
-    )
-    return converted
+    key = (currency, tx_date)
+    if key not in rates:
+        rates[key] = await fx_rate_service._resolve_rate(
+            session, currency, primary_currency, tx_date
+        )
+    rate = rates[key]
+    if rate is None:
+        return None
+    return (others * rate).quantize(Decimal("0.01"))
 
 
 async def owner_split_offset_pnl(
@@ -588,10 +598,11 @@ async def owner_split_offset_pnl(
     rows = await _owner_split_rows(
         session, user_id, month_start, month_end, use_effective_date, workspace_id
     )
+    rates: dict[tuple[str, date], Optional[Decimal]] = {}
     income_total = Decimal("0")
     expense_total = Decimal("0")
     for row in rows:
-        share = await _others_share_in_primary(session, row, primary_currency)
+        share = await _others_share_in_primary(session, row, primary_currency, rates)
         if share is None:
             continue
         if row.type == "credit":
@@ -622,9 +633,10 @@ async def owner_split_offset_by_category(
         workspace_id,
         extra_filters=(Transaction.type == "debit",),
     )
+    rates: dict[tuple[str, date], Optional[Decimal]] = {}
     totals: dict = {}
     for row in rows:
-        share = await _others_share_in_primary(session, row, primary_currency)
+        share = await _others_share_in_primary(session, row, primary_currency, rates)
         if share is None:
             continue
         totals[row.category_id] = totals.get(row.category_id, Decimal("0")) + share

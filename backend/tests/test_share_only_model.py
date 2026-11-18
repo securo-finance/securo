@@ -1237,3 +1237,43 @@ async def test_foreign_split_in_accrual_mode_uses_the_row_rate(
         session, test_user.id, may_start, may_end, primary_currency="BRL"
     )
     assert cash == {}
+
+
+@pytest.mark.asyncio
+async def test_unstamped_foreign_splits_look_up_a_missing_rate_once(
+    session: AsyncSession, test_user, test_workspace, test_categories, monkeypatch
+):
+    """Several unconverted rows on one currency and date resolve the rate
+    once per aggregation, so a day the provider has no rate for is not
+    fetched again for every row."""
+    from app.services import fx_rate_service
+    from app.services._query_filters import (
+        owner_split_offset_by_category,
+        owner_split_offset_pnl,
+    )
+
+    await _force_user_currency(session, test_user, "BRL")
+    today = date.today()
+    for category in test_categories[:3]:
+        await _foreign_split(
+            session, test_user, test_workspace, "20.00", None, "10.00",
+            when=today, category_id=category.id,
+        )
+    calls: list[tuple] = []
+
+    async def _no_rate(session, from_currency, to_currency, target_date=None, **kwargs):
+        calls.append((from_currency, to_currency, target_date))
+        return None
+
+    monkeypatch.setattr(fx_rate_service, "_resolve_rate", _no_rate)
+    month_start, month_end = _month_window(today)
+
+    assert await owner_split_offset_by_category(
+        session, test_user.id, month_start, month_end, primary_currency="BRL"
+    ) == {}
+    assert calls == [("USD", "BRL", today)]
+    calls.clear()
+    assert await owner_split_offset_pnl(
+        session, test_user.id, month_start, month_end, primary_currency="BRL"
+    ) == (0.0, 0.0)
+    assert calls == [("USD", "BRL", today)]
