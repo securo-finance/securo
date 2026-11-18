@@ -2141,6 +2141,7 @@
     "updated": "Activo actualizado",
     "deleted": "Activo eliminado",
     "confirmDelete": "¿Seguro que quieres eliminar este activo y todo su historial de valores?",
+    "confirmDeleteSynced": "Si la importación de activos está activada en esta conexión, la próxima sincronización traerá este activo de vuelta. Desactiva la importación de activos en los ajustes de la conexión para que siga eliminado.",
     "confirmDeleteTitle": "¿Eliminar activo?",
     "addValue": "Agregar valor",
     "valueHistory": "Historial de valores",

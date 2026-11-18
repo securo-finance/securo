@@ -2139,6 +2139,7 @@
     "updated": "Item bijgewerkt",
     "deleted": "Item verwijderd",
     "confirmDelete": "Weet u zeker dat u dit item en de gehele waardegeschiedenis ervan wilt verwijderen?",
+    "confirmDeleteSynced": "Als het importeren van bezittingen voor deze koppeling aan staat, haalt de volgende synchronisatie dit item terug. Zet het importeren van bezittingen uit in de koppelingsinstellingen om het verwijderd te houden.",
     "confirmDeleteTitle": "Item verwijderen?",
     "addValue": "Voeg waarde toe",
     "valueHistory": "Waardegeschiedenis",

@@ -2141,6 +2141,7 @@
     "updated": "Bene aggiornato",
     "deleted": "Bene eliminato",
     "confirmDelete": "Sei sicuro di voler eliminare questo bene e tutta la sua cronologia di valore?",
+    "confirmDeleteSynced": "Se l’importazione dei beni è attiva per questa connessione, la prossima sincronizzazione riporterà questo bene. Disattiva l’importazione dei beni nelle impostazioni della connessione perché resti eliminato.",
     "confirmDeleteTitle": "Eliminare il bene?",
     "addValue": "Aggiungi valore",
     "valueHistory": "Cronologia valore",

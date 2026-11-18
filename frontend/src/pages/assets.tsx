@@ -904,7 +904,7 @@ export default function AssetsPage() {
                 <button onClick={(e) => { e.stopPropagation(); if (!isProviderOwned) openEdit(asset) }} disabled={isProviderOwned} title={isProviderOwned ? t('assets.syncedReadOnly') : t('common.edit')} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                   <Pencil size={13} />
                 </button>
-                <button onClick={(e) => { e.stopPropagation(); if (!isProviderOwned) setDeletingId(asset.id) }} disabled={isProviderOwned} title={isProviderOwned ? t('assets.syncedReadOnly') : t('common.delete')} className="p-1 rounded text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                <button onClick={(e) => { e.stopPropagation(); setDeletingId(asset.id) }} title={t('common.delete')} aria-label={t('common.delete')} className="p-1 rounded text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-colors">
                   <Trash2 size={13} />
                 </button>
               </>
@@ -1687,6 +1687,9 @@ export default function AssetsPage() {
             <DialogTitle>{t('assets.confirmDeleteTitle')}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">{t('assets.confirmDelete')}</p>
+          {assetsList?.find(a => a.id === deletingId)?.connection_id && (
+            <p className="text-sm text-amber-600 dark:text-amber-400">{t('assets.confirmDeleteSynced')}</p>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeletingId(null)}>
               {t('common.cancel')}

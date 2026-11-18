@@ -2234,6 +2234,7 @@
     "updated": "Zaktualizowano aktywo",
     "deleted": "Usunięto aktywo",
     "confirmDelete": "Czy na pewno usunąć to aktywo i całą jego historię wartości?",
+    "confirmDeleteSynced": "Jeśli import aktywów jest włączony dla tego połączenia, następna synchronizacja przywróci to aktywo. Wyłącz import aktywów w ustawieniach połączenia, aby pozostało usunięte.",
     "confirmDeleteTitle": "Usunąć aktywo?",
     "addValue": "Dodaj wartość",
     "valueHistory": "Historia wartości",
