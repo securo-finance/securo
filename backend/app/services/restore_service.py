@@ -180,11 +180,15 @@ def _check_expansion(archive: zipfile.ZipFile) -> None:
     Runs before the first entry is read: the sizes come from the central
     directory, so refusing here costs one pass over the header, not the
     decompression the check exists to prevent.
+
+    Directory-named entries are checked too. A zip entry whose name ends in
+    `/` is reported as a directory, but nothing stops it from carrying content,
+    and `open_archive` reads every `attachments/...` name without asking
+    whether it is one — so skipping them would leave the size limit open to
+    exactly the upload it exists to refuse.
     """
     total = 0
     for info in archive.infolist():
-        if info.is_dir():
-            continue
         if info.file_size > _MAX_ENTRY_BYTES:
             raise RestoreError(
                 f"This backup holds an entry larger than {_MAX_ENTRY_BYTES // (1024 * 1024)} MB; "
@@ -274,6 +278,37 @@ def _check_recurring_duplicates(contents: ArchiveContents) -> None:
             raise RestoreError(
                 f'This backup holds two identical recurring bills ("{description}", '
                 f"{frequency} from {start_date}); this version keeps one per person in a workspace."
+            )
+        seen.add(key)
+
+
+def _check_budget_duplicates(contents: ArchiveContents) -> None:
+    """Refuse an archive whose budgets collide once they all belong to one person.
+
+    A budget is unique per (person, category, month, type). Every restored row
+    is written for whoever runs the restore, so two members budgeting the same
+    category for the same month in the source workspace become the same
+    person's duplicate, which the database refuses halfway through the copy.
+    Naming the category and month beats a constraint error surfacing as a 500.
+    """
+    names = {
+        str(row.get("id")): str(row.get("name"))
+        for row in contents.entities.get("categories", [])
+        if row.get("name")
+    }
+    seen: set[tuple[str, str, bool]] = set()
+    for row in contents.entities.get("budgets", []):
+        category_id = str(row.get("category_id"))
+        month = str(row.get("month"))
+        recurring = bool(row.get("is_recurring"))
+        key = (category_id, month, recurring)
+        if key in seen:
+            name = names.get(category_id)
+            label = f'"{name}"' if name else "a category"
+            kind = "recurring" if recurring else "one-off"
+            raise RestoreError(
+                f"This backup holds two {kind} budgets for {label} in {month}; "
+                "every restored row belongs to one person, who keeps one budget per category and month."
             )
         seen.add(key)
 
@@ -486,6 +521,7 @@ async def restore_workspace(
     """
     _check_versions(contents.metadata)
     _check_recurring_duplicates(contents)
+    _check_budget_duplicates(contents)
 
     settings_block = contents.workspace
     kind = settings_block.get("kind") if settings_block.get("kind") in WORKSPACE_KINDS else "personal"

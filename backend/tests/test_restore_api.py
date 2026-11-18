@@ -618,6 +618,58 @@ async def test_restore_refuses_an_archive_with_two_identical_bills(
 
 
 @pytest.mark.asyncio
+async def test_restore_refuses_an_archive_with_two_budgets_for_the_same_category(
+    client: AsyncClient,
+    session: AsyncSession,
+    auth_headers,
+    test_workspace,
+    test_user: User,
+    test_categories: list[Category],
+):
+    """A budget is unique per person, category, month and type.
+
+    Two members budgeting the same category for the same month in the source
+    workspace become the same person's duplicates once the copy writes every
+    row for whoever restores. Refusing the file names the category and month
+    instead of letting the unique constraint surface as a 500 halfway through.
+    """
+    month = date.today().replace(day=1)
+    member = User(
+        id=uuid.uuid4(),
+        email="member@example.com",
+        hashed_password="not-used",
+        is_active=True,
+        is_verified=True,
+    )
+    session.add(member)
+    await session.flush()
+    session.add(WorkspaceMember(workspace_id=test_workspace.id, user_id=member.id, role="editor"))
+    session.add_all(
+        Budget(
+            id=uuid.uuid4(),
+            user_id=owner_id,
+            workspace_id=test_workspace.id,
+            category_id=test_categories[0].id,
+            amount=Decimal("500.00"),
+            month=month,
+        )
+        for owner_id in (test_user.id, member.id)
+    )
+    await session.commit()
+
+    before = (await session.execute(select(Workspace))).scalars().all()
+    exported = await client.get("/api/export/backup", headers=auth_headers)
+    response = await _restore(client, auth_headers, exported.content)
+
+    assert response.status_code == 400, response.text
+    detail = response.json()["detail"]
+    assert test_categories[0].name in detail
+    assert month.isoformat() in detail
+    after = (await session.execute(select(Workspace))).scalars().all()
+    assert len(after) == len(before)
+
+
+@pytest.mark.asyncio
 async def test_restore_writes_nothing_when_the_file_is_refused(
     client: AsyncClient, session: AsyncSession, auth_headers
 ):
@@ -679,6 +731,27 @@ async def test_restore_refuses_an_archive_that_expands_past_the_entry_limit(
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("metadata.json", json.dumps({"pad": "x" * 4096}))
+
+    response = await _restore(client, auth_headers, buf.getvalue())
+
+    assert response.status_code == 400
+    assert "larger than" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_restore_refuses_a_directory_named_entry_that_expands_past_the_limit(
+    client: AsyncClient, auth_headers, monkeypatch
+):
+    """A name ending in `/` is reported as a directory, not forbidden from holding bytes.
+
+    `open_archive` reads every `attachments/...` entry, directory flag or not,
+    so the size limit has to count those entries too.
+    """
+    monkeypatch.setattr(restore_service, "_MAX_ENTRY_BYTES", 1024)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("metadata.json", "{}")
+        zf.writestr("attachments/payload/", "x" * 4096)
 
     response = await _restore(client, auth_headers, buf.getvalue())
 
