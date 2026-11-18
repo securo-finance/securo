@@ -2257,6 +2257,7 @@ async def _find_settled_eb_hold(
     account_id: uuid.UUID,
     txn_data,
     live_external_ids: set[str],
+    incoming_batch: Sequence[TransactionData] = (),
 ) -> Optional[Transaction]:
     """The pending Enable Banking hold that a booked entry settles, if unique.
 
@@ -2314,14 +2315,57 @@ async def _find_settled_eb_hold(
     # when the charge's reference starts with the purchase date, only a
     # blank hold of that date counts.
     purchase_date = _eb_purchase_date(raw, txn_data.date)
-    blank = [
-        candidate
+    blank_pairs = [
+        (candidate, held)
         for candidate, held in gone
-        if _eb_counterparty(held) is None
-        and _eb_remittance(held) is None
-        and (purchase_date is None or _eb_entry_date(held) == purchase_date)
+        if _eb_counterparty(held) is None and _eb_remittance(held) is None
     ]
+    if purchase_date is not None:
+        blank_pairs = [
+            (candidate, held)
+            for candidate, held in blank_pairs
+            if _eb_entry_date(held) == purchase_date
+        ]
+    else:
+        # The entries of a fetch are matched one at a time, so an undated
+        # charge listed first would take the hold of another charge listed
+        # later whose reference names that hold's date. Let the dated charge
+        # settle its own hold: it is the one the reference points at.
+        blank_pairs = [
+            (candidate, held)
+            for candidate, held in blank_pairs
+            if not _eb_dated_charge_in_batch(
+                held, txn_data, incoming_batch,
+            )
+        ]
+    blank = [candidate for candidate, _ in blank_pairs]
     return blank[0] if len(blank) == 1 else None
+
+
+def _eb_dated_charge_in_batch(
+    held: dict, txn_data, incoming_batch: Sequence[TransactionData],
+) -> bool:
+    """Whether another entry of this fetch names `held`'s date in its
+    reference, so it is the charge that settles this hold and not the
+    undated one being matched now."""
+    held_date = _eb_entry_date(held)
+    if held_date is None:
+        return False
+    for other in incoming_batch:
+        if (
+            other.external_id == txn_data.external_id
+            or other.amount != txn_data.amount
+            or other.currency != txn_data.currency
+            or other.type != txn_data.type
+            or other.status != "posted"
+        ):
+            continue
+        other_raw = other.raw_data if isinstance(other.raw_data, dict) else {}
+        if _eb_counterparty(other_raw) is None and _eb_remittance(other_raw) is None:
+            continue
+        if _eb_purchase_date(other_raw, other.date) == held_date:
+            return True
+    return False
 
 
 def _eb_purchase_date(raw: dict, booked_on: date) -> Optional[date]:
@@ -2598,7 +2642,9 @@ async def _find_synced_duplicate(
     # Path 6: Enable Banking hold settled under a new reference and date, see
     # `_find_settled_eb_hold`. Last, so it never takes a row another path
     # would have matched. Only Enable Banking syncs pass `live_external_ids`.
-    return await _find_settled_eb_hold(session, account_id, txn_data, live_external_ids)
+    return await _find_settled_eb_hold(
+        session, account_id, txn_data, live_external_ids, incoming_batch,
+    )
 
 
 def _relink_bill(

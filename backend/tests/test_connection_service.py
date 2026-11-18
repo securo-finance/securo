@@ -2950,6 +2950,40 @@ async def test_sync_connection_enable_banking_blank_hold_by_purchase_date(
 
 
 @pytest.mark.asyncio
+async def test_sync_connection_enable_banking_blank_hold_waits_for_the_dated_charge(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Two charges of one fetch can settle the same blank hold. The one whose
+    reference names the hold's date settles it, whichever the feed lists
+    first: an undated charge listed before the dated one must not take the
+    hold and leave the dated charge beside it with the user's edits on the
+    wrong row."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    hold = _blank_hold_payload("2026-10-22")
+    undated = _dated_charge_payload(
+        "2026-10-23", None, entry_ref="261023000000YY0000", merchant="Unknown Cafe",
+    )
+    dated = _dated_charge_payload("2026-10-23", "261022000000")
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, await _eb_fetch([], [hold]))
+
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id,
+        await _eb_fetch([undated, dated], []),
+    )
+
+    rows = await _account_rows(session, account_id)
+    claimed = [row for row in rows if row.date == date(2026, 10, 22)]
+    assert len(claimed) == 1
+    assert (claimed[0].status, claimed[0].payee) == ("posted", "Example Restaurant")
+    assert sorted((row.date, row.status) for row in rows) == [
+        (date(2026, 10, 22), "posted"),
+        (date(2026, 10, 23), "posted"),
+    ]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "hold",
     [
