@@ -1254,6 +1254,39 @@ async def test_handle_oauth_callback_creates_connection(session: AsyncSession, t
 
 
 @pytest.mark.asyncio
+async def test_handle_oauth_callback_stores_a_simplefin_card_as_debt(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """SimpleFIN reports a card's debt as negative; the first import stores it
+    positive, as every later sync does, so the card never reads as credit."""
+    mock_provider = AsyncMock()
+    mock_provider.handle_oauth_callback = AsyncMock(return_value=ConnectionData(
+        external_id="sfin-1",
+        institution_name="Test Bank",
+        credentials={"token": "abc"},
+        accounts=[
+            AccountData(
+                external_id="card-1", name="Everyday Visa",
+                type="credit_card", balance=Decimal("-250.00"), currency="USD",
+            ),
+        ],
+    ))
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock):
+        conn = await handle_oauth_callback(
+            session, test_workspace.id, test_user.id, "auth-code", "simplefin"
+        )
+
+    card = (
+        await session.execute(select(Account).where(Account.connection_id == conn.id))
+    ).scalar_one()
+    assert card.balance == Decimal("250.00")
+
+
+@pytest.mark.asyncio
 async def test_handle_oauth_callback_names_disambiguated_account_from_institution(
     session: AsyncSession, test_user, test_workspace,
 ):
