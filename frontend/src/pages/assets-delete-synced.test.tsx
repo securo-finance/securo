@@ -33,6 +33,9 @@ vi.mock('@/contexts/collection-filter-context', () => ({
 vi.mock('@/lib/page-chat-context', () => ({
   useRegisterPageChatContext: () => {},
 }))
+vi.mock('@/hooks/use-timezone', () => ({
+  useEffectiveTimezone: () => 'UTC',
+}))
 
 function asset(overrides: Partial<Asset>): Asset {
   return {
@@ -43,7 +46,8 @@ function asset(overrides: Partial<Asset>): Asset {
     current_value: 1000, current_value_primary: 1000, gain_loss: null, gain_loss_primary: null,
     value_count: 0, source: 'manual', connection_id: null, isin: null, maturity_date: null,
     group_id: null, ticker: null, ticker_exchange: null, last_price: null, last_price_at: null,
-    logo_url: null, average_price: null, total_invested: null, realized_gain: null,
+    logo_url: null, provider_value_date: null, average_price: null, total_invested: null,
+    realized_gain: null,
     transaction_count: 0,
     ...overrides,
   }
