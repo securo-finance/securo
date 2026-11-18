@@ -2696,7 +2696,7 @@
     "endDate": "Date de fin",
     "download": "Télécharger l'archive",
     "error": "Impossible de générer l'export",
-    "formatHint": "Un zip avec transactions.csv et profit-and-loss.csv, avec les séparateurs et l'encodage que les tableurs et logiciels comptables lisent sans ajustement. Chaque montant est la valeur totale de la transaction, pas votre part d'un partage."
+    "formatHint": "Un zip avec transactions.csv et profit-and-loss.csv, avec les séparateurs et l'encodage que les tableurs et logiciels comptables lisent sans ajustement."
   },
   "backup": {
     "button": "Sauvegarde",

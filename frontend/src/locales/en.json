@@ -2692,7 +2692,7 @@
     "endDate": "End date",
     "download": "Download package",
     "error": "Could not build the export",
-    "formatHint": "One zip with transactions.csv and profit-and-loss.csv, using the separators and encoding spreadsheet and accounting tools read without adjustment. Each amount is the transaction's full value, not your share of a split."
+    "formatHint": "One zip with transactions.csv and profit-and-loss.csv, using the separators and encoding spreadsheet and accounting tools read without adjustment."
   },
   "backup": {
     "button": "Backup",

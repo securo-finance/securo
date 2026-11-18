@@ -2696,7 +2696,7 @@
     "endDate": "Data final",
     "download": "Baixar pacote",
     "error": "Não foi possível gerar a exportação",
-    "formatHint": "Um zip com transactions.csv e profit-and-loss.csv, com os separadores e a codificação que planilhas e softwares contábeis leem sem ajuste. Cada valor é o total da transação, não a sua parte em uma divisão."
+    "formatHint": "Um zip com transactions.csv e profit-and-loss.csv, com os separadores e a codificação que planilhas e softwares contábeis leem sem ajuste."
   },
   "backup": {
     "button": "Backup",

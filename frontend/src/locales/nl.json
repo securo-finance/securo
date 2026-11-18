@@ -2694,7 +2694,7 @@
     "endDate": "Einddatum",
     "download": "Pakket downloaden",
     "error": "Export kon niet worden gemaakt",
-    "formatHint": "Eén zip met transactions.csv en profit-and-loss.csv, met de scheidingstekens en codering die spreadsheets en boekhoudsoftware zonder aanpassing lezen. Elk bedrag is de volledige waarde van de transactie, niet jouw deel van een splitsing."
+    "formatHint": "Eén zip met transactions.csv en profit-and-loss.csv, met de scheidingstekens en codering die spreadsheets en boekhoudsoftware zonder aanpassing lezen."
   },
   "backup": {
     "button": "Back-up",

@@ -2693,7 +2693,7 @@
     "endDate": "Enddatum",
     "download": "Paket herunterladen",
     "error": "Export konnte nicht erstellt werden",
-    "formatHint": "Eine Zip-Datei mit transactions.csv und profit-and-loss.csv, mit den Trennzeichen und der Kodierung, die Tabellenkalkulationen und Buchhaltungsprogramme ohne Anpassung lesen. Jeder Betrag ist der volle Wert der Transaktion, nicht dein Anteil an einer Aufteilung."
+    "formatHint": "Eine Zip-Datei mit transactions.csv und profit-and-loss.csv, mit den Trennzeichen und der Kodierung, die Tabellenkalkulationen und Buchhaltungsprogramme ohne Anpassung lesen."
   },
   "backup": {
     "button": "Backup",

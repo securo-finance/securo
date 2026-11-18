@@ -2804,7 +2804,7 @@
     "endDate": "Data końcowa",
     "download": "Pobierz paczkę",
     "error": "Nie udało się utworzyć eksportu",
-    "formatHint": "Jeden zip z transactions.csv i profit-and-loss.csv, z separatorami i kodowaniem, które arkusze kalkulacyjne i programy księgowe czytają bez zmian. Każda kwota to pełna wartość transakcji, a nie twoja część podziału."
+    "formatHint": "Jeden zip z transactions.csv i profit-and-loss.csv, z separatorami i kodowaniem, które arkusze kalkulacyjne i programy księgowe czytają bez zmian."
   },
   "backup": {
     "button": "Kopia zapasowa",
