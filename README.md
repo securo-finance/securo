@@ -52,6 +52,7 @@ Open [http://localhost:3000](http://localhost:3000) and create an account. That'
 - Recurring transactions, budgets, and loan/financing tracking
 - Goals and savings targets with progress tracking
 - Asset management with valuation tracking and growth rules
+- Portfolio performance: time-weighted returns, compared against market indices from Yahoo Finance and the Índice DI from the Central Bank of Brazil (Ipeadata as a fallback). These are only contacted when you search for or compare against an index; `PERFORMANCE_BENCHMARKS_ENABLED=false` turns them off
 - Reports: Net Worth and Income vs Expenses with category sparklines
 - Multi-currency support with automatic FX conversion
 - Multi-user support with workspaces, roles, and an admin panel

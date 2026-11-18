@@ -38,3 +38,4 @@ Each file here records one decision about how Securo is built: what we chose, wh
 | [0021](0021-plugin-icons.md) | Plugin icons come from the catalog by checksum, served by Securo |
 | [0022](0022-provider-reserved-balances.md) | Provider reserved balances are shown, never summed into a total |
 | [0023](0023-new-bank-providers-are-plugins.md) | New bank sync providers are plugins; the core keeps the pipeline |
+| [0025](0025-performance-benchmark-sources.md) | Performance benchmarks come from Yahoo Finance, the Central Bank of Brazil and Ipeadata |
