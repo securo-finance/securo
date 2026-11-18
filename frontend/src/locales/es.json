@@ -1100,6 +1100,7 @@
     "createCounterpartConfirm": "Crear",
     "unlinkTransfer": "Desenlazar transferencia",
     "unlinkTransferConfirm": "¿Desenlazar esta transferencia? Ambas transacciones volverán a tratarse como transacciones regulares.",
+    "unlinkTransferReportWarning": "Salvo que su categoría ya las excluya, ambas transacciones vuelven a contar en los informes de ingresos y gastos: la de salida como gasto y la de entrada como ingreso. Para excluir una, asígnale una categoría tratada como transferencia, como Transferencias.",
     "unlinkTransferSuccess": "Transferencia desenlazada",
     "confirmTransferCategoryTitle": "¿Aplicar esta categoría también a la transferencia emparejada?",
     "confirmTransferCategoryDesc": "Las transferencias vienen en pares. Puedes actualizar solo esta transacción o aplicar el mismo cambio de categoría a ambos lados.",

@@ -1102,6 +1102,7 @@
     "createCounterpartConfirm": "Erstellen",
     "unlinkTransfer": "Verknüpfung aufheben",
     "unlinkTransferConfirm": "Verknüpfung dieser Umbuchung aufheben? Beide Transaktionen werden danach wieder als reguläre Transaktionen behandelt.",
+    "unlinkTransferReportWarning": "Sofern ihre Kategorie sie nicht schon ausschließt, zählen beide Transaktionen wieder in den Einnahmen- und Ausgabenberichten: die ausgehende als Ausgabe, die eingehende als Einnahme. Um eine davon auszuschließen, gib ihr eine Kategorie, die als Umbuchung behandelt wird, zum Beispiel Umbuchungen.",
     "unlinkTransferSuccess": "Verknüpfung aufgehoben",
     "confirmTransferCategoryTitle": "Diese Kategorie auch auf die verknüpfte Umbuchung anwenden?",
     "confirmTransferCategoryDesc": "Umbuchungen treten paarweise auf. Du kannst nur diese Transaktion aktualisieren oder die gleiche Kategorieänderung auf beide Seiten anwenden.",

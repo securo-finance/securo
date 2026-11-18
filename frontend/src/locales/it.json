@@ -1100,6 +1100,7 @@
     "createCounterpartConfirm": "Crea",
     "unlinkTransfer": "Scollega trasferimento",
     "unlinkTransferConfirm": "Scollegare questo trasferimento? Entrambe le transazioni torneranno a essere trattate come transazioni normali.",
+    "unlinkTransferReportWarning": "A meno che la loro categoria non le escluda già, entrambe le transazioni tornano a contare nei report di entrate e uscite: quella in uscita come spesa, quella in entrata come entrata. Per escluderne una, assegnale una categoria trattata come trasferimento, ad esempio Trasferimenti.",
     "unlinkTransferSuccess": "Trasferimento scollegato",
     "confirmTransferCategoryTitle": "Applicare questa categoria anche al trasferimento abbinato?",
     "confirmTransferCategoryDesc": "I trasferimenti vengono in coppia. Puoi aggiornare solo questa transazione o applicare la stessa modifica di categoria a entrambi i lati.",
