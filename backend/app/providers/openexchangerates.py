@@ -45,7 +45,8 @@ class OpenExchangeRatesProvider(FxRateProvider):
 
     def _symbols(self) -> str:
         """Return comma-separated supported currencies for the OER `symbols` param."""
-        return get_settings().supported_currencies
+        codes = get_settings().supported_currencies.split(",")
+        return ",".join(c.strip().upper() for c in codes if c.strip())
 
     async def fetch_latest(self) -> dict[str, Decimal]:
         return await self._fetch("latest.json")
