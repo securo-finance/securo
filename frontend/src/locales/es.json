@@ -2113,7 +2113,8 @@
       "split_not_allowed": "no se pueden registrar splits en un activo sincronizado con el banco",
       "split_in_future": "un split no puede tener fecha futura",
       "nothing_held_before_split": "no hay unidades antes del split",
-      "too_large": "dejaría el activo demasiado grande para guardarlo"
+      "too_large": "dejaría el activo demasiado grande para guardarlo",
+      "holding_moved": "la posición cambió de nombre o de cartera mientras se ejecutaba la importación"
     },
     "splitRatio": "{{old}} → {{new}}"
   },

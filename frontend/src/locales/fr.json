@@ -2113,7 +2113,8 @@
       "split_not_allowed": "impossible d’enregistrer une division sur une position synchronisée avec la banque",
       "split_in_future": "une division ne peut pas être datée dans le futur",
       "nothing_held_before_split": "aucune unité détenue avant la division",
-      "too_large": "rendrait la position trop grande pour être enregistrée"
+      "too_large": "rendrait la position trop grande pour être enregistrée",
+      "holding_moved": "la position a été renommée ou a changé de portefeuille pendant l’import"
     },
     "splitRatio": "{{old}} → {{new}}"
   },

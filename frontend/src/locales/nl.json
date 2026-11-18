@@ -2111,7 +2111,8 @@
       "split_not_allowed": "splits kunnen niet worden vastgelegd op een positie die met de bank wordt gesynchroniseerd",
       "split_in_future": "een split kan niet in de toekomst liggen",
       "nothing_held_before_split": "geen eenheden in bezit vóór de split",
-      "too_large": "zou de positie te groot maken om op te slaan"
+      "too_large": "zou de positie te groot maken om op te slaan",
+      "holding_moved": "de positie is tijdens de import hernoemd of naar een andere portefeuille verplaatst"
     },
     "splitRatio": "{{old}} → {{new}}"
   },

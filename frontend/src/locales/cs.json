@@ -2249,7 +2249,8 @@
       "split_not_allowed": "split nelze zaznamenat u pozice synchronizované s bankou",
       "split_in_future": "split nemůže mít budoucí datum",
       "nothing_held_before_split": "před splitem nejsou drženy žádné kusy",
-      "too_large": "pozice by byla příliš velká na uložení"
+      "too_large": "pozice by byla příliš velká na uložení",
+      "holding_moved": "pozice byla během importu přejmenována nebo přesunuta do jiné peněženky"
     },
     "splitRatio": "{{old}} → {{new}}"
   },

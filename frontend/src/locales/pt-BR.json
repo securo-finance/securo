@@ -2113,7 +2113,8 @@
       "split_not_allowed": "não é possível registrar desdobramento em ativo sincronizado com o banco",
       "split_in_future": "o desdobramento não pode ter data futura",
       "nothing_held_before_split": "nenhuma unidade na carteira antes do desdobramento",
-      "too_large": "deixaria o ativo grande demais para guardar"
+      "too_large": "deixaria o ativo grande demais para guardar",
+      "holding_moved": "a posição foi renomeada ou mudou de carteira enquanto a importação corria"
     },
     "splitRatio": "{{old}} → {{new}}"
   },

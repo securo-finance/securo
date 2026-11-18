@@ -8,6 +8,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset import Asset
+from app.models.asset_group import AssetGroup
 from app.models.asset_transaction import AssetTransaction
 from app.models.fx_rate import FxRate
 from app.models.user import User
@@ -1733,6 +1734,68 @@ async def test_a_row_at_the_converted_price_is_named_not_taken_for_the_order(
         )
     )).scalars().all()
     assert [(tx.price, tx.source) for tx in on_that_date] == [(Decimal("200"), "manual")]
+
+
+class MovingTheHoldingWhileTheQuotesArrive(FakeProvider):
+    """Moves the holding out from under the import while it waits for quotes.
+
+    Either into another wallet or to another ticker: both leave the row the
+    file matched pointing at a position it is no longer.
+    """
+
+    def __init__(self, session: AsyncSession, asset: Asset, **change):
+        super().__init__(known=("AAPL", "MSFT"))
+        self._session = session
+        self._asset = asset
+        self._change = change
+
+    async def get_quotes(self, symbols):
+        await self._session.execute(
+            update(Asset)
+            .where(Asset.id == self._asset.id)
+            .values(**self._change)
+            .execution_options(synchronize_session=False)
+        )
+        await self._session.flush()
+        return await super().get_quotes(symbols)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["group_id", "ticker"])
+async def test_a_row_whose_holding_moved_while_the_quotes_arrived_is_left_out(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, field: str
+):
+    """The lock reads the holding again, and what it reads is what the row
+    has to match: a holding moved to another wallet (or renamed) is no longer
+    the position this file's rows were measured against, so they are reported
+    and left out instead of written onto somebody else's holding."""
+    asset = await _apple_in_usd(session, test_user, test_workspace)
+    session.add(AssetTransaction(
+        asset_id=asset.id, workspace_id=test_workspace.id, kind="buy",
+        quantity=Decimal("10"), price=Decimal("100"), fee=Decimal("0"),
+        date=date(2026, 1, 15), source="manual",
+    ))
+    wallet = AssetGroup(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Elsewhere",
+    )
+    session.add(wallet)
+    await session.commit()
+
+    change = {"group_id": wallet.id} if field == "group_id" else {"ticker": "AAPL2"}
+    provider = MovingTheHoldingWhileTheQuotesArrive(session, asset, **change)
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price",
+        "AAPL,2026-02-01,5,110.00",
+        "MSFT,2026-01-15,1,100.00",
+    ), provider)
+
+    assert summary["imported"] == 1
+    assert [(e.row, e.reason) for e in summary["errors"]] == [(2, "holding_moved")]
+    # The manual buy, and the buy the import wrote on the ticker it created.
+    rows = (await session.execute(select(AssetTransaction))).scalars().all()
+    assert len(rows) == 2
+    assert not any(row.asset_id == asset.id and row.source == "import" for row in rows)
 
 
 class RepricingTheHoldingWhileTheQuotesArrive(FakeProvider):

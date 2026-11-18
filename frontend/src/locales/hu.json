@@ -2109,7 +2109,8 @@
       "split_not_allowed": "bankkal szinkronizált pozíciónál nem rögzíthető felosztás",
       "split_in_future": "a felosztás nem lehet jövőbeli dátumú",
       "nothing_held_before_split": "a felosztás előtt nincs darab a pozícióban",
-      "too_large": "a pozíció túl nagy lenne a mentéshez"
+      "too_large": "a pozíció túl nagy lenne a mentéshez",
+      "holding_moved": "a pozíció az import közben átnevezésre került vagy másik pénztárcába került"
     },
     "splitRatio": "{{old}} → {{new}}"
   },

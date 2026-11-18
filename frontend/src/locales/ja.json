@@ -2109,7 +2109,8 @@
       "split_not_allowed": "銀行と同期している保有には分割を記録できません",
       "split_in_future": "分割の日付を未来にすることはできません",
       "nothing_held_before_split": "分割前に保有数量がありません",
-      "too_large": "保有が大きすぎて保存できません"
+      "too_large": "保有が大きすぎて保存できません",
+      "holding_moved": "インポート中に保有資産の名前が変更されたか、別のウォレットに移動されました"
     },
     "splitRatio": "{{old}} → {{new}}"
   },

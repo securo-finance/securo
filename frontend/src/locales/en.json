@@ -2109,7 +2109,8 @@
       "split_not_allowed": "splits can't be recorded on a holding synced from a bank",
       "split_in_future": "a split can't be dated in the future",
       "nothing_held_before_split": "no units held before the split",
-      "too_large": "would leave the holding too large to store"
+      "too_large": "would leave the holding too large to store",
+      "holding_moved": "the holding was renamed or moved to another wallet while the import ran"
     },
     "splitRatio": "{{old}} → {{new}}"
   },

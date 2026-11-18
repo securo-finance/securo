@@ -2110,7 +2110,8 @@
       "split_not_allowed": "Splits können bei einer mit der Bank synchronisierten Position nicht erfasst werden",
       "split_in_future": "ein Split kann nicht in der Zukunft liegen",
       "nothing_held_before_split": "vor dem Split werden keine Stücke gehalten",
-      "too_large": "die Position würde zu groß zum Speichern"
+      "too_large": "die Position würde zu groß zum Speichern",
+      "holding_moved": "die Position wurde während des Imports umbenannt oder in eine andere Wallet verschoben"
     },
     "splitRatio": "{{old}} → {{new}}"
   },

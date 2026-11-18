@@ -871,6 +871,7 @@ async def _recheck_before_write(
     holdings: dict[str, Asset],
     quotes: dict[str, Optional[MarketSymbolQuote]],
     errors: list[AssetImportRowError],
+    group_id: Optional[uuid.UUID],
     *,
     seen_before_lock: dict[tuple, set[Optional[str]]],
     origin: dict[int, tuple[str, Decimal]],
@@ -902,6 +903,7 @@ async def _recheck_before_write(
     ledgers: dict[str, list[AssetTransaction]] = {ticker: [] for ticker in tickers if ticker in holdings}
     settled = 0
     appeared: set[tuple] = set()
+    moved: set[str] = set()
     if asset_ids:
         by_id = {asset.id: ticker for ticker, asset in holdings.items() if ticker in tickers}
         # The refreshed row is what the size check below has to see: a refresh
@@ -914,7 +916,14 @@ async def _recheck_before_write(
             .with_for_update()
         )
         for asset in locked.scalars().all():
-            holdings[by_id[asset.id]] = asset
+            ticker = by_id[asset.id]
+            if (asset.ticker or '').upper() != ticker or asset.group_id != group_id:
+                # Renamed, or moved out of this wallet, while the quotes were
+                # on their way: the position this file matched is no longer
+                # the one its rows would land on.
+                moved.add(ticker)
+                continue
+            holdings[ticker] = asset
         stored: list[AssetTransaction] = []
         for row in await _ledger_rows(session, asset_ids, refresh=True):
             ledgers[by_id[row.asset_id]].append(row)
@@ -926,6 +935,11 @@ async def _recheck_before_write(
     kept: list[tuple[AssetOrderImport, AssetTransaction]] = []
     for order, entry in accepted:
         asset = holdings.get(order.ticker) or created[order.ticker]
+        if order.ticker in moved:
+            errors.append(AssetImportRowError(
+                row=order.row, reason='holding_moved', ticker=order.ticker,
+            ))
+            continue
         if appeared:
             if any(
                 key in appeared
@@ -1195,7 +1209,7 @@ async def import_orders(
         return summary
 
     accepted, errors, settled = await _recheck_before_write(
-        session, accepted, holdings, quotes, errors,
+        session, accepted, holdings, quotes, errors, group_id,
         seen_before_lock=seen, origin=origin,
     )
     skipped += settled

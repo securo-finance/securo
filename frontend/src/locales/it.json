@@ -2113,7 +2113,8 @@
       "split_not_allowed": "non si possono registrare frazionamenti su una posizione sincronizzata con la banca",
       "split_in_future": "un frazionamento non può avere una data futura",
       "nothing_held_before_split": "nessuna unità detenuta prima del frazionamento",
-      "too_large": "renderebbe la posizione troppo grande da salvare"
+      "too_large": "renderebbe la posizione troppo grande da salvare",
+      "holding_moved": "la posizione è stata rinominata o spostata in un altro portafoglio durante l’importazione"
     },
     "splitRatio": "{{old}} → {{new}}"
   },
