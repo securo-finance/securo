@@ -14,7 +14,10 @@ const draft = {
   goal_allocations: [{ goal_id: 'monitor', amount: 50 }],
 } satisfies TransactionEditPayload
 
-function renderDraft(transaction: Transaction | null = null) {
+function renderDraft(
+  transaction: Transaction | null = null,
+  accounts = [{ id: 'account', name: 'Savings', currency: 'EUR' }],
+) {
   const queryClient = createTestQueryClient()
   queryClient.setDefaultOptions({ queries: { enabled: false, retry: false, staleTime: Infinity } })
   queryClient.setQueryData(['settings', 'attachments'], { max_size_mb: 10 })
@@ -32,7 +35,7 @@ function renderDraft(transaction: Transaction | null = null) {
         icon: 'circle-help', color: '#000000', is_system: false, is_hidden: false,
         treat_as_transfer: false, is_ignored: true,
       } satisfies Category]} categoryGroups={[]}
-      accounts={[{ id: 'account', name: 'Savings', currency: 'EUR' }]}
+      accounts={accounts}
       onSave={onSave} loading={false} error={null}
     />,
     { queryClient },
@@ -108,6 +111,24 @@ it('warns before saving would remove saved pocket assignments', async () => {
 
   await user.selectOptions(status, 'posted')
   expect(screen.queryByText(notice)).not.toBeInTheDocument()
+})
+
+it('warns before moving a transaction to an account without pockets removes its assignments', async () => {
+  const saved = {
+    ...draft, id: 'tx', goal_allocations: [{ id: 'allocation', goal_id: 'monitor', goal_name: 'Monitor', amount: 50 }],
+  } as unknown as Transaction
+  const { user, onSave } = renderDraft(saved, [
+    { id: 'account', name: 'Savings', currency: 'EUR' },
+    { id: 'checking', name: 'Checking', currency: 'EUR' },
+  ])
+  const notice = t('goals.savingRemovesAssignments')
+  expect(screen.queryByText(notice)).not.toBeInTheDocument()
+
+  await user.selectOptions(screen.getByDisplayValue('Savings'), 'checking')
+  expect(screen.queryByRole('button', { name: 'Edit pockets' })).not.toBeInTheDocument()
+  expect(screen.getByText(notice)).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Save' }))
+  expect(onSave.mock.calls[0][0]).toEqual(expect.objectContaining({ account_id: 'checking', goal_allocations: [] }))
 })
 
 it('keeps edited pocket assignments when a status change is reverted', async () => {
