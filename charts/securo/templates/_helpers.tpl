@@ -84,7 +84,7 @@ when `persistence.attachments.existingClaim` is set, the chart's own otherwise.
 */}}
 {{- define "securo.attachmentsClaimName" -}}
 {{- if .Values.persistence.attachments.existingClaim -}}
-{{- .Values.persistence.attachments.existingClaim -}}
+{{- .Values.persistence.attachments.existingClaim | quote -}}
 {{- else -}}
 {{- printf "%s-attachments" (include "securo.fullname" .) -}}
 {{- end -}}

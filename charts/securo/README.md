@@ -137,6 +137,15 @@ create one, set `persistence.attachments.existingClaim`. Keep
 `persistence.attachments.enabled` true so the pods mount it; the chart then
 renders no PVC and leaves your claim untouched on uninstall.
 
+On a release that is already running, do not set it in the same upgrade that
+follows the first install. The chart's PVC leaves the release when the value is
+set, Helm deletes resources that leave the release, and with a `Delete` reclaim
+policy that takes the attachments with it. Hand it over in two steps: annotate
+the chart's PVC with `helm.sh/resource-policy: keep` and upgrade, then set
+`persistence.attachments.existingClaim` and upgrade again. The claim then also
+survives `helm uninstall`, so delete it by hand when you really want it gone. A
+claim you created yourself, outside the release, needs no handoff.
+
 ### AI Agents and the MCP server
 
 `mcpServer.enabled` runs the built-in MCP server inside the cluster. It is not added to the Ingress or the HTTPRoute unless you also set `mcpServer.publicRoute: true`, so publishing it to your public entry point is a deliberate step; when you do, set `config.agentsExternalMcpUrl` to the URL clients should use. Tokens are signed with `secret.agentsMcpJwtSecret` when it is set, or with a key derived from `secretKey` otherwise, so a random `secretKey` is enough. A known public value is ignored and the derived key used instead, since anyone holding the signing key could mint a token for any user.

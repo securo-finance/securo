@@ -241,6 +241,15 @@ persistence:
     # Mount a claim you already have instead of creating one. Keep `enabled`
     # true so the pods still mount it; the chart then renders no PVC and
     # leaves that claim alone on uninstall.
+    #
+    # On a release that already runs, switching this in one upgrade drops the
+    # PVC the chart created, Helm deletes what leaves the release, and a
+    # `Delete` reclaim policy takes the attachments with it. Hand the claim
+    # over in two steps: first annotate the chart's PVC with
+    # `helm.sh/resource-policy: keep` and upgrade, then set this value and
+    # upgrade again. The claim then also survives `helm uninstall` and has to
+    # be deleted by hand. A claim you created outside the release needs no
+    # handoff.
     existingClaim: ""
     size: 5Gi
     storageClass: ""
