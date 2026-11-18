@@ -1,7 +1,11 @@
+import asyncio
 import os
+import subprocess
+import sys
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 from typing import AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -47,6 +51,7 @@ import pytest_asyncio  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 from sqlalchemy.dialects.postgresql import UUID  # noqa: E402
+from sqlalchemy.engine import make_url  # noqa: E402
 from sqlalchemy.ext.compiler import compiles  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker  # noqa: E402
 
@@ -147,6 +152,48 @@ async def postgres_sessions():
                 await conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
         finally:
             await pg_engine.dispose()
+
+
+@pytest.fixture
+def migrated_database_url():
+    """An empty database, upgraded to head by the real migrations, dropped afterwards.
+
+    The rest of the suite builds its schema from the models
+    (`Base.metadata.create_all`), which is faster and cannot drift — but it also
+    cannot see anything only the migrations create, such as a constraint a model
+    never declared. A test that needs the database as a deployed instance has it,
+    needs this instead.
+    """
+    url = os.environ.get("POSTGRES_TEST_URL")
+    if not url:
+        if os.environ.get("CI"):
+            pytest.fail("CI must supply POSTGRES_TEST_URL for PostgreSQL tests")
+        pytest.skip("isolated PostgreSQL not configured")
+    name = f"schema_check_{uuid.uuid4().hex}"
+    target = make_url(url).set(database=name).render_as_string(hide_password=False)
+
+    async def admin(statement: str) -> None:
+        engine = create_async_engine(url, isolation_level="AUTOCOMMIT")
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(text(statement))
+        finally:
+            await engine.dispose()
+
+    asyncio.run(admin(f'CREATE DATABASE "{name}"'))
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", "head"],
+            cwd=Path(__file__).resolve().parent.parent,
+            env={**os.environ, "DATABASE_URL": target},
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        assert result.returncode == 0, f"alembic upgrade head failed:\n{result.stderr[-4000:]}"
+        yield target
+    finally:
+        asyncio.run(admin(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
 
 
 @pytest_asyncio.fixture

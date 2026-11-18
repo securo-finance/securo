@@ -11,18 +11,12 @@ difference not in that file fails: write the migration, or fix the model.
 A line in that file that no longer shows up also fails, so fixed drift is
 removed from the list and the list only shrinks.
 """
-import asyncio
-import os
-import subprocess
-import sys
-import uuid
 from pathlib import Path
 
 import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
-from sqlalchemy import ForeignKeyConstraint, Index, UniqueConstraint, text
-from sqlalchemy.engine import make_url
+from sqlalchemy import ForeignKeyConstraint, Index, UniqueConstraint
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.database import Base
@@ -31,7 +25,6 @@ from app.agents.models import *  # noqa: F401,F403
 
 pytestmark = pytest.mark.asyncio
 
-BACKEND = Path(__file__).resolve().parent.parent
 BASELINE = Path(__file__).resolve().parent / "schema_drift_baseline.txt"
 
 
@@ -68,41 +61,6 @@ def _key(diff) -> str:
 def _baseline() -> set[str]:
     lines = BASELINE.read_text().splitlines()
     return {line.strip() for line in lines if line.strip() and not line.startswith("#")}
-
-
-@pytest.fixture
-def migrated_database_url():
-    """An empty database, upgraded to head by the real migrations, dropped afterwards."""
-    url = os.environ.get("POSTGRES_TEST_URL")
-    if not url:
-        if os.environ.get("CI"):
-            pytest.fail("CI must supply POSTGRES_TEST_URL for PostgreSQL tests")
-        pytest.skip("isolated PostgreSQL not configured")
-    name = f"schema_check_{uuid.uuid4().hex}"
-    target = make_url(url).set(database=name).render_as_string(hide_password=False)
-
-    async def admin(statement: str) -> None:
-        engine = create_async_engine(url, isolation_level="AUTOCOMMIT")
-        try:
-            async with engine.connect() as conn:
-                await conn.execute(text(statement))
-        finally:
-            await engine.dispose()
-
-    asyncio.run(admin(f'CREATE DATABASE "{name}"'))
-    try:
-        result = subprocess.run(
-            [sys.executable, "-m", "alembic", "upgrade", "head"],
-            cwd=BACKEND,
-            env={**os.environ, "DATABASE_URL": target},
-            capture_output=True,
-            text=True,
-            timeout=300,
-        )
-        assert result.returncode == 0, f"alembic upgrade head failed:\n{result.stderr[-4000:]}"
-        yield target
-    finally:
-        asyncio.run(admin(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
 
 
 async def test_migrations_build_the_schema_the_models_describe(migrated_database_url):
