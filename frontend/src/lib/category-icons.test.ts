@@ -6,10 +6,14 @@ import { describe, expect, it } from 'vitest'
 import i18next, { type Resource } from 'i18next'
 
 import {
+  CATEGORY_EMOJIS,
   CATEGORY_ICONS,
+  EMOJI_TO_LUCIDE,
+  extractFirstEmoji,
   getCategoryIconLabel,
   ICON_MAP,
   isEmoji,
+  LUCIDE_TO_EMOJI,
 } from '@/lib/category-icons'
 import en from '@/locales/en.json'
 import ptBR from '@/locales/pt-BR.json'
@@ -144,5 +148,85 @@ describe('isEmoji', () => {
 
   it('rejects a long string that merely contains an emoji', () => {
     expect(isEmoji('food 🍔')).toBe(false)
+  })
+
+  it('recognises the emoji a phone keyboard actually sends', () => {
+    // Each of these is more than two code units, which is why the old
+    // length check missed them.
+    expect(isEmoji('👍🏽'), 'skin tone').toBe(true)
+    expect(isEmoji('🇧🇷'), 'flag').toBe(true)
+    expect(isEmoji('1️⃣'), 'keycap').toBe(true)
+    expect(isEmoji('👨‍👩‍👧‍👦'), 'ZWJ family').toBe(true)
+    expect(isEmoji('❤️'), 'text-presentation base with VS16').toBe(true)
+  })
+
+  it('rejects digits, which the unicode Emoji property also covers', () => {
+    // "12" used to pass the length check and the Emoji test, so a stored
+    // number was drawn as if it were a glyph.
+    expect(isEmoji('12')).toBe(false)
+  })
+})
+
+describe('extractFirstEmoji', () => {
+  it('returns the whole sequence, not its first code unit', () => {
+    expect(extractFirstEmoji('👨‍👩‍👧‍👦')).toBe('👨‍👩‍👧‍👦')
+    expect(extractFirstEmoji('🇧🇷')).toBe('🇧🇷')
+  })
+
+  it('finds an emoji inside pasted text', () => {
+    expect(extractFirstEmoji('party 🎉')).toBe('🎉')
+    expect(extractFirstEmoji('  🦄  ')).toBe('🦄')
+  })
+
+  it('returns null when there is no emoji', () => {
+    expect(extractFirstEmoji('car')).toBeNull()
+    expect(extractFirstEmoji('')).toBeNull()
+  })
+})
+
+describe('LUCIDE_TO_EMOJI', () => {
+  it('gives every catalogue icon an emoji equivalent', () => {
+    const missing = CATEGORY_ICONS.filter((entry) => !LUCIDE_TO_EMOJI[entry.name])
+    expect(missing.map((entry) => entry.name)).toEqual([])
+  })
+
+  it('holds no emoji for a name the catalogue does not know', () => {
+    const names = new Set(CATEGORY_ICONS.map((entry) => entry.name))
+    expect(Object.keys(LUCIDE_TO_EMOJI).filter((name) => !names.has(name))).toEqual([])
+  })
+
+  it('maps one icon to one emoji, and every emoji is a single glyph', () => {
+    const emojis = Object.values(LUCIDE_TO_EMOJI)
+    expect(new Set(emojis).size, 'duplicate emoji').toBe(emojis.length)
+    for (const emoji of emojis) expect(isEmoji(emoji), emoji).toBe(true)
+  })
+
+  it('is reversible through EMOJI_TO_LUCIDE', () => {
+    for (const [name, emoji] of Object.entries(LUCIDE_TO_EMOJI)) {
+      expect(EMOJI_TO_LUCIDE[emoji]).toBe(name)
+    }
+  })
+})
+
+describe('CATEGORY_EMOJIS', () => {
+  it('offers every catalogue icon as an emoji, plus the extra presets', () => {
+    const fromIcons = CATEGORY_EMOJIS.filter((entry) => entry.icon !== null)
+    expect(fromIcons).toHaveLength(CATEGORY_ICONS.length)
+    expect(CATEGORY_EMOJIS.length).toBeGreaterThan(CATEGORY_ICONS.length)
+  })
+
+  it('never repeats an emoji', () => {
+    const emojis = CATEGORY_EMOJIS.map((entry) => entry.emoji)
+    expect(new Set(emojis).size).toBe(emojis.length)
+  })
+
+  it('holds only whole emoji', () => {
+    for (const entry of CATEGORY_EMOJIS) expect(isEmoji(entry.emoji), entry.emoji).toBe(true)
+  })
+
+  it('gives every extra preset the search words that make it findable', () => {
+    for (const entry of CATEGORY_EMOJIS.filter((item) => item.icon === null)) {
+      expect(entry.keywords.length, entry.emoji).toBeGreaterThan(0)
+    }
   })
 })

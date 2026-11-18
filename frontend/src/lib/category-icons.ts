@@ -140,8 +140,209 @@ export function getCategoryIconLabel(t: TFunction, name: string): string {
   return CATEGORY_ICONS.find((entry) => entry.name === name)?.pt ?? name
 }
 
-// Check if a string is an emoji (for backward compatibility with old data)
-export function isEmoji(str: string): boolean {
-  // Emoji strings are typically 1-2 characters with high code points
-  return str.length <= 2 && /\p{Emoji}/u.test(str)
+// ---------------------------------------------------------------------------
+// Emoji (issue 752)
+//
+// A category, a category group, a goal and a workspace all store their icon as
+// a free string, and the column was always wide enough for an emoji, so rows
+// saved before the picker offered them still render. The picker now offers
+// emoji too, which means the detection has to hold for what a phone keyboard
+// or the OS emoji panel actually produces: one glyph, a skin tone, a flag, or
+// a family joined by zero-width joiners. Measuring that by string length does
+// not: a single emoji can be eleven code units and still be one glyph.
+// ---------------------------------------------------------------------------
+
+/** One whole emoji, from a lone pictograph to a ZWJ sequence or a flag. */
+const EMOJI_SEQUENCE =
+  /(?:\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier})?(?:[\u{E0020}-\u{E007F}]+)?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier})?)*)/gu
+
+function emojiSequences(text: string): string[] {
+  return text.match(EMOJI_SEQUENCE) ?? []
 }
+
+/** The first emoji inside a string, or null when there is none. */
+export function extractFirstEmoji(text: string): string | null {
+  if (!text) return null
+  return emojiSequences(text)[0] ?? null
+}
+
+/**
+ * Whether a stored icon value is an emoji rather than a Lucide name.
+ *
+ * True when the value is made only of emoji: one glyph, several of them, a
+ * flag or a ZWJ family. Whitespace between them is tolerated; any other
+ * character makes it false, so "12" and "food 🍔" are not emoji.
+ */
+export function isEmoji(str: string): boolean {
+  const value = str.trim()
+  if (!value) return false
+  const sequences = emojiSequences(value)
+  if (sequences.length === 0) return false
+  return sequences.join('') === value.replace(/\s+/g, '')
+}
+
+/**
+ * The emoji equivalent of every catalogue icon, one to one.
+ *
+ * Same meaning, different drawing: the picker shows both and a user switching
+ * to emoji keeps the same mental category. Kept flat so it is easy to read and
+ * to assert that every catalogue entry has an entry here.
+ */
+export const LUCIDE_TO_EMOJI: Record<string, string> = {
+  // Home
+  house: '🏠',
+  lightbulb: '💡',
+  droplets: '💧',
+  flame: '🔥',
+  wifi: '📶',
+  tv: '📺',
+  refrigerator: '🧊',
+  sofa: '🛋️',
+  'spray-can': '🧹',
+  // Food
+  'utensils-crossed': '🍽️',
+  coffee: '☕',
+  beer: '🍺',
+  pizza: '🍕',
+  salad: '🥗',
+  croissant: '🥐',
+  cake: '🍰',
+  'ice-cream-cone': '🍦',
+  apple: '🍎',
+  beef: '🥩',
+  fish: '🐟',
+  // Transport and travel
+  car: '🚗',
+  fuel: '⛽',
+  bus: '🚌',
+  train: '🚆',
+  plane: '✈️',
+  bike: '🚲',
+  motorbike: '🏍️',
+  'car-taxi-front': '🚕',
+  'bed-double': '🛏️',
+  luggage: '🧳',
+  // Shopping
+  'shopping-cart': '🛒',
+  'shopping-bag': '🛍️',
+  gift: '🎁',
+  package: '📦',
+  shirt: '👕',
+  // Health
+  pill: '💊',
+  stethoscope: '🩺',
+  syringe: '💉',
+  cross: '🏥',
+  heart: '❤️',
+  brain: '🧠',
+  dumbbell: '🏋️',
+  // Leisure
+  'gamepad-2': '🎮',
+  music: '🎵',
+  film: '🎬',
+  'party-popper': '🎉',
+  ticket: '🎟️',
+  trophy: '🏆',
+  camera: '📷',
+  newspaper: '📰',
+  // Technology
+  smartphone: '📱',
+  'credit-card': '💳',
+  laptop: '💻',
+  monitor: '🖥️',
+  // Education
+  'book-open': '📖',
+  'graduation-cap': '🎓',
+  school: '🏫',
+  'pencil-ruler': '✏️',
+  // Work
+  briefcase: '💼',
+  'building-2': '🏢',
+  landmark: '🏦',
+  // Finance
+  wallet: '👛',
+  banknote: '💵',
+  'piggy-bank': '🐖',
+  'trending-up': '📈',
+  'trending-down': '📉',
+  'hand-coins': '🪙',
+  receipt: '🧾',
+  'arrow-left-right': '🔁',
+  'heart-handshake': '🤝',
+  // Family and pets
+  baby: '👶',
+  dog: '🐶',
+  cat: '🐱',
+  'paw-print': '🐾',
+  // Services
+  scissors: '✂️',
+  wrench: '🔧',
+  hammer: '🔨',
+  // Nature and others
+  'tree-pine': '🌲',
+  trees: '🌳',
+  umbrella: '☂️',
+  globe: '🌍',
+  sparkles: '✨',
+  'circle-help': '❓',
+}
+
+/** The catalogue icon an emoji stands for, for the ones that have a twin. */
+export const EMOJI_TO_LUCIDE: Record<string, string> = Object.fromEntries(
+  Object.entries(LUCIDE_TO_EMOJI).map(([name, emoji]) => [emoji, name])
+)
+
+export interface CategoryEmoji {
+  emoji: string
+  /** Lucide name this emoji is the equivalent of, when there is one. */
+  icon: string | null
+  /** Search words beyond the icon's own name and label. */
+  keywords: string[]
+}
+
+// Emoji with no direct Lucide twin, kept for the everyday things the icon set
+// has no drawing for. Keywords are English and Portuguese, the two languages
+// the catalogue labels are written in.
+const EXTRA_EMOJIS: CategoryEmoji[] = [
+  { emoji: '🍔', icon: null, keywords: ['burger', 'hamburger', 'lanche'] },
+  { emoji: '🍟', icon: null, keywords: ['fries', 'batata frita', 'fast food'] },
+  { emoji: '🥪', icon: null, keywords: ['sandwich', 'sanduíche'] },
+  { emoji: '🍷', icon: null, keywords: ['wine', 'vinho'] },
+  { emoji: '🍸', icon: null, keywords: ['cocktail', 'drink', 'drinque'] },
+  { emoji: '🧃', icon: null, keywords: ['juice', 'suco'] },
+  { emoji: '💰', icon: null, keywords: ['money bag', 'savings', 'dinheiro', 'poupança'] },
+  { emoji: '💸', icon: null, keywords: ['spending', 'expense', 'gasto', 'despesa'] },
+  { emoji: '⚽', icon: null, keywords: ['soccer', 'football', 'futebol'] },
+  { emoji: '🏀', icon: null, keywords: ['basketball', 'basquete'] },
+  { emoji: '🎾', icon: null, keywords: ['tennis', 'tênis'] },
+  { emoji: '🧘', icon: null, keywords: ['yoga', 'meditation', 'meditação'] },
+  { emoji: '🎨', icon: null, keywords: ['art', 'hobby', 'arte'] },
+  { emoji: '🎧', icon: null, keywords: ['headphones', 'fone de ouvido'] },
+  { emoji: '🔌', icon: null, keywords: ['plug', 'charger', 'tomada', 'carregador'] },
+  { emoji: '🛠️', icon: null, keywords: ['tools', 'ferramentas'] },
+  { emoji: '🧼', icon: null, keywords: ['soap', 'sabonete', 'higiene'] },
+  { emoji: '🚿', icon: null, keywords: ['shower', 'banho'] },
+  { emoji: '👟', icon: null, keywords: ['shoes', 'sneakers', 'calçado'] },
+  { emoji: '💄', icon: null, keywords: ['makeup', 'maquiagem', 'beleza'] },
+  { emoji: '🧸', icon: null, keywords: ['toys', 'brinquedos', 'criança'] },
+  { emoji: '🌷', icon: null, keywords: ['flowers', 'flores', 'jardim'] },
+  { emoji: '🍀', icon: null, keywords: ['luck', 'sorte'] },
+  { emoji: '🎂', icon: null, keywords: ['birthday', 'aniversário'] },
+  { emoji: '🎄', icon: null, keywords: ['christmas', 'natal'] },
+  { emoji: '🛡️', icon: null, keywords: ['insurance', 'seguro', 'proteção'] },
+  { emoji: '🗺️', icon: null, keywords: ['map', 'travel', 'mapa', 'viagem'] },
+  { emoji: '🏖️', icon: null, keywords: ['beach', 'holiday', 'praia', 'férias'] },
+  { emoji: '🚀', icon: null, keywords: ['launch', 'startup', 'lançamento'] },
+  { emoji: '💎', icon: null, keywords: ['investment', 'luxury', 'investimento', 'luxo'] },
+  { emoji: '🏗️', icon: null, keywords: ['construction', 'obra', 'construção'] },
+]
+
+/** Every emoji the picker offers: one per catalogue icon, plus the extras. */
+export const CATEGORY_EMOJIS: CategoryEmoji[] = [
+  ...CATEGORY_ICONS.map((entry) => ({
+    emoji: LUCIDE_TO_EMOJI[entry.name],
+    icon: entry.name,
+    keywords: [] as string[],
+  })),
+  ...EXTRA_EMOJIS,
+]
