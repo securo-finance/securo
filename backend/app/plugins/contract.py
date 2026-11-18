@@ -44,6 +44,19 @@ MAX_RESERVED_BALANCES = 2_000
 MAX_HOLDINGS = 5_000
 MAX_TRADES = 20_000
 
+#: What the author has to know past the cap for a kind whose reported list
+#: replaces what is stored: paying the excess over two syncs would lose it.
+_OVER_CAP_NOTES = {
+    "reserved_balances": (
+        ". A reported list is the account's whole set, so it can't be split across syncs;"
+        " reserves left out of it are deleted"
+    ),
+    "holdings": (
+        ". A reported list is the whole set, so it can't be split across syncs;"
+        " holdings left out of it are archived"
+    ),
+}
+
 AccountType = Literal["checking", "savings", "credit_card", "loan", "investment", "wallet"]
 #: The asset types a holding may name; they pick its icon on the Assets page.
 HoldingType = Literal["stock", "etf", "fund", "crypto", "investment"]
@@ -289,7 +302,10 @@ class Payload(_Model):
         }
         for kind, (count, cap) in counts.items():
             if count > cap:
-                raise ValueError(f"{count} {kind} in one reply; the most is {cap}, send the rest on the next sync")
+                raise ValueError(
+                    f"{count} {kind} in one reply; the most is {cap}, and a reply over that is"
+                    f" refused whole{_OVER_CAP_NOTES.get(kind, '')}"
+                )
         return self
 
     def kinds(self) -> set[str]:

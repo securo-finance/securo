@@ -190,6 +190,31 @@ def test_replies_over_the_caps_are_refused(monkeypatch):
         parse_payload(_payload(), ALL)
 
 
+def test_the_reserved_balance_cap_counts_the_reply_and_says_it_cannot_be_split():
+    """The cap is the reply's total, and its message must not send the author to
+    a next sync: a reported list is the account's whole set, so what is left out
+    of it is deleted."""
+
+    def spread(data):
+        first = data["accounts"][0]
+        first["reserved_balances"] = [
+            {"external_id": f"first-{i}", "currency": "BRL", "amount": "1.00"} for i in range(1_000)
+        ]
+        second = copy.deepcopy(first)
+        second["external_id"] = "A2"
+        second["reserved_balances"] = [
+            {"external_id": f"second-{i}", "currency": "BRL", "amount": "1.00"} for i in range(1_001)
+        ]
+        data["accounts"].append(second)
+
+    with pytest.raises(PayloadError, match="2001 reserved_balances in one reply") as caught:
+        parse_payload(_payload(spread), ALL)
+    message = str(caught.value)
+    assert "the most is 2000, and a reply over that is refused whole" in message
+    assert "whole set" in message and "can't be split across syncs" in message
+    assert "next sync" not in message
+
+
 def test_data_must_be_an_object():
     with pytest.raises(PayloadError, match="object"):
         parse_payload(["accounts"], ALL)
