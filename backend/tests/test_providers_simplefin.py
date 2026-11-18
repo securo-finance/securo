@@ -1077,6 +1077,17 @@ def test_parse_accounts_does_not_read_a_credit_union_or_a_debit_card_as_a_card()
     assert [account.type for account in accounts] == ["checking", "checking"]
 
 
+def test_parse_accounts_reads_card_words_only_as_whole_words():
+    """"Visalia" holds "visa" and "Amexa" holds "amex"; neither names a card."""
+    _, accounts = SimpleFinProvider._parse_accounts(
+        _type_payload(
+            {"name": "Visalia Money Market", "balance": "100"},
+            {"name": "Amexa Brokerage", "balance": "100"},
+        )
+    )
+    assert [account.type for account in accounts] == ["checking", "checking"]
+
+
 def test_parse_accounts_does_not_read_an_overdrawn_checking_as_a_card():
     """A checking account short of cash is still checking: the name is read
     before the sign, so the overdraft does not turn it into a card."""

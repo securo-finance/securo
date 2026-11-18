@@ -1694,7 +1694,15 @@ async def handle_oauth_callback(
             display_name=institution.name if institution else None,
             masked_number=acc_data.masked_number,
             type=acc_data.type,
-            balance=_account_balance(acc_data, auto_invested_deducted),
+            # Signed like every later sync stores it, so a card does not read
+            # as credit until the second sync.
+            balance=_provider_to_internal_balance(
+                connection.provider,
+                acc_data.type,
+                _account_balance(acc_data, auto_invested_deducted),
+                available_credit=acc_data.available_credit,
+                credit_limit=acc_data.credit_limit if is_cc else None,
+            ),
             currency=acc_data.currency,
             credit_limit=acc_data.credit_limit if is_cc else None,
             statement_close_day=acc_data.statement_close_day if is_cc else None,

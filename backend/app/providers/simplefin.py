@@ -22,6 +22,7 @@ from __future__ import annotations
 import base64
 import binascii
 import logging
+import re
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
@@ -179,12 +180,17 @@ def _infer_account_type(name: str, balance: Decimal) -> str:
     reports a card.
     """
     lowered = " ".join((name or "").lower().split())
-    is_cash = any(word in lowered for word in _SAVINGS_WORDS + _CHECKING_WORDS)
-    says_card = any(word in lowered for word in _CREDIT_CARD_WORDS)
-    says_not_a_card = any(word in lowered for word in _NOT_A_CARD_WORDS)
+
+    def says(words: tuple[str, ...]) -> bool:
+        # Whole words only: "Visalia Money Market" is not a Visa card.
+        return any(re.search(rf"(?<!\w){re.escape(word)}(?!\w)", lowered) for word in words)
+
+    is_cash = says(_SAVINGS_WORDS + _CHECKING_WORDS)
+    says_card = says(_CREDIT_CARD_WORDS)
+    says_not_a_card = says(_NOT_A_CARD_WORDS)
     if says_card and not says_not_a_card and not is_cash:
         return "credit_card"
-    if any(word in lowered for word in _SAVINGS_WORDS):
+    if says(_SAVINGS_WORDS):
         return "savings"
     if is_cash:
         return "checking"

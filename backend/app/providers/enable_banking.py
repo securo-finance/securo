@@ -179,8 +179,8 @@ def _card_balance(
     sign, like any other EB account. Nothing usable reads as zero.
     """
     available = _balance_of_type(balances, CARD_AVAILABLE_BALANCE_TYPES)
-    if available is not None:
-        free_credit = _balance_decimal(available)
+    free_credit = _balance_amount(available)
+    if free_credit is not None:
         if credit_limit is None:
             return Decimal("0"), free_credit, available
         return credit_limit - free_credit, free_credit, available
@@ -188,6 +188,18 @@ def _card_balance(
     if booked is not None:
         return -_balance_decimal(booked), None, booked
     return Decimal("0"), None, None
+
+
+def _balance_amount(balance: Optional[dict]) -> Optional[Decimal]:
+    """The balance's amount, or None when it has no usable one."""
+    if not balance:
+        return None
+    amount = balance.get("balance_amount") or balance.get("amount") or {}
+    try:
+        value = Decimal(str(amount.get("amount")))
+    except (InvalidOperation, AttributeError):
+        return None
+    return value if value.is_finite() else None
 
 
 def _balance_decimal(balance: Optional[dict]) -> Decimal:
@@ -992,6 +1004,10 @@ class EnableBankingProvider(BankProvider):
         )
         masked = cached.get("masked_number")
         account.masked_number = masked if isinstance(masked, str) else None
+        # The cached limit only reads the balance; the bank did not send it
+        # now, and published it would overwrite a limit corrected on the row.
+        # The sync states the debt from the row's own limit instead.
+        account.credit_limit = None
         return account
 
     # ----- account / transaction fetches -----
