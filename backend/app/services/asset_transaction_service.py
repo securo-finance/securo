@@ -48,6 +48,14 @@ _MAX_SPLIT_UNITS = 1_000_000
 _MAX_STORED_VALUE = Decimal("999999999.999999")
 # The most assets.average_price can hold: it is Numeric(18, 6).
 _MAX_STORED_PRICE = Decimal("999999999999.999999")
+# The most asset_transactions.quantity holds, same Numeric(18, 6). A number
+# past it cannot even be rounded to the column's scale.
+_MAX_QUANTITY = Decimal("999999999999.999999")
+
+_TOO_LARGE_DETAIL = (
+    "This would leave the holding too large to store. "
+    "Check the quantity, price and ratio."
+)
 
 
 def _d(value) -> Decimal:
@@ -61,8 +69,28 @@ def _d(value) -> Decimal:
 _QUANTITY_QUANTUM = Decimal("0.000001")
 
 
+def fmt_units(value: Decimal) -> str:
+    return f"{value:.6f}".rstrip("0").rstrip(".")
+
+
+def quantity_too_large(value: Decimal) -> bool:
+    """Whether a quantity has more digits than the column (and its scale) holds.
+
+    `stored_quantity` cannot even round a number this size: `quantize` needs
+    more digits of precision than the decimal context keeps, and raises instead
+    of answering. The caller reports it as too large, the way the size check
+    reports the ledgers that the asset's own columns cannot hold.
+    """
+    return abs(value) > _MAX_QUANTITY
+
+
 def stored_quantity(value: Decimal) -> Decimal:
     """The quantity as the ledger stores it, so checks and storage agree."""
+    if quantity_too_large(value):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=_TOO_LARGE_DETAIL,
+        )
     return value.quantize(_QUANTITY_QUANTUM, rounding=ROUND_HALF_UP)
 
 
@@ -194,11 +222,11 @@ def _raise_if_oversell(transactions: list[AssetTransaction]) -> None:
     over = _detect_oversell(transactions)
     if over is not None:
         attempted, available = over
-        fmt = lambda q: f"{q:.6f}".rstrip("0").rstrip(".")  # noqa: E731
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=(
-                f"Cannot sell {fmt(attempted)} units — only {fmt(available)} held at that date. "
+                f"Cannot sell {fmt_units(attempted)} units — "
+                f"only {fmt_units(available)} held at that date. "
                 "Short positions aren't supported."
             ),
         )
@@ -287,7 +315,7 @@ def _raise_if_too_large_to_store(transactions: list[AssetTransaction], asset: As
     if too_large_to_store(transactions, asset):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="This would leave the holding too large to store. Check the quantity, price and ratio.",
+            detail=_TOO_LARGE_DETAIL,
         )
 
 
@@ -507,12 +535,17 @@ async def add_transaction(
     asset = await _lock_asset(session, asset_id, workspace_id)
     if asset is None:
         return None
-    quantity = None if data.quantity is None else stored_quantity(data.quantity)
+    is_split = data.kind == "split"
+    # Only a trade is rounded: a split must state no quantity at all, and that
+    # is a fact about what was entered. Rounded first, 0.0000004 would become a
+    # zero and pass as "no quantity".
+    quantity = None if data.quantity is None else (
+        data.quantity if is_split else stored_quantity(data.quantity)
+    )
     _validate(
         data.kind, quantity, data.price,
         fee=data.fee, old_units=data.old_units, new_units=data.new_units,
     )
-    is_split = data.kind == "split"
     if is_split:
         _raise_if_split_not_allowed(asset)
         _raise_if_split_in_future(data.date)
@@ -576,11 +609,13 @@ async def update_transaction(
     if tx is None:
         return None
     fields = data.model_dump(exclude_unset=True)
-    if fields.get("quantity") is not None:
-        # The checks below and the row that is written have to hold the same
-        # number: the column rounds to six decimals, so this does too.
-        fields["quantity"] = stored_quantity(fields["quantity"])
     kind = fields.get("kind", tx.kind)
+    if fields.get("quantity") is not None and kind != "split":
+        # The checks below and the row that is written have to hold the same
+        # number: the column rounds to six decimals, so this does too. A split
+        # is left as stated, so a quantity on it is refused rather than
+        # rounded down to the zero that "no quantity" looks like.
+        fields["quantity"] = stored_quantity(fields["quantity"])
     if (kind == "split") != (tx.kind == "split"):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

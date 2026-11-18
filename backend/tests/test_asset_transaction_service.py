@@ -1188,6 +1188,59 @@ async def test_a_second_split_is_judged_on_the_holding_it_leaves(session, test_w
     assert len(await _ledger(session, test_workspace, market_asset)) == 2
 
 
+@pytest.mark.asyncio
+async def test_a_split_with_a_fraction_of_a_unit_is_still_refused(
+    session, test_workspace, market_asset
+):
+    """The column rounds to six decimals, but the check on a split's quantity
+    reads what was entered: 0.0000004 is not the zero "no quantity" looks like."""
+    await _buy(session, test_workspace, market_asset, "10", "100", date(2026, 1, 1))
+
+    with pytest.raises(HTTPException) as exc:
+        await _add_split(
+            session, test_workspace, market_asset, 1, 2, date(2026, 2, 1),
+            quantity=Decimal("0.0000004"),
+        )
+
+    assert exc.value.status_code == 422
+    assert exc.value.detail == _NO_MONEY
+    assert len(await _ledger(session, test_workspace, market_asset)) == 1
+
+
+@pytest.mark.asyncio
+async def test_editing_a_split_to_a_fraction_of_a_unit_is_refused(
+    session, test_workspace, market_asset
+):
+    await _buy(session, test_workspace, market_asset, "10", "100", date(2026, 1, 1))
+    await _add_split(session, test_workspace, market_asset, 1, 2, date(2026, 2, 1))
+    split = next(tx for tx in await _ledger(session, test_workspace, market_asset) if tx.kind == "split")
+
+    with pytest.raises(HTTPException) as exc:
+        await asset_transaction_service.update_transaction(
+            session, split.id, test_workspace.id,
+            AssetTransactionUpdate(quantity=Decimal("0.0000004")),
+        )
+
+    assert exc.value.status_code == 422
+    assert exc.value.detail == _NO_MONEY
+    assert not session.dirty
+    assert await _split_ratio(session, split.id) == (1, 2)
+
+
+@pytest.mark.asyncio
+async def test_a_quantity_too_large_to_round_is_a_validation_error(
+    session, test_workspace, market_asset
+):
+    """1e23 has more digits than the column: rounding it raises, so the request
+    has to answer 422 instead of failing with a 500."""
+    with pytest.raises(HTTPException) as exc:
+        await _buy(session, test_workspace, market_asset, "1e23", "100", date(2026, 1, 1))
+
+    assert exc.value.status_code == 422
+    assert exc.value.detail == _TOO_LARGE
+    assert not session.new
+
+
 async def _too_large(call) -> None:
     with pytest.raises(HTTPException) as exc:
         await call
