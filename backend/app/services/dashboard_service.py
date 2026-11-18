@@ -1323,8 +1323,12 @@ async def _get_open_accounts(
     session: AsyncSession,
     workspace_id: uuid.UUID,
     account_ids: Optional[list[uuid.UUID]] = None,
+    closed_after: Optional[date] = None,
 ) -> list[Account]:
     """Get all non-closed accounts for a workspace.
+
+    ``closed_after`` also returns accounts closed after that date, for
+    snapshots taken while they were still open.
 
     When ``account_ids`` is provided (an active Collection filter, issue #105),
     restrict to that subset. An empty list returns no accounts — a collection
@@ -1340,7 +1344,8 @@ async def _get_open_accounts(
                 Account.workspace_id == workspace_id,
                 BankConnection.workspace_id == workspace_id,
             ),
-            Account.is_closed == False,
+            or_(Account.is_closed == False, Account.closed_at > closed_after)
+            if closed_after else Account.is_closed == False,
         )
     )
     if account_ids:
