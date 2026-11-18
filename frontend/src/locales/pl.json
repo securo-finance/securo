@@ -2797,6 +2797,15 @@
     "brandSelfHosted": "Samodzielnie hostowane",
     "brandPrivate": "Prywatne z założenia"
   },
+  "accountantExport": {
+    "title": "Eksport dla księgowego",
+    "description": "Pobierz skategoryzowane transakcje oraz rachunek wyników za okres w formacie, który oprogramowanie księgowe otwiera bezpośrednio. Kwoty to pełna wartość transakcji, przed podziałem z innymi osobami.",
+    "startDate": "Data początkowa",
+    "endDate": "Data końcowa",
+    "download": "Pobierz paczkę",
+    "error": "Nie udało się utworzyć eksportu",
+    "formatHint": "Jeden zip z transactions.csv i profit-and-loss.csv, z separatorami i kodowaniem, które arkusze kalkulacyjne i programy księgowe czytają bez zmian. Każda kwota to pełna wartość transakcji, a nie twoja część podziału."
+  },
   "backup": {
     "restore": {
       "button": "Przywróć z kopii zapasowej",

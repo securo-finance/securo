@@ -2686,6 +2686,15 @@
     "brandSelfHosted": "Selbstgehostet",
     "brandPrivate": "Privatsphäre standardmäßig"
   },
+  "accountantExport": {
+    "title": "Export für die Buchhaltung",
+    "description": "Lade die kategorisierten Transaktionen und die Gewinn- und Verlustrechnung eines Zeitraums herunter, in dem Format, das die Software deiner Buchhaltung direkt öffnet. Die Beträge sind der volle Transaktionswert, bevor er mit anderen Personen geteilt wird.",
+    "startDate": "Startdatum",
+    "endDate": "Enddatum",
+    "download": "Paket herunterladen",
+    "error": "Export konnte nicht erstellt werden",
+    "formatHint": "Eine Zip-Datei mit transactions.csv und profit-and-loss.csv, mit den Trennzeichen und der Kodierung, die Tabellenkalkulationen und Buchhaltungsprogramme ohne Anpassung lesen. Jeder Betrag ist der volle Wert der Transaktion, nicht dein Anteil an einer Aufteilung."
+  },
   "backup": {
     "restore": {
       "button": "Aus Backup wiederherstellen",
