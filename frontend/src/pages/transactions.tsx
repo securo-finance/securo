@@ -47,7 +47,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, CheckCheck, Clock, HelpCircle, Info, Paperclip, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, SlidersHorizontal, Receipt } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, CheckCheck, Clock, HelpCircle, Info, Paperclip, Repeat, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, SlidersHorizontal, Receipt } from 'lucide-react'
 import type { Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, TransactionEditPayload, ReconciliationSuggestion } from '@/types'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { PageHeader } from '@/components/page-header'
@@ -65,6 +65,7 @@ import { TransactionsPageActions } from '@/components/transactions-page-actions'
 import { MobileBulkSelectionActions } from '@/components/mobile-bulk-selection-actions'
 import { type ColumnDef, type ColumnId, useTransactionsGridState } from '@/components/transactions-grid-columns'
 import { TransferDialog } from '@/components/transfer-dialog'
+import { MakeRecurringDialog } from '@/components/make-recurring-dialog'
 import { useSidebarState } from '@/contexts/sidebar-state-context'
 import { cn } from '@/lib/utils'
 import { LinkTransferDialog } from '@/components/link-transfer-dialog'
@@ -83,6 +84,7 @@ import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { isTransferTransaction } from '@/lib/transaction-transfer'
 import { readCalendarDateBasis } from '@/lib/transaction-calendar'
 import { ReportingDateBadge } from '@/components/reporting-date-badge'
+import { listDate } from '@/lib/list-date'
 
 type TransactionUpdatePayload = TransactionEditPayload & {
   apply_to_transfer_pair?: boolean
@@ -242,6 +244,8 @@ export default function TransactionsPage() {
   const [bulkTagInput, setBulkTagInput] = useState<string>('')
   const [createRuleOpen, setCreateRuleOpen] = useState(false)
   const [createRuleInitialData, setCreateRuleInitialData] = useState<RuleDialogInitialData | undefined>(undefined)
+  // The row a recurring bill is being created from (issue #429).
+  const [recurringSource, setRecurringSource] = useState<Transaction | null>(null)
   const [isBulkBarPulsing, setIsBulkBarPulsing] = useState(false)
   const [menuEpoch, setMenuEpoch] = useState(0)
   const bulkTagInputRef = useRef<HTMLInputElement>(null)
@@ -878,7 +882,7 @@ export default function TransactionsPage() {
     const groups: { date: string; label: string; items: Transaction[] }[] = []
     let current: { date: string; label: string; items: Transaction[] } | null = null
     for (const tx of filteredItems) {
-      const reportingDate = tx.reporting_date_override ?? tx.date
+      const reportingDate = listDate(tx)
       if (!current || current.date !== reportingDate) {
         current = {
           date: reportingDate,
@@ -1375,7 +1379,7 @@ export default function TransactionsPage() {
           </div>
           <ReportingDateBadge tx={tx} locale={dateLocale} />
           {showInlineDate && (
-            <p className="text-xs text-muted-foreground mt-0.5">{new Date((tx.reporting_date_override ?? tx.date) + 'T00:00:00').toLocaleDateString(dateLocale)}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{new Date(listDate(tx) + 'T00:00:00').toLocaleDateString(dateLocale)}</p>
           )}
           {(showInlineNotes || showInlineTags) && tx.notes && (
             <div className="mt-1 space-y-0.5">
@@ -1410,7 +1414,7 @@ export default function TransactionsPage() {
       case 'date':
         return (
           <TableCell key={col.id} style={widthStyle} className={`${baseClass} text-sm text-muted-foreground tabular-nums`}>
-            {new Date((tx.reporting_date_override ?? tx.date) + 'T00:00:00').toLocaleDateString(dateLocale)}
+            {new Date(listDate(tx) + 'T00:00:00').toLocaleDateString(dateLocale)}
           </TableCell>
         )
       case 'description':
@@ -1893,6 +1897,14 @@ export default function TransactionsPage() {
                         <ContextMenuItem onSelect={() => handleCreateRuleFromTransaction(selectedSingleTx)}>
                           <SlidersHorizontal className="me-2 h-4 w-4" />
                           {t('transactions.createRule')}
+                        </ContextMenuItem>
+                      )}
+
+                      {selectedSingleTx && !selectedSingleTx.transfer_pair_id
+                        && !selectedSingleTx.recurring_transaction_id && (
+                        <ContextMenuItem onSelect={() => setRecurringSource(selectedSingleTx)}>
+                          <Repeat className="me-2 h-4 w-4" />
+                          {t('transactions.makeRecurring')}
                         </ContextMenuItem>
                       )}
 
@@ -2491,6 +2503,15 @@ export default function TransactionsPage() {
         onSave={(data) => createRuleMutation.mutate(data as Omit<Rule, 'id' | 'user_id'>)}
         loading={createRuleMutation.isPending}
         initialData={createRuleInitialData}
+      />
+
+      {/* Recurring bill filled from the selected row (issue #429) */}
+      <MakeRecurringDialog
+        transaction={recurringSource}
+        accounts={accountsList ?? []}
+        categories={categoriesList ?? []}
+        categoryGroups={categoryGroupsList ?? []}
+        onClose={() => setRecurringSource(null)}
       />
     </div>
   )

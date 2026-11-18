@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
-import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
+import { useDisplayLocale, useDisplayLocaleSettled, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { categories as categoriesApi, categoryGroups as categoryGroupsApi, recurring as recurringApi, accounts as accountsApi, currencies as currenciesApi } from '@/lib/api'
 import { extractApiError } from '@/lib/api-errors'
@@ -19,7 +19,14 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import type { Category, CategoryGroup, CategoryLineShareType, RecurringPriceChange, RecurringTransaction } from '@/types'
+import type {
+  Category,
+  CategoryGroup,
+  CategoryLineShareType,
+  RecurringPriceChange,
+  RecurringTransaction,
+  TransactionCategoryLine,
+} from '@/types'
 import { CategorySplitBadge } from '@/components/category-lines-display'
 import { TransactionCategoryLinesSection } from '@/components/transaction-category-lines-section'
 import {
@@ -37,6 +44,7 @@ import { formatAmountInput, ltrAmount, parseAmountInput } from '@/lib/format'
 import { Pencil, Trash2, Plus, RefreshCw, Info, History, TrendingUp, TrendingDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/page-header'
+import { RecurringMonthSummary } from '@/components/recurring-month-summary'
 import { CategorySelect } from '@/components/category-select'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -281,6 +289,7 @@ function RecurringTab() {
             ) : undefined
           }
         />
+        {recurringList && recurringList.length > 0 && <RecurringMonthSummary />}
         {recurringList && recurringList.length > 0 ? (
           <table className="w-full">
             <thead>
@@ -496,17 +505,36 @@ function RecurringTab() {
   )
 }
 
-export function RecurringForm({
-  recurring,
-  categories,
-  categoryGroups,
-  currentCategory,
-  accounts,
-  onSave,
-  onCancel,
-  loading,
-}: {
+/** The fields a caller may fill in before the form opens (issue #429). */
+export type RecurringInitialValues = Partial<
+  Pick<
+    RecurringTransaction,
+    | 'description'
+    | 'amount'
+    | 'currency'
+    | 'type'
+    | 'frequency'
+    | 'weekend_adjustment'
+    | 'day_of_month'
+    | 'start_date'
+    | 'end_date'
+    | 'category_id'
+    | 'account_id'
+    | 'is_active'
+    | 'auto_generate'
+  >
+> & {
+  /**
+   * The source transaction's split across categories (issue #429), carried as
+   * read lines so the form opens with the same parts it will save.
+   */
+  category_lines?: TransactionCategoryLine[]
+}
+
+type RecurringFormProps = {
   recurring: RecurringTransaction | null
+  /** What the form starts with when it is not editing an existing bill. */
+  initial?: RecurringInitialValues | null
   categories: Category[]
   categoryGroups: CategoryGroup[]
   currentCategory?: Category
@@ -514,7 +542,37 @@ export function RecurringForm({
   onSave: (data: Partial<RecurringTransaction>) => void
   onCancel: () => void
   loading: boolean
-}) {
+}
+
+/**
+ * The recurring bill form.
+ *
+ * Its draft amounts are text written in the workspace number format, so it
+ * waits for that format to settle before it mounts: a setting that lands while
+ * the form is open would leave the written text and the parsers (the amount,
+ * the split check, the payload and the split editor) under different
+ * separators, turning "12.34" into 1234.
+ */
+export function RecurringForm(props: RecurringFormProps) {
+  const { t } = useTranslation()
+  const settled = useDisplayLocaleSettled()
+  if (!settled) {
+    return <p className="py-6 text-center text-sm text-muted-foreground">{t('common.loading')}</p>
+  }
+  return <RecurringFormFields {...props} />
+}
+
+function RecurringFormFields({
+  recurring,
+  initial,
+  categories,
+  categoryGroups,
+  currentCategory,
+  accounts,
+  onSave,
+  onCancel,
+  loading,
+}: RecurringFormProps) {
   const { t } = useTranslation()
   const { user } = useAuth()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
@@ -529,34 +587,55 @@ export function RecurringForm({
   // silently drops. The field is text and goes through parseAmountInput, the
   // same path the transaction dialog uses.
   const displayLocale = useDisplayLocale()
-  const [description, setDescription] = useState(recurring?.description ?? '')
+  const [description, setDescription] = useState(recurring?.description ?? initial?.description ?? '')
   const [amount, setAmount] = useState(
-    recurring?.amount != null ? formatAmountInput(Number(recurring.amount), displayLocale) : '',
+    recurring?.amount != null
+      ? formatAmountInput(Number(recurring.amount), displayLocale)
+      : initial?.amount != null
+        ? formatAmountInput(Number(initial.amount), displayLocale)
+        : '',
   )
   const parsedAmount = parseAmountInput(amount, displayLocale)
   const amountInvalid = amount !== '' && parsedAmount == null
-  const [currency, setCurrency] = useState(recurring?.currency ?? userCurrency)
-  const [type, setType] = useState<'debit' | 'credit'>(recurring?.type ?? 'debit')
-  const [frequency, setFrequency] = useState(recurring?.frequency ?? 'monthly')
+  const [currency, setCurrency] = useState(recurring?.currency ?? initial?.currency ?? userCurrency)
+  // The selector always shows the currency Save submits: a transaction in a
+  // currency the list does not carry (or before it loads) keeps its option.
+  const currencyOptions = useMemo(() => {
+    const list = supportedCurrencies?.length
+      ? supportedCurrencies
+      : [{ code: userCurrency, symbol: userCurrency, name: userCurrency, flag: '' }]
+    return list.some((option) => option.code === currency)
+      ? list
+      : [{ code: currency, symbol: currency, name: currency, flag: '' }, ...list]
+  }, [supportedCurrencies, userCurrency, currency])
+  const [type, setType] = useState<'debit' | 'credit'>(recurring?.type ?? initial?.type ?? 'debit')
+  const [frequency, setFrequency] = useState(recurring?.frequency ?? initial?.frequency ?? 'monthly')
   const [weekendAdjustment, setWeekendAdjustment] = useState<RecurringTransaction['weekend_adjustment']>(
-    recurring?.weekend_adjustment ?? 'none'
+    recurring?.weekend_adjustment ?? initial?.weekend_adjustment ?? 'none'
   )
-  const [dayOfMonth, setDayOfMonth] = useState(recurring?.day_of_month?.toString() ?? '')
-  const [startDate, setStartDate] = useState(recurring?.start_date ?? localDateString())
-  const [endDate, setEndDate] = useState(recurring?.end_date ?? '')
-  const [categoryId, setCategoryId] = useState(recurring?.category_id ?? '')
-  const [accountId, setAccountId] = useState(recurring?.account_id ?? '')
-  const [isActive, setIsActive] = useState(recurring?.is_active ?? true)
-  const [autoGenerate, setAutoGenerate] = useState(recurring?.auto_generate ?? true)
+  const [dayOfMonth, setDayOfMonth] = useState(
+    recurring?.day_of_month?.toString() ?? initial?.day_of_month?.toString() ?? ''
+  )
+  const [startDate, setStartDate] = useState(recurring?.start_date ?? initial?.start_date ?? localDateString())
+  const [endDate, setEndDate] = useState(recurring?.end_date ?? initial?.end_date ?? '')
+  const [categoryId, setCategoryId] = useState(recurring?.category_id ?? initial?.category_id ?? '')
+  const [accountId, setAccountId] = useState(recurring?.account_id ?? initial?.account_id ?? '')
+  const [isActive, setIsActive] = useState(recurring?.is_active ?? initial?.is_active ?? true)
+  const [autoGenerate, setAutoGenerate] = useState(recurring?.auto_generate ?? initial?.auto_generate ?? true)
   // Split across categories, as in the transaction dialog: every occurrence
   // the schedule generates starts with these parts.
-  const [lineRows, setLineRows] = useState<CategoryLineRow[] | null>(() =>
-    recurring && isSplitByCategory(recurring) && recurring.category_lines
-      ? rowsFromLines(recurring.category_lines, (v) => formatAmountInput(v, displayLocale))
-      : null,
-  )
+  const [lineRows, setLineRows] = useState<CategoryLineRow[] | null>(() => {
+    if (recurring && isSplitByCategory(recurring) && recurring.category_lines) {
+      return rowsFromLines(recurring.category_lines, (v) => formatAmountInput(v, displayLocale))
+    }
+    // Creating a bill from a split transaction starts with its parts.
+    if (initial?.category_lines?.length) {
+      return rowsFromLines(initial.category_lines, (v) => formatAmountInput(v, displayLocale))
+    }
+    return null
+  })
   const [lineShareType, setLineShareType] = useState<CategoryLineShareType>(
-    () => recurring?.category_lines?.[0]?.share_type ?? 'exact',
+    () => recurring?.category_lines?.[0]?.share_type ?? initial?.category_lines?.[0]?.share_type ?? 'exact',
   )
   const hadInitialLines = !!recurring && isSplitByCategory(recurring)
   const linesValid = !lineRows || checkLines(lineRows, lineShareType, parsedAmount ?? 0, displayLocale).valid
@@ -630,7 +709,7 @@ export function RecurringForm({
         <div className="space-y-2">
           <Label>{t('recurring.currency')}</Label>
           <select className={selectClass} value={currency} onChange={(e) => setCurrency(e.target.value)}>
-            {(supportedCurrencies ?? [{ code: userCurrency, symbol: userCurrency, name: userCurrency, flag: '' }]).map((c) => (
+            {currencyOptions.map((c) => (
               <option key={c.code} value={c.code}>{c.flag} {c.name}</option>
             ))}
           </select>

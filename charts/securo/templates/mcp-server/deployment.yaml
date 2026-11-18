@@ -77,7 +77,7 @@ spec:
         {{- if .Values.persistence.attachments.enabled }}
         - name: attachments
           persistentVolumeClaim:
-            claimName: {{ include "securo.fullname" . }}-attachments
+            claimName: {{ include "securo.attachmentsClaimName" . }}
         {{- end }}
         {{- if and (eq (.Values.config.agentsEnabled | toString) "true") .Values.persistence.agentKnowledge.enabled }}
         - name: agent-knowledge

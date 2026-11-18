@@ -1,10 +1,14 @@
 # backend/tests/test_new_rules_api.py
 import uuid
+from datetime import date, datetime, timezone
+from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.account import Account
+from app.models.transaction import Transaction
 from app.models.user import User
 from app.schemas.rule import RuleAction, RuleCondition, RuleCreate
 from app.services.category_service import create_default_categories
@@ -85,6 +89,57 @@ async def test_create_rule_applies_to_existing_transactions(
     netflix = {t["description"]: t for t in items}.get("NETFLIX")
     assert netflix is not None
     assert netflix["category_id"] == cat_food
+
+
+@pytest.mark.asyncio
+async def test_create_provider_category_rule_applies_to_existing_transactions(
+    client: AsyncClient, auth_headers, session: AsyncSession,
+    test_user, test_workspace, test_categories,
+):
+    """Saving a provider-category rule with apply-to-existing categorises the
+    rows whose stored provider payload already carries that category."""
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Provider category API",
+        type="checking",
+        balance=Decimal("1000"),
+        currency="BRL",
+    )
+    transaction = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        description="RESTAURANT",
+        amount=Decimal("45.00"),
+        date=date(2025, 3, 1),
+        type="debit",
+        source="sync",
+        raw_data={"category": "Eating out"},
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add_all([account, transaction])
+    await session.commit()
+
+    payload = {
+        "name": "Provider category apply",
+        "conditions_op": "and",
+        "conditions": [
+            {"field": "provider_category", "op": "equals", "value": "Eating out"}
+        ],
+        "actions": [{"op": "set_category", "value": str(test_categories[1].id)}],
+        "priority": 5,
+        "is_active": True,
+    }
+    response = await client.post("/api/rules", json=payload, headers=auth_headers)
+    assert response.status_code == 201
+    assert response.json()["applied_count"] == 1
+
+    items = (await client.get("/api/transactions", headers=auth_headers)).json()["items"]
+    stored = next(t for t in items if t["id"] == str(transaction.id))
+    assert stored["category_id"] == str(test_categories[1].id)
 
 
 @pytest.mark.asyncio
@@ -1450,3 +1505,46 @@ async def test_preview_rule_skips_a_hidden_category_like_the_save_path(
         await client.get(f"/api/transactions/{item['id']}", headers=auth_headers)
     ).json()
     assert txn["category_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_preview_rule_keeps_a_transfer_leg_in_balances_like_the_save_path(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_categories,
+    test_transactions,
+):
+    """Preview reads rows through a column subset; it has to carry the pair id
+    so it skips `ignore` and an ignored category exactly as saving does."""
+    ignored = test_categories[0]
+    ignored.is_ignored = True
+    txn = test_transactions[4]  # NETFLIX, uncategorized
+    txn.transfer_pair_id = uuid.uuid4()
+    txn.is_ignored = False
+    txn_id = str(txn.id)
+    await session.commit()
+    session.expunge(txn)  # make the preview load the row itself
+
+    body = {
+        "conditions_op": "and",
+        "conditions": [{"field": "description", "op": "equals", "value": "NETFLIX"}],
+        "actions": [
+            {"op": "ignore", "value": True},
+            {"op": "set_category", "value": str(ignored.id)},
+        ],
+    }
+    data = (await client.post("/api/rules/preview", json=body, headers=auth_headers)).json()
+    assert data["matched"] == 1
+    assert data["will_change"] == 0
+    assert data["sample"][0]["new_category_id"] is None
+
+    created = await client.post(
+        "/api/rules",
+        json={**body, "name": "Unsafe on a leg", "apply_to_existing": True},
+        headers=auth_headers,
+    )
+    assert created.status_code == 201
+    saved = (await client.get(f"/api/transactions/{txn_id}", headers=auth_headers)).json()
+    assert saved["is_ignored"] is False
+    assert saved["category_id"] is None
