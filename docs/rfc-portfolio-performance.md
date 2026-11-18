@@ -188,6 +188,36 @@ with the expected return worked out by hand:
 - **Total wipeout.** Once the whole scope reaches zero, the time-weighted
   return stays at −100% even if new money arrives later. That is the
   definition of a compounded return, not a bug, but the UI could explain it.
+- **Other holdings during a trading day.** Only daily closes are stored,
+  and a trade carries a date but no time, so a holding not traded that day
+  has no price at the moment of a trade. It stays at its last valuation
+  until the close, as if the day's trades came before its move. The traded
+  holding itself is exact. The error comes from the money the day brings in
+  or takes out, not from how much was traded: a same-size switch from one
+  holding to another, or a day trade, leaves the base unchanged and is close
+  to exact. With `g = |net flow| / (portfolio value + net flow)`, `r` the
+  other holdings' move that day and `τ` the share of that move that came
+  before the trade, the day is off by about `r × τ × g`:
+
+  | Day | Worst case (`τ = 1`) | Expected (`τ` unknown, ½ on average) |
+  |---|---|---|
+  | Buy 10% of the portfolio, the rest moves 2% | 0.18 points | 0.09 points |
+  | Buy 4%, the rest moves 1.5% | 0.06 points | 0.03 points |
+
+  Over a year each day's error follows the market's direction that day, so
+  they mostly cancel out. With daily volatility `σ` and `N` such days, their
+  spread is about `σ × g × √(N / 3)`, assuming the other holdings are most
+  of the portfolio. Monthly purchases of 4% with 1.5% daily volatility come
+  to about 0.1 points a year. Adding or withdrawing 10% of the portfolio on
+  50 days a year comes to about 0.6 points.
+
+  Removing it needs two things. The trade's time, which the provider
+  interface does not carry (`HoldingTradeData` has a date only; IBKR Flex
+  reports execution times). And prices during the day for the other
+  holdings at that time: Yahoo keeps hourly bars for about two years and
+  finer ones for weeks, with patchier coverage than daily closes. That is
+  a new column and a new outbound call under ADR 0025, for an error of this
+  size. Worth revisiting in its own change once trades carry a time.
 - **Benchmark fairness.** The Ibovespa is a total-return index (dividends
   reinvested), and the Índice DI compounds all of its income, so comparing
   either with a price-only portfolio is unfair to the portfolio until
