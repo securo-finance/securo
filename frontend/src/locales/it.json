@@ -2592,12 +2592,12 @@
   },
   "accountantExport": {
     "title": "Esportazione per il commercialista",
-    "description": "Scarica le transazioni categorizzate e il conto economico di un periodo, nel formato che il software del tuo commercialista apre direttamente.",
+    "description": "Scarica le transazioni categorizzate e il conto economico di un periodo, nel formato che il software del tuo commercialista apre direttamente. Gli importi sono il valore intero della transazione, prima di dividerlo con altre persone.",
     "startDate": "Data iniziale",
     "endDate": "Data finale",
     "download": "Scarica pacchetto",
     "error": "Impossibile generare l'esportazione",
-    "formatHint": "Uno zip con transactions.csv e profit-and-loss.csv, con i separatori e la codifica che fogli di calcolo e software contabili leggono senza modifiche."
+    "formatHint": "Uno zip con transactions.csv e profit-and-loss.csv, con i separatori e la codifica che fogli di calcolo e software contabili leggono senza modifiche. Ogni importo è il valore intero della transazione, non la tua parte di una divisione."
   },
   "backup": {
     "button": "Backup",

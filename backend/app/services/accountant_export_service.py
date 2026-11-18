@@ -12,6 +12,10 @@ Two files are produced:
 - ``profit-and-loss.csv``: income and expenses grouped by category, then the
   period result. It follows the shared definition of what counts as income or
   expense (``counts_as_user_pnl``), so transfers and ignored rows stay out.
+
+Every text column a person can type (account, category, payee, document) goes
+through ``csv_safe``, so a description that begins like a formula opens as the
+text it is instead of running in the reader's spreadsheet.
 """
 from __future__ import annotations
 
@@ -43,6 +47,7 @@ from app.services._query_filters import (
     with_category_lines,
 )
 from app.services.admin_service import get_credit_card_accounting_mode
+from app.services.csv_safety import csv_safe
 
 TRANSACTIONS_FILE = "transactions.csv"
 PROFIT_AND_LOSS_FILE = "profit-and-loss.csv"
@@ -209,12 +214,12 @@ async def _transaction_rows(
         exported.append(
             [
                 _format_date(row.report_date),
-                row.account or "",
+                csv_safe(row.account),
                 _format_decimal(signed),
                 row.currency or "",
-                row.category or "",
-                row.payee or "",
-                row.document or "",
+                csv_safe(row.category),
+                csv_safe(row.payee),
+                csv_safe(row.document),
                 direction,
                 row.status or "",
             ]
@@ -295,7 +300,10 @@ async def _profit_and_loss_rows(
     ]
     ordered.sort(key=lambda item: (0 if item[0] == _INCOME else 1, item[1].lower()))
 
-    rows = [[section, label, _format_decimal(total)] for section, label, total in ordered]
+    rows = [
+        [section, csv_safe(label), _format_decimal(total)]
+        for section, label, total in ordered
+    ]
     income_total = sum(
         (total for section, _, total in ordered if section == _INCOME), Decimal("0.00")
     )

@@ -2592,12 +2592,12 @@
   },
   "accountantExport": {
     "title": "Exportación para el contador",
-    "description": "Descarga las transacciones categorizadas y el estado de resultados de un período, en el formato que el software de tu contador abre directamente.",
+    "description": "Descarga las transacciones categorizadas y el estado de resultados de un período, en el formato que el software de tu contador abre directamente. Los importes son el valor completo de la transacción, antes de dividir con otras personas.",
     "startDate": "Fecha inicial",
     "endDate": "Fecha final",
     "download": "Descargar paquete",
     "error": "No se pudo generar la exportación",
-    "formatHint": "Un zip con transactions.csv y profit-and-loss.csv, con los separadores y la codificación que las hojas de cálculo y los programas contables leen sin ajustes."
+    "formatHint": "Un zip con transactions.csv y profit-and-loss.csv, con los separadores y la codificación que las hojas de cálculo y los programas contables leen sin ajustes. Cada importe es el valor total de la transacción, no tu parte de un reparto."
   },
   "backup": {
     "button": "Copia de seguridad",

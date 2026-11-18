@@ -1,5 +1,5 @@
 import { screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { renderWithProviders, t } from '@/test/utils'
 import { localDateString } from '@/lib/date-utils'
@@ -7,8 +7,10 @@ import { localDateString } from '@/lib/date-utils'
 vi.mock('@/lib/api', () => ({ accountantExport: { download: vi.fn() } }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 // The workspace timezone comes from a query of its own; without one the
-// component falls back to the browser's day, which is what this test expects.
-vi.mock('@/hooks/use-timezone', () => ({ useEffectiveTimezone: () => undefined }))
+// component falls back to the browser's day. Mutable so a test can resolve it
+// after the first render, the way the query does.
+const timezone = vi.hoisted(() => ({ current: undefined as string | undefined }))
+vi.mock('@/hooks/use-timezone', () => ({ useEffectiveTimezone: () => timezone.current }))
 
 import { accountantExport } from '@/lib/api'
 
@@ -20,6 +22,11 @@ describe('AccountantExportSection', () => {
   beforeEach(() => {
     download.mockReset()
     download.mockResolvedValue(undefined)
+    timezone.current = undefined
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('starts on the current month and exports that range', async () => {
@@ -35,6 +42,30 @@ describe('AccountantExportSection', () => {
     await user.click(screen.getByRole('button', { name: t('accountantExport.download') }))
 
     expect(download).toHaveBeenCalledWith(`${today.slice(0, 7)}-01`, today)
+  })
+
+  it('derives the default dates from the timezone once it resolves', () => {
+    // Noon UTC is already March 1st in Kiritimati (UTC+14) and still
+    // February 28th in Midway (UTC-11), so the two zones give different days
+    // whatever the browser's own zone is. A period fixed on the browser's day
+    // while the workspace zone was still loading would stay wrong afterwards.
+    vi.useFakeTimers({
+      now: new Date('2026-02-28T12:00:00Z'),
+      shouldAdvanceTime: true,
+    })
+    timezone.current = 'Pacific/Kiritimati'
+    const { rerender } = renderWithProviders(<AccountantExportSection />)
+    const start = screen.getByLabelText(t('accountantExport.startDate'))
+    const end = screen.getByLabelText(t('accountantExport.endDate'))
+    expect(end).toHaveValue('2026-03-01')
+    expect(start).toHaveValue('2026-03-01')
+
+    // The workspace query answers: the defaults follow the zone it names.
+    timezone.current = 'Pacific/Midway'
+    rerender(<AccountantExportSection />)
+
+    expect(end).toHaveValue('2026-02-28')
+    expect(start).toHaveValue('2026-02-01')
   })
 
   it('sends the period the user picked', async () => {

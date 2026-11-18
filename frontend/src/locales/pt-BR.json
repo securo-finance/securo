@@ -2592,12 +2592,12 @@
   },
   "accountantExport": {
     "title": "Exportação para o contador",
-    "description": "Baixe as transações categorizadas e a DRE de um período, no formato que o software do seu contador abre direto.",
+    "description": "Baixe as transações categorizadas e a DRE de um período, no formato que o software do seu contador abre direto. Os valores são o valor cheio da transação, antes de dividir com outras pessoas.",
     "startDate": "Data inicial",
     "endDate": "Data final",
     "download": "Baixar pacote",
     "error": "Não foi possível gerar a exportação",
-    "formatHint": "Um zip com transactions.csv e profit-and-loss.csv, com os separadores e a codificação que planilhas e softwares contábeis leem sem ajuste."
+    "formatHint": "Um zip com transactions.csv e profit-and-loss.csv, com os separadores e a codificação que planilhas e softwares contábeis leem sem ajuste. Cada valor é o total da transação, não a sua parte em uma divisão."
   },
   "backup": {
     "button": "Backup",

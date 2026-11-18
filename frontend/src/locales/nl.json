@@ -2590,12 +2590,12 @@
   },
   "accountantExport": {
     "title": "Export voor de accountant",
-    "description": "Download de gecategoriseerde transacties en de winst-en-verliesrekening van een periode, in het formaat dat de software van je accountant direct opent.",
+    "description": "Download de gecategoriseerde transacties en de winst-en-verliesrekening van een periode, in het formaat dat de software van je accountant direct opent. De bedragen zijn de volledige transactiewaarde, vóór het splitsen met andere personen.",
     "startDate": "Begindatum",
     "endDate": "Einddatum",
     "download": "Pakket downloaden",
     "error": "Export kon niet worden gemaakt",
-    "formatHint": "Eén zip met transactions.csv en profit-and-loss.csv, met de scheidingstekens en codering die spreadsheets en boekhoudsoftware zonder aanpassing lezen."
+    "formatHint": "Eén zip met transactions.csv en profit-and-loss.csv, met de scheidingstekens en codering die spreadsheets en boekhoudsoftware zonder aanpassing lezen. Elk bedrag is de volledige waarde van de transactie, niet jouw deel van een splitsing."
   },
   "backup": {
     "button": "Back-up",

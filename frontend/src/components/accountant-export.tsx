@@ -23,8 +23,15 @@ function monthStart(today: string): string {
 export function AccountantExportSection() {
   const { t } = useTranslation()
   const today = todayInTimezone(useEffectiveTimezone())
-  const [startDate, setStartDate] = useState(() => monthStart(today))
-  const [endDate, setEndDate] = useState(today)
+  // The period starts unset and falls back to the current month, derived on
+  // every render, so the dates wait for the workspace timezone to resolve
+  // before they are fixed. Freezing them in a `useState` initializer took the
+  // browser's day while the zone was still unknown, and a workspace east or
+  // west of the browser could open the card on a period the server refuses.
+  // The first edit pins both ends; until then they keep following the day.
+  const [range, setRange] = useState<{ start: string; end: string } | null>(null)
+  const startDate = range?.start ?? monthStart(today)
+  const endDate = range?.end ?? today
   const [downloading, setDownloading] = useState(false)
 
   const rangeValid = startDate !== '' && endDate !== '' && endDate >= startDate
@@ -58,7 +65,7 @@ export function AccountantExportSection() {
             type="date"
             value={startDate}
             max={endDate || today}
-            onChange={(event) => setStartDate(event.target.value)}
+            onChange={(event) => setRange({ start: event.target.value, end: endDate })}
             className="h-10 rounded-lg"
           />
         </div>
@@ -72,7 +79,7 @@ export function AccountantExportSection() {
             value={endDate}
             min={startDate || undefined}
             max={today}
-            onChange={(event) => setEndDate(event.target.value)}
+            onChange={(event) => setRange({ start: startDate, end: event.target.value })}
             className="h-10 rounded-lg"
           />
         </div>

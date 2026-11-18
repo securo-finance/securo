@@ -492,3 +492,58 @@ async def test_range_validation(
         headers=headers,
     )
     assert too_wide.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_text_columns_open_as_text_never_as_a_formula(
+    client: AsyncClient,
+    session: AsyncSession,
+    auth_headers: dict,
+    test_user: User,
+    test_workspace: Workspace,
+    test_account: Account,
+):
+    """A payee, description or category that begins like a formula is written
+    with a leading apostrophe, so the spreadsheet reads it as text.
+
+    Without it, a bank statement is enough to put live content on the
+    accountant's machine: CSV injection, CWE-1236.
+    """
+    await _make_business(session, test_workspace, "Padaria São João")
+    category = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="=SUM(A1:A9)",
+    )
+    session.add(category)
+    await session.flush()
+    await _add_transaction(
+        session,
+        test_user,
+        test_workspace,
+        test_account,
+        amount="100.00",
+        tx_date=date(2024, 1, 10),
+        category_id=category.id,
+        description="-2+3",
+        payee='+HYPERLINK("x")',
+    )
+
+    response = await client.get(
+        EXPORT_URL,
+        params={"start_date": START.isoformat(), "end_date": END.isoformat()},
+        headers=_headers(auth_headers, test_workspace),
+    )
+
+    with _open_zip(response) as archive:
+        _, rows = _read_csv(archive, "transactions.csv")
+        _, profit_and_loss = _read_csv(archive, "profit-and-loss.csv")
+
+    row = rows[1]
+    assert row[4] == "'=SUM(A1:A9)"
+    assert row[5] == '\'+HYPERLINK("x")'
+    assert row[6] == "'-2+3"
+
+    # The P&L reads the same category name, so it is neutralised there too.
+    assert ["expense", "'=SUM(A1:A9)", "100,00"] in profit_and_loss
