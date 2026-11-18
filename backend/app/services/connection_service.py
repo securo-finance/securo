@@ -909,9 +909,13 @@ async def _sync_holdings(
                 if previous_marker == existing.sell_date.isoformat():
                     provider_sell_date = previous_marker
             # Keep descriptive fields fresh in case the provider still
-            # updates them post-closure, but don't touch valuation.
+            # updates them post-closure, but don't touch valuation. The
+            # position is closed, so no value date is stamped, and the
+            # reserved key is stripped like on the active path: the last
+            # valuation is older than the closure and the payload must not
+            # date it.
             existing.name = holding.name
-            withdrawn_metadata = dict(holding.metadata or {})
+            withdrawn_metadata = dict(_provider_metadata(holding) or {})
             if provider_sell_date is not None:
                 withdrawn_metadata[_PROVIDER_SELL_DATE_METADATA_KEY] = provider_sell_date
             existing.external_metadata = withdrawn_metadata or None
@@ -1168,20 +1172,27 @@ async def _sync_holding_trades(
             await _upsert_asset_value_for_today(session, asset, holding.current_value, app_today())
 
 
+def _provider_metadata(holding: HoldingData) -> Optional[dict]:
+    """The provider's metadata snapshot, without the keys Securo owns.
+
+    A provider can send anything, including the reserved value date key, so
+    the payload is never taken at its word for the markers Securo writes.
+    """
+    return {
+        key: value
+        for key, value in (holding.metadata or {}).items()
+        if key != PROVIDER_VALUE_DATE_METADATA_KEY
+    } or None
+
+
 def _holding_metadata(holding: HoldingData) -> Optional[dict]:
     """The holding's metadata snapshot, stamped with its provider value date.
 
     The blob is replaced on every sync, so the marker travels with it: when a
     provider stops reporting a date, the old marker goes with the snapshot
-    instead of lingering next to a value it no longer describes. The reserved
-    key is Securo's own, so whatever a provider sends under it is dropped
-    rather than trusted.
+    instead of lingering next to a value it no longer describes.
     """
-    metadata = {
-        key: value
-        for key, value in (holding.metadata or {}).items()
-        if key != PROVIDER_VALUE_DATE_METADATA_KEY
-    }
+    metadata = _provider_metadata(holding) or {}
     if holding.value_date is not None:
         metadata[PROVIDER_VALUE_DATE_METADATA_KEY] = holding.value_date.isoformat()
     return metadata or None

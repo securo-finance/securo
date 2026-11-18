@@ -849,6 +849,49 @@ async def test_provider_cannot_write_the_reserved_value_date_marker(
 
 
 @pytest.mark.asyncio
+async def test_withdrawal_drops_the_reserved_value_date_from_the_payload(
+    session: AsyncSession, test_user: User, mock_connection: BankConnection
+):
+    """A closed position carries no provider date: the withdrawal payload goes
+    through the same strip as the active one, so a smuggled key cannot date the
+    last valuation of a holding the provider has just closed."""
+    assert mock_connection.credentials is not None
+    _MockProvider._holdings = [
+        _holding(external_id="h-1", value_date=date(2026, 3, 17))
+    ]
+    await _sync_holdings(
+        session, test_user.id, mock_connection, mock_connection.credentials
+    )
+    await session.commit()
+    (asset,) = await _assets_for(session, test_user)
+
+    _MockProvider._holdings = [
+        _holding(
+            external_id="h-1",
+            current_value=Decimal("0"),
+            is_withdrawn=True,
+            metadata={
+                "status": "TOTAL_WITHDRAWAL",
+                PROVIDER_VALUE_DATE_METADATA_KEY: "2026-01-01",
+            },
+        )
+    ]
+    await _sync_holdings(
+        session, test_user.id, mock_connection, mock_connection.credentials
+    )
+    await session.commit()
+    await session.refresh(asset)
+
+    assert asset.sell_date is not None
+    assert asset.external_metadata is not None
+    assert PROVIDER_VALUE_DATE_METADATA_KEY not in asset.external_metadata
+    assert asset.external_metadata["status"] == "TOTAL_WITHDRAWAL"
+    read = await get_asset(session, asset.id, asset.workspace_id)
+    assert read is not None
+    assert read.provider_value_date is None
+
+
+@pytest.mark.asyncio
 async def test_manual_valuation_on_a_synced_asset_hides_the_provider_date(
     session: AsyncSession, test_user: User, mock_connection: BankConnection
 ):
