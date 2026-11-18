@@ -187,6 +187,41 @@ async def test_openai_tool_signatures_survive_multiple_rounds(provider_class, si
     assert [tc["id"] for tc in final_calls] == ["a", "b", "c"]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider_class", [OpenAICompatibleProvider, OpenAIProvider])
+async def test_openai_tool_calls_without_index_stay_apart(provider_class):
+    """Gemini's OpenAI endpoint streams tool calls with no `index` (#1318).
+
+    A new id opens a new call and a delta with no id continues the last one,
+    even when it carries the rest of the name. Keying a missing index as 0
+    glued both calls into `get_cashflow` with `{"months":12}{}`.
+    """
+    deltas = [
+        {"tool_calls": [{"id": "call_1", "function": {"name": "get_cash", "arguments": ""}}]},
+        {"tool_calls": [{"function": {"name": "flow", "arguments": '{"months":'}}]},
+        {"tool_calls": [{"function": {"arguments": "12}"}}]},
+        {"tool_calls": [{"id": "call_2", "function": {"name": "list_accounts", "arguments": "{}"}}]},
+    ]
+    _FakeAsyncClient.queue_stream.append(_FakeStreamResponse(status_code=200, lines=[
+        "data: " + json.dumps({"choices": [{"delta": delta}]}) for delta in deltas
+    ] + ['data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}', "data: [DONE]"]))
+    provider = provider_class(base_url="https://generativelanguage.googleapis.com/v1beta/openai")
+
+    result = await provider.chat([ChatMessage(role="user", content="How am I doing?")], model="gemini-test")
+
+    assert [(tc.id, tc.name, tc.arguments, tc.invalid_arguments) for tc in result.tool_calls] == [
+        ("call_1", "get_cashflow", {"months": 12}, None),
+        ("call_2", "list_accounts", {}, None),
+    ]
+
+
+@pytest.mark.parametrize("buf", ['{"months":12}{}', '{"months":', "[1, 2]"])
+def test_parse_tool_arguments_refuses_anything_but_one_object(buf):
+    from app.agents.providers.base import parse_tool_arguments
+
+    assert parse_tool_arguments(buf) == ({}, buf)
+
+
 # --------------------------------------------------------------------- Ollama: chat_stream
 
 @pytest.mark.asyncio
