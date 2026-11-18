@@ -5,6 +5,7 @@ from typing import Annotated, Literal, Optional
 
 from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, computed_field
 
+from app.schemas.transaction import normalize_transaction_type
 from app.schemas.transaction_category_line import (
     TransactionCategoryLineRead,
     TransactionCategoryLinesInput,
@@ -44,20 +45,8 @@ HolidayCalendar = Annotated[
     Annotated[str, Field(max_length=32)], AfterValidator(_validate_holiday_calendar)
 ]
 
-# Callers (the agent tools among them) say "expense" and "income" as often as
-# "debit" and "credit". Rows stored with those words were left out of every
-# balance and total, so they are translated rather than stored.
-_TYPE_ALIASES = {"expense": "debit", "income": "credit"}
-
-
-def _normalize_type(value):
-    if isinstance(value, str):
-        value = value.strip().lower()
-        return _TYPE_ALIASES.get(value, value)
-    return value
-
-
-RecurringType = Annotated[Literal["debit", "credit"], BeforeValidator(_normalize_type)]
+# "expense" and "income" are translated the way the transaction schemas do it.
+RecurringType = Annotated[Literal["debit", "credit"], BeforeValidator(normalize_transaction_type)]
 
 
 def _normalize_keywords(value):
