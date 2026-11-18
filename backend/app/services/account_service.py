@@ -741,7 +741,9 @@ async def _recompute_effective_dates(session: AsyncSession, account: Account) ->
 
     A row linked to a bank bill keeps that bill's due date, as the sync set
     it: the sync only refiles a row when its `bill_id` changes, so dropping
-    it here would leave the row on the cycle-math date for good."""
+    it here would leave the row on the cycle-math date for good. Only this
+    account's bills count: a row moved here from another card keeps its old
+    `bill_id`, and that card's due date says nothing about this one."""
     result = await session.execute(
         select(Transaction).where(Transaction.account_id == account.id)
     )
@@ -750,7 +752,10 @@ async def _recompute_effective_dates(session: AsyncSession, account: Account) ->
     due_dates: dict[uuid.UUID, _Date] = {}
     if bill_ids:
         rows = await session.execute(
-            select(CreditCardBill.id, CreditCardBill.due_date).where(CreditCardBill.id.in_(bill_ids))
+            select(CreditCardBill.id, CreditCardBill.due_date).where(
+                CreditCardBill.id.in_(bill_ids),
+                CreditCardBill.account_id == account.id,
+            )
         )
         due_dates = {bill_id: due_date for bill_id, due_date in rows.all()}
     for tx in transactions:

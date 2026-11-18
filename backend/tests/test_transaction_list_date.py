@@ -232,3 +232,45 @@ async def test_card_round_trip_keeps_the_linked_bill_date(
     assert stored is not None
     # Cycle math would say Apr 5; the bank's bill says Apr 10.
     assert stored.effective_date == date(2026, 4, 10)
+
+
+@pytest.mark.asyncio
+async def test_row_moved_from_another_card_ignores_that_cards_bill(
+    session, test_user, test_workspace
+):
+    """A row moved to another card keeps the `bill_id` of the card it came
+    from. Refiling the new card uses its own cycle, not the old card's bill."""
+    old_card = await _account(
+        session, test_user.id, test_workspace.id, "Old card", "credit_card",
+        statement_close_day=1, payment_due_day=5,
+    )
+    new_card = await _account(
+        session, test_user.id, test_workspace.id, "New card", "credit_card",
+        statement_close_day=31, payment_due_day=20,
+    )
+    old_bill = CreditCardBill(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=old_card.id,
+        external_id="bill-old",
+        due_date=date(2026, 4, 10),
+        total_amount=Decimal("10.00"),
+        currency="BRL",
+    )
+    session.add(old_bill)
+    await session.flush()
+    tx = await _tx(
+        session, new_card, date(2026, 3, 30), "Hotel",
+        bill_id=old_bill.id, effective_date=date(2026, 4, 10),
+    )
+    await session.commit()
+
+    await account_service.update_account(
+        session, new_card.id, test_workspace.id,
+        AccountUpdate(statement_close_day=31, payment_due_day=25),
+    )
+    stored = await session.scalar(select(Transaction).where(Transaction.id == tx.id))
+    assert stored is not None
+    assert stored.effective_date == compute_effective_date(date(2026, 3, 30), 31, 25)
+    assert stored.effective_date != date(2026, 4, 10)

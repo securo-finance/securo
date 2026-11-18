@@ -150,4 +150,17 @@ describe('listDate', () => {
     )
     expect(screen.getByText(new RegExp(new Date('2026-04-15T00:00:00').toLocaleDateString('en-US')))).toBeInTheDocument()
   })
+
+  it('the badge keeps the bank date readable when the column shows another date', () => {
+    // Filed on its bill date while the override pins the bank date: the
+    // Date column shows 4/10, so 3/30 has to stay visible somewhere.
+    renderWithProviders(
+      <ReportingDateBadge
+        tx={{ date: '2026-03-30', reporting_date_override: '2026-03-30', reporting_date: '2026-04-10' }}
+        locale="en-US"
+      />,
+    )
+    expect(screen.getByText('Bank date: 3/30/2026')).toBeInTheDocument()
+    expect(screen.queryByText(/Reporting date/)).not.toBeInTheDocument()
+  })
 })
