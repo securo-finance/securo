@@ -1899,6 +1899,7 @@ async def handle_oauth_callback(
         # that SUM(all transactions) matches the provider-reported balance. Any
         # history that falls outside the provider's lookback window gets
         # absorbed into this synthetic transaction.
+        await _drop_finance_charges_with_twins(session, account)
         await sync_opening_balance_for_connected_account(session, account)
 
     # Detect transfer pairs among newly synced transactions
@@ -2963,6 +2964,94 @@ def _describe_finance_charge(type_str: str, additional_info: Optional[str]) -> s
     }.get(type_str, "Encargo")
 
 
+#: Words that make a regular card transaction one of the bill's finance
+#: charges: some cards list "IOF do rotativo", "Juros por atraso" or "Multa
+#: por atraso" as transactions and in the bill's `financeCharges` too (#1258).
+_FINANCE_CHARGE_WORDS = frozenset({
+    "iof", "juros", "multa", "encargo", "encargos", "mora",
+    "interest", "fee", "penalty",
+})
+
+
+async def _regular_finance_charge_rows(
+    session: AsyncSession, account_id: uuid.UUID, bill_id: uuid.UUID,
+) -> list[Transaction]:
+    """The regular transactions on a bill that are finance charges.
+
+    A synthetic `bill_charge:*` row for a charge one of these already
+    carries would count it twice. Rows the user ignored are left out, so
+    the synthetic row keeps the charge in the totals.
+    """
+    result = await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == account_id,
+            Transaction.bill_id == bill_id,
+            Transaction.type == "debit",
+            Transaction.is_ignored.is_(False),
+            Transaction.source != "opening_balance",
+            or_(
+                Transaction.external_id.is_(None),
+                Transaction.external_id.not_like("bill_charge:%"),
+            ),
+        ).order_by(Transaction.date, Transaction.created_at)
+    )
+    return [
+        row
+        for row in result.scalars()
+        if _FINANCE_CHARGE_WORDS.intersection(
+            normalize_words(row.original_description)
+            + normalize_words(row.description)
+        )
+    ]
+
+
+def _claim_finance_charge_twin(
+    regular: list[Transaction], amount: Decimal,
+) -> bool:
+    """Take the first regular finance charge of `amount` off `regular`.
+
+    Each regular row stands for one charge, so two charges of the same
+    amount need two rows.
+    """
+    for index, row in enumerate(regular):
+        if row.amount == amount:
+            del regular[index]
+            return True
+    return False
+
+
+async def _drop_finance_charges_with_twins(
+    session: AsyncSession, account: Account,
+) -> None:
+    """Delete the synthetic finance charges a regular transaction carries.
+
+    The bills are synced before the transactions, so on the sync that first
+    brings a charge's transaction the synthetic row is already there, and
+    rows from syncs before #1258 never had the check. Runs after the
+    transactions land.
+    """
+    if account.type != "credit_card":
+        return
+    synthetic = (await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == account.id,
+            Transaction.bill_id.is_not(None),
+            Transaction.external_id.like("bill_charge:%"),
+        ).order_by(Transaction.external_id)
+    )).scalars().all()
+    regular_by_bill: dict[uuid.UUID, list[Transaction]] = {}
+    for row in synthetic:
+        bill_id = row.bill_id
+        if bill_id is None:
+            continue
+        if bill_id not in regular_by_bill:
+            regular_by_bill[bill_id] = await _regular_finance_charge_rows(
+                session, account.id, bill_id,
+            )
+        if _claim_finance_charge_twin(regular_by_bill[bill_id], row.amount):
+            await session.delete(row)
+
+
 async def _sync_bill_finance_charges(
     session: AsyncSession,
     user_id: uuid.UUID,
@@ -2987,6 +3076,9 @@ async def _sync_bill_finance_charges(
     # at bill.due_date so accrual-mode aggregations bucket the same as
     # regular CC purchases for this bill.
     charge_date = _compute_bill_close_date(bill.due_date, account.statement_close_day)
+    # A charge the card already lists as a transaction on this bill is not
+    # materialized, and a synthetic row made for it before is dropped below.
+    regular = await _regular_finance_charge_rows(session, account.id, bill.id)
 
     desired_external_ids: set[str] = set()
     for raw in raw_charges:
@@ -3004,6 +3096,8 @@ async def _sync_bill_finance_charges(
             continue
         charge_id = raw.get("id")
         if not charge_id:
+            continue
+        if _claim_finance_charge_twin(regular, abs(amount)):
             continue
         external_id = f"bill_charge:{bill.external_id}:{charge_id}"
         desired_external_ids.add(external_id)
@@ -3996,6 +4090,7 @@ async def sync_connection(
 
             # Reconcile the opening balance after any new transactions land so
             # SUM(all txs) keeps matching account.balance from the provider.
+            await _drop_finance_charges_with_twins(session, account)
             await sync_opening_balance_for_connected_account(session, account)
 
         # Detect transfer pairs among newly synced transactions
