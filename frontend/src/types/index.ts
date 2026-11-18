@@ -1375,6 +1375,12 @@ export interface MarketSymbolQuote {
   quote_type: string | null
 }
 
+export interface AssetPriceRefreshResult {
+  refreshed: number
+  skipped: number
+  rate_limited: number
+}
+
 export interface AssetGroup {
   id: string
   user_id: string

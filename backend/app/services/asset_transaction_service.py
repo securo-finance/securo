@@ -304,6 +304,25 @@ async def _load_asset(
     return result.scalar_one_or_none()
 
 
+async def _lock_asset(
+    session: AsyncSession, asset_id: uuid.UUID, workspace_id: uuid.UUID
+) -> Optional[Asset]:
+    """Load the holding under FOR UPDATE, for callers that write its ledger.
+
+    Every ledger write takes the Asset lock before touching transaction rows,
+    the same order delete_asset uses: a refresh holding the Asset cannot end up
+    in a lock cycle with an edit or a delete of one of its entries, which would
+    make PostgreSQL abort one of them.
+    """
+    result = await session.execute(
+        select(Asset)
+        .where(Asset.id == asset_id, Asset.workspace_id == workspace_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    return result.scalar_one_or_none()
+
+
 async def list_asset_transactions(
     session: AsyncSession, asset_id: uuid.UUID, workspace_id: uuid.UUID
 ) -> Optional[list[AssetTransactionRead]]:
@@ -508,7 +527,9 @@ async def update_transaction(
     # Resolve the asset before mutating the row: bailing out after the
     # setattr loop would leave the edits pending in the session, so a later
     # commit in the same request would persist an update we reported failed.
-    asset = await _load_asset(session, tx.asset_id, workspace_id)
+    # The lock comes before the flush below for the same reason delete_asset
+    # takes it first: Asset, then its transaction rows, in every writer.
+    asset = await _lock_asset(session, tx.asset_id, workspace_id)
     if asset is None:
         return None
 
@@ -537,7 +558,9 @@ async def delete_transaction(
     tx = result.scalar_one_or_none()
     if tx is None:
         return None
-    asset = await _load_asset(session, tx.asset_id, workspace_id)
+    # Asset lock first, as in update_transaction and delete_asset: the delete
+    # of the entry flushes after it, never before.
+    asset = await _lock_asset(session, tx.asset_id, workspace_id)
     if asset is None:
         return None
     others = [t for t in await _load_txs(session, tx.asset_id) if t.id != tx.id]

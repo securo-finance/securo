@@ -193,6 +193,30 @@ function assetErrorMessage(e: unknown, fallback: string): string {
   return resp?.status ? `${fallback} (${resp.status})` : fallback
 }
 
+/** What a rate-limited portfolio refresh already wrote before it stopped. */
+interface RateLimitedRefresh {
+  refreshed: number
+  skipped: number
+  rate_limited: number
+}
+
+/**
+ * The refresh counters carried by a 429, or null when the request failed for
+ * another reason. The service commits the prices it got before the provider
+ * refused, so these counts are what the page must show and refetch.
+ */
+function rateLimitedRefresh(e: unknown): RateLimitedRefresh | null {
+  const resp = (e as { response?: { data?: { detail?: unknown }; status?: number } })?.response
+  if (resp?.status !== 429) return null
+  const detail = resp.data?.detail
+  const summary = (detail && typeof detail === 'object' ? detail : {}) as Partial<RateLimitedRefresh>
+  return {
+    refreshed: Number(summary.refreshed ?? 0),
+    skipped: Number(summary.skipped ?? 0),
+    rate_limited: Number(summary.rate_limited ?? 1),
+  }
+}
+
 // Badge label and color per ledger kind. A split takes the indigo the value
 // chart already uses for its mixed markers.
 const TX_KIND_CONFIG: Record<AssetTransaction['kind'], { labelKey: string; tone: string }> = {
@@ -215,7 +239,7 @@ export default function AssetsPage() {
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
-  const { canWrite } = useWorkspace()
+  const { canWrite, current: workspace } = useWorkspace()
   // The day the server keeps the books in, so the staleness badge agrees with
   // the dates it writes, not the browser's clock. Until that timezone is known
   // there is no day to compare against, so the badge waits for it instead of
@@ -428,6 +452,48 @@ export default function AssetsPage() {
       toast.success(t('assets.priceRefreshed'))
     },
     onError: (e) => toast.error(assetErrorMessage(e, t('common.error'))),
+  })
+
+  // Portfolio-wide refresh (issue #778): one provider call for every
+  // market-priced holding instead of opening each asset and refreshing it.
+  const refreshAllPricesMutation = useMutation({
+    // The workspace comes from the click, not from the context when the
+    // request finally runs: a mutation paused while offline resumes later,
+    // and the interceptor would then stamp whichever workspace is selected
+    // by then (the app does not pin the mutation to online).
+    mutationFn: (workspaceId: string | null) => assets.refreshPrices(workspaceId),
+    onSuccess: (summary, requestedWorkspaceId) => {
+      // The answer belongs to the workspace that asked. If the user moved to
+      // another one while the provider was working, the counts are not this
+      // page's to show, and its data is not what the refetch would touch.
+      if (requestedWorkspaceId !== (workspace?.id ?? null)) return
+      refetchAssetViews()
+      if (summary.refreshed === 0 && summary.skipped === 0) {
+        toast.info(t('assets.refreshAllPricesNone'))
+        return
+      }
+      toast.success(
+        t('assets.refreshAllPricesDone', {
+          refreshed: summary.refreshed,
+          skipped: summary.skipped,
+        }),
+      )
+    },
+    onError: (e, requestedWorkspaceId) => {
+      const limited = rateLimitedRefresh(e)
+      if (requestedWorkspaceId !== (workspace?.id ?? null)) return
+      // A 429 here can come after some prices were written and committed, so
+      // the list and the charts are refetched on this path too.
+      if (limited) refetchAssetViews()
+      toast.error(
+        limited
+          ? t('assets.refreshAllPricesRateLimited', {
+              refreshed: limited.refreshed,
+              skipped: limited.skipped,
+            })
+          : assetErrorMessage(e, t('common.error')),
+      )
+    },
   })
 
   const { data: rawWalletsList } = useQuery({
@@ -1168,7 +1234,20 @@ export default function AssetsPage() {
         title={t('assets.title')}
         action={
           canWrite ? (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                onClick={() => refreshAllPricesMutation.mutate(workspace?.id ?? null)}
+                variant="outline"
+                className="gap-1.5"
+                disabled={refreshAllPricesMutation.isPending}
+                title={t('assets.refreshAllPrices')}
+              >
+                <RefreshCw
+                  size={16}
+                  className={refreshAllPricesMutation.isPending ? 'animate-spin' : ''}
+                />
+                {t('assets.refreshAllPrices')}
+              </Button>
               <Button onClick={() => navigate('/import?tab=investments')} variant="outline" className="gap-1.5">
                 <Upload size={16} />
                 {t('assetImport.action')}

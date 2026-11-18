@@ -1314,6 +1314,36 @@ class _DatedCloses(_FakeProvider):
         return {s.upper(): self._closes.get(s.upper()) for s in symbols}
 
 
+class _SplitDuringTheFallback(_FakeProvider):
+    """A feed that records a split while the sweep waits on another symbol."""
+
+    def __init__(
+        self,
+        *,
+        closes: dict[str, LatestClose],
+        quotes: dict[str, MarketSymbolQuote],
+        session: AsyncSession,
+        workspace,
+        asset: Asset,
+        split_on: date,
+    ) -> None:
+        super().__init__(quotes)
+        self._closes = closes
+        self._session = session
+        self._workspace = workspace
+        self._asset = asset
+        self._split_on = split_on
+
+    async def get_latest_closes(self, symbols: list[str]) -> dict[str, Optional[LatestClose]]:
+        return {s.upper(): self._closes.get(s.upper()) for s in symbols}
+
+    async def get_quote(self, symbol: str) -> Optional[MarketSymbolQuote]:
+        # The editor records the split while this fallback quote is in flight,
+        # after the batch answered and before the sweep takes its locks.
+        await _add_split(self._session, self._workspace, self._asset, 1, 2, self._split_on)
+        return await super().get_quote(symbol)
+
+
 @pytest.mark.asyncio
 async def test_the_refresh_skips_a_close_from_before_the_split(session, test_workspace, market_asset):
     # Issue #1357: before the market opens on the split day, the feed's latest
@@ -1363,6 +1393,49 @@ async def test_the_refresh_stores_an_older_close_when_no_split_followed(session,
     stored = await _today_value(session, market_asset)
     assert stored is not None
     assert stored.amount == pytest.approx(Decimal("1530"))
+
+
+@pytest.mark.asyncio
+async def test_the_refresh_reads_split_dates_after_locking_the_holdings(
+    session, test_workspace, test_user, market_asset
+):
+    # The split lands during the sweep, not before it: the batch answered with
+    # yesterday's close and the editor recorded the split while another
+    # symbol's fallback quote was pending. Read before the locks, the split
+    # dates would miss it and the pre-split close would be stored for the
+    # units after the split.
+    quoted_at = await _holding_quoted_yesterday(session, test_workspace, market_asset)
+    other = Asset(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Vale", type="stock", currency="BRL",
+        valuation_method="market_price", ticker="VALE3.SA",
+        last_price=Decimal("60"),
+    )
+    session.add(other)
+    await session.commit()
+
+    today = app_today()
+    feed = _SplitDuringTheFallback(
+        closes={"PETR4.SA": LatestClose(Decimal("500"), today - timedelta(days=1))},
+        quotes={"VALE3.SA": _quote("VALE3.SA", 61.0)},
+        session=session, workspace=test_workspace, asset=market_asset, split_on=today,
+    )
+
+    result = await asset_service.refresh_all_market_prices(
+        session, market_provider=feed, workspace_id=test_workspace.id
+    )
+
+    # The split holding keeps yesterday's quote instead of today's pre-split
+    # close valued over the units after the split...
+    assert result == {"refreshed": 1, "skipped": 1, "rate_limited": 0}
+    assert await _today_value(session, market_asset) is None
+    await session.refresh(market_asset)
+    assert market_asset.last_price == Decimal("500")
+    assert market_asset.last_price_at.replace(tzinfo=None) == quoted_at.replace(tzinfo=None)
+    assert (await _trend(session, test_workspace, market_asset))[today.isoformat()] == pytest.approx(1500)
+    # ...and the holding that needed the fallback still gets its quote.
+    await session.refresh(other)
+    assert other.last_price == Decimal("61")
 
 
 @pytest.mark.asyncio
