@@ -1978,6 +1978,10 @@ export const search = {
 
 // App-level feature flags (whether optional modules like agents are mounted)
 export interface AppInfo {
+  /** Version of the backend that answered (package metadata, e.g. "0.20.0"). */
+  version?: string
+  /** Source revision baked into the image, when the deployment set one. */
+  revision?: string | null
   features: { agents: boolean; demo?: boolean; tesouro_direto?: boolean; plugins?: boolean }
 }
 

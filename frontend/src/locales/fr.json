@@ -3815,5 +3815,8 @@
       "title": "Revenus récurrents",
       "hint": "Ce que rapportent les factures récurrentes chaque mois, et ce qui a été perdu récemment."
     }
+  },
+  "demo": {
+    "banner": "Démo publique — les données sont réinitialisées toutes les heures. Ne saisissez rien que vous ne partageriez pas."
   }
 }

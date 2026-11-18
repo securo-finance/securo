@@ -3,6 +3,9 @@
 Tells the frontend which optional features are enabled so it can hide
 nav items, routes, etc. Lightweight — no auth required.
 """
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,9 +19,25 @@ from app.models.user import User
 router = APIRouter(prefix="/api", tags=["info"])
 
 
+def _app_version() -> str:
+    """The version of the backend that is answering.
+
+    Read from the installed package metadata (the version in
+    ``pyproject.toml``, which the release workflow bumps) so the answer
+    comes from the image itself rather than from a file someone has to
+    remember to update on the host.
+    """
+    try:
+        return package_version("securo-backend")
+    except PackageNotFoundError:  # source tree without an install
+        return "0.0.0-dev"
+
+
 @router.get("/info")
 async def get_app_info():
     return {
+        "version": _app_version(),
+        "revision": get_settings().app_revision or None,
         "features": {
             "agents": feature_flag("AGENTS_ENABLED"),
             "demo": feature_flag("DEMO_MODE"),

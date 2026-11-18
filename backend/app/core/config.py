@@ -124,6 +124,12 @@ class Settings(BaseSettings):
     # scripts/reset_demo.sh cron.
     demo_mode: bool = False
 
+    # Build identity, reported by GET /api/info so the running instance can
+    # be matched to a commit without reading the checkout on the host. The
+    # image version comes from the package metadata; this is the source
+    # revision baked in at build time (empty when unknown).
+    app_revision: str = ""
+
     # OIDC login (works with Authentik, Pocket ID, and other standard OIDC providers)
     oidc_enabled: bool = False
     oidc_provider_name: str = "OIDC"

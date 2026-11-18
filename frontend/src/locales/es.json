@@ -3815,5 +3815,8 @@
       "title": "Ingresos recurrentes",
       "hint": "Lo que aportan las facturas recurrentes cada mes, y lo perdido recientemente."
     }
+  },
+  "demo": {
+    "banner": "Demo pública — los datos se reinician cada hora. No introduzcas nada que no compartirías."
   }
 }

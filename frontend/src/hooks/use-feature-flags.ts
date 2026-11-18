@@ -17,5 +17,8 @@ export function useFeatureFlags() {
     agentsEnabled: !!data?.features?.agents,
     demoMode: !!data?.features?.demo,
     pluginsEnabled: !!data?.features?.plugins,
+    // Build identity of the backend answering — null until /api/info lands.
+    version: data?.version ?? null,
+    revision: data?.revision ?? null,
   }
 }

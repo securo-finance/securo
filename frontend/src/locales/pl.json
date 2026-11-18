@@ -3947,5 +3947,8 @@
       "title": "Przychody cykliczne",
       "hint": "Ile co miesiąc przynoszą faktury cykliczne i co ostatnio utracono."
     }
+  },
+  "demo": {
+    "banner": "Publiczne demo — dane są czyszczone co godzinę. Nie wpisuj niczego, czym nie chciałbyś się podzielić."
   }
 }

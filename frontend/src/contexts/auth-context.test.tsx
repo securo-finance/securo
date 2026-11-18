@@ -14,7 +14,14 @@ const auth = vi.hoisted(() => ({
   verify2fa: vi.fn(),
   register: vi.fn(),
 }))
-vi.mock('@/lib/api', () => ({ auth }))
+const info = vi.hoisted(() => ({
+  get: vi.fn(),
+  demoLogin: vi.fn(),
+}))
+vi.mock('@/lib/api', () => ({ auth, info }))
+
+/** Self-hosted default: demo flag off, so no auto-login is attempted. */
+const NOT_A_DEMO = { version: '0.20.0', revision: null, features: { agents: false, demo: false } }
 
 const USER: User = {
   id: '1',
@@ -44,6 +51,7 @@ async function renderAuth() {
 beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
+  info.get.mockResolvedValue(NOT_A_DEMO)
 })
 
 describe('AuthProvider session restore', () => {
@@ -64,6 +72,33 @@ describe('AuthProvider session restore', () => {
     expect(auth.me).toHaveBeenCalled()
     expect(result.current.user).toEqual(USER)
     expect(result.current.token).toBe('stored-jwt')
+  })
+
+  it('signs a visitor in automatically when the server is in demo mode', async () => {
+    // The public demo has no login form: /api/info reports demo=true and the
+    // provider mints a session for the seeded demo user before the first paint.
+    info.get.mockResolvedValue({ version: '0.20.0', revision: null, features: { agents: false, demo: true } })
+    info.demoLogin.mockResolvedValue({ access_token: 'demo-jwt' })
+    auth.me.mockResolvedValue(USER)
+
+    const { result } = await renderAuth()
+
+    expect(info.demoLogin).toHaveBeenCalled()
+    expect(localStorage.getItem('token')).toBe('demo-jwt')
+    expect(result.current.token).toBe('demo-jwt')
+    await waitFor(() => expect(result.current.user).toEqual(USER))
+  })
+
+  it('settles signed out when the demo login is refused', async () => {
+    // A demo instance whose seed has not run yet (503) must fall back to the
+    // login screen instead of hanging on the boot guard.
+    info.get.mockResolvedValue({ version: '0.20.0', revision: null, features: { agents: false, demo: true } })
+    info.demoLogin.mockRejectedValue(new Error('503'))
+
+    const { result } = await renderAuth()
+
+    expect(result.current.token).toBeNull()
+    expect(result.current.user).toBeNull()
   })
 
   it('discards a token the server rejects', async () => {
