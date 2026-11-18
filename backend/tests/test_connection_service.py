@@ -1983,6 +1983,7 @@ async def test_sync_connection_enable_banking_expires_cancelled_hold(
     [
         "incomplete", "truncated", "before-window", "other-uid",
         "ignored", "paired", "attached", "noted", "adopted-manual",
+        "bill-cycle", "category",
     ],
 )
 async def test_sync_connection_enable_banking_keeps_hold_without_evidence(
@@ -2014,6 +2015,12 @@ async def test_sync_connection_enable_banking_keeps_hold_without_evidence(
         # A manual entry the fuzzy match adopted: the text the user typed,
         # the bank's text kept as provenance.
         fields["description"] = "Dinner with Ana"
+    if case == "bill-cycle":
+        # Moved to another bill by hand: only the cycle date is written.
+        fields["effective_bill_date"] = _HOLD_TODAY + timedelta(days=20)
+    if case == "category":
+        # A category picked by hand (one row or in bulk), without parts.
+        fields["category_id"] = (await _make_category(session, test_user.id, "Travel")).id
     [(held_id, _raw)] = await _hold_blank_holds(
         session, test_user.id, test_workspace.id, account,
         [_blank_hold(30 if case == "before-window" else 10)], **fields,
@@ -2030,6 +2037,97 @@ async def test_sync_connection_enable_banking_keeps_hold_without_evidence(
         session, conn, test_workspace.id, test_user.id, [],
         incomplete=case == "incomplete", truncated=case == "truncated",
     )
+
+    assert [row.id for row in await _account_rows(session, account_id)] == [held_id]
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("_hold_clock")
+async def test_sync_connection_enable_banking_expires_hold_categorised_by_rule(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A category the user's rules give the bank's text is not the user's
+    own work, so the cancelled hold still goes."""
+    from app.models.rule import Rule
+
+    conn, account = await _hold_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    category = await _make_category(session, test_user.id, "Card holds")
+    session.add(Rule(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="Holds",
+        conditions=[{"field": "description", "op": "contains", "value": "Transaction"}],
+        actions=[{"op": "set_category", "value": str(category.id)}],
+    ))
+    await _hold_blank_holds(
+        session, test_user.id, test_workspace.id, account, [_blank_hold(10)],
+        category_id=category.id,
+    )
+
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [])
+
+    assert await _account_rows(session, account_id) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("_hold_clock")
+async def test_sync_connection_enable_banking_keeps_adopted_manual_hold_with_bank_text(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A pending entry the user typed with the very text the bank sends is
+    adopted by the sync like any other; it stays the user's, so it is not
+    expired when the hold leaves the feed."""
+    conn, account = await _hold_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    hold = _blank_hold(10)
+    manual_id = uuid.uuid4()
+    session.add(Transaction(
+        id=manual_id, user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=account_id, description="Transaction", amount=Decimal("12.50"),
+        currency="EUR", date=_HOLD_TODAY - timedelta(days=10), type="debit",
+        source="manual", status="pending",
+    ))
+    await session.commit()
+
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, await _eb_fetch([], [hold]))
+    [adopted] = await _account_rows(session, account_id)
+    assert (adopted.id, adopted.source, adopted.description, adopted.original_description) == (
+        manual_id, "sync", "Transaction", "Transaction",
+    )
+
+    # The next sync starts from the pinned day again, so the hold's date is
+    # inside the window the empty feed covers.
+    conn.last_sync_at = datetime(2026, 11, 5, tzinfo=timezone.utc)
+    await session.commit()
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [])
+
+    assert [row.id for row in await _account_rows(session, account_id)] == [manual_id]
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("_hold_clock")
+async def test_sync_connection_enable_banking_undated_hold_keeps_held_rows(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A pending entry without any date can't be imported, but it is still
+    in the feed, maybe as the hold a stored row stands for. The feed is then
+    not complete, and nothing expires."""
+    conn, account = await _hold_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    [(held_id, _raw)] = await _hold_blank_holds(
+        session, test_user.id, test_workspace.id, account, [_blank_hold(10)],
+    )
+    undated = {k: v for k, v in _blank_hold(10).items() if k != "transaction_date"}
+
+    provider = EnableBankingProvider()
+    page = {"transactions": {"booked": [], "pending": [undated]}}
+    with patch.object(EnableBankingProvider, "_request", new=AsyncMock(return_value=page)):
+        fetched = await provider._fetch_transactions(
+            "eb-account", date(2026, 8, 1), _HOLD_TODAY, "auto"
+        )
+    assert fetched == []
+    assert provider.truncated_account_ids == {"eb-account"}
+
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, fetched, truncated=True)
 
     assert [row.id for row in await _account_rows(session, account_id)] == [held_id]
 

@@ -2695,23 +2695,73 @@ _EB_CANCELLED_HOLD_DAYS = _EB_HOLD_SETTLE_DAYS + 2
 _EB_SURE_FEED_DAYS = 88
 
 
+#: Key a manual entry the sync adopted carries in `raw_data`. Adoption sets
+#: `source = "sync"`, which the pending → posted promotion relies on, so the
+#: row's manual origin has to be kept apart from it. The sync only ever merges
+#: provider fields into `raw_data`, so the key outlives later syncs.
+ADOPTED_MANUAL_KEY = "securo_adopted_manual"
+
+
+def _mark_adopted_manual(tx: Transaction) -> None:
+    raw = tx.raw_data if isinstance(tx.raw_data, dict) else {}
+    tx.raw_data = {**raw, ADOPTED_MANUAL_KEY: True}
+
+
 def _holds_user_work(tx: Transaction) -> bool:
     """Whether a row carries something only the user put there.
 
-    A manual entry the sync adopted keeps the text the user typed beside the
-    bank's text in `original_description`, so an edited or typed description
-    shows as the two differing. A row whose provenance is unknown (no
-    `original_description`) counts as the user's too.
+    A manual entry the sync adopted is the user's whatever its text. An
+    edited description shows as it differing from the bank's text in
+    `original_description`; a row whose provenance is unknown (no
+    `original_description`) counts as the user's too. A category is checked
+    apart, in `_has_users_category`, because rules set one as well.
     """
+    if isinstance(tx.raw_data, dict) and tx.raw_data.get(ADOPTED_MANUAL_KEY):
+        return True
     if (tx.notes or "").strip():
         return True
-    if tx.reporting_date_override is not None or tx.recurring_transaction_id is not None:
+    if (
+        tx.reporting_date_override is not None
+        or tx.effective_bill_date is not None
+        or tx.recurring_transaction_id is not None
+    ):
         return True
     if tx.has_category_lines:
         return True
     if tx.original_description is None:
         return True
     return tx.description != tx.original_description and not tx.description_is_rule_managed
+
+
+async def _has_users_category(session: AsyncSession, tx: Transaction) -> bool:
+    """Whether the row's category is one the user picked.
+
+    On an Enable Banking row only the rules set a category (the bank sends
+    none), so a category the rules would not give the bank's own text again
+    was chosen by hand, one at a time or in bulk.
+    """
+    if tx.category_id is None:
+        return False
+    bank_view = Transaction(
+        user_id=tx.user_id,
+        workspace_id=tx.workspace_id,
+        account_id=tx.account_id,
+        category_id=None,
+        description=tx.original_description or tx.description,
+        original_description=tx.original_description,
+        description_is_rule_managed=False,
+        amount=tx.amount,
+        currency=tx.currency,
+        date=tx.date,
+        type=tx.type,
+        source=tx.source,
+        status=tx.status,
+        payee=tx.payee,
+        payee_id=tx.payee_id,
+        is_ignored=False,
+    )
+    preview = await preview_rules_for_transaction(session, tx.user_id, bank_view)
+    return preview.category_id != tx.category_id
 
 
 async def _expire_cancelled_holds(
@@ -2756,6 +2806,7 @@ async def _expire_cancelled_holds(
         if tx.external_id not in live_external_ids
         and is_account_txn_id(account_uid, tx.external_id, tx.raw_data)
         and not _holds_user_work(tx)
+        and not await _has_users_category(session, tx)
     ]
     if not gone:
         return
@@ -3613,6 +3664,7 @@ async def sync_connection(
                         continue
                     _merge_sync_metadata(fuzzy_match, txn_data)
                     fuzzy_match.source = "sync"
+                    _mark_adopted_manual(fuzzy_match)
                     merged_count += 1
                     continue
 

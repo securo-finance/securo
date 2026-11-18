@@ -462,7 +462,8 @@ class EnableBankingProvider(BankProvider):
         # sync then leaves last_sync_at alone so the rest is asked for again.
         self.incomplete_account_ids: set[str] = set()
         # External ids of accounts whose transaction pages stopped before the
-        # last one (a repeated cursor or the page cap). What was read is still
+        # last one (a repeated cursor or the page cap), or listed an entry we
+        # could not read. What was read is still
         # imported, but it is not the whole feed, so the sync layer must not
         # take an entry missing from it as one the bank stopped listing.
         self.truncated_account_ids: set[str] = set()
@@ -1243,7 +1244,13 @@ class EnableBankingProvider(BankProvider):
                 # A broken pagination cursor can make Enable Banking return a
                 # page we have already consumed. Keep the result idempotent
                 # even before the repeated cursor is detected below.
-                if not parsed or parsed.external_id in seen_transaction_ids:
+                if not parsed:
+                    # An entry we can't read (no date, no amount) is still in
+                    # the feed: without its id the sync would take its row
+                    # for one the bank stopped listing.
+                    self.truncated_account_ids.add(account_external_id)
+                    continue
+                if parsed.external_id in seen_transaction_ids:
                     continue
                 key = _settlement_key(raw_txn)
                 if key is not None:
