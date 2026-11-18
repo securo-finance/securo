@@ -58,6 +58,7 @@ import {
   ShieldCheck,
   Fingerprint,
   Palette,
+  AlertCircle,
 } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { ChangePasswordDialog } from '@/components/change-password-dialog'
@@ -218,6 +219,9 @@ export function AppLayout() {
     ? allAccounts.filter((a) => activeAccountIds.includes(a.id))
     : allAccounts
   const totalBalance = sumAccountsTotal(visibleAccounts)
+  // A foreign account without a real rate adds its native amount, so the
+  // total is an estimate; flag it like the dashboard does (#1165, #1474).
+  const totalHasFxFallback = visibleAccounts.some((a) => a.fx_fallback)
   const versionA11yLabel = t('app.versionAriaLabel', { version: APP_VERSION })
 
   return (
@@ -515,6 +519,16 @@ export function AppLayout() {
                   {t('accounts.title')}
                 </span>
                 <div className="flex items-center gap-2">
+                  {totalHasFxFallback && (
+                    <AlertCircle
+                      size={12}
+                      role="img"
+                      aria-label={t('transactions.fxFallbackBanner')}
+                      className="shrink-0 text-amber-500"
+                    >
+                      <title>{t('transactions.fxFallbackBanner')}</title>
+                    </AlertCircle>
+                  )}
                   <span
                     className={`tabular-nums font-medium text-xs ${totalBalance < 0 ? 'text-rose-400' : 'text-sidebar-muted'}`}
                   >
