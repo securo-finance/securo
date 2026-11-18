@@ -57,9 +57,11 @@ x-backend-env: &backend-env
   # TRAEFIK_ENABLE=true there is a second proxy ahead of nginx, so the
   # visitor's address is two hops from the right: set this to 2. A hop is only
   # read past a proxy inside TRUSTED_PROXY_NETWORKS (loopback and private
-  # ranges by default), so a visitor who reaches the backend or frontend port
-  # directly is keyed by its own address, whatever X-Forwarded-For it sends
-  # (ADR 0024). Narrow the networks if untrusted clients share those ranges.
+  # ranges by default), so a public visitor who reaches the backend or
+  # frontend port directly is keyed by its own address, whatever
+  # X-Forwarded-For it sends. Callers inside those networks count as proxies:
+  # if untrusted clients share those ranges, or Docker shows direct callers as
+  # the bridge gateway, list only the proxies' own addresses (ADR 0024).
   TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-1}
   TRUSTED_PROXY_NETWORKS: ${TRUSTED_PROXY_NETWORKS:-127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7}
   REDIS_URL: redis://redis:6379/0

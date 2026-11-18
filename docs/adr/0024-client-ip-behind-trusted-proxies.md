@@ -45,7 +45,8 @@ How the client IP comes out in each case:
 | Who connects to the backend | Hops | Key |
 |-----------------------------|------|-----|
 | a public caller, on port 8000 | any | the caller's own address |
-| nginx, for a caller who came straight to port 3000 | 1 or 2 | the address nginx saw |
+| nginx, for a public caller who came straight to port 3000 | 1 or 2 | the address nginx saw |
+| nginx, for a private-address caller who came straight to port 3000 | 2 | `"unknown"` (see Consequences) |
 | nginx, for a caller who came through Traefik | 2 | the address Traefik saw |
 | nginx, with `TRUSTED_PROXY_HOPS=1` behind Traefik | 1 | Traefik's address (every visitor shares one bucket: set 2) |
 
@@ -55,9 +56,24 @@ How the client IP comes out in each case:
   default, so it can still choose its key by sending the header. That only
   matters where untrusted people share those ranges with the proxies; such an
   instance narrows `TRUSTED_PROXY_NETWORKS` to the proxies' own networks.
-- When Docker publishes a port through its userland proxy instead of NAT, the
-  backend sees the bridge gateway (a private address) as the peer. The default
-  then trusts that hop; narrowing the networks to the Compose network closes it.
+- The same default costs private clients their own key when the hops do not
+  match the path they took. With `TRUSTED_PROXY_HOPS=2` and a visitor at
+  `192.168.1.20` who reaches nginx without Traefik, the resolver trusts the
+  visitor as a proxy, finds no further hop and returns `"unknown"`: every such
+  visitor shares one bucket. An instance whose clients sit on private ranges
+  sets `TRUSTED_PROXY_NETWORKS` to the proxies' own networks or addresses only,
+  leaving the client ranges out, and keeps a single way in so the hop count
+  holds.
+- When a published port goes through something that hides the source address
+  (Docker's userland proxy, rootless Docker's port driver), a direct caller
+  arrives as the bridge gateway, for example `172.20.0.1`. The gateway sits
+  inside the Compose network, so trusting the Compose network (172.20.0.0 with a /16 mask)
+  still lets that caller pick its key through the header; narrowing to it is
+  not a fix. Either the backend is not reachable directly (drop the backend
+  port, or bind it to loopback with `BACKEND_PORT=127.0.0.1:8000`), or
+  `TRUSTED_PROXY_NETWORKS` lists only the proxies' own addresses (a fixed
+  `ipv4_address` for nginx, and for Traefik, on a fixed subnet), which leaves
+  the gateway out.
 - Any new code that needs the client's address goes through
   `resolve_client_ip` with both settings, never `X-Forwarded-For` or
   `X-Real-IP` directly.
