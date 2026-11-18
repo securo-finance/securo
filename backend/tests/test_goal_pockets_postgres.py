@@ -969,6 +969,62 @@ async def test_deleting_allocation_actor_preserves_reservations(
         assert await fresh.get(User, editor.id) is None
 
 
+async def test_deleting_user_cannot_leave_pocket_funded_by_their_deposit_negative(
+    session, postgres_sessions, pocket_state
+):
+    user, workspace, account, goal, _ = pocket_state
+    editor = User(email="pocket-depositor@example.com", hashed_password="unused")
+    session.add(editor)
+    await session.flush()
+    session.add(WorkspaceMember(workspace_id=workspace.id, user_id=editor.id, role="editor"))
+
+    def entry(owner, description, amount, type_):
+        return Transaction(
+            user_id=owner.id,
+            workspace_id=workspace.id,
+            account_id=account.id,
+            description=description,
+            amount=Decimal(amount),
+            currency=account.currency,
+            date=date(2026, 1, 1),
+            type=type_,
+            source="manual",
+        )
+
+    deposit = entry(editor, "Editor deposit", "100", "credit")
+    spending = entry(user, "Owner spending", "60", "debit")
+    session.add_all([deposit, spending])
+    await session.flush()
+    for transaction, amount in ((deposit, 100), (spending, 60)):
+        await replace_transaction_allocations(
+            session,
+            workspace.id,
+            user.id,
+            transaction,
+            [GoalAllocationInput(goal_id=goal.id, amount=amount)],
+        )
+    await session.commit()
+    editor_id, deposit_id, spending_id, goal_id = editor.id, deposit.id, spending.id, goal.id
+    owner_id = user.id
+
+    with pytest.raises(ValueError):
+        await delete_user(session, editor_id, owner_id)
+    await session.rollback()
+    async with postgres_sessions() as fresh:
+        assert await fresh.get(User, editor_id) is not None
+        assert await fresh.get(Transaction, deposit_id) is not None
+        assert await _pocket_current_amount(fresh, goal_id) == 40
+
+    await session.execute(
+        GoalAllocation.__table__.delete().where(GoalAllocation.transaction_id == spending_id)
+    )
+    await session.commit()
+    assert await delete_user(session, editor_id, owner_id)
+    async with postgres_sessions() as fresh:
+        assert await fresh.get(Transaction, deposit_id) is None
+        assert await _pocket_current_amount(fresh, goal_id) == 0
+
+
 def _migrate(connection, direction):
     path = Path(__file__).resolve().parent.parent / "alembic/versions/128_goal_pockets.py"
     spec = importlib.util.spec_from_file_location("goal_pockets_migration", path)
