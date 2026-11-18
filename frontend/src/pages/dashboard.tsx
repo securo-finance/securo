@@ -533,19 +533,42 @@ export default function DashboardPage() {
   const projectedBalance = summary?.projected_balance_primary ?? Object.values(summary?.projected_balance ?? {}).reduce((a, b) => a + Number(b), 0)
   const hasProjectedBalance = Math.abs(projectedBalance - totalBalance) >= 0.01
   const assetsValue = summary?.assets_value_primary ?? Object.values(summary?.assets_value ?? {}).reduce((a, b) => a + b, 0)
+  // While the summary is loading or has failed, fall back to the account list
+  // so the investment row keeps showing the balance it showed before (#959).
+  // The list only holds today's balances, so a past month has nothing to show.
+  const investmentAccountsFromList = useMemo(() => (accountsList ?? [])
+    .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type === 'investment')
+    .reduce((sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0),
+    [accountsList, activeAccountIds])
+  // A collection with no accounts gets no account-only figures: the summary
+  // request carries no filter and would return workspace-wide totals.
+  const investmentAccountsValue = noAccounts
+    ? 0
+    : summary
+      ? (summary.investment_accounts_primary
+        ?? Object.values(summary.investment_accounts ?? {}).reduce((a, b) => a + Number(b), 0))
+      : (selectedMonth === currentMonth() ? investmentAccountsFromList : 0)
 
-  // Available balance: checking/savings accounts only — what's actually
-  // spendable today, as opposed to `totalBalance` (net worth: accounts +
-  // investments - open card bills). Scoped to the active Collection filter,
-  // same as the rest of the dashboard.
+  // Available balance: checking/savings/wallet — spendable / near-liquid cash.
+  // Investment brokerage accounts are excluded (issue #959); they show under
+  // net worth as "Investment accounts", not as available cash. Scoped to the
+  // active Collection filter, same as the rest of the dashboard.
   const availableBalanceAccounts = useMemo(() => {
     const all = accountsList ?? []
     const scoped = activeAccountIds ? all.filter((a) => activeAccountIds.includes(a.id)) : all
-    return scoped.filter((a) => a.type === 'checking' || a.type === 'savings')
+    return scoped.filter((a) => a.type === 'checking' || a.type === 'savings' || a.type === 'wallet')
   }, [accountsList, activeAccountIds])
-  const availableBalance = availableBalanceAccounts.reduce(
+  const availableBalanceFromAccounts = availableBalanceAccounts.reduce(
     (sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0,
   )
+  // The headline and its captions stay on the account list, so they agree with
+  // the account chips beside them. The summary's cash figure is cut off at the
+  // selected month's end, so it only fits the net-worth breakdown, next to
+  // total_balance, which uses the same cutoff (#959 review).
+  const availableBalance = availableBalanceFromAccounts
+  const netWorthCashBalance = noAccounts
+    ? 0
+    : (summary?.cash_balance_primary ?? availableBalanceFromAccounts)
   // A foreign account without a real FX rate is summed at its native amount,
   // so the headline total is an estimate; say so instead of hiding it (#1165).
   const availableBalanceHasFxFallback = availableBalanceAccounts.some((a) => a.fx_fallback)
@@ -560,13 +583,6 @@ export default function DashboardPage() {
     .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type === 'credit_card'))
   const loanBalance = (accountsList ?? [])
     .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type === 'loan')
-    .reduce((sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0)
-  // Net worth's "Available balance" breakdown row: every account that is not
-  // a card or loan (unlike the headline `availableBalance`, which is
-  // checking/savings only), so with the card and loan rows it reconciles with
-  // `totalBalance` — which sums all account types.
-  const nonCardAccountsBalance = (accountsList ?? [])
-    .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type !== 'credit_card' && a.type !== 'loan')
     .reduce((sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0)
 
   // Savings rate & projection
@@ -793,7 +809,7 @@ export default function DashboardPage() {
     'overview': (
       // A container, so the indicators below lay out by the widget's width, not the screen's.
       <div className="@container bg-card rounded-xl border border-border shadow-sm px-5 pt-5 pb-4">
-        {/* Available balance in checking/savings accounts */}
+        {/* Available balance in checking/savings/wallet accounts */}
         <div className="pb-4 mb-4 border-b border-border">
           <p className="text-xs font-semibold text-muted-foreground mb-1">{t('dashboard.availableBalance')}</p>
           {summaryLoading || accountsUnavailable ? (
@@ -950,9 +966,15 @@ export default function DashboardPage() {
                   <p>{t('dashboard.netWorthTooltip')}</p>
                   <div className="mt-1.5 pt-1.5 border-t border-background/20 space-y-0.5">
                     <div className="flex justify-between gap-3">
-                      <span>{t('dashboard.availableBalance')}</span>
-                      <span>{mask(formatCurrency(nonCardAccountsBalance, primaryCurrency, locale))}</span>
+                      <span>{t('dashboard.cashBalance')}</span>
+                      <span>{mask(formatCurrency(netWorthCashBalance, primaryCurrency, locale))}</span>
                     </div>
+                    {Math.abs(investmentAccountsValue) >= 0.01 && (
+                      <div className="flex justify-between gap-3">
+                        <span>{t('dashboard.investmentAccounts')}</span>
+                        <span>{mask(formatCurrency(investmentAccountsValue, primaryCurrency, locale))}</span>
+                      </div>
+                    )}
                     {assetsValue > 0 && (
                       <div className="flex justify-between gap-3">
                         <span>{t('dashboard.assetsValue')}</span>

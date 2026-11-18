@@ -210,7 +210,7 @@ describe('Dashboard net worth breakdown', () => {
     expect(cardRow).toHaveTextContent(formatCurrency(-500, 'USD', 'en-US'))
   })
 
-  it('lists mortgage debt as its own row instead of available balance', async () => {
+  it('lists mortgage debt as its own row instead of cash', async () => {
     api.accounts.list.mockResolvedValue([
       ...accounts,
       account({ id: 'mortgage', name: 'Mortgage', type: 'loan', current_balance: -40000 }),
@@ -225,10 +225,119 @@ describe('Dashboard net worth breakdown', () => {
     await user.hover(screen.getByRole('button', { name: 'i' }))
 
     const tooltip = await screen.findByRole('tooltip')
-    const availableRow = within(tooltip).getByText(t('dashboard.availableBalance')).parentElement!
-    expect(availableRow).toHaveTextContent(formatCurrency(1000, 'USD', 'en-US'))
+    const cashRow = within(tooltip).getByText(t('dashboard.cashBalance')).parentElement!
+    expect(cashRow).toHaveTextContent(formatCurrency(1000, 'USD', 'en-US'))
     const loanRow = within(tooltip).getByText(t('dashboard.loanBalance')).parentElement!
     expect(loanRow).toHaveTextContent(formatCurrency(-40000, 'USD', 'en-US'))
+  })
+
+  it('shows cash and investment accounts as separate rows from the summary', async () => {
+    // The summary amounts differ from the account balances on purpose: the
+    // breakdown has to read the summary, so equal numbers would hide a
+    // regression where the row silently falls back to the account list.
+    api.accounts.list.mockResolvedValue([
+      account({ id: 'checking', name: 'Checking', current_balance: 1000 }),
+      account({ id: 'broker', name: 'Broker', type: 'investment', current_balance: 8000 }),
+    ])
+    api.dashboard.summary.mockResolvedValue({
+      ...summary,
+      cash_balance_primary: 900,
+      investment_accounts_primary: 8500,
+    })
+    const { user } = renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+    )
+
+    await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
+    await user.hover(screen.getByRole('button', { name: 'i' }))
+
+    const tooltip = await screen.findByRole('tooltip')
+    const cashRow = within(tooltip).getByText(t('dashboard.cashBalance')).parentElement!
+    expect(cashRow).toHaveTextContent(formatCurrency(900, 'USD', 'en-US'))
+    const investmentRow = within(tooltip).getByText(t('dashboard.investmentAccounts')).parentElement!
+    expect(investmentRow).toHaveTextContent(formatCurrency(8500, 'USD', 'en-US'))
+  })
+
+  it('keeps the headline on current balances while a past month reads the cutoff', async () => {
+    // September ends at 1000 and the user spends 700 since: the headline and
+    // the chips have to agree on today's 300, while the breakdown keeps the
+    // month-end value that matches total_balance (#959 review).
+    api.accounts.list.mockResolvedValue([
+      account({ id: 'checking', name: 'Checking', current_balance: 300 }),
+    ])
+    api.dashboard.summary.mockResolvedValue({
+      ...summary,
+      cash_balance_primary: 1000,
+    })
+    const { user } = renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+      { route: '/?month=2026-09' },
+    )
+
+    await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
+    const heading = screen.getByText(t('dashboard.availableBalance'))
+    expect(heading.nextElementSibling).toHaveTextContent(formatCurrency(300, 'USD', 'en-US'))
+    const chip = screen.getByText('Checking').closest('a')!
+    expect(chip).toHaveTextContent(formatCurrency(300, 'USD', 'en-US'))
+
+    await user.hover(screen.getByRole('button', { name: 'i' }))
+    const tooltip = await screen.findByRole('tooltip')
+    const cashRow = within(tooltip).getByText(t('dashboard.cashBalance')).parentElement!
+    expect(cashRow).toHaveTextContent(formatCurrency(1000, 'USD', 'en-US'))
+  })
+
+  it('keeps the investment row visible while the summary is unavailable', async () => {
+    api.accounts.list.mockResolvedValue([
+      account({ id: 'checking', name: 'Checking', current_balance: 1000 }),
+      account({ id: 'broker', name: 'Broker', type: 'investment', current_balance: 8000 }),
+    ])
+    api.dashboard.summary.mockRejectedValue(new Error('summary unavailable'))
+    const { user } = renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+    )
+
+    await screen.findByText('Checking')
+    await user.hover(screen.getByRole('button', { name: 'i' }))
+
+    const tooltip = await screen.findByRole('tooltip')
+    const investmentRow = within(tooltip).getByText(t('dashboard.investmentAccounts')).parentElement!
+    expect(investmentRow).toHaveTextContent(formatCurrency(8000, 'USD', 'en-US'))
+  })
+
+  it('shows no account figures for a collection with no accounts', async () => {
+    // The summary request carries no account filter in this state and would
+    // return workspace-wide totals; account-only figures must stay empty.
+    collectionFilter.activeAccountIds = []
+    api.accounts.list.mockResolvedValue([
+      account({ id: 'checking', name: 'Checking', current_balance: 1000 }),
+      account({ id: 'broker', name: 'Broker', type: 'investment', current_balance: 8000 }),
+    ])
+    api.dashboard.summary.mockResolvedValue({
+      ...summary,
+      cash_balance_primary: 1000,
+      investment_accounts_primary: 8000,
+    })
+    const { user } = renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+    )
+
+    await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
+    const heading = screen.getByText(t('dashboard.availableBalance'))
+    expect(heading.nextElementSibling).toHaveTextContent(formatCurrency(0, 'USD', 'en-US'))
+    await user.hover(screen.getByRole('button', { name: 'i' }))
+
+    const tooltip = await screen.findByRole('tooltip')
+    const cashRow = within(tooltip).getByText(t('dashboard.cashBalance')).parentElement!
+    expect(cashRow).toHaveTextContent(formatCurrency(0, 'USD', 'en-US'))
+    expect(within(tooltip).queryByText(t('dashboard.investmentAccounts'))).not.toBeInTheDocument()
   })
 })
 
@@ -295,7 +404,7 @@ describe('Dashboard available balance with reserves', () => {
     expect(heading.nextElementSibling).toHaveTextContent(formatCurrency(values.expected, 'USD', 'en-US'))
     await user.hover(screen.getByRole('button', { name: 'i' }))
     const tooltip = await screen.findByRole('tooltip')
-    const row = within(tooltip).getByText(t('dashboard.availableBalance')).parentElement!
+    const row = within(tooltip).getByText(t('dashboard.cashBalance')).parentElement!
     expect(row).toHaveTextContent(formatCurrency(values.expected, 'USD', 'en-US'))
   })
 })

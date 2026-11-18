@@ -831,6 +831,8 @@
     "greetingAfternoon": "צהריים טובים",
     "greetingEvening": "ערב טוב",
     "availableBalance": "יתרה זמינה",
+    "cashBalance": "מזומן",
+    "investmentAccounts": "חשבונות השקעה",
     "netWorth": "שווי נקי",
     "netWorthTooltip": "חשבונות + השקעות, פחות חיובי כרטיסי אשראי פתוחים.",
     "creditCardBalance": "חיובי כרטיסי אשראי פתוחים",
