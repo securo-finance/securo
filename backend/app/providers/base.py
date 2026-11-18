@@ -123,6 +123,13 @@ class AccountData:
     # (ADR 0022). None = unreported or incomplete; keep stored rows.
     # [] = explicitly reported, none active.
     reserved_balances: Optional[list[ReservedBalanceData]] = None
+    # Credit still free on a card, when the provider reports it as a figure of
+    # its own instead of only the debt. Enable Banking reports a card from the
+    # account holder's side, and some banks (mBank PL, issue #624) put the
+    # credit limit in the booked balance, so the debt is only exact as
+    # `credit_limit - available_credit`. None = the provider said no such
+    # thing, and `balance` is the debt as usual.
+    available_credit: Optional[Decimal] = None
 
 
 @dataclass

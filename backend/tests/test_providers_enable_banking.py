@@ -23,6 +23,7 @@ from app.providers.base import (
     mask_last4,
 )
 from app.providers.enable_banking import (
+    ACCOUNT_DETAILS_KEY,
     DEFAULT_HISTORY_DAYS,
     FALLBACK_HISTORY_DAYS,
     EnableBankingProvider,
@@ -397,6 +398,170 @@ async def test_loan_account_keeps_the_bank_reported_balance(eb_keys, reported):
     # reported balance through untouched, whatever the type.
     assert acc.type == "checking"
     assert acc.balance == Decimal(reported)
+
+
+# ----- card balances (issue #624) -----
+
+
+def _balance(balance_type: str, amount: str, currency: str = "PLN") -> dict:
+    return {
+        "balance_type": balance_type,
+        "balance_amount": {"amount": amount, "currency": currency},
+    }
+
+
+def _card_credentials() -> dict:
+    # Fresh per test: get_accounts caches account details in the credentials.
+    return {"session_id": "sess-x", "valid_until": "2099-01-01T00:00:00Z"}
+
+
+def _card_bank(balances: list[dict], *, details: dict | None = None):
+    """An EB bank with one CARD account: session, details and balances."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/sessions/sess-x":
+            return httpx.Response(
+                200,
+                json={"status": "AUTHORIZED", "accounts_data": [{"uid": "card-1"}]},
+            )
+        if path == "/accounts/card-1/details":
+            return httpx.Response(
+                200,
+                json={
+                    "uid": "card-1",
+                    "display_name": "WORLD MASTERCARD",
+                    "currency": "PLN",
+                    "cash_account_type": "CARD",
+                    **(details or {}),
+                },
+            )
+        if path == "/accounts/card-1/balances":
+            return httpx.Response(200, json={"balances": balances})
+        raise AssertionError(f"unexpected path {path}")
+
+    return handler
+
+
+@pytest.mark.asyncio
+async def test_card_debt_is_what_the_limit_leaves_available(eb_keys):
+    """mBank reports the credit limit as the booked balance and the real free
+    credit as the available one (issue #624). Stored as the debt, that card
+    owes the limit minus what is available (100), not the 4900 available."""
+    provider = EnableBankingProvider()
+    handler = _card_bank(
+        [_balance("ITBD", "5000.00"), _balance("ITAV", "4900.00")],
+        details={"credit_limit": {"amount": "5000.00", "currency": "PLN"}},
+    )
+
+    with _patch_client(provider, handler):
+        accounts = await provider.get_accounts(_card_credentials())
+
+    card = accounts[0]
+    assert card.type == "credit_card"
+    assert card.balance == Decimal("100.00")
+    assert card.available_credit == Decimal("4900.00")
+    assert card.credit_limit == Decimal("5000.00")
+
+
+@pytest.mark.asyncio
+async def test_card_available_credit_without_a_limit_waits_for_the_sync(eb_keys):
+    """When the bank sends no limit, the free credit comes out on its own so
+    the sync can state the debt from the limit the account row holds."""
+    provider = EnableBankingProvider()
+    handler = _card_bank([_balance("ITAV", "4900.00")])
+
+    with _patch_client(provider, handler):
+        accounts = await provider.get_accounts(_card_credentials())
+
+    card = accounts[0]
+    assert card.credit_limit is None
+    assert card.available_credit == Decimal("4900.00")
+    assert card.balance == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_card_with_only_a_booked_balance_keeps_the_banks_sign(eb_keys):
+    """EB signs a card from the holder's side: a negative booked figure is
+    debt, which is what Securo stores."""
+    provider = EnableBankingProvider()
+    handler = _card_bank([_balance("CLBD", "-100.00")])
+
+    with _patch_client(provider, handler):
+        accounts = await provider.get_accounts(_card_credentials())
+
+    card = accounts[0]
+    assert card.balance == Decimal("100.00")
+    assert card.available_credit is None
+
+
+@pytest.mark.asyncio
+async def test_background_sync_reads_the_card_off_the_cached_limit(eb_keys):
+    """A background sync only has the cached details; the limit must ride in
+    them or the card's balance would read differently from a user-present one."""
+    provider = EnableBankingProvider()
+    credentials = {
+        "session_id": "sess-x",
+        ACCOUNT_DETAILS_KEY: {
+            "card-1": {
+                "name": "WORLD MASTERCARD",
+                "cash_account_type": "CARD",
+                "currency": "PLN",
+                "masked_number": "**** 4242",
+                "credit_limit": "5000.00",
+            }
+        },
+    }
+    calls: list[str] = []
+    inner = _card_bank([_balance("ITBD", "5000.00"), _balance("ITAV", "4900.00")])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return inner(request)
+
+    with _patch_client(provider, handler):
+        accounts = await provider.get_accounts(credentials)
+
+    assert "/accounts/card-1/details" not in calls
+    assert accounts[0].balance == Decimal("100.00")
+    assert accounts[0].available_credit == Decimal("4900.00")
+
+
+@pytest.mark.asyncio
+async def test_checking_account_balance_reading_is_unchanged(eb_keys):
+    """The card rule is card-only: on the same provider, a checking account
+    keeps reading exactly as before (issue #624 asked for no bank-wide flip)."""
+    provider = EnableBankingProvider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/sessions/sess-x":
+            return httpx.Response(
+                200,
+                json={"status": "AUTHORIZED", "accounts_data": [{"uid": "acc-1"}]},
+            )
+        if path == "/accounts/acc-1/details":
+            return httpx.Response(
+                200,
+                json={
+                    "uid": "acc-1",
+                    "display_name": "Girokonto",
+                    "currency": "PLN",
+                    "cash_account_type": "CACC",
+                },
+            )
+        if path == "/accounts/acc-1/balances":
+            return httpx.Response(
+                200, json={"balances": [_balance("ITAV", "4900.00")]}
+            )
+        raise AssertionError(f"unexpected path {path}")
+
+    with _patch_client(provider, handler):
+        accounts = await provider.get_accounts(_card_credentials())
+
+    checking = accounts[0]
+    assert checking.balance == Decimal("4900.00")
+    assert checking.available_credit is None
 
 
 @pytest.mark.asyncio

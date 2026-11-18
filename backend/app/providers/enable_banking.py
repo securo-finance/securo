@@ -122,16 +122,72 @@ def _account_identifier(raw: dict) -> Optional[str]:
     return None
 
 
+# Balance types EB reports for a card, split by what they mean. EB gives a
+# card's figures from the account holder's side: the available one is the
+# credit still free to spend, and a booked one is signed the same way (negative
+# while the card owes). Some banks report the credit limit as the booked figure
+# instead of the debt (mBank PL, issue #624), so a booked figure alone cannot
+# say what is owed and only `credit_limit - available` is exact.
+CARD_AVAILABLE_BALANCE_TYPES = ("ITAV", "CLAV")
+CARD_BOOKED_BALANCE_TYPES = ("CLBD", "ITBD", "XPCD", "OPBD", "PRCD")
+
+
+def _balance_of_type(
+    balances: list[dict], types: tuple[str, ...]
+) -> Optional[dict]:
+    """The first balance whose type is in ``types``, in the order given."""
+    by_type = {b.get("balance_type") or b.get("type"): b for b in balances if isinstance(b, dict)}
+    for key in types:
+        if key in by_type:
+            return by_type[key]
+    return None
+
+
 def _pick_balance(balances: list[dict]) -> Optional[dict]:
     """Pick the most useful balance from EB's list (prefer closing booked)."""
     if not balances:
         return None
-    priority = ["CLBD", "ITAV", "CLAV", "XPCD", "OPBD", "OPAV"]
-    by_type = {b.get("balance_type") or b.get("type"): b for b in balances if isinstance(b, dict)}
-    for key in priority:
-        if key in by_type:
-            return by_type[key]
+    picked = _balance_of_type(balances, ("CLBD", "ITAV", "CLAV", "XPCD", "OPBD", "OPAV"))
+    if picked is not None:
+        return picked
     return balances[0] if isinstance(balances[0], dict) else None
+
+
+def _credit_limit_decimal(raw: dict) -> Optional[Decimal]:
+    """The card's credit limit from a details payload (`credit_limit` is an
+    amount object there; a cached summary keeps the bare number)."""
+    value = raw.get("credit_limit")
+    if isinstance(value, dict):
+        value = value.get("amount")
+    try:
+        limit = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return limit if limit > 0 else None
+
+
+def _card_balance(
+    balances: list[dict], credit_limit: Optional[Decimal]
+) -> tuple[Decimal, Optional[Decimal], Optional[dict]]:
+    """A card's debt (positive, as Securo stores it), its free credit, and the
+    figure the reading came from (issue #624).
+
+    The debt is `limit - available` when both are known, which is what the
+    bank's own app shows whatever the bank calls its booked figure. Without a
+    limit the available figure goes back to the sync, which still has the limit
+    stored on the account row. A card with only a booked balance is read by its
+    sign, like any other EB account. Nothing usable reads as zero.
+    """
+    available = _balance_of_type(balances, CARD_AVAILABLE_BALANCE_TYPES)
+    if available is not None:
+        free_credit = _balance_decimal(available)
+        if credit_limit is None:
+            return Decimal("0"), free_credit, available
+        return credit_limit - free_credit, free_credit, available
+    booked = _balance_of_type(balances, CARD_BOOKED_BALANCE_TYPES)
+    if booked is not None:
+        return -_balance_decimal(booked), None, booked
+    return Decimal("0"), None, None
 
 
 def _balance_decimal(balance: Optional[dict]) -> Decimal:
@@ -324,11 +380,15 @@ def _details_summary(raw: dict) -> dict[str, Optional[str]]:
     holds nothing the account row does not already show.
     """
     name = raw.get("display_name") or raw.get("product") or raw.get("name")
+    limit = _credit_limit_decimal(raw)
     return {
         "name": name if isinstance(name, str) else None,
         "cash_account_type": raw.get("cash_account_type"),
         "currency": raw.get("currency"),
         "masked_number": mask_last4(_account_identifier(raw)),
+        # A card's balance can only be read against its limit (issue #624),
+        # and a background sync has no /details call to ask again.
+        "credit_limit": str(limit) if limit is not None else None,
     }
 
 
@@ -867,12 +927,20 @@ class EnableBankingProvider(BankProvider):
         `require_balance`, when the failure is raised to the caller instead."""
         uid = raw.get("uid") or raw.get("account_uid") or ""
         currency = raw.get("currency") or "EUR"
+        account_type = _map_cash_account_type(raw.get("cash_account_type"))
+        is_card = account_type == "credit_card"
+        credit_limit = _credit_limit_decimal(raw) if is_card else None
         # EB doesn't include balances in the session payload; fetch separately.
         balance = Decimal("0")
+        available_credit: Optional[Decimal] = None
         try:
             bal_resp = await self._request("GET", f"/accounts/{uid}/balances")
-            picked = _pick_balance(bal_resp.get("balances") or [])
-            balance = _balance_decimal(picked)
+            balances = bal_resp.get("balances") or []
+            if is_card:
+                balance, available_credit, picked = _card_balance(balances, credit_limit)
+            else:
+                picked = _pick_balance(balances)
+                balance = _balance_decimal(picked)
             currency = _balance_currency(picked, currency)
         except (httpx.HTTPError, SessionExpiredError) as exc:
             if require_balance:
@@ -895,9 +963,11 @@ class EnableBankingProvider(BankProvider):
         return AccountData(
             external_id=uid,
             name=name,
-            type=_map_cash_account_type(raw.get("cash_account_type")),
+            type=account_type,
             balance=balance,
             currency=currency,
+            credit_limit=credit_limit,
+            available_credit=available_credit,
             masked_number=mask_last4(_account_identifier(raw)),
             # From the session payload: `uid` is scoped to one session, this
             # hash is what lets a later session find the same account again.
@@ -914,6 +984,8 @@ class EnableBankingProvider(BankProvider):
                 "currency": cached.get("currency"),
                 "display_name": cached.get("name"),
                 "cash_account_type": cached.get("cash_account_type"),
+                # Kept so a card reads the same off the cache as off /details.
+                "credit_limit": cached.get("credit_limit"),
             },
             stable_external_id,
             require_balance=True,

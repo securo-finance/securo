@@ -3339,6 +3339,15 @@ async def sync_connection(
                     connection.provider,
                     account.type,
                     _account_balance(acc_data, auto_invested_deducted),
+                    available_credit=acc_data.available_credit,
+                    # The limit the row will hold after this sync: a card that
+                    # only reports its free credit needs it to state the debt
+                    # (issue #624).
+                    credit_limit=(
+                        acc_data.credit_limit
+                        if acc_data.credit_limit is not None
+                        else account.credit_limit
+                    ),
                 )
                 account.name = acc_data.name
                 # Backfills existing accounts on their next sync. Only written
@@ -3398,6 +3407,8 @@ async def sync_connection(
                         connection.provider,
                         acc_data.type,
                         _account_balance(acc_data, auto_invested_deducted),
+                        available_credit=acc_data.available_credit,
+                        credit_limit=acc_data.credit_limit if is_cc else None,
                     ),
                     currency=acc_data.currency,
                     credit_limit=acc_data.credit_limit if is_cc else None,
