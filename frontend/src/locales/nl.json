@@ -1281,6 +1281,13 @@
     "syncRateLimited": "Dagelijks banklimiet bereikt, er is geen nieuwe data opgehaald. Probeer het later opnieuw.",
     "syncPartial": "Sommige rekeningen zijn bijgewerkt, maar voor de andere is het dagelijkse banklimiet bereikt. Die worden later opnieuw geprobeerd.",
     "syncError": "Synchronisatie mislukt",
+    "syncFailure": {
+      "failedAt": "Laatste synchronisatie mislukt op {{when}}.",
+      "psu_present_required": "De bank deelt deze gegevens alleen terwijl je Securo gebruikt.",
+      "consent_expired": "De bank vraagt je de toegang opnieuw te autoriseren.",
+      "provider_error": "De bank gaf een fout terug.",
+      "syncNow": "Nu synchroniseren"
+    },
     "connected": "Bank succesvol verbonden",
     "connectError": "Kan geen verbinding maken met de bank",
     "disconnected": "Verbinding verwijderd",

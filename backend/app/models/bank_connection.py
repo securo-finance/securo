@@ -43,3 +43,28 @@ class BankConnection(Base):
     institutions: Mapped[list["Institution"]] = relationship(
         back_populates="connection", cascade="all, delete-orphan", lazy="selectin"
     )
+
+    @property
+    def last_sync_failure(self) -> Optional[dict]:
+        """Why the last sync failed, until a sync succeeds (issue #1405).
+
+        Kept in `settings` by connection_service; read here so the API can
+        return it as a field of its own."""
+        value = (self.settings or {}).get(LAST_SYNC_FAILURE_KEY)
+        if not isinstance(value, dict) or value.get("code") not in SYNC_FAILURE_CODES:
+            return None
+        try:
+            datetime.fromisoformat(value["at"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        return value
+
+
+# Key in BankConnection.settings holding the last sync failure, and its codes.
+LAST_SYNC_FAILURE_KEY = "last_sync_failure"
+SYNC_FAILURE_CODES = (
+    "psu_present_required",
+    "consent_expired",
+    "rate_limited",
+    "provider_error",
+)

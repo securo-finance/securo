@@ -1280,6 +1280,13 @@
     "syncRateLimited": "銀行の1日の利用上限に達したため、新しいデータは取得されませんでした。しばらくしてから再度お試しください。",
     "syncPartial": "一部の口座は更新されましたが、残りの口座は銀行の1日の利用上限に達しました。後ほど再試行されます。",
     "syncError": "同期に失敗しました",
+    "syncFailure": {
+      "failedAt": "前回の同期は {{when}} に失敗しました。",
+      "psu_present_required": "銀行はSecuroを利用中の間だけこのデータを共有します。",
+      "consent_expired": "銀行へのアクセスを再度承認する必要があります。",
+      "provider_error": "銀行からエラーが返されました。",
+      "syncNow": "今すぐ同期"
+    },
     "connected": "銀行を接続しました",
     "connectError": "銀行の接続に失敗しました",
     "disconnected": "接続を削除しました",

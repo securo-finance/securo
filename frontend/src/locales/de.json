@@ -1281,6 +1281,13 @@
     "syncRateLimited": "Tägliches Banklimit erreicht, es wurden keine neuen Daten geladen. Bitte später erneut versuchen.",
     "syncPartial": "Einige Konten wurden aktualisiert, für die übrigen wurde jedoch das tägliche Banklimit erreicht. Sie werden später erneut versucht.",
     "syncError": "Synchronisierung fehlgeschlagen",
+    "syncFailure": {
+      "failedAt": "Letzte Synchronisierung am {{when}} fehlgeschlagen.",
+      "psu_present_required": "Die Bank gibt diese Daten nur frei, während Sie Securo verwenden.",
+      "consent_expired": "Die Bank verlangt, dass Sie den Zugriff erneut autorisieren.",
+      "provider_error": "Die Bank hat einen Fehler zurückgegeben.",
+      "syncNow": "Jetzt synchronisieren"
+    },
     "connected": "Bank erfolgreich verbunden",
     "connectError": "Verbindung zur Bank fehlgeschlagen",
     "disconnected": "Verbindung entfernt",

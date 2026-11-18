@@ -145,6 +145,8 @@ export interface BankConnection {
   status: string
   settings: ConnectionSettings | null
   last_sync_at: string | null
+  /** Why the last sync failed, until a sync succeeds. */
+  last_sync_failure?: SyncFailure | null
   created_at: string
   // Institutions this link spans (issue #345). Empty for one-institution
   // providers — institution_name covers those.
@@ -153,6 +155,18 @@ export interface BankConnection {
   plugin_connection_id?: string | null
   plugin_id?: string | null
   integration?: string | null
+}
+
+export type SyncFailureCode =
+  | 'psu_present_required'
+  | 'consent_expired'
+  | 'rate_limited'
+  | 'provider_error'
+
+export interface SyncFailure {
+  code: SyncFailureCode
+  at: string
+  detail: string | null
 }
 
 export interface ConnectionSettings {

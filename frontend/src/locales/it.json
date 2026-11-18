@@ -1284,6 +1284,13 @@
     "syncRateLimited": "Limite giornaliero della banca raggiunto, nessun dato nuovo recuperato. Riprova più tardi.",
     "syncPartial": "Alcuni conti sono stati aggiornati, ma per gli altri è stato raggiunto il limite giornaliero della banca. Verranno riprovati più tardi.",
     "syncError": "Sincronizzazione fallita",
+    "syncFailure": {
+      "failedAt": "L'ultima sincronizzazione è fallita il {{when}}.",
+      "psu_present_required": "La banca condivide questi dati solo mentre stai usando Securo.",
+      "consent_expired": "La banca chiede di autorizzare di nuovo l'accesso.",
+      "provider_error": "La banca ha restituito un errore.",
+      "syncNow": "Sincronizza ora"
+    },
     "connected": "Banca collegata con successo",
     "connectError": "Impossibile collegare la banca",
     "disconnected": "Connessione rimossa",

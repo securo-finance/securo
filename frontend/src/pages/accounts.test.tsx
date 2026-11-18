@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 
 import AccountsPage, { AccountDialog } from '@/pages/accounts'
 import { renderWithProviders, t } from '@/test/utils'
@@ -168,6 +168,102 @@ describe('AccountsPage connection row actions', () => {
 
     await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledWith(t('accounts.syncPartial')))
     expect(toast.success).not.toHaveBeenCalled()
+  })
+})
+
+function syncError(status: number, detail: unknown) {
+  return Object.assign(new Error('Request failed'), {
+    isAxiosError: true,
+    response: { status, data: { detail } },
+  })
+}
+
+describe('AccountsPage last sync failure', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    api.accountsList.mockImplementation((includeClosed: boolean) =>
+      Promise.resolve(includeClosed ? [] : [makeAccount('conn-1')]),
+    )
+    api.sync.mockResolvedValue({ sync_outcome: 'refreshed', merged_count: 0 })
+    api.pluginsInstalled.mockResolvedValue([])
+    api.pluginConnections.mockResolvedValue([])
+  })
+
+  it('says why the last sync failed and offers a sync when the bank wants the user there', async () => {
+    api.connectionsList.mockResolvedValue([
+      makeConnection({
+        id: 'conn-psu',
+        status: 'error',
+        last_sync_failure: { code: 'psu_present_required', at: '2026-11-18T09:30:00Z', detail: 'psu_present_required' },
+      }),
+    ])
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    const line = await screen.findByTestId('sync-failure')
+    expect(line).toHaveTextContent(t('accounts.syncFailure.psu_present_required'))
+    await user.click(within(line).getByRole('button', { name: t('accounts.syncFailure.syncNow') }))
+
+    expect(api.sync).toHaveBeenCalledWith('conn-psu')
+  })
+
+  it('offers a reconnect when the consent expired', async () => {
+    api.connectionsList.mockResolvedValue([
+      makeConnection({
+        status: 'expired',
+        last_sync_failure: { code: 'consent_expired', at: '2026-11-18T09:30:00Z', detail: null },
+      }),
+    ])
+    renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    const line = await screen.findByTestId('sync-failure')
+    expect(line).toHaveTextContent(t('accounts.syncFailure.consent_expired'))
+    expect(within(line).getByRole('button', { name: t('accounts.reconnect') })).toBeInTheDocument()
+  })
+
+  it('only asks to wait when the bank throttled the sync', async () => {
+    api.connectionsList.mockResolvedValue([
+      makeConnection({
+        last_sync_failure: { code: 'rate_limited', at: '2026-11-18T09:30:00Z', detail: null },
+      }),
+    ])
+    renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    const line = await screen.findByTestId('sync-failure')
+    expect(line).toHaveTextContent(t('accounts.syncRateLimited'))
+    expect(within(line).queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('shows nothing once a sync succeeded', async () => {
+    api.connectionsList.mockResolvedValue([makeConnection({ last_sync_failure: null })])
+    renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    await screen.findByRole('button', { name: t('accounts.sync') })
+    expect(screen.queryByTestId('sync-failure')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    [409, { message: 'Bank wants the PSU present', code: 'psu_present_required' }, 'accounts.syncFailure.psu_present_required'],
+    [409, { message: 'Token revoked', code: 'credentials_invalid' }, 'accounts.syncFailure.consent_expired'],
+    [410, 'Session expired', 'accounts.syncFailure.consent_expired'],
+    [500, 'Sync failed: HTTPStatusError 502 for IBAN-123', 'accounts.syncFailure.provider_error'],
+  ])('shows the translated reason in the manual sync toast (%i)', async (status, detail, key) => {
+    api.connectionsList.mockResolvedValue([makeConnection({ id: 'conn-ok', status: 'active' })])
+    api.sync.mockRejectedValue(syncError(status, detail))
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    await user.click(await screen.findByRole('button', { name: t('accounts.sync') }))
+
+    await vi.waitFor(() => expect(toast.error).toHaveBeenCalledWith(t(key)))
+  })
+
+  it('keeps the server text when the provider is not configured', async () => {
+    api.connectionsList.mockResolvedValue([makeConnection({ id: 'conn-ok', status: 'active' })])
+    api.sync.mockRejectedValue(syncError(503, "Provider 'x' is not configured."))
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    await user.click(await screen.findByRole('button', { name: t('accounts.sync') }))
+
+    await vi.waitFor(() => expect(toast.error).toHaveBeenCalledWith("Provider 'x' is not configured."))
   })
 })
 

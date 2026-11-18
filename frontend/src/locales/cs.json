@@ -1360,6 +1360,13 @@
     "syncRateLimited": "Dosáhnuto denního limitu banky, žádná nová data nebyla stažena. Zkuste to prosím později.",
     "syncPartial": "Některé účty byly aktualizovány, ale u ostatních byl dosažen denní limit banky. Zkusíme je znovu později.",
     "syncError": "Synchronizace selhala",
+    "syncFailure": {
+      "failedAt": "Poslední synchronizace selhala {{when}}.",
+      "psu_present_required": "Banka tato data sdílí jen ve chvíli, kdy Securo používáte.",
+      "consent_expired": "Banka potřebuje, abyste přístup znovu autorizovali.",
+      "provider_error": "Banka vrátila chybu.",
+      "syncNow": "Synchronizovat nyní"
+    },
     "connected": "Banka úspěšně propojena",
     "connectError": "Banku se nepodařilo propojit",
     "disconnected": "Propojení odstraněno",

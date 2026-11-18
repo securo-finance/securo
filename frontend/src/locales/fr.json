@@ -1284,6 +1284,13 @@
     "syncRateLimited": "Limite journalier de la banque atteint, aucune donnée nouvelle n'a été récupérée. Réessayez plus tard.",
     "syncPartial": "Certains comptes ont été mis à jour, mais la limite journalière de la banque a été atteinte pour les autres. Ils seront réessayés plus tard.",
     "syncError": "Échec de la synchronisation",
+    "syncFailure": {
+      "failedAt": "La dernière synchronisation a échoué le {{when}}.",
+      "psu_present_required": "La banque ne partage ces données que pendant que vous utilisez Securo.",
+      "consent_expired": "La banque vous demande d'autoriser à nouveau l'accès.",
+      "provider_error": "La banque a renvoyé une erreur.",
+      "syncNow": "Synchroniser maintenant"
+    },
     "connected": "Banque connectée avec succès",
     "connectError": "Échec de la connexion à la banque",
     "disconnected": "Connexion supprimée",
