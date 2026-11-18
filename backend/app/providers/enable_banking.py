@@ -1193,10 +1193,12 @@ class EnableBankingProvider(BankProvider):
                 page_limit=INITIAL_TRANSACTION_PAGE_LIMIT,
             )
         except httpx.HTTPStatusError as exc:
-            if exc.response.status_code >= 500:
-                # The bank is failing, not refusing the strategy. Answering
-                # with the ordinary window would report a shorter history as
-                # a complete one, and the sync would move past the rest.
+            status = exc.response.status_code
+            if status == 408 or status >= 500:
+                # A timeout or a server error is the bank failing, not
+                # refusing the strategy. Answering with the ordinary window
+                # would report a shorter history as a complete one, and the
+                # sync would move past the rest.
                 raise
             logger.warning(
                 "Enable Banking refused the longest history of account %s "

@@ -798,18 +798,22 @@ async def test_get_transactions_initial_fetch_falls_back_when_the_strategy_is_re
     assert _span_days(requests[1]) == DEFAULT_HISTORY_DAYS
 
 
+@pytest.mark.parametrize("status", [408, 503])
 @pytest.mark.asyncio
-async def test_get_transactions_initial_fetch_surfaces_a_transient_failure(eb_keys):
-    """A failing bank is not a refusal of the longest history: the error
-    reaches the sync so it is retried, instead of a shorter history being
-    reported as a complete one and the rest never asked for again."""
+async def test_get_transactions_initial_fetch_surfaces_a_transient_failure(
+    eb_keys, status
+):
+    """A failing bank (a timeout or a server error) is not a refusal of the
+    longest history: the error reaches the sync so it is retried, instead of
+    a shorter history being reported as a complete one and the rest never
+    asked for again."""
     provider = EnableBankingProvider()
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
         return httpx.Response(
-            503, json={"code": 503, "message": "temporarily unavailable"}
+            status, json={"code": status, "message": "temporarily unavailable"}
         )
 
     with (
