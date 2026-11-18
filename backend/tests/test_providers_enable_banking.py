@@ -799,6 +799,31 @@ async def test_get_transactions_initial_fetch_falls_back_when_the_strategy_is_re
 
 
 @pytest.mark.asyncio
+async def test_get_transactions_initial_fetch_surfaces_a_transient_failure(eb_keys):
+    """A failing bank is not a refusal of the longest history: the error
+    reaches the sync so it is retried, instead of a shorter history being
+    reported as a complete one and the rest never asked for again."""
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            503, json={"code": 503, "message": "temporarily unavailable"}
+        )
+
+    with (
+        _patch_client(provider, handler),
+        _user_present(),
+        pytest.raises(httpx.HTTPStatusError),
+    ):
+        await provider.get_transactions(_CREDENTIALS, "acc-1")
+
+    assert len(requests) == 1
+    assert requests[0].url.params["strategy"] == "longest"
+
+
+@pytest.mark.asyncio
 async def test_get_transactions_incremental_fetch_never_asks_for_the_longest(eb_keys):
     """A sync that already has a starting point stays on its own window: the
     longest strategy is for the first, full fetch only."""

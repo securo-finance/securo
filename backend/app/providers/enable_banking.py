@@ -1174,9 +1174,11 @@ class EnableBankingProvider(BankProvider):
         PSD2 window or refused for lack of the user, so it is asked only when
         the user's own request drives the fetch.
 
-        It is an attempt, not a requirement: a bank that will not serve it is
-        left to the ordinary window, which the caller requests next. None
-        says so; an empty list means the bank served nothing.
+        It is an attempt, not a requirement: a bank that refuses it is left to
+        the ordinary window, which the caller requests next. None says so; an
+        empty list means the bank served nothing. A failure of the bank itself
+        is not a refusal and is raised, so the sync retries instead of taking
+        a shorter history for a complete one.
         """
         if not self._present_psu_headers():
             return None
@@ -1190,10 +1192,15 @@ class EnableBankingProvider(BankProvider):
                 strategy=LONGEST_HISTORY_STRATEGY,
                 page_limit=INITIAL_TRANSACTION_PAGE_LIMIT,
             )
-        except (httpx.HTTPStatusError, ProviderUserActionRequired) as exc:
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code >= 500:
+                # The bank is failing, not refusing the strategy. Answering
+                # with the ordinary window would report a shorter history as
+                # a complete one, and the sync would move past the rest.
+                raise
             logger.warning(
-                "Enable Banking would not serve the longest history of account "
-                "%s with the user present (%s); falling back to %d days",
+                "Enable Banking refused the longest history of account %s "
+                "with the user present (%s); falling back to %d days",
                 account_external_id,
                 _refusal_reason(exc),
                 DEFAULT_HISTORY_DAYS,
