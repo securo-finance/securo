@@ -96,6 +96,12 @@ INITIAL_TRANSACTION_PAGE_LIMIT = 200
 TERMINAL_SESSION_STATUSES = frozenset(
     {"EXPIRED", "REVOKED", "CLOSED", "CANCELLED", "INVALID"}
 )
+# Statuses of a flat transaction list. A cancelled or rejected entry never
+# moved money, and a held or scheduled one has not settled yet.
+SKIPPED_TRANSACTION_STATUSES = frozenset({"CNCL", "RJCT"})
+PENDING_TRANSACTION_STATUSES = frozenset({"PDNG", "PENDING", "HOLD", "SCHD"})
+# What `_iter_transactions` yields for a skipped entry: it is never imported.
+CANCELLED_STATUS = "cancelled"
 
 
 def _map_cash_account_type(eb_type: Optional[str]) -> str:
@@ -307,6 +313,23 @@ def _txn_fingerprint(account_uid: str, raw: dict) -> str:
     return digest[:32]
 
 
+def is_account_txn_id(account_uid: str, external_id: Optional[str], raw: Any) -> bool:
+    """Whether `external_id` is the id this account uid gives the entry in `raw`.
+
+    An entry without a reference is keyed by a fingerprint that includes the
+    account uid, and EB issues a new uid on every reauthorisation. A row
+    stored under the old uid then has an id the new feed never sends, so its
+    absence from that feed says nothing. An id from an entry reference does
+    not depend on the uid.
+    """
+    if not isinstance(raw, dict):
+        return False
+    entry_ref = (raw.get("entry_reference") or "").strip()
+    if entry_ref and entry_ref != "0":
+        return True
+    return external_id == _txn_fingerprint(account_uid, raw)
+
+
 def _canonical_amount(amount_obj: Any) -> str:
     """Canonical string for an EB amount.
 
@@ -350,6 +373,18 @@ def _entry_reference_external_id(entry_ref: str, amount_obj: dict, raw: dict) ->
         _counterparty_identity(raw, "debtor"),
     ]
     digest = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+    return digest[:32]
+
+
+def _repeat_external_id(external_id: str, occurrence: int) -> str:
+    """Id of the `occurrence`-th repeat (1, 2, ...) of an identical entry.
+
+    Two same-amount purchases on one day that the bank lists with nothing
+    else (a pending card purchase carries only amount, direction and date)
+    hash to the same id. Each repeat within a page gets its own id; the
+    first keeps the plain one, so rows already stored keep theirs.
+    """
+    digest = hashlib.sha256(f"{external_id}#{occurrence}".encode("utf-8")).hexdigest()
     return digest[:32]
 
 
@@ -550,10 +585,15 @@ class EnableBankingProvider(BankProvider):
         # still needed (issue #1405).
         self.presence_required_account_ids: set[str] = set()
         # External ids of accounts whose transaction pages stopped before the
-        # last one (a repeated cursor or the page cap). What was read is still
+        # last one (a repeated cursor or the page cap), or listed an entry we
+        # could not read. What was read is still
         # imported, but it is not the whole feed, so the sync layer must not
         # take an entry missing from it as one the bank stopped listing.
         self.truncated_account_ids: set[str] = set()
+        # Ids of the entries each account lists as cancelled or rejected. They
+        # are not imported, but the bank still lists them: a hold stored under
+        # one of them has not left the feed, so no booking may claim it.
+        self.cancelled_transaction_ids: dict[str, set[str]] = {}
 
     def _use_credentials(self, credentials: dict) -> None:
         aspsp = credentials.get("aspsp") if isinstance(credentials, dict) else None
@@ -1399,6 +1439,7 @@ class EnableBankingProvider(BankProvider):
         continuation_key: Optional[str] = None
         seen_continuation_keys: set[str] = set()
         seen_transaction_ids: set[str] = set()
+        self.cancelled_transaction_ids.pop(account_external_id, None)
         for _ in range(cap):
             params: dict[str, Any] = {"date_from": date_from}
             if date_to is not None:
@@ -1412,14 +1453,37 @@ class EnableBankingProvider(BankProvider):
                 f"/accounts/{account_external_id}/transactions",
                 params=params,
             )
+            page_occurrences: dict[str, int] = {}
             for raw_txn, status in self._iter_transactions(page):
                 parsed = self._build_transaction(
                     account_external_id, raw_txn, status, payee_source
                 )
+                if not parsed:
+                    # An entry we can't read (no date, no amount) is still in
+                    # the feed: without its id the sync would take its row
+                    # for one the bank stopped listing.
+                    self.truncated_account_ids.add(account_external_id)
+                    continue
+                # Identical entries within one page are distinct transactions.
+                # Counting per page, not per fetch, keeps the ids stable when
+                # a broken cursor repeats a page.
+                occurrence = page_occurrences.get(parsed.external_id, 0)
+                page_occurrences[parsed.external_id] = occurrence + 1
+                if occurrence:
+                    parsed.external_id = _repeat_external_id(
+                        parsed.external_id, occurrence
+                    )
+                # A cancelled entry took its slot above, so an identical live
+                # one next to it keeps the id it had while both were listed.
+                if status == CANCELLED_STATUS:
+                    self.cancelled_transaction_ids.setdefault(
+                        account_external_id, set()
+                    ).add(parsed.external_id)
+                    continue
                 # A broken pagination cursor can make Enable Banking return a
                 # page we have already consumed. Keep the result idempotent
                 # even before the repeated cursor is detected below.
-                if not parsed or parsed.external_id in seen_transaction_ids:
+                if parsed.external_id in seen_transaction_ids:
                     continue
                 key = _settlement_key(raw_txn)
                 if key is not None:
@@ -1479,7 +1543,12 @@ class EnableBankingProvider(BankProvider):
         elif isinstance(body, list):
             for raw in body:
                 raw_status = (raw.get("status") or "").upper()
-                yield raw, "pending" if raw_status in {"PDNG", "PENDING"} else "posted"
+                if raw_status in SKIPPED_TRANSACTION_STATUSES:
+                    yield raw, CANCELLED_STATUS
+                elif raw_status in PENDING_TRANSACTION_STATUSES:
+                    yield raw, "pending"
+                else:
+                    yield raw, "posted"
 
     def _build_transaction(
         self,

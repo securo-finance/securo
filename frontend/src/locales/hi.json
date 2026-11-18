@@ -1292,6 +1292,7 @@
       "syncNow": "अभी सिंक करें"
     },
     "connected": "बैंक सफलतापूर्वक कनेक्ट हुआ",
+    "connectedImportFailed": "बैंक जुड़ गया, लेकिन पहला आयात विफल रहा। पूरा करने के लिए सिंक दोहराएँ।",
     "connectError": "बैंक कनेक्ट करने में विफल",
     "disconnected": "कनेक्शन हटाया गया",
     "confirmDisconnectTitle": "बैंक कनेक्शन डिस्कनेक्ट करें?",
@@ -2188,6 +2189,10 @@
     "marketPriceSourceTooltip": "बाज़ार डेटा से मूल्य अपने आप रीफ़्रेश होता है",
     "lastUpdated": "अपडेट हुआ {{when}}",
     "refreshPrice": "मूल्य रीफ़्रेश करें",
+    "refreshAllPrices": "कीमतें रीफ़्रेश करें",
+    "refreshAllPricesDone": "{{refreshed}} कीमतें अपडेट हुईं, {{skipped}} बिना नई कीमत",
+    "refreshAllPricesNone": "रीफ़्रेश करने के लिए कोई बाज़ार-मूल्य संपत्ति नहीं",
+    "refreshAllPricesRateLimited": "मार्केट डेटा प्रदाता अभी अनुरोध सीमित कर रहा है। रुकने से पहले {{refreshed}} कीमतें अपडेट हुईं और {{skipped}} छोड़ दी गईं। एक मिनट बाद फिर कोशिश करें।",
     "priceRefreshed": "मूल्य रीफ़्रेश हुआ",
     "purchaseDate": "खरीद तिथि",
     "purchasePrice": "खरीद मूल्य",

@@ -599,6 +599,8 @@ async def delete_transaction(
     tx = result.scalar_one_or_none()
     if tx is None:
         return None
+    # Asset lock first, as in update_transaction and delete_asset: the delete
+    # of the entry flushes after it, never before.
     asset = await _lock_asset(session, tx.asset_id, workspace_id)
     if asset is None:
         return None

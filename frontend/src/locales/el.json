@@ -999,6 +999,7 @@
       "syncNow": "Συγχρονισμός τώρα"
     },
     "connected": "Η τράπεζα συνδέθηκε επιτυχώς",
+    "connectedImportFailed": "Η τράπεζα συνδέθηκε, αλλά η πρώτη εισαγωγή απέτυχε. Επαναλάβετε τον συγχρονισμό για να ολοκληρωθεί.",
     "connectError": "Αποτυχία σύνδεσης τράπεζας",
     "disconnected": "Η σύνδεση αφαιρέθηκε",
     "confirmDisconnectTitle": "Αποσύνδεση τραπεζικής σύνδεσης;",
@@ -2188,6 +2189,10 @@
     "marketPriceSourceTooltip": "Η τιμή ανανεώνεται αυτόματα από δεδομένα αγοράς",
     "lastUpdated": "Ενημερώθηκε {{when}}",
     "refreshPrice": "Ανανέωση τιμής",
+    "refreshAllPrices": "Ανανέωση τιμών",
+    "refreshAllPricesDone": "Ενημερώθηκαν {{refreshed}} τιμές, {{skipped}} χωρίς νέα τιμή",
+    "refreshAllPricesNone": "Δεν υπάρχουν στοιχεία με τιμή αγοράς για ανανέωση",
+    "refreshAllPricesRateLimited": "Ο πάροχος δεδομένων αγοράς περιορίζει τώρα τα αιτήματα. Ενημερώθηκαν {{refreshed}} τιμές και {{skipped}} παραλείφθηκαν πριν σταματήσει. Δοκιμάστε ξανά σε ένα λεπτό.",
     "priceRefreshed": "Η τιμή ανανεώθηκε",
     "purchaseDate": "Ημερομηνία αγοράς",
     "purchasePrice": "Τιμή αγοράς",

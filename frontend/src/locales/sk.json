@@ -1356,6 +1356,7 @@
       "syncNow": "Synchronizovať teraz"
     },
     "connected": "Banka úspešne prepojená",
+    "connectedImportFailed": "Banka je pripojená, ale prvý import zlyhal. Zopakujte synchronizáciu na dokončenie.",
     "connectError": "Nepodarilo sa prepojiť banku",
     "disconnected": "Prepojenie odstránené",
     "confirmDisconnectTitle": "Odpojiť prepojenie banky?",
@@ -2312,6 +2313,10 @@
     "marketPriceSourceTooltip": "Cena sa automaticky obnovuje z trhových dát",
     "lastUpdated": "Aktualizované {{when}}",
     "refreshPrice": "Obnoviť cenu",
+    "refreshAllPrices": "Obnoviť ceny",
+    "refreshAllPricesDone": "Aktualizovaných {{refreshed}} cien, {{skipped}} bez novej ceny",
+    "refreshAllPricesNone": "Žiadne aktíva s trhovou cenou na obnovenie",
+    "refreshAllPricesRateLimited": "Poskytovateľ trhových dát teraz obmedzuje požiadavky. Pred zastavením sa aktualizovalo {{refreshed}} cien a {{skipped}} bolo vynechaných. Skúste to znova o minútu.",
     "priceRefreshed": "Cena obnovená",
     "purchaseDate": "Dátum nákupu",
     "purchasePrice": "Nákupná cena",

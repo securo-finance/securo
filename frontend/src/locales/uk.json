@@ -1309,6 +1309,7 @@
       "syncNow": "Синхронізувати зараз"
     },
     "connected": "Банк успішно підключено",
+    "connectedImportFailed": "Банк підключено, але перший імпорт не вдався. Повторіть синхронізацію, щоб завершити.",
     "connectError": "Не вдалося підключити банк",
     "disconnected": "Підключення видалено",
     "confirmDisconnectTitle": "Відключити підключення до банку?",
@@ -2213,6 +2214,10 @@
     "marketPriceSourceTooltip": "Ціна оновлюється автоматично з ринкових даних",
     "lastUpdated": "Оновлено {{when}}",
     "refreshPrice": "Оновити ціну",
+    "refreshAllPrices": "Оновити ціни",
+    "refreshAllPricesDone": "Оновлено {{refreshed}} цін, {{skipped}} без нової котировки",
+    "refreshAllPricesNone": "Немає активів із ринковою ціною для оновлення",
+    "refreshAllPricesRateLimited": "Постачальник ринкових даних зараз обмежує запити. До зупинки оновилося {{refreshed}} цін, а {{skipped}} пропущено. Спробуйте ще раз за хвилину.",
     "priceRefreshed": "Ціну оновлено",
     "purchaseDate": "Дата купівлі",
     "purchasePrice": "Ціна купівлі",

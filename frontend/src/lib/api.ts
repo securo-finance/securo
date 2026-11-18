@@ -89,6 +89,7 @@ import type {
   AssetImportPreview,
   AssetImportResult,
   AssetOrderImport,
+  AssetPriceRefreshResult,
   AssetTransaction,
   AssetValue,
   MarketSymbolMatch,
@@ -1558,6 +1559,22 @@ export const assets = {
   refreshPrice: async (id: string): Promise<Asset> => {
     const { data } = await api.post(`/assets/${id}/refresh-price`)
     return data
+  },
+  refreshPrices: async (workspaceId?: string | null): Promise<AssetPriceRefreshResult> => {
+    try {
+      const { data } = await api.post('/assets/refresh-prices', undefined, workspaceHeader(workspaceId))
+      return data
+    } catch (error) {
+      // A 429 can arrive after the provider answered for part of the portfolio
+      // and the service committed those prices. The response interceptor only
+      // signals on success, so tell the other tabs here; the tab that asked
+      // still gets the error and refetches with its own counters.
+      const response = (error as { response?: { status?: number; data?: { detail?: { refreshed?: number } } } }).response
+      if (response?.status === 429 && Number(response.data?.detail?.refreshed ?? 0) > 0) {
+        markDataChanged()
+      }
+      throw error
+    }
   },
   // Transaction ledger (issue #235)
   transactions: async (id: string): Promise<AssetTransaction[]> => {

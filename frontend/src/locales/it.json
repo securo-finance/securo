@@ -1296,6 +1296,7 @@
       "syncNow": "Sincronizza ora"
     },
     "connected": "Banca collegata con successo",
+    "connectedImportFailed": "Banca collegata, ma la prima importazione non è riuscita. Ripeti la sincronizzazione per completare.",
     "connectError": "Impossibile collegare la banca",
     "disconnected": "Connessione rimossa",
     "confirmDisconnectTitle": "Disconnettere la connessione bancaria?",
@@ -2192,6 +2193,10 @@
     "marketPriceSourceTooltip": "Prezzo aggiornato automaticamente dai dati di mercato",
     "lastUpdated": "Aggiornato {{when}}",
     "refreshPrice": "Aggiorna prezzo",
+    "refreshAllPrices": "Aggiorna prezzi",
+    "refreshAllPricesDone": "{{refreshed}} prezzi aggiornati, {{skipped}} senza nuova quotazione",
+    "refreshAllPricesNone": "Nessun cespite a prezzo di mercato da aggiornare",
+    "refreshAllPricesRateLimited": "Il fornitore dei dati di mercato sta limitando le richieste. {{refreshed}} prezzi sono stati aggiornati e {{skipped}} saltati prima dello stop; riprova tra un minuto.",
     "priceRefreshed": "Prezzo aggiornato",
     "purchaseDate": "Data di acquisto",
     "purchasePrice": "Prezzo di acquisto",

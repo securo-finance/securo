@@ -1292,6 +1292,7 @@
       "syncNow": "Szinkronizálás most"
     },
     "connected": "Bank sikeresen csatlakoztatva",
+    "connectedImportFailed": "A bank csatlakozott, de az első import nem sikerült. Fejezze be a szinkronizálás megismétlésével.",
     "connectError": "Nem sikerült csatlakoztatni a bankot",
     "disconnected": "Kapcsolat eltávolítva",
     "confirmDisconnectTitle": "Leválasztod a bankkapcsolatot?",
@@ -2190,6 +2191,10 @@
     "marketPriceSourceTooltip": "Az ár automatikusan frissül a piaci adatokból",
     "lastUpdated": "Frissítve: {{when}}",
     "refreshPrice": "Ár frissítése",
+    "refreshAllPrices": "Árak frissítése",
+    "refreshAllPricesDone": "{{refreshed}} ár frissítve, {{skipped}} új jegyzés nélkül",
+    "refreshAllPricesNone": "Nincs piaci árazású eszköz a frissítéshez",
+    "refreshAllPricesRateLimited": "A piaci adatszolgáltató most korlátozza a kéréseket. {{refreshed}} ár frissült és {{skipped}} maradt ki a leállás előtt. Próbálja újra egy perc múlva.",
     "priceRefreshed": "Ár frissítve",
     "purchaseDate": "Vásárlás dátuma",
     "purchasePrice": "Vételár",

@@ -1372,6 +1372,7 @@
       "syncNow": "Synchronizovat nyní"
     },
     "connected": "Banka úspěšně propojena",
+    "connectedImportFailed": "Banka připojena, ale první import se nezdařil. Zopakujte synchronizaci pro dokončení.",
     "connectError": "Banku se nepodařilo propojit",
     "disconnected": "Propojení odstraněno",
     "confirmDisconnectTitle": "Odpojit propojení banky?",
@@ -2330,6 +2331,10 @@
     "marketPriceSourceTooltip": "Cena se automaticky obnovuje z tržních dat",
     "lastUpdated": "Aktualizováno {{when}}",
     "refreshPrice": "Obnovit cenu",
+    "refreshAllPrices": "Obnovit ceny",
+    "refreshAllPricesDone": "Aktualizováno {{refreshed}} cen, {{skipped}} bez nové ceny",
+    "refreshAllPricesNone": "Žádná aktiva s tržní cenou k obnovení",
+    "refreshAllPricesRateLimited": "Poskytovatel tržních dat nyní omezuje požadavky. Před zastavením se aktualizovalo {{refreshed}} cen a {{skipped}} bylo vynecháno. Zkuste to znovu za minutu.",
     "priceRefreshed": "Cena obnovena",
     "purchaseDate": "Datum nákupu",
     "purchasePrice": "Nákupní cena",
