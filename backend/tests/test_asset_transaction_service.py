@@ -21,7 +21,7 @@ from app.models.asset import Asset
 from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
 from app.models.user import User
-from app.providers.market_price import MarketPriceProvider
+from app.providers.market_price import LatestClose, MarketPriceProvider
 from app.schemas.asset import (
     AssetBuyCreate,
     AssetCreate,
@@ -1301,6 +1301,68 @@ async def test_deleting_the_split_values_today_at_the_quote_again(session, test_
     assert stored is not None
     assert stored.price == Decimal("500")
     assert stored.amount == pytest.approx(Decimal("1500"))
+
+
+class _DatedCloses(_FakeProvider):
+    """A batch feed that says which trading day each close is from."""
+
+    def __init__(self, closes: dict[str, LatestClose]):
+        super().__init__({s: _quote(s, float(c.price)) for s, c in closes.items()})
+        self._closes = closes
+
+    async def get_latest_closes(self, symbols: list[str]) -> dict[str, Optional[LatestClose]]:
+        return {s.upper(): self._closes.get(s.upper()) for s in symbols}
+
+
+@pytest.mark.asyncio
+async def test_the_refresh_skips_a_close_from_before_the_split(session, test_workspace, market_asset):
+    # Issue #1357: before the market opens on the split day, the feed's latest
+    # close is yesterday's, per pre-split unit.
+    quoted_at = await _holding_quoted_yesterday(session, test_workspace, market_asset)
+    today = app_today()
+    await _add_split(session, test_workspace, market_asset, 1, 100, today)
+    feed = _DatedCloses({"PETR4.SA": LatestClose(Decimal("500"), today - timedelta(days=1))})
+
+    result = await asset_service.refresh_all_market_prices(session, market_provider=feed)
+
+    assert result == {"refreshed": 0, "skipped": 1, "rate_limited": 0}
+    assert await _today_value(session, market_asset) is None
+    await session.refresh(market_asset)
+    assert market_asset.last_price == Decimal("500")
+    assert market_asset.last_price_at.replace(tzinfo=None) == quoted_at.replace(tzinfo=None)
+    assert (await _trend(session, test_workspace, market_asset))[today.isoformat()] == pytest.approx(1500)
+
+
+@pytest.mark.asyncio
+async def test_the_refresh_stores_a_close_from_the_split_day(session, test_workspace, market_asset):
+    await _holding_quoted_yesterday(session, test_workspace, market_asset)
+    today = app_today()
+    await _add_split(session, test_workspace, market_asset, 1, 100, today)
+    feed = _DatedCloses({"PETR4.SA": LatestClose(Decimal("5.05"), today)})
+
+    result = await asset_service.refresh_all_market_prices(session, market_provider=feed)
+
+    assert result == {"refreshed": 1, "skipped": 0, "rate_limited": 0}
+    stored = await _today_value(session, market_asset)
+    assert stored is not None
+    assert stored.price == Decimal("5.05")
+    assert stored.amount == pytest.approx(Decimal("1515"))
+
+
+@pytest.mark.asyncio
+async def test_the_refresh_stores_an_older_close_when_no_split_followed(session, test_workspace, market_asset):
+    # A weekend or holiday close is still the latest price when no split came after it.
+    await _holding_quoted_yesterday(session, test_workspace, market_asset)
+    today = app_today()
+    await _add_split(session, test_workspace, market_asset, 1, 100, today - timedelta(days=10))
+    feed = _DatedCloses({"PETR4.SA": LatestClose(Decimal("5.10"), today - timedelta(days=3))})
+
+    result = await asset_service.refresh_all_market_prices(session, market_provider=feed)
+
+    assert result["refreshed"] == 1
+    stored = await _today_value(session, market_asset)
+    assert stored is not None
+    assert stored.amount == pytest.approx(Decimal("1530"))
 
 
 @pytest.mark.asyncio

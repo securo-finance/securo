@@ -233,6 +233,7 @@ def apply_rule_actions(
     skip_payee: bool = False,
     assignable_category_ids: Collection[uuid.UUID] | None = None,
     existing_payee_ids: Collection[uuid.UUID] | None = None,
+    ignored_category_ids: Collection[uuid.UUID] = (),
 ) -> bool:
     """Apply actions in-place and return the updated category-set flag.
 
@@ -251,7 +252,14 @@ def apply_rule_actions(
     `set_payee` keeps its payee id the same way and can outlive the payee, so
     it only writes an id in `existing_payee_ids`. Passing nothing skips that
     check too.
+
+    A leg of a transfer (any row with a `transfer_pair_id`) has to keep
+    counting in its account's balance, or money would arrive on one side
+    without leaving the other. So on a leg `ignore` is skipped, and so is a
+    `set_category` naming one of `ignored_category_ids`; the rule's other
+    actions still apply, and a later rule may still categorize the leg.
     """
+    is_transfer_leg = getattr(tx, "transfer_pair_id", None) is not None
     for action in actions:
         op = action.get("op")
         value = action.get("value")
@@ -262,6 +270,8 @@ def apply_rule_actions(
             except (ValueError, AttributeError):
                 continue
             if assignable_category_ids is not None and category_id not in assignable_category_ids:
+                continue
+            if is_transfer_leg and category_id in ignored_category_ids:
                 continue
             tx.category_id = category_id
             category_already_set = True
@@ -299,7 +309,7 @@ def apply_rule_actions(
                 if len(notes) <= NOTES_MAX_LENGTH:
                     tx.notes = notes
 
-        elif op == "ignore":
+        elif op == "ignore" and not is_transfer_leg:
             tx.is_ignored = True
 
     return category_already_set

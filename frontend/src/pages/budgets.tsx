@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { AlertCircle, CalendarIcon, Repeat, Sparkles } from 'lucide-react'
+import { AlertCircle, CalendarIcon, Copy as CopyIcon, Repeat, Sparkles } from 'lucide-react'
 import { format } from 'date-fns'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
 import { monthLabel, monthRange, shiftMonth } from '@/lib/month-utils'
@@ -18,6 +18,7 @@ import { MonthPicker } from '@/components/ui/monthpicker'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/page-header'
 import { BudgetSpendingProgress } from '@/components/budget-spending-progress'
+import { BudgetCopyDialog } from '@/components/budget-copy-dialog'
 import { TransactionDrillDown } from '@/components/transaction-drill-down'
 import { CategoryIcon } from '@/components/category-icon'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -99,6 +100,7 @@ export default function BudgetsPage() {
   const [drillDownCategoryId, setDrillDownCategoryId] = useState<string | null>(null)
   const [focusedCategoryId, setFocusedCategoryId] = useState<string | null>(null)
   const [suggestOpen, setSuggestOpen] = useState(false)
+  const [copyOpen, setCopyOpen] = useState(false)
   const [suggestMonths, setSuggestMonths] = useState(3)
   const [suggestRecurring, setSuggestRecurring] = useState(false)
   const [suggestEdits, setSuggestEdits] = useState<Record<string, { checked: boolean; amount: string }>>({})
@@ -121,7 +123,7 @@ export default function BudgetsPage() {
 
   const fmt = (amount: number) => mask(formatCurrency(amount, userCurrency, locale))
 
-  const { data: budgetsList, isLoading: budgetsLoading, isError: budgetsError, error: budgetsLoadError, refetch: refetchBudgets } = useQuery({
+  const { data: budgetsList, isLoading: budgetsLoading, isFetching: budgetsFetching, isError: budgetsError, error: budgetsLoadError, refetch: refetchBudgets } = useQuery({
     queryKey: ['budgets', selectedMonth],
     queryFn: () => budgetsApi.list(monthParam),
   })
@@ -263,31 +265,47 @@ export default function BudgetsPage() {
         section={t('nav.groupSetup')}
         title={t('budgets.settingsTitle')}
         action={
-          <div className="flex flex-wrap items-center gap-1">
-            <button type="button" className={STEP_BUTTON} aria-label={t('budgets.previousMonth')} onClick={() => selectMonth(shiftMonth(selectedMonth, -1))}>‹</button>
-            <Popover open={monthCalOpen} onOpenChange={setMonthCalOpen}>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className="inline-flex items-center justify-center gap-2 border border-border rounded-lg px-3 py-1.5 text-sm bg-card text-foreground hover:bg-muted/50 transition-all cursor-pointer min-w-[180px]"
-                >
-                  <CalendarIcon className="size-3.5 text-muted-foreground" />
-                  {monthTitle}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent align="center" className="w-auto p-0">
-                <MonthPicker
-                  locale={dateFnsLocale}
-                  selectedMonth={new Date(`${selectedMonth}-01T00:00:00`)}
-                  onMonthSelect={(date) => {
-                    if (!date) return
-                    selectMonth(format(date, 'yyyy-MM'))
-                    setMonthCalOpen(false)
-                  }}
-                />
-              </PopoverContent>
-            </Popover>
-            <button type="button" className={STEP_BUTTON} aria-label={t('budgets.nextMonth')} onClick={() => selectMonth(shiftMonth(selectedMonth, 1))}>›</button>
+          <div className="flex flex-wrap items-center gap-2">
+            {canWrite && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 h-8"
+                // Without the month's budgets the dialog cannot tell which
+                // categories are missing, so it would overstate the copy —
+                // and a refetch still in flight is just as stale.
+                disabled={budgetsLoading || budgetsFetching || budgetsError || !budgetsList}
+                onClick={() => setCopyOpen(true)}
+              >
+                <CopyIcon size={13} /> {t('budgets.copyAction')}
+              </Button>
+            )}
+            <div className="flex flex-wrap items-center gap-1">
+              <button type="button" className={STEP_BUTTON} aria-label={t('budgets.previousMonth')} onClick={() => selectMonth(shiftMonth(selectedMonth, -1))}>‹</button>
+              <Popover open={monthCalOpen} onOpenChange={setMonthCalOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center gap-2 border border-border rounded-lg px-3 py-1.5 text-sm bg-card text-foreground hover:bg-muted/50 transition-all cursor-pointer min-w-[180px]"
+                  >
+                    <CalendarIcon className="size-3.5 text-muted-foreground" />
+                    {monthTitle}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="center" className="w-auto p-0">
+                  <MonthPicker
+                    locale={dateFnsLocale}
+                    selectedMonth={new Date(`${selectedMonth}-01T00:00:00`)}
+                    onMonthSelect={(date) => {
+                      if (!date) return
+                      selectMonth(format(date, 'yyyy-MM'))
+                      setMonthCalOpen(false)
+                    }}
+                  />
+                </PopoverContent>
+              </Popover>
+              <button type="button" className={STEP_BUTTON} aria-label={t('budgets.nextMonth')} onClick={() => selectMonth(shiftMonth(selectedMonth, 1))}>›</button>
+            </div>
           </div>
         }
       />
@@ -303,6 +321,17 @@ export default function BudgetsPage() {
           ) : undefined}
         />
 
+        {canWrite && !budgetsFetching && budgetsList?.length === 0 && allCategories.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/20 px-4 py-3 sm:px-5">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">{t('budgets.empty')}</p>
+              <p className="text-xs text-muted-foreground">{t('budgets.copyEmptyHint')}</p>
+            </div>
+            <Button variant="outline" size="sm" className="gap-1.5 h-8" onClick={() => setCopyOpen(true)}>
+              <CopyIcon size={13} /> {t('budgets.copyAction')}
+            </Button>
+          </div>
+        )}
         {spendingError && !noAccounts && (
           <div role="alert" className="flex items-center justify-between gap-3 px-4 sm:px-5 py-3 text-sm text-destructive">
             <span>{t('budgets.spendingError')}</span>
@@ -467,6 +496,16 @@ export default function BudgetsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <BudgetCopyDialog
+        // A fresh mount per opening resets the source month and the strategy.
+        key={copyOpen ? selectedMonth : 'closed'}
+        open={copyOpen}
+        onOpenChange={setCopyOpen}
+        targetMonth={selectedMonth}
+        targetBudgets={budgetsList ?? []}
+        targetRefreshing={budgetsFetching}
+      />
 
       {/* Save bar: same fixed placement as the transactions bulk-action bar, so it
           stays in reach while editing a long list. */}
