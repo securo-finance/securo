@@ -1702,12 +1702,17 @@ export const reports = {
     days?: number,
     startDate?: string,
     endDate?: string,
+    // A preset sent as explicit dates (This Month, a window stepped back)
+    // keeps its projections; a custom range is actuals only.
+    includeForecasts = false,
   ): Promise<ReportResponse> => {
     const extra = acctIdsParam(accountIds)
     const { data } = await api.get('/reports/income-expenses', {
       params: {
         months, interval, period, days,
-        ...(startDate && endDate ? { start_date: startDate, end_date: endDate } : {}),
+        ...(startDate && endDate
+          ? { start_date: startDate, end_date: endDate, ...(includeForecasts ? { include_forecasts: true } : {}) }
+          : {}),
         ...(extra.params ?? {}),
       },
       ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}),
