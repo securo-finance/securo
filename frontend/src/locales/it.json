@@ -1590,6 +1590,7 @@
     "walletHint": "Monitora questo obiettivo con il valore combinato di tutti gli asset nel portafoglio selezionato."
   },
   "recurring": {
+    "makeFromTransaction": "Nuova ricorrente da questa transazione",
     "title": "Transazioni ricorrenti",
     "add": "Aggiungi ricorrente",
     "edit": "Modifica ricorrente",

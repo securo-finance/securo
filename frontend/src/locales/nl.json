@@ -1588,6 +1588,7 @@
     "walletHint": "Volg dit doel met de gecombineerde waarde van alle activa in de geselecteerde portemonnee."
   },
   "recurring": {
+    "makeFromTransaction": "Nieuwe terugkerende transactie van deze transactie",
     "title": "Terugkerende transacties",
     "add": "Terugkerend toevoegen",
     "edit": "Bewerken Terugkerend",

@@ -1587,6 +1587,7 @@
     "walletHint": "Verfolge dieses Ziel mit dem Gesamtwert aller Vermögenswerte im ausgewählten Portfolio."
   },
   "recurring": {
+    "makeFromTransaction": "Neue wiederkehrende Buchung aus dieser Buchung",
     "title": "Wiederkehrende Transaktionen",
     "add": "Wiederkehrende hinzufügen",
     "edit": "Wiederkehrende bearbeiten",

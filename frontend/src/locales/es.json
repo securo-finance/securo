@@ -1590,6 +1590,7 @@
     "walletHint": "Sigue este objetivo con el valor combinado de todos los activos en la cartera seleccionada."
   },
   "recurring": {
+    "makeFromTransaction": "Nueva recurrente a partir de esta transacción",
     "title": "Transacciones recurrentes",
     "add": "Agregar recurrente",
     "edit": "Editar recurrente",
