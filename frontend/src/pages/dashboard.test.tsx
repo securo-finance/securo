@@ -858,6 +858,42 @@ it('keeps a wallet-only Expenses drill-down empty instead of querying all accoun
 })
 
 
+it('lists only the user share of a split credit in the Income drill-down, like the card', async () => {
+  api.transactions.list.mockResolvedValue({
+    items: [{
+      id: 'shared-refund', description: 'Shared refund', date: '2026-11-05', type: 'credit',
+      amount: 100, amount_primary: 100, currency: 'USD', status: 'posted', category: null,
+      attachment_count: 0, splits: [], is_shared: true, viewer_share: 40, user_id: 'friend',
+    }],
+    total: 1,
+  })
+  const { user } = renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
+  await user.click(await screen.findByRole('button', { name: /Income/ }))
+  const panel = screen.getByRole('complementary')
+  expect(await within(panel).findByText('+$40.00')).toBeInTheDocument()
+  expect(within(panel).getByText(/part of \$100\.00/)).toBeInTheDocument()
+})
+
+it('switches the Income drill-down to the user share when the collection is cleared while it is open', async () => {
+  collectionFilter.activeAccountIds = ['checking']
+  api.transactions.list.mockResolvedValue({
+    items: [{
+      id: 'shared-refund', description: 'Shared refund', date: '2026-11-05', type: 'credit',
+      amount: 100, amount_primary: 100, currency: 'USD', status: 'posted', category: null,
+      attachment_count: 0, splits: [], is_shared: true, viewer_share: 40, user_id: 'friend',
+    }],
+    total: 1,
+  })
+  const { user, rerender } = renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
+  await user.click(await screen.findByRole('button', { name: /Income/ }))
+  expect(await within(screen.getByRole('complementary')).findByText('+$100.00')).toBeInTheDocument()
+
+  collectionFilter.activeAccountIds = null
+  rerender(<TooltipProvider><DashboardPage /></TooltipProvider>)
+  expect(await within(screen.getByRole('complementary')).findByText('+$40.00')).toBeInTheDocument()
+})
+
+
 it('identifies each category in its spending progress bar accessible name', async () => {
   api.dashboard.spendingByCategory.mockResolvedValue([
     { category_id: 'rent', category_name: 'Rent', projected_total: 450, total: 450 },

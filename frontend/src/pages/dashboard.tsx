@@ -881,6 +881,10 @@ export default function DashboardPage() {
               type: 'credit',
               from: monthStart,
               to: monthEnd,
+              // The card counts only the user's share of a split; the
+              // drill-down drops that while a collection scopes the view.
+              ownShare: true,
+              ownShareCredits: true,
             })}
           >
             <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center">{t('dashboard.monthlyIncome')}</p>
@@ -909,6 +913,7 @@ export default function DashboardPage() {
               type: 'debit',
               from: monthStart,
               to: monthEnd,
+              ownShare: true,
             })}
           >
             <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center">{t('dashboard.monthlyExpenses')}</p>
@@ -1920,6 +1925,11 @@ export default function DashboardPage() {
               // they open from (e.g. "Categorize now").
               account_ids:
                 drillDown.account_ids ?? acctIds,
+              // Scoped cards count full amounts, so the share flags follow
+              // the scope in effect now, even if the collection changed
+              // while the panel was open.
+              ownShare: drillDown.ownShare && !(drillDown.account_ids ?? acctIds),
+              ownShareCredits: drillDown.ownShareCredits && !(drillDown.account_ids ?? acctIds),
             }
             : null
         }
