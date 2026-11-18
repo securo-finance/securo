@@ -1,15 +1,15 @@
 """make spending plan timestamps non-nullable, as the model declares
 
-Revision ID: 121
-Revises: 120
+Revision ID: fork_003
+Revises: fork_002
 """
 
 import sqlalchemy as sa
 
 from alembic import op
 
-revision = "121"
-down_revision = "120"
+revision = "fork_003"
+down_revision = "fork_002"
 branch_labels = None
 depends_on = None
 

@@ -27,7 +27,7 @@ spec:
             - |
               echo "Starting database migration..."
               for i in $(seq 1 30); do
-                if alembic upgrade head; then
+                if alembic upgrade heads; then
                   echo "Migration successful."
                   exit 0
                 fi

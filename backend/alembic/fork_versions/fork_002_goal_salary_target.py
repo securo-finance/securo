@@ -1,7 +1,7 @@
 """add salary-multiple targets to goals
 
-Revision ID: 120
-Revises: 119
+Revision ID: fork_002
+Revises: fork_001
 """
 
 import sqlalchemy as sa
@@ -9,8 +9,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "120"
-down_revision = "119"
+revision = "fork_002"
+down_revision = "fork_001"
 branch_labels = None
 depends_on = None
 
