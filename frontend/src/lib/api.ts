@@ -1,3 +1,4 @@
+export { recurringPayments, spendingPlan } from './fork-api'
 import axios from 'axios'
 import type { LayoutItem } from '@/lib/library'
 import { normalizeBudgetComparisonRows } from '@/lib/budget-settings-utils'
@@ -53,7 +54,6 @@ import type {
   IssuerTaxId,
   InvoiceSettings,
   InvoiceSummary,
-  RecurringPaymentInput,
   RecurringTransaction,
   RecurringPriceChange,
   RecurringPriceChangeHistory,
@@ -122,10 +122,6 @@ import type {
   ReconciliationRulePatch,
   ReconciliationSuggestion,
   ReconciliationHistoryEvent,
-  SimulatedPurchase,
-  SpendingPlan,
-  SpendingPlanInput,
-  SpendingPlanTimeline,
 } from '@/types'
 
 const api = axios.create({
@@ -1416,13 +1412,6 @@ export const recurring = {
     const { data } = await api.post('/recurring-transactions/generate')
     return data
   },
-  pay: async (
-    id: string,
-    payment: RecurringPaymentInput,
-  ): Promise<{ transaction: Transaction; recurring: RecurringTransaction }> => {
-    const { data } = await api.post(`/recurring-transactions/${id}/pay`, payment)
-    return data
-  },
   // Read-only price-change projections. Explicit methods keep the
   // wire paths visible; both are plain GETs with no optimistic mutation.
   recentPriceChanges: async (limit = 20): Promise<RecurringPriceChange[]> => {
@@ -1511,37 +1500,6 @@ const acctIdsParam = (accountIds?: string[]) =>
   accountIds && accountIds.length > 0
     ? { params: { account_ids: accountIds }, paramsSerializer: { indexes: null as null } }
     : {}
-
-export const spendingPlan = {
-  get: async (): Promise<SpendingPlan | null> => {
-    const { data } = await api.get('/spending-plan')
-    return data
-  },
-  save: async (plan: SpendingPlanInput): Promise<SpendingPlan> => {
-    const { data } = await api.put('/spending-plan', plan)
-    return data
-  },
-  remove: async (): Promise<void> => {
-    await api.delete('/spending-plan')
-  },
-  timeline: async (): Promise<SpendingPlanTimeline> => {
-    const { data } = await api.get('/spending-plan/timeline')
-    return data
-  },
-  // The timeline for a plan being edited. Saves nothing.
-  preview: async (draft: SpendingPlanInput): Promise<SpendingPlanTimeline> => {
-    const { data } = await api.post('/spending-plan/preview', draft)
-    return data
-  },
-  // The timeline after hypothetical purchases. Saves nothing.
-  simulate: async (purchases: SimulatedPurchase[], dailyAllowance?: number): Promise<SpendingPlanTimeline> => {
-    const { data } = await api.post('/spending-plan/simulate', {
-      purchases,
-      ...(dailyAllowance === undefined ? {} : { daily_allowance: dailyAllowance }),
-    })
-    return data
-  },
-}
 
 export const dashboard = {
   summary: async (

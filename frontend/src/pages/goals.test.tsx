@@ -44,6 +44,27 @@ function text(el: Element | null): string {
   return (el?.textContent ?? '').replace(/\s/g, ' ')
 }
 
+function goal(overrides: Partial<Record<string, unknown>>): Goal {
+  return {
+    id: 'g',
+    name: 'Reserva',
+    status: 'active',
+    currency: 'BRL',
+    percentage: 70,
+    current_amount: '58662.99',
+    target_amount: '83804.28',
+    target_date: null,
+    tracking_type: 'manual',
+    on_track: null,
+    monthly_contribution: null,
+    icon: null,
+    color: null,
+    salary_name: 'Salário',
+    monthly_salary: '13967.38',
+    ...overrides,
+  } as unknown as Goal
+}
+
 describe('GoalsPage salary targets', () => {
   beforeEach(() => {
     Object.values(api).forEach((group) => Object.values(group).forEach((fn) => fn.mockReset()))
@@ -87,7 +108,8 @@ describe('GoalsPage salary targets', () => {
         currency: 'BRL',
       }),
     )
-    expect(api.goals.create.mock.calls[0][0]).not.toHaveProperty('target_amount')
+    // The request body is JSON, so this is what the server receives.
+    expect(JSON.parse(JSON.stringify(api.goals.create.mock.calls[0][0]))).not.toHaveProperty('target_amount')
   })
 
   it('shows the target and coverage in salaries on the card', async () => {
@@ -117,5 +139,31 @@ describe('GoalsPage salary targets', () => {
 
     expect(await screen.findByText('Target: 6 net salaries')).toBeInTheDocument()
     expect(screen.getByText('4,2 of 6 salaries')).toBeInTheDocument()
+  })
+
+  it('opens a salary goal for editing in salary mode', async () => {
+    api.goals.list.mockResolvedValue([goal({ salary_recurring_id: 'salary', salary_months: 12 })])
+    const { user } = renderWithProviders(<GoalsPage />)
+
+    await user.click(await screen.findByRole('button', { name: 'Edit' }))
+    const dialog = await screen.findByRole('dialog')
+
+    expect(within(dialog).getByRole('button', { name: 'Multiple of net salary' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(within(dialog).getByRole('button', { name: '12' })).toHaveAttribute('aria-pressed', 'true')
+    expect(dialog.querySelector('input[name="target_amount"]')).toBeNull()
+  })
+
+  it('opens a fixed goal for editing with its amount', async () => {
+    api.goals.list.mockResolvedValue([goal({ salary_recurring_id: null, salary_months: null })])
+    const { user } = renderWithProviders(<GoalsPage />)
+
+    await user.click(await screen.findByRole('button', { name: 'Edit' }))
+    const dialog = await screen.findByRole('dialog')
+
+    expect(within(dialog).getByRole('button', { name: 'Fixed amount' })).toHaveAttribute('aria-pressed', 'true')
+    expect(dialog.querySelector('input[name="target_amount"]')).toHaveValue(83804.28)
   })
 })
