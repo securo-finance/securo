@@ -1173,14 +1173,18 @@ def _holding_metadata(holding: HoldingData) -> Optional[dict]:
 
     The blob is replaced on every sync, so the marker travels with it: when a
     provider stops reporting a date, the old marker goes with the snapshot
-    instead of lingering next to a value it no longer describes.
+    instead of lingering next to a value it no longer describes. The reserved
+    key is Securo's own, so whatever a provider sends under it is dropped
+    rather than trusted.
     """
-    if holding.value_date is None:
-        return holding.metadata
-    return {
-        **(holding.metadata or {}),
-        PROVIDER_VALUE_DATE_METADATA_KEY: holding.value_date.isoformat(),
+    metadata = {
+        key: value
+        for key, value in (holding.metadata or {}).items()
+        if key != PROVIDER_VALUE_DATE_METADATA_KEY
     }
+    if holding.value_date is not None:
+        metadata[PROVIDER_VALUE_DATE_METADATA_KEY] = holding.value_date.isoformat()
+    return metadata or None
 
 
 async def _upsert_asset_from_holding(

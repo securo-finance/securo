@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRegisterPageChatContext } from '@/lib/page-chat-context'
 import { accounts as accountsApi, assets, assetGroups, currencies as currenciesApi } from '@/lib/api'
 import { localDateString, todayInTimezone } from '@/lib/date-utils'
+import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -214,10 +215,10 @@ export default function AssetsPage() {
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
-  const { canWrite, current: workspace } = useWorkspace()
-  // The workspace's own day, so the staleness badge agrees with the dates the
-  // server writes, not the browser's clock.
-  const today = todayInTimezone(workspace?.timezone)
+  const { canWrite } = useWorkspace()
+  // The day the server keeps the books in, so the staleness badge agrees with
+  // the dates it writes, not the browser's clock.
+  const today = todayInTimezone(useEffectiveTimezone())
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
 
@@ -797,7 +798,9 @@ export default function AssetsPage() {
     const pctOfPortfolio = asset.sell_date ? null : getPortfolioShare(asset, portfolioTotalPrimary, userCurrency)
     const needsBuys = isMarketPriced && !hasCost && !asset.sell_date
     const needsExchangeRate = exchangeRatesNeedSetup && needsConversion(asset, userCurrency)
-    const staleValueDate = isSynced ? getStaleProviderValueDate(asset, today) : null
+    // Only where the provider's own figure is on screen: a market-priced
+    // holding shows units times its last quote instead.
+    const staleValueDate = isProviderOwned ? getStaleProviderValueDate(asset, today) : null
 
     return (
       <div key={asset.id} className="border-b border-border last:border-b-0">
@@ -810,7 +813,7 @@ export default function AssetsPage() {
           <div className="flex items-center gap-2.5 min-w-0">
             <AssetIcon logoUrl={asset.logo_url} Icon={Icon} colorClass={config.color} bgClass={config.bg} size={16} tile="w-8 h-8" />
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <span className="font-semibold text-foreground truncate">{asset.ticker && !asset.ticker.startsWith('TD:') ? asset.ticker : asset.name}</span>
                 {needsBuys && (
                   <Badge

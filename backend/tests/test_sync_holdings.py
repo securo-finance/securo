@@ -23,7 +23,8 @@ import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.asset import Asset
+from app.core.app_clock import app_today
+from app.models.asset import PROVIDER_VALUE_DATE_METADATA_KEY, Asset
 from app.models.asset_group import AssetGroup
 from app.models.asset_value import AssetValue
 from app.models.bank_connection import BankConnection
@@ -36,7 +37,8 @@ from app.providers.base import (
     HoldingData,
     TransactionData,
 )
-from app.services.asset_service import get_asset
+from app.schemas.asset import AssetValueCreate
+from app.services.asset_service import add_asset_value, get_asset
 from app.services.connection_service import _sync_holdings
 
 
@@ -813,4 +815,67 @@ async def test_provider_value_date_reaches_the_asset_and_follows_each_sync(
     await session.commit()
     read = await get_asset(session, asset.id, asset.workspace_id)
     assert read is not None
+    assert read.provider_value_date is None
+
+
+@pytest.mark.asyncio
+async def test_provider_cannot_write_the_reserved_value_date_marker(
+    session: AsyncSession, test_user: User, mock_connection: BankConnection
+):
+    """The marker belongs to Securo, so a payload that sends the reserved key
+    without reporting a value date is not taken at its word."""
+    assert mock_connection.credentials is not None
+    _MockProvider._holdings = [
+        _holding(
+            metadata={
+                "status": "ACTIVE",
+                PROVIDER_VALUE_DATE_METADATA_KEY: "2026-01-01",
+            }
+        )
+    ]
+    await _sync_holdings(
+        session, test_user.id, mock_connection, mock_connection.credentials
+    )
+    await session.commit()
+
+    (asset,) = await _assets_for(session, test_user)
+    read = await get_asset(session, asset.id, asset.workspace_id)
+    assert read is not None
+    assert read.provider_value_date is None
+    assert asset.external_metadata is not None
+    assert PROVIDER_VALUE_DATE_METADATA_KEY not in asset.external_metadata
+    # The rest of the provider blob is kept as it came.
+    assert asset.external_metadata["status"] == "ACTIVE"
+
+
+@pytest.mark.asyncio
+async def test_manual_valuation_on_a_synced_asset_hides_the_provider_date(
+    session: AsyncSession, test_user: User, mock_connection: BankConnection
+):
+    """The warning is about the provider's figure. Once a manual valuation is
+    the one on screen, pointing at the connection describes another number.
+    """
+    assert mock_connection.credentials is not None
+    frozen = date(2026, 3, 17)
+    _MockProvider._holdings = [_holding(value_date=frozen)]
+    await _sync_holdings(
+        session, test_user.id, mock_connection, mock_connection.credentials
+    )
+    await session.commit()
+
+    (asset,) = await _assets_for(session, test_user)
+    read = await get_asset(session, asset.id, asset.workspace_id)
+    assert read is not None
+    assert read.provider_value_date == frozen
+
+    await add_asset_value(
+        session,
+        asset.id,
+        asset.workspace_id,
+        AssetValueCreate(amount=Decimal("1200.00"), date=app_today() + timedelta(days=1)),
+    )
+
+    read = await get_asset(session, asset.id, asset.workspace_id)
+    assert read is not None
+    assert read.current_value == 1200.0
     assert read.provider_value_date is None

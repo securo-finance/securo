@@ -125,8 +125,20 @@ def _generate_growth_values(
     return values
 
 
-def _provider_value_date(asset: Asset) -> Optional[date]:
-    """The date the sync provider says this asset's value refers to, if any."""
+def _provider_value_date(
+    asset: Asset, latest_value: Optional[AssetValue]
+) -> Optional[date]:
+    """The date the sync provider says the value on screen refers to, if any.
+
+    Only while the displayed figure is the provider's own. A manual valuation
+    dated after the last sync replaces it, and a market-priced asset shows
+    units times its last quote; warning about the connection in either case
+    would point at a number the user isn't looking at.
+    """
+    if asset.valuation_method == "market_price":
+        return None
+    if latest_value is None or latest_value.source != "sync":
+        return None
     raw = (asset.external_metadata or {}).get(PROVIDER_VALUE_DATE_METADATA_KEY)
     if not isinstance(raw, str):
         return None
@@ -190,7 +202,7 @@ def _asset_to_read(
         last_price=float(asset.last_price) if asset.last_price is not None else None,
         last_price_at=asset.last_price_at,
         logo_url=asset.logo_url,
-        provider_value_date=_provider_value_date(asset),
+        provider_value_date=_provider_value_date(asset, latest_value),
         average_price=float(asset.average_price) if asset.average_price is not None else None,
         total_invested=total_invested,
         realized_gain=float(asset.realized_gain) if asset.realized_gain is not None else None,

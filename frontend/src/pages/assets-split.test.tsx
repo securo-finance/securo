@@ -48,6 +48,7 @@ vi.mock('@/hooks/use-display-locale', () => ({
 vi.mock('@/hooks/use-privacy-mode', () => ({
   usePrivacyMode: () => ({ mask: (value: string) => value }),
 }))
+vi.mock('@/hooks/use-timezone', () => ({ useEffectiveTimezone: () => 'UTC' }))
 
 vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => ({ user: { preferences: { currency_display: 'USD' } } }),

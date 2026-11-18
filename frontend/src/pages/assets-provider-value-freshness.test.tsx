@@ -21,6 +21,7 @@ vi.mock('@/hooks/use-display-locale', () => ({
 vi.mock('@/hooks/use-privacy-mode', () => ({
   usePrivacyMode: () => ({ mask: (value: string) => value, privacyMode: false }),
 }))
+vi.mock('@/hooks/use-timezone', () => ({ useEffectiveTimezone: () => 'UTC' }))
 vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => ({ user: { is_superuser: true, preferences: { currency_display: 'USD' } } }),
 }))
@@ -84,6 +85,23 @@ describe('Assets provider value freshness badge', () => {
     renderWithProviders(<AssetsPage />)
 
     expect(await screen.findByText(t('assets.sold'))).toBeVisible()
+    expect(screen.queryByTitle(t('assets.providerValueStaleTitle'))).not.toBeInTheDocument()
+  })
+
+  it('does not flag a market-priced holding, whose value comes from its quote', async () => {
+    api.assets.list.mockResolvedValue([
+      syncedAsset({
+        name: 'Apple',
+        ticker: 'AAPL',
+        valuation_method: 'market_price',
+        units: 100,
+        last_price: 10,
+        provider_value_date: '2026-06-17',
+      }),
+    ])
+    renderWithProviders(<AssetsPage />)
+
+    expect(await screen.findByText('AAPL')).toBeVisible()
     expect(screen.queryByTitle(t('assets.providerValueStaleTitle'))).not.toBeInTheDocument()
   })
 })
