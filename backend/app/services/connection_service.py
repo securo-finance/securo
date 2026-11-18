@@ -16,7 +16,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.app_clock import app_today
 from app.core.config import get_settings
-from app.models.asset import Asset
+from app.models.asset import PROVIDER_VALUE_DATE_METADATA_KEY, Asset
 from app.models.asset_group import AssetGroup
 from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
@@ -1168,6 +1168,21 @@ async def _sync_holding_trades(
             await _upsert_asset_value_for_today(session, asset, holding.current_value, app_today())
 
 
+def _holding_metadata(holding: HoldingData) -> Optional[dict]:
+    """The holding's metadata snapshot, stamped with its provider value date.
+
+    The blob is replaced on every sync, so the marker travels with it: when a
+    provider stops reporting a date, the old marker goes with the snapshot
+    instead of lingering next to a value it no longer describes.
+    """
+    if holding.value_date is None:
+        return holding.metadata
+    return {
+        **(holding.metadata or {}),
+        PROVIDER_VALUE_DATE_METADATA_KEY: holding.value_date.isoformat(),
+    }
+
+
 async def _upsert_asset_from_holding(
     session: AsyncSession,
     asset: Optional[Asset],
@@ -1201,7 +1216,7 @@ async def _upsert_asset_from_holding(
             isin=holding.isin,
             ticker=holding.ticker,
             maturity_date=holding.maturity_date,
-            external_metadata=holding.metadata,
+            external_metadata=_holding_metadata(holding),
             valuation_method="manual",
         )
         session.add(asset)
@@ -1217,7 +1232,7 @@ async def _upsert_asset_from_holding(
     asset.currency = holding.currency
     asset.user_id = user_id
     # external_metadata is a snapshot blob: we want the latest every time.
-    asset.external_metadata = holding.metadata
+    asset.external_metadata = _holding_metadata(holding)
     previous_connection_id = asset.connection_id
     asset.connection_id = connection_id
     # Only auto-unarchive when the holding moved to a different connection

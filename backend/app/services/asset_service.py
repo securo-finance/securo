@@ -11,7 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
 from app.models.account import Account
-from app.models.asset import ASSET_PRICE_DECIMALS, LOAN_COLLATERAL_TYPES, Asset
+from app.models.asset import (
+    ASSET_PRICE_DECIMALS,
+    LOAN_COLLATERAL_TYPES,
+    PROVIDER_VALUE_DATE_METADATA_KEY,
+    Asset,
+)
 from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
 from app.models.user import User
@@ -120,6 +125,17 @@ def _generate_growth_values(
     return values
 
 
+def _provider_value_date(asset: Asset) -> Optional[date]:
+    """The date the sync provider says this asset's value refers to, if any."""
+    raw = (asset.external_metadata or {}).get(PROVIDER_VALUE_DATE_METADATA_KEY)
+    if not isinstance(raw, str):
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
 def _asset_to_read(
     asset: Asset,
     latest_value: Optional[AssetValue],
@@ -174,6 +190,7 @@ def _asset_to_read(
         last_price=float(asset.last_price) if asset.last_price is not None else None,
         last_price_at=asset.last_price_at,
         logo_url=asset.logo_url,
+        provider_value_date=_provider_value_date(asset),
         average_price=float(asset.average_price) if asset.average_price is not None else None,
         total_invested=total_invested,
         realized_gain=float(asset.realized_gain) if asset.realized_gain is not None else None,

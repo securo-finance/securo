@@ -2052,6 +2052,8 @@
     "exchangeRateSetupAskAdmin": "Für die Umrechnung von {{from}} zu {{to}} werden Wechselkurse benötigt. Bitte einen Administrator, sie einzurichten.",
     "noFxRate": "kein Wechselkurs",
     "noFxRateTitle": "Für diese Währung steht kein Wechselkurs zur Verfügung. Das Asset wird in seiner Originalwährung angezeigt und bleibt aus den Summen ausgeschlossen.",
+    "providerValueStale": "nicht aktualisiert seit {{date}}",
+    "providerValueStaleTitle": "Der Anbieter meldet diese Position noch, hat ihren Wert aber seit diesem Datum nicht aktualisiert. Sie wurde möglicherweise aufgelöst, oder die Verbindung aktualisiert Anlagen nicht. Prüfen Sie es bei Ihrer Bank.",
     "fxRateMissing": "Für {{currencies}} steht kein Wechselkurs zur Verfügung. Diese Assets werden in ihrer Originalwährung angezeigt und bleiben aus den Summen ausgeschlossen.",
     "colAsset": "Vermögenswert",
     "colQuantity": "Menge",

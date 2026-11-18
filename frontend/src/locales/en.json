@@ -2051,6 +2051,8 @@
     "exchangeRateSetupAskAdmin": "{{from}} to {{to}} conversion needs exchange rates. Ask an administrator to set them up.",
     "noFxRate": "no FX rate",
     "noFxRateTitle": "No exchange rate is available for this currency. The asset is shown in its original currency and excluded from the totals.",
+    "providerValueStale": "not updated since {{date}}",
+    "providerValueStaleTitle": "The provider still reports this position but has not updated its value since this date. It may have been redeemed or the connection may be failing to refresh investments. Check it with your bank.",
     "fxRateMissing": "No exchange rate is available for {{currencies}}. Those assets are shown in their original currency and left out of the totals.",
     "colAsset": "Asset",
     "colQuantity": "Qty",

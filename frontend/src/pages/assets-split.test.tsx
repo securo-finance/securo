@@ -95,6 +95,7 @@ function makeHolding(overrides: Partial<Asset> = {}): Asset {
     last_price: 300,
     last_price_at: null,
     logo_url: null,
+    provider_value_date: null,
     average_price: 300,
     total_invested: 489,
     realized_gain: 0,

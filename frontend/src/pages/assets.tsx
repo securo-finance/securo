@@ -4,7 +4,7 @@ import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRegisterPageChatContext } from '@/lib/page-chat-context'
 import { accounts as accountsApi, assets, assetGroups, currencies as currenciesApi } from '@/lib/api'
-import { localDateString } from '@/lib/date-utils'
+import { localDateString, todayInTimezone } from '@/lib/date-utils'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -62,6 +62,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { getAssetProfit } from '@/lib/asset-profit'
+import { getStaleProviderValueDate } from '@/lib/asset-provider-freshness'
 import { getAssetValuePrimary, getPortfolioShare, getPortfolioTotalPrimary } from '@/lib/asset-portfolio-share'
 import { formatTransactionTotal, getTransactionTotalCurrency } from '@/lib/asset-transaction-total'
 import { MAX_SPLIT_UNITS, canRecordSplit, formatSplitRatio, parseSplitUnits } from '@/lib/asset-split'
@@ -213,7 +214,10 @@ export default function AssetsPage() {
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
-  const { canWrite } = useWorkspace()
+  const { canWrite, current: workspace } = useWorkspace()
+  // The workspace's own day, so the staleness badge agrees with the dates the
+  // server writes, not the browser's clock.
+  const today = todayInTimezone(workspace?.timezone)
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
 
@@ -793,6 +797,7 @@ export default function AssetsPage() {
     const pctOfPortfolio = asset.sell_date ? null : getPortfolioShare(asset, portfolioTotalPrimary, userCurrency)
     const needsBuys = isMarketPriced && !hasCost && !asset.sell_date
     const needsExchangeRate = exchangeRatesNeedSetup && needsConversion(asset, userCurrency)
+    const staleValueDate = isSynced ? getStaleProviderValueDate(asset, today) : null
 
     return (
       <div key={asset.id} className="border-b border-border last:border-b-0">
@@ -825,6 +830,18 @@ export default function AssetsPage() {
                   >
                     <AlertTriangle size={9} />
                     {t('assets.noFxRate')}
+                  </Badge>
+                )}
+                {staleValueDate && (
+                  <Badge
+                    variant="outline"
+                    className="text-[9px] px-1 py-0 text-amber-600 border-amber-300 bg-amber-50 dark:bg-amber-950/30 gap-0.5 shrink-0"
+                    title={t('assets.providerValueStaleTitle')}
+                  >
+                    <AlertTriangle size={9} />
+                    {t('assets.providerValueStale', {
+                      date: new Date(staleValueDate + 'T00:00:00').toLocaleDateString(dateLocale),
+                    })}
                   </Badge>
                 )}
                 {asset.sell_date && (

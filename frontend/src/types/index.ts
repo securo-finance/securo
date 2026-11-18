@@ -1254,6 +1254,9 @@ export interface Asset {
   last_price: number | null
   last_price_at: string | null
   logo_url: string | null
+  // Date the sync provider says current_value refers to (YYYY-MM-DD), when it
+  // reports one. A stale date is the sign that a position stopped updating.
+  provider_value_date: string | null
   // Ledger-derived (issue #235): weighted-average cost per unit (preço médio),
   // cost basis of held units, cumulative realized gain, and whether the holding
   // is driven by the transactions ledger.

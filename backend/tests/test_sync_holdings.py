@@ -36,6 +36,7 @@ from app.providers.base import (
     HoldingData,
     TransactionData,
 )
+from app.services.asset_service import get_asset
 from app.services.connection_service import _sync_holdings
 
 
@@ -125,6 +126,7 @@ def _holding(
     quantity: Optional[Decimal] = Decimal("1"),
     is_withdrawn: bool = False,
     metadata: Optional[dict] = None,
+    value_date: Optional[date] = None,
 ) -> HoldingData:
     return HoldingData(
         external_id=external_id,
@@ -134,6 +136,7 @@ def _holding(
         quantity=quantity,
         purchase_price=purchase_price,
         purchase_date=purchase_date,
+        value_date=value_date,
         is_withdrawn=is_withdrawn,
         metadata=(
             metadata
@@ -767,3 +770,47 @@ async def test_next_day_sync_appends_new_asset_value(
     assert len(rows) == 2
     assert rows[0].date == yesterday and rows[0].amount == Decimal("100")
     assert rows[1].date == date.today() and rows[1].amount == Decimal("105")
+
+
+@pytest.mark.asyncio
+async def test_provider_value_date_reaches_the_asset_and_follows_each_sync(
+    session: AsyncSession, test_user: User, mock_connection: BankConnection
+):
+    """A provider can keep serving a frozen balance while the sync writes a
+    fresh value row dated today. The provider's own value date is what exposes
+    that, so it must reach the API, move with each payload, and clear when the
+    provider stops reporting one.
+    """
+    assert mock_connection.credentials is not None
+    frozen = date(2026, 3, 17)
+    _MockProvider._holdings = [_holding(value_date=frozen)]
+    await _sync_holdings(
+        session, test_user.id, mock_connection, mock_connection.credentials
+    )
+    await session.commit()
+
+    (asset,) = await _assets_for(session, test_user)
+    read = await get_asset(session, asset.id, asset.workspace_id)
+    assert read is not None
+    assert read.provider_value_date == frozen
+    # The Securo marker sits next to the provider blob, not in place of it.
+    assert asset.external_metadata is not None
+    assert asset.external_metadata["status"] == "ACTIVE"
+
+    _MockProvider._holdings = [_holding(value_date=date(2026, 3, 18))]
+    await _sync_holdings(
+        session, test_user.id, mock_connection, mock_connection.credentials
+    )
+    await session.commit()
+    read = await get_asset(session, asset.id, asset.workspace_id)
+    assert read is not None
+    assert read.provider_value_date == date(2026, 3, 18)
+
+    _MockProvider._holdings = [_holding()]
+    await _sync_holdings(
+        session, test_user.id, mock_connection, mock_connection.credentials
+    )
+    await session.commit()
+    read = await get_asset(session, asset.id, asset.workspace_id)
+    assert read is not None
+    assert read.provider_value_date is None

@@ -2055,6 +2055,8 @@
     "exchangeRateSetupAskAdmin": "La conversión de {{from}} a {{to}} necesita tipos de cambio. Pide a un administrador que los configure.",
     "noFxRate": "sin tipo de cambio",
     "noFxRateTitle": "No hay tipo de cambio disponible para esta moneda. El activo se muestra en su moneda original y queda fuera de los totales.",
+    "providerValueStale": "sin actualizar desde {{date}}",
+    "providerValueStaleTitle": "El proveedor aún informa esta posición, pero no actualiza su valor desde esta fecha. Puede haber sido rescatada o la conexión puede estar fallando al actualizar inversiones. Verifícalo con tu banco.",
     "fxRateMissing": "No hay tipo de cambio disponible para {{currencies}}. Esos activos se muestran en su moneda original y quedan fuera de los totales.",
     "colAsset": "Activo",
     "colQuantity": "Cant.",
