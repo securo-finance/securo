@@ -2016,6 +2016,8 @@
     "undoImport": "Desfazer importação?",
     "undoOrdersDescription": "Isto vai apagar as {{count}} ordens importadas de {{filename}} e recalcular as posições afetadas. Os ativos criados por esta importação são removidos com elas.",
     "undone": "Importação desfeita",
+    "undoOversell": "Não é possível anular esta importação: um registo que permanece vende {{attempted}} unidades com {{available}} em carteira. Edite ou elimine esse registo primeiro.",
+    "undoTooLarge": "Não é possível anular esta importação: a posição que resta sem ela é demasiado grande para armazenar.",
     "undoDescription": "Isto vai eliminar {{count}} transações importadas de {{filename}}. Esta ação não pode ser desfeita.",
     "deleting": "A eliminar...",
     "deleteAll": "Eliminar tudo",

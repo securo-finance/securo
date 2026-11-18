@@ -2009,6 +2009,8 @@
     "undoImport": "インポートを取り消しますか?",
     "undoOrdersDescription": "{{filename}}からインポートした{{count}}件の注文を削除し、影響した保有位置を再計算します。このインポートで作成された保有も一緒に削除されます。",
     "undone": "インポートを取り消しました",
+    "undoOversell": "このインポートは元に戻せません: 残る取引が {{attempted}} 単位を売却しますが、保有は {{available}} です。先にその取引を編集または削除してください。",
+    "undoTooLarge": "このインポートは元に戻せません: 残る保有数量が大きすぎて保存できません。",
     "undoDescription": "{{filename}}からインポートした{{count}}件の取引を削除します。この操作は取り消せません。",
     "deleting": "削除中...",
     "deleteAll": "すべて削除",

@@ -2013,6 +2013,8 @@
     "undoImport": "Annuler l'import ?",
     "undoOrdersDescription": "Cela supprimera les {{count}} ordres importés de {{filename}} et recalculera les positions concernées. Les actifs créés par cet import sont supprimés avec eux.",
     "undone": "Import annulé",
+    "undoOversell": "Impossible d'annuler cet import : une écriture qui reste vend {{attempted}} unités alors que {{available}} sont détenues. Modifiez ou supprimez cette écriture d'abord.",
+    "undoTooLarge": "Impossible d'annuler cet import : la position restante est trop grande pour être enregistrée.",
     "undoDescription": "Cela supprimera {{count}} transactions importées depuis {{filename}}. Cette action est irréversible.",
     "deleting": "Suppression...",
     "deleteAll": "Tout supprimer",

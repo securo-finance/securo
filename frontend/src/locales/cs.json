@@ -2125,6 +2125,8 @@
     "undoImport": "Vrátit import zpět?",
     "undoOrdersDescription": "Smaže se {{count}} pokynů importovaných z {{filename}} a přepočítají se pozice, kterých se týkaly. Aktiva, která tento import vytvořil, se odstraní spolu s nimi.",
     "undone": "Import vrácen zpět",
+    "undoOversell": "Tento import nelze vrátit zpět: zbývající záznam prodává {{attempted}} jednotek, přičemž je drženo {{available}}. Nejprve tento záznam upravte nebo smažte.",
+    "undoTooLarge": "Tento import nelze vrátit zpět: zbývající pozice je příliš velká pro uložení.",
     "undoDescription": "Smaže se {{count}} importovaných transakcí z {{filename}}. Tuto akci nelze vrátit zpět.",
     "deleting": "Maže se...",
     "deleteAll": "Smazat vše",

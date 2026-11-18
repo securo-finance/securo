@@ -2009,6 +2009,8 @@
     "undoImport": "Visszavonod az importálást?",
     "undoOrdersDescription": "Ez törli a fájlból ({{filename}}) importált {{count}} megbízást, és újraszámolja az érintett pozíciókat. Az importálás során létrehozott pozíciók is törlődnek.",
     "undone": "Importálás visszavonva",
+    "undoOversell": "Ez az import nem vonható vissza: egy bent maradó tétel {{attempted}} egységet ad el, miközben {{available}} van a birtokban. Előbb szerkessze vagy törölje azt a tételt.",
+    "undoTooLarge": "Ez az import nem vonható vissza: a visszamaradó pozíció túl nagy a tároláshoz.",
     "undoDescription": "Ez törli a fájlból ({{filename}}) importált {{count}} tranzakciót. Ez a művelet nem vonható vissza.",
     "deleting": "Törlés...",
     "deleteAll": "Összes törlése",

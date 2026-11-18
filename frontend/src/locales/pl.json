@@ -2099,6 +2099,8 @@
     "undoOrdersDescription_many": "Usunie to {{count}} zleceń zaimportowanych z {{filename}} i przeliczy zmienione pozycje. Walory utworzone przez ten import zostaną usunięte razem z nimi.",
     "undoOrdersDescription_other": "Usunie to {{count}} zleceń zaimportowanych z {{filename}} i przeliczy zmienione pozycje. Walory utworzone przez ten import zostaną usunięte razem z nimi.",
     "undone": "Import cofnięty",
+    "undoOversell": "Nie można cofnąć tego importu: pozostający zapis sprzedaje {{attempted}} jednostek, a w posiadaniu jest {{available}}. Najpierw edytuj lub usuń ten zapis.",
+    "undoTooLarge": "Nie można cofnąć tego importu: pozostała pozycja jest zbyt duża do zapisania.",
     "undoImport": "Cofnąć import?",
     "undoDescription_one": "Spowoduje to usunięcie {{count}} zaimportowanej transakcji z pliku {{filename}}. Tej operacji nie można cofnąć.",
     "undoDescription_few": "Spowoduje to usunięcie {{count}} zaimportowanych transakcji z pliku {{filename}}. Tej operacji nie można cofnąć.",

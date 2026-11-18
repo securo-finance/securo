@@ -2004,6 +2004,8 @@
     "undoImport": "Importeren ongedaan maken?",
     "undoOrdersDescription": "Hierdoor worden de {{count}} orders geïmporteerd uit {{filename}} verwijderd en worden de posities die ze hebben aangeraakt opnieuw berekend. De holdings die door deze import zijn aangemaakt, worden samen met deze verwijderd.",
     "undone": "Importeren ongedaan gemaakt",
+    "undoOversell": "Deze import kan niet ongedaan worden gemaakt: een blijvende boeking verkoopt {{attempted}} eenheden terwijl er {{available}} in bezit zijn. Bewerk of verwijder die boeking eerst.",
+    "undoTooLarge": "Deze import kan niet ongedaan worden gemaakt: de resterende positie is te groot om op te slaan.",
     "undoDescription": "Hiermee worden geïmporteerde {{count}} transacties uit {{filename}} verwijderd. Deze actie kan niet ongedaan worden gemaakt.",
     "deleting": "Verwijderen...",
     "deleteAll": "Alles verwijderen",

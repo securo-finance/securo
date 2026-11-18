@@ -2125,6 +2125,8 @@
     "undoOrdersDescription_many": "Vymaže sa {{count}} pokynu importovaného z {{filename}} a prepočítajú sa pozície, ktorých sa týkal. Aktíva, ktoré tento import vytvoril, sa odstránia spolu s ním.",
     "undoOrdersDescription_other": "Vymaže sa {{count}} pokynov importovaných z {{filename}} a prepočítajú sa pozície, ktorých sa týkali. Aktíva, ktoré tento import vytvoril, sa odstránia spolu s nimi.",
     "undone": "Import vrátený späť",
+    "undoOversell": "Tento import nie je možné vrátiť späť: zostávajúci záznam predáva {{attempted}} jednotiek, pričom je držaných {{available}}. Najprv tento záznam upravte alebo odstráňte.",
+    "undoTooLarge": "Tento import nie je možné vrátiť späť: zostávajúca pozícia je príliš veľká na uloženie.",
     "undoDescription": "Vymaže sa {{count}} importovaných transakcií z {{filename}}. Túto akciu nie je možné vrátiť späť.",
     "undoDescription_one": "Vymaže sa {{count}} importovaná transakcia z {{filename}}. Túto akciu nie je možné vrátiť späť.",
     "undoDescription_few": "Vymažú sa {{count}} importované transakcie z {{filename}}. Túto akciu nie je možné vrátiť späť.",

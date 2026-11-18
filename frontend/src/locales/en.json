@@ -2009,6 +2009,8 @@
     "undoImport": "Undo import?",
     "undoOrdersDescription": "This will delete the {{count}} orders imported from {{filename}} and recalculate the positions they touched. Holdings this import created are removed with them.",
     "undone": "Import undone",
+    "undoOversell": "This import can't be undone: an entry that stays in the ledger sells {{attempted}} units with {{available}} held. Edit or delete that entry first.",
+    "undoTooLarge": "This import can't be undone: the holding left without it is too large to store.",
     "undoDescription": "This will delete {{count}} imported transactions from {{filename}}. This action cannot be undone.",
     "deleting": "Deleting...",
     "deleteAll": "Delete all",

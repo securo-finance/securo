@@ -2013,6 +2013,8 @@
     "undoImport": "Annullare l'importazione?",
     "undoOrdersDescription": "Verranno eliminati i {{count}} ordini importati da {{filename}} e ricalcolate le posizioni interessate. I titoli creati da questa importazione vengono rimossi con essi.",
     "undone": "Importazione annullata",
+    "undoOversell": "Impossibile annullare questa importazione: un movimento che resta vende {{attempted}} unità con {{available}} possedute. Modifica o elimina prima quel movimento.",
+    "undoTooLarge": "Impossibile annullare questa importazione: la posizione che resta è troppo grande da salvare.",
     "undoDescription": "Questo eliminerà {{count}} transazioni importate da {{filename}}. Questa azione non può essere annullata.",
     "deleting": "Eliminazione...",
     "deleteAll": "Elimina tutto",
