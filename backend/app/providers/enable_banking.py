@@ -1303,6 +1303,10 @@ class EnableBankingProvider(BankProvider):
         except InvalidOperation:
             return None
         indicator = (raw.get("credit_debit_indicator") or "").upper()
+        if indicator not in ("DBIT", "CRDT"):
+            # Some banks (SEB's reserved card purchases) send no indicator
+            # and sign the amount instead: a negative amount left the account.
+            indicator = "DBIT" if amount < 0 else "CRDT"
         txn_type = "debit" if indicator == "DBIT" else "credit"
         amount = amount.copy_abs()
         currency = amount_obj.get("currency") or "EUR"
