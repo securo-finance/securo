@@ -39,6 +39,11 @@ class RateLimiter:
     A scope shared by several routes, or by every id a path template takes,
     puts them in one bucket per IP, so moving to another route or another id
     does not hand out a fresh budget.
+
+    `unavailable_status`, when set, answers that status when Redis cannot be
+    reached. Left unset the driver error propagates as it always did, which
+    keeps the response of the routes that were limiting before this option
+    existed unchanged.
     """
 
     def __init__(
@@ -46,10 +51,12 @@ class RateLimiter:
         max_requests: int | Callable[[], int],
         window_seconds: int,
         scope: str | None = None,
+        unavailable_status: int | None = None,
     ):
         self.max_requests = max_requests
         self.window_seconds = window_seconds
         self.scope = scope
+        self.unavailable_status = unavailable_status
 
     def ceiling(self) -> int:
         limit = self.max_requests
@@ -79,9 +86,16 @@ class RateLimiter:
         except RedisError as exc:
             # The window lives in Redis. With it unreachable nothing can be
             # counted, and failing open would drop the protection exactly when
-            # the instance is already unhealthy. A 503 says "try again" instead
-            # of turning the route into a bare 500.
-            raise HTTPException(status_code=503, detail="Rate limit unavailable") from exc
+            # the instance is already unhealthy. Where the caller opted in, a
+            # 503 says "try again" instead of turning the route into a bare 500;
+            # the routes that were limiting before this option keep their
+            # previous behavior, so auth responses do not change here.
+            if self.unavailable_status is None:
+                raise
+            raise HTTPException(
+                status_code=self.unavailable_status,
+                detail="Rate limit unavailable",
+            ) from exc
 
         request_count = results[1]
 
@@ -111,4 +125,5 @@ agents_chat_rate_limit = RateLimiter(
     max_requests=_agents_chat_ceiling,
     window_seconds=60,
     scope="agents_chat",
+    unavailable_status=503,
 )
