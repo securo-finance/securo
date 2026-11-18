@@ -418,7 +418,7 @@ jobs:
                         nodes {
                           isResolved
                           isOutdated
-                          comments(first: 5) {
+                          comments(first: 30) {
                             pageInfo { hasNextPage }
                             nodes { author { login } body }
                           }
@@ -437,7 +437,11 @@ jobs:
                 }
                 // A gate that needs every thread must fail closed when it can
                 // only read some of them: a blocker past the first 100 threads,
-                // or past the fifth comment of one, would otherwise be invisible.
+                // or past the thirtieth comment of one, would otherwise be
+                // invisible. Thirty is not a claim that a longer thread is
+                // suspicious — a pull request through three review rounds
+                // passes five on one thread easily — only that a thread that
+                // long is past what this check reads.
                 if (!threads) return skip('its review threads came back empty');
                 if (threads.pageInfo && threads.pageInfo.hasNextPage) {
                   return skip('it has more review threads than this check can read');
