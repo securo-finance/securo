@@ -1979,6 +1979,9 @@ async def _run_first_import(
                 date=txn_data.date,
                 type=txn_data.type,
                 source="sync",
+                # A charge the bank brings in is new to the person until they
+                # look at it (issue #636).
+                is_read=False,
                 status=txn_data.status,
                 payee=txn_data.payee,
                 payee_id=payee_id,
@@ -3513,6 +3516,9 @@ async def _sync_bill_finance_charges(
                 effective_date=bill.due_date,
                 type="debit",
                 source="sync",
+                # A charge the bank brings in is new to the person until they
+                # look at it (issue #636).
+                is_read=False,
                 status="posted",
                 raw_data=raw,
                 bill_id=bill.id,
@@ -4325,6 +4331,9 @@ async def sync_connection(
                     date=txn_data.date,
                     type=txn_data.type,
                     source="sync",
+                    # A charge the bank brings in is new to the person until
+                    # they look at it (issue #636).
+                    is_read=False,
                     status=txn_data.status,
                     payee=txn_data.payee,
                     payee_id=sync_payee_id,

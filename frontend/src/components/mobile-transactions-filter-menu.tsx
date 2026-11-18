@@ -9,6 +9,7 @@ import {
   Coins,
   EyeClosed,
   Flag,
+  Inbox,
   ListChecks,
   Store,
   Tag,
@@ -38,6 +39,7 @@ export type MobileFilterView =
   | 'status'
   | 'ignored'
   | 'flagged'
+  | 'unread'
   | 'date'
   | 'amount'
 
@@ -66,6 +68,7 @@ interface MobileTransactionsFilterMenuProps {
   status: string
   hideIgnored: boolean
   flagged: boolean
+  onlyUnread: boolean
   from: string
   to: string
   minAmount: string
@@ -86,6 +89,7 @@ interface MobileTransactionsFilterMenuProps {
   onStatusChange: (value: string) => void
   onHideIgnoredChange: (value: boolean) => void
   onFlaggedChange: (value: boolean) => void
+  onOnlyUnreadChange: (value: boolean) => void
   onDateRangeChange: (from: string, to: string) => void
   onAmountRangeChange: (min: string, max: string) => void
   onApplyAmountRange: () => void
@@ -448,6 +452,7 @@ function buildRootOptions(
     { view: 'status', icon: ListChecks, label: labels.status, summary: summaries.status },
     { view: 'ignored', icon: EyeClosed, label: labels.ignored, summary: summaries.ignored },
     { view: 'flagged', icon: Flag, label: labels.flagged, summary: summaries.flagged },
+    { view: 'unread', icon: Inbox, label: labels.unread, summary: summaries.unread },
     { view: 'date', icon: CalendarIcon, label: labels.date, summary: summaries.date },
     { view: 'amount', icon: Coins, label: labels.amount, summary: summaries.amount },
   ]
@@ -465,6 +470,7 @@ function buildLabels(
     status: t('transactions.status'),
     ignored: t('transactions.ignoredRows'),
     flagged: t('transactions.flagged'),
+    unread: t('transactions.unreadRows'),
     date: t('transactions.filtersBar.date'),
     amount: t('transactions.filtersBar.amount'),
   }
@@ -509,6 +515,13 @@ function MobileFilterDetail({
   if (menu.view === 'flagged') {
     const options = [allOption, { value: 'only', label: t('transactions.flaggedOnly') }]
     return <MobileSelectionView options={options} selectedValue={menu.flagged ? 'only' : ''} onChange={(value) => menu.onFlaggedChange(value === 'only')} />
+  }
+  if (menu.view === 'unread') {
+    const options = [
+      { value: 'all', label: t('transactions.all') },
+      { value: 'unread', label: t('transactions.onlyUnread') },
+    ]
+    return <MobileSelectionView options={options} selectedValue={menu.onlyUnread ? 'unread' : 'all'} onChange={(value) => menu.onOnlyUnreadChange(value === 'unread')} />
   }
   if (menu.view === 'date') {
     return <MobileDateView from={menu.from} to={menu.to} presets={menu.datePresets} onChange={menu.onDateRangeChange} onOpenCustomRange={menu.onOpenCustomRange} />

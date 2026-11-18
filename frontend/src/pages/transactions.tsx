@@ -47,7 +47,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Clock, HelpCircle, Info, Paperclip, Repeat, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, Flag, SlidersHorizontal, Receipt } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, CheckCheck, Clock, HelpCircle, Info, Paperclip, Repeat, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, Flag, SlidersHorizontal, Receipt } from 'lucide-react'
 import type { Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, TransactionEditPayload, ReconciliationSuggestion } from '@/types'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { PageHeader } from '@/components/page-header'
@@ -191,6 +191,12 @@ export default function TransactionsPage() {
     }
   })
   const [filterFlagged, setFilterFlagged] = useState<boolean>(searchParams.get('flagged') === '1')
+  // The review queue of issue #636: show only rows nobody has reviewed yet.
+  // It lives in the URL and not in localStorage because it is a work list
+  // someone turns on for a reconciliation pass and turns off after.
+  const [onlyUnread, setOnlyUnread] = useState<boolean>(
+    () => searchParams.get('unread_only') === 'true',
+  )
   const [filterMinAmount, setFilterMinAmount] = useState<string>(searchParams.get('min_amount') ?? '')
   const [filterMaxAmount, setFilterMaxAmount] = useState<string>(searchParams.get('max_amount') ?? '')
   const [tagFilters, setTagFilters] = useState<string[]>([])
@@ -277,6 +283,7 @@ export default function TransactionsPage() {
     setFilterFlagged(searchParams.get('flagged') === '1')
     const urlHideIgnored = searchParams.get('hide_ignored')
     if (urlHideIgnored !== null) setHideIgnored(urlHideIgnored === 'true')
+    setOnlyUnread(searchParams.get('unread_only') === 'true')
     const categories = searchParams.get('category_id');
     setFilterCategoryIds(categories ? categories.split(',') : []);
     setFilterUncategorized(searchParams.get('uncategorized') === '1');
@@ -321,6 +328,7 @@ export default function TransactionsPage() {
         ['min_amount', filterMinAmount],
         ['max_amount', filterMaxAmount],
         ['hide_ignored', hideIgnored ? 'true' : ''],
+        ['unread_only', onlyUnread ? 'true' : ''],
       ].filter(([, v]) => v.length),
     );
 
@@ -347,6 +355,7 @@ export default function TransactionsPage() {
     filterMinAmount,
     filterMaxAmount,
     hideIgnored,
+    onlyUnread,
   ]);
 
   useEffect(() => {
@@ -363,7 +372,7 @@ export default function TransactionsPage() {
     setSelectedIds(new Set())
     setLastSelectedId(null)
     setBulkCategory('')
-  }, [page, filterAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterType, filterStatus, filterFlagged, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery])
+  }, [page, filterAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterType, filterStatus, filterFlagged, onlyUnread, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery])
 
   useEffect(() => {
     if (viewMode === 'calendar') {
@@ -413,7 +422,7 @@ export default function TransactionsPage() {
     && activeAccountIds !== null && activeAccountIds.length === 0
 
   const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ['transactions', page, limit, effectiveAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterFlagged, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
+    queryKey: ['transactions', page, limit, effectiveAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterFlagged, onlyUnread, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
     enabled: !noAccounts,
     queryFn: () =>
       transactions.list({
@@ -434,6 +443,7 @@ export default function TransactionsPage() {
         tags: tagFilters.length > 0 ? tagFilters : undefined,
         exclude_ignored: hideIgnored ? true : undefined,
         flagged: filterFlagged ? true : undefined,
+        unread_only: onlyUnread ? true : undefined,
         // Mobile has no column headers to change sort; force date-desc so
         // the date grouping always works correctly.
         ...(isMobile ? { sort_by: 'date', sort_dir: 'desc' as const } : grid.apiSort),
@@ -619,6 +629,31 @@ export default function TransactionsPage() {
       toast.error(extractApiError(error))
     },
   })
+
+  // Issue #636: opening a row is what clears its "new" marker. The badge is
+  // a review hint, so a failure here must not stop the dialog from opening:
+  // the row simply keeps the badge.
+  const markReadMutation = useMutation({
+    mutationFn: (id: string) => transactions.markRead(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['transactions'] }),
+  })
+
+  const markAllReadMutation = useMutation({
+    mutationFn: () => transactions.markAllRead(),
+    onSuccess: () => {
+      invalidateAfterTxMutation()
+      toast.success(t('transactions.markAllReadDone'))
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
+  })
+
+  const openTransaction = (tx: Transaction) => {
+    if (tx.is_read === false) markReadMutation.mutate(tx.id)
+    setEditingTx(tx)
+    setDialogOpen(true)
+  }
 
   const bulkCategorizeMutation = useMutation({
     mutationFn: ({ ids, categoryId }: { ids: string[]; categoryId: string | null }) =>
@@ -991,9 +1026,8 @@ export default function TransactionsPage() {
   const handleOpenCalendarTransaction = async (id: string) => {
     try {
       const tx = await transactions.get(id)
-      setEditingTx(tx)
       setDuplicateDraft(null)
-      setDialogOpen(true)
+      openTransaction(tx)
     } catch {
       toast.error(t('common.error'))
     }
@@ -1007,6 +1041,11 @@ export default function TransactionsPage() {
     } catch {
       // Private mode or a full quota: the filter still applies for this visit.
     }
+  }
+
+  const handleOnlyUnreadChange = (next: boolean) => {
+    setOnlyUnread(next)
+    setPage(1)
   }
 
   const handleExport = async () => {
@@ -1231,6 +1270,18 @@ export default function TransactionsPage() {
                 not the word that says what the badge is. Past the point
                 where even that no longer fits, the badge clips at the
                 cell edge rather than carrying on into the next column. */}
+            {/* Issue #636: a row nobody has opened yet. The dot keeps the
+                badge readable even where the cell is too narrow for the
+                word. */}
+            {tx.is_read === false && (
+              <span
+                title={t('transactions.newBadgeTooltip')}
+                className="inline-flex shrink-0 items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-sky-700 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded-full dark:text-sky-300 dark:bg-sky-500/15 dark:border-sky-500/30"
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-sky-500" aria-hidden="true" />
+                {t('transactions.newBadge')}
+              </span>
+            )}
             {isTransferTransaction(tx) && (
               <span className="inline-flex max-w-full items-center gap-1 overflow-hidden text-[10px] font-semibold uppercase tracking-wide text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">
                 <ArrowLeftRight className="h-3 w-3 shrink-0" />
@@ -1547,6 +1598,8 @@ export default function TransactionsPage() {
         onHideIgnoredChange={handleHideIgnoredChange}
         filterFlagged={filterFlagged}
         onFlaggedChange={(v) => { setFilterFlagged(v); setPage(1) }}
+        onlyUnread={onlyUnread}
+        onOnlyUnreadChange={handleOnlyUnreadChange}
         filterFrom={filterFrom}
         filterTo={filterTo}
         onDateRangeChange={(from, to) => { setFilterFrom(from); setFilterTo(to); setPage(1) }}
@@ -1567,6 +1620,7 @@ export default function TransactionsPage() {
           setFilterMinAmount('')
           setFilterMaxAmount('')
           handleHideIgnoredChange(false)
+          setOnlyUnread(false)
           setSearchInput('')
           setSearchQuery('')
           clearTagFilters()
@@ -1636,6 +1690,27 @@ export default function TransactionsPage() {
         />
       )}
 
+      {/* Issue #636: inside the review queue, say how many rows are left and
+          offer the one-click way out of it. */}
+      {viewMode === 'list' && onlyUnread && !noAccounts && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-200 bg-sky-50/60 px-3 py-2 dark:border-sky-500/30 dark:bg-sky-500/10">
+          <p className="text-xs font-medium text-sky-800 dark:text-sky-200">
+            {t('transactions.unreadCount', { count: data?.total ?? 0 })}
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => markAllReadMutation.mutate()}
+            disabled={!canWrite || markAllReadMutation.isPending || (data?.total ?? 0) === 0}
+          >
+            <CheckCheck className="me-1.5 h-4 w-4" />
+            {markAllReadMutation.isPending
+              ? t('transactions.markAllReadPending')
+              : t('transactions.markAllRead')}
+          </Button>
+        </div>
+      )}
+
       {/* Table / Mobile Cards */}
       {viewMode === 'list' && (
       <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden mb-4">
@@ -1675,8 +1750,7 @@ export default function TransactionsPage() {
                         if (t.group_id) navigate(`/groups/${t.group_id}`)
                         return
                       }
-                      setEditingTx(t)
-                      setDialogOpen(true)
+                      openTransaction(t)
                     }}
                   />
                 ))}
@@ -1730,8 +1804,7 @@ export default function TransactionsPage() {
                           return
                         }
                         if (!canWrite) return
-                        setEditingTx(tx)
-                        setDialogOpen(true)
+                        openTransaction(tx)
                       }}
                     >
                       <TableCell style={{ width: 40, minWidth: 40 }} className="py-2.5 ps-4 pe-0">
