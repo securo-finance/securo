@@ -273,14 +273,6 @@ def adjust_weekend_date(
     return nominal_date + timedelta(days=7 - weekday)
 
 
-def _shift(day: date, days: int) -> date:
-    """``day`` moved by ``days``, held at the first or last date there is."""
-    try:
-        return day + timedelta(days=days)
-    except OverflowError:
-        return date.min if days < 0 else date.max
-
-
 def get_occurrences_in_range(
     start: date, frequency: str, end_date: Optional[date],
     range_start: date, range_end: date,
@@ -294,35 +286,24 @@ def get_occurrences_in_range(
     boundary; filtering happens only after calculating each effective date.
     """
     day = intended_day if intended_day else start.day
-    nominal_range_start = _shift(range_start, -2)
-    nominal_range_end = _shift(range_end, 2)
+    nominal_range_start = range_start - timedelta(days=2)
+    nominal_range_end = range_end + timedelta(days=2)
     occurrences: list[date] = []
-    current: Optional[date] = start
-    while current is not None and current < nominal_range_start:
+    current = start
+    while current < nominal_range_start:
         if end_date and current > end_date:
             return occurrences
-        current = _next_occurrence_or_none(current, frequency, day)
-    while current is not None and current < nominal_range_end:
+        current = _advance_date(current, frequency, intended_day=day)
+    while current < nominal_range_end:
         if end_date and current > end_date:
             break
-        try:
-            effective_date = adjust_weekend_date(current, weekend_adjustment)
-        except OverflowError:
-            break
+        effective_date = adjust_weekend_date(current, weekend_adjustment)
         if range_start <= effective_date < range_end:
             occurrences.append(effective_date)
-        current = _next_occurrence_or_none(current, frequency, day)
+        current = _advance_date(current, frequency, intended_day=day)
         if len(occurrences) > 200:
             break
     return occurrences
-
-
-def _next_occurrence_or_none(current: date, frequency: str, day: int) -> Optional[date]:
-    """The next nominal occurrence, or None past the last date there is."""
-    try:
-        return _advance_date(current, frequency, intended_day=day)
-    except (OverflowError, ValueError):
-        return None
 
 
 async def _charged_occurrences(
@@ -338,10 +319,12 @@ async def _charged_occurrences(
     before or after the occurrence, so a December 1 occurrence can be paid
     by a November 30 charge and must still count in December.
 
-    Charges are handed out as generation links them: occurrences in date
-    order, each taking the nearest charge in its reach that an earlier one
-    did not take. A charge goes to the first occurrence that reached it, even
-    when a later one sits nearer, because generation never got that far.
+    Generation walks occurrences in order and stops at the pointer, so the
+    occurrences it reached are exactly those before ``next_occurrence``. The
+    hand-out walks them backwards from the pointer, each taking the nearest
+    charge in its reach that a later one did not take: a later occurrence
+    holds its own charge first, and an occurrence generation skipped, such as
+    a first one left out on creation, never takes a charge.
     """
     stopped = (await session.execute(
         select(RecurringTransaction).where(
@@ -358,18 +341,18 @@ async def _charged_occurrences(
         for frequency in {rec.frequency for rec in stopped}
     }
     # A charge sits at most `before` days ahead of its occurrence or `after`
-    # days behind it. The walk starts one reach before the month's own reach,
-    # so the occurrences just before the month take their charges first.
+    # days behind it. The walk covers one reach on each side of the month, so
+    # the occurrences around it take their own charges first.
     widest = max(before + after for before, after in reach.values())
-    walk_start = _shift(month_start, -widest)
+    walk_start = month_start - timedelta(days=widest)
+    walk_end = month_end + timedelta(days=widest)
     linked = (await session.execute(
         select(Transaction.recurring_transaction_id, Transaction.date).where(
-            # A charge whose account moved to another workspace keeps its
-            # link, but it is that workspace's row now.
+            # An account moved to another workspace keeps its charges' links.
             Transaction.workspace_id == workspace_id,
             Transaction.recurring_transaction_id.in_([rec.id for rec in stopped]),
-            Transaction.date >= _shift(walk_start, -widest),
-            Transaction.date < _shift(month_end, widest),
+            Transaction.date >= walk_start - timedelta(days=widest),
+            Transaction.date < walk_end + timedelta(days=widest),
         )
     )).all()
     charges: dict[uuid.UUID, list[date]] = {}
@@ -378,19 +361,23 @@ async def _charged_occurrences(
 
     charged: dict[uuid.UUID, set[date]] = {}
     for rec in stopped:
-        pending = sorted(charges.get(rec.id, []))
+        pending = charges.get(rec.id, [])
         if not pending:
             continue
         before, after = reach[rec.frequency]
-        for occurrence in get_occurrences_in_range(
+        # Nominal dates past the pointer were never generated.
+        reached_until = rec.next_occurrence - timedelta(days=1)
+        if rec.end_date and rec.end_date < reached_until:
+            reached_until = rec.end_date
+        for occurrence in reversed(get_occurrences_in_range(
             start=rec.start_date,
             frequency=rec.frequency,
-            end_date=rec.end_date,
+            end_date=reached_until,
             range_start=walk_start,
-            range_end=month_end,
+            range_end=walk_end,
             intended_day=rec.day_of_month or rec.start_date.day,
             weekend_adjustment=rec.weekend_adjustment,
-        ):
+        )):
             in_reach = [
                 day for day in pending
                 if occurrence - timedelta(days=before) <= day <= occurrence + timedelta(days=after)
@@ -399,7 +386,7 @@ async def _charged_occurrences(
                 continue
             taken = min(in_reach, key=lambda day: (abs((day - occurrence).days), day))
             pending.remove(taken)
-            if occurrence >= month_start:
+            if month_start <= occurrence < month_end:
                 charged.setdefault(rec.id, set()).add(occurrence)
     return charged
 
@@ -487,7 +474,7 @@ async def get_month_summary(
             primary = template
         else:
             if currency not in rates:
-                # The rate itself, unrounded: only the month's total rounds.
+                # The unrounded rate: the total is rounded once, at the end.
                 rates[currency] = (await convert_or_none(
                     session, Decimal("1"), currency, primary_currency.upper(),
                     month_start,

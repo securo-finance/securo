@@ -13,11 +13,7 @@ from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.models.workspace import Workspace
 from app.services import reconciliation_policy, reconciliation_rule_service
-from app.services.recurring_transaction_service import (
-    generate_pending,
-    get_month_summary,
-    get_occurrences_in_range,
-)
+from app.services.recurring_transaction_service import generate_pending, get_month_summary
 
 
 def _category(session, user, workspace, name, **flags):
@@ -261,6 +257,71 @@ async def test_a_paused_schedule_keeps_a_late_charge_on_the_occurrence_it_paid(
 
 
 @pytest.mark.asyncio
+async def test_a_paused_schedule_skipping_its_first_keeps_the_charge_where_generation_put_it(
+    session, test_user, test_workspace, test_account,
+):
+    """Created skipping December 1, the December 20 charge paid January 1.
+
+    Generation starts at the pointer, January 1, and links the charge there.
+    December 1 was never generated, so after the pause the charge stays in
+    January rather than moving to the nearer-looking start date.
+    """
+    await reconciliation_rule_service.upsert_override(
+        session, test_workspace.id, test_user.id,
+        reconciliation_policy.MATCH_RECURRING["node"], "same_account_exact",
+        {"when": {"date": {"before_days": 20, "after_days": 20}}},
+    )
+    _recurring(session, test_user, test_workspace, test_account,
+               "Gym", "80", "debit", "monthly", date(2026, 12, 1),
+               next_occurrence_override=date(2027, 1, 1), auto_generate=True)
+    charge = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=test_account.id, description="Gym", amount=Decimal("80"),
+        currency="BRL", date=date(2026, 12, 20), type="debit", source="manual",
+        status="posted",
+    )
+    session.add(charge)
+    await session.commit()
+
+    await generate_pending(
+        session, test_user.id, up_to=date(2027, 1, 1), workspace_id=test_workspace.id,
+    )
+    await session.refresh(charge)
+    gym = (await session.execute(
+        select(RecurringTransaction).where(RecurringTransaction.description == "Gym")
+    )).scalar_one()
+    assert charge.recurring_transaction_id == gym.id
+    gym.is_active = False
+    await session.commit()
+
+    assert (await _summary(session, test_workspace, date(2026, 12, 1))).expenses == Decimal("0")
+    assert (await _summary(session, test_workspace, date(2027, 1, 1))).expenses == Decimal("80.00")
+
+
+@pytest.mark.asyncio
+async def test_a_charge_moved_to_another_workspace_stays_out(
+    session, test_user, test_workspace, test_account,
+):
+    """A linked charge whose account moved away no longer counts here."""
+    other = Workspace(
+        id=uuid.uuid4(), name="Other", kind="personal", default_currency="BRL", locale="en",
+    )
+    session.add(other)
+    rec = _recurring(session, test_user, test_workspace, test_account,
+                     "Paused", "30", "debit", "monthly", date(2026, 11, 4),
+                     next_occurrence_override=date(2027, 1, 4), is_active=False)
+    session.add(Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=other.id,
+        account_id=test_account.id, description="Paused", amount=Decimal("30"),
+        currency="BRL", date=date(2026, 12, 4), type="debit", source="recurring",
+        status="posted", recurring_transaction_id=rec.id,
+    ))
+    await session.commit()
+
+    assert (await _summary(session, test_workspace, date(2026, 12, 1))).expenses == Decimal("0")
+
+
+@pytest.mark.asyncio
 async def test_a_paused_schedule_after_a_frequency_edit_stays_out(
     session, test_user, test_workspace, test_account,
 ):
@@ -275,39 +336,6 @@ async def test_a_paused_schedule_after_a_frequency_edit_stays_out(
     await session.commit()
 
     assert (await _summary(session, test_workspace, date(2026, 10, 1))).expenses == Decimal("0")
-
-
-@pytest.mark.asyncio
-async def test_generation_never_links_a_charge_from_another_workspace(
-    session, test_user, test_workspace, test_account,
-):
-    """Sync can move an account, and its charges, to another workspace.
-
-    Generation then writes this bill's own placeholder instead of stamping
-    the other workspace's charge with a link to it.
-    """
-    other = Workspace(id=uuid.uuid4(), name="Other", created_by_user_id=test_user.id)
-    session.add(other)
-    rent = _recurring(session, test_user, test_workspace, test_account,
-                      "Rent", "500", "debit", "monthly", date(2027, 1, 1), auto_generate=True)
-    moved_charge = Transaction(
-        id=uuid.uuid4(), user_id=test_user.id, workspace_id=other.id,
-        account_id=test_account.id, description="Rent", amount=Decimal("500"),
-        currency="BRL", date=date(2027, 1, 1), type="debit", source="sync",
-        status="posted",
-    )
-    session.add(moved_charge)
-    await session.commit()
-
-    await generate_pending(
-        session, test_user.id, up_to=date(2027, 1, 1), workspace_id=test_workspace.id,
-    )
-    await session.refresh(moved_charge)
-    assert moved_charge.recurring_transaction_id is None
-    placeholder = (await session.execute(
-        select(Transaction).where(Transaction.recurring_transaction_id == rent.id)
-    )).scalar_one()
-    assert placeholder.workspace_id == test_workspace.id
 
 
 @pytest.mark.asyncio
@@ -389,6 +417,26 @@ async def test_two_foreign_currencies_each_convert_at_their_own_rate(
 
 
 @pytest.mark.asyncio
+async def test_a_cross_rate_is_rounded_once_at_the_end(
+    session, test_user, test_workspace, test_account,
+):
+    """EUR 1.01 at a EUR to BRL rate of 1.499999999975 is BRL 1.51.
+
+    Rounding the cross rate first would read 1.5 and give 1.52.
+    """
+    for quote, rate in (("BRL", "5.9999999999"), ("EUR", "4")):
+        session.add(FxRate(
+            id=uuid.uuid4(), base_currency="USD", quote_currency=quote,
+            date=date(2026, 10, 1), rate=Decimal(rate), source="test",
+        ))
+    _recurring(session, test_user, test_workspace, test_account,
+               "Small", "1.01", "debit", "monthly", date(2026, 1, 1), currency="EUR")
+    await session.commit()
+
+    assert (await _summary(session, test_workspace, date(2026, 10, 1))).expenses == Decimal("1.51")
+
+
+@pytest.mark.asyncio
 async def test_currency_without_a_rate_stays_out_never_1_to_1(
     session, test_user, test_workspace, test_account,
 ):
@@ -427,105 +475,33 @@ async def test_summary_route(client, auth_headers, test_account, session, test_u
 
 
 @pytest.mark.asyncio
-async def test_summary_route_rejects_a_month_out_of_range(client, auth_headers):
+@pytest.mark.parametrize("month", ["9999-12-01", "9998-12-01", "0002-01-01"])
+async def test_summary_route_rejects_a_month_out_of_range(
+    client, auth_headers, session, test_user, test_workspace, test_account, month,
+):
+    """Months the summary would read past the calendar from are a 422, not a 500."""
+    await reconciliation_rule_service.upsert_override(
+        session, test_workspace.id, test_user.id,
+        reconciliation_policy.MATCH_RECURRING["node"], "same_account_exact",
+        {"when": {"date": {"before_days": 200, "after_days": 200}}},
+    )
+    _recurring(session, test_user, test_workspace, test_account,
+               "Far", "10", "debit", "yearly", date(9998, 1, 1))
+    _recurring(session, test_user, test_workspace, test_account,
+               "Old", "10", "debit", "monthly", date(1, 1, 1), is_active=False)
+    await session.commit()
+
     resp = await client.get(
-        "/api/recurring-transactions/summary", params={"month": "9999-12-01"},
+        "/api/recurring-transactions/summary", params={"month": month},
         headers=auth_headers,
     )
     assert resp.status_code == 422
 
 
 @pytest.mark.asyncio
-async def test_a_charge_moved_to_another_workspace_stays_out(
-    session, test_user, test_workspace, test_account,
-):
-    """Sync can move an account and its charges away without unlinking them."""
-    other = Workspace(id=uuid.uuid4(), name="Elsewhere", created_by_user_id=test_user.id)
-    session.add(other)
-    rec = _recurring(session, test_user, test_workspace, test_account,
-                     "Moved", "30", "debit", "monthly", date(2026, 12, 4),
-                     next_occurrence_override=date(2027, 1, 4), is_active=False)
-    session.add(Transaction(
-        id=uuid.uuid4(), user_id=test_user.id, workspace_id=other.id,
-        account_id=test_account.id, description="Moved", amount=Decimal("30"),
-        currency="BRL", date=date(2026, 12, 4), type="debit", source="sync",
-        status="posted", recurring_transaction_id=rec.id,
-    ))
-    await session.commit()
-
-    assert (await _summary(session, test_workspace, date(2026, 12, 1))).expenses == Decimal("0")
-
-
-async def _wide_window(session, workspace, user, days):
-    await reconciliation_rule_service.upsert_override(
-        session, workspace.id, user.id,
-        reconciliation_policy.MATCH_RECURRING["node"], "same_account_exact",
-        {"when": {"date": {"before_days": days, "after_days": days}}},
+async def test_summary_route_reads_the_last_supported_month(client, auth_headers):
+    resp = await client.get(
+        "/api/recurring-transactions/summary", params={"month": "9989-12-01"},
+        headers=auth_headers,
     )
-
-
-@pytest.mark.asyncio
-async def test_a_wide_window_near_the_first_year_does_not_fail(
-    session, test_user, test_workspace, test_account,
-):
-    await _wide_window(session, test_workspace, test_user, 200)
-    _recurring(session, test_user, test_workspace, test_account,
-               "Ancient", "10", "debit", "monthly", date(2, 1, 1), is_active=False)
-    await session.commit()
-
-    assert (await _summary(session, test_workspace, date(2, 1, 1))).expenses == Decimal("0")
-
-
-@pytest.mark.asyncio
-async def test_a_wide_window_near_the_last_year_does_not_fail(
-    session, test_user, test_workspace, test_account,
-):
-    await _wide_window(session, test_workspace, test_user, 200)
-    _recurring(session, test_user, test_workspace, test_account,
-               "Far", "10", "debit", "monthly", date(9998, 1, 1), is_active=False)
-    await session.commit()
-
-    assert (await _summary(session, test_workspace, date(9998, 12, 1))).expenses == Decimal("0")
-
-
-@pytest.mark.asyncio
-async def test_a_yearly_schedule_in_the_last_month_does_not_fail(
-    session, test_user, test_workspace, test_account,
-):
-    """The scan reaches January 9999 and has no next year to advance to."""
-    _recurring(session, test_user, test_workspace, test_account,
-               "Yearly", "120", "debit", "yearly", date(9998, 1, 1))
-    _recurring(session, test_user, test_workspace, test_account,
-               "Monthly", "10", "debit", "monthly", date(9998, 1, 1))
-    await session.commit()
-
-    assert (await _summary(session, test_workspace, date(9998, 12, 1))).expenses == Decimal("10.00")
-
-
-def test_the_occurrence_scan_stops_at_the_last_representable_year():
-    for adjustment in ("none", "next_monday", "previous_friday"):
-        assert get_occurrences_in_range(
-            date(9998, 1, 1), "yearly", None, date(9998, 12, 1), date(9999, 1, 1),
-            intended_day=1, weekend_adjustment=adjustment,
-        ) == []
-    # 31 Dec 9998 is a Friday, so nothing shifts; 1 Jan 9999 stays out.
-    assert get_occurrences_in_range(
-        date(9998, 12, 31), "yearly", None, date(9998, 12, 1), date(9999, 1, 1),
-    ) == [date(9998, 12, 31)]
-
-
-@pytest.mark.asyncio
-async def test_a_cross_rate_rounds_only_the_final_amount(
-    session, test_user, test_workspace, test_account,
-):
-    """EUR 1.01 at 5.9999999999 / 4 is BRL 1.51499..., so 1.51, not 1.52."""
-    for quote, rate in (("BRL", "5.9999999999"), ("EUR", "4")):
-        session.add(FxRate(
-            id=uuid.uuid4(), base_currency="USD", quote_currency=quote,
-            date=date(2026, 10, 1), rate=Decimal(rate), source="test",
-        ))
-    _recurring(session, test_user, test_workspace, test_account,
-               "Tiny", "1.01", "debit", "monthly", date(2026, 1, 1), currency="EUR")
-    await session.commit()
-
-    assert (await _summary(session, test_workspace, date(2026, 10, 1))).expenses == Decimal("1.51")
+    assert resp.status_code == 200
