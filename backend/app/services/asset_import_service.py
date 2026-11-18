@@ -918,7 +918,7 @@ async def _recheck_before_write(
     asset_ids = sorted(asset.id for ticker, asset in holdings.items() if ticker in tickers)
     ledgers: dict[str, list[AssetTransaction]] = {ticker: [] for ticker in tickers if ticker in holdings}
     settled = 0
-    appeared: set[tuple] = set()
+    appeared: dict[tuple, set[Optional[str]]] = {}
     moved: set[str] = set()
     if asset_ids:
         by_id = {asset.id: ticker for ticker, asset in holdings.items() if ticker in tickers}
@@ -944,7 +944,13 @@ async def _recheck_before_write(
         for row in await _ledger_rows(session, asset_ids, refresh=True):
             ledgers[by_id[row.asset_id]].append(row)
             stored.append(row)
-        appeared = {key for key in _fingerprints(stored) if key not in seen_before_lock}
+        # What the ledger gained since the replay read it, each key with the
+        # broker ids behind it now: only the ids that were not there before are
+        # new, and an order with another id is another order, not this one.
+        for key, ids in _fingerprints(stored).items():
+            new_ids = ids - seen_before_lock.get(key, set())
+            if new_ids:
+                appeared[key] = new_ids
 
     created = {ticker: _created_holding(quotes.get(ticker)) for ticker in tickers - set(holdings)}
 
@@ -957,15 +963,16 @@ async def _recheck_before_write(
             ))
             continue
         if appeared:
+            ext = order.external_id or None
             if any(
-                key in appeared
+                _same_order(appeared, key, ext)
                 for key in _appearance_keys(asset.id, order, entry, origin.get(order.row))
             ):
                 # Somebody wrote this very order between the replay and the lock.
                 settled += 1
                 continue
-            if origin.get(order.row) is not None and (
-                ('plain', *_order_key(asset.id, entry), entry.price) in appeared
+            if origin.get(order.row) is not None and _same_order(
+                appeared, ('plain', *_order_key(asset.id, entry), entry.price), ext,
             ):
                 # The same coincidence the replay names when it meets it before
                 # the lock: a row stored at this order's converted price, which
@@ -1129,7 +1136,7 @@ async def import_orders(
             if (
                 (ext and ('external', asset.id, ext) in seen)
                 or (stated and _same_order(seen, ('source', *fingerprint, stated[0], order.price), ext))
-                or (not converts and _row_key(asset.id, order) in seen)
+                or (not converts and _same_order(seen, _row_key(asset.id, order), ext))
             ):
                 skipped += 1
                 continue

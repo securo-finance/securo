@@ -673,6 +673,70 @@ async def test_a_converted_match_with_another_broker_id_is_a_new_order(
 
 
 @pytest.mark.asyncio
+async def test_a_same_currency_buy_with_another_broker_id_is_a_new_order(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    """ORD-2 shares every number with ORD-1 but is another order: taking it for
+    the stored one would drop its shares."""
+    asset = await _apple_in_usd(session, test_user, test_workspace)
+    session.add(AssetTransaction(
+        asset_id=asset.id, workspace_id=test_workspace.id, kind="buy",
+        quantity=Decimal("1"), price=Decimal("500"), fee=Decimal("0"),
+        date=date(2026, 1, 15), source="import", external_id="ORD-1",
+    ))
+    await session.commit()
+
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,order id",
+        "AAPL,2026-01-15,1,500,ORD-2",
+    ), provider)
+
+    assert (summary["imported"], summary["skipped"]) == (1, 0)
+    assert sorted(tx.external_id or "" for tx in await _ledger(session)) == ["ORD-1", "ORD-2"]
+
+
+class AnotherOrderWhileTheQuotesArrive(FakeProvider):
+    """Writes a different broker order with the same numbers as the file's."""
+
+    def __init__(self, session: AsyncSession, asset: Asset, workspace: Workspace):
+        super().__init__(known=("AAPL", "MSFT"))
+        self._session = session
+        self._asset = asset
+        self._workspace = workspace
+
+    async def get_quotes(self, symbols):
+        self._session.add(AssetTransaction(
+            asset_id=self._asset.id, workspace_id=self._workspace.id, kind="buy",
+            quantity=Decimal("1"), price=Decimal("500"), fee=Decimal("0"),
+            date=date(2026, 1, 15), source="manual", external_id="ORD-2",
+        ))
+        await self._session.flush()
+        return await super().get_quotes(symbols)
+
+
+@pytest.mark.asyncio
+async def test_an_order_landing_with_another_broker_id_is_not_taken_for_this_one(
+    session: AsyncSession, test_user: User, test_workspace: Workspace
+):
+    """The recheck under the lock sees ORD-2 appear; ORD-1 is still this file's
+    own order, not a repeat of it."""
+    asset = await _apple_in_usd(session, test_user, test_workspace)
+    provider = AnotherOrderWhileTheQuotesArrive(session, asset, test_workspace)
+
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,order id",
+        "AAPL,2026-01-15,1,500,ORD-1",
+        "MSFT,2026-01-10,1,100,",
+    ), provider)
+
+    assert (summary["imported"], summary["skipped"]) == (2, 0)
+    assert sorted(
+        tx.external_id or ""
+        for tx in await _ledger(session) if tx.asset_id == asset.id
+    ) == ["ORD-1", "ORD-2"]
+
+
+@pytest.mark.asyncio
 async def test_the_files_price_is_kept_unrounded_for_the_next_upload(
     session: AsyncSession, test_user: User, test_workspace: Workspace, provider
 ):
