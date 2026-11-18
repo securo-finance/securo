@@ -3902,5 +3902,8 @@
       "title": "Opakované príjmy",
       "hint": "Čo mesačne prinášajú opakované faktúry a čo sa nedávno stratilo."
     }
+  },
+  "demo": {
+    "banner": "Verejná ukážka — údaje sa každú hodinu obnovujú. Nezadávajte nič, čo by ste nezdieľali."
   }
 }

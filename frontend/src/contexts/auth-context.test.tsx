@@ -14,7 +14,14 @@ const auth = vi.hoisted(() => ({
   verify2fa: vi.fn(),
   register: vi.fn(),
 }))
-vi.mock('@/lib/api', () => ({ auth }))
+// The provider asks /api/info whether this instance is the public demo
+// before it settles as signed out; a self-hosted answer keeps it out of
+// the auto-login branch.
+const info = vi.hoisted(() => ({
+  get: vi.fn(),
+  demoLogin: vi.fn(),
+}))
+vi.mock('@/lib/api', () => ({ auth, info }))
 
 const USER: User = {
   id: '1',
@@ -44,6 +51,8 @@ async function renderAuth() {
 beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
+  info.get.mockResolvedValue({ features: { demo: false } })
+  info.demoLogin.mockResolvedValue({ access_token: 'demo-token' })
 })
 
 describe('AuthProvider session restore', () => {

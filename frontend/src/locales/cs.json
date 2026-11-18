@@ -3918,5 +3918,8 @@
       "title": "Opakované příjmy",
       "hint": "Co měsíčně přinášejí opakované faktury a co se nedávno ztratilo."
     }
+  },
+  "demo": {
+    "banner": "Veřejná ukázka — data se každou hodinu obnovují. Nezadávejte nic, co byste nesdíleli."
   }
 }

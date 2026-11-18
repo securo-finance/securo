@@ -3732,5 +3732,8 @@
       "title": "Ismétlődő bevétel",
       "hint": "Amit az ismétlődő számlák havonta hoznak, és ami nemrég elveszett."
     }
+  },
+  "demo": {
+    "banner": "Nyilvános demó — az adatok óránként törlődnek. Ne adjon meg olyat, amit nem osztana meg."
   }
 }

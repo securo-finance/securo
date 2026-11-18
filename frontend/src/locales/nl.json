@@ -3734,5 +3734,8 @@
       "title": "Terugkerende omzet",
       "hint": "Wat terugkerende facturen per maand opleveren, en wat onlangs verloren ging."
     }
+  },
+  "demo": {
+    "banner": "Openbare demo — de gegevens worden elk uur gereset. Voer niets in dat u niet zou delen."
   }
 }

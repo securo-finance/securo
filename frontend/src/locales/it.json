@@ -3736,5 +3736,8 @@
       "title": "Entrate ricorrenti",
       "hint": "Quanto portano le fatture ricorrenti ogni mese, e cosa si è perso di recente."
     }
+  },
+  "demo": {
+    "banner": "Demo pubblica — i dati vengono azzerati ogni ora. Non inserire nulla che non condivideresti."
   }
 }

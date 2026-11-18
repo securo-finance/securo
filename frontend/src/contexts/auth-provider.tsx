@@ -16,7 +16,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [bootResolved, setBootResolved] = useState(false)
   const queryClient = useQueryClient()
 
-  if (!token && bootResolved && (user !== null || isLoading)) {
+  // A session that goes away mid-flight (logout here or in another tab) is
+  // signed out at once, without waiting for /api/info again; only the very
+  // first boot, when there was never a user, waits for that answer.
+  if (!token && (user !== null || (isLoading && bootResolved))) {
     setUser(null)
     setIsLoading(false)
   }

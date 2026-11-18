@@ -3736,5 +3736,8 @@
       "title": "Receita recorrente",
       "hint": "Quanto as faturas recorrentes trazem por mês, e o que se perdeu recentemente."
     }
+  },
+  "demo": {
+    "banner": "Demo pública — os dados são apagados a cada hora. Não introduza nada que não partilharia."
   }
 }
