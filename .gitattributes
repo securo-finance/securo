@@ -1,0 +1,5 @@
+# Fork: merge frontend sources through oxfmt. Run scripts/git/setup once per
+# clone to register the driver; without it Git uses its normal text merge.
+frontend/**/*.ts merge=oxfmt
+frontend/**/*.tsx merge=oxfmt
+frontend/**/*.json merge=oxfmt

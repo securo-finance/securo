@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Register this fork's merge settings in the current clone. Safe to rerun.
+set -euo pipefail
+git config merge.oxfmt.name "format with oxfmt, then merge"
+git config merge.oxfmt.driver 'scripts/git/merge-oxfmt %O %A %B %P %L %S %X %Y'
+git config rerere.enabled true
+git config rerere.autoUpdate true
