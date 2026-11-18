@@ -496,9 +496,49 @@ async def test_card_with_only_a_booked_balance_keeps_the_banks_sign(eb_keys):
 
 
 @pytest.mark.asyncio
-async def test_background_sync_reads_the_card_off_the_cached_limit(eb_keys):
-    """A background sync only has the cached details; the limit must ride in
-    them or the card's balance would read differently from a user-present one."""
+async def test_card_without_a_limit_keeps_a_booked_debt_signed_by_the_bank(eb_keys):
+    """Free credit alone cannot state the debt when no limit is known, but a
+    booked figure EB signs as money owed still does, so the card does not read
+    as free while the sync waits for a limit."""
+    provider = EnableBankingProvider()
+    handler = _card_bank([_balance("CLBD", "-100.00"), _balance("ITAV", "4900.00")])
+
+    with _patch_client(provider, handler):
+        accounts = await provider.get_accounts(_card_credentials())
+
+    card = accounts[0]
+    assert card.credit_limit is None
+    assert card.balance == Decimal("100.00")
+    assert card.available_credit == Decimal("4900.00")
+
+
+@pytest.mark.asyncio
+async def test_card_balance_without_a_usable_amount_is_not_the_whole_limit(eb_keys):
+    """A balance entry that carries no amount says nothing about the card. Read
+    as zero free credit it would show the whole limit spent."""
+    provider = EnableBankingProvider()
+    handler = _card_bank(
+        [
+            {"balance_type": "ITAV", "balance_amount": {"currency": "PLN"}},
+            _balance("CLBD", "-100.00"),
+        ],
+        details={"credit_limit": {"amount": "5000.00", "currency": "PLN"}},
+    )
+
+    with _patch_client(provider, handler):
+        accounts = await provider.get_accounts(_card_credentials())
+
+    card = accounts[0]
+    # The booked figure states the debt on its own.
+    assert card.balance == Decimal("100.00")
+    assert card.available_credit is None
+
+
+@pytest.mark.asyncio
+async def test_background_sync_does_not_claim_a_cached_credit_limit(eb_keys):
+    """A background sync reads the cached details and never calls /details. It
+    reports the free credit and no limit, so the debt is stated against the
+    limit the account row holds and a cached figure cannot overwrite it."""
     provider = EnableBankingProvider()
     credentials = {
         "session_id": "sess-x",
@@ -523,8 +563,11 @@ async def test_background_sync_reads_the_card_off_the_cached_limit(eb_keys):
         accounts = await provider.get_accounts(credentials)
 
     assert "/accounts/card-1/details" not in calls
-    assert accounts[0].balance == Decimal("100.00")
-    assert accounts[0].available_credit == Decimal("4900.00")
+    card = accounts[0]
+    assert card.credit_limit is None
+    assert card.available_credit == Decimal("4900.00")
+    # The booked figure here is the limit itself, so it states no debt.
+    assert card.balance == Decimal("0")
 
 
 @pytest.mark.asyncio
