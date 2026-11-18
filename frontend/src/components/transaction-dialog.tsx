@@ -738,6 +738,10 @@ function TransactionForm({
       toast.success(updated.is_flagged
         ? t('transactions.flagSuccess')
         : t('transactions.unflagSuccess'))
+      // Not every opener passes onIgnoreChanged (Dashboard, Account Detail),
+      // so refresh the lists the row comes from here; the flag moves no money.
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['drill-down'] })
       onIgnoreChanged?.()
     } catch {
       toast.error(t('common.error'))
@@ -1642,7 +1646,6 @@ function TransactionForm({
               variant={isFlagged ? 'secondary' : 'outline'}
               onClick={handleToggleFlag}
               disabled={loading || togglingFlag}
-              aria-pressed={isFlagged}
               className="gap-1.5 whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
             >
               <Flag size={14} className={isFlagged ? 'fill-current text-amber-600 dark:text-amber-400' : undefined} />

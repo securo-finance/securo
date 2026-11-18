@@ -653,3 +653,23 @@ describe('TransactionDialog reporting date override', () => {
     ).not.toBeInTheDocument()
   })
 })
+
+describe('TransactionDialog flag (#56)', () => {
+  it('refreshes the transaction lists itself when no onIgnoreChanged is passed', async () => {
+    const tx = syncedTransaction({ is_flagged: false })
+    vi.spyOn(transactions, 'update').mockResolvedValue({ ...tx, is_flagged: true })
+    const { user, queryClient } = renderSyncedDialog(tx)
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+
+    const button = screen.getByRole('button', { name: t('transactions.flagAction') })
+    expect(button).not.toHaveAttribute('aria-pressed')
+    await user.click(button)
+
+    expect(transactions.update).toHaveBeenCalledWith(tx.id, { is_flagged: true })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['transactions'] })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['drill-down'] })
+    expect(
+      await screen.findByRole('button', { name: t('transactions.unflagAction') }),
+    ).toBeInTheDocument()
+  })
+})

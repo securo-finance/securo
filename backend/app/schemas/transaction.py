@@ -114,7 +114,9 @@ class TransactionUpdate(BaseModel):
     fx_rate_used: Optional[Decimal] = None
     is_ignored: Optional[bool] = None
     exclude_from_pnl: Optional[bool] = None
-    is_flagged: Optional[bool] = None
+    # Not Optional: the column is NOT NULL, so an explicit null is a 422, not a
+    # 500 at commit. Updates use exclude_unset, so leaving it out changes nothing.
+    is_flagged: bool = False
     # Manual status override (posted=settled, pending=not yet settled). Lets the
     # user mark a manually-entered transaction as settled once it clears,
     # or flip a synced row back to pending before the next sync.

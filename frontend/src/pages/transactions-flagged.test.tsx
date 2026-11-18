@@ -118,6 +118,25 @@ describe('flagged transactions', () => {
     }
   })
 
+  it('drops a row that leaves the list from the selection', async () => {
+    const { queryClient, user } = renderWithProviders(<TransactionsPage />, {
+      route: '/transactions?flagged=1', path: '/transactions',
+    })
+
+    const bakery = await screen.findByText('Bakery')
+    await user.click(bakery.closest('tr')!.querySelector('input[type="checkbox"]')!)
+    expect(await screen.findByText('Export Selected (1)')).toBeInTheDocument()
+
+    // Unflagged elsewhere: the next fetch under "Flagged only" no longer has it.
+    api.transactions.list.mockResolvedValue({
+      items: [row('tx-flagged', 'Pharmacy receipt', true)], total: 1, page: 1, limit: 50,
+    })
+    await queryClient.invalidateQueries({ queryKey: ['transactions'] })
+
+    await waitFor(() => expect(screen.queryByText('Bakery')).not.toBeInTheDocument())
+    expect(screen.queryByText(/Export Selected/)).not.toBeInTheDocument()
+  })
+
   it('leaves the flag out of the request when the filter is off', async () => {
     renderWithProviders(<TransactionsPage />, { route: '/transactions', path: '/transactions' })
 

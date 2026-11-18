@@ -3,7 +3,7 @@ import { AccountIcon } from '@/components/account-icon'
 import { CategorySplitBadge, TransactionCategoryIcon } from '@/components/category-lines-display'
 import { isSplitByCategory } from '@/lib/category-lines'
 import type { Transaction, Account } from '@/types'
-import { AlertTriangle, ArrowLeftRight, CalendarClock, ChartNoAxesColumn, Clock, EyeClosed, Paperclip } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, CalendarClock, ChartNoAxesColumn, Clock, EyeClosed, Flag, Paperclip } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useTranslation } from 'react-i18next'
 import { formatCurrency, ltrAmount } from '@/lib/format'
@@ -140,6 +140,13 @@ export function MobileTransactionRow({
             <ChartNoAxesColumn
               className="h-3 w-3 text-slate-500 shrink-0"
               aria-label={t('transactions.excludedFromReports')}
+            />
+          )}
+          {tx.is_flagged && (
+            <Flag
+              className="h-3 w-3 text-amber-600 dark:text-amber-400 fill-current shrink-0"
+              role="img"
+              aria-label={t('transactions.flagged')}
             />
           )}
           {tx.recurring_transaction_id != null && !virtual && (

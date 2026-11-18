@@ -28,6 +28,29 @@ async def test_flag_and_unflag_a_transaction(
 
 
 @pytest.mark.asyncio
+async def test_an_explicit_null_flag_is_refused_and_leaves_the_row_alone(
+    client: AsyncClient, auth_headers, test_transactions: list[Transaction]
+):
+    """The column is NOT NULL: null is a 422, never a 500 at commit."""
+    tx = test_transactions[0]
+    await client.patch(
+        f"/api/transactions/{tx.id}", json={"is_flagged": True}, headers=auth_headers
+    )
+
+    response = await client.patch(
+        f"/api/transactions/{tx.id}", json={"is_flagged": None}, headers=auth_headers
+    )
+    assert response.status_code == 422
+
+    # Leaving the key out keeps the flag as it was.
+    untouched = await client.patch(
+        f"/api/transactions/{tx.id}", json={"notes": "check later"}, headers=auth_headers
+    )
+    assert untouched.status_code == 200
+    assert untouched.json()["is_flagged"] is True
+
+
+@pytest.mark.asyncio
 async def test_flagging_a_synced_row_is_allowed(
     client: AsyncClient,
     auth_headers,

@@ -436,6 +436,19 @@ export default function TransactionsPage() {
       }),
   })
 
+  // A row can leave the page without a filter change (unflagged under
+  // "Flagged only", deleted elsewhere): drop it from the selection so the
+  // export and bulk actions only act on rows the user can still see.
+  useEffect(() => {
+    if (!data?.items) return
+    const visible = new Set(data.items.map((tx) => tx.id))
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev
+      const kept = new Set([...prev].filter((id) => visible.has(id)))
+      return kept.size === prev.size ? prev : kept
+    })
+  }, [data?.items])
+
   const calendarMonth = steppedMonth
   const calendarAccountIds = filterAccountIds.length === 1 ? filterAccountIds : []
   const { data: calendarData, isLoading: calendarLoading, isFetching: calendarFetching, refetch: refetchCalendar } = useQuery({
