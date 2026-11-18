@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset import Asset
@@ -1088,6 +1088,32 @@ def test_a_split_row_is_validated_like_a_manual_split(row):
     assert [(e.row, e.reason) for e in errors] == [(2, "invalid_split")]
 
 
+@pytest.mark.parametrize("cell", ["unknown", "1,00abc", "-"])
+def test_a_split_row_with_an_unreadable_money_cell_is_refused(cell):
+    """A blank cell and an unreadable one both read as None, and only the
+    blank one is allowed: a file that states a fee on a split is wrong even
+    when the fee it states cannot be read."""
+    orders, errors, _ = asset_import_service.parse_orders_csv(_csv(
+        "ticker,date,quantity,price,fee,kind,old_units,new_units",
+        f"AAPL,2026-03-01,,,{cell},split,1,4",
+    ))
+    assert orders == []
+    assert [(e.row, e.reason) for e in errors] == [(2, "invalid_split")]
+
+
+@pytest.mark.parametrize("row", [
+    "AAPL,2026-03-01,,,,split,1,4",          # blank cells
+    "AAPL,2026-03-01,0,0,0,split,1,4",       # the zeros a broker writes
+    "AAPL,2026-03-01,0,0.00,0.00,split,1,4",
+])
+def test_a_split_row_still_accepts_blank_and_zero_money_cells(row):
+    orders, errors, _ = asset_import_service.parse_orders_csv(_csv(
+        "ticker,date,quantity,price,fee,kind,old_units,new_units", row,
+    ))
+    assert errors == []
+    assert (orders[0].kind, orders[0].old_units, orders[0].new_units) == ("split", 1, 4)
+
+
 @pytest.mark.asyncio
 async def test_a_sell_after_an_imported_split_counts_the_split_units(
     session: AsyncSession, test_user: User, test_workspace: Workspace, provider
@@ -1347,10 +1373,46 @@ async def test_a_split_sent_without_a_usable_ratio_is_reported_not_raised(
 
 
 @pytest.mark.asyncio
-async def test_a_new_holding_is_measured_against_the_price_it_is_created_with(
-    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+@pytest.mark.parametrize("kind", ["buy", "sell"])
+async def test_a_ratio_on_a_trade_row_from_the_body_is_reported_not_raised(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider, kind
 ):
-    """The size check has to see the quote, not only the units.
+    """Only a split may carry a ratio, and the table says so.
+
+    The confirmation payload has no validator for the ratio, so a trade with
+    one used to reach the flush: the constraint failed, and the error took
+    the other rows of the batch with it.
+    """
+    quantity = Decimal("10") if kind == "buy" else Decimal("4")
+    orders = [
+        AssetOrderImport(
+            row=1, ticker="AAPL", date=date(2026, 1, 15), kind="buy",
+            quantity=Decimal("10"), price=Decimal("100"),
+        ),
+        AssetOrderImport(
+            row=2, ticker="AAPL", date=date(2026, 3, 1), kind=kind,
+            quantity=quantity, price=Decimal("50"), old_units=1, new_units=4,
+        ),
+    ]
+
+    summary = await asset_import_service.import_orders(
+        session, test_workspace.id, test_user.id, orders, market_provider=provider,
+    )
+
+    assert summary["imported"] == 1
+    assert [(e.row, e.reason) for e in summary["errors"]] == [(2, "invalid_split")]
+    assert [tx.kind for tx in (await session.execute(
+        select(AssetTransaction)
+    )).scalars().all()] == ["buy"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("dry_run", [True, False])
+async def test_a_new_holding_is_measured_against_the_price_it_is_created_with(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider, dry_run
+):
+    """The size check has to see the quote, not only the units — and the
+    preview has to say the same thing the confirmation does.
 
     1000 units at $100 through a 1 → 100000 split is a chart value the
     columns don't hold; it is refused against its line instead of failing in
@@ -1360,11 +1422,12 @@ async def test_a_new_holding_is_measured_against_the_price_it_is_created_with(
         "ticker,date,quantity,price,kind,old_units,new_units",
         "AAPL,2026-01-15,1000,100.00,buy,,",
         "AAPL,2026-03-01,,,split,1,100000",
-    ), provider)
+    ), provider, dry_run=dry_run)
 
     assert summary["imported"] == 1
     assert [(e.row, e.reason) for e in summary["errors"]] == [(3, "too_large")]
-    assert (await _only_asset(session, test_workspace)).units == Decimal("1000")
+    if not dry_run:
+        assert (await _only_asset(session, test_workspace)).units == Decimal("1000")
 
 
 class SellingWhileTheQuotesArrive(FakeProvider):
@@ -1419,3 +1482,105 @@ async def test_a_sale_that_lands_while_the_quotes_are_fetched_is_seen_before_the
         )
     )).scalars().all()
     assert [(tx.quantity, tx.date) for tx in written] == [(Decimal("5"), date(2026, 2, 1))]
+
+
+class EditingTheBuyWhileTheQuotesArrive(FakeProvider):
+    """Takes the stored buy down to 5 units behind the session's identity map."""
+
+    def __init__(self, session: AsyncSession, asset: Asset, workspace: Workspace):
+        super().__init__(known=("AAPL", "MSFT"))
+        self._session = session
+        self._asset = asset
+        self._workspace = workspace
+
+    async def get_quotes(self, symbols):
+        await self._session.execute(
+            update(AssetTransaction)
+            .where(AssetTransaction.asset_id == self._asset.id)
+            .values(quantity=Decimal("5"))
+            .execution_options(synchronize_session=False)
+        )
+        await self._session.flush()
+        return await super().get_quotes(symbols)
+
+
+@pytest.mark.asyncio
+async def test_a_holding_edited_while_the_quotes_are_fetched_is_reread_under_the_lock(
+    session: AsyncSession, test_user: User, test_workspace: Workspace
+):
+    """The row was already loaded, so the locked reread must refresh it.
+
+    The buy was 10 when the replay read it and 5 by the time of the write.
+    Without `populate_existing` the reread hands back the instance the session
+    already holds, and the sale of 8 is written on units that are no longer
+    stored.
+    """
+    asset = await _apple_in_usd(session, test_user, test_workspace)
+    session.add(AssetTransaction(
+        asset_id=asset.id, workspace_id=test_workspace.id, kind="buy",
+        quantity=Decimal("10"), price=Decimal("100"), fee=Decimal("0"),
+        date=date(2026, 1, 15), source="manual",
+    ))
+    await session.commit()
+
+    provider = EditingTheBuyWhileTheQuotesArrive(session, asset, test_workspace)
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,kind,old_units,new_units",
+        "AAPL,2026-03-01,8,120.00,sell,,",
+        "MSFT,2026-01-10,1,100.00,buy,,",
+    ), provider)
+
+    assert summary["imported"] == 1
+    assert [(e.row, e.reason) for e in summary["errors"]] == [(2, "oversell")]
+
+
+class ConfirmingTheSameSplitWhileTheQuotesArrive(FakeProvider):
+    """Writes the file's split, as a second confirmation of it would."""
+
+    def __init__(self, session: AsyncSession, asset: Asset, workspace: Workspace):
+        super().__init__(known=("AAPL", "MSFT"))
+        self._session = session
+        self._asset = asset
+        self._workspace = workspace
+
+    async def get_quotes(self, symbols):
+        self._session.add(AssetTransaction(
+            asset_id=self._asset.id, workspace_id=self._workspace.id, kind="split",
+            quantity=Decimal("0"), price=Decimal("0"), fee=Decimal("0"),
+            date=date(2026, 3, 1), old_units=1, new_units=10, source="import",
+        ))
+        await self._session.flush()
+        return await super().get_quotes(symbols)
+
+
+@pytest.mark.asyncio
+async def test_a_split_another_confirmation_wrote_meanwhile_is_not_written_twice(
+    session: AsyncSession, test_user: User, test_workspace: Workspace
+):
+    """Two confirmations of the same file both accepted the split.
+
+    The second one finds it in the refreshed ledger, and duplicate detection —
+    which ran before the quote fetch — has to run again on what appeared since,
+    or both splits land and 100 units become 1 instead of 10.
+    """
+    asset = await _apple_in_usd(session, test_user, test_workspace)
+    session.add(AssetTransaction(
+        asset_id=asset.id, workspace_id=test_workspace.id, kind="buy",
+        quantity=Decimal("10"), price=Decimal("100"), fee=Decimal("0"),
+        date=date(2026, 1, 15), source="manual",
+    ))
+    await session.commit()
+
+    provider = ConfirmingTheSameSplitWhileTheQuotesArrive(session, asset, test_workspace)
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,kind,old_units,new_units",
+        "AAPL,2026-03-01,,,split,1,10",
+        "MSFT,2026-01-10,1,100.00,buy,,",
+    ), provider)
+
+    assert summary["skipped"] == 1
+    assert summary["imported"] == 1
+    splits = (await session.execute(
+        select(AssetTransaction).where(AssetTransaction.kind == "split")
+    )).scalars().all()
+    assert len(splits) == 1

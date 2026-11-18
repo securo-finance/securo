@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 import pytest
 import pytest_asyncio
 from fastapi import HTTPException
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_timezone, app_today, use_resolved_timezone
@@ -32,6 +32,7 @@ from app.schemas.asset import (
 )
 from app.services import asset_import_service, asset_service, asset_transaction_service
 from app.services.asset_transaction_service import _detect_oversell, _recompute
+from tests.conftest import TestSessionLocal
 
 
 # ---------------------------------------------------------------------------
@@ -337,6 +338,48 @@ async def test_update_transaction_recomputes(session, test_workspace, market_ass
     assert read.units == 20
     assert read.average_price is not None
     assert round(read.average_price, 2) == 20.00
+
+
+@pytest.mark.asyncio
+async def test_an_edit_validates_against_the_row_as_it_is_once_the_holding_is_locked(
+    session, test_workspace, market_asset
+):
+    """A notes-only edit must not pass its checks on the values it loaded.
+
+    Another request took the buy down from 10 to 3 while this one waited for
+    the holding lock, and a sale of 4 is now short against it. The row this
+    session already holds comes back at 10 unless the read after the lock
+    refreshes it, and the edit is validated — and allowed — on units that are
+    no longer stored.
+    """
+    await asset_transaction_service.add_transaction(
+        session, market_asset.id, test_workspace.id,
+        AssetTransactionCreate(kind="buy", quantity=Decimal("10"), price=Decimal("20"), date=date(2026, 1, 1)),
+    )
+    txs = await asset_transaction_service.list_asset_transactions(session, market_asset.id, test_workspace.id)
+    assert txs is not None
+    stale = await session.get(AssetTransaction, txs[0].id)
+    assert stale.quantity == Decimal("10")
+    # The other request, committed after this one loaded the row.
+    async with TestSessionLocal() as writer:
+        await writer.execute(
+            update(AssetTransaction)
+            .where(AssetTransaction.id == txs[0].id)
+            .values(quantity=Decimal("3"))
+        )
+        writer.add(AssetTransaction(
+            asset_id=market_asset.id, workspace_id=test_workspace.id, kind="sell",
+            quantity=Decimal("4"), price=Decimal("30"), fee=Decimal("0"),
+            date=date(2026, 3, 1), source="manual",
+        ))
+        await writer.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        await asset_transaction_service.update_transaction(
+            session, txs[0].id, test_workspace.id, AssetTransactionUpdate(notes="edited"),
+        )
+
+    assert exc.value.status_code == 422
 
 
 @pytest.mark.asyncio

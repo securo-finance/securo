@@ -369,12 +369,20 @@ def parse_orders_csv(
         old_units = _parse_split_units(cell(row, 'old_units'))
         new_units = _parse_split_units(cell(row, 'new_units'))
         if kind_word in _SPLIT_WORDS:
-            if _invalid_split(
-                old_units,
-                new_units,
-                _parse_decimal(cell(row, 'quantity')),
-                _parse_decimal(cell(row, 'price')),
-                _parse_decimal(cell(row, 'fee')),
+            # A split carries no money. A cell that says something the file
+            # cannot read is a bad row, not an empty one: `_parse_decimal`
+            # answers None for both, so the text is checked as well.
+            money = [
+                (cell(row, field), _parse_decimal(cell(row, field)))
+                for field in ('quantity', 'price', 'fee')
+            ]
+            if (
+                any(raw and value is None for raw, value in money)
+                or _invalid_split(
+                    old_units,
+                    new_units,
+                    *(value for _, value in money),
+                )
             ):
                 errors.append(AssetImportRowError(row=index, reason='invalid_split', ticker=ticker))
                 continue
@@ -545,12 +553,21 @@ async def _holdings_in_other_wallets(
 async def _ledger_rows(
     session: AsyncSession,
     asset_ids: list[uuid.UUID],
+    *,
+    refresh: bool = False,
 ) -> list[AssetTransaction]:
+    """The ledger of these holdings as it stands in the database.
+
+    ``refresh`` is for a read that follows a lock: a row this session had
+    already loaded would otherwise come back with the values it had then,
+    and the checks would run on a ledger somebody has since edited.
+    """
     if not asset_ids:
         return []
-    result = await session.execute(
-        select(AssetTransaction).where(AssetTransaction.asset_id.in_(asset_ids))
-    )
+    statement = select(AssetTransaction).where(AssetTransaction.asset_id.in_(asset_ids))
+    if refresh:
+        statement = statement.execution_options(populate_existing=True)
+    result = await session.execute(statement)
     return list(result.scalars().all())
 
 
@@ -606,6 +623,31 @@ def _same_order(seen: dict[tuple, set[Optional[str]]], key: tuple, external_id: 
     if not ids:
         return False
     return external_id is None or None in ids or external_id in ids
+
+
+def _appearance_keys(
+    asset_id: uuid.UUID,
+    order: AssetOrderImport,
+    entry: AssetTransaction,
+    stated: Optional[tuple[str, Decimal]],
+) -> list[tuple]:
+    """The fingerprints a stored row carrying this order would be known by.
+
+    The mirror of `_fingerprints`, for one order: whatever the ledger gained
+    under these keys since the replay read it is this order, written by
+    somebody else. ``stated`` is what the file said for a converted row.
+    """
+    keys: list[tuple] = []
+    external_id = order.external_id or None
+    if external_id:
+        keys.append(('external', asset_id, external_id))
+    base = _order_key(asset_id, entry)
+    keys.append(_row_key(asset_id, entry))
+    if stated is not None:
+        keys.append(('source', *base, stated[0], stated[1]))
+    else:
+        keys.append(('plain', *base, entry.price))
+    return keys
 
 
 # Minor units a file may state prices in, named as the market feed names them:
@@ -739,13 +781,61 @@ def _ledger_problem(
     return None
 
 
+def _created_holding(quote: Optional[MarketSymbolQuote]) -> Asset:
+    """The holding the file is about to create, as far as the size check reads
+    it: the units and the price they are worth at.
+
+    Unsaved on purpose: it is measured against, never added to the session.
+    """
+    return Asset(
+        valuation_method='market_price',
+        last_price=Decimal(str(quote.price)) if quote is not None else None,
+        last_price_at=datetime.now(timezone.utc) if quote is not None else None,
+    )
+
+
+def _measure_created_holdings(
+    accepted: list[tuple[AssetOrderImport, AssetTransaction]],
+    holdings: dict[str, Asset],
+    quotes: dict[str, Optional[MarketSymbolQuote]],
+    errors: list[AssetImportRowError],
+) -> list[tuple[AssetOrderImport, AssetTransaction]]:
+    """Measure the rows of a holding the file creates against its quote.
+
+    The replay checks those rows on units alone, because the quote is not
+    fetched yet, so a split that does not fit the columns at the real price
+    would be listed as importable and then dropped at confirmation. Measured
+    here, in the preview too, against the same quote the write uses.
+    """
+    ledgers: dict[str, list[AssetTransaction]] = {}
+    kept: list[tuple[AssetOrderImport, AssetTransaction]] = []
+    for order, entry in accepted:
+        if order.ticker in holdings:
+            kept.append((order, entry))
+            continue
+        ledger = ledgers.setdefault(order.ticker, [])
+        problem = _ledger_problem(ledger, entry, _created_holding(quotes.get(order.ticker)))
+        if problem is not None:
+            reason, detail = problem
+            errors.append(AssetImportRowError(
+                row=order.row, reason=reason, ticker=order.ticker, detail=detail,
+            ))
+            continue
+        ledger.append(entry)
+        kept.append((order, entry))
+    return kept
+
+
 async def _recheck_before_write(
     session: AsyncSession,
     accepted: list[tuple[AssetOrderImport, AssetTransaction]],
     holdings: dict[str, Asset],
     quotes: dict[str, Optional[MarketSymbolQuote]],
     errors: list[AssetImportRowError],
-) -> tuple[list[tuple[AssetOrderImport, AssetTransaction]], list[AssetImportRowError]]:
+    *,
+    seen_before_lock: dict[tuple, set[Optional[str]]],
+    origin: dict[int, tuple[str, Decimal]],
+) -> tuple[list[tuple[AssetOrderImport, AssetTransaction]], list[AssetImportRowError], int]:
     """Measure every accepted row again against the ledger as it is now.
 
     The replay read the stored ledger before the quotes were fetched, and a
@@ -757,12 +847,19 @@ async def _recheck_before_write(
     the price the holding is created at, so what is written has been checked
     against what is stored and what is charged.
 
+    Duplicate detection ran before the same window, so it is run again on the
+    rows that appeared since: a second confirmation of the same file, or the
+    same order entered by hand, must not be written a second time. Those rows
+    are counted as skipped, the way the replay already treats a repeat.
+
     A row that no longer holds is reported against its line and left out,
     rather than aborting an import whose other rows are fine.
     """
     tickers = {order.ticker for order, _ in accepted}
     asset_ids = sorted(asset.id for ticker, asset in holdings.items() if ticker in tickers)
     ledgers: dict[str, list[AssetTransaction]] = {ticker: [] for ticker in tickers if ticker in holdings}
+    settled = 0
+    appeared: set[tuple] = set()
     if asset_ids:
         await session.execute(
             select(Asset.id)
@@ -771,23 +868,26 @@ async def _recheck_before_write(
             .with_for_update()
         )
         by_id = {asset.id: ticker for ticker, asset in holdings.items() if ticker in tickers}
-        for row in await _ledger_rows(session, asset_ids):
+        stored: list[AssetTransaction] = []
+        for row in await _ledger_rows(session, asset_ids, refresh=True):
             ledgers[by_id[row.asset_id]].append(row)
+            stored.append(row)
+        appeared = {key for key in _fingerprints(stored) if key not in seen_before_lock}
 
-    # Only what the size check reads: the units and the price they are worth at.
-    created: dict[str, Asset] = {}
-    for ticker in tickers - set(holdings):
-        quote = quotes.get(ticker)
-        created[ticker] = Asset(
-            valuation_method='market_price',
-            last_price=Decimal(str(quote.price)) if quote is not None else None,
-            last_price_at=datetime.now(timezone.utc) if quote is not None else None,
-        )
+    created = {ticker: _created_holding(quotes.get(ticker)) for ticker in tickers - set(holdings)}
 
     kept: list[tuple[AssetOrderImport, AssetTransaction]] = []
     for order, entry in accepted:
+        asset = holdings.get(order.ticker) or created[order.ticker]
+        if appeared and any(
+            key in appeared
+            for key in _appearance_keys(asset.id, order, entry, origin.get(order.row))
+        ):
+            # Somebody wrote this very order between the replay and the lock.
+            settled += 1
+            continue
         ledger = ledgers.setdefault(order.ticker, [])
-        problem = _ledger_problem(ledger, entry, holdings.get(order.ticker) or created[order.ticker])
+        problem = _ledger_problem(ledger, entry, asset)
         if problem is not None:
             reason, detail = problem
             errors.append(AssetImportRowError(
@@ -796,7 +896,7 @@ async def _recheck_before_write(
             continue
         ledger.append(entry)
         kept.append((order, entry))
-    return kept, errors
+    return kept, errors, settled
 
 
 async def import_orders(
@@ -882,7 +982,9 @@ async def import_orders(
     # average price are measured.
     unquoted = Asset(valuation_method='market_price')
     # Rows on the same date replay in the order they were entered, so the
-    # file's rows go after the ledger's and keep the file's order.
+    # file's trades go after the ledger's and keep the file's order. A split
+    # is the exception, as everywhere else: it replays before that date's
+    # trades (`_replay_order`), which is what entering one by hand does.
     entered_at = datetime.now(timezone.utc)
     today = app_today()
 
@@ -956,6 +1058,16 @@ async def import_orders(
                 ))
                 continue
 
+        if order.kind != 'split' and (
+            order.old_units is not None or order.new_units is not None
+        ):
+            # The rows of a confirmed import come from the request body, so a
+            # ratio on a buy or a sell gets here without the file reader. The
+            # table refuses it (the columns must be null off a split), and the
+            # flush error would abort the other rows of the batch.
+            errors.append(AssetImportRowError(row=order.row, reason='invalid_split', ticker=order.ticker))
+            continue
+
         if order.kind == 'split' and _invalid_split(
             order.old_units, order.new_units, order.quantity, order.price, order.fee,
         ):
@@ -990,6 +1102,16 @@ async def import_orders(
         ledger.append(entry)
         accepted.append((order, entry))
 
+    # A holding the file creates gets its quote here, before anything is
+    # written, so both the preview and the rows checked below are measured
+    # against the price the holding will actually carry.
+    to_create = sorted({o.ticker for o, _ in accepted if o.ticker not in holdings})
+    unquoted = [t for t in to_create if t not in quotes]
+    if unquoted:
+        provider = market_provider or get_market_price_provider()
+        quotes.update(await provider.get_quotes(unquoted))
+    accepted = _measure_created_holdings(accepted, holdings, quotes, errors)
+
     to_create = sorted({o.ticker for o, _ in accepted if o.ticker not in holdings})
     summary = {
         'imported': len(accepted),
@@ -1002,18 +1124,15 @@ async def import_orders(
     if dry_run or not accepted:
         return summary
 
-    # A holding the file creates gets its quote here, before anything is
-    # written, so the rows checked below are measured against the price the
-    # holding will actually carry.
-    unquoted = [t for t in to_create if t not in quotes]
-    if unquoted:
-        provider = market_provider or get_market_price_provider()
-        quotes.update(await provider.get_quotes(unquoted))
-
-    accepted, errors = await _recheck_before_write(session, accepted, holdings, quotes, errors)
+    accepted, errors, settled = await _recheck_before_write(
+        session, accepted, holdings, quotes, errors,
+        seen_before_lock=seen, origin=origin,
+    )
+    skipped += settled
     to_create = sorted({o.ticker for o, _ in accepted if o.ticker not in holdings})
     summary.update({
         'imported': len(accepted),
+        'skipped': skipped,
         'holdings_created': len(to_create),
         'holdings_matched': len({o.ticker for o, _ in accepted if o.ticker in holdings}),
         'errors': errors,

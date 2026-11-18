@@ -140,10 +140,17 @@ def _detect_oversell(transactions: list[AssetTransaction]) -> Optional[tuple[Dec
     return None
 
 
-async def _load_txs(session: AsyncSession, asset_id: uuid.UUID) -> list[AssetTransaction]:
-    result = await session.execute(
-        select(AssetTransaction).where(AssetTransaction.asset_id == asset_id)
-    )
+async def _load_txs(
+    session: AsyncSession, asset_id: uuid.UUID, *, refresh: bool = False,
+) -> list[AssetTransaction]:
+    """The holding's ledger. ``refresh`` is for a read that follows a lock: a
+    row this session already loaded would otherwise come back with the values
+    it had then, and the checks would run on a ledger somebody has since
+    edited."""
+    statement = select(AssetTransaction).where(AssetTransaction.asset_id == asset_id)
+    if refresh:
+        statement = statement.execution_options(populate_existing=True)
+    result = await session.execute(statement)
     return list(result.scalars().all())
 
 
@@ -516,6 +523,21 @@ async def update_transaction(
     tx = result.scalar_one_or_none()
     if tx is None:
         return None
+    # Resolve and lock the holding before anything is read off the row or
+    # mutated: a buy this request only adds a note to may have been edited down
+    # to fewer units while it waited, and the checks below have to see the units
+    # that are stored, not the ones this session loaded earlier. Bailing out
+    # after the setattr loop would also leave the edits pending in the session,
+    # so a later commit in the same request would persist an update we reported
+    # failed. The lock is taken before the ledger is read, so nothing lands
+    # between the checks and the write.
+    asset = await _load_asset_for_write(session, tx.asset_id, workspace_id)
+    if asset is None:
+        return None
+    # The row and the ledger it is measured against, as they stand once the
+    # holding is locked (`populate_existing`): an instance already in the
+    # identity map would otherwise come back with the values it had then.
+    await session.refresh(tx)
     fields = data.model_dump(exclude_unset=True)
     kind = fields.get("kind", tx.kind)
     if (kind == "split") != (tx.kind == "split"):
@@ -543,16 +565,8 @@ async def update_transaction(
         edited.kind, edited.quantity, edited.price,
         fee=edited.fee, old_units=edited.old_units, new_units=edited.new_units,
     )
-    # Resolve and lock the holding before mutating the row: bailing out after
-    # the setattr loop would leave the edits pending in the session, so a later
-    # commit in the same request would persist an update we reported failed.
-    # The lock is taken before the ledger is read, so nothing lands between
-    # the checks and the write.
-    asset = await _load_asset_for_write(session, tx.asset_id, workspace_id)
-    if asset is None:
-        return None
 
-    others = [t for t in await _load_txs(session, tx.asset_id) if t.id != tx.id]
+    others = [t for t in await _load_txs(session, tx.asset_id, refresh=True) if t.id != tx.id]
     if kind == "split":
         _raise_if_split_in_future(edited.date)
         _raise_if_nothing_held_before(others, edited.date)
@@ -585,7 +599,11 @@ async def delete_transaction(
     asset = await _load_asset_for_write(session, tx.asset_id, workspace_id)
     if asset is None:
         return None
-    others = [t for t in await _load_txs(session, tx.asset_id) if t.id != tx.id]
+    # What is deleted and what the delete is measured against, as they stand
+    # once the holding is locked: the row this session loaded may have been
+    # edited into (or out of) a split since.
+    await session.refresh(tx)
+    others = [t for t in await _load_txs(session, tx.asset_id, refresh=True) if t.id != tx.id]
     # The recompute would clamp a sell that needed the split's units, and that
     # can close the holding.
     if tx.kind == "split" and _detect_oversell(others) is not None:
