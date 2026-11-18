@@ -78,7 +78,20 @@ DEFAULT_PSU_TYPE = "personal"
 DEFAULT_HISTORY_DAYS = 90
 # Shorter window retried when a bank rejects the default one as out of bounds.
 FALLBACK_HISTORY_DAYS = 30
+# Floor of the history a fresh, user-present fetch asks for (issue #792).
+# Enable Banking then serves the longest period the bank allows, never
+# starting before this date: two years covers what most ASPSPs keep, while an
+# older floor would only earn the bank's WRONG_TRANSACTIONS_PERIOD.
+INITIAL_HISTORY_DAYS = 730
+# `strategy` value that makes Enable Banking find the longest period the
+# ASPSP serves instead of a window the application picked.
+LONGEST_HISTORY_STRATEGY = "longest"
 TRANSACTION_PAGE_LIMIT = 50  # safety cap
+# A fresh fetch may page through years of entries, so it gets a wider cap than
+# an incremental one: at 50 pages a busy account's history would end before
+# the feed does, and what a cut read leaves out never comes back (later syncs
+# only move forward). Still a ceiling, so one sync cannot run forever.
+INITIAL_TRANSACTION_PAGE_LIMIT = 200
 # Session states after which no data can be read until the user re-authorizes.
 TERMINAL_SESSION_STATUSES = frozenset(
     {"EXPIRED", "REVOKED", "CLOSED", "CANCELLED", "INVALID"}
@@ -416,6 +429,13 @@ def _is_wrong_period_error(resp: httpx.Response) -> bool:
     except ValueError:
         return False
     return isinstance(body, dict) and body.get("error") == "WRONG_TRANSACTIONS_PERIOD"
+
+
+def _refusal_reason(exc: Exception) -> str:
+    """How a failed data request was refused, short enough for a log line."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"HTTP {exc.response.status_code}"
+    return getattr(exc, "code", "") or type(exc).__name__
 
 
 def enable_banking_redirect_uri() -> str:
@@ -1113,6 +1133,11 @@ class EnableBankingProvider(BankProvider):
             return await self._fetch_transactions_since(
                 account_external_id, since, today, payee_source
             )
+        longest = await self._fetch_longest_history(
+            account_external_id, today, payee_source
+        )
+        if longest is not None:
+            return longest
         try:
             return await self._fetch_transactions(
                 account_external_id,
@@ -1136,6 +1161,57 @@ class EnableBankingProvider(BankProvider):
                 today,
                 payee_source,
             )
+
+    async def _fetch_longest_history(
+        self,
+        account_external_id: str,
+        today: date,
+        payee_source: str,
+    ) -> Optional[list[TransactionData]]:
+        """The history the bank serves, bounded by INITIAL_HISTORY_DAYS.
+
+        Enable Banking's `longest` strategy asks the ASPSP for the longest
+        period it can serve and takes `date_from` as the lower bound, so the
+        fetch reaches back as far as the bank allows without the application
+        picking that date (issue #792). Full history is only there shortly
+        after the authorization, and a background call would be cut at the
+        PSD2 window or refused for lack of the user, so it is asked only when
+        the user's own request drives the fetch.
+
+        It is an attempt, not a requirement: a bank that refuses it is left to
+        the ordinary window, which the caller requests next. None says so; an
+        empty list means the bank served nothing. A failure of the bank itself
+        is not a refusal and is raised, so the sync retries instead of taking
+        a shorter history for a complete one.
+        """
+        if not self._present_psu_headers():
+            return None
+        try:
+            return await self._fetch_transactions(
+                account_external_id,
+                _history_start(today, INITIAL_HISTORY_DAYS),
+                # No end date: the strategy picks it, as its documentation says.
+                None,
+                payee_source,
+                strategy=LONGEST_HISTORY_STRATEGY,
+                page_limit=INITIAL_TRANSACTION_PAGE_LIMIT,
+            )
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            if status == 408 or status >= 500:
+                # A timeout or a server error is the bank failing, not
+                # refusing the strategy. Answering with the ordinary window
+                # would report a shorter history as a complete one, and the
+                # sync would move past the rest.
+                raise
+            logger.warning(
+                "Enable Banking refused the longest history of account %s "
+                "with the user present (%s); falling back to %d days",
+                account_external_id,
+                _refusal_reason(exc),
+                DEFAULT_HISTORY_DAYS,
+            )
+            return None
 
     async def _fetch_transactions_since(
         self,
@@ -1204,19 +1280,33 @@ class EnableBankingProvider(BankProvider):
         self,
         account_external_id: str,
         start: date,
-        end: date,
+        end: Optional[date],
         payee_source: str,
+        *,
+        strategy: Optional[str] = None,
+        page_limit: Optional[int] = None,
     ) -> list[TransactionData]:
+        """Every page of one transactions request, from ``start`` to ``end``.
+
+        ``end`` is None with a strategy that picks the end itself (the longest
+        history), so `date_to` is left out of the request.
+        """
+        # Read at call time so a configured cap applies to this fetch.
+        cap = page_limit if page_limit is not None else TRANSACTION_PAGE_LIMIT
         date_from = start.isoformat()
-        date_to = end.isoformat()
+        date_to = end.isoformat() if end is not None else None
         collected: list[tuple[TransactionData, Optional[tuple[str, str, str, str]]]] = []
         booked_keys: dict[tuple[str, str, str, str], int] = {}
         pending_keys: dict[tuple[str, str, str, str], int] = {}
         continuation_key: Optional[str] = None
         seen_continuation_keys: set[str] = set()
         seen_transaction_ids: set[str] = set()
-        for _ in range(TRANSACTION_PAGE_LIMIT):
-            params: dict[str, Any] = {"date_from": date_from, "date_to": date_to}
+        for _ in range(cap):
+            params: dict[str, Any] = {"date_from": date_from}
+            if date_to is not None:
+                params["date_to"] = date_to
+            if strategy:
+                params["strategy"] = strategy
             if continuation_key:
                 params["continuation_key"] = continuation_key
             page = await self._request(
@@ -1257,7 +1347,7 @@ class EnableBankingProvider(BankProvider):
             logger.warning(
                 "Enable Banking returned more than %d transaction pages for "
                 "account %s; stopping pagination",
-                TRANSACTION_PAGE_LIMIT,
+                cap,
                 account_external_id,
             )
             self.truncated_account_ids.add(account_external_id)

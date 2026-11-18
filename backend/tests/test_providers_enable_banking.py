@@ -26,12 +26,15 @@ from app.providers.base import (
 from app.providers.enable_banking import (
     DEFAULT_HISTORY_DAYS,
     FALLBACK_HISTORY_DAYS,
+    INITIAL_HISTORY_DAYS,
+    INITIAL_TRANSACTION_PAGE_LIMIT,
     EnableBankingProvider,
     _account_identifier,
     _entry_reference_external_id,
     _map_cash_account_type,
     _txn_fingerprint,
 )
+from app.providers.psu import PsuContext, psu_present
 
 
 def _rsa_pem() -> tuple[str, str]:
@@ -575,6 +578,8 @@ def _span_days(request: httpx.Request) -> int:
 
 @pytest.mark.asyncio
 async def test_get_transactions_default_window_is_90_days_inclusive(eb_keys):
+    """A background fetch (no user present) keeps the ordinary 90-day window;
+    the longest history is only asked for on the user's own request."""
     provider = EnableBankingProvider()
     requests: list[httpx.Request] = []
 
@@ -587,7 +592,261 @@ async def test_get_transactions_default_window_is_90_days_inclusive(eb_keys):
 
     assert len(requests) == 1
     assert requests[0].url.params["date_to"] == date.today().isoformat()
+    assert requests[0].url.params.get("strategy") is None
     assert _span_days(requests[0]) == DEFAULT_HISTORY_DAYS == 90
+
+
+_USER_PRESENT_HEADERS = {
+    "Psu-Ip-Address": "203.0.113.7",
+    "Psu-User-Agent": "Mozilla/5.0 (Securo test)",
+}
+
+
+def _user_present():
+    """The fetch is driven by the user's own request, PSU headers and all."""
+    return psu_present(PsuContext(headers=dict(_USER_PRESENT_HEADERS)))
+
+
+def _utc_today() -> date:
+    """The day the provider itself uses, so tests do not depend on the host zone."""
+    return datetime.now(timezone.utc).date()
+
+
+def _booked_entry(reference: str, *, days_ago: int) -> dict:
+    """One booked entry of the bank's own payload, dated in the past."""
+    return {
+        "entry_reference": reference,
+        "status": "BOOK",
+        "transaction_amount": {"amount": "10.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": (_utc_today() - timedelta(days=days_ago)).isoformat(),
+        "remittance_information": [reference],
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_initial_fetch_asks_for_the_longest_history(eb_keys):
+    """A fresh fetch made with the user present asks Enable Banking for the
+    longest period the bank serves, bounded by INITIAL_HISTORY_DAYS, and does
+    not pick the end date itself (issue #792)."""
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200, json={"transactions": [_booked_entry("tx-old", days_ago=400)]}
+        )
+
+    with _patch_client(provider, handler), _user_present():
+        transactions = await provider.get_transactions(_CREDENTIALS, "acc-1")
+
+    assert len(requests) == 1
+    params = requests[0].url.params
+    assert params["strategy"] == "longest"
+    assert "date_to" not in params
+    assert params["date_from"] == (
+        _utc_today() - timedelta(days=INITIAL_HISTORY_DAYS - 1)
+    ).isoformat()
+    assert len(transactions) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_initial_fetch_reads_every_page(eb_keys):
+    """The paged answer is collected to the last page: the bank's cursor is
+    followed, each page is part of the same longest request."""
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+    pages = [
+        {
+            "transactions": [_booked_entry("tx-new", days_ago=3)],
+            "continuation_key": "page-2",
+        },
+        {
+            "transactions": [_booked_entry("tx-mid", days_ago=400)],
+            "continuation_key": "page-3",
+        },
+        {
+            "transactions": [_booked_entry("tx-old", days_ago=1200)],
+            "continuation_key": "",
+        },
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=pages[len(requests) - 1])
+
+    with _patch_client(provider, handler), _user_present():
+        transactions = await provider.get_transactions(_CREDENTIALS, "acc-1")
+
+    assert len(requests) == 3
+    assert requests[0].url.params.get("continuation_key") is None
+    assert requests[1].url.params["continuation_key"] == "page-2"
+    assert requests[2].url.params["continuation_key"] == "page-3"
+    assert [r.url.params.get("strategy") for r in requests] == ["longest"] * 3
+    assert {r.url.params["date_from"] for r in requests} == {
+        (_utc_today() - timedelta(days=INITIAL_HISTORY_DAYS - 1)).isoformat()
+    }
+    assert len(transactions) == 3
+    assert provider.truncated_account_ids == set()
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_initial_fetch_pages_past_the_incremental_cap(eb_keys):
+    """The initial cap is wider than the incremental one: a busy account's
+    history is not cut at the 50th page, where what is left out would never be
+    fetched again (later syncs only move forward)."""
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if len(requests) >= 60:
+            return httpx.Response(200, json={"transactions": []})
+        return httpx.Response(
+            200,
+            json={"transactions": [], "continuation_key": f"cursor-{len(requests)}"},
+        )
+
+    with _patch_client(provider, handler), _user_present():
+        await provider.get_transactions(_CREDENTIALS, "acc-1")
+
+    assert len(requests) == 60
+    assert provider.truncated_account_ids == set()
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_initial_fetch_stops_at_its_page_cap(eb_keys, caplog):
+    """Even the wider cap ends the loop: a feed that never stops paging is cut
+    and the account is reported as truncated."""
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+    cap = 3
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={"transactions": [], "continuation_key": f"cursor-{len(requests)}"},
+        )
+
+    with (
+        patch("app.providers.enable_banking.INITIAL_TRANSACTION_PAGE_LIMIT", cap),
+        _patch_client(provider, handler),
+        _user_present(),
+        caplog.at_level("WARNING"),
+    ):
+        await provider.get_transactions(_CREDENTIALS, "acc-1")
+
+    assert cap < INITIAL_TRANSACTION_PAGE_LIMIT
+    assert len(requests) == cap
+    assert provider.truncated_account_ids == {"acc-1"}
+    assert f"more than {cap} transaction pages" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_initial_fetch_falls_back_when_longest_is_refused(
+    eb_keys,
+):
+    """A bank that rejects the longest period still gets the ordinary window:
+    the connection is not failed over an attempt at more history."""
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.params.get("strategy") == "longest":
+            return httpx.Response(422, json=_WRONG_PERIOD_BODY)
+        return httpx.Response(
+            200, json={"transactions": [_booked_entry("tx-1", days_ago=10)]}
+        )
+
+    with _patch_client(provider, handler), _user_present():
+        transactions = await provider.get_transactions(_CREDENTIALS, "acc-1")
+
+    assert [r.url.params.get("strategy") for r in requests] == ["longest", None]
+    assert _span_days(requests[1]) == DEFAULT_HISTORY_DAYS
+    assert len(transactions) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_initial_fetch_falls_back_when_the_strategy_is_refused(
+    eb_keys,
+):
+    """A refusal that is not about the period (a bank without the strategy)
+    gets the same answer as a refused period: the ordinary window."""
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.params.get("strategy") == "longest":
+            return httpx.Response(
+                400,
+                json={
+                    "code": 400,
+                    "error": "ASPSP_ERROR",
+                    "message": "strategy is not supported",
+                },
+            )
+        return httpx.Response(200, json={"transactions": []})
+
+    with _patch_client(provider, handler), _user_present():
+        transactions = await provider.get_transactions(_CREDENTIALS, "acc-1")
+
+    assert transactions == []
+    assert [r.url.params.get("strategy") for r in requests] == ["longest", None]
+    assert _span_days(requests[1]) == DEFAULT_HISTORY_DAYS
+
+
+@pytest.mark.parametrize("status", [408, 503])
+@pytest.mark.asyncio
+async def test_get_transactions_initial_fetch_surfaces_a_transient_failure(
+    eb_keys, status
+):
+    """A failing bank (a timeout or a server error) is not a refusal of the
+    longest history: the error reaches the sync so it is retried, instead of
+    a shorter history being reported as a complete one and the rest never
+    asked for again."""
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            status, json={"code": status, "message": "temporarily unavailable"}
+        )
+
+    with (
+        _patch_client(provider, handler),
+        _user_present(),
+        pytest.raises(httpx.HTTPStatusError),
+    ):
+        await provider.get_transactions(_CREDENTIALS, "acc-1")
+
+    assert len(requests) == 1
+    assert requests[0].url.params["strategy"] == "longest"
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_incremental_fetch_never_asks_for_the_longest(eb_keys):
+    """A sync that already has a starting point stays on its own window: the
+    longest strategy is for the first, full fetch only."""
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"transactions": []})
+
+    with _patch_client(provider, handler), _user_present():
+        await provider.get_transactions(
+            _CREDENTIALS, "acc-1", _utc_today() - timedelta(days=5)
+        )
+
+    assert len(requests) == 1
+    assert requests[0].url.params.get("strategy") is None
+    assert _span_days(requests[0]) == 6
 
 
 @pytest.mark.asyncio
