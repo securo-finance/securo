@@ -26,7 +26,7 @@ from decimal import Decimal
 from typing import Any
 
 import pyzipper
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.workspace_context import WorkspaceContext
@@ -36,6 +36,7 @@ from app.models.asset import Asset
 from app.models.asset_group import AssetGroup
 from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
+from app.models.bank_connection import BankConnection
 from app.models.budget import Budget
 from app.models.category import Category
 from app.models.category_group import CategoryGroup
@@ -45,7 +46,25 @@ from app.models.goal import Goal
 from app.models.group import Group, GroupMember
 from app.models.group_settlement import GroupSettlement
 from app.models.import_log import ImportLog
+from app.models.invoice import (
+    Invoice,
+    InvoiceAllocation,
+    InvoiceDeduction,
+    InvoiceInstallment,
+    InvoiceLine,
+    InvoiceSettings,
+)
+from app.models.invoice_attachment import InvoiceAttachment
+from app.models.invoice_schedule import InvoiceSchedule, InvoiceScheduleTerm
+from app.models.mortgage_payment_allocation import MortgagePaymentAllocation
 from app.models.payee import Payee, PayeeMapping, PayeeTaxId
+from app.models.plugin_connection import PluginConnection
+from app.models.product import Product, ProductPrice
+from app.models.reconciliation import (
+    ReconciliationEvent,
+    ReconciliationRule,
+    ReconciliationSuggestion,
+)
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.recurring_transaction_category_line import RecurringTransactionCategoryLine
 from app.models.rule import Rule
@@ -53,7 +72,9 @@ from app.models.transaction import Transaction
 from app.models.transaction_attachment import TransactionAttachment
 from app.models.transaction_category_line import TransactionCategoryLine
 from app.models.transaction_split import TransactionSplit
+from app.models.ui_layout import UiLayout
 from app.models.workspace import Workspace, WorkspaceTaxId
+from app.models.workspace_plugin import WorkspacePlugin
 from app.providers import get_storage_provider
 from app.services import schema_versions
 
@@ -126,6 +147,42 @@ EXPORTED_ENTITIES: tuple[ExportedEntity, ...] = (
     ExportedEntity("rules", Rule),
     ExportedEntity("workspace_tax_ids", WorkspaceTaxId),
 )
+
+#: What the archive leaves behind, grouped the way a person thinks about it.
+#:
+#: A backup is a copy of the books, not a copy of the instance: invoices and
+#: products, reconciliation rules and history, bank connections, installed
+#: plugins, dashboard layouts and loan payment breakdowns are not carried. None
+#: of them blocks a restore — the rows they point at (payees, transactions,
+#: accounts) come back without them — but a person restoring a backup has to
+#: know what they will not find on the other side, so the export counts the
+#: rows it skipped into `metadata.json` and the restore reports them.
+#:
+#: Every model here is workspace-scoped, which is what makes the count mean
+#: "this workspace's rows"; `test_every_out_of_scope_entity_is_workspace_scoped`
+#: holds the list to it. Shared catalogues and per-install caches (`institutions`,
+#: `plugin_logos`, `fx_rates`) are deliberately absent: they belong to no
+#: workspace and are rebuilt or refetched rather than restored.
+OUT_OF_SCOPE_FAMILIES: dict[str, tuple[type, ...]] = {
+    "invoices": (
+        Invoice,
+        InvoiceLine,
+        InvoiceAllocation,
+        InvoiceInstallment,
+        InvoiceDeduction,
+        InvoiceSettings,
+        InvoiceSchedule,
+        InvoiceScheduleTerm,
+        InvoiceAttachment,
+        Product,
+        ProductPrice,
+    ),
+    "reconciliation": (ReconciliationRule, ReconciliationSuggestion, ReconciliationEvent),
+    "connections": (BankConnection,),
+    "plugins": (WorkspacePlugin, PluginConnection),
+    "ui_layouts": (UiLayout,),
+    "mortgage_allocations": (MortgagePaymentAllocation,),
+}
 
 #: Join tables have no model of their own; they are read and written as rows.
 JOIN_TABLES = ("collection_accounts", "collection_asset_groups")
@@ -206,6 +263,31 @@ async def _rows(session: AsyncSession, entity: ExportedEntity, workspace_id: uui
     return list((await session.execute(stmt)).scalars().all())
 
 
+async def _left_out_counts(session: AsyncSession, workspace_id: uuid.UUID) -> dict[str, int]:
+    """Rows the archive will not carry, per family, for the restore to report.
+
+    A family with nothing in this workspace is left out of the result: the
+    warning is about what this person had, not a catalogue of everything Securo
+    can hold. Counting is a handful of `count(*)` queries on the backup path,
+    which is worth it — the alternative is a restore that silently looks
+    complete.
+    """
+    counts: dict[str, int] = {}
+    for family, models in OUT_OF_SCOPE_FAMILIES.items():
+        total = 0
+        for model in models:
+            total += (
+                await session.execute(
+                    select(func.count())
+                    .select_from(model)
+                    .where(getattr(model, "workspace_id") == workspace_id)
+                )
+            ).scalar_one()
+        if total:
+            counts[family] = total
+    return counts
+
+
 async def collect_workspace_export(ctx: WorkspaceContext, session: AsyncSession) -> ExportPayload:
     """Every entity in the workspace, keyed by the file it becomes."""
     workspace = ctx.workspace
@@ -253,6 +335,11 @@ async def collect_workspace_export(ctx: WorkspaceContext, session: AsyncSession)
         "workspace_name": workspace.name,
         "entity_counts": entity_counts,
         "attachments_missing": missing_attachments,
+        # Rows the archive does not carry (see OUT_OF_SCOPE_FAMILIES). Advisory:
+        # the restore reads it to say what the new workspace will not have, and
+        # an archive without it — every backup written before this key existed —
+        # restores exactly as it always did.
+        "left_out": await _left_out_counts(session, ws_id),
     }
     return payload
 

@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { HardDriveUpload, Info } from 'lucide-react'
+import { HardDriveUpload, Info, TriangleAlert } from 'lucide-react'
 import { backup as backupApi } from '@/lib/api'
 import { useWorkspace } from '@/contexts/workspace-context'
 import type { BackupRestoreResult } from '@/types'
@@ -24,6 +24,20 @@ interface RestoreDialogProps {
 
 /** The counts worth showing after a restore, by their `entity_counts` key. */
 const COUNT_KEYS = ['accounts', 'transactions', 'categories', 'rules'] as const
+
+/**
+ * What the backup leaves out, in the order worth reading. The family names come
+ * from the archive (`backup_service.OUT_OF_SCOPE_FAMILIES`); a family this list
+ * does not know is not shown, so a newer archive never prints a raw key.
+ */
+const LEFT_OUT_KEYS = [
+  { family: 'invoices', label: 'backup.restore.leftOut.invoices' },
+  { family: 'reconciliation', label: 'backup.restore.leftOut.reconciliation' },
+  { family: 'connections', label: 'backup.restore.leftOut.connections' },
+  { family: 'plugins', label: 'backup.restore.leftOut.plugins' },
+  { family: 'ui_layouts', label: 'backup.restore.leftOut.uiLayouts' },
+  { family: 'mortgage_allocations', label: 'backup.restore.leftOut.mortgageAllocations' },
+] as const
 
 /**
  * Restores an archive into a brand-new workspace.
@@ -56,6 +70,11 @@ export function RestoreDialog({ open, onClose }: RestoreDialogProps) {
     setRestoring(false)
     onClose()
   }
+
+  // `?? 0` because an older instance's response may predate the field.
+  const leftOut: { family: string; label: string }[] = result
+    ? LEFT_OUT_KEYS.filter(({ family }) => (result.left_out?.[family] ?? 0) > 0)
+    : []
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -117,6 +136,23 @@ export function RestoreDialog({ open, onClose }: RestoreDialogProps) {
               <p className="text-xs text-muted-foreground">
                 {t('backup.restore.attachmentsMissing', { missing: result.attachments_missing })}
               </p>
+            )}
+            {leftOut.length > 0 && (
+              <div className="space-y-1 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
+                <p className="flex items-center gap-2 font-medium">
+                  <TriangleAlert size={14} className="shrink-0" />
+                  {t('backup.restore.leftOut.title')}
+                </p>
+                <p className="text-muted-foreground">{t('backup.restore.leftOut.description')}</p>
+                <ul className="space-y-0.5">
+                  {leftOut.map(({ family, label }) => (
+                    <li key={family} className="flex items-center justify-between gap-2">
+                      <span>{t(label)}</span>
+                      <span className="tabular-nums">{result.left_out?.[family]}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={handleClose}>

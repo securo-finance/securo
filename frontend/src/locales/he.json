@@ -2716,6 +2716,16 @@
       "successToast": "„{{name}}” שוחזרה",
       "success": "שוחזר אל „{{name}}”",
       "attachmentsMissing": "{{missing}} קבצי מצורפים היו חסרים בארכיון ודולגו.",
+      "leftOut": {
+        "title": "לא נכלל בגיבוי הזה",
+        "description": "הגיבוי מעולם לא הכיל אותם, ולכן סביבת העבודה המשוחזרת אינה כוללת אותם. כל מה שנספר למעלה שוחזר.",
+        "invoices": "חשבוניות ומוצרים",
+        "reconciliation": "כללי התאמה והיסטוריה",
+        "connections": "חיבורים בנקאיים",
+        "plugins": "תוספים",
+        "uiLayouts": "פריסות לוח הבקרה",
+        "mortgageAllocations": "פירוט תשלומי הלוואה"
+      },
       "openWorkspace": "פתיחת סביבת העבודה",
       "close": "סגירה",
       "counts": {

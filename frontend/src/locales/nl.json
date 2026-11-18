@@ -2702,6 +2702,16 @@
       "successToast": "‘{{name}}’ hersteld",
       "success": "Hersteld naar ‘{{name}}’",
       "attachmentsMissing": "{{missing}} bijlagebestanden ontbraken in het archief en zijn overgeslagen.",
+      "leftOut": {
+        "title": "Niet in deze back-up",
+        "description": "De back-up bevatte deze nooit, dus de herstelde werkruimte heeft ze niet. Alles hierboven geteld is teruggezet.",
+        "invoices": "Facturen en producten",
+        "reconciliation": "Afstemmingsregels en -geschiedenis",
+        "connections": "Bankverbindingen",
+        "plugins": "Plug-ins",
+        "uiLayouts": "Dashboardindelingen",
+        "mortgageAllocations": "Uitsplitsing van leningbetalingen"
+      },
       "openWorkspace": "Werkruimte openen",
       "close": "Sluiten",
       "counts": {

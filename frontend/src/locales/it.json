@@ -2704,6 +2704,16 @@
       "successToast": "«{{name}}» ripristinato",
       "success": "Ripristinato in «{{name}}»",
       "attachmentsMissing": "{{missing}} file allegati mancavano dall'archivio e sono stati saltati.",
+      "leftOut": {
+        "title": "Non presente in questo backup",
+        "description": "Il backup non li ha mai inclusi, quindi lo spazio di lavoro ripristinato non li contiene. Tutto ciò che è contato sopra è stato recuperato.",
+        "invoices": "Fatture e prodotti",
+        "reconciliation": "Regole e cronologia di riconciliazione",
+        "connections": "Connessioni bancarie",
+        "plugins": "Plugin",
+        "uiLayouts": "Layout della dashboard",
+        "mortgageAllocations": "Dettaglio dei pagamenti del prestito"
+      },
       "openWorkspace": "Apri workspace",
       "close": "Chiudi",
       "counts": {

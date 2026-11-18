@@ -2701,6 +2701,16 @@
       "successToast": "„{{name}}“ wiederhergestellt",
       "success": "Wiederhergestellt in „{{name}}“",
       "attachmentsMissing": "{{missing}} Anhangsdateien fehlten im Archiv und wurden übersprungen.",
+      "leftOut": {
+        "title": "Nicht in dieser Sicherung",
+        "description": "Diese Daten waren nie in der Sicherung enthalten, daher fehlen sie im wiederhergestellten Workspace. Alles oben Gezählte wurde zurückgespielt.",
+        "invoices": "Rechnungen und Produkte",
+        "reconciliation": "Abstimmungsregeln und -verlauf",
+        "connections": "Bankverbindungen",
+        "plugins": "Plugins",
+        "uiLayouts": "Dashboard-Layouts",
+        "mortgageAllocations": "Aufteilung der Darlehenszahlungen"
+      },
       "openWorkspace": "Workspace öffnen",
       "close": "Schließen",
       "counts": {

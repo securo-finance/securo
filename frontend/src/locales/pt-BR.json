@@ -2704,6 +2704,16 @@
       "successToast": "“{{name}}” restaurado",
       "success": "Restaurado em “{{name}}”",
       "attachmentsMissing": "{{missing}} arquivos de anexo estavam faltando no arquivo e foram ignorados.",
+      "leftOut": {
+        "title": "Fora deste backup",
+        "description": "O backup nunca trouxe estes itens, então o workspace restaurado não os tem. Tudo o que está contado acima voltou.",
+        "invoices": "Faturas e produtos",
+        "reconciliation": "Regras e histórico de conciliação",
+        "connections": "Conexões bancárias",
+        "plugins": "Plugins",
+        "uiLayouts": "Layouts do painel",
+        "mortgageAllocations": "Detalhamento de pagamentos de empréstimos"
+      },
       "openWorkspace": "Abrir workspace",
       "close": "Fechar",
       "counts": {

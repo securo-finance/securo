@@ -188,6 +188,13 @@ screen. A file missing from the archive — a torn zip, an attachment lost by th
 storage — is counted in the result and skipped: the rest of the restore goes
 through, because the archive is still the best copy of everything else.
 
+The archive carries the books, not everything that hangs off them. Invoices and
+products, reconciliation rules and their history, bank connections, installed
+plugins, dashboard layouts and loan payment breakdowns are not in it. The
+restore completes anyway and reports how many rows of each stayed behind, so the
+new workspace never looks more complete than it is; the rows those families
+point at — payees, accounts, transactions — come back without them.
+
 The in-app archive covers one workspace at a time and is the copy you can carry
 to another instance. It does not replace backing up PostgreSQL and the bucket
 (see [Attachment Storage](#attachment-storage)): a database-only restore does

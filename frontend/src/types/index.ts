@@ -193,6 +193,8 @@ export interface BackupRestoreResult {
   entity_counts: Record<string, number>
   attachments_restored: number
   attachments_missing: number
+  /** Rows the backup never carried, per family, as the archive reported them. */
+  left_out?: Record<string, number>
 }
 
 export type AccountType = 'checking' | 'savings' | 'credit_card' | 'loan' | 'investment' | 'wallet'

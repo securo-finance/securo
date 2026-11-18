@@ -2704,6 +2704,16 @@
       "successToast": "«{{name}}» restaurado",
       "success": "Restaurado em «{{name}}»",
       "attachmentsMissing": "Faltavam {{missing}} ficheiros de anexo no arquivo e foram ignorados.",
+      "leftOut": {
+        "title": "Fora desta cópia de segurança",
+        "description": "A cópia de segurança nunca incluiu estes itens, por isso o espaço de trabalho restaurado não os tem. Tudo o que está contado acima foi recuperado.",
+        "invoices": "Faturas e produtos",
+        "reconciliation": "Regras e histórico de reconciliação",
+        "connections": "Ligações bancárias",
+        "plugins": "Plugins",
+        "uiLayouts": "Disposições do painel",
+        "mortgageAllocations": "Detalhe dos pagamentos de empréstimos"
+      },
       "openWorkspace": "Abrir espaço de trabalho",
       "close": "Fechar",
       "counts": {

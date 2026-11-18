@@ -2860,6 +2860,16 @@
       "successToast": "„{{name}}“ obnoveno",
       "success": "Obnoveno do „{{name}}“",
       "attachmentsMissing": "V archivu chybělo {{missing}} souborů příloh a byly přeskočeny.",
+      "leftOut": {
+        "title": "V této záloze není",
+        "description": "Záloha je nikdy neobsahovala, takže obnovený pracovní prostor je nemá. Vše spočítané výše se obnovilo.",
+        "invoices": "Faktury a produkty",
+        "reconciliation": "Pravidla a historie párování",
+        "connections": "Bankovní připojení",
+        "plugins": "Pluginy",
+        "uiLayouts": "Rozvržení panelu",
+        "mortgageAllocations": "Rozpis splátek úvěru"
+      },
       "openWorkspace": "Otevřít pracovní prostor",
       "close": "Zavřít",
       "counts": {

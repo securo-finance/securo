@@ -42,6 +42,7 @@ from app.services.backup_service import (
     ATTACHMENTS_PREFIX,
     EXPORTED_ENTITIES,
     JOIN_TABLES,
+    OUT_OF_SCOPE_FAMILIES,
     _JOIN_TABLE_OBJECTS,
 )
 
@@ -100,6 +101,10 @@ class RestoreResult:
     entity_counts: dict[str, int]
     attachments_restored: int
     attachments_missing: int
+    #: What the archive said it left behind, per family (see
+    #: `backup_service.OUT_OF_SCOPE_FAMILIES`). Never a refusal: the rest of the
+    #: backup is the best copy of everything else the person has.
+    left_out: dict[str, int] = field(default_factory=dict)
 
 
 #: Which tables a column points at, by the entity file name. Every id is
@@ -311,6 +316,25 @@ def _check_budget_duplicates(contents: ArchiveContents) -> None:
                 "every restored row belongs to one person, who keeps one budget per category and month."
             )
         seen.add(key)
+
+
+def _read_left_out(metadata: dict[str, Any]) -> dict[str, int]:
+    """What the archive says it did not carry, keyed by a family this code knows.
+
+    Advisory in both directions. An archive written before the key existed has
+    none, and restores as it always did; an unknown family, a negative or a
+    non-number is dropped rather than echoed back to the caller, because
+    `metadata.json` is whatever the uploaded file says it is.
+    """
+    raw = metadata.get("left_out")
+    if not isinstance(raw, dict):
+        return {}
+    counts: dict[str, int] = {}
+    for family in OUT_OF_SCOPE_FAMILIES:
+        value = raw.get(family)
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            counts[family] = value
+    return counts
 
 
 def _coerce(column, value: Any) -> Any:
@@ -604,4 +628,5 @@ async def restore_workspace(
         entity_counts=counts,
         attachments_restored=restored,
         attachments_missing=missing,
+        left_out=_read_left_out(contents.metadata),
     )

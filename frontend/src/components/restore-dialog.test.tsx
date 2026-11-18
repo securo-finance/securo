@@ -82,9 +82,31 @@ describe('RestoreDialog', () => {
     // The counts are what the person checks the restore against.
     expect(screen.getByText('7')).toBeInTheDocument()
     expect(screen.getByText(String(restored.attachments_restored))).toBeInTheDocument()
+    // This archive carried everything, so there is nothing to warn about.
+    expect(screen.queryByText(t('backup.restore.leftOut.title'))).not.toBeInTheDocument()
     // The new workspace must appear in the switcher even if the dialog is
     // closed from here.
     expect(workspace.refresh).toHaveBeenCalled()
+  })
+
+  it('says what the backup left out, so a partial restore does not look complete', async () => {
+    ;(backupApi.restore as Mock).mockResolvedValue({
+      ...restored,
+      left_out: { invoices: 3, ui_layouts: 1 },
+    })
+    const { user } = renderDialog()
+
+    await submitBackup(user)
+
+    expect(await screen.findByText(t('backup.restore.leftOut.title'))).toBeInTheDocument()
+    const invoices = screen.getByText(t('backup.restore.leftOut.invoices')).closest('li')
+    expect(invoices).toHaveTextContent('3')
+    const layouts = screen.getByText(t('backup.restore.leftOut.uiLayouts')).closest('li')
+    expect(layouts).toHaveTextContent('1')
+    // A family the archive did not report is not invented for the list.
+    expect(
+      screen.queryByText(t('backup.restore.leftOut.connections')),
+    ).not.toBeInTheDocument()
   })
 
   it('opens no password field it does not need: an unencrypted archive goes as is', async () => {

@@ -14,12 +14,14 @@ from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.providers as providers_module
 from app.core.config import get_settings
+from app.core.database import Base
 from app.services import restore_service
+from app.services.backup_service import EXPORTED_ENTITIES
 from app.models.account import Account
 from app.models.asset import Asset
 from app.models.asset_group import AssetGroup
@@ -32,13 +34,18 @@ from app.models.goal import Goal
 from app.models.group import Group, GroupMember
 from app.models.group_settlement import GroupSettlement
 from app.models.import_log import ImportLog
+from app.models.invoice import Invoice, InvoiceLine
+from app.models.mortgage_payment_allocation import MortgagePaymentAllocation
 from app.models.payee import Payee, PayeeTaxId
+from app.models.reconciliation import ReconciliationRule
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.rule import Rule
 from app.models.transaction import Transaction
 from app.models.transaction_attachment import TransactionAttachment
 from app.models.transaction_split import TransactionSplit
+from app.models.ui_layout import UiLayout
 from app.models.user import User
+from app.models.workspace_plugin import WorkspacePlugin
 from app.models.workspace import Workspace, WorkspaceMember, WorkspaceTaxId
 
 TINY_PNG = bytes.fromhex(
@@ -291,6 +298,103 @@ async def _seed_rich_workspace(session: AsyncSession, client: AsyncClient, heade
     return {"workspace_id": workspace_id, "transaction_id": first.id}
 
 
+#: One row per family a backup does not carry, so a test can prove the export
+#: counts them and the restore says so. The bank connection is the one the
+#: `test_account` fixture already creates in this workspace.
+_LEFT_OUT_ROWS = {
+    "invoices": 2,  # the invoice and its line
+    "reconciliation": 1,
+    "connections": 1,
+    "plugins": 1,
+    "ui_layouts": 1,
+    "mortgage_allocations": 1,
+}
+
+
+async def _seed_out_of_scope_rows(session: AsyncSession, user, workspace_id, transaction) -> None:
+    """Rows from every family format 1.1 leaves behind, in the source workspace."""
+    today = date.today()
+    invoice = Invoice(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        workspace_id=workspace_id,
+        series="A",
+        number=7,
+        status="open",
+        issue_date=today,
+        due_date=today,
+        subtotal=Decimal("90.00"),
+        total=Decimal("90.00"),
+        currency="BRL",
+    )
+    session.add(invoice)
+    await session.flush()
+    session.add(
+        InvoiceLine(
+            id=uuid.uuid4(),
+            invoice_id=invoice.id,
+            workspace_id=workspace_id,
+            description="Consultoria",
+            unit_price=Decimal("90.00"),
+            total=Decimal("90.00"),
+        )
+    )
+    session.add(
+        ReconciliationRule(
+            id=uuid.uuid4(),
+            workspace_id=workspace_id,
+            user_id=user.id,
+            node="invoices",
+            strategy_id="same-client-net",
+            origin="custom",
+            name="Cliente e valor",
+            config={"amount_tolerance": "0.01"},
+        )
+    )
+    session.add(
+        WorkspacePlugin(
+            id=uuid.uuid4(),
+            workspace_id=workspace_id,
+            plugin_id="demo-bank",
+            name={"en": "Demo bank"},
+            version="1.0.0",
+            commit="a" * 40,
+            installed_by=user.id,
+        )
+    )
+    session.add(
+        UiLayout(
+            id=uuid.uuid4(),
+            user_id=user.id,
+            workspace_id=workspace_id,
+            surface="dashboard",
+            items=[{"id": "net-worth"}],
+        )
+    )
+    loan = Account(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        workspace_id=workspace_id,
+        name="Financiamento",
+        type="loan",
+        balance=Decimal("-90000.00"),
+        currency="BRL",
+    )
+    session.add(loan)
+    await session.flush()
+    session.add(
+        MortgagePaymentAllocation(
+            id=uuid.uuid4(),
+            workspace_id=workspace_id,
+            payment_transaction_id=transaction.id,
+            loan_account_id=loan.id,
+            principal_amount=Decimal("800.00"),
+            interest_amount=Decimal("200.00"),
+        )
+    )
+    await session.commit()
+
+
 @pytest.mark.asyncio
 async def test_round_trip_carries_every_entity_and_its_ids(
     client: AsyncClient,
@@ -458,6 +562,128 @@ async def test_round_trip_carries_every_entity_and_its_ids(
         )
     ).scalars().all()
     assert len(original_count) == len(test_transactions)
+
+
+@pytest.mark.asyncio
+async def test_a_backup_that_leaves_rows_out_still_restores_and_says_so(
+    client: AsyncClient,
+    session: AsyncSession,
+    auth_headers,
+    test_user: User,
+    test_account: Account,
+    test_transactions: list[Transaction],
+    test_categories: list[Category],
+    test_rules: list[Rule],
+    storage,
+):
+    """Criterion 3 of #198: a backup taken from an instance using the families
+    the first delivery leaves out is still restorable, and the restore says what
+    stayed behind instead of aborting or looking complete.
+
+    The warning is the point. A restore whose result reads "transactions: 12"
+    and nothing else is a person believing they have everything back.
+    """
+    seeded = await _seed_rich_workspace(
+        session, client, auth_headers, test_user, test_account, test_transactions, test_categories
+    )
+    await _seed_out_of_scope_rows(
+        session, test_user, seeded["workspace_id"], test_transactions[0]
+    )
+
+    exported = await client.get("/api/export/backup", headers=auth_headers)
+    assert exported.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(exported.content)) as zf:
+        metadata = json.loads(zf.read("metadata.json"))
+    # The archive itself records what it did not carry...
+    assert metadata["left_out"] == _LEFT_OUT_ROWS
+
+    restored = await _restore(client, auth_headers, exported.content)
+    # ...and the restore completes anyway: another family's rows are no reason
+    # to refuse the rest of somebody's books.
+    assert restored.status_code == 201, restored.text
+    body = restored.json()
+    assert body["left_out"] == _LEFT_OUT_ROWS
+    assert body["entity_counts"]["transactions"] == len(test_transactions)
+    assert body["attachments_restored"] == 1
+
+    new_workspace = uuid.UUID(body["workspace_id"])
+    for model in (
+        Invoice,
+        InvoiceLine,
+        ReconciliationRule,
+        WorkspacePlugin,
+        UiLayout,
+        MortgagePaymentAllocation,
+    ):
+        count = (
+            await session.execute(
+                select(func.count()).select_from(model).where(model.workspace_id == new_workspace)
+            )
+        ).scalar_one()
+        assert count == 0, model.__tablename__
+
+
+@pytest.mark.asyncio
+async def test_restore_leaves_no_dangling_foreign_key(
+    client: AsyncClient,
+    session: AsyncSession,
+    auth_headers,
+    test_user: User,
+    test_account: Account,
+    test_transactions: list[Transaction],
+    test_categories: list[Category],
+    test_rules: list[Rule],
+    storage,
+):
+    """Criterion 2 of #198: every foreign key in the restored rows resolves.
+
+    A restore re-keys every row, so a reference the copy forgot is a column
+    pointing at an id that only ever existed in the source workspace. Nulling
+    the columns that point outside the archive (`_EXTERNAL_REFERENCES`) is
+    deliberate; anything else that does not resolve is a bug. The check is
+    generic on purpose: a table added to the archive without its references
+    caught here is caught before somebody's data is.
+    """
+    await _seed_rich_workspace(
+        session, client, auth_headers, test_user, test_account, test_transactions, test_categories
+    )
+    exported = await client.get("/api/export/backup", headers=auth_headers)
+    restored = await _restore(client, auth_headers, exported.content)
+    assert restored.status_code == 201, restored.text
+    new_workspace = uuid.UUID(restored.json()["workspace_id"])
+
+    # What exists on the other side, so a value can be checked against it.
+    known: dict[str, set] = {}
+    for entity in EXPORTED_ENTITIES:
+        table = entity.model.__table__
+        known[table.name] = set(
+            (
+                await session.execute(
+                    select(table.c.id).where(table.c.workspace_id == new_workspace)
+                )
+            ).scalars().all()
+        )
+    for name in ("users", "workspaces"):
+        table = Base.metadata.tables[name]
+        known[name] = set((await session.execute(select(table.c.id))).scalars().all())
+
+    dangling: list[str] = []
+    for entity in EXPORTED_ENTITIES:
+        table = entity.model.__table__
+        rows = (
+            await session.execute(select(table).where(table.c.workspace_id == new_workspace))
+        ).mappings().all()
+        for column in table.columns:
+            targets = [fk.column.table.name for fk in column.foreign_keys]
+            if not targets:
+                continue
+            for row in rows:
+                value = row[column.key]
+                if value is None:
+                    continue
+                if not any(value in known.get(name, set()) for name in targets):
+                    dangling.append(f"{table.name}.{column.key} = {value}")
+    assert dangling == []
 
 
 @pytest.mark.asyncio

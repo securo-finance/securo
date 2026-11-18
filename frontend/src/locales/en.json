@@ -2700,6 +2700,16 @@
       "successToast": "“{{name}}” restored",
       "success": "Restored into “{{name}}”",
       "attachmentsMissing": "{{missing}} attachment files were missing from the archive and were skipped.",
+      "leftOut": {
+        "title": "Not in this backup",
+        "description": "The backup never carried these, so the restored workspace does not have them. Everything counted above came back.",
+        "invoices": "Invoices and products",
+        "reconciliation": "Reconciliation rules and history",
+        "connections": "Bank connections",
+        "plugins": "Plugins",
+        "uiLayouts": "Dashboard layouts",
+        "mortgageAllocations": "Loan payment breakdowns"
+      },
       "openWorkspace": "Open workspace",
       "close": "Close",
       "counts": {

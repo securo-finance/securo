@@ -25,3 +25,8 @@ class RestoreResult(BaseModel):
     entity_counts: dict[str, int]
     attachments_restored: int
     attachments_missing: int
+    #: Rows the backup never carried, per family (`invoices`, `reconciliation`,
+    #: `connections`, `plugins`, `ui_layouts`, `mortgage_allocations`), as the
+    #: archive itself reported them. Empty for an archive that left nothing out
+    #: and for one written before the export counted them.
+    left_out: dict[str, int] = Field(default_factory=dict)

@@ -2700,6 +2700,16 @@
       "successToast": "„{{name}}” visszaállítva",
       "success": "Visszaállítva ide: „{{name}}”",
       "attachmentsMissing": "{{missing}} mellékletfájl hiányzott az archívumból, ezek kimaradtak.",
+      "leftOut": {
+        "title": "Nincs ebben a biztonsági mentésben",
+        "description": "A mentés soha nem tartalmazta ezeket, ezért a visszaállított munkaterületen nincsenek meg. Minden fentebb számolt elem visszaállt.",
+        "invoices": "Számlák és termékek",
+        "reconciliation": "Egyeztetési szabályok és előzmények",
+        "connections": "Banki kapcsolatok",
+        "plugins": "Bővítmények",
+        "uiLayouts": "Irányítópult-elrendezések",
+        "mortgageAllocations": "Hitel törlesztésének bontása"
+      },
       "openWorkspace": "Munkaterület megnyitása",
       "close": "Bezárás",
       "counts": {

@@ -2704,6 +2704,16 @@
       "successToast": "«{{name}}» restaurado",
       "success": "Restaurado en «{{name}}»",
       "attachmentsMissing": "Faltaban {{missing}} archivos adjuntos en el archivo y se omitieron.",
+      "leftOut": {
+        "title": "No está en esta copia de seguridad",
+        "description": "La copia de seguridad nunca incluyó estos elementos, así que el espacio de trabajo restaurado no los tiene. Todo lo contado arriba se recuperó.",
+        "invoices": "Facturas y productos",
+        "reconciliation": "Reglas e historial de conciliación",
+        "connections": "Conexiones bancarias",
+        "plugins": "Plugins",
+        "uiLayouts": "Diseños del panel",
+        "mortgageAllocations": "Desglose de pagos de préstamos"
+      },
       "openWorkspace": "Abrir espacio de trabajo",
       "close": "Cerrar",
       "counts": {

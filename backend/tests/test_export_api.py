@@ -17,7 +17,7 @@ from app.models.category import Category
 from app.models.rule import Rule
 from app.models.transaction import Transaction
 from app.models.user import User
-from app.services.backup_service import EXPORTED_ENTITIES
+from app.services.backup_service import EXPORTED_ENTITIES, OUT_OF_SCOPE_FAMILIES
 
 
 @pytest.mark.asyncio
@@ -44,6 +44,8 @@ async def test_backup_empty(client: AsyncClient, auth_headers):
         assert "export_date" in metadata
         for count in metadata["entity_counts"].values():
             assert count == 0
+        # Nothing to warn about: no out-of-scope family has a row here.
+        assert metadata["left_out"] == {}
 
 
 @pytest.mark.asyncio
@@ -227,5 +229,21 @@ def test_every_exported_entity_is_workspace_scoped():
         entity.name
         for entity in EXPORTED_ENTITIES
         if "workspace_id" not in getattr(entity.model, "__table__").columns.keys()
+    ]
+    assert missing == []
+
+
+def test_every_out_of_scope_entity_is_workspace_scoped():
+    """The "left out" counts are this workspace's rows, so the same rule holds.
+
+    A model in `OUT_OF_SCOPE_FAMILIES` without `workspace_id` would either
+    count another workspace's rows or fail the export outright, so it has to be
+    caught when someone adds a family, not on somebody's backup.
+    """
+    missing = [
+        f"{family}.{model.__tablename__}"
+        for family, models in OUT_OF_SCOPE_FAMILIES.items()
+        for model in models
+        if "workspace_id" not in model.__table__.columns.keys()
     ]
     assert missing == []

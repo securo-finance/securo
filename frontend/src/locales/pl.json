@@ -2812,6 +2812,16 @@
       "successToast": "Przywrócono „{{name}}”",
       "success": "Przywrócono do „{{name}}”",
       "attachmentsMissing": "W archiwum brakowało {{missing}} plików załączników; zostały pominięte.",
+      "leftOut": {
+        "title": "Brak w tej kopii zapasowej",
+        "description": "Kopia nigdy ich nie zawierała, więc odtworzona przestrzeń robocza ich nie ma. Wszystko policzone powyżej zostało przywrócone.",
+        "invoices": "Faktury i produkty",
+        "reconciliation": "Reguły i historia uzgadniania",
+        "connections": "Połączenia bankowe",
+        "plugins": "Wtyczki",
+        "uiLayouts": "Układy pulpitu",
+        "mortgageAllocations": "Rozbicie spłat kredytu"
+      },
       "openWorkspace": "Otwórz przestrzeń roboczą",
       "close": "Zamknij",
       "counts": {

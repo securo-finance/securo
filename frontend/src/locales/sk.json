@@ -2844,6 +2844,16 @@
       "successToast": "„{{name}}“ obnovené",
       "success": "Obnovené do „{{name}}“",
       "attachmentsMissing": "V archíve chýbalo {{missing}} súborov príloh a boli preskočené.",
+      "leftOut": {
+        "title": "V tejto zálohe nie je",
+        "description": "Záloha ich nikdy neobsahovala, takže obnovený pracovný priestor ich nemá. Všetko spočítané vyššie sa obnovilo.",
+        "invoices": "Faktúry a produkty",
+        "reconciliation": "Pravidlá a história párovania",
+        "connections": "Bankové pripojenia",
+        "plugins": "Pluginy",
+        "uiLayouts": "Rozloženia panelu",
+        "mortgageAllocations": "Rozpis splátok úveru"
+      },
       "openWorkspace": "Otvoriť pracovný priestor",
       "close": "Zavrieť",
       "counts": {

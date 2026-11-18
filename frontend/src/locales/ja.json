@@ -2700,6 +2700,16 @@
       "successToast": "「{{name}}」を復元しました",
       "success": "「{{name}}」に復元しました",
       "attachmentsMissing": "アーカイブに {{missing}} 件の添付ファイルが見つからず、スキップしました。",
+      "leftOut": {
+        "title": "このバックアップには含まれません",
+        "description": "これらはバックアップに含まれていないため、復元したワークスペースにもありません。上に表示した件数はすべて復元されています。",
+        "invoices": "請求書と商品",
+        "reconciliation": "照合ルールと履歴",
+        "connections": "銀行接続",
+        "plugins": "プラグイン",
+        "uiLayouts": "ダッシュボードのレイアウト",
+        "mortgageAllocations": "ローン返済の内訳"
+      },
       "openWorkspace": "ワークスペースを開く",
       "close": "閉じる",
       "counts": {

@@ -2704,6 +2704,16 @@
       "successToast": "« {{name}} » restauré",
       "success": "Restauré dans « {{name}} »",
       "attachmentsMissing": "{{missing}} fichiers joints manquaient dans l'archive et ont été ignorés.",
+      "leftOut": {
+        "title": "Absent de cette sauvegarde",
+        "description": "La sauvegarde ne les a jamais inclus, l'espace de travail restauré ne les contient donc pas. Tout ce qui est compté ci-dessus a bien été restauré.",
+        "invoices": "Factures et produits",
+        "reconciliation": "Règles et historique de rapprochement",
+        "connections": "Connexions bancaires",
+        "plugins": "Plugins",
+        "uiLayouts": "Dispositions du tableau de bord",
+        "mortgageAllocations": "Détail des remboursements de prêt"
+      },
       "openWorkspace": "Ouvrir l'espace de travail",
       "close": "Fermer",
       "counts": {
