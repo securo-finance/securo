@@ -57,7 +57,11 @@ export function MemberForm({
               const picked = userDirectory?.find((u) => u.id === id)
               if (picked) {
                 onChangeEmail(picked.email)
-                onChangeName(picked.email.split('@')[0])
+                // The linked person's own name; the local part of the address
+                // is only a stand-in for someone who never set one.
+                onChangeName(
+                  picked.display_name?.trim() || picked.email.split('@')[0],
+                )
               }
             }
           }}

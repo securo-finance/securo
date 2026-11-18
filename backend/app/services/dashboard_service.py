@@ -521,6 +521,16 @@ async def get_summary(
         group_ids=(asset_group_ids or []) if filtered else None,
     )
 
+    # Cash vs investment *accounts* (issue #959). Same cutoff / account filter
+    # as total_balance, but typed so the UI never labels brokerage cash as
+    # "available". Net worth (total_balance) still includes both + assets.
+    cash_balance = await _total_balance_by_currency(
+        session, workspace_id, cutoff, account_ids, account_types=_CASH_ACCOUNT_TYPES,
+    )
+    investment_accounts = await _total_balance_by_currency(
+        session, workspace_id, cutoff, account_ids, account_types=_INVESTMENT_ACCOUNT_TYPES,
+    )
+
     # Add asset values to total balance
     for currency, amount in assets_value.items():
         total_balance[currency] = total_balance.get(currency, 0.0) + amount
@@ -535,7 +545,18 @@ async def get_summary(
     projected_balance_primary, projected_fx_fallback = await _sum_to_primary(
         session, projected_balance, primary_currency, cutoff
     )
-    fx_fallback = fx_fallback or projected_fx_fallback
+    cash_balance_primary, cash_fx_fallback = await _sum_to_primary(
+        session, cash_balance, primary_currency, cutoff
+    )
+    investment_accounts_primary, investment_fx_fallback = await _sum_to_primary(
+        session, investment_accounts, primary_currency, cutoff
+    )
+    fx_fallback = (
+        fx_fallback
+        or projected_fx_fallback
+        or cash_fx_fallback
+        or investment_fx_fallback
+    )
 
     # Convert income/expenses to primary currency using amount_primary when available
     # Use real-only totals (without projections) to avoid double-counting;
@@ -701,6 +722,10 @@ async def get_summary(
         pending_categorization_amount=pending_categorization_amount,
         assets_value=assets_value,
         assets_value_primary=round(assets_value_primary, 2),
+        cash_balance=cash_balance,
+        cash_balance_primary=round(cash_balance_primary, 2),
+        investment_accounts=investment_accounts,
+        investment_accounts_primary=round(investment_accounts_primary, 2),
         primary_currency=primary_currency,
         fx_fallback=fx_fallback,
         pending_shares_net=round(pending_shares_net, 2),
@@ -1323,8 +1348,12 @@ async def _get_open_accounts(
     session: AsyncSession,
     workspace_id: uuid.UUID,
     account_ids: Optional[list[uuid.UUID]] = None,
+    closed_after: Optional[date] = None,
 ) -> list[Account]:
     """Get all non-closed accounts for a workspace.
+
+    ``closed_after`` also returns accounts closed after that date, for
+    snapshots taken while they were still open.
 
     When ``account_ids`` is provided (an active Collection filter, issue #105),
     restrict to that subset. An empty list returns no accounts — a collection
@@ -1340,7 +1369,8 @@ async def _get_open_accounts(
                 Account.workspace_id == workspace_id,
                 BankConnection.workspace_id == workspace_id,
             ),
-            Account.is_closed == False,
+            or_(Account.is_closed == False, Account.closed_at > closed_after)
+            if closed_after else Account.is_closed == False,
         )
     )
     if account_ids:
@@ -1436,14 +1466,27 @@ async def _account_balance_at(
         return float(result or 0)
 
 
+# Account types treated as spendable / near-liquid cash on the dashboard.
+# Investment brokerage accounts and credit cards are excluded on purpose.
+_CASH_ACCOUNT_TYPES = frozenset({"checking", "savings", "wallet"})
+_INVESTMENT_ACCOUNT_TYPES = frozenset({"investment"})
+
+
 async def _total_balance_by_currency(
     session: AsyncSession, workspace_id: uuid.UUID, cutoff: date,
     account_ids: Optional[list[uuid.UUID]] = None,
     *,
     include_pending: bool = False,
+    account_types: Optional[frozenset[str]] = None,
 ) -> dict[str, float]:
-    """Get total balance across all open accounts at a date, grouped by currency."""
+    """Get total balance across open accounts at a date, grouped by currency.
+
+    When ``account_types`` is set, only accounts whose ``type`` is in that set
+    are included (used to split cash vs investment without changing net worth).
+    """
     accounts = await _get_open_accounts(session, workspace_id, account_ids)
+    if account_types is not None:
+        accounts = [a for a in accounts if a.type in account_types]
     if not accounts:
         return {}
 

@@ -95,6 +95,35 @@ async def test_list_accounts_primary_currency_has_no_fallback_flag(
     assert brl["fx_fallback"] is False
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code", ["rsd", " RSD", "Rsd "])
+async def test_list_accounts_converts_a_non_canonical_currency_code(
+    client: AsyncClient, auth_headers, session: AsyncSession, code: str
+):
+    """A code stored in another case or with spaces still finds its rate (#1474).
+
+    The rate lookup matched the code literally, so an account saved as "rsd"
+    got no rate, fell back to its raw amount and was summed 1:1 into a EUR
+    total, while the reverse direction (a canonical EUR account under an RSD
+    primary) converted fine.
+    """
+    session.add_all([
+        FxRate(base_currency="USD", quote_currency="RSD", date=app_today(),
+               rate=Decimal("100"), source="test"),
+        FxRate(base_currency="USD", quote_currency="BRL", date=app_today(),
+               rate=Decimal("5"), source="test"),
+    ])
+    await session.commit()
+    await client.post(
+        "/api/accounts", headers=auth_headers,
+        json={"name": "Wallet", "type": "checking", "balance": "-1000.00", "currency": code},
+    )
+    resp = await client.get("/api/accounts", headers=auth_headers)
+    wallet = next(a for a in resp.json() if a["name"] == "Wallet")
+    assert wallet["fx_fallback"] is False
+    assert wallet["balance_primary"] == pytest.approx(-50.0)
+
+
 # ---------------------------------------------------------------------------
 # get_account
 # ---------------------------------------------------------------------------
