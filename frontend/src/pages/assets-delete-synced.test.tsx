@@ -27,6 +27,7 @@ vi.mock('@/contexts/auth-context', () => ({
 vi.mock('@/contexts/workspace-context', () => ({
   useWorkspace: () => ({ canWrite: true }),
 }))
+vi.mock('@/hooks/use-timezone', () => ({ useEffectiveTimezone: () => 'UTC' }))
 vi.mock('@/contexts/collection-filter-context', () => ({
   useCollectionFilter: () => ({ activeWalletIds: null }),
 }))
@@ -43,6 +44,7 @@ function asset(overrides: Partial<Asset>): Asset {
     current_value: 1000, current_value_primary: 1000, gain_loss: null, gain_loss_primary: null,
     value_count: 0, source: 'manual', connection_id: null, isin: null, maturity_date: null,
     group_id: null, ticker: null, ticker_exchange: null, last_price: null, last_price_at: null,
+    provider_value_date: null,
     logo_url: null, average_price: null, total_invested: null, realized_gain: null,
     transaction_count: 0,
     ...overrides,
@@ -60,7 +62,9 @@ beforeEach(() => {
 
 describe('Deleting an asset a bank connection imported', () => {
   it('lets the user delete it and says a sync with asset import on brings it back', async () => {
-    api.assets.list.mockResolvedValue([asset({ source: 'pluggy', connection_id: 'conn-1' })])
+    api.assets.list
+      .mockResolvedValueOnce([asset({ source: 'pluggy', connection_id: 'conn-1' })])
+      .mockResolvedValue([])
     const user = userEvent.setup()
     renderWithProviders(<AssetsPage />)
 
@@ -74,6 +78,10 @@ describe('Deleting an asset a bank connection imported', () => {
     await user.click(within(dialog).getByRole('button', { name: t('common.delete') }))
 
     await waitFor(() => expect(api.assets.delete).toHaveBeenCalledWith('asset-1'))
+    // Deleting finishes in the page, not only at the client: the confirmation
+    // closes and the holding leaves the list once the list is refetched.
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByText('CDB Banco')).not.toBeInTheDocument())
   })
 
   it('does not warn about a sync for a manual asset', async () => {
