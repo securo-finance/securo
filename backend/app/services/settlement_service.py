@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import case, or_, select
@@ -82,6 +83,8 @@ async def _create_payment_transaction(
     account = account_result.scalar_one_or_none()
     if account is None:
         raise ValueError("Account not found")
+    if account.user_id != user_id:
+        raise ValueError("Payment account must belong to the settlement payer")
 
     tx = Transaction(
         id=uuid.uuid4(),
@@ -206,21 +209,63 @@ async def _validate_members_in_group(
         raise ValueError("Settlement members must belong to the group")
 
 
-async def _validate_transaction(
+async def _validate_payer_debit(
     session: AsyncSession,
     transaction_id: Optional[uuid.UUID],
     workspace_id: uuid.UUID,
+    group: Group,
+    from_member_id: uuid.UUID,
+    amount: Decimal,
+    currency: str,
+    *,
+    allow_generated_resize: bool = False,
 ) -> None:
     if transaction_id is None:
         return
     result = await session.execute(
-        select(Transaction).where(
+        select(Transaction, Account.user_id, GroupMember.linked_user_id, GroupMember.is_self)
+        .join(Account, Transaction.account_id == Account.id)
+        .join(GroupMember, GroupMember.id == from_member_id)
+        .where(
             Transaction.id == transaction_id,
             Transaction.workspace_id == workspace_id,
+            Account.workspace_id == workspace_id,
+            GroupMember.group_id == group.id,
         )
     )
-    if result.scalar_one_or_none() is None:
+    row = result.one_or_none()
+    if row is None:
         raise ValueError("Linked transaction not found")
+    transaction, account_user_id, payer_user_id, payer_is_self = row
+    if transaction.type != "debit":
+        raise ValueError("Linked transaction must be a payer debit")
+    expected_payer_id = payer_user_id or (group.user_id if payer_is_self else None)
+    if expected_payer_id is None or account_user_id != expected_payer_id:
+        raise ValueError("Linked transaction must belong to the settlement payer")
+    if allow_generated_resize and transaction.source == "settlement":
+        return
+    transaction_amount = abs(Decimal(str(transaction.amount)))
+    if transaction.currency == currency:
+        comparable_amount = transaction_amount
+    elif (
+        transaction.amount_primary is not None
+        and transaction.amount_primary_currency == currency
+    ):
+        comparable_amount = abs(Decimal(str(transaction.amount_primary)))
+    else:
+        from app.services.fx_rate_service import _resolve_rate
+
+        rate = await _resolve_rate(
+            session, transaction.currency, currency, transaction.date,
+            allow_fetch=False,
+        )
+        if rate is None:
+            raise ValueError(
+                "Cannot validate linked payer debit without an available FX rate"
+            )
+        comparable_amount = (transaction_amount * rate).quantize(Decimal("0.01"))
+    if comparable_amount < Decimal(str(amount)):
+        raise ValueError("Linked payer debit must cover the settlement amount")
 
 
 async def list_settlements(
@@ -252,14 +297,18 @@ async def create_settlement(
 
     if not await _can_settle_from(session, group, user_id, data.from_member_id):
         # Linked members may only record payments they themselves made.
-        raise PermissionError(
-            "You can only record settlements where you are the payer"
-        )
+        raise PermissionError("You can only record settlements where you are the payer")
 
-    await _validate_members_in_group(
-        session, group_id, [data.from_member_id, data.to_member_id]
+    await _validate_members_in_group(session, group_id, [data.from_member_id, data.to_member_id])
+    await _validate_payer_debit(
+        session,
+        data.transaction_id,
+        workspace_id,
+        group,
+        data.from_member_id,
+        data.amount,
+        data.currency,
     )
-    await _validate_transaction(session, data.transaction_id, workspace_id)
 
     payload = data.model_dump()
     account_id = payload.pop("account_id", None)
@@ -296,10 +345,20 @@ async def create_settlement(
                 "Pass either account_id (to create a transaction) or "
                 "transaction_id (to link an existing one), not both"
             )
+        payer_meta = member_meta.get(data.from_member_id)
+        expected_payer_user_id = (
+            payer_meta.linked_user_id
+            if payer_meta is not None
+            else None
+        )
+        if expected_payer_user_id is None and payer_meta is not None and payer_meta.is_self:
+            expected_payer_user_id = group.user_id
+        if expected_payer_user_id is None:
+            raise ValueError("Cannot create a payment for an unlinked settlement payer")
         auto_desc = description or f"Acerto · {group.name} · {to_name}"
         tx = await _create_payment_transaction(
             session,
-            user_id,
+            expected_payer_user_id,
             workspace_id,
             account_id,
             data.amount,
@@ -313,7 +372,10 @@ async def create_settlement(
     # user and has a checking/savings account, record the cash-in side
     # so their books reflect the actual money received.
     receiver_tx_id = None
-    if receiver_user_id is not None:
+    # Only mirror a cash receipt when this settlement also records a payer
+    # transaction. Administrative ledger-only settlements must not invent
+    # income in the receiver's account.
+    if receiver_user_id is not None and payload.get("transaction_id") is not None:
         receiver_desc = description or f"Acerto · {group.name} · {from_name}"
         receiver_tx = await _create_receiver_credit(
             session,
@@ -328,9 +390,7 @@ async def create_settlement(
             receiver_tx_id = receiver_tx.id
     payload["receiver_transaction_id"] = receiver_tx_id
 
-    settlement = GroupSettlement(
-        group_id=group_id, workspace_id=workspace_id, **payload
-    )
+    settlement = GroupSettlement(group_id=group_id, workspace_id=workspace_id, **payload)
     session.add(settlement)
     await session.commit()
     await session.refresh(settlement)
@@ -350,10 +410,12 @@ async def update_settlement(
         return None
 
     result = await session.execute(
-        select(GroupSettlement).where(
+        select(GroupSettlement)
+        .where(
             GroupSettlement.id == settlement_id,
             GroupSettlement.group_id == group_id,
         )
+        .with_for_update()
     )
     settlement = result.scalar_one_or_none()
     if not settlement:
@@ -379,11 +441,121 @@ async def update_settlement(
     if member_check:
         await _validate_members_in_group(session, group_id, member_check)
 
-    if "transaction_id" in update_data:
-        await _validate_transaction(session, update_data["transaction_id"], workspace_id)
+    payer_transaction_id = update_data.get("transaction_id", settlement.transaction_id)
+    payer_transaction = None
+    if payer_transaction_id is not None:
+        payer_tx_result = await session.execute(
+            select(Transaction).where(Transaction.id == payer_transaction_id).with_for_update()
+        )
+        payer_transaction = payer_tx_result.scalar_one_or_none()
+
+    # Debits created by this service are safe to keep in lockstep with edits to
+    # their settlement. User-linked bank/import transactions remain untouched.
+    generated_payer_debit = (
+        payer_transaction is not None
+        and payer_transaction.id == settlement.transaction_id
+        and payer_transaction.source == "settlement"
+        and not payer_transaction.external_id
+        and not payer_transaction.import_id
+    )
+    if "transaction_id" in update_data or (
+        payer_transaction_id is not None
+        and {"amount", "currency", "from_member_id"}.intersection(update_data)
+    ):
+        await _validate_payer_debit(
+            session,
+            payer_transaction_id,
+            workspace_id,
+            group,
+            update_data.get("from_member_id", settlement.from_member_id),
+            update_data.get("amount", settlement.amount),
+            update_data.get("currency", settlement.currency),
+            allow_generated_resize=generated_payer_debit,
+        )
+        # Unlinking the payer's ledger transaction does not undo the cash the
+        # receiver recorded. Keep that mirrored credit attached to the
+        # settlement so amount/date corrections continue to update it.
+
+    if generated_payer_debit and {"amount", "currency", "date"}.intersection(update_data):
+        payer_transaction.amount = update_data.get("amount", settlement.amount)
+        payer_transaction.currency = update_data.get("currency", settlement.currency)
+        payer_transaction.date = update_data.get("date", settlement.date)
+        payer_transaction.effective_date = payer_transaction.date
+        payer_transaction.amount_primary = None
+        payer_transaction.amount_primary_currency = None
+        payer_transaction.fx_rate_used = None
+        from app.services.fx_rate_service import stamp_primary_amount
+
+        await stamp_primary_amount(session, payer_transaction.user_id, payer_transaction)
+
+    if settlement.receiver_transaction_id and "to_member_id" in update_data:
+        raise ValueError(
+            "Cannot change the receiver while a receiver credit exists. "
+            "Have the receiver delete the linked settlement credit from their "
+            "transaction list, then retry."
+        )
+
+    receiver_tx = None
+    if settlement.receiver_transaction_id and {"amount", "currency", "date"}.intersection(
+        update_data
+    ):
+        receiver_result = await session.execute(
+            select(Transaction)
+            .where(Transaction.id == settlement.receiver_transaction_id)
+            .with_for_update()
+        )
+        receiver_tx = receiver_result.scalar_one_or_none()
+        if (
+            receiver_tx is None
+            or receiver_tx.external_id
+            or receiver_tx.import_id
+        ):
+            raise ValueError(
+                "This receiver credit has a bank/import match. Have the receiver "
+                "unlink that match before editing the settlement."
+            )
 
     for key, value in update_data.items():
         setattr(settlement, key, value)
+
+    if receiver_tx is not None:
+        receiver_tx.amount = settlement.amount
+        receiver_tx.currency = settlement.currency
+        receiver_tx.date = settlement.date
+        receiver_tx.effective_date = settlement.date
+        receiver_tx.amount_primary = None
+        receiver_tx.amount_primary_currency = None
+        receiver_tx.fx_rate_used = None
+        from app.services.fx_rate_service import stamp_primary_amount
+
+        await stamp_primary_amount(session, receiver_tx.user_id, receiver_tx)
+
+    if (
+        "transaction_id" in update_data
+        and settlement.transaction_id is not None
+        and settlement.receiver_transaction_id is None
+    ):
+        receiver_meta_result = await session.execute(
+            select(GroupMember.linked_user_id, GroupMember.is_self).where(
+                GroupMember.id == settlement.to_member_id
+            )
+        )
+        receiver_meta = receiver_meta_result.one_or_none()
+        receiver_user_id = receiver_meta[0] if receiver_meta else None
+        if receiver_user_id is None and receiver_meta and receiver_meta[1]:
+            receiver_user_id = group.user_id
+        if receiver_user_id is not None:
+            receiver_tx = await _create_receiver_credit(
+                session,
+                receiver_user_id,
+                settlement.amount,
+                settlement.currency,
+                settlement.date,
+                f"Acerto · {group.name}",
+                preferred_workspace_id=group.workspace_id,
+            )
+            if receiver_tx is not None:
+                settlement.receiver_transaction_id = receiver_tx.id
 
     await session.commit()
     await session.refresh(settlement)
