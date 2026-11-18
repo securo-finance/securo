@@ -1124,6 +1124,8 @@ export type { TransactionSplitsInput }
 export interface UserLookupResult {
   id: string
   email: string
+  /** The name the person set for themselves; null when they never set one. */
+  display_name: string | null
 }
 
 export const users = {
