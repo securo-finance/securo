@@ -87,33 +87,14 @@
         "priority": 10
       },
       {
-        "key": "pix-recebido",
-        "name": "Pix Recebido",
+        "key": "transferencia",
+        "name": "Transferência entre contas próprias",
         "conditions_op": "and",
         "conditions": [
           {
             "field": "description",
             "op": "regex",
-            "value": "PIX.*RECEBIDO"
-          }
-        ],
-        "actions": [
-          {
-            "op": "set_category",
-            "value": "transfers"
-          }
-        ],
-        "priority": 50
-      },
-      {
-        "key": "transferencia",
-        "name": "Transferência",
-        "conditions_op": "and",
-        "conditions": [
-          {
-            "field": "description",
-            "op": "contains",
-            "value": "TRANSFERENCIA"
+            "value": "MESMA TITULARIDADE|MESMO TITULAR|ENTRE CONTAS|CONTAS? PROPRIAS?"
           }
         ],
         "actions": [
@@ -388,25 +369,6 @@
           }
         ],
         "priority": 10
-      },
-      {
-        "key": "pix-enviado",
-        "name": "Pix Enviado",
-        "conditions_op": "and",
-        "conditions": [
-          {
-            "field": "description",
-            "op": "regex",
-            "value": "PIX.*ENVIADO|PIX.*TRANSF"
-          }
-        ],
-        "actions": [
-          {
-            "op": "set_category",
-            "value": "transfers"
-          }
-        ],
-        "priority": 50
       },
       {
         "key": "estacionamento-pedagio",

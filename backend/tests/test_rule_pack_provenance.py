@@ -125,6 +125,51 @@ async def test_every_pack_installs_whole_and_passes_the_rule_validator(session: 
         await validate_rule_definition(session, workspace_id, rule.conditions, rule.actions)
 
 
+# --- What the BR pack categorizes ----------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("description", "txn_type", "is_transfer"),
+    [
+        # Pix and TED from or to someone else are income and expenses (issue #221).
+        ("PIX RECEBIDO JOAO DA SILVA", "credit", False),
+        ("TRANSFERENCIA RECEBIDA PIX MARIA", "credit", False),
+        ("PIX ENVIADO PADARIA DO ZE", "debit", False),
+        ("PIX TRANSF ENVIADA JOAO DA SILVA", "debit", False),
+        # Money moved between the user's own accounts stays a transfer.
+        ("TED MESMA TITULARIDADE", "debit", True),
+        ("TRANSFERENCIA ENTRE CONTAS", "credit", True),
+        ("PIX ENVIADO CONTA PROPRIA", "debit", True),
+    ],
+)
+async def test_br_pack_files_only_own_account_moves_as_transfers(
+    session: AsyncSession, ids, description, txn_type, is_transfer,
+):
+    from app.services.rule_service import apply_rules_to_transaction
+
+    workspace_id, user_id = ids
+    rules = (await install_rule_pack(session, workspace_id, user_id, "BR", "pt-BR", create_missing_categories=True)).rules
+    transfers_id = next(
+        uuid.UUID(a["value"]) for r in rules if r.source_key == "transferencia"
+        for a in r.actions if a["op"] == "set_category"
+    )
+    account = Account(
+        user_id=user_id, workspace_id=workspace_id, name="Conta", type="checking",
+        balance=Decimal("0"), currency="BRL",
+    )
+    session.add(account)
+    await session.flush()
+    txn = Transaction(
+        user_id=user_id, workspace_id=workspace_id, account_id=account.id, description=description,
+        amount=Decimal("250"), date=date(2026, 11, 3), type=txn_type, currency="BRL", source="manual",
+    )
+
+    await apply_rules_to_transaction(session, user_id, txn)
+
+    assert (txn.category_id == transfers_id) is is_transfer
+
+
 # --- Installing records the origin --------------------------------------------------
 
 
