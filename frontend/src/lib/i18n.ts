@@ -4,6 +4,7 @@ import LanguageDetector from 'i18next-browser-languagedetector'
 
 import ptBR from '@/locales/pt-BR.json'
 import en from '@/locales/en.json'
+import { withBundledForkStrings, withForkStrings } from '@/lib/fork-i18n'
 
 // Keep the default and Brazilian Portuguese bundles available immediately;
 // other languages are separate build assets loaded by i18next when selected.
@@ -30,18 +31,20 @@ export const i18nReady = i18n
         callback(null, {})
         return
       }
-      load().then(
-        ({ default: resource }) => callback(null, resource),
-        (error: Error) => callback(error, false),
-      )
+      load()
+        .then(({ default: resource }) => withForkStrings(language, resource))
+        .then(
+          (resource) => callback(null, resource),
+          (error: Error) => callback(error, false),
+        )
     },
   })
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
     resources: {
-      'pt-BR': { translation: ptBR },
-      en: { translation: en },
+      'pt-BR': { translation: withBundledForkStrings('pt-BR', ptBR) },
+      en: { translation: withBundledForkStrings('en', en) },
     },
     partialBundledLanguages: true,
     initAsync: false,
