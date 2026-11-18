@@ -28,7 +28,10 @@ from app.schemas.workspace import (
     WorkspaceUpdate,
 )
 from app.services import module_service, workspace_service
-from app.services.primary_restamp_service import restamp_user_primary_amounts
+from app.services.primary_restamp_service import (
+    fetch_missing_today_rates,
+    restamp_user_primary_amounts,
+)
 
 router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 
@@ -149,14 +152,18 @@ async def update_workspace(
     timezone = updates.get("timezone")
     if timezone is not None and not is_valid_timezone(timezone):
         raise HTTPException(status_code=400, detail="Invalid IANA timezone")
+    new_currency = updates.get("default_currency")
+    restamp = bool(new_currency) and (user.preferences or {}).get("currency_display") != new_currency
+    if restamp:
+        # Commits on its own, so it runs before any change below.
+        await fetch_missing_today_rates(session, user.id, new_currency)
     for key, value in updates.items():
         setattr(workspace, key, value)
     # Changing the workspace currency follows through to the acting
     # owner's display currency, so the whole app re-renders in the new
     # currency (display is driven by user.currency_display, not the
     # workspace). Other members keep their own currency_display override.
-    new_currency = updates.get("default_currency")
-    if new_currency and (user.preferences or {}).get("currency_display") != new_currency:
+    if restamp:
         prefs = dict(user.preferences or {})
         prefs["currency_display"] = new_currency
         user.preferences = prefs

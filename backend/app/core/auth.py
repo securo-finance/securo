@@ -45,15 +45,36 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         if user_update.password is not None:
             require_local_auth_enabled()
         previous_currency = user.primary_currency
+        previous_preferences = dict(user.preferences or {})
         updated = await super().update(user_update, user, safe=safe, request=request)
         if updated.primary_currency != previous_currency:
-            # Stored primary amounts are in the old currency; totals that sum
-            # them would show old numbers under the new symbol (#1381).
-            from app.services.primary_restamp_service import restamp_user_primary_amounts
-
-            await restamp_user_primary_amounts(self.db_session, updated.id)
-            await self.db_session.commit()
+            await self._restamp_or_revert(updated, previous_preferences)
         return updated
+
+    async def _restamp_or_revert(self, user: User, previous_preferences: dict) -> None:
+        """Follow a display currency change through to the stored amounts.
+
+        Stored primary amounts are in the old currency; totals that sum them
+        would show old numbers under the new symbol (#1381). The adapter has
+        already committed the new preference, so when the restamp fails the
+        old preference is put back: a retry then sees a change and restamps.
+        """
+        from app.services.primary_restamp_service import (
+            fetch_missing_today_rates,
+            restamp_user_primary_amounts,
+        )
+
+        session = self.db_session
+        await fetch_missing_today_rates(session, user.id, user.primary_currency)
+        try:
+            await restamp_user_primary_amounts(session, user.id)
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            await session.refresh(user)
+            user.preferences = previous_preferences
+            await session.commit()
+            raise
 
     async def on_after_register(self, user: User, request: Optional[Request] = None):
         print(f"User {user.id} has registered.")

@@ -5,8 +5,10 @@ currency. A display currency change used to leave the cache in the old
 currency, so totals summing it kept the old numbers under the new symbol.
 """
 import uuid
+from contextlib import asynccontextmanager
 from datetime import date
 from decimal import Decimal
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
@@ -20,7 +22,11 @@ from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.models.workspace import Workspace
-from app.services.primary_restamp_service import restamp_user_primary_amounts
+from app.cli import restamp_primary_amounts
+from app.services.primary_restamp_service import (
+    fetch_missing_today_rates,
+    restamp_user_primary_amounts,
+)
 
 D1 = date(2025, 3, 10)
 D2 = date(2025, 9, 20)
@@ -180,3 +186,108 @@ async def test_restamp_is_idempotent_and_skips_other_users(
     _assert_in_usd(brl_rows)
     await session.refresh(theirs)
     assert theirs.amount_primary == Decimal("50.00")
+
+
+@pytest.mark.asyncio
+async def test_rerun_after_reload_sees_no_change_at_stored_rate_scale(
+    session: AsyncSession, test_user: User, brl_rows
+):
+    # 1 BRL = 1/6 USD repeats forever; the column keeps ten decimals.
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "USD"}
+    await session.commit()
+    user_id = test_user.id
+    await restamp_user_primary_amounts(session, user_id)
+    await session.commit()
+    session.expire_all()
+
+    again = await restamp_user_primary_amounts(session, user_id)
+    assert (again["transactions"], again["recurring"], again["assets"]) == (0, 0, 0)
+    await session.refresh(brl_rows["brl"])
+    assert brl_rows["brl"].fx_rate_used == Decimal("0.1666666667")
+
+
+@pytest.mark.asyncio
+async def test_restamp_never_fetches_and_the_fetch_runs_once(
+    session: AsyncSession, test_user: User, brl_rows
+):
+    # None of BRL, USD's peers or GBP has a quote for today.
+    with patch(
+        "app.services.primary_restamp_service.sync_rates", new=AsyncMock(return_value=0)
+    ) as sync:
+        await restamp_user_primary_amounts(session, test_user.id)
+        assert sync.await_count == 0
+
+        await fetch_missing_today_rates(session, test_user.id, "EUR")
+        assert sync.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_restamp_puts_the_old_display_currency_back(
+    client: AsyncClient, session: AsyncSession, auth_headers, test_user: User, brl_rows
+):
+    prefs = {**(test_user.preferences or {}), "currency_display": "USD"}
+    with patch(
+        "app.services.primary_restamp_service.restamp_user_primary_amounts",
+        new=AsyncMock(side_effect=RuntimeError("boom")),
+    ), pytest.raises(RuntimeError):
+        await client.patch("/api/users/me", headers=auth_headers, json={"preferences": prefs})
+
+    await session.refresh(test_user)
+    assert test_user.primary_currency == "BRL"
+    await _reload(session, brl_rows)
+    assert brl_rows["usd"].amount_primary == Decimal("50.00")
+
+    # The retry sees a change again and restamps.
+    response = await client.patch("/api/users/me", headers=auth_headers, json={"preferences": prefs})
+    assert response.status_code == 200
+    await _reload(session, brl_rows)
+    _assert_in_usd(brl_rows)
+
+
+@pytest.fixture
+def cli_session(session: AsyncSession):
+    @asynccontextmanager
+    async def maker():
+        yield session
+
+    with patch("app.cli.async_session_maker", new=maker):
+        yield session
+
+
+@pytest.mark.asyncio
+async def test_cli_empty_email_is_a_lookup_not_every_user(
+    cli_session: AsyncSession, test_user: User, brl_rows
+):
+    with patch("app.services.primary_restamp_service.restamp_user_primary_amounts") as restamp, \
+            pytest.raises(SystemExit) as exit_info:
+        await restamp_primary_amounts("")
+    assert exit_info.value.code == 1
+    restamp.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_cli_keeps_going_after_one_user_fails(
+    cli_session: AsyncSession, test_user: User, brl_rows
+):
+    other = User(
+        id=uuid.uuid4(), email="other@example.com", hashed_password="x",
+        is_active=True, preferences={"currency_display": "BRL"},
+    )
+    cli_session.add(other)
+    await cli_session.commit()
+
+    done: list[uuid.UUID] = []
+
+    async def restamp(_session, user_id):
+        if not done:
+            done.append(user_id)
+            raise RuntimeError("boom")
+        done.append(user_id)
+        return {}
+
+    with patch(
+        "app.services.primary_restamp_service.restamp_user_primary_amounts", new=restamp
+    ), pytest.raises(SystemExit) as exit_info:
+        await restamp_primary_amounts()
+    assert exit_info.value.code == 1
+    assert set(done) == {test_user.id, other.id}

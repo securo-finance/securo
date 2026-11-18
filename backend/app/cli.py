@@ -5,6 +5,7 @@ import uuid
 
 from sqlalchemy import select
 
+from app.core.config import get_settings
 from app.core.database import async_session_maker
 from app.models.user import User
 
@@ -67,20 +68,38 @@ async def restamp_primary_amounts(email: str | None = None) -> None:
     again: the result depends only on the rows and the stored rates.
     """
     from app.core.app_clock import use_timezone
-    from app.services.primary_restamp_service import restamp_user_primary_amounts
+    from app.services.primary_restamp_service import (
+        fetch_missing_today_rates,
+        restamp_user_primary_amounts,
+    )
 
     async with async_session_maker() as session, use_timezone(session, fresh=True):
-        stmt = select(User)
-        if email:
+        stmt = select(User.id, User.email, User.preferences)
+        if email is not None:
             stmt = stmt.where(User.email == email)
-        users = (await session.execute(stmt)).scalars().all()
-        if email and not users:
+        users = (await session.execute(stmt)).all()
+        if email is not None and not users:
             print(f"Error: no user with email '{email}'.")
             sys.exit(1)
-        for user in users:
-            stats = await restamp_user_primary_amounts(session, user.id)
-            await session.commit()
-            print(f"{user.email}: {stats}")
+        failed = 0
+        for user_id, user_email, preferences in users:
+            currency = (preferences or {}).get(
+                "currency_display", get_settings().default_currency
+            )
+            try:
+                await fetch_missing_today_rates(session, user_id, currency)
+                stats = await restamp_user_primary_amounts(session, user_id)
+                await session.commit()
+            except Exception as error:
+                # One user's failure must not leave the users after it unhealed.
+                await session.rollback()
+                failed += 1
+                print(f"{user_email}: failed: {error}")
+                continue
+            print(f"{user_email}: {stats}")
+        if failed:
+            print(f"Error: {failed} of {len(users)} users failed.")
+            sys.exit(1)
 
 
 def main() -> None:

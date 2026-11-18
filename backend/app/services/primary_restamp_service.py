@@ -11,12 +11,18 @@ would print the old numbers under the new symbol (#1381).
 rate stored for each row's own date, so it is idempotent: running it twice
 gives the same result as running it once. A row whose currency already is the
 new primary currency gets its amount at rate 1. A foreign row with no
-resolvable rate is set to NULL, the honest "not converted" state that
-`restamp_fallback_fx` heals later, rather than keeping a number in the old
-currency.
+resolvable rate is set to NULL, the honest "not converted" state, rather than
+keeping a number in the old currency. The scheduled `restamp_fallback_fx`
+heals such transactions once a rate arrives; an asset's
+`purchase_price_primary` is healed by `backfill_primary_amounts`, by editing
+the asset, or by running `restamp-primary-amounts` again.
 
 Rows are matched by `user_id`, the same owner `stamp_primary_amount` converts
 for, so a member's switch leaves rows other members created alone.
+
+The restamp only reads stored rates and never commits. Fetching today's quotes
+from the provider commits the session, so callers do it first, with
+`fetch_missing_today_rates`, before any write they still have to commit.
 """
 from __future__ import annotations
 
@@ -35,11 +41,14 @@ from app.models.asset import Asset
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.models.user import User
-from app.services.fx_rate_service import _resolve_rate
+from app.services.fx_rate_service import _get_exact_date_rate, _resolve_rate, sync_rates
 
 logger = logging.getLogger(__name__)
 
 CENT = Decimal("0.01")
+# `fx_rate_used` is Numeric(20, 10): compare and store at that scale, or a
+# rerun would see 1/6 and the stored 0.1666666667 as a change.
+RATE_SCALE = Decimal("1E-10")
 
 
 @dataclass
@@ -96,22 +105,44 @@ async def _converted(
     if rate is None:
         stats.unconverted += 1
         return None, None
-    return (amount * rate).quantize(CENT), rate
+    return (amount * rate).quantize(CENT), rate.quantize(RATE_SCALE)
 
 
-async def _warm_today_rates(
-    session: AsyncSession, stats: RestampStats, currencies: set[str]
+async def _row_currencies(session: AsyncSession, user_id: uuid.UUID) -> set[str]:
+    currencies: set[str] = set()
+    for column, owner in (
+        (Transaction.currency, Transaction.user_id),
+        (RecurringTransaction.currency, RecurringTransaction.user_id),
+        (Asset.currency, Asset.user_id),
+    ):
+        rows = await session.execute(select(column).where(owner == user_id).distinct())
+        currencies.update(c for c in rows.scalars() if c)
+    return currencies
+
+
+async def fetch_missing_today_rates(
+    session: AsyncSession, user_id: uuid.UUID, currency: str
 ) -> None:
-    """Let one on-demand fetch bring today's rates when none are stored.
+    """Fetch today's quotes once when one the restamp needs is not stored.
 
     A currency nobody used before has no rate in `fx_rates` yet; without one
     every foreign row would land as unconverted. This is the same on-demand
-    fetch `stamp_primary_amount` does, made once instead of once per row.
+    fetch `stamp_primary_amount` does, made once for the whole restamp, and a
+    provider failure only leaves the stored history to fall back on.
+
+    `sync_rates` commits the session, so call this before making any change
+    the caller still has to commit.
     """
     today = app_today()
-    for currency in sorted(currencies - {stats.currency}):
-        rate = await _resolve_rate(session, currency, stats.currency, today)
-        stats._rates[(currency, today)] = rate
+    for code in sorted(await _row_currencies(session, user_id) | {currency}):
+        if await _get_exact_date_rate(session, code, today) is None:
+            break
+    else:
+        return
+    try:
+        await sync_rates(session, today)
+    except Exception:
+        logger.warning("FX rate fetch before a restamp failed for %s", today, exc_info=True)
 
 
 async def restamp_user_primary_amounts(
@@ -139,14 +170,6 @@ async def restamp_user_primary_amounts(
             select(Asset).where(Asset.user_id == user_id, Asset.purchase_price.is_not(None))
         )
     ).scalars().all()
-
-    await _warm_today_rates(
-        session,
-        stats,
-        {t.currency for t in transactions}
-        | {r.currency for r in recurring}
-        | {a.currency for a in assets},
-    )
 
     for tx in transactions:
         primary, rate = await _converted(session, stats, tx.amount, tx.currency, tx.date)
