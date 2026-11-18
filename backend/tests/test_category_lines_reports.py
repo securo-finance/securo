@@ -411,3 +411,26 @@ async def test_a_part_in_primary_currency_is_exact(scene):
     rows = await _get(scene, "/api/budgets/comparison", month=scene["day"].isoformat())
     food = next(row for row in rows if row["category_id"] == str(scene["food"].id))
     assert Decimal(str(food["actual_amount"])) == Decimal("250")
+
+
+async def test_an_investment_withdrawal_is_a_source_in_the_money_map(scene):
+    """Money taken out of an investment pays for the month without being
+    income (#1418): the Money Map gets it as its own group, beside the
+    contributions, and the income and expense totals do not move."""
+    before = await _snapshot(scene)
+
+    await scene["create"](300, "credit", scene["invest"])
+    await scene["create"](60, "debit", scene["invest"])
+    after = await _snapshot(scene)
+
+    assert after["composition"][("withdrawals", "Investments")] == 300
+    assert after["composition"][("investments", "Investments")] == 60
+    assert after["report"] == before["report"]
+    assert after["income"] == before["income"]
+    assert after["expenses"] == before["expenses"]
+
+
+async def test_a_month_without_withdrawals_has_no_withdrawal_group(scene):
+    snap = await _snapshot(scene)
+
+    assert not [key for key in snap["composition"] if key[0] == "withdrawals"]
