@@ -31,7 +31,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.asset import Asset
+from app.models.asset import ASSET_PRICE_DECIMALS, Asset
 from app.models.asset_group import AssetGroup
 from app.models.asset_transaction import AssetTransaction
 from app.models.import_log import ImportLog
@@ -52,6 +52,7 @@ from app.services.import_service import (
     _sniff_csv_dialect,
     normalize_amount,
 )
+from app.services.fx_rate_service import convert_or_none
 from app.services.rule_engine import _strip_accents
 
 logger = logging.getLogger(__name__)
@@ -518,6 +519,12 @@ async def import_orders(
 
     missing_tickers = sorted({t for t in tickers if t not in holdings})
     resolvable = await resolve_tickers(missing_tickers, market_provider=market_provider) if missing_tickers else {}
+    quotes = {}
+    if missing_tickers:
+        provider = market_provider or get_market_price_provider()
+        quotes = await provider.get_quotes(
+            [ticker for ticker, found in resolvable.items() if found]
+        )
 
     errors: list[AssetImportRowError] = []
     accepted: list[AssetOrderImport] = []
@@ -536,6 +543,47 @@ async def import_orders(
             continue
 
         asset = holdings.get(order.ticker)
+        target_currency = asset.currency if asset is not None else (
+            quotes.get(order.ticker).currency if quotes.get(order.ticker) is not None else None
+        )
+        source_currency = order.currency.upper() if order.currency else target_currency
+        if target_currency and source_currency and source_currency != target_currency:
+            converted_price, _ = await convert_or_none(
+                session,
+                order.price,
+                source_currency,
+                target_currency,
+                order.date,
+                decimals=ASSET_PRICE_DECIMALS,
+            )
+            converted_fee, _ = await convert_or_none(
+                session,
+                order.fee or Decimal('0'),
+                source_currency,
+                target_currency,
+                order.date,
+                decimals=2,
+            )
+            if converted_price is None or converted_fee is None:
+                errors.append(AssetImportRowError(
+                    row=order.row,
+                    reason='currency_conversion_unavailable',
+                    ticker=order.ticker,
+                    detail=f'{source_currency} to {target_currency} on {order.date}',
+                ))
+                continue
+            warnings.append(AssetImportWarning(
+                ticker=order.ticker,
+                reason='currency_converted',
+                wallet=None,
+                detail=f'{source_currency} to {target_currency} on {order.date}',
+            ))
+            order = order.model_copy(update={
+                'price': converted_price,
+                'fee': converted_fee,
+                'currency': target_currency,
+            })
+
         if asset is not None:
             fingerprint = ('row', asset.id, order.date, order.kind, order.quantity, order.price)
             external = ('external', asset.id, order.external_id) if order.external_id else None
@@ -562,6 +610,7 @@ async def import_orders(
         'holdings_matched': len({o.ticker for o in accepted if o.ticker in holdings}),
         'errors': errors,
         'warnings': warnings,
+        'orders': accepted,
     }
     if dry_run or not accepted:
         return summary
@@ -579,11 +628,6 @@ async def import_orders(
     )
     session.add(log)
     await session.flush()
-
-    quotes = {}
-    if to_create:
-        provider = market_provider or get_market_price_provider()
-        quotes = await provider.get_quotes(to_create)
 
     touched: dict[str, Asset] = {}
     written = 0

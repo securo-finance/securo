@@ -317,7 +317,11 @@ export function AssetImportPanel() {
               <ul className="space-y-1 text-xs text-blue-600 dark:text-blue-300/80">
                 {walletWarnings.map((w) => (
                   <li key={`${w.ticker}-${w.reason}`}>
-                    {t(`assetImport.warning.${w.reason}`, { ticker: w.ticker, wallet: w.wallet ?? '—' })}
+                    {t(`assetImport.warning.${w.reason}`, {
+                      ticker: w.ticker,
+                      wallet: w.wallet ?? '—',
+                      detail: w.detail ?? '—',
+                    })}
                   </li>
                 ))}
               </ul>

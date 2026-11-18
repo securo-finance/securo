@@ -180,6 +180,54 @@ async def test_import_creates_the_holding_and_the_position(
 
 
 @pytest.mark.asyncio
+async def test_import_converts_price_and_fee_into_quote_currency(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider, monkeypatch
+):
+    async def convert(session, amount, from_currency, to_currency, target_date, *, decimals):
+        assert (from_currency, to_currency, target_date) == ("EUR", "USD", date(2026, 1, 15))
+        factor = Decimal("1.10")
+        return (amount * factor).quantize(Decimal(1).scaleb(-decimals)), factor
+
+    monkeypatch.setattr(asset_import_service, "convert_or_none", convert)
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,fee,currency",
+        "AAPL,2026-01-15,2,100.123456,3.00,EUR",
+    ), provider)
+
+    assert summary["imported"] == 1
+    assert summary["orders"][0].price == Decimal("110.135802")
+    assert summary["orders"][0].fee == Decimal("3.30")
+    assert summary["warnings"][0].reason == "currency_converted"
+
+    stored = await _only_asset(session, test_workspace)
+    transaction = await session.scalar(
+        select(AssetTransaction).where(AssetTransaction.asset_id == stored.id)
+    )
+    assert transaction.price == Decimal("110.135802")
+    assert transaction.fee == Decimal("3.30")
+
+
+@pytest.mark.asyncio
+async def test_import_rejects_currency_mismatch_without_a_real_rate(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider, monkeypatch
+):
+    async def convert(*args, **kwargs):
+        return None, None
+
+    monkeypatch.setattr(asset_import_service, "convert_or_none", convert)
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,currency",
+        "AAPL,2026-01-15,2,100,EUR",
+    ), provider)
+
+    assert summary["imported"] == 0
+    assert summary["orders"] == []
+    assert [(error.row, error.reason) for error in summary["errors"]] == [
+        (2, "currency_conversion_unavailable")
+    ]
+
+
+@pytest.mark.asyncio
 async def test_distinct_tickers_are_resolved_in_one_call(
     session: AsyncSession, test_user: User, test_workspace: Workspace, provider
 ):

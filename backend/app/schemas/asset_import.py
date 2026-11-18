@@ -26,7 +26,7 @@ class AssetImportRowError(BaseModel):
     """A row that will not be imported, and why, named by its line number."""
 
     row: int
-    reason: str  # missing_ticker | invalid_date | invalid_quantity | invalid_price | invalid_kind | unknown_ticker | oversell
+    reason: str  # missing_ticker | invalid_date | invalid_quantity | invalid_price | invalid_kind | unknown_ticker | oversell | currency_conversion_unavailable
     ticker: Optional[str] = None
     detail: Optional[str] = None
 
@@ -35,8 +35,9 @@ class AssetImportWarning(BaseModel):
     """Not a reason to refuse a row, but something to see before confirming."""
 
     ticker: str
-    reason: str  # exists_in_other_wallet | orders_already_in_other_wallet
+    reason: str  # exists_in_other_wallet | orders_already_in_other_wallet | currency_converted
     wallet: Optional[str] = None
+    detail: Optional[str] = None
 
 
 class AssetImportPreview(BaseModel):
