@@ -690,6 +690,37 @@ async def preview_rules_for_transaction(
     return preview
 
 
+async def apply_rules_to_settled_transaction(
+    session: AsyncSession, user_id: uuid.UUID, transaction: Transaction,
+) -> None:
+    """Run the rules again on a row whose pending entry just posted.
+
+    A pending entry often carries placeholder text and no counterparty, so
+    the rules that ran on it matched nothing; the posted entry brings the real
+    description and payee. What the row already holds wins: the rules fill an
+    empty category or payee, append their notes and may ignore the row, and
+    they replace the description only when the user did not write it.
+    """
+    lines = transaction.has_category_lines
+    preview = await preview_rules_for_transaction(
+        session, user_id, transaction, skip_category_rules=lines
+    )
+    if transaction.category_id is None and not lines:
+        transaction.category_id = preview.category_id
+    if transaction.payee_id is None:
+        transaction.payee_id = preview.payee_id
+    if preview.description != transaction.description and not _has_manual_description(
+        transaction
+    ):
+        transaction.description = preview.description
+        transaction.original_description = preview.original_description
+        transaction.description_is_rule_managed = preview.description_is_rule_managed
+    # The preview started from the row's notes, so its notes keep the user's.
+    transaction.notes = preview.notes
+    if preview.is_ignored:
+        transaction.is_ignored = True
+
+
 def rule_payee_ids(rules: Iterable[Rule]) -> set[uuid.UUID]:
     """Ids of the payees the rules' `set_payee` actions name."""
     payee_ids: set[uuid.UUID] = set()

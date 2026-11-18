@@ -66,6 +66,7 @@ from app.services.asset_group_service import (
 from app.services.credit_card_service import apply_effective_date
 from app.services.rule_engine import merge_notes
 from app.services.rule_service import (
+    apply_rules_to_settled_transaction,
     apply_rules_to_transaction,
     preview_rules_for_transaction,
     rule_payee_ids,
@@ -1749,6 +1750,7 @@ async def handle_oauth_callback(
                         txn_data,
                         replace_external_id=synced_dup.source == "sync",
                     )
+                    await apply_rules_to_settled_transaction(session, user_id, synced_dup)
                     if (
                         txn_data.bill_external_id
                         and synced_dup.effective_bill_date is None
@@ -2678,6 +2680,7 @@ async def _promote_settled_pending(
         return None
     transaction.status = "posted"
     _merge_sync_metadata(transaction, txn_data, replace_external_id=rekeyed)
+    await apply_rules_to_settled_transaction(session, account.user_id, transaction)
     _relink_bill(transaction, txn_data, account, bills_by_external_id)
     return transaction.external_id
 
@@ -3510,6 +3513,9 @@ async def sync_connection(
                     _merge_sync_metadata(existing_tx, txn_data)
                     if existing_tx.status == "pending" and txn_data.status == "posted":
                         existing_tx.status = "posted"
+                        await apply_rules_to_settled_transaction(
+                            session, user_id, existing_tx
+                        )
                     # Self-heal bill linkage: a tx that pre-dates the bills
                     # feature (or whose bill we hadn't ingested last time)
                     # picks up bill_id + bank-truth effective_date on the
@@ -3553,6 +3559,9 @@ async def sync_connection(
                             synced_dup,
                             txn_data,
                             replace_external_id=synced_dup.source == "sync",
+                        )
+                        await apply_rules_to_settled_transaction(
+                            session, user_id, synced_dup
                         )
                         _relink_bill(synced_dup, txn_data, account, bills_by_external_id)
                     elif synced_dup.external_id != txn_data.external_id:
