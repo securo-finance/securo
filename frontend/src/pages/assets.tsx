@@ -422,6 +422,26 @@ export default function AssetsPage() {
     onError: (e) => toast.error(assetErrorMessage(e, t('common.error'))),
   })
 
+  // Portfolio-wide refresh (issue #778): one provider call for every
+  // market-priced holding instead of opening each asset and refreshing it.
+  const refreshAllPricesMutation = useMutation({
+    mutationFn: () => assets.refreshPrices(),
+    onSuccess: (summary) => {
+      refetchAssetViews()
+      if (summary.refreshed === 0 && summary.skipped === 0) {
+        toast.info(t('assets.refreshAllPricesNone'))
+        return
+      }
+      toast.success(
+        t('assets.refreshAllPricesDone', {
+          refreshed: summary.refreshed,
+          skipped: summary.skipped,
+        }),
+      )
+    },
+    onError: (e) => toast.error(assetErrorMessage(e, t('common.error'))),
+  })
+
   const { data: rawWalletsList } = useQuery({
     queryKey: ['asset-groups'],
     queryFn: () => assetGroups.list(),
@@ -1144,7 +1164,20 @@ export default function AssetsPage() {
         title={t('assets.title')}
         action={
           canWrite ? (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                onClick={() => refreshAllPricesMutation.mutate()}
+                variant="outline"
+                className="gap-1.5"
+                disabled={refreshAllPricesMutation.isPending}
+                title={t('assets.refreshAllPrices')}
+              >
+                <RefreshCw
+                  size={16}
+                  className={refreshAllPricesMutation.isPending ? 'animate-spin' : ''}
+                />
+                {t('assets.refreshAllPrices')}
+              </Button>
               <Button onClick={() => navigate('/import?tab=investments')} variant="outline" className="gap-1.5">
                 <Upload size={16} />
                 {t('assetImport.action')}

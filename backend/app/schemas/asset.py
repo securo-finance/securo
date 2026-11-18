@@ -191,6 +191,18 @@ class MarketSymbolQuote(BaseModel):
     logo_url: Optional[str] = None
 
 
+class AssetPriceRefreshResult(BaseModel):
+    """Outcome of a portfolio-wide price refresh (issue #778).
+
+    Same counters the scheduled task returns, so the UI can say how many
+    holdings actually got a new quote instead of claiming success blindly.
+    """
+
+    refreshed: int
+    skipped: int
+    rate_limited: int
+
+
 class MarketSymbolMatch(BaseModel):
     """A single search result returned by /assets/market/search."""
 

@@ -89,6 +89,7 @@ import type {
   AssetImportPreview,
   AssetImportResult,
   AssetOrderImport,
+  AssetPriceRefreshResult,
   AssetTransaction,
   AssetValue,
   MarketSymbolMatch,
@@ -1542,6 +1543,10 @@ export const assets = {
   },
   refreshPrice: async (id: string): Promise<Asset> => {
     const { data } = await api.post(`/assets/${id}/refresh-price`)
+    return data
+  },
+  refreshPrices: async (): Promise<AssetPriceRefreshResult> => {
+    const { data } = await api.post('/assets/refresh-prices')
     return data
   },
   // Transaction ledger (issue #235)

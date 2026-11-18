@@ -1283,6 +1283,7 @@ async def refresh_all_market_prices(
     session: AsyncSession,
     *,
     market_provider: Optional[MarketPriceProvider] = None,
+    workspace_id: Optional[uuid.UUID] = None,
 ) -> dict[str, int]:
     """Refresh every non-archived market-priced asset in the database.
 
@@ -1292,17 +1293,24 @@ async def refresh_all_market_prices(
     if the batch returns nothing (provider without bulk support, or a hard
     failure on Yahoo's end).
 
+    ``workspace_id`` narrows the sweep to one workspace. The scheduled task
+    leaves it out (it really does mean every user); the manual refresh
+    endpoint passes it so a user's click never reaches another workspace's
+    rows (ADR 0002).
+
     Returns a summary counting successes, skips, and rate-limit halts —
     surfaced as the Celery task's return payload for observability.
     """
-    result = await session.execute(
-        select(Asset).where(
-            Asset.valuation_method == "market_price",
-            Asset.is_archived == False,
-            Asset.sell_date.is_(None),
-            Asset.ticker.isnot(None),
-        )
-    )
+    conditions = [
+        Asset.valuation_method == "market_price",
+        Asset.is_archived == False,
+        Asset.sell_date.is_(None),
+        Asset.ticker.isnot(None),
+    ]
+    if workspace_id is not None:
+        conditions.append(Asset.workspace_id == workspace_id)
+
+    result = await session.execute(select(Asset).where(*conditions))
     assets = list(result.scalars().all())
 
     if not assets:
