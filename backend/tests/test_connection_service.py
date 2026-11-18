@@ -3905,6 +3905,247 @@ async def test_sync_connection_enable_banking_claimed_hold_rekeys_by_booked_date
     ]
 
 
+def _blank_hold_payload(transaction_date: str, amount: str = "12.50") -> dict:
+    """A pending card purchase as a Finnish bank lists it through Enable
+    Banking: the amount, the direction and the purchase date, and nothing
+    else, so it names no merchant (#1232)."""
+    return {
+        "status": "PDNG",
+        "transaction_amount": {"amount": amount, "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": transaction_date,
+        "bank_transaction_code": {"description": None, "code": None, "sub_code": None},
+    }
+
+
+def _dated_charge_payload(
+    booked_on: str,
+    reference: str | None,
+    *,
+    amount: str = "12.50",
+    entry_ref: str = "261023000000XX0000",
+    merchant: str = "Example Restaurant",
+) -> dict:
+    """The booked entry for a blank hold: its own reference, booked a day or
+    more later, with the merchant, and a reference number that starts with
+    the purchase date as YYMMDD."""
+    remittance = [reference, "HELSINKI"] if reference else ["HELSINKI"]
+    payload = {
+        "status": "BOOK",
+        "transaction_amount": {"amount": amount, "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "entry_reference": entry_ref,
+        "transaction_date": booked_on,
+        "booking_date": booked_on,
+        "value_date": booked_on,
+        "remittance_information": remittance,
+        "creditor": {"name": merchant},
+        "bank_transaction_code": {"description": "<Cardpurchase>"},
+    }
+    if reference:
+        payload["reference_number"] = reference
+    return payload
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_charge_claims_blank_hold(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The reporter's purchase: a pending entry with only the amount and the
+    date lands as "Transaction" with no payee. Once it leaves the feed, the
+    booked entry takes over that row instead of landing next to it: the row
+    keeps the purchase date, turns posted, and gets the merchant as its
+    description and payee, linked like a row inserted with it (#1232)."""
+    from app.models.payee import Payee
+
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    hold = _blank_hold_payload("2026-10-22")
+    charge = _dated_charge_payload("2026-10-23", "261022000000")
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, await _eb_fetch([], [hold]))
+    (held,) = await _account_rows(session, account_id)
+    held_id = held.id
+    assert (held.description, held.payee or None, held.status) == (
+        "Transaction", None, "pending",
+    )
+
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, await _eb_fetch([charge], []),
+    )
+
+    (row,) = await _account_rows(session, account_id)
+    assert (row.id, row.date, row.status, row.external_id) == (
+        held_id, date(2026, 10, 22), "posted", _eb_txn(charge).external_id,
+    )
+    assert row.description == _eb_txn(charge).description
+    assert row.payee == "Example Restaurant"
+    payee = (
+        await session.execute(select(Payee).where(Payee.id == row.payee_id))
+    ).scalar_one()
+    assert payee.name == "Example Restaurant"
+
+    # The next sync finds the claimed row by its new id.
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, await _eb_fetch([charge], []),
+    )
+    assert [r.id for r in await _account_rows(session, account_id)] == [held_id]
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_blank_hold_keeps_user_edits(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A blank hold the user already described, categorized and annotated
+    keeps all of it when the booked entry takes it over."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    category = Category(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Dining", icon="utensils", color="#000000",
+    )
+    session.add(category)
+    await session.commit()
+    category_id = category.id
+    hold = _blank_hold_payload("2026-10-22")
+    charge = _dated_charge_payload("2026-10-23", "261022000000")
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, await _eb_fetch([], [hold]))
+    (held,) = await _account_rows(session, account_id)
+    held.description = "Lunch with Ana"
+    held.category_id = category_id
+    held.notes = "split later"
+    await session.commit()
+
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, await _eb_fetch([charge], []),
+    )
+
+    (row,) = await _account_rows(session, account_id)
+    assert (row.status, row.description, row.category_id, row.notes) == (
+        "posted", "Lunch with Ana", category_id, "split later",
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("hold_dates", "reference", "claimed_date"),
+    [
+        (["2026-10-24", "2026-10-25"], "261024000000", date(2026, 10, 24)),
+        (["2026-10-24", "2026-10-25"], "261025000000", date(2026, 10, 25)),
+        (["2026-10-24", "2026-10-25"], None, None),
+        (["2026-10-24"], None, date(2026, 10, 24)),
+        (["2026-10-24"], "261023000000", None),
+        (["2026-10-24"], "261099000000", date(2026, 10, 24)),
+    ],
+    ids=[
+        "prefix-picks-saturday",
+        "prefix-picks-sunday",
+        "two-blank-holds-no-prefix",
+        "one-blank-hold-no-prefix",
+        "prefix-of-another-day",
+        "prefix-not-a-date",
+    ],
+)
+async def test_sync_connection_enable_banking_blank_hold_by_purchase_date(
+    session: AsyncSession, test_user, test_workspace, hold_dates, reference, claimed_date,
+):
+    """Two blank holds of the same amount, on Saturday and on Sunday, both
+    gone from the feed: the purchase date at the start of the charge's
+    reference picks the hold it settles. Without that date the two are
+    ambiguous and neither is claimed; a single blank hold is. A reference
+    dated another day leaves the hold alone, and six digits that are no date
+    are not read as one."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    holds = [_blank_hold_payload(day) for day in hold_dates]
+    charge = _dated_charge_payload("2026-10-26", reference)
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, await _eb_fetch([], holds))
+
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, await _eb_fetch([charge], []),
+    )
+
+    rows = await _account_rows(session, account_id)
+    pending = sorted(row.date for row in rows if row.status == "pending")
+    posted = sorted(row.date for row in rows if row.status == "posted")
+    if claimed_date is None:
+        assert pending == [date.fromisoformat(day) for day in hold_dates]
+        assert posted == [date(2026, 10, 26)]
+    else:
+        assert posted == [claimed_date]
+        assert pending == [
+            date.fromisoformat(day) for day in hold_dates
+            if date.fromisoformat(day) != claimed_date
+        ]
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_blank_hold_waits_for_the_dated_charge(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Two charges of one fetch can settle the same blank hold. The one whose
+    reference names the hold's date settles it, whichever the feed lists
+    first: an undated charge listed before the dated one must not take the
+    hold and leave the dated charge beside it with the user's edits on the
+    wrong row."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    hold = _blank_hold_payload("2026-10-22")
+    undated = _dated_charge_payload(
+        "2026-10-23", None, entry_ref="261023000000YY0000", merchant="Unknown Cafe",
+    )
+    dated = _dated_charge_payload("2026-10-23", "261022000000")
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, await _eb_fetch([], [hold]))
+
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id,
+        await _eb_fetch([undated, dated], []),
+    )
+
+    rows = await _account_rows(session, account_id)
+    claimed = [row for row in rows if row.date == date(2026, 10, 22)]
+    assert len(claimed) == 1
+    assert (claimed[0].status, claimed[0].payee) == ("posted", "Example Restaurant")
+    assert sorted((row.date, row.status) for row in rows) == [
+        (date(2026, 10, 22), "posted"),
+        (date(2026, 10, 23), "posted"),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "hold",
+    [
+        _paypal_payload("1HD00000AA0000001", "2026-10-22", booked=False, amount="12.50"),
+        _blank_hold_payload("2026-10-22", amount="12.40"),
+    ],
+    ids=["hold-names-another-merchant", "other-amount"],
+)
+async def test_sync_connection_enable_banking_charge_leaves_non_blank_hold_alone(
+    session: AsyncSession, test_user, test_workspace, hold,
+):
+    """Only a hold that names no merchant falls back to the blank-hold
+    match: one that names another merchant is another purchase, and so is
+    a blank hold for another amount."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    charge = _dated_charge_payload("2026-10-23", "261022000000")
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, await _eb_fetch([], [hold]))
+
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, await _eb_fetch([charge], []),
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert sorted((row.date, row.status) for row in rows) == [
+        (date(2026, 10, 22), "pending"),
+        (date(2026, 10, 23), "posted"),
+    ]
+
+
 @pytest.mark.asyncio
 async def test_simplefin_rekey_respects_institution_and_closed_account(
     session: AsyncSession, test_user, test_workspace,
