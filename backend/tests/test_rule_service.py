@@ -1689,3 +1689,24 @@ async def test_preview_rule_matches_provider_category(
 
     assert preview.matched == 1
     assert preview.sample[0].id == transaction_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("op", ["gt", "gte", "lt", "lte"])
+async def test_create_rule_rejects_numeric_op_on_provider_category(
+    session: AsyncSession, test_user, test_workspace, op
+):
+    with pytest.raises(
+        ValueError,
+        match=f"unsupported op '{op}' for field 'provider_category'",
+    ):
+        await create_rule(
+            session,
+            test_workspace.id,
+            test_user.id,
+            RuleCreate(
+                name=f"Provider category {op}",
+                conditions=[RuleCondition(field="provider_category", op=op, value=0)],
+                actions=[RuleAction(op="ignore", value=True)],
+            ),
+        )
