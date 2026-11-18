@@ -65,8 +65,12 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         an API that names people should carry this.
         """
         prefs = self.preferences or {}
-        name = (prefs.get("display_name") or "").strip()
-        return name or None
+        # Preferences is a JSON column, so the value is only a string because
+        # the writers put one there; anything else is not a name.
+        name = prefs.get("display_name")
+        if not isinstance(name, str):
+            return None
+        return name.strip() or None
 
     @property
     def primary_currency(self) -> str:

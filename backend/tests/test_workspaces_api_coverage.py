@@ -130,6 +130,25 @@ async def test_list_members(client: AsyncClient, auth_headers, test_workspace, t
 
 
 @pytest.mark.asyncio
+async def test_list_members_survives_a_display_name_that_is_not_a_string(
+    client: AsyncClient, auth_headers, test_workspace, session, test_user
+):
+    """Preferences is a JSON column an admin can write anything into, so a
+    value of the wrong type must not take the members list down."""
+    test_user.preferences = {**(test_user.preferences or {}), "display_name": 123}
+    session.add(test_user)
+    await session.commit()
+
+    resp = await client.get(
+        f"/api/workspaces/{test_workspace.id}/members", headers=auth_headers
+    )
+
+    assert resp.status_code == 200, resp.text
+    owner = next(m for m in resp.json() if m["email"] == test_user.email)
+    assert owner["display_name"] is None
+
+
+@pytest.mark.asyncio
 async def test_invite_new_user_member(client: AsyncClient, auth_headers, test_workspace):
     resp = await client.post(
         f"/api/workspaces/{test_workspace.id}/members",

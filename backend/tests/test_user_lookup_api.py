@@ -76,6 +76,23 @@ async def test_lookup_reports_no_display_name_when_the_user_has_none(
 
 
 @pytest.mark.asyncio
+async def test_directory_survives_a_display_name_that_is_not_a_string(
+    client, auth_headers, session, test_user
+):
+    """Preferences is a JSON column, so a value of the wrong type must not
+    take the whole directory down for everyone."""
+    test_user.preferences = {**(test_user.preferences or {}), "display_name": 123}
+    session.add(test_user)
+    await session.commit()
+
+    resp = await client.get("/api/users/directory", headers=auth_headers)
+
+    assert resp.status_code == 200
+    entry = next(u for u in resp.json() if u["id"] == str(test_user.id))
+    assert entry["display_name"] is None
+
+
+@pytest.mark.asyncio
 async def test_directory_returns_display_names(client, auth_headers, session, test_user):
     """The member picker needs the name of every user it offers."""
     test_user.preferences = {**(test_user.preferences or {}), "display_name": "User Name"}
