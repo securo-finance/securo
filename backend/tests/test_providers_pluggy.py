@@ -1219,3 +1219,51 @@ def test_holding_carries_the_provider_value_date():
 
     assert _build_holding_data(frozen).value_date == date(2026, 3, 17)
     assert _build_holding_data(_investment(balance=1000)).value_date is None
+
+
+@pytest.mark.parametrize(
+    ("amount", "gross"),
+    [
+        (999999999.99, Decimal("999999999.99")),
+        ("999999999.9999995", None),  # rounds to 1e9 in Numeric(15, 6)
+        (1000000000, None),
+        (-1500000000.5, None),
+    ],
+)
+def test_holding_leaves_out_a_gross_value_the_column_cannot_hold(amount, gross):
+    """`gross_amount` is Numeric(15, 6); a larger gross would fail the sync's flush."""
+    holding = _build_holding_data(
+        {"id": "inv", "name": "Fund", "balance": 10, "amount": amount, "status": "ACTIVE"}
+    )
+    assert holding.gross_value == gross
+    assert holding.current_value == Decimal("10")
+
+
+async def _holding_trades_for(payload) -> dict:
+    page = MagicMock()
+    page.raise_for_status = MagicMock()
+    page.json = MagicMock(return_value=payload)
+    client = MagicMock()
+    client.get = AsyncMock(return_value=page)
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=None)
+    holding = HoldingData(
+        external_id="inv", name="inv", currency="BRL", current_value=Decimal("100")
+    )
+    with patch.object(
+        PluggyProvider, "_ensure_api_key", new=AsyncMock(return_value="fake-key")
+    ), patch("app.providers.pluggy.httpx.AsyncClient", return_value=client):
+        return await PluggyProvider().get_holding_trades({"item_id": "i"}, [holding])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("payload", [{"totalPages": 1}, {"results": None}, {"results": {}}])
+async def test_holding_trades_without_a_result_list_leave_the_investment_out(payload):
+    """A malformed page is not an empty history: that would be recorded as
+    `no_history` and not asked for again until the position moves."""
+    assert await _holding_trades_for(payload) == {}
+
+
+@pytest.mark.asyncio
+async def test_holding_trades_with_an_empty_result_list_are_an_empty_history():
+    assert await _holding_trades_for({"results": [], "totalPages": 1}) == {"inv": []}

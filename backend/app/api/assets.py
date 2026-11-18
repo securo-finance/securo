@@ -202,11 +202,6 @@ async def portfolio_performance(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="provider and benchmark must contain the same number of values",
         )
-    if len(providers) > 5:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="A maximum of five benchmarks can be compared",
-        )
     if any(item not in {"yahoo", "b3"} for item in providers):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -217,7 +212,18 @@ async def portfolio_performance(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Invalid benchmark symbol",
         )
-    comparisons = list(dict.fromkeys(zip(providers, symbols, strict=True)))
+    # Providers read symbols case-insensitively (history upper-cases them),
+    # so `spy` and `SPY` are one comparison. The first spelling is kept: the
+    # client keys each series by the provider and symbol it sent.
+    unique: dict[tuple[str, str], tuple[str, str]] = {}
+    for provider_name, symbol in zip(providers, symbols, strict=True):
+        unique.setdefault((provider_name, symbol.upper()), (provider_name, symbol))
+    comparisons = list(unique.values())
+    if len(comparisons) > 5:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="A maximum of five benchmarks can be compared",
+        )
     if not get_settings().performance_benchmarks_enabled:
         # The portfolio's own return needs no external data; a stale client
         # still asking for indices just gets it without them.

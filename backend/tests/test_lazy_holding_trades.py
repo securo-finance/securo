@@ -12,6 +12,7 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Optional
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
@@ -19,7 +20,9 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.asset import Asset
 from app.models.asset_transaction import AssetTransaction
+from app.models.asset_value import AssetValue
 from app.models.bank_connection import BankConnection
 from app.models.user import User
 from app.providers import register_provider
@@ -31,7 +34,11 @@ from app.providers.base import (
     HoldingTradeData,
     TransactionData,
 )
-from app.services.connection_service import _sync_holdings, enable_holding_trades
+from app.services.connection_service import (
+    _sync_holdings,
+    enable_holding_trades,
+    sync_connection,
+)
 
 
 def _adds_up(holding: HoldingData) -> list[HoldingTradeData]:
@@ -183,14 +190,38 @@ async def _sync(
     await session.commit()
 
 
+async def _stored_holdings(session: AsyncSession) -> dict[Optional[str], tuple]:
+    """Each synced asset's units and stored values, by external id."""
+    assets = (
+        await session.execute(select(Asset).where(Asset.source == "trades-mock"))
+    ).scalars().all()
+    stored = {}
+    for asset in assets:
+        values = (
+            await session.execute(
+                select(AssetValue.amount).where(AssetValue.asset_id == asset.id)
+            )
+        ).scalars().all()
+        stored[asset.external_id] = (
+            Decimal(str(asset.units)) if asset.units is not None else None,
+            sorted(Decimal(str(value)) for value in values),
+        )
+    return stored
+
+
 @pytest.mark.asyncio
 async def test_no_trade_requests_until_trade_import_is_on(
     session: AsyncSession, test_user: User, connection: BankConnection
 ):
     await _sync(session, test_user, connection, _fund("a", "10"), _fund("b", "5"))
-    await _sync(session, test_user, connection, _fund("a", "12"), _fund("b", "5"))
+    await _sync(session, test_user, connection, _fund("a", "12", "120"), _fund("b", "5"))
 
     assert _TradesProvider.requests == []
+    # The holdings themselves still synced; only their trades were skipped.
+    assert await _stored_holdings(session) == {
+        "a": (Decimal("12"), [Decimal("120")]),
+        "b": (Decimal("5"), [Decimal("100")]),
+    }
 
 
 @pytest.mark.asyncio
@@ -309,6 +340,7 @@ async def test_holdings_without_a_share_count_are_never_fetched(
     await _sync(session, test_user, connection, _fund("cdb", None, "1500"))
 
     assert _TradesProvider.requests == []
+    assert await _stored_holdings(session) == {"cdb": (None, [Decimal("1500")])}
 
 
 @pytest.mark.asyncio
@@ -456,3 +488,44 @@ async def test_a_synced_trade_cannot_be_edited_or_deleted(
     assert deleted.status_code == 409
     await session.refresh(trade)
     assert trade.quantity == Decimal("10")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("retry", [False, True])
+async def test_sync_connection_passes_the_retry_to_the_trade_import(
+    session: AsyncSession, test_user: User, test_workspace, connection: BankConnection, retry
+):
+    """The Performance tab's retry reaches the trade import through a full sync."""
+    await enable_holding_trades(session, test_workspace.id)
+    _TradesProvider.holdings = [_fund("a", "10")]
+
+    with patch(
+        "app.services.connection_service._import_holding_trades", new_callable=AsyncMock
+    ) as import_trades:
+        await sync_connection(
+            session, connection.id, test_workspace.id, test_user.id, retry_trade_import=retry
+        )
+
+    assert import_trades.await_args is not None
+    assert import_trades.await_args.kwargs["retry_unresolved"] is retry
+
+
+@pytest.mark.asyncio
+async def test_a_same_day_resync_replaces_the_gross_value(
+    session: AsyncSession, test_user: User, connection: BankConnection
+):
+    """A gross the provider stopped reporting must not sit next to the new net."""
+    morning = _fund("a", "10", "100")
+    morning.gross_value = Decimal("104")
+    await _sync(session, test_user, connection, morning)
+
+    await _sync(session, test_user, connection, _fund("a", "10", "101"))
+
+    rows = (
+        await session.execute(
+            select(AssetValue.amount, AssetValue.gross_amount)
+            .join(Asset, Asset.id == AssetValue.asset_id)
+            .where(Asset.external_id == "a")
+        )
+    ).all()
+    assert [(Decimal(str(amount)), gross) for amount, gross in rows] == [(Decimal("101"), None)]

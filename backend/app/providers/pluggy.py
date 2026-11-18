@@ -5,7 +5,7 @@ import json
 import logging
 import time
 from datetime import date
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Literal, Optional
 from urllib.parse import parse_qs, urlparse
 
@@ -223,6 +223,21 @@ def _decimal_or_none(value) -> Optional[Decimal]:
         return None
 
 
+# `AssetValue.gross_amount` is Numeric(15, 6): at most 9 integer digits.
+_GROSS_LIMIT = Decimal("1000000000")
+
+
+def _storable_gross(value) -> Optional[Decimal]:
+    """The gross amount, or None when the column can't hold it (even once
+    rounded to its 6 decimals); the net amount still records the value."""
+    gross = _decimal_or_none(value)
+    if gross is None or not gross.is_finite() or abs(gross) >= _GROSS_LIMIT:
+        return None
+    if abs(gross.quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)) >= _GROSS_LIMIT:
+        return None
+    return gross
+
+
 def _consolidated_credit_balance_group(
     credit_data: dict, account_balance, currency: str,
 ) -> Optional[str]:
@@ -315,7 +330,7 @@ def _build_holding_data(inv: dict) -> HoldingData:
         name=inv.get("name") or "Investment",
         currency=inv.get("currencyCode") or "BRL",
         current_value=current_value,
-        gross_value=_decimal_or_none(inv.get("amount")),
+        gross_value=_storable_gross(inv.get("amount")),
         quantity=quantity,
         unit_price=_decimal_or_none(inv.get("value")),
         purchase_price=_decimal_or_none(inv.get("amountOriginal")),
@@ -1075,7 +1090,13 @@ class PluggyProvider(BankProvider):
                     )
                     resp.raise_for_status()
                     data = resp.json()
-                    results = data.get("results", [])
+                    results = data.get("results") if isinstance(data, dict) else None
+                    if not isinstance(results, list):
+                        # Not an empty history: recording one would stop
+                        # asking for this holding until its position moves.
+                        raise ValueError(
+                            f"Pluggy returned no trade list for investment {holding_id}"
+                        )
                     for raw in results:
                         trade = _build_trade_data(raw)
                         if trade is not None:

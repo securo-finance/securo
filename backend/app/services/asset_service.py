@@ -286,7 +286,8 @@ def build_synced_ledger_series(
     Before the first one, the position is valued as quantity held × the price
     of its latest trade, so each buy and sell shows up on its own date at what
     was actually paid or received. From the first snapshot on, the provider's
-    valuation is authoritative.
+    valuation is authoritative. Trades on the same day replay in the order
+    given (the sort is stable), so pass them in the order they were recorded.
     """
     first_snapshot = snapshots[0][0] if snapshots else None
     out: list[tuple[date, float]] = []
@@ -510,6 +511,9 @@ async def _load_asset_native_values(
         ).where(AssetTransaction.asset_id.in_(asset_ids))
         if up_to_date is not None:
             tq = tq.where(AssetTransaction.date <= up_to_date)
+        # Same-day trades replay in the order they were recorded (a buy then a
+        # sell is not a sell then a buy), so the ledger order must be fixed.
+        tq = tq.order_by(AssetTransaction.date, AssetTransaction.created_at, AssetTransaction.id)
         for aid, d, kind, qty, price, old_units, new_units in (await session.execute(tq)).all():
             if kind == "split":
                 # A split has no quantity or price of its own; replaying it as a

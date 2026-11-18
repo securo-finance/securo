@@ -1389,7 +1389,14 @@ async def _sync_holding_trades(
         if was_sold and asset.sell_date is None and not holding.is_withdrawn:
             # Reopened by this sync: the value step above skipped it while it
             # still read as sold, so record today's value now.
-            await _upsert_asset_value_for_today(session, asset, holding.current_value, app_today())
+            await _upsert_asset_value_for_today(
+                session,
+                asset,
+                holding.current_value,
+                app_today(),
+                gross_amount=holding.gross_value,
+                price=_snapshot_unit_price(holding),
+            )
 
 
 async def _import_holding_trades(
@@ -1413,9 +1420,11 @@ async def _import_holding_trades(
     until its quantity changes, unless the owner asks to retry
     (``retry_unresolved``), since a provider can complete a history without
     the position moving. Why each one failed is kept for the Performance tab
-    to show. Stored trades are combined with the fetched ones in case the
-    provider only returns recent history. Only provider-sourced rows are
-    touched; trades the user entered stay.
+    to show. Stored trades dated before the earliest fetched one are kept
+    with the fetched ones first, in case the provider only returns recent
+    history (a closed round trip the provider dropped stays); if those don't
+    add up, the fetched trades alone are tried. Only provider-sourced rows
+    are touched; trades the user entered stay.
     """
     source = connection.provider
     settings = connection.settings or {}
@@ -1465,12 +1474,21 @@ async def _import_holding_trades(
         if trades is None:
             continue  # its request failed; try again next sync
         asset = synced_assets[holding.external_id]
-        # What the provider returns now wins (it may have corrected a trade);
-        # stored trades fill in history it no longer returns.
-        merged = {trade.external_id: trade for trade in ledgers[holding.external_id]}
+        # Stored trades fill in history the provider no longer returns, i.e.
+        # anything dated before the earliest trade it returned now; what it
+        # returns wins (it may have corrected a trade). Stored trades inside
+        # the returned window are left out, so a provider that re-issued the
+        # ids of history it still returns doesn't count those trades twice.
+        # Failing that, the returned trades alone are tried.
+        earliest = min((trade.date for trade in trades), default=None)
+        merged = {
+            trade.external_id: trade
+            for trade in ledgers[holding.external_id]
+            if earliest is not None and trade.date < earliest
+        }
         merged.update((trade.external_id, trade) for trade in trades)
-        reconciled = _reconciled_trades(holding, trades) or _reconciled_trades(
-            holding, list(merged.values())
+        reconciled = _reconciled_trades(holding, list(merged.values())) or _reconciled_trades(
+            holding, trades
         )
         if reconciled is None:
             logger.warning(
@@ -1649,8 +1667,9 @@ async def _upsert_asset_value_for_today(
 ) -> None:
     """One sync-sourced AssetValue per asset per day.
 
-    Re-syncing the same day updates the amount in place; a later day
-    creates a new row so we build a daily valuation history over time.
+    Re-syncing the same day replaces the amount, gross and price in place;
+    a later day creates a new row so we build a daily valuation history
+    over time.
     `price` records the unit value so performance can tell buying more
     shares apart from the price going up.
     """
@@ -1665,8 +1684,9 @@ async def _upsert_asset_value_for_today(
     if row is not None:
         row.amount = amount
         row.price = price
-        if gross_amount is not None:
-            row.gross_amount = gross_amount
+        # A same-day re-sync replaces the whole snapshot: a gross the
+        # provider no longer reports must not sit next to the new net.
+        row.gross_amount = gross_amount
     else:
         session.add(
             AssetValue(

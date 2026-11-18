@@ -45,7 +45,10 @@ def upgrade() -> None:
     # the performance read path between exact cost/current anchors. Sold and
     # redeemed holdings are skipped: sync keeps refreshing their metadata (a
     # redemption reports 0) but stops adding values, so the snapshot is newer
-    # than their latest value.
+    # than their latest value. The column holds at most 9 integer digits: an
+    # amount that doesn't fit, even once rounded to 6 decimals, is left null
+    # instead of aborting the upgrade. The CASE makes the cast run only on
+    # strings the pattern accepted.
     op.execute(
         """
         WITH latest_values AS (
@@ -54,16 +57,18 @@ def upgrade() -> None:
             ORDER BY asset_id, date DESC, id DESC
         )
         UPDATE asset_values value
-        SET gross_amount = (asset.external_metadata ->> 'amount')::numeric
+        SET gross_amount = round((asset.external_metadata ->> 'amount')::numeric, 6)
         FROM assets asset, latest_values latest
         WHERE value.id = latest.id
           AND latest.asset_id = asset.id
           AND asset.source = 'pluggy'
           AND asset.sell_date IS NULL
           AND upper(coalesce(asset.external_metadata ->> 'status', '')) <> 'TOTAL_WITHDRAWAL'
-          AND asset.external_metadata ->> 'amount' IS NOT NULL
-          AND asset.external_metadata ->> 'amount'
-              ~ '^-?[0-9]+([.][0-9]+)?$'
+          AND CASE
+              WHEN asset.external_metadata ->> 'amount' ~ '^-?[0-9]{1,9}([.][0-9]+)?$'
+              THEN abs(round((asset.external_metadata ->> 'amount')::numeric, 6)) < 1000000000
+              ELSE false
+          END
         """
     )
 
