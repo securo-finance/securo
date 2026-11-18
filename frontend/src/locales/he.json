@@ -2131,7 +2131,7 @@
     "refreshAllPrices": "רענן מחירים",
     "refreshAllPricesDone": "עודכנו {{refreshed}} מחירים, {{skipped}} ללא מחיר חדש",
     "refreshAllPricesNone": "אין נכסים בתמחור שוק לרענון",
-    "refreshAllPricesRateLimited": "ספק נתוני השוק מגביל כעת בקשות. {{refreshed}} מחירים עודכנו לפני העצירה — נסו שוב בעוד דקה.",
+    "refreshAllPricesRateLimited": "ספק נתוני השוק מגביל כעת בקשות. {{refreshed}} מחירים עודכנו לפני העצירה. נסו שוב בעוד דקה.",
     "priceRefreshed": "המחיר רוענן",
     "purchaseDate": "תאריך רכישה",
     "purchasePrice": "מחיר רכישה",

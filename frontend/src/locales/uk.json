@@ -2140,7 +2140,7 @@
     "refreshAllPrices": "Оновити ціни",
     "refreshAllPricesDone": "Оновлено {{refreshed}} цін, {{skipped}} без нової котировки",
     "refreshAllPricesNone": "Немає активів із ринковою ціною для оновлення",
-    "refreshAllPricesRateLimited": "Постачальник ринкових даних зараз обмежує запити. До зупинки оновилося {{refreshed}} цін — спробуйте ще раз за хвилину.",
+    "refreshAllPricesRateLimited": "Постачальник ринкових даних зараз обмежує запити. До зупинки оновилося {{refreshed}} цін. Спробуйте ще раз за хвилину.",
     "priceRefreshed": "Ціну оновлено",
     "purchaseDate": "Дата купівлі",
     "purchasePrice": "Ціна купівлі",

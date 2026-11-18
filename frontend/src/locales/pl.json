@@ -2212,7 +2212,7 @@
     "refreshAllPrices": "Odśwież ceny",
     "refreshAllPricesDone": "Zaktualizowano {{refreshed}} cen, {{skipped}} bez nowej wyceny",
     "refreshAllPricesNone": "Brak aktywów wycenianych rynkowo do odświeżenia",
-    "refreshAllPricesRateLimited": "Dostawca danych rynkowych ogranicza teraz liczbę zapytań. Zaktualizowano {{refreshed}} cen przed zatrzymaniem — spróbuj ponownie za minutę.",
+    "refreshAllPricesRateLimited": "Dostawca danych rynkowych ogranicza teraz liczbę zapytań. Zaktualizowano {{refreshed}} cen przed zatrzymaniem. Spróbuj ponownie za minutę.",
     "priceRefreshed": "Odświeżono cenę",
     "purchaseDate": "Data zakupu",
     "purchasePrice": "Cena zakupu",
