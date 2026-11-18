@@ -34,7 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core import redis as redis_store
 from app.models.access_token import AccessToken
-from app.models.bank_connection import BankConnection
+from app.models.bank_connection import LAST_SYNC_FAILURE_KEY, BankConnection
 from app.models.plugin_connection import PluginConnection
 from app.models.workspace_plugin import WorkspacePlugin
 from app.plugins import logos, runner, vault
@@ -270,6 +270,7 @@ async def _update_values(
     if unknown:
         raise PluginConnectionError(f"unknown fields: {', '.join(sorted(unknown))}")
     kept = {**{k: v for k, v in config.items() if k in fields}, **{k: v for k, v in secrets.items() if k in fields}}
+    changed = any(kept.get(k) != v for k, v in given.items())
     new_config, new_secrets = _split(integration, {**kept, **given})
     connection.config = new_config
     # The form's secrets replace theirs; everything else the plugin or Securo stored stays.
@@ -284,6 +285,9 @@ async def _update_values(
         bank = await session.get(BankConnection, connection.bank_connection_id)
         if bank is not None:
             bank.display_name = connection.name
+    if changed:
+        # Only new values end the reason the old ones left; a rename does not.
+        await _forget_bank_failure(session, connection)
     await _mirror_status(session, connection)
     await session.commit()
     return connection
@@ -436,25 +440,43 @@ async def finish_oauth(
         raise PluginConnectionError("this sign-in link expired or wasn't started here; try again")
     connection = await get_connection(session, workspace_id, uuid.UUID(payload["connection_id"]))
     result, secrets = await _call(session, connection, "oauth_exchange", {"code": code, "redirect_uri": redirect_uri()})
-    _keep(connection, result, secrets)
+    signed_in = _keep(connection, result, secrets)
     connection.status = "pending"
     connection.last_error = None
+    if signed_in:
+        await _forget_bank_failure(session, connection)
     await _mirror_status(session, connection)
     await session.commit()
     return connection
 
 
-def _keep(connection: PluginConnection, result: Any, secrets: dict[str, Any]) -> None:
-    """Store what a call handed back: new secrets (merged) and a new cursor."""
-    if not isinstance(result, dict):
+async def _forget_bank_failure(session: AsyncSession, connection: PluginConnection) -> None:
+    """New credentials end the reason the old ones left on the bank card (issue #1405)."""
+    if connection.bank_connection_id is None:
         return
+    bank = await session.get(BankConnection, connection.bank_connection_id)
+    settings = (bank.settings if bank is not None else None) or {}
+    if bank is not None and LAST_SYNC_FAILURE_KEY in settings:
+        bank.settings = {k: v for k, v in settings.items() if k != LAST_SYNC_FAILURE_KEY}
+
+
+def _keep(connection: PluginConnection, result: Any, secrets: dict[str, Any]) -> bool:
+    """Store what a call handed back: new secrets (merged) and a new cursor.
+
+    True when the call handed back secrets of its own to store."""
+    if not isinstance(result, dict):
+        return False
+    stored = False
     new_secrets = result.get("secrets")
-    if isinstance(new_secrets, dict) and new_secrets:
-        merged = {**secrets, **{k: v for k, v in new_secrets.items() if not str(k).startswith("__securo_")}}
-        connection.secrets = vault.seal(merged)
+    if isinstance(new_secrets, dict):
+        own = {k: v for k, v in new_secrets.items() if not str(k).startswith("__securo_")}
+        if own:
+            connection.secrets = vault.seal({**secrets, **own})
+            stored = True
     new_state = result.get("state")
     if isinstance(new_state, dict):
         connection.state = new_state
+    return stored
 
 
 async def sync(session: AsyncSession, connection: PluginConnection) -> PluginConnection:

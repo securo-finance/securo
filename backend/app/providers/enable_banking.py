@@ -444,6 +444,10 @@ class EnableBankingProvider(BankProvider):
         # Accounts whose transactions this sync fetched only in part; the
         # sync then leaves last_sync_at alone so the rest is asked for again.
         self.incomplete_account_ids: set[str] = set()
+        # Accounts the bank refused in part or in full because the user was
+        # not present: the run read data, but a sync with the user present is
+        # still needed (issue #1405).
+        self.presence_required_account_ids: set[str] = set()
         # External ids of accounts whose transaction pages stopped before the
         # last one (a repeated cursor or the page cap). What was read is still
         # imported, but it is not the whole feed, so the sync layer must not
@@ -1032,6 +1036,7 @@ class EnableBankingProvider(BankProvider):
                     raise
                 logger.warning("Account %s needs the user present: %s", uid, exc)
                 presence_refusal = presence_refusal or exc
+                self.presence_required_account_ids.add(uid)
                 continue
             except httpx.HTTPError as exc:
                 # A *transient* per-account failure. Without details we can't
@@ -1177,6 +1182,7 @@ class EnableBankingProvider(BankProvider):
         )
         if refused_in_background:
             self.incomplete_account_ids.add(account_external_id)
+            self.presence_required_account_ids.add(account_external_id)
             logger.warning(
                 "Enable Banking refused transactions of account %s from %s without "
                 "the user present; fetched from %s and kept the earlier range for a "

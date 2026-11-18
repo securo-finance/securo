@@ -180,4 +180,39 @@ describe('TransactionDrillDown', () => {
     expect((await screen.findAllByText('-$90.00')).length).toBeGreaterThan(0)
     expect(transactions.list).toHaveBeenCalledWith(expect.objectContaining({ status: 'posted', to: '2026-09-12' }))
   })
+
+  it('counts the owner share of a split credit only when asked, and shows the full amount', async () => {
+    vi.mocked(transactions.list).mockResolvedValue({
+      items: [
+        {
+          id: 'owned',
+          description: 'Group refund',
+          date: '2026-11-05',
+          type: 'credit',
+          amount: 100,
+          amount_primary: 100,
+          currency: 'USD',
+          status: 'posted',
+          category: null,
+          attachment_count: 0,
+          splits: [{ share_amount: 50 }, { share_amount: 50 }],
+          viewer_share: 50,
+          is_shared: false,
+          user_id: 'me',
+        },
+      ],
+      total: 1,
+    } as never)
+    const base = { title: 'Income', type: 'credit' as const, from: '2026-11-01', to: '2026-11-30', ownShare: true }
+
+    const { unmount } = renderWithProviders(<TransactionDrillDown filter={base} onClose={vi.fn()} />)
+    // The statement counts credits in full.
+    expect((await screen.findAllByText('$100.00')).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/part of/)).not.toBeInTheDocument()
+    unmount()
+
+    renderWithProviders(<TransactionDrillDown filter={{ ...base, ownShareCredits: true }} onClose={vi.fn()} />)
+    expect(await screen.findByText('+$50.00')).toBeInTheDocument()
+    expect(screen.getByText(/part of \$100\.00/)).toBeInTheDocument()
+  })
 })

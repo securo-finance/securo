@@ -12,9 +12,10 @@ name: fast lane
 # The gates, all of which must hold:
 #   1. the PR is against main, not a draft, and has no standing CHANGES_REQUESTED
 #   2. it carries `risk: low` or `risk: medium`
-#   3. none of its files match BLOCKED_PATHS below
+#   3. none of its code files match BLOCKED below; documentation never does
 #   4. the three required checks are green on the exact head being merged
-#   5. a trusted reviewer left a verdict comment naming that same head SHA
+#   5. a trusted reviewer other than its author left a verdict comment naming
+#      that same head SHA
 #   6. no unresolved CodeRabbit `Major` or `Critical` thread is left on it
 #
 # A refusal is also said on the pull request itself, in one comment this
@@ -55,16 +56,18 @@ on:
   # open pull request instead, which also covers any event GitHub did not
   # deliver. `workflow_dispatch` takes one PR number by hand, or none to sweep.
   #
-  # The sweep has two clocks, because one of them turned out not to exist. The
-  # cron below has produced no run since it landed on main — not one of its
-  # hourly slots — while the workflow stayed `active`, so it is kept only as the
-  # thing to fall back on if GitHub ever starts delivering it. What opens the
-  # slot in practice is the first CI run after :00 on main, below in step 0:
-  # every merge to main starts one, so it is the one event this repository is
-  # guaranteed to deliver. That holds for a merge made by a person, which is a
-  # push, and for a merge made by this lane, which dispatches `ci.yml` because a
-  # push made with the workflow token starts no run — and the lane's own merge
-  # is the one that leaves a resolved thread behind.
+  # The sweep has two clocks. The cron below is the older one and it does fire,
+  # but late: it passed over two of its first three slots on main and delivered
+  # the third 33 minutes after the fact (17 Nov, 23:50Z for the 23:17 one). A
+  # clock that late cannot be what makes the lane timely, so it stays the
+  # fallback. What opens the slot in practice is the first CI run after :00 on
+  # main, below in step 0: every merge to main starts one, so it is the one
+  # event this repository is guaranteed to deliver. That holds for a merge made
+  # by a person, which is a push, and for a merge made by this lane, which
+  # dispatches `ci.yml` because a push made with the workflow token starts no
+  # run — and the lane's own merge is the one that leaves a resolved thread
+  # behind. A slot is swept once even when the lane merges several pull
+  # requests inside it: the claim in step 0 covers that.
   schedule:
     - cron: '17 * * * *'
   workflow_dispatch:
@@ -85,12 +88,14 @@ on:
 # longer the check: it answers a question nobody depends on any more, since the
 # cron is the fallback and not the clock.
 #
-# A sweep is not one run per merge: only a CI run on main queued in the first ten
-# minutes of the hour opens the slot, so an hour with six merges sweeps once or
-# twice rather than six times. The cost of a sweep is every open pull request
-# through the gates (~250 calls today), and that guard is what keeps the
-# workflow token's hourly budget for the per-pull-request runs somebody is
-# actually waiting on.
+# A sweep is not one run per merge. Only a CI run on main queued in the first ten
+# minutes of the hour opens the slot, and only the first of those does: the rest
+# find the slot taken and log `sweep not opened by this run`, so an hour with six
+# merges still sweeps once. That matters because the lane's own merges dispatch
+# `ci.yml`, so without the claim a sweep would start the next one. The cost of a
+# sweep is every open pull request through the gates (~250 calls today), and that
+# guard is what keeps the workflow token's hourly budget for the
+# per-pull-request runs somebody is actually waiting on.
 #
 # A manual run proves the other half, that the sweep itself works. Its log
 # carries `sweeping N open pull requests` and then one line per pull request: the
@@ -128,15 +133,24 @@ jobs:
           script: |
             const OWNER = context.repo.owner, REPO = context.repo.repo;
 
-            // Who may leave a verdict. Same trust boundary as the label axes:
-            // an agent pushing through this repository commits as its owner.
-            const VERDICT_AUTHORS = ['tassionoronha'];
+            // Who may leave a verdict. Two identities: the account that pushes
+            // (an agent commits as its owner, so its comment is
+            // indistinguishable from the owner's) and the `securo-review` App,
+            // installed on this repository only. The App is what makes a
+            // second reviewer identity possible at all.
+            const VERDICT_AUTHORS = ['tassionoronha', 'securo-review[bot]'];
+            // The App's slug as GitHub reports it on the comment itself. The
+            // field only exists for a token minted by an installation, and a
+            // user token cannot set it, so this is checked as well as the login.
+            const REVIEWER_APP = 'securo-review';
             const VERDICT = '<!-- fast-lane: approve -->';
-            // A pull request opened by this login is never merged by the lane.
-            // Every agent pushes as the owner, so a verdict it could leave on
-            // its own code would let that code approve itself: `pulls.get`
-            // alone cannot tell an agent's comment from the owner's.
-            const SELF_APPROVAL_GUARD = ['tassionoronha'];
+            // A verdict only counts from someone other than the pull request's
+            // author. `pulls.get` cannot tell an agent's comment from the
+            // owner's, so a verdict the author's own identity left would let
+            // code approve itself. Before the App existed the two sides were
+            // one login and this was a list of authors never merged by the
+            // lane; the comparison below says the same thing and also covers
+            // the case that list could not: our pull request, the App's verdict.
 
             const REQUIRED = ['Backend Tests', 'Frontend Checks', 'Helm Checks'];
 
@@ -165,6 +179,17 @@ jobs:
               [/(^|\/)\.env/,                                         'environment file'],
               [/plugin[-_]runner|runtime\.py$/i,                      'executes third-party code'],
             ];
+
+            // Documentation is text no process executes: a README beside the
+            // chart or a page under docs/ describes a deployment, it does not
+            // perform one, so it is not matched against the rules above at all.
+            // Two green, medium-risk pull requests (#1545 and #1465) waited for
+            // a person only because `charts/securo/README.md` matched the
+            // `deployment` rule. Every path that is code keeps matching: a
+            // rename still reports its previous name, so moving a blocked file
+            // into a documentation path does not hide it.
+            const isDocumentation = (p) =>
+              /\.(md|mdx)$/i.test(p) || /(^|\/)docs\//i.test(p);
 
             // A refusal used to exist only in this run's log, and a log expires:
             // the pull request a person had already approved looked exactly as
@@ -300,11 +325,28 @@ jobs:
                 // The marker must open the comment, so quoting a verdict in the
                 // conversation cannot pass as one; an edited comment never counts,
                 // because a verdict is a statement about one head, written once.
-                verdict = comments.filter((c) =>
-                  c.user && VERDICT_AUTHORS.includes(c.user.login)
-                  && (c.body || '').trimStart().startsWith(VERDICT)
-                  && (!c.updated_at || c.created_at === c.updated_at)
-                  && new RegExp(`sha:\\s*${head}\\b`).test(c.body || '')).pop() || null;
+                verdict = comments.filter((c) => {
+                  const body = c.body || '';
+                  if (!c.user || !VERDICT_AUTHORS.includes(c.user.login)) return false;
+                  // The author's own verdict is not a verdict. It is dropped
+                  // here, not only at the gate, so that it cannot shadow a real
+                  // one written before it: an author's identity commenting its
+                  // own approval after the App's would otherwise take the merge
+                  // away from a pull request the App had approved.
+                  if (c.user.login === pr.user.login) return false;
+                  // A verdict attributed to the App must come from an
+                  // installation of it: the login alone is a string a fork
+                  // cannot forge, but the field is the proof GitHub signs.
+                  if (c.user.login === `${REVIEWER_APP}[bot]`
+                      && (c.performed_via_github_app || {}).slug !== REVIEWER_APP) {
+                    core.info(`#${number}: ignoring a verdict whose app slug is not ` +
+                      REVIEWER_APP);
+                    return false;
+                  }
+                  return body.trimStart().startsWith(VERDICT)
+                    && (!c.updated_at || c.created_at === c.updated_at)
+                    && new RegExp(`sha:\\s*${head}\\b`).test(body);
+                }).pop() || null;
               } catch (e) {
                 // No readable approval means nothing to report either way; the
                 // gates below still run and gate 4 names the missing verdict.
@@ -336,6 +378,7 @@ jobs:
               // workflow out of its directory would otherwise pass the list.
               for (const f of files) {
                 for (const p of [f.filename, f.previous_filename].filter(Boolean)) {
+                  if (isDocumentation(p)) continue;
                   for (const [re, what] of BLOCKED) {
                     if (re.test(p)) {
                       return skip(`\`${p}\` is in a part of the repository that is ` +
@@ -416,13 +459,14 @@ jobs:
               }
 
               // ---- 4. the verdict names the head we are about to merge ------
-              if (SELF_APPROVAL_GUARD.includes(pr.user.login)) {
-                // Never said on the pull request: a comment under the author's
-                // own pull request explaining the rule only spells out the guard.
-                return skip(`opened by ${pr.user.login}, which is not merged ` +
-                  'automatically', false);
+              // The selection above already left out the author's own comments,
+              // so any verdict still here is a second opinion and a missing one
+              // is the refusal. Nothing about a pull request the author opened
+              // is ever said on it: a comment there would only spell out the rule.
+              if (!verdict) {
+                return skip('it carries no approval from an identity other than ' +
+                  'its author', false);
               }
-              if (!verdict) return skip('it carries no approval for the commit checked');
 
               // ---- 5. green, on that exact head ----------------------------
               const { data: checks } = await github.rest.checks.listForRef(
@@ -493,6 +537,78 @@ jobs:
               return null;
             }
 
+            // ---- 0a. the slot belongs to its first run on main -------------
+            // A merge by this lane dispatches `ci.yml`, so a slot in which the
+            // lane merges k pull requests starts k CI runs on main, and each of
+            // them used to open the slot again: the sweep merged, the merges
+            // started the next sweeps, and the cost of one slot grew with the
+            // number of pull requests it merged — each sweep costing every open
+            // pull request through the gates (~250 calls) against the token's
+            // 1,000 an hour, the same budget the per-pull-request runs somebody
+            // is waiting on draw from.
+            //
+            // So the slot is claimed by its earliest CI run on main, and no
+            // state is written to say so: the run list is the claim, one call
+            // wide. A run asks whether an earlier run in the same slot exists
+            // that has not failed, and if one does, bows out. A run still going
+            // counts, because `ci.yml` never cancels a run on main and it will
+            // finish; a failed or cancelled one does not, or its slot would be
+            // lost with it. Ordering is by when the attempt started, then by run
+            // id, so exactly one attempt per slot finds nothing to bow to. The
+            // start time and not the id, because a re-run keeps its id and gets
+            // a new attempt: rerun at :05, the run created at :00 would come
+            // back as the oldest id in the slot and open a second sweep over a
+            // slot already swept. The one cost is that a slot can be lost when
+            // every earlier attempt fails only after a later one has already
+            // bowed out — the next hour's cron picks it up, which is a delay,
+            // not a gate: nothing here decides a merge.
+            const SLOT_MINUTES = 10;
+            const inSlot = (iso) => {
+              const t = new Date(iso);
+              // A run whose start time cannot be read opens nothing: the slot
+              // is what bounds a sweep's cost, and guessing it would not.
+              return !Number.isNaN(t.getTime()) && t.getUTCMinutes() < SLOT_MINUTES;
+            };
+            async function slotIsTaken(run) {
+              let runs = [];
+              try {
+                const { data } = await github.rest.actions.listWorkflowRuns({
+                  owner: OWNER, repo: REPO, workflow_id: 'ci.yml',
+                  branch: 'main', per_page: 50,
+                });
+                runs = data.workflow_runs || [];
+              } catch (e) {
+                // Without the list, sweeping is the behaviour before this
+                // claim: the cost is bounded by the slot's own ten minutes.
+                core.info(`could not read the runs on main: ${e.message}`);
+                return false;
+              }
+              // Same hour by the string itself: `run_started_at` is UTC and
+              // slicing it cannot drift through a time zone. A slot with more
+              // than 50 runs is beyond what a page can say, and the only
+              // consequence of missing one is an extra sweep, never a merge.
+              const slot = String(run.run_started_at).slice(0, 13);
+              const mineAt = String(run.run_started_at);
+              const earlier = runs.filter((r) => {
+                const at = String(r.run_started_at || '');
+                if ((r.event !== 'push' && r.event !== 'workflow_dispatch')
+                    || at.slice(0, 13) !== slot || !inSlot(at)) return false;
+                // Earlier by when this attempt started, not by id: a re-run
+                // keeps its id and starts now. Two attempts on the same second
+                // fall back to the id, so the order is still total.
+                if (!(at < mineAt || (at === mineAt && r.id < run.id))) return false;
+                return !(r.status === 'completed' && r.conclusion !== 'success');
+              });
+              if (!earlier.length) return false;
+              const openedBy = earlier.reduce((a, b) =>
+                String(b.run_started_at) < String(a.run_started_at)
+                  || (String(b.run_started_at) === String(a.run_started_at) && b.id < a.id)
+                  ? b : a);
+              core.info(`sweep not opened by this run: run ` +
+                `${openedBy.id} opened this slot`);
+              return true;
+            }
+
             // ---- 0. which pull request is this event about? ----------------
             const ev = context.eventName;
             let number = null;
@@ -510,15 +626,14 @@ jobs:
               // exactly the case the sweep exists for.
               //
               // The first ten minutes of the hour are the slot the cron was
-              // meant to open. A busy hour sweeps once or twice instead of once
-              // per merge; the sweep is every open pull request, so the guard is
-              // what keeps the token for the per-pull-request runs somebody is
-              // waiting on. `run_started_at` and not the clock: a CI run queued
-              // at :06 and finishing at :20 opens the slot it was queued in.
+              // meant to open. `run_started_at` and not the clock: a CI run
+              // queued at :06 and finishing at :20 opens the slot it was queued
+              // in. Of the runs in that slot only the first sweeps (0a above).
               const onMain = run.head_branch === 'main'
                 && (run.event === 'push' || run.event === 'workflow_dispatch');
               if (onMain) {
-                if (new Date(run.run_started_at).getUTCMinutes() >= 10) return;
+                if (!inSlot(run.run_started_at)) return;
+                if (await slotIsTaken(run)) return;
                 sweep = true;
               } else {
                 if (run.event !== 'pull_request') return;

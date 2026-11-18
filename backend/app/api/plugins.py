@@ -2,7 +2,8 @@
 
 All of it answers 404 while PLUGINS_ENABLED is off. Reading the catalog
 or a plan only needs to see the workspace; applying needs write access,
-and for a plugin with code, the owner. Connections need write access.
+and for a plugin with code, the owner or a manager. Connections need write
+access.
 Access tokens can't reach these routes.
 """
 import re
@@ -96,7 +97,7 @@ async def _guarded(call):
     except service.PluginForbidden:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the workspace owner can add, update or remove a plugin with code",
+            detail="Only the workspace owner or a manager can add, update or remove a plugin with code",
         )
     except service.PluginUnavailable as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Plugin unavailable: {exc}")

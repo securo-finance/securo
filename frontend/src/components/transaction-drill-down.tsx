@@ -38,6 +38,9 @@ export type DrillDownFilter = {
   // Count only the viewer's share of a split expense, as budgets and the
   // statement do, instead of the full amount that hit the account.
   ownShare?: boolean
+  // With `ownShare`, also count only the viewer's share of a split credit,
+  // as the dashboard's income card does.
+  ownShareCredits?: boolean
   // Total the panel as credits minus debits, for rows that show a net amount.
   netTotal?: boolean
 }
@@ -151,13 +154,15 @@ export function TransactionDrillDown({
       const parentPrimary = tx.amount_primary != null ? Number(tx.amount_primary) : null
       // Budgets (useViewerShare): the viewer's group share as the API tags it.
       const viewerShare = useViewerShare && tx.viewer_share != null ? Number(tx.viewer_share) : null
-      // The statement (ownShare): only the viewer's part of a split expense,
+      // The statement and the dashboard cards (ownShare): only the viewer's
+      // part of a split expense (and, with ownShareCredits, of a split credit),
       // the way the backend counts it: a member in the split keeps their own
       // share, the owner the amount less everyone else's shares, and anyone
       // else the full amount.
       const splits = tx.splits ?? []
+      const countsShare = tx.type === 'debit' || (tx.type === 'credit' && !!filter?.ownShareCredits)
       const ownShare =
-        viewerShare != null || !filter?.ownShare || tx.type !== 'debit'
+        viewerShare != null || !filter?.ownShare || !countsShare
           ? null
           : tx.is_shared
             ? Number(tx.viewer_share ?? 0)
@@ -195,7 +200,7 @@ export function TransactionDrillDown({
         isPending: tx.status === 'pending',
         attachmentCount: tx.attachment_count ?? 0,
         transaction: tx,
-        partOf: isPart ? Math.abs(Number(tx.amount)) : null,
+        partOf: isPart || (share != null && Math.abs(share) !== Math.abs(parentAmount)) ? Math.abs(parentAmount) : null,
       })
     }
 

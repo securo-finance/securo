@@ -7,7 +7,7 @@ from typing import Optional
 from sqlalchemy import String, and_, case, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.app_clock import app_today
+from app.core.app_clock import app_timezone, app_today
 from app.core.config import get_settings
 from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
 from app.models.account import Account
@@ -154,12 +154,23 @@ async def _net_worth_at(
     summed and only assets in the collection's wallets (``asset_group_ids``)
     are included.
 
-    ``accounts`` lets a caller that already fetched the (date-independent) open
-    account list for this workspace/filter pass it in, instead of re-querying
+    ``accounts`` lets a caller that already fetched the account list for
+    this workspace/filter pass it in, instead of re-querying
     it for every snapshot in a multi-point trend. Omit it to fetch as before.
     """
     if accounts is None:
-        accounts = await _get_open_accounts(session, workspace_id, account_ids)
+        accounts = await _get_open_accounts(session, workspace_id, account_ids, closed_after=cutoff)
+    # An account closed after the cutoff was still open on it. A closed card on
+    # a shared credit line stays out: its frozen balance can't be reconciled
+    # with the line's live one, and the open cards already carry that debt.
+    accounts = [
+        a for a in accounts
+        if not a.is_closed or (
+            a.closed_at is not None
+            and a.closed_at.astimezone(app_timezone()).date() > cutoff
+            and not (a.type == "credit_card" and a.shared_balance_group)
+        )
+    ]
 
     accounts_total = 0.0
     liabilities_total = 0.0
@@ -395,9 +406,9 @@ async def get_net_worth_report(
 
     points = _date_points(start, axis_end, interval)
 
-    # Fetch the open-account list once: it does not depend on the snapshot
-    # date, so every point below reuses it instead of re-querying it.
-    accounts = await _get_open_accounts(session, workspace_id, account_ids)
+    # Fetch the account list once, including accounts closed during the
+    # period; each point below keeps the ones still open on its date.
+    accounts = await _get_open_accounts(session, workspace_id, account_ids, closed_after=start)
 
     # Compute snapshot at each date point
     trend: list[ReportDataPoint] = []
@@ -504,8 +515,13 @@ async def get_income_expenses_report(
     financial_year_start_month: int = 1,
     start_date: date | None = None,
     end_date: date | None = None,
+    include_forecasts: bool = False,
 ) -> ReportResponse:
-    """Build income/expenses; explicit custom windows include actuals only."""
+    """Build income/expenses; explicit custom windows include actuals only.
+
+    ``include_forecasts`` keeps the estimates for an explicit window that
+    comes from a preset (This Month, Last Month, a window stepped back).
+    """
     filtered = account_ids is not None
     acct_filter = [Transaction.account_id.in_(account_ids)] if filtered else []
     real_today = app_today()
@@ -693,15 +709,18 @@ async def get_income_expenses_report(
         )
 
     # Custom windows report only actuals, including when they end today.
-    # Presets retain their existing full-month estimates.
-    include_forecasts = start_date is None and end_date is None
+    # Presets retain their existing full-month estimates, also when the page
+    # sends them as explicit dates (issue #1408).
+    include_forecasts = include_forecasts or (start_date is None and end_date is None)
     forecast_map: dict[str, tuple[float, float]] = {}
 
     # Add recurring projections for each month in the range (consistent with dashboard)
     from app.services.dashboard_service import _month_range, _get_recurring_projections
 
+    # Months up to the window's end: a window stepped back ends before today,
+    # and its summary must not pick up the months after it.
     cursor = start
-    while include_forecasts and cursor <= real_today:
+    while include_forecasts and cursor <= axis_end:
         m_start, m_end = _month_range(cursor)
         # A day-window range can start mid-month: only project occurrences that
         # fall inside the requested window.
@@ -928,14 +947,16 @@ async def get_income_expenses_report(
     # we surface them as their own "investments" group — money set aside, distinct
     # from spending and from leftover surplus (mirrors how Sure shows an
     # "Investment Contributions" node). Paired account transfers stay excluded via
-    # the transfer_pair_id filter, so only one-sided movements (contributions)
-    # appear here.
+    # the transfer_pair_id filter, so only one-sided movements appear here:
+    # debits are contributions, credits are withdrawals, which the Sankey draws
+    # as a source of money beside income (#1418).
     inv_result = await session.execute(
         with_category_lines(
             select(
                 Category.id,
                 Category.name,
                 Category.color,
+                Transaction.type,
                 func.sum(amount_expr),
             ).select_from(Transaction)
         )
@@ -945,7 +966,6 @@ async def get_income_expenses_report(
             report_date >= start,
             report_date <= axis_end,
             Transaction.source != "opening_balance",
-            Transaction.type == "debit",
             Transaction.status == "posted",
             Transaction.transfer_pair_id.is_(None),
             Transaction.is_ignored.is_(False),
@@ -954,13 +974,14 @@ async def get_income_expenses_report(
             Category.is_ignored.is_(False),
             *acct_filter,
         )
-        .group_by(Category.id, Category.name, Category.color)
+        .group_by(Category.id, Category.name, Category.color, Transaction.type)
     )
-    for cat_id, cat_name, cat_color, total_amount in inv_result.all():
+    for cat_id, cat_name, cat_color, txn_type, total_amount in inv_result.all():
         amount = abs(float(total_amount or 0))
         if amount <= 0:
             continue
-        comp_map[(str(cat_id), "investments")] = {
+        group = "withdrawals" if txn_type == "credit" else "investments"
+        comp_map[(str(cat_id), group)] = {
             "label": cat_name or "Investments",
             "color": cat_color or "#0EA5E9",
             "value": amount,
@@ -1061,7 +1082,7 @@ async def get_income_expenses_report(
     # Add recurring projections to composition and category trend
     cat_cache: dict[str, dict] = {}
     cursor2 = start
-    while include_forecasts and cursor2 <= real_today:
+    while include_forecasts and cursor2 <= axis_end:
         m_start, m_end = _month_range(cursor2)
         projections = await _get_recurring_projections(
             session, workspace_id, m_start, m_end, account_ids,

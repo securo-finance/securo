@@ -21,6 +21,7 @@ vi.mock('@/hooks/use-display-locale', () => ({
 vi.mock('@/hooks/use-privacy-mode', () => ({
   usePrivacyMode: () => ({ mask: (value: string) => value, privacyMode: false }),
 }))
+vi.mock('@/hooks/use-timezone', () => ({ useEffectiveTimezone: () => 'UTC' }))
 vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => ({ user: { is_superuser: auth.isSuperuser, preferences: { currency_display: 'USD' } } }),
 }))
@@ -68,6 +69,7 @@ function asset(currency: string): Asset {
     last_price: null,
     last_price_at: null,
     logo_url: null,
+    provider_value_date: null,
     average_price: null,
     total_invested: null,
     realized_gain: null,

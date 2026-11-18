@@ -181,6 +181,8 @@ function compactCurrencyFormatter(currency: string, locale: string): Intl.Number
     style: 'currency',
     currency: currency || 'USD',
     notation: 'compact',
+    // Older engines default the minimum to 1 here and pad "R$20K" to "R$20.0K".
+    minimumFractionDigits: 0,
     maximumFractionDigits: 1,
   }
   try {

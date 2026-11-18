@@ -11,7 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
 from app.models.account import Account
-from app.models.asset import ASSET_PRICE_DECIMALS, LOAN_COLLATERAL_TYPES, Asset
+from app.models.asset import (
+    ASSET_PRICE_DECIMALS,
+    LOAN_COLLATERAL_TYPES,
+    PROVIDER_VALUE_DATE_METADATA_KEY,
+    Asset,
+)
 from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
 from app.models.user import User
@@ -120,6 +125,35 @@ def _generate_growth_values(
     return values
 
 
+def _provider_value_date(
+    asset: Asset, latest_value: Optional[AssetValue]
+) -> Optional[date]:
+    """The date the sync provider says the value on screen refers to, if any.
+
+    Only while the displayed figure is the provider's own. A manual valuation
+    dated after the last sync replaces it, and once a quote is cached a
+    market-priced asset shows units times that quote; warning about the
+    connection in either case would point at a number the user isn't looking
+    at. The quote condition mirrors `_compute_current_value`, so a holding
+    waiting for its first quote keeps the date of the amount actually shown.
+    """
+    if (
+        asset.valuation_method == "market_price"
+        and asset.last_price is not None
+        and asset.units is not None
+    ):
+        return None
+    if latest_value is None or latest_value.source != "sync":
+        return None
+    raw = (asset.external_metadata or {}).get(PROVIDER_VALUE_DATE_METADATA_KEY)
+    if not isinstance(raw, str):
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
 def _asset_to_read(
     asset: Asset,
     latest_value: Optional[AssetValue],
@@ -174,6 +208,7 @@ def _asset_to_read(
         last_price=float(asset.last_price) if asset.last_price is not None else None,
         last_price_at=asset.last_price_at,
         logo_url=asset.logo_url,
+        provider_value_date=_provider_value_date(asset, latest_value),
         average_price=float(asset.average_price) if asset.average_price is not None else None,
         total_invested=total_invested,
         realized_gain=float(asset.realized_gain) if asset.realized_gain is not None else None,

@@ -106,6 +106,7 @@ import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { isTransferTransaction } from '@/lib/transaction-transfer'
 import { readCalendarDateBasis } from '@/lib/transaction-calendar'
 import { ReportingDateBadge } from '@/components/reporting-date-badge'
+import { listDate } from '@/lib/list-date'
 
 type TransactionUpdatePayload = TransactionEditPayload & {
   apply_to_transfer_pair?: boolean
@@ -846,7 +847,7 @@ export default function TransactionsPage() {
     const groups: { date: string; label: string; items: Transaction[] }[] = []
     let current: { date: string; label: string; items: Transaction[] } | null = null
     for (const tx of filteredItems) {
-      const reportingDate = tx.reporting_date_override ?? tx.date
+      const reportingDate = listDate(tx)
       if (!current || current.date !== reportingDate) {
         current = {
           date: reportingDate,
@@ -1340,7 +1341,7 @@ export default function TransactionsPage() {
           <ReportingDateBadge tx={tx} locale={dateLocale} />
           {showInlineDate && (
             <p className="text-xs text-muted-foreground mt-0.5">
-              {new Date((tx.reporting_date_override ?? tx.date) + 'T00:00:00').toLocaleDateString(dateLocale)}
+              {new Date(listDate(tx) + 'T00:00:00').toLocaleDateString(dateLocale)}
             </p>
           )}
           {(showInlineNotes || showInlineTags) && tx.notes && (
@@ -1383,7 +1384,7 @@ export default function TransactionsPage() {
             style={widthStyle}
             className={`${baseClass} text-sm text-muted-foreground tabular-nums`}
           >
-            {new Date((tx.reporting_date_override ?? tx.date) + 'T00:00:00').toLocaleDateString(dateLocale)}
+            {new Date(listDate(tx) + 'T00:00:00').toLocaleDateString(dateLocale)}
           </TableCell>
         )
       case 'description':

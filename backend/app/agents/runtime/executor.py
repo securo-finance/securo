@@ -39,6 +39,7 @@ from app.agents.providers.base import (
     LLMUnavailableError,
     Role,
     ToolCall,
+    parse_tool_arguments,
 )
 from app.agents.providers.registry import build_provider
 from app.agents.services import agent_service, context_service, conversation_service, usage_service
@@ -501,14 +502,11 @@ class AgentExecutor:
             assistant_text = "".join(text_buf)
             assembled_calls: list[ToolCall] = []
             for tc in open_calls.values():
-                import json
-                try:
-                    args = json.loads(tc["args_buf"]) if tc["args_buf"] else {}
-                except json.JSONDecodeError:
-                    args = {"_raw": tc["args_buf"]}
+                args, invalid = parse_tool_arguments(tc["args_buf"])
                 assembled_calls.append(ToolCall(
                     id=tc["id"], name=tc["name"], arguments=args,
                     thought_signature=tc.get("thought_signature"),
+                    invalid_arguments=invalid,
                 ))
 
             # Persist assistant turn.
@@ -674,6 +672,19 @@ async def _safe_call_tool(
             "ok": False,
             "data": None,
             "text": f"Tool {call.name!r} is not available to this agent.",
+            "elapsed_ms": 0,
+        }
+    if call.invalid_arguments is not None:
+        # Running the tool with a guess (or the raw text under a made-up
+        # key) only fails inside the tool; tell the model what was wrong.
+        logger.warning("agent %s sent arguments for %r that are not a JSON object", agent_id, call.name)
+        return {
+            "ok": False,
+            "data": None,
+            "text": (
+                f"Tool {call.name!r} was not called: its arguments must be one JSON object, "
+                f"got {call.invalid_arguments[:200]!r}. Call it again with valid arguments."
+            ),
             "elapsed_ms": 0,
         }
     try:

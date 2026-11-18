@@ -485,7 +485,7 @@ export default function ReportsPage() {
       isCashFlow
         ? reports.cashFlow(months, interval, cashFlowBaseline, acctIds)
         : activeTab === 'income_expenses' || isMoneyMap
-          ? reports.incomeExpenses(months, interval, acctIds, period, days, apiStart, apiEnd)
+          ? reports.incomeExpenses(months, interval, acctIds, period, days, apiStart, apiEnd, !isCustomRange)
           : reports.netWorth(months, interval, acctIds, walletIds, period, apiStart, apiEnd),
     // Only request a custom report with both committed endpoints.
     enabled:
