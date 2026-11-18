@@ -131,9 +131,9 @@ def _best_movement(
 
     `alternative_descriptions` gives a candidate a second wording to be scored
     by when the first one does not link. A generated placeholder answers to the
-    bill's wording even after a `set_description` rule rewrote its own: the
-    charge at the bank still carries the bill's text, so both must be offered
-    or a renamed placeholder could never be found by it.
+    wording it was written with even after a `set_description` rule rewrote it:
+    the charge at the bank still carries that text, so both must be offered or
+    a renamed placeholder could never be found by it.
     """
     linked = []
     for candidate in candidates:
@@ -249,11 +249,14 @@ async def find_placeholder_for_incoming(
     far as the wider of the two on each side and the policies decide from
     there. The workspace's rule is resolved before the query for that reason.
 
-    A placeholder's own description is not the only wording it answers to. A
-    rule may have rewritten it since it was generated (`set_description`), and
-    the charge at the bank still carries the bill's. Both are offered to the
-    engine in each pass, the stored text first, so a renamed placeholder is
-    found by the charge it was written for.
+    A placeholder's current description is not the only wording it answers to.
+    A rule may have rewritten it since it was generated (`set_description`),
+    and the charge at the bank still carries the wording the placeholder was
+    written with, which `set_description` keeps in `original_description`.
+    Both are offered to the engine in each pass, the current text first, so a
+    renamed placeholder is found by the charge it was written for. The bill's
+    own description is deliberately not read here: it is today's wording, and
+    an occurrence carries the one it was generated with.
     """
     account = await session.get(Account, account_id)
     if account is None:
@@ -269,11 +272,7 @@ async def find_placeholder_for_incoming(
     p_before, p_after = _date_reach(policy)
     r_before, r_after = _date_reach(composed)
     result = await session.execute(
-        select(
-            Transaction,
-            RecurringTransaction.frequency,
-            RecurringTransaction.description,
-        )
+        select(Transaction, RecurringTransaction.frequency)
         .join(
             RecurringTransaction,
             RecurringTransaction.id == Transaction.recurring_transaction_id,
@@ -310,7 +309,7 @@ async def find_placeholder_for_incoming(
         [row[0] for row in rows],
         incoming,
         policy,
-        {row[0].id: row[2] for row in rows},
+        {row[0].id: row[0].original_description for row in rows},
     )
     if found is not None or not rows:
         return found
@@ -324,7 +323,7 @@ async def find_placeholder_for_incoming(
         account_id=account_id,
     )
     linked = []
-    for placeholder, frequency, template_description in rows:
+    for placeholder, frequency in rows:
         if placeholder.is_ignored:
             continue
         occurrence = Expectation(
@@ -341,12 +340,12 @@ async def find_placeholder_for_incoming(
         decision = evaluate(charge, [occurrence], narrowed)
         if (
             decision.port != "linked"
-            and template_description
-            and template_description != placeholder.description
+            and placeholder.original_description
+            and placeholder.original_description != placeholder.description
         ):
             decision = evaluate(
                 charge,
-                [replace(occurrence, description=template_description)],
+                [replace(occurrence, description=placeholder.original_description)],
                 narrowed,
             )
         if decision.port == "linked":

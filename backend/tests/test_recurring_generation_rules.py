@@ -306,3 +306,41 @@ async def test_a_renamed_placeholder_is_still_found_by_the_bills_wording(
     assert [row.id for row in rows] == [placeholder_id]
     assert rows[0].external_id == "gym-jan"
     assert rows[0].description == "Academia"
+
+
+@pytest.mark.asyncio
+async def test_a_later_template_edit_does_not_rename_an_older_occurrence(
+    session, test_user, test_workspace, synced_account
+):
+    """An occurrence keeps the wording it was written with.
+
+    Renaming the bill afterwards is a change for the occurrences still to
+    come; a charge of the new wording must not absorb the placeholder that
+    was written for the old one.
+    """
+    conn, account = synced_account
+    conn_id, account_id = conn.id, account.id
+    bill = await _make_bill(session, test_workspace, test_user, account)
+
+    await generate_pending(session, test_user.id, up_to=date(2025, 1, 10))
+
+    [placeholder] = await _generated(session, account_id)
+    placeholder_id = placeholder.id
+    bill.description = "Electric utility"
+    await session.commit()
+
+    provider = _bank_reporting_the_charge(description="Electric utility")
+    with patch("app.services.connection_service.get_provider", return_value=provider), \
+            patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+            patch("app.services.connection_service.stamp_primary_amount", new=AsyncMock()):
+        await sync_connection(session, conn_id, test_workspace.id, test_user.id)
+
+    rows = (await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == account_id,
+            Transaction.source != "opening_balance",
+        )
+    )).scalars().all()
+    assert len(rows) == 2
+    assert placeholder_id in [row.id for row in rows]
+    assert "Electric utility" in [row.description for row in rows if row.id != placeholder_id]
