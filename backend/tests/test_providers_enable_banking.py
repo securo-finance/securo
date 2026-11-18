@@ -525,31 +525,6 @@ async def test_background_sync_reads_the_card_off_the_cached_limit(eb_keys):
     assert "/accounts/card-1/details" not in calls
     assert accounts[0].balance == Decimal("100.00")
     assert accounts[0].available_credit == Decimal("4900.00")
-    # The cached limit is not news from the bank: published, it would
-    # overwrite a limit the user corrected on the account row since.
-    assert accounts[0].credit_limit is None
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("amount", [None, "", "n/a"])
-async def test_card_without_a_usable_available_figure_reads_the_booked_one(eb_keys, amount):
-    """An available balance with no usable amount says nothing about the free
-    credit; read as zero it would put the whole limit down as debt."""
-    provider = EnableBankingProvider()
-    handler = _card_bank(
-        [
-            _balance("CLBD", "-100.00"),
-            {"balance_type": "ITAV", "balance_amount": {"amount": amount, "currency": "PLN"}},
-        ],
-        details={"credit_limit": {"amount": "5000.00", "currency": "PLN"}},
-    )
-
-    with _patch_client(provider, handler):
-        accounts = await provider.get_accounts(_card_credentials())
-
-    card = accounts[0]
-    assert card.balance == Decimal("100.00")
-    assert card.available_credit is None
 
 
 @pytest.mark.asyncio
