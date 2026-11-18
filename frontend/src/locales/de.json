@@ -1293,6 +1293,7 @@
       "syncNow": "Jetzt synchronisieren"
     },
     "connected": "Bank erfolgreich verbunden",
+    "connectedImportFailed": "Bank verbunden, aber der erste Import ist fehlgeschlagen. Wiederhole die Synchronisierung, um fortzufahren.",
     "connectError": "Verbindung zur Bank fehlgeschlagen",
     "disconnected": "Verbindung entfernt",
     "confirmDisconnectTitle": "Bankverbindung trennen?",

@@ -1304,6 +1304,7 @@
       "syncNow": "סנכרון עכשיו"
     },
     "connected": "הבנק חובר בהצלחה",
+    "connectedImportFailed": "הבנק חובר, אך הייבוא הראשון נכשל. חזרו על הסנכרון כדי להשלים.",
     "connectError": "חיבור הבנק נכשל",
     "disconnected": "החיבור הוסר",
     "confirmDisconnectTitle": "לנתק את חיבור הבנק?",

@@ -1292,6 +1292,7 @@
       "syncNow": "Sync now"
     },
     "connected": "Bank connected successfully",
+    "connectedImportFailed": "Bank connected, but the first import failed. Retry the sync to finish.",
     "connectError": "Failed to connect bank",
     "disconnected": "Connection removed",
     "confirmDisconnectTitle": "Disconnect bank connection?",

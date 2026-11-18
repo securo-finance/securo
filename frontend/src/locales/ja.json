@@ -1292,6 +1292,7 @@
       "syncNow": "今すぐ同期"
     },
     "connected": "銀行を接続しました",
+    "connectedImportFailed": "銀行に接続しましたが、最初のインポートに失敗しました。同期を再試行して完了してください。",
     "connectError": "銀行の接続に失敗しました",
     "disconnected": "接続を削除しました",
     "confirmDisconnectTitle": "銀行接続を切断しますか?",

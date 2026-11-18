@@ -1356,6 +1356,7 @@
       "syncNow": "Synchronizovať teraz"
     },
     "connected": "Banka úspešne prepojená",
+    "connectedImportFailed": "Banka je pripojená, ale prvý import zlyhal. Zopakujte synchronizáciu na dokončenie.",
     "connectError": "Nepodarilo sa prepojiť banku",
     "disconnected": "Prepojenie odstránené",
     "confirmDisconnectTitle": "Odpojiť prepojenie banky?",
