@@ -416,10 +416,11 @@ jobs:
                       reviewThreads(first: 100) {
                         pageInfo { hasNextPage }
                         nodes {
+                          id
                           isResolved
                           isOutdated
-                          comments(first: 30) {
-                            pageInfo { hasNextPage }
+                          comments(first: 100) {
+                            pageInfo { hasNextPage endCursor }
                             nodes { author { login } body }
                           }
                         }
@@ -435,26 +436,59 @@ jobs:
                 } catch (e) {
                   return skip('its review threads could not be read', true, e.message);
                 }
-                // A gate that needs every thread must fail closed when it can
-                // only read some of them: a blocker past the first 100 threads,
-                // or past the thirtieth comment of one, would otherwise be
-                // invisible. Thirty is not a claim that a longer thread is
-                // suspicious — a pull request through three review rounds
-                // passes five on one thread easily — only that a thread that
-                // long is past what this check reads.
                 if (!threads) return skip('its review threads came back empty');
                 if (threads.pageInfo && threads.pageInfo.hasNextPage) {
                   return skip('it has more review threads than this check can read');
                 }
-                const truncated = (threads.nodes || []).some((t) =>
-                  t.comments && t.comments.pageInfo && t.comments.pageInfo.hasNextPage);
-                if (truncated) {
-                  return skip('one of its review threads has more comments than ' +
-                    'this check can read');
+
+                // One page of a thread is not the thread. A pull request
+                // through several review rounds grows long conversations, and
+                // the Major that holds the merge can sit past the first page —
+                // refusing the whole pull request because a resolved thread
+                // got chatty is a gate failing on the shape of the data
+                // rather than on what it found. Every further page is read, so
+                // the cap below only stops a thread nobody could call triaged.
+                const MAX_COMMENT_PAGES = 10;
+                const commentsOf = new Map();
+                try {
+                  for (const thread of threads.nodes || []) {
+                    const comments = [...((thread.comments || {}).nodes || [])];
+                    let info = (thread.comments || {}).pageInfo || {};
+                    let more = Boolean(info.hasNextPage);
+                    let pages = 1;
+                    while (more) {
+                      if (pages >= MAX_COMMENT_PAGES) {
+                        return skip('one of its review threads has more comments ' +
+                          'than this check can read');
+                      }
+                      const page = await github.graphql(
+                        `query($thread: ID!, $after: String) {
+                          node(id: $thread) {
+                            ... on PullRequestReviewThread {
+                              comments(first: 100, after: $after) {
+                                pageInfo { hasNextPage endCursor }
+                                nodes { author { login } body }
+                              }
+                            }
+                          }
+                        }`, { thread: thread.id, after: info.endCursor });
+                      info = ((page || {}).node || {}).comments;
+                      if (!info) {
+                        throw new Error(`thread ${thread.id} came back without comments`);
+                      }
+                      comments.push(...(info.nodes || []));
+                      more = Boolean(info.pageInfo && info.pageInfo.hasNextPage);
+                      info = info.pageInfo || {};
+                      pages += 1;
+                    }
+                    commentsOf.set(thread.id, comments);
+                  }
+                } catch (e) {
+                  return skip('one of its review threads could not be read', true, e.message);
                 }
                 const open = (threads.nodes || [])
                   .filter((t) => !t.isResolved && !t.isOutdated)
-                  .filter((t) => (t.comments.nodes || []).some((c) =>
+                  .filter((t) => (commentsOf.get(t.id) || []).some((c) =>
                     c.author && c.author.login === 'coderabbitai'
                     && /\b(major|critical)\b/i.test(c.body || '')));
                 if (open.length) {
