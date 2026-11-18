@@ -82,9 +82,11 @@ function row(id: string, description: string, isFlagged: boolean): Transaction {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.setSystemTime(new Date('2026-10-20T12:00:00'))
-  api.transactions.list.mockResolvedValue({
-    items: [row('tx-flagged', 'Pharmacy receipt', true), row('tx-plain', 'Bakery', false)],
-    total: 2, page: 1, limit: 50,
+  // Answer like the server: under flagged=true only the flagged row comes back.
+  api.transactions.list.mockImplementation(async (params: { flagged?: boolean }) => {
+    const items = [row('tx-flagged', 'Pharmacy receipt', true), row('tx-plain', 'Bakery', false)]
+      .filter((tx) => !params.flagged || tx.is_flagged)
+    return { items, total: items.length, page: 1, limit: 50 }
   })
   api.categories.list.mockResolvedValue([])
   api.categories.listIncludingHidden.mockResolvedValue([])
@@ -109,16 +111,22 @@ describe('flagged transactions', () => {
     expect(plain.parentElement!.querySelector('[aria-label="Flagged"]')).toBeNull()
   })
 
-  it('asks the API for flagged rows only when the URL carries flagged=1', async () => {
+  it('shows only flagged rows when the URL carries flagged=1', async () => {
     renderWithProviders(<TransactionsPage />, { route: '/transactions?flagged=1', path: '/transactions' })
 
-    await waitFor(() => expect(api.transactions.list).toHaveBeenCalled())
+    expect(await screen.findByText('Pharmacy receipt')).toBeInTheDocument()
+    expect(screen.queryByText('Bakery')).not.toBeInTheDocument()
     for (const [params] of api.transactions.list.mock.calls) {
       expect(params).toMatchObject({ flagged: true })
     }
   })
 
   it('drops a row that leaves the list from the selection', async () => {
+    // Bakery was still flagged when the page loaded.
+    api.transactions.list.mockResolvedValue({
+      items: [row('tx-flagged', 'Pharmacy receipt', true), row('tx-plain', 'Bakery', true)],
+      total: 2, page: 1, limit: 50,
+    })
     const { queryClient, user } = renderWithProviders(<TransactionsPage />, {
       route: '/transactions?flagged=1', path: '/transactions',
     })
@@ -137,10 +145,11 @@ describe('flagged transactions', () => {
     expect(screen.queryByText(/Export Selected/)).not.toBeInTheDocument()
   })
 
-  it('leaves the flag out of the request when the filter is off', async () => {
+  it('shows every row and leaves the flag out of the request when the filter is off', async () => {
     renderWithProviders(<TransactionsPage />, { route: '/transactions', path: '/transactions' })
 
-    await waitFor(() => expect(api.transactions.list).toHaveBeenCalled())
+    expect(await screen.findByText('Bakery')).toBeInTheDocument()
+    expect(screen.getByText('Pharmacy receipt')).toBeInTheDocument()
     for (const [params] of api.transactions.list.mock.calls) {
       expect(params.flagged).toBeUndefined()
     }
