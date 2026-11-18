@@ -10,6 +10,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.models.transaction import Transaction
 
+#: Length of `Transaction.notes`; an `append_notes` past it is skipped.
+NOTES_MAX_LENGTH = 1000
+
 
 def _strip_accents(text: str) -> str:
     """Remove diacritics (accents), preserving case."""
@@ -227,6 +230,7 @@ def apply_rule_actions(
     category_already_set: bool,
     *,
     skip_description: bool = False,
+    skip_payee: bool = False,
     assignable_category_ids: Collection[uuid.UUID] | None = None,
     existing_payee_ids: Collection[uuid.UUID] | None = None,
 ) -> bool:
@@ -274,6 +278,8 @@ def apply_rule_actions(
             tx.description_is_rule_managed = True
 
         elif op == "set_payee":
+            if skip_payee:
+                continue
             try:
                 payee_id = uuid.UUID(str(value))
             except (ValueError, AttributeError):
@@ -288,7 +294,10 @@ def apply_rule_actions(
                 continue
             existing = tx.notes or ""
             if new_tags not in existing:
-                tx.notes = (existing + " " + new_tags).strip() if existing else new_tags
+                notes = (existing + " " + new_tags).strip() if existing else new_tags
+                # A note past the column would fail the write and the batch with it.
+                if len(notes) <= NOTES_MAX_LENGTH:
+                    tx.notes = notes
 
         elif op == "ignore":
             tx.is_ignored = True

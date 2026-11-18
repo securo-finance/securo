@@ -678,6 +678,9 @@ async def preview_rules_for_transaction(
     user_id: uuid.UUID,
     transaction: Transaction,
     skip_category_rules: bool = False,
+    *,
+    skip_description: bool = False,
+    skip_payee: bool = False,
 ) -> Transaction:
     """Apply active rules to a detached preview and return it without persistence."""
     preview = _rule_preview(transaction)
@@ -686,12 +689,32 @@ async def preview_rules_for_transaction(
         user_id,
         preview,
         skip_category_rules=skip_category_rules,
+        skip_description=skip_description,
+        skip_payee=skip_payee,
     )
     return preview
 
 
+def description_is_manual(transaction: Transaction) -> bool:
+    """Whether the row's description must survive a rule pass.
+
+    Read it before a sync merges the provider's text into the row: a user who
+    renamed a placeholder to exactly what the bank later sends would otherwise
+    look like provider text. A row with no provenance is kept as it is, the
+    same way the sync merge treats it.
+    """
+    return not transaction.description_is_rule_managed and (
+        transaction.original_description is None
+        or transaction.description != transaction.original_description
+    )
+
+
 async def apply_rules_to_settled_transaction(
-    session: AsyncSession, user_id: uuid.UUID, transaction: Transaction,
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    transaction: Transaction,
+    *,
+    manual_description: bool,
 ) -> None:
     """Run the rules again on a row whose pending entry just posted.
 
@@ -699,26 +722,32 @@ async def apply_rules_to_settled_transaction(
     the rules that ran on it matched nothing; the posted entry brings the real
     description and payee. What the row already holds wins: the rules fill an
     empty category or payee, append their notes and may ignore the row, and
-    they replace the description only when the user did not write it.
+    they replace the description only when the user did not write it
+    (`manual_description`, from `description_is_manual` before the merge).
+    The rules run with those fields pinned, so a later rule never acts on a
+    value the row will not keep. A row the user ignored is left alone.
     """
-    lines = transaction.has_category_lines
+    if transaction.is_ignored:
+        return
+    # Read the notes under a row lock, so a note the user saved since the
+    # sync loaded the row is the one the rules append to.
+    await session.refresh(transaction, ["notes"], with_for_update=True)
     preview = await preview_rules_for_transaction(
-        session, user_id, transaction, skip_category_rules=lines
+        session,
+        user_id,
+        transaction,
+        skip_category_rules=transaction.has_category_lines,
+        skip_description=manual_description,
+        skip_payee=transaction.payee_id is not None,
     )
-    if transaction.category_id is None and not lines:
-        transaction.category_id = preview.category_id
-    if transaction.payee_id is None:
-        transaction.payee_id = preview.payee_id
-    if preview.description != transaction.description and not _has_manual_description(
-        transaction
-    ):
-        transaction.description = preview.description
-        transaction.original_description = preview.original_description
-        transaction.description_is_rule_managed = preview.description_is_rule_managed
+    transaction.category_id = preview.category_id
+    transaction.payee_id = preview.payee_id
+    transaction.description = preview.description
+    transaction.original_description = preview.original_description
+    transaction.description_is_rule_managed = preview.description_is_rule_managed
     # The preview started from the row's notes, so its notes keep the user's.
     transaction.notes = preview.notes
-    if preview.is_ignored:
-        transaction.is_ignored = True
+    transaction.is_ignored = preview.is_ignored
 
 
 def rule_payee_ids(rules: Iterable[Rule]) -> set[uuid.UUID]:
@@ -754,6 +783,9 @@ async def get_existing_rule_payee_ids(
 async def apply_rules_to_transaction(
     session: AsyncSession, user_id: uuid.UUID, transaction: Transaction,
     skip_category_rules: bool = False,
+    *,
+    skip_description: bool = False,
+    skip_payee: bool = False,
 ) -> None:
     """Apply all active rules to a transaction, modifying it in-place. Commits nothing.
 
@@ -796,6 +828,8 @@ async def apply_rules_to_transaction(
                 actions,
                 transaction,
                 category_set,
+                skip_description=skip_description,
+                skip_payee=skip_payee,
                 assignable_category_ids=assignable_categories,
                 existing_payee_ids=existing_payees,
             )

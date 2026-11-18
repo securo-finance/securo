@@ -1,10 +1,11 @@
 import uuid
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1903,19 +1904,21 @@ async def _eb_fetch(booked: list[dict], pending: list[dict]) -> list[Transaction
 
 
 async def _settle_held_pending(
-    session, conn, account, user_id, workspace_id, path: str, **held_fields,
+    session, conn, account, user_id, workspace_id, path: str,
+    notes_saved_meanwhile: str | None = None, **held_fields,
 ) -> uuid.UUID:
     """Hold a pending row, then sync the posted entry that settles it.
 
     `same-id`: the posted entry keeps the pending entry's id and brings the
     merchant text. `rekeyed`: it books under a new id, next to its pending
     spelling, and the sync re-keys the row it holds.
+
+    `notes_saved_meanwhile` is written to the database behind the session's
+    back after the row is loaded, as a user saving a note while a sync runs.
     """
     if path == "same-id":
         pending = _eb_txn(_eb_payload("auth-5", "4.50", remittance="Transaction"), "pending")
-        posted = TransactionData(
-            **{**pending.__dict__, "status": "posted", "description": "SUPERMARKT 12 AT"}
-        )
+        posted = replace(pending, status="posted", description="SUPERMARKT 12 AT")
         incoming = [posted]
         held_raw = pending.raw_data
         held_id_value = pending.external_id
@@ -1932,6 +1935,14 @@ async def _settle_held_pending(
     session.add(held)
     await session.commit()
     held_id = held.id
+    if notes_saved_meanwhile is not None:
+        await session.refresh(held)
+        await session.execute(
+            update(Transaction)
+            .where(Transaction.id == held_id)
+            .values(notes=notes_saved_meanwhile)
+            .execution_options(synchronize_session=False)
+        )
     await _sync_eb(session, conn, workspace_id, user_id, incoming)
     return held_id
 
@@ -2004,6 +2015,7 @@ async def test_sync_connection_rules_on_a_posted_row_keep_user_edits(
     session.add(_supermarket_rule(test_user.id, test_workspace.id, [
         {"op": "set_category", "value": str(rules.id)},
         {"op": "set_description", "value": "Supermarket"},
+        {"op": "append_notes", "value": "#groceries"},
     ]))
 
     await _settle_held_pending(
@@ -2012,9 +2024,119 @@ async def test_sync_connection_rules_on_a_posted_row_keep_user_edits(
     )
 
     rows = await _account_rows(session, account_id)
-    assert [(row.status, row.category_id, row.description) for row in rows] == [
-        ("posted", mine.id, "SUPERMARKT 12 AT lunch with Ana"),
+    assert [(row.status, row.category_id, row.description, row.notes) for row in rows] == [
+        ("posted", mine.id, "SUPERMARKT 12 AT lunch with Ana", "#groceries"),
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["same-id", "rekeyed"])
+async def test_sync_connection_rules_on_a_posted_row_see_only_kept_values(
+    session: AsyncSession, test_user, test_workspace, path,
+):
+    """A rule that would swap the user's payee or description does not, and a
+    later rule keyed on the swapped value does not fire on a row that keeps
+    the user's values. A renamed placeholder stays the user's text even when
+    the bank posts that same text."""
+    from app.models.payee import Payee
+    from app.models.rule import Rule
+
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    mine, other = (
+        Payee(id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id, name=name)
+        for name in ("Mine", "Other")
+    )
+    session.add_all([mine, other])
+    session.add(_supermarket_rule(test_user.id, test_workspace.id, [
+        {"op": "set_payee", "value": str(other.id)},
+        {"op": "set_description", "value": "Supermarket"},
+    ]))
+    for field, value in (("payee_id", str(other.id)), ("description", "Supermarket")):
+        session.add(Rule(
+            user_id=test_user.id, workspace_id=test_workspace.id, name=f"Ignore {value}",
+            priority=99, conditions=[{"field": field, "op": "equals", "value": value}],
+            actions=[{"op": "ignore", "value": ""}],
+        ))
+
+    await _settle_held_pending(
+        session, conn, account, test_user.id, test_workspace.id, path,
+        payee_id=mine.id, description="SUPERMARKT 12 AT",
+        original_description="Transaction",
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert [(row.payee_id, row.description, row.is_ignored) for row in rows] == [
+        (mine.id, "SUPERMARKT 12 AT", False),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_rules_skip_an_ignored_twin(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A hold the user ignored keeps what it has when its booking claims it."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    category = Category(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Groceries", icon="tag", color="#000000", is_system=False,
+    )
+    session.add(category)
+    session.add(_supermarket_rule(test_user.id, test_workspace.id, [
+        {"op": "set_category", "value": str(category.id)},
+        {"op": "append_notes", "value": "#groceries"},
+    ]))
+
+    await _settle_held_pending(
+        session, conn, account, test_user.id, test_workspace.id, "rekeyed",
+        is_ignored=True,
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert [(row.category_id, row.notes) for row in rows] == [(None, None)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["same-id", "rekeyed"])
+async def test_sync_connection_rules_on_a_posted_row_append_to_the_saved_note(
+    session: AsyncSession, test_user, test_workspace, path,
+):
+    """A note the user saved after the sync loaded the row is the one kept,
+    and a tag that would overflow the note column is skipped."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    session.add(_supermarket_rule(test_user.id, test_workspace.id, [
+        {"op": "append_notes", "value": "#groceries"},
+    ]))
+    long_note = "x" * 995
+
+    await _settle_held_pending(
+        session, conn, account, test_user.id, test_workspace.id, path,
+        notes_saved_meanwhile=long_note, notes="old",
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert [(row.status, row.notes) for row in rows] == [("posted", long_note)]
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_rules_append_to_a_note_saved_meanwhile(
+    session: AsyncSession, test_user, test_workspace,
+):
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    session.add(_supermarket_rule(test_user.id, test_workspace.id, [
+        {"op": "append_notes", "value": "#groceries"},
+    ]))
+
+    await _settle_held_pending(
+        session, conn, account, test_user.id, test_workspace.id, "same-id",
+        notes_saved_meanwhile="theirs", notes="old",
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert [row.notes for row in rows] == ["theirs #groceries"]
 
 
 @pytest.mark.asyncio
