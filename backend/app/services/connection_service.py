@@ -486,15 +486,17 @@ async def _counted_holdings(
 
 # How far an unattributed holding's value may sit from an account's
 # auto-invested balance and still count as the same money: the larger of
-# 1% and 1.00 in the account currency. The two figures come from different
-# provider endpoints and can drift by a day's yield.
-_AUTO_INVEST_MATCH_RELATIVE = Decimal("0.01")
+# 0.1% and 1.00 in the account currency. The two figures come from different
+# provider endpoints and can drift by about a day's yield, not more; a wider
+# window lets an unrelated investment of similar size pass for the
+# auto-invested money (issue #1459).
+_AUTO_INVEST_MATCH_RELATIVE = Decimal("0.001")
 _AUTO_INVEST_MATCH_ABSOLUTE = Decimal("1")
 
 
 def _mirrors_auto_invested(holding: _CountedHolding, acc: AccountData) -> bool:
     """Whether an unattributed holding looks like this account's auto-invested money."""
-    if holding.currency != acc.currency:
+    if holding.currency != acc.currency or not holding.value.is_finite():
         return False
     tolerance = max(
         acc.auto_invested_balance * _AUTO_INVEST_MATCH_RELATIVE,
@@ -532,9 +534,11 @@ def _auto_invested_deductions(
 
     - exactly one account of the connection reports an auto-invested
       balance, so it is the only account the holding can mirror;
-    - the holding's value matches that balance, in the same currency,
-      within the tolerance above (in the case of issue #843 the two figures
-      were identical).
+    - exactly one unattributed holding matches that balance, in the same
+      currency, within the tolerance above (in the case of issue #843 the
+      two figures were identical). When two or more fall inside the window
+      the value cannot tell which one is the auto-invested money, or
+      whether any is (issue #1459).
 
     Otherwise the account keeps the full reported balance, which can count
     the money twice but never drops it.
@@ -557,10 +561,12 @@ def _auto_invested_deductions(
             deducted[acc.external_id] = min(attributed, acc.auto_invested_balance)
     if len(candidates) == 1:
         only = candidates[0]
-        if only.external_id not in deducted and any(
-            h.account_external_id is None and _mirrors_auto_invested(h, only)
+        mirrors = [
+            h
             for h in counted
-        ):
+            if h.account_external_id is None and _mirrors_auto_invested(h, only)
+        ]
+        if only.external_id not in deducted and len(mirrors) == 1:
             deducted[only.external_id] = only.auto_invested_balance
     return deducted
 
