@@ -2590,6 +2590,15 @@
     "brandSelfHosted": "Self-hosted",
     "brandPrivate": "Privado por padrão"
   },
+  "accountantExport": {
+    "title": "Exportação para o contador",
+    "description": "Baixe as transações categorizadas e a DRE de um período, no formato que o software do seu contador abre direto.",
+    "startDate": "Data inicial",
+    "endDate": "Data final",
+    "download": "Baixar pacote",
+    "error": "Não foi possível gerar a exportação",
+    "formatHint": "Um zip com transactions.csv e profit-and-loss.csv, com os separadores e a codificação que planilhas e softwares contábeis leem sem ajuste."
+  },
   "backup": {
     "button": "Backup",
     "downloading": "Baixando...",

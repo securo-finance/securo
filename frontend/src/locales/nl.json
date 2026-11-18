@@ -2588,6 +2588,15 @@
     "brandSelfHosted": "Zelf gehost",
     "brandPrivate": "Privé door ontwerp"
   },
+  "accountantExport": {
+    "title": "Export voor de accountant",
+    "description": "Download de gecategoriseerde transacties en de winst-en-verliesrekening van een periode, in het formaat dat de software van je accountant direct opent.",
+    "startDate": "Begindatum",
+    "endDate": "Einddatum",
+    "download": "Pakket downloaden",
+    "error": "Export kon niet worden gemaakt",
+    "formatHint": "Eén zip met transactions.csv en profit-and-loss.csv, met de scheidingstekens en codering die spreadsheets en boekhoudsoftware zonder aanpassing lezen."
+  },
   "backup": {
     "button": "Back-up",
     "downloading": "Downloaden...",

@@ -2730,6 +2730,15 @@
     "brandSelfHosted": "Na vlastnom serveri",
     "brandPrivate": "Súkromie od základu"
   },
+  "accountantExport": {
+    "title": "Export pre účtovníka",
+    "description": "Stiahnite si kategorizované transakcie a výkaz ziskov a strát za obdobie vo formáte, ktorý účtovný softvér otvorí priamo.",
+    "startDate": "Počiatočný dátum",
+    "endDate": "Koncový dátum",
+    "download": "Stiahnuť balík",
+    "error": "Export sa nepodarilo vytvoriť",
+    "formatHint": "Jeden zip s transactions.csv a profit-and-loss.csv, s oddeľovačmi a kódovaním, ktoré tabuľkové procesory a účtovné programy čítajú bez úprav."
+  },
   "backup": {
     "button": "Zálohovať",
     "downloading": "Sťahuje sa...",

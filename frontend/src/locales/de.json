@@ -2587,6 +2587,15 @@
     "brandSelfHosted": "Selbstgehostet",
     "brandPrivate": "Privatsphäre standardmäßig"
   },
+  "accountantExport": {
+    "title": "Export für die Buchhaltung",
+    "description": "Lade die kategorisierten Transaktionen und die Gewinn- und Verlustrechnung eines Zeitraums herunter, in dem Format, das die Software deiner Buchhaltung direkt öffnet.",
+    "startDate": "Startdatum",
+    "endDate": "Enddatum",
+    "download": "Paket herunterladen",
+    "error": "Export konnte nicht erstellt werden",
+    "formatHint": "Eine Zip-Datei mit transactions.csv und profit-and-loss.csv, mit den Trennzeichen und der Kodierung, die Tabellenkalkulationen und Buchhaltungsprogramme ohne Anpassung lesen."
+  },
   "backup": {
     "button": "Backup",
     "downloading": "Wird heruntergeladen...",

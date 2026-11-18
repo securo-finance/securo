@@ -2586,6 +2586,15 @@
     "brandSelfHosted": "Saját szerveren futó",
     "brandPrivate": "Alapjaiban privát"
   },
+  "accountantExport": {
+    "title": "Export a könyvelőnek",
+    "description": "Töltse le egy időszak kategorizált tranzakcióit és eredménykimutatását olyan formátumban, amelyet a könyvelőprogram közvetlenül megnyit.",
+    "startDate": "Kezdő dátum",
+    "endDate": "Záró dátum",
+    "download": "Csomag letöltése",
+    "error": "Nem sikerült elkészíteni az exportot",
+    "formatHint": "Egy zip a transactions.csv és a profit-and-loss.csv fájllal, olyan elválasztókkal és kódolással, amelyet a táblázatkezelők és könyvelőprogramok módosítás nélkül olvasnak."
+  },
   "backup": {
     "button": "Biztonsági mentés",
     "downloading": "Letöltés...",

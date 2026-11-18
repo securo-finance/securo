@@ -2590,6 +2590,15 @@
     "brandSelfHosted": "Self-hosted",
     "brandPrivate": "Privado por padrão"
   },
+  "accountantExport": {
+    "title": "Exportação para o contabilista",
+    "description": "Descarregue as transações categorizadas e a demonstração de resultados de um período, no formato que o software do seu contabilista abre diretamente.",
+    "startDate": "Data de início",
+    "endDate": "Data de fim",
+    "download": "Descarregar pacote",
+    "error": "Não foi possível gerar a exportação",
+    "formatHint": "Um zip com transactions.csv e profit-and-loss.csv, com os separadores e a codificação que folhas de cálculo e softwares de contabilidade leem sem ajuste."
+  },
   "backup": {
     "button": "Backup",
     "downloading": "A transferir...",
