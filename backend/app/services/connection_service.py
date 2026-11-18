@@ -3966,13 +3966,31 @@ async def sync_connection(
                     # win, the charge fills the empty ones, and only its
                     # provenance is recorded outright.
                     placeholder.original_description = txn_data.description
-                    if placeholder.amount != txn_data.amount or converted is not None:
+                    # A bill kept in a foreign currency is answered by a
+                    # charge in the account's own (#1073): the row takes the
+                    # charged currency.
+                    currency_changed = placeholder.currency != incoming_currency
+                    placeholder.currency = incoming_currency
+                    if (
+                        placeholder.amount != txn_data.amount
+                        or converted is not None
+                        or currency_changed
+                    ):
                         # Matched under a tolerance, or the bank said what the
                         # charge cost in the primary currency: the row now
                         # stands for what was actually charged, not for what
                         # the bill expected.
                         expected_amount = placeholder.amount
                         placeholder.amount = txn_data.amount
+                        if currency_changed:
+                            # The stamp on the row was made from the bill's
+                            # currency. Keeping it through a rate lookup that
+                            # finds nothing would publish a conversion of an
+                            # amount that never moved (#1073); clearing it
+                            # leaves an honest "not converted" until a rate
+                            # lands.
+                            placeholder.amount_primary = None
+                            placeholder.fx_rate_used = None
                         await _stamp_synced_primary_amount(
                             session, user_id, placeholder, converted
                         )
