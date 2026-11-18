@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Coins,
   EyeClosed,
+  Flag,
   ListChecks,
   ListFilter,
   Search,
@@ -72,6 +73,8 @@ interface TransactionsFilterBarProps {
   onStatusChange: (value: string) => void
   hideIgnored: boolean
   onHideIgnoredChange: (value: boolean) => void
+  filterFlagged: boolean
+  onFlaggedChange: (value: boolean) => void
   filterFrom: string
   filterTo: string
   onDateRangeChange: (from: string, to: string) => void
@@ -115,6 +118,8 @@ export function TransactionsFilterBar({
   onStatusChange,
   hideIgnored,
   onHideIgnoredChange,
+  filterFlagged,
+  onFlaggedChange,
   filterFrom,
   filterTo,
   onDateRangeChange,
@@ -210,6 +215,7 @@ export function TransactionsFilterBar({
     !!filterType ||
     !!filterStatus ||
     hideIgnored ||
+    filterFlagged ||
     !!filterFrom ||
     !!filterTo ||
     !!filterMinAmount ||
@@ -435,6 +441,7 @@ export function TransactionsFilterBar({
                   type: typeLabel,
                   status: statusLabel,
                   ignored: hideIgnored ? t('transactions.ignoredHide') : undefined,
+                  flagged: filterFlagged ? t('transactions.flaggedOnly') : undefined,
                   date: dateLabel,
                   amount: amountLabel,
                 }}
@@ -450,6 +457,8 @@ export function TransactionsFilterBar({
                 onStatusChange={onStatusChange}
                 hideIgnored={hideIgnored}
                 onHideIgnoredChange={onHideIgnoredChange}
+                flagged={filterFlagged}
+                onFlaggedChange={onFlaggedChange}
                 onDateRangeChange={onDateRangeChange}
                 onAmountRangeChange={onAmountRangeChange}
                 onApplyAmountRange={applyAmountRange}
@@ -822,6 +831,18 @@ export function TransactionsFilterBar({
                   {hideIgnored && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
 
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault()
+                    onFlaggedChange(!filterFlagged)
+                  }}
+                  className="gap-2 text-[13px]"
+                >
+                  <Flag size={14} className="text-muted-foreground" />
+                  <span className="flex-1">{t('transactions.flaggedOnly')}</span>
+                  {filterFlagged && <Check size={13} className="text-primary" />}
+                </DropdownMenuItem>
+
                 {/* Date range submenu with presets */}
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger className="gap-2 text-[13px]">
@@ -1091,6 +1112,14 @@ export function TransactionsFilterBar({
                 label={t('transactions.hideIgnored')}
                 value={t('transactions.ignoredHiddenValue')}
                 onRemove={() => onHideIgnoredChange(false)}
+              />
+            )}
+            {filterFlagged && (
+              <FilterChip
+                icon={<Flag size={12} />}
+                label={t('transactions.flagged')}
+                value={t('transactions.flaggedOnlyValue')}
+                onRemove={() => onFlaggedChange(false)}
               />
             )}
             {dateLabel && (

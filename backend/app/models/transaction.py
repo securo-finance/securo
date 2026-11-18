@@ -110,6 +110,11 @@ class Transaction(Base):
     exclude_from_pnl: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    # A marker the user sets to come back to a row later (issue #56). It only
+    # filters the list; no total, balance or report reads it.
+    is_flagged: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     # True while the amount is split across several categories, kept in
     # `category_lines`. `category_id` is null for those rows, which every
     # other path reads as "uncategorized"; this flag is how rules, sync and

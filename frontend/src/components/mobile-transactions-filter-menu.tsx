@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Coins,
   EyeClosed,
+  Flag,
   ListChecks,
   Store,
   Tag,
@@ -36,6 +37,7 @@ export type MobileFilterView =
   | 'type'
   | 'status'
   | 'ignored'
+  | 'flagged'
   | 'date'
   | 'amount'
 
@@ -63,6 +65,7 @@ interface MobileTransactionsFilterMenuProps {
   type: string
   status: string
   hideIgnored: boolean
+  flagged: boolean
   from: string
   to: string
   minAmount: string
@@ -82,6 +85,7 @@ interface MobileTransactionsFilterMenuProps {
   onTypeChange: (value: string) => void
   onStatusChange: (value: string) => void
   onHideIgnoredChange: (value: boolean) => void
+  onFlaggedChange: (value: boolean) => void
   onDateRangeChange: (from: string, to: string) => void
   onAmountRangeChange: (min: string, max: string) => void
   onApplyAmountRange: () => void
@@ -443,6 +447,7 @@ function buildRootOptions(
     { view: 'type', icon: ArrowUpDown, label: labels.type, summary: summaries.type },
     { view: 'status', icon: ListChecks, label: labels.status, summary: summaries.status },
     { view: 'ignored', icon: EyeClosed, label: labels.ignored, summary: summaries.ignored },
+    { view: 'flagged', icon: Flag, label: labels.flagged, summary: summaries.flagged },
     { view: 'date', icon: CalendarIcon, label: labels.date, summary: summaries.date },
     { view: 'amount', icon: Coins, label: labels.amount, summary: summaries.amount },
   ]
@@ -459,6 +464,7 @@ function buildLabels(
     type: t('transactions.type'),
     status: t('transactions.status'),
     ignored: t('transactions.ignoredRows'),
+    flagged: t('transactions.flagged'),
     date: t('transactions.filtersBar.date'),
     amount: t('transactions.filtersBar.amount'),
   }
@@ -499,6 +505,10 @@ function MobileFilterDetail({
       { value: 'hide', label: t('transactions.ignoredHide') },
     ]
     return <MobileSelectionView options={options} selectedValue={menu.hideIgnored ? 'hide' : 'show'} onChange={(value) => menu.onHideIgnoredChange(value === 'hide')} />
+  }
+  if (menu.view === 'flagged') {
+    const options = [allOption, { value: 'only', label: t('transactions.flaggedOnly') }]
+    return <MobileSelectionView options={options} selectedValue={menu.flagged ? 'only' : ''} onChange={(value) => menu.onFlaggedChange(value === 'only')} />
   }
   if (menu.view === 'date') {
     return <MobileDateView from={menu.from} to={menu.to} presets={menu.datePresets} onChange={menu.onDateRangeChange} onOpenCustomRange={menu.onOpenCustomRange} />

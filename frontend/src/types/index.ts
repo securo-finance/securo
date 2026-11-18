@@ -367,6 +367,8 @@ export interface Transaction {
   is_ignored: boolean
   // Keeps the transaction in the ledger/balance while excluding it from P&L.
   exclude_from_pnl?: boolean
+  // A marker to come back to the row later; only the list filter reads it.
+  is_flagged?: boolean
   // Balance right after this row, filled by the server only when the list
   // was asked for it on a single non-credit-card account (#1202).
   // `running_balance_primary` is null when the account is in the primary
