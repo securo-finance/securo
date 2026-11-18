@@ -4997,29 +4997,32 @@ async def test_sync_does_not_deduct_for_holding_the_user_sold_or_archived(
 @pytest.mark.parametrize(
     ("auto_invested", "holding_value", "expected"),
     [
-        ("400", "25", "1000"),
-        ("400", "400", "600"),
-        ("400", "404", "600"),
-        ("400", "396", "600"),
-        ("400", "404.01", "1000"),
-        ("50", "50.90", "950"),
-        ("50", "51.01", "1000"),
+        ("400", "25", "20000"),
+        ("400", "400", "19600"),
+        ("4000", "4004", "16000"),
+        ("4000", "3996", "16000"),
+        ("4000", "4004.01", "20000"),
+        ("4000", "3995.99", "20000"),
+        ("50", "50.90", "19950"),
+        ("50", "51.01", "20000"),
+        ("10000.00", "9948.62", "20000"),
     ],
     ids=[
-        "unrelated", "equal", "within-1pct-above", "within-1pct-below",
-        "beyond-1pct", "within-1-unit", "beyond-1-unit",
+        "unrelated", "equal", "within-0.1pct-above", "within-0.1pct-below",
+        "beyond-0.1pct-above", "beyond-0.1pct-below", "within-1-unit",
+        "beyond-1-unit", "issue-1459-lca-0.51pct-below",
     ],
 )
 async def test_sync_unattributed_holding_must_match_auto_invested_value(
     session: AsyncSession, test_user, test_workspace,
     auto_invested, holding_value, expected,
 ):
-    """Issue #843: a holding with no owning account only stands for the
-    auto-invested money when its value matches it (1% or 1.00, whichever is
-    larger); an unrelated investment of the same connection deducts
-    nothing."""
+    """Issues #843 and #1459: a holding with no owning account only stands
+    for the auto-invested money when its value matches it (0.1% or 1.00,
+    whichever is larger); an unrelated investment of the same connection,
+    even one within 1% like the LCA of #1459, deducts nothing."""
     conn = await _make_connection(session, test_user.id, "Match Bank")
-    accounts = [_auto_invest_account("acc-checking", "1000", auto_invested)]
+    accounts = [_auto_invest_account("acc-checking", "20000", auto_invested)]
 
     balances, _ = await _sync_accounts(
         session, test_user, test_workspace, conn, accounts,
@@ -5027,6 +5030,51 @@ async def test_sync_unattributed_holding_must_match_auto_invested_value(
     )
 
     assert balances["acc-checking"] == Decimal(expected)
+
+
+@pytest.mark.asyncio
+async def test_sync_unrelated_lca_near_auto_invested_value_keeps_balance(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Issue #1459 as reported: the whole checking balance is auto-invested,
+    the investments payload does not list that money, and an unrelated LCA
+    sits 0.51% below it. The account keeps its reported balance instead of
+    dropping to 0.00."""
+    conn = await _make_connection(session, test_user.id, "Lca Bank")
+    accounts = [
+        _auto_invest_account("acc-checking", "10000.00", "10000.00"),
+        _auto_invest_account("acc-other", "300.00", "0"),
+        _auto_invest_account("acc-card", "80.00", "0", type="credit_card"),
+    ]
+
+    balances, _ = await _sync_accounts(
+        session, test_user, test_workspace, conn, accounts,
+        [
+            _holding("lca-1", "9948.62"),
+            _holding("treasury-1", "4210.35"),
+            _holding("stock-1", "1532.10"),
+        ],
+    )
+
+    assert balances["acc-checking"] == Decimal("10000.00")
+
+
+@pytest.mark.asyncio
+async def test_sync_two_unattributed_holdings_in_window_do_not_deduct(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Issue #1459: when two unattributed holdings both match the
+    auto-invested value, the value cannot tell which is that money, or
+    whether either is, so the account keeps its full balance."""
+    conn = await _make_connection(session, test_user.id, "Twin Bank")
+    accounts = [_auto_invest_account("acc-checking", "1000", "400")]
+
+    balances, _ = await _sync_accounts(
+        session, test_user, test_workspace, conn, accounts,
+        [_holding("fund-x", "400"), _holding("fund-y", "400.30")],
+    )
+
+    assert balances["acc-checking"] == Decimal("1000")
 
 
 @pytest.mark.asyncio
