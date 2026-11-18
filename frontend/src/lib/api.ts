@@ -1832,6 +1832,30 @@ export const backup = {
   },
 }
 
+// Accountant export: the categorized transactions and the profit and loss of
+// one period, as two CSV files inside a zip. Business workspaces only.
+export const accountantExport = {
+  download: async (startDate: string, endDate: string): Promise<void> => {
+    const { data, headers } = await api.get('/export/accountant', {
+      params: { start_date: startDate, end_date: endDate },
+      responseType: 'blob',
+    })
+    const blob = new Blob([data], { type: 'application/zip' })
+    const url = URL.createObjectURL(blob)
+    // The server names the file after the workspace and the period; fall
+    // back to the same shape when the header isn't readable.
+    const disposition = String(headers['content-disposition'] ?? '')
+    const filename = /filename="?([^";]+)"?/.exec(disposition)?.[1]
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename ?? `securo-accountant-${startDate}_${endDate}.zip`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  },
+}
+
 // Admin
 export interface ProviderSettingStatus {
   name: string
