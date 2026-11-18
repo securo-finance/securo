@@ -21,6 +21,13 @@ if TYPE_CHECKING:
     from app.models.transaction_category_line import TransactionCategoryLine
 
 
+#: Key a pending synced row carries in `raw_data` once the user edited its
+#: category or payee. The bank sync reads it before expiring a hold it
+#: dropped: the edit is the user's work even when the value later went back
+#: to the one the sync gave.
+USER_EDITED_KEY = "securo_user_edited"
+
+
 class Transaction(Base):
     __tablename__ = "transactions"
 

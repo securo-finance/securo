@@ -313,6 +313,23 @@ def _txn_fingerprint(account_uid: str, raw: dict) -> str:
     return digest[:32]
 
 
+def is_account_txn_id(account_uid: str, external_id: Optional[str], raw: Any) -> bool:
+    """Whether `external_id` is the id this account uid gives the entry in `raw`.
+
+    An entry without a reference is keyed by a fingerprint that includes the
+    account uid, and EB issues a new uid on every reauthorisation. A row
+    stored under the old uid then has an id the new feed never sends, so its
+    absence from that feed says nothing. An id from an entry reference does
+    not depend on the uid.
+    """
+    if not isinstance(raw, dict):
+        return False
+    entry_ref = (raw.get("entry_reference") or "").strip()
+    if entry_ref and entry_ref != "0":
+        return True
+    return external_id == _txn_fingerprint(account_uid, raw)
+
+
 def _canonical_amount(amount_obj: Any) -> str:
     """Canonical string for an EB amount.
 
@@ -568,7 +585,8 @@ class EnableBankingProvider(BankProvider):
         # still needed (issue #1405).
         self.presence_required_account_ids: set[str] = set()
         # External ids of accounts whose transaction pages stopped before the
-        # last one (a repeated cursor or the page cap). What was read is still
+        # last one (a repeated cursor or the page cap), or listed an entry we
+        # could not read. What was read is still
         # imported, but it is not the whole feed, so the sync layer must not
         # take an entry missing from it as one the bank stopped listing.
         self.truncated_account_ids: set[str] = set()
@@ -1441,6 +1459,10 @@ class EnableBankingProvider(BankProvider):
                     account_external_id, raw_txn, status, payee_source
                 )
                 if not parsed:
+                    # An entry we can't read (no date, no amount) is still in
+                    # the feed: without its id the sync would take its row
+                    # for one the bank stopped listing.
+                    self.truncated_account_ids.add(account_external_id)
                     continue
                 # Identical entries within one page are distinct transactions.
                 # Counting per page, not per fetch, keeps the ids stable when

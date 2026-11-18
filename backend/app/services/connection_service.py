@@ -25,18 +25,21 @@ from app.models.account import Account
 from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.category import Category
 from app.models.institution import Institution
-from app.models.invoice import Invoice
+from app.models.invoice import Invoice, InvoiceAllocation
 from app.models.invoice_schedule import InvoiceSchedule
 from app.models.goal import Goal
 from app.models.collection import collection_asset_groups
 from app.models.credit_card_bill import CreditCardBill
 from app.models.payee import Payee, PayeeMapping
 from app.models.rule import Rule
-from app.models.transaction import Transaction
+from app.models.transaction import USER_EDITED_KEY, Transaction
+from app.models.transaction_attachment import TransactionAttachment
+from app.models.transaction_split import TransactionSplit
 from app.models.transaction_category_line import TransactionCategoryLine
 from app.models.user import User
 from app.plugins.provider import is_plugin_provider
 from app.providers import get_provider
+from app.providers.enable_banking import is_account_txn_id
 from app.providers.base import (
     AccountData,
     BankProvider,
@@ -2006,6 +2009,7 @@ async def _run_first_import(
                 )
             if transaction.category_id is None and not transaction.has_category_lines:
                 transaction.category_id = category_id
+            _record_sync_category(transaction)
 
             acct_currency = acc_data.currency or user_currency
             await _stamp_synced_primary_amount(
@@ -2405,6 +2409,27 @@ def _eb_same_merchant(held: dict, booked: dict) -> bool:
 #: Payload fields a bank may rewrite when it fills in a late entry_reference.
 _EB_LATE_REF_REWRITTEN = frozenset({"entry_reference", "remittance_information"})
 
+#: Key a manual entry the sync adopted carries in `raw_data`. Adoption sets
+#: `source = "sync"`, which the pending → posted promotion relies on, so the
+#: row's manual origin has to be kept apart from it. The sync only ever merges
+#: provider fields into `raw_data`, so the key outlives later syncs.
+ADOPTED_MANUAL_KEY = "securo_adopted_manual"
+
+#: Key a pending row the sync stored carries in `raw_data`: the category the
+#: sync itself gave it (its rules, or the provider's), recorded when it was
+#: given. A different category on the row was put there afterwards, by the
+#: user or a later bulk action, and is the user's.
+SYNC_CATEGORY_KEY = "securo_sync_category"
+
+#: The same record for the payee the sync gave a pending row.
+SYNC_PAYEE_KEY = "securo_sync_payee"
+
+#: Keys Securo writes into `raw_data` itself. They are not the provider's,
+#: so payload comparisons leave them out.
+_SECURO_RAW_KEYS = frozenset(
+    {ADOPTED_MANUAL_KEY, SYNC_CATEGORY_KEY, SYNC_PAYEE_KEY, USER_EDITED_KEY}
+)
+
 
 def _eb_reworded_entry(held: dict, booked: dict) -> bool:
     """Whether `booked` is `held` with a reference filled in and its
@@ -2424,7 +2449,9 @@ def _eb_reworded_entry(held: dict, booked: dict) -> bool:
     def rest(raw: dict) -> dict:
         return {
             key: value for key, value in raw.items()
-            if key not in _EB_LATE_REF_REWRITTEN and value is not None
+            if key not in _EB_LATE_REF_REWRITTEN
+            and key not in _SECURO_RAW_KEYS
+            and value is not None
         }
 
     if rest(held) != rest(booked):
@@ -2918,6 +2945,152 @@ async def _promote_settled_pending(
     )
     _relink_bill(transaction, txn_data, account, bills_by_external_id)
     return transaction.external_id
+
+
+#: How old a pending Enable Banking row has to be before its absence from a
+#: complete feed means the bank cancelled it. Past the hold settle window, no
+#: booked entry can claim it any more.
+_EB_CANCELLED_HOLD_DAYS = _EB_HOLD_SETTLE_DAYS + 2
+
+#: Days back an Enable Banking feed always covers. A bank that refuses an
+#: older `since` is asked for the last 90 days instead; two days less leaves
+#: room for the provider counting in UTC.
+_EB_SURE_FEED_DAYS = 88
+
+
+def _mark_adopted_manual(tx: Transaction) -> None:
+    raw = tx.raw_data if isinstance(tx.raw_data, dict) else {}
+    tx.raw_data = {**raw, ADOPTED_MANUAL_KEY: True}
+
+
+def _record_sync_category(tx: Transaction) -> None:
+    """Record on a pending row the category and payee the sync gave it.
+
+    Both are recorded even when empty (as ""), so a value the user later
+    clears differs from the record as much as one they change.
+    """
+    if tx.status != "pending":
+        return
+    raw = tx.raw_data if isinstance(tx.raw_data, dict) else {}
+    tx.raw_data = {
+        **raw,
+        SYNC_CATEGORY_KEY: str(tx.category_id) if tx.category_id else "",
+        SYNC_PAYEE_KEY: str(tx.payee_id) if tx.payee_id else "",
+    }
+
+
+def _differs_from_sync(raw: dict, key: str, value: Optional[uuid.UUID]) -> bool:
+    """Whether a category or payee differs from the one the sync recorded.
+
+    A row stored before the record existed has none: any value on it counts
+    as the user's, since what today's rules would give says nothing about
+    who set it.
+    """
+    recorded = raw.get(key)
+    if recorded is None:
+        return value is not None
+    return recorded != (str(value) if value else "")
+
+
+def _holds_user_work(tx: Transaction) -> bool:
+    """Whether a row carries something only the user put there.
+
+    A manual entry the sync adopted is the user's whatever its text, and so
+    is a row whose category or payee the user edited (`USER_EDITED_KEY`,
+    set by the edit even when the value later went back to the sync's). An
+    edited description shows as it differing from the bank's text in
+    `original_description`; a row whose provenance is unknown (no
+    `original_description`) counts as the user's too. So does a category or
+    payee other than the one the sync recorded when it stored the row
+    (`SYNC_CATEGORY_KEY`, `SYNC_PAYEE_KEY`), which also catches a bulk
+    recategorization and a cleared value.
+    """
+    raw = tx.raw_data if isinstance(tx.raw_data, dict) else {}
+    if raw.get(ADOPTED_MANUAL_KEY) or raw.get(USER_EDITED_KEY):
+        return True
+    if _differs_from_sync(raw, SYNC_CATEGORY_KEY, tx.category_id):
+        return True
+    if _differs_from_sync(raw, SYNC_PAYEE_KEY, tx.payee_id):
+        return True
+    if (tx.notes or "").strip():
+        return True
+    if (
+        tx.reporting_date_override is not None
+        or tx.effective_bill_date is not None
+        or tx.recurring_transaction_id is not None
+    ):
+        return True
+    if tx.has_category_lines:
+        return True
+    if tx.original_description is None:
+        return True
+    return tx.description != tx.original_description and not tx.description_is_rule_managed
+
+
+async def _expire_cancelled_holds(
+    session: AsyncSession,
+    account_id: uuid.UUID,
+    account_uid: str,
+    live_external_ids: set[str],
+    since: date,
+) -> None:
+    """Delete the pending Enable Banking rows the bank dropped without booking.
+
+    A card authorization the merchant cancels or lets expire leaves the feed
+    and never books, so its row would stay pending, and counted, for good.
+    Only a complete feed is evidence: the caller passes every id it returned,
+    pending ones included, and a row counts as gone only when its date falls
+    inside the window that feed surely covered, and its id is one this
+    account uid would send (a reauthorisation changes the uid, and with it
+    the id of an entry without a reference). Rows the user hid, paired as a
+    transfer, attached a file to, shared with a group or otherwise worked on
+    are left alone.
+    """
+    today = app_today()
+    window_start = max(since, today - timedelta(days=_EB_SURE_FEED_DAYS))
+    cutoff = today - timedelta(days=_EB_CANCELLED_HOLD_DAYS)
+    # Lock the candidates before reading their attachments, so a file
+    # uploaded while the sync runs either lands first and keeps the row, or
+    # waits for the delete.
+    result = await session.execute(
+        select(Transaction)
+        .where(
+            Transaction.account_id == account_id,
+            Transaction.source == "sync",
+            Transaction.status == "pending",
+            Transaction.is_ignored.is_(False),
+            Transaction.transfer_pair_id.is_(None),
+            Transaction.date >= window_start,
+            Transaction.date <= cutoff,
+        )
+        .with_for_update()
+    )
+    gone = [
+        tx for tx in result.scalars().all()
+        if tx.external_id not in live_external_ids
+        and is_account_txn_id(account_uid, tx.external_id, tx.raw_data)
+        and not _holds_user_work(tx)
+    ]
+    if not gone:
+        return
+    gone_ids = [tx.id for tx in gone]
+    # A file, a group share or an invoice payment hangs off the row and
+    # would go with it: deleting an allocated hold would reopen the invoice.
+    kept: set[uuid.UUID] = set()
+    for column in (
+        TransactionAttachment.transaction_id,
+        TransactionSplit.transaction_id,
+        InvoiceAllocation.transaction_id,
+    ):
+        kept.update(
+            tx_id for tx_id in (await session.execute(
+                select(column).where(column.in_(gone_ids))
+            )).scalars()
+            if tx_id is not None
+        )
+    for tx in gone:
+        if tx.id not in kept:
+            await session.delete(tx)
 
 
 async def _cleanup_phantom_duplicates(
@@ -3938,6 +4111,7 @@ async def sync_connection(
                         continue
                     _merge_sync_metadata(fuzzy_match, txn_data)
                     fuzzy_match.source = "sync"
+                    _mark_adopted_manual(fuzzy_match)
                     merged_count += 1
                     continue
 
@@ -4171,6 +4345,7 @@ async def sync_connection(
                     )
                 if transaction.category_id is None and not transaction.has_category_lines:
                     transaction.category_id = category_id
+                _record_sync_category(transaction)
 
                 await _stamp_synced_primary_amount(
                     session, user_id, transaction, converted
@@ -4236,6 +4411,17 @@ async def sync_connection(
                         )
                         if promoted_id:
                             promoted_ids.add(promoted_id)
+
+            # A hold that left a complete feed and that no booked entry claimed
+            # above was cancelled. The first sync has no rows to expire.
+            if claims_holds and since is not None:
+                await _expire_cancelled_holds(
+                    session,
+                    account.id,
+                    acc_data.external_id,
+                    live_txn_external_ids[account.id],
+                    since,
+                )
 
             # Reconcile the opening balance after any new transactions land so
             # SUM(all txs) keeps matching account.balance from the provider.
