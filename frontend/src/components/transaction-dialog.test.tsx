@@ -259,6 +259,10 @@ it('warns in the unlink confirmation that both legs start counting in reports', 
   const confirmDialog = confirmText.closest('[role="dialog"]') as HTMLElement
 
   expect(within(confirmDialog).getByText(t('transactions.unlinkTransferReportWarning'))).toBeInTheDocument()
+  // Screen readers announce the warning with the confirmation, not only the first sentence.
+  expect(confirmDialog).toHaveAccessibleDescription(
+    `${t('transactions.unlinkTransferConfirm')} ${t('transactions.unlinkTransferReportWarning')}`,
+  )
 })
 
 it('keeps the transfer linked when the unlink confirmation is cancelled', async () => {

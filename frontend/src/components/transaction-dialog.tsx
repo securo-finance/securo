@@ -1039,14 +1039,20 @@ function TransactionForm({
                 {/* Confirms the unlink: dropping the pair link re-reports the
                     other leg, which changes reported totals (issue #1160). */}
                 <Dialog open={unlinkConfirmOpen} onOpenChange={setUnlinkConfirmOpen}>
-                  <DialogContent className="sm:max-w-md">
+                  <DialogContent
+                    className="sm:max-w-md"
+                    aria-describedby="unlink-transfer-confirm unlink-transfer-report-warning"
+                  >
                     <DialogHeader>
                       <DialogTitle>{t('transactions.unlinkTransfer')}</DialogTitle>
-                      <DialogDescription>
+                      <DialogDescription id="unlink-transfer-confirm">
                         {t('transactions.unlinkTransferConfirm')}
                       </DialogDescription>
                     </DialogHeader>
-                    <div className="flex items-start gap-2 p-2 rounded-md bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400">
+                    <div
+                      id="unlink-transfer-report-warning"
+                      className="flex items-start gap-2 p-2 rounded-md bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400"
+                    >
                       <AlertTriangle size={14} className="mt-0.5 shrink-0" />
                       <span className="text-xs">{t('transactions.unlinkTransferReportWarning')}</span>
                     </div>

@@ -264,16 +264,25 @@ async def test_unlinked_legs_count_in_pnl_until_given_a_transfer_category(
 ):
     """What the unlink dialog warns about (issue #1160).
 
-    Unlinking only clears the pair id: both legs start counting in income
-    and expense totals, and a category flagged `treat_as_transfer` is what
-    keeps a leg out again.
+    Unlinking only clears the pair id: a leg with no category starts
+    counting in income and expense totals, while a leg whose category is
+    flagged `treat_as_transfer` keeps it and stays out, and giving a leg
+    such a category takes it out again.
     """
     acc1 = await _make_account(session, test_user.id, "Report A")
     acc2 = await _make_account(session, test_user.id, "Report B")
     today = date.today()
+    transfers = Category(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Transfers", treat_as_transfer=True,
+    )
+    session.add(transfers)
+    await session.commit()
 
     debit = await _add_txn(session, test_user.id, acc1.id, 1374.96, "debit", today)
     credit = await _add_txn(session, test_user.id, acc2.id, 1374.96, "credit", today)
+    credit.category_id = transfers.id
+    await session.commit()
     await detect_transfer_pairs(session, test_workspace.id)
     await session.commit()
     await session.refresh(debit)
@@ -296,20 +305,16 @@ async def test_unlinked_legs_count_in_pnl_until_given_a_transfer_category(
     await session.refresh(debit)
     await session.refresh(credit)
 
-    # Nothing but the link changes: no category, same amounts.
-    assert debit.category_id is None and credit.category_id is None
+    # Nothing but the link changes: same categories, same amounts.
+    assert debit.category_id is None
+    assert credit.category_id == transfers.id
     assert debit.amount == credit.amount == Decimal("1374.96")
-    assert (await pnl_ids()) == {debit.id, credit.id}
+    assert (await pnl_ids()) == {debit.id}
 
-    transfers = Category(
-        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
-        name="Transfers", treat_as_transfer=True,
-    )
-    session.add(transfers)
     debit.category_id = transfers.id
     await session.commit()
 
-    assert (await pnl_ids()) == {credit.id}
+    assert (await pnl_ids()) == set()
 
 
 @pytest.mark.asyncio

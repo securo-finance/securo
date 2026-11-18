@@ -1102,7 +1102,7 @@
     "createCounterpartConfirm": "Create",
     "unlinkTransfer": "Unlink transfer",
     "unlinkTransferConfirm": "Unlink this transfer? Both transactions will be treated as regular transactions again.",
-    "unlinkTransferReportWarning": "Both transactions will start counting in income and expense reports again: the outgoing one as an expense, the incoming one as income. To keep one out of the reports, give it a category treated as a transfer, such as Transfers.",
+    "unlinkTransferReportWarning": "Unless their category already keeps them out, both transactions start counting in income and expense reports again: the outgoing one as an expense, the incoming one as income. To keep one out, give it a category treated as a transfer, such as Transfers.",
     "unlinkTransferSuccess": "Transfer unlinked",
     "confirmTransferCategoryTitle": "Apply this category to the paired transfer too?",
     "confirmTransferCategoryDesc": "Transfers come in pairs. You can update only this transaction or apply the same category change to both sides.",

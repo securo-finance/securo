@@ -1104,7 +1104,7 @@
     "createCounterpartConfirm": "Créer",
     "unlinkTransfer": "Dissocier le virement",
     "unlinkTransferConfirm": "Dissocier ce virement ? Les deux transactions seront de nouveau traitées comme des transactions normales.",
-    "unlinkTransferReportWarning": "Les deux transactions seront de nouveau comptées dans les rapports de revenus et de dépenses : la sortante comme dépense, l'entrante comme revenu. Pour en exclure une des rapports, attribuez-lui une catégorie traitée comme un virement, par exemple Virements.",
+    "unlinkTransferReportWarning": "Sauf si leur catégorie les exclut déjà, les deux transactions sont de nouveau comptées dans les rapports de revenus et de dépenses : la sortante comme dépense, l'entrante comme revenu. Pour en exclure une, attribuez-lui une catégorie traitée comme un virement, par exemple Virements.",
     "unlinkTransferSuccess": "Virement dissocié",
     "confirmTransferCategoryTitle": "Appliquer aussi cette catégorie au virement lié ?",
     "confirmTransferCategoryDesc": "Les virements vont par paires. Vous pouvez mettre à jour uniquement cette transaction ou appliquer le même changement de catégorie aux deux côtés.",
