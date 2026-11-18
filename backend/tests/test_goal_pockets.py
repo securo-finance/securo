@@ -110,6 +110,25 @@ async def test_pocket_opening_adjustment_and_activity(
 
 
 @pytest.mark.asyncio
+async def test_goal_list_computes_each_account_snapshot_once(
+    client: AsyncClient, auth_headers: dict, test_account: Account, monkeypatch
+):
+    from app.services import goal_service
+
+    await create_pocket(client, auth_headers, test_account, name="Monitor", initial="300.00")
+    await create_pocket(client, auth_headers, test_account, name="Desk", initial="200.00")
+    snapshot = AsyncMock(wraps=goal_service._pocket_account_snapshot)
+    monkeypatch.setattr(goal_service, "_pocket_account_snapshot", snapshot)
+
+    response = await client.get("/api/goals", headers=auth_headers)
+
+    assert response.status_code == 200, response.text
+    assert snapshot.await_count == 1
+    assert {float(goal["account_reserved_total"]) for goal in response.json()} == {500}
+    assert {float(goal["account_available"]) for goal in response.json()} == {1000}
+
+
+@pytest.mark.asyncio
 async def test_pocket_cannot_double_reserve_account_balance(
     client: AsyncClient, auth_headers: dict, test_account: Account
 ):

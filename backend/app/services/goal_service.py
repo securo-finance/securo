@@ -284,7 +284,10 @@ def _compute_on_track(
 
 
 async def _enrich_goal(
-    session: AsyncSession, goal: Goal, user_id: uuid.UUID
+    session: AsyncSession,
+    goal: Goal,
+    user_id: uuid.UUID,
+    account_snapshots: Optional[dict[uuid.UUID, tuple]] = None,
 ) -> GoalRead:
     """Enrich a goal with computed fields."""
     current = await _resolve_current_amount(session, goal, user_id)
@@ -298,9 +301,15 @@ async def _enrich_goal(
     account_name = await _linked_name(session, Account, goal.account_id)
     asset_name = await _linked_name(session, Asset, goal.asset_id)
     asset_group_name = await _linked_name(session, AssetGroup, goal.asset_group_id)
-    account_balance, account_reserved_total, account_available, is_underfunded = (
-        await _pocket_account_snapshot(session, goal)
-    )
+    # A list request shares each account's snapshot among that account's Pockets.
+    if account_snapshots is not None and goal.tracking_type == "pocket" and goal.account_id:
+        snapshot = account_snapshots.get(goal.account_id)
+        if snapshot is None:
+            snapshot = await _pocket_account_snapshot(session, goal)
+            account_snapshots[goal.account_id] = snapshot
+    else:
+        snapshot = await _pocket_account_snapshot(session, goal)
+    account_balance, account_reserved_total, account_available, is_underfunded = snapshot
 
     # Convert to primary currency if needed
     primary_currency = await _get_primary_currency(session, user_id)
@@ -355,7 +364,8 @@ async def get_goals(
         query = query.where(Goal.status == status)
     result = await session.execute(query)
     goals = list(result.scalars().all())
-    return [await _enrich_goal(session, g, user_id) for g in goals]
+    account_snapshots: dict[uuid.UUID, tuple] = {}
+    return [await _enrich_goal(session, g, user_id, account_snapshots) for g in goals]
 
 
 async def get_goal(
