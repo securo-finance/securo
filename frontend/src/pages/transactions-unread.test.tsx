@@ -245,7 +245,7 @@ describe('review state of a transaction row', () => {
     })
 
     // The bar renders before the list resolves, and its button stays disabled
-    // until the queue has rows: wait for the count before clicking (issue #636).
+    // until the list has loaded: wait for the count before clicking (issue #636).
     await screen.findByText('1 transaction to review')
     const button = await screen.findByRole('button', {
       name: 'Mark all as read in this workspace',
@@ -259,6 +259,24 @@ describe('review state of a transaction row', () => {
     // The queue really empties, not just the request going out.
     await waitFor(() => expect(screen.queryByText('MARKET PURCHASE')).toBeNull())
     await screen.findByText('0 transactions to review')
+  })
+
+  it('keeps mark all enabled when the filtered queue is empty', async () => {
+    // The action clears the whole workspace and ignores the list's filters, so
+    // a date range with nothing left to review must not switch it off.
+    listOnce([])
+
+    renderWithProviders(<TransactionsPage />, {
+      route: '/transactions?unread_only=true&from=2026-10-01&to=2026-10-31',
+      path: '/transactions',
+    })
+
+    await screen.findByText('0 transactions to review')
+    const button = screen.getByRole('button', { name: 'Mark all as read in this workspace' })
+    await waitFor(() => expect(button).not.toBeDisabled())
+    fireEvent.click(button)
+
+    await waitFor(() => expect(api.transactions.markAllRead).toHaveBeenCalledWith('ws-1'))
   })
 
   it('drops a selected row that leaves the review queue', async () => {
@@ -294,34 +312,88 @@ describe('review state of a transaction row', () => {
 })
 
 describe('paging through the list', () => {
-  it('waits for a fresh answer before clamping the page back', async () => {
-    // 20 rows per page. Page 2 was last cached when the queue held exactly 20
-    // rows, so that response claims there is a single page; a sync then puts a
-    // row back. Clicking Next must not bounce back to page 1 before the fresh
-    // answer for page 2 arrives (issue #636).
-    const firstPage = Array.from({ length: 20 }, (_, i) =>
-      row({ id: `tx-${i + 1}`, description: `ROW ${i + 1}`, is_read: true }),
-    )
-    let pageTwoCalls = 0
+  const firstPage = Array.from({ length: 20 }, (_, i) =>
+    row({ id: `tx-${i + 1}`, description: `ROW ${i + 1}`, is_read: true }),
+  )
+
+  /**
+   * 20 rows per page. Page 2 is first answered when the queue held exactly 20
+   * rows, so that response claims there is a single page; a sync then puts a
+   * row back, and `second` is what page 2 says the next time it is asked.
+   */
+  function pagedList(second: () => Promise<unknown>) {
+    const calls = { pageTwo: 0 }
     api.transactions.list.mockImplementation(async (params?: { page?: number }) => {
       if (params?.page === 2) {
-        pageTwoCalls += 1
-        return pageTwoCalls === 1
+        calls.pageTwo += 1
+        return calls.pageTwo === 1
           ? { items: [], total: 20, page: 2, limit: 20 }
-          : {
-              items: [row({ id: 'tx-21', description: 'LATE ARRIVAL', is_read: true })],
-              total: 21,
-              page: 2,
-              limit: 20,
-            }
+          : second()
       }
       return { items: firstPage, total: 21, page: 1, limit: 20 }
     })
+    return calls
+  }
 
-    // Keep a page around after it leaves the screen, the way the app does
-    // (the test default throws every cached page away). The entry is stale, so
-    // visiting it again serves it and refetches, which is what an invalidation
-    // after a sync or an import leaves behind.
+  /**
+   * The list is on screen and the search box's mount debounce, which sends the
+   * page back to 1 after 300 ms, has already fired, so it cannot be mistaken
+   * for a clamp.
+   */
+  async function firstPageSettled() {
+    await screen.findByText('1 / 2')
+    await new Promise((resolve) => setTimeout(resolve, 350))
+  }
+
+  const lateArrival = async () => ({
+    items: [row({ id: 'tx-21', description: 'LATE ARRIVAL', is_read: true })],
+    total: 21,
+    page: 2,
+    limit: 20,
+  })
+
+  // Keep a page around after it leaves the screen, the way the app does (the
+  // test default throws every cached page away). A stale entry is served and
+  // refetched on the next visit, which is what an invalidation after a sync or
+  // an import leaves behind; a fresh one is the app's own five minutes.
+  it.each([
+    { cache: 'stale', staleTime: 0 },
+    { cache: 'fresh', staleTime: 1000 * 60 * 5 },
+  ])('asks a $cache cached page again before clamping it back', async ({ staleTime }) => {
+    // Clicking Next must not bounce back to page 1 on the cached total: the
+    // page is asked again, and the fresh answer for it decides (issue #636).
+    const calls = pagedList(lateArrival)
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: Infinity, staleTime } },
+    })
+
+    renderWithProviders(<TransactionsPage />, {
+      route: '/transactions',
+      path: '/transactions',
+      queryClient,
+    })
+
+    await firstPageSettled()
+
+    // The second page really is empty, so the clamp takes the person back.
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    await waitFor(() => expect(calls.pageTwo).toBe(1))
+    await screen.findByText('1 / 2')
+
+    // Now page 2 is cached with the old total. Asking for it again must reach
+    // the server before the page moves.
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    await screen.findByText('2 / 2')
+    await screen.findByText('LATE ARRIVAL')
+    expect(calls.pageTwo).toBe(2)
+  })
+
+  it('stays on the page when its refetch fails', async () => {
+    // A failed answer is not a new total: the cached one stays on screen and
+    // the person is left on the page they asked for, so Refresh can retry it.
+    const calls = pagedList(async () => {
+      throw new Error('offline')
+    })
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: Infinity, staleTime: 0 } },
     })
@@ -332,17 +404,21 @@ describe('paging through the list', () => {
       queryClient,
     })
 
+    await firstPageSettled()
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    await waitFor(() => expect(calls.pageTwo).toBe(1))
     await screen.findByText('1 / 2')
 
-    // The second page really is empty, so the clamp takes the person back.
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
-    await waitFor(() => expect(pageTwoCalls).toBe(1))
-    await screen.findByText('1 / 2')
+    await waitFor(() => expect(calls.pageTwo).toBe(2))
+    await waitFor(() =>
+      expect(queryClient.getQueryCache().findAll({ queryKey: ['transactions', 2] })[0]
+        .state.status).toBe('error'),
+    )
 
-    // Now page 2 is cached with the old total. Asking for it again serves that
-    // stale answer while a fresh one is on the way; the page must not move.
-    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
-    await screen.findByText('2 / 2')
-    await screen.findByText('LATE ARRIVAL')
+    // Page 1 is cached, so a clamp would put its rows and pager back at once.
+    expect(screen.queryByText('1 / 2')).toBeNull()
+    expect(screen.queryByText('ROW 1')).toBeNull()
+    expect(api.transactions.list.mock.calls.at(-1)![0].page).toBe(2)
   })
 })
