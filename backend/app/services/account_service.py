@@ -616,7 +616,7 @@ async def update_account(
             account.card_level = None
         if new_type != "loan":
             account.secured_asset_id = None
-        if cycle_fields_changed:
+        if cycle_fields_changed or _card_type_changed(old_type, new_type):
             await _recompute_effective_dates(session, account)
         await session.commit()
         await session.refresh(account)
@@ -688,7 +688,7 @@ async def update_account(
                 opening_tx.date = balance_date
             apply_effective_date(opening_tx, account)
 
-    if cycle_fields_changed:
+    if cycle_fields_changed or _card_type_changed(old_type, account.type):
         await _recompute_effective_dates(session, account)
 
     if account.type == "loan" and ("balance" in update_data or balance_date):
@@ -724,6 +724,12 @@ async def _has_mortgage_allocations(session: AsyncSession, account: Account) -> 
         .limit(1)
     )
     return linked is not None
+
+
+def _card_type_changed(old_type: str, new_type: str) -> bool:
+    """A card's rows are filed on bill due dates and any other account's on
+    their own date, so moving in or out of credit_card refiles them (#1386)."""
+    return (old_type == "credit_card") != (new_type == "credit_card")
 
 
 async def _recompute_effective_dates(session: AsyncSession, account: Account) -> None:

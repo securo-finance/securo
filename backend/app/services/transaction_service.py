@@ -45,6 +45,7 @@ from app.services._query_filters import (
     line_category_id,
     line_primary_or_amount,
     reporting_date_col,
+    reporting_date_value,
     with_category_lines,
 )
 from app.services.recurring_transaction_service import _advance_date
@@ -642,6 +643,13 @@ async def get_transactions(
         for tx in transactions:
             tx.attachment_count = counts.get(tx.id, 0)
             tx.payee_name = tx.payee_entity.name if tx.payee_entity else None
+            # The value `filter_date_col` read, so the list can show the
+            # date it filtered and ordered the row by (#1386).
+            tx.reporting_date = (
+                tx.effective_bill_date or tx.date
+                if in_statement_view
+                else reporting_date_value(tx, accounting_mode or "cash")
+            )
         # Tag shared rows with the viewer's share + the source group.
         # Owned rows stay as-is. We pre-compute the viewer's linked
         # member ids → group ids once, then look up each transaction's
