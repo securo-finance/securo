@@ -1865,3 +1865,78 @@ async def test_a_quantity_with_more_decimals_than_the_column_is_stored_rounded(
     assert stored.units == Decimal("0.123457")
     row = (await session.execute(select(AssetTransaction))).scalar_one()
     assert row.quantity == Decimal("0.123457")
+
+
+@pytest.mark.asyncio
+async def test_reuploading_an_order_with_more_decimals_than_the_column_keeps_is_skipped(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    """Duplicate matching reads the quantity the ledger stores, so the same
+    order looks the same on the second upload instead of being added twice."""
+    content = _csv("ticker,date,quantity,price", "AAPL,2026-01-15,0.1234567,100.00")
+    await _import(session, test_workspace, test_user, content, provider)
+    summary = await _import(session, test_workspace, test_user, content, provider)
+
+    assert summary["imported"] == 0
+    assert summary["skipped"] == 1
+    assert (await _only_asset(session, test_workspace)).units == Decimal("0.123457")
+
+
+@pytest.mark.asyncio
+async def test_a_quantity_too_large_for_the_column_is_reported_against_its_row(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    """1e23 has more digits than the column: rounding it raises, so the row is
+    named as too large and the rest of the file still imports."""
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price",
+        "AAPL,2026-01-15,1e23,100.00",
+        "AAPL,2026-02-15,5,100.00",
+    ), provider)
+
+    assert [(e.row, e.reason) for e in summary["errors"]] == [(2, "too_large")]
+    assert summary["imported"] == 1
+    assert (await _only_asset(session, test_workspace)).units == Decimal("5")
+
+
+@pytest.mark.asyncio
+async def test_undo_is_refused_when_the_position_left_would_be_too_large(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    """No sale stands in the way, but the rows the undo leaves would not fit the
+    holding's columns: the reverse split in the import is what keeps them down,
+    and refusing it is better than a failed recompute."""
+    from fastapi import HTTPException
+
+    from app.models.import_log import ImportLog
+
+    asset = await _apple_in_usd(session, test_user, test_workspace)
+    asset.last_price = Decimal("0")
+    session.add(AssetTransaction(
+        asset_id=asset.id, workspace_id=test_workspace.id, kind="buy",
+        quantity=Decimal("100000000"), price=Decimal("1"), fee=Decimal("0"),
+        date=date(2026, 1, 15), source="manual",
+    ))
+    await session.commit()
+
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,kind,old_units,new_units",
+        "AAPL,2026-02-01,,,split,100,1",
+    ), provider)
+    assert summary["imported"] == 1
+
+    session.add(AssetTransaction(
+        asset_id=asset.id, workspace_id=test_workspace.id, kind="buy",
+        quantity=Decimal("950000000"), price=Decimal("1"), fee=Decimal("0"),
+        date=date(2026, 3, 1), source="manual",
+    ))
+    await session.commit()
+
+    log = (await session.execute(select(ImportLog))).scalars().one()
+    with pytest.raises(HTTPException) as exc:
+        await asset_import_service.undo_import(session, test_workspace.id, log)
+
+    assert exc.value.status_code == 409
+    assert exc.value.detail["code"] == "import_undo_too_large"
+    # Nothing was taken back.
+    assert (await session.execute(select(ImportLog))).scalars().first() is not None

@@ -142,14 +142,23 @@ async def test_a_second_import_of_the_same_new_ticker_waits_for_the_first(
 
     async with postgres_sessions() as other:
         await other.execute(text("SET LOCAL lock_timeout = '250ms'"))
-        with pytest.raises(DBAPIError):
-            await asset_import_service.import_orders(
-                other, test_workspace.id, test_user.id, _orders(ticker, "2"),
-                market_provider=QuietProvider(),
-            )
-
-    release.set()
-    assert (await asyncio.wait_for(task, timeout=30))["imported"] == 1
+        try:
+            with pytest.raises(DBAPIError):
+                # Bounded on purpose: without the ticker lock the second import
+                # would reach the paused write and wait there forever, and
+                # `lock_timeout` does not cover that wait.
+                await asyncio.wait_for(
+                    asset_import_service.import_orders(
+                        other, test_workspace.id, test_user.id, _orders(ticker, "2"),
+                        market_provider=QuietProvider(),
+                    ),
+                    timeout=15,
+                )
+        finally:
+            # Released and joined whatever happened, so a failure here cannot
+            # leave the first import holding its transaction open.
+            release.set()
+            assert (await asyncio.wait_for(task, timeout=30))["imported"] == 1
 
     result = await session.execute(
         select(Asset).where(
@@ -157,3 +166,38 @@ async def test_a_second_import_of_the_same_new_ticker_waits_for_the_first(
         )
     )
     assert len(result.scalars().all()) == 1
+
+
+@pytest.mark.asyncio
+async def test_undo_waits_for_the_holding_lock(
+    session, postgres_sessions, test_user, test_workspace, market_asset,  # noqa: F811
+):
+    """The undo locks the holdings before it checks what the ledger keeps.
+
+    A write that holds the lock has to finish first: otherwise a sale could
+    land between the check and the delete and be left without the units it
+    sold. Without the lock in `undo_import`, this undo would succeed here.
+    """
+    from app.models.import_log import ImportLog
+
+    market_asset.last_price = Decimal("100")
+    await session.commit()
+    summary = await asset_import_service.import_orders(
+        session, test_workspace.id, test_user.id, _orders("PETR4.SA", "1"),
+        market_provider=QuietProvider(),
+    )
+    assert summary["imported"] == 1
+    log = (await session.execute(select(ImportLog))).scalars().one()
+
+    async with postgres_sessions() as other:
+        await other.execute(text("SET LOCAL lock_timeout = '250ms'"))
+        await other.execute(
+            select(Asset.id).where(Asset.id == market_asset.id).with_for_update()
+        )
+        with pytest.raises(DBAPIError) as exc:
+            await asset_import_service.undo_import(session, test_workspace.id, log)
+
+    assert "lock timeout" in str(exc.value).lower()
+
+    async with postgres_sessions() as fresh:
+        assert (await fresh.execute(select(ImportLog))).scalars().first() is not None

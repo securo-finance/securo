@@ -678,6 +678,22 @@ def _appearance_keys(
     return keys
 
 
+def _stored_order(order: AssetOrderImport) -> AssetOrderImport:
+    """The order with the quantity the ledger will store.
+
+    Duplicate matching compares a file row with the stored one by quantity, so
+    both have to hold the same number: the column keeps six decimals and a
+    file may state more, and a re-upload would otherwise look like a new order.
+    A split's zero is left alone, as is a quantity too large to round, which
+    the replay reports as a row of its own.
+    """
+    if order.kind == 'split' or asset_transaction_service.quantity_too_large(order.quantity):
+        return order
+    return order.model_copy(update={
+        'quantity': asset_transaction_service.stored_quantity(order.quantity),
+    })
+
+
 # Minor units a file may state prices in, named as the market feed names them:
 # 150 GBp is 1.50 GBP. Holdings are kept in the major unit, which is what the
 # feed's quotes are normalised to. Case matters only here: GBp is pence.
@@ -994,9 +1010,12 @@ async def import_orders(
     # before that day's trades, then the file's own order. Checking the rows in
     # any other order would measure a same-day sell against a split the file
     # states on a later line, and the stored ledger would replay it otherwise.
-    ordered = sorted(
-        orders, key=lambda o: (o.date, 0 if o.kind == 'split' else 1, o.row)
-    )
+    # The quantity the ledger stores, before anything is matched against the
+    # ledger: the same order uploaded again has to look the same both times.
+    ordered = [
+        _stored_order(o)
+        for o in sorted(orders, key=lambda o: (o.date, 0 if o.kind == 'split' else 1, o.row))
+    ]
     tickers = [o.ticker for o in ordered]
     if not dry_run:
         # Before anything is read: a second import of the same ticker has to
@@ -1073,6 +1092,16 @@ async def import_orders(
     for order in ordered:
         if order.ticker not in holdings and not resolvable.get(order.ticker, False):
             errors.append(AssetImportRowError(row=order.row, reason='unknown_ticker', ticker=order.ticker))
+            continue
+
+        if (
+            order.kind != 'split'
+            and asset_transaction_service.quantity_too_large(order.quantity)
+        ):
+            # More digits than the column holds: reporting it against its line
+            # keeps the rest of the file importable, but the row would only
+            # fail while saving.
+            errors.append(AssetImportRowError(row=order.row, reason='too_large', ticker=order.ticker))
             continue
 
         stated = _order_currency(order.currency)
@@ -1333,27 +1362,70 @@ async def undo_import(
         select(AssetTransaction).where(AssetTransaction.import_id == log.id)
     )
     rows = list(result.scalars().all())
-    asset_ids = {row.asset_id for row in rows}
+    asset_ids = sorted({row.asset_id for row in rows})
+
+    # The holdings are locked before the ledger is read and checked, in ID
+    # order as the import and the manual entries lock them: an entry that sells
+    # the units this import supplied must not land between the check and the
+    # delete, or the undo would leave it short. Waiting here makes the ledger
+    # read below the one the delete acts on.
+    holdings: dict[uuid.UUID, Asset] = {}
+    ledger_rows: list[AssetTransaction] = []
+    if asset_ids:
+        locked = await session.execute(
+            select(Asset)
+            .where(Asset.id.in_(asset_ids), Asset.workspace_id == workspace_id)
+            .order_by(Asset.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        holdings = {asset.id: asset for asset in locked.scalars().all()}
+        # Read again once the lock is held: the rows this session loaded
+        # before it may have been edited while it waited.
+        ledger_rows = await _ledger_rows(session, asset_ids, refresh=True)
+        rows = [row for row in ledger_rows if row.import_id == log.id]
 
     # A later entry may sell the units this import supplied, and taking those
     # rows back would leave a position the ledger itself would have refused —
     # the recompute can only clamp it. Checked before anything is deleted, so
     # a refused undo leaves the ledger as it was.
     remaining: dict[uuid.UUID, list[AssetTransaction]] = {asset_id: [] for asset_id in asset_ids}
-    for tx in await _ledger_rows(session, sorted(asset_ids)):
+    for tx in ledger_rows:
         if tx.import_id != log.id:
             remaining[tx.asset_id].append(tx)
-    for ledger in remaining.values():
+    for asset_id, ledger in remaining.items():
         over = asset_transaction_service._detect_oversell(ledger)
         if over is not None:
             attempted, available = over
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"This import can't be undone: an entry that stays in the ledger "
-                    f"sells {attempted} units with {available} held. Edit or delete "
-                    "that entry first."
-                ),
+                detail={
+                    # A code and the counts, so the panel can say it in the
+                    # reader's language: the sentence itself cannot be matched.
+                    'code': 'import_undo_oversell',
+                    'message': (
+                        "This import can't be undone: an entry that stays in the "
+                        f"ledger sells {asset_transaction_service.fmt_units(attempted)} "
+                        f"units with {asset_transaction_service.fmt_units(available)} "
+                        "held. Edit or delete that entry first."
+                    ),
+                    'attempted': asset_transaction_service.fmt_units(attempted),
+                    'available': asset_transaction_service.fmt_units(available),
+                },
+            )
+        asset = holdings.get(asset_id)
+        if asset is not None and asset_transaction_service.too_large_to_store(ledger, asset):
+            # No sale in the way, but the units left — or their value at the
+            # current quote — would not fit the holding's columns.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    'code': 'import_undo_too_large',
+                    'message': (
+                        "This import can't be undone: the holding left without it "
+                        "is too large to store."
+                    ),
+                },
             )
 
     for row in rows:
