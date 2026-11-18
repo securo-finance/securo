@@ -55,13 +55,12 @@ _ALLOWED_CONDITION_OPS = {
 _ALLOWED_ACTION_OPS = {
     "set_category", "set_payee", "set_description", "append_notes", "ignore",
 }
-# Text values are free-form, so a numeric comparison reads them as 0 and
-# matches every row, including ones with no value at all.
-_TEXT_CONDITION_OPS = {
+# The provider category is free text, so a numeric comparison would read the
+# label as 0 and match every row, including those without provider data.
+_PROVIDER_CATEGORY_CONDITION_OPS = {
     "contains", "not_contains", "equals", "not_equals", "starts_with",
     "ends_with", "regex",
 }
-_TEXT_CONDITION_FIELDS = {"description", "payee", "notes", "provider_category"}
 
 
 def _rule_item_value(item, key: str):
@@ -112,10 +111,10 @@ async def validate_rule_definition(
                     f"Invalid condition: unsupported status value {value!r}; "
                     "use 'pending' or 'posted'"
                 )
-        if field in _TEXT_CONDITION_FIELDS and op not in _TEXT_CONDITION_OPS:
+        if field == "provider_category" and op not in _PROVIDER_CATEGORY_CONDITION_OPS:
             raise ValueError(
-                f"Invalid condition: unsupported op {op!r} for field {field!r}; "
-                "text fields accept only contains, not_contains, equals, "
+                f"Invalid condition: unsupported op {op!r} for field 'provider_category'; "
+                "provider_category accepts only contains, not_contains, equals, "
                 "not_equals, starts_with, ends_with and regex"
             )
         if op == "regex":
