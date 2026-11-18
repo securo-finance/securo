@@ -34,10 +34,7 @@ async def sync_rates(
     target = min(requested_target, app_today())
     supported = set(get_settings().supported_currencies.split(","))
 
-    if target == app_today():
-        rates = await provider.fetch_latest()
-    else:
-        rates = await provider.fetch_historical(target)
+    rates = await _fetch(provider, target)
 
     count = 0
     for currency_code, rate in rates.items():
@@ -60,6 +57,23 @@ async def sync_rates(
     await session.commit()
     logger.info("Synced %d FX rates for %s", count, target)
     return count
+
+
+async def _fetch(provider: OpenExchangeRatesProvider, target: date) -> dict[str, Decimal]:
+    if target == app_today():
+        return await provider.fetch_latest()
+    return await provider.fetch_historical(target)
+
+
+async def fetch_rates(session: AsyncSession, target_date: date) -> dict[str, Decimal]:
+    """The provider's USD-based rates for a day, without storing them.
+
+    For a caller that must not write, such as an import preview. Raises when
+    the provider is not configured or the request fails, like
+    :func:`sync_rates`. A future date reads today's latest rates.
+    """
+    provider = OpenExchangeRatesProvider(await resolve_settings(session))
+    return await _fetch(provider, min(target_date, app_today()))
 
 
 async def _resolve_rate(

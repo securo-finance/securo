@@ -15,6 +15,7 @@ from app.schemas.recurring_transaction import RecurringTransactionCreate, Recurr
 from app.services import category_line_service, recurring_match_service
 from app.services.credit_card_service import apply_effective_date
 from app.services.fx_rate_service import stamp_primary_amount
+from app.services.rule_service import apply_rules_to_transaction
 
 
 async def _verify_account_in_workspace(
@@ -446,6 +447,16 @@ async def generate_pending(
                 session.add(transaction)
                 await session.flush()
                 await stamp_primary_amount(session, user_id, transaction)
+                # A new row reads the rules like any other (#568). The
+                # template's category is already set, so category rules
+                # leave it alone.
+                await apply_rules_to_transaction(session, user_id, transaction)
+                if transaction.status == "pending":
+                    # The matcher skips ignored placeholders, so an ignored
+                    # one would leave its bank charge to land beside it.
+                    # Sync and import carry the rule's ignore over when the
+                    # charge is folded in.
+                    transaction.is_ignored = False
                 count += 1
 
             # Advance to next occurrence

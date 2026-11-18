@@ -16,11 +16,11 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.app_clock import app_today
 from app.core.config import get_settings
-from app.models.asset import Asset
+from app.models.asset import PROVIDER_VALUE_DATE_METADATA_KEY, Asset
 from app.models.asset_group import AssetGroup
 from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
-from app.models.bank_connection import BankConnection
+from app.models.bank_connection import LAST_SYNC_FAILURE_KEY, BankConnection
 from app.models.account import Account
 from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.category import Category
@@ -909,9 +909,13 @@ async def _sync_holdings(
                 if previous_marker == existing.sell_date.isoformat():
                     provider_sell_date = previous_marker
             # Keep descriptive fields fresh in case the provider still
-            # updates them post-closure, but don't touch valuation.
+            # updates them post-closure, but don't touch valuation. The
+            # position is closed, so no value date is stamped, and the
+            # reserved key is stripped like on the active path: the last
+            # valuation is older than the closure and the payload must not
+            # date it.
             existing.name = holding.name
-            withdrawn_metadata = dict(holding.metadata or {})
+            withdrawn_metadata = dict(_provider_metadata(holding) or {})
             if provider_sell_date is not None:
                 withdrawn_metadata[_PROVIDER_SELL_DATE_METADATA_KEY] = provider_sell_date
             existing.external_metadata = withdrawn_metadata or None
@@ -1168,6 +1172,32 @@ async def _sync_holding_trades(
             await _upsert_asset_value_for_today(session, asset, holding.current_value, app_today())
 
 
+def _provider_metadata(holding: HoldingData) -> Optional[dict]:
+    """The provider's metadata snapshot, without the keys Securo owns.
+
+    A provider can send anything, including the reserved value date key, so
+    the payload is never taken at its word for the markers Securo writes.
+    """
+    return {
+        key: value
+        for key, value in (holding.metadata or {}).items()
+        if key != PROVIDER_VALUE_DATE_METADATA_KEY
+    } or None
+
+
+def _holding_metadata(holding: HoldingData) -> Optional[dict]:
+    """The holding's metadata snapshot, stamped with its provider value date.
+
+    The blob is replaced on every sync, so the marker travels with it: when a
+    provider stops reporting a date, the old marker goes with the snapshot
+    instead of lingering next to a value it no longer describes.
+    """
+    metadata = _provider_metadata(holding) or {}
+    if holding.value_date is not None:
+        metadata[PROVIDER_VALUE_DATE_METADATA_KEY] = holding.value_date.isoformat()
+    return metadata or None
+
+
 async def _upsert_asset_from_holding(
     session: AsyncSession,
     asset: Optional[Asset],
@@ -1201,7 +1231,7 @@ async def _upsert_asset_from_holding(
             isin=holding.isin,
             ticker=holding.ticker,
             maturity_date=holding.maturity_date,
-            external_metadata=holding.metadata,
+            external_metadata=_holding_metadata(holding),
             valuation_method="manual",
         )
         session.add(asset)
@@ -1217,7 +1247,7 @@ async def _upsert_asset_from_holding(
     asset.currency = holding.currency
     asset.user_id = user_id
     # external_metadata is a snapshot blob: we want the latest every time.
-    asset.external_metadata = holding.metadata
+    asset.external_metadata = _holding_metadata(holding)
     previous_connection_id = asset.connection_id
     asset.connection_id = connection_id
     # Only auto-unarchive when the holding moved to a different connection
@@ -1634,6 +1664,8 @@ async def handle_oauth_callback(
                 for key, value in reconnect_settings.items()
                 if key != SYNC_BACKOFF_KEY
             }
+        # The failure the old credentials left no longer says anything.
+        existing_reconnect.settings = _with_sync_failure(existing_reconnect.settings, None)
         await session.commit()
         await session.refresh(existing_reconnect)
         return existing_reconnect
@@ -3065,6 +3097,46 @@ def _with_retry_after(settings: Optional[dict], retry_after: Optional[float]) ->
     return current
 
 
+# Provider user-action codes that only a new authorization fixes. Any other
+# code is shown as a provider error, with a plain retry.
+_RECONNECT_ACTION_CODES = frozenset(
+    {"credentials_invalid", "setup_token_used", "no_accounts_linked"}
+)
+
+
+def _sync_failure(code: str, detail: Optional[str] = None) -> dict:
+    return {
+        "code": code,
+        "at": datetime.now(timezone.utc).isoformat(),
+        "detail": detail,
+    }
+
+
+def _sync_failure_for(exc: BaseException) -> dict:
+    """What a sync that raised `exc` leaves on the connection (issue #1405).
+
+    The detail is the provider's own code, the HTTP status or the exception's
+    type, never its message: a provider's text can carry account ids or
+    names."""
+    if isinstance(exc, SessionExpiredError):
+        return _sync_failure("consent_expired")
+    if isinstance(exc, ProviderUserActionRequired):
+        if exc.code == "psu_present_required":
+            return _sync_failure("psu_present_required", exc.code)
+        if exc.code in _RECONNECT_ACTION_CODES:
+            return _sync_failure("consent_expired", exc.code)
+        return _sync_failure("provider_error", exc.code)
+    if isinstance(exc, ProviderRateLimited):
+        return _sync_failure("rate_limited")
+    status_code = getattr(getattr(exc, "response", None), "status_code", None)
+    if status_code == 429:
+        # A provider that does not raise ProviderRateLimited itself.
+        return _sync_failure("rate_limited", "HTTP 429")
+    if isinstance(status_code, int):
+        return _sync_failure("provider_error", f"HTTP {status_code}")
+    return _sync_failure("provider_error", type(exc).__name__)
+
+
 def _parse_aware_datetime(value: object) -> Optional[datetime]:
     if not isinstance(value, str):
         return None
@@ -3941,6 +4013,18 @@ async def sync_connection(
                     throttled_without_retry_after,
                 ),
             )
+        # The reason shown on the connection card (issue #1405): a run that
+        # read data ends the last failure; one the bank throttled entirely
+        # notes it.
+        failure: Optional[dict] = (
+            _sync_failure("rate_limited") if sync_outcome == "rate_limited" else None
+        )
+        # A bank that took a shorter window, or skipped an account, because
+        # the user was not there still needs a sync with the user present:
+        # reading some data does not end that.
+        presence_required = getattr(provider, "presence_required_account_ids", None)
+        if failure is None and isinstance(presence_required, set) and presence_required:
+            failure = _sync_failure("psu_present_required", "partial")
         action_required_warnings = getattr(provider, "action_required_warnings", None)
         if isinstance(action_required_warnings, list) and action_required_warnings:
             logger.warning(
@@ -3950,8 +4034,12 @@ async def sync_connection(
                 connection.id,
             )
             connection.status = "error"
+            # The access URL is still good: the bank is reauthorized at the
+            # bridge, and a new setup token would only fail as already used.
+            failure = _sync_failure("reauthorize_at_provider", "action_required")
         else:
             connection.status = "active"
+        connection.settings = _with_sync_failure(connection.settings, failure)
         if rate_limited_accounts:
             logger.warning(
                 "Sync %s finished %s: %d account(s) rate-limited by the provider "
@@ -3965,19 +4053,23 @@ async def sync_connection(
         await session.refresh(connection)
         return connection, merged_count, sync_outcome
 
-    except SessionExpiredError:
+    except SessionExpiredError as exc:
         # Provider consent expired — distinct from a generic error so the UI
         # can show a clearer "reauthorize" prompt.
         await session.rollback()
-        await _mark_failed_sync(session, connection_id, "expired")
+        await _mark_failed_sync(
+            session, connection_id, "expired", failure=_sync_failure_for(exc)
+        )
         raise
-    except ProviderUserActionRequired:
+    except ProviderUserActionRequired as exc:
         # Stale/revoked provider credentials require a non-destructive
         # reconnect path. Mark the connection unhealthy so the accounts page
         # shows the reconnect banner, then let the API return a typed 409
         # instead of a generic 500.
         await session.rollback()
-        await _mark_failed_sync(session, connection_id, "error")
+        await _mark_failed_sync(
+            session, connection_id, "error", failure=_sync_failure_for(exc)
+        )
         raise
     except ProviderRateLimited as exc:
         # The bank/aggregator is throttling data requests (PSD2 caps unattended
@@ -3996,6 +4088,7 @@ async def sync_connection(
             "active",
             keep=("expired",),
             retry_after=exc.retry_after,
+            failure=_sync_failure_for(exc),
         )
         # The row can vanish if the connection was deleted mid-sync. Fall back
         # to the one we already hold rather than raising: re-raising here would
@@ -4004,7 +4097,7 @@ async def sync_connection(
         # Report "rate_limited" so the caller (manual sync endpoint, UI) knows
         # no fresh data was pulled and can say so instead of a success toast.
         return refreshed or connection, 0, "rate_limited"
-    except Exception:
+    except Exception as exc:
         # Mark connection as errored so UI shows reconnect banner. If some
         # account was also throttled in this run, its Retry-After is kept as
         # the floor on the next scheduled try.
@@ -4019,6 +4112,7 @@ async def sync_connection(
                 retry_after,
                 throttled_without_retry_after,
             ),
+            failure=_sync_failure_for(exc),
         )
         raise
 
@@ -4033,6 +4127,7 @@ async def _mark_failed_sync(
     *,
     keep: tuple[str, ...] = (),
     retry_after: Optional[float] = None,
+    failure: Optional[dict] = None,
 ) -> None:
     """Set the status a sync that ended early leaves. A disconnect can commit
     between the sync's rollback and this write; overwriting it would bring
@@ -4040,7 +4135,8 @@ async def _mark_failed_sync(
     read under lock, so the check and the write see the same status.
 
     `retry_after` is the provider's Retry-After on a throttled sync, noted as
-    a floor on the scheduler backoff."""
+    a floor on the scheduler backoff. `failure` is why the sync failed, kept
+    until a sync succeeds (issue #1405)."""
     async with session.begin():
         conn = await session.get(BankConnection, connection_id, with_for_update=True)
         if conn is None or conn.status == DISCONNECTED_STATUS:
@@ -4049,6 +4145,20 @@ async def _mark_failed_sync(
             conn.status = status
         if retry_after is not None:
             conn.settings = _with_retry_after(conn.settings, retry_after)
+        if failure is not None:
+            conn.settings = _with_sync_failure(conn.settings, failure)
+
+
+def _with_sync_failure(settings: Optional[dict], failure: Optional[dict]) -> dict:
+    """Settings with the last sync failure set, or cleared when None."""
+    current = {
+        key: value
+        for key, value in (settings or {}).items()
+        if key != LAST_SYNC_FAILURE_KEY
+    }
+    if failure is not None:
+        current[LAST_SYNC_FAILURE_KEY] = failure
+    return current
 
 
 class ConnectionDisconnectedError(Exception):

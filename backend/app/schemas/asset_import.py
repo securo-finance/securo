@@ -31,7 +31,7 @@ class AssetImportRowError(BaseModel):
     row: int
     # missing_ticker | invalid_date | invalid_quantity | invalid_price | invalid_fee | invalid_kind
     # | invalid_split | unknown_ticker | oversell | split_not_allowed | split_in_future
-    # | nothing_held_before_split | too_large
+    # | nothing_held_before_split | too_large | no_fx_rate | possible_duplicate
     reason: str
     ticker: Optional[str] = None
     detail: Optional[str] = None

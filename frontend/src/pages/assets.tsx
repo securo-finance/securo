@@ -4,7 +4,8 @@ import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRegisterPageChatContext } from '@/lib/page-chat-context'
 import { accounts as accountsApi, assets, assetGroups, currencies as currenciesApi } from '@/lib/api'
-import { localDateString } from '@/lib/date-utils'
+import { localDateString, todayInTimezone } from '@/lib/date-utils'
+import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -62,6 +63,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { getAssetProfit } from '@/lib/asset-profit'
+import { getStaleProviderValueDate } from '@/lib/asset-provider-freshness'
 import { getAssetValuePrimary, getPortfolioShare, getPortfolioTotalPrimary } from '@/lib/asset-portfolio-share'
 import { formatTransactionTotal, getTransactionTotalCurrency } from '@/lib/asset-transaction-total'
 import { MAX_SPLIT_UNITS, canRecordSplit, formatSplitRatio, parseSplitUnits } from '@/lib/asset-split'
@@ -214,6 +216,12 @@ export default function AssetsPage() {
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
   const { canWrite } = useWorkspace()
+  // The day the server keeps the books in, so the staleness badge agrees with
+  // the dates it writes, not the browser's clock. Until that timezone is known
+  // there is no day to compare against, so the badge waits for it instead of
+  // guessing with the browser's.
+  const effectiveTimezone = useEffectiveTimezone()
+  const today = effectiveTimezone ? todayInTimezone(effectiveTimezone) : null
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
 
@@ -793,6 +801,10 @@ export default function AssetsPage() {
     const pctOfPortfolio = asset.sell_date ? null : getPortfolioShare(asset, portfolioTotalPrimary, userCurrency)
     const needsBuys = isMarketPriced && !hasCost && !asset.sell_date
     const needsExchangeRate = exchangeRatesNeedSetup && needsConversion(asset, userCurrency)
+    // The API only fills the date while the provider's own figure is on
+    // screen, so the row just asks how old it is.
+    const staleValueDate =
+      isSynced && today ? getStaleProviderValueDate(asset, today) : null
 
     return (
       <div key={asset.id} className="border-b border-border last:border-b-0">
@@ -805,7 +817,7 @@ export default function AssetsPage() {
           <div className="flex items-center gap-2.5 min-w-0">
             <AssetIcon logoUrl={asset.logo_url} Icon={Icon} colorClass={config.color} bgClass={config.bg} size={16} tile="w-8 h-8" />
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <span className="font-semibold text-foreground truncate">{asset.ticker && !asset.ticker.startsWith('TD:') ? asset.ticker : asset.name}</span>
                 {needsBuys && (
                   <Badge
@@ -825,6 +837,18 @@ export default function AssetsPage() {
                   >
                     <AlertTriangle size={9} />
                     {t('assets.noFxRate')}
+                  </Badge>
+                )}
+                {staleValueDate && (
+                  <Badge
+                    variant="outline"
+                    className="text-[9px] px-1 py-0 text-amber-600 border-amber-300 bg-amber-50 dark:bg-amber-950/30 gap-0.5 shrink-0"
+                    title={t('assets.providerValueStaleTitle')}
+                  >
+                    <AlertTriangle size={9} />
+                    {t('assets.providerValueStale', {
+                      date: new Date(staleValueDate + 'T00:00:00').toLocaleDateString(dateLocale),
+                    })}
                   </Badge>
                 )}
                 {asset.sell_date && (
@@ -904,7 +928,7 @@ export default function AssetsPage() {
                 <button onClick={(e) => { e.stopPropagation(); if (!isProviderOwned) openEdit(asset) }} disabled={isProviderOwned} title={isProviderOwned ? t('assets.syncedReadOnly') : t('common.edit')} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                   <Pencil size={13} />
                 </button>
-                <button onClick={(e) => { e.stopPropagation(); if (!isProviderOwned) setDeletingId(asset.id) }} disabled={isProviderOwned} title={isProviderOwned ? t('assets.syncedReadOnly') : t('common.delete')} className="p-1 rounded text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                <button onClick={(e) => { e.stopPropagation(); setDeletingId(asset.id) }} title={t('common.delete')} aria-label={t('common.delete')} className="p-1 rounded text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-colors">
                   <Trash2 size={13} />
                 </button>
               </>
@@ -1687,6 +1711,9 @@ export default function AssetsPage() {
             <DialogTitle>{t('assets.confirmDeleteTitle')}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">{t('assets.confirmDelete')}</p>
+          {assetsList?.find(a => a.id === deletingId)?.connection_id && (
+            <p className="text-sm text-amber-600 dark:text-amber-400">{t('assets.confirmDeleteSynced')}</p>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeletingId(null)}>
               {t('common.cancel')}

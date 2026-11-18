@@ -144,6 +144,7 @@ async def get_income_expenses(
     days: Optional[int] = Query(None, ge=1, le=730),
     start_date: date | None = Query(None),
     end_date: date | None = Query(None),
+    include_forecasts: bool = Query(False),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
@@ -151,7 +152,9 @@ async def get_income_expenses(
 
     Alternatively `start_date`/`end_date` (both required together) pin the
     window to an explicit historical calendar range, overriding `months`,
-    `period`, and `days`. Custom ranges include actuals only, without estimates.
+    `period`, and `days`. Custom ranges include actuals only, without estimates;
+    `include_forecasts` keeps them for a window that comes from a preset
+    (This Month, Last Month, a preset stepped back).
     """
     financial_year_start_month = _financial_year_start_month(ctx.workspace.tax_jurisdiction)
     custom_start, custom_end = _resolve_custom_range(start_date, end_date)
@@ -164,6 +167,7 @@ async def get_income_expenses(
         account_ids=account_ids, period=effective_period, days=days,
         financial_year_start_month=financial_year_start_month,
         start_date=custom_start, end_date=custom_end,
+        include_forecasts=include_forecasts,
     )
 
 

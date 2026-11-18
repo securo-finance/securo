@@ -209,6 +209,11 @@ class HoldingData:
     # belongs in a 3-char ISO currency field.
     ticker: Optional[str] = None
     maturity_date: Optional[date] = None
+    # Date the provider says `current_value` refers to. A provider can keep
+    # serving a frozen figure (a redeemed position it never reports as
+    # closed), so this date is the only sign that the value stopped moving.
+    # None = not reported by this provider.
+    value_date: Optional[date] = None
     is_withdrawn: bool = False  # provider signaled the position was sold/transferred
     metadata: Optional[dict] = None
     # Owning-account hint (SimpleFIN — issue #345): holdings are reported per
