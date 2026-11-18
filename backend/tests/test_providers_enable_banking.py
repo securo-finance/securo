@@ -909,6 +909,58 @@ def test_mask_last4_handles_exactly_four():
     assert mask_last4("1234") == "1234"
 
 
+# ----- direction without credit_debit_indicator (issue #937) -----
+
+
+def _signed_entry(amount: str, indicator: str | None) -> dict:
+    raw: dict = {
+        "transaction_amount": {"amount": amount, "currency": "SEK"},
+        "booking_date": "2026-08-20",
+        "remittance_information": [],
+        "creditor": {"name": "ICA Kvantum"},
+        "debtor": {"name": "Account Holder"},
+    }
+    if indicator is not None:
+        raw["credit_debit_indicator"] = indicator
+    return raw
+
+
+@pytest.mark.parametrize(
+    ("amount", "indicator", "expected"),
+    [
+        ("-249.00", None, "debit"),
+        ("-249.00", "", "debit"),
+        ("249.00", None, "credit"),
+        ("249.00", "DBIT", "debit"),
+        ("249.00", "CRDT", "credit"),
+    ],
+)
+def test_build_transaction_direction(amount, indicator, expected):
+    """A bank that sends no indicator signs the amount instead (SEB's reserved
+    card purchases): a negative amount is money out. The amount is stored
+    unsigned either way, and the payee is the party across the direction."""
+    tx = EnableBankingProvider()._build_transaction(
+        "acc-1", _signed_entry(amount, indicator), "posted", "auto"
+    )
+    assert tx is not None
+    assert (tx.type, tx.amount) == (expected, Decimal("249.00"))
+    assert tx.description == ("ICA Kvantum" if expected == "debit" else "Account Holder")
+
+
+def test_build_transaction_reserved_and_booked_purchase_agree():
+    """SEB lists the reservation signed with no indicator and the booking with
+    DBIT; both are the same purchase, so both are debits."""
+    provider = EnableBankingProvider()
+    reserved = provider._build_transaction(
+        "acc-1", _signed_entry("-249.00", None), "pending", "auto"
+    )
+    booked = provider._build_transaction(
+        "acc-1", _signed_entry("249.00", "DBIT"), "posted", "auto"
+    )
+    assert reserved is not None and booked is not None
+    assert (reserved.type, reserved.amount) == (booked.type, booked.amount)
+
+
 # ----- counterparty fallback / transaction_date (issue #734, #753) -----
 
 
