@@ -1166,6 +1166,7 @@
     "createCounterpartConfirm": "Vytvořit",
     "unlinkTransfer": "Odpojit převod",
     "unlinkTransferConfirm": "Odpojit tento převod? Obě transakce se opět budou považovat za běžné transakce.",
+    "unlinkTransferReportWarning": "Obě transakce se znovu začnou počítat do přehledů příjmů a výdajů: odchozí jako výdaj, příchozí jako příjem. Pokud chcete některou z přehledů vynechat, dejte jí kategorii, která se považuje za převod, například Převody.",
     "unlinkTransferSuccess": "Převod odpojen",
     "confirmTransferCategoryTitle": "Použít tuto kategorii i na spárovaný převod?",
     "confirmTransferCategoryDesc": "Převody jsou ve dvojicích. Můžete upravit jen tuto transakci, nebo změnit kategorii na obou stranách.",

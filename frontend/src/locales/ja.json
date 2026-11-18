@@ -1102,6 +1102,7 @@
     "createCounterpartConfirm": "作成",
     "unlinkTransfer": "振替の紐付けを解除",
     "unlinkTransferConfirm": "この振替の紐付けを解除しますか?両方の取引が通常の取引として扱われます。",
+    "unlinkTransferReportWarning": "両方の取引が再び収入・支出レポートに計上されます。出金側は支出、入金側は収入として扱われます。レポートから除外したい場合は、「振替」など振替として扱われるカテゴリを設定してください。",
     "unlinkTransferSuccess": "振替の紐付けを解除しました",
     "confirmTransferCategoryTitle": "このカテゴリを振替の相手取引にも適用しますか?",
     "confirmTransferCategoryDesc": "振替は2件1組です。この取引のみ更新するか、両方に同じカテゴリ変更を適用できます。",

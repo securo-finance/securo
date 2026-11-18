@@ -1136,6 +1136,7 @@
     "createCounterpartConfirm": "Utwórz",
     "unlinkTransfer": "Odłącz transfer",
     "unlinkTransferConfirm": "Odłączyć ten transfer? Obie transakcje znów będą traktowane jako zwykłe.",
+    "unlinkTransferReportWarning": "Obie transakcje znów będą liczone w raportach przychodów i wydatków: wychodząca jako wydatek, przychodząca jako przychód. Aby wyłączyć jedną z raportów, przypisz jej kategorię traktowaną jak transfer, np. Przelewy.",
     "unlinkTransferSuccess": "Odłączono transfer",
     "confirmTransferCategoryTitle": "Zastosować tę kategorię także do powiązanego transferu?",
     "confirmTransferCategoryDesc": "Transfery występują parami. Możesz zaktualizować tylko tę transakcję albo zastosować tę samą zmianę kategorii do obu stron.",

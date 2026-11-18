@@ -1100,6 +1100,7 @@
     "createCounterpartConfirm": "Criar",
     "unlinkTransfer": "Desvincular transferência",
     "unlinkTransferConfirm": "Desvincular esta transferência? Ambas as transações voltarão a ser tratadas como transações normais.",
+    "unlinkTransferReportWarning": "As duas transações voltam a contar nos relatórios de receitas e despesas: a de saída como despesa e a de entrada como receita. Para deixar uma delas fora dos relatórios, coloque-a numa categoria tratada como transferência, como Transferências.",
     "unlinkTransferSuccess": "Transferência desvinculada",
     "confirmTransferCategoryTitle": "Aplicar esta categoria também à transferência pareada?",
     "confirmTransferCategoryDesc": "Transferências vêm em pares. Podes atualizar só esta transação ou aplicar a mesma alteração de categoria aos dois lados.",

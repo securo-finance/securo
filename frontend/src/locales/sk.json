@@ -1150,6 +1150,7 @@
     "createCounterpartConfirm": "Vytvoriť",
     "unlinkTransfer": "Odpojiť prevod",
     "unlinkTransferConfirm": "Odpojiť tento prevod? Obe transakcie sa opäť budú považovať za bežné transakcie.",
+    "unlinkTransferReportWarning": "Obe transakcie sa znova začnú počítať do prehľadov príjmov a výdavkov: odchádzajúca ako výdavok, prichádzajúca ako príjem. Ak chcete niektorú z prehľadov vynechať, dajte jej kategóriu, ktorá sa považuje za prevod, napríklad Prevody.",
     "unlinkTransferSuccess": "Prevod odpojený",
     "confirmTransferCategoryTitle": "Použiť túto kategóriu aj na spárovaný prevod?",
     "confirmTransferCategoryDesc": "Prevody sú vo dvojiciach. Môžeš upraviť len túto transakciu alebo zmeniť kategóriu na oboch stranách.",

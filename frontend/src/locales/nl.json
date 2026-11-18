@@ -1102,6 +1102,7 @@
     "createCounterpartConfirm": "Creëer",
     "unlinkTransfer": "Overdracht ontkoppelen",
     "unlinkTransferConfirm": "Deze overdracht ontkoppelen? Beide transacties worden weer als reguliere transacties behandeld.",
+    "unlinkTransferReportWarning": "Beide transacties tellen weer mee in de inkomsten- en uitgavenrapporten: de uitgaande als uitgave, de inkomende als inkomsten. Wil je er een buiten de rapporten houden, geef hem dan een categorie die als overboeking wordt behandeld, zoals Overboekingen.",
     "unlinkTransferSuccess": "Overdracht ontkoppeld",
     "confirmTransferCategoryTitle": "Deze categorie ook toepassen op de gepaarde overdracht?",
     "confirmTransferCategoryDesc": "Overdrachten gebeuren in paren. U kunt alleen deze transactie bijwerken of dezelfde categoriewijziging op beide zijden toepassen.",

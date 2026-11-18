@@ -251,6 +251,16 @@ it('asks for confirmation before unlinking a transfer pair', async () => {
   expect(onUnlinkTransfer).not.toHaveBeenCalled()
 })
 
+it('warns in the unlink confirmation that both legs start counting in reports', async () => {
+  const { user } = renderTransferDialog(vi.fn())
+
+  await user.click(await screen.findByRole('button', { name: t('transactions.unlinkTransfer') }))
+  const confirmText = await screen.findByText(t('transactions.unlinkTransferConfirm'))
+  const confirmDialog = confirmText.closest('[role="dialog"]') as HTMLElement
+
+  expect(within(confirmDialog).getByText(t('transactions.unlinkTransferReportWarning'))).toBeInTheDocument()
+})
+
 it('keeps the transfer linked when the unlink confirmation is cancelled', async () => {
   const onUnlinkTransfer = vi.fn()
   const { user } = renderTransferDialog(onUnlinkTransfer)

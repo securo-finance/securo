@@ -1102,6 +1102,7 @@
     "createCounterpartConfirm": "Létrehozás",
     "unlinkTransfer": "Átvezetés szétválasztása",
     "unlinkTransferConfirm": "Szétválasztod ezt az átvezetést? Mindkét tranzakció ismét normál tranzakcióként fog szerepelni.",
+    "unlinkTransferReportWarning": "Mindkét tranzakció újra beleszámít a bevételi és kiadási kimutatásokba: a kimenő kiadásként, a bejövő bevételként. Ha valamelyiket ki szeretnéd hagyni a kimutatásokból, tedd egy átvezetésként kezelt kategóriába, például az Átvezetések közé.",
     "unlinkTransferSuccess": "Átvezetés szétválasztva",
     "confirmTransferCategoryTitle": "Az átvezetés párjára is alkalmazod ezt a kategóriát?",
     "confirmTransferCategoryDesc": "Az átvezetések párban léteznek. Frissítheted csak ezt a tranzakciót, vagy mindkét oldalon módosíthatod a kategóriát.",

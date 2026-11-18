@@ -1046,6 +1046,10 @@ function TransactionForm({
                         {t('transactions.unlinkTransferConfirm')}
                       </DialogDescription>
                     </DialogHeader>
+                    <div className="flex items-start gap-2 p-2 rounded-md bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400">
+                      <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                      <span className="text-xs">{t('transactions.unlinkTransferReportWarning')}</span>
+                    </div>
                     <DialogFooter>
                       <Button type="button" variant="outline" onClick={() => setUnlinkConfirmOpen(false)}>
                         {t('common.cancel')}
