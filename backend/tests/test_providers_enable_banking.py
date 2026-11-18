@@ -311,6 +311,7 @@ async def test_handle_oauth_callback_builds_connection_data(eb_keys):
                     "accounts": [
                         {
                             "uid": "acc-uid-1",
+                            "identification_hash": "hash-1",
                             "currency": "EUR",
                             "display_name": "Main",
                             "cash_account_type": "CACC",
@@ -344,6 +345,8 @@ async def test_handle_oauth_callback_builds_connection_data(eb_keys):
     assert acc.type == "checking"
     assert acc.balance == Decimal("123.45")
     assert acc.currency == "EUR"
+    # The hash a later session finds the account by, kept from the first one.
+    assert acc.stable_external_id == "hash-1"
     # session_id must NOT appear in credentials in plaintext.
     assert "session_id_enc" in conn.credentials
     assert conn.credentials.get("session_id") is None

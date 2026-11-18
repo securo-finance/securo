@@ -626,6 +626,110 @@ async def test_sync_rematches_rekeyed_account_by_stable_external_id(
     assert rows[0].stable_external_id == "hash-1"
 
 
+def _dkb_accounts() -> list[AccountData]:
+    """A second Enable Banking consent at DKB: the checking account an older
+    connection already syncs, and the money market account opened since."""
+    return [
+        AccountData(external_id="new-uid-checking", stable_external_id="hash-checking",
+                    name="Girokonto", type="checking", balance=Decimal("25"),
+                    currency="EUR"),
+        AccountData(external_id="new-uid-mm", stable_external_id="hash-mm",
+                    name="Tagesgeld", type="savings", balance=Decimal("500"),
+                    currency="EUR"),
+    ]
+
+
+async def _held_checking(session, user_id, workspace_id, provider="enable_banking"):
+    conn = await _make_connection(session, user_id, "DKB")
+    conn.provider = provider
+    held = Account(
+        id=uuid.uuid4(), user_id=user_id, workspace_id=workspace_id,
+        connection_id=conn.id, external_id="old-uid-checking",
+        stable_external_id="hash-checking", name="Gemeinschaftskonto",
+        type="checking", balance=Decimal("10"), currency="EUR",
+    )
+    session.add(held)
+    await session.commit()
+    return conn.id, held.id
+
+
+async def _accounts_of(session, connection_id) -> list[Account]:
+    return list((await session.execute(
+        select(Account).where(Account.connection_id == connection_id)
+    )).scalars().all())
+
+
+@pytest.mark.asyncio
+async def test_new_enable_banking_link_skips_account_another_connection_syncs(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Linking a bank again to add a new account must not copy the accounts
+    the existing connection already syncs (#1224). The new connection takes
+    only the new account, keeps its hash, and never fetches the other one."""
+    old_conn_id, held_id = await _held_checking(session, test_user.id, test_workspace.id)
+    mock_provider = AsyncMock()
+    mock_provider.handle_oauth_callback = AsyncMock(return_value=ConnectionData(
+        external_id="sess-new", institution_name="DKB",
+        credentials={"session_id": "x"}, accounts=_dkb_accounts(),
+    ))
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+
+    p1, p2, p3 = _patch_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         p1, p2, p3:
+        connection = await handle_oauth_callback(
+            session, test_workspace.id, test_user.id, "code", "enable_banking",
+            sync_assets=False,
+        )
+
+    new_rows = await _accounts_of(session, connection.id)
+    assert [(row.external_id, row.stable_external_id) for row in new_rows] == [
+        ("new-uid-mm", "hash-mm"),
+    ]
+    fetched = [call.args[1] for call in mock_provider.get_transactions.await_args_list]
+    assert fetched == ["new-uid-mm"]
+    old_rows = await _accounts_of(session, old_conn_id)
+    assert [(row.id, row.external_id) for row in old_rows] == [(held_id, "old-uid-checking")]
+
+    # Its syncs leave the account to the connection that holds it.
+    mock_provider.refresh_credentials = AsyncMock(return_value={"session_id": "x"})
+    mock_provider.get_accounts = AsyncMock(return_value=_dkb_accounts())
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         p1, p2, p3:
+        await sync_connection(session, connection.id, test_workspace.id, test_user.id)
+
+    assert [row.external_id for row in await _accounts_of(session, connection.id)] == [
+        "new-uid-mm",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_new_link_keeps_account_held_by_another_provider(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Only an Enable Banking connection's hash names the same account: a
+    row of another provider with an equal id is left out of the check."""
+    await _held_checking(session, test_user.id, test_workspace.id, provider="test")
+    mock_provider = AsyncMock()
+    mock_provider.handle_oauth_callback = AsyncMock(return_value=ConnectionData(
+        external_id="sess-new", institution_name="DKB",
+        credentials={"session_id": "x"}, accounts=_dkb_accounts(),
+    ))
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+
+    p1, p2, p3 = _patch_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         p1, p2, p3:
+        connection = await handle_oauth_callback(
+            session, test_workspace.id, test_user.id, "code", "enable_banking",
+            sync_assets=False,
+        )
+
+    assert {row.external_id for row in await _accounts_of(session, connection.id)} == {
+        "new-uid-checking", "new-uid-mm",
+    }
+
+
 @pytest.mark.asyncio
 async def test_sync_rematches_legacy_account_by_masked_number(
     session: AsyncSession, test_user, test_workspace,

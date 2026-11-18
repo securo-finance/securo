@@ -819,8 +819,15 @@ class EnableBankingProvider(BankProvider):
             # behind a misconfigured proxy) must not cost the new session: the
             # authorization code is single-use, so failing here would make a
             # reconnect start over at the bank. The next sync reads the balance.
+            # The session payload carries the hash that later sessions find the
+            # account by, so a reconnect before the first sync still finds it.
+            hash_value = raw_acc.get("identification_hash")
             accounts.append(
-                await self._build_account(raw_acc, tolerate_presence_refusal=True)
+                await self._build_account(
+                    raw_acc,
+                    hash_value if isinstance(hash_value, str) and hash_value else None,
+                    tolerate_presence_refusal=True,
+                )
             )
             uid = raw_acc.get("uid") or raw_acc.get("account_uid")
             if uid:

@@ -1681,6 +1681,8 @@ async def handle_oauth_callback(
 
     institution_cache: dict[str, Institution] = {}
     for acc_data in connection_data.accounts:
+        if await _held_by_other_eb_connection(session, connection, acc_data):
+            continue
         is_cc = acc_data.type == "credit_card"
         institution = await _resolve_institution(
             session, connection.id, institution_cache, acc_data
@@ -1690,6 +1692,7 @@ async def handle_oauth_callback(
             workspace_id=workspace_id,
             connection_id=connection.id,
             external_id=acc_data.external_id,
+            stable_external_id=acc_data.stable_external_id,
             name=acc_data.name,
             display_name=institution.name if institution else None,
             masked_number=acc_data.masked_number,
@@ -1893,6 +1896,37 @@ def _normalized_account_name(name: str | None) -> str:
     suffix stays stable (e.g. "High Yield Savings Account (9402)").
     """
     return " ".join((name or "").casefold().split())
+
+
+async def _held_by_other_eb_connection(
+    session: AsyncSession, connection: BankConnection, acc_data: AccountData,
+) -> bool:
+    """Whether another Enable Banking connection of the workspace already
+    syncs this account.
+
+    Reconnect is only offered for a broken connection, so a user who opens a
+    new account at a bank they already connected links the bank again, and
+    the new consent lists the accounts the old one syncs too (#1224). Those
+    keep syncing on the connection that holds them, with their history and
+    rules, and the new connection takes only the accounts that are new. The
+    identification_hash is the same account across consents; a connection
+    whose consent ended still holds its accounts, which its own reconnect
+    brings back.
+    """
+    if connection.provider != "enable_banking" or not acc_data.stable_external_id:
+        return False
+    held = await session.execute(
+        select(Account.id)
+        .join(BankConnection, BankConnection.id == Account.connection_id)
+        .where(
+            Account.workspace_id == connection.workspace_id,
+            Account.connection_id != connection.id,
+            Account.stable_external_id == acc_data.stable_external_id,
+            BankConnection.provider == "enable_banking",
+        )
+        .limit(1)
+    )
+    return held.first() is not None
 
 
 async def _find_existing_connected_account(
@@ -3284,6 +3318,10 @@ async def sync_connection(
                 incoming_external_ids,
                 incoming_institution_external_ids,
             )
+            if account is None and await _held_by_other_eb_connection(
+                session, connection, acc_data
+            ):
+                continue
 
             if account is not None:
                 account.user_id = user_id
