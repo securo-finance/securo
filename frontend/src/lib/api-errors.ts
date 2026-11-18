@@ -1,4 +1,4 @@
-import { translateApiMessage } from '@/lib/api-error-translations'
+import { translateApiDetail, translateApiMessage } from '@/lib/api-error-translations'
 
 export function extractApiError(
   error: unknown,
@@ -21,8 +21,10 @@ export function extractApiError(
       // 0 to 1") was thrown away and the caller showed its generic
       // fallback instead.
       if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
-        const message = (detail as { message?: unknown }).message
-        if (typeof message === 'string' && message.trim()) return translateApiMessage(message)
+        // A coded detail ("import_undo_oversell") reads better translated with
+        // its own values than the English sentence the API builds with them.
+        const text = translateApiDetail(detail as Record<string, unknown>)
+        if (text) return text
       }
       if (Array.isArray(detail)) {
         const message = detail.map((d: { msg?: string; loc?: string[] }) => {

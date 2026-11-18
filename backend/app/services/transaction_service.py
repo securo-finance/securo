@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.app_clock import app_today
 from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
-from app.models.transaction import Transaction
+from app.models.transaction import USER_EDITED_KEY, Transaction
 from app.models.transaction_attachment import TransactionAttachment
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
@@ -45,6 +45,7 @@ from app.services._query_filters import (
     line_category_id,
     line_primary_or_amount,
     reporting_date_col,
+    reporting_date_value,
     with_category_lines,
 )
 from app.services.recurring_transaction_service import _advance_date
@@ -645,6 +646,13 @@ async def get_transactions(
         for tx in transactions:
             tx.attachment_count = counts.get(tx.id, 0)
             tx.payee_name = tx.payee_entity.name if tx.payee_entity else None
+            # The value `filter_date_col` read, so the list can show the
+            # date it filtered and ordered the row by (#1386).
+            tx.reporting_date = (
+                tx.effective_bill_date or tx.date
+                if in_statement_view
+                else reporting_date_value(tx, accounting_mode or "cash")
+            )
         # Tag shared rows with the viewer's share + the source group.
         # Owned rows stay as-is. We pre-compute the viewer's linked
         # member ids → group ids once, then look up each transaction's
@@ -1210,6 +1218,11 @@ async def create_transfer(
     apply_effective_date(credit_tx, to_account)
     session.add(credit_tx)
     await session.flush()
+
+    # Each leg goes through the rules on its own, as a single transaction does
+    # in `create_transaction`; the engine keeps both legs in their balances.
+    await apply_rules_to_transaction(session, user_id, debit_tx)
+    await apply_rules_to_transaction(session, user_id, credit_tx)
 
     # Stamp primary amounts on both
     await stamp_primary_amount(session, user_id, debit_tx)
@@ -1843,6 +1856,22 @@ def _check_category_lines_update(
         raise ValueError("Send the category lines along with the new amount")
 
 
+def _mark_user_edited_hold(row: Transaction, row_update: dict) -> None:
+    """Note on a pending synced row that the user changed its category or
+    payee, so the bank sync never expires it with that work (issue #1232).
+    Recorded at the edit because the final value alone cannot show it: the
+    user may clear it, or change it and change it back."""
+    if row.source != "sync" or row.status != "pending":
+        return
+    if not any(
+        field in row_update and row_update[field] != getattr(row, field)
+        for field in ("category_id", "payee_id")
+    ):
+        return
+    raw = row.raw_data if isinstance(row.raw_data, dict) else {}
+    row.raw_data = {**raw, USER_EDITED_KEY: True}
+
+
 async def update_transaction(
     session: AsyncSession,
     transaction_id: uuid.UUID,
@@ -2041,6 +2070,7 @@ async def update_transaction(
         for row, row_update, _ in prepared_rows
     )
     for row, row_update, row_splits in prepared_rows:
+        _mark_user_edited_hold(row, row_update)
         await _apply_update_to_row(
             session,
             user_id,
@@ -2129,6 +2159,16 @@ async def bulk_update_category(
         )
     if linked is not None:
         raise ValueError("Remove the mortgage breakdown before changing this payment")
+    held = (await session.execute(
+        select(Transaction).where(
+            *target,
+            Transaction.source == "sync",
+            Transaction.status == "pending",
+            Transaction.category_id.is_distinct_from(category_id),
+        )
+    )).scalars()
+    for row in held:
+        _mark_user_edited_hold(row, {"category_id": category_id})
     result = await session.execute(
         update(Transaction).where(*target).values(category_id=category_id)
     )

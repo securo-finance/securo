@@ -171,7 +171,8 @@ it.each([
   await user.click(custom)
   await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
   const reportApi = tab === 'reports.netWorth' ? api.reports.netWorth : api.reports.incomeExpenses
-  await waitFor(() => expect(reportApi.mock.calls.at(-1)?.slice(-2)).toEqual([
+  // Both report calls carry the window at positions 5 and 6.
+  await waitFor(() => expect(reportApi.mock.calls.at(-1)?.slice(5, 7)).toEqual([
     '2026-01-01', '2026-09-12',
   ]))
   await user.click(custom)
@@ -180,7 +181,7 @@ it.each([
   await waitFor(() => {
     expect(screen.getByRole('button', { name: t(fallback) })).toHaveClass('bg-primary')
     expect(reportApi.mock.calls.at(-1)?.[0]).toBe(months)
-    expect(reportApi.mock.calls.at(-1)?.slice(-2)).toEqual([undefined, undefined])
+    expect(reportApi.mock.calls.at(-1)?.slice(5, 7)).toEqual([undefined, undefined])
   })
   expect(custom).toHaveTextContent(t('reports.customRange'))
 })
@@ -192,12 +193,12 @@ it('preserves saved custom dates across supported tabs and preset dismissal', as
   await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
   for (const tab of ['reports.incomeExpenses', 'reports.moneyMap']) {
     await user.click(screen.getByRole('button', { name: t(tab) }))
-    await waitFor(() => expect(api.reports.incomeExpenses.mock.calls.at(-1)?.slice(-2))
+    await waitFor(() => expect(api.reports.incomeExpenses.mock.calls.at(-1)?.slice(5, 7))
       .toEqual(['2026-01-01', '2026-09-12']))
     expect(custom).toHaveClass('bg-primary')
   }
   await user.click(screen.getByRole('button', { name: t('reports.range6m') }))
-  await waitFor(() => expect(api.reports.incomeExpenses.mock.calls.at(-1)?.slice(-2))
+  await waitFor(() => expect(api.reports.incomeExpenses.mock.calls.at(-1)?.slice(5, 7))
     .toEqual([undefined, undefined]))
   const count = api.reports.incomeExpenses.mock.calls.length
   await user.click(custom)
@@ -207,7 +208,7 @@ it('preserves saved custom dates across supported tabs and preset dismissal', as
   expect(screen.getByRole('button', { name: t('reports.range6m') })).toHaveClass('bg-primary')
   await user.click(custom)
   await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
-  await waitFor(() => expect(api.reports.incomeExpenses.mock.calls.at(-1)?.slice(-2))
+  await waitFor(() => expect(api.reports.incomeExpenses.mock.calls.at(-1)?.slice(5, 7))
     .toEqual(['2026-01-01', '2026-09-12']))
   await user.click(screen.getByRole('button', { name: t('reports.cashFlow') }))
   await waitFor(() => expect(api.reports.cashFlow).toHaveBeenCalled())
@@ -375,6 +376,23 @@ describe('Reports page: month presets and period navigation (issue #519)', () =>
     await user.click(screen.getByRole('button', { name: 'Last Month' }))
     expect(api.reports.netWorth.mock.calls.at(-1)?.slice(-2)).toEqual(['2026-08-01', '2026-08-31'])
     expect(screen.getByTestId('reports-period-label')).toHaveTextContent('August 2026')
+  })
+
+  it('asks for projections on This Month but not on a custom range (issue #1408)', async () => {
+    const { user } = renderWithProviders(<ReportsPage />)
+    await screen.findByRole('heading', { name: 'Net Worth' })
+    await user.click(screen.getByRole('button', { name: t('reports.incomeExpenses') }))
+
+    await user.click(screen.getByRole('button', { name: 'This Month' }))
+    await waitFor(() => expect(api.reports.incomeExpenses.mock.calls.at(-1)?.slice(5)).toEqual([
+      '2026-09-01', '2026-09-12', true,
+    ]))
+
+    await user.click(screen.getByRole('button', { name: t('reports.customRange') }))
+    await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
+    await waitFor(() => expect(api.reports.incomeExpenses.mock.calls.at(-1)?.slice(5)).toEqual([
+      '2026-01-01', '2026-09-12', false,
+    ]))
   })
 
   it('steps the active period back and forward with the arrows', async () => {

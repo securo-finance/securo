@@ -11,7 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
 from app.models.account import Account
-from app.models.asset import ASSET_PRICE_DECIMALS, LOAN_COLLATERAL_TYPES, Asset
+from app.models.asset import (
+    ASSET_PRICE_DECIMALS,
+    LOAN_COLLATERAL_TYPES,
+    PROVIDER_VALUE_DATE_METADATA_KEY,
+    Asset,
+)
 from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
 from app.models.user import User
@@ -120,6 +125,35 @@ def _generate_growth_values(
     return values
 
 
+def _provider_value_date(
+    asset: Asset, latest_value: Optional[AssetValue]
+) -> Optional[date]:
+    """The date the sync provider says the value on screen refers to, if any.
+
+    Only while the displayed figure is the provider's own. A manual valuation
+    dated after the last sync replaces it, and once a quote is cached a
+    market-priced asset shows units times that quote; warning about the
+    connection in either case would point at a number the user isn't looking
+    at. The quote condition mirrors `_compute_current_value`, so a holding
+    waiting for its first quote keeps the date of the amount actually shown.
+    """
+    if (
+        asset.valuation_method == "market_price"
+        and asset.last_price is not None
+        and asset.units is not None
+    ):
+        return None
+    if latest_value is None or latest_value.source != "sync":
+        return None
+    raw = (asset.external_metadata or {}).get(PROVIDER_VALUE_DATE_METADATA_KEY)
+    if not isinstance(raw, str):
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
 def _asset_to_read(
     asset: Asset,
     latest_value: Optional[AssetValue],
@@ -174,6 +208,7 @@ def _asset_to_read(
         last_price=float(asset.last_price) if asset.last_price is not None else None,
         last_price_at=asset.last_price_at,
         logo_url=asset.logo_url,
+        provider_value_date=_provider_value_date(asset, latest_value),
         average_price=float(asset.average_price) if asset.average_price is not None else None,
         total_invested=total_invested,
         realized_gain=float(asset.realized_gain) if asset.realized_gain is not None else None,
@@ -837,8 +872,13 @@ async def delete_asset(
     session: AsyncSession, asset_id: uuid.UUID, workspace_id: uuid.UUID
 ) -> bool:
     """Delete an asset (cascades to values)."""
+    # Take the holding's lock before its children: the cascading delete
+    # removes today's AssetValue first, and a price refresh holds the Asset
+    # lock while it rewrites that same value, so the opposite order deadlocks.
     result = await session.execute(
-        select(Asset).where(Asset.id == asset_id, Asset.workspace_id == workspace_id)
+        select(Asset)
+        .where(Asset.id == asset_id, Asset.workspace_id == workspace_id)
+        .with_for_update()
     )
     asset = result.scalar_one_or_none()
     if not asset:
@@ -1279,30 +1319,57 @@ async def refresh_market_price_asset(
     return True
 
 
+async def _last_split_dates(
+    session: AsyncSession, asset_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, date]:
+    """Date of each holding's latest split up to today, in one query."""
+    if not asset_ids:
+        return {}
+    rows = await session.execute(
+        select(AssetTransaction.asset_id, func.max(AssetTransaction.date))
+        .where(
+            AssetTransaction.asset_id.in_(asset_ids),
+            AssetTransaction.kind == "split",
+            AssetTransaction.date <= app_today(),
+        )
+        .group_by(AssetTransaction.asset_id)
+    )
+    return {aid: d for aid, d in rows.all()}
+
+
 async def refresh_all_market_prices(
     session: AsyncSession,
     *,
     market_provider: Optional[MarketPriceProvider] = None,
+    workspace_id: Optional[uuid.UUID] = None,
 ) -> dict[str, int]:
     """Refresh every non-archived market-priced asset in the database.
 
-    Uses the provider's batch ``get_latest_prices`` endpoint when possible —
+    Uses the provider's batch ``get_latest_closes`` endpoint when possible —
     one HTTP request covers the whole portfolio via ``yfinance.download``
     instead of one call per asset. Falls back silently to per-asset refresh
     if the batch returns nothing (provider without bulk support, or a hard
-    failure on Yahoo's end).
+    failure on Yahoo's end). A close from before the holding's latest
+    recorded split is skipped, not stored.
+
+    ``workspace_id`` narrows the sweep to one workspace. The scheduled task
+    leaves it out (it really does mean every user); the manual refresh
+    endpoint passes it so a user's click never reaches another workspace's
+    rows (ADR 0002).
 
     Returns a summary counting successes, skips, and rate-limit halts —
     surfaced as the Celery task's return payload for observability.
     """
-    result = await session.execute(
-        select(Asset).where(
-            Asset.valuation_method == "market_price",
-            Asset.is_archived == False,
-            Asset.sell_date.is_(None),
-            Asset.ticker.isnot(None),
-        )
-    )
+    conditions = [
+        Asset.valuation_method == "market_price",
+        Asset.is_archived == False,
+        Asset.sell_date.is_(None),
+        Asset.ticker.isnot(None),
+    ]
+    if workspace_id is not None:
+        conditions.append(Asset.workspace_id == workspace_id)
+
+    result = await session.execute(select(Asset).where(*conditions))
     assets = list(result.scalars().all())
 
     if not assets:
@@ -1311,53 +1378,136 @@ async def refresh_all_market_prices(
     provider = market_provider or get_market_price_provider()
     tickers = [a.ticker for a in assets if a.ticker]
 
-    # Batch path: one request → dict[SYMBOL, price]. On rate-limit we halt
+    # Quotes carry no observation time, so the moment this sweep starts asking
+    # is the only reference for "older than what is stored". A workspace
+    # refresh, or the scheduled sweep, can commit a newer price for the same
+    # holding while this one waits on the provider; the write loop compares
+    # `last_price_at` against this mark so that price is not overwritten by the
+    # older quote in hand (and stamped as if it were fresh).
+    fetch_started_at = datetime.now(timezone.utc)
+
+    # Batch path: one request → dict[SYMBOL, close]. On rate-limit we halt
     # immediately — retrying within the same task would just pile on 429s
     # and risk an IP-level cookie ban.
     try:
-        prices = await provider.get_latest_prices(tickers)
+        closes = await provider.get_latest_closes(tickers)
     except MarketPriceRateLimitedError:
         logger.warning("Yahoo rate-limited the batch fetch; skipping this cycle")
         return {"refreshed": 0, "skipped": len(assets), "rate_limited": 1}
     except Exception as e:
         logger.warning("Batch price fetch failed, falling back to per-asset: %s", e)
-        prices = {}
+        closes = {}
+
+    # Per-asset fallback: the batch missed a symbol (delisted ticker, one-off
+    # provider error, etc.). These quote calls happen before anything is
+    # locked: a slow fallback would otherwise keep FOR UPDATE on every
+    # selected holding, other workspaces included during the scheduled sweep.
+    fallback_quotes: dict[str, Decimal] = {}
+    fallback_logos: dict[str, Optional[str]] = {}
+    attempted: set[str] = set()
+    rate_limited = False
+
+    for asset in assets:
+        ticker = asset.ticker
+        if not ticker or ticker in attempted:
+            continue
+        if closes and closes.get(ticker.upper()) is not None:
+            continue
+        attempted.add(ticker)
+        try:
+            quote = await provider.get_quote(ticker)
+        except MarketPriceRateLimitedError:
+            logger.warning(
+                "Yahoo rate-limited the fallback quote for %s; halting", ticker
+            )
+            rate_limited = True
+            break
+        except Exception as e:
+            logger.warning("Market price fallback failed for %s: %s", ticker, e)
+            continue
+        if quote is None or quote.price is None:
+            continue
+        fallback_quotes[ticker] = Decimal(str(quote.price))
+        fallback_logos[ticker] = quote.logo_url
+
+    # An editor can delete a holding or change its ticker while the provider
+    # is answering. Re-read the rows that still match under the same
+    # predicate, lock them and use these rows for the write: an id-only
+    # recheck would still write the AAPL quote into a holding that became
+    # MSFT, and a write to a deleted row rolls back every price in the batch.
+    locked = await session.execute(
+        select(Asset)
+        .where(Asset.id.in_([asset.id for asset in assets]), *conditions)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    current_by_id = {asset.id: asset for asset in locked.scalars().all()}
+
+    # Split dates are read only now, after the holdings are locked: a split
+    # recorded while the provider was answering must be seen by this write,
+    # or a 2-for-1 would store the pre-split close under today and multiply
+    # it by the units after the split (issue #1357). Reading them before the
+    # lock kept the pre-split view and valued the holding ten times over.
+    last_split = await _last_split_dates(session, list(current_by_id))
 
     refreshed = 0
     skipped = 0
+    deleted = 0
 
     for asset in assets:
-        if not asset.ticker:
-            skipped += 1
-            continue
-        price = prices.get(asset.ticker.upper()) if prices else None
-        if price is None:
-            # Per-asset fallback: the batch missed this symbol (delisted
-            # ticker, one-off provider error, etc.). Try the full quote
-            # path which also populates name/currency if needed.
-            try:
-                ok = await refresh_market_price_asset(
-                    session, asset, market_provider=provider
-                )
-            except MarketPriceRateLimitedError:
-                logger.warning(
-                    "Yahoo rate-limited mid-refresh after %d assets; halting",
-                    refreshed,
-                )
-                await session.commit()
-                return {
-                    "refreshed": refreshed,
-                    "skipped": skipped + (len(assets) - refreshed - skipped),
-                    "rate_limited": 1,
-                }
-            if ok:
-                refreshed += 1
-            else:
-                skipped += 1
+        current = current_by_id.get(asset.id)
+        if current is None:
+            # Deleted while the provider answered: nothing to write, and the
+            # rest of the batch carries on. It is not "skipped" — the
+            # provider was never asked about a holding that no longer exists.
+            deleted += 1
             continue
 
-        await _apply_price_to_asset(session, asset, price)
+        close = closes.get(current.ticker.upper()) if closes and current.ticker else None
+        split_on = last_split.get(current.id)
+        if close is not None and close.on is not None and split_on is not None and close.on < split_on:
+            # Before the market opens on a split day, the latest close is the
+            # previous session's, per pre-split unit. Stored under today it
+            # would be multiplied by the units after the split (issue #1357),
+            # so wait for a close from the split day on.
+            skipped += 1
+            continue
+        price: Optional[Decimal] = close.price if close is not None else None
+        logo_url: Optional[str] = None
+        if price is None and current.ticker:
+            # Only a quote for the ticker the holding has now: one fetched
+            # for the ticker it used to have belongs to another holding.
+            price = fallback_quotes.get(current.ticker)
+            logo_url = fallback_logos.get(current.ticker)
+        if price is None:
+            skipped += 1
+            continue
+
+        # A newer price landed while this sweep was waiting on the provider:
+        # the quote in hand is older than what the row already has, so writing
+        # it would go backwards and stamp the old price as today's.
+        if current.last_price_at is not None:
+            stored_at = current.last_price_at
+            if stored_at.tzinfo is None:
+                stored_at = stored_at.replace(tzinfo=timezone.utc)
+            if stored_at >= fetch_started_at:
+                skipped += 1
+                continue
+
+        await _apply_price_to_asset(session, current, price)
+        if logo_url and not current.logo_url:
+            current.logo_url = logo_url
         refreshed += 1
+
+    if rate_limited:
+        # Whatever was applied is committed: the caller keeps the counters and
+        # the next read sees the prices that did come in.
+        await session.commit()
+        return {
+            "refreshed": refreshed,
+            "skipped": max(len(assets) - refreshed - deleted, 0),
+            "rate_limited": 1,
+        }
 
     await session.commit()
     return {"refreshed": refreshed, "skipped": skipped, "rate_limited": 0}

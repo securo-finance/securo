@@ -9,25 +9,28 @@ short-circuit.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Optional
 from unittest.mock import patch
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset import Asset
 from app.models.asset_value import AssetValue
 from app.models.user import User
 from app.providers.market_price import (
+    LatestClose,
     MarketPriceProvider,
     MarketPriceRateLimitedError,
     YFinanceProvider,
+    _last_decimal_close,
 )
 from app.schemas.asset import (
     AssetCreate,
+    AssetRead,
     MarketSymbolMatch,
     MarketSymbolQuote,
 )
@@ -426,7 +429,273 @@ async def test_refresh_all_halts_on_rate_limit(
     assert result["skipped"] == 2
 
 
+class DeletingBatchProvider(FakeMarketProvider):
+    """A batch that answers while an editor deletes one holding."""
+
+    def __init__(
+        self,
+        quotes: dict[str, MarketSymbolQuote],
+        session: AsyncSession,
+        doomed_id,
+    ) -> None:
+        super().__init__(quotes)
+        self._session = session
+        self._doomed_id = doomed_id
+
+    async def get_latest_prices(self, symbols: list[str]) -> dict[str, Optional[Decimal]]:
+        prices = await super().get_latest_prices(symbols)
+        # `synchronize_session=False` keeps the ORM object in the identity map,
+        # which is how a row removed by another session looks to this one:
+        # still loaded, already gone from the table, so an UPDATE reaching it
+        # matches no row.
+        await self._session.execute(
+            delete(Asset)
+            .where(Asset.id == self._doomed_id)
+            .execution_options(synchronize_session=False)
+        )
+        await self._session.commit()
+        return prices
+
+
+@pytest.mark.asyncio
+async def test_refresh_all_skips_a_holding_deleted_while_the_provider_answers(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    creator = FakeMarketProvider(
+        {"AAPL": _quote("AAPL", 180.0), "MSFT": _quote("MSFT", 400.0)}
+    )
+    created: dict[str, AssetRead] = {}
+    for ticker in ("AAPL", "MSFT"):
+        created[ticker] = await asset_service.create_asset(
+            session,
+            test_workspace.id,
+            test_user.id,
+            AssetCreate(
+                name=ticker,
+                type="investment",
+                valuation_method="market_price",
+                ticker=ticker,
+                units=Decimal("1"),
+            ),
+            market_provider=creator,
+        )
+
+    deleting = DeletingBatchProvider(
+        {"AAPL": _quote("AAPL", 181.0), "MSFT": _quote("MSFT", 401.0)},
+        session,
+        created["MSFT"].id,
+    )
+
+    result = await refresh_all_market_prices(
+        session, market_provider=deleting, workspace_id=test_workspace.id
+    )
+
+    # The holding that vanished is dropped from the batch instead of aborting
+    # it with StaleDataError, and the other one keeps its new price.
+    assert result == {"refreshed": 1, "skipped": 0, "rate_limited": 0}
+    keeper = (
+        await session.execute(select(Asset).where(Asset.id == created["AAPL"].id))
+    ).scalar_one()
+    assert keeper.last_price == Decimal("181.0")
+
+
+class RenamingBatchProvider(FakeMarketProvider):
+    """A batch that answers while an editor swaps one holding's ticker."""
+
+    def __init__(
+        self,
+        quotes: dict[str, MarketSymbolQuote],
+        session: AsyncSession,
+        asset_id,
+    ) -> None:
+        super().__init__(quotes)
+        self._session = session
+        self._asset_id = asset_id
+
+    async def get_latest_prices(self, symbols: list[str]) -> dict[str, Optional[Decimal]]:
+        prices = await super().get_latest_prices(symbols)
+        # The row changes after the batch read it: still there, now a
+        # different ticker, so the quote fetched for the old one no longer
+        # belongs to it.
+        await self._session.execute(
+            update(Asset)
+            .where(Asset.id == self._asset_id)
+            .values(ticker="MSFT")
+            .execution_options(synchronize_session=False)
+        )
+        await self._session.commit()
+        return prices
+
+
+@pytest.mark.asyncio
+async def test_refresh_all_uses_the_ticker_the_holding_has_when_it_writes(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    creator = FakeMarketProvider(
+        {"AAPL": _quote("AAPL", 180.0), "MSFT": _quote("MSFT", 400.0)}
+    )
+    created: dict[str, AssetRead] = {}
+    for ticker in ("AAPL", "MSFT"):
+        created[ticker] = await asset_service.create_asset(
+            session,
+            test_workspace.id,
+            test_user.id,
+            AssetCreate(
+                name=ticker,
+                type="investment",
+                valuation_method="market_price",
+                ticker=ticker,
+                units=Decimal("1"),
+            ),
+            market_provider=creator,
+        )
+
+    renaming = RenamingBatchProvider(
+        {"AAPL": _quote("AAPL", 181.0), "MSFT": _quote("MSFT", 401.0)},
+        session,
+        created["AAPL"].id,
+    )
+
+    result = await refresh_all_market_prices(
+        session, market_provider=renaming, workspace_id=test_workspace.id
+    )
+
+    assert result == {"refreshed": 2, "skipped": 0, "rate_limited": 0}
+    # The holding that became MSFT takes the MSFT quote, never the AAPL one
+    # the batch fetched before the edit. Read the columns, not the entity:
+    # the session still has the pre-edit object in its identity map.
+    ticker, last_price = (
+        await session.execute(
+            select(Asset.ticker, Asset.last_price).where(Asset.id == created["AAPL"].id)
+        )
+    ).one()
+    assert ticker == "MSFT"
+    assert last_price == Decimal("401.0")
+
+
+class NewerPriceBatchProvider(FakeMarketProvider):
+    """A batch that answers after another refresh committed a newer quote."""
+
+    def __init__(
+        self,
+        quotes: dict[str, MarketSymbolQuote],
+        session: AsyncSession,
+        asset_id,
+        newer_price: Decimal,
+    ) -> None:
+        super().__init__(quotes)
+        self._session = session
+        self._asset_id = asset_id
+        self._newer_price = newer_price
+
+    async def get_latest_prices(self, symbols: list[str]) -> dict[str, Optional[Decimal]]:
+        prices = await super().get_latest_prices(symbols)
+        # A workspace refresh (or the scheduled sweep) finished while this one
+        # waited on the provider: the row now holds a fresher price.
+        await self._session.execute(
+            update(Asset)
+            .where(Asset.id == self._asset_id)
+            .values(
+                last_price=self._newer_price,
+                last_price_at=datetime.now(timezone.utc),
+            )
+            .execution_options(synchronize_session=False)
+        )
+        await self._session.commit()
+        return prices
+
+
+@pytest.mark.asyncio
+async def test_refresh_all_keeps_a_price_committed_while_it_asked_the_provider(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    creator = FakeMarketProvider({"AAPL": _quote("AAPL", 180.0)})
+    created = await asset_service.create_asset(
+        session,
+        test_workspace.id,
+        test_user.id,
+        AssetCreate(
+            name="AAPL",
+            type="investment",
+            valuation_method="market_price",
+            ticker="AAPL",
+            units=Decimal("2"),
+        ),
+        market_provider=creator,
+    )
+
+    newer = NewerPriceBatchProvider(
+        {"AAPL": _quote("AAPL", 181.0)}, session, created.id, Decimal("199.0")
+    )
+
+    result = await refresh_all_market_prices(
+        session, market_provider=newer, workspace_id=test_workspace.id
+    )
+
+    # The quote in hand was fetched before the newer price landed, so the
+    # sweep leaves the row alone instead of going backwards and stamping the
+    # older quote with a fresh `last_price_at`.
+    assert result == {"refreshed": 0, "skipped": 1, "rate_limited": 0}
+    last_price, amount = (
+        await session.execute(
+            select(Asset.last_price, AssetValue.amount)
+            .join(AssetValue, AssetValue.asset_id == Asset.id)
+            .where(Asset.id == created.id, AssetValue.date == date.today())
+        )
+    ).one()
+    assert last_price == Decimal("199.0")
+    # Today's value still comes from the price that was committed meanwhile
+    # (180 × 2 from creation), not from the older 181 quote.
+    assert amount == Decimal("360.0")
+
+
 # ---- YFinanceProvider batch refresh: minor-unit normalization ----
+
+
+_CLOSE_DAY = date(2026, 11, 17)
+
+
+def _close(price: str) -> LatestClose:
+    return LatestClose(Decimal(price), _CLOSE_DAY)
+
+
+@pytest.mark.asyncio
+async def test_yfinance_batch_closes_keep_their_trading_day():
+    provider = YFinanceProvider()
+    with (
+        patch.object(
+            YFinanceProvider,
+            "_download_closes_sync",
+            return_value={"EQQQ.L": _close("38450"), "AAPL": _close("181.25")},
+        ),
+        patch.object(YFinanceProvider, "_get_currencies_sync", return_value={"EQQQ.L": "GBp"}),
+    ):
+        closes = await provider.get_latest_closes(["EQQQ.L", "AAPL"])
+
+    assert closes == {
+        "EQQQ.L": LatestClose(Decimal("384.50"), _CLOSE_DAY),
+        "AAPL": LatestClose(Decimal("181.25"), _CLOSE_DAY),
+    }
+
+
+def test_last_close_reads_the_day_of_the_last_trading_row():
+    import pandas as pd
+
+    series = pd.Series(
+        [180.0, 181.25, float("nan")],
+        index=pd.to_datetime(["2026-11-13", "2026-11-17", "2026-11-18"]),
+    )
+
+    assert _last_decimal_close(series) == LatestClose(Decimal("181.25"), _CLOSE_DAY)
+
+
+@pytest.mark.asyncio
+async def test_default_latest_closes_have_no_day():
+    provider = FakeMarketProvider({"AAPL": _quote("AAPL", 180.0)})
+
+    assert await provider.get_latest_closes(["aapl"]) == {
+        "AAPL": LatestClose(Decimal("180.0"), None),
+    }
 
 
 @pytest.mark.asyncio
@@ -437,8 +706,8 @@ async def test_yfinance_batch_normalizes_gbp_pence_to_pounds():
     with (
         patch.object(
             YFinanceProvider,
-            "_download_prices_sync",
-            return_value={"EQQQ.L": Decimal("38450")},
+            "_download_closes_sync",
+            return_value={"EQQQ.L": _close("38450")},
         ),
         patch.object(
             YFinanceProvider,
@@ -458,8 +727,8 @@ async def test_yfinance_batch_normalizes_zac_cents_to_rand():
     with (
         patch.object(
             YFinanceProvider,
-            "_download_prices_sync",
-            return_value={"NPN.JO": Decimal("612300")},
+            "_download_closes_sync",
+            return_value={"NPN.JO": _close("612300")},
         ),
         patch.object(
             YFinanceProvider,
@@ -479,8 +748,8 @@ async def test_yfinance_batch_leaves_usd_ticker_unchanged():
     with (
         patch.object(
             YFinanceProvider,
-            "_download_prices_sync",
-            return_value={"AAPL": Decimal("181.25")},
+            "_download_closes_sync",
+            return_value={"AAPL": _close("181.25")},
         ),
         patch.object(YFinanceProvider, "_get_currencies_sync") as currencies,
     ):
@@ -496,8 +765,8 @@ async def test_yfinance_batch_keeps_decimal_precision_when_scaling():
     with (
         patch.object(
             YFinanceProvider,
-            "_download_prices_sync",
-            return_value={"EQQQ.L": Decimal("123.45678901234567")},
+            "_download_closes_sync",
+            return_value={"EQQQ.L": _close("123.45678901234567")},
         ),
         patch.object(
             YFinanceProvider,
@@ -517,8 +786,8 @@ async def test_yfinance_batch_leaves_major_unit_lse_ticker_unchanged():
     with (
         patch.object(
             YFinanceProvider,
-            "_download_prices_sync",
-            return_value={"CSPX.L": Decimal("612.40")},
+            "_download_closes_sync",
+            return_value={"CSPX.L": _close("612.40")},
         ),
         patch.object(
             YFinanceProvider,
@@ -540,11 +809,11 @@ async def test_yfinance_batch_drops_price_when_currency_unknown():
     with (
         patch.object(
             YFinanceProvider,
-            "_download_prices_sync",
+            "_download_closes_sync",
             return_value={
-                "EQQQ.L": Decimal("38450"),
-                "SGLN.L": Decimal("5120"),
-                "AAPL": Decimal("181.25"),
+                "EQQQ.L": _close("38450"),
+                "SGLN.L": _close("5120"),
+                "AAPL": _close("181.25"),
             },
         ),
         patch.object(
