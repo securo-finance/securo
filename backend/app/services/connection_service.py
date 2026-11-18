@@ -66,7 +66,9 @@ from app.services.asset_group_service import (
 from app.services.credit_card_service import apply_effective_date
 from app.services.rule_engine import merge_notes
 from app.services.rule_service import (
+    apply_rules_to_settled_transaction,
     apply_rules_to_transaction,
+    description_is_manual,
     preview_rules_for_transaction,
     rule_payee_ids,
 )
@@ -1780,6 +1782,7 @@ async def handle_oauth_callback(
                 session, account.id, txn_data, incoming_external_ids
             )
             if synced_dup:
+                manual_description = description_is_manual(synced_dup)
                 if synced_dup.original_description is None:
                     synced_dup.original_description = txn_data.description
                 if synced_dup.status == "pending" and txn_data.status == "posted":
@@ -1788,6 +1791,9 @@ async def handle_oauth_callback(
                         synced_dup,
                         txn_data,
                         replace_external_id=synced_dup.source == "sync",
+                    )
+                    await apply_rules_to_settled_transaction(
+                        session, user_id, synced_dup, manual_description=manual_description
                     )
                     if (
                         txn_data.bill_external_id
@@ -2788,8 +2794,12 @@ async def _promote_settled_pending(
         or transaction.external_id not in unseen_pending
     ):
         return None
+    manual_description = description_is_manual(transaction)
     transaction.status = "posted"
     _merge_sync_metadata(transaction, txn_data, replace_external_id=rekeyed)
+    await apply_rules_to_settled_transaction(
+        session, account.user_id, transaction, manual_description=manual_description
+    )
     _relink_bill(transaction, txn_data, account, bills_by_external_id)
     return transaction.external_id
 
@@ -3670,6 +3680,8 @@ async def sync_connection(
                     # a re-sync can't revive a transaction the user hid.
                     if existing_tx.is_ignored:
                         continue
+                    manual_description = description_is_manual(existing_tx)
+                    payee_was_empty = existing_tx.payee_id is None
                     await _refresh_provider_values(
                         session,
                         provider,
@@ -3682,6 +3694,13 @@ async def sync_connection(
                     _merge_sync_metadata(existing_tx, txn_data)
                     if existing_tx.status == "pending" and txn_data.status == "posted":
                         existing_tx.status = "posted"
+                        await apply_rules_to_settled_transaction(
+                            session, user_id, existing_tx,
+                            manual_description=manual_description,
+                            synced_payee_id=(
+                                existing_tx.payee_id if payee_was_empty else None
+                            ),
+                        )
                     # Self-heal bill linkage: a tx that pre-dates the bills
                     # feature (or whose bill we hadn't ingested last time)
                     # picks up bill_id + bank-truth effective_date on the
@@ -3715,6 +3734,7 @@ async def sync_connection(
                     incoming_batch=transactions_data,
                 )
                 if synced_dup:
+                    manual_description = description_is_manual(synced_dup)
                     if synced_dup.original_description is None:
                         synced_dup.original_description = txn_data.description
                     if synced_dup.status == "pending" and txn_data.status == "posted":
@@ -3725,6 +3745,10 @@ async def sync_connection(
                             synced_dup,
                             txn_data,
                             replace_external_id=synced_dup.source == "sync",
+                        )
+                        await apply_rules_to_settled_transaction(
+                            session, user_id, synced_dup,
+                            manual_description=manual_description,
                         )
                         _relink_bill(synced_dup, txn_data, account, bills_by_external_id)
                     elif synced_dup.external_id != txn_data.external_id:
