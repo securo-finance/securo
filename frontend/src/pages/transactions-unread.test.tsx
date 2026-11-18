@@ -8,6 +8,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { QueryClient } from '@tanstack/react-query'
 
 import TransactionsPage from '@/pages/transactions'
 import { renderWithProviders } from '@/test/utils'
@@ -289,5 +290,59 @@ describe('review state of a transaction row', () => {
     // description), and the selection bar goes with it.
     await screen.findByText('1 transaction to review')
     await waitFor(() => expect(screen.queryByText('selected')).toBeNull())
+  })
+})
+
+describe('paging through the list', () => {
+  it('waits for a fresh answer before clamping the page back', async () => {
+    // 20 rows per page. Page 2 was last cached when the queue held exactly 20
+    // rows, so that response claims there is a single page; a sync then puts a
+    // row back. Clicking Next must not bounce back to page 1 before the fresh
+    // answer for page 2 arrives (issue #636).
+    const firstPage = Array.from({ length: 20 }, (_, i) =>
+      row({ id: `tx-${i + 1}`, description: `ROW ${i + 1}`, is_read: true }),
+    )
+    let pageTwoCalls = 0
+    api.transactions.list.mockImplementation(async (params?: { page?: number }) => {
+      if (params?.page === 2) {
+        pageTwoCalls += 1
+        return pageTwoCalls === 1
+          ? { items: [], total: 20, page: 2, limit: 20 }
+          : {
+              items: [row({ id: 'tx-21', description: 'LATE ARRIVAL', is_read: true })],
+              total: 21,
+              page: 2,
+              limit: 20,
+            }
+      }
+      return { items: firstPage, total: 21, page: 1, limit: 20 }
+    })
+
+    // Keep a page around after it leaves the screen, the way the app does
+    // (the test default throws every cached page away). The entry is stale, so
+    // visiting it again serves it and refetches, which is what an invalidation
+    // after a sync or an import leaves behind.
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: Infinity, staleTime: 0 } },
+    })
+
+    renderWithProviders(<TransactionsPage />, {
+      route: '/transactions',
+      path: '/transactions',
+      queryClient,
+    })
+
+    await screen.findByText('1 / 2')
+
+    // The second page really is empty, so the clamp takes the person back.
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    await waitFor(() => expect(pageTwoCalls).toBe(1))
+    await screen.findByText('1 / 2')
+
+    // Now page 2 is cached with the old total. Asking for it again serves that
+    // stale answer while a fresh one is on the way; the page must not move.
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    await screen.findByText('2 / 2')
+    await screen.findByText('LATE ARRIVAL')
   })
 })

@@ -443,13 +443,15 @@ export default function TransactionsPage() {
 
   // A fresh page can hold fewer pages than the one being shown: clearing the
   // last rows of the review queue is the usual way it happens. Clamp only
-  // against a response that actually arrived, never while a refetch is in
-  // flight, so a stale total cannot move the page (issue #636).
+  // against an answer that really arrived for the page on screen: a cached
+  // total is still served while its refetch runs, and reacting to it would
+  // send the person back before they ever saw the page they asked for
+  // (issue #636).
   useEffect(() => {
-    if (!data) return
+    if (!data || isFetching) return
     const lastPage = Math.max(1, Math.ceil(data.total / limit))
     if (page > lastPage) setPage(lastPage)
-  }, [data, limit, page])
+  }, [data, isFetching, limit, page])
 
   // A selected row can leave the visible page without the page or the filters
   // changing: opening an unread row in the review queue clears its marker and
