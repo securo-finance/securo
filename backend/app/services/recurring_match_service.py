@@ -43,6 +43,7 @@ banks do not post charges of zero, but it is a difference rather than an
 identity.
 """
 import uuid
+from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Optional
@@ -116,6 +117,7 @@ def _best_movement(
     candidates,
     expectation: Expectation,
     policy: dict,
+    alternative_descriptions: Optional[dict[uuid.UUID, str]] = None,
 ) -> Optional[Transaction]:
     """The charge that best answers one expected occurrence.
 
@@ -126,15 +128,50 @@ def _best_movement(
     unless the rule that linked them asks for a single candidate. On an equal
     score the first candidate passed in wins, and the callers pass them nearest
     first.
+
+    `alternative_descriptions` gives a candidate a second wording to be scored
+    by when the first one does not link. A generated placeholder answers to the
+    bill's wording even after a `set_description` rule rewrote its own: the
+    charge at the bank still carries the bill's text, so both must be offered
+    or a renamed placeholder could never be found by it.
     """
     linked = []
     for candidate in candidates:
         if candidate.is_ignored:
             continue
-        decision = evaluate(_as_movement(candidate), [expectation], policy)
+        decision = _evaluate_candidate(
+            _as_movement(candidate), expectation, policy,
+            (alternative_descriptions or {}).get(candidate.id),
+        )
         if decision.port == "linked":
             linked.append((candidate, decision))
     return reconciliation_rule_service.pick_linked(linked, policy)[0]
+
+
+def _evaluate_candidate(
+    movement: Movement,
+    expectation: Expectation,
+    policy: dict,
+    alternative_description: Optional[str] = None,
+) -> Any:
+    """Judge one candidate, retrying it under a second wording if it did not link.
+
+    Only a wording that differs from the first is worth a second pass, and only
+    when the first pass linked nothing: a candidate the rule already refused on
+    the amount or the date is not rescued by the description.
+    """
+    decision = evaluate(movement, [expectation], policy)
+    if (
+        decision.port != "linked"
+        and alternative_description
+        and alternative_description != movement.description
+    ):
+        decision = evaluate(
+            replace(movement, description=alternative_description),
+            [expectation],
+            policy,
+        )
+    return decision
 
 
 async def find_real_tx_for_occurrence(
@@ -211,6 +248,12 @@ async def find_placeholder_for_incoming(
     the movement in one, the expectation in the other), so the query reaches as
     far as the wider of the two on each side and the policies decide from
     there. The workspace's rule is resolved before the query for that reason.
+
+    A placeholder's own description is not the only wording it answers to. A
+    rule may have rewritten it since it was generated (`set_description`), and
+    the charge at the bank still carries the bill's. Both are offered to the
+    engine in each pass, the stored text first, so a renamed placeholder is
+    found by the charge it was written for.
     """
     account = await session.get(Account, account_id)
     if account is None:
@@ -226,7 +269,11 @@ async def find_placeholder_for_incoming(
     p_before, p_after = _date_reach(policy)
     r_before, r_after = _date_reach(composed)
     result = await session.execute(
-        select(Transaction, RecurringTransaction.frequency)
+        select(
+            Transaction,
+            RecurringTransaction.frequency,
+            RecurringTransaction.description,
+        )
         .join(
             RecurringTransaction,
             RecurringTransaction.id == Transaction.recurring_transaction_id,
@@ -259,7 +306,12 @@ async def find_placeholder_for_incoming(
         description=description,
         account_id=account_id,
     )
-    found = _best_movement([row[0] for row in rows], incoming, policy)
+    found = _best_movement(
+        [row[0] for row in rows],
+        incoming,
+        policy,
+        {row[0].id: row[2] for row in rows},
+    )
     if found is not None or not rows:
         return found
 
@@ -272,25 +324,31 @@ async def find_placeholder_for_incoming(
         account_id=account_id,
     )
     linked = []
-    for placeholder, frequency in rows:
+    for placeholder, frequency, template_description in rows:
         if placeholder.is_ignored:
             continue
-        decision = evaluate(
-            charge,
-            [
-                Expectation(
-                    kind="recurring",
-                    id=placeholder.id,
-                    amount=Decimal(placeholder.amount or 0),
-                    currency=placeholder.currency,
-                    direction=placeholder.type,
-                    when=placeholder.date,
-                    description=placeholder.description,
-                    account_id=placeholder.account_id,
-                )
-            ],
-            reconciliation_rule_service.narrow_for_frequency(composed, frequency),
+        occurrence = Expectation(
+            kind="recurring",
+            id=placeholder.id,
+            amount=Decimal(placeholder.amount or 0),
+            currency=placeholder.currency,
+            direction=placeholder.type,
+            when=placeholder.date,
+            description=placeholder.description,
+            account_id=placeholder.account_id,
         )
+        narrowed = reconciliation_rule_service.narrow_for_frequency(composed, frequency)
+        decision = evaluate(charge, [occurrence], narrowed)
+        if (
+            decision.port != "linked"
+            and template_description
+            and template_description != placeholder.description
+        ):
+            decision = evaluate(
+                charge,
+                [replace(occurrence, description=template_description)],
+                narrowed,
+            )
         if decision.port == "linked":
             linked.append((placeholder, decision))
     return reconciliation_rule_service.pick_linked(linked, composed)[0]

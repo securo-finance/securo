@@ -197,6 +197,24 @@ async def test_ignore_rule_applies_to_a_posted_occurrence(
     assert occurrence.is_ignored is True
 
 
+def _bank_reporting_the_charge(description: str = "Gym membership") -> AsyncMock:
+    """The provider stub: one account, one charge, under the wording it wants."""
+    provider = AsyncMock()
+    provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    provider.get_accounts = AsyncMock(return_value=[
+        AccountData(external_id="acc-ext-568", name="Checking", type="checking",
+                    balance=Decimal("0"), currency="BRL"),
+    ])
+    provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id="gym-jan", description=description,
+            amount=Decimal("99.90"), date=date(2025, 1, 11),
+            type="debit", status="posted", currency="BRL",
+        )
+    ])
+    return provider
+
+
 @pytest.mark.asyncio
 async def test_ignore_rule_waits_for_the_bank_charge_on_a_pending_placeholder(
     session, test_user, test_workspace, synced_account
@@ -222,19 +240,7 @@ async def test_ignore_rule_waits_for_the_bank_charge_on_a_pending_placeholder(
     assert placeholder.is_ignored is False
     assert placeholder.notes == "#health"
 
-    provider = AsyncMock()
-    provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
-    provider.get_accounts = AsyncMock(return_value=[
-        AccountData(external_id="acc-ext-568", name="Checking", type="checking",
-                    balance=Decimal("0"), currency="BRL"),
-    ])
-    provider.get_transactions = AsyncMock(return_value=[
-        TransactionData(
-            external_id="gym-jan", description="Gym membership",
-            amount=Decimal("99.90"), date=date(2025, 1, 11),
-            type="debit", status="posted", currency="BRL",
-        )
-    ])
+    provider = _bank_reporting_the_charge()
     with patch("app.services.connection_service.get_provider", return_value=provider), \
             patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
             patch("app.services.connection_service.stamp_primary_amount", new=AsyncMock()):
@@ -250,3 +256,53 @@ async def test_ignore_rule_waits_for_the_bank_charge_on_a_pending_placeholder(
     assert rows[0].external_id == "gym-jan"
     assert rows[0].is_ignored is True
     assert rows[0].notes == "#health"
+
+
+@pytest.mark.asyncio
+async def test_a_renamed_placeholder_is_still_found_by_the_bills_wording(
+    session, test_user, test_workspace, synced_account
+):
+    """A `set_description` rule rewrites the placeholder; the bank keeps the bill's text.
+
+    The rule here names the placeholder's exact wording, so it renames the
+    placeholder and leaves the charge alone. The charge still reads like the
+    bill, and it has to land on the placeholder instead of beside it, so the
+    matcher scores the placeholder under the bill's wording as well as its own.
+    """
+    conn, account = synced_account
+    conn_id, account_id = conn.id, account.id
+    await _make_bill(session, test_workspace, test_user, account)
+    await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Rename the gym bill",
+            conditions=[RuleCondition(field="description", op="equals", value="Gym membership")],
+            actions=[RuleAction(op="set_description", value="Academia")],
+            apply_to_existing=False,
+        ),
+    )
+
+    await generate_pending(session, test_user.id, up_to=date(2025, 1, 10))
+
+    [placeholder] = await _generated(session, account_id)
+    placeholder_id = placeholder.id
+    assert placeholder.description == "Academia"
+    assert placeholder.status == "pending"
+
+    provider = _bank_reporting_the_charge(description="Gym membership Ltda")
+    with patch("app.services.connection_service.get_provider", return_value=provider), \
+            patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+            patch("app.services.connection_service.stamp_primary_amount", new=AsyncMock()):
+        await sync_connection(session, conn_id, test_workspace.id, test_user.id)
+
+    rows = (await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == account_id,
+            Transaction.source != "opening_balance",
+        )
+    )).scalars().all()
+    assert [row.id for row in rows] == [placeholder_id]
+    assert rows[0].external_id == "gym-jan"
+    assert rows[0].description == "Academia"
