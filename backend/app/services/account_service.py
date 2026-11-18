@@ -814,6 +814,10 @@ async def _recompute_effective_dates(session: AsyncSession, account: Account) ->
         apply_effective_date(tx, account, bill_due_date=bill_due_date)
 
 
+class _KeepOpeningRows(Exception):
+    """A duplicate opening row cannot be dropped; roll back the cleanup."""
+
+
 async def sync_opening_balance_for_connected_account(
     session: AsyncSession, account: Account
 ) -> None:
@@ -886,16 +890,21 @@ async def sync_opening_balance_for_connected_account(
     existing_tx, *duplicates = existing.scalars().all() or [None]
     from app.services import goal_allocation_service
 
-    for duplicate in duplicates:
-        if not await goal_allocation_service.release_for_background_delete(
-            session, account.workspace_id, duplicate
-        ):
-            # A pocket's spending depends on this duplicate. Dropping it would
-            # break the pocket, keeping it would skew the offset, so leave the
-            # opening rows as they are until the user resolves it.
-            logger.warning("Keeping duplicate opening balance for account %s", account.id)
+    if duplicates:
+        try:
+            async with session.begin_nested():
+                for duplicate in duplicates:
+                    if not await goal_allocation_service.release_for_background_delete(
+                        session, account.workspace_id, duplicate
+                    ):
+                        raise _KeepOpeningRows
+                    await session.delete(duplicate)
+        except _KeepOpeningRows:
+            # A pocket's spending depends on a duplicate. Dropping it would
+            # break the pocket and keeping only some would skew the offset, so
+            # leave every opening row as it is until the user resolves it.
+            logger.warning("Keeping duplicate opening balances for account %s", account.id)
             return
-        await session.delete(duplicate)
 
     # Offsets below one cent are rounding noise; drop any stale opening tx.
     if abs(offset) < Decimal("0.01"):

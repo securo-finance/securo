@@ -915,3 +915,74 @@ async def test_scoped_installment_edit_validates_allocated_siblings(
     for transaction_id in (first["id"], second["id"]):
         stored = await client.get(f"/api/transactions/{transaction_id}", headers=auth_headers)
         assert float(stored.json()["amount"]) == 100
+
+
+@pytest.mark.asyncio
+async def test_duplicate_opening_cleanup_is_all_or_nothing(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_account: Account,
+    session: AsyncSession,
+):
+    """When one duplicate opening cannot be dropped, none is (#1317 cleanup)."""
+    from datetime import datetime, timezone
+
+    from app.services.account_service import sync_opening_balance_for_connected_account
+    from app.services.goal_service import _pocket_current_amount
+
+    pocket = await create_pocket(client, auth_headers, test_account)
+    funded = await post_transaction(
+        client, auth_headers, test_account, "Funding opening", "100", "credit",
+        allocations=[(pocket["id"], "100")],
+    )
+    spent = await post_transaction(
+        client, auth_headers, test_account, "Pocket spending", "100", "debit",
+        allocations=[(pocket["id"], "100")],
+    )
+    assert funded.status_code == 201 and spent.status_code == 201
+    free = Transaction(
+        user_id=test_account.user_id,
+        workspace_id=test_account.workspace_id,
+        account_id=test_account.id,
+        description="Saldo inicial",
+        amount=Decimal("40"),
+        currency=test_account.currency,
+        date=date(2020, 1, 1),
+        type="credit",
+        source="opening_balance",
+        created_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+    )
+    kept = Transaction(
+        user_id=test_account.user_id,
+        workspace_id=test_account.workspace_id,
+        account_id=test_account.id,
+        description="Saldo inicial",
+        amount=Decimal("10"),
+        currency=test_account.currency,
+        date=date(2020, 1, 1),
+        type="credit",
+        source="opening_balance",
+        created_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+    )
+    session.add_all([free, kept])
+    await session.execute(
+        update(Transaction)
+        .where(Transaction.id == uuid.UUID(funded.json()["id"]))
+        .values(source="opening_balance", created_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
+    )
+    await session.commit()
+
+    # Newest first: `kept` stays, `free` could go, the funded one cannot.
+    await sync_opening_balance_for_connected_account(session, test_account)
+    await session.commit()
+
+    openings = set(
+        await session.scalars(
+            select(Transaction.id).where(
+                Transaction.account_id == test_account.id,
+                Transaction.source == "opening_balance",
+            )
+        )
+    )
+    assert openings == {kept.id, free.id, uuid.UUID(funded.json()["id"])}
+    assert await _pocket_current_amount(session, uuid.UUID(pocket["id"])) == 0
