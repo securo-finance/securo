@@ -2039,7 +2039,8 @@
       "invalid_fee": "frais illisibles",
       "invalid_kind": "achat/vente non reconnu",
       "unknown_ticker": "ticker introuvable chez le fournisseur de cours",
-      "oversell": "vente supérieure à la position"
+      "oversell": "vente supérieure à la position",
+      "no_fx_rate": "aucun taux de change pour la date de l'ordre"
     }
   },
   "assets": {

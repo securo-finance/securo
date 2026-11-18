@@ -2035,7 +2035,8 @@
       "invalid_fee": "olvashatatlan díj",
       "invalid_kind": "ismeretlen vétel/eladás érték",
       "unknown_ticker": "az árfolyam-szolgáltató nem ismeri a tickert",
-      "oversell": "több egységet adnál el, mint amennyi a pozícióban van"
+      "oversell": "több egységet adnál el, mint amennyi a pozícióban van",
+      "no_fx_rate": "nincs árfolyam a megbízás dátumára"
     }
   },
   "assets": {

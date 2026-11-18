@@ -45,7 +45,7 @@ from app.schemas.asset_import import (
     AssetImportWarning,
     AssetOrderImport,
 )
-from app.services import asset_transaction_service
+from app.services import asset_transaction_service, fx_rate_service
 from app.services.asset_group_service import ensure_group_in_workspace
 from app.services.import_service import (
     DATE_FORMAT_MAP,
@@ -519,6 +519,20 @@ async def import_orders(
     missing_tickers = sorted({t for t in tickers if t not in holdings})
     resolvable = await resolve_tickers(missing_tickers, market_provider=market_provider) if missing_tickers else {}
 
+    # The currency each holding is priced in. A holding to be created takes
+    # its quote's, so a file that states a currency needs that quote now, in
+    # the preview too, to know whether its prices must be converted (#1358).
+    priced_in = {ticker: asset.currency.upper() for ticker, asset in holdings.items() if asset.currency}
+    quotes = {}
+    stated = sorted({
+        o.ticker for o in ordered
+        if o.currency and o.ticker not in holdings and resolvable.get(o.ticker)
+    })
+    if stated:
+        quotes = await (market_provider or get_market_price_provider()).get_quotes(stated)
+        priced_in.update({t: q.currency.upper() for t, q in quotes.items() if q and q.currency})
+    rates: dict[tuple[str, str, date_type], Optional[Decimal]] = {}
+
     errors: list[AssetImportRowError] = []
     accepted: list[AssetOrderImport] = []
     skipped = 0
@@ -534,6 +548,28 @@ async def import_orders(
         if order.ticker not in holdings and not resolvable.get(order.ticker, False):
             errors.append(AssetImportRowError(row=order.row, reason='unknown_ticker', ticker=order.ticker))
             continue
+
+        # A ledger row is in the holding's currency. An order paid in another
+        # one is converted at its own date's rate, and refused when there is
+        # no rate rather than read 1:1 (#1358).
+        source = (order.currency or '').strip().upper()
+        target = priced_in.get(order.ticker)
+        if source and target and source != target:
+            key = (source, target, order.date)
+            if key not in rates:
+                rates[key] = await fx_rate_service._resolve_rate(session, source, target, order.date)
+            rate = rates[key]
+            if rate is None:
+                errors.append(AssetImportRowError(
+                    row=order.row, reason='no_fx_rate', ticker=order.ticker,
+                    detail=f'{source} → {target}',
+                ))
+                continue
+            order = order.model_copy(update={
+                'price': (order.price * rate).quantize(Decimal('0.000001')),
+                'fee': (order.fee * rate).quantize(Decimal('0.01')),
+                'currency': target,
+            })
 
         asset = holdings.get(order.ticker)
         if asset is not None:
@@ -580,10 +616,10 @@ async def import_orders(
     session.add(log)
     await session.flush()
 
-    quotes = {}
-    if to_create:
+    unquoted = [t for t in to_create if t not in quotes]
+    if unquoted:
         provider = market_provider or get_market_price_provider()
-        quotes = await provider.get_quotes(to_create)
+        quotes.update(await provider.get_quotes(unquoted))
 
     touched: dict[str, Asset] = {}
     written = 0

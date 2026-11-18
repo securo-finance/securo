@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset import Asset
 from app.models.asset_transaction import AssetTransaction
+from app.models.fx_rate import FxRate
 from app.models.user import User
 from app.models.workspace import Workspace
 from app.providers.market_price import MarketSymbolQuote
@@ -323,6 +324,11 @@ async def test_created_holding_takes_the_quote_currency_not_the_file(
 ):
     """A file reporting a US stock in BRL must not label the holding BRL while
     its price feed keeps returning USD."""
+    session.add(FxRate(
+        base_currency="USD", quote_currency="BRL", date=date(2026, 1, 15),
+        rate=Decimal("5"), source="test",
+    ))
+    await session.commit()
     summary = await _import(session, test_workspace, test_user, _csv(
         "ticker,date,quantity,price,currency",
         "AAPL,2026-01-15,10,150.00,BRL",
@@ -331,6 +337,96 @@ async def test_created_holding_takes_the_quote_currency_not_the_file(
     assert summary["imported"] == 1
     stored = await _only_asset(session, test_workspace)
     assert stored.currency == "USD"  # what the provider quotes it in
+    assert stored.average_price == Decimal("30")  # 150 BRL at 5 BRL per USD
+
+
+async def _eur_rate(session: AsyncSession, on: date, usd_to_eur: str) -> None:
+    session.add(FxRate(
+        base_currency="USD", quote_currency="EUR", date=on,
+        rate=Decimal(usd_to_eur), source="test",
+    ))
+    await session.commit()
+
+
+async def _ledger(session: AsyncSession) -> list[AssetTransaction]:
+    return list((await session.execute(
+        select(AssetTransaction).order_by(AssetTransaction.date)
+    )).scalars())
+
+
+@pytest.mark.asyncio
+async def test_orders_in_another_currency_are_converted_at_their_date(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    """A broker that settles US stocks in EUR: 400 EUR is not 400 USD (#1358)."""
+    await _eur_rate(session, date(2026, 1, 15), "0.8")
+    await _eur_rate(session, date(2026, 2, 16), "0.9")
+
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,fee,kind,currency",
+        "AAPL,2026-01-15,1,400,2,buy,EUR",
+        "AAPL,2026-02-16,1,450,0,buy,eur",
+    ), provider)
+
+    assert summary["imported"] == 2
+    assert summary["errors"] == []
+    stored = await _only_asset(session, test_workspace)
+    assert stored.currency == "USD"
+    ledger = await _ledger(session)
+    assert [(tx.price, tx.fee) for tx in ledger] == [
+        (Decimal("500.000000"), Decimal("2.50")),  # 400 / 0.8, 2 / 0.8
+        (Decimal("500.000000"), Decimal("0.00")),  # 450 / 0.9
+    ]
+
+    # The same file again adds nothing: the converted rows are what it matches.
+    again = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,fee,kind,currency",
+        "AAPL,2026-01-15,1,400,2,buy,EUR",
+        "AAPL,2026-02-16,1,450,0,buy,eur",
+    ), provider)
+    assert again["imported"] == 0
+    assert again["skipped"] == 2
+
+
+@pytest.mark.asyncio
+async def test_orders_onto_an_existing_holding_take_its_currency(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    await _eur_rate(session, date(2026, 1, 15), "0.8")
+    session.add(Asset(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Apple", type="stock", currency="USD", valuation_method="market_price",
+        ticker="AAPL", units=Decimal("0"),
+    ))
+    await session.commit()
+
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,currency",
+        "AAPL,2026-01-15,2,80,EUR",
+    ), provider)
+
+    assert summary["imported"] == 1
+    assert [tx.price for tx in await _ledger(session)] == [Decimal("100.000000")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("dry_run", [True, False])
+async def test_an_order_with_no_rate_for_its_currency_is_refused(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider, dry_run
+):
+    """No rate means no conversion, and never 400 EUR stored as 400 USD."""
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,currency",
+        "AAPL,2026-01-15,1,400,EUR",
+        "AAPL,2026-01-16,1,100,USD",
+    ), provider, dry_run=dry_run)
+
+    assert summary["imported"] == 1
+    assert [(e.row, e.reason, e.detail) for e in summary["errors"]] == [
+        (2, "no_fx_rate", "EUR → USD"),
+    ]
+    if not dry_run:
+        assert [tx.price for tx in await _ledger(session)] == [Decimal("100.000000")]
 
 
 @pytest.mark.asyncio

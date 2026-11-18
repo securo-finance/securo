@@ -2175,7 +2175,8 @@
       "invalid_fee": "nečitelný poplatek",
       "invalid_kind": "nerozpoznaná hodnota nákup/prodej",
       "unknown_ticker": "poskytovatel cen ticker nenašel",
-      "oversell": "prodej většího množství, než pozice obsahuje"
+      "oversell": "prodej většího množství, než pozice obsahuje",
+      "no_fx_rate": "chybí směnný kurz k datu pokynu"
     }
   },
   "assets": {

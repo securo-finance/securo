@@ -2035,7 +2035,8 @@
       "invalid_fee": "unreadable fee",
       "invalid_kind": "unrecognised buy/sell value",
       "unknown_ticker": "ticker not found by the price provider",
-      "oversell": "selling more units than the position holds"
+      "oversell": "selling more units than the position holds",
+      "no_fx_rate": "no exchange rate for the order's date"
     }
   },
   "assets": {
