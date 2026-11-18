@@ -3776,6 +3776,17 @@ async def sync_connection(
     if provider is None and not connection.credentials:
         raise ValueError("Credentials not found")
 
+    # Lock the connection's accounts before any transaction row, in ID order,
+    # with the lock pocket writers take. Edits lock accounts first and rows
+    # second; a sync that only reached for an account lock after posting rows
+    # (opening balance, placeholders) deadlocked against them.
+    await session.execute(
+        select(Account.id)
+        .where(Account.connection_id == connection.id)
+        .order_by(Account.id)
+        .with_for_update(key_share=True)
+    )
+
     # Authorization is workspace-scoped and happens before this service is
     # called. Data imported from a bank connection, however, must always be
     # owned by the user who owns that connection — not by whichever workspace

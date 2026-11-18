@@ -674,10 +674,28 @@ async def test_import_waits_for_running_transaction_edit(
 SYNCED_EXTERNAL_ID = "pocket-sync-1"
 
 
-@pytest_asyncio.fixture
-async def synced_row(session, pocket_state):
-    """A pending synced row the next sync will post, in the pocket's account."""
+@pytest_asyncio.fixture(params=[False, True], ids=["new-opening", "existing-opening"])
+async def synced_row(request, session, pocket_state):
+    """A pending synced row the next sync will post, in the pocket's account.
+
+    With an existing opening balance the sync reconciles that row at the end,
+    after it posted this one, which once reached for the account lock late.
+    """
     user, workspace, account, goal, _ = pocket_state
+    if request.param:
+        session.add(
+            Transaction(
+                user_id=user.id,
+                workspace_id=workspace.id,
+                account_id=account.id,
+                description="Saldo inicial",
+                amount=Decimal("1"),
+                currency=account.currency,
+                date=date(2020, 1, 1),
+                type="credit",
+                source="opening_balance",
+            )
+        )
     row = Transaction(
         user_id=user.id,
         workspace_id=workspace.id,
