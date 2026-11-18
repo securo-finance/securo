@@ -4,12 +4,13 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import select
 
 from app.models.account import Account
 from app.models.category import Category
 from app.models.fx_rate import FxRate
 from app.models.recurring_transaction import RecurringTransaction
-from app.services.recurring_transaction_service import get_month_summary
+from app.services.recurring_transaction_service import generate_pending, get_month_summary
 
 
 def _category(session, user, workspace, name, **flags):
@@ -103,6 +104,38 @@ async def test_respects_dates_status_and_closed_accounts(
 
     summary = await _summary(session, test_workspace, date(2026, 12, 1))
     assert summary.expenses == Decimal("50.00")
+
+
+@pytest.mark.asyncio
+async def test_a_schedule_completed_by_generation_keeps_its_last_month(
+    session, test_user, test_workspace, test_account,
+):
+    """Generating the last occurrence turns ``is_active`` off; December keeps it.
+
+    A paused definition with the same dates still stays out.
+    """
+    _recurring(session, test_user, test_workspace, test_account,
+               "Last debit", "500", "debit", "monthly", date(2026, 1, 10),
+               end_date=date(2026, 12, 10), auto_generate=True)
+    _recurring(session, test_user, test_workspace, test_account,
+               "Paused", "30", "debit", "monthly", date(2026, 1, 10),
+               end_date=date(2026, 12, 10), is_active=False)
+    await session.commit()
+
+    before = await _summary(session, test_workspace, date(2026, 12, 1))
+    assert before.expenses == Decimal("500.00")
+
+    await generate_pending(
+        session, test_user.id, up_to=date(2026, 12, 31), workspace_id=test_workspace.id,
+    )
+    completed = (await session.execute(
+        select(RecurringTransaction).where(RecurringTransaction.description == "Last debit")
+    )).scalar_one()
+    assert completed.is_active is False
+
+    after = await _summary(session, test_workspace, date(2026, 12, 1))
+    assert after.expenses == Decimal("500.00")
+    assert (await _summary(session, test_workspace, date(2027, 1, 1))).expenses == Decimal("0")
 
 
 @pytest.mark.asyncio

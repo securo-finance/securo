@@ -312,7 +312,10 @@ async def get_month_summary(
     month: date,
     primary_currency: str,
 ) -> RecurringMonthSummary:
-    """Income, expenses and net the active definitions expect in ``month``.
+    """Income, expenses and net the definitions expect in ``month``.
+
+    Paused definitions stay out; one that generation completed (past its end
+    date) keeps the occurrences it had in range.
 
     Each definition counts once per occurrence in the month, from its own
     schedule (start date, frequency, day, end date, weekend adjustment), so a
@@ -332,7 +335,12 @@ async def get_month_summary(
         .outerjoin(Account, RecurringTransaction.account_id == Account.id)
         .where(
             RecurringTransaction.workspace_id == workspace_id,
-            RecurringTransaction.is_active == True,
+            or_(
+                RecurringTransaction.is_active == True,
+                # Generating the last occurrence turns is_active off and moves
+                # next_occurrence past end_date; a paused definition never does.
+                RecurringTransaction.next_occurrence > RecurringTransaction.end_date,
+            ),
             RecurringTransaction.start_date < month_end + timedelta(days=2),
             or_(Account.id.is_(None), Account.is_closed == False),
         )
