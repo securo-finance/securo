@@ -183,12 +183,15 @@ async def test_card_turned_checking_files_rows_by_their_own_date(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("connected", [False, True])
+@pytest.mark.parametrize("type_only", [False, True], ids=["with-cycle", "type-only"])
 async def test_card_round_trip_keeps_the_linked_bill_date(
-    session, test_user, test_workspace, test_connection, connected
+    session, test_user, test_workspace, test_connection, connected, type_only
 ):
     """Card -> checking -> card: a row linked to a bank bill goes back to that
     bill's due date, not to cycle math. The sync only refiles a row when its
-    bill_id changes, so nothing else would put it back."""
+    bill_id changes, so nothing else would put it back. The way back may
+    resend the cycle days or change the type alone; the account keeps its
+    cycle days while it is checking."""
     extra = {"connection_id": test_connection.id, "external_id": "ext-card"} if connected else {}
     card = await _account(
         session, test_user.id, test_workspace.id, "Itau", "credit_card",
@@ -219,10 +222,12 @@ async def test_card_round_trip_keeps_the_linked_bill_date(
     assert stored is not None
     assert stored.effective_date == date(2026, 3, 30)
 
-    await account_service.update_account(
-        session, card.id, test_workspace.id,
-        AccountUpdate(type="credit_card", statement_close_day=1, payment_due_day=5),
+    back = (
+        AccountUpdate(type="credit_card")
+        if type_only
+        else AccountUpdate(type="credit_card", statement_close_day=1, payment_due_day=5)
     )
+    await account_service.update_account(session, card.id, test_workspace.id, back)
     stored = await session.scalar(select(Transaction).where(Transaction.id == tx.id))
     assert stored is not None
     # Cycle math would say Apr 5; the bank's bill says Apr 10.
