@@ -12,7 +12,7 @@ function entry(overrides: Partial<PluginCatalogEntry>): PluginCatalogEntry {
     version: '1.0.0', license: 'MIT', min_securo_version: '0.19.0', contributes: { categories: 2 },
     locales: [], topics: [], stars: 0, stars_7d: 0, added_at: null, updated_at: null,
     revoked: false, revoked_reason: null, compatible: true, supported: true,
-    workspaces: ['business'], fits_workspace: false, installed_version: null, update_available: false,
+    workspaces: ['business'], fits_workspace: false, icon_url: null, installed_version: null, update_available: false,
     ...overrides,
   }
 }

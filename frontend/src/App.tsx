@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { AppDirection } from '@/components/app-direction'
 import { ThemeProvider } from '@/components/theme-provider'
 import { AuthProvider } from '@/contexts/auth-provider'
 import { WorkspaceProvider } from '@/contexts/workspace-provider'
@@ -85,6 +86,7 @@ function App() {
     <ThemeProvider>
       <QueryClientProvider client={queryClient}>
         <CrossTabRefresh />
+        <AppDirection>
         <TooltipProvider>
         <BrowserRouter>
           <AuthProvider>
@@ -154,6 +156,7 @@ function App() {
           </AuthProvider>
         </BrowserRouter>
         </TooltipProvider>
+        </AppDirection>
       </QueryClientProvider>
     </ThemeProvider>
   )

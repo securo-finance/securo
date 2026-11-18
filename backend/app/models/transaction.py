@@ -21,6 +21,13 @@ if TYPE_CHECKING:
     from app.models.transaction_category_line import TransactionCategoryLine
 
 
+#: Key a pending synced row carries in `raw_data` once the user edited its
+#: category or payee. The bank sync reads it before expiring a hold it
+#: dropped: the edit is the user's work even when the value later went back
+#: to the one the sync gave.
+USER_EDITED_KEY = "securo_user_edited"
+
+
 class Transaction(Base):
     __tablename__ = "transactions"
 
@@ -165,6 +172,7 @@ class Transaction(Base):
     running_balance_primary = cast(Optional[float], None)
     matched_amount = cast(Optional[Decimal], None)
     matched_amount_primary = cast(Optional[Decimal], None)
+    reporting_date = cast(Optional[_date], None)
 
 
 # Safety net: `effective_date` is NOT NULL. For non-CC transactions it always

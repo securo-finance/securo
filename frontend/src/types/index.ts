@@ -145,10 +145,29 @@ export interface BankConnection {
   status: string
   settings: ConnectionSettings | null
   last_sync_at: string | null
+  /** Why the last sync failed, until a sync succeeds. */
+  last_sync_failure?: SyncFailure | null
   created_at: string
   // Institutions this link spans (issue #345). Empty for one-institution
   // providers — institution_name covers those.
   institutions: ConnectionInstitution[]
+  /** Set when a plugin syncs this connection: it is managed through that plugin connection. */
+  plugin_connection_id?: string | null
+  plugin_id?: string | null
+  integration?: string | null
+}
+
+export type SyncFailureCode =
+  | 'psu_present_required'
+  | 'consent_expired'
+  | 'reauthorize_at_provider'
+  | 'rate_limited'
+  | 'provider_error'
+
+export interface SyncFailure {
+  code: SyncFailureCode
+  at: string
+  detail: string | null
 }
 
 export interface ConnectionSettings {
@@ -160,9 +179,11 @@ export interface ConnectionSettings {
 // Response of POST /connections/{id}/sync: the connection plus what the run
 // actually did. "rate_limited" means the provider throttled the request
 // (429): nothing was pulled and last_sync_at was left untouched (issue #736).
+// "partial" means some accounts were throttled and skipped while the others
+// were imported.
 export interface SyncResult extends BankConnection {
   merged_count: number
-  sync_outcome: 'refreshed' | 'rate_limited'
+  sync_outcome: 'refreshed' | 'partial' | 'rate_limited'
 }
 
 export type AccountType = 'checking' | 'savings' | 'credit_card' | 'loan' | 'investment' | 'wallet'
@@ -192,7 +213,17 @@ export interface Account {
   loan_first_payment_date?: string | null
   loan_amortization?: LoanAmortization | null
   balance: number
+  // Provider balance as reported; reserves are a separate display-only breakdown.
   current_balance: number
+  reserved_balances?: {
+    id: string
+    external_id: string
+    name: string | null
+    currency: string
+    amount: number
+  }[]
+  // Sum of the same-currency reservations, in the account's currency.
+  reserved_total?: number
   previous_balance: number | null
   // Date of the opening-balance transaction; null when there is none.
   balance_date?: string | null
@@ -326,6 +357,10 @@ export interface Transaction {
   // Optional period-attribution override. The bank-provided `date` remains
   // unchanged; null restores automatic cash/accrual bucketing.
   reporting_date_override: string | null
+  // The date the paginated list filtered and ordered this row by (#1386):
+  // the override, a manual bill date or, in accrual mode, a card's bill due
+  // date. Absent outside the list.
+  reporting_date?: string | null
   // The recurring bill this transaction fulfills, if any (issue #116).
   recurring_transaction_id?: string | null
   splits: TransactionSplit[]
@@ -670,7 +705,11 @@ export interface PluginIntegration {
   fields: PluginField[]
   /** How often Securo asks the plugin to sync; null for never. */
   sync_minutes: number | null
+  /** Records it syncs as a connected bank; null for an integration that writes through the API. */
+  provides?: PluginProvidedKind[] | null
 }
+
+export type PluginProvidedKind = 'accounts' | 'transactions' | 'bills' | 'holdings' | 'trades'
 
 /** A host a plugin with code may reach, and why. */
 export interface PluginHost {
@@ -732,7 +771,12 @@ export interface PluginConnection {
 export interface PluginCodeConsent {
   network: PluginHost[]
   api_scopes: PluginScope[]
-  integrations: { key: string; name: LocalizedText; auth: PluginIntegration['auth'] }[]
+  integrations: {
+    key: string
+    name: LocalizedText
+    auth: PluginIntegration['auth']
+    provides?: PluginProvidedKind[] | null
+  }[]
   /** On an update: hosts and scopes the installed version didn't have. */
   new_hosts: string[]
   new_scopes: string[]
@@ -740,6 +784,8 @@ export interface PluginCodeConsent {
   connections: number
   /** An update to a version without code: its connections go, as on removal. */
   drops_code?: boolean
+  /** Bank connections the change ends: their accounts stay, as manual ones. */
+  unlinks?: number
 }
 
 export interface PluginCatalogEntry {
@@ -773,6 +819,8 @@ export interface PluginCatalogEntry {
   workspaces: string[]
   /** It's meant for this workspace's type. */
   fits_workspace: boolean
+  /** Where Securo serves the plugin's icon; null draws the generated badge. */
+  icon_url: string | null
   installed_version: string | null
   update_available: boolean
 }
@@ -963,6 +1011,37 @@ export interface RecurringTransaction {
   category_lines?: TransactionCategoryLine[]
 }
 
+// Read-only price-change projections. Derived from linked transaction
+// history on the backend; never written back and never mutated client-side.
+export type RecurringPriceChangeEligibility =
+  | 'insufficient_history'
+  | 'no_qualifying_change'
+  | 'changes_detected'
+
+export interface RecurringPriceChange {
+  recurring_id: string
+  previous_transaction_id: string
+  current_transaction_id: string
+  previous_date: string
+  current_date: string
+  // Exact two-decimal JSON strings; coerce only for display formatting.
+  previous_amount: string
+  current_amount: string
+  currency: string
+  direction: 'increase' | 'decrease'
+  absolute_delta: string
+  percent_delta: string
+  gap_days: number
+  baseline_occurrence_count: number
+}
+
+export interface RecurringPriceChangeHistory {
+  recurring_id: string
+  eligible_occurrence_count: number
+  eligibility: RecurringPriceChangeEligibility
+  changes: RecurringPriceChange[]
+}
+
 export interface ProjectedTransaction {
   recurring_id: string
   account_id: string | null
@@ -1062,6 +1141,12 @@ export interface DashboardSummary {
   pending_categorization_amount: number
   assets_value: Record<string, number>
   assets_value_primary: number
+  /** Checking + savings + wallet (spendable / near-liquid). */
+  cash_balance?: Record<string, number>
+  cash_balance_primary?: number
+  /** Accounts with type=investment (brokerage cash), distinct from assets_value. */
+  investment_accounts?: Record<string, number>
+  investment_accounts_primary?: number
   primary_currency: string
   // At least one currency bucket had no real FX rate, so the *_primary
   // totals sum it at 1:1 and are an estimate, not a conversion (issue #1165).
@@ -1194,6 +1279,9 @@ export interface Asset {
   last_price: number | null
   last_price_at: string | null
   logo_url: string | null
+  // Date the sync provider says current_value refers to (YYYY-MM-DD), when it
+  // reports one. A stale date is the sign that a position stopped updating.
+  provider_value_date: string | null
   // Ledger-derived (issue #235): weighted-average cost per unit (preço médio),
   // cost basis of held units, cumulative realized gain, and whether the holding
   // is driven by the transactions ledger.
@@ -1254,13 +1342,17 @@ export interface AssetImportResult {
 export interface AssetTransaction {
   id: string
   asset_id: string
-  kind: 'buy' | 'sell'
+  kind: 'buy' | 'sell' | 'split'
   quantity: number
   price: number
   fee: number
   date: string
   source: string
   notes: string | null
+  // Split only: the units held before the split became `new_units` after it
+  // (a 100-for-1 split is 1 → 100). Null on buys and sells.
+  old_units: number | null
+  new_units: number | null
   asset_name: string | null
   ticker: string | null
   currency: string | null
@@ -1281,6 +1373,12 @@ export interface MarketSymbolQuote {
   currency: string
   price: number
   quote_type: string | null
+}
+
+export interface AssetPriceRefreshResult {
+  refreshed: number
+  skipped: number
+  rate_limited: number
 }
 
 export interface AssetGroup {

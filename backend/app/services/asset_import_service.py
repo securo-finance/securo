@@ -24,28 +24,31 @@ import io
 import logging
 import uuid
 from datetime import date as date_type
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.models.asset import Asset
 from app.models.asset_group import AssetGroup
 from app.models.asset_transaction import AssetTransaction
+from app.models.fx_rate import FxRate
 from app.models.import_log import ImportLog
 from app.providers.market_price import (
     MarketPriceProvider,
     MarketPriceRateLimitedError,
     get_market_price_provider,
 )
+from app.schemas.asset import MarketSymbolQuote
 from app.schemas.asset_import import (
     AssetImportRowError,
     AssetImportWarning,
     AssetOrderImport,
 )
-from app.services import asset_transaction_service
+from app.services import asset_transaction_service, fx_rate_service
 from app.services.asset_group_service import ensure_group_in_workspace
 from app.services.import_service import (
     DATE_FORMAT_MAP,
@@ -456,23 +459,156 @@ async def _holdings_in_other_wallets(
 async def _already_imported(
     session: AsyncSession,
     asset_ids: list[uuid.UUID],
-) -> set[tuple]:
-    """Fingerprints of the ledger rows these holdings already carry.
+) -> dict[tuple, set[Optional[str]]]:
+    """Fingerprints of the ledger rows these holdings already carry, each with
+    the broker ids of the rows behind it (None for a row without one).
 
     Re-uploading the same file is the normal way people fix a mapping mistake,
     so a repeat run should add nothing rather than double the position.
+
+    ``row`` is the stored ledger price, for every row. ``plain`` is the same
+    for rows stored at the file's own price (no conversion recorded: same
+    currency, or imported before #1358). ``source`` is what a converted row's
+    file said.
     """
     if not asset_ids:
-        return set()
+        return {}
     result = await session.execute(
         select(AssetTransaction).where(AssetTransaction.asset_id.in_(asset_ids))
     )
-    seen = set()
+    seen: dict[tuple, set[Optional[str]]] = {}
+
+    def add(key: tuple, external_id: Optional[str]) -> None:
+        seen.setdefault(key, set()).add(external_id)
+
     for tx in result.scalars().all():
-        if tx.external_id:
-            seen.add(('external', tx.asset_id, tx.external_id))
-        seen.add(('row', tx.asset_id, tx.date, tx.kind, tx.quantity, tx.price))
+        ext = tx.external_id or None
+        if ext:
+            add(('external', tx.asset_id, ext), ext)
+        add(('row', tx.asset_id, tx.date, tx.kind, tx.quantity, tx.price), ext)
+        if tx.source_currency and tx.source_price is not None:
+            add(('source', tx.asset_id, tx.date, tx.kind, tx.quantity, tx.source_currency, tx.source_price), ext)
+        else:
+            add(('plain', tx.asset_id, tx.date, tx.kind, tx.quantity, tx.price), ext)
     return seen
+
+
+def _same_order(seen: dict[tuple, set[Optional[str]]], key: tuple, external_id: Optional[str]) -> bool:
+    """Whether a stored row with this fingerprint can be this order.
+
+    A row with another broker id is another order that happens to look the
+    same, so only a row without an id, or with this one, counts.
+    """
+    ids = seen.get(key)
+    if not ids:
+        return False
+    return external_id is None or None in ids or external_id in ids
+
+
+# Minor units a file may state prices in, named as the market feed names them:
+# 150 GBp is 1.50 GBP. Holdings are kept in the major unit, which is what the
+# feed's quotes are normalised to. Case matters only here: GBp is pence.
+_PENCE = ('GBp', 'GBP', Decimal('0.01'))
+_SA_CENTS = ('ZAc', 'ZAR', Decimal('0.01'))
+_MINOR_UNITS: dict[str, tuple[str, str, Decimal]] = {
+    'GBp': _PENCE, 'GBX': _PENCE, 'gbx': _PENCE,
+    'ZAc': _SA_CENTS, 'ZAC': _SA_CENTS,
+}
+
+
+def _order_currency(raw: Optional[str]) -> Optional[tuple[str, str, Decimal]]:
+    """The currency a file row states, as (code as kept on the ledger row, ISO
+    code, units of the ISO currency per unit of the stated one), or None when
+    the row states none."""
+    text = (raw or '').strip()
+    if not text:
+        return None
+    if text in _MINOR_UNITS:
+        return _MINOR_UNITS[text]
+    code = text.upper()
+    return code, code, Decimal('1')
+
+
+# How far before an order a stored rate may come from: a weekend or a bank
+# holiday has no snapshot of its own.
+_FX_LOOKBACK = timedelta(days=7)
+# Live rate requests per import. Each can wait 30 s on the provider, so a file
+# that spans hundreds of dates must not become hundreds of requests.
+_FX_FETCH_BUDGET = 20
+
+
+def _cross(usd_rates: dict[str, Decimal], source: str, target: str) -> Optional[Decimal]:
+    legs = {**usd_rates, 'USD': Decimal('1')}
+    usd_to_source, usd_to_target = legs.get(source), legs.get(target)
+    if usd_to_source is None or usd_to_target is None or usd_to_source == 0:
+        return None
+    return usd_to_target / usd_to_source
+
+
+class _OrderRates:
+    """Exchange rates for the orders of one import, read the same way in the
+    preview and in the import itself so both reach the same answer.
+
+    Both legs of a cross rate always come from the same day's snapshot. Rates
+    are read from the stored table first and otherwise asked of the provider,
+    a bounded number of times, without storing them: the preview writes
+    nothing, and neither does this.
+    """
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+        self.fetched: dict[date_type, dict[str, Decimal]] = {}
+        self.fetches_left = _FX_FETCH_BUDGET
+        self.known: dict[tuple[str, str, date_type], Optional[Decimal]] = {}
+
+    async def rate(self, source: str, target: str, on: date_type) -> Optional[Decimal]:
+        """Units of ``target`` per unit of ``source`` on the order's date, or None."""
+        on = min(on, app_today())
+        key = (source, target, on)
+        if key not in self.known:
+            rate = await self._stored(source, target, on)
+            if rate is None:
+                rate = _cross(await self._fetched(on), source, target)
+            self.known[key] = rate
+        return self.known[key]
+
+    async def _stored(self, source: str, target: str, on: date_type) -> Optional[Decimal]:
+        codes = [c for c in (source, target) if c != 'USD']
+        result = await self.session.execute(
+            select(FxRate.date, FxRate.quote_currency, FxRate.rate)
+            .where(
+                FxRate.base_currency == 'USD',
+                FxRate.quote_currency.in_(codes),
+                # Bounded so a row dated near 0001-01-01 gets no_fx_rate
+                # instead of an OverflowError that sinks the whole preview.
+                FxRate.date >= max(on, date_type.min + _FX_LOOKBACK) - _FX_LOOKBACK,
+                FxRate.date <= on,
+            )
+            .order_by(desc(FxRate.date))
+        )
+        days: dict[date_type, dict[str, Decimal]] = {}
+        for day, code, value in result.all():
+            days.setdefault(day, {})[code] = value
+        for day in sorted(days, reverse=True):
+            rate = _cross(days[day], source, target)
+            if rate is not None:
+                return rate
+        return None
+
+    async def _fetched(self, on: date_type) -> dict[str, Decimal]:
+        if on not in self.fetched:
+            if self.fetches_left <= 0:
+                return {}
+            self.fetches_left -= 1
+            try:
+                self.fetched[on] = await fx_rate_service.fetch_rates(self.session, on)
+            except Exception:
+                # Not configured, or down: asking again for the next date
+                # would only wait out the same failure.
+                logger.warning('FX rate fetch for an order import failed for %s', on, exc_info=True)
+                self.fetches_left = 0
+                self.fetched[on] = {}
+        return self.fetched[on]
 
 
 async def import_orders(
@@ -519,6 +655,26 @@ async def import_orders(
     missing_tickers = sorted({t for t in tickers if t not in holdings})
     resolvable = await resolve_tickers(missing_tickers, market_provider=market_provider) if missing_tickers else {}
 
+    # The currency each holding is priced in. A holding to be created takes
+    # its quote's, so a file that states a currency needs that quote now, in
+    # the preview too, to know whether its prices must be converted (#1358).
+    # Only a quote that names its currency counts: without one the import
+    # could not create the holding either.
+    priced_in = {ticker: asset.currency.upper() for ticker, asset in holdings.items() if asset.currency}
+    quotes: dict[str, Optional[MarketSymbolQuote]] = {}
+    quote_now = sorted({
+        o.ticker for o in ordered
+        if _order_currency(o.currency) and o.ticker not in holdings and resolvable.get(o.ticker)
+    })
+    if quote_now:
+        fetched = await (market_provider or get_market_price_provider()).get_quotes(quote_now)
+        usable = {t: q for t, q in fetched.items() if q and q.currency}
+        quotes.update(usable)
+        priced_in.update({t: q.currency.upper() for t, q in usable.items()})
+    rates = _OrderRates(session)
+    # What the file said for each converted row, kept on its ledger entry.
+    origin: dict[int, tuple[str, Decimal]] = {}
+
     errors: list[AssetImportRowError] = []
     accepted: list[AssetOrderImport] = []
     skipped = 0
@@ -535,12 +691,67 @@ async def import_orders(
             errors.append(AssetImportRowError(row=order.row, reason='unknown_ticker', ticker=order.ticker))
             continue
 
+        stated = _order_currency(order.currency)
         asset = holdings.get(order.ticker)
+        # A ledger row is in the holding's currency. An order paid in another
+        # one is converted at its own date's rate, and refused when there is
+        # no rate rather than read 1:1 (#1358).
+        target = priced_in.get(order.ticker)
+        converts = bool(stated and target and (stated[1] != target or stated[2] != 1))
         if asset is not None:
-            fingerprint = ('row', asset.id, order.date, order.kind, order.quantity, order.price)
-            external = ('external', asset.id, order.external_id) if order.external_id else None
-            if fingerprint in seen or (external and external in seen):
+            # Matched on what the file says, before any conversion: the same
+            # file again is skipped whatever the rates say by now.
+            ext = order.external_id or None
+            fingerprint = (asset.id, order.date, order.kind, order.quantity)
+            if (
+                (ext and ('external', asset.id, ext) in seen)
+                or (stated and _same_order(seen, ('source', *fingerprint, stated[0], order.price), ext))
+                or (not converts and ('row', *fingerprint, order.price) in seen)
+            ):
                 skipped += 1
+                continue
+            if converts and _same_order(seen, ('plain', *fingerprint, order.price), ext):
+                # A row stored at this very number in the holding's currency:
+                # either this order from an import made before conversion
+                # existed, or a different order at that price. Adding it could
+                # count the shares twice, so it is left out and named.
+                errors.append(AssetImportRowError(
+                    row=order.row, reason='possible_duplicate', ticker=order.ticker,
+                    detail=f'{order.price} {target}',
+                ))
+                continue
+
+        if stated and target is None and asset is None:
+            errors.append(AssetImportRowError(row=order.row, reason='unknown_ticker', ticker=order.ticker))
+            continue
+        if converts and stated is not None and target is not None:
+            written, source, unit = stated
+            rate = Decimal('1') if source == target else await rates.rate(source, target, order.date)
+            if rate is None:
+                errors.append(AssetImportRowError(
+                    row=order.row, reason='no_fx_rate', ticker=order.ticker,
+                    detail=f'{source} → {target}',
+                ))
+                continue
+            origin[order.row] = (written, order.price)
+            order = order.model_copy(update={
+                'price': (order.price * rate * unit).quantize(Decimal('0.000001')),
+                'fee': (order.fee * rate * unit).quantize(Decimal('0.01')),
+                'currency': target,
+            })
+            # A converted row that matches was already found above through
+            # what its file said; one from another currency or price is
+            # another order, even when both convert to the same number. Only
+            # a row stored at the converted price without a recorded origin
+            # could be this order, or another one: it is named, not dropped.
+            if asset is not None and _same_order(
+                seen, ('plain', asset.id, order.date, order.kind, order.quantity, order.price),
+                order.external_id or None,
+            ):
+                errors.append(AssetImportRowError(
+                    row=order.row, reason='possible_duplicate', ticker=order.ticker,
+                    detail=f'{order.price} {target}',
+                ))
                 continue
 
         held = units.get(order.ticker, Decimal('0'))
@@ -580,10 +791,10 @@ async def import_orders(
     session.add(log)
     await session.flush()
 
-    quotes = {}
-    if to_create:
+    unquoted = [t for t in to_create if t not in quotes]
+    if unquoted:
         provider = market_provider or get_market_price_provider()
-        quotes = await provider.get_quotes(to_create)
+        quotes.update(await provider.get_quotes(unquoted))
 
     touched: dict[str, Asset] = {}
     written = 0
@@ -631,6 +842,8 @@ async def import_orders(
             external_id=order.external_id,
             import_id=log.id,
             notes=order.notes,
+            source_currency=origin[order.row][0] if order.row in origin else None,
+            source_price=origin[order.row][1] if order.row in origin else None,
         ))
         touched[order.ticker] = asset
         written += 1

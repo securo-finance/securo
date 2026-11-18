@@ -25,6 +25,7 @@ from app.models.transaction import Transaction
 from app.schemas.account import AccountCreate, AccountUpdate
 import app.services.account_service as account_service
 from app.services.account_service import (
+    _account_balance_at,
     _provider_to_internal_balance,
     create_account,
     close_account,
@@ -33,6 +34,7 @@ from app.services.account_service import (
     get_account_balance_history,
     get_account_summary,
     get_accounts,
+    get_period_opening_balance,
     reopen_account,
     serialize_account,
     sync_opening_balance_for_connected_account,
@@ -75,6 +77,7 @@ async def _add_txn(
     amount: float, txn_type: str, txn_date: date,
     source: str = "manual", transfer_pair_id: uuid.UUID | None = None,
     status: str = "posted", category_id: uuid.UUID | None = None,
+    currency: str = "BRL",
 ) -> Transaction:
     from datetime import datetime, timezone
     txn = Transaction(
@@ -87,7 +90,7 @@ async def _add_txn(
         type=txn_type,
         source=source,
         status=status,
-        currency="BRL",
+        currency=currency,
         transfer_pair_id=transfer_pair_id,
         category_id=category_id,
         created_at=datetime.now(timezone.utc),
@@ -999,6 +1002,35 @@ async def test_get_account_summary_bill_payment_of_prior_debt_leaves_cycle_total
 
 
 @pytest.mark.asyncio
+async def test_get_account_summary_bill_ignores_unconverted_foreign_prior_debt(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A foreign purchase before the window must not read 1:1 as older debt.
+
+    Left at face value it swallows the cycle's payments, so the bill total
+    stays inflated while the card balance already ignores the same purchase
+    (#1263)."""
+    account = await _make_account(
+        session, test_user.id, "CC Foreign Prior", acc_type="credit_card"
+    )
+    today = date.today()
+    last_month = today.replace(day=1) - timedelta(days=1)
+
+    await _add_txn(
+        session, test_user.id, account.id, 700000, "debit", last_month,
+        currency="CLP",
+    )
+    await _add_txn(session, test_user.id, account.id, 1000, "debit", today)
+    await _add_txn(session, test_user.id, account.id, 400, "credit", today,
+                   transfer_pair_id=uuid.uuid4())
+
+    summary = await get_account_summary(session, account.id, test_workspace.id)
+    assert summary is not None
+    # No older debt survives conversion, so the whole 400 nets this cycle.
+    assert summary["monthly_expenses"] == pytest.approx(600.0)
+
+
+@pytest.mark.asyncio
 async def test_get_account_summary_bill_linked_pre_window_payment_is_not_prior_debt(
     session: AsyncSession, test_user, test_workspace
 ):
@@ -1256,6 +1288,170 @@ async def test_sync_opening_balance_ignores_future_and_ignored_rows(
     assert opening.amount == Decimal("100.00")
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("balance", "expected"),
+    [("600.00", Decimal("100.00")), ("500.00", None)],
+    ids=["keeps-newest", "drops-all-when-balanced"],
+)
+async def test_sync_opening_balance_tolerates_duplicate_openings(
+    session, test_user, test_workspace, test_connection, balance, expected
+):
+    """Two synthetic openings on one account must not break the sync (#1317)."""
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+
+    account = await _make_account(
+        session, test_user.id, "Duplicate Openings", balance=balance,
+        connection_id=test_connection.id,
+    )
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 500, "credit", today - timedelta(days=5))
+    older = await _add_txn(
+        session, test_user.id, account.id, 40, "credit", today - timedelta(days=30),
+        source="opening_balance",
+    )
+    newer = await _add_txn(
+        session, test_user.id, account.id, 70, "debit", today - timedelta(days=6),
+        source="opening_balance",
+    )
+    older.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    newer.created_at = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    await session.commit()
+
+    await sync_opening_balance_for_connected_account(session, account)
+    await session.commit()
+
+    openings = (await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == account.id,
+            Transaction.source == "opening_balance",
+        )
+    )).scalars().all()
+
+    if expected is None:
+        assert openings == []
+    else:
+        assert [(o.id, o.type, o.amount) for o in openings] == [(newer.id, "credit", expected)]
+
+
+@pytest.mark.asyncio
+async def test_sync_opening_balance_ignores_unconverted_foreign_rows(
+    session, test_user, test_workspace, test_connection
+):
+    """A foreign row with no amount_primary must not be counted 1:1."""
+    account = await _make_account(
+        session, test_user.id, "Wise BRL", balance="1.02",
+        connection_id=test_connection.id,
+    )
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 100, "credit", today - timedelta(days=1))
+    await _add_txn(
+        session, test_user.id, account.id, 700000, "credit", today,
+        currency="CLP",
+    )
+
+    await sync_opening_balance_for_connected_account(session, account)
+    from sqlalchemy import select
+    result = await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == account.id,
+            Transaction.source == "opening_balance",
+        )
+    )
+    opening = result.scalar_one()
+
+    assert opening.type == "debit"
+    assert opening.amount == Decimal("98.98")
+
+
+@pytest.mark.asyncio
+async def test_account_balance_ignores_unconverted_foreign_rows(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Net worth history must not read 700,000 CLP as 700,000 BRL."""
+    account = await _make_account(session, test_user.id, "Wise BRL History", currency="BRL")
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 100, "credit", today - timedelta(days=1))
+    await _add_txn(
+        session, test_user.id, account.id, 700000, "credit", today,
+        currency="CLP",
+    )
+
+    balance = await _account_balance_at(session, account.id, today, "BRL")
+    assert balance == pytest.approx(100.0)
+
+
+@pytest.mark.asyncio
+async def test_balance_counts_a_same_currency_row_stored_with_other_case(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A code that differs only by case still names the account's currency.
+
+    The account schema stores the code as sent, while the transaction schema
+    upper-cases it, so a ``brl`` account meets a ``BRL`` row. Comparing the
+    codes literally would drop the row as an unconverted foreign one and
+    report zero instead of the amount (#1263)."""
+    account = await _make_account(
+        session, test_user.id, "Lowercase BRL", currency="brl"
+    )
+    today = date.today()
+    await _add_txn(
+        session, test_user.id, account.id, 100, "credit", today, currency="BRL"
+    )
+
+    accounts = await get_accounts(session, test_workspace.id)
+    listed = next(a for a in accounts if a["id"] == account.id)
+    assert listed["current_balance"] == pytest.approx(100.0)
+
+
+@pytest.mark.asyncio
+async def test_manual_account_reports_the_balance_its_history_ends_on(
+    session: AsyncSession, test_user, test_workspace
+):
+    """An unconverted foreign row stays out of the balance and the history (#1263)."""
+    account = await _make_account(session, test_user.id, "Manual BRL", currency="BRL")
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 100, "credit", today - timedelta(days=2))
+    await _add_txn(
+        session, test_user.id, account.id, 700000, "credit", today - timedelta(days=1),
+        currency="CLP",
+    )
+
+    accounts = await get_accounts(session, test_workspace.id)
+    listed = next(a for a in accounts if a["id"] == account.id)
+    assert listed["current_balance"] == pytest.approx(100.0)
+
+    summary = await get_account_summary(session, account.id, test_workspace.id)
+    assert summary is not None
+    assert summary["current_balance"] == pytest.approx(100.0)
+
+    history = await get_account_balance_history(
+        session, account.id, test_workspace.id,
+        date_from=today - timedelta(days=3), date_to=today,
+    )
+    assert history is not None
+    assert history[-1]["balance"] == pytest.approx(100.0)
+
+
+@pytest.mark.asyncio
+async def test_period_opening_balance_ignores_unconverted_foreign_rows(
+    session: AsyncSession, test_user, test_workspace
+):
+    """The running-balance seed must agree with the rows the walk applies (#1263)."""
+    account = await _make_account(session, test_user.id, "Manual BRL Opening", currency="BRL")
+    today = date.today()
+    before_window = today - timedelta(days=3)
+    await _add_txn(session, test_user.id, account.id, 50, "credit", before_window)
+    await _add_txn(
+        session, test_user.id, account.id, 700000, "credit", before_window,
+        currency="CLP",
+    )
+
+    opening = await get_period_opening_balance(session, account, today)
+    assert opening == pytest.approx(50.0)
+
+
 # ---------------------------------------------------------------------------
 # get_account_balance_history
 # ---------------------------------------------------------------------------
@@ -1368,6 +1564,39 @@ def test_provider_to_internal_balance_other_provider_unchanged():
     assert _provider_to_internal_balance(
         "enable_banking", "credit_card", Decimal("500.00")
     ) == Decimal("500.00")
+
+
+def test_provider_to_internal_balance_reads_a_card_from_its_available_credit():
+    """Enable Banking can report a card's free credit instead of the debt;
+    what the card owes is the rest of the limit (issue #624)."""
+    assert _provider_to_internal_balance(
+        "enable_banking",
+        "credit_card",
+        Decimal("0"),
+        available_credit=Decimal("4900.00"),
+        credit_limit=Decimal("5000.00"),
+    ) == Decimal("100.00")
+
+
+def test_provider_to_internal_balance_needs_a_limit_for_available_credit():
+    """Without a limit there is no debt to derive; the provider's reading stays."""
+    assert _provider_to_internal_balance(
+        "enable_banking",
+        "credit_card",
+        Decimal("0"),
+        available_credit=Decimal("4900.00"),
+    ) == Decimal("0")
+
+
+def test_provider_to_internal_balance_ignores_available_credit_on_other_types():
+    """Only a card reads free credit as debt; another type keeps its balance."""
+    assert _provider_to_internal_balance(
+        "enable_banking",
+        "checking",
+        Decimal("4900.00"),
+        available_credit=Decimal("4900.00"),
+        credit_limit=Decimal("5000.00"),
+    ) == Decimal("4900.00")
 
 
 @pytest.mark.asyncio

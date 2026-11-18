@@ -38,6 +38,9 @@ export type DrillDownFilter = {
   // Count only the viewer's share of a split expense, as budgets and the
   // statement do, instead of the full amount that hit the account.
   ownShare?: boolean
+  // With `ownShare`, also count only the viewer's share of a split credit,
+  // as the dashboard's income card does.
+  ownShareCredits?: boolean
   // Total the panel as credits minus debits, for rows that show a net amount.
   netTotal?: boolean
 }
@@ -146,12 +149,14 @@ export function TransactionDrillDown({
       const parentPrimary = tx.amount_primary != null ? Number(tx.amount_primary) : null
       // Budgets (useViewerShare): the viewer's group share as the API tags it.
       const viewerShare = useViewerShare && tx.viewer_share != null ? Number(tx.viewer_share) : null
-      // The statement (ownShare): only the viewer's part of a split expense,
+      // The statement and the dashboard cards (ownShare): only the viewer's
+      // part of a split expense (and, with ownShareCredits, of a split credit),
       // the way the backend counts it: a member in the split keeps their own
       // share, the owner the amount less everyone else's shares, and anyone
       // else the full amount.
       const splits = tx.splits ?? []
-      const ownShare = viewerShare != null || !filter?.ownShare || tx.type !== 'debit'
+      const countsShare = tx.type === 'debit' || (tx.type === 'credit' && !!filter?.ownShareCredits)
+      const ownShare = viewerShare != null || !filter?.ownShare || !countsShare
         ? null
         : tx.is_shared
           ? Number(tx.viewer_share ?? 0)
@@ -183,7 +188,9 @@ export function TransactionDrillDown({
         isPending: tx.status === 'pending',
         attachmentCount: tx.attachment_count ?? 0,
         transaction: tx,
-        partOf: isPart ? Math.abs(Number(tx.amount)) : null,
+        partOf: isPart || (share != null && Math.abs(share) !== Math.abs(parentAmount))
+          ? Math.abs(parentAmount)
+          : null,
       })
     }
 
@@ -348,13 +355,13 @@ export function TransactionDrillDown({
         tabIndex={-1}
         inert={!filter}
         aria-hidden={!filter}
-        className={`fixed top-0 right-0 h-full w-full max-w-md bg-card shadow-2xl z-50 transform transition-transform duration-200 ease-out flex flex-col ${
-          filter ? 'translate-x-0' : 'translate-x-full'
+        className={`fixed top-0 end-0 h-full w-full max-w-md bg-card shadow-2xl z-50 transform transition-transform duration-200 ease-out flex flex-col ${
+          filter ? 'translate-x-0' : 'translate-x-full rtl:-translate-x-full'
         }`}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
-          <h2 className="text-sm font-semibold text-foreground truncate pr-4">
+          <h2 className="text-sm font-semibold text-foreground truncate pe-4">
             {filter?.title}
           </h2>
           <button
@@ -442,14 +449,16 @@ export function TransactionDrillDown({
                       })}`}
                     </p>
                   </div>
-                  <div className="text-right shrink-0">
+                  <div className="text-end shrink-0">
                     <span
                       className={`text-sm font-semibold tabular-nums ${
                         item.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'
                       }`}
                     >
-                      {item.type === 'credit' ? '+' : '-'}
-                      {mask(formatCurrency(Math.abs(item.amount), item.currency ?? userCurrency, locale))}
+                      <span dir="ltr">
+                        {item.type === 'credit' ? '+' : '-'}
+                        {mask(formatCurrency(Math.abs(item.amount), item.currency ?? userCurrency, locale))}
+                      </span>
                     </span>
                     {item.currency !== userCurrency && item.amountPrimary != null && (
                       <div className="flex items-center justify-end gap-1">

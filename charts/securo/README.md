@@ -18,6 +18,12 @@
 - Persistent Volume (PV) provisioner support in the underlying infrastructure
 
 ### Persistent Storage Requirements
+
+The following shared-file requirement applies to **local storage**. With
+`config.storageProvider: s3`, attachments and invoice logos use object storage;
+you can disable `persistence.attachments.enabled` after migrating existing files.
+AI knowledge documents and embedding caches still need their configured volumes.
+
 Since the Backend, Celery Worker, and MCP Server all share the same files (like uploaded attachments and AI knowledge bases), they all mount the same Persistent Volume Claims concurrently.
 **If your cluster spans multiple nodes, you MUST use a StorageClass that supports `ReadWriteMany` (RWX) access mode (e.g., NFS, CephFS, or Longhorn RWX).**
 If your storage only supports `ReadWriteOnce` (RWO), you must restrict all Securo pods to run on a single node (using `nodeSelector` or `podAffinity`) but that is an antipattern in Kubernetes.
@@ -52,7 +58,97 @@ global:
   existingSecret: "my-securo-secrets"
 ```
 
-The secret must contain the corresponding keys (e.g., `secretKey`, `databaseUrl`, `agentsOpenaiApiKey`).
+The existing Secret must contain environment-variable keys (e.g., `SECRET_KEY`,
+`DATABASE_URL`, `AGENTS_OPENAI_API_KEY`). The camelCase names in `values.yaml`
+are converted to these names only when the chart creates the Secret itself.
+
+### S3 attachment storage
+
+```yaml
+config:
+  storageProvider: s3
+  storageS3Bucket: securo-attachments
+  storageS3Region: garage
+  storageS3EndpointUrl: https://s3.example.com
+  storageS3AddressingStyle: path
+persistence:
+  attachments:
+    enabled: false
+global:
+  existingSecret: securo-secrets
+```
+
+S3 support is part of the regular backend image, so `backend.image.tag` stays
+as it is.
+
+In addition to the usual application secrets, provide `STORAGE_S3_ACCESS_KEY`
+and `STORAGE_S3_SECRET_KEY` in `securo-secrets` (optionally
+`STORAGE_S3_SESSION_TOKEN`). Alternatively, use `secret.storageS3AccessKey`,
+`secret.storageS3SecretKey`, and `secret.storageS3SessionToken` when letting Helm
+create the Secret. Leave credentials unset when using an SDK-supported workload
+identity. For AWS S3, omit the endpoint and use addressing style `auto`.
+`http://` endpoints are rejected unless `config.storageS3AllowInsecureHttp: "true"`
+is set (development only; traffic is unencrypted).
+
+Create a private bucket before deployment and migrate existing attachments
+before disabling their PVC. Consult the repository README's Attachment Storage
+section for permissions, migration, and integration testing. S3 mode does not
+move AI knowledge files to object storage.
+
+### Extra environment variables, volumes and volume mounts
+
+`backend`, `celeryWorker`, `celeryBeat` and `migration` each accept `extraEnv`,
+`extraEnvFrom`, `extraVolumes` and `extraVolumeMounts`, empty by default. The
+entries keep the Kubernetes shapes (`EnvVar`, `EnvFromSource`, `Volume`,
+`VolumeMount`) and are rendered untouched, so `valueFrom` and every volume type
+work. `extraEnv` is read after the ConfigMap and the Secret and therefore wins
+over both, as `env` does over `envFrom` in Kubernetes. `migration` configures
+the post-install/post-upgrade Job, which reaches the database before the pods do.
+
+This is what an external PostgreSQL with TLS client-certificate authentication
+needs, for example:
+
+```yaml
+backend:
+  extraEnv:
+    - name: PGSSLMODE
+      value: verify-full
+    - name: PGSSLCERT
+      value: /etc/pg-tls/tls.crt
+    - name: PGSSLKEY
+      value: /etc/pg-tls/tls.key
+    - name: PGSSLROOTCERT
+      value: /etc/pg-tls/ca.crt
+  extraVolumes:
+    - name: pg-client-tls
+      secret:
+        secretName: pg-client-tls
+  extraVolumeMounts:
+    - name: pg-client-tls
+      mountPath: /etc/pg-tls
+      readOnly: true
+```
+
+Repeat the block under `celeryWorker`, `celeryBeat` and `migration` if those
+pods connect to the same database.
+
+To mount a PersistentVolumeClaim you already have instead of letting the chart
+create one, set `persistence.attachments.existingClaim`. Keep
+`persistence.attachments.enabled` true so the pods mount it; the chart then
+renders no PVC and leaves your claim untouched on uninstall.
+
+On a release that is already running, do not set it in the same upgrade that
+follows the first install. The chart's PVC leaves the release when the value is
+set, Helm deletes resources that leave the release, and with a `Delete` reclaim
+policy that takes the attachments with it. Hand it over in two steps: annotate
+the chart's PVC with `helm.sh/resource-policy: keep` and upgrade, then set
+`persistence.attachments.existingClaim` and upgrade again. The claim then also
+survives `helm uninstall`, so delete it by hand when you really want it gone. A
+claim you created yourself, outside the release, needs no handoff.
+
+### AI Agents and the MCP server
+
+`mcpServer.enabled` runs the built-in MCP server inside the cluster. It is not added to the Ingress or the HTTPRoute unless you also set `mcpServer.publicRoute: true`, so publishing it to your public entry point is a deliberate step; when you do, set `config.agentsExternalMcpUrl` to the URL clients should use. Tokens are signed with `secret.agentsMcpJwtSecret` when it is set, or with a key derived from `secretKey` otherwise, so a random `secretKey` is enough. A known public value is ignored and the derived key used instead, since anyone holding the signing key could mint a token for any user.
 
 ## Uninstalling the Chart
 

@@ -24,7 +24,7 @@ export function UpdateAvailableBanner({ onOpen }: UpdateAvailableBannerProps) {
         type="button"
         onClick={onOpen}
         title={t('app.updateAvailableHint', { version: data.tagName })}
-        className="flex items-center gap-2 w-full rounded-lg border border-sidebar-border px-3 py-2 text-xs font-medium text-sidebar-foreground hover:bg-sidebar-accent transition-colors text-left"
+        className="flex items-center gap-2 w-full rounded-lg border border-sidebar-border px-3 py-2 text-xs font-medium text-sidebar-foreground hover:bg-sidebar-accent transition-colors text-start"
       >
         <Download size={14} className="shrink-0 text-sidebar-muted" />
         <span className="flex-1 truncate">{t('app.updateAvailable')}</span>

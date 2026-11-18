@@ -297,7 +297,7 @@ export function ReconciliationPair({
       {/* Provenance, quieter, split only by a hairline. Boxes here would be
           boxes inside a row inside a card. */}
       <div className="mt-4 grid gap-4 sm:grid-cols-2 sm:divide-x divide-border">
-        <div className="space-y-2 sm:pr-5">
+        <div className="space-y-2 sm:pe-5">
           <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
             {t(isTransfer ? 'reconciliation.pair.otherLeg' : 'reconciliation.pair.owed')}
           </p>
@@ -312,7 +312,7 @@ export function ReconciliationPair({
           ))}
         </div>
 
-        <div className="space-y-2 sm:pl-5">
+        <div className="space-y-2 sm:ps-5">
           <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
             {t(isTransfer ? 'reconciliation.pair.thisLeg' : 'reconciliation.pair.arrived')}
           </p>
