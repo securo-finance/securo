@@ -286,16 +286,15 @@ def _extract_payee(raw: dict, indicator: str, source: str) -> Optional[str]:
 
     DBIT (money out): creditor (the recipient).
     CRDT (money in): debtor (the sender).
+
+    Only the counterparty's side is read. The other side is the account
+    holder, so falling back to it named the user as the payee of every row
+    whose bank leaves the counterparty out (#1042); no payee is left then.
     """
-    if source == "none":
+    if source in ("none", "description"):
         return None
-    creditor = _counterparty_name(raw, "creditor")
-    debtor = _counterparty_name(raw, "debtor")
-    if source == "description":
-        return None  # let description carry the info
-    if indicator == "DBIT":
-        return creditor or debtor
-    return debtor or creditor
+    side = "creditor" if indicator == "DBIT" else "debtor"
+    return _counterparty_name(raw, side) or None
 
 
 def _history_start(today: date, days: int) -> date:
