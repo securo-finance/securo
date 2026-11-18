@@ -1610,7 +1610,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "Après un intervalle de {{days}} jours",
-    "priceChangeInsufficient": "Au moins 3 frais publiés et liés sont nécessaires avant que Securo ne signale une variation de prix stable."
+    "priceChangeInsufficient": "Au moins 3 frais publiés et liés sont nécessaires avant que Securo ne signale une variation de prix stable.",
+    "summaryIncome": "Revenus",
+    "summaryExpenses": "Dépenses",
+    "summaryNet": "Net",
+    "summaryTransfers": "Virements exclus : {{count}}",
+    "summaryUnconverted": "Sans taux de change, exclues : {{count}}",
+    "summaryFailed": "Impossible de charger les totaux du mois"
   },
   "rules": {
     "searchPlaceholder": "Rechercher des règles...",

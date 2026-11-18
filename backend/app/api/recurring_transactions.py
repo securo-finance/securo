@@ -1,8 +1,12 @@
 import uuid
+from datetime import date
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
+from app.core.config import get_settings
 from app.core.database import get_async_session
 from app.core.workspace_context import (
     WorkspaceContext,
@@ -14,6 +18,7 @@ from app.schemas.recurring_price_change import (
     RecurringPriceChangeRead,
 )
 from app.schemas.recurring_transaction import (
+    RecurringMonthSummary,
     RecurringTransactionCreate,
     RecurringTransactionRead,
     RecurringTransactionUpdate,
@@ -43,6 +48,21 @@ async def recent_price_changes(
     """Latest qualifying price change per series in the workspace, newest first."""
     return await recurring_price_change_service.get_recent_price_changes(
         session, ctx.workspace.id, limit
+    )
+
+
+@router.get("/summary", response_model=RecurringMonthSummary)
+async def recurring_month_summary(
+    month: Optional[date] = Query(None, description="Any day of the month; defaults to this month"),
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Income, expenses and net the active definitions expect in one month."""
+    return await recurring_transaction_service.get_month_summary(
+        session,
+        ctx.workspace.id,
+        month or app_today(),
+        ctx.user.primary_currency or get_settings().default_currency,
     )
 
 

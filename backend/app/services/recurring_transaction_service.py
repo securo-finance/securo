@@ -1,20 +1,26 @@
 import calendar
 import uuid
 from datetime import date, timedelta
+from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import and_, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.app_clock import app_today, get_workspace_timezone, today_in
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
-from app.schemas.recurring_transaction import RecurringTransactionCreate, RecurringTransactionUpdate
+from app.schemas.recurring_transaction import (
+    RecurringMonthSummary,
+    RecurringTransactionCreate,
+    RecurringTransactionUpdate,
+)
 from app.services import category_line_service, recurring_match_service
 from app.services.credit_card_service import apply_effective_date
-from app.services.fx_rate_service import stamp_primary_amount
+from app.services.fx_rate_service import convert_or_none, stamp_primary_amount
 
 
 async def _verify_account_in_workspace(
@@ -297,6 +303,101 @@ def get_occurrences_in_range(
         if len(occurrences) > 200:
             break
     return occurrences
+
+
+async def get_month_summary(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    month: date,
+    primary_currency: str,
+) -> RecurringMonthSummary:
+    """Income, expenses and net the active definitions expect in ``month``.
+
+    Each definition counts once per occurrence in the month, from its own
+    schedule (start date, frequency, day, end date, weekend adjustment), so a
+    weekly one counts four or five times and a yearly one only in its month.
+    Occurrences already generated count too: this is the month's plan, not
+    what is still to come. Ignored categories are left out, and so are
+    transfer-like ones, which are only counted. An amount in another
+    currency uses its stamped primary amount, or the month's first-day rate;
+    with neither, it is left out and counted, never read 1:1.
+    """
+    month_start = month.replace(day=1)
+    month_end = _advance_months(month_start, 1, 1)
+    result = await session.execute(
+        select(RecurringTransaction)
+        .outerjoin(Account, RecurringTransaction.account_id == Account.id)
+        .where(
+            RecurringTransaction.workspace_id == workspace_id,
+            RecurringTransaction.is_active == True,
+            RecurringTransaction.start_date < month_end + timedelta(days=2),
+            or_(Account.id.is_(None), Account.is_closed == False),
+        )
+        .options(selectinload(RecurringTransaction.category))
+    )
+
+    income = expenses = Decimal("0")
+    transfer_count = unconverted_count = 0
+    rates: dict[str, Optional[Decimal]] = {}
+    for rec in result.scalars().all():
+        occurrences = get_occurrences_in_range(
+            start=rec.start_date,
+            frequency=rec.frequency,
+            end_date=rec.end_date,
+            range_start=month_start,
+            range_end=month_end,
+            intended_day=rec.day_of_month or rec.start_date.day,
+            weekend_adjustment=rec.weekend_adjustment,
+        )
+        if not occurrences:
+            continue
+        template = abs(rec.amount)
+        if rec.has_category_lines and rec.category_lines:
+            parts = [(line.category, abs(line.amount)) for line in rec.category_lines]
+        else:
+            parts = [(rec.category, template)]
+        counted = sum(
+            (amount for category, amount in parts
+             if not (category and (category.is_ignored or category.treat_as_transfer))),
+            Decimal("0"),
+        )
+        if any(category and category.treat_as_transfer
+               and not category.is_ignored for category, _ in parts):
+            transfer_count += len(occurrences)
+        if not counted or not template:
+            continue
+
+        currency = (rec.currency or "").upper()
+        if currency == primary_currency.upper():
+            primary = template
+        elif rec.amount_primary is not None:
+            primary = abs(rec.amount_primary)
+        else:
+            if currency not in rates:
+                rates[currency] = (await convert_or_none(
+                    session, Decimal("1"), currency, primary_currency.upper(),
+                    month_start, decimals=10,
+                ))[0]
+            rate = rates[currency]
+            if rate is None:
+                unconverted_count += len(occurrences)
+                continue
+            primary = template * rate
+        total = (primary * counted / template * len(occurrences)).quantize(Decimal("0.01"))
+        if rec.type == "credit":
+            income += total
+        else:
+            expenses += total
+
+    return RecurringMonthSummary(
+        month=month_start,
+        currency=primary_currency,
+        income=income,
+        expenses=expenses,
+        net=income - expenses,
+        transfer_count=transfer_count,
+        unconverted_count=unconverted_count,
+    )
 
 
 async def generate_pending(

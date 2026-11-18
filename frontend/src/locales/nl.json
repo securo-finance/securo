@@ -1608,7 +1608,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "Na een onderbreking van {{days}} dagen",
-    "priceChangeInsufficient": "Er zijn minstens 3 gekoppelde geboekte afschrijvingen nodig voordat Securo een stabiele prijswijziging meldt."
+    "priceChangeInsufficient": "Er zijn minstens 3 gekoppelde geboekte afschrijvingen nodig voordat Securo een stabiele prijswijziging meldt.",
+    "summaryIncome": "Inkomsten",
+    "summaryExpenses": "Uitgaven",
+    "summaryNet": "Netto",
+    "summaryTransfers": "Uitgesloten overboekingen: {{count}}",
+    "summaryUnconverted": "Zonder wisselkoers, uitgesloten: {{count}}",
+    "summaryFailed": "De totalen van deze maand konden niet worden geladen"
   },
   "rules": {
     "searchPlaceholder": "Regels zoeken...",

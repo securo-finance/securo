@@ -1606,7 +1606,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "Μετά από κενό {{days}} ημερών",
-    "priceChangeInsufficient": "Απαιτούνται τουλάχιστον 3 συνδεδεμένες καταχωρημένες χρεώσεις πριν το Securo αναφέρει μια σταθερή αλλαγή τιμών."
+    "priceChangeInsufficient": "Απαιτούνται τουλάχιστον 3 συνδεδεμένες καταχωρημένες χρεώσεις πριν το Securo αναφέρει μια σταθερή αλλαγή τιμών.",
+    "summaryIncome": "Έσοδα",
+    "summaryExpenses": "Έξοδα",
+    "summaryNet": "Καθαρό",
+    "summaryTransfers": "Μεταφορές που εξαιρέθηκαν: {{count}}",
+    "summaryUnconverted": "Χωρίς συναλλαγματική ισοτιμία, εξαιρέθηκαν: {{count}}",
+    "summaryFailed": "Δεν ήταν δυνατή η φόρτωση των συνόλων του μήνα"
   },
   "rules": {
     "searchPlaceholder": "Αναζήτηση κανόνων...",

@@ -1702,7 +1702,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "After a {{days}}-day gap",
-    "priceChangeInsufficient": "At least 3 matched posted charges are needed before Securo reports a stable price change."
+    "priceChangeInsufficient": "At least 3 matched posted charges are needed before Securo reports a stable price change.",
+    "summaryIncome": "Příjmy",
+    "summaryExpenses": "Výdaje",
+    "summaryNet": "Čistý zůstatek",
+    "summaryTransfers": "Vynechané převody: {{count}}",
+    "summaryUnconverted": "Bez směnného kurzu, vynecháno: {{count}}",
+    "summaryFailed": "Součty za měsíc se nepodařilo načíst"
   },
   "rules": {
     "searchPlaceholder": "Hledat pravidla...",

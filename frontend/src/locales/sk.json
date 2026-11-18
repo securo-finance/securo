@@ -1686,7 +1686,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "Po prestávke {{days}} dní",
-    "priceChangeInsufficient": "Predtým, ako Securo oznámi stabilnú zmenu ceny, sú potrebné aspoň 3 prepojené zaúčtované poplatky."
+    "priceChangeInsufficient": "Predtým, ako Securo oznámi stabilnú zmenu ceny, sú potrebné aspoň 3 prepojené zaúčtované poplatky.",
+    "summaryIncome": "Príjmy",
+    "summaryExpenses": "Výdavky",
+    "summaryNet": "Čistý zostatok",
+    "summaryTransfers": "Vynechané prevody: {{count}}",
+    "summaryUnconverted": "Bez výmenného kurzu, vynechané: {{count}}",
+    "summaryFailed": "Súčty za mesiac sa nepodarilo načítať"
   },
   "rules": {
     "searchPlaceholder": "Hľadať pravidlá...",

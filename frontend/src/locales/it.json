@@ -1610,7 +1610,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "Dopo un intervallo di {{days}} giorni",
-    "priceChangeInsufficient": "Sono necessari almeno 3 addebiti pubblicati e collegati prima che Securo segnali una variazione di prezzo stabile."
+    "priceChangeInsufficient": "Sono necessari almeno 3 addebiti pubblicati e collegati prima che Securo segnali una variazione di prezzo stabile.",
+    "summaryIncome": "Entrate",
+    "summaryExpenses": "Uscite",
+    "summaryNet": "Netto",
+    "summaryTransfers": "Trasferimenti esclusi: {{count}}",
+    "summaryUnconverted": "Senza tasso di cambio, esclusi: {{count}}",
+    "summaryFailed": "Impossibile caricare i totali del mese"
   },
   "rules": {
     "searchPlaceholder": "Cerca regole...",
