@@ -178,6 +178,25 @@ async def test_owner_own_split_expense_is_not_reprojected_in_another_workspace(
 
 
 @pytest.mark.asyncio
+async def test_owner_does_not_see_a_workspace_row_as_shared(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A linked self-member must not turn a coworker's row in the owner's
+    own workspace into a locked "shared" row: only the other workspace's
+    share is projected to the owner."""
+    group, me, friend, guest, guest_ws = await _trip_group(
+        session, test_user, test_workspace, linked_self=True
+    )
+    await _record_split_expense(
+        session, guest, test_workspace, [me, friend], "60.00", "Team lunch"
+    )
+
+    rows, _, _ = await get_transactions(session, test_workspace.id, test_user.id)
+    row = next(r for r in rows if r.description == "Team lunch")
+    assert row.is_shared is False
+
+
+@pytest.mark.asyncio
 async def test_owner_group_stays_reachable_from_their_other_workspace(
     session: AsyncSession, test_user, test_workspace
 ):

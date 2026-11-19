@@ -849,26 +849,28 @@ async def _tag_shared_view(
     from app.models.group import Group, GroupMember
 
     # Every member row that represents the viewer: the memberships linked
-    # to them, and the self-member they created (often unlinked) in a
-    # group they own (#1305). A cross-workspace share can be on either.
+    # to them, and the self-member they created in a group they own (#1305).
     member_rows = await session.execute(
         select(
-            GroupMember.id, GroupMember.group_id, GroupMember.linked_user_id
+            GroupMember.id,
+            GroupMember.group_id,
+            GroupMember.is_self,
+            Group.user_id.label("owner_id"),
         )
         .outerjoin(Group, Group.id == GroupMember.group_id)
         .where(viewer_member_predicate(user_id))
     )
+    # Split the two ends apart. The owner's self-member, linked or not,
+    # only carries shares that live in another workspace (the invited
+    # member's expense); inside the group's own workspace its parent row
+    # is already native, so it is matched for cross-workspace rows only.
     member_to_group: dict[uuid.UUID, uuid.UUID] = {}
-    # The viewer's own self-member carries shares that live in another
-    # workspace (the invited member's expense). Inside the group's own
-    # workspace the parent row is already native, so it is only matched
-    # for cross-workspace rows below.
     self_member_to_group: dict[uuid.UUID, uuid.UUID] = {}
     for row in member_rows:
-        if row.linked_user_id == user_id:
-            member_to_group[row.id] = row.group_id
-        else:
+        if row.is_self and row.owner_id == user_id:
             self_member_to_group[row.id] = row.group_id
+        else:
+            member_to_group[row.id] = row.group_id
 
     # Map every split-member that appears in this batch → group, so we
     # can also tag owner-side transactions with their group. (The
