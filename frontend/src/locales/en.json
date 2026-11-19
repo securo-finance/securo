@@ -2685,6 +2685,15 @@
     "brandSelfHosted": "Self-hosted",
     "brandPrivate": "Private by design"
   },
+  "accountantExport": {
+    "title": "Accountant export",
+    "description": "Download the categorized transactions and the profit and loss of a period, in the format your accountant's software opens directly. Amounts are the full transaction value, before splits with other people.",
+    "startDate": "Start date",
+    "endDate": "End date",
+    "download": "Download package",
+    "error": "Could not build the export",
+    "formatHint": "One zip with transactions.csv and profit-and-loss.csv, using the separators and encoding spreadsheet and accounting tools read without adjustment. Each amount is the transaction's full value, not your share of a split."
+  },
   "backup": {
     "button": "Backup",
     "downloading": "Downloading...",
