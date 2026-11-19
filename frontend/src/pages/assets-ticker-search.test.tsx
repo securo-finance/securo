@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 
 import AssetsPage from '@/pages/assets'
 import { renderWithProviders, t } from '@/test/utils'
@@ -62,5 +62,45 @@ describe('Ticker search on the Assets page', () => {
     await waitFor(() =>
       expect(api.assets.marketSearch).toHaveBeenCalledWith('cronos', 10, 'BRL'),
     )
+  })
+
+  it('ignores a response for a query that was already replaced (issue #621)', async () => {
+    const { user } = renderWithProviders(<AssetsPage />)
+
+    await user.click(await screen.findByRole('button', { name: t('assets.addAsset') }))
+    await user.click(await screen.findByRole('button', { name: t('assets.marketPrice') }))
+
+    let resolveOld: (rows: unknown[]) => void = () => {}
+    let resolveNew: (rows: unknown[]) => void = () => {}
+    api.assets.marketSearch
+      .mockReturnValueOnce(new Promise(resolve => { resolveOld = resolve }))
+      .mockReturnValueOnce(new Promise(resolve => { resolveNew = resolve }))
+
+    const input = screen.getByPlaceholderText(t('assets.tickerPlaceholder'))
+    await user.type(input, 'cro')
+    await waitFor(() => expect(api.assets.marketSearch).toHaveBeenCalledTimes(1), {
+      timeout: 2000,
+    })
+    await user.type(input, 'nos')
+    await waitFor(() => expect(api.assets.marketSearch).toHaveBeenCalledTimes(2), {
+      timeout: 2000,
+    })
+
+    // The newer query answers first; the older one must not overwrite it when
+    // it lands afterwards.
+    await act(async () => {
+      resolveNew([
+        { symbol: 'CRO-BRL', name: 'Cronos', exchange: 'CCC', quote_type: 'CRYPTOCURRENCY' },
+      ])
+    })
+    await screen.findByText('CRO-BRL')
+
+    await act(async () => {
+      resolveOld([
+        { symbol: 'STALE-USD', name: 'Stale Cronos', exchange: 'CCC', quote_type: 'CRYPTOCURRENCY' },
+      ])
+    })
+    expect(screen.queryByText('STALE-USD')).not.toBeInTheDocument()
+    expect(screen.getByText('CRO-BRL')).toBeInTheDocument()
   })
 })

@@ -659,20 +659,26 @@ export default function AssetsPage() {
       setTickerMatches([])
       return
     }
+    // A request already on the wire when the query or the currency changes
+    // must not answer for the new one: clearTimeout only stops the timer.
+    let ignored = false
     setTickerSearchLoading(true)
     const handle = window.setTimeout(async () => {
       try {
         // The display currency lets the backend list the coin's pair in the
         // user's own currency first (issue #621).
         const results = await assets.marketSearch(q, 10, userCurrency)
-        setTickerMatches(results)
+        if (!ignored) setTickerMatches(results)
       } catch {
-        setTickerMatches([])
+        if (!ignored) setTickerMatches([])
       } finally {
-        setTickerSearchLoading(false)
+        if (!ignored) setTickerSearchLoading(false)
       }
     }, 300)
-    return () => window.clearTimeout(handle)
+    return () => {
+      ignored = true
+      window.clearTimeout(handle)
+    }
   }, [formMethod, formTickerQuery, selectedQuote, userCurrency])
 
   async function pickTickerMatch(match: MarketSymbolMatch) {

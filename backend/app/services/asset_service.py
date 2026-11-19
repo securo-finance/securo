@@ -323,14 +323,17 @@ def rank_symbol_matches(
     # should not rank a gold-backed token above the gold ETFs.
     crypto_first = any(score <= 3 and _is_crypto_match(match) for match, score in scored)
 
-    def sort_key(entry: tuple[MarketSymbolMatch, int]) -> tuple[int, int, int, str]:
+    def sort_key(entry: tuple[MarketSymbolMatch, int]) -> tuple[int, int, int]:
         match, score = entry
-        crypto = crypto_first and _is_crypto_match(match)
-        if not crypto:
-            return (score, 1, 0, match.symbol)
-        quote = _quote_currency(match.symbol)
-        currency_rank = 0 if quote == preferred else 1 if quote == "USD" else 2
-        return (score, 0, currency_rank, match.symbol)
+        if crypto_first and _is_crypto_match(match):
+            quote = _quote_currency(match.symbol)
+            currency_rank = 0 if quote == preferred else 1 if quote == "USD" else 2
+            return (score, 0, currency_rank)
+        # The query names no coin (or this row is not one): at the same score a
+        # non-crypto instrument goes first, so "gold" keeps the gold ETFs above
+        # a gold-backed token. No symbol in the key: equal rows keep the
+        # provider's own order (sorted() is stable).
+        return (score, 1, int(_is_crypto_match(match)))
 
     return [match for match, _ in sorted(scored, key=sort_key)]
 

@@ -96,24 +96,27 @@ def test_usd_comes_after_the_preferred_currency_and_before_the_rest():
 
 def test_a_query_that_names_no_coin_keeps_equities_first():
     # "gold" is a word in the token's name, not the coin itself, so the gold
-    # ETFs keep their place above the PAX Gold token.
+    # ETFs keep their place above the PAX Gold token. The token comes first
+    # from the provider and its symbol sorts before SGOL, so only the crypto
+    # tie-breaker can put the ETF ahead.
     matches = [
         _crypto("PAXG-USD", "PAX Gold"),
+        _equity("SGOL", "abrdn Physical Gold Shares"),
         _equity("GLD", "SPDR Gold Shares"),
-        _equity("IAU", "iShares Gold Trust"),
     ]
 
     assert _symbols(rank_symbol_matches(matches, "gold", "USD")) == [
+        "SGOL",
         "GLD",
-        "IAU",
         "PAXG-USD",
     ]
 
 
 def test_provider_order_is_kept_between_equally_good_matches():
-    matches = [_equity("AAPL", "Apple Inc."), _equity("APLE", "Apple Hospitality")]
+    # Reversed on purpose: sorting by symbol would answer AAPL, APLE.
+    matches = [_equity("APLE", "Apple Hospitality"), _equity("AAPL", "Apple Inc.")]
 
-    assert _symbols(rank_symbol_matches(matches, "apple", "USD")) == ["AAPL", "APLE"]
+    assert _symbols(rank_symbol_matches(matches, "apple", "USD")) == ["APLE", "AAPL"]
 
 
 def test_a_single_result_is_returned_unchanged():
