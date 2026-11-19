@@ -1852,18 +1852,30 @@ async def _claim_first_import(
     )
 
 
+def _feed_came_whole(provider: BankProvider, account_external_id: str) -> bool:
+    """The provider returned this account's transactions to the end.
+
+    A feed the provider marked incomplete, or whose pages stopped before
+    the last, can be missing any row, a card payment included."""
+    for flagged in ("incomplete_account_ids", "truncated_account_ids"):
+        ids = getattr(provider, flagged, None)
+        if isinstance(ids, set) and account_external_id in ids:
+            return False
+    return True
+
+
 async def _set_aside_card_mirrors(
     session: AsyncSession,
-    connection_id: uuid.UUID,
+    connection: BankConnection,
     new_tx_ids: list[uuid.UUID],
-    refreshed_account_ids: set[uuid.UUID],
+    complete_account_ids: set[uuid.UUID],
 ) -> None:
     """Ignore card purchases the connection also reports on their account,
     then reconcile those cards' opening balance, which no longer counts
-    them (issue #1460). Only accounts whose balance this sync set are
-    compared."""
+    them (issue #1460). Only accounts whose transaction feed this sync
+    read whole are compared."""
     touched = await ignore_mirrored_card_charges(
-        session, connection_id, new_tx_ids, refreshed_account_ids
+        session, connection, new_tx_ids, complete_account_ids
     )
     if not touched:
         return
@@ -2049,7 +2061,14 @@ async def _run_first_import(
         await sync_opening_balance_for_connected_account(session, account)
 
     await _set_aside_card_mirrors(
-        session, connection.id, new_tx_ids, {account.id for account, _ in accounts}
+        session,
+        connection,
+        new_tx_ids,
+        {
+            account.id
+            for account, acc_data in accounts
+            if _feed_came_whole(provider, acc_data.external_id)
+        },
     )
 
     # Detect transfer pairs among newly synced transactions
@@ -3880,10 +3899,10 @@ async def sync_connection(
         user = await session.get(User, user_id)
         user_currency = user.primary_currency if user else get_settings().default_currency
         new_tx_ids: list[uuid.UUID] = []
-        # Accounts whose balance this run set from the provider. One the
-        # provider skipped keeps an old balance, so the card mirror check
-        # leaves it out.
-        refreshed_account_ids: set[uuid.UUID] = set()
+        # Accounts whose balance and whole transaction feed this run read.
+        # One skipped, throttled or cut short may be missing rows (a card
+        # payment among them), so the card mirror check leaves it out.
+        complete_feed_account_ids: set[uuid.UUID] = set()
         merged_count = 0
         live_txn_external_ids: dict[uuid.UUID, set[str]] = {}
         incomplete_fetch_account_ids: set[uuid.UUID] = set()
@@ -4092,7 +4111,6 @@ async def sync_connection(
                 session.add(account)
                 await session.flush()
 
-            refreshed_account_ids.add(account.id)
             await _sync_reserved_balances(session, account, acc_data)
 
             # Fetch the bills feed before transactions so transaction → bill
@@ -4155,6 +4173,8 @@ async def sync_connection(
             incomplete = getattr(provider, "incomplete_account_ids", None)
             if isinstance(incomplete, set) and acc_data.external_id in incomplete:
                 incomplete_fetch_account_ids.add(account.id)
+            if _feed_came_whole(provider, acc_data.external_id):
+                complete_feed_account_ids.add(account.id)
             if not import_pending:
                 transactions_data = [t for t in transactions_data if t.status != "pending"]
 
@@ -4570,11 +4590,14 @@ async def sync_connection(
             await _drop_finance_charges_with_twins(session, account)
             await sync_opening_balance_for_connected_account(session, account)
 
+        # Every run, new rows or not: a purchase an earlier run could not
+        # decide (its card or account skipped) is retried once both read.
+        await _set_aside_card_mirrors(
+            session, connection, new_tx_ids, complete_feed_account_ids
+        )
+
         # Detect transfer pairs among newly synced transactions
         if new_tx_ids:
-            await _set_aside_card_mirrors(
-                session, connection.id, new_tx_ids, refreshed_account_ids
-            )
             await detect_transfer_pairs(session, workspace_id, candidate_ids=new_tx_ids)
 
             # Then settle whatever this money was promised against. It runs

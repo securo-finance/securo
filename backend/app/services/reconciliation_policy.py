@@ -453,18 +453,22 @@ MATCH_TRANSFER: dict[str, Any] = {
 #: debit.
 #:
 #: The defaults are narrow on purpose. Only synced rows of **one
-#: connection** are compared, only when the card owes nothing after the
-#: sync (a card settled on the spot never carries a balance; a card with
-#: a bill does), and only the exact amount within two days, with each
-#: leg having to name the other as its single answer. A card that
-#: received a payment of that amount was just paid off, so its purchase
-#: is left alone. A card copy already set aside still claims its
-#: account copy, and one a person brought back is not paired again by a
-#: later sync, while a card row whose copy arrives late still can be.
-#: Accounts the sync did not refresh are not compared. The card's copy is
-#: the one set aside, since the account's copy is the money that moved.
-#: It is marked ignored rather than deleted, so a person can bring it
-#: back and the next sync leaves it as they set it.
+#: connection** are compared, and only accounts whose transaction feed
+#: came back whole in that sync. The card must owe nothing (a card
+#: settled on the spot never carries a balance; a card with a bill
+#: does), the other side must be a current or savings account, and the
+#: two debits must have the exact amount and currency within two days,
+#: each naming the other as its single answer. A card that received a
+#: payment of that amount (up to `payment_after_days` later) was just
+#: paid off, so its purchase is left alone, and a card is treated as
+#: debited on the spot only once it has shown `min_pairs` such pairs.
+#: Each pair made is written to the reconciliation history, and that
+#: record is the pair from then on: its account copy is taken for good,
+#: and its card copy is never decided again, so one a person brought
+#: back stays back. Rows a sync could not decide (an account skipped, a
+#: copy not in yet) are retried for `retry_days`. The card's copy is the
+#: one set aside, since the account's copy is the money that moved. It is
+#: marked ignored rather than deleted, so a person can bring it back.
 #:
 #: Not on the rules page yet, like the placeholder node: it is written as
 #: a document so surfacing it is a change to the page, not to the code.
@@ -494,6 +498,14 @@ MATCH_CARD_MIRROR: dict[str, Any] = {
             },
         },
     ],
+    "card": {
+        # The accounts a card debited on the spot draws from. A loan
+        # repayment of the same amount is not a copy of a purchase.
+        "paid_from": ["checking", "savings"],
+        "min_pairs": 2,
+        "payment_after_days": 10,
+        "retry_days": 30,
+    },
     "on_ambiguity": "suggest",
 }
 
