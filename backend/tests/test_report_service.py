@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.account import Account
 from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.asset import Asset
+from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
 from app.models.bank_connection import BankConnection
 from app.models.transaction import Transaction
@@ -24,7 +25,7 @@ from app.schemas.report import (
     ReportResponse,
     ReportSummary,
 )
-from app.services import report_service
+from app.services import asset_service, report_service
 from app.api.reports import (
     _add_years,
     _financial_year_start_month,
@@ -34,7 +35,6 @@ from app.api.reports import (
 from app.core.app_clock import today_in, use_resolved_timezone
 from app.services.report_service import (
     _add_months,
-    _asset_value_at,
     _date_points,
     _format_date_label,
     _net_worth_at,
@@ -823,7 +823,7 @@ async def test_net_worth_report_has_empty_category_trend(session: AsyncSession, 
 
 
 # ---------------------------------------------------------------------------
-# _asset_value_at
+# _net_worth_at: assets
 # ---------------------------------------------------------------------------
 
 
@@ -851,7 +851,7 @@ async def _add_txn(session, user_id, account_id, amount, txn_type, txn_date, sou
 
 
 @pytest.mark.asyncio
-async def test_asset_value_at_with_entries(session: AsyncSession, test_user, test_workspace: User):
+async def test_net_worth_asset_with_entries(session: AsyncSession, test_user, test_workspace: User):
     asset = Asset(
         id=uuid.uuid4(), user_id=test_user.id, name="House",
         type="real_estate", currency="BRL",
@@ -870,12 +870,12 @@ async def test_asset_value_at_with_entries(session: AsyncSession, test_user, tes
     session.add_all([v1, v2])
     await session.commit()
 
-    total = await _asset_value_at(session, test_workspace.id, date.today(), "BRL")
+    total = (await _net_worth_at(session, test_workspace.id, date.today(), "BRL")).breakdowns["assets"]
     assert total == 110000.0
 
 
 @pytest.mark.asyncio
-async def test_asset_value_at_fallback_purchase_price(session: AsyncSession, test_user, test_workspace: User):
+async def test_net_worth_asset_fallback_purchase_price(session: AsyncSession, test_user, test_workspace: User):
     asset = Asset(
         id=uuid.uuid4(), user_id=test_user.id, name="Car",
         type="vehicle", currency="BRL",
@@ -885,12 +885,12 @@ async def test_asset_value_at_fallback_purchase_price(session: AsyncSession, tes
     session.add(asset)
     await session.commit()
 
-    total = await _asset_value_at(session, test_workspace.id, date.today(), "BRL")
+    total = (await _net_worth_at(session, test_workspace.id, date.today(), "BRL")).breakdowns["assets"]
     assert total == 50000.0
 
 
 @pytest.mark.asyncio
-async def test_asset_value_at_excludes_archived(session: AsyncSession, test_user, test_workspace: User):
+async def test_net_worth_asset_excludes_archived(session: AsyncSession, test_user, test_workspace: User):
     asset = Asset(
         id=uuid.uuid4(), user_id=test_user.id, name="Sold Car",
         type="vehicle", currency="BRL",
@@ -899,12 +899,12 @@ async def test_asset_value_at_excludes_archived(session: AsyncSession, test_user
     session.add(asset)
     await session.commit()
 
-    total = await _asset_value_at(session, test_workspace.id, date.today(), "BRL")
+    total = (await _net_worth_at(session, test_workspace.id, date.today(), "BRL")).breakdowns["assets"]
     assert total == 0.0
 
 
 @pytest.mark.asyncio
-async def test_asset_value_at_excludes_sold(session: AsyncSession, test_user, test_workspace: User):
+async def test_net_worth_asset_excludes_sold(session: AsyncSession, test_user, test_workspace: User):
     asset = Asset(
         id=uuid.uuid4(), user_id=test_user.id, name="Sold Asset",
         type="vehicle", currency="BRL",
@@ -914,12 +914,12 @@ async def test_asset_value_at_excludes_sold(session: AsyncSession, test_user, te
     session.add(asset)
     await session.commit()
 
-    total = await _asset_value_at(session, test_workspace.id, date.today(), "BRL")
+    total = (await _net_worth_at(session, test_workspace.id, date.today(), "BRL")).breakdowns["assets"]
     assert total == 0.0
 
 
 @pytest.mark.asyncio
-async def test_asset_value_at_purchase_date_after_cutoff(session: AsyncSession, test_user, test_workspace: User):
+async def test_net_worth_asset_purchase_date_after_cutoff(session: AsyncSession, test_user, test_workspace: User):
     asset = Asset(
         id=uuid.uuid4(), user_id=test_user.id, name="Future Asset",
         type="other", currency="BRL",
@@ -929,7 +929,7 @@ async def test_asset_value_at_purchase_date_after_cutoff(session: AsyncSession, 
     session.add(asset)
     await session.commit()
 
-    total = await _asset_value_at(session, test_workspace.id, date.today(), "BRL")
+    total = (await _net_worth_at(session, test_workspace.id, date.today(), "BRL")).breakdowns["assets"]
     assert total == 0.0
 
 
@@ -967,7 +967,217 @@ async def test_net_worth_counts_asset_sold_after_the_cutoff(
     assert on_sale.breakdowns["assets"] == 0.0
     after = await _net_worth_at(session, test_workspace.id, date(2025, 3, 31), "BRL")
     assert after.breakdowns["assets"] == 0.0
-    assert await _asset_value_at(session, test_workspace.id, date(2025, 2, 28), "BRL") == 29000.0
+
+
+async def _add_ledger_holding(session, test_user, test_workspace, name="Fund", **fields):
+    asset = Asset(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name=name, type="stock", currency="BRL", valuation_method="market_price",
+        ticker="FUND", position=0, **fields,
+    )
+    session.add(asset)
+    await session.flush()
+    return asset
+
+
+def _ledger_tx(asset, test_workspace, kind, quantity, price, when):
+    return AssetTransaction(
+        asset_id=asset.id, workspace_id=test_workspace.id, kind=kind,
+        quantity=Decimal(str(quantity)), price=Decimal(str(price)),
+        fee=Decimal("0"), date=when,
+    )
+
+
+async def _open_ledger_holding(session, test_user, test_workspace):
+    """Two buys and one stored price, with the cost basis recompute_and_cache leaves."""
+    asset = await _add_ledger_holding(
+        session, test_user, test_workspace, units=Decimal("40"),
+        purchase_price=Decimal("6300"), purchase_date=date(2026, 3, 2),
+    )
+    session.add_all([
+        _ledger_tx(asset, test_workspace, "buy", 20, 150, date(2026, 3, 2)),
+        _ledger_tx(asset, test_workspace, "buy", 20, 165, date(2026, 7, 1)),
+        AssetValue(asset_id=asset.id, amount=Decimal("6800"), price=Decimal("170"),
+                   date=date(2026, 11, 10), source="sync"),
+    ])
+    await session.commit()
+    return asset
+
+
+@pytest.mark.asyncio
+async def test_net_worth_values_an_open_holding_from_its_ledger(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The report values a market-priced holding as ledger units x price, the
+    way the Assets page does, not from the cost basis or the last stored amount."""
+    await _open_ledger_holding(session, test_user, test_workspace)
+
+    for cutoff, expected in [
+        (date(2026, 4, 30), 3000.0),
+        (date(2026, 7, 31), 6600.0),
+        (date(2026, 11, 15), 6800.0),
+    ]:
+        point = await _net_worth_at(session, test_workspace.id, cutoff, "BRL")
+        assert point.breakdowns["assets"] == expected
+        _, as_of_total = await asset_service.get_asset_values_at(
+            session, test_workspace.id, as_of_date=cutoff,
+            primary_currency="BRL", by_workspace=True,
+        )
+        assert point.breakdowns["assets"] == pytest.approx(as_of_total)
+
+    # A Collection with no wallets holds no assets.
+    empty = await _net_worth_at(
+        session, test_workspace.id, date(2026, 11, 15), "BRL",
+        account_ids=[], asset_group_ids=[],
+    )
+    assert empty.breakdowns["assets"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_net_worth_values_a_sold_holding_from_its_ledger(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A fully sold holding keeps its ledger value until the sale day."""
+    asset = await _add_ledger_holding(
+        session, test_user, test_workspace, units=Decimal("0"),
+        purchase_price=None, sell_date=date(2026, 11, 17),
+    )
+    session.add_all([
+        _ledger_tx(asset, test_workspace, "buy", 25, 110, date(2026, 3, 2)),
+        _ledger_tx(asset, test_workspace, "sell", 25, 125, date(2026, 11, 17)),
+    ])
+    await session.commit()
+
+    before = await _net_worth_at(session, test_workspace.id, date(2026, 6, 30), "BRL")
+    assert before.breakdowns["assets"] == 2750.0
+    on_sale = await _net_worth_at(session, test_workspace.id, date(2026, 11, 17), "BRL")
+    assert on_sale.breakdowns["assets"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_net_worth_replays_a_split(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Units are replayed through a split, so the price after it applies to 1000 units."""
+    asset = await _add_ledger_holding(
+        session, test_user, test_workspace, units=Decimal("1000"),
+    )
+    session.add_all([
+        _ledger_tx(asset, test_workspace, "buy", 10, 480, date(2026, 1, 5)),
+        AssetTransaction(
+            asset_id=asset.id, workspace_id=test_workspace.id, kind="split",
+            quantity=Decimal("0"), price=Decimal("0"), fee=Decimal("0"),
+            old_units=1, new_units=100, date=date(2026, 10, 27),
+        ),
+        AssetValue(asset_id=asset.id, amount=Decimal("5000"), price=Decimal("500"),
+                   date=date(2026, 10, 26), source="sync"),
+        AssetValue(asset_id=asset.id, amount=Decimal("5000"), price=Decimal("5"),
+                   date=date(2026, 10, 27), source="sync"),
+        AssetValue(asset_id=asset.id, amount=Decimal("51"), price=Decimal("5.1"),
+                   date=date(2026, 10, 28), source="sync"),
+    ])
+    await session.commit()
+
+    point = await _net_worth_at(session, test_workspace.id, date(2026, 10, 28), "BRL")
+    _, as_of_total = await asset_service.get_asset_values_at(
+        session, test_workspace.id, as_of_date=date(2026, 10, 28),
+        primary_currency="BRL", by_workspace=True,
+    )
+    assert point.breakdowns["assets"] == pytest.approx(5100.0)
+    assert point.breakdowns["assets"] == pytest.approx(as_of_total)
+
+
+@pytest.mark.asyncio
+async def test_net_worth_report_matches_snapshots_for_ledger_holdings(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The report loads the assets once for the whole range; every point still
+    equals a snapshot that loads for its own cutoff."""
+    await _open_ledger_holding(session, test_user, test_workspace)
+
+    report = await get_net_worth_report(
+        session, test_workspace.id, test_user.id, interval="monthly", currency="BRL",
+        start_date=date(2026, 3, 1), end_date=date(2026, 11, 15),
+    )
+    cutoffs = _date_points(date(2026, 3, 1), date(2026, 11, 15), "monthly")
+    assert len(report.trend) == len(cutoffs)
+    for point, cutoff in zip(report.trend, cutoffs):
+        snapshot = await _net_worth_at(session, test_workspace.id, cutoff, "BRL")
+        assert point.breakdowns["assets"] == snapshot.breakdowns["assets"]
+    assert report.trend[-1].breakdowns["assets"] == 6800.0
+    # April holds only the first buy (20 x 150), not the 6300 cost basis.
+    april = next(p for p, c in zip(report.trend, cutoffs) if c == date(2026, 4, 30))
+    assert april.breakdowns["assets"] == 3000.0
+
+
+@pytest.mark.asyncio
+async def test_net_worth_report_drops_an_asset_from_its_sale_month(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The report loads assets once for the range, so each point re-applies the
+    sale date: a car sold on May 15 counts at the end of March and April only."""
+    car = Asset(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Sold Car", type="vehicle", currency="BRL", valuation_method="manual",
+        purchase_date=date(2026, 2, 1), purchase_price=Decimal("29000"),
+        sell_date=date(2026, 5, 15),
+    )
+    session.add(car)
+    await session.commit()
+
+    report = await get_net_worth_report(
+        session, test_workspace.id, test_user.id, interval="monthly", currency="BRL",
+        start_date=date(2026, 3, 1), end_date=date(2026, 8, 15),
+    )
+    assert _date_points(date(2026, 3, 1), date(2026, 8, 15), "monthly") == [
+        date(2026, 3, 31), date(2026, 4, 30), date(2026, 5, 31),
+        date(2026, 6, 30), date(2026, 7, 31), date(2026, 8, 15),
+    ]
+    assert [p.breakdowns["assets"] for p in report.trend] == [
+        29000.0, 29000.0, 0.0, 0.0, 0.0, 0.0,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_net_worth_value_does_not_depend_on_the_report_end(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A stored value before the first trade is ignored once the ledger is
+    replayed. The report loads the whole series, so a date reads the same
+    whatever the report's end is, and the same as the Assets page."""
+    asset = await _add_ledger_holding(session, test_user, test_workspace, units=Decimal("10"))
+    session.add_all([
+        AssetValue(asset_id=asset.id, amount=Decimal("1000"), price=Decimal("100"),
+                   date=date(2026, 1, 31), source="sync"),
+        _ledger_tx(asset, test_workspace, "buy", 10, 100, date(2026, 2, 15)),
+    ])
+    await session.commit()
+
+    january = date(2026, 1, 31)
+    short = await get_net_worth_report(
+        session, test_workspace.id, test_user.id, interval="monthly", currency="BRL",
+        start_date=date(2026, 1, 1), end_date=january,
+    )
+    long = await get_net_worth_report(
+        session, test_workspace.id, test_user.id, interval="monthly", currency="BRL",
+        start_date=date(2026, 1, 1), end_date=date(2026, 3, 31),
+    )
+    snapshot = await _net_worth_at(session, test_workspace.id, january, "BRL")
+
+    # The Assets page chart, filled forward to the date as the page does.
+    trend = (await asset_service.get_portfolio_trend(
+        session, test_workspace.id, test_user.id,
+    ))["trend"]
+    page_value = 0.0
+    for row in trend:
+        if date.fromisoformat(str(row["date"])) <= january:
+            page_value = float(str(row["_total"]))
+
+    assert short.trend[0].breakdowns["assets"] == 0.0
+    assert long.trend[0].breakdowns["assets"] == 0.0
+    assert snapshot.breakdowns["assets"] == 0.0
+    assert page_value == 0.0
+    assert long.trend[1].breakdowns["assets"] == 1000.0
 
 
 @pytest.mark.asyncio
@@ -3389,9 +3599,6 @@ async def test_net_worth_keeps_sub_cent_foreign_assets(
             amount=Decimal("0.001"), date=today, source="sync",
         ))
     await session.commit()
-
-    total = await _asset_value_at(session, test_workspace.id, today, "BRL")
-    assert total == pytest.approx(0.015)
 
     point = await _net_worth_at(session, test_workspace.id, today, "BRL")
     assert point.breakdowns["assets"] == pytest.approx(0.02)

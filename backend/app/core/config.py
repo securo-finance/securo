@@ -159,6 +159,11 @@ class Settings(BaseSettings):
     oidc_roles_claim: str = "groups"
     oidc_admin_roles: str = ""  # comma-separated provider roles/groups that grant Securo admin
     oidc_workspace_role_map: str = ""  # JSON: {"provider-role": "owner|editor|viewer"}
+    # RP-initiated logout (#1623): where to send the browser so signing out
+    # ends the provider's own session too. Empty reads end_session_endpoint
+    # from the discovery document; a provider with neither keeps today's
+    # behaviour (the local token is dropped and nothing else).
+    oidc_logout_url: str = ""
 
     # Deploy scripts that source the .env file with a shell need values with
     # spaces to be quoted, and some panels (PaaS env vars, manual exports)

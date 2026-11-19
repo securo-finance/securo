@@ -378,6 +378,48 @@ it('shows the mortgage breakdown editor for a payment opened from the dashboard'
   expect(screen.getByLabelText(t('transactions.mortgageInterest'))).toBeInTheDocument()
 })
 
+it('dates card rows by the bill due date the server reports (#1379)', async () => {
+  api.transactions.list.mockResolvedValue({
+    items: [{
+      id: 'charge-1', user_id: 'user-1', account_id: 'card-c', category_id: null,
+      category: null, external_id: null, description: 'October charge', original_description: null,
+      amount: 16.9, currency: 'USD', date: '2026-10-17', reporting_date: '2026-11-11',
+      type: 'debit', source: 'manual',
+      status: 'posted', payee: null, payee_id: null, payee_name: null, notes: null,
+      transfer_pair_id: null, amount_primary: null, fx_rate_used: null, fx_fallback: false,
+      installment_number: null, total_installments: null, installment_total_amount: null,
+      installment_purchase_date: null, installment_series_id: null, bill_id: null,
+      effective_bill_date: null, splits: [], is_ignored: false,
+    }],
+    total: 1,
+    page: 1,
+    limit: 500,
+  })
+  api.dashboard.projectedTransactions.mockResolvedValue([{
+    recurring_id: 'rec-1', account_id: 'card-c', description: 'November charge',
+    amount: 16.9, amount_primary: null, currency: 'USD', type: 'debit',
+    date: '2026-11-17', reporting_date: '2026-12-11',
+    category_id: null, category_name: null, category_icon: null, category_color: null,
+  }])
+
+  renderWithProviders(
+    <TooltipProvider delayDuration={0}>
+      <DashboardPage />
+    </TooltipProvider>,
+  )
+
+  await screen.findAllByText('October charge')
+  expect(screen.getAllByText(formatDateEnUs('2026-11-11')).length).toBeGreaterThan(0)
+  expect(screen.queryByText(formatDateEnUs('2026-10-17'))).not.toBeInTheDocument()
+  await screen.findAllByText('November charge')
+  expect(screen.getAllByText(formatDateEnUs('2026-12-11')).length).toBeGreaterThan(0)
+  expect(screen.queryByText(formatDateEnUs('2026-11-17'))).not.toBeInTheDocument()
+})
+
+function formatDateEnUs(isoDate: string) {
+  return new Date(isoDate + 'T00:00:00').toLocaleDateString('en-US')
+}
+
 describe('Dashboard available balance with reserves', () => {
   it.each([
     { currency: 'USD', current_balance: 1000, balance_primary: null, expected: 1000 },
