@@ -105,16 +105,17 @@ def _report_start_date(
 
 
 async def _get_report_assets(
-    session: AsyncSession, workspace_id: uuid.UUID, since: date, up_to: date,
+    session: AsyncSession, workspace_id: uuid.UUID, since: date,
     account_ids: Optional[list[uuid.UUID]] = None,
     asset_group_ids: Optional[list[uuid.UUID]] = None,
 ) -> tuple[list[Asset], dict[str, list[tuple[date, float]]]]:
-    """Assets held on ``since`` or later, with their native value series up to ``up_to``.
+    """Assets held on ``since`` or later, with their whole native value series.
 
-    The value at a date depends only on rows up to it, so one load serves
-    every snapshot of a report. The series is the one the Assets page and the
-    dashboard use (``get_asset_values_at``): ledger replay for market-priced
-    holdings, stored amounts otherwise.
+    The series is whole, not cut at the report's end: a market-priced holding's
+    past values come from replaying its whole ledger, so cutting rows at the end
+    could change an earlier value. It is the series the Assets page chart loads
+    (ledger replay for market-priced holdings, stored amounts otherwise), and one
+    load serves every snapshot of a report.
     """
     stmt = select(Asset).where(
         Asset.workspace_id == workspace_id,
@@ -124,7 +125,7 @@ async def _get_report_assets(
     if account_ids is not None:
         stmt = stmt.where(Asset.group_id.in_(asset_group_ids or []))
     assets = list((await session.execute(stmt)).scalars().all())
-    return assets, await _load_asset_native_values(session, assets, up_to_date=up_to)
+    return assets, await _load_asset_native_values(session, assets)
 
 
 async def _net_worth_at(
@@ -148,7 +149,7 @@ async def _net_worth_at(
     ``assets`` is the same for the assets: a caller building a multi-point
     trend passes the ``_get_report_assets`` result for the whole range in,
     instead of reloading the value series for every snapshot. Omit it to load
-    for this cutoff.
+    them here.
     """
     if accounts is None:
         accounts = await _get_open_accounts(session, workspace_id, account_ids, closed_after=cutoff)
@@ -222,7 +223,7 @@ async def _net_worth_at(
     # asset sold after the cutoff was still held on it.
     if assets is None:
         assets = await _get_report_assets(
-            session, workspace_id, cutoff, cutoff, account_ids, asset_group_ids
+            session, workspace_id, cutoff, account_ids, asset_group_ids
         )
     report_assets, asset_values = assets
     # Decimal until the one final rounding: sub-cent holdings must add up
@@ -389,11 +390,9 @@ async def get_net_worth_report(
     # period; each point below keeps the ones still open on its date.
     accounts = await _get_open_accounts(session, workspace_id, account_ids, closed_after=start)
 
-    # Load the assets once for the whole range: the latest cutoff any snapshot
-    # asks for is the last point, or `start` for the baseline.
+    # Load the assets once for the whole range.
     assets = await _get_report_assets(
-        session, workspace_id, start, max(points[-1], start) if points else start,
-        account_ids, asset_group_ids,
+        session, workspace_id, start, account_ids, asset_group_ids,
     )
 
     # Compute snapshot at each date point

@@ -1139,6 +1139,48 @@ async def test_net_worth_report_drops_an_asset_from_its_sale_month(
 
 
 @pytest.mark.asyncio
+async def test_net_worth_value_does_not_depend_on_the_report_end(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A stored value before the first trade is ignored once the ledger is
+    replayed. The report loads the whole series, so a date reads the same
+    whatever the report's end is, and the same as the Assets page."""
+    asset = await _add_ledger_holding(session, test_user, test_workspace, units=Decimal("10"))
+    session.add_all([
+        AssetValue(asset_id=asset.id, amount=Decimal("1000"), price=Decimal("100"),
+                   date=date(2026, 1, 31), source="sync"),
+        _ledger_tx(asset, test_workspace, "buy", 10, 100, date(2026, 2, 15)),
+    ])
+    await session.commit()
+
+    january = date(2026, 1, 31)
+    short = await get_net_worth_report(
+        session, test_workspace.id, test_user.id, interval="monthly", currency="BRL",
+        start_date=date(2026, 1, 1), end_date=january,
+    )
+    long = await get_net_worth_report(
+        session, test_workspace.id, test_user.id, interval="monthly", currency="BRL",
+        start_date=date(2026, 1, 1), end_date=date(2026, 3, 31),
+    )
+    snapshot = await _net_worth_at(session, test_workspace.id, january, "BRL")
+
+    # The Assets page chart, filled forward to the date as the page does.
+    trend = (await asset_service.get_portfolio_trend(
+        session, test_workspace.id, test_user.id,
+    ))["trend"]
+    page_value = 0.0
+    for row in trend:
+        if date.fromisoformat(str(row["date"])) <= january:
+            page_value = float(str(row["_total"]))
+
+    assert short.trend[0].breakdowns["assets"] == 0.0
+    assert long.trend[0].breakdowns["assets"] == 0.0
+    assert snapshot.breakdowns["assets"] == 0.0
+    assert page_value == 0.0
+    assert long.trend[1].breakdowns["assets"] == 1000.0
+
+
+@pytest.mark.asyncio
 async def test_net_worth_counts_account_closed_after_the_cutoff(
     session: AsyncSession, test_user, test_workspace: User,
 ):
