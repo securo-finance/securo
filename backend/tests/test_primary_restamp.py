@@ -23,6 +23,7 @@ from app.models.transaction import Transaction
 from app.models.user import User
 from app.models.workspace import Workspace
 from app.cli import restamp_primary_amounts
+from tests.conftest import TestSessionLocal
 from app.services.primary_restamp_service import (
     fetch_missing_today_rates,
     restamp_user_primary_amounts,
@@ -361,3 +362,39 @@ async def test_clearing_preferences_restamps_into_the_default_currency(
 
     await _reload(session, brl_rows)
     _assert_in_usd(brl_rows)
+
+
+@pytest.mark.asyncio
+async def test_a_switch_committed_meanwhile_is_compared_not_the_stale_user(
+    session: AsyncSession, test_user: User, brl_rows
+):
+    """This request loaded the user while the display was BRL; another one has
+    since switched to USD and restamped. Asking for BRL now is a change from
+    the committed USD, so it restamps back instead of trusting the stale BRL."""
+    from sqlalchemy import update as sa_update
+    from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
+
+    from app.core.auth import UserManager
+    from app.schemas.user import UserUpdate
+
+    stale_prefs = dict(test_user.preferences or {})
+    assert stale_prefs.get("currency_display", "BRL") == "BRL"
+    await session.execute(
+        sa_update(User)
+        .where(User.id == test_user.id)
+        .values(preferences={**stale_prefs, "currency_display": "USD"})
+        .execution_options(synchronize_session=False)
+    )
+    await session.commit()
+    async with TestSessionLocal() as other:
+        await restamp_user_primary_amounts(other, test_user.id)
+        await other.commit()
+
+    manager = UserManager(SQLAlchemyUserDatabase(session, User))
+    await manager.update(
+        UserUpdate(preferences={**stale_prefs, "currency_display": "BRL"}), test_user
+    )
+
+    await _reload(session, brl_rows)
+    assert brl_rows["usd"].amount_primary == Decimal("50.00")
+    assert brl_rows["brl"].amount_primary == Decimal("120.00")

@@ -180,6 +180,8 @@ async def restamp_user_primary_amounts(
 
     Flushes but does not commit; the caller owns the transaction.
     """
+    # Rows are read from the database, not from objects this session already
+    # holds, so "unchanged" is judged against what is stored.
     # Lock the owner's row until the caller commits, so a currency switch
     # committed meanwhile cannot leave rows stamped in the one read here. A
     # pending switch in this same session is flushed first, so the reload
@@ -202,16 +204,21 @@ async def restamp_user_primary_amounts(
             select(Transaction, Account.currency)
             .join(Account, Account.id == Transaction.account_id)
             .where(Transaction.user_id == user_id)
+            .execution_options(populate_existing=True)
         )
     ).all()
     recurring = (
         await session.execute(
-            select(RecurringTransaction).where(RecurringTransaction.user_id == user_id)
+            select(RecurringTransaction)
+            .where(RecurringTransaction.user_id == user_id)
+            .execution_options(populate_existing=True)
         )
     ).scalars().all()
     assets = (
         await session.execute(
-            select(Asset).where(Asset.user_id == user_id, Asset.purchase_price.is_not(None))
+            select(Asset)
+            .where(Asset.user_id == user_id, Asset.purchase_price.is_not(None))
+            .execution_options(populate_existing=True)
         )
     ).scalars().all()
 

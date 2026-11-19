@@ -2,6 +2,7 @@ import uuid
 from decimal import Decimal
 from typing import Optional, cast
 
+from sqlalchemy import select
 from fastapi import Depends, Request
 from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin, schemas
 from fastapi_users.authentication import (
@@ -75,7 +76,21 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         if user_update.password is not None:
             require_local_auth_enabled()
         new_currency = _requested_currency(user_update)
-        if new_currency is None or new_currency == user.primary_currency:
+        if new_currency is None:
+            return await super().update(user_update, user, safe=safe, request=request)
+        # Compare with the committed currency, under the row lock the restamp
+        # also takes: a switch another request committed meanwhile must not
+        # let this one change the currency without restamping. The lock lasts
+        # until this update commits, on either branch.
+        current = (
+            await self.db_session.execute(
+                select(User)
+                .where(User.id == user.id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
+        if new_currency == current.primary_currency:
             return await super().update(user_update, user, safe=safe, request=request)
         return await self._update_and_restamp(
             user_update, user, new_currency, safe=safe, request=request
