@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pyotp
@@ -57,6 +57,27 @@ async def test_setup_2fa(client: AsyncClient, auth_headers: dict):
     assert "secret" in data
     assert "otpauth_uri" in data
     assert "otpauth://totp/" in data["otpauth_uri"]
+
+
+async def test_setup_2fa_refused_when_already_enabled(
+    client: AsyncClient,
+    test_user,
+    session,
+    auth_headers: dict,
+):
+    secret = pyotp.random_base32()
+    test_user.totp_secret = secret
+    test_user.is_2fa_enabled = True
+    session.add(test_user)
+    await session.commit()
+
+    response = await client.post("/api/auth/2fa/setup", headers=auth_headers)
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "2FA is already enabled"
+    await session.refresh(test_user)
+    assert test_user.totp_secret == secret
+    assert test_user.is_2fa_enabled is True
 
 
 @pytest.mark.parametrize("path", ["/api/auth/2fa/setup", "/api/auth/2fa/enable"])
@@ -132,19 +153,17 @@ async def test_enable_2fa_invalid_code(client: AsyncClient, auth_headers: dict, 
 
 def test_verify_totp_allows_adjacent_time_windows():
     secret = pyotp.random_base32()
-    fixed_time = datetime(2026, 7, 19, 12, 0)
+    fixed_time = datetime(2026, 7, 19, 12, 0, tzinfo=timezone.utc)
     totp = pyotp.TOTP(secret)
     previous_code = totp.at(fixed_time, counter_offset=-1)
     next_code = totp.at(fixed_time, counter_offset=1)
+    distant_code = totp.at(fixed_time, counter_offset=2)
 
-    class FrozenDateTime(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return cls(2026, 7, 19, 12, 0, tzinfo=tz)
-
-    with patch("pyotp.totp.datetime.datetime", FrozenDateTime):
-        assert _verify_totp(secret, previous_code)
-        assert _verify_totp(secret, next_code)
+    # The time is handed to pyotp instead of freezing the clock it reads
+    # internally, which moved from datetime.now() to time.time() in 2.12.
+    assert _verify_totp(secret, previous_code, for_time=fixed_time)
+    assert _verify_totp(secret, next_code, for_time=fixed_time)
+    assert not _verify_totp(secret, distant_code, for_time=fixed_time)
 
 
 async def test_login_with_2fa(client: AsyncClient, test_user_with_2fa):

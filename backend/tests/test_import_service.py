@@ -86,6 +86,24 @@ class TestParseCsv:
         assert transactions[1].date == date(2026, 2, 15)
         assert transactions[1].type == "credit"
 
+    def test_parse_csv_date_with_time(self):
+        """Bank exports such as Revolut's put a time after the date."""
+        csv_content = (
+            "date,description,amount\n"
+            "2024-01-16 09:12:40,Tesco,-23.45\n"
+            "2024-01-17T08:00:01,Top-Up,500.00\n"
+        )
+        transactions, failed = parse_csv(csv_content.encode("utf-8"))
+
+        assert failed == []
+        assert [t.date for t in transactions] == [date(2024, 1, 16), date(2024, 1, 17)]
+
+        csv_content = "date,description,amount\n01/15/2024 13:45,A,-1\n02/03/2024 09:00,B,-2\n"
+        transactions, failed = parse_csv(csv_content.encode("utf-8"))
+
+        assert failed == []
+        assert [t.date for t in transactions] == [date(2024, 1, 15), date(2024, 2, 3)]
+
     def test_parse_csv_invalid_columns(self):
         """CSV with unrecognized column names should raise ValueError with found and expected columns."""
         csv_content = (
@@ -516,6 +534,10 @@ class TestDetectCsvColumns:
         csv_content = " date , description , amount \n2026-01-10,X,-1.00\n".encode("utf-8-sig")
         assert detect_csv_columns(csv_content) == ["date", "description", "amount"]
 
+    def test_detect_latin1(self):
+        csv_content = "Data;Histórico;Valor\n10/02/2026;PADARIA SÃO JOÃO;-25,50\n".encode("cp1252")
+        assert detect_csv_columns(csv_content) == ["Data", "Histórico", "Valor"]
+
     def test_detect_empty_file(self):
         assert detect_csv_columns(b"") == []
 
@@ -686,6 +708,34 @@ class TestParseQif:
         assert len(transactions) == 1
         assert transactions[0].amount == Decimal("1250.00")
 
+    def test_parse_qif_comma_grouped_and_comma_decimal_in_the_same_file(self):
+        """QIF has no column types: each amount's own shape decides the comma.
+
+        "1,250" and "1,250,000" keep importing as the grouped amounts they
+        were before, while "25,50" is a decimal — in one file.
+        """
+        qif_content = (
+            "D01/01/2026\n"
+            "T-1,250\n"
+            "PGrouped\n"
+            "^\n"
+            "D01/02/2026\n"
+            "T-1,250,000\n"
+            "PGrouped twice\n"
+            "^\n"
+            "D01/03/2026\n"
+            "T25,50\n"
+            "PDecimal\n"
+            "^\n"
+        )
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
+        assert failed_rows == []
+        assert [(t.description, t.amount, t.type) for t in transactions] == [
+            ("Grouped", Decimal("1250"), "debit"),
+            ("Grouped twice", Decimal("1250000"), "debit"),
+            ("Decimal", Decimal("25.50"), "credit"),
+        ]
+
     def test_parse_qif_latin1_encoding(self):
         """QIF files from legacy software (e.g. Microsoft Money) using Latin-1 encoding."""
         qif_content = (
@@ -699,6 +749,20 @@ class TestParseQif:
         assert len(transactions) == 1
         assert transactions[0].description == "Caf\u00e9 Fran\u00e7ais"
         assert transactions[0].amount == Decimal("75.00")
+        assert transactions[0].type == "debit"
+
+    def test_parse_qif_reads_windows_1252_minus_and_euro(self):
+        """A legacy export writes the minus as 0x96 and the euro as 0x80.
+
+        Read as Latin-1 those bytes are C1 controls: the sign is lost, so the
+        debit is dropped instead of imported. cp1252 reads them as the en dash
+        and the euro sign the file meant.
+        """
+        qif_content = b"D01/15/2026\nT\x9625,50\nPCAFE 3\x80\n^\n"
+        transactions, failed_rows = parse_qif(qif_content)
+        assert failed_rows == []
+        assert transactions[0].description == "CAFE 3\u20ac"
+        assert transactions[0].amount == Decimal("25.50")
         assert transactions[0].type == "debit"
 
     def test_parse_qif_two_digit_year(self):
@@ -725,6 +789,18 @@ class TestParseQif:
         assert len(transactions) == 1
         assert transactions[0].date == date(2026, 1, 15)
 
+
+    def test_parse_qif_apostrophe_space_padded_year(self):
+        """Quicken writes 2000-2009 dates with a space-padded year."""
+        qif_content = (
+            "D3/ 1' 8\n"
+            "T-100.00\n"
+            "PTest\n"
+            "^\n"
+        )
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
+        assert failed_rows == []
+        assert transactions[0].date == date(2008, 3, 1)
 
 class TestParseCamt:
     """Tests for the parse_camt function (ISO 20022 XML)."""

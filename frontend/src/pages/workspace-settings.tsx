@@ -42,6 +42,7 @@ import {
 } from '@/components/ui/dialog'
 import { AlertTriangle, Archive, Plus, Save, Trash2, Users } from 'lucide-react'
 import { WORKSPACE_KIND_LABEL_KEY } from '@/lib/workspace-kinds'
+import { AccountantExportSection } from '@/components/accountant-export'
 import { SUPPORTED_LANGS } from '@/lib/i18n'
 import { countryFlag } from '@/lib/country-flag'
 import { countryName } from '@/lib/country-name'
@@ -349,7 +350,7 @@ export default function WorkspaceSettingsPage() {
               className="rounded-lg"
               size="sm"
             >
-              <Save className="mr-2 h-4 w-4" />
+              <Save className="me-2 h-4 w-4" />
               {updateMutation.isPending ? t('common.loading') : t('common.save')}
             </Button>
           )}
@@ -431,7 +432,7 @@ export default function WorkspaceSettingsPage() {
                 <SelectContent>
                   {(supportedCurrencies ?? [{ code: editCurrency, symbol: editCurrency, name: editCurrency, flag: '' }]).map((c) => (
                     <SelectItem key={c.code} value={c.code}>
-                      <span className="mr-2">{c.flag}</span>
+                      <span className="me-2">{c.flag}</span>
                       {c.name}
                     </SelectItem>
                   ))}
@@ -474,7 +475,7 @@ export default function WorkspaceSettingsPage() {
                   <SelectItem value="__none__">—</SelectItem>
                   {sortedJurisdictions.map((code) => (
                     <SelectItem key={code} value={code}>
-                      <span className="mr-2">{countryFlag(code)}</span>
+                      <span className="me-2">{countryFlag(code)}</span>
                       {countryName(code, i18n.language)}
                     </SelectItem>
                   ))}
@@ -520,7 +521,7 @@ export default function WorkspaceSettingsPage() {
           </div>
           {canManage && (
             <Button onClick={() => setInviteOpen(true)} size="sm" className="rounded-lg">
-              <Plus className="mr-2 h-4 w-4" />
+              <Plus className="me-2 h-4 w-4" />
               {t('workspace.addMember')}
             </Button>
           )}
@@ -550,7 +551,7 @@ export default function WorkspaceSettingsPage() {
                     <p className="text-sm font-medium truncate">
                       {m.display_name || m.email}
                       {isMe && (
-                        <span className="ml-2 text-xs text-muted-foreground">
+                        <span className="ms-2 text-xs text-muted-foreground">
                           ({t('workspace.you')})
                         </span>
                       )}
@@ -599,6 +600,11 @@ export default function WorkspaceSettingsPage() {
         )}
       </section>
 
+      {/* Accountant export: the business workspace's books, for the period
+          the user picks. Any member may export; the server refuses other
+          workspace kinds. */}
+      {current.kind === 'business' && <AccountantExportSection />}
+
       {pluginsEnabled && <PluginsSection />}
 
       {/* Danger zone — owners only */}
@@ -630,7 +636,7 @@ export default function WorkspaceSettingsPage() {
               className="rounded-lg text-destructive hover:bg-destructive/10 hover:text-destructive"
               onClick={() => setArchiveOpen(true)}
             >
-              <Archive className="mr-2 h-4 w-4" />
+              <Archive className="me-2 h-4 w-4" />
               {t('workspace.archive', 'Arquivar')}
             </Button>
           </div>
@@ -781,7 +787,7 @@ export default function WorkspaceSettingsPage() {
               disabled={archiveMutation.isPending}
               className="rounded-lg"
             >
-              <Archive className="mr-2 h-4 w-4" />
+              <Archive className="me-2 h-4 w-4" />
               {archiveMutation.isPending ? t('common.loading') : t('workspace.archive', 'Arquivar')}
             </Button>
           </DialogFooter>

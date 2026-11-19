@@ -251,6 +251,20 @@ it('asks for confirmation before unlinking a transfer pair', async () => {
   expect(onUnlinkTransfer).not.toHaveBeenCalled()
 })
 
+it('warns in the unlink confirmation that both legs start counting in reports', async () => {
+  const { user } = renderTransferDialog(vi.fn())
+
+  await user.click(await screen.findByRole('button', { name: t('transactions.unlinkTransfer') }))
+  const confirmText = await screen.findByText(t('transactions.unlinkTransferConfirm'))
+  const confirmDialog = confirmText.closest('[role="dialog"]') as HTMLElement
+
+  expect(within(confirmDialog).getByText(t('transactions.unlinkTransferReportWarning'))).toBeInTheDocument()
+  // Screen readers announce the warning with the confirmation, not only the first sentence.
+  expect(confirmDialog).toHaveAccessibleDescription(
+    `${t('transactions.unlinkTransferConfirm')} ${t('transactions.unlinkTransferReportWarning')}`,
+  )
+})
+
 it('keeps the transfer linked when the unlink confirmation is cancelled', async () => {
   const onUnlinkTransfer = vi.fn()
   const { user } = renderTransferDialog(onUnlinkTransfer)
@@ -417,6 +431,40 @@ it('does not submit the transaction when Enter is pressed in a mortgage split fi
   await user.keyboard('{Enter}')
 
   expect(onSave).not.toHaveBeenCalled()
+})
+
+it('reopens a transaction split among people with its members still selected', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  const member = (id: string, name: string, is_self = false) => ({ id, name, is_self })
+  const other = { id: 'g-other', name: 'Other', members: [member('a1', 'Me', true), member('a2', 'Ana')] }
+  const trip = { id: 'g-trip', name: 'Trip', members: [member('b1', 'Me', true), member('b2', 'Bob'), member('b3', 'Carol')] }
+  vi.spyOn(groups, 'list').mockResolvedValue([other, trip] as never)
+  vi.spyOn(groups, 'get').mockImplementation(async (id: string) => (id === trip.id ? trip : other) as never)
+  const split = (id: string, memberId: string) => ({
+    id, transaction_id: 'tx-dinner', group_member_id: memberId, share_type: 'equal', share_amount: 10, share_pct: null,
+  })
+  renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture('unused', {
+        id: 'tx-dinner', amount: 30, transfer_pair_id: null,
+        splits: [split('s1', 'b1'), split('s2', 'b2'), split('s3', 'b3')] as never,
+      })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+    />,
+  )
+
+  expect(screen.getByRole('checkbox', { name: t('splitGroups.splitTransaction') })).toBeChecked()
+  expect(await screen.findByRole('checkbox', { name: 'Bob' })).toBeChecked()
+  expect(screen.getByRole('checkbox', { name: 'Carol' })).toBeChecked()
+  expect(screen.getByDisplayValue('Trip')).toBeInTheDocument()
 })
 
 function splitFixture(): Transaction {

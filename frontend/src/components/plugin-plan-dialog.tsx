@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Globe, KeyRound, RefreshCw, ShieldAlert, ShieldCheck, Trash2 } from 'lucide-react'
+import { Globe, KeyRound, Landmark, RefreshCw, ShieldAlert, ShieldCheck, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -183,7 +183,7 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
           </Button>
           {failed ? (
             <Button variant="outline" onClick={() => void refetch()} disabled={isFetching}>
-              <RefreshCw size={14} className="mr-1" />
+              <RefreshCw size={14} className="me-1" />
               {t('common.retry')}
             </Button>
           ) : (
@@ -192,7 +192,7 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
               onClick={() => shown && applyMutation.mutate(shown)}
               disabled={pending || !confirmable}
             >
-              {target.action === 'remove' && <Trash2 size={14} className="mr-1" />}
+              {target.action === 'remove' && <Trash2 size={14} className="me-1" />}
               {t(`plugins.confirm.${target.action}`)}
             </Button>
           )}
@@ -216,14 +216,16 @@ function CodeConsent({ code, action }: { code: PluginCodeConsent; action: Plugin
           {code.connections > 0
             ? t('plugins.code.removeConnections', { count: code.connections })
             : t('plugins.code.removeNothing')}
+          {(code.unlinks ?? 0) > 0 && <> {t('plugins.code.unlinks', { count: code.unlinks })}</>}
         </span>
       </div>
     )
   }
 
+  const providers = code.integrations.filter((integration) => integration.provides?.length)
   const isNew = (value: string, list: string[]) =>
     list.includes(value) && (
-      <span className="ml-1.5 rounded bg-amber-100 px-1 py-px text-[10px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+      <span className="ms-1.5 rounded bg-amber-100 px-1 py-px text-[10px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
         {t('plugins.code.new')}
       </span>
     )
@@ -234,6 +236,13 @@ function CodeConsent({ code, action }: { code: PluginCodeConsent; action: Plugin
         <ShieldAlert size={14} className="mt-0.5 shrink-0" />
         <span>{t('plugins.code.runsCode')}</span>
       </div>
+
+      {(code.unlinks ?? 0) > 0 && (
+        <div className="flex items-start gap-2 rounded-lg border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
+          <Landmark size={14} className="mt-0.5 shrink-0" />
+          <span>{t('plugins.code.unlinks', { count: code.unlinks })}</span>
+        </div>
+      )}
 
       <section className="space-y-1.5">
         <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -256,6 +265,26 @@ function CodeConsent({ code, action }: { code: PluginCodeConsent; action: Plugin
           </ul>
         )}
       </section>
+
+      {providers.length > 0 && (
+        <section className="space-y-1.5">
+          <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <Landmark size={12} />
+            {t('plugins.code.provides')}
+          </h3>
+          <ul className="space-y-1.5">
+            {providers.map((integration) => (
+              <li key={integration.key}>
+                <p className="text-xs font-medium">{localized(integration.name, lang)}</p>
+                <p className="text-xs text-muted-foreground">
+                  {(integration.provides ?? []).map((kind) => t(`plugins.code.kinds.${kind}`)).join(', ')}
+                </p>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-muted-foreground">{t('plugins.code.providesHint')}</p>
+        </section>
+      )}
 
       <section className="space-y-1.5">
         <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">

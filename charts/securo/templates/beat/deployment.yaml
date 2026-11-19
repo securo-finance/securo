@@ -39,6 +39,13 @@ spec:
                 {{- else }}
                 name: {{ include "securo.fullname" . }}-secrets
                 {{- end }}
+            {{- with .Values.celeryBeat.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.celeryBeat.extraEnv }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           volumeMounts:
             {{- if .Values.persistence.attachments.enabled }}
             - name: attachments
@@ -56,6 +63,9 @@ spec:
             - name: agent-embedding-models
               mountPath: /app/data/embedding_models
             {{- end }}
+            {{- with .Values.celeryBeat.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- if .Values.celeryBeat.resources }}
           resources:
             {{- toYaml .Values.celeryBeat.resources | nindent 12 }}
@@ -64,7 +74,7 @@ spec:
         {{- if .Values.persistence.attachments.enabled }}
         - name: attachments
           persistentVolumeClaim:
-            claimName: {{ include "securo.fullname" . }}-attachments
+            claimName: {{ include "securo.attachmentsClaimName" . }}
         {{- end }}
         {{- if .Values.persistence.backups.enabled }}
         - name: backups
@@ -80,5 +90,8 @@ spec:
         - name: agent-embedding-models
           persistentVolumeClaim:
             claimName: {{ include "securo.fullname" . }}-agent-embedding-models
+        {{- end }}
+        {{- with .Values.celeryBeat.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
         {{- end }}
 {{- end }}

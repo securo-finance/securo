@@ -21,6 +21,22 @@ class ConnectionInstitutionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class SyncFailureRead(BaseModel):
+    """Why the connection's last sync failed (issue #1405). `code` picks the
+    message and the action the user is offered; `detail` is the provider's
+    own code or HTTP status, never its free text."""
+
+    code: Literal[
+        "psu_present_required",
+        "consent_expired",
+        "reauthorize_at_provider",
+        "rate_limited",
+        "provider_error",
+    ]
+    at: datetime
+    detail: Optional[str] = None
+
+
 class BankConnectionRead(BankConnectionBase):
     id: uuid.UUID
     user_id: uuid.UUID
@@ -30,10 +46,15 @@ class BankConnectionRead(BankConnectionBase):
     settings: Optional[dict] = None
     status: str
     last_sync_at: Optional[datetime] = None
+    last_sync_failure: Optional[SyncFailureRead] = None
     created_at: datetime
     # Institutions this link spans. Empty for providers that are one
     # institution per connection — institution_name above covers those.
     institutions: list[ConnectionInstitutionRead] = []
+    # Set when a plugin syncs this connection: manage it through the plugin connection.
+    plugin_connection_id: Optional[uuid.UUID] = None
+    plugin_id: Optional[str] = None
+    integration: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.asset import Asset
 from app.models.category import Category
 from app.models.mortgage_payment_allocation import (
@@ -40,7 +41,7 @@ async def _seed_money(
     workspace: Workspace,
     categories: list[Category],
 ) -> None:
-    """A split purchase, a split recurring bill and a mortgage payment."""
+    """A split purchase, a split recurring bill, a mortgage payment and a reserved balance."""
     food, transport, _ = categories
     home = Asset(
         id=uuid.uuid4(),
@@ -115,7 +116,15 @@ async def _seed_money(
         next_occurrence=date(2026, 12, 1),
         has_category_lines=True,
     )
-    session.add_all([opening, payment, recurring])
+    reserved = AccountReservedBalance(
+        workspace_id=workspace.id,
+        account_id=checking.id,
+        external_id="cofrinho-1",
+        name="Emergency fund",
+        currency="USD",
+        amount=Decimal("1250.40"),
+    )
+    session.add_all([opening, payment, recurring, reserved])
     await session.flush()
     session.add_all(
         [
@@ -252,8 +261,19 @@ async def _money(session: AsyncSession, workspace_id: uuid.UUID) -> dict:
                 principal_entry.source if principal_entry else None,
             )
         )
+    reserved = sorted(
+        (accounts[row.account_id], row.external_id, row.name, row.currency, row.amount)
+        for row in (
+            await session.execute(
+                select(AccountReservedBalance).where(
+                    AccountReservedBalance.workspace_id == workspace_id
+                )
+            )
+        ).scalars()
+    )
     return {
         "balances": balances,
+        "reserved": reserved,
         "lines": lines,
         "recurring_lines": recurring_lines,
         "allocations": sorted(allocations),
@@ -293,6 +313,7 @@ async def test_round_trip_into_a_new_workspace_keeps_every_amount(
     assert len(before["recurring_lines"]) == 2
     assert before["allocations"][0][4] == Decimal("167.76")
     assert before["allocations"][0][5] == MORTGAGE_PRINCIPAL_SOURCE
+    assert before["reserved"] == [("Checking", "cofrinho-1", "Emergency fund", "USD", Decimal("1250.40"))]
 
     archive = await client.get("/api/export/backup", headers=auth_headers)
     assert archive.status_code == 200

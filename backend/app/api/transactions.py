@@ -23,11 +23,18 @@ from app.schemas.transaction import BulkAddToGroupRequest, BulkCategorizeRequest
 from app.schemas.transaction_calendar import TransactionCalendarResponse
 from app.services import transaction_service
 from app.services.category_line_service import csv_export_parts
+from app.services.csv_safety import csv_safe as _csv_safe
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.transaction_calendar_service import get_transaction_calendar
 from app.services._query_filters import reporting_date_value
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
+
+# Text columns go through `_csv_safe` (app.services.csv_safety): a spreadsheet
+# evaluates any cell that starts with a formula leader, so a description like
+# "=HYPERLINK(...)" runs as live content when the export is opened (CSV
+# injection, CWE-1236). The amounts, dates and codes below are written by this
+# endpoint and cannot carry a payload.
 
 
 async def _attach_invoice_links(session, ctx, items: list) -> None:
@@ -312,15 +319,15 @@ async def export_transactions(
         for amount, amount_primary, category, split_group, split_index in csv_export_parts(tx):
             writer.writerow([
                 tx.date.isoformat(),
-                tx.description,
+                _csv_safe(tx.description),
                 str(amount),
                 tx.type,
                 tx.currency,
-                category.name if category else "",
-                tx.account.name if tx.account else "",
-                tx.payee or "",
-                getattr(tx, "payee_name", "") or "",
-                tx.notes or "",
+                _csv_safe(category.name if category else ""),
+                _csv_safe(tx.account.name if tx.account else ""),
+                _csv_safe(tx.payee),
+                _csv_safe(getattr(tx, "payee_name", "")),
+                _csv_safe(tx.notes),
                 tx.status,
                 tx.source,
                 str(amount_primary) if amount_primary is not None else "",

@@ -821,8 +821,10 @@
     "greetingAfternoon": "Boa tarde",
     "greetingEvening": "Boa noite",
     "availableBalance": "Saldo disponível em contas",
+    "cashBalance": "Caixa",
+    "investmentAccounts": "Contas de investimento",
     "netWorth": "Patrimônio líquido",
-    "netWorthTooltip": "Contas + investimentos, descontando faturas de cartão em aberto.",
+    "netWorthTooltip": "Caixa + contas de investimento + patrimônio investido, descontando faturas de cartão em aberto. Investimento não conta como dinheiro disponível.",
     "creditCardBalance": "Faturas de cartão em aberto",
     "loanBalance": "Empréstimos e financiamentos",
     "pendingSharesOwe": "Líquido {{net}} após dívidas de grupo ({{owed}} pendente)",
@@ -1100,6 +1102,7 @@
     "createCounterpartConfirm": "Criar",
     "unlinkTransfer": "Desvincular transferência",
     "unlinkTransferConfirm": "Desvincular esta transferência? Ambas as transações voltarão a ser tratadas como transações normais.",
+    "unlinkTransferReportWarning": "A menos que a categoria já as deixe de fora, as duas transações voltam a contar nos relatórios de receitas e despesas: a de saída como despesa e a de entrada como receita. Para deixar uma delas de fora, coloque-a numa categoria tratada como transferência, como Transferências.",
     "unlinkTransferSuccess": "Transferência desvinculada",
     "confirmTransferCategoryTitle": "Aplicar esta categoria também à transferência pareada?",
     "confirmTransferCategoryDesc": "Transferências vêm em pares. Você pode atualizar só esta transação ou aplicar a mesma mudança de categoria aos dois lados.",
@@ -1282,14 +1285,28 @@
     "deleted": "Conta excluída",
     "syncDone": "Sincronização concluída",
     "syncRateLimited": "Limite diário do banco atingido, nenhum dado novo foi buscado. Tente novamente mais tarde.",
+    "syncPartial": "Algumas contas foram atualizadas, mas o limite diário do banco foi atingido para as outras. Elas serão tentadas de novo mais tarde.",
     "syncError": "Erro ao sincronizar",
+    "syncFailure": {
+      "failedAt": "A última sincronização falhou em {{when}}.",
+      "psu_present_required": "O banco só libera esses dados enquanto você está usando o Securo.",
+      "consent_expired": "O banco precisa que você autorize o acesso de novo.",
+      "reauthorize_at_provider": "Autorize este banco de novo na sua conta do SimpleFIN Bridge e sincronize outra vez.",
+      "provider_error": "O banco devolveu um erro.",
+      "syncNow": "Sincronizar agora"
+    },
     "connected": "Banco conectado com sucesso",
+    "connectedImportFailed": "Banco conectado, mas a primeira importação falhou. Repita a sincronização para concluir.",
     "connectError": "Erro ao conectar banco",
     "disconnected": "Conexão removida",
     "confirmDisconnectTitle": "Desconectar conexão bancária?",
     "confirmDisconnectDesc": "Isso vai desvincular {{institution}} e remover do app as contas e transações sincronizadas. Esta ação é irreversível.",
     "viewTransactions": "Ver transações",
     "currentBalance": "Saldo atual",
+    "reservedBalances": "Saldos reservados",
+    "reservedBalanceFallback": "Saldo reservado",
+    "reservedTotal": "Reservado",
+    "reservedBalancesHint": "Fundos reservados informados pelo provedor para esta conta.",
     "income": "Entradas",
     "expenses": "Saídas",
     "projectedBalance": "Saldo projetado",
@@ -1371,8 +1388,16 @@
     "connectionStatus": {
       "active": "Ativa",
       "error": "Erro",
-      "expired": "Expirada"
-    }
+      "expired": "Expirada",
+      "disconnected": "Desconectada"
+    },
+    "pluginConnectors": "Dos seus plugins",
+    "pluginUnavailable": "O plugin desta conexão não está mais instalado ou disponível.",
+    "confirmDisconnectKeepDesc": "{{institution}} vai parar de sincronizar. As contas e o histórico de transações continuam no app, e você pode reconectar depois.",
+    "disconnectAlsoDelete": "Também apagar contas e transações",
+    "disconnectedKept": "Banco desconectado. As contas e o histórico foram mantidos.",
+    "removeConnection": "Remover conexão",
+    "connectionDisconnected": "Desconectada. Reconecte para voltar a sincronizar"
   },
   "loans": {
     "title": "Contrato do empréstimo",
@@ -1485,7 +1510,26 @@
     "suggestEmpty": "Sem histórico de gastos no período selecionado para sugerir.",
     "suggestError": "Não foi possível carregar as sugestões. Tente novamente em instantes.",
     "hiddenCategory": "Oculta",
-    "average": "normalmente {{amount}}"
+    "average": "normalmente {{amount}}",
+    "copyAction": "Copiar mês anterior",
+    "copyTitle": "Copiar orçamentos",
+    "copyDescription": "Copie os orçamentos de um mês de origem para {{month}}.",
+    "copySource": "Mês de origem",
+    "copyExisting": "Orçamentos existentes",
+    "copyOverwrite": "Substituir pelos valores do mês de origem",
+    "copyMissing": "Manter e copiar apenas as categorias que faltam",
+    "copyAdjustment": "Ajuste (%)",
+    "copyAdjustmentHint": "Opcional, entre -100 e 1000. 5 acrescenta 5%, -10 reduz 10%.",
+    "copyPreviewCount": "Categorias a copiar: {{count}}",
+    "copyPreviewTotal": "Total a copiar: {{amount}}",
+    "copyPreviewEmpty": "O mês selecionado não tem orçamentos para copiar.",
+    "copyPreviewError": "Não foi possível carregar o mês de origem.",
+    "copyAmountTooLarge": "O valor ajustado passa do limite de orçamento. Reduza o ajuste percentual.",
+    "copyConfirm": "Copiar orçamentos",
+    "copySuccess": "Orçamentos copiados: {{count}}",
+    "copyNothing": "Nenhum orçamento foi copiado.",
+    "copyError": "Não foi possível copiar os orçamentos.",
+    "copyEmptyHint": "Copie os orçamentos de um mês anterior para começar a partir deles."
   },
   "goals": {
     "title": "Metas",
@@ -1546,6 +1590,7 @@
     "walletHint": "Acompanhe este objetivo pelo valor combinado de todos os ativos na carteira selecionada."
   },
   "recurring": {
+    "makeFromTransaction": "Nova recorrente a partir desta transação",
     "title": "Transações Recorrentes",
     "add": "Adicionar Recorrente",
     "edit": "Editar Recorrente",
@@ -1586,7 +1631,24 @@
     "autoGenerate": "Gerar transações automaticamente",
     "autoGenerateHelp": "Cria uma transação sempre que esta conta vence. Desative para aguardar o lançamento real (por exemplo, da sincronização bancária) e mostrá-la apenas como prevista até lá.",
     "fxEstimate": "Estimativa baseada na última taxa de câmbio ({{rate}}). O valor final pode mudar.",
-    "confirmDeleteDescription": "A definição recorrente \"{{description}}\" será excluída permanentemente. As transações existentes permanecerão, mas perderão o vínculo recorrente. Esta ação não pode ser desfeita."
+    "confirmDeleteDescription": "A definição recorrente \"{{description}}\" será excluída permanentemente. As transações existentes permanecerão, mas perderão o vínculo recorrente. Esta ação não pode ser desfeita.",
+    "priceHistory": "Histórico de preços",
+    "viewPriceHistory": "Ver histórico de preços",
+    "priceChangesTitle": "Alterações recentes de preço (últimos 30 dias)",
+    "priceChangesEmpty": "Nenhuma alteração de preço estável detectada",
+    "priceChangeBadge": "Preço alterado",
+    "priceChangeIncrease": "Preço aumentou",
+    "priceChangeDecrease": "Preço diminuiu",
+    "priceChangeAmount": "{{old}} → {{new}}",
+    "priceChangeDelta": "{{absolute}} ({{percent}})",
+    "priceChangeGap": "Após uma lacuna de {{days}} dias",
+    "priceChangeInsufficient": "São necessárias pelo menos 3 cobranças lançadas e vinculadas para relatar uma alteração de preço estável.",
+    "summaryIncome": "Receitas",
+    "summaryExpenses": "Despesas",
+    "summaryNet": "Saldo",
+    "summaryTransfers": "Transferências fora da conta: {{count}}",
+    "summaryUnconverted": "Sem cotação, fora da conta: {{count}}",
+    "summaryFailed": "Não foi possível carregar os totais do mês"
   },
   "rules": {
     "searchPlaceholder": "Buscar regras...",
@@ -1692,6 +1754,7 @@
     "fieldPayee": "Pessoa",
     "fieldDate": "Data",
     "fieldStatus": "Status",
+    "fieldProviderCategory": "Categoria do provedor",
     "opContains": "contém",
     "opNotContains": "não contém",
     "opEquals": "é igual a",
@@ -1845,6 +1908,39 @@
     "sparkles": "Especial",
     "circle-help": "Outros / Indefinido"
   },
+  "categoryEmojis": {
+    "burger": "Hambúrguer",
+    "fries": "Batata frita",
+    "sandwich": "Sanduíche",
+    "wine": "Vinho",
+    "cocktail": "Coquetel",
+    "juice": "Suco",
+    "money-bag": "Saco de dinheiro",
+    "spending": "Gastos",
+    "soccer": "Futebol",
+    "basketball": "Basquete",
+    "tennis": "Tênis",
+    "yoga": "Ioga",
+    "art": "Arte",
+    "headphones": "Fones de ouvido",
+    "plug": "Tomada",
+    "tools": "Ferramentas",
+    "soap": "Sabonete",
+    "shower": "Banho",
+    "shoes": "Calçados",
+    "makeup": "Maquiagem",
+    "toys": "Brinquedos",
+    "flowers": "Flores",
+    "luck": "Sorte",
+    "birthday": "Aniversário",
+    "christmas": "Natal",
+    "protection": "Proteção",
+    "map": "Mapa",
+    "beach": "Praia",
+    "launch": "Lançamento",
+    "investment": "Investimento",
+    "construction": "Construção"
+  },
   "groups": {
     "title": "Grupos de Categorias",
     "add": "Adicionar Grupo",
@@ -1925,6 +2021,8 @@
     "undoImport": "Desfazer importação?",
     "undoOrdersDescription": "Isso vai apagar as {{count}} ordens importadas de {{filename}} e recalcular as posições afetadas. Os ativos criados por essa importação são removidos junto.",
     "undone": "Importação desfeita",
+    "undoOversell": "Não é possível desfazer esta importação: um lançamento que permanece vende {{attempted}} unidades com {{available}} em carteira. Edite ou exclua esse lançamento primeiro.",
+    "undoTooLarge": "Não é possível desfazer esta importação: a posição que sobra sem ela é grande demais para armazenar.",
     "undoDescription": "Isso vai excluir {{count}} transações importadas de {{filename}}. Esta ação não pode ser desfeita.",
     "deleting": "Excluindo...",
     "deleteAll": "Excluir tudo",
@@ -1996,7 +2094,9 @@
       "fee": "Taxas",
       "kind": "Compra/Venda",
       "currency": "Moeda",
-      "notes": "Observações"
+      "notes": "Observações",
+      "old_units": "Unidades antes",
+      "new_units": "Unidades depois"
     },
     "walletWarningTitle": "Já está no seu patrimônio",
     "warning": {
@@ -2005,7 +2105,8 @@
     },
     "kind": {
       "buy": "Compra",
-      "sell": "Venda"
+      "sell": "Venda",
+      "split": "Desdobramento"
     },
     "reason": {
       "missing_ticker": "sem ativo",
@@ -2015,8 +2116,17 @@
       "invalid_fee": "taxa ilegível",
       "invalid_kind": "compra/venda não reconhecida",
       "unknown_ticker": "ativo não encontrado no provedor de cotações",
-      "oversell": "venda maior do que a posição"
-    }
+      "oversell": "venda maior do que a posição",
+      "no_fx_rate": "sem cotação de câmbio na data da ordem",
+      "possible_duplicate": "pode já estar neste ativo por uma importação anterior",
+      "invalid_split": "proporção do desdobramento ilegível, ou desdobramento com quantidade, preço ou taxa",
+      "split_not_allowed": "não é possível registrar desdobramento em ativo sincronizado com o banco",
+      "split_in_future": "o desdobramento não pode ter data futura",
+      "nothing_held_before_split": "nenhuma unidade na carteira antes do desdobramento",
+      "too_large": "deixaria o ativo grande demais para guardar",
+      "holding_moved": "a posição foi renomeada ou mudou de carteira enquanto a importação corria"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Patrimônio",
@@ -2031,6 +2141,8 @@
     "exchangeRateSetupAskAdmin": "A conversão de {{from}} para {{to}} precisa de taxas de câmbio. Peça a um administrador para configurá-las.",
     "noFxRate": "sem cotação",
     "noFxRateTitle": "Não há cotação disponível para esta moeda. O ativo aparece na moeda original e fica de fora dos totais.",
+    "providerValueStale": "sem atualização desde {{date}}",
+    "providerValueStaleTitle": "O provedor ainda informa esta posição, mas não atualiza o valor desde esta data. Ela pode ter sido resgatada ou a conexão pode estar falhando ao atualizar investimentos. Confira com o seu banco.",
     "fxRateMissing": "Não há cotação disponível para {{currencies}}. Esses ativos aparecem na moeda original e ficam de fora dos totais.",
     "colAsset": "Ativo",
     "colQuantity": "Qtd.",
@@ -2051,6 +2163,7 @@
     "noTransactions": "Nenhuma transação ainda",
     "txBuy": "Compra",
     "txSell": "Venda",
+    "txSplit": "Desdobramento",
     "txFee": "Taxa",
     "txSaved": "Transação salva",
     "txDeleted": "Transação excluída",
@@ -2061,6 +2174,10 @@
     "unitPrice": "Preço unitário",
     "fee": "Taxa",
     "txTotal": "Total",
+    "splitOldUnits": "Unidades antes",
+    "splitNewUnits": "Unidades depois",
+    "splitHint": "Informe as unidades que você tinha antes do desdobramento e em quantas se transformaram: um desdobramento de 1 para 100 é 1 → 100, um grupamento de 10 para 1 é 10 → 1. Use como data o primeiro dia em que o ativo é cotado ao novo preço.",
+    "splitInvalid": "Informe dois números inteiros diferentes, de 1 a 1.000.000.",
     "confirmDeleteTxTitle": "Excluir transação?",
     "confirmDeleteTx": "Isso remove o lançamento e recalcula o preço médio do ativo.",
     "editAsset": "Editar Ativo",
@@ -2087,6 +2204,10 @@
     "marketPriceSourceTooltip": "Preço atualizado automaticamente via dados de mercado",
     "lastUpdated": "Atualizado {{when}}",
     "refreshPrice": "Atualizar cotação",
+    "refreshAllPrices": "Atualizar preços",
+    "refreshAllPricesDone": "{{refreshed}} preços atualizados, {{skipped}} sem cotação nova",
+    "refreshAllPricesNone": "Nenhum ativo com preço de mercado para atualizar",
+    "refreshAllPricesRateLimited": "O provedor de cotações está limitando as requisições agora. {{refreshed}} preços foram atualizados e {{skipped}} ficaram de fora antes de parar, tente de novo em um minuto.",
     "priceRefreshed": "Cotação atualizada",
     "purchaseDate": "Data de Compra",
     "purchasePrice": "Preço de Compra",
@@ -2112,6 +2233,7 @@
     "updated": "Ativo atualizado",
     "deleted": "Ativo excluído",
     "confirmDelete": "Tem certeza que deseja excluir este ativo e todo o histórico de valores?",
+    "confirmDeleteSynced": "Se a importação de ativos estiver ligada nesta conexão, a próxima sincronização traz este ativo de volta. Desligue a importação de ativos nas configurações da conexão para que ele continue excluído.",
     "confirmDeleteTitle": "Excluir ativo?",
     "addValue": "Adicionar Valor",
     "valueHistory": "Histórico de Valores",
@@ -2239,6 +2361,7 @@
     "baseline": "Estimativa",
     "surplus": "Sobra",
     "deficit": "Déficit",
+    "investmentWithdrawals": "Resgates de investimento",
     "cashFlowNode": "Fluxo de Caixa",
     "flowChartAria": "Diagrama de fluxo de caixa: receitas fluindo para as despesas",
     "category": "Categoria",
@@ -2405,8 +2528,13 @@
     "retry": "Tentar novamente",
     "error": "Erro",
     "success": "Sucesso",
-    "searchIcon": "Buscar ícone...",
     "noIconsFound": "Nenhum ícone encontrado",
+    "searchIconOrEmoji": "Buscar ícone ou emoji...",
+    "iconPickerIcons": "Ícones",
+    "iconPickerEmojis": "Emojis",
+    "useEmoji": "Usar este emoji",
+    "noEmojisFound": "Nenhum emoji encontrado",
+    "seeMatchingEmojis": "Ver emojis correspondentes ({{count}})",
     "primaryCurrency": "Moeda Principal",
     "showLess": "Mostrar menos",
     "showMore": "Mostrar +{{count}}",
@@ -2418,7 +2546,8 @@
     "download": "Baixar",
     "closePreview": "Fechar visualização",
     "remove": "Remover",
-    "refresh": "Atualizar"
+    "refresh": "Atualizar",
+    "invalidAmount": "Informe um valor válido, como {{example}}."
   },
   "splitGroups": {
     "searchPlaceholder": "Buscar grupos...",
@@ -2560,6 +2689,15 @@
     "brandOpen": "Código aberto",
     "brandSelfHosted": "Self-hosted",
     "brandPrivate": "Privado por padrão"
+  },
+  "accountantExport": {
+    "title": "Exportação para o contador",
+    "description": "Baixe as transações categorizadas e a DRE de um período, no formato que o software do seu contador abre direto. Os valores são o valor cheio da transação, antes de dividir com outras pessoas.",
+    "startDate": "Data inicial",
+    "endDate": "Data final",
+    "download": "Baixar pacote",
+    "error": "Não foi possível gerar a exportação",
+    "formatHint": "Um zip com transactions.csv e profit-and-loss.csv, com os separadores e a codificação que planilhas e softwares contábeis leem sem ajuste."
   },
   "backup": {
     "button": "Baixar backup",
@@ -2889,6 +3027,8 @@
       "saveFailed": "Falha ao salvar a seleção de ferramentas",
       "empty": "Nenhuma ferramenta descoberta. O servidor MCP está rodando? Com Docker: `docker compose --profile agents up -d`.",
       "proposeBadge": "proposta",
+      "enabledCount": "{{enabled}} de {{total}} ligadas",
+      "enableAll": "Ligar todas",
       "loading": "Carregando ferramentas…"
     },
     "chat": {
@@ -2940,7 +3080,13 @@
         "deleteBudget": "{{category}}: {{amount}} para {{month}}",
         "deleteRecurringBudget": "{{category}}: {{amount}} todo mês a partir de {{month}}",
         "updateTransactionNotes": "{{description}}: {{before}} → {{after}}",
-        "createCategoryGroup": "“{{name}}”"
+        "createCategoryGroup": "“{{name}}”",
+        "createManualAccount": "{{name}} · {{type}} · {{currentBalance}} · {{openingBalance}}{{balanceDate}}",
+        "updateManualAccount": "{{name}}. {{currentBalance}}. {{changes}}",
+        "manualAccountMoney": "{{label}}: {{amount}}",
+        "manualAccountDate": "{{label}}: {{date}}",
+        "manualAccountChange": "{{field}}: {{before}} → {{after}}",
+        "manualAccountNoChanges": "Nenhuma alteração"
       }
     },
     "conversation": {
@@ -2966,6 +3112,7 @@
       "baseUrl": "URL do endpoint",
       "baseUrlPlaceholder": "https://...",
       "baseUrlRequired": "A URL do endpoint é obrigatória para este provedor",
+      "baseUrlInvalid": "Informe uma URL de endpoint http ou https válida",
       "ollamaHint": "Se o Ollama roda na sua máquina, use http://host.docker.internal:11434 (Mac/Windows) ou o IP do seu host (Linux).",
       "openaiCompatHint": "Cole apenas host:porta (ex.: http://192.168.1.142:1234). O caminho /v1 é adicionado automaticamente. De dentro do Docker no Mac/Windows, troque localhost por host.docker.internal.",
       "apiKey": "Chave de API / token",
@@ -3541,8 +3688,9 @@
       "new": "novo",
       "read": "Ler {{what}}",
       "write": "Ler e alterar {{what}}",
-      "ownerOnly": "Só o dono do workspace pode adicionar, atualizar ou remover um plugin que roda código.",
+      "ownerOnly": "Só o dono do workspace ou um gerente pode adicionar, atualizar ou remover um plugin que roda código.",
       "removeConnections": "As conexões dele neste workspace ({{count}}) são removidas, junto com as chaves salvas e os acessos.",
+      "unlinks": "As conexões bancárias dele ({{count}}) param de sincronizar. As contas e transações ficam, como contas manuais.",
       "removeNothing": "O código do plugin sai do seu servidor quando nenhum workspace o usar mais.",
       "auth": {
         "credentials": "Chave ou senha",
@@ -3567,6 +3715,15 @@
         "install": "Este plugin não traz dados. Veja o que o código dele pode fazer:",
         "update": "Veja o que a nova versão pode fazer:",
         "remove": "O código dele deixa de rodar neste workspace."
+      },
+      "provides": "Sincroniza como um banco conectado",
+      "providesHint": "O Securo adiciona esses registros a este workspace e os mantém atualizados, como em um banco conectado. Cada conexão aparece em Conexões Bancárias.",
+      "kinds": {
+        "accounts": "Contas",
+        "transactions": "transações",
+        "bills": "faturas de cartão",
+        "holdings": "investimentos",
+        "trades": "compras e vendas"
       }
     },
     "connections": {
@@ -3604,8 +3761,13 @@
       "added": "{{name}} conectada",
       "removeTitle": "Remover {{name}}?",
       "removeHint": "As chaves salvas e o acesso dela a este workspace são apagados. O que ela já trouxe continua.",
+      "removeBankHint": "Ela sincroniza como um banco conectado: remover desconecta esse banco e remove as contas que ele sincronizou, com as transações.",
       "removed": "{{name}} removida",
-      "copyFailed": "Não foi possível copiar. Selecione o endereço e copie manualmente."
+      "copyFailed": "Não foi possível copiar. Selecione o endereço e copie manualmente.",
+      "editTitle": "Reconectar {{name}}",
+      "editHint": "Atualize o que mudou, como uma nova senha ou token. A conexão sincroniza de novo em seguida.",
+      "keepBlank": "Deixe um campo em branco para manter o valor atual.",
+      "updated": "{{name}} atualizada"
     },
     "oauth": {
       "title": "Concluindo o login",

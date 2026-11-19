@@ -1,0 +1,28 @@
+{
+  "id": "your-name/demo-bank",
+  "name": "Demo Bank",
+  "description": "A made-up bank with a checking account, a credit card and a fund, to see how a bank sync plugin works. It never connects anywhere.",
+  "version": "1.0.0",
+  "repository": "https://github.com/your-name/securo-demo-bank",
+  "license": "AGPL-3.0-only",
+  "min_securo_version": "0.19.0",
+  "runtime": {
+    "entrypoint": "demo_bank:plugin"
+  },
+  "contributes": {
+    "integrations": [
+      {
+        "key": "demo",
+        "name": "Demo Bank",
+        "description": "Any access code works. Use \"expired\" to see a sign-in that needs reconnecting, or \"busy\" to see a rate-limited sync.",
+        "auth": "credentials",
+        "fields": [
+          {"key": "customer", "label": "Name on the accounts", "required": false},
+          {"key": "access_code", "label": "Access code", "secret": true}
+        ],
+        "sync_minutes": 360,
+        "provides": ["accounts", "transactions", "bills", "holdings", "trades"]
+      }
+    ]
+  }
+}

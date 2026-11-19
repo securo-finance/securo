@@ -31,6 +31,8 @@ from app.services.rule_service import (
     get_rule,
     get_rules,
     import_rules,
+    preview_rule,
+    preview_rules_for_transaction,
     update_rule,
 )
 from app.services.transaction_service import update_transaction
@@ -208,7 +210,7 @@ async def test_update_rule_duplicate_name_raises(session: AsyncSession, test_use
 
 @pytest.mark.asyncio
 async def test_create_rule_rejects_unknown_action(session: AsyncSession, test_user, test_workspace):
-    with pytest.raises(ValueError, match="Invalid rule action"):
+    with pytest.raises(ValueError, match="Invalid action: unsupported op 'explode'"):
         await create_rule(
             session,
             test_workspace.id,
@@ -217,6 +219,35 @@ async def test_create_rule_rejects_unknown_action(session: AsyncSession, test_us
                 name="Bad Action",
                 conditions=[RuleCondition(field="description", op="contains", value="X")],
                 actions=[RuleAction(op="explode", value="nope")],
+            ),
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("field", "op", "expected"),
+    [
+        (
+            "amount",
+            "less_than_or_equal",
+            "Invalid condition: unsupported op 'less_than_or_equal' for field 'amount'",
+        ),
+        ("amount", ">", "Invalid condition: unsupported op '>' for field 'amount'"),
+        ("foo", "equals", "Invalid condition: unsupported field 'foo'"),
+    ],
+)
+async def test_create_rule_names_the_rejected_condition(
+    session: AsyncSession, test_user, test_workspace, field, op, expected
+):
+    with pytest.raises(ValueError, match=expected):
+        await create_rule(
+            session,
+            test_workspace.id,
+            test_user.id,
+            RuleCreate(
+                name="Bad condition",
+                conditions=[RuleCondition(field=field, op=op, value=0)],
+                actions=[RuleAction(op="ignore", value=True)],
             ),
         )
 
@@ -662,6 +693,78 @@ async def test_apply_rules_skips_a_payee_deleted_after_the_rule_was_saved(
 
     assert txn.payee_id is None
     assert txn.notes == "#ride"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("apply", ["to_transaction", "single_rule", "all_rules", "preview"])
+@pytest.mark.parametrize("source", ["transfer", "sync"])
+async def test_rules_never_ignore_a_transfer_leg_but_still_categorize_it(
+    session: AsyncSession, test_user, test_workspace, test_account, test_categories,
+    apply, source,
+):
+    """Ignoring one leg of a transfer, directly or through an ignored
+    category, takes it out of its account's balance while the other leg stays
+    (#1276). Rules skip those two actions on any paired row and keep the rest."""
+    ignored_category, safe_category = test_categories[:2]
+    ignored_category.is_ignored = True
+    await session.commit()
+
+    unsafe_rule = await create_rule(
+        session, test_workspace.id, test_user.id,
+        RuleCreate(
+            name="Hide card payments",
+            conditions=[RuleCondition(field="description", op="contains", value="CARD PAYMENT")],
+            actions=[
+                RuleAction(op="ignore", value=True),
+                RuleAction(op="set_category", value=str(ignored_category.id)),
+                RuleAction(op="append_notes", value="#card"),
+            ],
+            priority=10,
+            apply_to_existing=False,
+        ),
+    )
+    safe_rule = await create_rule(
+        session, test_workspace.id, test_user.id,
+        RuleCreate(
+            name="Categorize card payments",
+            conditions=[RuleCondition(field="description", op="contains", value="CARD PAYMENT")],
+            actions=[RuleAction(op="set_category", value=str(safe_category.id))],
+            priority=20,
+            apply_to_existing=False,
+        ),
+    )
+    leg, ordinary = [
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=test_account.id, description="CARD PAYMENT",
+            amount=Decimal("25.50"), date=date(2025, 3, 1), type="debit",
+            source=source if paired else "manual",
+            transfer_pair_id=uuid.uuid4() if paired else None, is_ignored=False,
+        )
+        for paired in (True, False)
+    ]
+    session.add_all([leg, ordinary])
+    await session.commit()
+
+    if apply == "to_transaction":
+        for txn in (leg, ordinary):
+            await apply_rules_to_transaction(session, test_user.id, txn)
+    elif apply == "single_rule":
+        await apply_single_rule(session, test_workspace.id, unsafe_rule)
+        await apply_single_rule(session, test_workspace.id, safe_rule)
+    elif apply == "all_rules":
+        await apply_all_rules(session, test_workspace.id)
+    else:
+        leg, ordinary = [
+            await preview_rules_for_transaction(session, test_user.id, txn)
+            for txn in (leg, ordinary)
+        ]
+
+    assert leg.is_ignored is False
+    assert leg.category_id == safe_category.id
+    assert ordinary.is_ignored is True
+    assert ordinary.category_id == ignored_category.id
+    assert leg.notes == ordinary.notes == "#card"
 
 
 # ---------------------------------------------------------------------------
@@ -1410,13 +1513,18 @@ async def test_create_rule_accepts_status_condition(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("op", "value"),
-    [("contains", "pending"), ("regex", "pend"), ("gt", "pending"), ("equals", "reserved")],
+    ("op", "value", "expected"),
+    [
+        ("contains", "pending", "Invalid condition: unsupported op 'contains' for field 'status'"),
+        ("regex", "pend", "Invalid condition: unsupported op 'regex' for field 'status'"),
+        ("gt", "pending", "Invalid condition: unsupported op 'gt' for field 'status'"),
+        ("equals", "reserved", "Invalid condition: unsupported status value 'reserved'"),
+    ],
 )
 async def test_create_rule_rejects_invalid_status_condition(
-    session: AsyncSession, test_user, test_workspace, op, value
+    session: AsyncSession, test_user, test_workspace, op, value, expected
 ):
-    with pytest.raises(ValueError, match="Invalid rule condition"):
+    with pytest.raises(ValueError, match=expected):
         await create_rule(
             session,
             test_workspace.id,
@@ -1477,3 +1585,128 @@ async def test_status_rule_applies_to_pending_transaction_only(
     await apply_rules_to_transaction(session, test_user.id, posted)
 
     assert (pending.category_id, posted.category_id) == (test_categories[1].id, None)
+
+
+@pytest.mark.asyncio
+async def test_provider_category_rule_applies_to_raw_data_category(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
+    await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Provider category",
+            conditions=[
+                RuleCondition(
+                    field="provider_category", op="equals", value="Eating out"
+                )
+            ],
+            actions=[RuleAction(op="set_category", value=str(test_categories[1].id))],
+        ),
+    )
+
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="ProviderCategoryAcc",
+        type="checking",
+        balance=Decimal("1000"),
+        currency="BRL",
+    )
+    session.add(account)
+    await session.commit()
+
+    transaction = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        account_id=account.id,
+        description="RESTAURANT",
+        amount=Decimal("45.00"),
+        date=date(2025, 3, 1),
+        type="debit",
+        source="sync",
+        raw_data={"category": "Eating out"},
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(transaction)
+    await session.commit()
+
+    await apply_rules_to_transaction(session, test_user.id, transaction)
+
+    assert transaction.category_id == test_categories[1].id
+
+
+@pytest.mark.asyncio
+async def test_preview_rule_matches_provider_category(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="ProviderCategoryPreviewAcc",
+        type="checking",
+        balance=Decimal("1000"),
+        currency="BRL",
+    )
+    session.add(account)
+    await session.commit()
+
+    transaction = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        description="RESTAURANT",
+        amount=Decimal("45.00"),
+        date=date(2025, 3, 1),
+        type="debit",
+        source="sync",
+        raw_data={"category": "Provider Preview Probe"},
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(transaction)
+    await session.commit()
+    transaction_id = transaction.id
+    workspace_id = test_workspace.id
+    # The preview request runs in its own session; expire so load_only must
+    # fetch raw_data for real instead of reusing this identity-mapped row.
+    session.expire_all()
+
+    preview = await preview_rule(
+        session,
+        workspace_id,
+        "and",
+        [
+            {
+                "field": "provider_category",
+                "op": "equals",
+                "value": "Provider Preview Probe",
+            }
+        ],
+        [],
+    )
+
+    assert preview.matched == 1
+    assert preview.sample[0].id == transaction_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("op", ["gt", "gte", "lt", "lte"])
+async def test_create_rule_rejects_numeric_op_on_provider_category(
+    session: AsyncSession, test_user, test_workspace, op
+):
+    with pytest.raises(
+        ValueError,
+        match=f"unsupported op '{op}' for field 'provider_category'",
+    ):
+        await create_rule(
+            session,
+            test_workspace.id,
+            test_user.id,
+            RuleCreate(
+                name=f"Provider category {op}",
+                conditions=[RuleCondition(field="provider_category", op=op, value=0)],
+                actions=[RuleAction(op="ignore", value=True)],
+            ),
+        )

@@ -984,3 +984,296 @@ async def test_negative_owner_forecast_reduces_but_never_inverts_a_category(
     by_id = {r.category_id: r for r in rows}
     assert float(by_id[food.id].projected_amount) == pytest.approx(30.0, abs=0.01)
     assert float(by_id[transport.id].projected_amount) == pytest.approx(0.0, abs=0.01)
+
+
+# ─────────── share-only model: foreign-currency splits (#1337) ───────────
+
+
+async def _foreign_split(
+    session,
+    test_user,
+    test_workspace,
+    amount: str,
+    amount_primary: str | None,
+    friend_share: str,
+    *,
+    when: date,
+    type_: str = "debit",
+    category_id=None,
+):
+    """A USD row on a BRL user, with `friend_share` (USD) owed by a friend."""
+    account = await _make_account(session, test_user.id, currency="USD")
+    tx = await _make_tx(
+        session, test_user.id, account.id, amount, currency="USD",
+        when=when, type_=type_, category_id=category_id,
+    )
+    tx.amount_primary = Decimal(amount_primary) if amount_primary else None
+    _, members = await _setup_group(
+        session, test_user, test_workspace.id, "Me", "Friend", default_currency="USD"
+    )
+    me, friend = members
+    await split_service.replace_splits(
+        session,
+        tx,
+        TransactionSplitsInput(
+            share_type="exact",
+            splits=[
+                TransactionSplitInput(
+                    group_member_id=me.id,
+                    share_amount=Decimal(amount) - Decimal(friend_share),
+                ),
+                TransactionSplitInput(
+                    group_member_id=friend.id, share_amount=Decimal(friend_share)
+                ),
+            ],
+        ),
+        test_user.id,
+    )
+    await session.commit()
+    return tx
+
+
+def _seed_brl_rate(session: AsyncSession, when: date, rate: str) -> None:
+    session.add(
+        FxRate(
+            id=uuid.uuid4(), base_currency="USD", quote_currency="BRL",
+            rate=Decimal(rate), date=when, source="test",
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_foreign_split_owed_in_full_leaves_nothing_without_a_rate(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
+    """The #1337 report: USD 57.38 stamped at BRL 308.73, all of it owed by
+    a friend, and no FX rate for the day. The friend's share comes off at
+    the row's own rate, so nothing is left, where the 1:1 fallback took off
+    57.38 and left BRL 251.35 as the owner's expense."""
+    from app.services._query_filters import (
+        owner_split_offset_by_category,
+        owner_split_offset_pnl,
+    )
+
+    await _force_user_currency(session, test_user, "BRL")
+    today = date.today()
+    food = test_categories[0]
+    await _foreign_split(
+        session, test_user, test_workspace, "57.38", "308.73", "57.38",
+        when=today, category_id=food.id,
+    )
+
+    month_start, month_end = _month_window(today)
+    by_category = await owner_split_offset_by_category(
+        session, test_user.id, month_start, month_end, primary_currency="BRL"
+    )
+    assert by_category[food.id] == pytest.approx(308.73, abs=0.001)
+    _, expense_offset = await owner_split_offset_pnl(
+        session, test_user.id, month_start, month_end, primary_currency="BRL"
+    )
+    assert expense_offset == pytest.approx(308.73, abs=0.001)
+
+    summary = await dashboard_service.get_summary(
+        session, test_workspace.id, test_user.id, today.replace(day=1)
+    )
+    assert summary.monthly_expenses_primary == pytest.approx(0.0, abs=0.001)
+    spending = await dashboard_service.get_spending_by_category(
+        session, test_workspace.id, test_user.id, today.replace(day=1)
+    )
+    assert all(row.category_id != str(food.id) for row in spending)
+
+
+@pytest.mark.asyncio
+async def test_foreign_split_partial_share_keeps_the_owner_part(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
+    """A quarter owed by a friend takes a quarter of the stamped amount off,
+    on the dashboard and in the budget alike."""
+    from app.models.budget import Budget
+
+    await _force_user_currency(session, test_user, "BRL")
+    today = date.today()
+    food = test_categories[0]
+    await _foreign_split(
+        session, test_user, test_workspace, "100.00", "540.00", "25.00",
+        when=today, category_id=food.id,
+    )
+    session.add(
+        Budget(
+            id=uuid.uuid4(), user_id=test_user.id, category_id=food.id,
+            amount=Decimal("1000.00"), currency="BRL",
+            month=today.replace(day=1), is_recurring=True,
+        )
+    )
+    await session.commit()
+
+    summary = await dashboard_service.get_summary(
+        session, test_workspace.id, test_user.id, today.replace(day=1)
+    )
+    assert summary.monthly_expenses_primary == pytest.approx(405.0, abs=0.001)
+    spending = await dashboard_service.get_spending_by_category(
+        session, test_workspace.id, test_user.id, today.replace(day=1)
+    )
+    food_row = next(row for row in spending if row.category_id == str(food.id))
+    assert food_row.total == pytest.approx(405.0, abs=0.001)
+    rows = await budget_service.get_budget_vs_actual(
+        session, test_workspace.id, test_user.id, today.replace(day=1)
+    )
+    food_budget = next(row for row in rows if row.category_id == food.id)
+    assert float(food_budget.actual_amount) == pytest.approx(405.0, abs=0.001)
+
+
+@pytest.mark.asyncio
+async def test_foreign_splits_use_each_row_rate_not_the_rate_table(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
+    """Two USD rows stamped at different rates come off at their own rates,
+    not at today's rate from the table."""
+    from app.services._query_filters import owner_split_offset_by_category
+
+    await _force_user_currency(session, test_user, "BRL")
+    today = date.today()
+    food = test_categories[0]
+    _seed_brl_rate(session, today, "5.50")
+    await _foreign_split(
+        session, test_user, test_workspace, "10.00", "50.00", "10.00",
+        when=today, category_id=food.id,
+    )
+    await _foreign_split(
+        session, test_user, test_workspace, "10.00", "60.00", "5.00",
+        when=today, category_id=food.id,
+    )
+
+    month_start, month_end = _month_window(today)
+    by_category = await owner_split_offset_by_category(
+        session, test_user.id, month_start, month_end, primary_currency="BRL"
+    )
+    # 50.00 (all of the first) + 30.00 (half of the second).
+    assert by_category[food.id] == pytest.approx(80.0, abs=0.001)
+
+
+@pytest.mark.asyncio
+async def test_unstamped_foreign_split_is_never_read_one_to_one(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
+    """With no stored conversion the share is converted at the row's date;
+    with no rate either it takes nothing off instead of a 1:1 amount."""
+    from app.services._query_filters import (
+        owner_split_offset_by_category,
+        owner_split_offset_pnl,
+    )
+
+    await _force_user_currency(session, test_user, "BRL")
+    today = date.today()
+    food = test_categories[0]
+    await _foreign_split(
+        session, test_user, test_workspace, "20.00", None, "20.00",
+        when=today, category_id=food.id,
+    )
+    month_start, month_end = _month_window(today)
+
+    assert await owner_split_offset_by_category(
+        session, test_user.id, month_start, month_end, primary_currency="BRL"
+    ) == {}
+    assert await owner_split_offset_pnl(
+        session, test_user.id, month_start, month_end, primary_currency="BRL"
+    ) == (0.0, 0.0)
+
+    _seed_brl_rate(session, today, "5.00")
+    await session.commit()
+    by_category = await owner_split_offset_by_category(
+        session, test_user.id, month_start, month_end, primary_currency="BRL"
+    )
+    assert by_category[food.id] == pytest.approx(100.0, abs=0.001)
+
+
+@pytest.mark.asyncio
+async def test_foreign_split_income_comes_off_at_the_row_rate(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A split credit uses the same scaling as a debit."""
+    from app.services._query_filters import owner_split_offset_pnl
+
+    await _force_user_currency(session, test_user, "BRL")
+    today = date.today()
+    await _foreign_split(
+        session, test_user, test_workspace, "40.00", "220.00", "10.00",
+        when=today, type_="credit",
+    )
+    month_start, month_end = _month_window(today)
+    income_offset, expense_offset = await owner_split_offset_pnl(
+        session, test_user.id, month_start, month_end, primary_currency="BRL"
+    )
+    assert income_offset == pytest.approx(55.0, abs=0.001)
+    assert expense_offset == 0.0
+
+
+@pytest.mark.asyncio
+async def test_foreign_split_in_accrual_mode_uses_the_row_rate(
+    session: AsyncSession, test_user, test_workspace, test_categories, monkeypatch
+):
+    """Accrual mode reads the effective date, and the share still comes off
+    at the row's own rate."""
+    from app.services._query_filters import owner_split_offset_by_category
+
+    today = date(2026, 5, 20)
+    monkeypatch.setattr("app.services._query_filters.app_today", lambda: today)
+    await _force_user_currency(session, test_user, "BRL")
+    food = test_categories[0]
+    tx = await _foreign_split(
+        session, test_user, test_workspace, "30.00", "165.00", "30.00",
+        when=date(2026, 4, 28), category_id=food.id,
+    )
+    tx.effective_date = date(2026, 5, 10)
+    await session.commit()
+
+    may_start, may_end = _month_window(today)
+    accrual = await owner_split_offset_by_category(
+        session, test_user.id, may_start, may_end,
+        use_effective_date=True, primary_currency="BRL",
+    )
+    assert accrual[food.id] == pytest.approx(165.0, abs=0.001)
+    cash = await owner_split_offset_by_category(
+        session, test_user.id, may_start, may_end, primary_currency="BRL"
+    )
+    assert cash == {}
+
+
+@pytest.mark.asyncio
+async def test_unstamped_foreign_splits_look_up_a_missing_rate_once(
+    session: AsyncSession, test_user, test_workspace, test_categories, monkeypatch
+):
+    """Several unconverted rows on one currency and date resolve the rate
+    once per aggregation, so a day the provider has no rate for is not
+    fetched again for every row."""
+    from app.services import fx_rate_service
+    from app.services._query_filters import (
+        owner_split_offset_by_category,
+        owner_split_offset_pnl,
+    )
+
+    await _force_user_currency(session, test_user, "BRL")
+    today = date.today()
+    for category in test_categories[:3]:
+        await _foreign_split(
+            session, test_user, test_workspace, "20.00", None, "10.00",
+            when=today, category_id=category.id,
+        )
+    calls: list[tuple] = []
+
+    async def _no_rate(session, from_currency, to_currency, target_date=None, **kwargs):
+        calls.append((from_currency, to_currency, target_date))
+        return None
+
+    monkeypatch.setattr(fx_rate_service, "_resolve_rate", _no_rate)
+    month_start, month_end = _month_window(today)
+
+    assert await owner_split_offset_by_category(
+        session, test_user.id, month_start, month_end, primary_currency="BRL"
+    ) == {}
+    assert calls == [("USD", "BRL", today)]
+    calls.clear()
+    assert await owner_split_offset_pnl(
+        session, test_user.id, month_start, month_end, primary_currency="BRL"
+    ) == (0.0, 0.0)
+    assert calls == [("USD", "BRL", today)]

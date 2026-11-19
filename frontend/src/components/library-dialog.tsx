@@ -77,7 +77,7 @@ export function LibraryDialog({
               }}
             >
               {t('library.browseCatalog')}
-              <ArrowRight size={14} className="ml-1" />
+              <ArrowRight size={14} className="ms-1" />
             </Button>
           </div>
         )}
@@ -125,7 +125,7 @@ function SurfaceItems({ surface }: { surface: Surface }) {
                   aria-label={t(`library.removeFrom.${surface}`, { name: t(entry.titleKey) })}
                   onClick={() => save(items.filter((item) => item.id !== entry.id))}
                 >
-                  <Minus size={14} className="mr-1" />
+                  <Minus size={14} className="me-1" />
                   {t('library.remove')}
                 </Button>
               ) : (
@@ -138,7 +138,7 @@ function SurfaceItems({ surface }: { surface: Surface }) {
                   aria-label={t(`library.addTo.${surface}`, { name: t(entry.titleKey) })}
                   onClick={() => save([...items, { id: entry.id }])}
                 >
-                  <Plus size={14} className="mr-1" />
+                  <Plus size={14} className="me-1" />
                   {t('library.add')}
                 </Button>
               )}
@@ -150,7 +150,7 @@ function SurfaceItems({ surface }: { surface: Surface }) {
       {isCustom && (
         <div className="flex justify-end">
           <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={reset} disabled={!ready}>
-            <RotateCcw size={14} className="mr-1" />
+            <RotateCcw size={14} className="me-1" />
             {t('library.restoreDefault')}
           </Button>
         </div>
@@ -182,7 +182,7 @@ function Themes() {
             aria-pressed={selected}
             onClick={() => chooseTheme(theme.id)}
             className={cn(
-              'group rounded-xl border p-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'group rounded-xl border p-2 text-start transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               selected ? 'border-primary ring-1 ring-primary' : 'hover:border-foreground/25',
             )}
           >

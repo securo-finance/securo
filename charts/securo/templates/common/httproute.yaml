@@ -25,7 +25,7 @@ spec:
       backendRefs:
         - name: {{ include "securo.fullname" . }}-frontend
           port: {{ .Values.frontend.service.port }}
-    {{- if .Values.mcpServer.enabled }}
+    {{- if and .Values.mcpServer.enabled .Values.mcpServer.publicRoute }}
     - matches:
         - path:
             type: PathPrefix

@@ -261,6 +261,61 @@ def test_ignore_action_sets_flag():
     apply_rule_actions(actions, tx, category_already_set=False)
     assert tx.is_ignored is True
 
+
+@pytest.mark.parametrize("paired", [False, True])
+def test_ignore_skips_only_transfer_legs_and_keeps_other_actions(paired):
+    category_id = uuid.uuid4()
+    payee_id = uuid.uuid4()
+    tx = make_tx(transfer_pair_id=uuid.uuid4() if paired else None, is_ignored=False)
+
+    category_set = apply_rule_actions(
+        [
+            {"op": "ignore"},
+            {"op": "set_description", "value": "Card payment"},
+            {"op": "set_payee", "value": str(payee_id)},
+            {"op": "append_notes", "value": "#reviewed"},
+            {"op": "set_category", "value": str(category_id)},
+        ],
+        tx,
+        category_already_set=False,
+    )
+
+    assert tx.is_ignored is (not paired)
+    assert tx.description == "Card payment"
+    assert tx.payee_id == payee_id
+    assert tx.notes == "#reviewed"
+    assert tx.category_id == category_id
+    assert category_set is True
+
+
+@pytest.mark.parametrize("paired", [False, True])
+def test_ignored_category_skips_only_transfer_legs_and_a_later_one_still_applies(paired):
+    ignored_category_id = uuid.uuid4()
+    safe_category_id = uuid.uuid4()
+    tx = make_tx(transfer_pair_id=uuid.uuid4() if paired else None)
+
+    category_set = apply_rule_actions(
+        [
+            {"op": "set_category", "value": str(ignored_category_id)},
+            {"op": "set_category", "value": str(safe_category_id)},
+        ],
+        tx,
+        category_already_set=False,
+        ignored_category_ids={ignored_category_id},
+    )
+
+    assert tx.category_id == (safe_category_id if paired else ignored_category_id)
+    assert category_set is True
+
+
+def test_skipping_ignore_on_a_transfer_leg_leaves_an_existing_flag_alone():
+    tx = make_tx(transfer_pair_id=uuid.uuid4(), is_ignored=True)
+
+    apply_rule_actions([{"op": "ignore"}], tx, category_already_set=False)
+
+    assert tx.is_ignored is True
+
+
 def test_set_description_preserves_first_original_and_is_idempotent():
     tx = make_tx(description="|fd*f|ood Club", original_description=None)
 
@@ -300,6 +355,44 @@ def test_payee_id_condition_remains_compatible():
     ]
 
     assert evaluate_conditions("and", conditions, tx) is True
+
+
+def test_provider_category_condition_matches_raw_data():
+    tx = make_tx(raw_data={"category": "Eating out"})
+    conditions = [
+        {"field": "provider_category", "op": "equals", "value": "Eating out"}
+    ]
+
+    assert evaluate_conditions("and", conditions, tx) is True
+
+
+def test_provider_category_condition_is_case_and_accent_insensitive():
+    tx = make_tx(raw_data={"category": "Alimentação"})
+    conditions = [
+        {"field": "provider_category", "op": "contains", "value": "alimentacao"}
+    ]
+
+    assert evaluate_conditions("and", conditions, tx) is True
+
+
+def test_provider_category_condition_without_category_does_not_match():
+    tx = make_tx(raw_data={"id": "tx-1"})
+    conditions = [
+        {"field": "provider_category", "op": "equals", "value": "Eating out"}
+    ]
+
+    assert evaluate_conditions("and", conditions, tx) is False
+
+
+def test_provider_category_negated_conditions_do_not_match_without_category():
+    tx = make_tx(source="manual", raw_data=None)
+    conditions = [
+        {"field": "provider_category", "op": "not_equals", "value": "Eating out"},
+        {"field": "provider_category", "op": "not_contains", "value": "eating"},
+    ]
+
+    for condition in conditions:
+        assert evaluate_conditions("and", [condition], tx) is False
 
 
 # --- Edge-case: evaluate_conditions ---

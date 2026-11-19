@@ -87,7 +87,7 @@ export function ProviderSettingsField({ fieldKey, field, value, disabled, pendin
           </p>
         ) : isToggle ? <span className="text-xs text-muted-foreground">{t(source)}</span> : null}
         {field.source === 'app' && (
-          <Button type="button" variant="link" className="h-auto whitespace-normal p-0 text-left text-xs text-muted-foreground" disabled={pending} onClick={onReset}>
+          <Button type="button" variant="link" className="h-auto whitespace-normal p-0 text-start text-xs text-muted-foreground" disabled={pending} onClick={onReset}>
             <RotateCcw className="size-3" aria-hidden="true" />
             {t(`providerSettings.${field.environment_configured ? 'reset' : 'remove'}`)}
           </Button>
