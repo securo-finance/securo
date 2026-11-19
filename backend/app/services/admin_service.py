@@ -183,6 +183,40 @@ async def delete_user(
     from app.models.bank_connection import BankConnection
     from app.models.invoice import Invoice
     from app.models.invoice_schedule import InvoiceSchedule
+    from app.models.goal import GoalAllocation
+    from app.services import goal_allocation_service, goal_service
+
+    # Pockets go with the accounts deleted below. Pocket assignments on the
+    # user's transactions in other members' accounts are removed together,
+    # and rejected when a pocket's spending still depends on them.
+    # Account locks first, in ID order, as pocket writers take them, so this
+    # cannot deadlock with an assignment being saved on one of these accounts.
+    user_account_ids = list(
+        (
+            await session.scalars(
+                select(Account.id)
+                .where(Account.user_id == user_id)
+                .order_by(Account.id)
+                .with_for_update(key_share=True)
+            )
+        ).all()
+    )
+    await goal_service.delete_account_pockets(session, user_account_ids)
+    allocated = (
+        await session.scalars(
+            select(Transaction).where(
+                Transaction.user_id == user_id,
+                Transaction.id.in_(select(GoalAllocation.transaction_id)),
+            )
+        )
+    ).all()
+    by_workspace: dict[uuid.UUID, list[Transaction]] = {}
+    for transaction in allocated:
+        by_workspace.setdefault(transaction.workspace_id, []).append(transaction)
+    for workspace_id, transactions in by_workspace.items():
+        await goal_allocation_service.clear_transactions_allocations(
+            session, workspace_id, transactions
+        )
 
     # Delete attachments for user's transactions
     tx_ids_query = select(Transaction.id).where(Transaction.user_id == user_id)

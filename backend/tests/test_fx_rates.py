@@ -221,6 +221,30 @@ class TestResolveRate:
         assert rate == Decimal("5.2500000000")
 
     @pytest.mark.asyncio
+    async def test_on_demand_sync_persists_rates_without_committing_the_caller(
+        self, session: AsyncSession, clean_db
+    ):
+        """Fetched rates are committed in their own session, so read-only
+        callers reuse them, while the caller's transaction stays open."""
+        from app.services.fx_rate_service import _resolve_rate
+
+        sync_sessions: list[AsyncSession] = []
+
+        async def sync_latest(db: AsyncSession, target: date) -> int:
+            sync_sessions.append(db)
+            await _insert_rate(db, "BRL", Decimal("5.2500000000"), target)
+            return 1
+
+        with patch("app.services.fx_rate_service.sync_rates", side_effect=sync_latest), \
+             patch.object(session, "commit", wraps=session.commit) as caller_commit:
+            rate = await _resolve_rate(session, "USD", "BRL")
+
+        assert rate == Decimal("5.2500000000")
+        assert len(sync_sessions) == 1
+        assert sync_sessions[0] is not session
+        caller_commit.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_get_rate_still_falls_back_to_one_for_live_reads(
         self, session: AsyncSession
     ):

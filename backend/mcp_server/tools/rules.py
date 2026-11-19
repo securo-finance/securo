@@ -186,17 +186,21 @@ async def propose_create_rule(
     if not _can_apply(ctx, apply):
         return proposal
 
-    created = await rule_service.create_rule(session, workspace_id, ctx.user_id, draft)
+    created = await rule_service.create_rule(
+        session, workspace_id, ctx.user_id, draft, commit=False
+    )
     applied_count = (
         await rule_service.apply_single_rule(
             session,
             workspace_id,
             created,
             overwrite_existing_categories=draft.overwrite_existing_categories,
+            commit=False,
         )
         if draft.apply_to_existing
         else 0
     )
+    await session.commit()
     return {
         **proposal,
         "applied": True,
@@ -286,7 +290,7 @@ async def propose_update_rule(
         return proposal
 
     updated = await rule_service.update_rule(
-        session, uuid.UUID(rule_id), workspace_id, update
+        session, uuid.UUID(rule_id), workspace_id, update, commit=False
     )
     if updated is None:
         return {"error": "rule not found"}
@@ -296,10 +300,12 @@ async def propose_update_rule(
             workspace_id,
             updated,
             overwrite_existing_categories=update.overwrite_existing_categories,
+            commit=False,
         )
         if should_apply
         else 0
     )
+    await session.commit()
     return {
         **proposal,
         "applied": True,

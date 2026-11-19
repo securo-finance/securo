@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import date as _Date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -48,6 +49,8 @@ from app.services.credit_card_service import (
 )
 from app.services.fx_rate_service import _resolve_rate, stamp_primary_amount
 from app.models.category import Category
+
+logger = logging.getLogger(__name__)
 
 # Loan accounts only: contract terms the payment schedule is computed from.
 LOAN_TERM_FIELDS = (
@@ -530,6 +533,24 @@ async def update_account(
     # its opening balance; with real history it would silently reinterpret it.
     # A connected account keeps its provider balance and history: the sync
     # renormalizes the balance to the new type on its next run.
+    if new_type == "credit_card" and account.type != "credit_card":
+        from app.models.goal import Goal
+        from app.services.goal_service import _lock_pocket_account
+
+        # Under the lock pocket creation takes, so a pocket cannot be created
+        # between this check and the type change.
+        account = await _lock_pocket_account(session, workspace_id, account_id)
+        has_pocket = await session.scalar(
+            select(Goal.id)
+            .where(
+                Goal.workspace_id == workspace_id,
+                Goal.account_id == account.id,
+                Goal.tracking_type == "pocket",
+            )
+            .limit(1)
+        )
+        if has_pocket is not None:
+            raise ValueError("Remove this account's pockets before changing it to a credit card")
     if (
         account.connection_id is None
         and new_type != account.type
@@ -640,6 +661,12 @@ async def update_account(
         await session.refresh(account)
         return account
 
+    from app.services import goal_allocation_service
+    from app.services.goal_service import _lock_pocket_account
+
+    if "balance" in update_data or balance_date or new_type != account.type:
+        account = await _lock_pocket_account(session, workspace_id, account_id)
+
     for key, value in update_data.items():
         setattr(account, key, value)
 
@@ -660,10 +687,13 @@ async def update_account(
     if "balance" in update_data:
         new_balance = update_data["balance"]
         existing_opening = await session.execute(
-            select(Transaction).where(
+            select(Transaction)
+            .where(
                 Transaction.account_id == account_id,
                 Transaction.source == "opening_balance",
             )
+            .with_for_update(key_share=True)
+            .execution_options(populate_existing=True)
         )
         opening_tx = existing_opening.scalar_one_or_none()
 
@@ -675,6 +705,9 @@ async def update_account(
                 if balance_date:
                     opening_tx.date = balance_date
                 apply_effective_date(opening_tx, account)
+                await goal_allocation_service.validate_transaction_allocations(
+                    session, workspace_id, opening_tx
+                )
             else:
                 opening_tx = Transaction(
                     user_id=account.user_id,
@@ -690,6 +723,9 @@ async def update_account(
                 apply_effective_date(opening_tx, account)
                 session.add(opening_tx)
         elif opening_tx:
+            await goal_allocation_service.clear_transaction_allocations(
+                session, workspace_id, opening_tx
+            )
             await session.delete(opening_tx)
     elif opening_balance_type_changed or balance_date:
         existing_opening = await session.execute(
@@ -697,11 +733,16 @@ async def update_account(
                 Transaction.account_id == account_id,
                 Transaction.source == "opening_balance",
             )
+            .with_for_update(key_share=True)
+            .execution_options(populate_existing=True)
         )
         opening_tx = existing_opening.scalar_one_or_none()
         if opening_tx:
             if opening_balance_type_changed and account.balance != Decimal("0.00"):
                 _, opening_tx.type = _opening_balance_values(account.type, account.balance)
+                await goal_allocation_service.validate_transaction_allocations(
+                    session, workspace_id, opening_tx
+                )
             if balance_date:
                 opening_tx.date = balance_date
             apply_effective_date(opening_tx, account)
@@ -781,6 +822,10 @@ async def _recompute_effective_dates(session: AsyncSession, account: Account) ->
         apply_effective_date(tx, account, bill_due_date=bill_due_date)
 
 
+class _KeepOpeningRows(Exception):
+    """A duplicate opening row cannot be dropped; roll back the cleanup."""
+
+
 async def sync_opening_balance_for_connected_account(
     session: AsyncSession, account: Account
 ) -> None:
@@ -847,14 +892,40 @@ async def sync_opening_balance_for_connected_account(
             Transaction.source == "opening_balance",
         )
         .order_by(Transaction.created_at.desc(), Transaction.id.desc())
+        .with_for_update(key_share=True)
+        .execution_options(populate_existing=True)
     )
-    existing_tx, *duplicates = existing.scalars().all() or [None]
-    for duplicate in duplicates:
-        await session.delete(duplicate)
+    openings = list(existing.scalars().all())
+    existing_tx = openings[0] if openings else None
+    duplicates = openings[1:]
+    from app.services import goal_allocation_service
+
+    if duplicates:
+        try:
+            async with session.begin_nested():
+                for duplicate in duplicates:
+                    if not await goal_allocation_service.release_for_background_delete(
+                        session, account.workspace_id, duplicate
+                    ):
+                        raise _KeepOpeningRows
+                    await session.delete(duplicate)
+        except _KeepOpeningRows:
+            # A pocket's spending depends on a duplicate. Dropping it would
+            # break the pocket and keeping only some would skew the offset, so
+            # leave every opening row as it is until the user resolves it.
+            logger.warning("Keeping duplicate opening balances for account %s", account.id)
+            return
 
     # Offsets below one cent are rounding noise; drop any stale opening tx.
     if abs(offset) < Decimal("0.01"):
         if existing_tx:
+            if not await goal_allocation_service.release_for_background_delete(
+                session, account.workspace_id, existing_tx
+            ):
+                # A pocket's spending depends on this row. Keep it rather than
+                # fail the whole provider sync.
+                logger.warning("Keeping opening balance for account %s", account.id)
+                return
             await session.delete(existing_tx)
         return
 
@@ -882,11 +953,25 @@ async def sync_opening_balance_for_connected_account(
     amount = abs(offset).quantize(Decimal("0.01"))
 
     if existing_tx:
-        existing_tx.amount = amount
-        existing_tx.type = opening_type
-        existing_tx.date = opening_date
-        existing_tx.currency = account.currency
-        apply_effective_date(existing_tx, account)
+        try:
+            # The savepoint restores the row if the new amount cannot be reconciled.
+            async with session.begin_nested():
+                existing_tx.amount = amount
+                existing_tx.type = opening_type
+                existing_tx.date = opening_date
+                existing_tx.currency = account.currency
+                apply_effective_date(existing_tx, account)
+                try:
+                    await goal_allocation_service.validate_transaction_allocations(
+                        session, account.workspace_id, existing_tx
+                    )
+                except ValueError:
+                    await goal_allocation_service.clear_transaction_allocations(
+                        session, account.workspace_id, existing_tx
+                    )
+        except ValueError as exc:
+            logger.warning("Keeping opening balance for account %s: %s", account.id, exc)
+            return
     else:
         opening_tx = Transaction(
             user_id=account.user_id,
@@ -951,6 +1036,11 @@ async def delete_account(session: AsyncSession, account_id: uuid.UUID, workspace
     # Only allow deleting manual accounts
     if account.connection_id is not None:
         raise ValueError("Cannot delete bank-connected accounts")
+    # Account before its transaction rows, as edits lock them, so a delete
+    # racing an edit cannot deadlock after its attachment files are gone.
+    from app.services.goal_service import _lock_pocket_account
+
+    account = await _lock_pocket_account(session, workspace_id, account_id)
     if await _has_mortgage_allocations(session, account):
         raise ValueError("Remove this loan's mortgage payment breakdowns before deleting it")
 
@@ -959,6 +1049,7 @@ async def delete_account(session: AsyncSession, account_id: uuid.UUID, workspace
     from app.models.import_log import ImportLog
     from app.models.recurring_transaction import RecurringTransaction
     from app.models.goal import Goal
+    from app.services import goal_service
     tx_result = await session.execute(
         select(Transaction.id).where(Transaction.account_id == account_id)
     )
@@ -988,6 +1079,7 @@ async def delete_account(session: AsyncSession, account_id: uuid.UUID, workspace
             RecurringTransaction.account_id == account_id
         )
     )
+    await goal_service.delete_account_pockets(session, [account_id])
     await session.execute(
         update(Goal)
         .where(Goal.account_id == account_id)

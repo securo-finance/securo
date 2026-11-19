@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
@@ -100,6 +100,36 @@ async def _get_payment(
     if lock:
         # Replacing a breakdown deletes and re-inserts its rows; two saves of
         # the same payment must take turns, or both insert the same loan part.
+        # The save also deletes the payment's principal entries, so take them
+        # with the payment in ID order, the order rule application locks in.
+        # A save waiting behind another would miss the principal entries that
+        # one inserts, so saves of one payment queue on an advisory lock first
+        # and find those entries only once the earlier save has committed.
+        if session.bind.dialect.name == "postgresql":
+            await session.execute(
+                select(
+                    func.pg_advisory_xact_lock(
+                        func.hashtext(f"mortgage-breakdown:{workspace_id}:{payment_id}")
+                    )
+                )
+            )
+        await session.execute(
+            select(Transaction.id)
+            .where(
+                Transaction.workspace_id == workspace_id,
+                or_(
+                    Transaction.id == payment_id,
+                    Transaction.id.in_(
+                        select(MortgagePaymentAllocation.loan_transaction_id).where(
+                            MortgagePaymentAllocation.payment_transaction_id == payment_id,
+                            MortgagePaymentAllocation.workspace_id == workspace_id,
+                        )
+                    ),
+                ),
+            )
+            .order_by(Transaction.id)
+            .with_for_update()
+        )
         query = query.with_for_update(of=Transaction)
     result = await session.execute(query)
     return result.one_or_none()

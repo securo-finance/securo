@@ -10,6 +10,7 @@ Two guarantees:
 """
 import uuid
 from typing import Any, cast
+from unittest.mock import patch
 
 import pytest
 from jose import jwt
@@ -248,6 +249,28 @@ async def test_viewer_role_blocks_the_apply_gate_directly():
     editor = CallContext(user_id=uuid.uuid4(), external=True, role="editor")
     assert not _can_apply(viewer, True)
     assert _can_apply(editor, True)
+
+
+@pytest.mark.asyncio
+async def test_rule_is_not_saved_when_applying_it_to_history_fails(
+    session, test_user, test_workspace
+):
+    member = await _membership(session, test_user, test_workspace)
+    member.role = "editor"
+    await session.commit()
+    ctx = CallContext(user_id=test_user.id, workspace_id=test_workspace.id, external=True)
+
+    with patch(
+        "app.services.rule_service.apply_single_rule", side_effect=ValueError("rejected")
+    ), pytest.raises(ValueError, match="rejected"):
+        await call_tool(
+            session, ctx, "propose_create_rule", {**_RULE_ARGS, "apply_to_existing": True, "apply": True}
+        )
+    workspace_id = test_workspace.id
+    await session.rollback()
+
+    rules = (await session.execute(select(Rule).where(Rule.workspace_id == workspace_id))).scalars().all()
+    assert all(rule.name != "Coffee" for rule in rules)
 
 
 @pytest.mark.asyncio
