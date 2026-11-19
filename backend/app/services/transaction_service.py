@@ -249,7 +249,7 @@ async def get_transactions(
         # preserved because the parent tx's account still belongs to the
         # original owner. Two predicates keep it from double-surfacing:
         # rows of this workspace are already native here, and rows the
-        # viewer created are already native in their own workspace — so
+        # viewer created are already native in their own workspace, so
         # they never come back as "shared" after a workspace switch.
         # Membership, not who created the parent, decides what the viewer
         # sees: the group owner gets the invited member's expense and the
@@ -967,7 +967,7 @@ async def _tag_shared_view(
             tx.viewer_share = owner_split.share_amount if owner_split else None
             continue
         # The viewer doesn't own this; find their split share. Their own
-        # self-member only counts on a row from another workspace — in the
+        # self-member only counts on a row from another workspace; in the
         # group's own workspace the parent is already native, above.
         match = next(
             (s for s in (tx.splits or []) if s.group_member_id in member_to_group),

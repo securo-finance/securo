@@ -719,7 +719,7 @@ async def viewer_shared_pnl(
     """
     from app.models.transaction_split import TransactionSplit
 
-    # Cross-workspace Splitwise projection: every membership of the
+    # Cross-workspace group share projection: every membership of the
     # viewer, their own self-member included (#1305). The rows they
     # created are already counted by the workspace-scoped filter at the
     # caller, so `user_id != user_id` keeps them out here.
@@ -806,7 +806,7 @@ async def viewer_shared_spending_by_category(
     nominal sums (single-currency only)."""
     from app.models.transaction_split import TransactionSplit
 
-    # Cross-workspace Splitwise projection: every membership of the
+    # Cross-workspace group share projection: every membership of the
     # viewer, their own self-member included (#1305). The rows they
     # created are already counted by the workspace-scoped filter at the
     # caller, so `user_id != user_id` keeps them out here.

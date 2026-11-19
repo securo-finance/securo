@@ -78,13 +78,12 @@ async def _resolve_member_email(
 def _visible_predicate(workspace_id: uuid.UUID, user_id: uuid.UUID):
     """Group is visible when EITHER:
       - it lives in the current workspace (any workspace member sees it), OR
-      - the requesting user is a member from outside the workspace — linked
-        to it (the Splitwise case where Adam invites Eve from her own
-        workspace) or its owner in their own self-member. The owner's
-        shares are projected into every workspace they belong to (#1305),
-        so the row's group link must open from there too — never from a
-        workspace they are not a member of. Editing still goes through
-        `get_group`, which stays workspace-scoped.
+      - the requesting user is a member from outside the workspace: linked
+        to it (a member added from their own workspace) or its owner in
+        their own self-member. The owner's shares are projected into every
+        workspace they belong to (#1305), so the row's group link must open
+        from there too, never from a workspace they are not a member of.
+        Editing still goes through `get_group`, which stays workspace-scoped.
     """
     belongs_here = (
         select(WorkspaceMember.id)

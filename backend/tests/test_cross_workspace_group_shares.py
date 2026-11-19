@@ -125,7 +125,7 @@ async def test_owner_sees_invited_members_shared_expense(
     session: AsyncSession, test_user, test_workspace, linked_self
 ):
     """The invited member's expense lands in the owner's default list as a
-    shared row carrying the owner's share — the case that was asymmetric."""
+    shared row carrying the owner's share, the case that was asymmetric."""
     group, me, friend, guest, guest_ws = await _trip_group(
         session, test_user, test_workspace, linked_self=linked_self
     )
