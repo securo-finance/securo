@@ -30,6 +30,9 @@ const api = vi.hoisted(() => ({
   settings: { attachments: vi.fn() },
   assets: { list: vi.fn() },
   mortgagePayments: { get: vi.fn(), replace: vi.fn(), remove: vi.fn() },
+  // The payee form the transaction dialog opens asks for the documents the
+  // workspace files under.
+  fiscal: { taxIdKinds: vi.fn() },
 }))
 
 vi.mock('@/lib/api', () => api)

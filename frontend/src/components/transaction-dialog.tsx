@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'react'
 import { getAccountLabel, getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
@@ -7,6 +7,7 @@ import { formatAmountInput, formatCurrency, parseAmountInput } from '@/lib/forma
 import { amountToCents, parseCents } from '@/lib/mortgage-split'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
+import { WorkspaceContext } from '@/contexts/workspace-context'
 import { accounts as accountsApi, assets as assetsApi, currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi, mortgagePayments as mortgagePaymentsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
@@ -31,7 +32,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { AlertTriangle, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Flag, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check } from 'lucide-react'
+import { AlertTriangle, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Flag, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check, Pencil } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,13 +41,14 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { CategorySelect } from '@/components/category-select'
 import { PayeeSelect } from '@/components/payee-select'
+import { PayeeFormDialog } from '@/components/payee-form-dialog'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { TransactionAttachments } from '@/components/transaction-attachments'
 import type { AttachmentPreview } from '@/components/transaction-attachments'
 import { TransactionSplitsSection } from '@/components/transaction-splits-section'
 import { buildInstallmentSeriesInput, hasNonStatusChange, isManualInstallmentSeriesRow } from '@/lib/installment-series'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
-import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, CategoryLineShareType, Rule, RuleCondition, RuleConditionNode } from '@/types'
+import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, CategoryLineShareType, Rule, RuleCondition, RuleConditionNode, Payee } from '@/types'
 import { TransactionCategoryLinesSection } from '@/components/transaction-category-lines-section'
 import {
   buildLinesPayload,
@@ -450,6 +452,25 @@ function TransactionForm({
     queryKey: ['payees'],
     queryFn: payeesApi.list,
   })
+  const seed = transaction ?? duplicateDraft
+  const canWrite = useContext(WorkspaceContext)?.canWrite ?? false
+  // The payee form opened from here, and the record it just saved: the
+  // refetched list takes a moment to carry a payee created in this dialog.
+  const [payeeId, setPayeeId] = useState(seed?.payee_id ?? '')
+  const [payeeFormOpen, setPayeeFormOpen] = useState(false)
+  const [payeeFormTarget, setPayeeFormTarget] = useState<Payee | null>(null)
+  const [savedPayee, setSavedPayee] = useState<Payee | null>(null)
+  // The saved record is the freshest copy this dialog holds: it stands in for
+  // the cached row it replaced, and covers the gap until the refetch carries
+  // a payee created here, so the selection never flickers to "no payee".
+  const selectablePayees = useMemo(() => {
+    const list = payeesList ?? []
+    if (!savedPayee) return list
+    return list.some((p) => p.id === savedPayee.id)
+      ? list.map((p) => (p.id === savedPayee.id ? savedPayee : p))
+      : [...list, savedPayee]
+  }, [payeesList, savedPayee])
+  const selectedPayee = selectablePayees.find((p) => p.id === payeeId) ?? null
   const { data: linkedCards = [] } = useQuery({
     queryKey: ['accounts', transaction?.account_id, 'linked-cards'],
     queryFn: () => accountsApi.linkedCards(transaction?.account_id ?? ''),
@@ -458,7 +479,6 @@ function TransactionForm({
   const linkedCardLabel = linkedCards.find(
     (card) => card.masked_number === transaction?.card_masked_number,
   )?.label
-  const seed = transaction ?? duplicateDraft
   const [description, setDescription] = useState(seed?.description ?? '')
   // Amount fields hold display-locale strings (comma decimals on dot_comma),
   // so seeds from stored numbers go through formatAmountInput — a raw
@@ -481,7 +501,6 @@ function TransactionForm({
       ?? userCurrency
   )
   const [categoryId, setCategoryId] = useState(seed?.category_id ?? '')
-  const [payeeId, setPayeeId] = useState(seed?.payee_id ?? '')
   const [accountId, setAccountId] = useState(seed?.account_id ?? defaultAccountId ?? '')
   const [notes, setNotes] = useState(seed?.notes ?? '')
   // Manual CC bucketing override (issue #92). Empty = auto. Visible only
@@ -1459,11 +1478,50 @@ function TransactionForm({
       )}
       <div className={cn("grid gap-4", isSynced ? "grid-cols-1" : "grid-cols-2")}>
         <div className="space-y-2">
-          <Label>{t('payees.payee')}</Label>
+          <div className="flex items-center justify-between gap-2">
+            <Label>{t('payees.payee')}</Label>
+            {/* Creating and editing the record without leaving the form
+                (#1069): the payees page owns the full form, so it is the
+                same one, opened on this transaction's payee. */}
+            {canWrite && (
+              <div className="flex items-center gap-0.5">
+                {selectedPayee && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    aria-label={t('payees.edit')}
+                    title={t('payees.edit')}
+                    onClick={() => {
+                      setPayeeFormTarget(selectedPayee)
+                      setPayeeFormOpen(true)
+                    }}
+                  >
+                    <Pencil size={13} />
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="size-7"
+                  aria-label={t('payees.add')}
+                  title={t('payees.add')}
+                  onClick={() => {
+                    setPayeeFormTarget(null)
+                    setPayeeFormOpen(true)
+                  }}
+                >
+                  <Plus size={13} />
+                </Button>
+              </div>
+            )}
+          </div>
           <PayeeSelect
             value={payeeId}
             onChange={setPayeeId}
-            payees={payeesList ?? []}
+            payees={selectablePayees}
             creatable
           />
           {isSynced && transaction?.payee && (
@@ -1890,6 +1948,15 @@ function TransactionForm({
           initialData={extendRuleDialogProps.initialData}
         />
       )}
+      <PayeeFormDialog
+        open={payeeFormOpen}
+        onOpenChange={setPayeeFormOpen}
+        payee={payeeFormTarget}
+        onSaved={(saved) => {
+          setSavedPayee(saved)
+          setPayeeId(saved.id)
+        }}
+      />
     </form>
   )
 }
