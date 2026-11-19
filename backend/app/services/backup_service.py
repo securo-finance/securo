@@ -1131,7 +1131,7 @@ def _rewrite_polymorphic_reference(
 def _legacy_account_amount(data: dict[str, Any]) -> tuple[Optional[Decimal], Optional[str]]:
     """The account amount and its source for a row from before ADR 0027.
 
-    Mirrors migration 123: the bank's charge when the stored payload still has
+    Mirrors migration 124: the bank's charge when the stored payload still has
     it, else `amount_primary`, which is what the balances read back then.
     """
     raw = data.get("raw_data")
@@ -1141,10 +1141,10 @@ def _legacy_account_amount(data: dict[str, Any]) -> tuple[Optional[Decimal], Opt
     primary = data.get("amount_primary")
     if primary is None:
         return None, None
-    if data.get("source") == "sync":
-        return primary, "bank"
     if data.get("fx_rate_used") == 1:
         return primary, None
+    if data.get("source") == "sync":
+        return primary, "bank"
     return primary, "user"
 
 
@@ -1252,7 +1252,7 @@ def _prepare_model_data(
 
     if model is Transaction and "amount_account" not in row:
         # A backup from before ADR 0027 has no account-currency amount; it is
-        # filled the way migration 123 fills it. Same-currency rows never read
+        # filled the way migration 124 fills it. Same-currency rows never read
         # the column, so they can carry the copy harmlessly.
         data["amount_account"], data["amount_account_source"] = _legacy_account_amount(data)
     if "workspace_id" in columns:

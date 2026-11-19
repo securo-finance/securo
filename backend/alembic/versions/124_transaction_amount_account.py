@@ -1,7 +1,7 @@
 """store a transaction's amount in its account's currency
 
-Revision ID: 123
-Revises: 122
+Revision ID: 124
+Revises: 123
 
 `amount_primary` was read for two things: a row's value in its owner's
 display currency (reports) and, for a row in another currency than its
@@ -17,16 +17,17 @@ should always have had.
 
 `amount_account_source` says where the value came from, so a stamp that only
 heals the reporting value keeps a bank charge or a typed amount. Old rows do
-not record it: a synced row is taken as the bank's figure, a manual row as the
-user's, except a manual row stamped 1:1 (the fallback #353 stopped writing),
-which is derived so the FX healer can still fix it.
+not record it. A row stamped exactly 1:1 between two different currencies is
+the fallback #353 stopped writing, not a real charge, so it is derived and the
+FX healer can still fix it; any other synced row is taken as the bank's
+figure, and a manual one as the user's.
 """
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "123"
-down_revision = "122"
+revision = "124"
+down_revision = "123"
 branch_labels = None
 depends_on = None
 
@@ -43,8 +44,8 @@ SET amount_account = CASE
         WHEN json_typeof(transactions.raw_data::json -> 'amountInAccountCurrency') = 'number'
             THEN 'bank'
         WHEN transactions.amount_primary IS NULL THEN NULL
-        WHEN transactions.source = 'sync' THEN 'bank'
         WHEN transactions.fx_rate_used = 1 THEN NULL
+        WHEN transactions.source = 'sync' THEN 'bank'
         ELSE 'user'
     END
 FROM accounts

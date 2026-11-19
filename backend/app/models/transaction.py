@@ -33,7 +33,7 @@ class Transaction(Base):
     __table_args__ = (
         # Declared here so autogenerate keeps migration 120's composite index.
         Index("ix_transactions_account_card_masked_number", "account_id", "card_masked_number"),
-        # Migration 123: the flagged views and their counts read only flagged rows.
+        # Migration 124: the flagged views and their counts read only flagged rows.
         Index(
             "ix_transactions_flagged",
             "workspace_id",

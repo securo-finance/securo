@@ -23,7 +23,9 @@ from app.models.fx_rate import FxRate
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.providers.base import BankProvider, TransactionData
+from app.services.backup_service import _legacy_account_amount
 from app.services.connection_service import (
+    _refresh_account_charge,
     _refresh_provider_values,
     _stamp_synced_primary_amount,
 )
@@ -454,3 +456,47 @@ async def test_a_pending_charge_settled_under_a_new_id_takes_the_final_charge(
     assert len(rows) == 1
     assert rows[0].status == "posted"
     assert rows[0].amount_account == Decimal("550.00")
+
+
+@pytest.mark.parametrize(
+    ("row", "expected"),
+    [
+        # The stored payload says what the bank charged: that figure, whatever
+        # the primary stamp was.
+        ({"source": "sync", "amount_primary": Decimal("100.00"), "fx_rate_used": Decimal("1"),
+          "raw_data": {"amountInAccountCurrency": -545.1}}, (Decimal("545.10"), "bank")),
+        # A synced charge with no payload, at a real rate.
+        ({"source": "sync", "amount_primary": Decimal("540.00"), "fx_rate_used": Decimal("5.4"),
+          "raw_data": None}, (Decimal("540.00"), "bank")),
+        # Exactly 1:1 with no payload: the old fallback, left for the healer.
+        ({"source": "sync", "amount_primary": Decimal("100.00"), "fx_rate_used": Decimal("1"),
+          "raw_data": None}, (Decimal("100.00"), None)),
+        ({"source": "manual", "amount_primary": Decimal("100.00"), "fx_rate_used": Decimal("1")},
+         (Decimal("100.00"), None)),
+        ({"source": "manual", "amount_primary": Decimal("512.00"), "fx_rate_used": Decimal("5.12")},
+         (Decimal("512.00"), "user")),
+        ({"source": "manual", "amount_primary": None, "fx_rate_used": None}, (None, None)),
+    ],
+)
+def test_an_older_backup_row_gets_the_account_amount_migration_124_gives(row, expected):
+    assert _legacy_account_amount(row) == expected
+
+
+@pytest.mark.asyncio
+async def test_sync_leaves_an_ignored_row_alone(
+    session: AsyncSession, test_user: User, test_account: Account, rates
+):
+    tx = _bank_row(test_user, test_account, raw_data={"id": "ext-1"}, is_ignored=True)
+    session.add(tx)
+    await session.flush()
+
+    await _refresh_account_charge(
+        session, tx,
+        TransactionData(
+            external_id="ext-2", description="Online store", amount=Decimal("100.00"),
+            date=ON, type="debit", currency="USD", status="posted",
+            amount_in_account_currency=Decimal("550.00"),
+        ),
+        account_currency="BRL", user_currency="BRL",
+    )
+    assert tx.amount_account == Decimal("545.10")

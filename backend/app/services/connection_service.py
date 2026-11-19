@@ -2429,6 +2429,9 @@ async def _refresh_account_charge(
     The new charge replaces the stored one unless the user typed theirs, and
     a pending re-read never overrides what the posted row was charged.
     """
+    if transaction.is_ignored:
+        # The user hid the row: a re-sync must not move its figures.
+        return
     charged = txn_data.amount_in_account_currency
     if charged is None or _same_cents(transaction.amount_account, charged):
         return
