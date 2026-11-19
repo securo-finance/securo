@@ -178,6 +178,16 @@ jobs:
               [/^backend\/alembic\//,                                 'schema migration'],
               [/^backend\/app\/providers\//,                          'bank provider'],
               [/^backend\/app\/services\/.*(sync|plugin)/i,           'sync or plugin'],
+              // The rule above reads the file name, and the engines do not
+              // carry the word: a sync runs in `connection_service.py`, FX
+              // conversion in `fx_rate_service.py`, and the reconciliation,
+              // card-mirror and loan files move money without saying so
+              // either. #1625 changed the sync engine in three of these and
+              // the lane still called it free to merge; a person was what
+              // held it. Named one by one, so an unrelated service stays
+              // free.
+              [/^backend\/app\/services\/(connection_service|card_mirror_service|reconciliation_[a-z_]*|fx_rate_service|_query_filters|loan_schedule)\.py$/,
+                                                                      'money or bank sync'],
               [/^(charts|k8s|helm)\//i,                               'deployment'],
               [/(^|\/)(Dockerfile|docker-compose[^/]*\.(yml|yaml)|install\.sh)$/, 'deployment'],
               [/(^|\/)\.env/,                                         'environment file'],

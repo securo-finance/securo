@@ -96,10 +96,12 @@ function answerThreads(query, threads) {
 // merge if no gate refused it: open, `risk: low`, a documentation file only,
 // an approving verdict naming the head, the three required checks green, and a
 // CodeRabbit review of that same head.
-async function evaluate({ threads, comments, reviews, checks, order }) {
+async function evaluate({ threads, comments, reviews, checks, order, files }) {
   const log = [];
   const merged = [];
   const posted = [];
+  // A file carries its new name, and `previous_filename` when it was renamed.
+  const changedFiles = files || [{ filename: 'docs/notes.md' }];
   const state = {
     pr: {
       state: 'open',
@@ -108,9 +110,9 @@ async function evaluate({ threads, comments, reviews, checks, order }) {
       head: { sha: HEAD },
       user: { login: 'securo-dev' },
       labels: [{ name: 'risk: low' }],
-      changed_files: 1,
+      changed_files: changedFiles.length,
     },
-    files: [{ filename: 'docs/notes.md' }],
+    files: changedFiles,
     reviews: reviews || [coderabbitReview()],
     checks: checks || GREEN,
     comments: comments || [{
@@ -336,6 +338,98 @@ scenario('a successful check that does not say it reviewed refuses', async () =>
   });
   assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
   assert.match(log, /CodeRabbit has no review of this commit/, log);
+});
+
+// The bug of #221: the lane knew sync and money only by the file name, and
+// the engines are not named that way. #1625 changed the sync engine in three
+// of these files and the lane still called it free to merge. Each one is a
+// separate case, so a path dropped from the rule shows up here by name.
+const ENGINE_FILES = [
+  'backend/app/services/connection_service.py',        // sync
+  'backend/app/services/card_mirror_service.py',       // card copy set aside during sync
+  'backend/app/services/fx_rate_service.py',           // exchange rates
+  'backend/app/services/reconciliation_service.py',    // pairs and history
+  'backend/app/services/reconciliation_engine.py',     // the pure matcher
+  'backend/app/services/reconciliation_policy.py',     // who may match what
+  'backend/app/services/_query_filters.py',            // what counts as income
+  'backend/app/services/loan_schedule.py',             // amortization
+];
+
+for (const file of ENGINE_FILES) {
+  scenario(`a pull request that edits ${file.split('/').pop()} refuses`, async () => {
+    const { merged, log } = await evaluate({ threads: [], files: [{ filename: file }] });
+    assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+    assert.match(log,
+      new RegExp(`\`${file.replace(/[.]/g, '\\.')}\` is in a part of the repository that is ` +
+        'never merged automatically \\(money or bank sync\\)'), log);
+  });
+}
+
+// Renaming a blocked file into a free path must not hide it: the previous name
+// is read as well as the new one.
+scenario('one of those files renamed out of the directory still refuses', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    files: [{
+      filename: 'backend/app/helpers/sync_engine.py',
+      previous_filename: 'backend/app/services/connection_service.py',
+    }],
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.match(log, /\(money or bank sync\)/, log);
+});
+
+// Every other service keeps the verdict it had: the rule names files, so a
+// helper that is not one of them is still free to merge.
+scenario('a service the rule does not name still merges', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    files: [{ filename: 'backend/app/services/payee_service.py' }],
+  });
+  assert.ok(merged, `expected a merge, got: ${log}`);
+});
+
+// Documentation never matches a blocked rule, whatever it sits beside: a page
+// under docs/ and a chart's README describe the engines, they do not run them.
+scenario('documentation about those engines still merges', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    files: [
+      { filename: 'docs/adr/0027-card-mirror.md' },
+      { filename: 'charts/securo/README.md' },
+      { filename: 'backend/app/services/README.md' },
+    ],
+  });
+  assert.ok(merged, `expected a merge, got: ${log}`);
+});
+
+// The rules that were already there keep the verdict they had: each group
+// still refuses its own paths, with its own reason, and code outside every
+// group is still free. This is what says the new rule adds a gate instead of
+// replacing one.
+const EXISTING_BLOCKED = [
+  ['backend/app/core/auth.py', 'auth or secrets'],
+  ['backend/app/api/custom_auth.py', 'auth API'],
+  ['.github/workflows/ci.yml', 'CI or repository configuration'],
+  ['backend/alembic/versions/027_money.py', 'schema migration'],
+  ['backend/app/providers/pluggy.py', 'bank provider'],
+  ['charts/securo/Chart.yaml', 'deployment'],
+];
+
+for (const [file, what] of EXISTING_BLOCKED) {
+  scenario(`${file} keeps refusing as ${what}`, async () => {
+    const { merged, log } = await evaluate({ threads: [], files: [{ filename: file }] });
+    assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+    assert.ok(log.includes(`(${what})`), `expected the reason "${what}": ${log}`);
+  });
+}
+
+scenario('a frontend page outside every group still merges', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    files: [{ filename: 'frontend/src/pages/transactions.tsx' }],
+  });
+  assert.ok(merged, `expected a merge, got: ${log}`);
 });
 
 let failed = 0;
