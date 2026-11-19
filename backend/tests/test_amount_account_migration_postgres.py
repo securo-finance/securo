@@ -67,9 +67,19 @@ async def test_backfill_copies_the_figure_the_balance_reads_today(session, test_
     # says it was the bank's figure.
     charged_one_to_one = _row(account, test_user.id, "USD", "100.00", source="sync", rate="1")
     charged_one_to_one.raw_data = {"id": "p-1", "amountInAccountCurrency": 100}
+    # A plugin charge with no stored payload, also 1:1: a synced row is kept as
+    # the bank's figure, since nothing proves it was a fallback.
+    plugin_one_to_one = _row(account, test_user.id, "EUR", "100.00", source="sync", rate="1")
+    # Stamped while the display currency was USD: the primary amount says 100,
+    # the payload says the card was charged BRL 545.10.
+    charged_elsewhere = _row(account, test_user.id, "USD", "100.00", source="sync", rate="1")
+    charged_elsewhere.raw_data = {"id": "p-2", "amountInAccountCurrency": -545.1}
     lower_case_same = _row(account, test_user.id, "brl", "100.00")
     unconverted = _row(account, test_user.id, "EUR", None)
-    session.add_all([foreign, typed, fallback, charged_one_to_one, lower_case_same, unconverted])
+    session.add_all([
+        foreign, typed, fallback, charged_one_to_one, plugin_one_to_one,
+        charged_elsewhere, lower_case_same, unconverted,
+    ])
     await session.flush()
 
     schema = session.bind.get_execution_options()["schema_translate_map"][None]
@@ -91,6 +101,8 @@ async def test_backfill_copies_the_figure_the_balance_reads_today(session, test_
     # The 1:1 fallback #353 stopped writing stays derived, so the healer fixes it.
     assert stored[fallback.id] == (Decimal("100.00"), None)
     assert stored[charged_one_to_one.id] == (Decimal("100.00"), "bank")
+    assert stored[plugin_one_to_one.id] == (Decimal("100.00"), "bank")
+    assert stored[charged_elsewhere.id] == (Decimal("545.10"), "bank")
     # Same currency as the account, whatever the case: balances read `amount`.
     assert stored[lower_case_same.id] == (None, None)
     # Not converted yet: stays NULL, as the balance already counted it as zero.
@@ -105,10 +117,12 @@ async def test_backfill_copies_the_figure_the_balance_reads_today(session, test_
             rate=rate, source="test",
         ))
     await session.flush()
-    for row in (charged_one_to_one, fallback):
+    for row in (charged_one_to_one, plugin_one_to_one, charged_elsewhere, fallback):
         await session.refresh(row)
         await stamp_primary_amount(session, test_user.id, row, allow_fetch=False)
     assert charged_one_to_one.amount_primary == Decimal("500.00")
     assert charged_one_to_one.amount_account == Decimal("100.00")
+    assert plugin_one_to_one.amount_account == Decimal("100.00")
+    assert charged_elsewhere.amount_account == Decimal("545.10")
     assert fallback.amount_primary == Decimal("625.00")
     assert fallback.amount_account == Decimal("625.00")

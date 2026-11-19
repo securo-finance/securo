@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import pyzipper
 from fastapi import HTTPException, status
@@ -1128,6 +1128,26 @@ def _rewrite_polymorphic_reference(
     return id_maps.opaque_references.setdefault(opaque_key, str(uuid.uuid4()))
 
 
+def _legacy_account_amount(data: dict[str, Any]) -> tuple[Optional[Decimal], Optional[str]]:
+    """The account amount and its source for a row from before ADR 0027.
+
+    Mirrors migration 123: the bank's charge when the stored payload still has
+    it, else `amount_primary`, which is what the balances read back then.
+    """
+    raw = data.get("raw_data")
+    charged = raw.get("amountInAccountCurrency") if isinstance(raw, dict) else None
+    if isinstance(charged, (int, float, Decimal)) and not isinstance(charged, bool):
+        return abs(Decimal(str(charged))).quantize(Decimal("0.01")), "bank"
+    primary = data.get("amount_primary")
+    if primary is None:
+        return None, None
+    if data.get("source") == "sync":
+        return primary, "bank"
+    if data.get("fx_rate_used") == 1:
+        return primary, None
+    return primary, "user"
+
+
 def _prepare_model_data(
     model: Any,
     row: dict[str, Any],
@@ -1231,23 +1251,10 @@ def _prepare_model_data(
         data[key] = _deserialize_column(column, rewritten)
 
     if model is Transaction and "amount_account" not in row:
-        # A backup from before ADR 0027 has no account-currency amount. Its
-        # balances read `amount_primary` for a row in another currency than
-        # its account, and only for such a row, so carrying it over restores
-        # the same balances. Same-currency rows never read the column. The
-        # source follows migration 123.
-        data["amount_account"] = data.get("amount_primary")
-        raw = data.get("raw_data")
-        if data["amount_account"] is None:
-            data["amount_account_source"] = None
-        elif isinstance(raw, dict) and raw.get("amountInAccountCurrency") is not None:
-            data["amount_account_source"] = "bank"
-        elif data.get("fx_rate_used") == 1:
-            data["amount_account_source"] = None
-        elif data.get("source") == "sync":
-            data["amount_account_source"] = "bank"
-        else:
-            data["amount_account_source"] = "user"
+        # A backup from before ADR 0027 has no account-currency amount; it is
+        # filled the way migration 123 fills it. Same-currency rows never read
+        # the column, so they can carry the copy harmlessly.
+        data["amount_account"], data["amount_account_source"] = _legacy_account_amount(data)
     if "workspace_id" in columns:
         data["workspace_id"] = target_workspace_id
     if "user_id" in columns:

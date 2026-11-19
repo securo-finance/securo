@@ -194,6 +194,13 @@ async def test_a_backup_from_before_the_column_restores_the_same_balance(
                 assert rows and all("amount_account" in row for row in rows)
                 for row in rows:
                     del row["amount_account"]
+                    del row["amount_account_source"]
+                    if row["currency"] == "USD":
+                        # A synced charge stamped while the display currency
+                        # was USD; the payload kept the BRL figure.
+                        row["source"] = "sync"
+                        row["amount_primary"], row["fx_rate_used"] = "100.00", "1"
+                        row["raw_data"] = {"amountInAccountCurrency": 545.1}
                 data = json.dumps(rows).encode()
             target.writestr(item, data)
 
@@ -212,8 +219,7 @@ async def test_a_backup_from_before_the_column_restores_the_same_balance(
     )
     assert copied is not None
     assert copied.amount_account == Decimal("545.10")
-    # Typed in the dialog: kept on heals like a bank charge.
-    assert copied.amount_account_source == "user"
+    assert copied.amount_account_source == "bank"
 
 
 def _bank_row(user: User, account: Account, **fields) -> Transaction:
@@ -396,3 +402,55 @@ async def test_sync_does_not_replace_an_amount_the_user_typed(
         payee_source="auto", account_currency="BRL", user_currency="BRL",
     )
     assert tx.amount_account == Decimal("545.10")
+
+
+@pytest.mark.asyncio
+async def test_a_pending_charge_settled_under_a_new_id_takes_the_final_charge(
+    session: AsyncSession, test_user: User, test_workspace, rates
+):
+    """The hold and the posted charge come under different ids; the posted
+    one carries the final figure the bank charged the account."""
+    from datetime import datetime, timezone
+    from unittest.mock import AsyncMock, patch
+
+    from app.models.bank_connection import BankConnection
+    from app.providers.base import AccountData
+    from app.services.connection_service import sync_connection
+
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "USD"}
+    conn = BankConnection(
+        id=uuid.uuid4(), user_id=test_user.id, provider="test",
+        external_id=f"ext-{uuid.uuid4().hex[:8]}", institution_name="Card bank",
+        credentials={"token": "fake"}, status="active",
+        last_sync_at=datetime.now(timezone.utc), created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn)
+    await session.commit()
+
+    def _charge(external_id: str, status: str, charged: str) -> TransactionData:
+        return TransactionData(
+            external_id=external_id, description="ONLINE STORE", amount=Decimal("100.00"),
+            date=ON, type="debit", currency="USD", status=status,
+            amount_in_account_currency=Decimal(charged),
+        )
+
+    provider = AsyncMock()
+    provider.refresh_credentials = AsyncMock(return_value={"token": "fake"})
+    provider.get_accounts = AsyncMock(return_value=[
+        AccountData(external_id="card-1", name="Card", type="credit_card",
+                    balance=Decimal("0"), currency="BRL"),
+    ])
+    with patch("app.services.connection_service.get_provider", return_value=provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        provider.get_transactions = AsyncMock(return_value=[_charge("hold-1", "pending", "545.10")])
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+        provider.get_transactions = AsyncMock(return_value=[_charge("post-1", "posted", "550.00")])
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    rows = (await session.scalars(
+        select(Transaction).where(Transaction.description == "ONLINE STORE")
+    )).all()
+    assert len(rows) == 1
+    assert rows[0].status == "posted"
+    assert rows[0].amount_account == Decimal("550.00")

@@ -2021,6 +2021,10 @@ async def _run_first_import(
                         txn_data,
                         replace_external_id=synced_dup.source == "sync",
                     )
+                    await _refresh_account_charge(
+                        session, synced_dup, txn_data,
+                        account_currency=account.currency, user_currency=user_currency,
+                    )
                     await apply_rules_to_settled_transaction(
                         session, user_id, synced_dup, manual_description=manual_description
                     )
@@ -2416,7 +2420,7 @@ async def _refresh_account_charge(
     txn_data,
     *,
     account_currency: str,
-    user_currency: str,
+    user_currency: Optional[str] = None,
 ) -> None:
     """Take a corrected charge in the account's currency (ADR 0027).
 
@@ -2432,6 +2436,9 @@ async def _refresh_account_charge(
         return
     if transaction.status == "posted" and txn_data.status == "pending":
         return
+    if user_currency is None:
+        owner = await session.get(User, transaction.user_id)
+        user_currency = owner.primary_currency if owner else get_settings().default_currency
     converted = _bank_converted_amount(txn_data, account_currency, user_currency)
     await _stamp_synced_primary_amount(
         session, transaction.user_id, transaction, converted, charged,
@@ -3196,6 +3203,9 @@ async def _promote_settled_pending(
     manual_description = await read_description_is_manual(session, transaction)
     transaction.status = "posted"
     _merge_sync_metadata(transaction, txn_data, replace_external_id=rekeyed)
+    await _refresh_account_charge(
+        session, transaction, txn_data, account_currency=account.currency
+    )
     await apply_rules_to_settled_transaction(
         session, account.user_id, transaction, manual_description=manual_description
     )
@@ -4432,6 +4442,11 @@ async def sync_connection(
                             synced_dup,
                             txn_data,
                             replace_external_id=synced_dup.source == "sync",
+                        )
+                        await _refresh_account_charge(
+                            session, synced_dup, txn_data,
+                            account_currency=acc_data.currency or user_currency,
+                            user_currency=user_currency,
                         )
                         # A hold that named nobody gets the payee only now;
                         # link it like a row inserted with it.
