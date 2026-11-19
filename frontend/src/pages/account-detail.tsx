@@ -527,9 +527,10 @@ export default function AccountDetailPage() {
     })),
   })
 
-  // A credit-card cycle is bounded by its bill, so the card keeps the
-  // client-side cycle math below, which needs every row of the cycle rather
-  // than the first page (#1202).
+  // A credit-card cycle is bounded by its bill, so the card needs every row
+  // of the cycle rather than the first page (#1202). Each row carries the
+  // balance right after it, seeded with the debt carried into the window
+  // (#920), so the newest row lands on the account's balance.
   const { data: cycleTxData, isLoading: cycleTxLoading } = useQuery({
     queryKey: ['transactions', {
       account_id: id,
@@ -537,6 +538,7 @@ export default function AccountDetailPage() {
       from: filterFrom,
       to: filterTo,
       include_opening_balance: true,
+      include_running_balance: true,
       unbilled_only: isInProgressCycle,
       statement_view: isCreditCard,
     }],
@@ -559,6 +561,7 @@ export default function AccountDetailPage() {
         to: filterTo || undefined,
         limit: CYCLE_PAGE_SIZE,
         include_opening_balance: true,
+        include_running_balance: true,
       }
       const first = await transactions.list({ ...params, page: 1 })
       const items = [...first.items]
@@ -871,23 +874,19 @@ export default function AccountDetailPage() {
     })
   }, [isCreditCard, cycleTxData, runningBalanceSeries, projectedRows, filterFrom, filterTo, dateLocale, usePrimary, displayCurrency, activeBill])
 
+  // The card's statement rows carry the balance right after each of them from
+  // the server, seeded with the debt carried into the window, so the newest
+  // row reconciles with the account balance instead of restarting at zero
+  // (#920). No projections: a card's statement is what the bank posted.
   const ccRunningTotal = useMemo((): TxWithBalance[] => {
     if (!isCreditCard || !cycleTxData?.items) return []
-    const ascending = [...cycleTxData.items].sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-    )
-    let running = 0
-    const withBalance = ascending.map((tx) => {
-      if (!tx.is_ignored && tx.source !== 'opening_balance' && !tx.transfer_pair_id) {
-        const amt = transactionAmountForBalance(tx, usePrimary, displayCurrency)
-        if (amt == null) return { ...tx, runningBalance: running }
-        if (tx.type === 'debit') running += amt
-        else if (tx.type === 'credit') running -= amt
-      }
-      return { ...tx, runningBalance: running }
+    return mergeRunningBalances(cycleTxData.items, [], {
+      openingBalance,
+      hasMore: false,
+      usePrimary,
+      displayCurrency,
     })
-    return withBalance.reverse()
-  }, [cycleTxData, isCreditCard, usePrimary, displayCurrency])
+  }, [cycleTxData, isCreditCard, usePrimary, displayCurrency, openingBalance])
 
   // Merged list: real transactions, pending rows, and virtual recurring
   // projections. The newest row is the forecast at the end of the range,
@@ -1843,7 +1842,9 @@ export default function AccountDetailPage() {
                             </span>
                           )}
                         </td>
-                        <td className={`px-4 py-3 text-end tabular-nums text-sm hidden sm:table-cell whitespace-nowrap ${(account.type === 'credit_card' ? tx.runningBalance > 0 : tx.runningBalance < 0) ? 'text-rose-500' : 'text-muted-foreground'}`}>
+                        {/* A card's column holds the balance, not cycle spend,
+                            so debt is negative here like everywhere else (#920). */}
+                        <td className={`px-4 py-3 text-end tabular-nums text-sm hidden sm:table-cell whitespace-nowrap ${tx.runningBalance < 0 ? 'text-rose-500' : 'text-muted-foreground'}`}>
                           {mask(formatCurrency(tx.runningBalance, displayCurrency, locale))}
                         </td>
                       </tr>
