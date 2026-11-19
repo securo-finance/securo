@@ -175,6 +175,10 @@ To rotate, set new `plugins.runner.token` and `plugins.runner.egressSecret` valu
 
 Under GitOps tools (Argo CD, Flux) and plain `helm template`, `lookup` returns nothing, so every sync would generate a new pair and restart those pods for nothing. Manage the Secret yourself there and set `plugins.runner.existingSecret` to it.
 
+Turning the runner on for a release installed before this value existed needs a values file or `helm upgrade --reset-values`. With `--reuse-values`, Helm keeps the old release values and drops the chart's defaults for the new key, so `--reuse-values --set plugins.runner.enabled=true` leaves the rest of `plugins.runner` unset and the render stops.
+
+When the Secret is yours (`existingSecret`, or tokens managed outside the chart), rotating it does not change any checksum. Restart the consumers afterwards: roll the runner StatefulSet and the backend, worker and beat Deployments so they pick up the new token.
+
 The runner starts plugin processes as their own unprivileged users, with a read-only root filesystem, `/tmp` on tmpfs and a PID and memory limit. Plugin code reaches the internet only through `plugins-egress`, which checks each plugin's signed pass against the hosts it declared and refuses private addresses. DNS is the exception: the runner resolves the backend and the proxy through the cluster resolver, and plugin code can send its own queries there, so that resolver is a low-bandwidth channel of its own unless it filters undeclared names.
 
 Enabling the runner turns `PLUGINS_ENABLED` on and keeps it on, even if `config.pluginsEnabled` says otherwise. Its namespace needs the `baseline` Pod Security Standard or looser: the runner runs as root so it can give each plugin its own uid.
