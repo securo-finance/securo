@@ -262,7 +262,8 @@ async def test_apply_writes_the_primary_amount_and_the_derived_rate(
     assert result["transaction"]["amount_primary"] == 3730.56
 
     fresh = await _fresh(session, clp_transaction.id)
-    assert float(fresh.amount_primary) == 3730.56
+    assert fresh.amount_primary == Decimal("3730.56")
+    assert fresh.fx_rate_used is not None
     assert float(fresh.fx_rate_used) == pytest.approx(3730.56 / 671500, abs=1e-10)
 
 
