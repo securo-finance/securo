@@ -231,6 +231,7 @@ class TransactionRead(TransactionBase):
     installment_purchase_date: Optional[_Date] = None
     installment_series_id: Optional[uuid.UUID] = None
     bill_id: Optional[uuid.UUID] = None
+    card_masked_number: Optional[str] = None
     effective_bill_date: Optional[_Date] = None
     reporting_date_override: Optional[_Date] = None
     # The date the list filtered and ordered this row by: the reporting

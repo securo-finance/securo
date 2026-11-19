@@ -132,6 +132,20 @@ def test_latin1_file_does_not_blow_up():
     assert orders[0].ticker == "AAPL"
 
 
+def test_windows_1252_minus_and_euro_keep_their_meaning():
+    """0x96 is the en dash a broker writes for the minus, and 0x80 the euro.
+
+    Read as Latin-1 they are C1 controls: the sign is stripped, so a sale is
+    imported as a buy, and the ticker's name comes out as garbage.
+    """
+    content = b"ticker,date,quantity,price,name\nAAPL,2026-01-15,\x9610,150.00,A\x80O\n"
+    orders, errors, _ = asset_import_service.parse_orders_csv(content)
+    assert errors == []
+    assert orders[0].kind == "sell"
+    assert orders[0].quantity == Decimal("10")
+    assert orders[0].name == "A€O"
+
+
 def test_missing_required_column_is_a_parse_error():
     with pytest.raises(ValueError, match="quantity"):
         asset_import_service.parse_orders_csv(_csv("ticker,date,price", "AAPL,2026-01-15,150.00"))

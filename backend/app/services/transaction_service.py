@@ -4,15 +4,17 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional, cast
 
-from sqlalchemy import CursorResult, and_, case, delete, literal, select, func, or_, update
+from sqlalchemy import CursorResult, and_, case, delete, func, literal, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.app_clock import app_today
 from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
 from app.models.transaction import USER_EDITED_KEY, Transaction
 from app.models.transaction_attachment import TransactionAttachment
 from app.models.account import Account
+from app.models.account_card import AccountCard
 from app.models.bank_connection import BankConnection
 from app.models.category import Category
 from app.models.group import Group, GroupMember
@@ -144,6 +146,7 @@ async def get_transactions(
     min_amount: Optional[float] = None,
     max_amount: Optional[float] = None,
     account_types: Optional[list[str]] = None,
+    linked_card_ids: Optional[list[uuid.UUID]] = None,
     status: Optional[str] = None,
     include_summary: bool = False,
     user_pnl_only: bool = False,
@@ -346,6 +349,22 @@ async def get_transactions(
             base_query = base_query.where(amount_expr <= max_amount)
     if account_types:
         base_query = base_query.where(Account.type.in_(account_types))
+    if linked_card_ids:
+        # A card final is scoped to its account. Filtering by AccountCard.id
+        # avoids matching an unrelated account that happens to share the same
+        # final four, and keeps user-owned labels as the UI's source of truth.
+        linked_card_pairs = (
+            select(AccountCard.account_id, AccountCard.masked_number)
+            .where(
+                AccountCard.workspace_id == workspace_id,
+                AccountCard.id.in_(linked_card_ids),
+            )
+        )
+        base_query = base_query.where(
+            tuple_(Transaction.account_id, Transaction.card_masked_number).in_(
+                linked_card_pairs
+            )
+        )
     # Bill-driven filter: when the caller passes bill_id, include
     #   (a) txs linked to this bill via Pluggy's billId mapping (handles
     #       charges the bank rolled into a bill whose nominal range doesn't
@@ -866,6 +885,9 @@ async def _tag_shared_view(
             # (attachment auth is owner-only). Avoid the dead-end UX
             # by not advertising files he can't open.
             tx.attachment_count = 0
+            # The card ending belongs to the owner's workspace. Committed
+            # value, so a later flush cannot write it back to the row.
+            set_committed_value(tx, "card_masked_number", None)
 
 
 async def get_transaction(

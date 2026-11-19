@@ -22,11 +22,16 @@
 The following shared-file requirement applies to **local storage**. With
 `config.storageProvider: s3`, attachments and invoice logos use object storage;
 you can disable `persistence.attachments.enabled` after migrating existing files.
-AI knowledge documents and embedding caches still need their configured volumes.
+AI knowledge documents, embedding caches and managed backups still need their configured volumes.
 
-Since the Backend, Celery Worker, and MCP Server all share the same files (like uploaded attachments and AI knowledge bases), they all mount the same Persistent Volume Claims concurrently.
+Since the Backend, Celery Worker, Celery Beat, and MCP Server share persistent files (like uploaded attachments, managed backups, and AI knowledge bases), they mount the same Persistent Volume Claims concurrently.
 **If your cluster spans multiple nodes, you MUST use a StorageClass that supports `ReadWriteMany` (RWX) access mode (e.g., NFS, CephFS, or Longhorn RWX).**
 If your storage only supports `ReadWriteOnce` (RWO), you must restrict all Securo pods to run on a single node (using `nodeSelector` or `podAffinity`) but that is an antipattern in Kubernetes.
+
+Managed backup persistence is opt-in. Enable it with
+`--set persistence.backups.enabled=true`; without that value, managed ZIPs use
+pod-local storage and scheduled backups are disabled because the API and worker
+do not share a filesystem. Direct backup downloads remain available.
 
 ## Quickstart
 

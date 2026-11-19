@@ -3,7 +3,8 @@
 The chat route streams a reply and spends provider tokens on every POST, so
 the ceiling has to apply on entry, before the stream opens. A turn is a single
 POST: the tool calls the executor makes happen inside that same request, so a
-turn with many tools never spends more than one slot here.
+turn with many tools never spends more than one slot here. Naming a
+conversation calls the provider too, so it spends from the same bucket.
 """
 
 import uuid
@@ -17,7 +18,7 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 from starlette.requests import Request
 
 from app.agents.schemas.conversation import SendMessageRequest
-from app.core.config import Settings
+from app.core.config import DEFAULT_TRUSTED_PROXY_NETWORKS, Settings
 from app.core.rate_limit import login_rate_limit
 from app.main import app
 
@@ -79,6 +80,7 @@ def _settings(limit: int, hops: int = 0) -> SimpleNamespace:
     """Settings as the limiter reads them: the ceiling, and the proxy trust."""
     return SimpleNamespace(
         trusted_proxy_hops=hops,
+        trusted_proxy_networks=DEFAULT_TRUSTED_PROXY_NETWORKS,
         agents_chat_rate_limit_per_minute=limit,
     )
 
@@ -153,6 +155,45 @@ async def test_oversized_side_fields_are_refused_with_422(
 # ---------------------------------------------------------------------------
 # Rate limit
 # ---------------------------------------------------------------------------
+
+
+def _generate_title_url(conversation_id: uuid.UUID | None = None) -> str:
+    return (
+        f"/api/agents/conversations/{conversation_id or uuid.uuid4()}/generate-title"
+    )
+
+
+async def test_generate_title_spends_the_same_budget_as_chat(client: AsyncClient):
+    """Naming a conversation is another provider call, so it goes through the
+    chat's limiter and its bucket: leaving it unmetered would give a caller a
+    free path to the provider, and a bucket of its own would hand out a second
+    minute the moment it switched route."""
+    with patch("app.core.rate_limit.get_settings", lambda: _settings(limit=2)):
+        first = await client.post(_generate_title_url())
+        second = await client.post(_generate_title_url())
+
+        refused = await client.post(_generate_title_url())
+        # Same bucket, so the chat is out of budget too.
+        chat_refused = await client.post(_chat_url(), json={"content": "hi"})
+
+    assert (first.status_code, second.status_code) == (401, 401)
+    assert refused.status_code == 429
+    assert refused.headers["Retry-After"] == "60"
+    assert chat_refused.status_code == 429
+
+
+async def test_chat_refusal_leaves_no_budget_for_naming_the_conversation(
+    client: AsyncClient,
+):
+    """The other way round: an exhausted chat budget must also close the title
+    route, whether the ceiling comes from chat turns or from title calls."""
+    with patch("app.core.rate_limit.get_settings", lambda: _settings(limit=2)):
+        await client.post(_chat_url(), json={"content": "hi"})
+        await client.post(_chat_url(), json={"content": "hi"})
+
+        refused = await client.post(_generate_title_url())
+
+    assert refused.status_code == 429
 
 
 async def test_chat_is_rate_limited_per_ip(client: AsyncClient):
