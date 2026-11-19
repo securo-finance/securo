@@ -10,7 +10,11 @@ would print the old numbers under the new symbol (#1381).
 `restamp_user_primary_amounts` rewrites them from the native amount and the
 rate stored for each row's own date, so it is idempotent: running it twice
 gives the same result as running it once. A row whose currency already is the
-new primary currency gets its amount at rate 1. A foreign row with no
+new primary currency gets its amount at rate 1. A row in another currency than
+its account, when the new primary is the account's currency, takes what the
+account was charged (`amount_account`, ADR 0027), not a market conversion.
+Balances read `amount_account`, which this never writes, so no balance moves
+when the display currency does. A foreign row with no
 resolvable rate is set to NULL, the honest "not converted" state, rather than
 keeping a number in the old currency. The scheduled `restamp_fallback_fx`
 heals such transactions once a rate arrives; an asset's
@@ -37,6 +41,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
+from app.core.currency import same_currency
+from app.models.account import Account
 from app.models.asset import Asset
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
@@ -108,6 +114,28 @@ async def _converted(
     return (amount * rate).quantize(CENT), rate.quantize(RATE_SCALE)
 
 
+def _charged_in_primary(
+    stats: RestampStats, tx: Transaction, account_currency: str
+) -> Optional[tuple[Decimal, Decimal]]:
+    """What the account was charged, when the new primary is its currency.
+
+    A foreign row keeps its value in its account's currency (`amount_account`,
+    ADR 0027): the bank's charge or the amount the user typed. When the
+    display currency becomes that account's, it is the row's primary amount,
+    so a USD purchase the card billed at R$ 545.10 reads 545.10 again after a
+    round trip through USD, not a market conversion.
+    """
+    if (
+        tx.amount_account is None
+        or not tx.amount
+        or same_currency(tx.currency, account_currency)
+        or not same_currency(account_currency, stats.currency)
+    ):
+        return None
+    primary = Decimal(str(tx.amount_account)).quantize(CENT)
+    return primary, (primary / abs(Decimal(str(tx.amount)))).quantize(RATE_SCALE)
+
+
 async def _row_currencies(session: AsyncSession, user_id: uuid.UUID) -> set[str]:
     currencies: set[str] = set()
     for column, owner in (
@@ -158,8 +186,12 @@ async def restamp_user_primary_amounts(
     stats = RestampStats(currency=user.primary_currency)
 
     transactions = (
-        await session.execute(select(Transaction).where(Transaction.user_id == user_id))
-    ).scalars().all()
+        await session.execute(
+            select(Transaction, Account.currency)
+            .join(Account, Account.id == Transaction.account_id)
+            .where(Transaction.user_id == user_id)
+        )
+    ).all()
     recurring = (
         await session.execute(
             select(RecurringTransaction).where(RecurringTransaction.user_id == user_id)
@@ -171,8 +203,12 @@ async def restamp_user_primary_amounts(
         )
     ).scalars().all()
 
-    for tx in transactions:
-        primary, rate = await _converted(session, stats, tx.amount, tx.currency, tx.date)
+    for tx, account_currency in transactions:
+        charged = _charged_in_primary(stats, tx, account_currency)
+        if charged is not None:
+            primary, rate = charged
+        else:
+            primary, rate = await _converted(session, stats, tx.amount, tx.currency, tx.date)
         if (tx.amount_primary, tx.fx_rate_used) != (primary, rate):
             tx.amount_primary, tx.fx_rate_used = primary, rate
             stats.transactions += 1

@@ -298,3 +298,51 @@ async def test_cli_keeps_going_after_one_user_fails(
         await restamp_primary_amounts()
     assert exit_info.value.code == 1
     assert set(done) == {test_user.id, other.id}
+
+
+@pytest.mark.asyncio
+async def test_round_trip_keeps_the_charged_amount_in_balance_and_reports(
+    client: AsyncClient, session: AsyncSession, auth_headers, test_user: User, rates
+):
+    """A USD purchase the BRL card billed at R$ 545.10 (ADR 0027): switching
+    to USD and back never moves the balance, and the reports read 545.10
+    again in BRL instead of a market conversion of the USD amount."""
+    async def display(currency: str) -> None:
+        prefs = {**(test_user.preferences or {}), "currency_display": currency}
+        response = await client.patch("/api/users/me", headers=auth_headers, json={"preferences": prefs})
+        assert response.status_code == 200, response.text
+
+    async def balance(account_id: str) -> Decimal:
+        response = await client.get(f"/api/accounts/{account_id}", headers=auth_headers)
+        assert response.status_code == 200, response.text
+        return Decimal(str(response.json()["current_balance"]))
+
+    await display("BRL")
+    account = await client.post(
+        "/api/accounts", headers=auth_headers,
+        json={"name": "Card", "type": "checking", "balance": "0", "currency": "BRL"},
+    )
+    assert account.status_code == 201, account.text
+    account_id = account.json()["id"]
+    created = await client.post(
+        "/api/transactions", headers=auth_headers,
+        json={"account_id": account_id, "description": "Online store", "amount": "100.00",
+              "currency": "USD", "date": D1.isoformat(), "type": "debit",
+              "amount_primary": "545.10"},
+    )
+    assert created.status_code == 201, created.text
+    tx = await session.get(Transaction, uuid.UUID(created.json()["id"]))
+    assert tx is not None
+    assert await balance(account_id) == Decimal("-545.10")
+
+    await display("USD")
+    await session.refresh(tx)
+    assert (tx.amount_primary, tx.fx_rate_used) == (Decimal("100.00"), Decimal("1"))
+    assert tx.amount_account == Decimal("545.10")
+    assert await balance(account_id) == Decimal("-545.10")
+
+    await display("BRL")
+    await session.refresh(tx)
+    assert tx.amount_primary == Decimal("545.10")  # the charge, not 100 x 5 = 500
+    assert tx.fx_rate_used == Decimal("5.4510000000")
+    assert await balance(account_id) == Decimal("-545.10")
