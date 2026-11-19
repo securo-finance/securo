@@ -19,7 +19,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any
 
-from sqlalchemy import ColumnElement, Select, select, true
+from sqlalchemy import ColumnElement, Select, and_, or_, select, true
 
 _bound: ContextVar[uuid.UUID | None] = ContextVar("bound_workspace", default=None)
 
@@ -44,12 +44,32 @@ def in_bound_workspace(workspace_column: Any) -> ColumnElement[bool]:
     return true() if bound is None else workspace_column == bound
 
 
-def invited_group_member_ids(user_id: uuid.UUID) -> Select:
-    """The user's memberships in groups they were invited to (not their own
-    self-member), as a subquery of ids."""
-    from app.models.group import GroupMember
+def viewer_member_predicate(user_id: uuid.UUID) -> ColumnElement[bool]:
+    """The `GroupMember` rows that represent the user in a group: every
+    membership linked to them, plus their own self-member in a group they
+    own.
 
-    return select(GroupMember.id).where(
+    The self-member is often unlinked (the owner never gave an e-mail), so
+    it is found through the group's owner instead of `linked_user_id`. Both
+    ends of a cross-workspace split must match this: the invited member's
+    rows and the owner's, or one side sees a share the other never does
+    (#1305). Needs `Group` joined on `GroupMember.group_id`.
+    """
+    from app.models.group import Group, GroupMember
+
+    return or_(
         GroupMember.linked_user_id == user_id,
-        GroupMember.is_self.is_(False),
+        and_(GroupMember.is_self.is_(True), Group.user_id == user_id),
+    )
+
+
+def invited_group_member_ids(user_id: uuid.UUID) -> Select:
+    """The member rows that represent the user, as a subquery of ids. See
+    `viewer_member_predicate`."""
+    from app.models.group import Group, GroupMember
+
+    return (
+        select(GroupMember.id)
+        .outerjoin(Group, Group.id == GroupMember.group_id)
+        .where(viewer_member_predicate(user_id))
     )

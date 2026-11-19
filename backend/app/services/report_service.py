@@ -637,8 +637,10 @@ async def get_income_expenses_report(
     # currency so we can FX-convert each bucket to primary correctly.
     from app.models.transaction_split import TransactionSplit
 
-    # Exclude is_self memberships — the owner's own self-member must
-    # not surface their in-Pessoal transactions in Trabalho's report.
+    # The viewer's memberships, self-member included: their share of an
+    # invited member's expense counts here too (#1305). Rows the viewer
+    # created stay out via `user_id != user_id`, so an in-Pessoal
+    # transaction never surfaces in Trabalho's report.
     viewer_member_ids = invited_group_member_ids(user_id)
     shared_result = await session.execute(
         select(
