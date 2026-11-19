@@ -20,6 +20,15 @@ from app.providers.benchmark import (
 )
 from app.schemas.asset import BenchmarkMatch
 
+# The endpoint ends its window at app_today() in the workspace timezone; the
+# fixtures seed their latest valuation on the same pinned day.
+TODAY = date(2026, 3, 16)
+
+
+@pytest.fixture(autouse=True)
+def _pinned_today(monkeypatch):
+    monkeypatch.setattr("app.services.portfolio_performance_service.app_today", lambda: TODAY)
+
 
 class FakeBenchmarkProvider:
     def __init__(self, *, history_error: Exception | None = None, empty: bool = False) -> None:
@@ -45,7 +54,7 @@ class FakeBenchmarkProvider:
 
 
 async def _seed_performance_asset(session: AsyncSession, user: User, workspace) -> uuid.UUID:
-    end = date.today()
+    end = TODAY
     start = end - timedelta(days=30)
     asset = Asset(
         id=uuid.uuid4(),
@@ -398,7 +407,7 @@ async def test_performance_endpoint_filters_to_individual_assets(
     monkeypatch,
 ):
     selected_id = await _seed_performance_asset(session, test_user, test_workspace)
-    end = date.today()
+    end = TODAY
     start = end - timedelta(days=30)
     excluded = Asset(
         id=uuid.uuid4(),

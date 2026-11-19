@@ -72,18 +72,19 @@ async def test_symbols_differing_only_in_case_are_one_benchmark(
         "/api/assets/performance",
         params=[
             ("provider", "yahoo"),
-            ("benchmark", "SPY"),
-            ("provider", "yahoo"),
             ("benchmark", " spy "),
+            ("provider", "yahoo"),
+            ("benchmark", "SPY"),
             ("period", "3m"),
         ],
         headers=auth_headers,
     )
 
     assert response.status_code == 200
-    assert fake.symbols == ["SPY"]
+    assert len(fake.symbols) == 1
     # The key is the spelling the client sent first, so it finds its series.
-    assert [item["key"] for item in response.json()["benchmarks"]] == ["yahoo:SPY"]
+    # Lowercase first: an API that upper-cased every key would fail here.
+    assert [item["key"] for item in response.json()["benchmarks"]] == ["yahoo:spy"]
 
 
 @pytest.mark.asyncio

@@ -698,6 +698,52 @@ async def test_yahoo_history_without_prices_is_empty(monkeypatch):
     assert points == []
 
 
+def _prices_missing_ticker(**error_kwargs):
+    from yfinance.exceptions import YFPricesMissingError
+
+    class MissingTicker:
+        def __init__(self, symbol):
+            pass
+
+        def history(self, **kwargs):
+            raise YFPricesMissingError("^GSPC", **error_kwargs)
+
+    return MissingTicker
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "yahoo_reason",
+    [
+        "No data found, symbol may be delisted",
+        "Data doesn't exist for startDate = 1767225600, endDate = 1767657600",
+    ],
+)
+async def test_yahoo_history_stated_empty_range_is_empty(monkeypatch, yahoo_reason):
+    ticker = _prices_missing_ticker(
+        debug_info=" (1d 2026-01-01 -> 2026-01-06)", yahoo_reason=yahoo_reason
+    )
+    monkeypatch.setattr("yfinance.Ticker", ticker)
+    points = await YahooBenchmarkProvider().history("^GSPC", date(2026, 1, 1), date(2026, 1, 5))
+    assert points == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error_kwargs",
+    [
+        # yfinance 1.8 raises YFPricesMissingError for a 503 chart error payload.
+        {"debug_info": " (1d 2026-01-01 -> 2026-01-06)", "yahoo_reason": "Service unavailable"},
+        {"debug_info": " (1d 2026-01-01 -> 2026-01-06)(Yahoo status_code = 500)"},
+    ],
+)
+async def test_yahoo_history_service_error_is_a_source_failure(monkeypatch, error_kwargs):
+    monkeypatch.setattr("yfinance.Ticker", _prices_missing_ticker(**error_kwargs))
+    with pytest.raises(BenchmarkProviderError) as raised:
+        await YahooBenchmarkProvider().history("^GSPC", date(2026, 1, 1), date(2026, 1, 5))
+    assert not isinstance(raised.value, BenchmarkRateLimitedError)
+
+
 def test_yahoo_history_carries_the_quote_currency_in_major_units(monkeypatch):
     import pandas as pd
 

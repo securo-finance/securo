@@ -285,9 +285,13 @@ class YahooBenchmarkProvider(BenchmarkProvider):
                 auto_adjust=True,
                 raise_errors=True,
             )
-        except YFPricesMissingError:
-            # Yahoo answered, with no prices for these dates.
-            return []
+        except YFPricesMissingError as exc:
+            # yfinance raises this both when Yahoo has no prices for these
+            # dates and when Yahoo answers with an error payload (a 503
+            # chart error, say). Only the first is "no data".
+            if _yahoo_reports_no_prices(exc):
+                return []
+            raise BenchmarkProviderError(f"Yahoo Finance could not serve {symbol}") from exc
         if frame is None or frame.empty or "Close" not in frame.columns:
             return []
         try:
@@ -312,6 +316,21 @@ class YahooBenchmarkProvider(BenchmarkProvider):
             if start_date <= point_date <= end_date:
                 values[point_date] = value
         return [BenchmarkHistoryPoint(d, values[d], currency) for d in sorted(values)]
+
+
+# Chart error descriptions Yahoo gives when it has no prices to return: an
+# unknown or delisted symbol, or a range without trading days.
+_YAHOO_NO_PRICES_REASONS = ("no data found", "data doesn't exist")
+
+
+def _yahoo_reports_no_prices(exc: Exception) -> bool:
+    """Whether a yfinance ``YFPricesMissingError`` means an empty range."""
+    if "status_code" in (getattr(exc, "debug_info", None) or ""):
+        return False  # Yahoo answered with an error status payload.
+    reason = getattr(exc, "yahoo_reason", None)
+    if reason is None:
+        return True  # A chart result without quotes.
+    return str(reason).strip().lower().startswith(_YAHOO_NO_PRICES_REASONS)
 
 
 def _normalize_search(value: str) -> str:
