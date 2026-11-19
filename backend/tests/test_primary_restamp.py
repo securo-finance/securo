@@ -398,3 +398,88 @@ async def test_a_switch_committed_meanwhile_is_compared_not_the_stale_user(
     await _reload(session, brl_rows)
     assert brl_rows["usd"].amount_primary == Decimal("50.00")
     assert brl_rows["brl"].amount_primary == Decimal("120.00")
+
+
+async def _usd_row_typed_in_brl(client: AsyncClient, auth_headers, test_user: User):
+    """A USD 300 purchase on a USD account, typed as costing R$ 1,560 while the
+    market rate stored for its date is 5 (R$ 1,500)."""
+    prefs = {**(test_user.preferences or {}), "currency_display": "BRL"}
+    switched = await client.patch("/api/users/me", headers=auth_headers, json={"preferences": prefs})
+    assert switched.status_code == 200, switched.text
+    account = await client.post(
+        "/api/accounts", headers=auth_headers,
+        json={"name": "Wise USD", "type": "checking", "balance": "0", "currency": "USD"},
+    )
+    assert account.status_code == 201, account.text
+    created = await client.post(
+        "/api/transactions", headers=auth_headers,
+        json={"account_id": account.json()["id"], "description": "Hotel Lisboa",
+              "amount": "300.00", "currency": "USD", "date": D1.isoformat(),
+              "type": "debit", "amount_primary": "1560.00"},
+    )
+    assert created.status_code == 201, created.text
+    return created.json()["id"]
+
+
+async def _display(client: AsyncClient, auth_headers, test_user: User, currency: str) -> None:
+    prefs = {**(test_user.preferences or {}), "currency_display": currency}
+    response = await client.patch("/api/users/me", headers=auth_headers, json={"preferences": prefs})
+    assert response.status_code == 200, response.text
+
+
+@pytest.mark.asyncio
+async def test_round_trip_brings_back_a_typed_amount_on_a_same_currency_account(
+    client: AsyncClient, session: AsyncSession, auth_headers, test_user: User, rates
+):
+    """#1561 treated `amount_primary` as a cache: on a USD row of a USD account
+    the typed R$ 1,560 lived nowhere else, and BRL -> USD -> BRL replaced it
+    with 300 x 5 = 1,500 (ADR 0028)."""
+    tx_id = await _usd_row_typed_in_brl(client, auth_headers, test_user)
+    tx = await session.get(Transaction, uuid.UUID(tx_id))
+    assert tx is not None
+    assert tx.amount_primary == Decimal("1560.00")
+
+    await _display(client, auth_headers, test_user, "USD")
+    await session.refresh(tx)
+    assert (tx.amount_primary, tx.fx_rate_used) == (Decimal("300.00"), Decimal("1"))
+
+    await _display(client, auth_headers, test_user, "BRL")
+    await session.refresh(tx)
+    assert tx.amount_primary == Decimal("1560.00")
+    assert tx.fx_rate_used == Decimal("5.2000000000")
+
+    # A rerun at the same currency changes nothing.
+    assert (await restamp_user_primary_amounts(session, test_user.id))["transactions"] == 0
+
+
+@pytest.mark.asyncio
+async def test_a_typed_amount_survives_a_resave_and_goes_with_a_new_amount(
+    client: AsyncClient, session: AsyncSession, auth_headers, test_user: User, rates
+):
+    tx_id = await _usd_row_typed_in_brl(client, auth_headers, test_user)
+
+    # The dialog resending the same amount keeps the typed conversion.
+    resaved = await client.patch(
+        f"/api/transactions/{tx_id}", headers=auth_headers,
+        json={"amount": "300.00", "description": "Hotel Lisboa (2 nights)"},
+    )
+    assert resaved.status_code == 200, resaved.text
+    tx = await session.get(Transaction, uuid.UUID(tx_id))
+    assert tx is not None
+    await session.refresh(tx)
+    assert tx.amount_primary == Decimal("1560.00")
+
+    # A new amount without a new conversion is converted at the stored rate,
+    # and a later round trip does not resurrect the old typed figure.
+    changed = await client.patch(
+        f"/api/transactions/{tx_id}", headers=auth_headers, json={"amount": "200.00"},
+    )
+    assert changed.status_code == 200, changed.text
+    await session.refresh(tx)
+    assert tx.amount_primary == Decimal("1000.00")
+    assert tx.amount_primary_typed is None
+
+    await _display(client, auth_headers, test_user, "USD")
+    await _display(client, auth_headers, test_user, "BRL")
+    await session.refresh(tx)
+    assert tx.amount_primary == Decimal("1000.00")

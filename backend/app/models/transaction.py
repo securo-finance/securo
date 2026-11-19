@@ -94,6 +94,15 @@ class Transaction(Base):
     # Only a derived value is worked out again when nothing about the row
     # changed (ADR 0027).
     amount_account_source: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
+    # The converted amount the user typed for a foreign row, and the display
+    # currency it was typed in (ADR 0028). `amount_primary` follows the
+    # display currency; this does not, so switching back restores it.
+    amount_primary_typed: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(precision=15, scale=2), nullable=True
+    )
+    amount_primary_typed_currency: Mapped[Optional[str]] = mapped_column(
+        String(3), nullable=True
+    )
     # Installment (parcelamento) metadata. Populated from provider data when available.
     # `installment_number` is 1-indexed (e.g. 3 for "3/12"). Storing alongside the
     # raw tx row so the door stays open to a plan view or manual entry later
