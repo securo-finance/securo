@@ -723,6 +723,20 @@ class TestParseQif:
         assert transactions[0].amount == Decimal("75.00")
         assert transactions[0].type == "debit"
 
+    def test_parse_qif_reads_windows_1252_minus_and_euro(self):
+        """A legacy export writes the minus as 0x96 and the euro as 0x80.
+
+        Read as Latin-1 those bytes are C1 controls: the sign is lost, so the
+        debit is dropped instead of imported. cp1252 reads them as the en dash
+        and the euro sign the file meant.
+        """
+        qif_content = b"D01/15/2026\nT\x9625,50\nPCAFE 3\x80\n^\n"
+        transactions, failed_rows = parse_qif(qif_content)
+        assert failed_rows == []
+        assert transactions[0].description == "CAFE 3\u20ac"
+        assert transactions[0].amount == Decimal("25.50")
+        assert transactions[0].type == "debit"
+
     def test_parse_qif_two_digit_year(self):
         """QIF with 2-digit year date formats (common in Microsoft Money)."""
         qif_content = (
