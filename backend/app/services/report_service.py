@@ -710,7 +710,8 @@ async def get_income_expenses_report(
         # A day-window range can start mid-month: only project occurrences that
         # fall inside the requested window.
         projections = await _get_recurring_projections(
-            session, workspace_id, max(m_start, start), m_end, account_ids
+            session, workspace_id, max(m_start, start), m_end, account_ids,
+            accounting_mode=accounting_mode,
         )
         for proj in projections:
             # Convert to primary currency
@@ -718,7 +719,9 @@ async def get_income_expenses_report(
                 session, Decimal(str(proj["amount"])), proj["currency"], primary_currency,
             )
             proj_amount = float(converted)
-            label = _format_date_label(cursor, interval)
+            # The projection's own date: in accrual a card charge is due on
+            # its bill's date, which can sit days after the month's cursor.
+            label = _format_date_label(proj["date"], interval)
             existing_income, existing_expenses = forecast_map.get(label, (0.0, 0.0))
             if proj["type"] == "credit":
                 forecast_map[label] = (existing_income + proj_amount, existing_expenses)
@@ -1068,9 +1071,12 @@ async def get_income_expenses_report(
     cursor2 = start
     while include_forecasts and cursor2 <= axis_end:
         m_start, m_end = _month_range(cursor2)
-        projections = await _get_recurring_projections(session, workspace_id, m_start, m_end, account_ids)
-        period_label = _format_date_label(cursor2, interval)
+        projections = await _get_recurring_projections(
+            session, workspace_id, m_start, m_end, account_ids,
+            accounting_mode=accounting_mode,
+        )
         for proj in projections:
+            period_label = _format_date_label(proj["date"], interval)
             cat_id_str = str(proj["category_id"]) if proj["category_id"] else "uncategorized"
             group = "income" if proj["type"] == "credit" else "expenses"
 
