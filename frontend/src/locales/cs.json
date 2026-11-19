@@ -2907,6 +2907,15 @@
     "brandSelfHosted": "Na vlastním serveru",
     "brandPrivate": "Soukromí od základu"
   },
+  "accountantExport": {
+    "title": "Export pro účetního",
+    "description": "Stáhněte si kategorizované transakce a výkaz zisku a ztráty za období ve formátu, který účetní software otevře přímo. Částky jsou plná hodnota transakce, před rozdělením s dalšími osobami.",
+    "startDate": "Počáteční datum",
+    "endDate": "Koncové datum",
+    "download": "Stáhnout balíček",
+    "error": "Export se nepodařilo vytvořit",
+    "formatHint": "Jeden zip s transactions.csv a profit-and-loss.csv, s oddělovači a kódováním, které tabulkové procesory a účetní programy čtou bez úprav. Každá částka je plná hodnota transakce, ne váš podíl na rozdělení."
+  },
   "backup": {
     "button": "Zálohovat",
     "downloading": "Stahuje se...",

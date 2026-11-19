@@ -2747,6 +2747,15 @@
     "brandSelfHosted": "セルフホスト",
     "brandPrivate": "プライバシー重視設計"
   },
+  "accountantExport": {
+    "title": "会計士向けエクスポート",
+    "description": "期間の分類済み取引と損益計算書を、会計ソフトがそのまま開ける形式でダウンロードします。金額は他の人と分ける前の、取引の全額です。",
+    "startDate": "開始日",
+    "endDate": "終了日",
+    "download": "パッケージをダウンロード",
+    "error": "エクスポートを作成できませんでした",
+    "formatHint": "transactions.csv と profit-and-loss.csv を含む1つの zip。表計算ソフトや会計ソフトが調整なしで読める区切り文字と文字コードを使用します。各金額は取引の全額で、分割した場合のあなたの負担分ではありません。"
+  },
   "backup": {
     "button": "バックアップ",
     "downloading": "ダウンロード中...",
