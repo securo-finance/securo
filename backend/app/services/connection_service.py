@@ -1690,6 +1690,83 @@ async def update_connection_settings(
     return connection
 
 
+def _reactivate_connection(
+    connection: BankConnection, connection_data,
+) -> None:
+    """Point a connection at the credentials and provider ids of a new session.
+
+    Everything the provider owns follows the new authorization; what the user
+    owns — the name, the settings, the accounts and their history — stays.
+    `last_sync_at` restarts the window so the next sync reconciles the
+    accounts against a feed whose ids belong to another session.
+    """
+    connection.external_id = connection_data.external_id
+    connection.institution_name = (
+        connection_data.institution_name or connection.institution_name
+    )
+    connection.logo_url = _clean_logo_url(connection_data.logo_url) or connection.logo_url
+    connection.credentials = connection_data.credentials
+    connection.status = "active"
+    # Re-sync from current data on next sync cycle.
+    connection.last_sync_at = None
+    # New credentials end a backoff earned by failing ones, so the next
+    # cycle syncs it. A rate-limit backoff stays: the bank's quota is the
+    # same whatever the credentials.
+    reconnect_settings = connection.settings or {}
+    backoff = reconnect_settings.get(SYNC_BACKOFF_KEY)
+    if backoff is not None and not (
+        isinstance(backoff, dict) and backoff.get("rate_limited") is True
+    ):
+        connection.settings = {
+            key: value
+            for key, value in reconnect_settings.items()
+            if key != SYNC_BACKOFF_KEY
+        }
+    # The failure the old credentials left no longer says anything.
+    connection.settings = _with_sync_failure(connection.settings, None)
+
+
+async def _connection_holding_these_accounts(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    provider_name: str,
+    accounts: Sequence[AccountData],
+) -> Optional[BankConnection]:
+    """The connected bank these provider accounts already belong to (#1224).
+
+    Connecting a bank again from the Accounts page, instead of pressing
+    Reconnect, used to create a second connection and a second row for every
+    account the first one already held. Enable Banking scopes an account's
+    `uid` to one session, so a new consent renames every account and nothing
+    on the row matches by id. The identification hash survives the session and
+    names the same real account across sessions, so an incoming account whose
+    hash a live connection of this provider already holds says the user is
+    re-authorising that connection, not adding a second one.
+
+    Two connections holding the hash, or none, leaves the answer open and the
+    caller creates a connection as before: a hash two logins share is not
+    enough to pick one. A different login into the same bank names different
+    accounts and matches nothing here.
+    """
+    hashes = {a.stable_external_id for a in accounts if a.stable_external_id}
+    if not hashes:
+        return None
+    connection_ids = (await session.execute(
+        select(Account.connection_id)
+        .join(BankConnection, BankConnection.id == Account.connection_id)
+        .where(
+            BankConnection.workspace_id == workspace_id,
+            BankConnection.provider == provider_name,
+            BankConnection.status != DISCONNECTED_STATUS,
+            Account.stable_external_id.in_(hashes),
+        )
+        .distinct()
+    )).scalars().all()
+    if len(connection_ids) != 1:
+        return None
+    return await session.get(BankConnection, connection_ids[0])
+
+
 async def handle_oauth_callback(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -1731,31 +1808,13 @@ async def handle_oauth_callback(
     provider = get_provider(provider_name, settings=await resolve_settings(session))
     connection_data = await provider.handle_oauth_callback(code)
 
-    if existing_reconnect:
-        existing_reconnect.external_id = connection_data.external_id
-        existing_reconnect.institution_name = (
-            connection_data.institution_name or existing_reconnect.institution_name
+    if existing_reconnect is None:
+        existing_reconnect = await _connection_holding_these_accounts(
+            session, workspace_id, provider_name, connection_data.accounts
         )
-        existing_reconnect.logo_url = _clean_logo_url(connection_data.logo_url) or existing_reconnect.logo_url
-        existing_reconnect.credentials = connection_data.credentials
-        existing_reconnect.status = "active"
-        # Re-sync from current data on next sync cycle.
-        existing_reconnect.last_sync_at = None
-        # New credentials end a backoff earned by failing ones, so the next
-        # cycle syncs it. A rate-limit backoff stays: the bank's quota is the
-        # same whatever the credentials.
-        reconnect_settings = existing_reconnect.settings or {}
-        backoff = reconnect_settings.get(SYNC_BACKOFF_KEY)
-        if backoff is not None and not (
-            isinstance(backoff, dict) and backoff.get("rate_limited") is True
-        ):
-            existing_reconnect.settings = {
-                key: value
-                for key, value in reconnect_settings.items()
-                if key != SYNC_BACKOFF_KEY
-            }
-        # The failure the old credentials left no longer says anything.
-        existing_reconnect.settings = _with_sync_failure(existing_reconnect.settings, None)
+
+    if existing_reconnect:
+        _reactivate_connection(existing_reconnect, connection_data)
         await session.commit()
         await session.refresh(existing_reconnect)
         return existing_reconnect
