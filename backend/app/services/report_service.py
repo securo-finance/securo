@@ -1063,6 +1063,89 @@ async def get_income_expenses_report(
         )
         cur_period = cat_trend_map[map_key]["periods"].get(period_label, 0.0)
         cat_trend_map[map_key]["periods"][period_label] = max(0.0, cur_period - offset)
+
+    # Layer in the viewer's share of splits they did not pay for, the same
+    # cross-workspace rows the summary above adds (#242). The author guard
+    # and the current-workspace exclusion mirror it: a row that lives in the
+    # reported workspace is already counted whole in the composition below.
+    if not filtered:
+        shared_cat_result = await session.execute(
+            select(
+                label_expr,
+                Category.id,
+                Category.name,
+                Category.color,
+                Transaction.type,
+                Transaction.currency,
+                func.sum(TransactionSplit.share_amount),
+            )
+            .select_from(TransactionSplit)
+            .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
+            .outerjoin(Category, Transaction.category_id == Category.id)
+            .where(
+                TransactionSplit.group_member_id.in_(viewer_member_ids),
+                Transaction.user_id != user_id,
+                Transaction.workspace_id != workspace_id,
+                in_bound_workspace(Transaction.workspace_id),
+                report_date >= start,
+                report_date <= axis_end,
+                Transaction.source != "opening_balance",
+                Transaction.status == "posted",
+                counts_as_user_pnl(Transaction.category_id),
+            )
+            .group_by(
+                label_expr,
+                Category.id,
+                Category.name,
+                Category.color,
+                Transaction.type,
+                Transaction.currency,
+            )
+        )
+        for (
+            period_label,
+            cat_id,
+            cat_name,
+            cat_color,
+            txn_type,
+            currency,
+            raw_share,
+        ) in shared_cat_result.all():
+            if not raw_share:
+                continue
+            share_primary, _ = await fx_convert(
+                session, Decimal(str(raw_share)), currency, primary_currency
+            )
+            amount = abs(float(share_primary))
+            if amount <= 0:
+                continue
+            cat_key = str(cat_id) if cat_id else "uncategorized"
+            group = "income" if txn_type == "credit" else "expenses"
+            label = cat_name or "Uncategorized"
+            color = cat_color or "#6B7280"
+
+            comp_key = (cat_key, group)
+            if comp_key in comp_map:
+                comp_map[comp_key]["value"] += amount
+            else:
+                comp_map[comp_key] = {
+                    "label": label,
+                    "color": color,
+                    "value": amount,
+                }
+
+            if comp_key not in cat_trend_map:
+                cat_trend_map[comp_key] = {
+                    "label": label,
+                    "color": color,
+                    "total": 0.0,
+                    "periods": {},
+                }
+            cat_trend_map[comp_key]["total"] += amount
+            cat_trend_map[comp_key]["periods"][period_label] = (
+                cat_trend_map[comp_key]["periods"].get(period_label, 0.0) + amount
+            )
+
     # Drop categories that fully zeroed out
     for key in list(cat_trend_map.keys()):
         if cat_trend_map[key]["total"] <= 0:

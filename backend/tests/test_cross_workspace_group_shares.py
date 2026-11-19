@@ -4,6 +4,9 @@ An invited member already sees both ends of a split expense: their own
 parent row and the owner's. The group owner must see the invited member's
 split in the default statement scope too, without ever getting their own
 transactions re-projected as "shared" after switching workspaces.
+
+Issue #242: the report's per-category breakdowns must count that share as
+the summary already does.
 """
 
 import uuid
@@ -16,11 +19,18 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.category import Category
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.schemas.group import GroupCreate, GroupMemberCreate
 from app.schemas.transaction_split import TransactionSplitInput, TransactionSplitsInput
-from app.services import dashboard_service, group_service, split_service, workspace_service
+from app.services import (
+    dashboard_service,
+    group_service,
+    report_service,
+    split_service,
+    workspace_service,
+)
 from app.services._query_filters import viewer_shared_pnl
 from app.services.search_service import search_all
 from app.services.transaction_service import get_transactions
@@ -46,8 +56,23 @@ async def _make_user_with_workspace(
     return user, workspace
 
 
+async def _make_category(session, user, workspace, name: str, color: str) -> Category:
+    category = Category(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        workspace_id=workspace.id,
+        name=name,
+        icon="circle-help",
+        color=color,
+    )
+    session.add(category)
+    await session.flush()
+    return category
+
+
 async def _record_split_expense(
-    session, payer, workspace, members, amount: str, description: str
+    session, payer, workspace, members, amount: str, description: str,
+    category: Category | None = None,
 ) -> Transaction:
     """`payer` pays `amount` from an account in `workspace`, split equally."""
     account = Account(
@@ -66,6 +91,7 @@ async def _record_split_expense(
         user_id=payer.id,
         workspace_id=workspace.id,
         account_id=account.id,
+        category_id=category.id if category else None,
         description=description,
         amount=Decimal(amount),
         currency="BRL",
@@ -316,3 +342,97 @@ async def test_dashboard_counts_a_third_party_row_in_the_owners_workspace_once(
         session, test_workspace.id, test_user.id, month=month
     )
     assert sum(item.total for item in by_category) == pytest.approx(150.0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("linked_self", [False, True])
+async def test_report_category_totals_count_the_owners_shared_share(
+    session: AsyncSession, test_user, test_workspace, linked_self
+):
+    """The report summary already counted the owner's share of the invited
+    member's expense; the composition and the per-category trend were still
+    workspace-only (#242). A row inside the owner's workspace stays whole,
+    and the share of a row in the member's workspace is added."""
+    _group, me, friend, guest, guest_ws = await _trip_group(
+        session, test_user, test_workspace, linked_self=linked_self
+    )
+    lunch = await _make_category(session, guest, test_workspace, "Lunch", "#F59E0B")
+    groceries = await _make_category(
+        session, guest, guest_ws, "Groceries", "#22C55E"
+    )
+    await _record_split_expense(
+        session, guest, test_workspace, [me, friend], "100.00", "Team lunch",
+        category=lunch,
+    )
+    await _record_split_expense(
+        session, guest, guest_ws, [me, friend], "100.00", "Groceries",
+        category=groceries,
+    )
+
+    report = await report_service.get_income_expenses_report(
+        session, test_workspace.id, test_user.id, months=1
+    )
+
+    expenses = next(b for b in report.summary.breakdowns if b.key == "expenses")
+    assert expenses.value == pytest.approx(150.0)
+
+    composition = {
+        item.label: item.value
+        for item in report.composition
+        if item.group == "expenses"
+    }
+    assert composition["Lunch"] == pytest.approx(100.0)
+    assert composition["Groceries"] == pytest.approx(50.0)
+
+    trend = {
+        item.label: item
+        for item in report.category_trend
+        if item.group == "expenses"
+    }
+    assert trend["Groceries"].total == pytest.approx(50.0)
+    current_point = report.trend[-1]
+    current_series = next(
+        point for point in trend["Groceries"].series if point.date == current_point.date
+    )
+    assert current_series.value == pytest.approx(50.0)
+
+
+@pytest.mark.asyncio
+async def test_report_for_the_invited_member_counts_their_own_share(
+    session: AsyncSession, test_user, test_workspace
+):
+    """From the invited member's workspace their expense counts once: the
+    whole row minus the owner's share, with no projection of their own row."""
+    _group, me, friend, guest, guest_ws = await _trip_group(
+        session, test_user, test_workspace, linked_self=False
+    )
+    guest.preferences = {"currency_display": "BRL"}
+    await session.commit()
+    groceries = await _make_category(
+        session, guest, guest_ws, "Groceries", "#22C55E"
+    )
+    await _record_split_expense(
+        session, guest, guest_ws, [me, friend], "100.00", "Groceries",
+        category=groceries,
+    )
+
+    report = await report_service.get_income_expenses_report(
+        session, guest_ws.id, guest.id, months=1
+    )
+
+    expenses = next(b for b in report.summary.breakdowns if b.key == "expenses")
+    assert expenses.value == pytest.approx(50.0)
+
+    composition = {
+        item.label: item.value
+        for item in report.composition
+        if item.group == "expenses"
+    }
+    assert composition["Groceries"] == pytest.approx(50.0)
+
+    trend = {
+        item.label: item
+        for item in report.category_trend
+        if item.group == "expenses"
+    }
+    assert trend["Groceries"].total == pytest.approx(50.0)
