@@ -1384,10 +1384,15 @@ export const recurring = {
     const { data } = await api.get('/recurring-transactions')
     return data
   },
-  // `skip_first` is write-only: it moves the first occurrence one period ahead
-  // when the transaction that would cover it already exists.
+  // `skip_first` and `source_transaction_id` are write-only: the first moves
+  // the first occurrence one period ahead when the transaction that would
+  // cover it already exists, and the second links that transaction to the new
+  // bill so it is not offered again.
   create: async (
-    rt: Partial<RecurringTransaction> & { skip_first?: boolean },
+    rt: Partial<RecurringTransaction> & {
+      skip_first?: boolean
+      source_transaction_id?: string
+    },
   ): Promise<RecurringTransaction> => {
     const { data } = await api.post('/recurring-transactions', rt)
     return data

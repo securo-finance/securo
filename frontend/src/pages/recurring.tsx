@@ -588,11 +588,13 @@ function RecurringFormFields({
   // same path the transaction dialog uses.
   const displayLocale = useDisplayLocale()
   const [description, setDescription] = useState(recurring?.description ?? initial?.description ?? '')
+  // Money is always written with its two decimals: a bill filled from a
+  // transaction reads "129,90", never "129,9".
   const [amount, setAmount] = useState(
     recurring?.amount != null
-      ? formatAmountInput(Number(recurring.amount), displayLocale)
+      ? formatAmountInput(Number(recurring.amount), displayLocale, 2, 2)
       : initial?.amount != null
-        ? formatAmountInput(Number(initial.amount), displayLocale)
+        ? formatAmountInput(Number(initial.amount), displayLocale, 2, 2)
         : '',
   )
   const parsedAmount = parseAmountInput(amount, displayLocale)
@@ -702,7 +704,7 @@ function RecurringFormFields({
           />
           {amountInvalid && (
             <p id="recurring-amount-error" role="alert" className="text-xs text-destructive">
-              {t('common.invalidAmount', { example: formatAmountInput(1234.56, displayLocale) })}
+              {t('common.invalidAmount', { example: formatAmountInput(1234.56, displayLocale, 2, 2) })}
             </p>
           )}
         </div>

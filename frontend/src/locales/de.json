@@ -1620,6 +1620,8 @@
   },
   "recurring": {
     "makeFromTransaction": "Neue wiederkehrende Buchung aus dieser Buchung",
+    "duplicate": "Es gibt bereits eine wiederkehrende Buchung mit derselben Beschreibung, Häufigkeit und demselben Startdatum",
+    "alreadyLinked": "Diese Buchung gehört bereits zu einer wiederkehrenden Buchung",
     "title": "Wiederkehrende Transaktionen",
     "add": "Wiederkehrende hinzufügen",
     "edit": "Wiederkehrende bearbeiten",

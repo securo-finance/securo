@@ -1711,6 +1711,8 @@
   },
   "recurring": {
     "makeFromTransaction": "Nová opakovaná transakce z této transakce",
+    "duplicate": "Opakovaná transakce se stejným popisem, frekvencí a datem začátku už existuje",
+    "alreadyLinked": "Tato transakce už patří k opakované transakci",
     "title": "Opakované transakce",
     "add": "Přidat opakovanou",
     "edit": "Upravit opakovanou",

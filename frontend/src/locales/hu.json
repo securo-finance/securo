@@ -1619,6 +1619,8 @@
   },
   "recurring": {
     "makeFromTransaction": "Új ismétlődő tranzakció ebből a tranzakcióból",
+    "duplicate": "Már létezik ismétlődő tranzakció ugyanezzel a leírással, gyakorisággal és kezdő dátummal",
+    "alreadyLinked": "Ez a tranzakció már egy ismétlődő tranzakcióhoz tartozik",
     "title": "Ismétlődő tranzakciók",
     "add": "Ismétlődő hozzáadása",
     "edit": "Ismétlődő szerkesztése",

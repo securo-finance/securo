@@ -1678,6 +1678,8 @@
   },
   "recurring": {
     "makeFromTransaction": "Nowa cykliczna z tej transakcji",
+    "duplicate": "Istnieje już transakcja cykliczna z tym samym opisem, częstotliwością i datą rozpoczęcia",
+    "alreadyLinked": "Ta transakcja należy już do transakcji cyklicznej",
     "title": "Transakcje cykliczne",
     "add": "Dodaj cykliczną",
     "edit": "Edytuj cykliczną",
