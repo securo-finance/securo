@@ -14,8 +14,12 @@ const auth = vi.hoisted(() => ({
   login: vi.fn(),
   verify2fa: vi.fn(),
   register: vi.fn(),
+  oidcConfig: vi.fn(),
 }))
 vi.mock('@/lib/api', () => ({ auth }))
+
+const providerLogout = vi.hoisted(() => ({ endProviderSession: vi.fn() }))
+vi.mock('@/lib/provider-logout', () => providerLogout)
 
 const USER: User = {
   id: '1',
@@ -395,6 +399,45 @@ describe('cross-tab sync', () => {
     })
 
     expect(result.current.token).toBe('jwt')
+  })
+})
+
+describe('AuthProvider sign-out', () => {
+  it('ends the provider session when the sign-in came from OIDC (issue #1623)', async () => {
+    localStorage.setItem('token', 'oidc-jwt')
+    localStorage.setItem('oidc_session', '1')
+    auth.me.mockResolvedValue(USER)
+
+    const { result } = await renderAuth()
+    act(() => result.current.logout())
+
+    expect(providerLogout.endProviderSession).toHaveBeenCalledTimes(1)
+    expect(result.current.token).toBeNull()
+    expect(result.current.user).toBeNull()
+    expect(localStorage.getItem('token')).toBeNull()
+    expect(localStorage.getItem('oidc_session')).toBeNull()
+  })
+
+  it('leaves the provider alone on a local sign-out', async () => {
+    localStorage.setItem('token', 'local-jwt')
+    auth.me.mockResolvedValue(USER)
+
+    const { result } = await renderAuth()
+    act(() => result.current.logout())
+
+    expect(providerLogout.endProviderSession).not.toHaveBeenCalled()
+    expect(localStorage.getItem('token')).toBeNull()
+  })
+
+  it('marks a session as OIDC only when loginWithToken says so', async () => {
+    auth.me.mockResolvedValue(USER)
+
+    const { result } = await renderAuth()
+    act(() => result.current.loginWithToken('oidc-jwt', true))
+    expect(localStorage.getItem('oidc_session')).toBe('1')
+
+    act(() => result.current.loginWithToken('local-jwt'))
+    expect(localStorage.getItem('oidc_session')).toBeNull()
   })
 })
 

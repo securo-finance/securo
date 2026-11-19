@@ -5,6 +5,10 @@ import { auth } from '@/lib/api'
 import type { User } from '@/types'
 
 import { AuthContext, type LoginResult } from '@/contexts/auth-context'
+import { endProviderSession } from '@/lib/provider-logout'
+
+/** Marks a session that came from the OIDC provider (issue #1623). */
+const OIDC_SESSION_KEY = 'oidc_session'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
@@ -47,6 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (isAxiosError(error) && error.response?.status === 401) {
           stopRetrying()
           localStorage.removeItem('token')
+          localStorage.removeItem(OIDC_SESSION_KEY)
           setToken(null)
           return
         }
@@ -79,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const accessToken = data.access_token
     localStorage.setItem('token', accessToken)
+    localStorage.removeItem(OIDC_SESSION_KEY)
     setToken(accessToken)
     const me = await auth.me()
     setUser(me)
@@ -88,13 +94,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const verify2fa = useCallback(async (tempToken: string, code: string) => {
     const data = await auth.verify2fa(tempToken, code)
     localStorage.setItem('token', data.access_token)
+    localStorage.removeItem(OIDC_SESSION_KEY)
     setToken(data.access_token)
     const me = await auth.me()
     setUser(me)
   }, [])
 
-  const loginWithToken = useCallback((accessToken: string) => {
+  const loginWithToken = useCallback((accessToken: string, viaOidc = false) => {
     localStorage.setItem('token', accessToken)
+    if (viaOidc) localStorage.setItem(OIDC_SESSION_KEY, '1')
+    else localStorage.removeItem(OIDC_SESSION_KEY)
     setToken(accessToken)
     auth.me().then(setUser).catch(() => {})
   }, [])
@@ -109,10 +118,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [login])
 
   const logout = useCallback(() => {
+    const signedInWithOidc = localStorage.getItem(OIDC_SESSION_KEY) === '1'
     localStorage.removeItem('token')
+    localStorage.removeItem(OIDC_SESSION_KEY)
     setToken(null)
     setUser(null)
     queryClient.clear()
+    // Dropping the local token leaves the provider's SSO session alive, so the
+    // next sign-in returns as the same user. Only an OIDC session has one to
+    // end; a password or passkey sign-in never touches the provider.
+    if (signedInWithOidc) void endProviderSession()
   }, [queryClient])
 
   return (

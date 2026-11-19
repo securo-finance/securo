@@ -2,8 +2,9 @@ import base64
 import hashlib
 import json
 import secrets
+import time
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -35,6 +36,9 @@ class OIDCConfigResponse(BaseModel):
     enabled: bool
     provider_name: str = "OIDC"
     local_auth_enabled: bool = True
+    # Where the browser goes after the local sign-out so the provider's own
+    # session ends too (#1623); empty when there is nowhere to send it.
+    logout_url: str = ""
 
 
 async def _discover() -> dict[str, Any]:
@@ -54,6 +58,57 @@ def _redirect_uri() -> str:
     return settings.oidc_redirect_uri or f"{settings.frontend_url.rstrip('/')}/api/auth/oidc/callback"
 
 
+def _with_client_id(url: str, client_id: str) -> str:
+    """Add `client_id` to a logout URL that doesn't carry it yet.
+
+    Keycloak needs either `id_token_hint` or `client_id` to end the session;
+    Securo keeps only its own JWT, so the client id is what it can send.
+    """
+    parts = urlsplit(url)
+    query = parse_qsl(parts.query, keep_blank_values=True)
+    if client_id and not any(key == "client_id" for key, _ in query):
+        query.append(("client_id", client_id))
+    return urlunsplit(parts._replace(query=urlencode(query)))
+
+
+_LOGOUT_URL_TTL = 300.0
+# (monotonic time, discovery url + client id it was read for, resolved URL)
+_logout_url_cache: tuple[float, str, str] | None = None
+
+
+async def _provider_logout_url() -> str:
+    """Where to send the browser so the provider's own session ends (#1623).
+
+    An explicit `OIDC_LOGOUT_URL` wins; otherwise the discovery document's
+    `end_session_endpoint`. Cached for a few minutes because `/config` is
+    public and the document rarely changes. Every failure answers "": the
+    local sign-out already happened and must never wait on the provider.
+    """
+    global _logout_url_cache
+    settings = get_settings()
+    if not settings.oidc_login_available:
+        return ""
+    if settings.oidc_logout_url:
+        return _with_client_id(settings.oidc_logout_url, settings.oidc_client_id)
+
+    cache_key = f"{settings.oidc_discovery_url}|{settings.oidc_client_id}"
+    now = time.monotonic()
+    if (
+        _logout_url_cache is not None
+        and _logout_url_cache[1] == cache_key
+        and now - _logout_url_cache[0] < _LOGOUT_URL_TTL
+    ):
+        return _logout_url_cache[2]
+    try:
+        discovery = await _discover()
+        endpoint = str(discovery.get("end_session_endpoint") or "")
+    except (HTTPException, httpx.HTTPError, ValueError):
+        endpoint = ""
+    url = _with_client_id(endpoint, settings.oidc_client_id) if endpoint else ""
+    _logout_url_cache = (now, cache_key, url)
+    return url
+
+
 @router.get("/config", response_model=OIDCConfigResponse)
 async def oidc_config():
     settings = get_settings()
@@ -61,6 +116,7 @@ async def oidc_config():
         enabled=settings.oidc_login_available,
         provider_name=settings.oidc_provider_name or "OIDC",
         local_auth_enabled=settings.local_auth_enabled,
+        logout_url=await _provider_logout_url(),
     )
 
 
