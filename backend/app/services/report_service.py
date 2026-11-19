@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import String, and_, case, desc, func, or_, select
+from sqlalchemy import String, and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_timezone, app_today
@@ -12,7 +12,6 @@ from app.core.config import get_settings
 from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
 from app.models.account import Account
 from app.models.asset import ASSET_PRICE_DECIMALS, Asset
-from app.models.asset_value import AssetValue
 from app.models.transaction import Transaction
 from app.models.category import Category
 from app.models.user import User
@@ -33,7 +32,11 @@ from app.services._query_filters import (
 )
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.account_service import get_account_name
-from app.services.asset_service import held_on
+from app.services.asset_service import (
+    _fill_forward_at,
+    _load_asset_native_values,
+    held_on,
+)
 from app.services.fx_rate_service import convert
 from app.schemas.report import (
     CategoryTrendItem,
@@ -101,44 +104,27 @@ def _report_start_date(
     return start.replace(day=1)
 
 
-async def _asset_value_at(
-    session: AsyncSession, workspace_id: uuid.UUID, cutoff: date,
-    primary_currency: str = "USD",
-    group_ids: Optional[list[uuid.UUID]] = None,
-) -> float:
-    """Sum of all asset values held at a given date, converted to primary currency."""
-    asset_stmt = select(Asset).where(
+async def _get_report_assets(
+    session: AsyncSession, workspace_id: uuid.UUID, since: date, up_to: date,
+    account_ids: Optional[list[uuid.UUID]] = None,
+    asset_group_ids: Optional[list[uuid.UUID]] = None,
+) -> tuple[list[Asset], dict[str, list[tuple[date, float]]]]:
+    """Assets held on ``since`` or later, with their native value series up to ``up_to``.
+
+    The value at a date depends only on rows up to it, so one load serves
+    every snapshot of a report. The series is the one the Assets page and the
+    dashboard use (``get_asset_values_at``): ledger replay for market-priced
+    holdings, stored amounts otherwise.
+    """
+    stmt = select(Asset).where(
         Asset.workspace_id == workspace_id,
         Asset.is_archived == False,
-        held_on(cutoff),
+        held_on(since),
     )
-    if group_ids is not None:
-        asset_stmt = asset_stmt.where(Asset.group_id.in_(group_ids))
-    asset_result = await session.execute(asset_stmt)
-    total = 0.0
-    for asset in asset_result.scalars().all():
-        val_result = await session.execute(
-            select(AssetValue.amount)
-            .where(AssetValue.asset_id == asset.id, AssetValue.date <= cutoff)
-            .order_by(desc(AssetValue.date), desc(AssetValue.id))
-            .limit(1)
-        )
-        val = val_result.scalar_one_or_none()
-        if val is not None:
-            amount = float(val)
-        elif asset.purchase_price is not None and (
-            asset.purchase_date is None or asset.purchase_date <= cutoff
-        ):
-            amount = float(asset.purchase_price)
-        else:
-            amount = 0.0
-        if amount > 0:
-            converted, _ = await convert(
-                session, Decimal(str(amount)), asset.currency, primary_currency, cutoff,
-                decimals=ASSET_PRICE_DECIMALS,
-            )
-            total += float(converted)
-    return total
+    if account_ids is not None:
+        stmt = stmt.where(Asset.group_id.in_(asset_group_ids or []))
+    assets = list((await session.execute(stmt)).scalars().all())
+    return assets, await _load_asset_native_values(session, assets, up_to_date=up_to)
 
 
 async def _net_worth_at(
@@ -147,6 +133,7 @@ async def _net_worth_at(
     account_ids: Optional[list[uuid.UUID]] = None,
     asset_group_ids: Optional[list[uuid.UUID]] = None,
     accounts: Optional[list[Account]] = None,
+    assets: Optional[tuple[list[Asset], dict[str, list[tuple[date, float]]]]] = None,
 ) -> ReportDataPoint:
     """Compute a single net worth snapshot at a given date, converted to primary currency.
 
@@ -157,6 +144,11 @@ async def _net_worth_at(
     ``accounts`` lets a caller that already fetched the account list for
     this workspace/filter pass it in, instead of re-querying
     it for every snapshot in a multi-point trend. Omit it to fetch as before.
+
+    ``assets`` is the same for the assets: a caller building a multi-point
+    trend passes the ``_get_report_assets`` result for the whole range in,
+    instead of reloading the value series for every snapshot. Omit it to load
+    for this cutoff.
     """
     if accounts is None:
         accounts = await _get_open_accounts(session, workspace_id, account_ids, closed_after=cutoff)
@@ -225,36 +217,23 @@ async def _net_worth_at(
                     group="accounts",
                 ))
 
-    # Per-asset composition at the cutoff date. An asset sold after the
-    # cutoff was still held on it.
-    filtered = account_ids is not None
-    asset_stmt = select(Asset).where(
-        Asset.workspace_id == workspace_id,
-        Asset.is_archived == False,
-        held_on(cutoff),
-    )
-    if filtered:
-        asset_stmt = asset_stmt.where(Asset.group_id.in_(asset_group_ids or []))
-    asset_result = await session.execute(asset_stmt)
+    # Per-asset composition at the cutoff date, from the same series as the
+    # Assets page and dashboard (ledger replay for market-priced holdings). An
+    # asset sold after the cutoff was still held on it.
+    if assets is None:
+        assets = await _get_report_assets(
+            session, workspace_id, cutoff, cutoff, account_ids, asset_group_ids
+        )
+    report_assets, asset_values = assets
     # Decimal until the one final rounding: sub-cent holdings must add up
     # exactly the way the wallet rollup does.
     assets_sum = Decimal("0")
-    for asset in asset_result.scalars().all():
-        val_result = await session.execute(
-            select(AssetValue.amount)
-            .where(AssetValue.asset_id == asset.id, AssetValue.date <= cutoff)
-            .order_by(desc(AssetValue.date), desc(AssetValue.id))
-            .limit(1)
-        )
-        val = val_result.scalar_one_or_none()
-        if val is not None:
-            amount = float(val)
-        elif asset.purchase_price is not None and (
-            asset.purchase_date is None or asset.purchase_date <= cutoff
-        ):
-            amount = float(asset.purchase_price)
-        else:
-            amount = 0.0
+    for asset in report_assets:
+        # The preloaded list was selected with held_on(since): re-apply it for
+        # this cutoff.
+        if asset.sell_date is not None and asset.sell_date <= cutoff:
+            continue
+        amount = _fill_forward_at(asset, asset_values[str(asset.id)], cutoff) or 0.0
         if amount > 0:
             converted, _ = await convert(
                 session, Decimal(str(amount)), asset.currency, primary_currency, cutoff,
@@ -410,12 +389,19 @@ async def get_net_worth_report(
     # period; each point below keeps the ones still open on its date.
     accounts = await _get_open_accounts(session, workspace_id, account_ids, closed_after=start)
 
+    # Load the assets once for the whole range: the latest cutoff any snapshot
+    # asks for is the last point, or `start` for the baseline.
+    assets = await _get_report_assets(
+        session, workspace_id, start, max(points[-1], start) if points else start,
+        account_ids, asset_group_ids,
+    )
+
     # Compute snapshot at each date point
     trend: list[ReportDataPoint] = []
     for point in points:
         dp = await _net_worth_at(
             session, workspace_id, point, primary_currency, account_ids, asset_group_ids,
-            accounts=accounts,
+            accounts=accounts, assets=assets,
         )
         dp.date = _format_date_label(point, interval)
         dp.change = round(dp.value - trend[-1].value, 2) if trend else None
@@ -434,7 +420,7 @@ async def get_net_worth_report(
     else:
         baseline = await _net_worth_at(
             session, workspace_id, start, primary_currency, account_ids, asset_group_ids,
-            accounts=accounts,
+            accounts=accounts, assets=assets,
         )
     previous = baseline if trend else current
 
