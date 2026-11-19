@@ -708,3 +708,44 @@ async def test_category_transfer_converts_a_limit_into_the_kept_rows_currency(
     assert [(b.category_id, b.amount, b.currency) for b in remaining] == [
         (destination_id, Decimal(expected[0]), expected[1])
     ]
+
+
+@pytest.mark.asyncio
+async def test_category_transfer_refuses_limits_in_two_currencies_without_a_rate(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace,
+    test_categories: list[Category],
+):
+    """With no USD/BRL rate, US$ 100 onto R$ 1,000 is refused, not stored as 1,100."""
+    source, destination = test_categories[:2]
+    month = date(2025, 3, 1)
+    await _make_budget(
+        session, test_user, test_workspace, source.id,
+        amount="100", month=month, is_recurring=True, currency="USD",
+    )
+    await _make_budget(
+        session, test_user, test_workspace, destination.id,
+        amount="1000", month=month, is_recurring=True, currency="BRL",
+    )
+    workspace_id, source_id, destination_id = test_workspace.id, source.id, destination.id
+
+    response = await client.delete(
+        f"/api/categories/{source_id}",
+        headers=auth_headers,
+        params={"transfer_to_category_id": str(destination_id)},
+    )
+
+    assert response.status_code == 400
+    assert "exchange rate" in response.json()["detail"]
+    session.expire_all()
+    remaining = (
+        await session.execute(select(Budget).where(Budget.workspace_id == workspace_id))
+    ).scalars().all()
+    assert sorted((b.category_id == source_id, b.amount, b.currency) for b in remaining) == [
+        (False, Decimal("1000.00"), "BRL"),
+        (True, Decimal("100.00"), "USD"),
+    ]
+    assert await session.get(Category, source_id) is not None

@@ -42,6 +42,8 @@ const KNOWN_MESSAGES: Record<string, string> = {
     'categoryLines.errors.categoryInUse',
   'Transactions split across categories cannot move into an ignored or hidden category.':
     'categoryLines.errors.destinationInvalid',
+  'These budgets are in different currencies and there is no exchange rate for their month to combine them.':
+    'categoryLines.errors.mergeNeedsRate',
 }
 
 /**

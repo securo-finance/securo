@@ -8,6 +8,7 @@ from sqlalchemy import func, or_, select, update as sa_update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.models.account import Account
 from app.models.budget import Budget
 from app.models.category import Category
@@ -24,6 +25,7 @@ from app.services.category_defaults import (
     localized_name,
 )
 from app.services.category_group_service import create_default_groups
+from app.services.fx_rate_service import convert_or_none
 
 
 class CategoryVisibilityError(ValueError):
@@ -377,6 +379,11 @@ async def _used_in_card_credit_lines(
     return False
 
 
+_MERGE_NEEDS_RATE = (
+    "These budgets are in different currencies and there is no exchange rate "
+    "for their month to combine them."
+)
+
 # (amount, amount_primary, currency) of one member's limit.
 _Limit = tuple[Decimal, Decimal | None, str | None]
 
@@ -393,9 +400,6 @@ async def _merge_budgets(
     overrides its own category for that month. Merge those schedules before
     moving the rows, or a later recurring row would hide the earlier limit.
     """
-    # budget_service reaches category_service through dashboard_service.
-    from app.services.budget_service import amount_in_currency
-
     moving = (
         (
             await session.execute(
@@ -464,11 +468,17 @@ async def _merge_budgets(
             )
             total = Decimal("0")
             for amount, _, share_currency in shares[user_id]:
-                total += (
-                    await amount_in_currency(session, amount, share_currency, currency, month)
-                    if currency
-                    else amount
+                if not currency or not share_currency or share_currency == currency:
+                    total += amount
+                    continue
+                # A missing rate must stop the move: the 1:1 read fallback
+                # would store US$ 100 onto R$ 1,000 as 1,100.
+                converted, _ = await convert_or_none(
+                    session, amount, share_currency, currency, min(month, app_today())
                 )
+                if converted is None:
+                    raise CategoryTransferError(_MERGE_NEEDS_RATE)
+                total += converted
             target.amount = total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             target.currency = currency
             primary = [value for _, value, _ in shares[user_id] if value is not None]
