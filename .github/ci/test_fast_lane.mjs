@@ -60,6 +60,23 @@ const VERDICT = [
   '',
   `<!-- sha: ${HEAD} -->`,
 ].join('\n');
+// The same verdict, given for the head a later push replaced.
+const STALE_VERDICT = VERDICT.replace(HEAD, OLD_HEAD);
+// The lane's refusal note, as the workflow writes it: its own comment, opening
+// with the marker, rewritten in place across evaluations.
+const REFUSAL = '<!-- fast-lane: refused -->';
+const refusalNote = (id = 9001) => ({
+  id,
+  user: { login: 'github-actions[bot]' },
+  body: [
+    REFUSAL,
+    '',
+    'This pull request was not merged automatically: it has 1 unresolved ' +
+      'CodeRabbit major thread(s).',
+    '',
+    'That is only a note about the automatic merge.',
+  ].join('\n'),
+});
 
 const plain = (body = 'Looks fine to me.') => ({ author: { login: 'coderabbitai' }, body });
 const major = (body = '**Major** — the lock is taken after the read.') =>
@@ -98,10 +115,15 @@ function answerThreads(query, threads) {
 // CodeRabbit review of that same head.
 async function evaluate({
   threads, comments, reviews, checks, order, body = 'Reviewed, green on this head.',
+  commentsError = null,
 }) {
   const log = [];
   const merged = [];
   const posted = [];
+  const deleted = [];
+  // How many times the comment list was read: a transient failure is the first
+  // call and only it, so a second read (if anything makes one) succeeds.
+  let commentReads = 0;
   const state = {
     pr: {
       state: 'open',
@@ -139,10 +161,17 @@ async function evaluate({
         merge: async (params) => { merged.push(params); return { data: {} }; },
       },
       issues: {
-        listComments: async () => state.comments,
+        listComments: async () => {
+          commentReads += 1;
+          if (commentsError && commentReads === 1) throw new Error(commentsError);
+          return state.comments;
+        },
         createComment: async (params) => { posted.push(params); return { data: {} }; },
         updateComment: async () => ({ data: {} }),
-        deleteComment: async () => ({ data: {} }),
+        deleteComment: async (params) => {
+          deleted.push(params.comment_id);
+          return { data: {} };
+        },
       },
       checks: {
         listForRef: async () => {
@@ -174,6 +203,7 @@ async function evaluate({
     mergeParams: merged[0] || null,
     log: log.join('\n'),
     posted,
+    deleted,
   };
 }
 
@@ -240,6 +270,46 @@ scenario('a head the CodeRabbit never reviewed refuses, and the pull request say
     assert.equal(posted.length, 1, `the refusal belongs in one comment: ${log}`);
     assert.match(posted[0].body, /CodeRabbit has no review of this commit/, posted[0].body);
   });
+
+// #1585: the note describes the head it was written for, and a verdict names
+// one commit. An approved pull request was refused, the author pushed a fix,
+// and no verdict names the new head any more — the note is then about a state
+// the current commit no longer has, so it goes instead of being kept.
+scenario('a new head with no verdict clears the note written for the old one',
+  async () => {
+    const { merged, log, posted, deleted } = await evaluate({
+      threads: [{ comments: [plain()] }],
+      comments: [{
+        user: { login: 'tassionoronha' },
+        body: STALE_VERDICT,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      }, refusalNote()],
+    });
+    assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+    assert.match(log, /carries no approval from an identity other than its author/, log);
+    assert.deepEqual(deleted, [9001],
+      `the note written for the previous head has to go: ${log}`);
+    assert.equal(posted.length, 0,
+      `an unapproved head gets no note of its own: ${log}`);
+  });
+
+// The other half: no note may be deleted on a read that failed. An API error
+// says nothing about the head, and a transient hiccup must not take away the
+// only place the refusal is written down. The failure is the first read only,
+// and the note is there for any second one, so a fix that retries the list
+// after the error deletes it and fails this scenario.
+scenario('a failed comment read keeps the refusal note', async () => {
+  const { merged, log, posted, deleted } = await evaluate({
+    threads: [{ comments: [plain()] }],
+    comments: [refusalNote()],
+    commentsError: 'HTTP 502',
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.match(log, /could not read the comments: HTTP 502/, log);
+  assert.deepEqual(deleted, [], `a failed read deletes nothing: ${log}`);
+  assert.equal(posted.length, 0, log);
+});
 
 // The case that actually happened: the bot was rate limited on this head. Its
 // check run is `completed` and `neutral`, so a gate reading the conclusion

@@ -23,13 +23,13 @@ name: fast lane
 #      so does a check run that reports its review as completed
 #
 # A refusal is also said on the pull request itself, in one comment this
-# workflow rewrites in place and deletes once the pull request merges, but only
-# when the head being evaluated already carries an approval. That is the one
-# case where somebody is waiting on the lane and the log is the only place
-# saying why. An open pull request nobody has approved yet is not commented on
-# at all: a sweep looks at every open pull request, and saying "no approval
-# yet" under each of them, every hour, is noise on other people's work. This is
-# visibility only, never a looser gate.
+# workflow rewrites in place and deletes once the pull request merges or the
+# head it describes is gone, but only when the head being evaluated already
+# carries an approval. That is the one case where somebody is waiting on the
+# lane and the log is the only place saying why. An open pull request nobody has
+# approved yet is not commented on at all: a sweep looks at every open pull
+# request, and saying "no approval yet" under each of them, every hour, is noise
+# on other people's work. This is visibility only, never a looser gate.
 #
 # Gate 5 is a comment and not a GitHub review on purpose: posting a review is
 # one of the calls that needs a human approval, posting a comment is not. Both
@@ -214,6 +214,11 @@ jobs:
             // someone else's work. `tryMerge` marks a skip reportable only when
             // that head carries a valid verdict, and the caller obeys the mark.
             //
+            // The same rule takes the note away when the head it was written
+            // for is gone: a push leaves the new head with no verdict, so there
+            // is nothing on it the note describes any more. `tryMerge` clears it
+            // then, and only when the comments could be read.
+            //
             // Creating it only when none exists is not enough to keep it one: a
             // sweep and a hand-run of the same pull request sit in different
             // concurrency groups, so both can list the comments before either
@@ -226,14 +231,18 @@ jobs:
             // one, and every skip keeps its log line above.
             const REFUSAL = '<!-- fast-lane: refused -->';
 
-            async function refusalComments(number) {
-              const comments = await github.paginate(github.rest.issues.listComments,
+            // Only the lane's own comments, and only this marker: the verdict
+            // comments and the merge comment are a different thing entirely.
+            const isRefusal = (c) => Boolean(c.user)
+              && c.user.login === 'github-actions[bot]'
+              && (c.body || '').trimStart().startsWith(REFUSAL);
+
+            // `listed` hands over comments an evaluation already read, so a
+            // caller holding that page does not spend another call on it.
+            async function refusalComments(number, listed) {
+              const comments = listed || await github.paginate(github.rest.issues.listComments,
                 { owner: OWNER, repo: REPO, issue_number: number, per_page: 100 });
-              // Only the lane's own comments, and only this marker: the verdict
-              // comments and the merge comment are a different thing entirely.
-              return comments.filter((c) => c.user
-                && c.user.login === 'github-actions[bot]'
-                && (c.body || '').trimStart().startsWith(REFUSAL));
+              return comments.filter(isRefusal);
             }
 
             // Written for a contributor who has never read this workflow: no
@@ -275,11 +284,12 @@ jobs:
 
             // A pull request that merged must not also say why it did not: the
             // sweep and a hand-run can disagree about the same head, and after
-            // the merge only the merge comment is the truth. Best effort on
-            // purpose: nothing here fails a merge that already happened.
-            async function clearRefusal(number) {
+            // the merge only the merge comment is the truth. The same goes for
+            // a note whose head is gone (see tryMerge). Best effort on purpose:
+            // nothing here fails a merge that already happened.
+            async function clearRefusal(number, listed) {
               try {
-                for (const c of await refusalComments(number)) {
+                for (const c of await refusalComments(number, listed)) {
                   try {
                     await github.rest.issues.deleteComment(
                       { owner: OWNER, repo: REPO, comment_id: c.id });
@@ -303,6 +313,12 @@ jobs:
               // can tell whether a person already approved it. Gate 4 below is
               // where the verdict actually decides the merge.
               let verdict = null;
+              // Whether that read worked at all. A missing verdict and an
+              // unreadable list look the same in `verdict`, and they are not:
+              // only the first says this head carries no approval.
+              let verdictKnown = false;
+              // The comment page itself, kept for the refusal check below.
+              let comments = [];
               // A closed, draft or wrong-base pull request is refused before the
               // lane would consider it at all, and the pull request itself
               // already shows that: a comment there would be noise, so these
@@ -331,7 +347,7 @@ jobs:
               head = pr.head.sha;
 
               try {
-                const comments = await github.paginate(github.rest.issues.listComments,
+                comments = await github.paginate(github.rest.issues.listComments,
                   { owner: OWNER, repo: REPO, issue_number: number, per_page: 100 });
                 // The marker must open the comment, so quoting a verdict in the
                 // conversation cannot pass as one; an edited comment never counts,
@@ -358,11 +374,25 @@ jobs:
                     && (!c.updated_at || c.created_at === c.updated_at)
                     && new RegExp(`sha:\\s*${head}\\b`).test(body);
                 }).pop() || null;
+                verdictKnown = true;
               } catch (e) {
                 // No readable approval means nothing to report either way; the
                 // gates below still run and gate 4 names the missing verdict.
                 core.info(`#${number}: could not read the comments: ${e.message}`);
               }
+
+              // A note speaks about one head: the verdict it answers names a
+              // commit. After a push that commit is gone and no verdict names
+              // the new one, so the note that drove the last evaluation now
+              // describes a state the pull request no longer has — an open
+              // thread or a red check the author has since fixed — while its
+              // text promises to describe the most recent check. Nothing is
+              // waiting on the lane for this head either, and an unapproved
+              // head gets no note of its own, so the stale one goes (#1585).
+              // Only on a successful read: a failed one proves nothing about
+              // the head, and a transient API error must never delete anything.
+              // The page read above is handed over, so this costs no call.
+              if (verdictKnown && !verdict) await clearRefusal(number, comments);
 
               const labels = pr.labels.map((l) => l.name);
               const risk = labels.filter((l) => l.startsWith('risk: ')).map((l) => l.slice(6));
