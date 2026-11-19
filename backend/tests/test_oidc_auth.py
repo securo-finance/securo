@@ -282,6 +282,104 @@ async def test_oidc_config_gives_up_on_a_slow_discovery(
     assert response.json()["logout_url"] == ""
 
 
+class FakeClock:
+    def __init__(self, start: float = 1000.0):
+        self.now = start
+
+    def __call__(self) -> float:
+        return self.now
+
+
+@pytest.mark.asyncio
+async def test_oidc_config_retries_the_discovery_soon_after_a_failure(
+    client: AsyncClient, clean_db, oidc_settings, monkeypatch
+):
+    """One discovery hiccup must not disable provider sign-out for minutes
+    (#1639): a failed lookup is remembered for seconds, not the long TTL."""
+    clock = FakeClock()
+    calls = []
+
+    async def flaky_discover():
+        calls.append(clock.now)
+        if len(calls) == 1:
+            raise oidc_auth.httpx.ConnectError("provider hiccup")
+        return {"end_session_endpoint": "https://id.example.com/logout"}
+
+    monkeypatch.setattr(oidc_auth, "_discover", flaky_discover)
+    monkeypatch.setattr(oidc_auth, "_logout_url_cache", None)
+    monkeypatch.setattr(oidc_auth.time, "monotonic", clock)
+
+    response = await client.get("/api/auth/oidc/config")
+    assert response.json()["logout_url"] == ""
+    assert len(calls) == 1
+
+    clock.now += 10
+    response = await client.get("/api/auth/oidc/config")
+    assert response.json()["logout_url"] == ""
+    assert len(calls) == 1, "a burst of sign-outs must not hammer a provider that is down"
+
+    clock.now += 31
+    response = await client.get("/api/auth/oidc/config")
+    assert response.json()["logout_url"] == "https://id.example.com/logout?client_id=securo"
+    assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_oidc_config_keeps_a_resolved_logout_url_cached(
+    client: AsyncClient, clean_db, oidc_settings, monkeypatch
+):
+    """The long TTL still applies when the discovery answers (#1639)."""
+    clock = FakeClock()
+    calls = []
+
+    async def counting_discover():
+        calls.append(clock.now)
+        return {"end_session_endpoint": "https://id.example.com/logout"}
+
+    monkeypatch.setattr(oidc_auth, "_discover", counting_discover)
+    monkeypatch.setattr(oidc_auth, "_logout_url_cache", None)
+    monkeypatch.setattr(oidc_auth.time, "monotonic", clock)
+
+    response = await client.get("/api/auth/oidc/config")
+    assert response.json()["logout_url"] == "https://id.example.com/logout?client_id=securo"
+
+    clock.now += oidc_auth._LOGOUT_URL_TTL - 1
+    response = await client.get("/api/auth/oidc/config")
+    assert response.json()["logout_url"] == "https://id.example.com/logout?client_id=securo"
+    assert len(calls) == 1
+
+    clock.now += 2
+    response = await client.get("/api/auth/oidc/config")
+    assert response.json()["logout_url"] == "https://id.example.com/logout?client_id=securo"
+    assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_oidc_config_does_not_retry_a_provider_without_logout_often(
+    client: AsyncClient, clean_db, oidc_settings, monkeypatch
+):
+    """A discovery document with no end_session_endpoint is a valid answer, so
+    it keeps the long TTL instead of being retried like a failure (#1639)."""
+    clock = FakeClock()
+    calls = []
+
+    async def counting_discover():
+        calls.append(clock.now)
+        return {"authorization_endpoint": "https://id.example.com/authorize"}
+
+    monkeypatch.setattr(oidc_auth, "_discover", counting_discover)
+    monkeypatch.setattr(oidc_auth, "_logout_url_cache", None)
+    monkeypatch.setattr(oidc_auth.time, "monotonic", clock)
+
+    response = await client.get("/api/auth/oidc/config")
+    assert response.json()["logout_url"] == ""
+
+    clock.now += 60
+    response = await client.get("/api/auth/oidc/config")
+    assert response.json()["logout_url"] == ""
+    assert len(calls) == 1
+
+
 @pytest.mark.asyncio
 async def test_oidc_config_has_no_logout_url_when_oidc_is_off(client: AsyncClient, clean_db):
     response = await client.get("/api/auth/oidc/config")
