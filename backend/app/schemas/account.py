@@ -5,6 +5,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.currency import parse_supported_currency
+
 LoanKind = Literal["mortgage", "auto", "personal", "student", "other"]
 LoanRatePeriod = Literal["monthly", "yearly_effective", "yearly_nominal"]
 LoanAmortization = Literal["price", "sac"]
@@ -40,6 +42,13 @@ class AccountCreate(BaseModel):
     loan_term_months: Optional[int] = Field(default=None, ge=1, le=600)
     loan_first_payment_date: Optional[date] = None
     loan_amortization: Optional[LoanAmortization] = None
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def check_currency(cls, value: object) -> object:
+        # The column is varchar(3): " eur " reached the database and failed
+        # there with a 500, while "brl" and "XYZ" were stored as typed.
+        return parse_supported_currency(value) if isinstance(value, str) else value
 
 
 class AccountUpdate(BaseModel):

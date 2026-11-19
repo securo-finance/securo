@@ -1,3 +1,4 @@
+import uuid
 from decimal import Decimal
 
 import pytest
@@ -1115,3 +1116,55 @@ async def test_account_without_opening_balance_has_no_balance_date(
     )
     fetched = await client.get(f"/api/accounts/{created.json()['id']}", headers=auth_headers)
     assert fetched.json()["balance_date"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("typed,stored", [(" eur ", "EUR"), ("brl", "BRL"), ("USD", "USD")])
+async def test_create_account_stores_the_currency_trimmed_and_upper_case(
+    client: AsyncClient, auth_headers, session, typed, stored
+):
+    """" eur " used to reach the varchar(3) column and fail there with a 500,
+    and "brl" was stored lower-case."""
+    response = await client.post(
+        "/api/accounts",
+        json={"name": "Wise", "type": "checking", "balance": 1000, "currency": typed},
+        headers=auth_headers,
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["currency"] == stored
+    account = await session.get(Account, uuid.UUID(response.json()["id"]))
+    assert account is not None and account.currency == stored
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("typed", ["XYZ", "EURO", "", "   "])
+async def test_create_account_refuses_an_unsupported_currency(
+    client: AsyncClient, auth_headers, typed
+):
+    response = await client.post(
+        "/api/accounts",
+        json={"name": "Wise", "type": "checking", "balance": 1000, "currency": typed},
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+    assert "unsupported currency code" in response.text
+
+
+@pytest.mark.asyncio
+async def test_update_account_leaves_the_currency_alone(
+    client: AsyncClient, auth_headers
+):
+    """An account's currency is fixed at creation: a PATCH carrying one,
+    valid or not, keeps the stored code."""
+    created = await client.post(
+        "/api/accounts",
+        json={"name": "Wise", "type": "checking", "balance": 0, "currency": "BRL"},
+        headers=auth_headers,
+    )
+    response = await client.patch(
+        f"/api/accounts/{created.json()['id']}",
+        json={"name": "Renamed", "currency": " xyz "},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["currency"] == "BRL"
