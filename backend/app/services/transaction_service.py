@@ -1714,11 +1714,17 @@ async def _apply_update_to_row(
         _preserve_original_description(tx)
         tx.description_is_rule_managed = False
 
+    previous_account_id = tx.account_id
     fx_keys = {"amount_primary", "fx_rate_used"}
     for key, value in update_data.items():
         if key in fx_keys:
             continue
         setattr(tx, key, value)
+    account_moved = tx.account_id != previous_account_id
+    if account_moved:
+        # The old account's figure means nothing in the new one; NULL until a
+        # stamp below finds the new account's value.
+        tx.amount_account = None
 
     restamp_fields = {"amount", "currency", "date"}
     needs_restamp = bool(restamp_fields & update_data.keys())
@@ -1727,7 +1733,7 @@ async def _apply_update_to_row(
         if override_amount_primary is None and override_fx_rate is None:
             tx.amount_primary = None
             tx.fx_rate_used = None
-            await stamp_primary_amount(session, user_id, tx)
+            await stamp_primary_amount(session, user_id, tx, restamp_account=True)
         else:
             _apply_fx_override(
                 tx,
@@ -1736,12 +1742,12 @@ async def _apply_update_to_row(
                 override_fx_rate,
             )
             await stamp_account_amount(session, tx)
-    elif needs_restamp or heals_fx_on_post:
-        await stamp_primary_amount(session, user_id, tx)
-    elif "account_id" in update_data:
-        # Moved to another account: its account-currency amount is the new
-        # account's, while the primary stamp does not depend on the account.
-        await stamp_account_amount(session, tx)
+    elif needs_restamp or heals_fx_on_post or account_moved:
+        # Posting only heals the reporting stamp; the account amount follows
+        # a change of amount, currency, date or account.
+        await stamp_primary_amount(
+            session, user_id, tx, restamp_account=needs_restamp or account_moved
+        )
 
     # Refresh effective_date when the purchase date, account, or the manual
     # bill-cycle override changed. Also re-link bill_id when the override
@@ -1802,7 +1808,7 @@ async def _apply_update_to_row(
                         paired_date_changed = update_data[key] != paired_tx.date
                     setattr(paired_tx, key, update_data[key])
             if paired_amount_changed or paired_date_changed:
-                await stamp_primary_amount(session, user_id, paired_tx)
+                await stamp_primary_amount(session, user_id, paired_tx, restamp_account=True)
             if paired_date_changed:
                 paired_account = await session.get(Account, paired_tx.account_id)
                 apply_effective_date(paired_tx, paired_account)
@@ -2471,7 +2477,10 @@ async def post_transaction_today(
 
     account = await session.get(Account, transaction.account_id)
     apply_effective_date(transaction, account)
-    await stamp_primary_amount(session, transaction.user_id, transaction)
+    # Posting moves the date to today: the account amount follows it.
+    await stamp_primary_amount(
+        session, transaction.user_id, transaction, restamp_account=True
+    )
 
     if transaction.transfer_pair_id:
         paired_result = await session.execute(
@@ -2488,7 +2497,9 @@ async def post_transaction_today(
                 paired.date = today
                 paired_account = await session.get(Account, paired.account_id)
                 apply_effective_date(paired, paired_account)
-                await stamp_primary_amount(session, paired.user_id, paired)
+                await stamp_primary_amount(
+                    session, paired.user_id, paired, restamp_account=True
+                )
 
     await session.commit()
     await session.refresh(transaction)

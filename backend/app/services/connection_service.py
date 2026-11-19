@@ -1454,12 +1454,22 @@ def _bank_converted_amount(
     return None
 
 
+def _same_cents(left: Optional[Decimal], right: Optional[Decimal]) -> bool:
+    """Whether two optional money values agree to the cent."""
+    if left is None or right is None:
+        return left is right
+    cent = Decimal("0.01")
+    return Decimal(str(left)).quantize(cent) == Decimal(str(right)).quantize(cent)
+
+
 async def _stamp_synced_primary_amount(
     session: AsyncSession,
     user_id: uuid.UUID,
     transaction: Transaction,
     converted: Optional[Decimal],
     account_amount: Optional[Decimal] = None,
+    *,
+    restamp_account: bool = False,
 ) -> None:
     """Prefer the bank's conversion (see _bank_converted_amount); else use our FX rates.
 
@@ -1472,10 +1482,13 @@ async def _stamp_synced_primary_amount(
     if converted is not None:
         transaction.amount_primary = converted
         transaction.fx_rate_used = converted / transaction.amount
-        await stamp_account_amount(session, transaction, bank_amount=account_amount)
+        await stamp_account_amount(
+            session, transaction, bank_amount=account_amount, recompute=restamp_account
+        )
     else:
         await stamp_primary_amount(
-            session, user_id, transaction, account_amount=account_amount
+            session, user_id, transaction,
+            account_amount=account_amount, restamp_account=restamp_account,
         )
 
 
@@ -2430,9 +2443,22 @@ async def _refresh_provider_values(
         converted = _bank_converted_amount(txn_data, account_currency, user_currency)
         await _stamp_synced_primary_amount(
             session, transaction.user_id, transaction, converted,
-            txn_data.amount_in_account_currency,
+            txn_data.amount_in_account_currency, restamp_account=True,
         )
         await category_line_service.rescale_lines(session, transaction, old_amount)
+    elif (
+        txn_data.amount_in_account_currency is not None
+        and _same_cents(transaction.amount_account, previous.amount_in_account_currency)
+        and not _same_cents(transaction.amount_account, txn_data.amount_in_account_currency)
+    ):
+        # The charge in the account's currency was corrected on its own (the
+        # issuer settled the spread later). Same rule as above: only while the
+        # row still holds what the previous payload gave.
+        converted = _bank_converted_amount(txn_data, account_currency, user_currency)
+        await _stamp_synced_primary_amount(
+            session, transaction.user_id, transaction, converted,
+            txn_data.amount_in_account_currency, restamp_account=True,
+        )
 
     if transaction.payee == previous.payee and txn_data.payee != previous.payee:
         transaction.payee = txn_data.payee
@@ -4530,6 +4556,7 @@ async def sync_connection(
                     if (
                         placeholder.amount != txn_data.amount
                         or converted is not None
+                        or txn_data.amount_in_account_currency is not None
                         or currency_changed
                     ):
                         # Matched under a tolerance, or the bank said what the
@@ -4550,7 +4577,7 @@ async def sync_connection(
                             placeholder.amount_account = None
                         await _stamp_synced_primary_amount(
                             session, user_id, placeholder, converted,
-                            txn_data.amount_in_account_currency,
+                            txn_data.amount_in_account_currency, restamp_account=True,
                         )
                         # A split placeholder keeps its split, resized.
                         await category_line_service.rescale_lines(

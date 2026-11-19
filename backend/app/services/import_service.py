@@ -1340,7 +1340,9 @@ async def import_transactions(
                     placeholder.amount_primary = txn_data.amount * txn_data.fx_rate
                     await stamp_account_amount(session, placeholder)
                 else:
-                    await stamp_primary_amount(session, user_id, placeholder)
+                    await stamp_primary_amount(
+                        session, user_id, placeholder, restamp_account=True
+                    )
                 # A split placeholder keeps its split, resized.
                 await category_line_service.rescale_lines(session, placeholder, expected_amount)
             placeholder_split = (

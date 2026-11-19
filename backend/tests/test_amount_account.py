@@ -10,6 +10,7 @@ import uuid
 import zipfile
 from datetime import date
 from decimal import Decimal
+from unittest.mock import MagicMock
 
 import pytest
 import pytest_asyncio
@@ -21,7 +22,12 @@ from app.models.account import Account
 from app.models.fx_rate import FxRate
 from app.models.transaction import Transaction
 from app.models.user import User
-from app.services.connection_service import _stamp_synced_primary_amount
+from app.providers.base import BankProvider, TransactionData
+from app.services.connection_service import (
+    _refresh_provider_values,
+    _stamp_synced_primary_amount,
+)
+from app.services.fx_rate_service import stamp_primary_amount
 
 ON = date(2025, 3, 10)
 
@@ -206,3 +212,140 @@ async def test_a_backup_from_before_the_column_restores_the_same_balance(
     )
     assert copied is not None
     assert copied.amount_account == Decimal("545.10")
+
+
+def _bank_row(user: User, account: Account, **fields) -> Transaction:
+    """A synced USD charge on the BRL `test_account`, R$ 545.10 per the bank."""
+    return Transaction(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        workspace_id=account.workspace_id,
+        account_id=account.id,
+        description="Online store",
+        amount=Decimal("100.00"),
+        currency="USD",
+        date=ON,
+        type="debit",
+        source="sync",
+        amount_account=Decimal("545.10"),
+        **fields,
+    )
+
+
+@pytest.mark.asyncio
+async def test_posting_a_pending_charge_keeps_the_bank_charge(
+    client: AsyncClient, session: AsyncSession, auth_headers, test_user: User,
+    test_account: Account, rates,
+):
+    await _set_display_currency(client, auth_headers, test_user, "USD")
+    # In USD the reporting stamp is the amount itself, at rate 1, which makes
+    # posting heal it; the BRL charge has nothing to heal.
+    tx = _bank_row(
+        test_user, test_account, status="pending",
+        amount_primary=Decimal("100.00"), fx_rate_used=Decimal("1"),
+    )
+    session.add(tx)
+    await session.commit()
+
+    response = await client.patch(
+        f"/api/transactions/{tx.id}", headers=auth_headers, json={"status": "posted"}
+    )
+    assert response.status_code == 200, response.text
+    await session.refresh(tx)
+    assert tx.amount_account == Decimal("545.10")
+
+
+@pytest.mark.asyncio
+async def test_saving_the_same_account_keeps_the_bank_charge(
+    client: AsyncClient, session: AsyncSession, auth_headers, test_user: User,
+    test_account: Account, rates,
+):
+    await _set_display_currency(client, auth_headers, test_user, "USD")
+    tx = _bank_row(
+        test_user, test_account,
+        amount_primary=Decimal("100.00"), fx_rate_used=Decimal("1"),
+    )
+    session.add(tx)
+    await session.commit()
+
+    response = await client.patch(
+        f"/api/transactions/{tx.id}", headers=auth_headers,
+        json={"account_id": str(test_account.id), "description": "Store"},
+    )
+    assert response.status_code == 200, response.text
+    await session.refresh(tx)
+    assert tx.amount_account == Decimal("545.10")
+
+
+@pytest.mark.asyncio
+async def test_a_move_with_no_rate_into_the_new_account_leaves_it_unconverted(
+    client: AsyncClient, session: AsyncSession, auth_headers, test_user: User, rates
+):
+    await _set_display_currency(client, auth_headers, test_user, "BRL")
+    brl_id = await _account(client, auth_headers, "Real", "BRL")
+    gbp_id = await _account(client, auth_headers, "Pound", "GBP")  # no GBP rate stored
+    tx_id = await _purchase(client, auth_headers, brl_id)
+
+    response = await client.patch(
+        f"/api/transactions/{tx_id}", headers=auth_headers, json={"account_id": gbp_id}
+    )
+    assert response.status_code == 200, response.text
+    tx = await session.get(Transaction, uuid.UUID(tx_id))
+    assert tx is not None
+    await session.refresh(tx)
+    # Not the BRL 500 read as pounds: unconverted, so it counts as zero.
+    assert tx.amount_account is None
+    assert await _balance(client, auth_headers, gbp_id) == Decimal("0.00")
+
+
+@pytest.mark.asyncio
+async def test_healing_the_reporting_stamp_keeps_a_bank_charge_and_follows_a_copy(
+    session: AsyncSession, test_user: User, test_account: Account, rates
+):
+    """What the FX healers do: restamp `amount_primary` with no account change."""
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "BRL"}
+    charged = _bank_row(test_user, test_account)  # never got a primary stamp
+    # A 1:1 fallback stamp, copied into the account amount when it was written.
+    copied = _bank_row(
+        test_user, test_account,
+        amount_primary=Decimal("100.00"), fx_rate_used=Decimal("1"),
+    )
+    copied.amount_account = Decimal("100.00")
+    session.add_all([charged, copied])
+    await session.flush()
+
+    for tx in (charged, copied):
+        await stamp_primary_amount(session, test_user.id, tx, allow_fetch=False)
+
+    assert charged.amount_primary == Decimal("500.00")
+    assert charged.amount_account == Decimal("545.10")
+    assert copied.amount_primary == Decimal("500.00")
+    assert copied.amount_account == Decimal("500.00")
+
+
+@pytest.mark.asyncio
+async def test_sync_takes_a_corrected_bank_charge_under_the_same_amount(
+    session: AsyncSession, test_user: User, test_account: Account, rates
+):
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "USD"}
+    tx = _bank_row(
+        test_user, test_account, raw_data={"id": "ext-1"},
+        amount_primary=Decimal("100.00"), fx_rate_used=Decimal("1"),
+    )
+    session.add(tx)
+    await session.flush()
+
+    def _data(charged: str) -> TransactionData:
+        return TransactionData(
+            external_id="ext-1", description="Online store", amount=Decimal("100.00"),
+            date=ON, type="debit", currency="USD",
+            amount_in_account_currency=Decimal(charged),
+        )
+
+    provider = MagicMock(spec=BankProvider)
+    provider.parse_raw_transaction.return_value = _data("545.10")
+    await _refresh_provider_values(
+        session, provider, tx, _data("550.00"),
+        payee_source="auto", account_currency="BRL", user_currency="USD",
+    )
+    assert tx.amount_account == Decimal("550.00")

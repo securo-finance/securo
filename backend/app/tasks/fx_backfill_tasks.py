@@ -86,9 +86,14 @@ async def _backfill_primary_amounts() -> dict:
                     )
                     if rate is None:
                         continue  # still no rate — leave as-is, heal next run
+                    previous_primary = tx.amount_primary
                     tx.amount_primary = (Decimal(str(tx.amount)) * rate).quantize(Decimal("0.01"))
                     tx.fx_rate_used = rate
-                    await stamp_account_amount(session, tx, allow_fetch=False)
+                    # A repair of the reporting stamp: a bank charge stays.
+                    await stamp_account_amount(
+                        session, tx, allow_fetch=False,
+                        recompute=False, previous_primary=previous_primary,
+                    )
                     stats["transactions"] += 1
                 except Exception:
                     logger.exception("Failed to backfill tx %s", tx.id)

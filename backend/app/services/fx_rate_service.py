@@ -317,19 +317,28 @@ async def stamp_primary_amount(
     *,
     allow_fetch: bool = True,
     account_amount: Optional[Decimal] = None,
+    restamp_account: bool = False,
 ) -> None:
     """Stamp obj's primary amount and, for a transaction, its account amount.
 
     `account_amount` is the figure the bank charged the account, when the
-    provider reports one; see `stamp_account_amount`.
+    provider reports one. Pass `restamp_account` when the row's amount,
+    currency, date or account changed; a stamp that only heals the reporting
+    value keeps the account amount (see `stamp_account_amount`).
     """
+    previous_primary = getattr(obj, primary_field, None)
     await _stamp_primary_fields(
         session, user_id, obj, amount_field, primary_field, rate_field,
         date_field, currency_field, allow_fetch=allow_fetch,
     )
     if isinstance(obj, Transaction) and primary_field == "amount_primary":
         await stamp_account_amount(
-            session, obj, bank_amount=account_amount, allow_fetch=allow_fetch
+            session,
+            obj,
+            bank_amount=account_amount,
+            allow_fetch=allow_fetch,
+            recompute=restamp_account,
+            previous_primary=previous_primary,
         )
 
 
@@ -339,6 +348,8 @@ async def stamp_account_amount(
     *,
     bank_amount: Optional[Decimal] = None,
     allow_fetch: bool = True,
+    recompute: bool = True,
+    previous_primary: Optional[Decimal] = None,
 ) -> None:
     """Set `amount_account`: the row's value in its account's currency (ADR 0027).
 
@@ -354,6 +365,12 @@ async def stamp_account_amount(
 
     With none of these the field is left as it is, like `amount_primary`.
     A row in its account's own currency gets NULL; readers use `amount`.
+
+    Without `recompute` (a stamp that only heals or re-reads the reporting
+    value: posting a pending row, the FX healers) a stored value is kept
+    unless it was a copy of the previous `amount_primary`. A bank charge, or a
+    conversion into an account outside the owner's currency, does not change
+    because the reporting stamp did.
     """
     account = await session.get(Account, transaction.account_id)
     if account is None:
@@ -363,6 +380,12 @@ async def stamp_account_amount(
         return
     if bank_amount is not None:
         transaction.amount_account = Decimal(str(bank_amount)).quantize(Decimal("0.01"))
+        return
+    if (
+        not recompute
+        and transaction.amount_account is not None
+        and transaction.amount_account != previous_primary
+    ):
         return
     user = await session.get(User, transaction.user_id)
     primary = user.primary_currency if user else get_settings().default_currency
