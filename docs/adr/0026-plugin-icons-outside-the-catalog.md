@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-11-18
-- Origin: #1618 (Connect Bank shows generated artwork instead of a plugin's icon)
+- Origin: #1621 (issue #1618: Connect Bank shows generated artwork instead of a plugin's icon)
 - Extends: [0015](0015-plugins.md), [0016](0016-outbound-calls-and-no-telemetry.md), [0021](0021-plugin-icons.md)
 
 ## Context
