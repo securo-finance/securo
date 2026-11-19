@@ -1073,7 +1073,7 @@ async def test_net_worth_replays_a_split(
                    date=date(2026, 10, 26), source="sync"),
         AssetValue(asset_id=asset.id, amount=Decimal("5000"), price=Decimal("5"),
                    date=date(2026, 10, 27), source="sync"),
-        AssetValue(asset_id=asset.id, amount=Decimal("5100"), price=Decimal("5.1"),
+        AssetValue(asset_id=asset.id, amount=Decimal("51"), price=Decimal("5.1"),
                    date=date(2026, 10, 28), source="sync"),
     ])
     await session.commit()
@@ -1105,6 +1105,37 @@ async def test_net_worth_report_matches_snapshots_for_ledger_holdings(
         snapshot = await _net_worth_at(session, test_workspace.id, cutoff, "BRL")
         assert point.breakdowns["assets"] == snapshot.breakdowns["assets"]
     assert report.trend[-1].breakdowns["assets"] == 6800.0
+    # April holds only the first buy (20 x 150), not the 6300 cost basis.
+    april = next(p for p, c in zip(report.trend, cutoffs) if c == date(2026, 4, 30))
+    assert april.breakdowns["assets"] == 3000.0
+
+
+@pytest.mark.asyncio
+async def test_net_worth_report_drops_an_asset_from_its_sale_month(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The report loads assets once for the range, so each point re-applies the
+    sale date: a car sold on May 15 counts at the end of March and April only."""
+    car = Asset(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Sold Car", type="vehicle", currency="BRL", valuation_method="manual",
+        purchase_date=date(2026, 2, 1), purchase_price=Decimal("29000"),
+        sell_date=date(2026, 5, 15),
+    )
+    session.add(car)
+    await session.commit()
+
+    report = await get_net_worth_report(
+        session, test_workspace.id, test_user.id, interval="monthly", currency="BRL",
+        start_date=date(2026, 3, 1), end_date=date(2026, 8, 15),
+    )
+    assert _date_points(date(2026, 3, 1), date(2026, 8, 15), "monthly") == [
+        date(2026, 3, 31), date(2026, 4, 30), date(2026, 5, 31),
+        date(2026, 6, 30), date(2026, 7, 31), date(2026, 8, 15),
+    ]
+    assert [p.breakdowns["assets"] for p in report.trend] == [
+        29000.0, 29000.0, 0.0, 0.0, 0.0, 0.0,
+    ]
 
 
 @pytest.mark.asyncio
