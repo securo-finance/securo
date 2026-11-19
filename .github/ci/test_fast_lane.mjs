@@ -43,9 +43,11 @@ const GREEN = REQUIRED.map((name) => ({
 // CodeRabbit's own check run. Under a rate limit it still comes back
 // `completed`, only with `neutral` (rate limited) or `skipped` (paused) and a
 // title that says so: nothing but the title tells the two apart from a review.
-const coderabbitCheck = (conclusion, title) => ({
+// A review that found nothing to say ends `success` with "Review completed" in
+// the summary and no review object at all (#1612).
+const coderabbitCheck = (conclusion, title, summary = '') => ({
   name: 'CodeRabbit', status: 'completed', conclusion,
-  output: { title }, started_at: '2026-01-01T00:00:01Z',
+  output: { title, summary }, started_at: '2026-01-01T00:00:01Z',
 });
 // What a review looks like: the commit it judged is on the review itself.
 const coderabbitReview = (commitId = HEAD) => ({
@@ -268,6 +270,34 @@ scenario('a review on the head wins over a stale rate-limit check', async () => 
     checks: [...GREEN, coderabbitCheck('neutral', 'Review rate limited')],
   });
   assert.ok(merged, `expected a merge, got: ${log}`);
+});
+
+// #1612: on an incremental push that leaves nothing to say, CodeRabbit
+// finishes the review without submitting a review object. Its check run is
+// bound to the head and says "Review completed", which is evidence of a review
+// of this exact sha, so the lane merges instead of refusing it forever.
+scenario('a head whose check completed the review, with no review object, merges',
+  async () => {
+    const { merged, log } = await evaluate({
+      threads: [],
+      reviews: [coderabbitReview(OLD_HEAD)],
+      checks: [...GREEN, coderabbitCheck('success', 'Finished',
+        'Result: Success - Review completed')],
+    });
+    assert.ok(merged, `expected a merge, got: ${log}`);
+    assert.doesNotMatch(log, /CodeRabbit has no review/, log);
+  });
+
+// `success` on its own is not a review: a check that never says the review was
+// completed must not be read as one, or the gate loosens to "any green run".
+scenario('a successful check that does not say it reviewed refuses', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    reviews: [coderabbitReview(OLD_HEAD)],
+    checks: [...GREEN, coderabbitCheck('success', 'Finished', 'Result: Success')],
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.match(log, /CodeRabbit has no review of this commit/, log);
 });
 
 let failed = 0;

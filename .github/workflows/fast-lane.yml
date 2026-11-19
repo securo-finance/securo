@@ -19,7 +19,8 @@ name: fast lane
 #   6. no unresolved CodeRabbit `Major` or `Critical` thread is left on it
 #   7. CodeRabbit reviewed that same head: no open thread is evidence of a
 #      review only once a review happened, and a rate-limited or paused bot
-#      leaves a completed check run with no review behind it
+#      leaves a completed check run saying so; a review names the commit, and
+#      so does a check run that reports its review as completed
 #
 # A refusal is also said on the pull request itself, in one comment this
 # workflow rewrites in place and deletes once the pull request merges, but only
@@ -480,20 +481,24 @@ jobs:
               // paused, and the lane then merged on the App's verdict with
               // nothing read (seen at #1553 and #1568).
               //
-              // A review names the commit it judged in `commit_id`, which is
-              // the sha-exact evidence the API carries; the bot's summary
-              // comment does not name one, so accepting that would accept a
-              // review of an older commit and reopen the hole.
+              // Two kinds of evidence name this head exactly. A review names
+              // the commit it judged in `commit_id`. Its check run is bound to
+              // the same sha, and on an incremental push that leaves nothing
+              // to say the bot finishes the review without submitting a review
+              // object — #1612 at `337456b9` carries `success` with "Review
+              // completed" and no review — which is a review of this head all
+              // the same. A rate-limited or paused review is `neutral` or
+              // `skipped`, and `success` says nothing unless the output says
+              // the review was completed, so neither is mistaken for evidence.
+              // The bot's summary comment still is not accepted: it names no
+              // commit, so it could belong to an older head and reopen the hole.
               {
                 const reviewed = reviews.some((r) => r.user
                   && r.user.login === 'coderabbitai[bot]'
                   && r.commit_id === head);
                 if (!reviewed) {
-                  // Why it did not review is in its check run, and that run is
-                  // `completed` either way: a rate-limited review ends
-                  // `neutral` or `skipped`, so the conclusion proves nothing
-                  // and only the title says what happened.
                   let why = '';
+                  let completed = false;
                   try {
                     const { data } = await github.rest.checks.listForRef(
                       { owner: OWNER, repo: REPO, ref: head, per_page: 100 });
@@ -501,14 +506,26 @@ jobs:
                       .filter((c) => c.name && /coderabbit/i.test(c.name))
                       .sort((a, b) =>
                         (b.started_at || '').localeCompare(a.started_at || ''))[0];
-                    const title = run && run.output && run.output.title;
-                    if (title) why = `: its check says "${title}"`;
+                    const output = (run && run.output) || {};
+                    // Why it did not review is in the same run: a skipped
+                    // review ends `neutral` or `skipped` and only the title
+                    // says what happened.
+                    if (output.title) why = `: its check says "${output.title}"`;
+                    completed = Boolean(run) && run.conclusion === 'success'
+                      && /review completed/i.test(
+                        `${output.title || ''} ${output.summary || ''}`);
+                    if (completed) {
+                      core.info(`#${number}: CodeRabbit completed its review ` +
+                        `without a review object; the check run is the evidence`);
+                    }
                   } catch (e) {
                     // The missing review is the refusal with or without it.
                     core.info(`#${number}: could not read the CodeRabbit ` +
                       `check: ${e.message}`);
                   }
-                  return skip(`CodeRabbit has no review of this commit${why}`);
+                  if (!completed) {
+                    return skip(`CodeRabbit has no review of this commit${why}`);
+                  }
                 }
               }
 
