@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run typecheck && vite build",
+    "build": "npm run typecheck && vite build && node ./build/check-pwa-precache.mjs",
     "typecheck": "node ./node_modules/@typescript/native/bin/tsc -b",
     "lint": "eslint .",
     "preview": "vite preview",
