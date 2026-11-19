@@ -36,6 +36,7 @@ from app.services.account_service import get_account, get_running_balances
 from app.services.credit_card_service import apply_effective_date, cc_cycle_bill_due_dates
 from app.services.rule_service import apply_rules_to_transaction
 from app.services.fx_rate_service import (
+    ACCOUNT_AMOUNT_FROM_USER,
     convert as fx_convert,
     stamp_account_amount,
     stamp_primary_amount,
@@ -1810,7 +1811,16 @@ async def _apply_update_to_row(
         if override_amount_primary is None and override_fx_rate is None:
             tx.amount_primary = None
             tx.fx_rate_used = None
-            await stamp_primary_amount(session, user_id, tx, restamp_account=True)
+            # Clearing the typed conversion drops a typed account amount with
+            # it; a bank charge stays unless the charge itself changed.
+            await stamp_primary_amount(
+                session, user_id, tx,
+                restamp_account=(
+                    account_inputs_changed
+                    or account_moved
+                    or tx.amount_account_source == ACCOUNT_AMOUNT_FROM_USER
+                ),
+            )
         else:
             _apply_fx_override(
                 tx,
