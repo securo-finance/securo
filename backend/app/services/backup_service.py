@@ -1234,8 +1234,15 @@ def _prepare_model_data(
         # A backup from before ADR 0027 has no account-currency amount. Its
         # balances read `amount_primary` for a row in another currency than
         # its account, and only for such a row, so carrying it over restores
-        # the same balances. Same-currency rows never read the column.
+        # the same balances. Same-currency rows never read the column. The
+        # source follows migration 123.
         data["amount_account"] = data.get("amount_primary")
+        if data["amount_account"] is None or data.get("fx_rate_used") == 1:
+            data["amount_account_source"] = None
+        elif data.get("source") == "sync":
+            data["amount_account_source"] = "bank"
+        else:
+            data["amount_account_source"] = "user"
     if "workspace_id" in columns:
         data["workspace_id"] = target_workspace_id
     if "user_id" in columns:

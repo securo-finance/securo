@@ -228,6 +228,7 @@ def _bank_row(user: User, account: Account, **fields) -> Transaction:
         type="debit",
         source="sync",
         amount_account=Decimal("545.10"),
+        amount_account_source="bank",
         **fields,
     )
 
@@ -310,7 +311,7 @@ async def test_healing_the_reporting_stamp_keeps_a_bank_charge_and_follows_a_cop
         test_user, test_account,
         amount_primary=Decimal("100.00"), fx_rate_used=Decimal("1"),
     )
-    copied.amount_account = Decimal("100.00")
+    copied.amount_account, copied.amount_account_source = Decimal("100.00"), None
     session.add_all([charged, copied])
     await session.flush()
 
@@ -342,10 +343,54 @@ async def test_sync_takes_a_corrected_bank_charge_under_the_same_amount(
             amount_in_account_currency=Decimal(charged),
         )
 
+    # Like Pluggy: no parser for the stored payload, so the correction cannot
+    # lean on what the previous payload said.
     provider = MagicMock(spec=BankProvider)
-    provider.parse_raw_transaction.return_value = _data("545.10")
+    provider.parse_raw_transaction.return_value = None
     await _refresh_provider_values(
         session, provider, tx, _data("550.00"),
         payee_source="auto", account_currency="BRL", user_currency="USD",
     )
     assert tx.amount_account == Decimal("550.00")
+
+
+@pytest.mark.asyncio
+async def test_a_bank_charge_equal_to_the_primary_stamp_is_kept_on_heal(
+    session: AsyncSession, test_user: User, test_account: Account, rates
+):
+    """The bank charged exactly the foreign amount, so the row looks like a
+    1:1 stamp; it is still the bank's figure and a heal must not touch it."""
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "BRL"}
+    tx = _bank_row(
+        test_user, test_account,
+        amount_primary=Decimal("100.00"), fx_rate_used=Decimal("1"),
+    )
+    tx.amount_account = Decimal("100.00")
+    session.add(tx)
+    await session.flush()
+
+    await stamp_primary_amount(session, test_user.id, tx, allow_fetch=False)
+
+    assert tx.amount_primary == Decimal("500.00")
+    assert tx.amount_account == Decimal("100.00")
+
+
+@pytest.mark.asyncio
+async def test_sync_does_not_replace_an_amount_the_user_typed(
+    session: AsyncSession, test_user: User, test_account: Account, rates
+):
+    tx = _bank_row(test_user, test_account, raw_data={"id": "ext-1"})
+    tx.amount_account_source = "user"
+    session.add(tx)
+    await session.flush()
+
+    await _refresh_provider_values(
+        session, MagicMock(spec=BankProvider), tx,
+        TransactionData(
+            external_id="ext-1", description="Online store", amount=Decimal("100.00"),
+            date=ON, type="debit", currency="USD",
+            amount_in_account_currency=Decimal("550.00"),
+        ),
+        payee_source="auto", account_currency="BRL", user_currency="BRL",
+    )
+    assert tx.amount_account == Decimal("545.10")

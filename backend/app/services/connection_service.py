@@ -79,7 +79,11 @@ from app.services.rule_service import (
 )
 from app.services.card_mirror_service import ignore_mirrored_card_charges
 from app.services.transfer_detection_service import detect_transfer_pairs
-from app.services.fx_rate_service import stamp_account_amount, stamp_primary_amount
+from app.services.fx_rate_service import (
+    ACCOUNT_AMOUNT_FROM_USER,
+    stamp_account_amount,
+    stamp_primary_amount,
+)
 from app.services.payee_service import find_payee_by_name, get_or_create_payee
 from app.services.transaction_match_service import find_unique_transaction_match
 
@@ -2406,6 +2410,35 @@ def _merge_sync_metadata(
         transaction.payee = txn_data.payee
 
 
+async def _refresh_account_charge(
+    session: AsyncSession,
+    transaction: Transaction,
+    txn_data,
+    *,
+    account_currency: str,
+    user_currency: str,
+) -> None:
+    """Take a corrected charge in the account's currency (ADR 0027).
+
+    An issuer can settle a foreign purchase at another figure than it first
+    reported (the spread lands later) while the purchase's own amount stays.
+    The new charge replaces the stored one unless the user typed theirs, and
+    a pending re-read never overrides what the posted row was charged.
+    """
+    charged = txn_data.amount_in_account_currency
+    if charged is None or _same_cents(transaction.amount_account, charged):
+        return
+    if transaction.amount_account_source == ACCOUNT_AMOUNT_FROM_USER:
+        return
+    if transaction.status == "posted" and txn_data.status == "pending":
+        return
+    converted = _bank_converted_amount(txn_data, account_currency, user_currency)
+    await _stamp_synced_primary_amount(
+        session, transaction.user_id, transaction, converted, charged,
+        restamp_account=True,
+    )
+
+
 async def _refresh_provider_values(
     session: AsyncSession,
     provider,
@@ -2426,7 +2459,13 @@ async def _refresh_provider_values(
     differs is the user's and stays. Must run before `_merge_sync_metadata`,
     which merges the new payload into ``raw_data``.
     """
-    if transaction.source != "sync" or not isinstance(transaction.raw_data, dict):
+    if transaction.source != "sync":
+        return
+    await _refresh_account_charge(
+        session, transaction, txn_data,
+        account_currency=account_currency, user_currency=user_currency,
+    )
+    if not isinstance(transaction.raw_data, dict):
         return
     if not isinstance(provider, BankProvider):
         return
@@ -2446,19 +2485,6 @@ async def _refresh_provider_values(
             txn_data.amount_in_account_currency, restamp_account=True,
         )
         await category_line_service.rescale_lines(session, transaction, old_amount)
-    elif (
-        txn_data.amount_in_account_currency is not None
-        and _same_cents(transaction.amount_account, previous.amount_in_account_currency)
-        and not _same_cents(transaction.amount_account, txn_data.amount_in_account_currency)
-    ):
-        # The charge in the account's currency was corrected on its own (the
-        # issuer settled the spread later). Same rule as above: only while the
-        # row still holds what the previous payload gave.
-        converted = _bank_converted_amount(txn_data, account_currency, user_currency)
-        await _stamp_synced_primary_amount(
-            session, transaction.user_id, transaction, converted,
-            txn_data.amount_in_account_currency, restamp_account=True,
-        )
 
     if transaction.payee == previous.payee and txn_data.payee != previous.payee:
         transaction.payee = txn_data.payee

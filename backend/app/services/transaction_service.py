@@ -1006,7 +1006,7 @@ async def create_transaction(
     # Stamp primary currency amount (manual override or auto)
     if data.amount_primary is not None or data.fx_rate_used is not None:
         _apply_fx_override(transaction, data.amount, data.amount_primary, data.fx_rate_used)
-        await stamp_account_amount(session, transaction)
+        await stamp_account_amount(session, transaction, typed_primary=True)
     else:
         await stamp_primary_amount(session, user_id, transaction)
 
@@ -1121,10 +1121,10 @@ async def create_installment_series(
             await apply_rules_to_transaction(session, user_id, tx)
         if base.fx_rate_used is not None:
             _apply_fx_override(tx, tx.amount, None, base.fx_rate_used)
-            await stamp_account_amount(session, tx)
+            await stamp_account_amount(session, tx, typed_primary=True)
         elif base.amount_primary is not None:
             _apply_fx_override(tx, tx.amount, base.amount_primary, None)
-            await stamp_account_amount(session, tx)
+            await stamp_account_amount(session, tx, typed_primary=True)
         else:
             await stamp_primary_amount(session, user_id, tx)
         if base.splits is not None:
@@ -1741,7 +1741,7 @@ async def _apply_update_to_row(
                 override_amount_primary,
                 override_fx_rate,
             )
-            await stamp_account_amount(session, tx)
+            await stamp_account_amount(session, tx, typed_primary=True)
     elif needs_restamp or heals_fx_on_post or account_moved:
         # Posting only heals the reporting stamp; the account amount follows
         # a change of amount, currency, date or account.

@@ -326,7 +326,6 @@ async def stamp_primary_amount(
     currency, date or account changed; a stamp that only heals the reporting
     value keeps the account amount (see `stamp_account_amount`).
     """
-    previous_primary = getattr(obj, primary_field, None)
     await _stamp_primary_fields(
         session, user_id, obj, amount_field, primary_field, rate_field,
         date_field, currency_field, allow_fetch=allow_fetch,
@@ -338,8 +337,13 @@ async def stamp_primary_amount(
             bank_amount=account_amount,
             allow_fetch=allow_fetch,
             recompute=restamp_account,
-            previous_primary=previous_primary,
         )
+
+
+# Where a stored `amount_account` came from. NULL is a derived value: a copy of
+# `amount_primary` or a conversion at a stored rate, safe to work out again.
+ACCOUNT_AMOUNT_FROM_BANK = "bank"
+ACCOUNT_AMOUNT_FROM_USER = "user"
 
 
 async def stamp_account_amount(
@@ -347,9 +351,9 @@ async def stamp_account_amount(
     transaction: Transaction,
     *,
     bank_amount: Optional[Decimal] = None,
+    typed_primary: bool = False,
     allow_fetch: bool = True,
     recompute: bool = True,
-    previous_primary: Optional[Decimal] = None,
 ) -> None:
     """Set `amount_account`: the row's value in its account's currency (ADR 0027).
 
@@ -359,32 +363,33 @@ async def stamp_account_amount(
 
     - the amount the bank charged the account, when the provider reports it;
     - `amount_primary`, when the account is in the owner's primary currency,
-      since the two are then the same figure (this keeps a converted amount
-      typed in the transaction dialog);
+      since the two are then the same figure. `typed_primary` says the user
+      typed that amount in the transaction dialog;
     - the stored rate from the row's currency into the account's, for its date.
 
     With none of these the field is left as it is, like `amount_primary`.
     A row in its account's own currency gets NULL; readers use `amount`.
 
-    Without `recompute` (a stamp that only heals or re-reads the reporting
-    value: posting a pending row, the FX healers) a stored value is kept
-    unless it was a copy of the previous `amount_primary`. A bank charge, or a
-    conversion into an account outside the owner's currency, does not change
-    because the reporting stamp did.
+    `amount_account_source` records which one it was. Without `recompute` (a
+    stamp that only heals the reporting value: posting a pending row, the FX
+    healers) a value from the bank or the user is kept; only a derived one is
+    worked out again.
     """
     account = await session.get(Account, transaction.account_id)
     if account is None:
         return
     if same_currency(transaction.currency, account.currency):
         transaction.amount_account = None
+        transaction.amount_account_source = None
         return
     if bank_amount is not None:
         transaction.amount_account = Decimal(str(bank_amount)).quantize(Decimal("0.01"))
+        transaction.amount_account_source = ACCOUNT_AMOUNT_FROM_BANK
         return
     if (
         not recompute
         and transaction.amount_account is not None
-        and transaction.amount_account != previous_primary
+        and transaction.amount_account_source is not None
     ):
         return
     user = await session.get(User, transaction.user_id)
@@ -392,6 +397,9 @@ async def stamp_account_amount(
     if same_currency(account.currency, primary):
         if transaction.amount_primary is not None:
             transaction.amount_account = transaction.amount_primary
+            transaction.amount_account_source = (
+                ACCOUNT_AMOUNT_FROM_USER if typed_primary else None
+            )
         return
     if transaction.amount is None:
         return
@@ -403,6 +411,7 @@ async def stamp_account_amount(
         transaction.amount_account = (
             Decimal(str(transaction.amount)) * rate
         ).quantize(Decimal("0.01"))
+        transaction.amount_account_source = None
 
 
 async def _stamp_primary_fields(

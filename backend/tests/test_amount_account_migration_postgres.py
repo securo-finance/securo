@@ -38,12 +38,16 @@ def clean_db(postgres_sessions):
     """The reused user fixture starts in a fresh per-test PostgreSQL schema."""
 
 
-def _row(account: Account, user_id, currency: str, primary: str | None) -> Transaction:
+def _row(
+    account: Account, user_id, currency: str, primary: str | None,
+    *, source: str = "manual", rate: str | None = None,
+) -> Transaction:
     return Transaction(
         id=uuid.uuid4(), user_id=user_id, account_id=account.id,
         description=f"{currency} purchase", amount=Decimal("100.00"), currency=currency,
-        date=date(2025, 3, 10), type="debit", source="manual",
+        date=date(2025, 3, 10), type="debit", source=source,
         amount_primary=Decimal(primary) if primary is not None else None,
+        fx_rate_used=Decimal(rate) if rate is not None else None,
     )
 
 
@@ -54,10 +58,12 @@ async def test_backfill_copies_the_figure_the_balance_reads_today(session, test_
     )
     session.add(account)
     await session.flush()
-    foreign = _row(account, test_user.id, "USD", "545.10")
+    foreign = _row(account, test_user.id, "USD", "545.10", source="sync", rate="5.451")
+    typed = _row(account, test_user.id, "USD", "512.00", rate="5.12")
+    fallback = _row(account, test_user.id, "GBP", "100.00", rate="1")
     lower_case_same = _row(account, test_user.id, "brl", "100.00")
     unconverted = _row(account, test_user.id, "EUR", None)
-    session.add_all([foreign, lower_case_same, unconverted])
+    session.add_all([foreign, typed, fallback, lower_case_same, unconverted])
     await session.flush()
 
     schema = session.bind.get_execution_options()["schema_translate_map"][None]
@@ -66,15 +72,19 @@ async def test_backfill_copies_the_figure_the_balance_reads_today(session, test_
     await conn.execute(text(f'SET LOCAL search_path TO "{schema}"'))
     await conn.execute(text(migration.BACKFILL_SQL))
 
-    stored = dict(
-        (await session.execute(
-            select(Transaction.id, Transaction.amount_account).where(
-                Transaction.account_id == account.id
-            )
+    stored = {
+        row.id: (row.amount_account, row.amount_account_source)
+        for row in (await session.execute(
+            select(
+                Transaction.id, Transaction.amount_account, Transaction.amount_account_source
+            ).where(Transaction.account_id == account.id)
         )).all()
-    )
-    assert stored[foreign.id] == Decimal("545.10")
+    }
+    assert stored[foreign.id] == (Decimal("545.10"), "bank")
+    assert stored[typed.id] == (Decimal("512.00"), "user")
+    # The 1:1 fallback #353 stopped writing stays derived, so the healer fixes it.
+    assert stored[fallback.id] == (Decimal("100.00"), None)
     # Same currency as the account, whatever the case: balances read `amount`.
-    assert stored[lower_case_same.id] is None
+    assert stored[lower_case_same.id] == (None, None)
     # Not converted yet: stays NULL, as the balance already counted it as zero.
-    assert stored[unconverted.id] is None
+    assert stored[unconverted.id] == (None, None)
