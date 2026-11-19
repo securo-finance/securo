@@ -54,10 +54,16 @@ export default function OAuthCallbackPage() {
 
     ;(async () => {
       try {
-        await connections.handleCallback(code, '', state)
+        const connection = await connections.handleCallback(code, '', state)
         await queryClient.refetchQueries({ queryKey: ['connections'] })
         invalidateFinancialQueries(queryClient)
-        toast.success(t('accounts.connected'))
+        if (connection.status === 'error') {
+          // The bank is connected; only the first import was refused. The
+          // connection card retries it with the credentials already stored.
+          toast.warning(t('accounts.connectedImportFailed'))
+        } else {
+          toast.success(t('accounts.connected'))
+        }
         navigate('/accounts', { replace: true })
       } catch (err) {
         if (axios.isAxiosError(err) && err.response?.status === 409) {

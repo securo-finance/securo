@@ -14,7 +14,8 @@ export default function OIDCCallbackPage() {
 
   useEffect(() => {
     if (!accessToken) return
-    loginWithToken(accessToken)
+    // viaOidc: signing out must end the provider's session too (issue #1623).
+    loginWithToken(accessToken, true)
     window.history.replaceState(null, '', '/auth/oidc/callback')
     navigate('/', { replace: true })
   }, [accessToken, loginWithToken, navigate])

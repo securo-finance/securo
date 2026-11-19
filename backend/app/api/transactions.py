@@ -19,28 +19,23 @@ from app.core.workspace_context import (
 )
 from app.models.account import Account
 from app.models.transaction import Transaction
-from app.schemas.transaction import BulkAddToGroupRequest, BulkCategorizeRequest, DescriptionSuggestion, BulkTagsRequest, CreateCounterpartRequest, InstallmentSeriesCreate, LinkTransferRequest, TransactionBulkDeleteRequest, TransactionCreate, TransactionRead, TransactionTransferCounterpart, TransactionUpdate, TransferCreate, TransferRead
+from app.schemas.transaction import BulkAddToGroupRequest, BulkCategorizeRequest, DescriptionSuggestion, BulkFlagRequest, BulkTagsRequest, CreateCounterpartRequest, FlaggedSummary, InstallmentSeriesCreate, LinkTransferRequest, TransactionBulkDeleteRequest, TransactionCreate, TransactionRead, TransactionTransferCounterpart, TransactionUpdate, TransferCreate, TransferRead
 from app.schemas.transaction_calendar import TransactionCalendarResponse
 from app.services import transaction_service
+from app.services.transaction_service import FlagDue
 from app.services.category_line_service import csv_export_parts
+from app.services.csv_safety import csv_safe as _csv_safe
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.transaction_calendar_service import get_transaction_calendar
 from app.services._query_filters import reporting_date_value
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
-# A spreadsheet evaluates any cell that starts with one of these as a formula,
-# so a description like "=HYPERLINK(...)" runs as live content when the export
-# is opened in Excel or Sheets (CSV injection, CWE-1236). Text columns go
-# through _csv_safe(); the amounts, dates and codes below are written by this
+# Text columns go through `_csv_safe` (app.services.csv_safety): a spreadsheet
+# evaluates any cell that starts with a formula leader, so a description like
+# "=HYPERLINK(...)" runs as live content when the export is opened (CSV
+# injection, CWE-1236). The amounts, dates and codes below are written by this
 # endpoint and cannot carry a payload.
-_FORMULA_LEADERS = ("=", "+", "-", "@", "\t", "\r")
-
-
-def _csv_safe(value: object) -> str:
-    """`value` as text that a spreadsheet reads literally, never as a formula."""
-    text = "" if value is None else str(value)
-    return f"'{text}" if text[:1] in _FORMULA_LEADERS else text
 
 
 async def _attach_invoice_links(session, ctx, items: list) -> None:
@@ -175,6 +170,7 @@ def _merge_id_filters(
 async def list_transactions(
     account_id: Optional[uuid.UUID] = Query(None),
     account_ids: Optional[List[uuid.UUID]] = Query(None),
+    linked_card_ids: Optional[List[uuid.UUID]] = Query(None),
     category_id: Optional[uuid.UUID] = Query(None),
     category_ids: Optional[List[uuid.UUID]] = Query(None),
     payee_id: Optional[uuid.UUID] = Query(None),
@@ -192,14 +188,16 @@ async def list_transactions(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=500),
     include_opening_balance: bool = Query(False),
-    include_running_balance: bool = Query(False, description="Fill running_balance per row (issue #1202): one non-credit-card account, `from` set, include_opening_balance, no other filter, default order; null otherwise"),
+    include_running_balance: bool = Query(False, description="Fill running_balance per row (issue #1202): one account, `from` set, include_opening_balance, default order, and no filter beyond a credit card's statement window (`bill_id`/`unbilled_only`); null otherwise"),
     exclude_transfers: bool = Query(False),
     user_pnl_only: bool = Query(False, description="Return only rows that count toward dashboard/user income/expense totals"),
     exclude_ignored: bool = Query(False, description="Drop rows the user marked ignored, or whose category is ignored"),
+    flagged: bool = Query(False, description="Return only rows the user flagged"),
+    flag_due: Optional[FlagDue] = Query(None, description="Flagged rows past their reminder date (overdue) or due within a week (soon)"),
     tags: Optional[List[str]] = Query(None),
     min_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount >= this value (primary currency)."),
     max_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount <= this value (primary currency)."),
-    sort_by: Optional[str] = Query(None, description="Column to sort by (date|amount|description|payee|category|account|type|status). Default: date desc."),
+    sort_by: Optional[str] = Query(None, description="Column to sort by (date|amount|description|payee|category|account|type|status|flag_due_date). Default: date desc."),
     sort_dir: str = Query("desc", pattern="^(asc|desc)$"),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
@@ -208,6 +206,7 @@ async def list_transactions(
     transactions, total, summary = await transaction_service.get_transactions(
         session, ctx.workspace.id, ctx.user_id,
         account_ids=_merge_id_filters(account_id, account_ids),
+        linked_card_ids=linked_card_ids,
         category_ids=_merge_id_filters(category_id, category_ids),
         payee_id=payee_id, from_date=from_date, to_date=to_date, page=page, limit=limit,
         include_opening_balance=include_opening_balance, search=q, uncategorized=uncategorized,
@@ -215,6 +214,8 @@ async def list_transactions(
         txn_type=type, exclude_transfers=exclude_transfers,
         user_pnl_only=user_pnl_only,
         exclude_ignored=exclude_ignored,
+        flagged_only=flagged,
+        flag_due=flag_due,
         status=status,
         accounting_mode=accounting_mode,
         tags=tags,
@@ -261,6 +262,15 @@ async def transaction_calendar(
     )
 
 
+@router.get("/flagged-summary", response_model=FlaggedSummary)
+async def get_flagged_summary(
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """How many rows are flagged, past their reminder date, or due soon."""
+    return await transaction_service.flagged_summary(session, ctx.workspace.id)
+
+
 @router.get("/description-suggestions", response_model=list[DescriptionSuggestion])
 async def description_suggestions(
     q: str = Query("", max_length=100),
@@ -276,6 +286,7 @@ async def description_suggestions(
 async def export_transactions(
     account_id: Optional[uuid.UUID] = Query(None),
     account_ids: Optional[List[uuid.UUID]] = Query(None),
+    linked_card_ids: Optional[List[uuid.UUID]] = Query(None),
     category_id: Optional[uuid.UUID] = Query(None),
     category_ids: Optional[List[uuid.UUID]] = Query(None),
     payee_id: Optional[uuid.UUID] = Query(None),
@@ -286,6 +297,8 @@ async def export_transactions(
     type: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     exclude_ignored: bool = Query(False, description="Drop rows the user marked ignored, or whose category is ignored"),
+    flagged: bool = Query(False, description="Export only rows the user flagged"),
+    flag_due: Optional[FlagDue] = Query(None, description="Flagged rows past their reminder date (overdue) or due within a week (soon)"),
     tags: Optional[List[str]] = Query(None),
     transaction_ids: Optional[List[uuid.UUID]] = Query(None, description="If set, exports exactly these rows (scoped to the workspace); other filters are ignored."),
     ctx: WorkspaceContext = Depends(current_workspace),
@@ -305,11 +318,14 @@ async def export_transactions(
         transactions, _, _ = await transaction_service.get_transactions(
             session, ctx.workspace.id, ctx.user_id,
             account_ids=_merge_id_filters(account_id, account_ids),
+            linked_card_ids=linked_card_ids,
             category_ids=_merge_id_filters(category_id, category_ids),
             payee_id=payee_id, from_date=from_date, to_date=to_date,
             search=q, uncategorized=uncategorized, txn_type=type, status=status, skip_pagination=True,
             accounting_mode=accounting_mode,
             exclude_ignored=exclude_ignored,
+            flagged_only=flagged,
+            flag_due=flag_due,
             tags=tags,
         )
 
@@ -381,6 +397,18 @@ async def bulk_add_tags(
 ):
     count = await transaction_service.bulk_add_tags(
         session, ctx.workspace.id, data.transaction_ids, data.tags
+    )
+    return {"updated": count}
+
+
+@router.patch("/bulk-flag")
+async def bulk_flag(
+    data: BulkFlagRequest,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    count = await transaction_service.bulk_set_flag(
+        session, ctx.workspace.id, data.transaction_ids, data.is_flagged, data.flag_due_date
     )
     return {"updated": count}
 

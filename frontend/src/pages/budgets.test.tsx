@@ -15,7 +15,7 @@ const api = vi.hoisted(() => ({
   dashboard: { spendingByCategory: vi.fn(), projectedTransactions: vi.fn() },
   transactions: { list: vi.fn() },
   admin: { accountingMode: vi.fn() },
-  budgets: { list: vi.fn(), comparison: vi.fn(), suggestions: vi.fn(), createBatch: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
+  budgets: { list: vi.fn(), comparison: vi.fn(), suggestions: vi.fn(), createBatch: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), copyMonth: vi.fn() },
   categories: { listIncludingHidden: vi.fn() },
   categoryGroups: { listIncludingHidden: vi.fn() },
 }))
@@ -27,7 +27,7 @@ vi.mock('@/lib/api', () => ({
 vi.mock('@/hooks/use-display-locale', () => ({ useDisplayLocale: () => 'en-US', useDateLocale: () => 'en-US' }))
 vi.mock('@/hooks/use-timezone', () => ({ useEffectiveTimezone: () => 'UTC' }))
 vi.mock('@/contexts/auth-context', () => ({ useAuth: () => ({ user: { preferences: { currency_display: 'USD' } } }) }))
-vi.mock('@/contexts/workspace-context', () => ({ useWorkspace: () => ({ canWrite: api.canWrite }) }))
+vi.mock('@/contexts/workspace-context', () => ({ useWorkspace: () => ({ canWrite: api.canWrite, current: { id: 'ws-1' } }) }))
 vi.mock('@/contexts/collection-filter-context', () => ({
   useCollectionFilter: () => ({ activeAccountIds: api.activeAccountIds }),
 }))
@@ -513,5 +513,94 @@ describe('Budget spending in the inline editor', () => {
     expect(budgetRow().getByText('$0.00')).toBeInTheDocument()
     expect(budgetRow().getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0')
     expect(api.dashboard.spendingByCategory).toHaveBeenCalledTimes(calls)
+  })
+})
+
+describe('Copying the previous month', () => {
+  it('opens the copy dialog from the page header', async () => {
+    const { user } = renderWithProviders(<BudgetsPage />)
+    await screen.findByRole('textbox', { name: t('budgets.budgetFor', { category: 'Rent' }) })
+
+    await user.click(screen.getByRole('button', { name: t('budgets.copyAction') }))
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: t('budgets.copyTitle') })).toBeInTheDocument()
+    // Pinned to the active workspace, so a switch in another tab cannot move it.
+    expect(api.budgets.list).toHaveBeenCalledWith('2026-09-01', 'ws-1')
+  })
+
+  it('offers the copy action in the empty month state', async () => {
+    api.budgets.list.mockImplementation(async (month?: string) => (month === '2026-10-01' ? [] : [rent]))
+    const { user } = renderWithProviders(<BudgetsPage />)
+
+    expect(await screen.findByText(t('budgets.empty'))).toBeInTheDocument()
+    expect(screen.getByText(t('budgets.copyEmptyHint'))).toBeInTheDocument()
+    const copyButtons = screen.getAllByRole('button', { name: t('budgets.copyAction') })
+    expect(copyButtons).toHaveLength(2)
+
+    await user.click(copyButtons[1])
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('keeps the header copy action disabled until the month has loaded', async () => {
+    let resolveTable: (budgets: Budget[]) => void = () => {}
+    api.budgets.list.mockImplementation((month?: string) => (
+      month === '2026-10-01'
+        ? new Promise<Budget[]>((resolve) => { resolveTable = resolve })
+        : Promise.resolve([rent])
+    ))
+    renderWithProviders(<BudgetsPage />)
+
+    const button = await screen.findByRole('button', { name: t('budgets.copyAction') })
+    expect(button).toBeDisabled()
+
+    await act(async () => { resolveTable([rent]) })
+    await waitFor(() => expect(button).toBeEnabled())
+  })
+
+  it('keeps the copy actions disabled while the month is refetched after a copy', async () => {
+    api.budgets.copyMonth.mockResolvedValue([rent])
+    let targetCalls = 0
+    let resolveRefresh: (budgets: Budget[]) => void = () => {}
+    api.budgets.list.mockImplementation((month?: string) => {
+      if (month !== '2026-10-01') return Promise.resolve([rent])
+      targetCalls += 1
+      return targetCalls === 1
+        ? Promise.resolve([])
+        : new Promise<Budget[]>((resolve) => { resolveRefresh = resolve })
+    })
+    const { user } = renderWithProviders(<BudgetsPage />)
+
+    expect(await screen.findByText(t('budgets.empty'))).toBeInTheDocument()
+    await user.click(screen.getAllByRole('button', { name: t('budgets.copyAction') })[1])
+    const confirm = await screen.findByRole('button', { name: t('budgets.copyConfirm') })
+    await waitFor(() => expect(confirm).toBeEnabled())
+    await user.click(confirm)
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    // The copy invalidated the month, and the rows on screen are the ones from
+    // before it until the refetch lands — so no second copy yet, and no empty
+    // state that claims the month has nothing.
+    const header = screen.getByRole('button', { name: t('budgets.copyAction') })
+    expect(header).toBeDisabled()
+    expect(screen.queryByText(t('budgets.copyEmptyHint'))).not.toBeInTheDocument()
+
+    await act(async () => { resolveRefresh([]) })
+    await waitFor(() => expect(header).toBeEnabled())
+  })
+
+  it('hides the copy action from a viewer, with and without budgets in the month', async () => {
+    api.canWrite = false
+    const { unmount } = renderWithProviders(<BudgetsPage />)
+    await screen.findByRole('textbox', { name: t('budgets.budgetFor', { category: 'Rent' }) })
+    expect(screen.queryByRole('button', { name: t('budgets.copyAction') })).not.toBeInTheDocument()
+    unmount()
+
+    api.budgets.list.mockImplementation(async (month?: string) => (month === '2026-10-01' ? [] : [rent]))
+    renderWithProviders(<BudgetsPage />)
+    await waitFor(() => expect(api.budgets.list).toHaveBeenCalledWith('2026-10-01'))
+    await screen.findByRole('textbox', { name: t('budgets.budgetFor', { category: 'Rent' }) })
+
+    expect(screen.queryByRole('button', { name: t('budgets.copyAction') })).not.toBeInTheDocument()
   })
 })

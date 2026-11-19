@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 
 import AccountsPage, { AccountDialog } from '@/pages/accounts'
 import { renderWithProviders, t } from '@/test/utils'
@@ -13,6 +13,7 @@ const api = vi.hoisted(() => ({
   pluginsInstalled: vi.fn(),
   pluginConnections: vi.fn(),
   pluginUpdateValues: vi.fn(),
+  pluginCatalog: vi.fn(),
 }))
 
 const toast = vi.hoisted(() => ({
@@ -36,7 +37,12 @@ vi.mock('@/lib/api', () => ({
   },
   currencies: { list: vi.fn().mockResolvedValue([]) },
   info: { get: vi.fn().mockResolvedValue({ features: { plugins: true } }) },
-  plugins: { installed: api.pluginsInstalled, connections: api.pluginConnections, updateValues: api.pluginUpdateValues },
+  plugins: {
+    installed: api.pluginsInstalled,
+    connections: api.pluginConnections,
+    updateValues: api.pluginUpdateValues,
+    catalog: api.pluginCatalog,
+  },
 }))
 
 vi.mock('@/contexts/auth-context', () => ({
@@ -61,7 +67,10 @@ vi.mock('@/hooks/use-display-locale', () => ({
 }))
 
 
-vi.mock('@/components/bank-connect-dialog', () => ({ BankConnectDialog: () => null }))
+vi.mock('@/components/bank-connect-dialog', () => ({
+  BankConnectDialog: ({ open, reconnectConnectionId }: { open: boolean; reconnectConnectionId?: string }) =>
+    open ? <div data-testid="reconnect-dialog" data-connection-id={reconnectConnectionId} /> : null,
+}))
 vi.mock('@/components/connector-select-dialog', () => ({ ConnectorSelectDialog: () => null }))
 vi.mock('@/components/oauth-connect-dialog', () => ({ OAuthConnectDialog: () => null }))
 vi.mock('@/components/token-connect-dialog', () => ({ TokenConnectDialog: () => null }))
@@ -171,6 +180,137 @@ describe('AccountsPage connection row actions', () => {
   })
 })
 
+function syncError(status: number, detail: unknown) {
+  return Object.assign(new Error('Request failed'), {
+    isAxiosError: true,
+    response: { status, data: { detail } },
+  })
+}
+
+describe('AccountsPage last sync failure', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    api.accountsList.mockImplementation((includeClosed: boolean) =>
+      Promise.resolve(includeClosed ? [] : [makeAccount('conn-1')]),
+    )
+    api.sync.mockResolvedValue({ sync_outcome: 'refreshed', merged_count: 0 })
+    api.pluginsInstalled.mockResolvedValue([])
+    api.pluginConnections.mockResolvedValue([])
+  })
+
+  it('says why the last sync failed and offers a sync when the bank wants the user there', async () => {
+    api.connectionsList.mockResolvedValue([
+      makeConnection({
+        id: 'conn-psu',
+        status: 'error',
+        last_sync_failure: { code: 'psu_present_required', at: '2026-11-18T09:30:00Z', detail: 'psu_present_required' },
+      }),
+    ])
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    const line = await screen.findByTestId('sync-failure')
+    expect(line).toHaveTextContent(t('accounts.syncFailure.psu_present_required'))
+    await user.click(within(line).getByRole('button', { name: t('accounts.syncFailure.syncNow') }))
+
+    expect(api.sync).toHaveBeenCalledWith('conn-psu')
+  })
+
+  it('reconnects that connection when the consent expired', async () => {
+    api.connectionsList.mockResolvedValue([
+      makeConnection({
+        id: 'conn-exp',
+        provider: 'pluggy',
+        status: 'expired',
+        last_sync_failure: { code: 'consent_expired', at: '2026-11-18T09:30:00Z', detail: null },
+      }),
+    ])
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    const line = await screen.findByTestId('sync-failure')
+    expect(line).toHaveTextContent(t('accounts.syncFailure.consent_expired'))
+    expect(screen.queryByTestId('reconnect-dialog')).not.toBeInTheDocument()
+    await user.click(within(line).getByRole('button', { name: t('accounts.reconnect') }))
+
+    expect(await screen.findByTestId('reconnect-dialog')).toHaveAttribute('data-connection-id', 'conn-exp')
+    expect(api.sync).not.toHaveBeenCalled()
+  })
+
+  it('sends the user to the SimpleFIN Bridge and offers a sync afterwards', async () => {
+    api.connectionsList.mockResolvedValue([
+      makeConnection({
+        id: 'conn-sf',
+        status: 'error',
+        last_sync_failure: { code: 'reauthorize_at_provider', at: '2026-11-18T09:30:00Z', detail: 'action_required' },
+      }),
+    ])
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    const line = await screen.findByTestId('sync-failure')
+    expect(line).toHaveTextContent(t('accounts.syncFailure.reauthorize_at_provider'))
+    await user.click(within(line).getByRole('button', { name: t('accounts.syncFailure.syncNow') }))
+
+    expect(api.sync).toHaveBeenCalledWith('conn-sf')
+  })
+
+  it('only asks to wait when the bank throttled the sync', async () => {
+    api.connectionsList.mockResolvedValue([
+      makeConnection({
+        last_sync_failure: { code: 'rate_limited', at: '2026-11-18T09:30:00Z', detail: null },
+      }),
+    ])
+    renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    const line = await screen.findByTestId('sync-failure')
+    expect(line).toHaveTextContent(t('accounts.syncRateLimited'))
+    expect(within(line).queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('drops the notice once a sync succeeded', async () => {
+    const failed = makeConnection({
+      id: 'conn-1',
+      status: 'error',
+      last_sync_failure: { code: 'provider_error', at: '2026-11-18T09:30:00Z', detail: 'HTTP 502' },
+    })
+    api.connectionsList
+      .mockResolvedValueOnce([failed])
+      .mockResolvedValue([{ ...failed, status: 'active', last_sync_failure: null }])
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    const line = await screen.findByTestId('sync-failure')
+    await user.click(within(line).getByRole('button', { name: t('accounts.syncFailure.syncNow') }))
+
+    expect(api.sync).toHaveBeenCalledWith('conn-1')
+    await vi.waitFor(() => expect(screen.queryByTestId('sync-failure')).not.toBeInTheDocument())
+  })
+
+  it.each([
+    [409, { message: 'Bank wants the PSU present', code: 'psu_present_required' }, 'accounts.syncFailure.psu_present_required'],
+    [409, { message: 'Token revoked', code: 'credentials_invalid' }, 'accounts.syncFailure.consent_expired'],
+    [409, { message: 'Bridge wants it reauthorized', code: 'some_new_code' }, 'accounts.syncFailure.provider_error'],
+    [409, 'Connection was disconnected', 'accounts.connectionDisconnected'],
+    [410, 'Session expired', 'accounts.syncFailure.consent_expired'],
+    [500, 'Sync failed: HTTPStatusError 502 for IBAN-123', 'accounts.syncFailure.provider_error'],
+  ])('shows the translated reason in the manual sync toast (%i)', async (status, detail, key) => {
+    api.connectionsList.mockResolvedValue([makeConnection({ id: 'conn-ok', status: 'active' })])
+    api.sync.mockRejectedValue(syncError(status, detail))
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    await user.click(await screen.findByRole('button', { name: t('accounts.sync') }))
+
+    await vi.waitFor(() => expect(toast.error).toHaveBeenCalledWith(t(key)))
+  })
+
+  it('keeps the server text when the provider is not configured', async () => {
+    api.connectionsList.mockResolvedValue([makeConnection({ id: 'conn-ok', status: 'active' })])
+    api.sync.mockRejectedValue(syncError(503, "Provider 'x' is not configured."))
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    await user.click(await screen.findByRole('button', { name: t('accounts.sync') }))
+
+    await vi.waitFor(() => expect(toast.error).toHaveBeenCalledWith("Provider 'x' is not configured."))
+  })
+})
+
 describe('AccountsPage disconnect dialog', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -272,6 +412,7 @@ describe('AccountsPage connections a plugin syncs', () => {
     api.accountsList.mockResolvedValue([])
     api.pluginsInstalled.mockResolvedValue([plugin])
     api.pluginConnections.mockResolvedValue([pluginConnection])
+    api.pluginCatalog.mockResolvedValue([])
     api.connectionsList.mockResolvedValue([makeConnection({
       id: 'bank-1', provider: 'plugin:acme/ledger', status: 'expired', display_name: 'Main',
       plugin_connection_id: 'pc-1', plugin_id: 'acme/ledger', integration: 'keys',
@@ -287,6 +428,23 @@ describe('AccountsPage connections a plugin syncs', () => {
     expect(await screen.findByText(t('plugins.connections.editTitle', { name: 'Main' }))).toBeInTheDocument()
     expect(screen.getByText(t('plugins.connections.keepBlank'))).toBeInTheDocument()
     expect(screen.getByRole('button', { name: t('common.save') })).toBeEnabled()
+  })
+
+  it("shows the plugin's catalog icon on a connection without a logo", async () => {
+    const icon = `/api/plugins/icons/${'b'.repeat(64)}.png`
+    api.pluginCatalog.mockResolvedValue([{ id: 'acme/ledger', icon_url: icon }])
+    const { container } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+    await waitFor(() => expect(container.querySelector(`img[src="${icon}"]`)).not.toBeNull())
+  })
+
+  it('does not ask the catalog for icons when every plugin connection has a logo', async () => {
+    api.connectionsList.mockResolvedValue([makeConnection({
+      id: 'bank-1', provider: 'plugin:acme/ledger', status: 'active', display_name: 'Main',
+      plugin_connection_id: 'pc-1', plugin_id: 'acme/ledger', integration: 'keys', logo_url: '/logo.png',
+    })])
+    renderWithProviders(<AccountsPage />, { route: '/accounts' })
+    expect(await screen.findByText('Main')).toBeInTheDocument()
+    expect(api.pluginCatalog).not.toHaveBeenCalled()
   })
 
   it('shows what a reconnect brought in, even when its sync settles before any poll', async () => {

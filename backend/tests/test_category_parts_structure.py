@@ -26,9 +26,7 @@ WHOLE_ROW: dict[tuple[str, str], str] = {
         "list filter; split rows are matched through any_line_in",
     ("app/services/_query_filters.py", "counts_as_user_pnl_row"):
         "list filter; split rows are matched through their lines",
-    ("app/services/_query_filters.py", "owner_split_offset_pnl"):
-        "group-split shares; a group-split row cannot be split by category",
-    ("app/services/_query_filters.py", "owner_split_offset_by_category"):
+    ("app/services/_query_filters.py", "_owner_split_rows"):
         "group-split shares; a group-split row cannot be split by category",
     ("app/services/_query_filters.py", "viewer_shared_pnl"):
         "group-split shares; a group-split row cannot be split by category",

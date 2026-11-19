@@ -36,11 +36,6 @@ from app.services.primary_restamp_service import (
 router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 
 
-def _user_display_name(user: User) -> str | None:
-    prefs = user.preferences or {}
-    return prefs.get("display_name") or None
-
-
 def _workspace_read(workspace: Workspace, role: str | None) -> WorkspaceRead:
     """Build the read model for a workspace.
 
@@ -190,7 +185,7 @@ async def list_workspace_members(
             id=m.id,
             user_id=u.id,
             email=u.email,
-            display_name=_user_display_name(u),
+            display_name=u.display_name,
             role=m.role,
             joined_at=m.joined_at,
         )
@@ -280,7 +275,7 @@ async def invite_member(
         id=member.id,
         user_id=target.id,
         email=target.email,
-        display_name=_user_display_name(target),
+        display_name=target.display_name,
         role=member.role,
         joined_at=member.joined_at,
     )
@@ -313,7 +308,7 @@ async def change_member_role(
         id=member.id,
         user_id=target.id,
         email=target.email,
-        display_name=_user_display_name(target),
+        display_name=target.display_name,
         role=member.role,
         joined_at=member.joined_at,
     )

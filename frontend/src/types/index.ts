@@ -145,6 +145,8 @@ export interface BankConnection {
   status: string
   settings: ConnectionSettings | null
   last_sync_at: string | null
+  /** Why the last sync failed, until a sync succeeds. */
+  last_sync_failure?: SyncFailure | null
   created_at: string
   // Institutions this link spans (issue #345). Empty for one-institution
   // providers — institution_name covers those.
@@ -153,6 +155,19 @@ export interface BankConnection {
   plugin_connection_id?: string | null
   plugin_id?: string | null
   integration?: string | null
+}
+
+export type SyncFailureCode =
+  | 'psu_present_required'
+  | 'consent_expired'
+  | 'reauthorize_at_provider'
+  | 'rate_limited'
+  | 'provider_error'
+
+export interface SyncFailure {
+  code: SyncFailureCode
+  at: string
+  detail: string | null
 }
 
 export interface ConnectionSettings {
@@ -246,6 +261,13 @@ export interface CreditCardBill {
   minimum_payment: number | null
 }
 
+export interface AccountCard {
+  id: string
+  account_id: string
+  masked_number: string
+  label: string | null
+}
+
 export interface Collection {
   id: string
   user_id: string
@@ -334,6 +356,9 @@ export interface Transaction {
   installment_purchase_date: string | null
   installment_series_id: string | null
   bill_id: string | null
+  // Last four characters of the physical/virtual card that made this charge.
+  // Null when the connected provider does not expose it.
+  card_masked_number?: string | null
   // Manual override for which credit-card bill cycle this tx belongs to
   // (issue #92). Empty / null = use auto bucketing (Pluggy bill_id when
   // available, cycle math otherwise). Setting it forces the tx into the
@@ -342,6 +367,10 @@ export interface Transaction {
   // Optional period-attribution override. The bank-provided `date` remains
   // unchanged; null restores automatic cash/accrual bucketing.
   reporting_date_override: string | null
+  // The date the paginated list filtered and ordered this row by (#1386):
+  // the override, a manual bill date or, in accrual mode, a card's bill due
+  // date. Absent outside the list.
+  reporting_date?: string | null
   // The recurring bill this transaction fulfills, if any (issue #116).
   recurring_transaction_id?: string | null
   splits: TransactionSplit[]
@@ -367,6 +396,11 @@ export interface Transaction {
   is_ignored: boolean
   // Keeps the transaction in the ledger/balance while excluding it from P&L.
   exclude_from_pnl?: boolean
+  // A marker to come back to the row later, with an optional reminder date
+  // (YYYY-MM-DD) and note; only the flagged views read them.
+  is_flagged?: boolean
+  flag_due_date?: string | null
+  flag_note?: string | null
   // Balance right after this row, filled by the server only when the list
   // was asked for it on a single non-credit-card account (#1202).
   // `running_balance_primary` is null when the account is in the primary
@@ -464,6 +498,15 @@ export interface TransactionSplitsInput {
 // TransactionSplitsInput the split section produces, not the
 // TransactionSplit[] rows the API returns, so the edit payload type reflects
 // the form's actual shape.
+// Narrows the flagged views by reminder date: past it, or within a week.
+export type FlagDue = 'overdue' | 'soon'
+
+export interface FlaggedSummary {
+  flagged: number
+  overdue: number
+  due_soon: number
+}
+
 export type TransactionEditPayload = Omit<Partial<Transaction>, 'splits' | 'category_lines'> & {
   splits?: TransactionSplitsInput | null
   category_lines?: TransactionCategoryLinesInput
@@ -1023,6 +1066,17 @@ export interface RecurringPriceChangeHistory {
   changes: RecurringPriceChange[]
 }
 
+/** What the active recurring definitions expect in one month (#532). */
+export interface RecurringMonthSummary {
+  month: string
+  currency: string
+  income: string
+  expenses: string
+  net: string
+  transfer_count: number
+  unconverted_count: number
+}
+
 export interface ProjectedTransaction {
   recurring_id: string
   account_id: string | null
@@ -1032,6 +1086,8 @@ export interface ProjectedTransaction {
   currency: string
   type: 'debit' | 'credit'
   date: string
+  /** The card bill's due date in accrual mode, else `date`. */
+  reporting_date?: string | null
   category_id: string | null
   category_name: string | null
   category_icon: string | null
@@ -1122,6 +1178,12 @@ export interface DashboardSummary {
   pending_categorization_amount: number
   assets_value: Record<string, number>
   assets_value_primary: number
+  /** Checking + savings + wallet (spendable / near-liquid). */
+  cash_balance?: Record<string, number>
+  cash_balance_primary?: number
+  /** Accounts with type=investment (brokerage cash), distinct from assets_value. */
+  investment_accounts?: Record<string, number>
+  investment_accounts_primary?: number
   primary_currency: string
   // At least one currency bucket had no real FX rate, so the *_primary
   // totals sum it at 1:1 and are an estimate, not a conversion (issue #1165).
@@ -1254,6 +1316,9 @@ export interface Asset {
   last_price: number | null
   last_price_at: string | null
   logo_url: string | null
+  // Date the sync provider says current_value refers to (YYYY-MM-DD), when it
+  // reports one. A stale date is the sign that a position stopped updating.
+  provider_value_date: string | null
   // Ledger-derived (issue #235): weighted-average cost per unit (preço médio),
   // cost basis of held units, cumulative realized gain, and whether the holding
   // is driven by the transactions ledger.
@@ -1268,7 +1333,8 @@ export interface AssetOrderImport {
   row: number
   ticker: string
   date: string
-  kind: 'buy' | 'sell'
+  kind: 'buy' | 'sell' | 'split'
+  /** 0 on a split, which carries its ratio in old_units → new_units. */
   quantity: number
   price: number
   fee: number
@@ -1276,6 +1342,8 @@ export interface AssetOrderImport {
   name: string | null
   notes: string | null
   external_id: string | null
+  old_units?: number | null
+  new_units?: number | null
 }
 
 export interface AssetImportRowError {
@@ -1345,6 +1413,12 @@ export interface MarketSymbolQuote {
   currency: string
   price: number
   quote_type: string | null
+}
+
+export interface AssetPriceRefreshResult {
+  refreshed: number
+  skipped: number
+  rate_limited: number
 }
 
 export interface AssetGroup {

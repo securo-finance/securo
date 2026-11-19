@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from app.models.bank_connection import BankConnection
     from app.models.institution import Institution
     from app.models.transaction import Transaction
+    from app.models.account_card import AccountCard
 
 
 class Account(Base):
@@ -82,6 +83,9 @@ class Account(Base):
         back_populates="accounts", lazy="selectin"
     )
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="account", cascade="all, delete-orphan")
+    linked_cards: Mapped[list["AccountCard"]] = relationship(
+        back_populates="account", cascade="all, delete-orphan"
+    )
     # Provider-owned reserved funds held inside this account (Pluggy
     # `bankData.reservedBalances`). Eager (selectin) because serialization
     # reads them in an async session, like `institution`.
