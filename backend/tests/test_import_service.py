@@ -534,6 +534,10 @@ class TestDetectCsvColumns:
         csv_content = " date , description , amount \n2026-01-10,X,-1.00\n".encode("utf-8-sig")
         assert detect_csv_columns(csv_content) == ["date", "description", "amount"]
 
+    def test_detect_latin1(self):
+        csv_content = "Data;Histórico;Valor\n10/02/2026;PADARIA SÃO JOÃO;-25,50\n".encode("cp1252")
+        assert detect_csv_columns(csv_content) == ["Data", "Histórico", "Valor"]
+
     def test_detect_empty_file(self):
         assert detect_csv_columns(b"") == []
 

@@ -633,13 +633,29 @@ def _sniff_csv_dialect(text: str):
         return csv.excel
 
 
+def _decode_csv(content: bytes) -> str:
+    """UTF-8 (with or without BOM), else Windows-1252, else Latin-1: Excel's
+    plain "CSV" and many bank exports are not UTF-8."""
+    try:
+        return content.decode('utf-8-sig')
+    except UnicodeDecodeError:
+        pass
+    try:
+        # 0x80-0x9F are typographic characters (en dash, euro sign) in
+        # Windows-1252, as in _normalize_ofx_encoding; Latin-1 maps them to C1 controls
+        return content.decode('cp1252')
+    except UnicodeDecodeError:
+        # cp1252 leaves 0x81, 0x8D, 0x8F, 0x90 and 0x9D undefined
+        return content.decode('latin-1')
+
+
 def detect_csv_columns(content: bytes) -> list[str]:
     """Return the CSV header column names exactly as they appear in the file.
 
     Used by the import preview so the UI can offer accurate column-mapping
     dropdowns instead of guessing headers client-side.
     """
-    text = content.decode('utf-8-sig')  # Handle BOM
+    text = _decode_csv(content)
     dialect = _sniff_csv_dialect(text)
     reader = csv.DictReader(io.StringIO(text), dialect=dialect)
     return [f.strip() for f in (reader.fieldnames or []) if f and f.strip()]
@@ -666,7 +682,7 @@ def parse_csv(
     - column_mapping: explicit Securo-field -> CSV-header map. Any field
       present here overrides auto-detection; unmapped fields still auto-detect.
     """
-    text = content.decode('utf-8-sig')  # Handle BOM
+    text = _decode_csv(content)
     dialect = _sniff_csv_dialect(text)
     reader = csv.DictReader(io.StringIO(text), dialect=dialect)
 
