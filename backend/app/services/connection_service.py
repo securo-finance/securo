@@ -76,6 +76,7 @@ from app.services.rule_service import (
     read_description_is_manual,
     rule_payee_ids,
 )
+from app.services.card_mirror_service import ignore_mirrored_card_charges
 from app.services.transfer_detection_service import detect_transfer_pairs
 from app.services.fx_rate_service import stamp_primary_amount
 from app.services.payee_service import find_payee_by_name, get_or_create_payee
@@ -1851,6 +1852,23 @@ async def _claim_first_import(
     )
 
 
+async def _set_aside_card_mirrors(
+    session: AsyncSession,
+    connection_id: uuid.UUID,
+    new_tx_ids: list[uuid.UUID],
+) -> None:
+    """Ignore card purchases the connection also reports on their account,
+    then reconcile those cards' opening balance, which no longer counts
+    them (issue #1460)."""
+    touched = await ignore_mirrored_card_charges(session, connection_id, new_tx_ids)
+    if not touched:
+        return
+    await session.flush()
+    cards = await session.execute(select(Account).where(Account.id.in_(touched)))
+    for card in cards.scalars():
+        await sync_opening_balance_for_connected_account(session, card)
+
+
 async def _run_first_import(
     session: AsyncSession,
     *,
@@ -2025,6 +2043,8 @@ async def _run_first_import(
         # absorbed into this synthetic transaction.
         await _drop_finance_charges_with_twins(session, account)
         await sync_opening_balance_for_connected_account(session, account)
+
+    await _set_aside_card_mirrors(session, connection.id, new_tx_ids)
 
     # Detect transfer pairs among newly synced transactions
     await detect_transfer_pairs(session, workspace_id, candidate_ids=new_tx_ids)
@@ -4541,6 +4561,7 @@ async def sync_connection(
 
         # Detect transfer pairs among newly synced transactions
         if new_tx_ids:
+            await _set_aside_card_mirrors(session, connection.id, new_tx_ids)
             await detect_transfer_pairs(session, workspace_id, candidate_ids=new_tx_ids)
 
             # Then settle whatever this money was promised against. It runs

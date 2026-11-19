@@ -443,6 +443,55 @@ MATCH_TRANSFER: dict[str, Any] = {
     "on_ambiguity": "suggest",
 }
 
+#: The same card purchase reported by two accounts of one bank connection.
+#:
+#: A card with immediate debit charges the account it is attached to the
+#: moment it is used, and some banks list the card as an account of its
+#: own. Every purchase then arrives twice: once on the card and once on
+#: the account the money really left. Both legs are debits, so this is
+#: not a transfer, and the transfer node rightly never looks at a card
+#: debit.
+#:
+#: The defaults are narrow on purpose. Only synced rows of **one
+#: connection** are compared, only when the card owes nothing after the
+#: sync (a card settled on the spot never carries a balance; a card with
+#: a bill does), and only the exact amount within two days, with each
+#: leg having to name the other as its single answer. The card's copy is
+#: the one set aside, since the account's copy is the money that moved.
+#: It is marked ignored rather than deleted, so a person can bring it
+#: back and the next sync leaves it as they set it.
+#:
+#: Not on the rules page yet, like the placeholder node: it is written as
+#: a document so surfacing it is a change to the page, not to the code.
+MATCH_CARD_MIRROR: dict[str, Any] = {
+    "version": POLICY_VERSION,
+    "node": "reconciliation.match_card_mirror",
+    "scope": {
+        "movement": "any",
+        # Only rows a sync wrote are read at all (the service loads
+        # nothing else), so there is nothing left here to ignore.
+        "ignore_transaction_sources": [],
+    },
+    "strategies": [
+        {
+            "id": "card_charge_mirrored_on_account",
+            "enabled": True,
+            "outcome": "link",
+            "trigger": "money_arrives",
+            "when": {
+                "direction": "debit",
+                "different_account": True,
+                "account_types": ["credit_card"],
+                "amount": {"match": "exact"},
+                "date": {"before_days": 2, "after_days": 2},
+                "tie_break": "closest_date",
+                "unique_candidate": True,
+            },
+        },
+    ],
+    "on_ambiguity": "suggest",
+}
+
 #: A weekly bill sits closer to its neighbours, so its window narrows or
 #: a charge could match the wrong occurrence. Carried as an override on
 #: the strategy rather than as a second document.
@@ -455,6 +504,7 @@ _DEFAULTS: dict[str, dict[str, Any]] = {
     MATCH_RECURRING["node"]: MATCH_RECURRING,
     MATCH_PLACEHOLDER["node"]: MATCH_PLACEHOLDER,
     MATCH_TRANSFER["node"]: MATCH_TRANSFER,
+    MATCH_CARD_MIRROR["node"]: MATCH_CARD_MIRROR,
 }
 
 
