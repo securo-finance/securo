@@ -90,14 +90,25 @@ _MAX_BILL_LAG = timedelta(days=62)
 
 
 async def _card_cycles(
-    session: AsyncSession, account_ids: set[uuid.UUID]
+    session: AsyncSession, workspace_id: uuid.UUID, account_ids: set[uuid.UUID]
 ) -> dict[uuid.UUID, tuple[int, int]]:
-    """Close and due day of each credit card in ``account_ids`` that has both."""
+    """Close and due day of each credit card in ``account_ids`` that has both.
+
+    Only cards reachable from ``workspace_id``: sync can move a card to
+    another workspace while its rule stays here, and that workspace's billing
+    setup must not date this one's projections. Such a rule keeps its own date.
+    """
     if not account_ids:
         return {}
     result = await session.execute(
-        select(Account.id, Account.statement_close_day, Account.payment_due_day).where(
+        select(Account.id, Account.statement_close_day, Account.payment_due_day)
+        .outerjoin(BankConnection)
+        .where(
             Account.id.in_(account_ids),
+            or_(
+                Account.workspace_id == workspace_id,
+                BankConnection.workspace_id == workspace_id,
+            ),
             Account.type == "credit_card",
             Account.statement_close_day.is_not(None),
             Account.payment_due_day.is_not(None),
@@ -185,7 +196,9 @@ async def _get_recurring_projections(
     result = await session.execute(stmt)
     recurring_list = list(result.scalars().all())
     card_cycles = (
-        await _card_cycles(session, {rec.account_id for rec in recurring_list if rec.account_id})
+        await _card_cycles(
+            session, workspace_id, {rec.account_id for rec in recurring_list if rec.account_id}
+        )
         if accounting_mode == "accrual"
         else {}
     )
@@ -1273,7 +1286,9 @@ async def get_projected_transactions(
     result = await session.execute(stmt)
     recurring_list = list(result.scalars().all())
     card_cycles = (
-        await _card_cycles(session, {rec.account_id for rec in recurring_list if rec.account_id})
+        await _card_cycles(
+            session, workspace_id, {rec.account_id for rec in recurring_list if rec.account_id}
+        )
         if accounting_mode == "accrual"
         else {}
     )

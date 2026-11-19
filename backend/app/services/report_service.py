@@ -719,7 +719,9 @@ async def get_income_expenses_report(
                 session, Decimal(str(proj["amount"])), proj["currency"], primary_currency,
             )
             proj_amount = float(converted)
-            label = _format_date_label(cursor, interval)
+            # The projection's own date: in accrual a card charge is due on
+            # its bill's date, which can sit days after the month's cursor.
+            label = _format_date_label(proj["date"], interval)
             existing_income, existing_expenses = forecast_map.get(label, (0.0, 0.0))
             if proj["type"] == "credit":
                 forecast_map[label] = (existing_income + proj_amount, existing_expenses)
@@ -1073,8 +1075,8 @@ async def get_income_expenses_report(
             session, workspace_id, m_start, m_end, account_ids,
             accounting_mode=accounting_mode,
         )
-        period_label = _format_date_label(cursor2, interval)
         for proj in projections:
+            period_label = _format_date_label(proj["date"], interval)
             cat_id_str = str(proj["category_id"]) if proj["category_id"] else "uncategorized"
             group = "income" if proj["type"] == "credit" else "expenses"
 
