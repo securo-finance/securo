@@ -26,7 +26,14 @@ from app.providers.market_price import (
     MarketPriceRateLimitedError,
     get_market_price_provider,
 )
-from app.schemas.asset import AssetCreate, AssetUpdate, AssetValueCreate, AssetRead, AssetValueRead
+from app.schemas.asset import (
+    AssetCreate,
+    AssetUpdate,
+    AssetValueCreate,
+    AssetRead,
+    AssetValueRead,
+    MarketSymbolMatch,
+)
 from app.services.asset_group_service import ensure_group_in_workspace
 from app.services.fx_rate_service import convert, convert_or_none, has_rate, stamp_primary_amount
 
@@ -251,6 +258,81 @@ def split_units(quantity: Decimal, old_units: int, new_units: int) -> Decimal:
     divide evenly (10 units through a 3 → 1 reverse split are 3.333333).
     """
     return (quantity * new_units / old_units).quantize(_UNIT_STEP, rounding=ROUND_DOWN)
+
+
+def _normalize_symbol_text(value: Optional[str]) -> str:
+    """Case- and punctuation-insensitive form used to compare a query to a row."""
+    return "".join(ch for ch in (value or "").casefold() if ch.isalnum())
+
+
+def _quote_currency(symbol: str) -> Optional[str]:
+    """The quote currency of a pair symbol (`CRO-EUR` → `EUR`), else None."""
+    base, sep, quote = (symbol or "").partition("-")
+    if not sep or not base or not quote:
+        return None
+    return quote.upper()
+
+
+def _is_crypto_match(match: MarketSymbolMatch) -> bool:
+    quote_type = (match.quote_type or "").upper()
+    exchange = (match.exchange or "").upper()
+    return quote_type == "CRYPTOCURRENCY" or exchange in {"CCC", "CCY"}
+
+
+def _match_score(match: MarketSymbolMatch, query_norm: str) -> int:
+    """How exactly a result answers the query; lower is a closer match."""
+    symbol = match.symbol or ""
+    if _normalize_symbol_text(symbol) == query_norm:
+        return 0
+    base, sep, quote = symbol.partition("-")
+    # A pair is named by its base: "BTC-USD" is how Yahoo lists "BTC".
+    if sep and quote and _normalize_symbol_text(base) == query_norm:
+        return 0
+    if _normalize_symbol_text(base) == query_norm:
+        return 1
+    name_norm = _normalize_symbol_text(match.name)
+    if name_norm == query_norm:
+        return 2
+    if name_norm.startswith(query_norm):
+        return 3
+    return 4
+
+
+def rank_symbol_matches(
+    matches: Sequence[MarketSymbolMatch],
+    query: str,
+    preferred_currency: Optional[str] = None,
+) -> list[MarketSymbolMatch]:
+    """Order ticker suggestions so the one the user most likely means comes first.
+
+    Yahoo answers a coin name with one row per currency pair (`CRO-EUR`,
+    `CRO-USD`, ...) and with unrelated assets whose names merely resemble the
+    query, in no useful order (issue #621). Nothing is filtered out — the
+    user still picks — but the rows are ranked: an exact symbol or name beats
+    a similar one, and when the query names a cryptocurrency its pairs move
+    ahead of the rest, the pair quoted in `preferred_currency` first and
+    USD after it. Ties keep the provider's own order.
+    """
+    query_norm = _normalize_symbol_text(query)
+    if not query_norm or len(matches) < 2:
+        return list(matches)
+
+    preferred = (preferred_currency or "").strip().upper()
+    scored = [(match, _match_score(match, query_norm)) for match in matches]
+    # Only push crypto ahead when the query actually names one: a bare "gold"
+    # should not rank a gold-backed token above the gold ETFs.
+    crypto_first = any(score <= 3 and _is_crypto_match(match) for match, score in scored)
+
+    def sort_key(entry: tuple[MarketSymbolMatch, int]) -> tuple[int, int, int, str]:
+        match, score = entry
+        crypto = crypto_first and _is_crypto_match(match)
+        if not crypto:
+            return (score, 1, 0, match.symbol)
+        quote = _quote_currency(match.symbol)
+        currency_rank = 0 if quote == preferred else 1 if quote == "USD" else 2
+        return (score, 0, currency_rank, match.symbol)
+
+    return [match for match, _ in sorted(scored, key=sort_key)]
 
 
 def build_market_value_series(

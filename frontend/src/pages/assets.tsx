@@ -662,7 +662,9 @@ export default function AssetsPage() {
     setTickerSearchLoading(true)
     const handle = window.setTimeout(async () => {
       try {
-        const results = await assets.marketSearch(q, 10)
+        // The display currency lets the backend list the coin's pair in the
+        // user's own currency first (issue #621).
+        const results = await assets.marketSearch(q, 10, userCurrency)
         setTickerMatches(results)
       } catch {
         setTickerMatches([])
@@ -671,7 +673,7 @@ export default function AssetsPage() {
       }
     }, 300)
     return () => window.clearTimeout(handle)
-  }, [formMethod, formTickerQuery, selectedQuote])
+  }, [formMethod, formTickerQuery, selectedQuote, userCurrency])
 
   async function pickTickerMatch(match: MarketSymbolMatch) {
     setTickerMatches([])
