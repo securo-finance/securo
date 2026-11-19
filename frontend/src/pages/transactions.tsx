@@ -50,6 +50,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Clock, HelpCircle, Info, Paperclip, Repeat, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, Flag, SlidersHorizontal, Receipt } from 'lucide-react'
 import type { Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, TransactionEditPayload, ReconciliationSuggestion } from '@/types'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
+import { TransactionFlagMarker } from '@/components/transaction-flag-marker'
+import { flagFilterToParam, parseFlagFilter, type FlagFilter } from '@/lib/transaction-flag'
 import { PageHeader } from '@/components/page-header'
 import { calculateRangeSelection } from '@/lib/selection-utils'
 import { isManualInstallmentSeriesRow } from '@/lib/installment-series'
@@ -140,6 +142,10 @@ export default function TransactionsPage() {
     return initial ? [initial] : []
   })
   const [filterUncategorized, setFilterUncategorized] = useState<boolean>(false)
+  const [filterFlag, setFilterFlag] = useState<FlagFilter>(() => parseFlagFilter(searchParams.get('flagged')))
+  // The range in use before the flag filter cleared it, put back when the
+  // filter is turned off again.
+  const rangeBeforeFlagRef = useRef<{ from: string; to: string } | null>(null)
   // Seed the date range from the URL, else the range last used on this page
   // (issue #1053), else the current month. Done in the initializer so it
   // survives effect re-runs (e.g. React StrictMode's double-invoke in
@@ -148,13 +154,19 @@ export default function TransactionsPage() {
     const f = searchParams.get('from')
     const t = searchParams.get('to')
     if (f || t) return { from: f ?? '', to: t ?? '' }
+    // A flag is something to come back to, often from months ago: the
+    // flagged views open on the whole history, not the current month.
+    if (parseFlagFilter(searchParams.get('flagged'))) return { from: '', to: '' }
     return loadRange('transactions') ?? monthRange(currentMonth())
   })
   const [filterFrom, setFilterFrom] = useState<string>(initialRange.from)
   const [filterTo, setFilterTo] = useState<string>(initialRange.to)
   useEffect(() => {
+    // The flagged views drop the range for their own sake; keep the one
+    // the user picked for the next visit.
+    if (filterFlag) return
     saveRange('transactions', filterFrom, filterTo)
-  }, [filterFrom, filterTo])
+  }, [filterFrom, filterTo, filterFlag])
   // Month reflected by the stepper: the active range when it spans exactly one
   // full month, otherwise the current month (custom ranges still navigable).
   const steppedMonth = monthFromRange(filterFrom, filterTo) ?? currentMonth()
@@ -194,7 +206,6 @@ export default function TransactionsPage() {
       return false
     }
   })
-  const [filterFlagged, setFilterFlagged] = useState<boolean>(searchParams.get('flagged') === '1')
   const [filterMinAmount, setFilterMinAmount] = useState<string>(searchParams.get('min_amount') ?? '')
   const [filterMaxAmount, setFilterMaxAmount] = useState<string>(searchParams.get('max_amount') ?? '')
   const [tagFilters, setTagFilters] = useState<string[]>([])
@@ -278,7 +289,7 @@ export default function TransactionsPage() {
     setFilterGroupId(searchParams.get('group_id') ?? '')
     setFilterType(searchParams.get('type') ?? '')
     setFilterStatus(searchParams.get('status') ?? '')
-    setFilterFlagged(searchParams.get('flagged') === '1')
+    setFilterFlag(parseFlagFilter(searchParams.get('flagged')))
     const urlHideIgnored = searchParams.get('hide_ignored')
     if (urlHideIgnored !== null) setHideIgnored(urlHideIgnored === 'true')
     const categories = searchParams.get('category_id');
@@ -318,7 +329,7 @@ export default function TransactionsPage() {
         ['group_id', filterGroupId],
         ['type', filterType],
         ['status', filterStatus],
-        ['flagged', filterFlagged ? '1' : ''],
+        ['flagged', flagFilterToParam(filterFlag)],
         ['category_id', filterCategoryIds.join(',')],
         ['uncategorized', filterUncategorized ? '1' : ''],
         ['account_id', filterAccountIds.join(',')],
@@ -345,7 +356,7 @@ export default function TransactionsPage() {
     filterGroupId,
     filterType,
     filterStatus,
-    filterFlagged,
+    filterFlag,
     filterCategoryIds,
     filterUncategorized,
     filterAccountIds,
@@ -371,7 +382,7 @@ export default function TransactionsPage() {
     setSelectedIds(new Set())
     setLastSelectedId(null)
     setBulkCategory('')
-  }, [page, filterAccountIds, filterLinkedCardIds, filterCategoryIds, filterUncategorized, filterPayee, filterType, filterStatus, filterFlagged, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery])
+  }, [page, filterAccountIds, filterLinkedCardIds, filterCategoryIds, filterUncategorized, filterPayee, filterType, filterStatus, filterFlag, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery])
 
   useEffect(() => {
     if (viewMode === 'calendar') {
@@ -424,7 +435,7 @@ export default function TransactionsPage() {
     && activeAccountIds !== null && activeAccountIds.length === 0
 
   const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ['transactions', page, limit, effectiveAccountIds, filterLinkedCardIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterFlagged, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
+    queryKey: ['transactions', page, limit, effectiveAccountIds, filterLinkedCardIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterFlag, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
     enabled: !noAccounts,
     queryFn: () =>
       transactions.list({
@@ -445,7 +456,8 @@ export default function TransactionsPage() {
         q: searchQuery || undefined,
         tags: tagFilters.length > 0 ? tagFilters : undefined,
         exclude_ignored: hideIgnored ? true : undefined,
-        flagged: filterFlagged ? true : undefined,
+        flagged: filterFlag === 'all' ? true : undefined,
+        flag_due: filterFlag === 'overdue' || filterFlag === 'soon' ? filterFlag : undefined,
         // Mobile has no column headers to change sort; force date-desc so
         // the date grouping always works correctly.
         ...(isMobile ? { sort_by: 'date', sort_dir: 'desc' as const } : grid.apiSort),
@@ -490,7 +502,7 @@ export default function TransactionsPage() {
     group_id: filterGroupId || undefined,
     type: filterType || undefined,
     status: filterStatus || undefined,
-    flagged: filterFlagged || undefined,
+    flagged: filterFlag || undefined,
     uncategorized: filterUncategorized || undefined,
     from: filterFrom || undefined,
     to: filterTo || undefined,
@@ -650,6 +662,19 @@ export default function TransactionsPage() {
       toast.success(t('transactions.bulkSuccess', { count: result.updated }), {
         description: skipped > 0 ? t('categoryLines.bulkSkipped', { count: skipped }) : undefined,
       })
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
+  })
+
+  const bulkFlagMutation = useMutation({
+    mutationFn: ({ ids, isFlagged }: { ids: string[]; isFlagged: boolean }) =>
+      transactions.bulkFlag(ids, isFlagged),
+    onSuccess: (result, { isFlagged }) => {
+      invalidateAfterTxMutation()
+      setSelectedIds(new Set())
+      toast.success(t(isFlagged ? 'transactions.bulkFlagSuccess' : 'transactions.bulkUnflagSuccess', { count: result.updated }))
     },
     onError: (error) => {
       toast.error(extractApiError(error))
@@ -1016,6 +1041,24 @@ export default function TransactionsPage() {
     }
   }
 
+  const handleFlagFilterChange = (next: FlagFilter) => {
+    if (next && !filterFlag) {
+      rangeBeforeFlagRef.current = { from: filterFrom, to: filterTo }
+      setFilterFrom('')
+      setFilterTo('')
+    } else if (!next && filterFlag) {
+      const previous = rangeBeforeFlagRef.current
+      // Only when the user has not picked another range in the meantime.
+      if (previous && !filterFrom && !filterTo) {
+        setFilterFrom(previous.from)
+        setFilterTo(previous.to)
+      }
+      rangeBeforeFlagRef.current = null
+    }
+    setFilterFlag(next)
+    setPage(1)
+  }
+
   const handleHideIgnoredChange = (next: boolean) => {
     setHideIgnored(next)
     setPage(1)
@@ -1047,7 +1090,8 @@ export default function TransactionsPage() {
           q: searchQuery || undefined,
           tags: tagFilters.length > 0 ? tagFilters : undefined,
           exclude_ignored: hideIgnored ? true : undefined,
-          flagged: filterFlagged ? true : undefined,
+          flagged: filterFlag === 'all' ? true : undefined,
+          flag_due: filterFlag === 'overdue' || filterFlag === 'soon' ? filterFlag : undefined,
         })
       }
       toast.success(t('transactions.exportSuccess'))
@@ -1285,16 +1329,7 @@ export default function TransactionsPage() {
                 <span className="shrink-0" title={t('transactions.excludeFromReportsHint')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
               </span>
             )}
-            {tx.is_flagged && (
-              <span
-                className="inline-flex shrink-0 items-center text-amber-600 dark:text-amber-400"
-                title={t('transactions.flagged')}
-                aria-label={t('transactions.flagged')}
-                role="img"
-              >
-                <Flag className="h-3.5 w-3.5 fill-current" />
-              </span>
-            )}
+            <TransactionFlagMarker tx={tx} locale={dateLocale} />
             {tx.recurring_transaction_id != null && (
               <span
                 className="inline-flex max-w-full items-center text-[10px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1.5 py-0.5 rounded-full"
@@ -1479,6 +1514,14 @@ export default function TransactionsPage() {
   const duplicableTx = selectedSingleTx && !selectedSingleTx.is_shared && !selectedSingleTx.transfer_pair_id
     ? selectedSingleTx
     : null
+  // The flag action unflags when every selected row is already flagged,
+  // and flags the whole selection otherwise.
+  const selectedRows = filteredItems.filter(tx => selectedIds.has(tx.id))
+  const selectionAllFlagged = selectedRows.length > 0 && selectedRows.every(tx => tx.is_flagged)
+  const toggleFlagOnSelection = () => {
+    if (selectedIds.size === 0) return
+    bulkFlagMutation.mutate({ ids: Array.from(selectedIds), isFlagged: !selectionAllFlagged })
+  }
   const exportLabel = exporting
     ? t('transactions.exporting')
     : selectedIds.size > 0
@@ -1567,8 +1610,8 @@ export default function TransactionsPage() {
         onStatusChange={(v) => { setFilterStatus(v); setPage(1) }}
         hideIgnored={hideIgnored}
         onHideIgnoredChange={handleHideIgnoredChange}
-        filterFlagged={filterFlagged}
-        onFlaggedChange={(v) => { setFilterFlagged(v); setPage(1) }}
+        filterFlag={filterFlag}
+        onFlagFilterChange={handleFlagFilterChange}
         filterFrom={filterFrom}
         filterTo={filterTo}
         onDateRangeChange={(from, to) => { setFilterFrom(from); setFilterTo(to); setPage(1) }}
@@ -1586,7 +1629,7 @@ export default function TransactionsPage() {
           setFilterGroupId('')
           setFilterType('')
           setFilterStatus('')
-          setFilterFlagged(false)
+          setFilterFlag('')
           setFilterMinAmount('')
           setFilterMaxAmount('')
           handleHideIgnoredChange(false)
@@ -1822,6 +1865,14 @@ export default function TransactionsPage() {
                         {t('transactions.addToGroup')}
                       </ContextMenuItem>
 
+                      <ContextMenuItem
+                        disabled={bulkFlagMutation.isPending}
+                        onSelect={toggleFlagOnSelection}
+                      >
+                        <Flag className="me-2 h-4 w-4" />
+                        {selectionAllFlagged ? t('transactions.unflagAction') : t('transactions.flagAction')}
+                      </ContextMenuItem>
+
                       <ContextMenuItem onSelect={handleFocusTagInput}>
                         <TagIcon className="me-2 h-4 w-4" />
                         {t('transactions.bulkAddTags')}
@@ -2038,6 +2089,9 @@ export default function TransactionsPage() {
                 if (next) bulkCategorizeMutation.mutate({ ids: Array.from(selectedIds), categoryId: next })
               }}
               onOpenGroup={() => setBulkAddToGroupOpen(true)}
+              allFlagged={selectionAllFlagged}
+              flagPending={bulkFlagMutation.isPending}
+              onToggleFlag={toggleFlagOnSelection}
               onOpenTransfer={() => setLinkTransferDialogOpen(true)}
               onCreateRule={selectedSingleTx && !selectedSingleTx.is_shared
                 ? () => handleCreateRuleFromTransaction(selectedSingleTx)
@@ -2116,9 +2170,28 @@ export default function TransactionsPage() {
 
             <div className="w-px bg-border/60 self-stretch" />
 
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={bulkFlagMutation.isPending}
+              onClick={toggleFlagOnSelection}
+              title={selectionAllFlagged ? t('transactions.unflagAction') : t('transactions.flagAction')}
+              aria-label={selectionAllFlagged ? t('transactions.unflagAction') : t('transactions.flagAction')}
+              className="h-8 px-3 shrink-0 text-sm"
+            >
+              {/* Icon only until 2xl: with Create Rule showing for a single
+                  row, a label here pushes Delete out of the bar. */}
+              <Flag size={15} className={cn('2xl:me-1.5', selectionAllFlagged && 'fill-current text-amber-600 dark:text-amber-400')} />
+              <span className="hidden 2xl:inline">
+                {selectionAllFlagged ? t('transactions.unflagAction') : t('transactions.flagAction')}
+              </span>
+            </Button>
+
+            <div className="w-px bg-border/60 self-stretch" />
+
             {/* Add tags inline */}
             <div
-              className={`flex items-center gap-1 px-1 rounded-xl transition-all duration-300 ${
+              className={`flex min-w-0 items-center gap-1 px-1 rounded-xl transition-all duration-300 ${
                 isBulkBarPulsing ? 'ring-2 ring-primary ring-offset-2 scale-[1.05] bg-primary/5' : ''
               }`}>
               <input
@@ -2127,7 +2200,7 @@ export default function TransactionsPage() {
                 value={bulkTagInput}
                 onChange={(e) => setBulkTagInput(e.target.value)}
                 placeholder={t('transactions.addTagsPlaceholder')}
-                className="rounded-lg px-2.5 py-2 text-sm bg-transparent text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:bg-muted/60 w-28 md:w-40"
+                className="rounded-lg px-2.5 py-2 text-sm bg-transparent text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:bg-muted/60 w-28 md:w-40 min-w-20 shrink"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && bulkTagInput.trim()) {
                     e.preventDefault()

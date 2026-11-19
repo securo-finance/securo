@@ -43,6 +43,7 @@ import {
 import { Calendar } from '@/components/ui/calendar'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import type { FlagFilter } from '@/lib/transaction-flag'
 import { localDateString } from '@/lib/date-utils'
 import { formatDateRange } from '@/lib/date-range-format'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
@@ -77,8 +78,8 @@ interface TransactionsFilterBarProps {
   onStatusChange: (value: string) => void
   hideIgnored: boolean
   onHideIgnoredChange: (value: boolean) => void
-  filterFlagged: boolean
-  onFlaggedChange: (value: boolean) => void
+  filterFlag: FlagFilter
+  onFlagFilterChange: (value: FlagFilter) => void
   filterFrom: string
   filterTo: string
   onDateRangeChange: (from: string, to: string) => void
@@ -125,8 +126,8 @@ export function TransactionsFilterBar({
   onStatusChange,
   hideIgnored,
   onHideIgnoredChange,
-  filterFlagged,
-  onFlaggedChange,
+  filterFlag,
+  onFlagFilterChange,
   filterFrom,
   filterTo,
   onDateRangeChange,
@@ -251,7 +252,7 @@ export function TransactionsFilterBar({
     !!filterType ||
     !!filterStatus ||
     hideIgnored ||
-    filterFlagged ||
+    !!filterFlag ||
     !!filterFrom ||
     !!filterTo ||
     !!filterMinAmount ||
@@ -266,6 +267,16 @@ export function TransactionsFilterBar({
         : filterType === 'transfer'
           ? t('transactions.transfer')
           : ''
+
+  const flagOptions: { value: FlagFilter; label: string }[] = [
+    { value: '', label: t('transactions.all') },
+    { value: 'all', label: t('transactions.flagFilterAll') },
+    { value: 'overdue', label: t('transactions.flagFilterOverdue') },
+    { value: 'soon', label: t('transactions.flagFilterSoon') },
+  ]
+  const flagLabel = filterFlag
+    ? flagOptions.find((opt) => opt.value === filterFlag)?.label ?? ''
+    : ''
 
   const statusLabel =
     filterStatus === 'pending'
@@ -490,7 +501,7 @@ export function TransactionsFilterBar({
                   type: typeLabel,
                   status: statusLabel,
                   ignored: hideIgnored ? t('transactions.ignoredHide') : undefined,
-                  flagged: filterFlagged ? t('transactions.flaggedOnly') : undefined,
+                  flagged: flagLabel || undefined,
                   date: dateLabel,
                   amount: amountLabel,
                 }}
@@ -507,8 +518,9 @@ export function TransactionsFilterBar({
                 onStatusChange={onStatusChange}
                 hideIgnored={hideIgnored}
                 onHideIgnoredChange={onHideIgnoredChange}
-                flagged={filterFlagged}
-                onFlaggedChange={onFlaggedChange}
+                flagFilter={filterFlag}
+                flagOptions={flagOptions}
+                onFlagFilterChange={onFlagFilterChange}
                 onDateRangeChange={onDateRangeChange}
                 onAmountRangeChange={onAmountRangeChange}
                 onApplyAmountRange={applyAmountRange}
@@ -947,17 +959,43 @@ export function TransactionsFilterBar({
                   {hideIgnored && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
 
-                <DropdownMenuItem
-                  onSelect={(e) => {
-                    e.preventDefault()
-                    onFlaggedChange(!filterFlagged)
-                  }}
-                  className="gap-2 text-[13px]"
-                >
-                  <Flag size={14} className="text-muted-foreground" />
-                  <span className="flex-1">{t('transactions.flaggedOnly')}</span>
-                  {filterFlagged && <Check size={13} className="text-primary" />}
-                </DropdownMenuItem>
+                {/* Flagged rows, optionally by reminder date */}
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="gap-2 text-[13px]">
+                    <Flag size={14} className="text-muted-foreground" />
+                    <span className="flex-1">{t('transactions.flagged')}</span>
+                    {flagLabel && (
+                      <span className="max-w-[90px] truncate text-[11px] text-muted-foreground">
+                        {flagLabel}
+                      </span>
+                    )}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuPortal>
+                    <DropdownMenuSubContent
+                      sideOffset={8}
+                      className="w-[220px] p-1"
+                    >
+                      {flagOptions.map((opt) => (
+                        <DropdownMenuItem
+                          key={opt.value || 'any'}
+                          onSelect={() => onFlagFilterChange(opt.value)}
+                          className={cn(
+                            'gap-2 rounded-sm px-2 py-1.5 text-[13px]',
+                            filterFlag === opt.value && 'bg-primary/5',
+                          )}
+                        >
+                          <span className="size-2.5 shrink-0" />
+                          <span className="min-w-0 flex-1 truncate text-start">
+                            {opt.label}
+                          </span>
+                          {filterFlag === opt.value && (
+                            <Check size={13} className="text-primary" />
+                          )}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuPortal>
+                </DropdownMenuSub>
 
                 {/* Date range submenu with presets */}
                 <DropdownMenuSub>
@@ -1155,6 +1193,7 @@ export function TransactionsFilterBar({
           !!selectedPayee ||
           !!typeLabel ||
           !!statusLabel ||
+          !!flagLabel ||
           !!dateLabel ||
           !!amountLabel) && (
           <div className="flex flex-wrap items-center gap-1 border-t border-border/60 px-2 py-1.5">
@@ -1248,12 +1287,12 @@ export function TransactionsFilterBar({
                 onRemove={() => onHideIgnoredChange(false)}
               />
             )}
-            {filterFlagged && (
+            {flagLabel && (
               <FilterChip
                 icon={<Flag size={12} />}
                 label={t('transactions.flagged')}
-                value={t('transactions.flaggedOnlyValue')}
-                onRemove={() => onFlaggedChange(false)}
+                value={flagLabel}
+                onRemove={() => onFlagFilterChange('')}
               />
             )}
             {dateLabel && (

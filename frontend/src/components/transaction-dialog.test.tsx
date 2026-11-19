@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { fireEvent, screen, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { TransactionDialog } from '@/components/transaction-dialog'
@@ -753,5 +753,70 @@ describe('TransactionDialog flag (#56)', () => {
     expect(
       await screen.findByRole('button', { name: t('transactions.unflagAction') }),
     ).toBeInTheDocument()
+  })
+
+  it('sets a reminder date and note on the flag, each saved on its own', async () => {
+    vi.setSystemTime(new Date('2026-10-20T12:00:00'))
+    const tx = syncedTransaction({ is_flagged: true })
+    let stored = tx
+    vi.spyOn(transactions, 'update').mockImplementation(async (_id, body) => {
+      stored = { ...stored, ...body } as Transaction
+      return stored
+    })
+    vi.spyOn(currencies, 'list').mockResolvedValue([])
+    vi.spyOn(payees, 'list').mockResolvedValue([])
+    vi.spyOn(groups, 'list').mockResolvedValue([])
+    const { user } = renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={tx}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={vi.fn()}
+        loading={false}
+        error={null}
+        isSynced
+      />,
+    )
+
+    expect(await screen.findByTestId('flag-reminder')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: t('transactions.flagPreset.nextWeek') }))
+    expect(transactions.update).toHaveBeenCalledWith(tx.id, { flag_due_date: '2026-10-27' })
+
+    const note = screen.getByLabelText(t('transactions.flagNote'))
+    await user.type(note, 'ask for the refund{Enter}')
+    expect(transactions.update).toHaveBeenLastCalledWith(tx.id, { flag_note: 'ask for the refund' })
+    vi.useRealTimers()
+  })
+
+  it('hides the reminder once the flag is removed', async () => {
+    const tx = syncedTransaction({ is_flagged: true, flag_due_date: '2026-10-27', flag_note: 'call the shop' })
+    vi.spyOn(transactions, 'update').mockResolvedValue({
+      ...tx, is_flagged: false, flag_due_date: null, flag_note: null,
+    })
+    vi.spyOn(currencies, 'list').mockResolvedValue([])
+    vi.spyOn(payees, 'list').mockResolvedValue([])
+    vi.spyOn(groups, 'list').mockResolvedValue([])
+    const { user } = renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={tx}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={vi.fn()}
+        loading={false}
+        error={null}
+        isSynced
+      />,
+    )
+
+    expect(await screen.findByDisplayValue('call the shop')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: t('transactions.unflagAction') }))
+
+    await waitFor(() => expect(screen.queryByTestId('flag-reminder')).not.toBeInTheDocument())
   })
 })

@@ -114,6 +114,8 @@ import type {
   GroupSummary,
   TransactionSplitsInput,
   TransactionEditPayload,
+  FlagDue,
+  FlaggedSummary,
   InstallmentSeriesInput,
   TransactionApplyScope,
   InvoiceAttachment,
@@ -651,6 +653,7 @@ export const transactions = {
     user_pnl_only?: boolean
     exclude_ignored?: boolean
     flagged?: boolean
+    flag_due?: FlagDue
     tags?: string[]
     min_amount?: number
     max_amount?: number
@@ -740,6 +743,22 @@ export const transactions = {
       transaction_ids: transactionIds,
       tags,
     })
+    return data
+  },
+  bulkFlag: async (
+    transactionIds: string[],
+    isFlagged: boolean,
+    flagDueDate?: string,
+  ): Promise<{ updated: number }> => {
+    const { data } = await api.patch('/transactions/bulk-flag', {
+      transaction_ids: transactionIds,
+      is_flagged: isFlagged,
+      flag_due_date: flagDueDate,
+    })
+    return data
+  },
+  flaggedSummary: async (): Promise<FlaggedSummary> => {
+    const { data } = await api.get('/transactions/flagged-summary')
     return data
   },
   bulkRemoveTags: async (transactionIds: string[], tags: string[]): Promise<{ updated: number }> => {
@@ -854,6 +873,7 @@ export const transactions = {
     tags?: string[]
     exclude_ignored?: boolean
     flagged?: boolean
+    flag_due?: FlagDue
     transaction_ids?: string[]
   }): Promise<void> => {
     const { data } = await api.get('/transactions/export', {

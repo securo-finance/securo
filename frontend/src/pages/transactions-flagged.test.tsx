@@ -1,6 +1,7 @@
 /**
- * Flagged transactions (#56): a flagged row shows its marker, and the
- * "flagged only" filter read from the URL reaches the list request.
+ * Flagged transactions (#56): a flagged row shows its marker (red once its
+ * reminder date has passed), the flag filters read from the URL reach the
+ * list request over the whole history, and the bulk bar flags a selection.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
@@ -10,7 +11,7 @@ import { renderWithProviders } from '@/test/utils'
 import type { Transaction } from '@/types'
 
 const api = vi.hoisted(() => ({
-  transactions: { list: vi.fn(), update: vi.fn(), delete: vi.fn(), create: vi.fn() },
+  transactions: { list: vi.fn(), update: vi.fn(), delete: vi.fn(), create: vi.fn(), bulkFlag: vi.fn() },
   categories: { list: vi.fn(), listIncludingHidden: vi.fn() },
   categoryGroups: { list: vi.fn() },
   accounts: {
@@ -153,5 +154,62 @@ describe('flagged transactions', () => {
     for (const [params] of api.transactions.list.mock.calls) {
       expect(params.flagged).toBeUndefined()
     }
+  })
+
+  it('opens the flagged view on the whole history, not the current month', async () => {
+    renderWithProviders(<TransactionsPage />, { route: '/transactions?flagged=1', path: '/transactions' })
+
+    expect(await screen.findByText('Pharmacy receipt')).toBeInTheDocument()
+    for (const [params] of api.transactions.list.mock.calls) {
+      expect(params.from).toBeUndefined()
+      expect(params.to).toBeUndefined()
+    }
+  })
+
+  it('asks for overdue flags when the URL carries flagged=overdue', async () => {
+    renderWithProviders(<TransactionsPage />, { route: '/transactions?flagged=overdue', path: '/transactions' })
+
+    await screen.findByText('Pharmacy receipt')
+    expect(api.transactions.list).toHaveBeenCalled()
+    for (const [params] of api.transactions.list.mock.calls) {
+      expect(params).toMatchObject({ flag_due: 'overdue' })
+      expect(params.flagged).toBeUndefined()
+    }
+    expect(screen.getByText('Overdue', { selector: 'span' })).toBeInTheDocument()
+  })
+
+  it('names the reminder in the marker and turns it red once overdue', async () => {
+    api.transactions.list.mockResolvedValue({
+      items: [{ ...row('tx-flagged', 'Pharmacy receipt', true), flag_due_date: '2026-10-10', flag_note: 'ask for the refund' }],
+      total: 1, page: 1, limit: 50,
+    })
+    renderWithProviders(<TransactionsPage />, { route: '/transactions', path: '/transactions' })
+
+    const cell = await screen.findByText('Pharmacy receipt')
+    const marker = cell.parentElement!.querySelector('[data-flag-state]')!
+    expect(marker.getAttribute('data-flag-state')).toBe('overdue')
+    expect(marker.getAttribute('aria-label')).toMatch(/^Overdue · Due .+ · ask for the refund$/)
+  })
+
+  it('flags the selected rows from the bulk bar', async () => {
+    api.transactions.bulkFlag.mockResolvedValue({ updated: 1 })
+    const { user } = renderWithProviders(<TransactionsPage />, { route: '/transactions', path: '/transactions' })
+
+    const bakery = await screen.findByText('Bakery')
+    await user.click(bakery.closest('tr')!.querySelector('input[type="checkbox"]')!)
+    await user.click(await screen.findByRole('button', { name: 'Flag' }))
+
+    expect(api.transactions.bulkFlag).toHaveBeenCalledWith(['tx-plain'], true)
+  })
+
+  it('unflags the selection when every selected row is flagged', async () => {
+    api.transactions.bulkFlag.mockResolvedValue({ updated: 1 })
+    const { user } = renderWithProviders(<TransactionsPage />, { route: '/transactions', path: '/transactions' })
+
+    const pharmacy = await screen.findByText('Pharmacy receipt')
+    await user.click(pharmacy.closest('tr')!.querySelector('input[type="checkbox"]')!)
+    await user.click(await screen.findByRole('button', { name: 'Unflag' }))
+
+    expect(api.transactions.bulkFlag).toHaveBeenCalledWith(['tx-flagged'], false)
   })
 })

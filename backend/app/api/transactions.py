@@ -19,9 +19,10 @@ from app.core.workspace_context import (
 )
 from app.models.account import Account
 from app.models.transaction import Transaction
-from app.schemas.transaction import BulkAddToGroupRequest, BulkCategorizeRequest, DescriptionSuggestion, BulkTagsRequest, CreateCounterpartRequest, InstallmentSeriesCreate, LinkTransferRequest, TransactionBulkDeleteRequest, TransactionCreate, TransactionRead, TransactionTransferCounterpart, TransactionUpdate, TransferCreate, TransferRead
+from app.schemas.transaction import BulkAddToGroupRequest, BulkCategorizeRequest, DescriptionSuggestion, BulkFlagRequest, BulkTagsRequest, CreateCounterpartRequest, FlaggedSummary, InstallmentSeriesCreate, LinkTransferRequest, TransactionBulkDeleteRequest, TransactionCreate, TransactionRead, TransactionTransferCounterpart, TransactionUpdate, TransferCreate, TransferRead
 from app.schemas.transaction_calendar import TransactionCalendarResponse
 from app.services import transaction_service
+from app.services.transaction_service import FlagDue
 from app.services.category_line_service import csv_export_parts
 from app.services.csv_safety import csv_safe as _csv_safe
 from app.services.admin_service import get_credit_card_accounting_mode
@@ -192,6 +193,7 @@ async def list_transactions(
     user_pnl_only: bool = Query(False, description="Return only rows that count toward dashboard/user income/expense totals"),
     exclude_ignored: bool = Query(False, description="Drop rows the user marked ignored, or whose category is ignored"),
     flagged: bool = Query(False, description="Return only rows the user flagged"),
+    flag_due: Optional[FlagDue] = Query(None, description="Flagged rows past their reminder date (overdue) or due within a week (soon)"),
     tags: Optional[List[str]] = Query(None),
     min_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount >= this value (primary currency)."),
     max_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount <= this value (primary currency)."),
@@ -213,6 +215,7 @@ async def list_transactions(
         user_pnl_only=user_pnl_only,
         exclude_ignored=exclude_ignored,
         flagged_only=flagged,
+        flag_due=flag_due,
         status=status,
         accounting_mode=accounting_mode,
         tags=tags,
@@ -259,6 +262,15 @@ async def transaction_calendar(
     )
 
 
+@router.get("/flagged-summary", response_model=FlaggedSummary)
+async def get_flagged_summary(
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """How many rows are flagged, past their reminder date, or due soon."""
+    return await transaction_service.flagged_summary(session, ctx.workspace.id)
+
+
 @router.get("/description-suggestions", response_model=list[DescriptionSuggestion])
 async def description_suggestions(
     q: str = Query("", max_length=100),
@@ -286,6 +298,7 @@ async def export_transactions(
     status: Optional[str] = Query(None),
     exclude_ignored: bool = Query(False, description="Drop rows the user marked ignored, or whose category is ignored"),
     flagged: bool = Query(False, description="Export only rows the user flagged"),
+    flag_due: Optional[FlagDue] = Query(None, description="Flagged rows past their reminder date (overdue) or due within a week (soon)"),
     tags: Optional[List[str]] = Query(None),
     transaction_ids: Optional[List[uuid.UUID]] = Query(None, description="If set, exports exactly these rows (scoped to the workspace); other filters are ignored."),
     ctx: WorkspaceContext = Depends(current_workspace),
@@ -312,6 +325,7 @@ async def export_transactions(
             accounting_mode=accounting_mode,
             exclude_ignored=exclude_ignored,
             flagged_only=flagged,
+            flag_due=flag_due,
             tags=tags,
         )
 
@@ -383,6 +397,18 @@ async def bulk_add_tags(
 ):
     count = await transaction_service.bulk_add_tags(
         session, ctx.workspace.id, data.transaction_ids, data.tags
+    )
+    return {"updated": count}
+
+
+@router.patch("/bulk-flag")
+async def bulk_flag(
+    data: BulkFlagRequest,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    count = await transaction_service.bulk_set_flag(
+        session, ctx.workspace.id, data.transaction_ids, data.is_flagged, data.flag_due_date
     )
     return {"updated": count}
 

@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { getAccountName } from '@/lib/account-utils'
 import { cn } from '@/lib/utils'
+import type { FlagFilter } from '@/lib/transaction-flag'
 import type { Account, AccountCard, Category, CategoryGroup, Group, Payee } from '@/types'
 
 export type MobileFilterView =
@@ -69,7 +70,8 @@ interface MobileTransactionsFilterMenuProps {
   type: string
   status: string
   hideIgnored: boolean
-  flagged: boolean
+  flagFilter: FlagFilter
+  flagOptions: { value: FlagFilter; label: string }[]
   from: string
   to: string
   minAmount: string
@@ -90,7 +92,7 @@ interface MobileTransactionsFilterMenuProps {
   onTypeChange: (value: string) => void
   onStatusChange: (value: string) => void
   onHideIgnoredChange: (value: boolean) => void
-  onFlaggedChange: (value: boolean) => void
+  onFlagFilterChange: (value: FlagFilter) => void
   onDateRangeChange: (from: string, to: string) => void
   onAmountRangeChange: (min: string, max: string) => void
   onApplyAmountRange: () => void
@@ -585,8 +587,7 @@ function MobileFilterDetail({
     return <MobileSelectionView options={options} selectedValue={menu.hideIgnored ? 'hide' : 'show'} onChange={(value) => menu.onHideIgnoredChange(value === 'hide')} />
   }
   if (menu.view === 'flagged') {
-    const options = [allOption, { value: 'only', label: t('transactions.flaggedOnly') }]
-    return <MobileSelectionView options={options} selectedValue={menu.flagged ? 'only' : ''} onChange={(value) => menu.onFlaggedChange(value === 'only')} />
+    return <MobileSelectionView options={menu.flagOptions} selectedValue={menu.flagFilter} onChange={(value) => menu.onFlagFilterChange(value as FlagFilter)} />
   }
   if (menu.view === 'date') {
     return <MobileDateView from={menu.from} to={menu.to} presets={menu.datePresets} onChange={menu.onDateRangeChange} onOpenCustomRange={menu.onOpenCustomRange} />
