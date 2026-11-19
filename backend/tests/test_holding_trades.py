@@ -263,6 +263,49 @@ async def test_same_day_trades_replay_in_the_order_they_were_recorded(
 
 
 @pytest.mark.asyncio
+async def test_an_as_of_load_before_the_first_snapshot_still_drops_the_purchase_seed(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """The sync's purchase-date seed (1000) is a placeholder whatever date the
+    load stops at: a buy of 20 @ 100 opens the position at 2000 both in the
+    full history and in an as-of load that ends before the provider's first
+    snapshot."""
+    from app.models.asset_value import AssetValue
+    from app.services.asset_service import _load_asset_native_values
+
+    asset = await _pluggy_holding(session, test_user, test_workspace, "Seeded")
+    asset.purchase_date = date(2026, 8, 1)
+    asset.purchase_price = Decimal("1000")
+    session.add_all(
+        [
+            AssetValue(
+                asset_id=asset.id, amount=Decimal("1000"), date=date(2026, 8, 1), source="sync"
+            ),
+            AssetValue(
+                asset_id=asset.id, amount=Decimal("2100"), date=date(2026, 8, 10), source="sync"
+            ),
+            AssetTransaction(
+                asset_id=asset.id,
+                workspace_id=test_workspace.id,
+                kind="buy",
+                quantity=Decimal("20"),
+                price=Decimal("100"),
+                date=date(2026, 8, 1),
+                source="pluggy",
+                external_id="buy",
+            ),
+        ]
+    )
+    await session.flush()
+
+    full = await _load_asset_native_values(session, [asset])
+    as_of = await _load_asset_native_values(session, [asset], up_to_date=date(2026, 8, 5))
+
+    assert full[str(asset.id)] == [(date(2026, 8, 1), 2000.0), (date(2026, 8, 10), 2100.0)]
+    assert as_of[str(asset.id)] == [(date(2026, 8, 1), 2000.0)]
+
+
+@pytest.mark.asyncio
 async def test_fetched_trades_keep_an_older_round_trip_the_provider_dropped(
     session: AsyncSession, test_user: User, test_workspace
 ):

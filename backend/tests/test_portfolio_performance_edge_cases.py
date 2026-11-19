@@ -196,6 +196,21 @@ async def test_writing_off_a_delisted_holding_by_selling_at_zero(
 
 
 @pytest.mark.asyncio
+async def test_writing_off_the_only_holding_is_a_total_loss(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    gone = await stock(session, test_user, test_workspace, "ONLY3")
+    session.add_all(
+        [
+            trade(gone, "buy", day(0), "10", "100"),
+            close(gone, day(0), "100"),
+            trade(gone, "sell", day(5), "10", "0"),
+        ]
+    )
+    assert await portfolio_return(session, test_user, test_workspace) == pytest.approx(-100.0)
+
+
+@pytest.mark.asyncio
 async def test_a_big_buy_on_a_day_the_price_moves_does_not_dilute_that_day(
     session: AsyncSession, test_user: User, test_workspace
 ):

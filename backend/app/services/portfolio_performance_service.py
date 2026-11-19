@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import calendar
 from bisect import bisect_right
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 import logging
 import uuid
@@ -144,13 +145,17 @@ def snapshot_ledger_flows(
     cash must land on the snapshot that first includes the trade, or the
     chart shows a gain or drawdown that is really just timing. Providers
     differ: one day's snapshot already shows a same-day redemption while
-    another only shows a purchase the next day. Each trade therefore lands
-    on its own date's snapshot if that snapshot holds the post-trade share
-    count, and on the next snapshot otherwise. The share count is the stored
-    one when known, else the snapshot value at the trade's own price. A day
-    whose trades net to no cash has no price to count with, so it waits for
-    the next snapshot. Trades no snapshot reflects yet are left out until
-    one does. Each flow is returned as ``(snapshot date, cash, trade date)``.
+    another only shows a purchase days later. Each trade therefore lands on
+    the first snapshot, from its own date on, whose share count is closer to
+    the ledger's position with the trade than without it. The share count is
+    the stored one when known, else the snapshot value at the trade's own
+    price. If no later snapshot shows the trade, it lands on the next one,
+    so its cash is never dropped. A day whose trades leave the share count
+    unchanged (sell and buy back) moves no shares for a snapshot to show, so
+    its net cash lands on that day's own snapshot. A day whose trades net to
+    no cash has no price to count with, so it waits for the next snapshot.
+    Trades with no snapshot on or after their date are left out until one
+    arrives. Each flow is returned as ``(snapshot date, cash, trade date)``.
     """
     by_date: dict[date, tuple[Decimal, Decimal]] = {}
     for trade_date, quantity, flow in trades:
@@ -162,23 +167,46 @@ def snapshot_ledger_flows(
         ]
 
     first_snapshot = snapshots[0][0]
-    position = Decimal("0")
+    days = sorted(by_date.items())
+    trade_dates = [trade_date for trade_date, _ in days]
+    positions: list[Decimal] = []
+    running = Decimal("0")
+    for _, (quantity, _) in days:
+        running += quantity
+        positions.append(running)
+
+    def position_on(point_date: date) -> Decimal:
+        index = bisect_right(trade_dates, point_date) - 1
+        return positions[index] if index >= 0 else Decimal("0")
+
     flows: list[tuple[date, Decimal, date]] = []
-    for trade_date, (quantity, flow) in sorted(by_date.items()):
-        before, after = position, position + quantity
-        position = after
+    for trade_date, (quantity, flow) in days:
         if trade_date < first_snapshot:
             flows.append((trade_date, flow, trade_date))
             continue
-        same_day = next((point for point in snapshots if point[0] == trade_date), None)
-        later = next((point for point in snapshots if point[0] > trade_date), None)
-        reflected = later
-        if same_day is not None:
-            _, value, shares = same_day
-            if shares is None and quantity and flow:
+        candidates = [point for point in snapshots if point[0] >= trade_date]
+        if not candidates:
+            continue
+        if not quantity:
+            # Sold and bought back: the share count is the same either way.
+            flows.append((candidates[0][0], flow, trade_date))
+            continue
+
+        def shows_trade(point: tuple[date, float, Optional[float]]) -> bool:
+            point_date, value, shares = point
+            if shares is None and flow:
                 shares = value / float(abs(flow) / abs(quantity))
-            if shares is not None and abs(shares - float(after)) < abs(shares - float(before)):
-                reflected = same_day
+            if shares is None:
+                return False
+            # Later trades may have moved the position since; compare with
+            # the ledger as of the snapshot, with and without this trade.
+            with_trade = float(position_on(point_date))
+            return abs(shares - with_trade) < abs(shares - (with_trade - float(quantity)))
+
+        reflected = next((point for point in candidates if shows_trade(point)), None)
+        if reflected is None:
+            later = [point for point in candidates if point[0] > trade_date]
+            reflected = later[0] if later else None
         if reflected is not None:
             flows.append((reflected[0], flow, trade_date))
     return flows
@@ -402,7 +430,9 @@ def time_weighted_returns(
         held = previous_value + opening.get(point_date, 0.0)
         for trade in intraday.get(point_date, ()):
             marked = max(held + trade.revalue, 0.0)
-            if held > 0 and marked > 0:
+            if held > 0:
+                # Marked to zero (the only holding sold for nothing) is a
+                # total loss, and the return stays there.
                 growth *= marked / held
             held = marked
             if trade.amount >= 0:
@@ -459,6 +489,7 @@ async def _in_portfolio_currency(
     session: AsyncSession,
     history: list[BenchmarkHistoryPoint],
     primary_currency: str,
+    on_dates: Iterable[date] = (),
 ) -> Optional[list[tuple[date, float]]]:
     """A benchmark's values in the portfolio's currency, at each day's rate.
 
@@ -468,11 +499,25 @@ async def _in_portfolio_currency(
     rest of the app would (that day's, else the closest before, else the
     first after). None when either currency has no stored rate at all; a
     source that does not name its currency is taken as already matching.
+
+    ``on_dates`` are the other dates the benchmark is compared on. A date
+    with no close carries the last close forward in the index's own
+    currency and converts it at that date's rate, as a foreign holding
+    valued that day would be; carrying the converted value instead would
+    leave the currency move since the close out of the benchmark only.
     """
     currency = history[0].currency
     pairs = [(point.date, point.value) for point in history]
     if not currency or currency == primary_currency:
         return pairs
+    close_dates = [point_date for point_date, _ in pairs]
+    known = set(close_dates)
+    carried = [
+        (point_date, pairs[bisect_right(close_dates, point_date) - 1][1])
+        for point_date in sorted(set(on_dates))
+        if point_date > close_dates[0] and point_date not in known
+    ]
+    pairs = sorted(pairs + carried)
     first, last = pairs[0][0], pairs[-1][0]
     source = await _usd_rates(session, currency, first, last)
     target = await _usd_rates(session, primary_currency, first, last)
@@ -614,10 +659,12 @@ class MarketTrade(NamedTuple):
 
     ``mark`` is the holding marked to the trade's price just before it, and
     ``amount`` the value bought (positive) or sold (negative) at that price.
+    A buy at no price (free shares, such as a split recorded as a buy) says
+    nothing about what the holding is worth, so its ``mark`` is None.
     """
 
     asset_key: str
-    mark: float
+    mark: Optional[float]
     amount: float
     fee: float
 
@@ -763,8 +810,12 @@ async def _cash_flows(
             positions[asset.id] = held_before + (quantity if tx.kind == "buy" else -quantity)
             if start_date < tx.date <= end_date:
                 price = Decimal(str(tx.price))
-                mark = await in_primary(
-                    max(held_before, Decimal("0")) * price, asset.currency, tx.date
+                mark = (
+                    None
+                    if tx.kind == "buy" and price <= 0
+                    else await in_primary(
+                        max(held_before, Decimal("0")) * price, asset.currency, tx.date
+                    )
                 )
                 amount = await in_primary(gross, asset.currency, tx.date)
                 converted_fee = await in_primary(fee, asset.currency, tx.date) if fee else 0.0
@@ -956,7 +1007,7 @@ async def get_portfolio_performance_multi(
             ],
         )
 
-    history_pairs: dict[str, list[tuple[date, float]]] = {}
+    native_histories: dict[str, list[BenchmarkHistoryPoint]] = {}
     source_errors: dict[str, BenchmarkSourceError] = {}
     if benchmarks:
         benchmark_provider = provider or get_benchmark_provider()
@@ -987,11 +1038,7 @@ async def get_portfolio_performance_multi(
             elif len(history) < 2:
                 source_errors[key] = "no_data"
             else:
-                converted = await _in_portfolio_currency(session, history, primary_currency)
-                if converted is None:
-                    source_errors[key] = "no_fx_rate"
-                else:
-                    history_pairs[key] = converted
+                native_histories[key] = history
 
     raw_trend: list[dict] = trend["trend"]
     trend_dates = [date.fromisoformat(str(row["date"])) for row in raw_trend]
@@ -1076,10 +1123,11 @@ async def get_portfolio_performance_multi(
             last_mark = marks.get(trade.asset_key)
             if last_mark is None:
                 last_mark = asset_value(asset_by_key[trade.asset_key], previous_date)
+            mark = last_mark if trade.mark is None else trade.mark
             intraday.setdefault(point_date, []).append(
-                IntradayTrade(trade.mark - last_mark, trade.amount, trade.fee)
+                IntradayTrade(mark - last_mark, trade.amount, trade.fee)
             )
-            marks[trade.asset_key] = trade.mark + trade.amount
+            marks[trade.asset_key] = mark + trade.amount
     portfolio_returns = time_weighted_returns(
         portfolio_values,
         flows.contributions,
@@ -1090,7 +1138,14 @@ async def get_portfolio_performance_multi(
     )
     benchmark_returns: dict[str, list[tuple[date, float]]] = {}
     benchmark_starts: dict[str, date] = {}
-    for key, pairs in history_pairs.items():
+    for key, history in native_histories.items():
+        pairs = await _in_portfolio_currency(
+            session, history, primary_currency, on_dates=portfolio_dates
+        )
+        if pairs is None:
+            source_errors[key] = "no_fx_rate"
+            continue
+        close_dates = [point.date for point in history]
         # Compared from the portfolio's start when the benchmark has a close
         # on or before it (the look-back covers weekends and holidays), else
         # from its own first close.
@@ -1098,7 +1153,7 @@ async def get_portfolio_performance_multi(
         benchmark_start = max(portfolio_start, baseline[0] if baseline is not None else pairs[0][0])
         # Closes from the look-back alone would carry the last one forward
         # as a flat 0%: the benchmark needs a close inside its own window.
-        if not any(benchmark_start < point_date <= last_date for point_date, _ in pairs):
+        if not any(benchmark_start < point_date <= last_date for point_date in close_dates):
             source_errors[key] = "no_data"
             continue
         returns = _benchmark_index_returns(

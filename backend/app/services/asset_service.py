@@ -574,13 +574,18 @@ async def _load_asset_native_values(
         .where(AssetValue.asset_id.in_(asset_ids))
         .order_by(AssetValue.asset_id, AssetValue.date, AssetValue.id)
     )
-    if up_to_date is not None:
-        q = q.where(AssetValue.date <= up_to_date)
 
+    # The cutoff is applied here rather than in the query: whether the first
+    # stored value is the sync's purchase-date placeholder depends on the
+    # whole history, so an as-of load must classify it like the full load.
     rows = (await session.execute(q)).all()
     raw: dict[str, list[ValueRecord]] = {str(a.id): [] for a in assets}
     gross_raw: dict[str, list[GrossValueRecord]] = {str(a.id): [] for a in assets}
+    value_counts: dict[str, int] = {}
     for aid, d, amt, price, gross_amount in rows:
+        value_counts[str(aid)] = value_counts.get(str(aid), 0) + 1
+        if up_to_date is not None and d > up_to_date:
+            continue
         raw[str(aid)].append((d, amt, price))
         gross_raw[str(aid)].append((d, amt, gross_amount))
 
@@ -621,10 +626,12 @@ async def _load_asset_native_values(
         gross_rows = gross_raw[aid]
         if asset.source != "manual" and txs_by_aid.get(aid):
             synced_ledger_ids.add(aid)
+            # Rows are date-ordered, so the kept rows are a prefix of the
+            # full history and share its indexes.
             gross_rows = [
                 row
                 for index, row in enumerate(gross_rows)
-                if not is_historical_seed(asset, row[0], index == 0, index < len(gross_rows) - 1)
+                if not is_historical_seed(asset, row[0], index == 0, index < value_counts[aid] - 1)
             ]
         if use_gross:
             series = estimate_gross_value_series(gross_rows)

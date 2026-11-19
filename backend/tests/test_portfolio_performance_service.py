@@ -409,6 +409,34 @@ async def test_benchmark_in_another_currency_is_converted_at_each_days_rate(
 
 
 @pytest.mark.asyncio
+async def test_benchmark_converts_at_the_comparison_dates_rate_after_its_last_close(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """A flat USD index whose last close is Friday, compared on Monday after the
+    dollar rose 10%: the benchmark gains the 10% a USD holding would show."""
+    end = date.today()
+    start = end - timedelta(days=30)
+    await _flat_brl_fund(session, test_user, test_workspace, start, end)
+    session.add_all(
+        FxRate(base_currency="USD", quote_currency="BRL", date=when, rate=rate, source="test")
+        for when, rate in ((start - timedelta(days=3), Decimal("5")), (end, Decimal("5.5")))
+    )
+    await session.commit()
+
+    provider = FakeHistoryProvider(
+        [
+            BenchmarkHistoryPoint(start, 200.0, "USD"),
+            BenchmarkHistoryPoint(end - timedelta(days=3), 200.0, "USD"),
+        ]
+    )
+    result = await get_portfolio_performance(
+        session, test_workspace.id, test_user.id, "BRL", "yahoo", "^GSPC", "3m",
+        end_date=end, provider=provider,  # type: ignore[arg-type]
+    )
+    assert result.benchmark_return == pytest.approx(10.0)
+
+
+@pytest.mark.asyncio
 async def test_benchmark_without_a_stored_rate_reports_it_instead_of_mixing_currencies(
     session: AsyncSession, test_user: User, test_workspace
 ):
@@ -842,6 +870,60 @@ def test_ledger_flows_prefer_the_stored_share_count():
         ],
     )
     assert flows[-1] == (date(2026, 9, 29), Decimal("500"), date(2026, 9, 28))
+
+
+def test_ledger_flows_wait_past_a_snapshot_that_still_shows_the_old_count():
+    """A provider can take more than a day to show a buy (settlement)."""
+    flows = snapshot_ledger_flows(
+        [
+            (date(2026, 9, 1), Decimal("10"), Decimal("1000")),
+            (date(2026, 9, 28), Decimal("5"), Decimal("500")),
+        ],
+        [
+            (date(2026, 9, 1), 1000.0, 10.0),
+            (date(2026, 9, 28), 1000.0, 10.0),
+            (date(2026, 9, 29), 1000.0, 10.0),
+            (date(2026, 9, 30), 1500.0, 15.0),
+        ],
+    )
+    assert flows[-1] == (date(2026, 9, 30), Decimal("500"), date(2026, 9, 28))
+
+
+def test_ledger_flows_count_a_same_day_round_trip_on_its_own_day():
+    """Selling 10 at 110 and buying 10 back at 100 leaves the count at 10, so
+    no snapshot can show it; the 100 taken out belongs to that day."""
+    day = date(2026, 9, 10)
+    flows = snapshot_ledger_flows(
+        [
+            (date(2026, 9, 1), Decimal("10"), Decimal("1000")),
+            (day, Decimal("-10"), Decimal("-1100")),
+            (day, Decimal("10"), Decimal("1000")),
+        ],
+        [
+            (date(2026, 9, 1), 1000.0, 10.0),
+            (day, 1000.0, 10.0),
+            (date(2026, 9, 11), 1000.0, 10.0),
+        ],
+    )
+    assert flows[-1] == (day, Decimal("-100"), day)
+
+
+def test_ledger_flows_never_drop_a_trade_a_later_one_offsets():
+    """A buy the provider never shows, sold the next day: both flows count."""
+    flows = snapshot_ledger_flows(
+        [
+            (date(2026, 9, 1), Decimal("10"), Decimal("1000")),
+            (date(2026, 9, 2), Decimal("5"), Decimal("500")),
+            (date(2026, 9, 3), Decimal("-5"), Decimal("-550")),
+        ],
+        [
+            (date(2026, 9, 1), 1000.0, 10.0),
+            (date(2026, 9, 2), 1000.0, 10.0),
+            (date(2026, 9, 3), 1000.0, 10.0),
+            (date(2026, 9, 4), 1000.0, 10.0),
+        ],
+    )
+    assert sum(flow for _, flow, _ in flows) == Decimal("950")
 
 
 def test_ledger_flows_survive_a_day_whose_trades_net_to_no_cash():
