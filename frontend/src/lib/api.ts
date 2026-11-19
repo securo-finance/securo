@@ -1574,8 +1574,10 @@ export const assets = {
     const { data } = await api.get('/assets/portfolio-trend')
     return data
   },
-  marketSearch: async (q: string, limit = 15): Promise<MarketSymbolMatch[]> => {
-    const { data } = await api.get('/assets/market/search', { params: { q, limit } })
+  marketSearch: async (q: string, limit = 15, currency?: string): Promise<MarketSymbolMatch[]> => {
+    const { data } = await api.get('/assets/market/search', {
+      params: { q, limit, ...(currency ? { currency } : {}) },
+    })
     return data
   },
   marketQuote: async (symbol: string): Promise<MarketSymbolQuote> => {
