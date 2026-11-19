@@ -708,6 +708,34 @@ class TestParseQif:
         assert len(transactions) == 1
         assert transactions[0].amount == Decimal("1250.00")
 
+    def test_parse_qif_comma_grouped_and_comma_decimal_in_the_same_file(self):
+        """QIF has no column types: each amount's own shape decides the comma.
+
+        "1,250" and "1,250,000" keep importing as the grouped amounts they
+        were before, while "25,50" is a decimal — in one file.
+        """
+        qif_content = (
+            "D01/01/2026\n"
+            "T-1,250\n"
+            "PGrouped\n"
+            "^\n"
+            "D01/02/2026\n"
+            "T-1,250,000\n"
+            "PGrouped twice\n"
+            "^\n"
+            "D01/03/2026\n"
+            "T25,50\n"
+            "PDecimal\n"
+            "^\n"
+        )
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
+        assert failed_rows == []
+        assert [(t.description, t.amount, t.type) for t in transactions] == [
+            ("Grouped", Decimal("1250"), "debit"),
+            ("Grouped twice", Decimal("1250000"), "debit"),
+            ("Decimal", Decimal("25.50"), "credit"),
+        ]
+
     def test_parse_qif_latin1_encoding(self):
         """QIF files from legacy software (e.g. Microsoft Money) using Latin-1 encoding."""
         qif_content = (

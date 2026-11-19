@@ -373,6 +373,29 @@ def _qif_records(text: str) -> list[tuple[int, list[str]]]:
     return records
 
 
+# A comma-grouped QIF amount: "-1,250", "1,250,000".
+_QIF_GROUPED_COMMA = re.compile(r'^[+-]?\d{1,3}(,\d{3})+$')
+
+
+def _qif_amount(raw: str) -> str:
+    """A QIF amount in the separator convention its own value shows.
+
+    QIF has no column types, so a comma is a thousands separator when the
+    value is grouped ("-1,250", "-1,250,000") and the decimal separator
+    otherwise ("25,50"). With both separators the last one is the decimal,
+    which normalize_amount already reads. The minus may arrive as an en dash
+    (0x96) from a Windows tool, so it is folded to ASCII before the shape
+    is checked.
+    """
+    value = raw.strip().translate(_UNICODE_MINUS)
+    if ',' in value and '.' not in value:
+        if _QIF_GROUPED_COMMA.match(value):
+            value = value.replace(',', '')
+        else:
+            value = value.replace(',', '.')
+    return normalize_amount(value)
+
+
 def parse_qif(content: bytes, date_format: str | None = None) -> tuple[list[TransactionImport], list[FailedRow]]:
     """Parse QIF file content and return transactions.
 
@@ -419,9 +442,7 @@ def parse_qif(content: bytes, date_format: str | None = None) -> tuple[list[Tran
                 raw = value.strip()
                 amount_raws.append(raw)
                 try:
-                    # A file from a Windows tool may write the minus as an en
-                    # dash (0x96), and the comma as the decimal separator.
-                    amounts.append(Decimal(normalize_amount(raw)))
+                    amounts.append(Decimal(normalize_amount(_qif_amount(raw))))
                 except Exception:
                     pass
             elif tag == 'P':
