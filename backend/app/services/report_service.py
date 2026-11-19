@@ -710,7 +710,8 @@ async def get_income_expenses_report(
         # A day-window range can start mid-month: only project occurrences that
         # fall inside the requested window.
         projections = await _get_recurring_projections(
-            session, workspace_id, max(m_start, start), m_end, account_ids
+            session, workspace_id, max(m_start, start), m_end, account_ids,
+            accounting_mode=accounting_mode,
         )
         for proj in projections:
             # Convert to primary currency
@@ -1068,7 +1069,10 @@ async def get_income_expenses_report(
     cursor2 = start
     while include_forecasts and cursor2 <= axis_end:
         m_start, m_end = _month_range(cursor2)
-        projections = await _get_recurring_projections(session, workspace_id, m_start, m_end, account_ids)
+        projections = await _get_recurring_projections(
+            session, workspace_id, m_start, m_end, account_ids,
+            accounting_mode=accounting_mode,
+        )
         period_label = _format_date_label(cursor2, interval)
         for proj in projections:
             cat_id_str = str(proj["category_id"]) if proj["category_id"] else "uncategorized"

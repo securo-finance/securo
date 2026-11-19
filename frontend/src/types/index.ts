@@ -1086,6 +1086,8 @@ export interface ProjectedTransaction {
   currency: string
   type: 'debit' | 'credit'
   date: string
+  /** The card bill's due date in accrual mode, else `date`. */
+  reporting_date?: string | null
   category_id: string | null
   category_name: string | null
   category_icon: string | null

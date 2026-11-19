@@ -63,6 +63,7 @@ import type { Rule, Transaction } from '@/types'
 import { formatCompactCurrency, formatCurrency, ltrAmount } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { readCalendarDateBasis } from '@/lib/transaction-calendar'
+import { listDate } from '@/lib/list-date'
 import { WidgetGrid } from '@/components/widget-grid'
 import {
   AgingWidget,
@@ -710,7 +711,8 @@ export default function DashboardPage() {
       rows.push({
         key: tx.id,
         description: tx.description,
-        date: tx.date,
+        // The month holds a card row on its bill's due date in accrual mode.
+        date: listDate(tx),
         type: tx.type,
         amount: displayAmount,
         amountPrimary: tx.amount_primary != null ? Number(tx.amount_primary) : null,
@@ -740,7 +742,7 @@ export default function DashboardPage() {
       rows.push({
         key: `proj-${pt.recurring_id}-${pt.date}`,
         description: pt.description,
-        date: pt.date,
+        date: pt.reporting_date ?? pt.date,
         type: pt.type,
         amount: pt.amount,
         amountPrimary: pt.amount_primary ?? null,
