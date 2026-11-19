@@ -3959,6 +3959,15 @@
       "none": "Aucune facture à échéance.",
       "noClient": "Sans client"
     },
+    "flagged": {
+      "title": "Transactions signalées",
+      "hint": "Ce que vous avez signalé pour y revenir, rappels en retard d'abord.",
+      "none": "Rien de signalé.",
+      "overdue": "En retard : {{count}}",
+      "dueSoon": "Cette semaine : {{count}}",
+      "noDate": "Sans date",
+      "more": "Autres signalées : {{count}}"
+    },
     "recurringRevenue": {
       "title": "Revenus récurrents",
       "hint": "Ce que rapportent les factures récurrentes chaque mois, et ce qui a été perdu récemment."

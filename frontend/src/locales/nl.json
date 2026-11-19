@@ -3951,6 +3951,15 @@
       "none": "Geen facturen die vervallen.",
       "noClient": "Geen klant"
     },
+    "flagged": {
+      "title": "Gemarkeerde transacties",
+      "hint": "Wat je hebt gemarkeerd om op terug te komen, verlopen herinneringen eerst.",
+      "none": "Niets gemarkeerd.",
+      "overdue": "Verlopen: {{count}}",
+      "dueSoon": "Deze week: {{count}}",
+      "noDate": "Geen datum",
+      "more": "Meer gemarkeerd: {{count}}"
+    },
     "recurringRevenue": {
       "title": "Terugkerende omzet",
       "hint": "Wat terugkerende facturen per maand opleveren, en wat onlangs verloren ging."

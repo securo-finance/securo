@@ -4097,6 +4097,15 @@
       "none": "Brak faktur z bliskim terminem.",
       "noClient": "Brak klienta"
     },
+    "flagged": {
+      "title": "Oznaczone transakcje",
+      "hint": "To, co oznaczyłeś do sprawdzenia, najpierw zaległe przypomnienia.",
+      "none": "Nic nie oznaczono.",
+      "overdue": "Zaległe: {{count}}",
+      "dueSoon": "W tym tygodniu: {{count}}",
+      "noDate": "Bez daty",
+      "more": "Pozostałe oznaczone: {{count}}"
+    },
     "recurringRevenue": {
       "title": "Przychody cykliczne",
       "hint": "Ile co miesiąc przynoszą faktury cykliczne i co ostatnio utracono."

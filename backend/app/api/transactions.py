@@ -197,7 +197,7 @@ async def list_transactions(
     tags: Optional[List[str]] = Query(None),
     min_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount >= this value (primary currency)."),
     max_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount <= this value (primary currency)."),
-    sort_by: Optional[str] = Query(None, description="Column to sort by (date|amount|description|payee|category|account|type|status). Default: date desc."),
+    sort_by: Optional[str] = Query(None, description="Column to sort by (date|amount|description|payee|category|account|type|status|flag_due_date). Default: date desc."),
     sort_dir: str = Query("desc", pattern="^(asc|desc)$"),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),

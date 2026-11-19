@@ -3959,6 +3959,15 @@
       "none": "Nenhuma cobrança a vencer.",
       "noClient": "Sem cliente"
     },
+    "flagged": {
+      "title": "Transações marcadas",
+      "hint": "O que você marcou para revisar, com os lembretes vencidos primeiro.",
+      "none": "Nenhuma transação marcada.",
+      "overdue": "Vencidas: {{count}}",
+      "dueSoon": "Esta semana: {{count}}",
+      "noDate": "Sem data",
+      "more": "Outras marcadas: {{count}}"
+    },
     "recurringRevenue": {
       "title": "Receita recorrente",
       "hint": "Quanto as cobranças recorrentes trazem por mês, e o que foi perdido recentemente."

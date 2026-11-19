@@ -633,6 +633,7 @@ async def get_transactions(
         "type": Transaction.type,
         "status": Transaction.status,
         "created_at": Transaction.created_at,
+        "flag_due_date": Transaction.flag_due_date,
     }
     chosen_col = sort_columns.get(sort_by) if sort_by else None
     if chosen_col is None:
@@ -645,6 +646,9 @@ async def get_transactions(
         )
     else:
         direction = (chosen_col.asc() if sort_dir == "asc" else chosen_col.desc())
+        if sort_by == "flag_due_date":
+            # Flags without a reminder date come after the dated ones either way.
+            direction = direction.nulls_last()
         # Always tie-break on date desc + created_at desc so equal values
         # stay in a sensible order (e.g. multiple txs with the same amount).
         query = base_query.order_by(

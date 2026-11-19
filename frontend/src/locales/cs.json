@@ -4147,6 +4147,15 @@
       "none": "Žádné faktury před splatností.",
       "noClient": "Bez klienta"
     },
+    "flagged": {
+      "title": "Označené transakce",
+      "hint": "Co jste si označili k vyřízení, nejdřív připomínky po termínu.",
+      "none": "Nic není označeno.",
+      "overdue": "Po termínu: {{count}}",
+      "dueSoon": "Tento týden: {{count}}",
+      "noDate": "Bez data",
+      "more": "Další označené: {{count}}"
+    },
     "recurringRevenue": {
       "title": "Opakované příjmy",
       "hint": "Co měsíčně přinášejí opakované faktury a co se nedávno ztratilo."

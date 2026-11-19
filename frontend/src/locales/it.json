@@ -3959,6 +3959,15 @@
       "none": "Nessuna fattura in scadenza.",
       "noClient": "Nessun cliente"
     },
+    "flagged": {
+      "title": "Transazioni contrassegnate",
+      "hint": "Ciò che hai contrassegnato da rivedere, prima i promemoria scaduti.",
+      "none": "Niente di contrassegnato.",
+      "overdue": "Scadute: {{count}}",
+      "dueSoon": "Questa settimana: {{count}}",
+      "noDate": "Senza data",
+      "more": "Altre contrassegnate: {{count}}"
+    },
     "recurringRevenue": {
       "title": "Entrate ricorrenti",
       "hint": "Quanto portano le fatture ricorrenti ogni mese, e cosa si è perso di recente."

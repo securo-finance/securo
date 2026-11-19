@@ -3949,6 +3949,15 @@
       "none": "Nincs esedékes számla.",
       "noClient": "Nincs ügyfél"
     },
+    "flagged": {
+      "title": "Megjelölt tranzakciók",
+      "hint": "Amit visszatérésre megjelöltél, elöl a lejárt emlékeztetők.",
+      "none": "Nincs megjelölt tranzakció.",
+      "overdue": "Lejárt: {{count}}",
+      "dueSoon": "Ezen a héten: {{count}}",
+      "noDate": "Nincs dátum",
+      "more": "További megjelöltek: {{count}}"
+    },
     "recurringRevenue": {
       "title": "Ismétlődő bevétel",
       "hint": "Amit az ismétlődő számlák havonta hoznak, és ami nemrég elveszett."

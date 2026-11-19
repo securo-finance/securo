@@ -3949,6 +3949,15 @@
       "none": "No invoices coming due.",
       "noClient": "No client"
     },
+    "flagged": {
+      "title": "Flagged transactions",
+      "hint": "Rows you flagged to come back to, overdue reminders first.",
+      "none": "Nothing flagged.",
+      "overdue": "Overdue: {{count}}",
+      "dueSoon": "This week: {{count}}",
+      "noDate": "No date",
+      "more": "More flagged: {{count}}"
+    },
     "recurringRevenue": {
       "title": "Recurring revenue",
       "hint": "What recurring invoices bring in each month, and what was lost lately."

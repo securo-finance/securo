@@ -3959,6 +3959,15 @@
       "none": "Nenhuma fatura a vencer.",
       "noClient": "Sem cliente"
     },
+    "flagged": {
+      "title": "Transações assinaladas",
+      "hint": "O que assinalou para rever, com os lembretes em atraso primeiro.",
+      "none": "Nenhuma transação assinalada.",
+      "overdue": "Em atraso: {{count}}",
+      "dueSoon": "Esta semana: {{count}}",
+      "noDate": "Sem data",
+      "more": "Outras assinaladas: {{count}}"
+    },
     "recurringRevenue": {
       "title": "Receita recorrente",
       "hint": "Quanto as faturas recorrentes trazem por mês, e o que se perdeu recentemente."

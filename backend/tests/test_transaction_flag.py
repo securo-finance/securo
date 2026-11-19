@@ -250,3 +250,27 @@ async def test_a_viewer_cannot_bulk_flag(
         headers=viewer_auth_headers,
     )
     assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_flagged_rows_sort_by_reminder_date_with_undated_last(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_transactions: list[Transaction],
+):
+    today = app_today()
+    undated, later, overdue = test_transactions[0], test_transactions[1], test_transactions[2]
+    undated.is_flagged = True
+    later.is_flagged, later.flag_due_date = True, today + timedelta(days=10)
+    overdue.is_flagged, overdue.flag_due_date = True, today - timedelta(days=2)
+    await session.commit()
+
+    response = await client.get(
+        "/api/transactions?flagged=true&sort_by=flag_due_date&sort_dir=asc",
+        headers=auth_headers,
+    )
+
+    assert [i["id"] for i in response.json()["items"]] == [
+        str(overdue.id), str(later.id), str(undated.id),
+    ]
