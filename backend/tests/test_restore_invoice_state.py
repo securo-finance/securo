@@ -48,7 +48,12 @@ async def _restored_invoices(session: AsyncSession, workspace_id: uuid.UUID) -> 
         .scalars()
         .all()
     )
-    return {invoice.number: invoice for invoice in rows}
+    by_number: dict[int, Invoice] = {}
+    for invoice in rows:
+        # Every invoice in this fixture is issued, so each one carries a number.
+        assert invoice.number is not None
+        by_number[invoice.number] = invoice
+    return by_number
 
 
 @pytest.mark.asyncio
@@ -255,6 +260,8 @@ async def test_restore_keeps_the_derived_invoice_state(
     assert restored_schedule.consecutive_failures == 2
     assert restored_schedule.status == "active"
     # SQLite hands the timestamp back naive; the instant is what matters.
+    assert restored_schedule.last_generated_at is not None
+    assert schedule.last_generated_at is not None
     assert restored_schedule.last_generated_at.replace(tzinfo=None) == (
         schedule.last_generated_at.replace(tzinfo=None)
     )
