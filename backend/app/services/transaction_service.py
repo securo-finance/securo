@@ -1,8 +1,8 @@
 import re
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
-from typing import Optional, cast
+from typing import Literal, Optional, cast
 
 from sqlalchemy import CursorResult, and_, case, delete, func, literal, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -113,6 +113,11 @@ def _apply_fx_override(transaction, amount, amount_primary=None, fx_rate_used=No
         )
 
 
+FlagDue = Literal["overdue", "soon"]
+# "Soon" is today and the week after it.
+FLAG_DUE_SOON_DAYS = 7
+
+
 async def get_transactions(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -151,6 +156,8 @@ async def get_transactions(
     include_summary: bool = False,
     user_pnl_only: bool = False,
     exclude_ignored: bool = False,
+    flagged_only: bool = False,
+    flag_due: Optional[FlagDue] = None,
     include_running_balance: bool = False,
     primary_currency: Optional[str] = None,
 ) -> tuple[list[Transaction], int, Optional[dict]]:
@@ -322,6 +329,8 @@ async def get_transactions(
         # filtered set, so the totals a hidden list shows stay the totals of
         # what it is showing.
         base_query = base_query.where(is_not_ignored())
+    if flagged_only or flag_due is not None:
+        base_query = base_query.where(_flagged_in_workspace(workspace_id, flag_due))
     if txn_type == "transfer":
         # Not a value of the `type` column: a transfer is still stored as a
         # credit or a debit, so this narrows to the transfer family instead.
@@ -624,6 +633,7 @@ async def get_transactions(
         "type": Transaction.type,
         "status": Transaction.status,
         "created_at": Transaction.created_at,
+        "flag_due_date": Transaction.flag_due_date,
     }
     chosen_col = sort_columns.get(sort_by) if sort_by else None
     if chosen_col is None:
@@ -636,6 +646,9 @@ async def get_transactions(
         )
     else:
         direction = (chosen_col.asc() if sort_dir == "asc" else chosen_col.desc())
+        if sort_by == "flag_due_date":
+            # Flags without a reminder date come after the dated ones either way.
+            direction = direction.nulls_last()
         # Always tie-break on date desc + created_at desc so equal values
         # stay in a sensible order (e.g. multiple txs with the same amount).
         query = base_query.order_by(
@@ -710,7 +723,7 @@ async def get_transactions(
                     category_id, category_ids, payee_id, search, uncategorized,
                     txn_type, tags, status, currency, account_types, transaction_ids,
                     min_amount is not None, max_amount is not None,
-                    exclude_transfers, user_pnl_only, exclude_ignored,
+                    exclude_transfers, user_pnl_only, exclude_ignored, flagged_only, flag_due is not None,
                     group_id,
                     # `bill_id` and `unbilled_only` pick a card's statement
                     # window, not a smaller ledger: the walk still covers
@@ -755,6 +768,60 @@ async def _running_balance_account(
     if narrowed or not default_order or len(set(account_ids)) != 1:
         return None
     return await get_account(session, account_ids[0], workspace_id)
+
+
+def _flagged_in_workspace(workspace_id: uuid.UUID, flag_due: Optional[FlagDue] = None):
+    """Rows flagged in this workspace, optionally narrowed by reminder date.
+
+    Scoped to the workspace even where the list also shows rows shared from
+    another one: a flag belongs to the workspace that set it.
+    """
+    clauses = [Transaction.workspace_id == workspace_id, Transaction.is_flagged.is_(True)]
+    today = app_today()
+    if flag_due == "overdue":
+        clauses.append(Transaction.flag_due_date < today)
+    elif flag_due == "soon":
+        clauses.append(
+            Transaction.flag_due_date.between(today, today + timedelta(days=FLAG_DUE_SOON_DAYS))
+        )
+    return and_(*clauses)
+
+
+async def flagged_summary(session: AsyncSession, workspace_id: uuid.UUID) -> dict[str, int]:
+    """Counts behind the flagged views: all, past their date, due soon."""
+    today = app_today()
+    soon_end = today + timedelta(days=FLAG_DUE_SOON_DAYS)
+    row = (
+        await session.execute(
+            select(
+                func.count(),
+                func.count().filter(Transaction.flag_due_date < today),
+                func.count().filter(Transaction.flag_due_date.between(today, soon_end)),
+            ).where(_flagged_in_workspace(workspace_id))
+        )
+    ).one()
+    return {"flagged": row[0], "overdue": row[1], "due_soon": row[2]}
+
+
+def _normalize_flag_update(tx: Transaction, update_data: dict) -> None:
+    """Keep the flag and its reminder consistent within one edit.
+
+    A reminder lives only on a flagged row: unflagging clears it, and a date or
+    note sent for a row that is not flagged (and not being flagged in the same
+    edit) is dropped. Dropping rather than flagging matters: a note saved as
+    the user clicks Unflag can reach the server second, and must not bring the
+    flag back.
+    """
+    if "flag_note" in update_data:
+        note = (update_data["flag_note"] or "").strip()
+        update_data["flag_note"] = note or None
+    flagged_after = update_data.get("is_flagged", tx.is_flagged)
+    if not flagged_after:
+        update_data.pop("flag_due_date", None)
+        update_data.pop("flag_note", None)
+        if update_data.get("is_flagged") is False:
+            update_data["flag_due_date"] = None
+            update_data["flag_note"] = None
 
 
 async def _tag_shared_view(
@@ -887,6 +954,10 @@ async def _tag_shared_view(
             # The card ending belongs to the owner's workspace. Committed
             # value, so a later flush cannot write it back to the row.
             set_committed_value(tx, "card_masked_number", None)
+            # So does the owner's flag and its reminder note.
+            set_committed_value(tx, "is_flagged", False)
+            set_committed_value(tx, "flag_due_date", None)
+            set_committed_value(tx, "flag_note", None)
 
 
 async def get_transaction(
@@ -1914,6 +1985,7 @@ async def update_transaction(
     update_data.pop("splits", None)
     lines_payload = data.category_lines if "category_lines" in update_data else None
     update_data.pop("category_lines", None)
+    _normalize_flag_update(transaction, update_data)
     _check_category_lines_update(transaction, update_data, lines_payload)
 
     # Verify the new account belongs to the workspace before touching the
@@ -2301,6 +2373,38 @@ async def bulk_add_tags(
 
     await session.commit()
     return touched
+
+
+async def bulk_set_flag(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    transaction_ids: list[uuid.UUID],
+    is_flagged: bool,
+    flag_due_date: Optional[date] = None,
+) -> int:
+    """Flag or unflag rows of this workspace. Unflagging clears the reminder;
+    flagging keeps each row's note and sets the date only when one is given."""
+    if not transaction_ids:
+        return 0
+    values: dict[str, object] = {"is_flagged": is_flagged}
+    if not is_flagged:
+        values.update(flag_due_date=None, flag_note=None)
+    elif flag_due_date is not None:
+        values["flag_due_date"] = flag_due_date
+    result = cast(
+        CursorResult,
+        await session.execute(
+            update(Transaction)
+            .where(
+                Transaction.id.in_(transaction_ids),
+                Transaction.workspace_id == workspace_id,
+            )
+            .values(**values)
+            .execution_options(synchronize_session=False)
+        ),
+    )
+    await session.commit()
+    return result.rowcount or 0
 
 
 async def bulk_remove_tags(

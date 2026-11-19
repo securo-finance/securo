@@ -133,6 +133,18 @@ describe('MobileTransactionRow transfer indicator', () => {
   })
 })
 
+describe('MobileTransactionRow flag marker (#56)', () => {
+  it('marks a flagged row with a labelled flag', () => {
+    renderRow(makeTx({ is_flagged: true }))
+    expect(screen.getByLabelText('transactions.flagged')).toBeInTheDocument()
+  })
+
+  it('shows no flag on an unflagged row', () => {
+    renderRow(makeTx({ is_flagged: false }))
+    expect(screen.queryByLabelText('transactions.flagged')).not.toBeInTheDocument()
+  })
+})
+
 describe('MobileTransactionRow reporting date indicator', () => {
   it('shows reporting and original bank dates for moved rows', () => {
     renderRow(makeTx({ reporting_date_override: '2026-09-30' }))
