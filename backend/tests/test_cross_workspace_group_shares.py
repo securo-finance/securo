@@ -284,7 +284,7 @@ async def test_reports_count_the_owners_share_of_an_invited_members_expense(
 async def test_dashboard_counts_a_third_party_row_in_the_owners_workspace_once(
     session: AsyncSession, test_user, test_workspace, linked_self
 ):
-    """A coworker's expense in the owner's workspace is already in the
+    """A member's expense in the owner's workspace is already in the
     workspace total, whole. Projecting the owner's self-member share of
     that same row would count it twice, so the projection must leave the
     current workspace out while still adding the invited member's row
