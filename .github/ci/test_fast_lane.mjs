@@ -362,6 +362,10 @@ const ENGINE_FILES = [
   'backend/app/services/reconciliation_policy.py',     // who may match what
   'backend/app/services/_query_filters.py',            // what counts as income
   'backend/app/services/loan_schedule.py',             // amortization
+  'backend/app/services/transfer_detection_service.py',// which lines become transfers
+  'backend/app/services/transaction_match_service.py', // new line or duplicate
+  'backend/app/services/credit_card_service.py',       // which bill a purchase falls in
+  'backend/app/services/provider_settings.py',         // bank provider configuration
 ];
 
 for (const file of ENGINE_FILES) {

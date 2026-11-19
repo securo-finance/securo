@@ -189,11 +189,14 @@ jobs:
               // carry the word: a sync runs in `connection_service.py`, FX
               // conversion in `fx_rate_service.py`, and the reconciliation,
               // card-mirror and loan files move money without saying so
-              // either. #1625 changed the sync engine in three of these and
-              // the lane still called it free to merge; a person was what
-              // held it. Named one by one, so an unrelated service stays
-              // free.
-              [/^backend\/app\/services\/(connection_service|card_mirror_service|reconciliation_[a-z_]*|fx_rate_service|_query_filters|loan_schedule)\.py$/,
+              // either. A sync also pairs transfers (`transfer_detection`),
+              // matches incoming lines (`transaction_match`), places a
+              // purchase in a bill (`credit_card`) and reads the provider
+              // settings. #1625 changed the sync engine in three of these
+              // and the lane still called it free to merge; a person was
+              // what held it. Named one by one, so an unrelated service
+              // stays free.
+              [/^backend\/app\/services\/(connection_service|card_mirror_service|reconciliation_[a-z_]*|fx_rate_service|_query_filters|loan_schedule|transfer_detection_service|transaction_match_service|credit_card_service|provider_settings)\.py$/,
                                                                       'money or bank sync'],
               [/^(charts|k8s|helm)\//i,                               'deployment'],
               [/(^|\/)(Dockerfile|docker-compose[^/]*\.(yml|yaml)|install\.sh)$/, 'deployment'],
