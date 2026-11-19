@@ -456,7 +456,12 @@ MATCH_TRANSFER: dict[str, Any] = {
 #: connection** are compared, only when the card owes nothing after the
 #: sync (a card settled on the spot never carries a balance; a card with
 #: a bill does), and only the exact amount within two days, with each
-#: leg having to name the other as its single answer. The card's copy is
+#: leg having to name the other as its single answer. A card that
+#: received a payment of that amount was just paid off, so its purchase
+#: is left alone. A card copy already set aside still claims its
+#: account copy, and one a person brought back is not paired again by a
+#: later sync, while a card row whose copy arrives late still can be.
+#: Accounts the sync did not refresh are not compared. The card's copy is
 #: the one set aside, since the account's copy is the money that moved.
 #: It is marked ignored rather than deleted, so a person can bring it
 #: back and the next sync leaves it as they set it.

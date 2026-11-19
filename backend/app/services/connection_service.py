@@ -1856,11 +1856,15 @@ async def _set_aside_card_mirrors(
     session: AsyncSession,
     connection_id: uuid.UUID,
     new_tx_ids: list[uuid.UUID],
+    refreshed_account_ids: set[uuid.UUID],
 ) -> None:
     """Ignore card purchases the connection also reports on their account,
     then reconcile those cards' opening balance, which no longer counts
-    them (issue #1460)."""
-    touched = await ignore_mirrored_card_charges(session, connection_id, new_tx_ids)
+    them (issue #1460). Only accounts whose balance this sync set are
+    compared."""
+    touched = await ignore_mirrored_card_charges(
+        session, connection_id, new_tx_ids, refreshed_account_ids
+    )
     if not touched:
         return
     await session.flush()
@@ -2044,7 +2048,9 @@ async def _run_first_import(
         await _drop_finance_charges_with_twins(session, account)
         await sync_opening_balance_for_connected_account(session, account)
 
-    await _set_aside_card_mirrors(session, connection.id, new_tx_ids)
+    await _set_aside_card_mirrors(
+        session, connection.id, new_tx_ids, {account.id for account, _ in accounts}
+    )
 
     # Detect transfer pairs among newly synced transactions
     await detect_transfer_pairs(session, workspace_id, candidate_ids=new_tx_ids)
@@ -3874,6 +3880,10 @@ async def sync_connection(
         user = await session.get(User, user_id)
         user_currency = user.primary_currency if user else get_settings().default_currency
         new_tx_ids: list[uuid.UUID] = []
+        # Accounts whose balance this run set from the provider. One the
+        # provider skipped keeps an old balance, so the card mirror check
+        # leaves it out.
+        refreshed_account_ids: set[uuid.UUID] = set()
         merged_count = 0
         live_txn_external_ids: dict[uuid.UUID, set[str]] = {}
         incomplete_fetch_account_ids: set[uuid.UUID] = set()
@@ -4082,6 +4092,7 @@ async def sync_connection(
                 session.add(account)
                 await session.flush()
 
+            refreshed_account_ids.add(account.id)
             await _sync_reserved_balances(session, account, acc_data)
 
             # Fetch the bills feed before transactions so transaction → bill
@@ -4561,7 +4572,9 @@ async def sync_connection(
 
         # Detect transfer pairs among newly synced transactions
         if new_tx_ids:
-            await _set_aside_card_mirrors(session, connection.id, new_tx_ids)
+            await _set_aside_card_mirrors(
+                session, connection.id, new_tx_ids, refreshed_account_ids
+            )
             await detect_transfer_pairs(session, workspace_id, candidate_ids=new_tx_ids)
 
             # Then settle whatever this money was promised against. It runs
