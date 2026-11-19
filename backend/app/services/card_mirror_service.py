@@ -34,6 +34,7 @@ from app.models.reconciliation import ReconciliationEvent
 from app.models.transaction import Transaction
 from app.services import reconciliation_history_service, reconciliation_policy
 from app.services.reconciliation_engine import Expectation, Movement, evaluate
+from app.services.text_similarity import normalize_words, token_overlap
 
 NODE = reconciliation_policy.MATCH_CARD_MIRROR["node"]
 STRATEGY = reconciliation_policy.MATCH_CARD_MIRROR["strategies"][0]["id"]
@@ -45,15 +46,48 @@ STRATEGY = reconciliation_policy.MATCH_CARD_MIRROR["strategies"][0]["id"]
 SINCE_KEY = "card_mirror_since"
 
 
+#: Words every card line carries whatever was bought, so sharing one says
+#: nothing about two lines being the same purchase.
+_CARD_WORDS = frozenset(
+    {
+        "achat", "card", "carte", "cartao", "cb", "compra", "credit", "credito",
+        "debit", "debito", "paiement", "pagamento", "payment", "pos",
+        "purchase", "tarjeta", "visa", "mastercard", "elo",
+    }
+)
+
+
 def _settles_on_the_spot(account: Account) -> bool:
     """A card that owes nothing once the sync has read it.
 
     A card with a bill carries the purchases until the bill is paid; a
     card debited immediately never does. A regular card that was just
-    paid off also reads zero, so this alone is not enough (see
-    `min_pairs` and the payment check in `ignore_mirrored_card_charges`).
+    paid off also reads zero, so this alone is not enough (see the
+    description, credit and `min_pairs` checks in
+    `ignore_mirrored_card_charges`).
     """
     return account.type == "credit_card" and Decimal(account.balance or 0) == 0
+
+
+def _same_purchase(a: Transaction, b: Transaction, min_overlap: float) -> bool:
+    """Do the two lines print the same purchase?
+
+    The bank formats each feed its own way (`CARTE 07/11/26 PADDLE.NET*
+    BLABLA CB` on the card, `CARTE 07/11/26 PADDLE.NET* BLBL` on the
+    account), so the words need not be equal, but most must be shared and
+    one of the shared ones must be more than a card word or a date: the
+    merchant. A rent debit or a transfer to savings of the same amount
+    prints something else entirely.
+    """
+    if a.external_id and a.external_id == b.external_id:
+        return True
+    words_a, words_b = normalize_words(a.description), normalize_words(b.description)
+    if token_overlap(" ".join(words_a), " ".join(words_b)) < min_overlap:
+        return False
+    return any(
+        len(word) >= 3 and not word.isdigit() and word not in _CARD_WORDS
+        for word in set(words_a) & set(words_b)
+    )
 
 
 def _as_movement(tx: Transaction, account: Account) -> Movement:
@@ -189,7 +223,9 @@ async def ignore_mirrored_card_charges(
         )
 
     # What earlier runs paired: the card row is decided, the account row
-    # is taken. Read from the history, never worked out again.
+    # is taken. Read from the history, never worked out again. The card
+    # row may since have been deleted (the event keeps a null reference),
+    # and its account row stays taken all the same.
     pairs_made = (
         await session.execute(
             select(
@@ -197,20 +233,20 @@ async def ignore_mirrored_card_charges(
                 ReconciliationEvent.expectation_id,
                 Transaction.account_id,
             )
-            .join(Transaction, Transaction.id == ReconciliationEvent.transaction_id)
+            .outerjoin(Transaction, Transaction.id == ReconciliationEvent.transaction_id)
             .where(
                 ReconciliationEvent.workspace_id == connection.workspace_id,
                 ReconciliationEvent.action == "linked",
                 ReconciliationEvent.strategy_id == STRATEGY,
-                Transaction.account_id.in_(cards),
             )
         )
     ).all()
-    decided = {card_tx_id for card_tx_id, _, _ in pairs_made}
+    decided = {card_tx_id for card_tx_id, _, _ in pairs_made if card_tx_id is not None}
     taken = {account_tx_id for _, account_tx_id, _ in pairs_made}
     evidence: dict = defaultdict(int)
     for _, _, card_id in pairs_made:
-        evidence[card_id] += 1
+        if card_id in cards:
+            evidence[card_id] += 1
 
     # The rows this run wrote, and recent rows earlier runs wrote but could
     # not decide (an account skipped, a feed cut short, a copy not in yet).
@@ -242,6 +278,33 @@ async def ignore_mirrored_card_charges(
     # pair with in turn (each side must name the other).
     first = min(tx.date for tx in candidates.values()) - timedelta(days=2 * window)
     last = max(tx.date for tx in candidates.values()) + timedelta(days=2 * window)
+
+    # A card debited on the spot has no bill to pay. One that received any
+    # credit around these rows (a payment, sometimes days after it left
+    # the account, or a refund) is treated as a regular card: a bill paid
+    # with one purchase in it looks exactly like a copy, and the worst a
+    # refund costs is a duplicate left in sight.
+    credited = set(
+        (
+            await session.execute(
+                select(Transaction.account_id).where(
+                    Transaction.account_id.in_(cards),
+                    Transaction.type == "credit",
+                    Transaction.is_ignored.is_(False),
+                    # The row the sync writes to square the balance it read
+                    # is not money the card received.
+                    Transaction.source != "opening_balance",
+                    Transaction.date >= first,
+                    Transaction.date <= last + timedelta(days=int(rules["payment_after_days"])),
+                )
+            )
+        ).scalars()
+    )
+    cards -= credited
+    if not cards:
+        return set()
+    min_overlap = float(rules["description"]["min_overlap"])
+
     pool: list[Transaction] = []
     for tx in (
         await session.execute(
@@ -271,6 +334,7 @@ async def ignore_mirrored_card_charges(
             if o.account_id in wanted
             and o.amount == tx.amount
             and o.currency == tx.currency
+            and _same_purchase(tx, o, min_overlap)
         ]
         if not found:
             return None
@@ -278,39 +342,6 @@ async def ignore_mirrored_card_charges(
         if decision.port != "linked" or decision.expectation is None:
             return None
         return decision.expectation.id
-
-    # Payments the cards received, to tell a paid-off bill from a copy.
-    payments: dict = defaultdict(list)
-    for tx in (
-        await session.execute(
-            select(Transaction)
-            .where(
-                Transaction.account_id.in_(cards),
-                Transaction.type == "credit",
-                Transaction.is_ignored.is_(False),
-                Transaction.date >= first,
-            )
-            .options(noload(Transaction.category_lines))
-        )
-    ).scalars():
-        payments[tx.account_id].append(tx)
-    reach = int(rules["payment_after_days"])
-
-    def paid_with(card_id: uuid.UUID, account_tx: Transaction) -> bool:
-        """The account's debit is a payment the card received, not a copy.
-
-        A regular card paid off reads zero like an immediately debited
-        one; when its bill held a single purchase, the payment leaving the
-        account has that purchase's amount. The card shows the payment
-        arriving, sometimes days after it left the account; a card debited
-        on the spot has no bill to pay.
-        """
-        return any(
-            p.currency == account_tx.currency
-            and abs(Decimal(p.amount)) == abs(Decimal(account_tx.amount))
-            and -window <= (p.date - account_tx.date).days <= reach
-            for p in payments[card_id]
-        )
 
     pairs: list[tuple[Transaction, Transaction]] = []
     for card_tx in pool:
@@ -325,8 +356,6 @@ async def ignore_mirrored_card_charges(
         # then neither is set aside.
         if answer(account_tx) != card_tx.id:
             continue
-        if paid_with(card_tx.account_id, account_tx):
-            continue
         pairs.append((card_tx, account_tx))
         evidence[card_tx.account_id] += 1
 
@@ -336,7 +365,10 @@ async def ignore_mirrored_card_charges(
     # as one only after showing it more than once.
     touched: set[uuid.UUID] = set()
     for card_tx, account_tx in pairs:
-        if card_tx.id not in candidates and account_tx.id not in candidates:
+        # The card row is the one set aside, so it is the one that must be
+        # new or retried: an old card row stays as history left it even
+        # when a new account row turns up beside it.
+        if card_tx.id not in candidates:
             continue
         if evidence[card_tx.account_id] < int(rules["min_pairs"]):
             continue

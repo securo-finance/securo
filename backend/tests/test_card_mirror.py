@@ -56,12 +56,14 @@ async def _account(
 
 def _tx(
     session, account, external_id, amount, *, days_ago=0, kind="debit",
-    source="sync", currency="EUR", created_at=None,
+    source="sync", currency="EUR", created_at=None, description=None,
 ):
+    # Both feeds print the purchase, each in its own way.
+    suffix = " CB" if account.type == "credit_card" else ""
     tx = Transaction(
         id=uuid.uuid4(), user_id=account.user_id, workspace_id=account.workspace_id,
         account_id=account.id, external_id=external_id,
-        description=f"CARD PURCHASE {external_id}", amount=Decimal(amount),
+        description=description or f"CARTE SHOP {amount}{suffix}", amount=Decimal(amount),
         currency=currency, date=TODAY - timedelta(days=days_ago),
         effective_date=TODAY - timedelta(days=days_ago),
         type=kind, source=source, status="posted",
@@ -181,9 +183,17 @@ async def test_nothing_is_ignored_outside_the_rules(session, test_user, test_wor
         session, test_user.id, test_workspace.id, other_conn, "checking"
     )
     loan = await _account(session, test_user.id, test_workspace.id, conn, "loan")
+    # Two real copies first, so the card has shown it mirrors its
+    # purchases and each case below is refused on its own merit.
+    mirrored = [
+        _tx(session, card, "card-1", "25.00"),
+        _tx(session, checking, "acct-1", "25.00"),
+        _tx(session, card, "card-2", "9.90"),
+        _tx(session, checking, "acct-2", "9.90"),
+    ]
     # Another connection's account, a different amount, too far apart, a
-    # refund (credit), a row typed by hand, another currency and a loan
-    # repayment: none is the card's twin.
+    # credit, a row typed by hand, another currency, a loan repayment and
+    # a debit that prints something else: none is the card's twin.
     rows = [
         _tx(session, card, "c-other-conn", "10.00"),
         _tx(session, elsewhere, "a-other-conn", "10.00"),
@@ -191,18 +201,21 @@ async def test_nothing_is_ignored_outside_the_rules(session, test_user, test_wor
         _tx(session, checking, "a-amount", "11.01"),
         _tx(session, card, "c-far", "12.00", days_ago=5),
         _tx(session, checking, "a-far", "12.00"),
-        _tx(session, card, "c-refund", "13.00", kind="credit"),
-        _tx(session, checking, "a-refund", "13.00", kind="credit"),
+        _tx(session, checking, "a-credit", "13.00", kind="credit"),
         _tx(session, card, "c-manual", "14.00"),
         _tx(session, checking, "a-manual", "14.00", source="manual"),
         _tx(session, card, "c-currency", "15.00"),
         _tx(session, checking, "a-currency", "15.00", currency="USD"),
         _tx(session, card, "c-loan", "16.00"),
         _tx(session, loan, "a-loan", "16.00"),
+        _tx(session, card, "c-rent", "17.00", description="CARTE 07/11 BOOKSHOP CB"),
+        _tx(session, checking, "a-rent", "17.00", description="PRLV SEPA LOYER NOVEMBRE"),
     ]
     await session.flush()
 
-    assert await _ignore(session, conn, [tx.id for tx in rows]) == set()
+    ids = [tx.id for tx in mirrored + rows]
+    assert await _ignore(session, conn, ids) == {card.id}
+    assert mirrored[0].is_ignored and mirrored[2].is_ignored
     assert not any(tx.is_ignored for tx in rows)
 
 
@@ -226,29 +239,64 @@ async def test_history_written_before_the_matcher_ran_is_left_as_it_was(session,
 
 
 @pytest.mark.asyncio
-async def test_a_paid_off_card_keeps_its_purchase(session, bank):
-    # A regular card whose bill held one purchase, imported after it was
-    # paid: it reads zero, and the payment leaving the account has the
-    # purchase's amount. The card shows the payment arriving, here five
-    # days after it left the account, so that debit is the payment, not
-    # a copy of the purchase. A payment in another currency proves nothing.
+async def test_a_card_that_received_a_credit_keeps_its_purchases(session, bank):
+    # A regular card imported after its bill was paid: it reads zero, and
+    # the card shows the payment arriving (here five days after it left
+    # the account). A card debited on the spot has no bill to pay, so any
+    # credit around the rows makes it a regular card, whatever its amount
+    # or currency; even rows that print alike are left alone.
     conn, checking, card = bank
     rows = [
         _tx(session, card, "card-1", "100.00", days_ago=6),
-        _tx(session, card, "card-pay", "100.00", kind="credit"),
-        _tx(session, checking, "acct-pay", "100.00", days_ago=5),
+        _tx(session, checking, "acct-1", "100.00", days_ago=6),
+        _tx(session, card, "card-pay", "125.00", kind="credit", currency="USD"),
         _tx(session, card, "card-2", "25.00"),
-        _tx(session, card, "card-usd", "25.00", kind="credit", currency="USD"),
         _tx(session, checking, "acct-2", "25.00"),
-        _tx(session, card, "card-3", "9.90"),
-        _tx(session, checking, "acct-3", "9.90"),
     ]
     await session.flush()
-    purchase, _, _, second, _, _, third, _ = rows
 
-    assert await _ignore(session, conn, [tx.id for tx in rows]) == {card.id}
-    assert not purchase.is_ignored
-    assert second.is_ignored and third.is_ignored
+    assert await _ignore(session, conn, [tx.id for tx in rows]) == set()
+    assert not any(tx.is_ignored for tx in rows)
+
+
+@pytest.mark.asyncio
+async def test_old_card_rows_stay_as_history_left_them(session, bank):
+    # Card rows written before the matcher first ran are history, even when
+    # the account's copies only arrive now.
+    conn, checking, card = bank
+    old = [
+        _tx(session, card, "card-1", "25.00", created_at=AN_HOUR_AGO),
+        _tx(session, card, "card-2", "9.90", created_at=AN_HOUR_AGO),
+    ]
+    new = [_tx(session, checking, "acct-1", "25.00"), _tx(session, checking, "acct-2", "9.90")]
+    await session.flush()
+
+    assert await _ignore(session, conn, [tx.id for tx in new]) == set()
+    assert not any(tx.is_ignored for tx in old)
+
+
+@pytest.mark.asyncio
+async def test_a_taken_debit_stays_taken_when_its_card_row_is_deleted(session, bank):
+    # The history keeps the pair with a null card reference once the card
+    # row is gone; the account's debit still backs that purchase only.
+    conn, checking, card = bank
+    first = _tx(session, card, "card-1", "25.00", days_ago=1)
+    on_account = _tx(session, checking, "acct-1", "25.00")
+    other = [_tx(session, card, "card-9", "9.90"), _tx(session, checking, "acct-9", "9.90")]
+    await session.flush()
+    await _ignore(session, conn, [first.id, on_account.id] + [tx.id for tx in other])
+    assert first.is_ignored
+
+    event = (await session.execute(
+        select(ReconciliationEvent).where(ReconciliationEvent.transaction_id == first.id)
+    )).scalar_one()
+    await session.delete(first)
+    event.transaction_id = None  # what ON DELETE SET NULL does in Postgres
+    second = _tx(session, card, "card-2", "25.00")
+    await session.flush()
+
+    assert await _ignore(session, conn, [second.id]) == set()
+    assert not second.is_ignored
 
 
 @pytest.mark.asyncio
@@ -394,10 +442,12 @@ def _provider(accounts: list[AccountData], feeds: dict) -> AsyncMock:
     return provider
 
 
-def _purchase(external_id: str, description: str, amount: str = "25.00") -> TransactionData:
+def _purchase(
+    external_id: str, description: str, amount: str = "25.00", days_ago: int = 0
+) -> TransactionData:
     return TransactionData(
         external_id=external_id, description=description,
-        amount=Decimal(amount), date=TODAY, type="debit",
+        amount=Decimal(amount), date=TODAY - timedelta(days=days_ago), type="debit",
         currency="EUR", status="posted",
     )
 
@@ -482,6 +532,38 @@ async def test_sync_leaves_a_card_alone_while_its_feed_is_throttled(
         "card": ProviderRateLimited("slow down"),
     })
     await _sync(session, conn, test_workspace.id, test_user.id, second)
+
+    purchases = list((await session.execute(
+        select(Transaction).where(Transaction.external_id.in_(["card-1", "card-2"]))
+    )).scalars())
+    assert len(purchases) == 2
+    assert not any(tx.is_ignored for tx in purchases)
+
+
+@pytest.mark.asyncio
+async def test_first_sync_of_a_paid_off_credit_card_keeps_every_purchase(
+    session, test_user, test_workspace
+):
+    # A regular credit card, connected right after its bill (100 + 50) was
+    # paid: it reads zero and the payment is not in its feed. The account
+    # happens to hold a rent debit of 100 on the first purchase's day and
+    # a transfer to savings of 50 two days after the second. Amounts and
+    # dates line up, but nothing printed says these are the same purchases,
+    # so both purchases stay counted.
+    conn = await _connection(session, test_user.id, test_workspace.id)
+    await session.commit()
+
+    provider = _provider(ACCOUNTS, {
+        "acct": [
+            _purchase("acct-rent", "PRLV SEPA LOYER NOVEMBRE", "100.00", days_ago=4),
+            _purchase("acct-save", "VIR VERS LIVRET A", "50.00"),
+        ],
+        "card": [
+            _purchase("card-1", "CARTE 05/11 FNAC PARIS", "100.00", days_ago=4),
+            _purchase("card-2", "CARTE 07/11 DECATHLON", "50.00", days_ago=2),
+        ],
+    })
+    await _sync(session, conn, test_workspace.id, test_user.id, provider)
 
     purchases = list((await session.execute(
         select(Transaction).where(Transaction.external_id.in_(["card-1", "card-2"]))

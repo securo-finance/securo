@@ -458,10 +458,13 @@ MATCH_TRANSFER: dict[str, Any] = {
 #: settled on the spot never carries a balance; a card with a bill
 #: does), the other side must be a current or savings account, and the
 #: two debits must have the exact amount and currency within two days,
-#: each naming the other as its single answer. A card that received a
-#: payment of that amount (up to `payment_after_days` later) was just
-#: paid off, so its purchase is left alone, and a card is treated as
-#: debited on the spot only once it has shown `min_pairs` such pairs.
+#: print the same purchase (their descriptions share most words, one of
+#: them naming the merchant, or the bank gave both the same id), and each
+#: name the other as its single answer. A card that received any credit
+#: around those rows (up to `payment_after_days` after them) has a bill or
+#: a refund, so none of its purchases there is set aside; and a card is
+#: treated as debited on the spot only once it has shown `min_pairs` such
+#: pairs.
 #: Each pair made is written to the reconciliation history, and that
 #: record is the pair from then on: its account copy is taken for good,
 #: and its card copy is never decided again, so one a person brought
@@ -503,8 +506,16 @@ MATCH_CARD_MIRROR: dict[str, Any] = {
         # repayment of the same amount is not a copy of a purchase.
         "paid_from": ["checking", "savings"],
         "min_pairs": 2,
+        # A card that received any credit (a bill payment, a refund) from
+        # this many days before the rows compared to this many after is a
+        # card with a bill, never a copy: the worst a refund costs is a
+        # duplicate left visible.
         "payment_after_days": 10,
         "retry_days": 30,
+        # Both copies print the same purchase. Same amount and date alone
+        # also fit the payment of a bill whose total equals one purchase,
+        # or any debit of the account that happens to share the amount.
+        "description": {"min_overlap": 0.6},
     },
     "on_ambiguity": "suggest",
 }
