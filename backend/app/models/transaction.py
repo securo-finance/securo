@@ -3,7 +3,7 @@ from datetime import date as _date, datetime, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING, Optional, cast
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, JSON, Numeric, SmallInteger, String, event
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, JSON, Numeric, SmallInteger, String, event
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -30,6 +30,10 @@ USER_EDITED_KEY = "securo_user_edited"
 
 class Transaction(Base):
     __tablename__ = "transactions"
+    __table_args__ = (
+        # Declared here so autogenerate keeps migration 120's composite index.
+        Index("ix_transactions_account_card_masked_number", "account_id", "card_masked_number"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
@@ -106,6 +110,11 @@ class Transaction(Base):
         nullable=True,
         index=True,
     )
+    # Last four characters of the physical/virtual card that made this charge.
+    # A credit-card account can represent multiple additional or virtual cards,
+    # so this belongs to the transaction rather than Account.masked_number.
+    # Never store the complete card number here.
+    card_masked_number: Mapped[Optional[str]] = mapped_column(String(4), nullable=True)
     # Ignore the row everywhere monetary totals are calculated, including the
     # account balance. The row remains stored and can still be shown in ledger
     # views unless the caller explicitly hides ignored transactions.
@@ -136,6 +145,12 @@ class Transaction(Base):
         index=True,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    @property
+    def provider_category(self) -> Optional[str]:
+        if not isinstance(self.raw_data, dict):
+            return None
+        return self.raw_data.get("category")
 
     account: Mapped["Account"] = relationship(back_populates="transactions")
     category: Mapped[Optional["Category"]] = relationship()

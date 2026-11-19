@@ -36,6 +36,7 @@ import { BankConnectDialog } from '@/components/bank-connect-dialog'
 import { ConnectorSelectDialog, type Provider } from '@/components/connector-select-dialog'
 import { pluginConnectors } from '@/lib/plugin-connectors'
 import { PluginAvatar } from '@/components/plugin-avatar'
+import { usePluginIcons } from '@/hooks/use-plugin-icons'
 import { PluginConnectionDialog } from '@/components/plugin-connections'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
 import { localized } from '@/lib/localized-text'
@@ -129,6 +130,8 @@ export default function AccountsPage() {
     () => new Map((installedPlugins ?? []).map((plugin) => [plugin.plugin_id, plugin])),
     [installedPlugins],
   )
+  // Only a plugin connection without a logo draws the plugin's avatar.
+  const pluginIcons = usePluginIcons(pluginsEnabled && (connectionsList ?? []).some((c) => c.plugin_id && !c.logo_url))
   const hasPluginConnections = (connectionsList ?? []).some((c) => c.plugin_connection_id)
   // A plugin's connection syncs in the background: follow it until it settles,
   // then show what it brought in.
@@ -451,6 +454,7 @@ export default function AccountsPage() {
                           <PluginAvatar
                             seed={conn.plugin_id}
                             label={localized(pluginsById.get(conn.plugin_id)?.name ?? { en: conn.institution_name }, i18n.language)}
+                            src={pluginIcons.get(conn.plugin_id)}
                             className="h-8 w-8 rounded-lg text-[11px]"
                           />
                         ) : (

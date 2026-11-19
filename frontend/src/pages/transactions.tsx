@@ -47,7 +47,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Clock, HelpCircle, Info, Paperclip, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, SlidersHorizontal, Receipt } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Clock, HelpCircle, Info, Paperclip, Repeat, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, SlidersHorizontal, Receipt } from 'lucide-react'
 import type { Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, TransactionEditPayload, ReconciliationSuggestion } from '@/types'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { PageHeader } from '@/components/page-header'
@@ -65,6 +65,7 @@ import { TransactionsPageActions } from '@/components/transactions-page-actions'
 import { MobileBulkSelectionActions } from '@/components/mobile-bulk-selection-actions'
 import { type ColumnDef, type ColumnId, useTransactionsGridState } from '@/components/transactions-grid-columns'
 import { TransferDialog } from '@/components/transfer-dialog'
+import { MakeRecurringDialog } from '@/components/make-recurring-dialog'
 import { useSidebarState } from '@/contexts/sidebar-state-context'
 import { cn } from '@/lib/utils'
 import { LinkTransferDialog } from '@/components/link-transfer-dialog'
@@ -128,6 +129,10 @@ export default function TransactionsPage() {
   })
   const [filterAccountIds, setFilterAccountIds] = useState<string[]>(() => {
     const initial = searchParams.get('account_id')
+    return initial ? initial.split(',') : []
+  })
+  const [filterLinkedCardIds, setFilterLinkedCardIds] = useState<string[]>(() => {
+    const initial = searchParams.get('linked_card_id')
     return initial ? initial.split(',') : []
   })
   const [filterCategoryIds, setFilterCategoryIds] = useState<string[]>(() => {
@@ -237,6 +242,8 @@ export default function TransactionsPage() {
   const [bulkTagInput, setBulkTagInput] = useState<string>('')
   const [createRuleOpen, setCreateRuleOpen] = useState(false)
   const [createRuleInitialData, setCreateRuleInitialData] = useState<RuleDialogInitialData | undefined>(undefined)
+  // The row a recurring bill is being created from (issue #429).
+  const [recurringSource, setRecurringSource] = useState<Transaction | null>(null)
   const [isBulkBarPulsing, setIsBulkBarPulsing] = useState(false)
   const [menuEpoch, setMenuEpoch] = useState(0)
   const bulkTagInputRef = useRef<HTMLInputElement>(null)
@@ -277,6 +284,8 @@ export default function TransactionsPage() {
     setFilterUncategorized(searchParams.get('uncategorized') === '1');
     const accounts = searchParams.get('account_id');
     setFilterAccountIds(accounts ? accounts.split(',') : []);
+    const linkedCards = searchParams.get('linked_card_id');
+    setFilterLinkedCardIds(linkedCards ? linkedCards.split(',') : []);
     const urlFrom = searchParams.get('from')
     const urlTo = searchParams.get('to')
     if (urlFrom || urlTo) {
@@ -310,6 +319,7 @@ export default function TransactionsPage() {
         ['category_id', filterCategoryIds.join(',')],
         ['uncategorized', filterUncategorized ? '1' : ''],
         ['account_id', filterAccountIds.join(',')],
+        ['linked_card_id', filterLinkedCardIds.join(',')],
         ['from', filterFrom],
         ['to', filterTo],
         ['min_amount', filterMinAmount],
@@ -335,6 +345,7 @@ export default function TransactionsPage() {
     filterCategoryIds,
     filterUncategorized,
     filterAccountIds,
+    filterLinkedCardIds,
     filterFrom,
     filterTo,
     filterMinAmount,
@@ -356,16 +367,19 @@ export default function TransactionsPage() {
     setSelectedIds(new Set())
     setLastSelectedId(null)
     setBulkCategory('')
-  }, [page, filterAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery])
+  }, [page, filterAccountIds, filterLinkedCardIds, filterCategoryIds, filterUncategorized, filterPayee, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery])
 
   useEffect(() => {
     if (viewMode === 'calendar') {
       setFilterAccountIds((prev) => prev.length > 1 ? [] : prev)
+      // The calendar ignores the card filter, so a card arriving from a link
+      // must not linger here and narrow the export.
+      setFilterLinkedCardIds((prev) => prev.length > 0 ? [] : prev)
       setSelectedIds(new Set())
       setLastSelectedId(null)
       setBulkCategory('')
     }
-  }, [viewMode, filterAccountIds.length])
+  }, [viewMode, filterAccountIds.length, filterLinkedCardIds.length])
 
   // Reset bulk category when selection changes so the same category can be re-applied
   useEffect(() => {
@@ -406,13 +420,14 @@ export default function TransactionsPage() {
     && activeAccountIds !== null && activeAccountIds.length === 0
 
   const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ['transactions', page, limit, effectiveAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
+    queryKey: ['transactions', page, limit, effectiveAccountIds, filterLinkedCardIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
     enabled: !noAccounts,
     queryFn: () =>
       transactions.list({
         page,
         limit,
         account_ids: effectiveAccountIds.length > 0 ? effectiveAccountIds : undefined,
+        linked_card_ids: filterLinkedCardIds.length > 0 ? filterLinkedCardIds : undefined,
         category_ids: filterCategoryIds.length > 0 ? filterCategoryIds : undefined,
         payee_id: filterPayee || undefined,
         group_id: filterGroupId || undefined,
@@ -451,6 +466,7 @@ export default function TransactionsPage() {
   const ctxFilters = {
     search: searchQuery || undefined,
     account_ids: effectiveAccountIds.length ? effectiveAccountIds : undefined,
+    linked_card_ids: filterLinkedCardIds.length ? filterLinkedCardIds : undefined,
     category_ids: filterCategoryIds.length ? filterCategoryIds : undefined,
     payee_id: filterPayee || undefined,
     group_id: filterGroupId || undefined,
@@ -501,6 +517,10 @@ export default function TransactionsPage() {
   const { data: accountsList } = useQuery({
     queryKey: ['accounts'],
     queryFn: () => accountsApi.list(),
+  })
+  const { data: linkedCardsList = [] } = useQuery({
+    queryKey: ['accounts', 'linked-cards'],
+    queryFn: () => accountsApi.linkedCards(),
   })
 
   const { data: payeesList } = useQuery({
@@ -997,6 +1017,7 @@ export default function TransactionsPage() {
       } else {
         await transactions.export({
           account_ids: effectiveAccountIds.length > 0 ? effectiveAccountIds : undefined,
+          linked_card_ids: filterLinkedCardIds.length > 0 ? filterLinkedCardIds : undefined,
           category_ids: filterCategoryIds.length > 0 ? filterCategoryIds : undefined,
           payee_id: filterPayee || undefined,
           type: filterType || undefined,
@@ -1452,6 +1473,7 @@ export default function TransactionsPage() {
               value: viewMode,
               onChange: (value) => {
                 if (value === 'calendar' && filterAccountIds.length > 1) setFilterAccountIds([])
+                if (value === 'calendar') setFilterLinkedCardIds([])
                 setViewMode(value)
               },
               listLabel: t('transactions.listView'),
@@ -1498,6 +1520,9 @@ export default function TransactionsPage() {
         filterAccountIds={filterAccountIds}
         onAccountIdsChange={(v) => { setFilterAccountIds(viewMode === 'calendar' ? v.slice(0, 1) : v); setPage(1) }}
         accountSelectionMode={viewMode === 'calendar' ? 'single' : 'multiple'}
+        linkedCards={viewMode === 'list' ? linkedCardsList : []}
+        filterLinkedCardIds={filterLinkedCardIds}
+        onLinkedCardIdsChange={(v) => { setFilterLinkedCardIds(v); setPage(1) }}
         filterCategoryIds={filterCategoryIds}
         onCategoryIdsChange={(v) => { setFilterCategoryIds(v); setPage(1) }}
         filterUncategorized={filterUncategorized}
@@ -1522,6 +1547,7 @@ export default function TransactionsPage() {
           setFilterFrom('')
           setFilterTo('')
           setFilterAccountIds([])
+          setFilterLinkedCardIds([])
           setFilterCategoryIds([])
           setFilterUncategorized(false)
           setFilterPayee('')
@@ -1772,6 +1798,14 @@ export default function TransactionsPage() {
                         <ContextMenuItem onSelect={() => handleCreateRuleFromTransaction(selectedSingleTx)}>
                           <SlidersHorizontal className="me-2 h-4 w-4" />
                           {t('transactions.createRule')}
+                        </ContextMenuItem>
+                      )}
+
+                      {selectedSingleTx && !selectedSingleTx.transfer_pair_id
+                        && !selectedSingleTx.recurring_transaction_id && (
+                        <ContextMenuItem onSelect={() => setRecurringSource(selectedSingleTx)}>
+                          <Repeat className="me-2 h-4 w-4" />
+                          {t('transactions.makeRecurring')}
                         </ContextMenuItem>
                       )}
 
@@ -2370,6 +2404,15 @@ export default function TransactionsPage() {
         onSave={(data) => createRuleMutation.mutate(data as Omit<Rule, 'id' | 'user_id'>)}
         loading={createRuleMutation.isPending}
         initialData={createRuleInitialData}
+      />
+
+      {/* Recurring bill filled from the selected row (issue #429) */}
+      <MakeRecurringDialog
+        transaction={recurringSource}
+        accounts={accountsList ?? []}
+        categories={categoriesList ?? []}
+        categoryGroups={categoryGroupsList ?? []}
+        onClose={() => setRecurringSource(null)}
       />
     </div>
   )

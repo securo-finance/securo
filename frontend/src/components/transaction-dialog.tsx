@@ -7,7 +7,7 @@ import { formatAmountInput, formatCurrency, parseAmountInput } from '@/lib/forma
 import { amountToCents, parseCents } from '@/lib/mortgage-split'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
-import { assets as assetsApi, currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi, mortgagePayments as mortgagePaymentsApi } from '@/lib/api'
+import { accounts as accountsApi, assets as assetsApi, currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi, mortgagePayments as mortgagePaymentsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { extractApiError } from '@/lib/api-errors'
@@ -449,6 +449,14 @@ function TransactionForm({
     queryKey: ['payees'],
     queryFn: payeesApi.list,
   })
+  const { data: linkedCards = [] } = useQuery({
+    queryKey: ['accounts', transaction?.account_id, 'linked-cards'],
+    queryFn: () => accountsApi.linkedCards(transaction?.account_id ?? ''),
+    enabled: !!transaction?.account_id && !!transaction.card_masked_number,
+  })
+  const linkedCardLabel = linkedCards.find(
+    (card) => card.masked_number === transaction?.card_masked_number,
+  )?.label
   const seed = transaction ?? duplicateDraft
   const [description, setDescription] = useState(seed?.description ?? '')
   // Amount fields hold display-locale strings (comma decimals on dot_comma),
@@ -1360,6 +1368,18 @@ function TransactionForm({
           )}
         </div>
       </div>
+      {transaction?.card_masked_number && (
+        <div className="space-y-2">
+          <Label>{t('transactions.card')}</Label>
+          {/* Read-only text rather than a disabled input, so a long label
+              wraps and never pushes the ending out of view. */}
+          <div className="flex min-h-9 items-center gap-2 rounded-md border border-input bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground">
+            {linkedCardLabel && <span className="min-w-0 break-words">{linkedCardLabel}</span>}
+            {linkedCardLabel && <span aria-hidden="true">·</span>}
+            <span className="shrink-0 tabular-nums">•••• {transaction.card_masked_number}</span>
+          </div>
+        </div>
+      )}
       {splitByCategory && (
         <TransactionCategoryLinesSection
           amount={parseAmountInput(amount, displayLocale) ?? 0}

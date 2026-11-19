@@ -23,24 +23,18 @@ from app.schemas.transaction import BulkAddToGroupRequest, BulkCategorizeRequest
 from app.schemas.transaction_calendar import TransactionCalendarResponse
 from app.services import transaction_service
 from app.services.category_line_service import csv_export_parts
+from app.services.csv_safety import csv_safe as _csv_safe
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.transaction_calendar_service import get_transaction_calendar
 from app.services._query_filters import reporting_date_value
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
-# A spreadsheet evaluates any cell that starts with one of these as a formula,
-# so a description like "=HYPERLINK(...)" runs as live content when the export
-# is opened in Excel or Sheets (CSV injection, CWE-1236). Text columns go
-# through _csv_safe(); the amounts, dates and codes below are written by this
+# Text columns go through `_csv_safe` (app.services.csv_safety): a spreadsheet
+# evaluates any cell that starts with a formula leader, so a description like
+# "=HYPERLINK(...)" runs as live content when the export is opened (CSV
+# injection, CWE-1236). The amounts, dates and codes below are written by this
 # endpoint and cannot carry a payload.
-_FORMULA_LEADERS = ("=", "+", "-", "@", "\t", "\r")
-
-
-def _csv_safe(value: object) -> str:
-    """`value` as text that a spreadsheet reads literally, never as a formula."""
-    text = "" if value is None else str(value)
-    return f"'{text}" if text[:1] in _FORMULA_LEADERS else text
 
 
 async def _attach_invoice_links(session, ctx, items: list) -> None:
@@ -175,6 +169,7 @@ def _merge_id_filters(
 async def list_transactions(
     account_id: Optional[uuid.UUID] = Query(None),
     account_ids: Optional[List[uuid.UUID]] = Query(None),
+    linked_card_ids: Optional[List[uuid.UUID]] = Query(None),
     category_id: Optional[uuid.UUID] = Query(None),
     category_ids: Optional[List[uuid.UUID]] = Query(None),
     payee_id: Optional[uuid.UUID] = Query(None),
@@ -208,6 +203,7 @@ async def list_transactions(
     transactions, total, summary = await transaction_service.get_transactions(
         session, ctx.workspace.id, ctx.user_id,
         account_ids=_merge_id_filters(account_id, account_ids),
+        linked_card_ids=linked_card_ids,
         category_ids=_merge_id_filters(category_id, category_ids),
         payee_id=payee_id, from_date=from_date, to_date=to_date, page=page, limit=limit,
         include_opening_balance=include_opening_balance, search=q, uncategorized=uncategorized,
@@ -276,6 +272,7 @@ async def description_suggestions(
 async def export_transactions(
     account_id: Optional[uuid.UUID] = Query(None),
     account_ids: Optional[List[uuid.UUID]] = Query(None),
+    linked_card_ids: Optional[List[uuid.UUID]] = Query(None),
     category_id: Optional[uuid.UUID] = Query(None),
     category_ids: Optional[List[uuid.UUID]] = Query(None),
     payee_id: Optional[uuid.UUID] = Query(None),
@@ -305,6 +302,7 @@ async def export_transactions(
         transactions, _, _ = await transaction_service.get_transactions(
             session, ctx.workspace.id, ctx.user_id,
             account_ids=_merge_id_filters(account_id, account_ids),
+            linked_card_ids=linked_card_ids,
             category_ids=_merge_id_filters(category_id, category_ids),
             payee_id=payee_id, from_date=from_date, to_date=to_date,
             search=q, uncategorized=uncategorized, txn_type=type, status=status, skip_pagination=True,

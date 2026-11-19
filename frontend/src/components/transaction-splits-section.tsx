@@ -185,11 +185,13 @@ export function TransactionSplitsSection({
 
     const groupChanged = lastGroupIdRef.current !== group.id
     lastGroupIdRef.current = group.id
+    // Read the refs here: the updater runs after hydratedRef is set below.
+    const rebuild = !hydratedRef.current || groupChanged
+    const source = hydratedRef.current ? null : seedRef.current
 
     setRows((prevRows) => {
       // If first hydration or switched groups, rebuild completely
-      if (!hydratedRef.current || groupChanged) {
-        const source = hydratedRef.current ? null : seedRef.current
+      if (rebuild) {
         return buildRows(group, source)
       }
 
