@@ -51,6 +51,7 @@ def test_registry_contains_v1_tools():
         "propose_create_budget",
         "propose_create_payee_rule",
         "propose_create_transaction",
+        "propose_update_transaction",
         "propose_create_recurring_transaction",
         "propose_update_recurring_transaction",
         "propose_cancel_recurring_transaction",
