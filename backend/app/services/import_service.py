@@ -209,10 +209,17 @@ def _ensure_ofx_sgml_header(text: str, encoding: str) -> str:
     return header + text
 
 
+# ofxparse converts a date with a "[+1:CET]" suffix to UTC, so a midnight
+# booking in Europe or Asia lands on the previous day. The bank's day is the
+# one printed, so drop the offset from transaction dates.
+_OFX_TXN_DATE_OFFSET = re.compile(r"(<(?:DTPOSTED|DTUSER)>\s*[0-9.]+)\s*\[[^\]<]*\]", re.IGNORECASE)
+
+
 def _preprocess_ofx(content: bytes) -> bytes:
     """Apply text-level fixups ofxparse needs before it can parse the file."""
     text, encoding = _decode_ofx_bytes(content)
     text = _patch_empty_fitids(text)
+    text = _OFX_TXN_DATE_OFFSET.sub(r"\1", text)
     text = _ensure_ofx_sgml_header(text, encoding)
     return text.encode(encoding, errors="replace")
 
