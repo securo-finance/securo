@@ -1812,14 +1812,15 @@ async def _apply_update_to_row(
             tx.amount_primary = None
             tx.fx_rate_used = None
             # Clearing the typed conversion drops a typed account amount with
-            # it; a bank charge stays unless the charge itself changed.
+            # it, even when no rate can replace it yet; a bank charge stays
+            # unless the charge itself changed.
+            typed_account_amount = tx.amount_account_source == ACCOUNT_AMOUNT_FROM_USER
+            if typed_account_amount:
+                tx.amount_account = None
+                tx.amount_account_source = None
             await stamp_primary_amount(
                 session, user_id, tx,
-                restamp_account=(
-                    account_inputs_changed
-                    or account_moved
-                    or tx.amount_account_source == ACCOUNT_AMOUNT_FROM_USER
-                ),
+                restamp_account=account_inputs_changed or account_moved or typed_account_amount,
             )
         else:
             _apply_fx_override(

@@ -577,3 +577,26 @@ async def test_clearing_the_typed_conversion_keeps_a_bank_charge_and_drops_a_typ
     await session.refresh(typed)
     assert typed.amount_account == Decimal("500.00")  # back to the rate
     assert typed.amount_account_source is None
+
+
+@pytest.mark.asyncio
+async def test_clearing_a_typed_conversion_with_no_rate_leaves_the_row_unconverted(
+    client: AsyncClient, session: AsyncSession, auth_headers, test_user: User, clean_db
+):
+    """No USD/BRL rate is stored: the typed charge still goes, rather than
+    surviving the clear as if the user had kept it."""
+    await _set_display_currency(client, auth_headers, test_user, "BRL")
+    account_id = await _account(client, auth_headers, "Card", "BRL")
+    tx_id = await _purchase(client, auth_headers, account_id, amount_primary="545.10")
+    await _set_display_currency(client, auth_headers, test_user, "USD")
+
+    response = await client.patch(
+        f"/api/transactions/{tx_id}", headers=auth_headers,
+        json={"amount_primary": None, "fx_rate_used": None},
+    )
+    assert response.status_code == 200, response.text
+    tx = await session.get(Transaction, uuid.UUID(tx_id))
+    assert tx is not None
+    await session.refresh(tx)
+    assert (tx.amount_account, tx.amount_account_source) == (None, None)
+    assert await _balance(client, auth_headers, account_id) == Decimal("0.00")
