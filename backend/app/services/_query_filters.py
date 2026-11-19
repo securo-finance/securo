@@ -719,10 +719,10 @@ async def viewer_shared_pnl(
     """
     from app.models.transaction_split import TransactionSplit
 
-    # Cross-workspace Splitwise projection: include only invitations
-    # (linked_user_id matches but is_self is False). Self-memberships
-    # represent the user in their own group and are already counted via
-    # the workspace-scoped Transaction filter at the caller.
+    # Cross-workspace Splitwise projection: every membership of the
+    # viewer, their own self-member included (#1305). The rows they
+    # created are already counted by the workspace-scoped filter at the
+    # caller, so `user_id != user_id` keeps them out here.
     member_ids = invited_group_member_ids(user_id)
     date_col = reporting_date_col("accrual" if use_effective_date else "cash")
 
@@ -806,10 +806,10 @@ async def viewer_shared_spending_by_category(
     nominal sums (single-currency only)."""
     from app.models.transaction_split import TransactionSplit
 
-    # Cross-workspace Splitwise projection: include only invitations
-    # (linked_user_id matches but is_self is False). Self-memberships
-    # represent the user in their own group and are already counted via
-    # the workspace-scoped Transaction filter at the caller.
+    # Cross-workspace Splitwise projection: every membership of the
+    # viewer, their own self-member included (#1305). The rows they
+    # created are already counted by the workspace-scoped filter at the
+    # caller, so `user_id != user_id` keeps them out here.
     member_ids = invited_group_member_ids(user_id)
     date_col = reporting_date_col("accrual" if use_effective_date else "cash")
 

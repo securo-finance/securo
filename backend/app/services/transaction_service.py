@@ -10,7 +10,11 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.app_clock import app_today
-from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
+from app.core.shared_scope import (
+    in_bound_workspace,
+    invited_group_member_ids,
+    viewer_member_predicate,
+)
 from app.models.transaction import USER_EDITED_KEY, Transaction
 from app.models.transaction_attachment import TransactionAttachment
 from app.models.account import Account
@@ -243,18 +247,15 @@ async def get_transactions(
         # viewer's "Concert Tickets · share $90" from another workspace
         # alongside their own expenses; account-balance integrity is
         # preserved because the parent tx's account still belongs to the
-        # original owner. The shared-id subquery EXCLUDES rows already
-        # in this workspace — otherwise self-membership in an
-        # in-workspace group double-surfaces the owner's own
-        # transactions when they switch to another workspace.
-        from app.models.group import GroupMember
+        # original owner. Two predicates keep it from double-surfacing:
+        # rows of this workspace are already native here, and rows the
+        # viewer created are already native in their own workspace — so
+        # they never come back as "shared" after a workspace switch.
+        # Membership, not who created the parent, decides what the viewer
+        # sees: the group owner gets the invited member's expense and the
+        # invited member gets the owner's (#1305).
         from app.models.transaction_split import TransactionSplit
 
-        # Exclude is_self memberships — those represent the viewer's
-        # OWN self-member in groups they created, not invitations from
-        # someone else's workspace. Without this exclusion, the owner's
-        # own transactions get double-projected when they switch into
-        # a different workspace.
         viewer_member_ids = invited_group_member_ids(user_id)
         shared_tx_ids = (
             select(TransactionSplit.transaction_id)
@@ -262,6 +263,7 @@ async def get_transactions(
             .where(
                 TransactionSplit.group_member_id.in_(viewer_member_ids),
                 Transaction.workspace_id != workspace_id,
+                Transaction.user_id != user_id,
                 in_bound_workspace(Transaction.workspace_id),
             )
             .distinct()
@@ -689,7 +691,7 @@ async def get_transactions(
         # Run for both default and group-scoped queries: when filtering
         # by `group_id`, a linked member sees the owner's transactions
         # and the frontend needs `is_shared` to lock them from edits.
-        await _tag_shared_view(session, transactions, user_id)
+        await _tag_shared_view(session, transactions, user_id, workspace_id)
 
         if filter_category_ids:
             # The part of each split row inside the filter, so a drill-down
@@ -828,6 +830,7 @@ async def _tag_shared_view(
     session: AsyncSession,
     transactions: list[Transaction],
     user_id: uuid.UUID,
+    workspace_id: uuid.UUID,
 ) -> None:
     """Annotate transactions with split metadata for the viewer:
 
@@ -843,15 +846,29 @@ async def _tag_shared_view(
     Mutates the in-memory objects so Pydantic's from_attributes picks
     them up directly.
     """
-    from app.models.group import GroupMember
+    from app.models.group import Group, GroupMember
 
+    # Every member row that represents the viewer: the memberships linked
+    # to them, and the self-member they created (often unlinked) in a
+    # group they own (#1305). A cross-workspace share can be on either.
     member_rows = await session.execute(
-        select(GroupMember.id, GroupMember.group_id).where(
-            GroupMember.linked_user_id == user_id,
-            GroupMember.is_self.is_(False),
+        select(
+            GroupMember.id, GroupMember.group_id, GroupMember.linked_user_id
         )
+        .outerjoin(Group, Group.id == GroupMember.group_id)
+        .where(viewer_member_predicate(user_id))
     )
-    member_to_group = {row.id: row.group_id for row in member_rows}
+    member_to_group: dict[uuid.UUID, uuid.UUID] = {}
+    # The viewer's own self-member carries shares that live in another
+    # workspace (the invited member's expense). Inside the group's own
+    # workspace the parent row is already native, so it is only matched
+    # for cross-workspace rows below.
+    self_member_to_group: dict[uuid.UUID, uuid.UUID] = {}
+    for row in member_rows:
+        if row.linked_user_id == user_id:
+            member_to_group[row.id] = row.group_id
+        else:
+            self_member_to_group[row.id] = row.group_id
 
     # Map every split-member that appears in this batch → group, so we
     # can also tag owner-side transactions with their group. (The
@@ -869,7 +886,7 @@ async def _tag_shared_view(
         )
         split_member_to_group = {row.id: row.group_id for row in rows}
 
-    if not member_to_group and not split_member_to_group:
+    if not member_to_group and not self_member_to_group and not split_member_to_group:
         for tx in transactions:
             tx.is_shared = False
             tx.viewer_share = None
@@ -881,7 +898,11 @@ async def _tag_shared_view(
     # owner / payer. We need this for ALL groups touching this batch,
     # not just the viewer-linked ones — owners need their own
     # self-member id to compute their share. Cached once per call.
-    all_group_ids = set(member_to_group.values()) | set(split_member_to_group.values())
+    all_group_ids = (
+        set(member_to_group.values())
+        | set(split_member_to_group.values())
+        | set(self_member_to_group.values())
+    )
     self_member_rows = await session.execute(
         select(GroupMember.id, GroupMember.group_id, GroupMember.name).where(
             GroupMember.group_id.in_(all_group_ids),
@@ -893,6 +914,18 @@ async def _tag_shared_view(
     for row in self_member_rows:
         self_member_id_by_group[row.group_id] = row.id
         owner_name_by_group[row.group_id] = row.name
+    # Who actually paid a shared row: the member linked to the account
+    # owner who created it. Falls back to the group's self-member for
+    # shadow payers and for an owner whose self-member is unlinked.
+    author_rows = await session.execute(
+        select(GroupMember.group_id, GroupMember.linked_user_id, GroupMember.name).where(
+            GroupMember.group_id.in_(all_group_ids),
+            GroupMember.linked_user_id.is_not(None),
+        )
+    )
+    author_name_by_group: dict[uuid.UUID, dict[uuid.UUID, str]] = {}
+    for row in author_rows:
+        author_name_by_group.setdefault(row.group_id, {})[row.linked_user_id] = row.name
 
     for tx in transactions:
         if tx.user_id == user_id:
@@ -931,11 +964,22 @@ async def _tag_shared_view(
             )
             tx.viewer_share = owner_split.share_amount if owner_split else None
             continue
-        # The viewer doesn't own this; find their split share.
+        # The viewer doesn't own this; find their split share. Their own
+        # self-member only counts on a row from another workspace — in the
+        # group's own workspace the parent is already native, above.
         match = next(
             (s for s in (tx.splits or []) if s.group_member_id in member_to_group),
             None,
         )
+        matched_group = member_to_group.get(match.group_member_id) if match else None
+        if match is None and tx.workspace_id != workspace_id:
+            match = next(
+                (s for s in (tx.splits or []) if s.group_member_id in self_member_to_group),
+                None,
+            )
+            matched_group = (
+                self_member_to_group.get(match.group_member_id) if match else None
+            )
         if match is None:
             tx.is_shared = False
             tx.viewer_share = None
@@ -944,8 +988,11 @@ async def _tag_shared_view(
         else:
             tx.is_shared = True
             tx.viewer_share = match.share_amount
-            tx.group_id = member_to_group[match.group_member_id]
-            tx.parent_owner_name = owner_name_by_group.get(tx.group_id)
+            tx.group_id = matched_group
+            tx.parent_owner_name = (
+                author_name_by_group.get(matched_group, {}).get(tx.user_id)
+                or owner_name_by_group.get(matched_group)
+            )
             # Hide attachment count on shared rows — Bob can see the
             # paperclip but the API would 403 the actual download
             # (attachment auth is owner-only). Avoid the dead-end UX
