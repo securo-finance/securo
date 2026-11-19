@@ -1,4 +1,4 @@
-{{- if .Values.plugins.runner.enabled }}
+{{- if include "securo.pluginsRunnerEnabled" . }}
 apiVersion: v1
 kind: Service
 metadata:

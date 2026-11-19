@@ -1,4 +1,4 @@
-{{- if and .Values.plugins.runner.enabled .Values.plugins.runner.persistence.enabled }}
+{{- if and (include "securo.pluginsRunnerEnabled" .) .Values.plugins.runner.persistence.enabled }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -6,6 +6,11 @@ metadata:
   labels:
     {{- include "securo.labels" . | nindent 4 }}
     app.kubernetes.io/component: plugins
+  annotations:
+    # Keep installed plugin code when the runner is disabled or the release is
+    # pruned; turning the runner back on mounts the same claim.
+    helm.sh/resource-policy: keep
+    argocd.argoproj.io/sync-options: Prune=false
 spec:
   accessModes:
     - {{ .Values.plugins.runner.persistence.accessMode | quote }}

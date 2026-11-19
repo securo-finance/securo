@@ -169,21 +169,21 @@ plugins:
     enabled: true
 ```
 
-The chart creates a Secret with a random runner token and egress secret, kept across upgrades. To bring your own, set `plugins.runner.existingSecret` to a Secret with `PLUGINS_RUNNER_TOKEN` and `PLUGINS_EGRESS_SECRET`, each at least 32 characters.
+The chart creates a Secret with a random runner token and egress secret, kept across upgrades. To bring your own, set `plugins.runner.existingSecret` to a Secret with `PLUGINS_RUNNER_TOKEN` and `PLUGINS_EGRESS_SECRET`, each at least 32 characters, or set `plugins.runner.token` and `plugins.runner.egressSecret` as values.
 
-To rotate the generated pair, delete the `-plugins` Secret and run `helm upgrade`: the chart creates a new one and the checksum rolls the runner, the backend, the worker and beat.
+To rotate, set new `plugins.runner.token` and `plugins.runner.egressSecret` values (or update your own Secret): the checksum is computed from the credentials in use, so the runners, the backend, the worker and beat roll together. Deleting the Secret in place is not a rotation path when the chart generates the pair outside the cluster, since the render cannot tell that the old credentials are gone.
 
 Under GitOps tools (Argo CD, Flux) and plain `helm template`, `lookup` returns nothing, so every sync would generate a new pair and restart those pods for nothing. Manage the Secret yourself there and set `plugins.runner.existingSecret` to it.
 
-The runner starts plugin processes as their own unprivileged users, with a read-only root filesystem, `/tmp` on tmpfs and a PID and memory limit. Plugin code leaves the namespace only through `plugins-egress`, which checks each plugin's signed pass against the hosts it declared and refuses private addresses.
+The runner starts plugin processes as their own unprivileged users, with a read-only root filesystem, `/tmp` on tmpfs and a PID and memory limit. Plugin code reaches the internet only through `plugins-egress`, which checks each plugin's signed pass against the hosts it declared and refuses private addresses. DNS is the exception: the runner resolves the backend and the proxy through the cluster resolver, and plugin code can send its own queries there, so that resolver is a low-bandwidth channel of its own unless it filters undeclared names.
 
 Enabling the runner turns `PLUGINS_ENABLED` on and keeps it on, even if `config.pluginsEnabled` says otherwise. Its namespace needs the `baseline` Pod Security Standard or looser: the runner runs as root so it can give each plugin its own uid.
 
-The runner stays at one replica and rolls with `Recreate`: its registry and uid allocation are guarded by locks inside one process, so two pods writing the same volume can hand one uid to two plugins.
+The runner is a one-replica StatefulSet: its registry and uid allocation are guarded by locks inside one process, so two pods writing the same volume can hand one uid to two plugins. The controller never creates the replacement before the previous pod is fully gone, which covers a manual `kubectl delete pod` as well as an upgrade. The claim is annotated to survive the runner being disabled, so installed plugin code is still there when it is turned back on.
 
 The NetworkPolicy is on by default, like the internal network in Compose: it allows the backend (plugin calls that carry an API token talk to it), the worker, beat, DNS and the egress proxy, nothing else. Without it, plugin code can open sockets straight to Redis, Postgres or the cloud metadata endpoint, because the proxy only guards traffic that goes through it. Leave it off only when the CNI does not enforce `NetworkPolicy`; the runner is not isolated then.
 
-Disabling `plugins.egress` points you at your own proxy through `runner.extraEnv`. Add its destination to `plugins.networkPolicy.extraEgress` too, otherwise the policy the chart applies blocks it.
+Disabling `plugins.egress` points you at your own proxy through `runner.extraEnv`. Add its destination to `plugins.networkPolicy.extraEgress` too, otherwise the policy the chart applies blocks it. Clusters that resolve through a NodeLocal DNSCache behind Cilium Local Redirect also need that resolver's address there, since the built-in rule matches `kube-dns` only.
 
 ## Uninstalling the Chart
 

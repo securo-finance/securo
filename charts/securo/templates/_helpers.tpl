@@ -89,11 +89,18 @@ changes only when the live Secret data changes.
 */}}
 {{- define "securo.pluginsSecretChecksum" -}}
 {{- $secret := lookup "v1" "Secret" .Release.Namespace (include "securo.pluginsSecretName" .) }}
-{{- if $secret }}
-{{- toJson $secret.data | sha256sum }}
-{{- else }}
-{{- "" | sha256sum }}
+{{- $explicit := dict "token" .Values.plugins.runner.token "egress" .Values.plugins.runner.egressSecret }}
+{{- toJson (dict "data" (default dict ($secret.data)) "explicit" (pick $explicit "token" "egress")) | sha256sum }}
 {{- end }}
+
+{{/*
+`plugins` is a new top-level value. Under `helm upgrade --reuse-values` Helm
+keeps the old value map, so the key can be absent; every condition guards it.
+*/}}
+{{- define "securo.pluginsRunnerEnabled" -}}
+{{- $plugins := .Values.plugins | default dict }}
+{{- $runner := get $plugins "runner" | default dict }}
+{{- if get $runner "enabled" }}true{{ end }}
 {{- end }}
 
 {{/*

@@ -1,19 +1,19 @@
-{{- if .Values.plugins.runner.enabled }}
+{{- if include "securo.pluginsRunnerEnabled" . }}
 {{- if gt (int .Values.plugins.runner.replicaCount) 1 }}
 {{- fail "plugins.runner.replicaCount must stay at 1: the runner store keeps its registry and uid allocation in process-local locks" }}
 {{- end }}
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: {{ include "securo.fullname" . }}-plugins-runner
   labels:
     {{- include "securo.labels" . | nindent 4 }}
     app.kubernetes.io/component: plugins-runner
 spec:
+  # A StatefulSet holds at most one pod per ordinal: the replacement is only
+  # created after the previous pod is fully gone, including a manual delete.
+  serviceName: {{ include "securo.fullname" . }}-plugins-runner
   replicas: {{ .Values.plugins.runner.replicaCount }}
-  # Never let an old and a new runner write the same volume at the same time.
-  strategy:
-    type: Recreate
   selector:
     matchLabels:
       {{- include "securo.selectorLabels" . | nindent 6 }}

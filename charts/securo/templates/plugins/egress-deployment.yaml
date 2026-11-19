@@ -1,4 +1,4 @@
-{{- if and .Values.plugins.runner.enabled .Values.plugins.egress.enabled }}
+{{- if and (include "securo.pluginsRunnerEnabled" .) .Values.plugins.egress.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

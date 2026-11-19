@@ -243,7 +243,9 @@ plugins:
     enabled: false
     # Must stay 1: the runner keeps its registry and uid allocation in
     # process-local locks, so two pods sharing the volume can hand one uid to
-    # two plugins or write a stale registry. The template refuses more.
+    # two plugins or write a stale registry. It runs as a StatefulSet, which
+    # never creates the replacement before the old pod is gone, and the
+    # template refuses more than one replica.
     replicaCount: 1
     # Defaults to the backend image: the runner ships in it as
     # `plugin_runner.main:create_app`.
@@ -254,6 +256,10 @@ plugins:
     service:
       port: 8090
     existingSecret: ""
+    # Optional fixed pair, used instead of the generated one. Setting a new
+    # value is the supported way to rotate: the checksum rolls the pods.
+    token: ""
+    egressSecret: ""
     # Where the runner keeps installed plugin code. Each plugin gets its own
     # directory and its own unprivileged user on the runner.
     persistence:
@@ -305,7 +311,8 @@ plugins:
     enabled: true
     # Extra egress rules for the runner, appended to its policy. Needed when
     # plugin code has to reach something else, for example an external proxy
-    # set through `runner.extraEnv` while `egress.enabled` is false.
+    # set through `runner.extraEnv` while `egress.enabled` is false, or a
+    # NodeLocal DNSCache resolver that the kube-dns rule below does not match.
     extraEgress: []
 
 # Persistence for application data

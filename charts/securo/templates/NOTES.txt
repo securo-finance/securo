@@ -43,7 +43,7 @@ These can be configured by providing the necessary API keys in your `values.yaml
 
 For detailed configuration instructions, please refer to the official documentation:
   https://github.com/securo-finance/securo-docs
-{{- if .Values.plugins.runner.enabled }}
+{{- if include "securo.pluginsRunnerEnabled" . }}
 
 Plugins with code are enabled. The runner is reachable at
   http://{{ include "securo.fullname" . }}-plugins-runner:{{ .Values.plugins.runner.service.port }}
