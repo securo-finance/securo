@@ -34,6 +34,13 @@ export function MemberForm({
     staleTime: 60_000,
   })
 
+  // A member linked to someone outside your workspaces is not in the
+  // directory; keep their link as an option so the select doesn't read
+  // "not linked" while the fields stay locked to that user.
+  const linkedOutsideDirectory =
+    linkedUserId !== null &&
+    !(userDirectory ?? []).some((u) => u.id === linkedUserId)
+
   // Resolve a typed email to an existing Securo user
   const trimmedEmail = email.trim()
   const { data: lookupResult } = useQuery({
@@ -68,6 +75,9 @@ export function MemberForm({
           }}
         >
           <option value="">{t('splitGroups.linkedUserNone')}</option>
+          {linkedOutsideDirectory && (
+            <option value={linkedUserId}>{email || linkedUserId}</option>
+          )}
           {(userDirectory ?? []).map((u) => (
             <option key={u.id} value={u.id}>
               {u.email}
