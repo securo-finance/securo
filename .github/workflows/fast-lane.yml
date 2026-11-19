@@ -158,6 +158,13 @@ jobs:
 
             const REQUIRED = ['Backend Tests', 'Frontend Checks', 'Helm Checks'];
 
+            // A line that closes an issue once it is in a commit on the default
+            // branch: the keyword GitHub reads, followed by a reference. It
+            // matches a line of a pull request's description and is carried
+            // into the squash commit below, which is the only place GitHub
+            // looks for it.
+            const CLOSING = /^(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+(?:[\w.-]+\/[\w.-]+)?#\d+/i;
+
             // Stricter than `risk: low/medium` on purpose. The label comes from
             // file names, and two of the open medium PRs are a new auth endpoint
             // and a runner that executes plugin code — a path rule that reads
@@ -575,10 +582,32 @@ jobs:
               // ---- merge, pinned to the head the verdict was given for -----
               // Passing `sha` makes GitHub refuse if the branch moved after the
               // checks above, which is the race a plain merge would have.
+              //
+              // The message is passed by hand because GitHub builds the default
+              // squash message from the pull request's title and the messages
+              // of its commits: the description, where this repository writes
+              // "Closes #N", never reaches the commit, and the issue stayed
+              // open after the lane merged it (#1356 from #1568). GitHub closes
+              // an issue from a closing keyword in a commit on the default
+              // branch, so the keywords are carried over and nothing else is:
+              // the rest of the description does not belong in the history.
+              // Both fields go together or neither does: passing either one
+              // replaces GitHub's generated squash message instead of
+              // appending to it, so sending the title alone would drop a
+              // keyword written in a commit message (#532). With no keyword in
+              // the description nothing is passed and GitHub's own message
+              // stays exactly as it was.
+              const closing = (pr.body || '').split('\n')
+                .map((line) => line.trim())
+                .filter((line) => CLOSING.test(line));
               try {
                 await github.rest.pulls.merge({
                   owner: OWNER, repo: REPO, pull_number: number,
                   sha: head, merge_method: 'squash',
+                  ...(closing.length ? {
+                    commit_title: `${pr.title} (#${number})`,
+                    commit_message: closing.join('\n'),
+                  } : {}),
                 });
               } catch (e) {
                 return skip('GitHub refused the merge', true, e.message);

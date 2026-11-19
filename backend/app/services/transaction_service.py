@@ -169,8 +169,8 @@ async def get_transactions(
 
     `include_running_balance` fills `running_balance` (and, for an account in a
     currency other than `primary_currency`, `running_balance_primary`) when the
-    list is one non-credit-card account's ledger from `from_date` in the default
-    order; see `_running_balance_account`.
+    list is one account's ledger from `from_date` in the default order, a
+    credit card's statement window included; see `_running_balance_account`.
     """
     # In "accrual" mode, bucket/order by effective_date so list filters
     # line up with the cash-flow view used by the dashboard and reports.
@@ -720,7 +720,10 @@ async def get_transactions(
                     txn_type, tags, status, currency, account_types, transaction_ids,
                     min_amount is not None, max_amount is not None,
                     exclude_transfers, user_pnl_only, exclude_ignored, flagged_only, flag_due is not None,
-                    group_id, bill_id, unbilled_only,
+                    group_id,
+                    # `bill_id` and `unbilled_only` pick a card's statement
+                    # window, not a smaller ledger: the walk still covers
+                    # every row that moves the balance (#920).
                     # Without the opening row the walk misses its amount
                     # whenever it falls inside the range.
                     not include_opening_balance,
@@ -753,15 +756,14 @@ async def _running_balance_account(
 
     A running balance is exposed on one account's unfiltered ledger in its
     default display order. Reporting overrides can reorder rows, but each
-    balance stays anchored to the bank-date ledger. A card's balance is the
-    bill cycle, which the account page walks itself.
+    balance stays anchored to the bank-date ledger. A card's statement window
+    is such a ledger: `bill_id` and `unbilled_only` only choose which rows the
+    statement shows, so the walk behind them still starts from the debt carried
+    into the window and the newest row lands on the account balance (#920).
     """
     if narrowed or not default_order or len(set(account_ids)) != 1:
         return None
-    account = await get_account(session, account_ids[0], workspace_id)
-    if account is None or account.type == "credit_card":
-        return None
-    return account
+    return await get_account(session, account_ids[0], workspace_id)
 
 
 def _flagged_in_workspace(workspace_id: uuid.UUID, flag_due: Optional[FlagDue] = None):

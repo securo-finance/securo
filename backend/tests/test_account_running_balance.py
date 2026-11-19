@@ -350,7 +350,7 @@ async def test_running_balance_primary_for_foreign_currency_account(
 
 @pytest.mark.parametrize("case", [
     "flag_off", "no_from", "search", "category", "sort_amount", "sort_date_asc",
-    "two_accounts", "credit_card", "no_opening_row",
+    "two_accounts", "no_opening_row",
 ])
 @pytest.mark.asyncio
 async def test_running_balance_is_null_when_the_list_is_not_one_ledger(
@@ -360,11 +360,10 @@ async def test_running_balance_is_null_when_the_list_is_not_one_ledger(
     sequence, so they get null rather than a wrong number. No error either."""
     account = await _make_account(session, test_user.id)
     other = await _make_account(session, test_user.id)
-    card = await _make_account(session, test_user.id, acc_type="credit_card")
     category = Category(id=uuid.uuid4(), user_id=test_user.id, name="Food")
     session.add(category)
     await session.commit()
-    for target in (account, other, card):
+    for target in (account, other):
         await _add_txn(
             session, test_user.id, target, "10", "debit", date(2026, 2, 3), category_id=category.id,
         )
@@ -385,8 +384,6 @@ async def test_running_balance_is_null_when_the_list_is_not_one_ledger(
     elif case == "two_accounts":
         del params["account_id"]
         params["account_ids"] = [str(account.id), str(other.id)]
-    elif case == "credit_card":
-        params["account_id"] = str(card.id)
     elif case == "no_opening_row":
         params["include_opening_balance"] = "false"
 
@@ -395,6 +392,48 @@ async def test_running_balance_is_null_when_the_list_is_not_one_ledger(
     assert items
     assert all(tx["running_balance"] is None for tx in items)
     assert all(tx["running_balance_primary"] is None for tx in items)
+
+
+@pytest.mark.asyncio
+async def test_credit_card_statement_balances_start_from_the_debt_it_carried_in(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user,
+):
+    """A card's statement lists its cycle, but the column is the balance (#920):
+    the rows start from the debt carried into the window, so the newest one
+    lands on the account balance instead of restarting at zero each cycle."""
+    account = await _make_account(session, test_user.id, acc_type="credit_card")
+    # Carried into the window: a charge and a payment from January.
+    await _add_txn(session, test_user.id, account, "500", "debit", date(2026, 1, 10))
+    await _add_txn(session, test_user.id, account, "100", "credit", date(2026, 1, 20))
+    for amount, txn_type, day in [
+        ("300", "debit", 5), ("200", "debit", 10), ("50", "credit", 15),
+    ]:
+        await _add_txn(session, test_user.id, account, amount, txn_type, date(2026, 2, day))
+
+    params = {
+        "account_id": str(account.id), "from": "2026-02-01", "to": "2026-02-28",
+        "statement_view": "true",
+    }
+    items = await _list(client, auth_headers, **params)
+
+    # January left -400 of debt; the window walks to -850, newest row first.
+    assert [tx["running_balance"] for tx in items] == [-850, -900, -700]
+    summary = (
+        await client.get(
+            f"/api/accounts/{account.id}/summary",
+            params={"from": "2026-02-01", "to": "2026-02-28"}, headers=auth_headers,
+        )
+    ).json()
+    assert items[0]["running_balance"] == summary["current_balance"]
+
+    # The in-progress cycle asks the same way and keeps the same balances.
+    in_progress = await _list(client, auth_headers, **params, unbilled_only="true")
+    assert [tx["running_balance"] for tx in in_progress] == [-850, -900, -700]
+
+    # Anything narrowed beyond the statement window leaves the column empty.
+    narrowed = await _list(client, auth_headers, **params, q="debit")
+    assert narrowed
+    assert all(tx["running_balance"] is None for tx in narrowed)
 
 
 # ---------------------------------------------------------------------------

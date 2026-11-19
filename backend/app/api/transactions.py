@@ -188,7 +188,7 @@ async def list_transactions(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=500),
     include_opening_balance: bool = Query(False),
-    include_running_balance: bool = Query(False, description="Fill running_balance per row (issue #1202): one non-credit-card account, `from` set, include_opening_balance, no other filter, default order; null otherwise"),
+    include_running_balance: bool = Query(False, description="Fill running_balance per row (issue #1202): one account, `from` set, include_opening_balance, default order, and no filter beyond a credit card's statement window (`bill_id`/`unbilled_only`); null otherwise"),
     exclude_transfers: bool = Query(False),
     user_pnl_only: bool = Query(False, description="Return only rows that count toward dashboard/user income/expense totals"),
     exclude_ignored: bool = Query(False, description="Drop rows the user marked ignored, or whose category is ignored"),
