@@ -180,7 +180,19 @@ async def restamp_user_primary_amounts(
 
     Flushes but does not commit; the caller owns the transaction.
     """
-    user = await session.get(User, user_id)
+    # Lock the owner's row until the caller commits, so a currency switch
+    # committed meanwhile cannot leave rows stamped in the one read here. A
+    # pending switch in this same session is flushed first, so the reload
+    # sees it. Call it after `fetch_missing_today_rates`, which commits.
+    await session.flush()
+    user = (
+        await session.execute(
+            select(User)
+            .where(User.id == user_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
     if user is None:
         return {}
     stats = RestampStats(currency=user.primary_currency)

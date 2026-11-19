@@ -39,8 +39,17 @@ class _FlushingUserDatabase(SQLAlchemyUserDatabase):
 
 def _requested_currency(user_update: schemas.BaseUserUpdate) -> Optional[str]:
     """The display currency a profile update asks for, or None when it does
-    not touch the preferences."""
-    preferences = user_update.model_dump(exclude_unset=True).get("preferences")
+    not touch the preferences.
+
+    An explicit `null` clears every preference, so the user falls back to the
+    default currency like a dict without `currency_display` does.
+    """
+    fields = user_update.model_dump(exclude_unset=True)
+    if "preferences" not in fields:
+        return None
+    preferences = fields["preferences"]
+    if preferences is None:
+        return settings.default_currency
     if not isinstance(preferences, dict):
         return None
     return preferences.get("currency_display", settings.default_currency)

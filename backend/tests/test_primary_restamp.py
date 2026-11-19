@@ -346,3 +346,18 @@ async def test_round_trip_keeps_the_charged_amount_in_balance_and_reports(
     assert tx.amount_primary == Decimal("545.10")  # the charge, not 100 x 5 = 500
     assert tx.fx_rate_used == Decimal("5.4510000000")
     assert await balance(account_id) == Decimal("-545.10")
+
+
+@pytest.mark.asyncio
+async def test_clearing_preferences_restamps_into_the_default_currency(
+    client: AsyncClient, session: AsyncSession, auth_headers, test_user: User, brl_rows
+):
+    """`{"preferences": null}` falls back to the default currency (USD), which
+    is a currency change like any other."""
+    response = await client.patch(
+        "/api/users/me", headers=auth_headers, json={"preferences": None}
+    )
+    assert response.status_code == 200, response.text
+
+    await _reload(session, brl_rows)
+    _assert_in_usd(brl_rows)
