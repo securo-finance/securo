@@ -235,8 +235,14 @@ def _invalid_split(
 
 
 def _decode(content: bytes) -> str:
-    """Broker exports are not always UTF-8; fall back rather than blow up."""
-    for encoding in ('utf-8-sig', 'latin-1'):
+    """Broker exports are not always UTF-8; fall back rather than blow up.
+
+    Windows-1252 comes before Latin-1 because 0x80-0x9F are typographic
+    characters (euro sign, en dash) there, while Latin-1 maps them to C1
+    controls, which read as a sale with no sign. cp1252 leaves 0x81, 0x8D,
+    0x8F, 0x90 and 0x9D undefined, so Latin-1 is the last resort.
+    """
+    for encoding in ('utf-8-sig', 'cp1252', 'latin-1'):
         try:
             return content.decode(encoding)
         except UnicodeDecodeError:

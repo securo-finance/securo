@@ -708,6 +708,34 @@ class TestParseQif:
         assert len(transactions) == 1
         assert transactions[0].amount == Decimal("1250.00")
 
+    def test_parse_qif_comma_grouped_and_comma_decimal_in_the_same_file(self):
+        """QIF has no column types: each amount's own shape decides the comma.
+
+        "1,250" and "1,250,000" keep importing as the grouped amounts they
+        were before, while "25,50" is a decimal — in one file.
+        """
+        qif_content = (
+            "D01/01/2026\n"
+            "T-1,250\n"
+            "PGrouped\n"
+            "^\n"
+            "D01/02/2026\n"
+            "T-1,250,000\n"
+            "PGrouped twice\n"
+            "^\n"
+            "D01/03/2026\n"
+            "T25,50\n"
+            "PDecimal\n"
+            "^\n"
+        )
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
+        assert failed_rows == []
+        assert [(t.description, t.amount, t.type) for t in transactions] == [
+            ("Grouped", Decimal("1250"), "debit"),
+            ("Grouped twice", Decimal("1250000"), "debit"),
+            ("Decimal", Decimal("25.50"), "credit"),
+        ]
+
     def test_parse_qif_latin1_encoding(self):
         """QIF files from legacy software (e.g. Microsoft Money) using Latin-1 encoding."""
         qif_content = (
@@ -721,6 +749,20 @@ class TestParseQif:
         assert len(transactions) == 1
         assert transactions[0].description == "Caf\u00e9 Fran\u00e7ais"
         assert transactions[0].amount == Decimal("75.00")
+        assert transactions[0].type == "debit"
+
+    def test_parse_qif_reads_windows_1252_minus_and_euro(self):
+        """A legacy export writes the minus as 0x96 and the euro as 0x80.
+
+        Read as Latin-1 those bytes are C1 controls: the sign is lost, so the
+        debit is dropped instead of imported. cp1252 reads them as the en dash
+        and the euro sign the file meant.
+        """
+        qif_content = b"D01/15/2026\nT\x9625,50\nPCAFE 3\x80\n^\n"
+        transactions, failed_rows = parse_qif(qif_content)
+        assert failed_rows == []
+        assert transactions[0].description == "CAFE 3\u20ac"
+        assert transactions[0].amount == Decimal("25.50")
         assert transactions[0].type == "debit"
 
     def test_parse_qif_two_digit_year(self):

@@ -373,6 +373,29 @@ def _qif_records(text: str) -> list[tuple[int, list[str]]]:
     return records
 
 
+# A comma-grouped QIF amount: "-1,250", "1,250,000".
+_QIF_GROUPED_COMMA = re.compile(r'^[+-]?\d{1,3}(,\d{3})+$')
+
+
+def _qif_amount(raw: str) -> str:
+    """A QIF amount in the separator convention its own value shows.
+
+    QIF has no column types, so a comma is a thousands separator when the
+    value is grouped ("-1,250", "-1,250,000") and the decimal separator
+    otherwise ("25,50"). With both separators the last one is the decimal,
+    which normalize_amount already reads. The minus may arrive as an en dash
+    (0x96) from a Windows tool, so it is folded to ASCII before the shape
+    is checked.
+    """
+    value = raw.strip().translate(_UNICODE_MINUS)
+    if ',' in value and '.' not in value:
+        if _QIF_GROUPED_COMMA.match(value):
+            value = value.replace(',', '')
+        else:
+            value = value.replace(',', '.')
+    return normalize_amount(value)
+
+
 def parse_qif(content: bytes, date_format: str | None = None) -> tuple[list[TransactionImport], list[FailedRow]]:
     """Parse QIF file content and return transactions.
 
@@ -383,11 +406,7 @@ def parse_qif(content: bytes, date_format: str | None = None) -> tuple[list[Tran
     that disagree) are not guessed at: they come back in the second element
     so the preview can show them per line, like the CSV path does.
     """
-    # Try UTF-8 first, fall back to Latin-1 for legacy software (e.g. Microsoft Money)
-    try:
-        text = content.decode('utf-8-sig')
-    except UnicodeDecodeError:
-        text = content.decode('latin-1')
+    text = _decode_text(content)
     transactions = []
     failed_rows = []
 
@@ -420,10 +439,10 @@ def parse_qif(content: bytes, date_format: str | None = None) -> tuple[list[Tran
                     except ValueError:
                         continue
             elif tag == 'T' or tag == 'U':
-                raw = value.strip().replace(',', '')
+                raw = value.strip()
                 amount_raws.append(raw)
                 try:
-                    amounts.append(Decimal(raw))
+                    amounts.append(Decimal(normalize_amount(_qif_amount(raw))))
                 except Exception:
                     pass
             elif tag == 'P':
@@ -633,20 +652,28 @@ def _sniff_csv_dialect(text: str):
         return csv.excel
 
 
-def _decode_csv(content: bytes) -> str:
-    """UTF-8 (with or without BOM), else Windows-1252, else Latin-1: Excel's
-    plain "CSV" and many bank exports are not UTF-8."""
+def _decode_text(content: bytes) -> str:
+    """UTF-8 (with or without BOM), else Windows-1252, else Latin-1.
+
+    Excel's plain "CSV", broker exports and legacy QIF software are not UTF-8.
+    0x80-0x9F are typographic characters (en dash, euro sign) in Windows-1252,
+    as in _normalize_ofx_encoding; Latin-1 maps them to C1 controls, which the
+    amount parser strips, so a minus sign would be lost. cp1252 leaves 0x81,
+    0x8D, 0x8F, 0x90 and 0x9D undefined, so Latin-1 is the last resort.
+    """
     try:
         return content.decode('utf-8-sig')
     except UnicodeDecodeError:
         pass
     try:
-        # 0x80-0x9F are typographic characters (en dash, euro sign) in
-        # Windows-1252, as in _normalize_ofx_encoding; Latin-1 maps them to C1 controls
         return content.decode('cp1252')
     except UnicodeDecodeError:
-        # cp1252 leaves 0x81, 0x8D, 0x8F, 0x90 and 0x9D undefined
         return content.decode('latin-1')
+
+
+def _decode_csv(content: bytes) -> str:
+    """A CSV upload: see _decode_text."""
+    return _decode_text(content)
 
 
 def detect_csv_columns(content: bytes) -> list[str]:
