@@ -19,6 +19,7 @@ import type {
   ConnectionSettings,
   SyncResult,
   Account,
+  AccountCard,
   AccountSummary,
   AccountRunningBalancePoint,
   Collection,
@@ -117,6 +118,8 @@ import type {
   GroupSummary,
   TransactionSplitsInput,
   TransactionEditPayload,
+  FlagDue,
+  FlaggedSummary,
   InstallmentSeriesInput,
   TransactionApplyScope,
   InvoiceAttachment,
@@ -355,7 +358,13 @@ export const auth = {
     }, readOnly)
     return data
   },
-  oidcConfig: async (): Promise<{ enabled: boolean; provider_name: string; local_auth_enabled: boolean }> => {
+  oidcConfig: async (): Promise<{
+    enabled: boolean
+    provider_name: string
+    local_auth_enabled: boolean
+    /** Where to send the browser so the provider session ends too (#1623). */
+    logout_url: string
+  }> => {
     // The login card blocks on this call while it decides which sign-in
     // methods to offer, so a hung request must fail fast and let the caller
     // fall back instead of leaving the page stuck on its loading state.
@@ -577,6 +586,17 @@ export const accounts = {
     const { data } = await api.get(`/accounts/${id}/bills`, { params: { limit } })
     return data
   },
+  linkedCards: async (id?: string): Promise<AccountCard[]> => {
+    const { data } = await api.get(id ? `/accounts/${id}/linked-cards` : '/accounts/linked-cards')
+    return data
+  },
+  updateLinkedCards: async (
+    id: string,
+    cards: { id: string; label: string }[],
+  ): Promise<AccountCard[]> => {
+    const { data } = await api.patch(`/accounts/${id}/linked-cards`, { cards })
+    return data
+  },
   close: async (id: string): Promise<Account> => {
     const { data } = await api.post(`/accounts/${id}/close`)
     return data
@@ -635,6 +655,7 @@ export const transactions = {
   list: async (params?: {
     account_id?: string
     account_ids?: string[]
+    linked_card_ids?: string[]
     category_id?: string
     category_ids?: string[]
     payee_id?: string
@@ -656,6 +677,8 @@ export const transactions = {
     exclude_transfers?: boolean
     user_pnl_only?: boolean
     exclude_ignored?: boolean
+    flagged?: boolean
+    flag_due?: FlagDue
     tags?: string[]
     min_amount?: number
     max_amount?: number
@@ -745,6 +768,22 @@ export const transactions = {
       transaction_ids: transactionIds,
       tags,
     })
+    return data
+  },
+  bulkFlag: async (
+    transactionIds: string[],
+    isFlagged: boolean,
+    flagDueDate?: string,
+  ): Promise<{ updated: number }> => {
+    const { data } = await api.patch('/transactions/bulk-flag', {
+      transaction_ids: transactionIds,
+      is_flagged: isFlagged,
+      flag_due_date: flagDueDate,
+    })
+    return data
+  },
+  flaggedSummary: async (): Promise<FlaggedSummary> => {
+    const { data } = await api.get('/transactions/flagged-summary')
     return data
   },
   bulkRemoveTags: async (transactionIds: string[], tags: string[]): Promise<{ updated: number }> => {
@@ -846,6 +885,7 @@ export const transactions = {
   export: async (params?: {
     account_id?: string
     account_ids?: string[]
+    linked_card_ids?: string[]
     category_id?: string
     category_ids?: string[]
     payee_id?: string
@@ -857,6 +897,8 @@ export const transactions = {
     q?: string
     tags?: string[]
     exclude_ignored?: boolean
+    flagged?: boolean
+    flag_due?: FlagDue
     transaction_ids?: string[]
   }): Promise<void> => {
     const { data } = await api.get('/transactions/export', {
@@ -1624,8 +1666,10 @@ export const assets = {
     )
     return data
   },
-  marketSearch: async (q: string, limit = 15): Promise<MarketSymbolMatch[]> => {
-    const { data } = await api.get('/assets/market/search', { params: { q, limit } })
+  marketSearch: async (q: string, limit = 15, currency?: string): Promise<MarketSymbolMatch[]> => {
+    const { data } = await api.get('/assets/market/search', {
+      params: { q, limit, ...(currency ? { currency } : {}) },
+    })
     return data
   },
   marketQuote: async (symbol: string): Promise<MarketSymbolQuote> => {
@@ -1872,27 +1916,140 @@ export const settings = {
 }
 
 // Backup
+export type BackupContent = 'configuration' | 'data' | 'both'
+export type BackupRestoreMode = 'new_workspace' | 'current_workspace'
+
+export interface BackupConfig {
+  scheduled_enabled: boolean
+  storage_shared: boolean
+  schedule: 'daily' | 'weekly'
+  content: BackupContent
+  retention_count: number
+  retention_days: number | null
+  last_run_at: string | null
+  next_run_at: string | null
+}
+
+export interface BackupItem {
+  id: string
+  filename: string
+  size_bytes: number
+  created_at: string
+  workspace_id: string | null
+  workspace_name: string | null
+  content: BackupContent
+  entity_counts: Record<string, number>
+}
+
+export interface BackupPreview {
+  valid: boolean
+  format_version: string | null
+  export_date: string | null
+  workspace_id: string | null
+  workspace_name: string | null
+  content: BackupContent
+  entity_counts: Record<string, number>
+  warnings: string[]
+}
+
+export interface BackupRestoreResult {
+  workspace_id: string
+  workspace_name: string
+  mode: BackupRestoreMode
+  content: BackupContent
+  restored_counts: Record<string, number>
+  warnings: string[]
+}
+
+export type BackupConfigUpdate = Partial<Omit<BackupConfig, 'last_run_at' | 'next_run_at'>>
+
+function downloadBlob(data: BlobPart, filename: string) {
+  const blob = new Blob([data], { type: 'application/zip' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+function filenameFromDisposition(disposition?: string): string | null {
+  const match = disposition?.match(/filename="?([^";]+)"?/i)
+  return match?.[1] ?? null
+}
+
 export const backup = {
-  /**
-   * Download the workspace archive, encrypted with AES-256 when a password is
-   * given. POST rather than GET so the password stays out of browser history
-   * and proxy logs.
-   */
-  download: async (password?: string): Promise<void> => {
+  getConfig: async (): Promise<BackupConfig> => {
+    const { data } = await api.get('/backups/config')
+    return data
+  },
+  updateConfig: async (payload: BackupConfigUpdate): Promise<BackupConfig> => {
+    const { data } = await api.put('/backups/config', payload)
+    return data
+  },
+  list: async (): Promise<BackupItem[]> => {
+    const { data } = await api.get('/backups')
+    return data
+  },
+  run: async (content?: BackupContent): Promise<BackupItem> => {
+    const { data } = await api.post('/backups/run', content ? { content } : {})
+    return data
+  },
+  previewUpload: async (file: File, password?: string): Promise<BackupPreview> => {
+    const form = new FormData()
+    form.append('file', file)
+    if (password) form.append('password', password)
+    const { data } = await api.post('/backups/preview-upload', form)
+    return data
+  },
+  restoreUpload: async (
+    file: File,
+    payload: {
+      content: BackupContent
+      mode: BackupRestoreMode
+      confirmation?: string
+      password?: string
+    },
+  ): Promise<BackupRestoreResult> => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('content', payload.content)
+    form.append('mode', payload.mode)
+    if (payload.confirmation) form.append('confirmation', payload.confirmation)
+    if (payload.password) form.append('password', payload.password)
+    const { data } = await api.post('/backups/restore-upload', form)
+    return data
+  },
+  previewStored: async (id: string): Promise<BackupPreview> => {
+    const { data } = await api.get(`/backups/${id}/preview`)
+    return data
+  },
+  restoreStored: async (
+    id: string,
+    payload: { content: BackupContent; mode: BackupRestoreMode; confirmation?: string },
+  ): Promise<BackupRestoreResult> => {
+    const { data } = await api.post(`/backups/${id}/restore`, payload)
+    return data
+  },
+  downloadStored: async (id: string): Promise<void> => {
+    const response = await api.get(`/backups/${id}/download`, { responseType: 'blob' })
+    const filename = filenameFromDisposition(response.headers['content-disposition']) ?? `${id}.zip`
+    downloadBlob(response.data, filename)
+  },
+  download: async (content: BackupContent = 'both'): Promise<void> => {
+    const { data } = await api.get('/export/backup', { params: { content }, responseType: 'blob' })
+    downloadBlob(data, `securo-backup-${new Date().toISOString().slice(0, 10)}.zip`)
+  },
+  /** Send the optional password in the body so it never enters URL logs. */
+  downloadProtected: async (password?: string): Promise<void> => {
     const { data } = await api.post(
       '/export/backup',
       password ? { password } : {},
       { ...readOnly, responseType: 'blob' },
     )
-    const blob = new Blob([data], { type: 'application/zip' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `securo-backup-${new Date().toISOString().slice(0, 10)}.zip`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    downloadBlob(data, `securo-backup-${new Date().toISOString().slice(0, 10)}.zip`)
   },
 }
 

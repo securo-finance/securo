@@ -77,8 +77,9 @@ def counts_in_current_balance(as_of: date):
 def amount_in_account_currency(account_currency):
     """SQL expression: a row's amount in its account's currency.
 
-    A row in another currency only has a usable account-currency value once
-    ``amount_primary`` was stamped; an unconverted one contributes zero
+    A row in another currency counts with ``amount_account``, its value in the
+    account's currency (ADR 0027), never with ``amount_primary``, which follows
+    the owner's display currency. An unconverted one contributes zero
     instead of being read 1:1 (#353, #1263). Falling back to the native amount
     there is how a 700,000 CLP purchase became 700,000 BRL in the ledger.
 
@@ -95,7 +96,7 @@ def amount_in_account_currency(account_currency):
             func.upper(Transaction.currency) == func.upper(account_currency),
             Transaction.amount,
         ),
-        else_=func.coalesce(Transaction.amount_primary, 0),
+        else_=func.coalesce(Transaction.amount_account, 0),
     )
 
 
@@ -218,6 +219,23 @@ def line_amount_primary():
 def line_primary_or_amount():
     """The joined part in primary currency, falling back to its own amount."""
     return func.coalesce(line_amount_primary(), line_amount())
+
+
+def line_amount_account():
+    """The joined part's share of `amount_account` (NULL when the row has none).
+
+    Same arithmetic as `line_amount_primary`, for the account's currency.
+    """
+    return case(
+        (CATEGORY_LINE.id.is_(None), Transaction.amount_account),
+        else_=(Transaction.amount_account * CATEGORY_LINE.amount * literal_column("1.0"))
+        / func.nullif(func.abs(Transaction.amount), 0),
+    )
+
+
+def line_account_or_amount():
+    """The joined part in its account's currency, falling back to its own amount."""
+    return func.coalesce(line_amount_account(), line_amount())
 
 
 def any_line_in(category_ids):

@@ -1,6 +1,7 @@
 import json
 import logging
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
@@ -76,17 +77,24 @@ async def market_search(
     # Upper bound is generous so the Tesouro Direto dropdown can list every
     # open bond (~60 and growing); ticker autocomplete still requests ~15.
     limit: int = Query(15, ge=1, le=300),
-    _: User = Depends(current_active_user),
+    currency: Optional[str] = Query(
+        None,
+        min_length=3,
+        max_length=3,
+        description="Quote currency to prefer for cryptocurrency pairs",
+    ),
+    ctx: WorkspaceContext = Depends(current_workspace),
 ) -> list[MarketSymbolMatch]:
     """Autocomplete ticker symbols for the Add-Asset form.
 
-    Intentionally thin — just proxies to the configured market-price
-    provider. Upstream errors turn into an empty list so the UI degrades
+    Just proxies to the configured market-price provider and ranks what comes
+    back (exact matches first, a coin's pair in the workspace's own currency
+    first). Upstream errors turn into an empty list so the UI degrades
     gracefully (a user typing a query shouldn't ever see a 500).
     """
     provider = get_market_price_provider()
     try:
-        return await provider.search(q, limit=limit)
+        matches = await provider.search(q, limit=limit)
     except MarketPriceRateLimitedError:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -95,6 +103,8 @@ async def market_search(
     except Exception:
         logger.exception("Market search failed for %r", q)
         return []
+    preferred = currency or ctx.workspace.default_currency
+    return asset_service.rank_symbol_matches(matches, q, preferred)
 
 
 @router.get("/market/quote", response_model=MarketSymbolQuote)

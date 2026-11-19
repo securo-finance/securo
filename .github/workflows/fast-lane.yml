@@ -17,15 +17,19 @@ name: fast lane
 #   5. a trusted reviewer other than its author left a verdict comment naming
 #      that same head SHA
 #   6. no unresolved CodeRabbit `Major` or `Critical` thread is left on it
+#   7. CodeRabbit reviewed that same head: no open thread is evidence of a
+#      review only once a review happened, and a rate-limited or paused bot
+#      leaves a completed check run saying so; a review names the commit, and
+#      so does a check run that reports its review as completed
 #
 # A refusal is also said on the pull request itself, in one comment this
-# workflow rewrites in place and deletes once the pull request merges, but only
-# when the head being evaluated already carries an approval. That is the one
-# case where somebody is waiting on the lane and the log is the only place
-# saying why. An open pull request nobody has approved yet is not commented on
-# at all: a sweep looks at every open pull request, and saying "no approval
-# yet" under each of them, every hour, is noise on other people's work. This is
-# visibility only, never a looser gate.
+# workflow rewrites in place and deletes once the pull request merges or the
+# head it describes is gone, but only when the head being evaluated already
+# carries an approval. That is the one case where somebody is waiting on the
+# lane and the log is the only place saying why. An open pull request nobody has
+# approved yet is not commented on at all: a sweep looks at every open pull
+# request, and saying "no approval yet" under each of them, every hour, is noise
+# on other people's work. This is visibility only, never a looser gate.
 #
 # Gate 5 is a comment and not a GitHub review on purpose: posting a review is
 # one of the calls that needs a human approval, posting a comment is not. Both
@@ -154,6 +158,13 @@ jobs:
 
             const REQUIRED = ['Backend Tests', 'Frontend Checks', 'Helm Checks'];
 
+            // A line that closes an issue once it is in a commit on the default
+            // branch: the keyword GitHub reads, followed by a reference. It
+            // matches a line of a pull request's description and is carried
+            // into the squash commit below, which is the only place GitHub
+            // looks for it.
+            const CLOSING = /^(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+(?:[\w.-]+\/[\w.-]+)?#\d+/i;
+
             // Stricter than `risk: low/medium` on purpose. The label comes from
             // file names, and two of the open medium PRs are a new auth endpoint
             // and a runner that executes plugin code — a path rule that reads
@@ -203,6 +214,11 @@ jobs:
             // someone else's work. `tryMerge` marks a skip reportable only when
             // that head carries a valid verdict, and the caller obeys the mark.
             //
+            // The same rule takes the note away when the head it was written
+            // for is gone: a push leaves the new head with no verdict, so there
+            // is nothing on it the note describes any more. `tryMerge` clears it
+            // then, and only when the comments could be read.
+            //
             // Creating it only when none exists is not enough to keep it one: a
             // sweep and a hand-run of the same pull request sit in different
             // concurrency groups, so both can list the comments before either
@@ -215,14 +231,18 @@ jobs:
             // one, and every skip keeps its log line above.
             const REFUSAL = '<!-- fast-lane: refused -->';
 
-            async function refusalComments(number) {
-              const comments = await github.paginate(github.rest.issues.listComments,
+            // Only the lane's own comments, and only this marker: the verdict
+            // comments and the merge comment are a different thing entirely.
+            const isRefusal = (c) => Boolean(c.user)
+              && c.user.login === 'github-actions[bot]'
+              && (c.body || '').trimStart().startsWith(REFUSAL);
+
+            // `listed` hands over comments an evaluation already read, so a
+            // caller holding that page does not spend another call on it.
+            async function refusalComments(number, listed) {
+              const comments = listed || await github.paginate(github.rest.issues.listComments,
                 { owner: OWNER, repo: REPO, issue_number: number, per_page: 100 });
-              // Only the lane's own comments, and only this marker: the verdict
-              // comments and the merge comment are a different thing entirely.
-              return comments.filter((c) => c.user
-                && c.user.login === 'github-actions[bot]'
-                && (c.body || '').trimStart().startsWith(REFUSAL));
+              return comments.filter(isRefusal);
             }
 
             // Written for a contributor who has never read this workflow: no
@@ -264,11 +284,12 @@ jobs:
 
             // A pull request that merged must not also say why it did not: the
             // sweep and a hand-run can disagree about the same head, and after
-            // the merge only the merge comment is the truth. Best effort on
-            // purpose: nothing here fails a merge that already happened.
-            async function clearRefusal(number) {
+            // the merge only the merge comment is the truth. The same goes for
+            // a note whose head is gone (see tryMerge). Best effort on purpose:
+            // nothing here fails a merge that already happened.
+            async function clearRefusal(number, listed) {
               try {
-                for (const c of await refusalComments(number)) {
+                for (const c of await refusalComments(number, listed)) {
                   try {
                     await github.rest.issues.deleteComment(
                       { owner: OWNER, repo: REPO, comment_id: c.id });
@@ -292,6 +313,12 @@ jobs:
               // can tell whether a person already approved it. Gate 4 below is
               // where the verdict actually decides the merge.
               let verdict = null;
+              // Whether that read worked at all. A missing verdict and an
+              // unreadable list look the same in `verdict`, and they are not:
+              // only the first says this head carries no approval.
+              let verdictKnown = false;
+              // The comment page itself, kept for the refusal check below.
+              let comments = [];
               // A closed, draft or wrong-base pull request is refused before the
               // lane would consider it at all, and the pull request itself
               // already shows that: a comment there would be noise, so these
@@ -320,7 +347,7 @@ jobs:
               head = pr.head.sha;
 
               try {
-                const comments = await github.paginate(github.rest.issues.listComments,
+                comments = await github.paginate(github.rest.issues.listComments,
                   { owner: OWNER, repo: REPO, issue_number: number, per_page: 100 });
                 // The marker must open the comment, so quoting a verdict in the
                 // conversation cannot pass as one; an edited comment never counts,
@@ -347,11 +374,25 @@ jobs:
                     && (!c.updated_at || c.created_at === c.updated_at)
                     && new RegExp(`sha:\\s*${head}\\b`).test(body);
                 }).pop() || null;
+                verdictKnown = true;
               } catch (e) {
                 // No readable approval means nothing to report either way; the
                 // gates below still run and gate 4 names the missing verdict.
                 core.info(`#${number}: could not read the comments: ${e.message}`);
               }
+
+              // A note speaks about one head: the verdict it answers names a
+              // commit. After a push that commit is gone and no verdict names
+              // the new one, so the note that drove the last evaluation now
+              // describes a state the pull request no longer has — an open
+              // thread or a red check the author has since fixed — while its
+              // text promises to describe the most recent check. Nothing is
+              // waiting on the lane for this head either, and an unapproved
+              // head gets no note of its own, so the stale one goes (#1585).
+              // Only on a successful read: a failed one proves nothing about
+              // the head, and a transient API error must never delete anything.
+              // The page read above is handed over, so this costs no call.
+              if (verdictKnown && !verdict) await clearRefusal(number, comments);
 
               const labels = pr.labels.map((l) => l.name);
               const risk = labels.filter((l) => l.startsWith('risk: ')).map((l) => l.slice(6));
@@ -403,6 +444,42 @@ jobs:
               const blocked = [...latest].filter(([, s]) => s === 'CHANGES_REQUESTED');
               if (blocked.length) {
                 return skip(`changes were requested by ${blocked.map(([u]) => u).join(', ')}`);
+              }
+
+              // ---- 3a. the evidence that CodeRabbit reviewed this head ------
+              // Read here, before the thread list below, because the two gates
+              // are only sound in that order: a review that completed after the
+              // threads were read has findings the list does not carry yet, and
+              // the lane would merge on a stale list. With the evidence first,
+              // everything a completed review published is in the list that
+              // follows it.
+              //
+              // Two kinds of evidence name this head exactly. A review names
+              // the commit it judged in `commit_id`. Its check run is bound to
+              // the same sha, and on an incremental push that leaves nothing to
+              // say the bot finishes the review without submitting a review
+              // object — #1612 at `337456b9` carries `success` with "Review
+              // completed" and no review — which is a review of this head all
+              // the same. The bot's summary comment is not accepted: it names no
+              // commit, so it could belong to an older head and reopen the hole.
+              const reviewedByReview = reviews.some((r) => r.user
+                && r.user.login === 'coderabbitai[bot]'
+                && r.commit_id === head);
+              let coderabbitRun = null;
+              if (!reviewedByReview) {
+                try {
+                  const { data } = await github.rest.checks.listForRef(
+                    { owner: OWNER, repo: REPO, ref: head, per_page: 100 });
+                  coderabbitRun = (data.check_runs || [])
+                    .filter((c) => c.name && /coderabbit/i.test(c.name))
+                    .sort((a, b) =>
+                      (b.started_at || '').localeCompare(a.started_at || ''))[0] || null;
+                } catch (e) {
+                  // A check that cannot be read is no evidence, so the refusal
+                  // below stands and the run says why in the log.
+                  core.info(`#${number}: could not read the CodeRabbit ` +
+                    `check: ${e.message}`);
+                }
               }
 
               // ---- 3b. an unresolved CodeRabbit major thread blocks the merge
@@ -469,6 +546,35 @@ jobs:
                 }
               }
 
+              // ---- 3c. CodeRabbit reviewed this very head -------------------
+              // The gate above is only evidence of a review when a review
+              // happened at all: an empty thread list is what a pull request
+              // looks like after a clean review and after one the bot never
+              // opened. CodeRabbit skips a commit while it is rate limited or
+              // paused, and the lane then merged on the App's verdict with
+              // nothing read (seen at #1553 and #1568).
+              //
+              // The evidence itself was read at 3a, before the thread list. A
+              // rate-limited or paused review is `neutral` or `skipped`, and
+              // `success` says nothing unless the output says the review was
+              // completed, so a check run is no evidence on its own.
+              if (!reviewedByReview) {
+                const output = (coderabbitRun && coderabbitRun.output) || {};
+                // Why it did not review is in the same run: a skipped review
+                // ends `neutral` or `skipped` and only the title says what
+                // happened.
+                const why = output.title ? `: its check says "${output.title}"` : '';
+                const byCheck = Boolean(coderabbitRun)
+                  && coderabbitRun.conclusion === 'success'
+                  && /review completed/i.test(
+                    `${output.title || ''} ${output.summary || ''}`);
+                if (!byCheck) {
+                  return skip(`CodeRabbit has no review of this commit${why}`);
+                }
+                core.info(`#${number}: CodeRabbit completed its review without ` +
+                  `a review object; the check run is the evidence`);
+              }
+
               // ---- 4. the verdict names the head we are about to merge ------
               // The selection above already left out the author's own comments,
               // so any verdict still here is a second opinion and a missing one
@@ -506,10 +612,32 @@ jobs:
               // ---- merge, pinned to the head the verdict was given for -----
               // Passing `sha` makes GitHub refuse if the branch moved after the
               // checks above, which is the race a plain merge would have.
+              //
+              // The message is passed by hand because GitHub builds the default
+              // squash message from the pull request's title and the messages
+              // of its commits: the description, where this repository writes
+              // "Closes #N", never reaches the commit, and the issue stayed
+              // open after the lane merged it (#1356 from #1568). GitHub closes
+              // an issue from a closing keyword in a commit on the default
+              // branch, so the keywords are carried over and nothing else is:
+              // the rest of the description does not belong in the history.
+              // Both fields go together or neither does: passing either one
+              // replaces GitHub's generated squash message instead of
+              // appending to it, so sending the title alone would drop a
+              // keyword written in a commit message (#532). With no keyword in
+              // the description nothing is passed and GitHub's own message
+              // stays exactly as it was.
+              const closing = (pr.body || '').split('\n')
+                .map((line) => line.trim())
+                .filter((line) => CLOSING.test(line));
               try {
                 await github.rest.pulls.merge({
                   owner: OWNER, repo: REPO, pull_number: number,
                   sha: head, merge_method: 'squash',
+                  ...(closing.length ? {
+                    commit_title: `${pr.title} (#${number})`,
+                    commit_message: closing.join('\n'),
+                  } : {}),
                 });
               } catch (e) {
                 return skip('GitHub refused the merge', true, e.message);

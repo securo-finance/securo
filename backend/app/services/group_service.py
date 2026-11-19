@@ -426,9 +426,14 @@ async def list_transactions(
     )
     txs = list(result.scalars().all())
     # Hydrate fields the TransactionRead schema expects.
+    from sqlalchemy.orm.attributes import set_committed_value
+
     for tx in txs:
         tx.attachment_count = 0
         tx.payee_name = tx.payee_entity.name if tx.payee_entity else None
+        # A linked member's row keeps its card ending in its own workspace.
+        if tx.workspace_id != workspace_id:
+            set_committed_value(tx, "card_masked_number", None)
     return txs
 
 

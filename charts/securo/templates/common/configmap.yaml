@@ -6,6 +6,7 @@ metadata:
     {{- include "securo.labels" . | nindent 4 }}
 data:
   FRONTEND_URL: {{ include "securo.frontendUrl" . | quote }}
+  BACKUP_STORAGE_SHARED: {{ .Values.persistence.backups.enabled | quote }}
   PLUGGY_OAUTH_REDIRECT_URI: {{ default (include "securo.oauthRedirectUri" .) .Values.config.pluggyOauthRedirectUri | quote }}
   ENABLE_BANKING_OAUTH_REDIRECT_URI: {{ default (include "securo.oauthRedirectUri" .) .Values.config.enableBankingOauthRedirectUri | quote }}
   {{- range $key, $value := .Values.config }}

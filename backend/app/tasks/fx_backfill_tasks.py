@@ -31,7 +31,7 @@ async def _backfill_primary_amounts() -> dict:
     re-stamps them once a real rate is resolvable. Genuine same-currency 1:1 rows
     are left untouched.
     """
-    from app.services.fx_rate_service import sync_rates, convert, _resolve_rate
+    from app.services.fx_rate_service import sync_rates, convert, _resolve_rate, stamp_account_amount
 
     engine, session_maker = _make_session_maker()
     try:
@@ -88,6 +88,11 @@ async def _backfill_primary_amounts() -> dict:
                         continue  # still no rate — leave as-is, heal next run
                     tx.amount_primary = (Decimal(str(tx.amount)) * rate).quantize(Decimal("0.01"))
                     tx.fx_rate_used = rate
+                    # A repair of the reporting stamp: a bank charge or an
+                    # amount the user typed stays.
+                    await stamp_account_amount(
+                        session, tx, allow_fetch=False, recompute=False
+                    )
                     stats["transactions"] += 1
                 except Exception:
                     logger.exception("Failed to backfill tx %s", tx.id)

@@ -19,7 +19,7 @@ import { auth as authApi } from '@/lib/api'
 import { resolveSupportedLang } from '@/lib/i18n'
 import { OnboardingTour } from '@/components/onboarding-tour'
 import { useTheme } from 'next-themes'
-import { accounts as accountsApi } from '@/lib/api'
+import { accounts as accountsApi, transactions as transactionsApi } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
@@ -69,7 +69,7 @@ import { CommandPalette } from '@/components/command-palette'
 import { useCommandPaletteHotkey } from '@/hooks/use-command-palette-hotkey'
 import { GlobalChatPanel } from '@/components/global-chat-panel'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
-import { Bot, Plus, Puzzle, Search, Sparkles } from 'lucide-react'
+import { Bot, Flag, Plus, Puzzle, Search, Sparkles } from 'lucide-react'
 import { useAppTheme } from '@/hooks/use-app-theme'
 import { LibraryProvider } from '@/components/library-provider'
 import { useLibrary } from '@/contexts/library-context'
@@ -212,6 +212,16 @@ export function AppLayout() {
     queryFn: () => accountsApi.list(),
   })
 
+  // Flagged rows past their reminder date, counted next to Transactions.
+  // Under the 'transactions' key so any edit to a row refreshes it.
+  const { data: flaggedSummary } = useQuery({
+    queryKey: ['transactions', 'flagged-summary'],
+    queryFn: () => transactionsApi.flaggedSummary(),
+    enabled: hasModule('transactions'),
+    staleTime: 60_000,
+  })
+  const overdueFlags = flaggedSummary?.overdue ?? 0
+
   const allAccounts = sidebarAccounts(accountsList ?? [])
   // When a collection is active, the sidebar list + total reflect only its
   // accounts (issue #105). null = all accounts.
@@ -227,7 +237,7 @@ export function AppLayout() {
   return (
     <AssistantContext.Provider value={assistant}>
     <LibraryProvider>
-    <div className="min-h-screen bg-background">
+    <div className="min-h-dvh bg-background">
       {/* Mobile header */}
       <header className="sticky top-0 z-40 flex h-14 items-center gap-3 bg-sidebar border-b border-sidebar-border px-4 lg:hidden">
         <button
@@ -484,7 +494,32 @@ export function AppLayout() {
                   <span className={cn(desktopSidebarCollapsed && 'lg:hidden')}>{t(`nav.${item.key}`)}</span>
                 </Link>
               )
-              if (!showQuickAdd) return link
+              const overdueBadge = item.key === 'transactions' && overdueFlags > 0 ? (
+                <Link
+                  to="/transactions?flagged=overdue"
+                  onClick={() => setSidebarOpen(false)}
+                  title={t('transactions.flagOverdueCount', { count: overdueFlags })}
+                  aria-label={t('transactions.flagOverdueCount', { count: overdueFlags })}
+                  data-testid="nav-overdue-flags"
+                  className={cn(
+                    'absolute inline-flex h-5 min-w-5 items-center justify-center gap-0.5 rounded-full bg-rose-500/15 px-1.5 text-[10px] font-semibold text-rose-600 transition-colors hover:bg-rose-500/25 dark:text-rose-400',
+                    showQuickAdd ? 'end-9' : 'end-2',
+                    desktopSidebarCollapsed && 'lg:end-0.5 lg:top-0.5 lg:h-4 lg:min-w-4 lg:px-1 lg:text-[9px]',
+                  )}
+                >
+                  <Flag size={10} className={cn('fill-current', desktopSidebarCollapsed && 'lg:hidden')} />
+                  {overdueFlags > 99 ? '99+' : overdueFlags}
+                </Link>
+              ) : null
+              if (!showQuickAdd && !overdueBadge) return link
+              if (!showQuickAdd) {
+                return (
+                  <div key={item.key} className="relative flex items-center">
+                    <div className="min-w-0 flex-1">{link}</div>
+                    {overdueBadge}
+                  </div>
+                )
+              }
               return (
                 <div key={item.key} className="relative flex items-center">
                   <div className="min-w-0 flex-1">{link}</div>
@@ -503,6 +538,7 @@ export function AppLayout() {
                   >
                     <Plus size={14} />
                   </button>
+                  {overdueBadge}
                 </div>
               )
             })}
@@ -627,7 +663,7 @@ export function AppLayout() {
 
         {/* Main content */}
         <main className={cn(
-          'flex-1 min-h-screen overflow-x-hidden transition-[margin] duration-300 ease-in-out motion-reduce:transition-none',
+          'flex-1 min-h-dvh overflow-x-hidden transition-[margin] duration-300 ease-in-out motion-reduce:transition-none',
           desktopSidebarCollapsed ? 'lg:ms-16' : 'lg:ms-60',
         )}>
           <div className="p-6 max-w-7xl mx-auto">

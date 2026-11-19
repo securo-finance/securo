@@ -18,7 +18,7 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 from starlette.requests import Request
 
 from app.agents.schemas.conversation import SendMessageRequest
-from app.core.config import Settings
+from app.core.config import DEFAULT_TRUSTED_PROXY_NETWORKS, Settings
 from app.core.rate_limit import login_rate_limit
 from app.main import app
 
@@ -80,6 +80,7 @@ def _settings(limit: int, hops: int = 0) -> SimpleNamespace:
     """Settings as the limiter reads them: the ceiling, and the proxy trust."""
     return SimpleNamespace(
         trusted_proxy_hops=hops,
+        trusted_proxy_networks=DEFAULT_TRUSTED_PROXY_NETWORKS,
         agents_chat_rate_limit_per_minute=limit,
     )
 

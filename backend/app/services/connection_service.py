@@ -22,6 +22,7 @@ from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
 from app.models.bank_connection import LAST_SYNC_FAILURE_KEY, BankConnection
 from app.models.account import Account
+from app.models.account_card import AccountCard
 from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.category import Category
 from app.models.institution import Institution
@@ -76,8 +77,14 @@ from app.services.rule_service import (
     read_description_is_manual,
     rule_payee_ids,
 )
+from app.services.card_mirror_service import ignore_mirrored_card_charges
 from app.services.transfer_detection_service import detect_transfer_pairs
-from app.services.fx_rate_service import stamp_primary_amount
+from app.services.fx_rate_service import (
+    ACCOUNT_AMOUNT_FROM_BANK,
+    ACCOUNT_AMOUNT_FROM_USER,
+    stamp_account_amount,
+    stamp_primary_amount,
+)
 from app.services.payee_service import find_payee_by_name, get_or_create_payee
 from app.services.transaction_match_service import find_unique_transaction_match
 
@@ -88,6 +95,43 @@ LOCAL_IMPORT_SOURCES = {"import", "csv", "ofx", "qif", "camt"}
 settings = get_settings()
 
 _PROVIDER_SELL_DATE_METADATA_KEY = "_securo_provider_sell_date"
+
+
+async def _remember_linked_card(
+    session: AsyncSession,
+    account: Account,
+    masked_number: Optional[str],
+    known_numbers: dict[uuid.UUID, set[str]],
+) -> None:
+    """Register a provider-discovered card final once per credit-card account."""
+    if account.type != "credit_card" or not masked_number:
+        return
+    account_numbers = known_numbers.setdefault(account.id, set())
+    if masked_number in account_numbers:
+        return
+    try:
+        # A manual and a scheduled sync can discover the same card at once.
+        # Keep the uniqueness conflict inside a savepoint, then reuse the row
+        # written by the other sync instead of failing the outer sync.
+        async with session.begin_nested():
+            session.add(
+                AccountCard(
+                    workspace_id=account.workspace_id,
+                    account_id=account.id,
+                    masked_number=masked_number,
+                )
+            )
+            await session.flush()
+    except IntegrityError:
+        existing = await session.scalar(
+            select(AccountCard.id).where(
+                AccountCard.account_id == account.id,
+                AccountCard.masked_number == masked_number,
+            )
+        )
+        if existing is None:
+            raise
+    account_numbers.add(masked_number)
 
 
 def _clean_logo_url(value: object) -> Optional[str]:
@@ -1757,21 +1801,42 @@ def _bank_converted_amount(
     return None
 
 
+def _same_cents(left: Optional[Decimal], right: Optional[Decimal]) -> bool:
+    """Whether two optional money values agree to the cent."""
+    if left is None or right is None:
+        return left is right
+    cent = Decimal("0.01")
+    return Decimal(str(left)).quantize(cent) == Decimal(str(right)).quantize(cent)
+
+
 async def _stamp_synced_primary_amount(
     session: AsyncSession,
     user_id: uuid.UUID,
     transaction: Transaction,
     converted: Optional[Decimal],
+    account_amount: Optional[Decimal] = None,
+    *,
+    restamp_account: bool = False,
 ) -> None:
     """Prefer the bank's conversion (see _bank_converted_amount); else use our FX rates.
+
+    `account_amount` is what the bank charged the account. It is kept as the
+    row's account-currency amount whatever the user's primary currency is,
+    since the account balance must not depend on it (ADR 0027).
 
     The transaction's amount must already be the charged amount.
     """
     if converted is not None:
         transaction.amount_primary = converted
         transaction.fx_rate_used = converted / transaction.amount
+        await stamp_account_amount(
+            session, transaction, bank_amount=account_amount, recompute=restamp_account
+        )
     else:
-        await stamp_primary_amount(session, user_id, transaction)
+        await stamp_primary_amount(
+            session, user_id, transaction,
+            account_amount=account_amount, restamp_account=restamp_account,
+        )
 
 
 async def _find_installment_category(
@@ -2193,6 +2258,39 @@ async def _claim_first_import(
     )
 
 
+def _feed_came_whole(provider: BankProvider, account_external_id: str) -> bool:
+    """The provider returned this account's transactions to the end.
+
+    A feed the provider marked incomplete, or whose pages stopped before
+    the last, can be missing any row, a card payment included."""
+    for flagged in ("incomplete_account_ids", "truncated_account_ids"):
+        ids = getattr(provider, flagged, None)
+        if isinstance(ids, set) and account_external_id in ids:
+            return False
+    return True
+
+
+async def _set_aside_card_mirrors(
+    session: AsyncSession,
+    connection: BankConnection,
+    new_tx_ids: list[uuid.UUID],
+    complete_account_ids: set[uuid.UUID],
+) -> None:
+    """Ignore card purchases the connection also reports on their account,
+    then reconcile those cards' opening balance, which no longer counts
+    them (issue #1460). Only accounts whose transaction feed this sync
+    read whole are compared."""
+    touched = await ignore_mirrored_card_charges(
+        session, connection, new_tx_ids, complete_account_ids
+    )
+    if not touched:
+        return
+    await session.flush()
+    cards = await session.execute(select(Account).where(Account.id.in_(touched)))
+    for card in cards.scalars():
+        await sync_opening_balance_for_connected_account(session, card)
+
+
 async def _run_first_import(
     session: AsyncSession,
     *,
@@ -2215,6 +2313,7 @@ async def _run_first_import(
     the authorization.
     """
     new_tx_ids: list[uuid.UUID] = []
+    known_linked_card_numbers: dict[uuid.UUID, set[str]] = {}
     for account, acc_data in accounts:
         bills_by_external_id = await _sync_credit_card_bills(
             session, user_id, account, provider, credentials
@@ -2235,6 +2334,9 @@ async def _run_first_import(
                 continue
             seen_external_ids.add(txn_data.external_id)
 
+            await _remember_linked_card(
+                session, account, txn_data.card_masked_number, known_linked_card_numbers
+            )
             # Pending↔posted twin (and the credit-card installment variant).
             # When the same logical operation comes back under a new external
             # id with a different status, fingerprint match prevents the
@@ -2250,12 +2352,21 @@ async def _run_first_import(
                     )
                 if synced_dup.original_description is None:
                     synced_dup.original_description = txn_data.description
+                if txn_data.card_masked_number is not None and not (
+                    synced_dup.card_masked_number is not None
+                    and synced_dup.status == "posted" and txn_data.status == "pending"
+                ):
+                    synced_dup.card_masked_number = txn_data.card_masked_number
                 if settles:
                     synced_dup.status = "posted"
                     _merge_sync_metadata(
                         synced_dup,
                         txn_data,
                         replace_external_id=synced_dup.source == "sync",
+                    )
+                    await _refresh_account_charge(
+                        session, synced_dup, txn_data,
+                        account_currency=account.currency, user_currency=user_currency,
                     )
                     await apply_rules_to_settled_transaction(
                         session, user_id, synced_dup, manual_description=manual_description
@@ -2331,6 +2442,7 @@ async def _run_first_import(
                 installment_total_amount=txn_data.installment_total_amount,
                 installment_purchase_date=txn_data.installment_purchase_date,
                 bill_id=bill.id if bill else None,
+                card_masked_number=txn_data.card_masked_number,
             )
             apply_effective_date(
                 transaction, account, bill_due_date=bill.due_date if bill else None
@@ -2359,6 +2471,7 @@ async def _run_first_import(
                 user_id,
                 transaction,
                 _bank_converted_amount(txn_data, acct_currency, user_currency),
+                txn_data.amount_in_account_currency,
             )
 
         # After importing the initial batch, reconcile the opening balance so
@@ -2367,6 +2480,17 @@ async def _run_first_import(
         # absorbed into this synthetic transaction.
         await _drop_finance_charges_with_twins(session, account)
         await sync_opening_balance_for_connected_account(session, account)
+
+    await _set_aside_card_mirrors(
+        session,
+        connection,
+        new_tx_ids,
+        {
+            account.id
+            for account, acc_data in accounts
+            if _feed_came_whole(provider, acc_data.external_id)
+        },
+    )
 
     # Detect transfer pairs among newly synced transactions
     await detect_transfer_pairs(session, workspace_id, candidate_ids=new_tx_ids)
@@ -2621,8 +2745,57 @@ def _merge_sync_metadata(
             transaction.original_description = provider_description
     elif provider_description and transaction.original_description is None:
         transaction.original_description = provider_description
+    # A stale pending twin must not replace what the posted row already knows,
+    # but it may still fill an ending the posted row never had.
+    if txn_data.card_masked_number is not None and not (
+        transaction.card_masked_number is not None
+        and transaction.status == "posted"
+        and txn_data.status == "pending"
+    ):
+        transaction.card_masked_number = txn_data.card_masked_number
     if txn_data.payee and not transaction.payee:
         transaction.payee = txn_data.payee
+
+
+async def _refresh_account_charge(
+    session: AsyncSession,
+    transaction: Transaction,
+    txn_data,
+    *,
+    account_currency: str,
+    user_currency: Optional[str] = None,
+) -> None:
+    """Take a corrected charge in the account's currency (ADR 0027).
+
+    An issuer can settle a foreign purchase at another figure than it first
+    reported (the spread lands later) while the purchase's own amount stays.
+    The new charge replaces the stored one unless the user typed theirs, and
+    a pending re-read never overrides what the posted row was charged.
+    """
+    if transaction.is_ignored:
+        # The user hid the row: a re-sync must not move its figures.
+        return
+    charged = txn_data.amount_in_account_currency
+    if charged is None:
+        return
+    if transaction.amount_account_source == ACCOUNT_AMOUNT_FROM_USER:
+        return
+    if _same_cents(transaction.amount_account, charged):
+        # Same figure, now confirmed by the bank: record it as the bank's so a
+        # later heal does not work it out again from a rate.
+        if transaction.amount_account is not None:
+            transaction.amount_account_source = ACCOUNT_AMOUNT_FROM_BANK
+        return
+    if transaction.status == "posted" and txn_data.status == "pending":
+        return
+    if user_currency is None:
+        owner = await session.get(User, transaction.user_id)
+        user_currency = owner.primary_currency if owner else get_settings().default_currency
+    converted = _bank_converted_amount(txn_data, account_currency, user_currency)
+    await _stamp_synced_primary_amount(
+        session, transaction.user_id, transaction, converted, charged,
+        restamp_account=True,
+    )
 
 
 async def _refresh_provider_values(
@@ -2645,7 +2818,13 @@ async def _refresh_provider_values(
     differs is the user's and stays. Must run before `_merge_sync_metadata`,
     which merges the new payload into ``raw_data``.
     """
-    if transaction.source != "sync" or not isinstance(transaction.raw_data, dict):
+    if transaction.source != "sync":
+        return
+    await _refresh_account_charge(
+        session, transaction, txn_data,
+        account_currency=account_currency, user_currency=user_currency,
+    )
+    if not isinstance(transaction.raw_data, dict):
         return
     if not isinstance(provider, BankProvider):
         return
@@ -2661,7 +2840,8 @@ async def _refresh_provider_values(
         transaction.type = txn_data.type
         converted = _bank_converted_amount(txn_data, account_currency, user_currency)
         await _stamp_synced_primary_amount(
-            session, transaction.user_id, transaction, converted
+            session, transaction.user_id, transaction, converted,
+            txn_data.amount_in_account_currency, restamp_account=True,
         )
         await category_line_service.rescale_lines(session, transaction, old_amount)
 
@@ -3340,6 +3520,7 @@ async def _promote_settled_pending(
     incoming_external_ids: set[str],
     unseen_pending: dict[str, date],
     bills_by_external_id: dict[str, CreditCardBill],
+    known_linked_card_numbers: dict[uuid.UUID, set[str]],
 ) -> Optional[str]:
     """Mark the pending row a posted `txn_data` settles as posted.
 
@@ -3374,10 +3555,16 @@ async def _promote_settled_pending(
     manual_description = await read_description_is_manual(session, transaction)
     transaction.status = "posted"
     _merge_sync_metadata(transaction, txn_data, replace_external_id=rekeyed)
+    await _refresh_account_charge(
+        session, transaction, txn_data, account_currency=account.currency
+    )
     await apply_rules_to_settled_transaction(
         session, account.user_id, transaction, manual_description=manual_description
     )
     _relink_bill(transaction, txn_data, account, bills_by_external_id)
+    await _remember_linked_card(
+        session, account, txn_data.card_masked_number, known_linked_card_numbers
+    )
     return transaction.external_id
 
 
@@ -4197,6 +4384,10 @@ async def sync_connection(
         user = await session.get(User, user_id)
         user_currency = user.primary_currency if user else get_settings().default_currency
         new_tx_ids: list[uuid.UUID] = []
+        # Accounts whose balance and whole transaction feed this run read.
+        # One skipped, throttled or cut short may be missing rows (a card
+        # payment among them), so the card mirror check leaves it out.
+        complete_feed_account_ids: set[uuid.UUID] = set()
         merged_count = 0
         live_txn_external_ids: dict[uuid.UUID, set[str]] = {}
         incomplete_fetch_account_ids: set[uuid.UUID] = set()
@@ -4234,6 +4425,14 @@ async def sync_connection(
             else None
         )
         transactions_fetched = 0
+        existing_linked_cards = await session.execute(
+            select(AccountCard.account_id, AccountCard.masked_number)
+            .join(Account, Account.id == AccountCard.account_id)
+            .where(Account.connection_id == connection.id)
+        )
+        known_linked_card_numbers: dict[uuid.UUID, set[str]] = {}
+        for account_id, masked_number in existing_linked_cards:
+            known_linked_card_numbers.setdefault(account_id, set()).add(masked_number)
         incoming_external_ids = {acc.external_id for acc in accounts_data}
         incoming_institution_external_ids = frozenset(
             acc.institution_external_id
@@ -4291,6 +4490,12 @@ async def sync_connection(
                     update(CreditCardBill)
                     .where(CreditCardBill.account_id == account.id)
                     .values(user_id=user_id, workspace_id=connection.workspace_id)
+                )
+                # Linked cards follow their account, labels included.
+                await session.execute(
+                    update(AccountCard)
+                    .where(AccountCard.account_id == account.id)
+                    .values(workspace_id=connection.workspace_id)
                 )
 
             # Honor user intent: a closed connected account stays closed and is
@@ -4467,6 +4672,8 @@ async def sync_connection(
             incomplete = getattr(provider, "incomplete_account_ids", None)
             if isinstance(incomplete, set) and acc_data.external_id in incomplete:
                 incomplete_fetch_account_ids.add(account.id)
+            if _feed_came_whole(provider, acc_data.external_id):
+                complete_feed_account_ids.add(account.id)
             if not import_pending:
                 transactions_data = [t for t in transactions_data if t.status != "pending"]
 
@@ -4483,6 +4690,9 @@ async def sync_connection(
             claims_holds = connection.provider == "enable_banking" and not partial_feed
             hold_live_ids = live_txn_external_ids[account.id] if claims_holds else None
             for txn_data in transactions_data:
+                await _remember_linked_card(
+                    session, account, txn_data.card_masked_number, known_linked_card_numbers
+                )
                 existing = await session.execute(
                     select(Transaction)
                     .where(
@@ -4571,6 +4781,11 @@ async def sync_connection(
                         )
                     if synced_dup.original_description is None:
                         synced_dup.original_description = txn_data.description
+                    if txn_data.card_masked_number is not None and not (
+                        synced_dup.card_masked_number is not None
+                        and synced_dup.status == "posted" and txn_data.status == "pending"
+                    ):
+                        synced_dup.card_masked_number = txn_data.card_masked_number
                     if settles:
                         # Posted truth wins: swap in the new id so subsequent
                         # syncs match by external_id and update raw_data.
@@ -4580,6 +4795,11 @@ async def sync_connection(
                             synced_dup,
                             txn_data,
                             replace_external_id=synced_dup.source == "sync",
+                        )
+                        await _refresh_account_charge(
+                            session, synced_dup, txn_data,
+                            account_currency=acc_data.currency or user_currency,
+                            user_currency=user_currency,
                         )
                         # A hold that named nobody gets the payee only now;
                         # link it like a row inserted with it.
@@ -4678,6 +4898,7 @@ async def sync_connection(
                     installment_total_amount=txn_data.installment_total_amount,
                     installment_purchase_date=txn_data.installment_purchase_date,
                     bill_id=bill.id if bill else None,
+                    card_masked_number=txn_data.card_masked_number,
                 )
                 apply_effective_date(
                     transaction,
@@ -4712,6 +4933,8 @@ async def sync_connection(
                     placeholder.source = "sync"
                     placeholder.status = txn_data.status
                     placeholder.raw_data = txn_data.raw_data
+                    if txn_data.card_masked_number is not None:
+                        placeholder.card_masked_number = txn_data.card_masked_number
                     # Same shape as the import path: fold in the `preview` the
                     # rules already produced from the incoming charge instead of
                     # re-running them against the placeholder, whose description
@@ -4727,6 +4950,7 @@ async def sync_connection(
                     if (
                         placeholder.amount != txn_data.amount
                         or converted is not None
+                        or txn_data.amount_in_account_currency is not None
                         or currency_changed
                     ):
                         # Matched under a tolerance, or the bank said what the
@@ -4744,8 +4968,11 @@ async def sync_connection(
                             # lands.
                             placeholder.amount_primary = None
                             placeholder.fx_rate_used = None
+                            placeholder.amount_account = None
+                            placeholder.amount_account_source = None
                         await _stamp_synced_primary_amount(
-                            session, user_id, placeholder, converted
+                            session, user_id, placeholder, converted,
+                            txn_data.amount_in_account_currency, restamp_account=True,
                         )
                         # A split placeholder keeps its split, resized.
                         await category_line_service.rescale_lines(
@@ -4802,7 +5029,8 @@ async def sync_connection(
                 _record_sync_category(transaction)
 
                 await _stamp_synced_primary_amount(
-                    session, user_id, transaction, converted
+                    session, user_id, transaction, converted,
+                    txn_data.amount_in_account_currency,
                 )
 
             # Re-read by date the pending rows the listing above no longer returns.
@@ -4862,6 +5090,7 @@ async def sync_connection(
                             incoming_ids,
                             unseen_pending,
                             bills_by_external_id,
+                            known_linked_card_numbers,
                         )
                         if promoted_id:
                             promoted_ids.add(promoted_id)
@@ -4881,6 +5110,12 @@ async def sync_connection(
             # SUM(all txs) keeps matching account.balance from the provider.
             await _drop_finance_charges_with_twins(session, account)
             await sync_opening_balance_for_connected_account(session, account)
+
+        # Every run, new rows or not: a purchase an earlier run could not
+        # decide (its card or account skipped) is retried once both read.
+        await _set_aside_card_mirrors(
+            session, connection, new_tx_ids, complete_feed_account_ids
+        )
 
         # Detect transfer pairs among newly synced transactions
         if new_tx_ids:

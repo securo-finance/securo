@@ -4,6 +4,7 @@ import { screen } from '@testing-library/react'
 import {
   AgingWidget,
   AssistantWidget,
+  FlaggedWidget,
   InvoicesDueWidget,
   InvoiceTotalsWidget,
   RecurringRevenueWidget,
@@ -17,7 +18,7 @@ import {
 import { AssistantContext } from '@/contexts/assistant-context'
 import { formatCurrency } from '@/lib/format'
 import { renderWithProviders, t } from '@/test/utils'
-import type { Account, DashboardSummary, Invoice, InvoiceSummary } from '@/types'
+import type { Account, DashboardSummary, Invoice, InvoiceSummary, Transaction } from '@/types'
 
 const api = vi.hoisted(() => ({
   dashboard: { summary: vi.fn(), spendingByCategory: vi.fn(), projectedTransactions: vi.fn() },
@@ -25,6 +26,7 @@ const api = vi.hoisted(() => ({
   accounts: { list: vi.fn() },
   invoices: { summary: vi.fn() },
   invoiceSchedules: { summary: vi.fn() },
+  transactions: { list: vi.fn(), flaggedSummary: vi.fn() },
 }))
 vi.mock('@/lib/api', () => api)
 vi.mock('@/hooks/use-display-locale', () => ({ useDisplayLocale: () => 'en-US', useDateLocale: () => 'en-US' }))
@@ -317,5 +319,51 @@ describe('RecurringRevenueWidget', () => {
     api.invoiceSchedules.summary.mockResolvedValue({ active_count: 0, paused_count: 0, ended_count: 0, by_currency: [] })
     renderWithProviders(<RecurringRevenueWidget scope={PAST} />)
     expect(await screen.findByText(t('invoices.schedules.summary.none'))).toBeInTheDocument()
+  })
+})
+
+describe('FlaggedWidget', () => {
+  const flagged = (overrides: Partial<Transaction>) =>
+    ({
+      id: 'tx1', description: 'Amazon return', amount: 89.9, amount_primary: null, currency: 'USD', type: 'debit',
+      is_flagged: true, flag_due_date: null, flag_note: null, ...overrides,
+    }) as unknown as Transaction
+
+  beforeEach(() => {
+    vi.setSystemTime(new Date('2026-11-19T12:00:00'))
+  })
+
+  it('lists flagged rows by reminder date with the counts, and opens the one clicked', async () => {
+    const overdue = flagged({ flag_due_date: '2026-11-10', flag_note: 'Refund not received yet' })
+    api.transactions.list.mockResolvedValue({
+      items: [overdue, flagged({ id: 'tx2', description: 'Flight deposit', amount: 300 })],
+      total: 7, page: 1, limit: 5,
+    })
+    api.transactions.flaggedSummary.mockResolvedValue({ flagged: 7, overdue: 1, due_soon: 2 })
+    const onOpen = vi.fn()
+    const { user } = renderWithProviders(<FlaggedWidget scope={PAST} onOpen={onOpen} />)
+
+    expect(await screen.findByText('Amazon return')).toBeInTheDocument()
+    expect(screen.getByText('Refund not received yet')).toBeInTheDocument()
+    expect(screen.getByText(t('widgets.flagged.noDate'))).toBeInTheDocument()
+    expect(await screen.findByText(t('widgets.flagged.overdue', { count: 1 }))).toBeInTheDocument()
+    expect(screen.getByText(t('widgets.flagged.dueSoon', { count: 2 }))).toBeInTheDocument()
+    expect(screen.getByText(t('widgets.flagged.more', { count: 5 }))).toBeInTheDocument()
+    expect(api.transactions.list).toHaveBeenCalledWith(expect.objectContaining({
+      flagged: true, sort_by: 'flag_due_date', sort_dir: 'asc', limit: 5,
+    }))
+    // Overdue first, so "view all" opens the overdue view.
+    expect(screen.getByText(t('widgets.viewAll'), { exact: false }).closest('a'))
+      .toHaveAttribute('href', '/transactions?flagged=overdue')
+
+    await user.click(screen.getByText('Amazon return'))
+    expect(onOpen).toHaveBeenCalledWith(overdue)
+  })
+
+  it('says so when nothing is flagged', async () => {
+    api.transactions.list.mockResolvedValue({ items: [], total: 0, page: 1, limit: 5 })
+    api.transactions.flaggedSummary.mockResolvedValue({ flagged: 0, overdue: 0, due_soon: 0 })
+    renderWithProviders(<FlaggedWidget scope={PAST} onOpen={vi.fn()} />)
+    expect(await screen.findByText(t('widgets.flagged.none'))).toBeInTheDocument()
   })
 })

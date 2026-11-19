@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
-import { plugins as pluginsApi } from '@/lib/api'
+import { pluginCatalogQuery } from '@/lib/plugin-catalog-query'
 
 const NO_ICONS: ReadonlyMap<string, string> = new Map()
 
@@ -14,13 +14,7 @@ const NO_ICONS: ReadonlyMap<string, string> = new Map()
  * catalog, or a catalog that can't be reached, leaves its generated badge.
  */
 export function usePluginIcons(enabled: boolean): ReadonlyMap<string, string> {
-  const { data } = useQuery({
-    queryKey: ['plugins', 'catalog'],
-    queryFn: pluginsApi.catalog,
-    staleTime: 5 * 60 * 1000,
-    retry: false,
-    enabled,
-  })
+  const { data } = useQuery({ ...pluginCatalogQuery, enabled })
   return useMemo(
     () =>
       data

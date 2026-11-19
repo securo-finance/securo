@@ -147,6 +147,18 @@ it("shows a plugin's catalog icon instead of its generated badge", async () => {
   await waitFor(() => expect(button.querySelector('img')).toHaveAttribute('src', LEDGER_ICON))
 })
 
+it('keeps the generated badge when the catalog lists the plugin without an icon', async () => {
+  api.getProviders.mockResolvedValue([])
+  api.catalog.mockResolvedValue([{ id: 'acme/ledger', icon_url: null }])
+  renderWithProviders(
+    <ConnectorSelectDialog open onClose={vi.fn()} onSelect={vi.fn()} plugins={[{ plugin: ledgerPlugin, integration: ledgerIntegration }]} />,
+  )
+  const button = await screen.findByRole('button', { name: /Ledger \(API key\)/ })
+  await waitFor(() => expect(api.catalog).toHaveBeenCalled())
+  expect(button.querySelector('img')).toBeNull()
+  expect(button).toHaveTextContent('LE')
+})
+
 it('keeps the generated badge when the catalog has no icon for the plugin or cannot be reached', async () => {
   api.getProviders.mockResolvedValue([])
   api.catalog.mockRejectedValue(new Error('index unreachable'))
