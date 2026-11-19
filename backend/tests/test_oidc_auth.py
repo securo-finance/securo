@@ -180,6 +180,27 @@ async def test_oidc_config_prefers_the_configured_logout_url(
 
 
 @pytest.mark.asyncio
+async def test_oidc_config_keeps_a_return_address_put_on_the_logout_url(
+    client: AsyncClient, clean_db, oidc_settings, monkeypatch
+):
+    """An operator sends people back after provider sign-out by putting the
+    registered return address in OIDC_LOGOUT_URL (#1639)."""
+    oidc_settings.oidc_logout_url = (
+        "https://sso.example.com/logout"
+        "?post_logout_redirect_uri=https%3A%2F%2Fapp.example.com%2Flogin"
+    )
+    monkeypatch.setattr(oidc_auth, "_logout_url_cache", None)
+
+    response = await client.get("/api/auth/oidc/config")
+
+    assert response.json()["logout_url"] == (
+        "https://sso.example.com/logout"
+        "?post_logout_redirect_uri=https%3A%2F%2Fapp.example.com%2Flogin"
+        "&client_id=securo"
+    )
+
+
+@pytest.mark.asyncio
 async def test_oidc_config_has_no_logout_url_when_the_provider_lacks_one(
     client: AsyncClient, clean_db, oidc_settings, monkeypatch
 ):
