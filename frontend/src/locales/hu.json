@@ -2692,7 +2692,7 @@
     "endDate": "Záró dátum",
     "download": "Csomag letöltése",
     "error": "Nem sikerült elkészíteni az exportot",
-    "formatHint": "Egy zip a transactions.csv és a profit-and-loss.csv fájllal, olyan elválasztókkal és kódolással, amelyet a táblázatkezelők és könyvelőprogramok módosítás nélkül olvasnak. Minden összeg a tranzakció teljes értéke, nem a megosztásból rád jutó rész."
+    "formatHint": "Egy zip a transactions.csv és a profit-and-loss.csv fájllal, olyan elválasztókkal és kódolással, amelyet a táblázatkezelők és könyvelőprogramok módosítás nélkül olvasnak."
   },
   "backup": {
     "button": "Biztonsági mentés",

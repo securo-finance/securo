@@ -82,6 +82,19 @@ describe('AccountantExportSection', () => {
     expect(download).toHaveBeenCalledWith('2026-01-01', '2026-01-31')
   })
 
+  it('states the full-value note once, in the description', () => {
+    // The note explains why the file does not match the app's split report.
+    // Saying it again in the format hint made the card repeat itself, so the
+    // hint keeps the file format only.
+    renderWithProviders(<AccountantExportSection />)
+
+    const description = screen.getByText(t('accountantExport.description'))
+    const hint = screen.getByText(t('accountantExport.formatHint'))
+
+    expect(description.textContent).toMatch(/full transaction value/i)
+    expect(hint.textContent).not.toMatch(/full.*value|share/i)
+  })
+
   it('refuses an incomplete period', async () => {
     const { user } = renderWithProviders(<AccountantExportSection />)
 
