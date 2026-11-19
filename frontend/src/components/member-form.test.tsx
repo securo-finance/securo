@@ -74,4 +74,31 @@ describe('MemberForm', () => {
 
     expect(nameInput(container).value).toBe('user')
   })
+
+  it('keeps showing a linked user who is outside the directory', async () => {
+    directory.mockResolvedValue([
+      { id: 'user-viewer', email: 'me@mydomain.org', display_name: 'Me' },
+    ])
+    const { container } = renderWithProviders(
+      <MemberForm
+        name="Outsider"
+        onChangeName={vi.fn()}
+        email="outsider@elsewhere.org"
+        onChangeEmail={vi.fn()}
+        linkedUserId="user-outsider"
+        onChangeLinkedUserId={vi.fn()}
+      />,
+    )
+
+    const select = await vi.waitFor(() => {
+      const el = container.querySelector('select') as HTMLSelectElement
+      if (!el.querySelector('option[value="user-viewer"]')) {
+        throw new Error('directory not loaded yet')
+      }
+      return el
+    })
+
+    expect(select.value).toBe('user-outsider')
+    expect(select.selectedOptions[0].textContent).toBe('outsider@elsewhere.org')
+  })
 })

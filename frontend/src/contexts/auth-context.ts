@@ -13,7 +13,9 @@ interface AuthContextType {
   isLoading: boolean
   login: (email: string, password: string) => Promise<LoginResult>
   verify2fa: (tempToken: string, code: string) => Promise<void>
-  loginWithToken: (accessToken: string) => void
+  /** `viaOidc` marks the session as coming from the provider, so signing out
+   *  can end the provider's session too (issue #1623). */
+  loginWithToken: (accessToken: string, viaOidc?: boolean) => void
   register: (email: string, password: string, preferences?: Record<string, string>) => Promise<void>
   updateUser: (user: User) => void
   logout: () => void

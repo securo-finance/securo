@@ -9,6 +9,7 @@ import {
   Coins,
   CreditCard,
   EyeClosed,
+  Flag,
   ListChecks,
   Store,
   Tag,
@@ -26,6 +27,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { getAccountName } from '@/lib/account-utils'
 import { cn } from '@/lib/utils'
+import type { FlagFilter } from '@/lib/transaction-flag'
 import type { Account, AccountCard, Category, CategoryGroup, Group, Payee } from '@/types'
 
 export type MobileFilterView =
@@ -38,6 +40,7 @@ export type MobileFilterView =
   | 'type'
   | 'status'
   | 'ignored'
+  | 'flagged'
   | 'date'
   | 'amount'
 
@@ -67,6 +70,8 @@ interface MobileTransactionsFilterMenuProps {
   type: string
   status: string
   hideIgnored: boolean
+  flagFilter: FlagFilter
+  flagOptions: { value: FlagFilter; label: string }[]
   from: string
   to: string
   minAmount: string
@@ -87,6 +92,7 @@ interface MobileTransactionsFilterMenuProps {
   onTypeChange: (value: string) => void
   onStatusChange: (value: string) => void
   onHideIgnoredChange: (value: boolean) => void
+  onFlagFilterChange: (value: FlagFilter) => void
   onDateRangeChange: (from: string, to: string) => void
   onAmountRangeChange: (min: string, max: string) => void
   onApplyAmountRange: () => void
@@ -517,6 +523,7 @@ function buildRootOptions(
     { view: 'type', icon: ArrowUpDown, label: labels.type, summary: summaries.type },
     { view: 'status', icon: ListChecks, label: labels.status, summary: summaries.status },
     { view: 'ignored', icon: EyeClosed, label: labels.ignored, summary: summaries.ignored },
+    { view: 'flagged', icon: Flag, label: labels.flagged, summary: summaries.flagged },
     { view: 'date', icon: CalendarIcon, label: labels.date, summary: summaries.date },
     { view: 'amount', icon: Coins, label: labels.amount, summary: summaries.amount },
   ]
@@ -534,6 +541,7 @@ function buildLabels(
     type: t('transactions.type'),
     status: t('transactions.status'),
     ignored: t('transactions.ignoredRows'),
+    flagged: t('transactions.flagged'),
     date: t('transactions.filtersBar.date'),
     amount: t('transactions.filtersBar.amount'),
   }
@@ -577,6 +585,9 @@ function MobileFilterDetail({
       { value: 'hide', label: t('transactions.ignoredHide') },
     ]
     return <MobileSelectionView options={options} selectedValue={menu.hideIgnored ? 'hide' : 'show'} onChange={(value) => menu.onHideIgnoredChange(value === 'hide')} />
+  }
+  if (menu.view === 'flagged') {
+    return <MobileSelectionView options={menu.flagOptions} selectedValue={menu.flagFilter} onChange={(value) => menu.onFlagFilterChange(value as FlagFilter)} />
   }
   if (menu.view === 'date') {
     return <MobileDateView from={menu.from} to={menu.to} presets={menu.datePresets} onChange={menu.onDateRangeChange} onOpenCustomRange={menu.onOpenCustomRange} />

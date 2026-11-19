@@ -114,6 +114,8 @@ import type {
   GroupSummary,
   TransactionSplitsInput,
   TransactionEditPayload,
+  FlagDue,
+  FlaggedSummary,
   InstallmentSeriesInput,
   TransactionApplyScope,
   InvoiceAttachment,
@@ -352,7 +354,13 @@ export const auth = {
     }, readOnly)
     return data
   },
-  oidcConfig: async (): Promise<{ enabled: boolean; provider_name: string; local_auth_enabled: boolean }> => {
+  oidcConfig: async (): Promise<{
+    enabled: boolean
+    provider_name: string
+    local_auth_enabled: boolean
+    /** Where to send the browser so the provider session ends too (#1623). */
+    logout_url: string
+  }> => {
     // The login card blocks on this call while it decides which sign-in
     // methods to offer, so a hung request must fail fast and let the caller
     // fall back instead of leaving the page stuck on its loading state.
@@ -650,6 +658,8 @@ export const transactions = {
     exclude_transfers?: boolean
     user_pnl_only?: boolean
     exclude_ignored?: boolean
+    flagged?: boolean
+    flag_due?: FlagDue
     tags?: string[]
     min_amount?: number
     max_amount?: number
@@ -739,6 +749,22 @@ export const transactions = {
       transaction_ids: transactionIds,
       tags,
     })
+    return data
+  },
+  bulkFlag: async (
+    transactionIds: string[],
+    isFlagged: boolean,
+    flagDueDate?: string,
+  ): Promise<{ updated: number }> => {
+    const { data } = await api.patch('/transactions/bulk-flag', {
+      transaction_ids: transactionIds,
+      is_flagged: isFlagged,
+      flag_due_date: flagDueDate,
+    })
+    return data
+  },
+  flaggedSummary: async (): Promise<FlaggedSummary> => {
+    const { data } = await api.get('/transactions/flagged-summary')
     return data
   },
   bulkRemoveTags: async (transactionIds: string[], tags: string[]): Promise<{ updated: number }> => {
@@ -852,6 +878,8 @@ export const transactions = {
     q?: string
     tags?: string[]
     exclude_ignored?: boolean
+    flagged?: boolean
+    flag_due?: FlagDue
     transaction_ids?: string[]
   }): Promise<void> => {
     const { data } = await api.get('/transactions/export', {
@@ -1574,8 +1602,10 @@ export const assets = {
     const { data } = await api.get('/assets/portfolio-trend')
     return data
   },
-  marketSearch: async (q: string, limit = 15): Promise<MarketSymbolMatch[]> => {
-    const { data } = await api.get('/assets/market/search', { params: { q, limit } })
+  marketSearch: async (q: string, limit = 15, currency?: string): Promise<MarketSymbolMatch[]> => {
+    const { data } = await api.get('/assets/market/search', {
+      params: { q, limit, ...(currency ? { currency } : {}) },
+    })
     return data
   },
   marketQuote: async (symbol: string): Promise<MarketSymbolQuote> => {

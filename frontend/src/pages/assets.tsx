@@ -650,28 +650,47 @@ export default function AssetsPage() {
   // selected and the query is non-trivial — keeps the autocomplete snappy
   // without flooding the yfinance-backed endpoint.
   useEffect(() => {
-    if (formMethod !== 'market_price') return
+    // Every path that leaves without issuing a request has to clear the
+    // spinner: a search already on the wire had its `ignored` set by the
+    // cleanup, so its `finally` never resets it. Clearing the input in the
+    // middle of a search used to leave the loading label up forever.
+    if (formMethod !== 'market_price') {
+      setTickerSearchLoading(false)
+      return
+    }
     const q = formTickerQuery.trim()
     // Don't search if the field matches the already-selected quote — the
     // user just picked it and we'd spam the endpoint for no reason.
-    if (selectedQuote && q === selectedQuote.symbol) return
-    if (q.length < 1) {
-      setTickerMatches([])
+    if (selectedQuote && q === selectedQuote.symbol) {
+      setTickerSearchLoading(false)
       return
     }
+    if (q.length < 1) {
+      setTickerMatches([])
+      setTickerSearchLoading(false)
+      return
+    }
+    // A request already on the wire when the query or the currency changes
+    // must not answer for the new one: clearTimeout only stops the timer.
+    let ignored = false
     setTickerSearchLoading(true)
     const handle = window.setTimeout(async () => {
       try {
-        const results = await assets.marketSearch(q, 10)
-        setTickerMatches(results)
+        // The display currency lets the backend list the coin's pair in the
+        // user's own currency first (issue #621).
+        const results = await assets.marketSearch(q, 10, userCurrency)
+        if (!ignored) setTickerMatches(results)
       } catch {
-        setTickerMatches([])
+        if (!ignored) setTickerMatches([])
       } finally {
-        setTickerSearchLoading(false)
+        if (!ignored) setTickerSearchLoading(false)
       }
     }, 300)
-    return () => window.clearTimeout(handle)
-  }, [formMethod, formTickerQuery, selectedQuote])
+    return () => {
+      ignored = true
+      window.clearTimeout(handle)
+    }
+  }, [formMethod, formTickerQuery, selectedQuote, userCurrency])
 
   async function pickTickerMatch(match: MarketSymbolMatch) {
     setTickerMatches([])
