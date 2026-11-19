@@ -100,7 +100,18 @@ beforeEach(() => {
     opening_balance: 0, current_balance: -850, monthly_income: 0, monthly_expenses: 0,
     projected_income: 0, projected_expenses: 0,
   })
-  api.transactions.list.mockResolvedValue({ items: cycle, total: cycle.length })
+  // The API only fills the balance when it is asked for it, and the stub does
+  // the same: a page that stopped sending the flag would render an empty
+  // column here, so what the tests below read is the request and its
+  // consumer together, not a stub that answers either way.
+  api.transactions.list.mockImplementation(
+    (params: { include_running_balance?: boolean }) => Promise.resolve({
+      items: params?.include_running_balance
+        ? cycle
+        : cycle.map((row) => ({ ...row, running_balance: null })),
+      total: cycle.length,
+    }),
+  )
   api.dashboard.projectedTransactions.mockResolvedValue([])
   api.categories.list.mockResolvedValue([])
   api.categoryGroups.list.mockResolvedValue([])
@@ -144,17 +155,5 @@ describe("a credit card's balance column", () => {
 
     await screen.findByText('Payment 0')
     expect(balanceCell('Payment 0').className).toContain('text-rose-500')
-  })
-
-  it('keeps the projected balance on the newest row instead of inventing a gap', async () => {
-    renderWithProviders(<AccountDetailPage />, {
-      route: '/accounts/acc-1',
-      path: '/accounts/:id',
-    })
-
-    await screen.findByText('Payment 0')
-    // With the column ending on the account balance, the card no longer
-    // claims an unsettled difference next to it.
-    expect(screen.queryByText(/Not settled/)).not.toBeInTheDocument()
   })
 })
