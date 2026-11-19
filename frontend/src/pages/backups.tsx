@@ -152,6 +152,7 @@ export default function BackupPage() {
   const [uploadContent, setUploadContent] = useState<BackupContent>('both')
   const [uploadMode, setUploadMode] = useState<BackupRestoreMode>('new_workspace')
   const [uploadConfirmation, setUploadConfirmation] = useState('')
+  const [uploadPassword, setUploadPassword] = useState('')
   const [storedRestore, setStoredRestore] = useState<BackupItem | null>(null)
   const [storedMode, setStoredMode] = useState<BackupRestoreMode>('new_workspace')
   const [storedContent, setStoredContent] = useState<BackupContent>('both')
@@ -228,7 +229,7 @@ export default function BackupPage() {
   })
 
   const previewUploadMutation = useMutation({
-    mutationFn: (file: File) => backupApi.previewUpload(file),
+    mutationFn: (file: File) => backupApi.previewUpload(file, uploadPassword || undefined),
     onSuccess: (preview, file) => {
       if (uploadFileRef.current !== file) return
       setUploadPreview(preview)
@@ -241,6 +242,14 @@ export default function BackupPage() {
     },
   })
 
+  // An encrypted archive fails the first preview; once its password is typed,
+  // read it again instead of making the person pick the same file twice.
+  const retryPreviewWithPassword = () => {
+    if (uploadFile && !uploadPreview && uploadPassword && !previewUploadMutation.isPending) {
+      previewUploadMutation.mutate(uploadFile)
+    }
+  }
+
   const restoreUploadMutation = useMutation({
     mutationFn: () => {
       if (!uploadFile) throw new Error(t('backup.noFile'))
@@ -248,6 +257,7 @@ export default function BackupPage() {
         content: uploadContent,
         mode: uploadMode,
         confirmation: uploadMode === 'current_workspace' ? uploadConfirmation : undefined,
+        password: uploadPassword || undefined,
       })
     },
     onSuccess: async (result) => {
@@ -256,6 +266,7 @@ export default function BackupPage() {
       uploadFileRef.current = null
       setUploadPreview(null)
       setUploadConfirmation('')
+      setUploadPassword('')
       if (fileInputRef.current) fileInputRef.current.value = ''
       await refreshWorkspaces()
       invalidateBackups()
@@ -377,6 +388,21 @@ export default function BackupPage() {
                   {uploadFile?.name ?? t('backup.noFileSelected')}
                 </span>
               </div>
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="backup-upload-password" className="text-xs font-medium text-muted-foreground">{t('backup.passwordLabel')}</Label>
+              <Input
+                id="backup-upload-password"
+                className="h-9 text-sm"
+                type="password"
+                autoComplete="off"
+                value={uploadPassword}
+                onChange={(e) => setUploadPassword(e.target.value)}
+                onBlur={retryPreviewWithPassword}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') retryPreviewWithPassword()
+                }}
+              />
             </div>
             {previewUploadMutation.isPending && (
               <p className="text-sm text-muted-foreground">{t('backup.previewing')}</p>

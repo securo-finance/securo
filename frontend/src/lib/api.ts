@@ -1889,21 +1889,28 @@ export const backup = {
     const { data } = await api.post('/backups/run', content ? { content } : {})
     return data
   },
-  previewUpload: async (file: File): Promise<BackupPreview> => {
+  previewUpload: async (file: File, password?: string): Promise<BackupPreview> => {
     const form = new FormData()
     form.append('file', file)
+    if (password) form.append('password', password)
     const { data } = await api.post('/backups/preview-upload', form)
     return data
   },
   restoreUpload: async (
     file: File,
-    payload: { content: BackupContent; mode: BackupRestoreMode; confirmation?: string },
+    payload: {
+      content: BackupContent
+      mode: BackupRestoreMode
+      confirmation?: string
+      password?: string
+    },
   ): Promise<BackupRestoreResult> => {
     const form = new FormData()
     form.append('file', file)
     form.append('content', payload.content)
     form.append('mode', payload.mode)
     if (payload.confirmation) form.append('confirmation', payload.confirmation)
+    if (payload.password) form.append('password', payload.password)
     const { data } = await api.post('/backups/restore-upload', form)
     return data
   },

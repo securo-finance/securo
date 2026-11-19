@@ -66,10 +66,12 @@ async def run_backup(
 @router.post("/preview-upload", response_model=BackupPreview)
 async def preview_upload(
     file: UploadFile = File(...),
+    password: str | None = Form(None),
     ctx: WorkspaceContext = Depends(current_workspace),
 ):
     _ = ctx
-    return backup_service.preview_backup_bytes(await file.read())
+    data = backup_service.decrypt_backup_bytes(await file.read(), password)
+    return backup_service.preview_backup_bytes(data)
 
 
 @router.post("/restore-upload", response_model=BackupRestoreResult)
@@ -78,6 +80,7 @@ async def restore_upload(
     content: BackupContent = Form(BackupContent.both),
     mode: BackupRestoreMode = Form(BackupRestoreMode.new_workspace),
     confirmation: str | None = Form(None),
+    password: str | None = Form(None),
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
@@ -85,7 +88,7 @@ async def restore_upload(
         ctx.require_owner()
     return await backup_service.restore_backup_bytes(
         session,
-        data=await file.read(),
+        data=backup_service.decrypt_backup_bytes(await file.read(), password),
         target_user_id=ctx.user_id,
         current_workspace=ctx.workspace,
         content=content,

@@ -126,6 +126,30 @@ describe('BackupPage', () => {
     expect(retentionCount).toHaveValue(7)
   })
 
+  it('reads an encrypted upload again with its password and restores with it', async () => {
+    api.previewUpload
+      .mockRejectedValueOnce(new Error('This backup is encrypted: enter its password to restore it.'))
+      .mockResolvedValueOnce(preview('Encrypted'))
+    api.restoreUpload.mockResolvedValue({ workspace_id: 'w2', workspace_name: 'Encrypted (restored)' })
+    const { container, user } = renderWithProviders(<BackupPage />)
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    const file = new File(['locked'], 'locked.zip', { type: 'application/zip' })
+
+    await user.upload(input, file)
+    await waitFor(() => expect(api.previewUpload).toHaveBeenCalledWith(file, undefined))
+    const restoreButton = screen.getByRole('button', { name: t('backup.restore') })
+    expect(restoreButton).toBeDisabled()
+
+    await user.type(screen.getByLabelText(t('backup.passwordLabel')), 'secret phrase{Enter}')
+    await waitFor(() => expect(api.previewUpload).toHaveBeenLastCalledWith(file, 'secret phrase'))
+    await waitFor(() => expect(restoreButton).toBeEnabled())
+
+    await user.click(restoreButton)
+    await waitFor(() =>
+      expect(api.restoreUpload).toHaveBeenCalledWith(file, expect.objectContaining({ password: 'secret phrase' })),
+    )
+  })
+
   it('ignores an older upload preview that resolves after the current file', async () => {
     const firstRequest = deferred<BackupPreview>()
     const secondRequest = deferred<BackupPreview>()

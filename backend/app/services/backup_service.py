@@ -767,11 +767,8 @@ def _metadata_from_zip_bytes(data: bytes) -> tuple[dict[str, Any], list[str]]:
     except (RuntimeError, NotImplementedError) as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                "Encrypted backups cannot be restored here. "
-                f"Upload an unencrypted Securo backup ZIP: {exc}"
-            ),
-        )
+            detail="This backup is encrypted: enter its password to restore it.",
+        ) from exc
     except (zipfile.BadZipFile, OSError, json.JSONDecodeError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid backup file: {exc}"
@@ -814,6 +811,35 @@ def _preview_from_metadata(metadata: dict[str, Any], warnings: list[str]) -> Bac
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid backup metadata: {exc}",
         ) from exc
+
+
+def decrypt_backup_bytes(data: bytes, password: str | None) -> bytes:
+    """Return a plain ZIP for an archive encrypted with the backup password.
+
+    The export can protect an archive with AES-256 (WinZip AES). Decrypting at
+    the edge keeps every reader below working on one plain format. Without a
+    password the bytes pass through untouched, so an encrypted archive still
+    reaches the reader and is refused there with a clear message.
+    """
+    if not password:
+        return data
+    try:
+        with pyzipper.AESZipFile(io.BytesIO(data)) as encrypted:
+            encrypted.setpassword(password.encode("utf-8"))
+            plain = io.BytesIO()
+            with zipfile.ZipFile(plain, "w", _COMPRESSION) as output:
+                for info in encrypted.infolist():
+                    output.writestr(info.filename, encrypted.read(info.filename))
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The password does not open this backup.",
+        ) from exc
+    except (zipfile.BadZipFile, pyzipper.BadZipFile, OSError, NotImplementedError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid backup file: {exc}"
+        ) from exc
+    return plain.getvalue()
 
 
 def preview_backup_bytes(data: bytes) -> BackupPreview:

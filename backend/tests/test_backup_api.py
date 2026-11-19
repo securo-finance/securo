@@ -255,7 +255,16 @@ async def test_preview_rejects_encrypted_and_non_object_backups(client: AsyncCli
         headers=auth_headers,
     )
     assert encrypted_resp.status_code == 400
-    assert "encrypted backups cannot be restored" in encrypted_resp.json()["detail"].lower()
+    assert "encrypted" in encrypted_resp.json()["detail"].lower()
+    assert "password" in encrypted_resp.json()["detail"].lower()
+
+    unlocked_resp = await client.post(
+        "/api/backups/preview-upload",
+        files={"file": ("encrypted.zip", encrypted, "application/zip")},
+        data={"password": "correct horse battery staple"},
+        headers=auth_headers,
+    )
+    assert unlocked_resp.status_code == 200, unlocked_resp.text
 
     non_object = backup_service.build_backup_archive({"metadata.json": []})
     non_object_resp = await client.post(
@@ -349,6 +358,44 @@ async def test_restore_upload_creates_new_workspace_without_bank_connection(
         .where(WorkspaceMember.workspace_id == restored_workspace_id)
     )
     assert membership_count == 1
+
+
+@pytest.mark.asyncio
+async def test_restore_upload_reads_a_password_protected_export(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_account,
+    test_transactions,
+):
+    export_resp = await client.post(
+        "/api/export/backup", json={"password": "a long passphrase"}, headers=auth_headers
+    )
+    assert export_resp.status_code == 200
+
+    wrong = await client.post(
+        "/api/backups/restore-upload",
+        files={"file": ("backup.zip", export_resp.content, "application/zip")},
+        data={"content": "both", "mode": "new_workspace", "password": "not it"},
+        headers=auth_headers,
+    )
+    assert wrong.status_code == 400
+    assert wrong.json()["detail"] == "The password does not open this backup."
+
+    restored = await client.post(
+        "/api/backups/restore-upload",
+        files={"file": ("backup.zip", export_resp.content, "application/zip")},
+        data={"content": "both", "mode": "new_workspace", "password": "a long passphrase"},
+        headers=auth_headers,
+    )
+    assert restored.status_code == 200, restored.text
+    restored_workspace_id = uuid.UUID(restored.json()["workspace_id"])
+    tx_count = await session.scalar(
+        select(func.count())
+        .select_from(Transaction)
+        .where(Transaction.workspace_id == restored_workspace_id)
+    )
+    assert tx_count == len(test_transactions)
 
 
 @pytest.mark.asyncio
