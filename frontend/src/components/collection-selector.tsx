@@ -69,7 +69,7 @@ export function CollectionSelector({ variant = 'sidebar' }: { variant?: 'sidebar
             page scrollbar and shifts the layout under the sticky bar. */}
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
-            <button className="flex items-center gap-2 w-full rounded-lg border border-sidebar-border/60 bg-sidebar-accent/30 px-2.5 py-1.5 text-left hover:bg-sidebar-accent/50 transition-colors">
+            <button className="flex items-center gap-2 w-full rounded-lg border border-sidebar-border/60 bg-sidebar-accent/30 px-2.5 py-1.5 text-start hover:bg-sidebar-accent/50 transition-colors">
               {activeCollection ? (
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: activeCollection.color }} />
               ) : (

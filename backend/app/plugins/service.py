@@ -24,7 +24,7 @@ from app.models.rule import Rule
 from app.models.workspace import Workspace
 from app.models.plugin_connection import PluginConnection
 from app.models.workspace_plugin import WorkspacePlugin
-from app.plugins import connections, index, runner, sync
+from app.plugins import connections, index, logos, runner, sync
 from app.plugins.manifest import Manifest, parse_manifest
 from app.services.category_defaults import DEFAULT_CATEGORIES, DEFAULT_GROUPS
 from app.services.rule_packs import built_in_packs
@@ -87,6 +87,8 @@ class CodeConsent:
     """Connections in this workspace (removed along with the plugin)."""
     drops_code: bool = False
     """An update to a version without code: its connections go, as on removal."""
+    unlinks: int = 0
+    """Bank connections this change ends: their accounts stay, as manual ones."""
 
 
 @dataclass(frozen=True)
@@ -113,6 +115,16 @@ async def catalog(session: AsyncSession, workspace_id: uuid.UUID) -> list[Catalo
         entries = await index.fetch_index(client)
     kind = await _workspace_kind(session, workspace_id)
     return [CatalogItem(entry, installed.get(entry.id), kind) for entry in entries]
+
+
+async def icon(name: str) -> index.Icon | None:
+    """A plugin's icon, by its file name in the catalog; None when there's no such icon."""
+    try:
+        async with index.http_client() as client:
+            return await index.fetch_icon(client, name)
+    except index.PluginIndexError as exc:
+        logger.info("Plugin icon not served: %s", exc)
+        return None
 
 
 async def details(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str) -> PluginDetails:
@@ -287,16 +299,31 @@ async def _consent(
             PluginConnection.plugin_id == plugin_id,
         )
     )
+    linked = (
+        await session.scalars(
+            select(PluginConnection.integration).where(
+                PluginConnection.workspace_id == workspace_id,
+                PluginConnection.plugin_id == plugin_id,
+                PluginConnection.bank_connection_id.is_not(None),
+            )
+        )
+    ).all()
+    providing = {i.key for i in manifest.contributes.integrations if i.is_provider} if manifest else set()
+    unlinks = sum(1 for integration in linked if integration not in providing)
     old_hosts = {h.host for h in current.network} if current and manifest else set()
     old_scopes = {a.scope for a in current.api_scopes} if current and manifest else set()
     return CodeConsent(
         network=[h.model_dump() for h in shown.network],
         api_scopes=[a.model_dump() for a in shown.api_scopes],
-        integrations=[{"key": i.key, "name": i.name, "auth": i.auth} for i in shown.contributes.integrations],
+        integrations=[
+            {"key": i.key, "name": i.name, "auth": i.auth, "provides": i.provides}
+            for i in shown.contributes.integrations
+        ],
         new_hosts=sorted({h.host for h in shown.network} - old_hosts) if current and manifest else [],
         new_scopes=sorted({a.scope for a in shown.api_scopes} - old_scopes) if current and manifest else [],
         connections=int(count or 0),
         drops_code=drops_code,
+        unlinks=unlinks,
     )
 
 
@@ -335,6 +362,8 @@ async def apply(
         # If the runner can't take it, nothing changes here.
         installed_now = await _install_code(entry, manifest)
     try:
+        if manifest is not None and entry is not None and target_commit is not None:
+            await _store_logos(session, entry, target_commit, manifest)
         consent = await _consent(session, workspace_id, plugin_id, manifest)
         # One plugin change per workspace at a time: two confirmations of the same
         # first install would otherwise both find nothing to lock and both create.
@@ -384,6 +413,19 @@ async def apply(
     return PluginPlan(action, plugin_id, target_commit, result.plan, consent, None)
 
 
+async def _store_logos(session: AsyncSession, entry: index.IndexEntry, commit: str, manifest: Manifest) -> None:
+    """Keep the logos the package ships, served by Securo itself."""
+
+    async def fetch() -> bytes:
+        async with index.http_client() as http:
+            return (await index.fetch_archive(http, entry))[0]
+
+    try:
+        await logos.store(session, entry.id, commit, manifest, fetch)
+    except logos.LogoError as exc:
+        raise PluginUnavailable(str(exc)) from exc
+
+
 async def _install_code(entry: index.IndexEntry, manifest: Manifest) -> bool:
     """Put the pinned commit on the runner; False when it was there already."""
     if not runner.configured():
@@ -414,7 +456,9 @@ async def install_on_runner(entry: index.IndexEntry, manifest: Manifest) -> bool
 
 
 async def _release_code(session: AsyncSession, plugin_id: str, commit: str) -> None:
-    """Take a commit off the runner once no workspace runs it."""
+    """Take a commit off the runner, and drop its logos, once no workspace runs it."""
+    await logos.release(session, plugin_id, commit)
+    await session.commit()
     still_used = await session.scalar(
         select(WorkspacePlugin.id)
         .where(WorkspacePlugin.plugin_id == plugin_id, WorkspacePlugin.commit == commit)

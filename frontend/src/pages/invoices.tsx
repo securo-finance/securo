@@ -163,7 +163,7 @@ export default function InvoicesPage() {
                   onClick={() => navigate('/invoices/products')}
                   data-testid="invoice-products-button"
                 >
-                  <Package className="h-4 w-4 mr-1.5" />
+                  <Package className="h-4 w-4 me-1.5" />
                   {t('invoices.products.title')}
                 </Button>
                 <Button
@@ -172,7 +172,7 @@ export default function InvoicesPage() {
                   onClick={() => navigate('/invoices/schedules')}
                   data-testid="invoice-schedules-button"
                 >
-                  <Repeat className="h-4 w-4 mr-1.5" />
+                  <Repeat className="h-4 w-4 me-1.5" />
                   {t('invoices.schedules.title')}
                 </Button>
               </>
@@ -183,12 +183,12 @@ export default function InvoicesPage() {
               onClick={() => setSettingsOpen(true)}
               data-testid="invoice-settings-button"
             >
-              <Settings2 className="h-4 w-4 mr-1.5" />
+              <Settings2 className="h-4 w-4 me-1.5" />
               {t('invoices.settings.title')}
             </Button>
             {canWrite && (
               <Button size="sm" onClick={() => setCreateOpen(true)} data-testid="invoice-new-button">
-                <Plus className="h-4 w-4 mr-1.5" />
+                <Plus className="h-4 w-4 me-1.5" />
                 {direction === 'payable' ? t('invoices.newPayable') : t('invoices.new')}
               </Button>
             )}
@@ -241,7 +241,7 @@ export default function InvoicesPage() {
                 >
                   {money(overdue)}
                   {summary && summary.overdue_count > 0 && (
-                    <span className="ml-1.5 font-medium text-muted-foreground">
+                    <span className="ms-1.5 font-medium text-muted-foreground">
                       {t('invoices.summary.overdueCount', { count: summary.overdue_count })}
                     </span>
                   )}
@@ -268,7 +268,7 @@ export default function InvoicesPage() {
             </div>
           </div>
 
-          <div className="px-5 py-4 border-t border-border lg:border-t-0 lg:border-l">
+          <div className="px-5 py-4 border-t border-border lg:border-t-0 lg:border-s">
             <p className="text-xs font-medium text-muted-foreground mb-2">
               {t('invoices.summary.aging')}
             </p>
@@ -301,7 +301,7 @@ export default function InvoicesPage() {
                         <dt className="text-muted-foreground">
                           {t(`invoices.bucket.${bucket.key}`)}
                         </dt>
-                        <dd className="ml-auto tabular-nums font-medium">{money(amount)}</dd>
+                        <dd className="ms-auto tabular-nums font-medium">{money(amount)}</dd>
                       </div>
                     )
                   })}
@@ -343,7 +343,7 @@ export default function InvoicesPage() {
             >
               <CalendarIcon className="size-3.5 text-muted-foreground" />
               {year ? t('invoices.fiscalYear', { year }) : t('invoices.allYears')}
-              <ChevronDown className="size-3.5 text-muted-foreground ml-auto" />
+              <ChevronDown className="size-3.5 text-muted-foreground ms-auto" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -401,7 +401,7 @@ export default function InvoicesPage() {
               filter === 'all' &&
               canWrite && (
                 <Button size="sm" className="mt-4" onClick={() => setCreateOpen(true)}>
-                  <Plus className="h-4 w-4 mr-1.5" />
+                  <Plus className="h-4 w-4 me-1.5" />
                   {t('invoices.new')}
                 </Button>
               )
@@ -412,22 +412,22 @@ export default function InvoicesPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border">
-                  <th className={`${TH} pl-4 sm:pl-5 text-left`}>
+                  <th className={`${TH} ps-4 sm:ps-5 text-start`}>
                     {direction === 'payable'
                       ? t('invoices.column.supplier')
                       : t('invoices.column.client')}
                   </th>
-                  <th className={`${TH} text-left w-24 hidden sm:table-cell`}>
+                  <th className={`${TH} text-start w-24 hidden sm:table-cell`}>
                     {t('invoices.column.number')}
                   </th>
-                  <th className={`${TH} text-left w-32 hidden md:table-cell`}>
+                  <th className={`${TH} text-start w-32 hidden md:table-cell`}>
                     {t('invoices.column.due')}
                   </th>
-                  <th className={`${TH} text-right w-32`}>{t('invoices.column.total')}</th>
-                  <th className={`${TH} text-right w-32 hidden sm:table-cell`}>
+                  <th className={`${TH} text-end w-32`}>{t('invoices.column.total')}</th>
+                  <th className={`${TH} text-end w-32 hidden sm:table-cell`}>
                     {t('invoices.column.balance')}
                   </th>
-                  <th className={`${TH} pr-4 sm:pr-5 text-right w-28`}>
+                  <th className={`${TH} pe-4 sm:pe-5 text-end w-28`}>
                     {t('invoices.column.state')}
                   </th>
                 </tr>
@@ -440,7 +440,7 @@ export default function InvoicesPage() {
                     data-testid="invoice-row"
                     className="border-b border-border last:border-0 hover:bg-muted transition-colors cursor-pointer"
                   >
-                    <td className="py-3 pl-4 sm:pl-5">
+                    <td className="py-3 ps-4 sm:ps-5">
                       <div className="flex items-center gap-1.5 text-sm font-medium text-foreground truncate">
                         {/* A recurring invoice says so with a glyph, not a
                             column: the list is about money, and which
@@ -478,27 +478,27 @@ export default function InvoicesPage() {
                         {showDate(displayDue(invoice))}
                       </span>
                       {invoice.installments.length > 0 && (
-                        <span className="ml-1.5 text-[11px] text-muted-foreground/70" data-testid="invoice-row-installments">
+                        <span className="ms-1.5 text-[11px] text-muted-foreground/70" data-testid="invoice-row-installments">
                           {t('invoices.installments.count', { count: invoice.installments.length })}
                         </span>
                       )}
                       {invoice.days_overdue > 0 && (
-                        <span className="ml-1.5 text-[11px] font-medium text-rose-500">
+                        <span className="ms-1.5 text-[11px] font-medium text-rose-500">
                           {t('invoices.daysLate', { count: invoice.days_overdue })}
                         </span>
                       )}
                     </td>
-                    <td className="py-3 text-right text-xs sm:text-sm tabular-nums text-muted-foreground">
+                    <td className="py-3 text-end text-xs sm:text-sm tabular-nums text-muted-foreground">
                       {money(invoice.total, invoice.currency)}
                     </td>
-                    <td className="py-3 text-right text-xs sm:text-sm font-bold tabular-nums hidden sm:table-cell">
+                    <td className="py-3 text-end text-xs sm:text-sm font-bold tabular-nums hidden sm:table-cell">
                       {Number(invoice.balance) > 0 ? (
                         money(invoice.balance, invoice.currency)
                       ) : (
                         <span className="text-muted-foreground font-medium">—</span>
                       )}
                     </td>
-                    <td className="py-3 pr-4 sm:pr-5 text-right">
+                    <td className="py-3 pe-4 sm:pe-5 text-end">
                       <StateBadge state={invoice.state} />
                     </td>
                   </tr>
@@ -1123,7 +1123,7 @@ function LabelSection({
         type="button"
         onClick={() => setOpen(!open)}
         data-testid="invoice-labels-toggle"
-        className="flex w-full items-center justify-between text-left"
+        className="flex w-full items-center justify-between text-start"
       >
         <div>
           <Label className="cursor-pointer">{t('invoices.settings.labels')}</Label>

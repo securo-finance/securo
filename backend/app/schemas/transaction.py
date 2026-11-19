@@ -3,8 +3,9 @@ from datetime import date as _Date
 from decimal import Decimal
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.core.currency import normalize_currency_code
 from app.schemas.category import CategoryRead
 from app.schemas.transaction_category_line import (
     TransactionCategoryLineRead,
@@ -26,6 +27,11 @@ class TransactionBase(BaseModel):
     currency: Optional[str] = None
     fx_rate: Optional[Decimal] = None
     payee_raw: Optional[str] = None  # raw payee string from import (OFX/QIF)
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def normalize_currency(cls, value: Optional[str]) -> Optional[str]:
+        return normalize_currency_code(value)
 
 
 class TransactionCreate(TransactionBase):
@@ -108,6 +114,14 @@ class TransactionUpdate(BaseModel):
     fx_rate_used: Optional[Decimal] = None
     is_ignored: Optional[bool] = None
     exclude_from_pnl: Optional[bool] = None
+    # Not Optional: the column is NOT NULL, so an explicit null is a 422, not a
+    # 500 at commit. Updates use exclude_unset, so leaving it out changes nothing.
+    is_flagged: bool = False
+    # Optional reminder on a flag. Kept only while the row is flagged:
+    # unflagging clears both, and either one sent for an unflagged row is
+    # ignored. Null clears just that field.
+    flag_due_date: Optional[_Date] = None
+    flag_note: Optional[str] = Field(default=None, max_length=500)
     # Manual status override (posted=settled, pending=not yet settled). Lets the
     # user mark a manually-entered transaction as settled once it clears,
     # or flip a synced row back to pending before the next sync.
@@ -130,6 +144,11 @@ class TransactionUpdate(BaseModel):
     # same series; "all" touches every row in the series. Ignored when the
     # transaction has no installment fingerprint.
     apply_to: Literal["this", "future", "all"] = "this"
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def normalize_currency(cls, value: Optional[str]) -> Optional[str]:
+        return normalize_currency_code(value)
 
 
 class InstallmentSeriesCreate(BaseModel):
@@ -194,7 +213,7 @@ class TransactionRead(TransactionBase):
     invoice_links: list[TransactionInvoiceLink] = []
     # A stored transaction always has a currency, so the read model narrows
     # the optional input field on purpose.
-    currency: str = "USD"  # ty: ignore[invalid-mutable-override]
+    currency: str = "USD"  # ty: ignore[incompatible-mutable-override]
     source: str
     status: str = "posted"
     payee: Optional[str] = None
@@ -217,8 +236,13 @@ class TransactionRead(TransactionBase):
     installment_purchase_date: Optional[_Date] = None
     installment_series_id: Optional[uuid.UUID] = None
     bill_id: Optional[uuid.UUID] = None
+    card_masked_number: Optional[str] = None
     effective_bill_date: Optional[_Date] = None
     reporting_date_override: Optional[_Date] = None
+    # The date the list filtered and ordered this row by: the reporting
+    # override, a manual bill date or, in accrual mode, a card's bill due
+    # date, else `date` (#1386). Set by the list; null elsewhere.
+    reporting_date: Optional[_Date] = None
     recurring_transaction_id: Optional[uuid.UUID] = None
     splits: list[TransactionSplitRead] = []
     # Set when the amount is split across several categories; `category_id`
@@ -243,6 +267,9 @@ class TransactionRead(TransactionBase):
     parent_owner_name: Optional[str] = None
     is_ignored: bool = False
     exclude_from_pnl: bool = False
+    is_flagged: bool = False
+    flag_due_date: Optional[_Date] = None
+    flag_note: Optional[str] = None
     # Account balance right after this row, set only when the list asked for
     # it on one non-credit-card account's unfiltered ledger (#1202). The
     # primary-currency value is null when the account is already in it, or
@@ -313,6 +340,23 @@ class CreateCounterpartRequest(BaseModel):
 class BulkTagsRequest(BaseModel):
     transaction_ids: list[uuid.UUID]
     tags: list[str]
+
+
+class BulkFlagRequest(BaseModel):
+    """Flag or unflag several rows at once. A reminder date given with
+    `is_flagged=True` is set on every row; unflagging clears the reminders."""
+
+    transaction_ids: list[uuid.UUID] = Field(min_length=1, max_length=1000)
+    is_flagged: bool
+    flag_due_date: Optional[_Date] = None
+
+
+class FlaggedSummary(BaseModel):
+    """How many flagged rows a workspace has, and how many are past their date."""
+
+    flagged: int
+    overdue: int
+    due_soon: int
 
 
 class DescriptionSuggestion(BaseModel):

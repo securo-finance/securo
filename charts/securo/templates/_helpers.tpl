@@ -83,6 +83,20 @@ user pointed them somewhere else.
 {{- end }}
 
 {{/*
+Stable checksum for the plugin tokens. Renders the same value for every caller
+in one render (the Secret template itself uses random values on install), and
+changes only when the live Secret data changes.
+*/}}
+{{- define "securo.pluginsSecretChecksum" -}}
+{{- $secret := lookup "v1" "Secret" .Release.Namespace (include "securo.pluginsSecretName" .) }}
+{{- if $secret }}
+{{- toJson $secret.data | sha256sum }}
+{{- else }}
+{{- "" | sha256sum }}
+{{- end }}
+{{- end }}
+
+{{/*
 Compute the frontend URL based on global.domain and global.tls
 */}}
 {{- define "securo.frontendUrl" -}}
@@ -98,4 +112,16 @@ Compute the default OAuth Redirect URI
 */}}
 {{- define "securo.oauthRedirectUri" -}}
 {{ include "securo.frontendUrl" . }}/oauth/callback
+{{- end -}}
+
+{{/*
+Name of the claim the attachment mounts use: the one the operator already has
+when `persistence.attachments.existingClaim` is set, the chart's own otherwise.
+*/}}
+{{- define "securo.attachmentsClaimName" -}}
+{{- if .Values.persistence.attachments.existingClaim -}}
+{{- .Values.persistence.attachments.existingClaim | quote -}}
+{{- else -}}
+{{- printf "%s-attachments" (include "securo.fullname" .) -}}
+{{- end -}}
 {{- end -}}

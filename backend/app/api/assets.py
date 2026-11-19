@@ -1,6 +1,7 @@
 import json
 import logging
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
@@ -26,6 +27,7 @@ from app.schemas.asset_import import (
 from app.schemas.asset import (
     AssetBuyCreate,
     AssetCreate,
+    AssetPriceRefreshResult,
     AssetRead,
     AssetTransactionCreate,
     AssetTransactionRead,
@@ -59,17 +61,24 @@ async def market_search(
     # Upper bound is generous so the Tesouro Direto dropdown can list every
     # open bond (~60 and growing); ticker autocomplete still requests ~15.
     limit: int = Query(15, ge=1, le=300),
-    _: User = Depends(current_active_user),
+    currency: Optional[str] = Query(
+        None,
+        min_length=3,
+        max_length=3,
+        description="Quote currency to prefer for cryptocurrency pairs",
+    ),
+    ctx: WorkspaceContext = Depends(current_workspace),
 ) -> list[MarketSymbolMatch]:
     """Autocomplete ticker symbols for the Add-Asset form.
 
-    Intentionally thin — just proxies to the configured market-price
-    provider. Upstream errors turn into an empty list so the UI degrades
+    Just proxies to the configured market-price provider and ranks what comes
+    back (exact matches first, a coin's pair in the workspace's own currency
+    first). Upstream errors turn into an empty list so the UI degrades
     gracefully (a user typing a query shouldn't ever see a 500).
     """
     provider = get_market_price_provider()
     try:
-        return await provider.search(q, limit=limit)
+        matches = await provider.search(q, limit=limit)
     except MarketPriceRateLimitedError:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -78,6 +87,8 @@ async def market_search(
     except Exception:
         logger.exception("Market search failed for %r", q)
         return []
+    preferred = currency or ctx.workspace.default_currency
+    return asset_service.rank_symbol_matches(matches, q, preferred)
 
 
 @router.get("/market/quote", response_model=MarketSymbolQuote)
@@ -164,6 +175,35 @@ async def refresh_asset_price(
     return refreshed
 
 
+@router.post("/refresh-prices", response_model=AssetPriceRefreshResult)
+async def refresh_all_asset_prices(
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+) -> AssetPriceRefreshResult:
+    """Re-quote every market-priced asset of the current workspace (issue #778).
+
+    Same work the daily task does, on demand and narrowed to one workspace —
+    the scheduled sweep covers every tenant, so it must never be reused here
+    as-is. ``skipped`` counts holdings the provider had no price for (delisted
+    tickers, a failed per-symbol fallback); those keep their last known price.
+    """
+    summary = await asset_service.refresh_all_market_prices(
+        session, workspace_id=ctx.workspace.id
+    )
+    if summary["rate_limited"]:
+        # The service commits whatever it refreshed before the provider
+        # refused, so the counters are real: the caller refetches and can say
+        # how many prices already changed instead of losing that information.
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "message": "Market data provider is currently rate-limiting. Try again in a minute.",
+                **AssetPriceRefreshResult(**summary).model_dump(),
+            },
+        )
+    return AssetPriceRefreshResult(**summary)
+
+
 @router.get("", response_model=list[AssetRead])
 async def list_assets(
     include_archived: bool = False,
@@ -204,12 +244,13 @@ async def portfolio_trend(
 @router.get("/transactions", response_model=list[AssetTransactionRead])
 async def list_workspace_transactions(
     ticker: str | None = Query(None, max_length=32),
-    kind: str | None = Query(None, pattern="^(buy|sell)$"),
+    kind: str | None = Query(None, pattern="^(buy|sell|split)$"),
     limit: int = Query(500, ge=1, le=2000),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """All buy/sell transactions in the workspace — powers the Transactions tab."""
+    """All ledger entries (buys, sells and splits) in the workspace — powers the
+    Transactions tab."""
     return await asset_transaction_service.list_workspace_transactions(
         session, ctx.workspace.id, ticker=ticker, kind=kind, limit=limit
     )

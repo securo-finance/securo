@@ -16,7 +16,7 @@ spec:
     metadata:
       {{- if not .Values.plugins.runner.existingSecret }}
       annotations:
-        checksum/plugins-secret: {{ include (print $.Template.BasePath "/plugins/secret.yaml") . | sha256sum }}
+        checksum/plugins-secret: {{ include "securo.pluginsSecretChecksum" . }}
       {{- end }}
       labels:
         {{- include "securo.selectorLabels" . | nindent 8 }}

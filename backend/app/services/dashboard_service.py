@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.app_clock import app_today
 from app.core.config import get_settings
+from app.core.currency import same_currency
 from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
@@ -30,11 +31,13 @@ from app.services._query_filters import (
     owner_split_offset_pnl,
     reporting_date_col,
     reporting_date_value,
+    signed_amount_expr,
     viewer_shared_pnl,
     viewer_shared_spending_by_category,
 )
 from app.services import invoice_forecast_service
 from app.services.admin_service import get_credit_card_accounting_mode
+from app.services.credit_card_service import compute_effective_date
 from app.services.recurring_transaction_service import get_occurrences_in_range
 from app.services.asset_service import get_asset_values_at
 from app.services.fx_rate_service import _resolve_rate, convert
@@ -81,6 +84,67 @@ async def _materialized_recurring_occurrences(
     }
 
 
+# A card purchase is due at most a month after it (the next close) plus
+# another month (the due day after that close).
+_MAX_BILL_LAG = timedelta(days=62)
+
+
+async def _card_cycles(
+    session: AsyncSession, workspace_id: uuid.UUID, account_ids: set[uuid.UUID]
+) -> dict[uuid.UUID, tuple[int, int]]:
+    """Close and due day of each credit card in ``account_ids`` that has both.
+
+    Only cards reachable from ``workspace_id``: sync can move a card to
+    another workspace while its rule stays here, and that workspace's billing
+    setup must not date this one's projections. Such a rule keeps its own date.
+    """
+    if not account_ids:
+        return {}
+    result = await session.execute(
+        select(Account.id, Account.statement_close_day, Account.payment_due_day)
+        .outerjoin(BankConnection)
+        .where(
+            Account.id.in_(account_ids),
+            or_(
+                Account.workspace_id == workspace_id,
+                BankConnection.workspace_id == workspace_id,
+            ),
+            Account.type == "credit_card",
+            Account.statement_close_day.is_not(None),
+            Account.payment_due_day.is_not(None),
+        )
+    )
+    return {account_id: (close, due) for account_id, close, due in result.all()}
+
+
+def _dated_occurrences(
+    rec: RecurringTransaction,
+    range_start: date,
+    range_end: date,
+    card_cycle: Optional[tuple[int, int]] = None,
+) -> list[tuple[date, date]]:
+    """Occurrences of ``rec`` reported in ``[range_start, range_end)``.
+
+    Each one is ``(occurrence date, reporting date)``. With a card cycle the
+    reporting date is the due date of the bill the purchase falls on, the
+    same date ``compute_effective_date`` gives the row once it exists, so a
+    purchase before the range can land in it and one inside can leave it.
+    """
+    occurrences = get_occurrences_in_range(
+        start=rec.next_occurrence,
+        frequency=rec.frequency,
+        end_date=rec.end_date,
+        range_start=range_start - _MAX_BILL_LAG if card_cycle else range_start,
+        range_end=range_end,
+        intended_day=rec.day_of_month or rec.start_date.day,
+        weekend_adjustment=rec.weekend_adjustment,
+    )
+    if card_cycle is None:
+        return [(occ_date, occ_date) for occ_date in occurrences]
+    dated = [(occ_date, compute_effective_date(occ_date, *card_cycle)) for occ_date in occurrences]
+    return [(occ_date, due) for occ_date, due in dated if range_start <= due < range_end]
+
+
 async def _get_recurring_projections(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -89,6 +153,7 @@ async def _get_recurring_projections(
     account_ids: Optional[list[uuid.UUID]] = None,
     *,
     include_transfer_like: bool = False,
+    accounting_mode: str = "cash",
 ) -> list[dict]:
     """Compute virtual recurring transaction projections for a month.
     Pure read — no DB writes. Returns list of dicts with category_id, amount, type, currency.
@@ -99,7 +164,12 @@ async def _get_recurring_projections(
     Transfer-like categories are excluded by default because most callers use
     these rows for P&L, budgets, reports, or spending. Balance projections can
     opt in because transfers and investment applications still move cash in
-    the affected account. Ignored categories never participate."""
+    the affected account. Ignored categories never participate.
+
+    ``accounting_mode`` is for the P&L callers: in ``"accrual"`` a rule on a
+    credit card is reported on its bill's due date, like the real rows those
+    callers sum (#1379). Balance callers keep the default, the day the card's
+    balance moves."""
     if account_ids is not None and len(account_ids) == 0:
         return []
     filters = [
@@ -125,6 +195,13 @@ async def _get_recurring_projections(
         stmt = stmt.where(RecurringTransaction.account_id.in_(account_ids))
     result = await session.execute(stmt)
     recurring_list = list(result.scalars().all())
+    card_cycles = (
+        await _card_cycles(
+            session, workspace_id, {rec.account_id for rec in recurring_list if rec.account_id}
+        )
+        if accounting_mode == "accrual"
+        else {}
+    )
 
     # A recurrence may already have been materialized without its nominal
     # pointer being advanced yet (for example by generate-ahead workflows).
@@ -134,7 +211,7 @@ async def _get_recurring_projections(
         session,
         workspace_id,
         {rec.id for rec in recurring_list},
-        month_start,
+        month_start - _MAX_BILL_LAG if card_cycles else month_start,
         month_end,
     )
 
@@ -142,14 +219,8 @@ async def _get_recurring_projections(
     for rec in recurring_list:
         # Compute occurrences from the nominal pointer; linked rows are
         # filtered explicitly below because the pointer can lag materialization.
-        occurrences = get_occurrences_in_range(
-            start=rec.next_occurrence,
-            frequency=rec.frequency,
-            end_date=rec.end_date,
-            range_start=month_start,
-            range_end=month_end,
-            intended_day=rec.day_of_month or rec.start_date.day,
-            weekend_adjustment=rec.weekend_adjustment,
+        occurrences = _dated_occurrences(
+            rec, month_start, month_end, card_cycles.get(rec.account_id)
         )
         # A split template projects one row per part, in its own category,
         # so totals by category read the parts; every other total adds the
@@ -164,7 +235,7 @@ async def _get_recurring_projections(
             if rec.has_category_lines and rec.category_lines
             else [(rec.category_id, float(rec.amount))]
         )
-        for occ_date in occurrences:
+        for occ_date, report_date in occurrences:
             if (rec.id, occ_date) in materialized_occurrences:
                 continue
             for part_category_id, part_amount in parts:
@@ -174,7 +245,7 @@ async def _get_recurring_projections(
                     "amount": part_amount,
                     "type": rec.type,
                     "currency": rec.currency,
-                    "date": occ_date,
+                    "date": report_date,
                 })
     return projections
 
@@ -356,14 +427,9 @@ async def get_summary(
             ):
                 continue
             account_currency = tx.account.currency if tx.account else tx.currency
-            amount = (
-                tx.amount
-                if tx.currency == account_currency
-                else (tx.amount_primary or tx.amount)
-            )
-            signed = amount if tx.type == "credit" else -amount
             projected_balance[account_currency] = (
-                projected_balance.get(account_currency, 0.0) + float(signed)
+                projected_balance.get(account_currency, 0.0)
+                + _signed_transaction_amount(tx)
             )
 
         # Money promised but not yet moved. An invoice is a claim rather
@@ -448,7 +514,8 @@ async def get_summary(
 
     # Add virtual recurring projections
     projections = await _get_recurring_projections(
-        session, workspace_id, month_start, month_end, account_ids
+        session, workspace_id, month_start, month_end, account_ids,
+        accounting_mode=accounting_mode,
     )
     forecast_transactions = await _get_forecast_transactions(
         session, workspace_id, month_start, month_end, account_ids,
@@ -524,6 +591,16 @@ async def get_summary(
         group_ids=(asset_group_ids or []) if filtered else None,
     )
 
+    # Cash vs investment *accounts* (issue #959). Same cutoff / account filter
+    # as total_balance, but typed so the UI never labels brokerage cash as
+    # "available". Net worth (total_balance) still includes both + assets.
+    cash_balance = await _total_balance_by_currency(
+        session, workspace_id, cutoff, account_ids, account_types=_CASH_ACCOUNT_TYPES,
+    )
+    investment_accounts = await _total_balance_by_currency(
+        session, workspace_id, cutoff, account_ids, account_types=_INVESTMENT_ACCOUNT_TYPES,
+    )
+
     # Add asset values to total balance
     for currency, amount in assets_value.items():
         total_balance[currency] = total_balance.get(currency, 0.0) + amount
@@ -538,7 +615,18 @@ async def get_summary(
     projected_balance_primary, projected_fx_fallback = await _sum_to_primary(
         session, projected_balance, primary_currency, cutoff
     )
-    fx_fallback = fx_fallback or projected_fx_fallback
+    cash_balance_primary, cash_fx_fallback = await _sum_to_primary(
+        session, cash_balance, primary_currency, cutoff
+    )
+    investment_accounts_primary, investment_fx_fallback = await _sum_to_primary(
+        session, investment_accounts, primary_currency, cutoff
+    )
+    fx_fallback = (
+        fx_fallback
+        or projected_fx_fallback
+        or cash_fx_fallback
+        or investment_fx_fallback
+    )
 
     # Convert income/expenses to primary currency using amount_primary when available
     # Use real-only totals (without projections) to avoid double-counting;
@@ -704,6 +792,10 @@ async def get_summary(
         pending_categorization_amount=pending_categorization_amount,
         assets_value=assets_value,
         assets_value_primary=round(assets_value_primary, 2),
+        cash_balance=cash_balance,
+        cash_balance_primary=round(cash_balance_primary, 2),
+        investment_accounts=investment_accounts,
+        investment_accounts_primary=round(investment_accounts_primary, 2),
         primary_currency=primary_currency,
         fx_fallback=fx_fallback,
         pending_shares_net=round(pending_shares_net, 2),
@@ -903,7 +995,8 @@ async def get_spending_by_category(
 
     # Add virtual recurring projections (debit only), converted to primary currency
     projections = await _get_recurring_projections(
-        session, workspace_id, month_start, month_end, account_ids
+        session, workspace_id, month_start, month_end, account_ids,
+        accounting_mode=accounting_mode,
     )
     # We need category info for recurring projections — fetch categories
     cat_cache: dict[str, dict] = {}
@@ -1152,7 +1245,13 @@ async def get_projected_transactions(
     P&L, and an investment contribution is money that will leave the account.
     The P&L-shaped callers exclude them on their own side, through
     ``_get_recurring_projections(include_transfer_like=False)``.
+
+    The month list sits beside that month's totals, so in accrual mode a rule
+    on a credit card is listed in the month its bill is due, with that due
+    date as ``reporting_date`` (#1379). A date range lists occurrences by
+    their own date.
     """
+    accounting_mode = "cash"
     if (from_date is None) != (to_date is None):
         raise ValueError("from_date and to_date must be provided together")
     if from_date and to_date:
@@ -1163,6 +1262,7 @@ async def get_projected_transactions(
         if not month:
             month = app_today().replace(day=1)
         range_start, range_end = _month_range(month)
+        accounting_mode = await get_credit_card_accounting_mode(session)
 
     # Get user's primary currency for live conversion
     user = await session.get(User, user_id)
@@ -1185,12 +1285,19 @@ async def get_projected_transactions(
         stmt = stmt.where(RecurringTransaction.account_id == account_id)
     result = await session.execute(stmt)
     recurring_list = list(result.scalars().all())
+    card_cycles = (
+        await _card_cycles(
+            session, workspace_id, {rec.account_id for rec in recurring_list if rec.account_id}
+        )
+        if accounting_mode == "accrual"
+        else {}
+    )
 
     materialized_occurrences = await _materialized_recurring_occurrences(
         session,
         workspace_id,
         {rec.id for rec in recurring_list},
-        range_start,
+        range_start - _MAX_BILL_LAG if card_cycles else range_start,
         range_end,
     )
 
@@ -1213,14 +1320,8 @@ async def get_projected_transactions(
 
     projections: list[ProjectedTransaction] = []
     for rec in recurring_list:
-        occurrences = get_occurrences_in_range(
-            start=rec.next_occurrence,
-            frequency=rec.frequency,
-            end_date=rec.end_date,
-            range_start=range_start,
-            range_end=range_end,
-            intended_day=rec.day_of_month or rec.start_date.day,
-            weekend_adjustment=rec.weekend_adjustment,
+        occurrences = _dated_occurrences(
+            rec, range_start, range_end, card_cycles.get(rec.account_id)
         )
         cat_name, cat_icon, cat_color, cat_is_transfer = (
             cat_map.get(rec.category_id, (None, None, None, False))
@@ -1241,7 +1342,7 @@ async def get_projected_transactions(
                     (Decimal(str(rec.amount)) * rate).quantize(Decimal("0.01"))
                 )
 
-        for occ_date in occurrences:
+        for occ_date, report_date in occurrences:
             if (rec.id, occ_date) in materialized_occurrences:
                 continue
             projections.append(ProjectedTransaction(
@@ -1253,6 +1354,7 @@ async def get_projected_transactions(
                 currency=rec.currency,
                 type=rec.type,
                 date=occ_date.isoformat(),
+                reporting_date=report_date.isoformat(),
                 category_id=str(rec.category_id) if rec.category_id else None,
                 category_name=cat_name,
                 category_icon=cat_icon,
@@ -1278,29 +1380,17 @@ async def get_projected_transactions(
     return projections
 
 
-def _signed_balance_expr(account_currency: str = ""):
-    """Reusable SQL expression: credit → +amount, debit → −amount.
-    Uses amount_primary when tx currency differs from account currency."""
-    if account_currency:
-        effective = case(
-            (Transaction.currency == account_currency, Transaction.amount),
-            else_=func.coalesce(Transaction.amount_primary, Transaction.amount),
-        )
-    else:
-        effective = Transaction.amount
-    return case(
-        (Transaction.type == "credit", effective),
-        else_=-effective,
-    )
-
-
 def _signed_transaction_amount(tx: Transaction) -> float:
-    """Return a loaded transaction's signed amount in its account currency."""
+    """Return a loaded transaction's signed amount in its account currency.
+
+    An unconverted cross-currency row contributes zero rather than being read
+    1:1, for the same reason as ``signed_amount_expr`` (issue #353).
+    """
     account_currency = tx.account.currency if tx.account else tx.currency
     amount = (
         tx.amount
-        if tx.currency == account_currency
-        else (tx.amount_primary or tx.amount)
+        if same_currency(tx.currency, account_currency)
+        else (tx.amount_primary or 0)
     )
     signed = amount if tx.type == "credit" else -amount
     return float(signed)
@@ -1338,8 +1428,12 @@ async def _get_open_accounts(
     session: AsyncSession,
     workspace_id: uuid.UUID,
     account_ids: Optional[list[uuid.UUID]] = None,
+    closed_after: Optional[date] = None,
 ) -> list[Account]:
     """Get all non-closed accounts for a workspace.
+
+    ``closed_after`` also returns accounts closed after that date, for
+    snapshots taken while they were still open.
 
     When ``account_ids`` is provided (an active Collection filter, issue #105),
     restrict to that subset. An empty list returns no accounts — a collection
@@ -1355,7 +1449,8 @@ async def _get_open_accounts(
                 Account.workspace_id == workspace_id,
                 BankConnection.workspace_id == workspace_id,
             ),
-            Account.is_closed == False,
+            or_(Account.is_closed == False, Account.closed_at > closed_after)
+            if closed_after else Account.is_closed == False,
         )
     )
     if account_ids:
@@ -1395,7 +1490,7 @@ async def _account_balance_at(
         # Subtract activity after cutoff to get the balance AT cutoff
         # Exclude ignored transactions from balance calculation
         delta_after = await session.scalar(
-            select(func.coalesce(func.sum(_signed_balance_expr(account.currency)), 0))
+            select(func.coalesce(func.sum(signed_amount_expr(account.currency)), 0))
             .outerjoin(Category, Transaction.category_id == Category.id)
             .where(
                 Transaction.account_id == account.id,
@@ -1415,7 +1510,7 @@ async def _account_balance_at(
             # historical posted-only snapshots; the current snapshot above is
             # intentionally left untouched to preserve provider parity.
             pending_delta = await session.scalar(
-                select(func.coalesce(func.sum(_signed_balance_expr(account.currency)), 0))
+                select(func.coalesce(func.sum(signed_amount_expr(account.currency)), 0))
                 .outerjoin(Category, Transaction.category_id == Category.id)
                 .where(
                     Transaction.account_id == account.id,
@@ -1435,7 +1530,7 @@ async def _account_balance_at(
         # Exclude ignored transactions from balance calculation
         status_filter = [] if include_pending else [Transaction.status == "posted"]
         result = await session.scalar(
-            select(func.coalesce(func.sum(_signed_balance_expr(account.currency)), 0))
+            select(func.coalesce(func.sum(signed_amount_expr(account.currency)), 0))
             .outerjoin(Category, Transaction.category_id == Category.id)
             .where(
                 Transaction.account_id == account.id,
@@ -1451,14 +1546,27 @@ async def _account_balance_at(
         return float(result or 0)
 
 
+# Account types treated as spendable / near-liquid cash on the dashboard.
+# Investment brokerage accounts and credit cards are excluded on purpose.
+_CASH_ACCOUNT_TYPES = frozenset({"checking", "savings", "wallet"})
+_INVESTMENT_ACCOUNT_TYPES = frozenset({"investment"})
+
+
 async def _total_balance_by_currency(
     session: AsyncSession, workspace_id: uuid.UUID, cutoff: date,
     account_ids: Optional[list[uuid.UUID]] = None,
     *,
     include_pending: bool = False,
+    account_types: Optional[frozenset[str]] = None,
 ) -> dict[str, float]:
-    """Get total balance across all open accounts at a date, grouped by currency."""
+    """Get total balance across open accounts at a date, grouped by currency.
+
+    When ``account_types`` is set, only accounts whose ``type`` is in that set
+    are included (used to split cash vs investment without changing net worth).
+    """
     accounts = await _get_open_accounts(session, workspace_id, account_ids)
+    if account_types is not None:
+        accounts = [a for a in accounts if a.type in account_types]
     if not accounts:
         return {}
 
@@ -1471,14 +1579,7 @@ async def _total_balance_by_currency(
     # query per account. This matters especially for balance-history, which
     # asks for two historical cutoffs and used to multiply the round-trips by
     # the number of accounts.
-    effective = case(
-        (Transaction.currency == Account.currency, Transaction.amount),
-        else_=func.coalesce(Transaction.amount_primary, Transaction.amount),
-    )
-    signed = case(
-        (Transaction.type == "credit", effective),
-        else_=-effective,
-    )
+    signed = signed_amount_expr(Account.currency)
 
     async def grouped_sums(account_ids: list[uuid.UUID], *filters) -> dict[uuid.UUID, float]:
         if not account_ids:
@@ -1549,7 +1650,10 @@ async def _total_balance_by_currency(
             # Every card in the group carries the same shared debt, so `total`
             # counts it len(group) times; strip the duplicates.
             current_shared = await _account_balance_at(
-                session, group[0], today, include_pending=include_pending
+                session,
+                group[0],
+                today,
+                include_pending=include_pending,
             )
             total -= current_shared * (len(group) - 1)
         currency = group[0].currency
@@ -1600,19 +1704,12 @@ async def _daily_balance_deltas_by_date(
 ) -> dict[date, float]:
     """Get daily balance deltas for a date range [start, end), keyed by date.
 
-    Computes per-account in native currency (using amount_primary only for
-    foreign txs within an account), grouped by date and account currency,
-    then converts each currency to primary. This is consistent with
+    Computes per-account in native currency (a foreign row counts only once
+    ``amount_primary`` was stamped), grouped by date and account currency, then
+    converts each currency to primary. This is consistent with
     ``_balance_at`` and avoids per-transaction FX conversion loops.
     """
-    effective = case(
-        (Transaction.currency == Account.currency, Transaction.amount),
-        else_=func.coalesce(Transaction.amount_primary, Transaction.amount),
-    )
-    signed = case(
-        (Transaction.type == "credit", effective),
-        else_=-effective,
-    )
+    signed = signed_amount_expr(Account.currency)
     status_filter = [] if include_pending else [Transaction.status == "posted"]
     if month_starts is not None and not month_starts:
         return {}

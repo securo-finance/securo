@@ -7,8 +7,12 @@ in the linked member's ledger' design:
   - Owner doesn't see duplicates (they own the parent).
 """
 
+import uuid
+
 import pytest
 from httpx import AsyncClient
+
+from app.models.transaction import Transaction
 
 
 async def _register(client: AsyncClient, email: str, password: str) -> dict:
@@ -313,3 +317,110 @@ async def test_group_filter_still_works_for_linked_member(
     assert resp.status_code == 200
     rows = resp.json()["items"]
     assert {r["description"] for r in rows} == {"Brunch"}
+
+
+@pytest.mark.asyncio
+async def test_linked_member_does_not_see_owner_card_ending(
+    client, auth_headers, test_user, session
+):
+    friend_email = "shared-card-friend@example.com"
+    await _register(client, friend_email, "friendpassword12")
+    friend_headers = await _login(client, friend_email, "friendpassword12")
+
+    account = await _create_account(client, auth_headers)
+    _, me_member, friend_member = await _create_group_with_self_and_friend(
+        client, auth_headers, friend_email
+    )
+    resp = await client.post(
+        "/api/transactions",
+        headers=auth_headers,
+        json={
+            "account_id": account["id"],
+            "description": "Dinner",
+            "amount": 60,
+            "date": "2026-04-28",
+            "type": "debit",
+            "currency": "USD",
+            "splits": {
+                "share_type": "equal",
+                "splits": [
+                    {"group_member_id": me_member["id"]},
+                    {"group_member_id": friend_member["id"]},
+                ],
+            },
+        },
+    )
+    assert resp.status_code == 201
+    tx_id = uuid.UUID(resp.json()["id"])
+    tx = await session.get(Transaction, tx_id)
+    assert tx is not None
+    tx.card_masked_number = "8172"
+    await session.commit()
+
+    friend_items = (await client.get("/api/transactions", headers=friend_headers)).json()["items"]
+    shared = [t for t in friend_items if t.get("is_shared")]
+    assert len(shared) == 1
+    assert shared[0]["card_masked_number"] is None
+
+    # Hiding it from the friend never touches the owner's row.
+    owner_items = (await client.get("/api/transactions", headers=auth_headers)).json()["items"]
+    owner_row = next(t for t in owner_items if t["id"] == str(tx_id))
+    assert owner_row["card_masked_number"] == "8172"
+
+
+@pytest.mark.asyncio
+async def test_linked_member_does_not_see_or_filter_by_owner_flag(
+    client, auth_headers, test_user, session
+):
+    """A flag and its reminder note belong to the workspace that set them."""
+    friend_email = "shared-flag-friend@example.com"
+    await _register(client, friend_email, "friendpassword12")
+    friend_headers = await _login(client, friend_email, "friendpassword12")
+
+    account = await _create_account(client, auth_headers)
+    _, me_member, friend_member = await _create_group_with_self_and_friend(
+        client, auth_headers, friend_email
+    )
+    resp = await client.post(
+        "/api/transactions",
+        headers=auth_headers,
+        json={
+            "account_id": account["id"],
+            "description": "Dinner",
+            "amount": 60,
+            "date": "2026-04-28",
+            "type": "debit",
+            "currency": "USD",
+            "splits": {
+                "share_type": "equal",
+                "splits": [
+                    {"group_member_id": me_member["id"]},
+                    {"group_member_id": friend_member["id"]},
+                ],
+            },
+        },
+    )
+    assert resp.status_code == 201
+    tx_id = resp.json()["id"]
+    flagged = await client.patch(
+        f"/api/transactions/{tx_id}",
+        headers=auth_headers,
+        json={"is_flagged": True, "flag_note": "ask for the receipt", "flag_due_date": "2026-05-05"},
+    )
+    assert flagged.json()["is_flagged"] is True
+
+    friend_items = (await client.get("/api/transactions", headers=friend_headers)).json()["items"]
+    shared = [t for t in friend_items if t.get("is_shared")]
+    assert len(shared) == 1
+    assert shared[0]["is_flagged"] is False
+    assert shared[0]["flag_note"] is None
+    assert shared[0]["flag_due_date"] is None
+
+    friend_flagged = await client.get("/api/transactions?flagged=true", headers=friend_headers)
+    assert friend_flagged.json()["total"] == 0
+    summary = await client.get("/api/transactions/flagged-summary", headers=friend_headers)
+    assert summary.json()["flagged"] == 0
+
+    owner_items = (await client.get("/api/transactions", headers=auth_headers)).json()["items"]
+    owner_row = next(t for t in owner_items if t["id"] == tx_id)
+    assert owner_row["flag_note"] == "ask for the receipt"

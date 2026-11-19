@@ -4,15 +4,14 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import String, and_, case, desc, func, or_, select
+from sqlalchemy import String, and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.app_clock import app_today
+from app.core.app_clock import app_timezone, app_today
 from app.core.config import get_settings
 from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
 from app.models.account import Account
 from app.models.asset import ASSET_PRICE_DECIMALS, Asset
-from app.models.asset_value import AssetValue
 from app.models.transaction import Transaction
 from app.models.category import Category
 from app.models.user import User
@@ -33,7 +32,11 @@ from app.services._query_filters import (
 )
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.account_service import get_account_name
-from app.services.asset_service import held_on
+from app.services.asset_service import (
+    _fill_forward_at,
+    _load_asset_native_values,
+    held_on,
+)
 from app.services.fx_rate_service import convert
 from app.schemas.report import (
     CategoryTrendItem,
@@ -101,44 +104,28 @@ def _report_start_date(
     return start.replace(day=1)
 
 
-async def _asset_value_at(
-    session: AsyncSession, workspace_id: uuid.UUID, cutoff: date,
-    primary_currency: str = "USD",
-    group_ids: Optional[list[uuid.UUID]] = None,
-) -> float:
-    """Sum of all asset values held at a given date, converted to primary currency."""
-    asset_stmt = select(Asset).where(
+async def _get_report_assets(
+    session: AsyncSession, workspace_id: uuid.UUID, since: date,
+    account_ids: Optional[list[uuid.UUID]] = None,
+    asset_group_ids: Optional[list[uuid.UUID]] = None,
+) -> tuple[list[Asset], dict[str, list[tuple[date, float]]]]:
+    """Assets held on ``since`` or later, with their whole native value series.
+
+    The series is whole, not cut at the report's end: a market-priced holding's
+    past values come from replaying its whole ledger, so cutting rows at the end
+    could change an earlier value. It is the series the Assets page chart loads
+    (ledger replay for market-priced holdings, stored amounts otherwise), and one
+    load serves every snapshot of a report.
+    """
+    stmt = select(Asset).where(
         Asset.workspace_id == workspace_id,
         Asset.is_archived == False,
-        held_on(cutoff),
+        held_on(since),
     )
-    if group_ids is not None:
-        asset_stmt = asset_stmt.where(Asset.group_id.in_(group_ids))
-    asset_result = await session.execute(asset_stmt)
-    total = 0.0
-    for asset in asset_result.scalars().all():
-        val_result = await session.execute(
-            select(AssetValue.amount)
-            .where(AssetValue.asset_id == asset.id, AssetValue.date <= cutoff)
-            .order_by(desc(AssetValue.date), desc(AssetValue.id))
-            .limit(1)
-        )
-        val = val_result.scalar_one_or_none()
-        if val is not None:
-            amount = float(val)
-        elif asset.purchase_price is not None and (
-            asset.purchase_date is None or asset.purchase_date <= cutoff
-        ):
-            amount = float(asset.purchase_price)
-        else:
-            amount = 0.0
-        if amount > 0:
-            converted, _ = await convert(
-                session, Decimal(str(amount)), asset.currency, primary_currency, cutoff,
-                decimals=ASSET_PRICE_DECIMALS,
-            )
-            total += float(converted)
-    return total
+    if account_ids is not None:
+        stmt = stmt.where(Asset.group_id.in_(asset_group_ids or []))
+    assets = list((await session.execute(stmt)).scalars().all())
+    return assets, await _load_asset_native_values(session, assets)
 
 
 async def _net_worth_at(
@@ -147,6 +134,7 @@ async def _net_worth_at(
     account_ids: Optional[list[uuid.UUID]] = None,
     asset_group_ids: Optional[list[uuid.UUID]] = None,
     accounts: Optional[list[Account]] = None,
+    assets: Optional[tuple[list[Asset], dict[str, list[tuple[date, float]]]]] = None,
 ) -> ReportDataPoint:
     """Compute a single net worth snapshot at a given date, converted to primary currency.
 
@@ -154,12 +142,28 @@ async def _net_worth_at(
     summed and only assets in the collection's wallets (``asset_group_ids``)
     are included.
 
-    ``accounts`` lets a caller that already fetched the (date-independent) open
-    account list for this workspace/filter pass it in, instead of re-querying
+    ``accounts`` lets a caller that already fetched the account list for
+    this workspace/filter pass it in, instead of re-querying
     it for every snapshot in a multi-point trend. Omit it to fetch as before.
+
+    ``assets`` is the same for the assets: a caller building a multi-point
+    trend passes the ``_get_report_assets`` result for the whole range in,
+    instead of reloading the value series for every snapshot. Omit it to load
+    them here.
     """
     if accounts is None:
-        accounts = await _get_open_accounts(session, workspace_id, account_ids)
+        accounts = await _get_open_accounts(session, workspace_id, account_ids, closed_after=cutoff)
+    # An account closed after the cutoff was still open on it. A closed card on
+    # a shared credit line stays out: its frozen balance can't be reconciled
+    # with the line's live one, and the open cards already carry that debt.
+    accounts = [
+        a for a in accounts
+        if not a.is_closed or (
+            a.closed_at is not None
+            and a.closed_at.astimezone(app_timezone()).date() > cutoff
+            and not (a.type == "credit_card" and a.shared_balance_group)
+        )
+    ]
 
     accounts_total = 0.0
     liabilities_total = 0.0
@@ -214,36 +218,23 @@ async def _net_worth_at(
                     group="accounts",
                 ))
 
-    # Per-asset composition at the cutoff date. An asset sold after the
-    # cutoff was still held on it.
-    filtered = account_ids is not None
-    asset_stmt = select(Asset).where(
-        Asset.workspace_id == workspace_id,
-        Asset.is_archived == False,
-        held_on(cutoff),
-    )
-    if filtered:
-        asset_stmt = asset_stmt.where(Asset.group_id.in_(asset_group_ids or []))
-    asset_result = await session.execute(asset_stmt)
+    # Per-asset composition at the cutoff date, from the same series as the
+    # Assets page and dashboard (ledger replay for market-priced holdings). An
+    # asset sold after the cutoff was still held on it.
+    if assets is None:
+        assets = await _get_report_assets(
+            session, workspace_id, cutoff, account_ids, asset_group_ids
+        )
+    report_assets, asset_values = assets
     # Decimal until the one final rounding: sub-cent holdings must add up
     # exactly the way the wallet rollup does.
     assets_sum = Decimal("0")
-    for asset in asset_result.scalars().all():
-        val_result = await session.execute(
-            select(AssetValue.amount)
-            .where(AssetValue.asset_id == asset.id, AssetValue.date <= cutoff)
-            .order_by(desc(AssetValue.date), desc(AssetValue.id))
-            .limit(1)
-        )
-        val = val_result.scalar_one_or_none()
-        if val is not None:
-            amount = float(val)
-        elif asset.purchase_price is not None and (
-            asset.purchase_date is None or asset.purchase_date <= cutoff
-        ):
-            amount = float(asset.purchase_price)
-        else:
-            amount = 0.0
+    for asset in report_assets:
+        # The preloaded list was selected with held_on(since): re-apply it for
+        # this cutoff.
+        if asset.sell_date is not None and asset.sell_date <= cutoff:
+            continue
+        amount = _fill_forward_at(asset, asset_values[str(asset.id)], cutoff) or 0.0
         if amount > 0:
             converted, _ = await convert(
                 session, Decimal(str(amount)), asset.currency, primary_currency, cutoff,
@@ -395,16 +386,21 @@ async def get_net_worth_report(
 
     points = _date_points(start, axis_end, interval)
 
-    # Fetch the open-account list once: it does not depend on the snapshot
-    # date, so every point below reuses it instead of re-querying it.
-    accounts = await _get_open_accounts(session, workspace_id, account_ids)
+    # Fetch the account list once, including accounts closed during the
+    # period; each point below keeps the ones still open on its date.
+    accounts = await _get_open_accounts(session, workspace_id, account_ids, closed_after=start)
+
+    # Load the assets once for the whole range.
+    assets = await _get_report_assets(
+        session, workspace_id, start, account_ids, asset_group_ids,
+    )
 
     # Compute snapshot at each date point
     trend: list[ReportDataPoint] = []
     for point in points:
         dp = await _net_worth_at(
             session, workspace_id, point, primary_currency, account_ids, asset_group_ids,
-            accounts=accounts,
+            accounts=accounts, assets=assets,
         )
         dp.date = _format_date_label(point, interval)
         dp.change = round(dp.value - trend[-1].value, 2) if trend else None
@@ -423,7 +419,7 @@ async def get_net_worth_report(
     else:
         baseline = await _net_worth_at(
             session, workspace_id, start, primary_currency, account_ids, asset_group_ids,
-            accounts=accounts,
+            accounts=accounts, assets=assets,
         )
     previous = baseline if trend else current
 
@@ -504,8 +500,13 @@ async def get_income_expenses_report(
     financial_year_start_month: int = 1,
     start_date: date | None = None,
     end_date: date | None = None,
+    include_forecasts: bool = False,
 ) -> ReportResponse:
-    """Build income/expenses; explicit custom windows include actuals only."""
+    """Build income/expenses; explicit custom windows include actuals only.
+
+    ``include_forecasts`` keeps the estimates for an explicit window that
+    comes from a preset (This Month, Last Month, a window stepped back).
+    """
     filtered = account_ids is not None
     acct_filter = [Transaction.account_id.in_(account_ids)] if filtered else []
     real_today = app_today()
@@ -693,20 +694,24 @@ async def get_income_expenses_report(
         )
 
     # Custom windows report only actuals, including when they end today.
-    # Presets retain their existing full-month estimates.
-    include_forecasts = start_date is None and end_date is None
+    # Presets retain their existing full-month estimates, also when the page
+    # sends them as explicit dates (issue #1408).
+    include_forecasts = include_forecasts or (start_date is None and end_date is None)
     forecast_map: dict[str, tuple[float, float]] = {}
 
     # Add recurring projections for each month in the range (consistent with dashboard)
     from app.services.dashboard_service import _month_range, _get_recurring_projections
 
+    # Months up to the window's end: a window stepped back ends before today,
+    # and its summary must not pick up the months after it.
     cursor = start
-    while include_forecasts and cursor <= real_today:
+    while include_forecasts and cursor <= axis_end:
         m_start, m_end = _month_range(cursor)
         # A day-window range can start mid-month: only project occurrences that
         # fall inside the requested window.
         projections = await _get_recurring_projections(
-            session, workspace_id, max(m_start, start), m_end, account_ids
+            session, workspace_id, max(m_start, start), m_end, account_ids,
+            accounting_mode=accounting_mode,
         )
         for proj in projections:
             # Convert to primary currency
@@ -714,7 +719,9 @@ async def get_income_expenses_report(
                 session, Decimal(str(proj["amount"])), proj["currency"], primary_currency,
             )
             proj_amount = float(converted)
-            label = _format_date_label(cursor, interval)
+            # The projection's own date: in accrual a card charge is due on
+            # its bill's date, which can sit days after the month's cursor.
+            label = _format_date_label(proj["date"], interval)
             existing_income, existing_expenses = forecast_map.get(label, (0.0, 0.0))
             if proj["type"] == "credit":
                 forecast_map[label] = (existing_income + proj_amount, existing_expenses)
@@ -927,14 +934,16 @@ async def get_income_expenses_report(
     # we surface them as their own "investments" group — money set aside, distinct
     # from spending and from leftover surplus (mirrors how Sure shows an
     # "Investment Contributions" node). Paired account transfers stay excluded via
-    # the transfer_pair_id filter, so only one-sided movements (contributions)
-    # appear here.
+    # the transfer_pair_id filter, so only one-sided movements appear here:
+    # debits are contributions, credits are withdrawals, which the Sankey draws
+    # as a source of money beside income (#1418).
     inv_result = await session.execute(
         with_category_lines(
             select(
                 Category.id,
                 Category.name,
                 Category.color,
+                Transaction.type,
                 func.sum(amount_expr),
             ).select_from(Transaction)
         )
@@ -944,7 +953,6 @@ async def get_income_expenses_report(
             report_date >= start,
             report_date <= axis_end,
             Transaction.source != "opening_balance",
-            Transaction.type == "debit",
             Transaction.status == "posted",
             Transaction.transfer_pair_id.is_(None),
             Transaction.is_ignored.is_(False),
@@ -953,13 +961,14 @@ async def get_income_expenses_report(
             Category.is_ignored.is_(False),
             *acct_filter,
         )
-        .group_by(Category.id, Category.name, Category.color)
+        .group_by(Category.id, Category.name, Category.color, Transaction.type)
     )
-    for cat_id, cat_name, cat_color, total_amount in inv_result.all():
+    for cat_id, cat_name, cat_color, txn_type, total_amount in inv_result.all():
         amount = abs(float(total_amount or 0))
         if amount <= 0:
             continue
-        comp_map[(str(cat_id), "investments")] = {
+        group = "withdrawals" if txn_type == "credit" else "investments"
+        comp_map[(str(cat_id), group)] = {
             "label": cat_name or "Investments",
             "color": cat_color or "#0EA5E9",
             "value": amount,
@@ -1060,11 +1069,14 @@ async def get_income_expenses_report(
     # Add recurring projections to composition and category trend
     cat_cache: dict[str, dict] = {}
     cursor2 = start
-    while include_forecasts and cursor2 <= real_today:
+    while include_forecasts and cursor2 <= axis_end:
         m_start, m_end = _month_range(cursor2)
-        projections = await _get_recurring_projections(session, workspace_id, m_start, m_end, account_ids)
-        period_label = _format_date_label(cursor2, interval)
+        projections = await _get_recurring_projections(
+            session, workspace_id, m_start, m_end, account_ids,
+            accounting_mode=accounting_mode,
+        )
         for proj in projections:
+            period_label = _format_date_label(proj["date"], interval)
             cat_id_str = str(proj["category_id"]) if proj["category_id"] else "uncategorized"
             group = "income" if proj["type"] == "credit" else "expenses"
 

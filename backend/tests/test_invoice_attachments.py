@@ -267,6 +267,53 @@ async def test_a_download_returns_the_bytes_that_were_stored(
     assert resp.content == payload
 
 
+def _delete_stored_files(base):
+    for path in base.rglob("*"):
+        if path.is_file():
+            path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_a_download_whose_file_vanished_is_a_404(
+    client: AsyncClient, biz_headers, monkeypatch, tmp_path
+):
+    """Row in the ledger, bytes gone from storage: 404, not 500."""
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "storage_local_path", str(tmp_path))
+    invoice = await make_invoice(client, biz_headers)
+    attachment = (await upload(client, biz_headers, invoice["id"])).json()
+    _delete_stored_files(tmp_path)
+
+    resp = await client.get(
+        f"/api/invoices/{invoice['id']}/attachments/{attachment['id']}",
+        headers=biz_headers,
+    )
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Attachment file is missing from storage"
+
+
+@pytest.mark.asyncio
+async def test_a_filed_document_gone_from_storage_has_no_pdf_to_give(
+    client: AsyncClient, biz_headers, monkeypatch, tmp_path
+):
+    """The filed document is served when asked for the PDF. When its bytes
+    are gone, that is a 404, not a 500."""
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "storage_local_path", str(tmp_path))
+    invoice = await make_invoice(
+        client, biz_headers, direction="payable", origin="imported",
+        external_source="email", external_id="gone-from-storage",
+    )
+    await upload(client, biz_headers, invoice["id"], kind="bill")
+    _delete_stored_files(tmp_path)
+
+    resp = await client.get(f"/api/invoices/{invoice['id']}/pdf", headers=biz_headers)
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Attachment file is missing from storage"
+
+
 @pytest.mark.asyncio
 async def test_an_import_with_nothing_filed_has_no_pdf_to_give(
     client: AsyncClient, biz_headers

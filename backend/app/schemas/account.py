@@ -3,7 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 LoanKind = Literal["mortgage", "auto", "personal", "student", "other"]
 LoanRatePeriod = Literal["monthly", "yearly_effective", "yearly_nominal"]
@@ -65,6 +65,19 @@ class AccountUpdate(BaseModel):
     loan_amortization: Optional[LoanAmortization] = None
 
 
+class AccountReservedBalanceRead(BaseModel):
+    """Provider-held reserved funds inside an account (cofrinhos). Read-only:
+    the sync owns these rows, so they are absent from Create/Update."""
+
+    id: uuid.UUID
+    external_id: str
+    name: Optional[str] = None
+    currency: str
+    amount: float
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class AccountRead(AccountBase):
     id: uuid.UUID
     user_id: uuid.UUID
@@ -80,6 +93,11 @@ class AccountRead(AccountBase):
     institution_name: Optional[str] = None
     institution_logo_url: Optional[str] = None
     current_balance: float = 0.0
+    # Provider-owned reserves are a separate display-only breakdown. Their
+    # relationship to the provider's balance is not guaranteed (ADR 0022).
+    reserved_balances: list[AccountReservedBalanceRead] = []
+    # Sum of the same-currency reservations, in the account's currency.
+    reserved_total: float = 0.0
     previous_balance: Optional[float] = None
     # Date of the opening-balance transaction; null when there is none.
     balance_date: Optional[date] = None
@@ -116,6 +134,34 @@ class AccountRead(AccountBase):
     closed_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AccountCardRead(BaseModel):
+    id: uuid.UUID
+    account_id: uuid.UUID
+    masked_number: str
+    label: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AccountCardLabelUpdate(BaseModel):
+    id: uuid.UUID
+    # Required so an item without a label cannot erase one by accident; an
+    # explicit empty value clears the alias. The final four is never editable
+    # here because it is supplied by the financial institution.
+    label: str = Field(max_length=80)
+
+    @field_validator("label")
+    @classmethod
+    def _reject_nul(cls, value: str) -> str:
+        if "\x00" in value:
+            raise ValueError("Label cannot contain a NUL character")
+        return value
+
+
+class AccountCardsUpdate(BaseModel):
+    cards: list[AccountCardLabelUpdate] = Field(default_factory=list, max_length=100)
 
 
 class CreditCardBillRead(BaseModel):

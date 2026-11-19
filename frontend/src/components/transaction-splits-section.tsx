@@ -185,11 +185,13 @@ export function TransactionSplitsSection({
 
     const groupChanged = lastGroupIdRef.current !== group.id
     lastGroupIdRef.current = group.id
+    // Read the refs here: the updater runs after hydratedRef is set below.
+    const rebuild = !hydratedRef.current || groupChanged
+    const source = hydratedRef.current ? null : seedRef.current
 
     setRows((prevRows) => {
       // If first hydration or switched groups, rebuild completely
-      if (!hydratedRef.current || groupChanged) {
-        const source = hydratedRef.current ? null : seedRef.current
+      if (rebuild) {
         return buildRows(group, source)
       }
 
@@ -293,7 +295,7 @@ export function TransactionSplitsSection({
       </label>
 
       {enabled && (
-        <div className="space-y-3 pl-6">
+        <div className="space-y-3 ps-6">
           {!groups || groups.length === 0 ? (
             <div className="space-y-2 py-2">
               <p className="text-xs text-muted-foreground font-semibold">
@@ -431,7 +433,7 @@ export function TransactionSplitsSection({
                               <span className="text-sm flex-1 min-w-0 truncate">
                                 {m.name}
                                 {m.is_self && (
-                                  <span className="ml-1.5 text-xs text-primary">
+                                  <span className="ms-1.5 text-xs text-primary">
                                     ({t('splitGroups.you')})
                                   </span>
                                 )}

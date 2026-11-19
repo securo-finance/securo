@@ -103,14 +103,55 @@ def test_get_storage_provider_local():
         providers_mod._storage_provider = original
 
 
+def test_get_storage_provider_s3():
+    import app.providers as providers_mod
+    from app.providers.s3_storage import S3StorageProvider
+
+    original = providers_mod._storage_provider
+    providers_mod._storage_provider = None
+    try:
+        with patch("app.core.config.get_settings") as mock_settings:
+            mock_settings.return_value.storage_provider = "s3"
+            provider = get_storage_provider()
+            assert isinstance(provider, S3StorageProvider)
+            assert provider.name == "s3"
+            assert get_storage_provider() is provider
+    finally:
+        providers_mod._storage_provider = original
+
+
+def test_local_storage_never_loads_the_s3_client():
+    """The S3 client ships in every image; with local storage it stays unloaded (ADR 0019)."""
+    import subprocess
+    import sys
+
+    code = (
+        "import sys\n"
+        "from unittest.mock import patch\n"
+        "import app.main\n"
+        "import app.providers as p\n"
+        "with patch('app.core.config.get_settings') as s:\n"
+        "    s.return_value.storage_provider = 'local'\n"
+        "    p._storage_provider = None\n"
+        "    p.get_storage_provider()\n"
+        "loaded = sorted(m for m in sys.modules if m.split('.')[0] in {'aiobotocore', 'botocore'}"
+        " or m == 'app.providers.s3_storage')\n"
+        "assert not loaded, loaded\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, timeout=120
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_get_storage_provider_unsupported():
     import app.providers as providers_mod
     original = providers_mod._storage_provider
     providers_mod._storage_provider = None
     try:
         with patch("app.core.config.get_settings") as mock_settings:
-            mock_settings.return_value.storage_provider = "s3"
-            with pytest.raises(NotImplementedError, match="s3"):
+            mock_settings.return_value.storage_provider = "unsupported"
+            with pytest.raises(NotImplementedError, match="unsupported"):
                 get_storage_provider()
     finally:
         providers_mod._storage_provider = original

@@ -22,13 +22,16 @@ spec:
     metadata:
       {{- if not .Values.plugins.runner.existingSecret }}
       annotations:
-        checksum/plugins-secret: {{ include (print $.Template.BasePath "/plugins/secret.yaml") . | sha256sum }}
+        checksum/plugins-secret: {{ include "securo.pluginsSecretChecksum" . }}
       {{- end }}
       labels:
         {{- include "securo.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: plugins-runner
     spec:
       automountServiceAccountToken: false
+      # Reap plugin processes the runner kills, like `init: true` in Compose:
+      # uvicorn is PID 1 and does not reap orphans on its own.
+      shareProcessNamespace: true
       securityContext:
         seccompProfile:
           type: RuntimeDefault

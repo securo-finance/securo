@@ -13,7 +13,7 @@ import { activityChartData, dayActivity, isCalendarItemInteractive } from '@/lib
 import { todayInTimezone, weekdayShortLabels } from '@/lib/date-utils'
 import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { cn } from '@/lib/utils'
-import { formatCurrency } from '@/lib/format'
+import { formatCurrency, ltrAmount } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import {
   saveCalendarDateBasis,
@@ -25,12 +25,13 @@ function parseLocalDate(value: string) {
 }
 
 function compactCurrency(value: number, currency = 'USD', locale = 'en-US') {
-  return new Intl.NumberFormat(locale, {
+  const formatted = new Intl.NumberFormat(locale, {
     style: 'currency',
     currency,
     notation: 'compact',
     maximumFractionDigits: 1,
   }).format(value)
+  return ltrAmount(formatted)
 }
 
 function signedAmount(item: TransactionCalendarItem) {
@@ -140,7 +141,7 @@ export function TransactionCalendarView({
         </div>
         <div className="grid grid-cols-7">
           {Array.from({ length: 35 }).map((_, index) => (
-            <div key={index} className="min-h-32 border-r border-b border-border p-3">
+            <div key={index} className="min-h-32 border-e border-b border-border p-3">
               <Skeleton className="h-4 w-8 mb-4" />
               <Skeleton className="h-4 w-24" />
             </div>
@@ -209,8 +210,8 @@ export function TransactionCalendarView({
               // two bottom corner cells carry a matching radius (12px outer − 1px
               // border) — otherwise their selection/focus ring loses its corner.
               className={cn(
-                index === calendar.days.length - 7 && 'rounded-bl-[11px]',
-                index === calendar.days.length - 1 && 'rounded-br-[11px]',
+                index === calendar.days.length - 7 && 'rounded-es-[11px]',
+                index === calendar.days.length - 1 && 'rounded-ee-[11px]',
               )}
             />
           ))}
@@ -461,11 +462,11 @@ function ActivityBars({
   const tooltipFor = (activity: (typeof data.days)[number]) => {
     const amount = (value: number) => mask(compactCurrency(value, currency, locale))
     const actualParts: string[] = []
-    if (activity.actualIncome > 0) actualParts.push(`${t('transactions.summaryIncome')} +${amount(activity.actualIncome)}`)
-    if (activity.actualExpense > 0) actualParts.push(`${t('transactions.summaryExpenses')} −${amount(activity.actualExpense)}`)
+    if (activity.actualIncome > 0) actualParts.push(`${t('transactions.summaryIncome')} ${ltrAmount(`+${amount(activity.actualIncome)}`)}`)
+    if (activity.actualExpense > 0) actualParts.push(`${t('transactions.summaryExpenses')} ${ltrAmount(`−${amount(activity.actualExpense)}`)}`)
     const projectedParts: string[] = []
-    if (activity.projectedIncome > 0) projectedParts.push(`+${amount(activity.projectedIncome)}`)
-    if (activity.projectedExpense > 0) projectedParts.push(`−${amount(activity.projectedExpense)}`)
+    if (activity.projectedIncome > 0) projectedParts.push(ltrAmount(`+${amount(activity.projectedIncome)}`))
+    if (activity.projectedExpense > 0) projectedParts.push(ltrAmount(`−${amount(activity.projectedExpense)}`))
     const segments = [
       String(displayDayNumber(activity.date)),
       actualParts.length > 0 ? actualParts.join(' · ') : t('transactions.calendarNoMovements'),
@@ -746,7 +747,7 @@ function DayCell({
       className={cn(
         // Column flex so a quiet day's marker can claim the leftover height and
         // sit in the middle of the cell instead of hanging under the date.
-        'flex flex-col border-r border-b border-border p-3 text-left transition-colors hover:bg-muted/30 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary/40',
+        'flex flex-col border-e border-b border-border p-3 text-start transition-colors hover:bg-muted/30 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary/40',
         detailed ? 'min-h-44' : 'min-h-24',
         !day.in_month && 'bg-muted/20 text-muted-foreground',
         day.in_month && isLowBalance && 'bg-rose-50/60 dark:bg-rose-950/20',
@@ -796,7 +797,7 @@ function DayCell({
       )}
 
       {detailed && previewItems.length > 0 && (
-        <div className="mt-3 space-y-1.5 pr-1">
+        <div className="mt-3 space-y-1.5 pe-1">
           {previewItems.map((item) => (
             <DayPreviewRow
               key={`${item.kind}-${item.id ?? item.recurring_id}-${item.date}`}
@@ -864,11 +865,11 @@ function DayPreviewRow({
       <span
         className={cn(
           'font-bold tabular-nums whitespace-nowrap',
-          showDescription ? 'shrink-0' : 'min-w-0 flex-1 truncate text-right',
+          showDescription ? 'shrink-0' : 'min-w-0 flex-1 truncate text-end',
           amount >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
         )}
       >
-        {mask(`${amount >= 0 ? '+' : '−'}${compactCurrency(Math.abs(item.amount), item.currency, locale)}`)}
+        {mask(ltrAmount(`${amount >= 0 ? '+' : '−'}${compactCurrency(Math.abs(item.amount), item.currency, locale)}`))}
       </span>
     </div>
   )
@@ -896,8 +897,8 @@ function DayCellActivity({
   const { t } = useTranslation()
   const activity = dayActivity(day)
   const projectedParts = [
-    activity.projectedIncome > 0 ? mask(`+${compactCurrency(activity.projectedIncome, currency, locale)}`) : null,
-    activity.projectedExpense > 0 ? mask(`−${compactCurrency(activity.projectedExpense, currency, locale)}`) : null,
+    activity.projectedIncome > 0 ? mask(ltrAmount(`+${compactCurrency(activity.projectedIncome, currency, locale)}`)) : null,
+    activity.projectedExpense > 0 ? mask(ltrAmount(`−${compactCurrency(activity.projectedExpense, currency, locale)}`)) : null,
   ].filter(Boolean)
 
   if (!activity.hasActual && !activity.hasProjected) {
@@ -917,17 +918,17 @@ function DayCellActivity({
   }
 
   return (
-    <div className={cn('mt-3 space-y-0.5', align === 'right' && 'mt-0 text-right')}>
+    <div className={cn('mt-3 space-y-0.5', align === 'right' && 'mt-0 text-end')}>
       {activity.hasActual && (
         <p className={cn('flex flex-wrap items-center gap-x-1.5 text-sm font-semibold tabular-nums', align === 'right' && 'justify-end')}>
           {activity.actualIncome > 0 && (
             <span className="text-emerald-600 dark:text-emerald-400">
-              {mask(`+${compactCurrency(activity.actualIncome, currency, locale)}`)}
+              {mask(ltrAmount(`+${compactCurrency(activity.actualIncome, currency, locale)}`))}
             </span>
           )}
           {activity.actualExpense > 0 && (
             <span className="text-rose-600 dark:text-rose-400">
-              {mask(`−${compactCurrency(activity.actualExpense, currency, locale)}`)}
+              {mask(ltrAmount(`−${compactCurrency(activity.actualExpense, currency, locale)}`))}
             </span>
           )}
         </p>
@@ -1028,7 +1029,7 @@ function MobileDayRow({
       aria-expanded={selected}
       aria-controls={selected ? panelId : undefined}
       className={cn(
-        'w-full border-l-4 border-transparent px-4 py-3 text-left transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary',
+        'w-full border-s-4 border-transparent px-4 py-3 text-start transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary',
         isLowBalance && !selected && 'bg-rose-50/75 dark:bg-rose-950/25',
         selected && 'border-primary bg-primary/10 dark:bg-primary/15',
       )}
@@ -1042,7 +1043,7 @@ function MobileDayRow({
             {t('transactions.calendarItemCount', { count: day.actual_count + day.projected_count })}
           </p>
         </div>
-        <div className="flex flex-col items-end gap-0.5 text-right">
+        <div className="flex flex-col items-end gap-0.5 text-end">
           {metric === 'balance' ? (
             <p className={cn('text-sm font-bold tabular-nums', day.ending_balance < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400')}>
               {mask(formatCurrency(day.ending_balance, currency, locale))}
@@ -1106,7 +1107,7 @@ function SelectedDayPanel({
   const headline = metric === 'balance' ? day.ending_balance : activity.actualNet
   const headlineLabel = metric === 'balance'
     ? mask(formatCurrency(day.ending_balance, currency, locale))
-    : mask(`${activity.actualNet >= 0 ? '+' : '−'}${formatCurrency(Math.abs(activity.actualNet), currency, locale)}`)
+    : mask(ltrAmount(`${activity.actualNet >= 0 ? '+' : '−'}${formatCurrency(Math.abs(activity.actualNet), currency, locale)}`))
   return (
     <aside
       id={id}
@@ -1129,7 +1130,7 @@ function SelectedDayPanel({
           <p
             title={headlineLabel}
             className={cn(
-              'shrink-0 text-right text-lg font-bold tabular-nums',
+              'shrink-0 text-end text-lg font-bold tabular-nums',
               headline < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400',
             )}
           >
@@ -1143,12 +1144,12 @@ function SelectedDayPanel({
           <div className="space-y-2 border-b border-border px-4 py-3">
             <DayPanelRow
               label={t('transactions.summaryIncome')}
-              value={mask(`+${formatCurrency(activity.actualIncome, currency, locale)}`)}
+              value={mask(ltrAmount(`+${formatCurrency(activity.actualIncome, currency, locale)}`))}
               amount={activity.actualIncome}
             />
             <DayPanelRow
               label={t('transactions.summaryExpenses')}
-              value={mask(`−${formatCurrency(activity.actualExpense, currency, locale)}`)}
+              value={mask(ltrAmount(`−${formatCurrency(activity.actualExpense, currency, locale)}`))}
               amount={-activity.actualExpense}
             />
             {day.has_transfer && (
@@ -1171,21 +1172,21 @@ function SelectedDayPanel({
               {activity.projectedIncome > 0 && (
                 <DayPanelRow
                   label={t('transactions.summaryIncome')}
-                  value={mask(`+${formatCurrency(activity.projectedIncome, currency, locale)}`)}
+                  value={mask(ltrAmount(`+${formatCurrency(activity.projectedIncome, currency, locale)}`))}
                   amount={activity.projectedIncome}
                 />
               )}
               {activity.projectedExpense > 0 && (
                 <DayPanelRow
                   label={t('transactions.summaryExpenses')}
-                  value={mask(`−${formatCurrency(activity.projectedExpense, currency, locale)}`)}
+                  value={mask(ltrAmount(`−${formatCurrency(activity.projectedExpense, currency, locale)}`))}
                   amount={-activity.projectedExpense}
                 />
               )}
               {activity.projectedIncome > 0 && activity.projectedExpense > 0 && (
                 <DayPanelRow
                   label={t('transactions.summaryNet')}
-                  value={mask(`${activity.projectedNet >= 0 ? '+' : '−'}${formatCurrency(Math.abs(activity.projectedNet), currency, locale)}`)}
+                  value={mask(ltrAmount(`${activity.projectedNet >= 0 ? '+' : '−'}${formatCurrency(Math.abs(activity.projectedNet), currency, locale)}`))}
                   amount={activity.projectedNet}
                 />
               )}
@@ -1264,7 +1265,7 @@ function CalendarItemRow({
       disabled={!interactive}
       onClick={() => { if (item.id) onOpenTransaction(item.id) }}
       className={cn(
-        'w-full flex items-center gap-3 pl-3 pr-3 py-3 text-left',
+        'w-full flex items-center gap-3 ps-3 pe-3 py-3 text-start',
         interactive
           ? 'hover:bg-muted/50 active:bg-muted/60 transition-colors'
           : 'cursor-default opacity-80',
@@ -1316,9 +1317,9 @@ function CalendarItemRow({
           </div>
         )}
       </div>
-      <div className="shrink-0 text-right">
+      <div className="shrink-0 text-end">
         <span className={cn('text-sm font-bold tabular-nums', amountColor)}>
-          {mask(`${item.is_ignored ? ' ' : item.type === 'credit' ? '+' : '−'}${formatCurrency(Math.abs(item.amount), item.currency, locale)}`)}
+          {mask(ltrAmount(`${item.is_ignored ? ' ' : item.type === 'credit' ? '+' : '−'}${formatCurrency(Math.abs(item.amount), item.currency, locale)}`))}
         </span>
         {item.amount_primary != null && item.currency !== userCurrency && (
           <div className="text-[10px] text-muted-foreground tabular-nums mt-0.5">

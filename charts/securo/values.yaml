@@ -13,8 +13,13 @@ global:
 
 # If existingSecret is NOT set, this secret will be created with the values below
 secret:
-  # MUST change in production
-  secretKey: "dev-secret-change-in-production"
+  # S3 credentials; omit both to use the SDK credential chain (e.g. IAM roles).
+  storageS3AccessKey: ""
+  storageS3SecretKey: ""
+  storageS3SessionToken: ""
+  # Optional. Left empty, Securo generates a unique key on first start and keeps
+  # it in the database. Set one (openssl rand -hex 32) to manage it yourself.
+  secretKey: ""
   # If postgresql.enabled is true, the internal database will be deployed.
   # If postgresql.enabled is false, you must provide your external database URL here or in existingSecret.
   databaseUrl: 'postgresql+asyncpg://postgres:postgres@{{ include "securo.fullname" . }}-postgresql:5432/securo'
@@ -34,8 +39,11 @@ secret:
   # OpenExchangeRates
   openexchangeratesAppId: ""
 
-  # Agents (LLM)
-  agentsMcpJwtSecret: "dev-mcp-secret-change-in-production"
+  # Agents (LLM). Signs the MCP server's JWTs. Empty derives it from secretKey,
+  # so the install needs no extra value. There is no default on purpose: a
+  # public one would let anyone mint a token for any user (#1174). A known
+  # public value is ignored and the derived key used instead.
+  agentsMcpJwtSecret: ""
   agentsOpenaiApiKey: ""
   agentsAnthropicApiKey: ""
   agentsOpenaiCompatApiKey: ""
@@ -80,13 +88,22 @@ config:
   celeryBrokerUrl: 'redis://{{ include "securo.fullname" . }}-redis-master:6379/0'
   celeryResultBackend: 'redis://{{ include "securo.fullname" . }}-redis-master:6379/0'
 
+  storageProvider: "local"
   storageLocalPath: "/app/data/attachments"
+  storageS3Bucket: ""
+  storageS3Region: ""
+  storageS3EndpointUrl: ""
+  storageS3AllowInsecureHttp: "false" # development only; required for http:// endpoints
+  storageS3AddressingStyle: "auto" # use path for Garage/MinIO
   agentsKnowledgeStoragePath: "/app/data/agent_knowledge"
 
   # Agents feature
   agentsEnabled: "false"
   agentsBuiltinMcpUrl: 'http://{{ include "securo.fullname" . }}-mcp-server:8765/mcp'
-  agentsExternalMcpUrl: '{{ include "securo.frontendUrl" . }}/mcp'
+  # Public URL external MCP clients use, shown in the app. Empty lets the UI
+  # derive it from the browser (host:8765). Set it when you publish /mcp with
+  # mcpServer.publicRoute and reach it on the same domain.
+  agentsExternalMcpUrl: ""
   agentsExtraMcpServers: ""
   agentsMcpExternalTtlDays: "90"
   agentsDefaultProvider: "ollama"
@@ -113,6 +130,16 @@ backend:
     requests:
       cpu: 100m
       memory: 256Mi
+  # Anything the chart does not model, such as an external database reached
+  # with a client certificate or a private CA bundle. Entries keep the
+  # Kubernetes shapes (EnvVar, EnvFromSource, Volume, VolumeMount) and are
+  # passed through untouched. All four are empty by default, so rendering is
+  # unchanged, and extraEnv is read after the ConfigMap and the Secret, so it
+  # wins over both, as `env` does over `envFrom` in Kubernetes.
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumes: []
+  extraVolumeMounts: []
 
 # Frontend configuration
 frontend:
@@ -146,6 +173,11 @@ celeryWorker:
     requests:
       cpu: 100m
       memory: 256Mi
+  # Same four keys as `backend`, for the worker pods.
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumes: []
+  extraVolumeMounts: []
 
 # Celery Beat configuration
 celeryBeat:
@@ -159,10 +191,30 @@ celeryBeat:
     requests:
       cpu: 50m
       memory: 64Mi
+  # Same four keys as `backend`, for the beat pod.
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumes: []
+  extraVolumeMounts: []
+
+# Database migration Job, a Helm post-install/post-upgrade hook that runs the
+# backend image. It reaches the database before the pods do, so it needs the
+# same extras when the connection uses a client certificate or a private CA.
+migration:
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumes: []
+  extraVolumeMounts: []
 
 # Built-in MCP Server configuration
 mcpServer:
   enabled: false
+  # Add /mcp to the Ingress (or HTTPRoute) so external MCP clients can reach
+  # it through the cluster's public entry point. Off by default: the server
+  # is only reachable inside the cluster, and publishing it is a deliberate
+  # choice that should sit behind your own gateway or network policy. When
+  # you turn it on, also set config.agentsExternalMcpUrl to the public URL.
+  publicRoute: false
   replicaCount: 1
   image:
     pullPolicy: IfNotPresent
@@ -243,12 +295,14 @@ plugins:
     extraEnv: []
   networkPolicy:
     # Restricts the runner to the backend, the Celery worker and the egress
-    # proxy. Requires a CNI that enforces NetworkPolicy. Leave it off when the
-    # cluster does not have one: private addresses are still refused by the
-    # proxy, but the runner could then reach other pods. The runner itself runs
-    # as root with the default capability set, so its namespace cannot be under
-    # the `restricted` Pod Security Standard.
-    enabled: false
+    # proxy. On by default, like the internal network in Compose: without it
+    # plugin code can open sockets straight to Redis, Postgres or the cloud
+    # metadata endpoint, and the proxy only guards traffic that goes through
+    # it. Turn it off only when the CNI does not enforce NetworkPolicy; the
+    # runner is not isolated then. The runner itself runs as root with the
+    # default capability set, so its namespace cannot be under the
+    # `restricted` Pod Security Standard.
+    enabled: true
     # Extra egress rules for the runner, appended to its policy. Needed when
     # plugin code has to reach something else, for example an external proxy
     # set through `runner.extraEnv` while `egress.enabled` is false.
@@ -261,7 +315,27 @@ plugins:
 # `ReadWriteOnce` will only work if you restrict all pods to a single node.
 persistence:
   attachments:
+    # Set false when using S3; migrate existing files before disabling this PVC.
     enabled: true
+    # Mount a claim you already have instead of creating one. Keep `enabled`
+    # true so the pods still mount it; the chart then renders no PVC and
+    # leaves that claim alone on uninstall.
+    #
+    # On a release that already runs, switching this in one upgrade drops the
+    # PVC the chart created, Helm deletes what leaves the release, and a
+    # `Delete` reclaim policy takes the attachments with it. Hand the claim
+    # over in two steps: first annotate the chart's PVC with
+    # `helm.sh/resource-policy: keep` and upgrade, then set this value and
+    # upgrade again. The claim then also survives `helm uninstall` and has to
+    # be deleted by hand. A claim you created outside the release needs no
+    # handoff.
+    existingClaim: ""
+    size: 5Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+  backups:
+    # Opt in when managed/scheduled backups should survive pod replacement.
+    enabled: false
     size: 5Gi
     storageClass: ""
     accessMode: ReadWriteOnce

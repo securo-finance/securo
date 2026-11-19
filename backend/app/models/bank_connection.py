@@ -22,7 +22,7 @@ class BankConnection(Base):
     workspace_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
     )
-    provider: Mapped[str] = mapped_column(String(50))  # "pluggy", "belvo", etc.
+    provider: Mapped[str] = mapped_column(String(128))  # "pluggy", "belvo", "plugin:<plugin id>", etc.
     external_id: Mapped[str] = mapped_column(String(255))  # Provider's item ID
     institution_name: Mapped[str] = mapped_column(String(255))
     display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -43,3 +43,38 @@ class BankConnection(Base):
     institutions: Mapped[list["Institution"]] = relationship(
         back_populates="connection", cascade="all, delete-orphan", lazy="selectin"
     )
+
+    @property
+    def last_sync_failure(self) -> Optional[dict]:
+        """Why the last sync failed, until a sync succeeds (issue #1405).
+
+        Kept in `settings` by connection_service; read here so the API can
+        return it as a field of its own."""
+        value = (self.settings or {}).get(LAST_SYNC_FAILURE_KEY)
+        if not isinstance(value, dict) or value.get("code") not in SYNC_FAILURE_CODES:
+            return None
+        try:
+            at = datetime.fromisoformat(value["at"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        # fromisoformat takes forms (an ISO week date, a bare date) the API
+        # schema refuses; hand it one it reads.
+        value = {**value, "at": at.isoformat()}
+        detail = value.get("detail")
+        if detail is not None and not isinstance(detail, str):
+            # A malformed detail must not take the whole connections list down.
+            return {**value, "detail": None}
+        return value
+
+
+# Key in BankConnection.settings holding the last sync failure, and its codes.
+LAST_SYNC_FAILURE_KEY = "last_sync_failure"
+SYNC_FAILURE_CODES = (
+    "psu_present_required",
+    "consent_expired",
+    # A bank linked through an aggregator the user manages (the SimpleFIN
+    # Bridge) needs reauthorizing there; the connection itself stays valid.
+    "reauthorize_at_provider",
+    "rate_limited",
+    "provider_error",
+)

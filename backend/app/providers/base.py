@@ -56,6 +56,24 @@ def mask_last4(value: Optional[str]) -> Optional[str]:
 
 
 @dataclass
+class ReservedBalanceData:
+    """Funds an institution holds reserved/earmarked inside an account.
+
+    Mercado Pago cofrinhos, "saldo reservado", caixinhas. Providers report
+    these beside the account balance without guaranteeing whether they are
+    included, so they are stored and shown without changing totals (ADR 0022).
+    `external_id` is the provider's identification, stable across syncs and
+    scoped to its account. One instance per currency: `amount` sums the
+    reservation's remuneration bands in that currency.
+    """
+
+    external_id: str
+    name: Optional[str]
+    currency: str
+    amount: Decimal
+
+
+@dataclass
 class AccountData:
     # The provider's identifier for this account. It is expected to be stable
     # across re-syncs, and the sync matches an incoming account on it first. A
@@ -101,6 +119,17 @@ class AccountData:
     # money is counted once: as the asset when one mirrors it, as cash
     # otherwise.
     auto_invested_balance: Decimal = Decimal(0)
+    # Provider-owned reserves, shown separately and never added to totals
+    # (ADR 0022). None = unreported or incomplete; keep stored rows.
+    # [] = explicitly reported, none active.
+    reserved_balances: Optional[list[ReservedBalanceData]] = None
+    # Credit still free on a card, when the provider reports it as a figure of
+    # its own instead of only the debt. Enable Banking reports a card from the
+    # account holder's side, and some banks (mBank PL, issue #624) put the
+    # credit limit in the booked balance, so the debt is only exact as
+    # `credit_limit - available_credit`. None = the provider said no such
+    # thing, and `balance` is the debt as usual.
+    available_credit: Optional[Decimal] = None
 
 
 @dataclass
@@ -124,6 +153,10 @@ class TransactionData:
     # Provider-side identifier of the bill this transaction belongs to.
     # Resolved to a credit_card_bills.id FK at sync time (issue #92).
     bill_external_id: Optional[str] = None
+    # Last four characters of the physical/virtual card used for this charge.
+    # This belongs to the transaction rather than the account because a single
+    # credit-card account can have additional or virtual cards. Never the PAN.
+    card_masked_number: Optional[str] = None
 
 
 @dataclass
@@ -187,6 +220,11 @@ class HoldingData:
     # belongs in a 3-char ISO currency field.
     ticker: Optional[str] = None
     maturity_date: Optional[date] = None
+    # Date the provider says `current_value` refers to. A provider can keep
+    # serving a frozen figure (a redeemed position it never reports as
+    # closed), so this date is the only sign that the value stopped moving.
+    # None = not reported by this provider.
+    value_date: Optional[date] = None
     is_withdrawn: bool = False  # provider signaled the position was sold/transferred
     metadata: Optional[dict] = None
     # Owning-account hint (SimpleFIN — issue #345): holdings are reported per
@@ -195,6 +233,28 @@ class HoldingData:
     # providers whose holdings aren't attributable to an account.
     account_external_id: Optional[str] = None
     account_name: Optional[str] = None
+    # Buys and sells of this holding, for providers that report them (plugin
+    # contract 1). None: not reported, the stored ledger is left alone.
+    trades: Optional[list["HoldingTradeData"]] = None
+    # What kind of investment it is ("stock", "etf", "fund", "crypto"), for
+    # providers that know. None: the generic "investment".
+    asset_type: Optional[str] = None
+
+
+@dataclass
+class HoldingTradeData:
+    """One buy or sell the provider reports for a holding.
+
+    `quantity` is always positive; `kind` gives the direction. `price` is per
+    unit in the asset's currency, and `fee` what executing the trade cost.
+    """
+
+    external_id: str
+    kind: Literal["buy", "sell"]
+    date: date
+    quantity: Decimal
+    price: Decimal
+    fee: Decimal = Decimal("0")
 
 
 @dataclass
@@ -243,7 +303,14 @@ class ProviderRateLimited(Exception):
     access (commonly ~4/day per resource), so a burst of syncs returns HTTP
     429. The connection is healthy; callers should skip this run and retry
     later rather than flag it as errored.
+
+    ``retry_after`` is the wait the provider asked for, in seconds, when it
+    sent one (``Retry-After``); None when it did not.
     """
+
+    def __init__(self, message: str = "", retry_after: Optional[float] = None):
+        super().__init__(message)
+        self.retry_after = retry_after
 
 
 class ProviderNotConfiguredError(Exception):
@@ -397,6 +464,20 @@ class BankProvider(ABC):
         every other provider as it was.
         """
         return []
+
+    def parse_raw_transaction(
+        self, raw: dict, payee_source: str = "auto"
+    ) -> Optional[TransactionData]:
+        """Rebuild a transaction from the payload this provider stores in
+        ``raw_data``, or None when it can't.
+
+        A re-sync reads it on the payload stored before the new one is merged
+        in: where a row still holds what that payload gave, the user never
+        changed it, so a provider correction under the same id may replace
+        it. Providers whose ``raw_data`` is the whole entry override this;
+        the default leaves a known row's amount, type and payee as they are.
+        """
+        return None
 
     @abstractmethod
     async def refresh_credentials(self, credentials: dict) -> dict:

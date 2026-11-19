@@ -3,9 +3,10 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts'
-import { ArrowRight, RefreshCw, SendHorizontal, Sparkles } from 'lucide-react'
+import { ArrowRight, Flag, RefreshCw, SendHorizontal, Sparkles } from 'lucide-react'
 
-import { accounts as accountsApi, budgets, dashboard, invoiceSchedules, invoices as invoicesApi } from '@/lib/api'
+import { accounts as accountsApi, budgets, dashboard, invoiceSchedules, invoices as invoicesApi, transactions as transactionsApi } from '@/lib/api'
+import { flagState } from '@/lib/transaction-flag'
 import { AGING_BUCKETS, displayNumber } from '@/lib/invoice-utils'
 import { sumAccountBalances, getAccountLabel } from '@/lib/account-utils'
 import { formatCurrency } from '@/lib/format'
@@ -18,7 +19,7 @@ import { CategoryIcon } from '@/components/category-icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import type { DashboardSummary, InvoiceDirection } from '@/types'
+import type { DashboardSummary, InvoiceDirection, Transaction } from '@/types'
 
 /**
  * What the dashboard is looking at, for widgets that fetch their own data.
@@ -51,7 +52,7 @@ function WidgetCard({ title, action, children, className }: { title: string; act
 function CardLink({ to, label }: { to: string; label: string }) {
   return (
     <Link to={to} className="shrink-0 text-xs font-medium text-primary hover:underline">
-      {label} &rarr;
+      {label} <span aria-hidden="true" className="rtl-mirror">&rarr;</span>
     </Link>
   )
 }
@@ -67,7 +68,7 @@ function Failed({ onRetry }: { onRetry: () => void }) {
     <div className="flex flex-1 flex-col items-center justify-center gap-2 py-6 text-center">
       <p className="text-sm text-muted-foreground">{t('widgets.loadFailed')}</p>
       <Button variant="outline" size="sm" onClick={onRetry}>
-        <RefreshCw size={14} className="mr-1" />
+        <RefreshCw size={14} className="me-1" />
         {t('common.retry')}
       </Button>
     </div>
@@ -222,7 +223,7 @@ export function SpendingDistributionWidget({ scope }: { scope: DashboardScope })
                 <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
                   {Math.round((row.total / total) * 100)}%
                 </span>
-                <span className="w-24 text-right text-sm font-semibold tabular-nums">{money(row.total)}</span>
+                <span className="w-24 text-end text-sm font-semibold tabular-nums">{money(row.total)}</span>
               </li>
             ))}
           </ul>
@@ -255,8 +256,10 @@ export function MonthResultWidget({ scope }: { scope: DashboardScope }) {
         <div className="flex flex-1 flex-col justify-between gap-4">
           <div>
             <p className={cn('text-2xl font-bold tabular-nums', result < 0 ? 'text-rose-500' : 'text-foreground')}>
-              {result > 0 ? '+' : ''}
-              {money(result)}
+              <span dir="ltr">
+                {result > 0 ? '+' : ''}
+                {money(result)}
+              </span>
             </p>
             {before !== null && (
               <p className="mt-1 text-xs text-muted-foreground tabular-nums">{t('widgets.monthResult.previous', { amount: money(before) })}</p>
@@ -265,11 +268,11 @@ export function MonthResultWidget({ scope }: { scope: DashboardScope }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-xs text-muted-foreground">{t('dashboard.monthlyIncome')}</p>
-              <p className="text-sm font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">+{money(income)}</p>
+              <p className="text-sm font-semibold tabular-nums text-emerald-600 dark:text-emerald-400"><span dir="ltr">+{money(income)}</span></p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">{t('dashboard.monthlyExpenses')}</p>
-              <p className="text-sm font-semibold tabular-nums text-rose-500">-{money(expenses)}</p>
+              <p className="text-sm font-semibold tabular-nums text-rose-500"><span dir="ltr">-{money(expenses)}</span></p>
             </div>
           </div>
         </div>
@@ -318,16 +321,117 @@ export function UpcomingWidget({ scope }: { scope: DashboardScope }) {
                 <CategoryIcon icon={row.category_icon} color={row.category_color} size="sm" />
                 <span className="min-w-0 flex-1 truncate text-sm">{row.description}</span>
                 <span className={cn('text-sm font-semibold tabular-nums', row.type === 'credit' ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground')}>
-                  {row.type === 'credit' ? '+' : '-'}
-                  {mask(formatCurrency(Math.abs(amount), currency, locale))}
+                  <span dir="ltr">
+                    {row.type === 'credit' ? '+' : '-'}
+                    {mask(formatCurrency(Math.abs(amount), currency, locale))}
+                  </span>
                 </span>
-                <span className="w-14 text-right text-xs tabular-nums text-muted-foreground">
+                <span className="w-14 text-end text-xs tabular-nums text-muted-foreground">
                   {new Date(`${row.date}T00:00:00`).toLocaleDateString(dateLocale, { day: '2-digit', month: 'short' })}
                 </span>
               </li>
             )
           })}
         </ul>
+      )}
+    </WidgetCard>
+  )
+}
+
+const FLAGGED_ROWS = 5
+
+/**
+ * Transactions flagged to come back to, the ones past their reminder date
+ * first, then by date, then those without one.
+ */
+export function FlaggedWidget({ scope, onOpen }: { scope: DashboardScope; onOpen: (tx: Transaction) => void }) {
+  const { t } = useTranslation()
+  const locale = useDisplayLocale()
+  const dateLocale = useDateLocale()
+  const { mask } = usePrivacyMode()
+  const accountIds = scope.activeAccountIds ?? undefined
+  // Under 'transactions' so flagging or unflagging anywhere refreshes it.
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['transactions', 'flagged-widget', scope.activeAccountIds],
+    queryFn: () => transactionsApi.list({
+      flagged: true,
+      account_ids: accountIds,
+      sort_by: 'flag_due_date',
+      sort_dir: 'asc',
+      limit: FLAGGED_ROWS,
+    }),
+    enabled: !scope.noAccounts,
+  })
+  const { data: summary } = useQuery({
+    queryKey: ['transactions', 'flagged-summary'],
+    queryFn: () => transactionsApi.flaggedSummary(),
+  })
+  const rows = scope.noAccounts ? [] : (data?.items ?? [])
+  const total = data?.total ?? 0
+  const counts = [
+    summary?.overdue ? { key: 'overdue', text: t('widgets.flagged.overdue', { count: summary.overdue }), className: 'bg-rose-500/10 text-rose-600 dark:text-rose-400' } : null,
+    summary?.due_soon ? { key: 'soon', text: t('widgets.flagged.dueSoon', { count: summary.due_soon }), className: 'bg-amber-500/10 text-amber-700 dark:text-amber-400' } : null,
+  ].filter((c): c is { key: string; text: string; className: string } => c !== null)
+  const viewAllTo = summary?.overdue ? '/transactions?flagged=overdue' : '/transactions?flagged=1'
+
+  return (
+    <WidgetCard title={t('widgets.flagged.title')} action={<CardLink to={viewAllTo} label={t('widgets.viewAll')} />}>
+      {isLoading && !scope.noAccounts ? (
+        <Skeleton className="h-32 w-full" />
+      ) : isError ? (
+        <Failed onRetry={() => void refetch()} />
+      ) : rows.length === 0 ? (
+        <Empty>{t('widgets.flagged.none')}</Empty>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {counts.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {counts.map((c) => (
+                <span key={c.key} className={cn('rounded-full px-2 py-0.5 text-[11px] font-semibold', c.className)}>{c.text}</span>
+              ))}
+            </div>
+          )}
+          <ul className="divide-y divide-border">
+            {rows.map((tx) => {
+              const state = flagState(tx)
+              const amount = Number(tx.amount_primary ?? tx.amount)
+              const currency = tx.amount_primary != null ? scope.currency : tx.currency
+              return (
+                <li key={tx.id}>
+                  <button
+                    type="button"
+                    onClick={() => onOpen(tx)}
+                    className="flex w-full items-center gap-3 py-2.5 text-start hover:text-primary"
+                  >
+                    <Flag
+                      size={14}
+                      className={cn('shrink-0 fill-current', state === 'overdue' ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400')}
+                      aria-hidden="true"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm">{tx.description}</span>
+                      {tx.flag_note && <span className="block truncate text-xs text-muted-foreground">{tx.flag_note}</span>}
+                    </span>
+                    <span className={cn('text-sm font-semibold tabular-nums', tx.type === 'credit' ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground')}>
+                      <span dir="ltr">
+                        {tx.type === 'credit' ? '+' : '-'}
+                        {mask(formatCurrency(Math.abs(amount), currency, locale))}
+                      </span>
+                    </span>
+                    <span className={cn('w-16 text-end text-xs tabular-nums', state === 'overdue' ? 'font-medium text-rose-600 dark:text-rose-400' : 'text-muted-foreground')}>
+                      {tx.flag_due_date
+                        ? new Date(`${tx.flag_due_date}T00:00:00`).toLocaleDateString(dateLocale, { day: '2-digit', month: 'short' })
+                        : t('widgets.flagged.noDate')}
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+          {total > rows.length && (
+            <p className="text-xs text-muted-foreground">{t('widgets.flagged.more', { count: total - rows.length })}</p>
+          )}
+        </div>
       )}
     </WidgetCard>
   )
@@ -395,7 +499,7 @@ export function CreditCardsWidget({ scope }: { scope: DashboardScope }) {
                   <span className="min-w-0 flex-1 truncate text-sm" title={label}>{label}</span>
                   <span className="text-sm font-semibold tabular-nums">{money(owes)}</span>
                   {due && (
-                    <span className="w-14 text-right text-xs tabular-nums text-muted-foreground">
+                    <span className="w-14 text-end text-xs tabular-nums text-muted-foreground">
                       {new Date(`${due}T00:00:00`).toLocaleDateString(dateLocale, { day: '2-digit', month: 'short' })}
                     </span>
                   )}
@@ -449,7 +553,7 @@ export function AssistantWidget() {
               </button>
             ))}
           </div>
-          <form onSubmit={submit} className="flex items-center gap-2 rounded-lg border border-border bg-background p-1 pl-3 focus-within:ring-2 focus-within:ring-ring/30">
+          <form onSubmit={submit} className="flex items-center gap-2 rounded-lg border border-border bg-background p-1 ps-3 focus-within:ring-2 focus-within:ring-ring/30">
             <input
               value={message}
               onChange={(event) => setMessage(event.target.value)}
@@ -564,7 +668,7 @@ export function AgingWidget({ scope }: { scope: DashboardScope }) {
                 <div key={bucket.key} className="flex items-center gap-2 text-sm">
                   <span className={cn('size-2 shrink-0 rounded-full', bucket.tone)} />
                   <dt className="text-muted-foreground">{t(`invoices.bucket.${bucket.key}`)}</dt>
-                  <dd className="ml-auto font-medium tabular-nums">{mask(formatCurrency(amountOf(bucket.key), scope.currency, locale))}</dd>
+                  <dd className="ms-auto font-medium tabular-nums">{mask(formatCurrency(amountOf(bucket.key), scope.currency, locale))}</dd>
                 </div>
               ) : null,
             )}
@@ -601,10 +705,10 @@ export function InvoicesDueWidget() {
                 <Link to={`/invoices/${invoice.id}`} className="flex items-center gap-3 py-2.5 hover:text-primary">
                   <span className="min-w-0 flex-1 truncate text-sm">
                     {invoice.payee?.name ?? t('widgets.invoicesDue.noClient')}
-                    {number && <span className="ml-1.5 text-xs text-muted-foreground">#{number}</span>}
+                    {number && <span className="ms-1.5 text-xs text-muted-foreground">#{number}</span>}
                   </span>
                   <span className="text-sm font-semibold tabular-nums">{mask(formatCurrency(Number(invoice.balance), invoice.currency, locale))}</span>
-                  <span className="w-14 text-right text-xs tabular-nums text-muted-foreground">
+                  <span className="w-14 text-end text-xs tabular-nums text-muted-foreground">
                     {/* An invoice in installments is due on its next unpaid one. */}
                     {new Date(`${invoice.next_due_date ?? invoice.due_date}T00:00:00`).toLocaleDateString(dateLocale, { day: '2-digit', month: 'short' })}
                   </span>
