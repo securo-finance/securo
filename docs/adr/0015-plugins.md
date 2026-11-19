@@ -19,6 +19,7 @@ People want categories, rules, integrations and looks that Securo doesn't ship. 
 - Installs are per workspace at a pinned commit (`workspace_plugin`). Rows a plugin created carry their origin (`plugin_origin`); a row the user edited is left alone on update and kept on removal.
 - Installing code requires the workspace owner.
 - Extended by [0021](0021-plugin-icons.md): a plugin's icon is read from the catalog's host when a browser asks Securo for it, as well as when someone opens the catalog.
+- Extended by [0026](0026-plugin-icons-outside-the-catalog.md): the index is also fetched when Connect Bank or Accounts shows an installed plugin's avatar, to find its icon.
 - Extended by [0023](0023-new-bank-providers-are-plugins.md): an integration that declares `provides` returns records the bank sync pipeline writes, and new bank providers come this way.
 
 ## Consequences
