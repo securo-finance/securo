@@ -430,6 +430,49 @@ async def test_an_investment_withdrawal_is_a_source_in_the_money_map(scene):
     assert after["expenses"] == before["expenses"]
 
 
+async def test_an_unpaired_card_bill_payment_is_neither_a_withdrawal_nor_a_contribution(scene):
+    """A bill paid from checking and imported from both statements is a debit
+    on the account and a credit on the card, never paired (#1551). Both legs
+    are the same money: they leave the Money Map, and a real withdrawal in
+    the same month still shows."""
+    bill = Category(
+        id=uuid.uuid4(), user_id=scene["user"].id, name="Pagamento de fatura",
+        icon="credit-card", color="#64748B", treat_as_transfer=True,
+    )
+    scene["session"].add(bill)
+    await scene["session"].commit()
+    resp = await scene["client"].post(
+        "/api/accounts", headers=scene["headers"],
+        json={"name": "Itaú Azul", "type": "credit_card", "balance": 0, "currency": CURRENCY},
+    )
+    assert resp.status_code in (200, 201), resp.text
+    card = resp.json()
+    before = await _snapshot(scene)
+
+    await scene["create"](300, "credit", scene["invest"])
+    await scene["create"](2500, "debit", bill, description="PAGTO FATURA ITAU AZUL")
+    await scene["create"](
+        2500, "credit", bill, account_id=card["id"], description="PAGAMENTO RECEBIDO",
+    )
+    after = await _snapshot(scene)
+
+    assert after["composition"][("withdrawals", "Investments")] == 300
+    assert ("withdrawals", "Pagamento de fatura") not in after["composition"]
+    assert ("investments", "Pagamento de fatura") not in after["composition"]
+    assert after["report"] == before["report"]
+
+
+async def test_a_movement_in_one_account_only_still_counts(scene):
+    """Same amount and category, but both in the same account: an
+    application and its redemption, not two legs of one movement."""
+    await scene["create"](500, "debit", scene["invest"])
+    await scene["create"](500, "credit", scene["invest"])
+    snap = await _snapshot(scene)
+
+    assert snap["composition"][("investments", "Investments")] == 500
+    assert snap["composition"][("withdrawals", "Investments")] == 500
+
+
 async def test_a_month_without_withdrawals_has_no_withdrawal_group(scene):
     snap = await _snapshot(scene)
 
