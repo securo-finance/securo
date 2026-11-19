@@ -96,7 +96,7 @@ function answerThreads(query, threads) {
 // merge if no gate refused it: open, `risk: low`, a documentation file only,
 // an approving verdict naming the head, the three required checks green, and a
 // CodeRabbit review of that same head.
-async function evaluate({ threads, comments, reviews, checks }) {
+async function evaluate({ threads, comments, reviews, checks, order }) {
   const log = [];
   const merged = [];
   const posted = [];
@@ -122,7 +122,10 @@ async function evaluate({ threads, comments, reviews, checks }) {
   };
   const github = {
     paginate: async (fn, params) => fn(params),
-    graphql: async (query) => answerThreads(query, threads),
+    graphql: async (query) => {
+      if (order) order.push('threads');
+      return answerThreads(query, threads);
+    },
     rest: {
       pulls: {
         get: async () => ({ data: state.pr }),
@@ -137,7 +140,12 @@ async function evaluate({ threads, comments, reviews, checks }) {
         updateComment: async () => ({ data: {} }),
         deleteComment: async () => ({ data: {} }),
       },
-      checks: { listForRef: async () => ({ data: { check_runs: state.checks } }) },
+      checks: {
+        listForRef: async () => {
+          if (order) order.push('checks');
+          return { data: { check_runs: state.checks } };
+        },
+      },
       actions: {
         createWorkflowDispatch: async () => ({ data: {} }),
         listWorkflowRuns: async () => ({ data: { workflow_runs: [] } }),
@@ -287,6 +295,36 @@ scenario('a head whose check completed the review, with no review object, merges
     assert.ok(merged, `expected a merge, got: ${log}`);
     assert.doesNotMatch(log, /CodeRabbit has no review/, log);
   });
+
+// The check run has to be read before the thread list. A review that completes
+// between the two has findings the list that came first does not carry, and
+// the lane would merge a Major it never saw — the ordering CodeRabbit called
+// out on #1605. Reading the evidence first means everything a completed review
+// published is in the list that follows it.
+scenario('the check run is read before the review threads', async () => {
+  const order = [];
+  const { merged, log } = await evaluate({
+    threads: [],
+    reviews: [coderabbitReview(OLD_HEAD)],
+    checks: [...GREEN, coderabbitCheck('success', 'Finished',
+      'Result: Success - Review completed')],
+    order,
+  });
+  assert.ok(merged, `expected a merge, got: ${log}`);
+  const checksAt = order.indexOf('checks');
+  const threadsAt = order.indexOf('threads');
+  assert.ok(checksAt !== -1 && threadsAt !== -1, `both were read: ${order}`);
+  assert.ok(checksAt < threadsAt, `the check run is read first: ${order}`);
+});
+
+// A review naming the head is evidence on its own, so the check run is not
+// read for it: the one read left is gate 5's, after the thread list.
+scenario('a review on the head does not spend a check read', async () => {
+  const order = [];
+  const { merged, log } = await evaluate({ threads: [], order });
+  assert.ok(merged, `expected a merge, got: ${log}`);
+  assert.deepEqual(order, ['threads', 'checks'], `only gate 5 reads it: ${order}`);
+});
 
 // `success` on its own is not a review: a check that never says the review was
 // completed must not be read as one, or the gate loosens to "any green run".
