@@ -12,6 +12,7 @@ import { formatCurrency, parseAmountInput } from '@/lib/format'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import { extractApiError } from '@/lib/api-errors'
 import { budgets as budgetsApi } from '@/lib/api'
+import { budgetDisplayAmount } from '@/lib/budget-settings-utils'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -157,6 +158,7 @@ export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudget
     const sourceByCategory = new Map<string, Budget>()
     for (const budget of sourceBudgets ?? []) sourceByCategory.set(budget.category_id, budget)
 
+    // Each copied limit, in the display currency for the total.
     const rows: number[] = []
     let overLimit = false
     for (const [categoryId, budget] of sourceByCategory) {
@@ -166,7 +168,7 @@ export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudget
       if (copiedCents >= MAX_BUDGET_CENTS) overLimit = true
       const existingCents = targetCents.get(categoryId)
       if (existingCents !== undefined && (!overwriteExisting || existingCents === copiedCents)) continue
-      rows.push(copiedCents)
+      rows.push(adjustedCents(budgetDisplayAmount(budget), adjustmentPercent))
     }
     return { rows, overLimit }
   }, [sourceBudgets, targetBudgets, overwriteExisting, adjustmentPercent])

@@ -213,6 +213,18 @@ describe('Budget spending in the inline editor', () => {
     expect(budgetRow().getByRole('progressbar').firstElementChild).toHaveClass(color)
   })
 
+  it('edits a limit typed in another currency in the display currency', async () => {
+    api.budgets.list.mockResolvedValue([{ ...rent, amount: 4500, currency: 'BRL', amount_primary: '900.00' }])
+    mockSpending()
+    renderWithProviders(<BudgetsPage />)
+    await screen.findByText('$450.00')
+
+    expect(budgetInput()).toHaveValue('900')
+    expect(budgetRow().getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50')
+    expect(screen.getByRole('button', { name: t('common.save') })).toBeDisabled()
+    expectNoBudgetWrites()
+  })
+
   it('previews a valid draft without persisting anything before Save', async () => {
     mockSpending()
     const { user } = renderWithProviders(<BudgetsPage />)

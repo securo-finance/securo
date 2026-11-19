@@ -663,7 +663,7 @@ async def propose_update_budget(
 
     if _can_apply(ctx, apply):
         updated = await budget_service.update_budget(
-            session, budget.id, ws_id, BudgetUpdate(amount=new_amount)
+            session, budget.id, ws_id, BudgetUpdate(amount=new_amount), ctx.user_id
         )
         if updated is None:
             return {**preview, "error": "budget not found"}
