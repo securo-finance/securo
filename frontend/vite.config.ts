@@ -50,7 +50,7 @@ export default defineConfig(async ({ mode }) => {
         workbox: {
           // `mjs` covers the PDF.js worker emitted into static/ (the attachment
           // preview needs it offline); `json` covers the hand-written
-          // manifest.json copied from public/ (issue #201).
+          // manifest.json copied from public/ (issue #1289).
           globPatterns: ['**/*.{js,css,html,png,ico,mjs,json}'],
           // Workbox skips any asset over 2 MiB by default, and the PDF.js
           // worker is ~2.17 MiB, so the default would leave it out even with

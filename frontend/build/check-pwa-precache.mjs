@@ -1,4 +1,4 @@
-// Guards what the service worker precaches (issue #201).
+// Guards what the service worker precaches (issue #1289).
 //
 // `vite build` writes `dist/sw.js` with the Workbox precache manifest inlined.
 // Two things the app needs offline live outside the shell: the PDF.js worker
