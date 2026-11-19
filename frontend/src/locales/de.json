@@ -2353,6 +2353,7 @@
     "performanceViewSaved": "Ansicht „{{name}}“ gespeichert",
     "performanceViewDeleted": "Ansicht „{{name}}“ gelöscht",
     "performanceViewSaveError": "Ansicht konnte nicht gespeichert werden",
+    "performanceViewGone": "Die Ansicht „{{name}}“ existiert nicht mehr. Deine Auswahl bleibt erhalten, du kannst sie als neue Ansicht speichern.",
     "performanceSelectedPeriod": "Ausgewählter Zeitraum",
     "performanceClearSelection": "Auswahl aufheben",
     "performanceDragHint": "Ziehen Sie über das Diagramm, um die Rendite eines beliebigen Zeitraums zu sehen.",

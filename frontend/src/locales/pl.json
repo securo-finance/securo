@@ -2449,6 +2449,7 @@
     "performanceViewSaved": "Zapisano widok „{{name}}”",
     "performanceViewDeleted": "Usunięto widok „{{name}}”",
     "performanceViewSaveError": "Nie udało się zapisać widoku",
+    "performanceViewGone": "Widok „{{name}}” już nie istnieje. Zaznaczenie zostało zachowane, możesz zapisać je jako nowy widok.",
     "performanceSelectedPeriod": "Wybrany okres",
     "performanceClearSelection": "Wyczyść zaznaczenie",
     "performanceDragHint": "Przeciągnij po wykresie, aby zobaczyć stopę zwrotu za dowolny okres.",

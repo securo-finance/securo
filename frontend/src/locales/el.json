@@ -2356,6 +2356,7 @@
     "performanceViewSaved": "Η προβολή «{{name}}» αποθηκεύτηκε",
     "performanceViewDeleted": "Η προβολή «{{name}}» διαγράφηκε",
     "performanceViewSaveError": "Δεν ήταν δυνατή η αποθήκευση της προβολής",
+    "performanceViewGone": "Η προβολή «{{name}}» δεν υπάρχει πλέον. Η επιλογή σας διατηρήθηκε, ώστε να την αποθηκεύσετε ως νέα προβολή.",
     "performanceSelectedPeriod": "Επιλεγμένη περίοδος",
     "performanceClearSelection": "Καθαρισμός επιλογής",
     "performanceDragHint": "Σύρετε στο γράφημα για να δείτε την απόδοση οποιασδήποτε περιόδου.",

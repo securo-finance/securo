@@ -2377,6 +2377,7 @@
     "performanceViewSaved": "Подання «{{name}}» збережено",
     "performanceViewDeleted": "Подання «{{name}}» видалено",
     "performanceViewSaveError": "Не вдалося зберегти подання",
+    "performanceViewGone": "Подання «{{name}}» більше не існує. Вибір збережено, його можна зберегти як нове подання.",
     "performanceSelectedPeriod": "Вибраний період",
     "performanceClearSelection": "Скасувати вибір",
     "performanceDragHint": "Проведіть по графіку, щоб побачити дохідність за будь-який період.",

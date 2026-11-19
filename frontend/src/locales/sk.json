@@ -2480,6 +2480,7 @@
     "performanceViewSaved": "Zobrazenie „{{name}}“ uložené",
     "performanceViewDeleted": "Zobrazenie „{{name}}“ odstránené",
     "performanceViewSaveError": "Zobrazenie sa nepodarilo uložiť",
+    "performanceViewGone": "Zobrazenie „{{name}}“ už neexistuje. Výber zostal zachovaný, môžete ho uložiť ako nové zobrazenie.",
     "performanceSelectedPeriod": "Vybrané obdobie",
     "performanceClearSelection": "Zrušiť výber",
     "performanceDragHint": "Potiahnutím po grafe zobrazíte výnos za ľubovoľné obdobie.",

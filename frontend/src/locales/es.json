@@ -2356,6 +2356,7 @@
     "performanceViewSaved": "Vista «{{name}}» guardada",
     "performanceViewDeleted": "Vista «{{name}}» eliminada",
     "performanceViewSaveError": "No se pudo guardar la vista",
+    "performanceViewGone": "La vista «{{name}}» ya no existe. Se conserva tu selección para que puedas guardarla como una vista nueva.",
     "performanceSelectedPeriod": "Período seleccionado",
     "performanceClearSelection": "Borrar selección",
     "performanceDragHint": "Arrastra sobre el gráfico para ver la rentabilidad de cualquier período.",

@@ -2356,6 +2356,7 @@
     "performanceViewSaved": "व्यू “{{name}}” सेव हो गया",
     "performanceViewDeleted": "व्यू “{{name}}” हटा दिया गया",
     "performanceViewSaveError": "व्यू सेव नहीं हो सका",
+    "performanceViewGone": "व्यू “{{name}}” अब मौजूद नहीं है। आपका चयन बना रहेगा, ताकि आप इसे नए व्यू के रूप में सेव कर सकें।",
     "performanceSelectedPeriod": "चयनित अवधि",
     "performanceClearSelection": "चयन हटाएँ",
     "performanceDragHint": "किसी भी अवधि का रिटर्न देखने के लिए चार्ट पर ड्रैग करें।",

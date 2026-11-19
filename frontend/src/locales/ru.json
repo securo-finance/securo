@@ -2377,6 +2377,7 @@
     "performanceViewSaved": "Представление «{{name}}» сохранено",
     "performanceViewDeleted": "Представление «{{name}}» удалено",
     "performanceViewSaveError": "Не удалось сохранить представление",
+    "performanceViewGone": "Представление «{{name}}» больше не существует. Выбор сохранён, его можно сохранить как новое представление.",
     "performanceSelectedPeriod": "Выбранный период",
     "performanceClearSelection": "Сбросить выбор",
     "performanceDragHint": "Проведите по графику, чтобы увидеть доходность за любой период.",

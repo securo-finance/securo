@@ -2494,6 +2494,7 @@
     "performanceViewSaved": "Pohled „{{name}}“ uložen",
     "performanceViewDeleted": "Pohled „{{name}}“ smazán",
     "performanceViewSaveError": "Pohled se nepodařilo uložit",
+    "performanceViewGone": "Pohled „{{name}}“ už neexistuje. Výběr zůstal zachován, můžete ho uložit jako nový pohled.",
     "performanceSelectedPeriod": "Vybrané období",
     "performanceClearSelection": "Zrušit výběr",
     "performanceDragHint": "Tažením přes graf zobrazíte výnos za libovolné období.",

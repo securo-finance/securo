@@ -2368,6 +2368,7 @@
     "performanceViewSaved": "התצוגה „{{name}}” נשמרה",
     "performanceViewDeleted": "התצוגה „{{name}}” נמחקה",
     "performanceViewSaveError": "לא ניתן לשמור את התצוגה",
+    "performanceViewGone": "התצוגה „{{name}}” כבר לא קיימת. הבחירה שלך נשמרה, כך שאפשר לשמור אותה כתצוגה חדשה.",
     "performanceSelectedPeriod": "התקופה שנבחרה",
     "performanceClearSelection": "נקה בחירה",
     "performanceDragHint": "גרור לאורך התרשים כדי לראות את התשואה לכל תקופה.",

@@ -55,7 +55,7 @@ export function AssetImportPanel() {
 
   const { data: wallets } = useQuery({
     queryKey: ['asset-groups'],
-    queryFn: assetGroupsApi.list,
+    queryFn: () => assetGroupsApi.list(),
   })
 
   async function runPreview(

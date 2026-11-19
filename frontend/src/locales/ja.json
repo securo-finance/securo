@@ -2356,6 +2356,7 @@
     "performanceViewSaved": "ビュー「{{name}}」を保存しました",
     "performanceViewDeleted": "ビュー「{{name}}」を削除しました",
     "performanceViewSaveError": "ビューを保存できませんでした",
+    "performanceViewGone": "ビュー「{{name}}」はもう存在しません。選択内容はそのまま残っているので、新しいビューとして保存できます。",
     "performanceSelectedPeriod": "選択した期間",
     "performanceClearSelection": "選択を解除",
     "performanceDragHint": "グラフ上をドラッグすると、任意の期間のリターンを表示します。",

@@ -2358,6 +2358,7 @@
     "performanceViewSaved": "Weergave “{{name}}” opgeslagen",
     "performanceViewDeleted": "Weergave “{{name}}” verwijderd",
     "performanceViewSaveError": "Kon de weergave niet opslaan",
+    "performanceViewGone": "Weergave “{{name}}” bestaat niet meer. Je selectie blijft behouden, zodat je die als nieuwe weergave kunt opslaan.",
     "performanceSelectedPeriod": "Geselecteerde periode",
     "performanceClearSelection": "Selectie wissen",
     "performanceDragHint": "Sleep over de grafiek om het rendement van een periode te zien.",

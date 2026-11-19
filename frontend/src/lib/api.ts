@@ -1581,8 +1581,13 @@ export const dashboard = {
 
 // Assets
 export const assets = {
-  list: async (includeArchived = false): Promise<Asset[]> => {
-    const { data } = await api.get('/assets', { params: { include_archived: includeArchived } })
+  // workspaceId pins the read to one workspace, for a caller whose cache
+  // belongs to it while another tab may have switched the shared default.
+  list: async (includeArchived = false, workspaceId?: string | null): Promise<Asset[]> => {
+    const { data } = await api.get('/assets', {
+      params: { include_archived: includeArchived },
+      ...workspaceHeader(workspaceId),
+    })
     return data
   },
   get: async (id: string): Promise<Asset> => {
@@ -1768,8 +1773,8 @@ export const assets = {
 
 // Asset Groups ("wallets")
 export const assetGroups = {
-  list: async (): Promise<AssetGroup[]> => {
-    const { data } = await api.get('/asset-groups')
+  list: async (workspaceId?: string | null): Promise<AssetGroup[]> => {
+    const { data } = await api.get('/asset-groups', workspaceHeader(workspaceId))
     return data
   },
   create: async (group: Partial<AssetGroup> & { name: string }): Promise<AssetGroup> => {

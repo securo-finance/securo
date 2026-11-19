@@ -2352,6 +2352,7 @@
     "performanceViewSaved": "Saved view “{{name}}”",
     "performanceViewDeleted": "Deleted view “{{name}}”",
     "performanceViewSaveError": "Could not save the view",
+    "performanceViewGone": "View “{{name}}” no longer exists. Your selection is kept, so you can save it as a new view.",
     "performanceSelectedPeriod": "Selected period",
     "performanceClearSelection": "Clear selection",
     "performanceDragHint": "Drag across the chart to see the return for any period.",

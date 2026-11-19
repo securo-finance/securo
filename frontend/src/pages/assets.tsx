@@ -1191,21 +1191,37 @@ export default function AssetsPage() {
   // Performance tells a deleted wallet or holding (dropped from a saved or
   // remembered selection) from one the collection hides or that is archived
   // (kept), so it needs the whole workspace, archived holdings included.
-  const { data: inventoryAssets } = useQuery({
-    queryKey: ['assets', 'including-archived'],
-    queryFn: () => assets.list(true),
-    enabled: activeTab === 'performance',
+  // Both reads name the workspace, in the key and on the request: another tab
+  // switching workspace changes the shared default, and an inventory from the
+  // wrong workspace would prune this one's remembered selection.
+  const inventoryWorkspaceId = workspace?.id ?? null
+  const inventoryAssetsQuery = useQuery({
+    queryKey: ['assets', 'including-archived', inventoryWorkspaceId],
+    queryFn: () => assets.list(true, inventoryWorkspaceId),
+    enabled: activeTab === 'performance' && !!inventoryWorkspaceId,
   })
+  const inventoryWalletsQuery = useQuery({
+    queryKey: ['asset-groups', 'inventory', inventoryWorkspaceId],
+    queryFn: () => assetGroups.list(inventoryWorkspaceId),
+    enabled: activeTab === 'performance' && !!inventoryWorkspaceId,
+  })
+  const inventoryAssets = inventoryAssetsQuery.data
+  const inventoryWallets = inventoryWalletsQuery.data
   const performanceInventory = useMemo(
     () =>
-      inventoryAssets && rawWalletsList
+      inventoryAssets && inventoryWallets
         ? {
-            walletIds: rawWalletsList.map((wallet) => wallet.id),
+            walletIds: inventoryWallets.map((wallet) => wallet.id),
             assetIds: inventoryAssets.map((asset) => asset.id),
           }
         : null,
-    [inventoryAssets, rawWalletsList],
+    [inventoryAssets, inventoryWallets],
   )
+  const inventoryError = inventoryAssetsQuery.isError || inventoryWalletsQuery.isError
+  const retryInventory = () => {
+    if (inventoryAssetsQuery.isError) void inventoryAssetsQuery.refetch()
+    if (inventoryWalletsQuery.isError) void inventoryWalletsQuery.refetch()
+  }
 
   const ungroupedAssets = assetsByGroup.get(null) ?? []
 
@@ -1444,6 +1460,8 @@ export default function AssetsPage() {
           holdings={performanceHoldings}
           wallets={sortedWallets}
           inventory={performanceInventory}
+          inventoryError={inventoryError}
+          onRetryInventory={retryInventory}
           locale={locale}
           dateLocale={dateLocale}
           mask={mask}

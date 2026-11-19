@@ -26,6 +26,13 @@ vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => authState,
 }))
 
+const toastMock = vi.hoisted(() => ({
+  success: vi.fn(),
+  warning: vi.fn(),
+  error: vi.fn(),
+}))
+vi.mock('sonner', () => ({ toast: toastMock }))
+
 vi.mock('@/lib/api', () => ({
   assets: {
     performance: vi.fn(),
@@ -108,6 +115,8 @@ function renderPerformance(
     holdings?: Asset[]
     wallets?: AssetGroup[]
     inventory?: PerformanceInventory | null
+    inventoryError?: boolean
+    onRetryInventory?: () => void
     canManage?: boolean
   } = {},
 ) {
@@ -122,6 +131,8 @@ function renderPerformance(
       holdings={shownHoldings}
       wallets={shownWallets}
       inventory={inventory}
+      inventoryError={options.inventoryError}
+      onRetryInventory={options.onRetryInventory}
       locale="en-US"
       dateLocale="en-US"
       mask={options.mask ?? ((value) => value)}
@@ -239,6 +250,33 @@ describe('PortfolioPerformance', () => {
     await waitFor(() => {
       expect(screen.queryByText('Carbon Fund')).not.toBeInTheDocument()
     })
+  })
+
+  it('reports a trade-import retry that only partly synced as partial, not done', async () => {
+    vi.mocked(assets.tradeImport).mockResolvedValue({
+      available: true,
+      enabled: true,
+      issues: [
+        {
+          connection_id: 'connection-a',
+          asset_id: 'asset-a',
+          name: 'Carbon Fund',
+          ticker: null,
+          status: 'incomplete',
+        },
+      ],
+    })
+    vi.mocked(connections.sync).mockResolvedValue({ sync_outcome: 'partial' } as never)
+    const { user } = renderPerformance({ canManage: true })
+
+    await screen.findByText('Carbon Fund')
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+
+    await waitFor(() => expect(toastMock.warning).toHaveBeenCalledTimes(1))
+    expect(toastMock.warning).toHaveBeenCalledWith(i18n.t('accounts.syncPartial'))
+    expect(toastMock.success).not.toHaveBeenCalled()
+    // The issue list is asked for again, so what still needs attention shows.
+    await waitFor(() => expect(assets.tradeImport).toHaveBeenCalledTimes(2))
   })
 
   it('does not list import problems to someone who cannot manage the workspace', async () => {
@@ -676,6 +714,67 @@ describe('PortfolioPerformance', () => {
         },
       },
     })
+  })
+
+  it('says so when the view being updated was deleted in another tab, and keeps the selection', async () => {
+    const view = { id: 'view-1', name: 'Long term', wallet_ids: ['brokerage'], asset_ids: [] }
+    authState.user = { preferences: { performance_views: { [workspaceId]: [view] } } }
+    const updateUser = vi.fn()
+    authState.updateUser = updateUser
+    // Another tab has deleted the view since this one loaded.
+    const fresh = { preferences: { performance_views: { [workspaceId]: [] } } }
+    vi.mocked(auth.me).mockResolvedValue(fresh as unknown as User)
+    const { user } = renderPerformance()
+    await screen.findByText('+12.50%')
+
+    await user.click(screen.getByRole('button', { name: /Entire portfolio/ }))
+    await user.click(
+      within(screen.getByRole('dialog', { name: 'Portfolio scope' })).getByRole('button', {
+        name: 'Long term',
+      }),
+    )
+    await user.click(screen.getByRole('button', { name: /Long term/ }))
+    const scope = screen.getByRole('dialog', { name: 'Portfolio scope' })
+    await user.click(within(scope).getByRole('checkbox', { name: 'Cash reserve' }))
+    await user.click(within(scope).getByRole('button', { name: 'Update “Long term”' }))
+
+    await waitFor(() =>
+      expect(toastMock.error).toHaveBeenCalledWith(
+        i18n.t('assets.performanceViewGone', { name: 'Long term' }),
+      ),
+    )
+    expect(auth.updateMe).not.toHaveBeenCalled()
+    expect(toastMock.success).not.toHaveBeenCalled()
+    // This tab catches up with the deletion.
+    expect(updateUser).toHaveBeenCalledWith(fresh)
+    // The selection stays and can be saved as a new view.
+    expect(within(scope).getByRole('checkbox', { name: 'Brokerage' })).toBeChecked()
+    expect(within(scope).getByRole('checkbox', { name: 'Cash reserve' })).toBeChecked()
+    expect(
+      within(scope).queryByRole('button', { name: 'Update “Long term”' }),
+    ).not.toBeInTheDocument()
+    expect(
+      within(scope).getByRole('textbox', { name: i18n.t('assets.performanceViewNamePlaceholder') }),
+    ).toBeInTheDocument()
+  })
+
+  it('offers a retry when the inventory fails to load for a remembered custom selection', async () => {
+    writeLastSelection(workspaceId, {
+      scope: 'custom',
+      walletIds: ['brokerage'],
+      assetIds: ['cash'],
+      period: '1y',
+    })
+    const onRetryInventory = vi.fn()
+    const { user } = renderPerformance({ inventory: null, inventoryError: true, onRetryInventory })
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(i18n.t('assets.performanceLoadError'))
+    expect(screen.queryByRole('status', { name: 'Loading...' })).not.toBeInTheDocument()
+    await user.click(within(alert).getByRole('button', { name: i18n.t('common.retry') }))
+    expect(onRetryInventory).toHaveBeenCalledTimes(1)
+    // Without the inventory, the custom selection is not sent.
+    expect(assets.performance).not.toHaveBeenCalled()
   })
 
   it('leaves deleted wallets and holdings out of a restored selection once the inventory loads', async () => {

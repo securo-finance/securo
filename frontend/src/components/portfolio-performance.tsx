@@ -111,6 +111,8 @@ export function PortfolioPerformance({
   holdings,
   wallets,
   inventory,
+  inventoryError = false,
+  onRetryInventory,
   locale,
   dateLocale,
   mask,
@@ -126,6 +128,9 @@ export function PortfolioPerformance({
    * only hides. A saved or restored selection keeps hidden ids.
    */
   inventory: PerformanceInventory | null
+  /** The inventory failed to load; a custom selection can't be sent without it. */
+  inventoryError?: boolean
+  onRetryInventory?: () => void
   locale: string
   dateLocale: string
   mask: (value: string) => string
@@ -242,6 +247,7 @@ export function PortfolioPerformance({
   // for, and for the inventory before sending a custom selection, so ids
   // deleted since it was saved are left out.
   const waitingForInputs = flagsLoading || (scope === 'custom' && !inventory)
+  const inventoryFailed = scope === 'custom' && !inventory && inventoryError
   const performance = useQuery({
     queryKey: [
       'asset-performance',
@@ -301,6 +307,7 @@ export function PortfolioPerformance({
       connectionIds: string[]
     }) => {
       let rateLimited = false
+      let partial = false
       let failed = false
       for (const connectionId of connectionIds) {
         try {
@@ -309,15 +316,17 @@ export function PortfolioPerformance({
             workspaceId: targetWorkspaceId,
           })
           rateLimited ||= result.sync_outcome === 'rate_limited'
+          partial ||= result.sync_outcome === 'partial'
         } catch {
           failed = true
         }
       }
-      return { rateLimited, failed }
+      return { rateLimited, partial, failed }
     },
-    onSuccess: ({ rateLimited, failed }) => {
+    onSuccess: ({ rateLimited, partial, failed }) => {
       if (failed) toast.error(t('accounts.syncError'))
       else if (rateLimited) toast.warning(t('accounts.syncRateLimited'))
+      else if (partial) toast.warning(t('accounts.syncPartial'))
       else toast.success(t('accounts.syncDone'))
     },
     onSettled: () => invalidateSyncedRecords(queryClient),
@@ -433,18 +442,22 @@ export function PortfolioPerformance({
    * saved from another tab since this one loaded is kept. This narrows the
    * race but doesn't close it: the server replaces the whole preferences
    * object, so a write from another tab between our read and our write is
-   * still lost.
+   * still lost. A `change` that returns null writes nothing; the fresh
+   * preferences are still shown, so this tab catches up with the other.
    */
-  const storeViews = async (change: (views: PerformanceView[]) => PerformanceView[]) => {
+  const storeViews = async (
+    change: (views: PerformanceView[]) => PerformanceView[] | null,
+  ) => {
     setSavingView(true)
     try {
       const fresh = await authApi.me()
+      const views = change(readSavedViews(fresh.preferences, workspaceId))
+      if (!views) {
+        updateUser(fresh)
+        return false
+      }
       const updated = await authApi.updateMe({
-        preferences: withSavedViews(
-          fresh.preferences,
-          workspaceId,
-          change(readSavedViews(fresh.preferences, workspaceId)),
-        ),
+        preferences: withSavedViews(fresh.preferences, workspaceId, views),
       })
       updateUser(updated)
       return true
@@ -474,14 +487,25 @@ export function PortfolioPerformance({
 
   const updateEditingView = async () => {
     if (!editingView) return
-    const update = (views: PerformanceView[]) =>
-      views.map((view) =>
+    // Another tab may have deleted the view since. Then nothing is written,
+    // and the selection stays, so it can be saved as a new view.
+    let deleted = false
+    const update = (views: PerformanceView[]) => {
+      if (!views.some((view) => view.id === editingView.id)) {
+        deleted = true
+        return null
+      }
+      return views.map((view) =>
         view.id === editingView.id
           ? { ...view, walletIds: [...selectedWalletIds], assetIds: [...selectedAssetIds] }
           : view,
       )
+    }
     if (await storeViews(update)) {
       toast.success(t('assets.performanceViewSaved', { name: editingView.name }))
+    } else if (deleted) {
+      setEditingViewId(null)
+      toast.error(t('assets.performanceViewGone', { name: editingView.name }))
     }
   }
 
@@ -1022,6 +1046,14 @@ export function PortfolioPerformance({
             <Button variant="outline" onClick={() => setScopeOpen(true)}>
               {t('assets.performanceSelectAssets')}
             </Button>
+          </PerformanceEmptyState>
+        ) : inventoryFailed ? (
+          <PerformanceEmptyState message={t('assets.performanceLoadError')} error>
+            {onRetryInventory && (
+              <Button variant="outline" onClick={onRetryInventory}>
+                {t('common.retry')}
+              </Button>
+            )}
           </PerformanceEmptyState>
         ) : performance.isLoading || waitingForInputs ? (
           <div className="space-y-6" role="status" aria-label={t('common.loading')}>

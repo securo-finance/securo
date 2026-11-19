@@ -2354,6 +2354,7 @@
     "performanceViewSaved": "„{{name}}” nézet mentve",
     "performanceViewDeleted": "„{{name}}” nézet törölve",
     "performanceViewSaveError": "Nem sikerült menteni a nézetet",
+    "performanceViewGone": "A(z) „{{name}}” nézet már nem létezik. A kijelölés megmaradt, elmentheted új nézetként.",
     "performanceSelectedPeriod": "Kiválasztott időszak",
     "performanceClearSelection": "Kiválasztás törlése",
     "performanceDragHint": "Húzd végig a grafikonon, hogy bármely időszak hozamát lásd.",
