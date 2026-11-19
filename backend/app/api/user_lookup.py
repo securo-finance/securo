@@ -3,14 +3,14 @@
 Two modes:
 - ``/lookup`` — exact-match by email, used to validate a typed address
   before creating a member.
-- ``/directory`` — flat list of all users on the instance, used to power
-  the "pick an existing user" dropdown when adding a member.
+- ``/directory`` — the caller and the users who share a workspace with
+  them, used to power the "pick an existing user" dropdown when adding a
+  member.
 
-The directory endpoint exposes every user's email to any authenticated
-caller. That is acceptable for self-hosted, single-tenant deployments
-(everyone on the instance trusts each other). It will need to be scoped
-to "users in the same organization" once multi-tenancy lands; flag this
-when introducing org boundaries.
+The directory used to list every account on the instance, which handed any
+signed-in user the email and id of everyone else (#1173). Someone outside
+the caller's workspaces is still reachable by typing their exact address,
+which ``/lookup`` resolves.
 """
 
 import uuid
@@ -20,10 +20,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, EmailStr
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.core.auth import current_active_user
 from app.core.database import get_async_session
 from app.models.user import User
+from app.models.workspace import WorkspaceMember
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -56,11 +58,25 @@ async def lookup_user_by_email(
 @router.get("/directory", response_model=list[UserLookupResult])
 async def list_users_directory(
     session: AsyncSession = Depends(get_async_session),
-    _: User = Depends(current_active_user),
+    user: User = Depends(current_active_user),
 ):
-    """List every user on the instance — for the member-picker dropdown.
+    """The caller and everyone who shares a workspace with them.
 
-    Single-tenant assumption: scope to org once multi-tenancy lands.
+    Two queries, like ``workspace_service.list_members``: ``users.id`` is
+    fastapi-users' portable GUID and ``workspace_members.user_id`` is
+    Postgres ``UUID``, which SQLite stores differently, so a SQL comparison
+    between them finds nothing under test.
     """
-    result = await session.execute(select(User).order_by(User.email))
+    callers = aliased(WorkspaceMember)
+    callers_workspaces = select(callers.workspace_id).where(callers.user_id == user.id)
+    co_members = await session.execute(
+        select(WorkspaceMember.user_id).where(
+            WorkspaceMember.workspace_id.in_(callers_workspaces)
+        )
+    )
+    user_ids = set(co_members.scalars().all()) | {user.id}
+    result = await session.execute(
+        select(User).where(User.id.in_(user_ids)).order_by(User.email)
+    )
+    return list(result.scalars().all())
     return list(result.scalars().all())

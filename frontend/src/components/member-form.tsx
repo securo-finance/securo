@@ -26,7 +26,8 @@ export function MemberForm({
   const { t } = useTranslation()
   const { user } = useAuth()
 
-  // Directory of all Securo users on the instance
+  // You and the users who share a workspace with you. Anyone else is
+  // linked by typing their exact email below.
   const { data: userDirectory } = useQuery({
     queryKey: ['users', 'directory'],
     queryFn: () => usersApi.directory(),
