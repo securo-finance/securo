@@ -14,9 +14,11 @@ figure the balances read today, so no balance moves on upgrade.
 
 `amount_account_source` says where the value came from, so a stamp that only
 heals the reporting value keeps a bank charge or a typed amount. Old rows
-cannot say; a synced row is taken as the bank's figure, any other as the
-user's, and a row stamped 1:1 (the fallback #353 stopped writing) as derived,
-so the FX healer can still fix it.
+do not record it, so it is read from what they still carry: a stored payload
+with the bank's account-currency amount (Pluggy's `amountInAccountCurrency`)
+is the bank's figure whatever its rate; otherwise a row stamped 1:1 (the
+fallback #353 stopped writing) is derived, so the FX healer can still fix it,
+a synced row is the bank's and any other the user's.
 """
 
 import sqlalchemy as sa
@@ -33,6 +35,7 @@ BACKFILL_SQL = """
 UPDATE transactions
 SET amount_account = transactions.amount_primary,
     amount_account_source = CASE
+        WHEN transactions.raw_data ->> 'amountInAccountCurrency' IS NOT NULL THEN 'bank'
         WHEN transactions.fx_rate_used = 1 THEN NULL
         WHEN transactions.source = 'sync' THEN 'bank'
         ELSE 'user'

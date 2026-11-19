@@ -10,7 +10,9 @@ import pytest_asyncio
 from sqlalchemy import select, text
 
 from app.models.account import Account
+from app.models.fx_rate import FxRate
 from app.models.transaction import Transaction
+from app.services.fx_rate_service import stamp_primary_amount
 
 pytestmark = pytest.mark.asyncio
 
@@ -61,9 +63,13 @@ async def test_backfill_copies_the_figure_the_balance_reads_today(session, test_
     foreign = _row(account, test_user.id, "USD", "545.10", source="sync", rate="5.451")
     typed = _row(account, test_user.id, "USD", "512.00", rate="5.12")
     fallback = _row(account, test_user.id, "GBP", "100.00", rate="1")
+    # The bank really charged BRL 100 for USD 100: rate 1, but Pluggy's payload
+    # says it was the bank's figure.
+    charged_one_to_one = _row(account, test_user.id, "USD", "100.00", source="sync", rate="1")
+    charged_one_to_one.raw_data = {"id": "p-1", "amountInAccountCurrency": 100}
     lower_case_same = _row(account, test_user.id, "brl", "100.00")
     unconverted = _row(account, test_user.id, "EUR", None)
-    session.add_all([foreign, typed, fallback, lower_case_same, unconverted])
+    session.add_all([foreign, typed, fallback, charged_one_to_one, lower_case_same, unconverted])
     await session.flush()
 
     schema = session.bind.get_execution_options()["schema_translate_map"][None]
@@ -84,7 +90,25 @@ async def test_backfill_copies_the_figure_the_balance_reads_today(session, test_
     assert stored[typed.id] == (Decimal("512.00"), "user")
     # The 1:1 fallback #353 stopped writing stays derived, so the healer fixes it.
     assert stored[fallback.id] == (Decimal("100.00"), None)
+    assert stored[charged_one_to_one.id] == (Decimal("100.00"), "bank")
     # Same currency as the account, whatever the case: balances read `amount`.
     assert stored[lower_case_same.id] == (None, None)
     # Not converted yet: stays NULL, as the balance already counted it as zero.
     assert stored[unconverted.id] == (None, None)
+
+    # Then the FX healer repairs the 1:1 reporting stamps: the bank's BRL 100
+    # stays, the old fallback follows the real rate.
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "BRL"}
+    for quote, rate in (("BRL", Decimal("5")), ("GBP", Decimal("0.8"))):
+        session.add(FxRate(
+            base_currency="USD", quote_currency=quote, date=date(2025, 3, 10),
+            rate=rate, source="test",
+        ))
+    await session.flush()
+    for row in (charged_one_to_one, fallback):
+        await session.refresh(row)
+        await stamp_primary_amount(session, test_user.id, row, allow_fetch=False)
+    assert charged_one_to_one.amount_primary == Decimal("500.00")
+    assert charged_one_to_one.amount_account == Decimal("100.00")
+    assert fallback.amount_primary == Decimal("625.00")
+    assert fallback.amount_account == Decimal("625.00")

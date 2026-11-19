@@ -1237,7 +1237,12 @@ def _prepare_model_data(
         # the same balances. Same-currency rows never read the column. The
         # source follows migration 123.
         data["amount_account"] = data.get("amount_primary")
-        if data["amount_account"] is None or data.get("fx_rate_used") == 1:
+        raw = data.get("raw_data")
+        if data["amount_account"] is None:
+            data["amount_account_source"] = None
+        elif isinstance(raw, dict) and raw.get("amountInAccountCurrency") is not None:
+            data["amount_account_source"] = "bank"
+        elif data.get("fx_rate_used") == 1:
             data["amount_account_source"] = None
         elif data.get("source") == "sync":
             data["amount_account_source"] = "bank"

@@ -212,6 +212,8 @@ async def test_a_backup_from_before_the_column_restores_the_same_balance(
     )
     assert copied is not None
     assert copied.amount_account == Decimal("545.10")
+    # Typed in the dialog: kept on heals like a bank charge.
+    assert copied.amount_account_source == "user"
 
 
 def _bank_row(user: User, account: Account, **fields) -> Transaction:
