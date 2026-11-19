@@ -365,6 +365,25 @@ for (const file of ENGINE_FILES) {
   });
 }
 
+// The list #1625 actually carried: the sync engine, the card mirror and the
+// reconciliation policy, beside a page and a test. No file name matched, so
+// the lane called it free to merge — a person was what held it.
+scenario('the file list of #1625 refuses as money or bank sync', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    files: [
+      { filename: 'AGENTS.md' },
+      { filename: 'backend/app/services/card_mirror_service.py' },
+      { filename: 'backend/app/services/connection_service.py' },
+      { filename: 'backend/app/services/reconciliation_policy.py' },
+      { filename: 'backend/tests/test_card_mirror.py' },
+    ],
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.ok(log.includes('card_mirror_service.py` is in a part of the repository that is ' +
+    'never merged automatically (money or bank sync)'), log);
+});
+
 // Renaming a blocked file into a free path must not hide it: the previous name
 // is read as well as the new one.
 scenario('one of those files renamed out of the directory still refuses', async () => {
@@ -423,6 +442,18 @@ for (const [file, what] of EXISTING_BLOCKED) {
     assert.ok(log.includes(`(${what})`), `expected the reason "${what}": ${log}`);
   });
 }
+
+// The rule the new one sits beside still catches what it always did, and says
+// it in its own words: a service named for a sync is refused as `sync or
+// plugin`, not as the new group.
+scenario('a service named for a sync still refuses as sync or plugin', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    files: [{ filename: 'backend/app/services/connection_sync.py' }],
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.ok(log.includes('(sync or plugin)'), `expected the old reason: ${log}`);
+});
 
 scenario('a frontend page outside every group still merges', async () => {
   const { merged, log } = await evaluate({
