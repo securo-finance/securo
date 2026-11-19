@@ -123,6 +123,13 @@ class AccountData:
     # (ADR 0022). None = unreported or incomplete; keep stored rows.
     # [] = explicitly reported, none active.
     reserved_balances: Optional[list[ReservedBalanceData]] = None
+    # Credit still free on a card, when the provider reports it as a figure of
+    # its own instead of only the debt. Enable Banking reports a card from the
+    # account holder's side, and some banks (mBank PL, issue #624) put the
+    # credit limit in the booked balance, so the debt is only exact as
+    # `credit_limit - available_credit`. None = the provider said no such
+    # thing, and `balance` is the debt as usual.
+    available_credit: Optional[Decimal] = None
 
 
 @dataclass
@@ -213,6 +220,11 @@ class HoldingData:
     # belongs in a 3-char ISO currency field.
     ticker: Optional[str] = None
     maturity_date: Optional[date] = None
+    # Date the provider says `current_value` refers to. A provider can keep
+    # serving a frozen figure (a redeemed position it never reports as
+    # closed), so this date is the only sign that the value stopped moving.
+    # None = not reported by this provider.
+    value_date: Optional[date] = None
     is_withdrawn: bool = False  # provider signaled the position was sold/transferred
     metadata: Optional[dict] = None
     # Owning-account hint (SimpleFIN — issue #345): holdings are reported per
@@ -452,6 +464,20 @@ class BankProvider(ABC):
         every other provider as it was.
         """
         return []
+
+    def parse_raw_transaction(
+        self, raw: dict, payee_source: str = "auto"
+    ) -> Optional[TransactionData]:
+        """Rebuild a transaction from the payload this provider stores in
+        ``raw_data``, or None when it can't.
+
+        A re-sync reads it on the payload stored before the new one is merged
+        in: where a row still holds what that payload gave, the user never
+        changed it, so a provider correction under the same id may replace
+        it. Providers whose ``raw_data`` is the whole entry override this;
+        the default leaves a known row's amount, type and payee as they are.
+        """
+        return None
 
     @abstractmethod
     async def refresh_credentials(self, credentials: dict) -> dict:

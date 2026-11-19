@@ -819,8 +819,10 @@
     "greetingAfternoon": "Good afternoon",
     "greetingEvening": "Good evening",
     "availableBalance": "Available balance",
+    "cashBalance": "Cash",
+    "investmentAccounts": "Investment accounts",
     "netWorth": "Net Worth",
-    "netWorthTooltip": "Accounts + investments, minus open credit card bills.",
+    "netWorthTooltip": "Cash + investment accounts + invested assets, minus open credit card bills. Investment is not treated as available cash.",
     "creditCardBalance": "Open credit card bills",
     "loanBalance": "Loans",
     "pendingSharesOwe": "Net {{net}} after group debts ({{owed}} pending)",
@@ -1288,7 +1290,16 @@
     "syncRateLimited": "Bank daily limit reached, no new data was fetched. Try again later.",
     "syncPartial": "Some accounts were updated, but the bank's daily limit was reached for the others. They will be retried later.",
     "syncError": "Sync failed",
+    "syncFailure": {
+      "failedAt": "Last sync failed on {{when}}.",
+      "psu_present_required": "The bank only shares this data while you are using Securo.",
+      "consent_expired": "The bank needs you to authorize access again.",
+      "reauthorize_at_provider": "Reauthorize this bank in your SimpleFIN Bridge account, then sync again.",
+      "provider_error": "The bank returned an error.",
+      "syncNow": "Sync now"
+    },
     "connected": "Bank connected successfully",
+    "connectedImportFailed": "Bank connected, but the first import failed. Retry the sync to finish.",
     "connectError": "Failed to connect bank",
     "disconnected": "Connection removed",
     "confirmDisconnectTitle": "Disconnect bank connection?",
@@ -1582,6 +1593,7 @@
     "walletHint": "Track this goal with the combined value of all assets in the selected wallet."
   },
   "recurring": {
+    "makeFromTransaction": "New recurring from this transaction",
     "title": "Recurring Transactions",
     "add": "Add Recurring",
     "edit": "Edit Recurring",
@@ -1633,7 +1645,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "After a {{days}}-day gap",
-    "priceChangeInsufficient": "At least 3 matched posted charges are needed before Securo reports a stable price change."
+    "priceChangeInsufficient": "At least 3 matched posted charges are needed before Securo reports a stable price change.",
+    "summaryIncome": "Income",
+    "summaryExpenses": "Expenses",
+    "summaryNet": "Net",
+    "summaryTransfers": "Transfers left out: {{count}}",
+    "summaryUnconverted": "No exchange rate, left out: {{count}}",
+    "summaryFailed": "Couldn't load this month's totals"
   },
   "rules": {
     "searchPlaceholder": "Search rules...",
@@ -1739,6 +1757,7 @@
     "fieldPayee": "Payee",
     "fieldDate": "Date",
     "fieldStatus": "Status",
+    "fieldProviderCategory": "Provider category",
     "opContains": "contains",
     "opNotContains": "does not contain",
     "opEquals": "equals",
@@ -2005,6 +2024,8 @@
     "undoImport": "Undo import?",
     "undoOrdersDescription": "This will delete the {{count}} orders imported from {{filename}} and recalculate the positions they touched. Holdings this import created are removed with them.",
     "undone": "Import undone",
+    "undoOversell": "This import can't be undone: an entry that stays in the ledger sells {{attempted}} units with {{available}} held. Edit or delete that entry first.",
+    "undoTooLarge": "This import can't be undone: the holding left without it is too large to store.",
     "undoDescription": "This will delete {{count}} imported transactions from {{filename}}. This action cannot be undone.",
     "deleting": "Deleting...",
     "deleteAll": "Delete all",
@@ -2076,7 +2097,9 @@
       "fee": "Fee",
       "kind": "Buy/Sell",
       "currency": "Currency",
-      "notes": "Notes"
+      "notes": "Notes",
+      "old_units": "Old units",
+      "new_units": "New units"
     },
     "walletWarningTitle": "Already in your portfolio",
     "warning": {
@@ -2085,7 +2108,8 @@
     },
     "kind": {
       "buy": "Buy",
-      "sell": "Sell"
+      "sell": "Sell",
+      "split": "Split"
     },
     "reason": {
       "missing_ticker": "no ticker",
@@ -2095,8 +2119,17 @@
       "invalid_fee": "unreadable fee",
       "invalid_kind": "unrecognised buy/sell value",
       "unknown_ticker": "ticker not found by the price provider",
-      "oversell": "selling more units than the position holds"
-    }
+      "oversell": "selling more units than the position holds",
+      "no_fx_rate": "no exchange rate for the order's date",
+      "possible_duplicate": "may already be in this holding from an earlier import",
+      "invalid_split": "unreadable split ratio, or a split with a quantity, price or fee",
+      "split_not_allowed": "splits can't be recorded on a holding synced from a bank",
+      "split_in_future": "a split can't be dated in the future",
+      "nothing_held_before_split": "no units held before the split",
+      "too_large": "would leave the holding too large to store",
+      "holding_moved": "the holding was renamed or moved to another wallet while the import ran"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Assets",
@@ -2111,6 +2144,8 @@
     "exchangeRateSetupAskAdmin": "{{from}} to {{to}} conversion needs exchange rates. Ask an administrator to set them up.",
     "noFxRate": "no FX rate",
     "noFxRateTitle": "No exchange rate is available for this currency. The asset is shown in its original currency and excluded from the totals.",
+    "providerValueStale": "not updated since {{date}}",
+    "providerValueStaleTitle": "The provider still reports this position but has not updated its value since this date. It may have been redeemed or the connection may be failing to refresh investments. Check it with your bank.",
     "fxRateMissing": "No exchange rate is available for {{currencies}}. Those assets are shown in their original currency and left out of the totals.",
     "colAsset": "Asset",
     "colQuantity": "Qty",
@@ -2172,6 +2207,10 @@
     "marketPriceSourceTooltip": "Price refreshed automatically from market data",
     "lastUpdated": "Updated {{when}}",
     "refreshPrice": "Refresh price",
+    "refreshAllPrices": "Refresh prices",
+    "refreshAllPricesDone": "{{refreshed}} prices updated, {{skipped}} without a new quote",
+    "refreshAllPricesNone": "No market-priced assets to refresh",
+    "refreshAllPricesRateLimited": "Market data is rate-limiting right now. {{refreshed}} prices were updated and {{skipped}} skipped before it stopped, try again in a minute.",
     "priceRefreshed": "Price refreshed",
     "purchaseDate": "Purchase Date",
     "purchasePrice": "Purchase Price",
@@ -2197,6 +2236,7 @@
     "updated": "Asset updated",
     "deleted": "Asset deleted",
     "confirmDelete": "Are you sure you want to delete this asset and all its value history?",
+    "confirmDeleteSynced": "If asset import is on for this connection, the next sync brings this asset back. Turn asset import off in the connection settings to keep it deleted.",
     "confirmDeleteTitle": "Delete asset?",
     "addValue": "Add Value",
     "valueHistory": "Value History",
@@ -2324,6 +2364,7 @@
     "baseline": "Estimate",
     "surplus": "Surplus",
     "deficit": "Deficit",
+    "investmentWithdrawals": "Investment withdrawals",
     "cashFlowNode": "Cash Flow",
     "flowChartAria": "Cashflow diagram: income sources flowing through to expenses",
     "category": "Category",
@@ -2650,6 +2691,15 @@
     "brandOpen": "Open source",
     "brandSelfHosted": "Self-hosted",
     "brandPrivate": "Private by design"
+  },
+  "accountantExport": {
+    "title": "Accountant export",
+    "description": "Download the categorized transactions and the profit and loss of a period, in the format your accountant's software opens directly. Amounts are the full transaction value, before splits with other people.",
+    "startDate": "Start date",
+    "endDate": "End date",
+    "download": "Download package",
+    "error": "Could not build the export",
+    "formatHint": "One zip with transactions.csv and profit-and-loss.csv, using the separators and encoding spreadsheet and accounting tools read without adjustment."
   },
   "backup": {
     "button": "Backup",

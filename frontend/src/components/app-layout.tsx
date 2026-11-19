@@ -58,6 +58,7 @@ import {
   ShieldCheck,
   Fingerprint,
   Palette,
+  AlertCircle,
 } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { ChangePasswordDialog } from '@/components/change-password-dialog'
@@ -218,6 +219,9 @@ export function AppLayout() {
     ? allAccounts.filter((a) => activeAccountIds.includes(a.id))
     : allAccounts
   const totalBalance = sumAccountsTotal(visibleAccounts)
+  // A foreign account without a real rate adds its native amount, so the
+  // total is an estimate; flag it like the dashboard does (#1165, #1474).
+  const totalHasFxFallback = visibleAccounts.some((a) => a.fx_fallback)
   const versionA11yLabel = t('app.versionAriaLabel', { version: APP_VERSION })
 
   return (
@@ -515,6 +519,9 @@ export function AppLayout() {
                   {t('accounts.title')}
                 </span>
                 <div className="flex items-center gap-2">
+                  {totalHasFxFallback && (
+                    <AlertCircle size={12} aria-hidden="true" className="shrink-0 text-amber-500" />
+                  )}
                   <span
                     className={`tabular-nums font-medium text-xs ${totalBalance < 0 ? 'text-rose-400' : 'text-sidebar-muted'}`}
                   >
@@ -529,6 +536,12 @@ export function AppLayout() {
                   />
                 </div>
               </button>
+              {/* Visible text, not a hover title, so keyboard and touch users can read it. */}
+              {totalHasFxFallback && (
+                <p className="px-3 pb-1 text-[11px] text-amber-700 dark:text-amber-400">
+                  {t('transactions.fxFallbackBanner')}
+                </p>
+              )}
               {accountsExpanded && (
                 <div className="mt-1 space-y-0.5">
                   {sortAccountsByAbsoluteBalance(visibleAccounts, (a) => sidebarAccountBalance(a).amount).slice(0, accountsShowAll ? visibleAccounts.length : 3).map((acc) => {

@@ -144,16 +144,34 @@ async def update_linked_card_labels(
 LIABILITY_ACCOUNT_TYPES = frozenset({"credit_card", "loan"})
 
 
-def _provider_to_internal_balance(provider: str, account_type: str, balance: Decimal) -> Decimal:
+def _provider_to_internal_balance(
+    provider: str,
+    account_type: str,
+    balance: Decimal,
+    *,
+    available_credit: Optional[Decimal] = None,
+    credit_limit: Optional[Decimal] = None,
+) -> Decimal:
     """Normalize provider balances to positive-for-debt for liabilities.
 
     A loan's balance is always debt, whichever type the provider reported and
     whatever sign it used, so the magnitude is the whole answer. SimpleFIN
     reports credit card debt as a negative value and exposes no account type,
     so only that combination needs a sign flip.
+
+    A card whose provider reports the credit still free instead of the debt
+    (Enable Banking, issue #624) owes what is missing from the limit. The limit
+    is the provider's when it sends one, else the one already stored on the
+    account; with neither, the provider's own reading is kept.
     """
     if account_type == "loan":
         return abs(balance)
+    if (
+        account_type == "credit_card"
+        and available_credit is not None
+        and credit_limit is not None
+    ):
+        return credit_limit - available_credit
     if provider == "simplefin" and account_type == "credit_card":
         return -balance
     return balance
@@ -692,7 +710,7 @@ async def update_account(
             account.card_level = None
         if new_type != "loan":
             account.secured_asset_id = None
-        if cycle_fields_changed:
+        if cycle_fields_changed or _card_type_changed(old_type, new_type):
             await _recompute_effective_dates(session, account)
         await session.commit()
         await session.refresh(account)
@@ -764,7 +782,7 @@ async def update_account(
                 opening_tx.date = balance_date
             apply_effective_date(opening_tx, account)
 
-    if cycle_fields_changed:
+    if cycle_fields_changed or _card_type_changed(old_type, account.type):
         await _recompute_effective_dates(session, account)
 
     if account.type == "loan" and ("balance" in update_data or balance_date):
@@ -802,17 +820,41 @@ async def _has_mortgage_allocations(session: AsyncSession, account: Account) -> 
     return linked is not None
 
 
+def _card_type_changed(old_type: str, new_type: str) -> bool:
+    """A card's rows are filed on bill due dates and any other account's on
+    their own date, so moving in or out of credit_card refiles them (#1386)."""
+    return (old_type == "credit_card") != (new_type == "credit_card")
+
+
 async def _recompute_effective_dates(session: AsyncSession, account: Account) -> None:
     """Recompute effective_date on every transaction in this account.
 
     Called when an account's CC cycle metadata (statement_close_day,
     payment_due_day) changes, so historical transactions get rebucketed into
-    the correct bill. Cheap: a few hundred rows per account at most."""
+    the correct bill. Cheap: a few hundred rows per account at most.
+
+    A row linked to a bank bill keeps that bill's due date, as the sync set
+    it: the sync only refiles a row when its `bill_id` changes, so dropping
+    it here would leave the row on the cycle-math date for good. Only this
+    account's bills count: a row moved here from another card keeps its old
+    `bill_id`, and that card's due date says nothing about this one."""
     result = await session.execute(
         select(Transaction).where(Transaction.account_id == account.id)
     )
-    for tx in result.scalars():
-        apply_effective_date(tx, account)
+    transactions = list(result.scalars())
+    bill_ids = {tx.bill_id for tx in transactions if tx.bill_id is not None}
+    due_dates: dict[uuid.UUID, _Date] = {}
+    if bill_ids:
+        rows = await session.execute(
+            select(CreditCardBill.id, CreditCardBill.due_date).where(
+                CreditCardBill.id.in_(bill_ids),
+                CreditCardBill.account_id == account.id,
+            )
+        )
+        due_dates = {bill_id: due_date for bill_id, due_date in rows.all()}
+    for tx in transactions:
+        bill_due_date = due_dates.get(tx.bill_id) if tx.bill_id is not None else None
+        apply_effective_date(tx, account, bill_due_date=bill_due_date)
 
 
 async def sync_opening_balance_for_connected_account(
@@ -870,13 +912,21 @@ async def sync_opening_balance_for_connected_account(
 
     offset = Decimal(str(target)) - tx_sum
 
+    # An account should carry one synthetic opening, but duplicates exist in
+    # the wild (#1317). The offset above is computed from the other rows
+    # alone, so keep the newest opening and drop the rest: the kept one then
+    # takes the whole offset and the balance still reconciles.
     existing = await session.execute(
-        select(Transaction).where(
+        select(Transaction)
+        .where(
             Transaction.account_id == account.id,
             Transaction.source == "opening_balance",
         )
+        .order_by(Transaction.created_at.desc(), Transaction.id.desc())
     )
-    existing_tx = existing.scalar_one_or_none()
+    existing_tx, *duplicates = existing.scalars().all() or [None]
+    for duplicate in duplicates:
+        await session.delete(duplicate)
 
     # Offsets below one cent are rounding noise; drop any stale opening tx.
     if abs(offset) < Decimal("0.01"):

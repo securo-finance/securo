@@ -820,7 +820,7 @@
     "greetingEvening": "Goedenavond",
     "availableBalance": "Beschikbaar saldo op rekeningen",
     "netWorth": "Nettovermogen",
-    "netWorthTooltip": "Rekeningen + beleggingen, min openstaande creditcardafschriften.",
+    "netWorthTooltip": "Contant + beleggingsrekeningen + geïnvesteerde activa, min openstaande creditcardafschriften. Beleggingen tellen niet als beschikbaar geld.",
     "creditCardBalance": "Openstaande creditcardafschriften",
     "loanBalance": "Leningen en financieringen",
     "pendingSharesOwe": "Netto {{net}} na groepsschulden ({{owed}} in behandeling)",
@@ -889,7 +889,9 @@
     "fxRateUsed": "Wisselkoers: {{rate}}",
     "refreshRates": "Vernieuw de wisselkoersen",
     "ratesRefreshed": "FX-tarieven bijgewerkt",
-    "ratesError": "Kan de valutakoersen niet updaten"
+    "ratesError": "Kan de valutakoersen niet updaten",
+    "cashBalance": "Contant",
+    "investmentAccounts": "Beleggingsrekeningen"
   },
   "transactions": {
     "title": "Transacties",
@@ -1289,7 +1291,16 @@
     "syncRateLimited": "Dagelijks banklimiet bereikt, er is geen nieuwe data opgehaald. Probeer het later opnieuw.",
     "syncPartial": "Sommige rekeningen zijn bijgewerkt, maar voor de andere is het dagelijkse banklimiet bereikt. Die worden later opnieuw geprobeerd.",
     "syncError": "Synchronisatie mislukt",
+    "syncFailure": {
+      "failedAt": "Laatste synchronisatie mislukt op {{when}}.",
+      "psu_present_required": "De bank deelt deze gegevens alleen terwijl je Securo gebruikt.",
+      "consent_expired": "De bank vraagt je de toegang opnieuw te autoriseren.",
+      "reauthorize_at_provider": "Autoriseer deze bank opnieuw in je SimpleFIN Bridge-account en synchroniseer daarna opnieuw.",
+      "provider_error": "De bank gaf een fout terug.",
+      "syncNow": "Nu synchroniseren"
+    },
     "connected": "Bank succesvol verbonden",
+    "connectedImportFailed": "Bank gekoppeld, maar de eerste import is mislukt. Herhaal de synchronisatie om af te ronden.",
     "connectError": "Kan geen verbinding maken met de bank",
     "disconnected": "Verbinding verwijderd",
     "confirmDisconnectTitle": "Bankverbinding verbreken?",
@@ -1584,6 +1595,7 @@
     "walletHint": "Volg dit doel met de gecombineerde waarde van alle activa in de geselecteerde portemonnee."
   },
   "recurring": {
+    "makeFromTransaction": "Nieuwe terugkerende transactie van deze transactie",
     "title": "Terugkerende transacties",
     "add": "Terugkerend toevoegen",
     "edit": "Bewerken Terugkerend",
@@ -1635,7 +1647,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "Na een onderbreking van {{days}} dagen",
-    "priceChangeInsufficient": "Er zijn minstens 3 gekoppelde geboekte afschrijvingen nodig voordat Securo een stabiele prijswijziging meldt."
+    "priceChangeInsufficient": "Er zijn minstens 3 gekoppelde geboekte afschrijvingen nodig voordat Securo een stabiele prijswijziging meldt.",
+    "summaryIncome": "Inkomsten",
+    "summaryExpenses": "Uitgaven",
+    "summaryNet": "Netto",
+    "summaryTransfers": "Uitgesloten overboekingen: {{count}}",
+    "summaryUnconverted": "Zonder wisselkoers, uitgesloten: {{count}}",
+    "summaryFailed": "De totalen van deze maand konden niet worden geladen"
   },
   "rules": {
     "searchPlaceholder": "Regels zoeken...",
@@ -1739,6 +1757,7 @@
     "fieldPayee": "Begunstigde",
     "fieldDate": "Datum",
     "fieldStatus": "Status",
+    "fieldProviderCategory": "Categorie van de provider",
     "opContains": "bevat",
     "opNotContains": "bevat niet",
     "opEquals": "gelijk aan",
@@ -2000,6 +2019,8 @@
     "undoImport": "Importeren ongedaan maken?",
     "undoOrdersDescription": "Hierdoor worden de {{count}} orders geïmporteerd uit {{filename}} verwijderd en worden de posities die ze hebben aangeraakt opnieuw berekend. De holdings die door deze import zijn aangemaakt, worden samen met deze verwijderd.",
     "undone": "Importeren ongedaan gemaakt",
+    "undoOversell": "Deze import kan niet ongedaan worden gemaakt: een blijvende boeking verkoopt {{attempted}} eenheden terwijl er {{available}} in bezit zijn. Bewerk of verwijder die boeking eerst.",
+    "undoTooLarge": "Deze import kan niet ongedaan worden gemaakt: de resterende positie is te groot om op te slaan.",
     "undoDescription": "Hiermee worden geïmporteerde {{count}} transacties uit {{filename}} verwijderd. Deze actie kan niet ongedaan worden gemaakt.",
     "deleting": "Verwijderen...",
     "deleteAll": "Alles verwijderen",
@@ -2078,7 +2099,9 @@
       "fee": "Vergoeding",
       "kind": "Kopen/verkopen",
       "currency": "Valuta",
-      "notes": "Opmerkingen"
+      "notes": "Opmerkingen",
+      "old_units": "Eenheden voor",
+      "new_units": "Eenheden na"
     },
     "walletWarningTitle": "Al in uw portefeuille",
     "warning": {
@@ -2087,7 +2110,8 @@
     },
     "kind": {
       "buy": "Koop",
-      "sell": "Verkopen"
+      "sell": "Verkopen",
+      "split": "Split"
     },
     "reason": {
       "missing_ticker": "geen tikker",
@@ -2097,8 +2121,17 @@
       "invalid_fee": "onleesbare kosten",
       "invalid_kind": "onbekende koop-/verkoopwaarde",
       "unknown_ticker": "ticker niet gevonden door de prijsaanbieder",
-      "oversell": "meer eenheden verkopen dan de positie bevat"
-    }
+      "oversell": "meer eenheden verkopen dan de positie bevat",
+      "no_fx_rate": "geen wisselkoers voor de orderdatum",
+      "possible_duplicate": "staat mogelijk al in deze positie door een eerdere import",
+      "invalid_split": "splitverhouding onleesbaar, of een split met een hoeveelheid, prijs of kosten",
+      "split_not_allowed": "splits kunnen niet worden vastgelegd op een positie die met de bank wordt gesynchroniseerd",
+      "split_in_future": "een split kan niet in de toekomst liggen",
+      "nothing_held_before_split": "geen eenheden in bezit vóór de split",
+      "too_large": "zou de positie te groot maken om op te slaan",
+      "holding_moved": "de positie is tijdens de import hernoemd of naar een andere portefeuille verplaatst"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Activa",
@@ -2113,6 +2146,8 @@
     "exchangeRateSetupAskAdmin": "Voor de omrekening van {{from}} naar {{to}} zijn wisselkoersen nodig. Vraag een beheerder om deze in te stellen.",
     "noFxRate": "geen wisselkoers",
     "noFxRateTitle": "Voor deze munt is geen wisselkoers beschikbaar. Het vermogen wordt in de oorspronkelijke munt getoond en blijft buiten de totalen.",
+    "providerValueStale": "niet bijgewerkt sinds {{date}}",
+    "providerValueStaleTitle": "De provider meldt deze positie nog, maar heeft de waarde sinds deze datum niet bijgewerkt. Mogelijk is ze afgelost, of de koppeling ververst beleggingen niet. Controleer het bij je bank.",
     "fxRateMissing": "Voor {{currencies}} is geen wisselkoers beschikbaar. Deze activa worden in de oorspronkelijke munt getoond en blijven buiten de totalen.",
     "colAsset": "Aanwinst",
     "colQuantity": "Aantal",
@@ -2174,6 +2209,10 @@
     "marketPriceSourceTooltip": "Prijs wordt automatisch vernieuwd op basis van marktgegevens",
     "lastUpdated": "{{when}} bijgewerkt",
     "refreshPrice": "Prijs vernieuwen",
+    "refreshAllPrices": "Prijzen vernieuwen",
+    "refreshAllPricesDone": "{{refreshed}} prijzen bijgewerkt, {{skipped}} zonder nieuwe koers",
+    "refreshAllPricesNone": "Geen activa met marktprijs om bij te werken",
+    "refreshAllPricesRateLimited": "De marktdata-aanbieder beperkt het aantal aanvragen. {{refreshed}} prijzen zijn bijgewerkt en {{skipped}} overgeslagen voordat dit begon; probeer het over een minuut opnieuw.",
     "priceRefreshed": "Prijs vernieuwd",
     "purchaseDate": "Aankoopdatum",
     "purchasePrice": "Aankoopprijs",
@@ -2199,6 +2238,7 @@
     "updated": "Item bijgewerkt",
     "deleted": "Item verwijderd",
     "confirmDelete": "Weet u zeker dat u dit item en de gehele waardegeschiedenis ervan wilt verwijderen?",
+    "confirmDeleteSynced": "Als het importeren van bezittingen voor deze koppeling aan staat, haalt de volgende synchronisatie dit item terug. Zet het importeren van bezittingen uit in de koppelingsinstellingen om het verwijderd te houden.",
     "confirmDeleteTitle": "Item verwijderen?",
     "addValue": "Voeg waarde toe",
     "valueHistory": "Waardegeschiedenis",
@@ -2326,6 +2366,7 @@
     "baseline": "Schatting",
     "surplus": "Overschot",
     "deficit": "Tekort",
+    "investmentWithdrawals": "Opnames uit beleggingen",
     "cashFlowNode": "Cashstroom",
     "flowChartAria": "Cashflowdiagram: inkomstenbronnen die doorstromen naar uitgaven",
     "category": "Categorie",
@@ -2652,6 +2693,15 @@
     "brandOpen": "Open-source",
     "brandSelfHosted": "Zelf gehost",
     "brandPrivate": "Privé door ontwerp"
+  },
+  "accountantExport": {
+    "title": "Export voor de accountant",
+    "description": "Download de gecategoriseerde transacties en de winst-en-verliesrekening van een periode, in het formaat dat de software van je accountant direct opent. De bedragen zijn de volledige transactiewaarde, vóór het splitsen met andere personen.",
+    "startDate": "Begindatum",
+    "endDate": "Einddatum",
+    "download": "Pakket downloaden",
+    "error": "Export kon niet worden gemaakt",
+    "formatHint": "Eén zip met transactions.csv en profit-and-loss.csv, met de scheidingstekens en codering die spreadsheets en boekhoudsoftware zonder aanpassing lezen."
   },
   "backup": {
     "button": "Back-up",

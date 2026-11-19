@@ -843,6 +843,8 @@
     "greetingAfternoon": "Dobré odpoledne",
     "greetingEvening": "Dobrý večer",
     "availableBalance": "Dostupný zůstatek na účtech",
+    "cashBalance": "Hotovost",
+    "investmentAccounts": "Investiční účty",
     "netWorth": "Čisté jmění",
     "netWorthTooltip": "Účty + investice, po odečtení otevřených výpisů kreditní karty.",
     "creditCardBalance": "Otevřené výpisy kreditní karty",
@@ -1368,7 +1370,16 @@
     "syncRateLimited": "Dosáhnuto denního limitu banky, žádná nová data nebyla stažena. Zkuste to prosím později.",
     "syncPartial": "Některé účty byly aktualizovány, ale u ostatních byl dosažen denní limit banky. Zkusíme je znovu později.",
     "syncError": "Synchronizace selhala",
+    "syncFailure": {
+      "failedAt": "Poslední synchronizace selhala {{when}}.",
+      "psu_present_required": "Banka tato data sdílí jen ve chvíli, kdy Securo používáte.",
+      "consent_expired": "Banka potřebuje, abyste přístup znovu autorizovali.",
+      "reauthorize_at_provider": "Znovu autorizujte tuto banku ve svém účtu SimpleFIN Bridge a pak synchronizujte.",
+      "provider_error": "Banka vrátila chybu.",
+      "syncNow": "Synchronizovat nyní"
+    },
     "connected": "Banka úspěšně propojena",
+    "connectedImportFailed": "Banka připojena, ale první import se nezdařil. Zopakujte synchronizaci pro dokončení.",
     "connectError": "Banku se nepodařilo propojit",
     "disconnected": "Propojení odstraněno",
     "confirmDisconnectTitle": "Odpojit propojení banky?",
@@ -1674,6 +1685,7 @@
     "walletHint": "Sledujte tento cíl podle celkové hodnoty všech aktiv ve vybrané peněžence."
   },
   "recurring": {
+    "makeFromTransaction": "Nová opakovaná transakce z této transakce",
     "title": "Opakované transakce",
     "add": "Přidat opakovanou",
     "edit": "Upravit opakovanou",
@@ -1729,7 +1741,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "After a {{days}}-day gap",
-    "priceChangeInsufficient": "At least 3 matched posted charges are needed before Securo reports a stable price change."
+    "priceChangeInsufficient": "At least 3 matched posted charges are needed before Securo reports a stable price change.",
+    "summaryIncome": "Příjmy",
+    "summaryExpenses": "Výdaje",
+    "summaryNet": "Čistý zůstatek",
+    "summaryTransfers": "Vynechané převody: {{count}}",
+    "summaryUnconverted": "Bez směnného kurzu, vynecháno: {{count}}",
+    "summaryFailed": "Součty za měsíc se nepodařilo načíst"
   },
   "rules": {
     "searchPlaceholder": "Hledat pravidla...",
@@ -1855,6 +1873,7 @@
     "fieldPayee": "Příjemce",
     "fieldDate": "Datum",
     "fieldStatus": "Stav",
+    "fieldProviderCategory": "Kategorie poskytovatele",
     "opContains": "obsahuje",
     "opNotContains": "neobsahuje",
     "opEquals": "rovná se",
@@ -2121,6 +2140,8 @@
     "undoImport": "Vrátit import zpět?",
     "undoOrdersDescription": "Smaže se {{count}} pokynů importovaných z {{filename}} a přepočítají se pozice, kterých se týkaly. Aktiva, která tento import vytvořil, se odstraní spolu s nimi.",
     "undone": "Import vrácen zpět",
+    "undoOversell": "Tento import nelze vrátit zpět: zbývající záznam prodává {{attempted}} jednotek, přičemž je drženo {{available}}. Nejprve tento záznam upravte nebo smažte.",
+    "undoTooLarge": "Tento import nelze vrátit zpět: zbývající pozice je příliš velká pro uložení.",
     "undoDescription": "Smaže se {{count}} importovaných transakcí z {{filename}}. Tuto akci nelze vrátit zpět.",
     "deleting": "Maže se...",
     "deleteAll": "Smazat vše",
@@ -2216,7 +2237,9 @@
       "fee": "Poplatek",
       "kind": "Nákup/prodej",
       "currency": "Měna",
-      "notes": "Poznámka"
+      "notes": "Poznámka",
+      "old_units": "Kusy před",
+      "new_units": "Kusy po"
     },
     "walletWarningTitle": "Už je ve vašem portfoliu",
     "warning": {
@@ -2225,7 +2248,8 @@
     },
     "kind": {
       "buy": "Nákup",
-      "sell": "Prodej"
+      "sell": "Prodej",
+      "split": "Split"
     },
     "reason": {
       "missing_ticker": "chybí ticker",
@@ -2235,8 +2259,17 @@
       "invalid_fee": "nečitelný poplatek",
       "invalid_kind": "nerozpoznaná hodnota nákup/prodej",
       "unknown_ticker": "poskytovatel cen ticker nenašel",
-      "oversell": "prodej většího množství, než pozice obsahuje"
-    }
+      "oversell": "prodej většího množství, než pozice obsahuje",
+      "no_fx_rate": "chybí směnný kurz k datu pokynu",
+      "possible_duplicate": "může už být v této pozici z dřívějšího importu",
+      "invalid_split": "nečitelný poměr splitu, nebo split s množstvím, cenou nebo poplatkem",
+      "split_not_allowed": "split nelze zaznamenat u pozice synchronizované s bankou",
+      "split_in_future": "split nemůže mít budoucí datum",
+      "nothing_held_before_split": "před splitem nejsou drženy žádné kusy",
+      "too_large": "pozice by byla příliš velká na uložení",
+      "holding_moved": "pozice byla během importu přejmenována nebo přesunuta do jiné peněženky"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Aktiva",
@@ -2253,6 +2286,8 @@
     "exchangeRateSetupAskAdmin": "Převod {{from}} na {{to}} vyžaduje směnné kurzy. Požádejte správce o jejich nastavení.",
     "noFxRate": "nemá kurz",
     "noFxRateTitle": "Pro tuto měnu není k dispozici kurz měny. Aktiva se zobrazují v původní měně a jsou vynečány z celků.",
+    "providerValueStale": "neaktualizováno od {{date}}",
+    "providerValueStaleTitle": "Poskytovatel tuto pozici stále uvádí, ale od tohoto data neaktualizoval její hodnotu. Mohla být odkoupena nebo připojení neobnovuje investice. Ověřte to u své banky.",
     "fxRateMissing": "Pro {{currencies}} není k dispozici kurz měny. Tyto aktiva se zobrazují v původní měně a jsou vynečány z celků.",
     "colAsset": "Aktivum",
     "colQuantity": "Množ.",
@@ -2314,6 +2349,10 @@
     "marketPriceSourceTooltip": "Cena se automaticky obnovuje z tržních dat",
     "lastUpdated": "Aktualizováno {{when}}",
     "refreshPrice": "Obnovit cenu",
+    "refreshAllPrices": "Obnovit ceny",
+    "refreshAllPricesDone": "Aktualizováno {{refreshed}} cen, {{skipped}} bez nové ceny",
+    "refreshAllPricesNone": "Žádná aktiva s tržní cenou k obnovení",
+    "refreshAllPricesRateLimited": "Poskytovatel tržních dat nyní omezuje požadavky. Před zastavením se aktualizovalo {{refreshed}} cen a {{skipped}} bylo vynecháno. Zkuste to znovu za minutu.",
     "priceRefreshed": "Cena obnovena",
     "purchaseDate": "Datum nákupu",
     "purchasePrice": "Nákupní cena",
@@ -2339,6 +2378,7 @@
     "updated": "Aktivum aktualizováno",
     "deleted": "Aktivum smazáno",
     "confirmDelete": "Opravdu chcete smazat toto aktivum a celou jeho historii hodnot?",
+    "confirmDeleteSynced": "Pokud má toto připojení zapnutý import aktiv, další synchronizace toto aktivum vrátí zpět. Vypnutím importu aktiv v nastavení připojení zůstane smazané.",
     "confirmDeleteTitle": "Smazat aktivum?",
     "addValue": "Přidat hodnotu",
     "valueHistory": "Historie hodnot",
@@ -2464,6 +2504,7 @@
     "baseline": "Odhad",
     "surplus": "Přebytek",
     "deficit": "Deficit",
+    "investmentWithdrawals": "Výběry z investic",
     "cashFlowNode": "Cash flow",
     "flowChartAria": "Diagram cash flow: zdroje příjmů přitékající do výdajů",
     "category": "Kategorie",
@@ -2810,6 +2851,15 @@
     "brandOpen": "Open source",
     "brandSelfHosted": "Na vlastním serveru",
     "brandPrivate": "Soukromí od základu"
+  },
+  "accountantExport": {
+    "title": "Export pro účetního",
+    "description": "Stáhněte si kategorizované transakce a výkaz zisku a ztráty za období ve formátu, který účetní software otevře přímo. Částky jsou plná hodnota transakce, před rozdělením s dalšími osobami.",
+    "startDate": "Počáteční datum",
+    "endDate": "Koncové datum",
+    "download": "Stáhnout balíček",
+    "error": "Export se nepodařilo vytvořit",
+    "formatHint": "Jeden zip s transactions.csv a profit-and-loss.csv, s oddělovači a kódováním, které tabulkové procesory a účetní programy čtou bez úprav."
   },
   "backup": {
     "button": "Zálohovat",

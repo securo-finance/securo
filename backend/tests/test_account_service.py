@@ -1289,6 +1289,53 @@ async def test_sync_opening_balance_ignores_future_and_ignored_rows(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("balance", "expected"),
+    [("600.00", Decimal("100.00")), ("500.00", None)],
+    ids=["keeps-newest", "drops-all-when-balanced"],
+)
+async def test_sync_opening_balance_tolerates_duplicate_openings(
+    session, test_user, test_workspace, test_connection, balance, expected
+):
+    """Two synthetic openings on one account must not break the sync (#1317)."""
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+
+    account = await _make_account(
+        session, test_user.id, "Duplicate Openings", balance=balance,
+        connection_id=test_connection.id,
+    )
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 500, "credit", today - timedelta(days=5))
+    older = await _add_txn(
+        session, test_user.id, account.id, 40, "credit", today - timedelta(days=30),
+        source="opening_balance",
+    )
+    newer = await _add_txn(
+        session, test_user.id, account.id, 70, "debit", today - timedelta(days=6),
+        source="opening_balance",
+    )
+    older.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    newer.created_at = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    await session.commit()
+
+    await sync_opening_balance_for_connected_account(session, account)
+    await session.commit()
+
+    openings = (await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == account.id,
+            Transaction.source == "opening_balance",
+        )
+    )).scalars().all()
+
+    if expected is None:
+        assert openings == []
+    else:
+        assert [(o.id, o.type, o.amount) for o in openings] == [(newer.id, "credit", expected)]
+
+
+@pytest.mark.asyncio
 async def test_sync_opening_balance_ignores_unconverted_foreign_rows(
     session, test_user, test_workspace, test_connection
 ):
@@ -1517,6 +1564,39 @@ def test_provider_to_internal_balance_other_provider_unchanged():
     assert _provider_to_internal_balance(
         "enable_banking", "credit_card", Decimal("500.00")
     ) == Decimal("500.00")
+
+
+def test_provider_to_internal_balance_reads_a_card_from_its_available_credit():
+    """Enable Banking can report a card's free credit instead of the debt;
+    what the card owes is the rest of the limit (issue #624)."""
+    assert _provider_to_internal_balance(
+        "enable_banking",
+        "credit_card",
+        Decimal("0"),
+        available_credit=Decimal("4900.00"),
+        credit_limit=Decimal("5000.00"),
+    ) == Decimal("100.00")
+
+
+def test_provider_to_internal_balance_needs_a_limit_for_available_credit():
+    """Without a limit there is no debt to derive; the provider's reading stays."""
+    assert _provider_to_internal_balance(
+        "enable_banking",
+        "credit_card",
+        Decimal("0"),
+        available_credit=Decimal("4900.00"),
+    ) == Decimal("0")
+
+
+def test_provider_to_internal_balance_ignores_available_credit_on_other_types():
+    """Only a card reads free credit as debt; another type keeps its balance."""
+    assert _provider_to_internal_balance(
+        "enable_banking",
+        "checking",
+        Decimal("4900.00"),
+        available_credit=Decimal("4900.00"),
+        credit_limit=Decimal("5000.00"),
+    ) == Decimal("4900.00")
 
 
 @pytest.mark.asyncio

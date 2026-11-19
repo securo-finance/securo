@@ -1,6 +1,9 @@
 import time
+from collections.abc import Callable
+from uuid import uuid4
 
 from fastapi import HTTPException, Request
+from redis.exceptions import RedisError
 
 from app.core.config import get_settings
 from app.core.redis import get_redis
@@ -27,28 +30,80 @@ def resolve_client_ip(request: Request, trusted_proxy_hops: int) -> str:
 
 
 class RateLimiter:
-    def __init__(self, max_requests: int, window_seconds: int):
+    """Sliding window per client IP, counted in Redis.
+
+    `max_requests` may be a zero-argument callable, so a ceiling kept in
+    settings is read on every request instead of frozen at import time. A
+    ceiling of zero or less turns the limiter off.
+
+    Requests are keyed by `scope`, or by the request path when there is none.
+    A scope shared by several routes, or by every id a path template takes,
+    puts them in one bucket per IP, so moving to another route or another id
+    does not hand out a fresh budget.
+
+    `unavailable_status`, when set, answers that status when Redis cannot be
+    reached. Left unset the driver error propagates as it always did, which
+    keeps the response of the routes that were limiting before this option
+    existed unchanged.
+    """
+
+    def __init__(
+        self,
+        max_requests: int | Callable[[], int],
+        window_seconds: int,
+        scope: str | None = None,
+        unavailable_status: int | None = None,
+    ):
         self.max_requests = max_requests
         self.window_seconds = window_seconds
+        self.scope = scope
+        self.unavailable_status = unavailable_status
+
+    def ceiling(self) -> int:
+        limit = self.max_requests
+        if isinstance(limit, int):
+            return limit
+        return limit()
 
     async def __call__(self, request: Request) -> None:
+        limit = self.ceiling()
+        if limit <= 0:
+            return
+
         client_ip = resolve_client_ip(request, get_settings().trusted_proxy_hops)
-        key = f"rate_limit:{request.url.path}:{client_ip}"
+        key = f"rate_limit:{self.scope or request.url.path}:{client_ip}"
 
-        r = await get_redis()
-        now = time.time()
-        window_start = now - self.window_seconds
+        try:
+            r = await get_redis()
+            now = time.time()
+            window_start = now - self.window_seconds
 
-        pipe = r.pipeline()
-        pipe.zremrangebyscore(key, 0, window_start)
-        pipe.zcard(key)
-        pipe.zadd(key, {str(now): now})
-        pipe.expire(key, self.window_seconds)
-        results = await pipe.execute()
+            pipe = r.pipeline()
+            pipe.zremrangebyscore(key, 0, window_start)
+            pipe.zcard(key)
+            # A unique member per request: keyed by the timestamp, two requests
+            # that share a float value would land on the same member and the
+            # window would count them as one.
+            pipe.zadd(key, {uuid4().hex: now})
+            pipe.expire(key, self.window_seconds)
+            results = await pipe.execute()
+        except RedisError as exc:
+            # The window lives in Redis. With it unreachable nothing can be
+            # counted, and failing open would drop the protection exactly when
+            # the instance is already unhealthy. Where the caller opted in, a
+            # 503 says "try again" instead of turning the route into a bare 500;
+            # the routes that were limiting before this option keep their
+            # previous behavior, so auth responses do not change here.
+            if self.unavailable_status is None:
+                raise
+            raise HTTPException(
+                status_code=self.unavailable_status,
+                detail="Rate limit unavailable",
+            ) from exc
 
         request_count = results[1]
 
-        if request_count >= self.max_requests:
+        if request_count >= limit:
             retry_after = self.window_seconds
             raise HTTPException(
                 status_code=429,
@@ -60,3 +115,19 @@ class RateLimiter:
 login_rate_limit = RateLimiter(max_requests=5, window_seconds=60)
 register_rate_limit = RateLimiter(max_requests=3, window_seconds=3600)
 password_reset_rate_limit = RateLimiter(max_requests=3, window_seconds=3600)
+
+
+def _agents_chat_ceiling() -> int:
+    return get_settings().agents_chat_rate_limit_per_minute
+
+
+# Every assistant message spends provider tokens, so the chat has a ceiling of
+# its own, read from settings so a demo can be tighter than a self-hosted
+# instance. All agents share one bucket: per-path keys would give a caller a
+# fresh minute every time it switched agent id.
+agents_chat_rate_limit = RateLimiter(
+    max_requests=_agents_chat_ceiling,
+    window_seconds=60,
+    scope="agents_chat",
+    unavailable_status=503,
+)

@@ -820,7 +820,7 @@
     "greetingEvening": "こんばんは",
     "availableBalance": "利用可能残高",
     "netWorth": "純資産",
-    "netWorthTooltip": "口座+投資から、未払いのクレジットカード請求を差し引いた額。",
+    "netWorthTooltip": "現金＋投資口座＋投資資産から、未払いのクレジットカード請求を差し引いた額。投資は利用可能残高として扱いません。",
     "creditCardBalance": "未払いのクレジットカード請求",
     "loanBalance": "ローン",
     "pendingSharesOwe": "グループの貸し借りを反映した純額 {{net}}({{owed}}件未精算)",
@@ -889,7 +889,9 @@
     "fxRateUsed": "為替レート: {{rate}}",
     "refreshRates": "為替レートを更新",
     "ratesRefreshed": "為替レートを更新しました",
-    "ratesError": "為替レートの更新に失敗しました"
+    "ratesError": "為替レートの更新に失敗しました",
+    "cashBalance": "現金",
+    "investmentAccounts": "投資口座"
   },
   "transactions": {
     "title": "取引",
@@ -1288,7 +1290,16 @@
     "syncRateLimited": "銀行の1日の利用上限に達したため、新しいデータは取得されませんでした。しばらくしてから再度お試しください。",
     "syncPartial": "一部の口座は更新されましたが、残りの口座は銀行の1日の利用上限に達しました。後ほど再試行されます。",
     "syncError": "同期に失敗しました",
+    "syncFailure": {
+      "failedAt": "前回の同期は {{when}} に失敗しました。",
+      "psu_present_required": "銀行はSecuroを利用中の間だけこのデータを共有します。",
+      "consent_expired": "銀行へのアクセスを再度承認する必要があります。",
+      "reauthorize_at_provider": "SimpleFIN Bridge のアカウントでこの銀行を再度承認してから、もう一度同期してください。",
+      "provider_error": "銀行からエラーが返されました。",
+      "syncNow": "今すぐ同期"
+    },
     "connected": "銀行を接続しました",
+    "connectedImportFailed": "銀行に接続しましたが、最初のインポートに失敗しました。同期を再試行して完了してください。",
     "connectError": "銀行の接続に失敗しました",
     "disconnected": "接続を削除しました",
     "confirmDisconnectTitle": "銀行接続を切断しますか?",
@@ -1582,6 +1593,7 @@
     "walletHint": "選択したウォレット内の全資産の合計値でこの目標を追跡します。"
   },
   "recurring": {
+    "makeFromTransaction": "この取引から定期取引を作成",
     "title": "定期取引",
     "add": "定期取引を追加",
     "edit": "定期取引を編集",
@@ -1633,7 +1645,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "{{days}} 日間の間隔を経て",
-    "priceChangeInsufficient": "Securoが安定した価格変更を報告するには、リンクされた確定取引が最低 3 件必要です。"
+    "priceChangeInsufficient": "Securoが安定した価格変更を報告するには、リンクされた確定取引が最低 3 件必要です。",
+    "summaryIncome": "収入",
+    "summaryExpenses": "支出",
+    "summaryNet": "純額",
+    "summaryTransfers": "除外した振替: {{count}}",
+    "summaryUnconverted": "為替レートなしで除外: {{count}}",
+    "summaryFailed": "今月の合計を読み込めませんでした"
   },
   "rules": {
     "searchPlaceholder": "ルールを検索...",
@@ -1734,6 +1752,7 @@
     "fieldPayee": "取引相手",
     "fieldDate": "日付",
     "fieldStatus": "ステータス",
+    "fieldProviderCategory": "プロバイダーのカテゴリ",
     "opContains": "次を含む",
     "opNotContains": "次を含まない",
     "opEquals": "次に等しい",
@@ -2005,6 +2024,8 @@
     "undoImport": "インポートを取り消しますか?",
     "undoOrdersDescription": "{{filename}}からインポートした{{count}}件の注文を削除し、影響した保有位置を再計算します。このインポートで作成された保有も一緒に削除されます。",
     "undone": "インポートを取り消しました",
+    "undoOversell": "このインポートは元に戻せません: 残る取引が {{attempted}} 単位を売却しますが、保有は {{available}} です。先にその取引を編集または削除してください。",
+    "undoTooLarge": "このインポートは元に戻せません: 残る保有数量が大きすぎて保存できません。",
     "undoDescription": "{{filename}}からインポートした{{count}}件の取引を削除します。この操作は取り消せません。",
     "deleting": "削除中...",
     "deleteAll": "すべて削除",
@@ -2076,7 +2097,9 @@
       "fee": "手数料",
       "kind": "買付/売却",
       "currency": "通貨",
-      "notes": "メモ"
+      "notes": "メモ",
+      "old_units": "分割前の数量",
+      "new_units": "分割後の数量"
     },
     "walletWarningTitle": "すでにポートフォリオに存在します",
     "warning": {
@@ -2085,7 +2108,8 @@
     },
     "kind": {
       "buy": "買付",
-      "sell": "売却"
+      "sell": "売却",
+      "split": "株式分割"
     },
     "reason": {
       "missing_ticker": "ティッカーなし",
@@ -2095,8 +2119,17 @@
       "invalid_fee": "読み取れない手数料",
       "invalid_kind": "認識できない買付/売却値",
       "unknown_ticker": "価格プロバイダーがティッカーを検出できません",
-      "oversell": "保有数を超える売却"
-    }
+      "oversell": "保有数を超える売却",
+      "no_fx_rate": "注文日の為替レートがありません",
+      "possible_duplicate": "以前のインポートでこの保有銘柄に登録済みの可能性があります",
+      "invalid_split": "分割比率を読み取れない、または数量・価格・手数料のある分割",
+      "split_not_allowed": "銀行と同期している保有には分割を記録できません",
+      "split_in_future": "分割の日付を未来にすることはできません",
+      "nothing_held_before_split": "分割前に保有数量がありません",
+      "too_large": "保有が大きすぎて保存できません",
+      "holding_moved": "インポート中に保有資産の名前が変更されたか、別のウォレットに移動されました"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "資産",
@@ -2111,6 +2144,8 @@
     "exchangeRateSetupAskAdmin": "{{from}}から{{to}}への換算には為替レートが必要です。管理者に設定を依頼してください。",
     "noFxRate": "為替レートなし",
     "noFxRateTitle": "この通貨の為替レートが利用できません。資産は元通貨で表示され、合計から除外されます。",
+    "providerValueStale": "{{date}} 以降未更新",
+    "providerValueStaleTitle": "プロバイダーはこのポジションをまだ報告していますが、この日付以降評価額を更新していません。償還済みか、接続が投資データを更新できていない可能性があります。銀行で確認してください。",
     "fxRateMissing": "{{currencies}} の為替レートが利用できません。これらの資産は元通貨で表示され、合計から除外されます。",
     "colAsset": "資産",
     "colQuantity": "数量",
@@ -2172,6 +2207,10 @@
     "marketPriceSourceTooltip": "市場データから価格を自動更新",
     "lastUpdated": "更新: {{when}}",
     "refreshPrice": "価格を更新",
+    "refreshAllPrices": "価格を更新",
+    "refreshAllPricesDone": "{{refreshed}}件の価格を更新、{{skipped}}件は新しい価格なし",
+    "refreshAllPricesNone": "更新する時価評価の資産がありません",
+    "refreshAllPricesRateLimited": "市場データプロバイダーが現在リクエストを制限しています。停止前に{{refreshed}}件の価格を更新し、{{skipped}}件をスキップしました。1分後にもう一度お試しください。",
     "priceRefreshed": "価格を更新しました",
     "purchaseDate": "取得日",
     "purchasePrice": "取得価格",
@@ -2197,6 +2236,7 @@
     "updated": "資産を更新しました",
     "deleted": "資産を削除しました",
     "confirmDelete": "この資産とすべての価値履歴を削除してもよろしいですか?",
+    "confirmDeleteSynced": "この接続で資産のインポートがオンの場合、次回の同期でこの資産は元に戻ります。削除したままにするには、接続設定で資産のインポートをオフにしてください。",
     "confirmDeleteTitle": "資産を削除しますか?",
     "addValue": "価値を追加",
     "valueHistory": "価値履歴",
@@ -2324,6 +2364,7 @@
     "baseline": "推計",
     "surplus": "黒字",
     "deficit": "赤字",
+    "investmentWithdrawals": "投資の取り崩し",
     "cashFlowNode": "キャッシュフロー",
     "flowChartAria": "キャッシュフロー図: 収入源から支出への流れ",
     "category": "カテゴリ",
@@ -2650,6 +2691,15 @@
     "brandOpen": "オープンソース",
     "brandSelfHosted": "セルフホスト",
     "brandPrivate": "プライバシー重視設計"
+  },
+  "accountantExport": {
+    "title": "会計士向けエクスポート",
+    "description": "期間の分類済み取引と損益計算書を、会計ソフトがそのまま開ける形式でダウンロードします。金額は他の人と分ける前の、取引の全額です。",
+    "startDate": "開始日",
+    "endDate": "終了日",
+    "download": "パッケージをダウンロード",
+    "error": "エクスポートを作成できませんでした",
+    "formatHint": "transactions.csv と profit-and-loss.csv を含む1つの zip。表計算ソフトや会計ソフトが調整なしで読める区切り文字と文字コードを使用します。"
   },
   "backup": {
     "button": "バックアップ",

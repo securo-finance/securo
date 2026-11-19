@@ -884,3 +884,68 @@ async def test_sync_placeholder_without_a_conversion_is_not_restamped(
     assert txs[0].amount_primary == Decimal("90.00")
     assert txs[0].fx_rate_used == Decimal("4.8833")
     stamp.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_sync_a_local_charge_takes_over_a_foreign_placeholder(
+    session, test_user, test_workspace, conn_account
+):
+    """A USD bill on a BRL account charged in BRL (#1073): the BRL charge
+    replaces the USD placeholder instead of being written next to it."""
+    conn, account = conn_account
+    conn_id, account_id = conn.id, account.id
+    bill = await _make_bill(session, test_workspace, test_user, account,
+                            amount=Decimal("18.43"), currency="USD",
+                            start_date=date(2025, 1, 10))
+    bill_id = bill.id
+    bill.next_occurrence = date(2025, 2, 10)
+    placeholder_id = await _usd_placeholder(
+        session, test_workspace, test_user, account, bill_id
+    )
+    provider = _provider([_tx(external_id="s1", description="NETFLIX SUBSCRIPTION",
+                              amount=Decimal("97.30"), date=date(2025, 1, 11))])
+
+    stamp = AsyncMock()
+
+    await _run_sync(
+        session, conn_id, test_workspace, test_user, provider, stamp=stamp
+    )
+
+    txs = await _all_txs(session, account_id)
+    assert len(txs) == 1
+    assert txs[0].id == placeholder_id
+    assert txs[0].recurring_transaction_id == bill_id
+    assert (txs[0].amount, txs[0].currency) == (Decimal("97.30"), "BRL")
+    stamp.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_sync_drops_a_stamp_made_in_the_bills_currency(
+    session, test_user, test_workspace, conn_account
+):
+    """The row takes the charge's currency, so a stamp made from the bill's
+    cannot survive it — even when no rate replaces it (#1073)."""
+    conn, account = conn_account
+    conn_id, account_id = conn.id, account.id
+    bill = await _make_bill(session, test_workspace, test_user, account,
+                            amount=Decimal("18.43"), currency="USD",
+                            start_date=date(2025, 1, 10))
+    bill_id = bill.id
+    bill.next_occurrence = date(2025, 2, 10)
+    await _usd_placeholder(
+        session, test_workspace, test_user, account, bill_id
+    )
+    provider = _provider([_tx(external_id="s1", description="NETFLIX SUBSCRIPTION",
+                              amount=Decimal("97.30"), date=date(2025, 1, 11))])
+
+    stamp = AsyncMock()
+
+    await _run_sync(
+        session, conn_id, test_workspace, test_user, provider, stamp=stamp
+    )
+
+    txs = await _all_txs(session, account_id)
+    assert len(txs) == 1
+    assert txs[0].amount_primary is None
+    assert txs[0].fx_rate_used is None
+    stamp.assert_awaited()

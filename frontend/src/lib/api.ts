@@ -57,6 +57,7 @@ import type {
   RecurringTransaction,
   RecurringPriceChange,
   RecurringPriceChangeHistory,
+  RecurringMonthSummary,
   ProjectedTransaction,
   TransactionCalendarResponse,
   Budget,
@@ -90,6 +91,7 @@ import type {
   AssetImportPreview,
   AssetImportResult,
   AssetOrderImport,
+  AssetPriceRefreshResult,
   AssetTransaction,
   AssetValue,
   MarketSymbolMatch,
@@ -1138,6 +1140,8 @@ export type { TransactionSplitsInput }
 export interface UserLookupResult {
   id: string
   email: string
+  /** The name the person set for themselves; null when they never set one. */
+  display_name: string | null
 }
 
 export const users = {
@@ -1352,7 +1356,11 @@ export const recurring = {
     const { data } = await api.get('/recurring-transactions')
     return data
   },
-  create: async (rt: Partial<RecurringTransaction>): Promise<RecurringTransaction> => {
+  // `skip_first` is write-only: it moves the first occurrence one period ahead
+  // when the transaction that would cover it already exists.
+  create: async (
+    rt: Partial<RecurringTransaction> & { skip_first?: boolean },
+  ): Promise<RecurringTransaction> => {
     const { data } = await api.post('/recurring-transactions', rt)
     return data
   },
@@ -1377,6 +1385,13 @@ export const recurring = {
   },
   priceHistory: async (id: string): Promise<RecurringPriceChangeHistory> => {
     const { data } = await api.get(`/recurring-transactions/${id}/price-changes`)
+    return data
+  },
+  /** `month` is `"YYYY-MM"`; totals come in the primary currency. */
+  monthSummary: async (month: string): Promise<RecurringMonthSummary> => {
+    const { data } = await api.get('/recurring-transactions/summary', {
+      params: { month: `${month}-01` },
+    })
     return data
   },
 }
@@ -1571,6 +1586,22 @@ export const assets = {
     const { data } = await api.post(`/assets/${id}/refresh-price`)
     return data
   },
+  refreshPrices: async (workspaceId?: string | null): Promise<AssetPriceRefreshResult> => {
+    try {
+      const { data } = await api.post('/assets/refresh-prices', undefined, workspaceHeader(workspaceId))
+      return data
+    } catch (error) {
+      // A 429 can arrive after the provider answered for part of the portfolio
+      // and the service committed those prices. The response interceptor only
+      // signals on success, so tell the other tabs here; the tab that asked
+      // still gets the error and refetches with its own counters.
+      const response = (error as { response?: { status?: number; data?: { detail?: { refreshed?: number } } } }).response
+      if (response?.status === 429 && Number(response.data?.detail?.refreshed ?? 0) > 0) {
+        markDataChanged()
+      }
+      throw error
+    }
+  },
   // Transaction ledger (issue #235)
   transactions: async (id: string): Promise<AssetTransaction[]> => {
     const { data } = await api.get(`/assets/${id}/transactions`)
@@ -1714,12 +1745,17 @@ export const reports = {
     days?: number,
     startDate?: string,
     endDate?: string,
+    // A preset sent as explicit dates (This Month, a window stepped back)
+    // keeps its projections; a custom range is actuals only.
+    includeForecasts = false,
   ): Promise<ReportResponse> => {
     const extra = acctIdsParam(accountIds)
     const { data } = await api.get('/reports/income-expenses', {
       params: {
         months, interval, period, days,
-        ...(startDate && endDate ? { start_date: startDate, end_date: endDate } : {}),
+        ...(startDate && endDate
+          ? { start_date: startDate, end_date: endDate, ...(includeForecasts ? { include_forecasts: true } : {}) }
+          : {}),
         ...(extra.params ?? {}),
       },
       ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}),
@@ -1803,6 +1839,30 @@ export const backup = {
     const a = document.createElement('a')
     a.href = url
     a.download = `securo-backup-${new Date().toISOString().slice(0, 10)}.zip`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  },
+}
+
+// Accountant export: the categorized transactions and the profit and loss of
+// one period, as two CSV files inside a zip. Business workspaces only.
+export const accountantExport = {
+  download: async (startDate: string, endDate: string): Promise<void> => {
+    const { data, headers } = await api.get('/export/accountant', {
+      params: { start_date: startDate, end_date: endDate },
+      responseType: 'blob',
+    })
+    const blob = new Blob([data], { type: 'application/zip' })
+    const url = URL.createObjectURL(blob)
+    // The server names the file after the workspace and the period; fall
+    // back to the same shape when the header isn't readable.
+    const disposition = String(headers['content-disposition'] ?? '')
+    const filename = /filename="?([^";]+)"?/.exec(disposition)?.[1]
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename ?? `securo-accountant-${startDate}_${endDate}.zip`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -1985,7 +2045,7 @@ export const plugins = {
     const { data } = await api.get('/plugins')
     return data
   },
-  /** The catalog: fetched from the index now, so only call it when the user asks. */
+  /** The catalog: fetched from the index now, so only call it when the user asks or a plugin's icon is on screen (ADR 0026). */
   catalog: async (): Promise<PluginCatalogEntry[]> => {
     const { data } = await api.get('/plugins/catalog')
     return data

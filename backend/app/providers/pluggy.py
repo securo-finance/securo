@@ -320,6 +320,7 @@ def _build_holding_data(inv: dict) -> HoldingData:
         purchase_date=purchase_date,
         isin=inv.get("isin") or None,
         maturity_date=_date_or_none(inv.get("dueDate")),
+        value_date=_date_or_none(inv.get("date")),
         is_withdrawn=is_withdrawn,
         metadata=metadata or None,
     )

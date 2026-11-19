@@ -822,7 +822,7 @@
     "greetingEvening": "Buonasera",
     "availableBalance": "Saldo disponibile in conto",
     "netWorth": "Patrimonio netto",
-    "netWorthTooltip": "Conti + investimenti, meno le fatture della carta di credito aperte.",
+    "netWorthTooltip": "Liquidità + conti di investimento + beni investiti, meno le fatture della carta di credito aperte. Gli investimenti non contano come denaro disponibile.",
     "creditCardBalance": "Fatture della carta aperte",
     "loanBalance": "Prestiti e finanziamenti",
     "pendingSharesOwe": "Netto {{net}} dopo i debiti di gruppo ({{owed}} in sospeso)",
@@ -891,7 +891,9 @@
     "fxRateUsed": "Tasso di cambio: {{rate}}",
     "refreshRates": "Aggiorna i tassi di cambio",
     "ratesRefreshed": "Tassi di cambio aggiornati",
-    "ratesError": "Impossibile aggiornare i tassi di cambio"
+    "ratesError": "Impossibile aggiornare i tassi di cambio",
+    "cashBalance": "Liquidità",
+    "investmentAccounts": "Conti di investimento"
   },
   "transactions": {
     "title": "Transazioni",
@@ -1292,7 +1294,16 @@
     "syncRateLimited": "Limite giornaliero della banca raggiunto, nessun dato nuovo recuperato. Riprova più tardi.",
     "syncPartial": "Alcuni conti sono stati aggiornati, ma per gli altri è stato raggiunto il limite giornaliero della banca. Verranno riprovati più tardi.",
     "syncError": "Sincronizzazione fallita",
+    "syncFailure": {
+      "failedAt": "L'ultima sincronizzazione è fallita il {{when}}.",
+      "psu_present_required": "La banca condivide questi dati solo mentre stai usando Securo.",
+      "consent_expired": "La banca chiede di autorizzare di nuovo l'accesso.",
+      "reauthorize_at_provider": "Autorizza di nuovo questa banca nel tuo account SimpleFIN Bridge, poi sincronizza.",
+      "provider_error": "La banca ha restituito un errore.",
+      "syncNow": "Sincronizza ora"
+    },
     "connected": "Banca collegata con successo",
+    "connectedImportFailed": "Banca collegata, ma la prima importazione non è riuscita. Ripeti la sincronizzazione per completare.",
     "connectError": "Impossibile collegare la banca",
     "disconnected": "Connessione rimossa",
     "confirmDisconnectTitle": "Disconnettere la connessione bancaria?",
@@ -1586,6 +1597,7 @@
     "walletHint": "Monitora questo obiettivo con il valore combinato di tutti gli asset nel portafoglio selezionato."
   },
   "recurring": {
+    "makeFromTransaction": "Nuova ricorrente da questa transazione",
     "title": "Transazioni ricorrenti",
     "add": "Aggiungi ricorrente",
     "edit": "Modifica ricorrente",
@@ -1637,7 +1649,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "Dopo un intervallo di {{days}} giorni",
-    "priceChangeInsufficient": "Sono necessari almeno 3 addebiti pubblicati e collegati prima che Securo segnali una variazione di prezzo stabile."
+    "priceChangeInsufficient": "Sono necessari almeno 3 addebiti pubblicati e collegati prima che Securo segnali una variazione di prezzo stabile.",
+    "summaryIncome": "Entrate",
+    "summaryExpenses": "Uscite",
+    "summaryNet": "Netto",
+    "summaryTransfers": "Trasferimenti esclusi: {{count}}",
+    "summaryUnconverted": "Senza tasso di cambio, esclusi: {{count}}",
+    "summaryFailed": "Impossibile caricare i totali del mese"
   },
   "rules": {
     "searchPlaceholder": "Cerca regole...",
@@ -1743,6 +1761,7 @@
     "fieldPayee": "Beneficiario",
     "fieldDate": "Data",
     "fieldStatus": "Stato",
+    "fieldProviderCategory": "Categoria del provider",
     "opContains": "contiene",
     "opNotContains": "non contiene",
     "opEquals": "uguale a",
@@ -2009,6 +2028,8 @@
     "undoImport": "Annullare l'importazione?",
     "undoOrdersDescription": "Verranno eliminati i {{count}} ordini importati da {{filename}} e ricalcolate le posizioni interessate. I titoli creati da questa importazione vengono rimossi con essi.",
     "undone": "Importazione annullata",
+    "undoOversell": "Impossibile annullare questa importazione: un movimento che resta vende {{attempted}} unità con {{available}} possedute. Modifica o elimina prima quel movimento.",
+    "undoTooLarge": "Impossibile annullare questa importazione: la posizione che resta è troppo grande da salvare.",
     "undoDescription": "Questo eliminerà {{count}} transazioni importate da {{filename}}. Questa azione non può essere annullata.",
     "deleting": "Eliminazione...",
     "deleteAll": "Elimina tutto",
@@ -2080,7 +2101,9 @@
       "fee": "Commissioni",
       "kind": "Acquisto/Vendita",
       "currency": "Valuta",
-      "notes": "Note"
+      "notes": "Note",
+      "old_units": "Unità prima",
+      "new_units": "Unità dopo"
     },
     "walletWarningTitle": "Già nel tuo portafoglio",
     "warning": {
@@ -2089,7 +2112,8 @@
     },
     "kind": {
       "buy": "Acquisto",
-      "sell": "Vendita"
+      "sell": "Vendita",
+      "split": "Frazionamento"
     },
     "reason": {
       "missing_ticker": "nessun ticker",
@@ -2099,8 +2123,17 @@
       "invalid_fee": "commissione illeggibile",
       "invalid_kind": "acquisto/vendita non riconosciuto",
       "unknown_ticker": "ticker non trovato dal fornitore di prezzi",
-      "oversell": "vendita superiore alla posizione"
-    }
+      "oversell": "vendita superiore alla posizione",
+      "no_fx_rate": "nessun tasso di cambio per la data dell'ordine",
+      "possible_duplicate": "potrebbe essere già in questa posizione da un'importazione precedente",
+      "invalid_split": "rapporto di frazionamento illeggibile, o frazionamento con quantità, prezzo o commissione",
+      "split_not_allowed": "non si possono registrare frazionamenti su una posizione sincronizzata con la banca",
+      "split_in_future": "un frazionamento non può avere una data futura",
+      "nothing_held_before_split": "nessuna unità detenuta prima del frazionamento",
+      "too_large": "renderebbe la posizione troppo grande da salvare",
+      "holding_moved": "la posizione è stata rinominata o spostata in un altro portafoglio durante l’importazione"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Beni",
@@ -2115,6 +2148,8 @@
     "exchangeRateSetupAskAdmin": "La conversione da {{from}} a {{to}} richiede i tassi di cambio. Chiedi a un amministratore di configurarli.",
     "noFxRate": "nessun tasso di cambio",
     "noFxRateTitle": "Non è disponibile un tasso di cambio per questa valuta. L'attivo viene mostrato nella valuta originale e escluso dai totali.",
+    "providerValueStale": "non aggiornato dal {{date}}",
+    "providerValueStaleTitle": "Il fornitore riporta ancora questa posizione ma non ne aggiorna il valore da questa data. Potrebbe essere stata riscattata o la connessione potrebbe non riuscire ad aggiornare gli investimenti. Verifica con la tua banca.",
     "fxRateMissing": "Non è disponibile un tasso di cambio per {{currencies}}. Questi attivi sono mostrati nella valuta originale e esclusi dai totali.",
     "colAsset": "Attività",
     "colQuantity": "Qtà",
@@ -2176,6 +2211,10 @@
     "marketPriceSourceTooltip": "Prezzo aggiornato automaticamente dai dati di mercato",
     "lastUpdated": "Aggiornato {{when}}",
     "refreshPrice": "Aggiorna prezzo",
+    "refreshAllPrices": "Aggiorna prezzi",
+    "refreshAllPricesDone": "{{refreshed}} prezzi aggiornati, {{skipped}} senza nuova quotazione",
+    "refreshAllPricesNone": "Nessun cespite a prezzo di mercato da aggiornare",
+    "refreshAllPricesRateLimited": "Il fornitore dei dati di mercato sta limitando le richieste. {{refreshed}} prezzi sono stati aggiornati e {{skipped}} saltati prima dello stop; riprova tra un minuto.",
     "priceRefreshed": "Prezzo aggiornato",
     "purchaseDate": "Data di acquisto",
     "purchasePrice": "Prezzo di acquisto",
@@ -2201,6 +2240,7 @@
     "updated": "Bene aggiornato",
     "deleted": "Bene eliminato",
     "confirmDelete": "Sei sicuro di voler eliminare questo bene e tutta la sua cronologia di valore?",
+    "confirmDeleteSynced": "Se l’importazione dei beni è attiva per questa connessione, la prossima sincronizzazione riporterà questo bene. Disattiva l’importazione dei beni nelle impostazioni della connessione perché resti eliminato.",
     "confirmDeleteTitle": "Eliminare il bene?",
     "addValue": "Aggiungi valore",
     "valueHistory": "Cronologia valore",
@@ -2328,6 +2368,7 @@
     "baseline": "Stima",
     "surplus": "Avanzo",
     "deficit": "Disavanzo",
+    "investmentWithdrawals": "Disinvestimenti",
     "cashFlowNode": "Flusso di cassa",
     "flowChartAria": "Diagramma del flusso di cassa: entrate che confluiscono nelle spese",
     "category": "Categoria",
@@ -2654,6 +2695,15 @@
     "brandOpen": "Open source",
     "brandSelfHosted": "Self-hosted",
     "brandPrivate": "Privato per progettazione"
+  },
+  "accountantExport": {
+    "title": "Esportazione per il commercialista",
+    "description": "Scarica le transazioni categorizzate e il conto economico di un periodo, nel formato che il software del tuo commercialista apre direttamente. Gli importi sono il valore intero della transazione, prima di dividerlo con altre persone.",
+    "startDate": "Data iniziale",
+    "endDate": "Data finale",
+    "download": "Scarica pacchetto",
+    "error": "Impossibile generare l'esportazione",
+    "formatHint": "Uno zip con transactions.csv e profit-and-loss.csv, con i separatori e la codifica che fogli di calcolo e software contabili leggono senza modifiche."
   },
   "backup": {
     "button": "Backup",

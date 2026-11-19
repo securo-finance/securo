@@ -822,7 +822,7 @@
     "greetingEvening": "Bonsoir",
     "availableBalance": "Solde disponible en compte",
     "netWorth": "Valeur nette",
-    "netWorthTooltip": "Comptes + investissements, moins les factures de carte ouvertes.",
+    "netWorthTooltip": "Liquidités + comptes d'investissement + actifs investis, moins les factures de carte ouvertes. L'investissement n'est pas traité comme de l'argent disponible.",
     "creditCardBalance": "Factures de carte ouvertes",
     "loanBalance": "Prêts et financements",
     "pendingSharesOwe": "Net {{net}} après dettes de groupe ({{owed}} en attente)",
@@ -891,7 +891,9 @@
     "fxRateUsed": "Taux de change : {{rate}}",
     "refreshRates": "Actualiser les taux de change",
     "ratesRefreshed": "Taux de change mis à jour",
-    "ratesError": "Échec de la mise à jour des taux de change"
+    "ratesError": "Échec de la mise à jour des taux de change",
+    "cashBalance": "Liquidités",
+    "investmentAccounts": "Comptes d'investissement"
   },
   "transactions": {
     "title": "Transactions",
@@ -1292,7 +1294,16 @@
     "syncRateLimited": "Limite journalier de la banque atteint, aucune donnée nouvelle n'a été récupérée. Réessayez plus tard.",
     "syncPartial": "Certains comptes ont été mis à jour, mais la limite journalière de la banque a été atteinte pour les autres. Ils seront réessayés plus tard.",
     "syncError": "Échec de la synchronisation",
+    "syncFailure": {
+      "failedAt": "La dernière synchronisation a échoué le {{when}}.",
+      "psu_present_required": "La banque ne partage ces données que pendant que vous utilisez Securo.",
+      "consent_expired": "La banque vous demande d'autoriser à nouveau l'accès.",
+      "reauthorize_at_provider": "Autorisez à nouveau cette banque dans votre compte SimpleFIN Bridge, puis synchronisez.",
+      "provider_error": "La banque a renvoyé une erreur.",
+      "syncNow": "Synchroniser maintenant"
+    },
     "connected": "Banque connectée avec succès",
+    "connectedImportFailed": "Banque connectée, mais la première importation a échoué. Relancez la synchronisation pour terminer.",
     "connectError": "Échec de la connexion à la banque",
     "disconnected": "Connexion supprimée",
     "confirmDisconnectTitle": "Déconnecter la connexion bancaire ?",
@@ -1586,6 +1597,7 @@
     "walletHint": "Suivez cet objectif avec la valeur combinée de tous les actifs du portefeuille sélectionné."
   },
   "recurring": {
+    "makeFromTransaction": "Nouvelle récurrence à partir de cette transaction",
     "title": "Transactions récurrentes",
     "add": "Ajouter une récurrente",
     "edit": "Modifier la récurrente",
@@ -1637,7 +1649,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "Après un intervalle de {{days}} jours",
-    "priceChangeInsufficient": "Au moins 3 frais publiés et liés sont nécessaires avant que Securo ne signale une variation de prix stable."
+    "priceChangeInsufficient": "Au moins 3 frais publiés et liés sont nécessaires avant que Securo ne signale une variation de prix stable.",
+    "summaryIncome": "Revenus",
+    "summaryExpenses": "Dépenses",
+    "summaryNet": "Net",
+    "summaryTransfers": "Virements exclus : {{count}}",
+    "summaryUnconverted": "Sans taux de change, exclues : {{count}}",
+    "summaryFailed": "Impossible de charger les totaux du mois"
   },
   "rules": {
     "searchPlaceholder": "Rechercher des règles...",
@@ -1743,6 +1761,7 @@
     "fieldPayee": "Bénéficiaire",
     "fieldDate": "Date",
     "fieldStatus": "Statut",
+    "fieldProviderCategory": "Catégorie du fournisseur",
     "opContains": "contient",
     "opNotContains": "ne contient pas",
     "opEquals": "est égal à",
@@ -2009,6 +2028,8 @@
     "undoImport": "Annuler l'import ?",
     "undoOrdersDescription": "Cela supprimera les {{count}} ordres importés de {{filename}} et recalculera les positions concernées. Les actifs créés par cet import sont supprimés avec eux.",
     "undone": "Import annulé",
+    "undoOversell": "Impossible d'annuler cet import : une écriture qui reste vend {{attempted}} unités alors que {{available}} sont détenues. Modifiez ou supprimez cette écriture d'abord.",
+    "undoTooLarge": "Impossible d'annuler cet import : la position restante est trop grande pour être enregistrée.",
     "undoDescription": "Cela supprimera {{count}} transactions importées depuis {{filename}}. Cette action est irréversible.",
     "deleting": "Suppression...",
     "deleteAll": "Tout supprimer",
@@ -2080,7 +2101,9 @@
       "fee": "Frais",
       "kind": "Achat/Vente",
       "currency": "Devise",
-      "notes": "Notes"
+      "notes": "Notes",
+      "old_units": "Unités avant",
+      "new_units": "Unités après"
     },
     "walletWarningTitle": "Déjà dans votre portefeuille",
     "warning": {
@@ -2089,7 +2112,8 @@
     },
     "kind": {
       "buy": "Achat",
-      "sell": "Vente"
+      "sell": "Vente",
+      "split": "Division"
     },
     "reason": {
       "missing_ticker": "aucun ticker",
@@ -2099,8 +2123,17 @@
       "invalid_fee": "frais illisibles",
       "invalid_kind": "achat/vente non reconnu",
       "unknown_ticker": "ticker introuvable chez le fournisseur de cours",
-      "oversell": "vente supérieure à la position"
-    }
+      "oversell": "vente supérieure à la position",
+      "no_fx_rate": "aucun taux de change pour la date de l'ordre",
+      "possible_duplicate": "figure peut-être déjà dans cette position via un import précédent",
+      "invalid_split": "ratio de division illisible, ou division avec une quantité, un prix ou des frais",
+      "split_not_allowed": "impossible d’enregistrer une division sur une position synchronisée avec la banque",
+      "split_in_future": "une division ne peut pas être datée dans le futur",
+      "nothing_held_before_split": "aucune unité détenue avant la division",
+      "too_large": "rendrait la position trop grande pour être enregistrée",
+      "holding_moved": "la position a été renommée ou a changé de portefeuille pendant l’import"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Actifs",
@@ -2115,6 +2148,8 @@
     "exchangeRateSetupAskAdmin": "La conversion de {{from}} vers {{to}} nécessite des taux de change. Demandez à un administrateur de les configurer.",
     "noFxRate": "pas de taux de change",
     "noFxRateTitle": "Aucun taux de change n'est disponible pour cette devise. L'actif est affiché dans sa devise d'origine et exclu des totaux.",
+    "providerValueStale": "non mis à jour depuis le {{date}}",
+    "providerValueStaleTitle": "Le fournisseur indique toujours cette position mais n'a pas mis à jour sa valeur depuis cette date. Elle a peut-être été rachetée, ou la connexion n'arrive pas à actualiser les placements. Vérifiez auprès de votre banque.",
     "fxRateMissing": "Aucun taux de change n'est disponible pour {{currencies}}. Ces actifs sont affichés dans leur devise d'origine et exclus des totaux.",
     "colAsset": "Actif",
     "colQuantity": "Qté",
@@ -2176,6 +2211,10 @@
     "marketPriceSourceTooltip": "Prix actualisé automatiquement à partir des données de marché",
     "lastUpdated": "Mis à jour {{when}}",
     "refreshPrice": "Actualiser le prix",
+    "refreshAllPrices": "Actualiser les prix",
+    "refreshAllPricesDone": "{{refreshed}} prix actualisés, {{skipped}} sans nouveau cours",
+    "refreshAllPricesNone": "Aucun actif à prix de marché à actualiser",
+    "refreshAllPricesRateLimited": "Le fournisseur de données de marché limite les requêtes pour le moment. {{refreshed}} prix ont été mis à jour et {{skipped}} laissés de côté avant l'arrêt ; réessayez dans une minute.",
     "priceRefreshed": "Prix actualisé",
     "purchaseDate": "Date d'achat",
     "purchasePrice": "Prix d'achat",
@@ -2201,6 +2240,7 @@
     "updated": "Actif mis à jour",
     "deleted": "Actif supprimé",
     "confirmDelete": "Êtes-vous sûr de vouloir supprimer cet actif et tout son historique de valeur ?",
+    "confirmDeleteSynced": "Si l’import des actifs est activé pour cette connexion, la prochaine synchronisation fera revenir cet actif. Désactivez l’import des actifs dans les paramètres de la connexion pour qu’il reste supprimé.",
     "confirmDeleteTitle": "Supprimer l'actif ?",
     "addValue": "Ajouter une valeur",
     "valueHistory": "Historique des valeurs",
@@ -2328,6 +2368,7 @@
     "baseline": "Estimation",
     "surplus": "Excédent",
     "deficit": "Déficit",
+    "investmentWithdrawals": "Retraits d'investissements",
     "cashFlowNode": "Flux de trésorerie",
     "flowChartAria": "Diagramme de flux de trésorerie : les sources de revenus s'écoulent vers les dépenses",
     "category": "Catégorie",
@@ -2654,6 +2695,15 @@
     "brandOpen": "Open source",
     "brandSelfHosted": "Auto-hébergé",
     "brandPrivate": "Confidentiel par conception"
+  },
+  "accountantExport": {
+    "title": "Export pour le comptable",
+    "description": "Téléchargez les transactions catégorisées et le compte de résultat d'une période, dans le format que le logiciel de votre comptable ouvre directement. Les montants sont la valeur totale de la transaction, avant tout partage avec d'autres personnes.",
+    "startDate": "Date de début",
+    "endDate": "Date de fin",
+    "download": "Télécharger l'archive",
+    "error": "Impossible de générer l'export",
+    "formatHint": "Un zip avec transactions.csv et profit-and-loss.csv, avec les séparateurs et l'encodage que les tableurs et logiciels comptables lisent sans ajustement."
   },
   "backup": {
     "button": "Sauvegarde",

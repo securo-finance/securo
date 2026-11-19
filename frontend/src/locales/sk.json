@@ -828,7 +828,7 @@
     "greetingEvening": "Dobrý večer",
     "availableBalance": "Dostupný zostatok na účtoch",
     "netWorth": "Čisté imanie",
-    "netWorthTooltip": "Účty + investície, po odpočítaní otvorených faktúr kreditnej karty.",
+    "netWorthTooltip": "Hotovosť + investičné účty + investované aktíva, po odpočítaní otvorených faktúr kreditnej karty. Investície sa nepovažujú za dostupné peniaze.",
     "creditCardBalance": "Otvorené faktúry kreditnej karty",
     "loanBalance": "Úvery a financovanie",
     "pendingSharesOwe": "Netto {{net}} po skupinových dlhoch ({{owed}} čaká na vyrovnanie)",
@@ -905,7 +905,9 @@
     "fxRateUsed": "Kurz: {{rate}}",
     "refreshRates": "Obnoviť kurzy",
     "ratesRefreshed": "Kurzy aktualizované",
-    "ratesError": "Kurzy sa nepodarilo aktualizovať"
+    "ratesError": "Kurzy sa nepodarilo aktualizovať",
+    "cashBalance": "Hotovosť",
+    "investmentAccounts": "Investičné účty"
   },
   "transactions": {
     "title": "Transakcie",
@@ -1352,7 +1354,16 @@
     "syncRateLimited": "Dosiahnutý denný limit banky, žiadne nové údaje neboli stiahnuté. Skúste to prosím neskôr.",
     "syncPartial": "Niektoré účty boli aktualizované, ale pri ostatných bol dosiahnutý denný limit banky. Skúsime ich znova neskôr.",
     "syncError": "Synchronizácia zlyhala",
+    "syncFailure": {
+      "failedAt": "Posledná synchronizácia zlyhala {{when}}.",
+      "psu_present_required": "Banka tieto údaje zdieľa len vtedy, keď používate Securo.",
+      "consent_expired": "Banka potrebuje, aby ste prístup znova autorizovali.",
+      "reauthorize_at_provider": "Znova autorizujte túto banku vo svojom účte SimpleFIN Bridge a potom synchronizujte.",
+      "provider_error": "Banka vrátila chybu.",
+      "syncNow": "Synchronizovať teraz"
+    },
     "connected": "Banka úspešne prepojená",
+    "connectedImportFailed": "Banka je pripojená, ale prvý import zlyhal. Zopakujte synchronizáciu na dokončenie.",
     "connectError": "Nepodarilo sa prepojiť banku",
     "disconnected": "Prepojenie odstránené",
     "confirmDisconnectTitle": "Odpojiť prepojenie banky?",
@@ -1658,6 +1669,7 @@
     "walletHint": "Sleduj tento cieľ podľa celkovej hodnoty všetkých aktív vo vybranej peňaženke."
   },
   "recurring": {
+    "makeFromTransaction": "Nová opakovaná transakcia z tejto transakcie",
     "title": "Opakované transakcie",
     "add": "Pridať opakovanú",
     "edit": "Upraviť opakovanú",
@@ -1713,7 +1725,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "Po prestávke {{days}} dní",
-    "priceChangeInsufficient": "Predtým, ako Securo oznámi stabilnú zmenu ceny, sú potrebné aspoň 3 prepojené zaúčtované poplatky."
+    "priceChangeInsufficient": "Predtým, ako Securo oznámi stabilnú zmenu ceny, sú potrebné aspoň 3 prepojené zaúčtované poplatky.",
+    "summaryIncome": "Príjmy",
+    "summaryExpenses": "Výdavky",
+    "summaryNet": "Čistý zostatok",
+    "summaryTransfers": "Vynechané prevody: {{count}}",
+    "summaryUnconverted": "Bez výmenného kurzu, vynechané: {{count}}",
+    "summaryFailed": "Súčty za mesiac sa nepodarilo načítať"
   },
   "rules": {
     "searchPlaceholder": "Hľadať pravidlá...",
@@ -1839,6 +1857,7 @@
     "fieldPayee": "Príjemca",
     "fieldDate": "Dátum",
     "fieldStatus": "Stav",
+    "fieldProviderCategory": "Kategória poskytovateľa",
     "opContains": "obsahuje",
     "opNotContains": "neobsahuje",
     "opEquals": "rovná sa",
@@ -2121,6 +2140,8 @@
     "undoOrdersDescription_many": "Vymaže sa {{count}} pokynu importovaného z {{filename}} a prepočítajú sa pozície, ktorých sa týkal. Aktíva, ktoré tento import vytvoril, sa odstránia spolu s ním.",
     "undoOrdersDescription_other": "Vymaže sa {{count}} pokynov importovaných z {{filename}} a prepočítajú sa pozície, ktorých sa týkali. Aktíva, ktoré tento import vytvoril, sa odstránia spolu s nimi.",
     "undone": "Import vrátený späť",
+    "undoOversell": "Tento import nie je možné vrátiť späť: zostávajúci záznam predáva {{attempted}} jednotiek, pričom je držaných {{available}}. Najprv tento záznam upravte alebo odstráňte.",
+    "undoTooLarge": "Tento import nie je možné vrátiť späť: zostávajúca pozícia je príliš veľká na uloženie.",
     "undoDescription": "Vymaže sa {{count}} importovaných transakcií z {{filename}}. Túto akciu nie je možné vrátiť späť.",
     "undoDescription_one": "Vymaže sa {{count}} importovaná transakcia z {{filename}}. Túto akciu nie je možné vrátiť späť.",
     "undoDescription_few": "Vymažú sa {{count}} importované transakcie z {{filename}}. Túto akciu nie je možné vrátiť späť.",
@@ -2200,7 +2221,9 @@
       "fee": "Poplatok",
       "kind": "Nákup/predaj",
       "currency": "Mena",
-      "notes": "Poznámka"
+      "notes": "Poznámka",
+      "old_units": "Kusy pred",
+      "new_units": "Kusy po"
     },
     "walletWarningTitle": "Už je v tvojom portfóliu",
     "warning": {
@@ -2209,7 +2232,8 @@
     },
     "kind": {
       "buy": "Nákup",
-      "sell": "Predaj"
+      "sell": "Predaj",
+      "split": "Split"
     },
     "reason": {
       "missing_ticker": "chýba ticker",
@@ -2219,8 +2243,17 @@
       "invalid_fee": "nečitateľný poplatok",
       "invalid_kind": "nerozpoznaná hodnota nákup/predaj",
       "unknown_ticker": "poskytovateľ cien ticker nenašiel",
-      "oversell": "predaj väčšieho množstva, než pozícia obsahuje"
-    }
+      "oversell": "predaj väčšieho množstva, než pozícia obsahuje",
+      "no_fx_rate": "chýba výmenný kurz k dátumu pokynu",
+      "possible_duplicate": "môže už byť v tejto pozícii z predchádzajúceho importu",
+      "invalid_split": "nečitateľný pomer splitu alebo split s množstvom, cenou alebo poplatkom",
+      "split_not_allowed": "split nemožno zaznamenať pri pozícii synchronizovanej s bankou",
+      "split_in_future": "split nemôže mať budúci dátum",
+      "nothing_held_before_split": "pred splitom nie sú držané žiadne kusy",
+      "too_large": "pozícia by bola príliš veľká na uloženie",
+      "holding_moved": "pozícia bola počas importu premenovaná alebo presunutá do inej peňaženky"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Aktíva",
@@ -2235,6 +2268,8 @@
     "exchangeRateSetupAskAdmin": "Prevod z {{from}} na {{to}} vyžaduje výmenné kurzy. Požiadaj správcu o ich nastavenie.",
     "noFxRate": "chýba kurz",
     "noFxRateTitle": "Pre túto menu nie je k dispozícii kurz. Aktívum sa zobrazuje v pôvodnej mene a je vynechané z celkov.",
+    "providerValueStale": "neaktualizované od {{date}}",
+    "providerValueStaleTitle": "Poskytovateľ túto pozíciu stále uvádza, ale od tohto dátumu neaktualizoval jej hodnotu. Mohla byť odkúpená alebo pripojenie neobnovuje investície. Overte to vo svojej banke.",
     "fxRateMissing": "Pre {{currencies}} nie je k dispozícii kurz. Tieto aktíva sa zobrazujú v pôvodnej mene a sú vynechané z celkov.",
     "colAsset": "Aktívum",
     "colQuantity": "Množ.",
@@ -2296,6 +2331,10 @@
     "marketPriceSourceTooltip": "Cena sa automaticky obnovuje z trhových dát",
     "lastUpdated": "Aktualizované {{when}}",
     "refreshPrice": "Obnoviť cenu",
+    "refreshAllPrices": "Obnoviť ceny",
+    "refreshAllPricesDone": "Aktualizovaných {{refreshed}} cien, {{skipped}} bez novej ceny",
+    "refreshAllPricesNone": "Žiadne aktíva s trhovou cenou na obnovenie",
+    "refreshAllPricesRateLimited": "Poskytovateľ trhových dát teraz obmedzuje požiadavky. Pred zastavením sa aktualizovalo {{refreshed}} cien a {{skipped}} bolo vynechaných. Skúste to znova o minútu.",
     "priceRefreshed": "Cena obnovená",
     "purchaseDate": "Dátum nákupu",
     "purchasePrice": "Nákupná cena",
@@ -2321,6 +2360,7 @@
     "updated": "Aktívum aktualizované",
     "deleted": "Aktívum vymazané",
     "confirmDelete": "Naozaj chceš vymazať toto aktívum a celú jeho históriu hodnôt?",
+    "confirmDeleteSynced": "Ak má toto pripojenie zapnutý import aktív, ďalšia synchronizácia toto aktívum vráti späť. Vypni import aktív v nastaveniach pripojenia, aby zostalo vymazané.",
     "confirmDeleteTitle": "Vymazať aktívum?",
     "addValue": "Pridať hodnotu",
     "valueHistory": "História hodnôt",
@@ -2448,6 +2488,7 @@
     "baseline": "Odhad",
     "surplus": "Prebytok",
     "deficit": "Deficit",
+    "investmentWithdrawals": "Výbery z investícií",
     "cashFlowNode": "Cash flow",
     "flowChartAria": "Diagram cash flow: zdroje príjmov pretekajúce do výdavkov",
     "category": "Kategória",
@@ -2794,6 +2835,15 @@
     "brandOpen": "Open source",
     "brandSelfHosted": "Na vlastnom serveri",
     "brandPrivate": "Súkromie od základu"
+  },
+  "accountantExport": {
+    "title": "Export pre účtovníka",
+    "description": "Stiahnite si kategorizované transakcie a výkaz ziskov a strát za obdobie vo formáte, ktorý účtovný softvér otvorí priamo. Sumy sú plná hodnota transakcie, pred rozdelením s ďalšími osobami.",
+    "startDate": "Počiatočný dátum",
+    "endDate": "Koncový dátum",
+    "download": "Stiahnuť balík",
+    "error": "Export sa nepodarilo vytvoriť",
+    "formatHint": "Jeden zip s transactions.csv a profit-and-loss.csv, s oddeľovačmi a kódovaním, ktoré tabuľkové procesory a účtovné programy čítajú bez úprav."
   },
   "backup": {
     "button": "Zálohovať",
