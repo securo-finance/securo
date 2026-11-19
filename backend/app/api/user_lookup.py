@@ -20,12 +20,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, EmailStr
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased
 
 from app.core.auth import current_active_user
 from app.core.database import get_async_session
 from app.models.user import User
-from app.models.workspace import WorkspaceMember
+from app.services import workspace_service
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -60,22 +59,5 @@ async def list_users_directory(
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
-    """The caller and everyone who shares a workspace with them.
-
-    Two queries, like ``workspace_service.list_members``: ``users.id`` is
-    fastapi-users' portable GUID and ``workspace_members.user_id`` is
-    Postgres ``UUID``, which SQLite stores differently, so a SQL comparison
-    between them finds nothing under test.
-    """
-    callers = aliased(WorkspaceMember)
-    callers_workspaces = select(callers.workspace_id).where(callers.user_id == user.id)
-    co_members = await session.execute(
-        select(WorkspaceMember.user_id).where(
-            WorkspaceMember.workspace_id.in_(callers_workspaces)
-        )
-    )
-    user_ids = set(co_members.scalars().all()) | {user.id}
-    result = await session.execute(
-        select(User).where(User.id.in_(user_ids)).order_by(User.email)
-    )
-    return list(result.scalars().all())
+    """The caller and everyone who shares a workspace with them."""
+    return await workspace_service.list_directory_users(session, user.id)
