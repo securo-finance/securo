@@ -2231,6 +2231,7 @@
     "noAssets": "Ancora nessun bene",
     "showArchived": "Mostra archiviati",
     "archivedNotCounted": "Non contano nel totale del portafoglio.",
+    "archivedLoadFailed": "Impossibile caricare gli asset archiviati.",
     "created": "Bene creato",
     "updated": "Bene aggiornato",
     "deleted": "Bene eliminato",

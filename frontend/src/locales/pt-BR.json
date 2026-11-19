@@ -2231,6 +2231,7 @@
     "noAssets": "Nenhum ativo ainda",
     "showArchived": "Mostrar arquivados",
     "archivedNotCounted": "Não entram no total do portfólio.",
+    "archivedLoadFailed": "Não foi possível carregar os ativos arquivados.",
     "created": "Ativo criado",
     "updated": "Ativo atualizado",
     "deleted": "Ativo excluído",

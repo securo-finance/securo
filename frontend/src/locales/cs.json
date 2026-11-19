@@ -2369,6 +2369,7 @@
     "noAssets": "Zatím žádná aktiva",
     "showArchived": "Zobrazit archivovaná",
     "archivedNotCounted": "Nezapočítávají se do celkové hodnoty portfolia.",
+    "archivedLoadFailed": "Archivovaná aktiva se nepodařilo načíst.",
     "created": "Aktivum vytvořeno",
     "updated": "Aktivum aktualizováno",
     "deleted": "Aktivum smazáno",

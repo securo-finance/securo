@@ -2229,6 +2229,7 @@
     "noAssets": "Még nincs eszköz",
     "showArchived": "Archiváltak megjelenítése",
     "archivedNotCounted": "Nem számítanak bele a portfólió összértékébe.",
+    "archivedLoadFailed": "Nem sikerült betölteni az archivált eszközöket.",
     "created": "Eszköz létrehozva",
     "updated": "Eszköz frissítve",
     "deleted": "Eszköz törölve",

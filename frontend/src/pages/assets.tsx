@@ -318,13 +318,18 @@ export default function AssetsPage() {
     setShowArchived(checked)
     localStorage.setItem(SHOW_ARCHIVED_KEY, checked ? '1' : '0')
   }
-  const { data: rawAssetsList, isLoading } = useQuery({
-    // Only the archived view gets its own entry: the other readers of
-    // ['assets'] expect the API's default, which leaves archived rows out.
-    queryKey: showArchived ? ['assets', 'archived'] : ['assets'],
-    queryFn: () => assets.list(showArchived),
-    placeholderData: (previous) => previous,
+  // The default list stays loaded underneath the archived one, so a failed
+  // archived request leaves the page as it was instead of emptying it.
+  const { data: defaultAssets, isLoading } = useQuery({
+    queryKey: ['assets'],
+    queryFn: () => assets.list(false),
   })
+  const withArchived = useQuery({
+    queryKey: ['assets', 'archived'],
+    queryFn: () => assets.list(true),
+    enabled: showArchived,
+  })
+  const rawAssetsList = showArchived && withArchived.data ? withArchived.data : defaultAssets
 
   // Active Collection filter (issue #105): when a collection is active, scope
   // the Assets page to the assets in its wallets (asset_groups). A collection
@@ -381,6 +386,9 @@ export default function AssetsPage() {
   // Only what the toggle asked for: a response that lands after it is turned
   // back off cannot flash archived rows into the page or this summary.
   const archivedAssets = showArchived ? (assetsList ?? []).filter((a) => a.is_archived) : []
+  // A failed archived request keeps the default list on screen; say so instead
+  // of letting the page look like an empty portfolio.
+  const archivedFailed = showArchived && withArchived.isError
   const totalValue = countedAssets.reduce(
     (acc: number, a: { current_value?: number | null }) => acc + Number(a.current_value || 0),
     0,
@@ -1390,6 +1398,19 @@ export default function AssetsPage() {
             </div>
           )}
 
+          {archivedFailed && (
+            <div role="status" className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+              <AlertTriangle size={14} className="shrink-0" aria-hidden="true" />
+              <span className="flex-1">{t('assets.archivedLoadFailed')}</span>
+              <button
+                onClick={() => void withArchived.refetch()}
+                className="rounded-md border border-current px-2.5 py-1 font-medium"
+              >
+                {t('common.retry')}
+              </button>
+            </div>
+          )}
+
           {/* Archived holdings: kept apart from wallets, totals and the
               portfolio share, and dimmed so they read as inactive. */}
           {archivedAssets.length > 0 && (
@@ -1402,7 +1423,7 @@ export default function AssetsPage() {
             </div>
           )}
 
-          {activeAssets.length === 0 && soldAssets.length === 0 && archivedAssets.length === 0 && (
+          {activeAssets.length === 0 && soldAssets.length === 0 && archivedAssets.length === 0 && !archivedFailed && (
             <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden text-center py-16 text-muted-foreground">
               <Package size={32} className="mx-auto mb-2 opacity-50" />
               <p>{t('assets.noAssets')}</p>

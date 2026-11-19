@@ -2227,6 +2227,7 @@
     "noAssets": "No assets yet",
     "showArchived": "Show archived",
     "archivedNotCounted": "Not counted in the portfolio total.",
+    "archivedLoadFailed": "Could not load archived holdings.",
     "created": "Asset created",
     "updated": "Asset updated",
     "deleted": "Asset deleted",

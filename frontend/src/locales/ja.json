@@ -2227,6 +2227,7 @@
     "noAssets": "資産はまだありません",
     "showArchived": "アーカイブを表示",
     "archivedNotCounted": "ポートフォリオ合計には含まれません。",
+    "archivedLoadFailed": "アーカイブ済みの資産を読み込めませんでした。",
     "created": "資産を作成しました",
     "updated": "資産を更新しました",
     "deleted": "資産を削除しました",

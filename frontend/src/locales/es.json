@@ -2231,6 +2231,7 @@
     "noAssets": "Aún no hay activos",
     "showArchived": "Mostrar archivados",
     "archivedNotCounted": "No cuentan para el total de la cartera.",
+    "archivedLoadFailed": "No se pudieron cargar los activos archivados.",
     "created": "Activo creado",
     "updated": "Activo actualizado",
     "deleted": "Activo eliminado",

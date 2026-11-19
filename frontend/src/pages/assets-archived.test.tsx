@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 
 import AssetsPage from '@/pages/assets'
 import { renderWithProviders, t } from '@/test/utils'
@@ -96,6 +96,22 @@ describe('Archived holdings on the Assets page', () => {
     // The active holding is 100% of a portfolio that does not count the 900.
     expect(screen.getByText('100.0%')).toBeVisible()
     expect(within(archivedRow).queryByText(/%$/)).not.toBeInTheDocument()
+  })
+
+  it('keeps the active holdings on screen when the archived request fails', async () => {
+    api.assets.list.mockImplementation((includeArchived: boolean) =>
+      includeArchived ? Promise.reject(new Error('index unreachable')) : Promise.resolve([ACTIVE]),
+    )
+    localStorage.setItem('securo:assets:showArchived', '1')
+    const { user } = renderWithProviders(<AssetsPage />)
+
+    expect(await screen.findByText('Active Broker')).toBeVisible()
+    expect(await screen.findByText(t('assets.archivedLoadFailed'))).toBeVisible()
+    expect(screen.queryByText(t('assets.noAssets'))).not.toBeInTheDocument()
+
+    // Retrying is the way out, not reloading the page.
+    await user.click(screen.getByRole('button', { name: t('common.retry') }))
+    await waitFor(() => expect(api.assets.list.mock.calls.filter(([all]) => all === true)).toHaveLength(2))
   })
 
   it('offers the toggle when every holding is archived', async () => {

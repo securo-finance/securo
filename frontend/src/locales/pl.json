@@ -2324,6 +2324,7 @@
     "noAssets": "Brak aktywów",
     "showArchived": "Pokaż zarchiwizowane",
     "archivedNotCounted": "Nie są liczone do łącznej wartości portfela.",
+    "archivedLoadFailed": "Nie udało się wczytać zarchiwizowanych aktywów.",
     "created": "Utworzono aktywo",
     "updated": "Zaktualizowano aktywo",
     "deleted": "Usunięto aktywo",

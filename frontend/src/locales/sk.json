@@ -2351,6 +2351,7 @@
     "noAssets": "Zatiaľ žiadne aktíva",
     "showArchived": "Zobraziť archivované",
     "archivedNotCounted": "Nezapočítavajú sa do celkovej hodnoty portfólia.",
+    "archivedLoadFailed": "Archivované aktíva sa nepodarilo načítať.",
     "created": "Aktívum vytvorené",
     "updated": "Aktívum aktualizované",
     "deleted": "Aktívum vymazané",
