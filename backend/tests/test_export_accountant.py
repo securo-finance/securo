@@ -408,6 +408,61 @@ async def test_profit_and_loss_is_in_the_workspace_currency_not_the_exporters_di
 
 
 @pytest.mark.asyncio
+async def test_profit_and_loss_rows_add_up_to_the_result(
+    client: AsyncClient,
+    session: AsyncSession,
+    auth_headers: dict,
+    test_user: User,
+    test_workspace: Workspace,
+    test_account: Account,
+    test_categories: list[Category],
+):
+    """The printed categories sum to the printed result, cent by cent.
+
+    Two 0,01 USD expenses at 1,5 BRL convert to 0,015 each. Rounded once per
+    category they show 0,02, so the result must say 0,04 instead of the 0,03
+    the unrounded totals gave.
+    """
+    await _make_business(session, test_workspace, "Loja Centavos")
+    await _add_rate(session, date(2024, 9, 10), "BRL", "1.5")
+    await _add_transaction(
+        session,
+        test_user,
+        test_workspace,
+        test_account,
+        amount="0.01",
+        tx_date=date(2024, 9, 10),
+        category_id=test_categories[0].id,
+        currency="USD",
+        description="CENTAVO A",
+    )
+    await _add_transaction(
+        session,
+        test_user,
+        test_workspace,
+        test_account,
+        amount="0.01",
+        tx_date=date(2024, 9, 10),
+        category_id=test_categories[1].id,
+        currency="USD",
+        description="CENTAVO B",
+    )
+
+    response = await client.get(
+        EXPORT_URL,
+        params={"start_date": "2024-09-01", "end_date": "2024-09-30"},
+        headers=_headers(auth_headers, test_workspace),
+    )
+
+    with _open_zip(response) as archive:
+        _, rows = _read_csv(archive, "profit-and-loss.csv")
+
+    assert ["expense", "Alimentação", "0,02", "BRL"] in rows
+    assert ["expense", "Transporte", "0,02", "BRL"] in rows
+    assert rows[-1] == ["result", "", "-0,04", "BRL"]
+
+
+@pytest.mark.asyncio
 async def test_foreign_line_without_a_rate_is_reported_instead_of_summed(
     client: AsyncClient,
     session: AsyncSession,

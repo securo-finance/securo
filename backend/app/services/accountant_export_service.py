@@ -114,10 +114,14 @@ def _as_decimal(value: Any) -> Decimal:
     return Decimal(str(value if value is not None else 0))
 
 
+def _money(value: Any) -> Decimal:
+    """A value at the two decimals the files are written with."""
+    return _as_decimal(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
 def _format_decimal(value: Any) -> str:
     """Two decimals and a decimal comma, e.g. ``1234.5`` -> ``1234,50``."""
-    amount = _as_decimal(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    return f"{amount:.2f}".replace(".", ",")
+    return f"{_money(value):.2f}".replace(".", ",")
 
 
 def _csv_bytes(header: Iterable[str], rows: Iterable[Iterable[str]]) -> bytes:
@@ -258,11 +262,12 @@ async def _profit_and_loss_rows(
     books would export different numbers for two people with different
     preferences (#240).
 
-    A part whose currency has no stored rate for its date is kept out of the
-    totals rather than summed at 1:1. It goes to an ``unconverted_income`` /
-    ``unconverted_expense`` section with its own currency in the ``Currency``
-    column, so the file tells the accountant what was left out and why (#574).
-    The export reads stored rates only and never calls the provider for a
+    The rate is the one the rest of the app resolves: the day's own stored
+    rate, else the closest stored one. A part whose currency has no stored
+    rate at all is kept out of the totals rather than summed at 1:1. It goes
+    to an ``unconverted_income`` / ``unconverted_expense`` section with its own
+    currency in the ``Currency`` column, so the file tells the accountant what
+    was left out and why (#574). The export never calls the provider for a
     missing day, which keeps a ten-year period a bounded number of queries.
 
     This books the full amount of every transaction, which is what the ledger
@@ -363,8 +368,11 @@ async def _profit_and_loss_rows(
             key = (section, label)
             totals[key] = totals.get(key, Decimal("0")) + total * rate
 
+    # Each category is rounded once, to the cent the file prints, and that
+    # rounded value is what the result sums: otherwise two 0,015 lines show
+    # 0,02 each and the result says 0,03.
     ordered: list[tuple[str, str, Decimal]] = [
-        (section, label, total) for (section, label), total in totals.items()
+        (section, label, _money(total)) for (section, label), total in totals.items()
     ]
     ordered.sort(key=lambda item: (0 if item[0] == _INCOME else 1, item[1].lower()))
 
@@ -382,7 +390,7 @@ async def _profit_and_loss_rows(
     # Parts kept out of the totals, with the currency they are actually in.
     # The section name carries the direction; the amount stays a magnitude.
     skipped: list[tuple[str, str, str, Decimal]] = [
-        (section, label, skipped_currency, total)
+        (section, label, skipped_currency, _money(total))
         for (section, label, skipped_currency), total in unconverted.items()
     ]
     skipped.sort(
