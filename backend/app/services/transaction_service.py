@@ -1786,6 +1786,12 @@ async def _apply_update_to_row(
         tx.description_is_rule_managed = False
 
     previous_account_id = tx.account_id
+    # Compared before the update: a save that resends the same amount must
+    # not work out the account amount again.
+    account_inputs_changed = any(
+        key in update_data and update_data[key] != getattr(tx, key)
+        for key in ("amount", "currency", "date")
+    )
     fx_keys = {"amount_primary", "fx_rate_used"}
     for key, value in update_data.items():
         if key in fx_keys:
@@ -1817,7 +1823,7 @@ async def _apply_update_to_row(
         # Posting only heals the reporting stamp; the account amount follows
         # a change of amount, currency, date or account.
         await stamp_primary_amount(
-            session, user_id, tx, restamp_account=needs_restamp or account_moved
+            session, user_id, tx, restamp_account=account_inputs_changed or account_moved
         )
 
     # Refresh effective_date when the purchase date, account, or the manual

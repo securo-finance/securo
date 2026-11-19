@@ -80,6 +80,7 @@ from app.services.rule_service import (
 from app.services.card_mirror_service import ignore_mirrored_card_charges
 from app.services.transfer_detection_service import detect_transfer_pairs
 from app.services.fx_rate_service import (
+    ACCOUNT_AMOUNT_FROM_BANK,
     ACCOUNT_AMOUNT_FROM_USER,
     stamp_account_amount,
     stamp_primary_amount,
@@ -2433,9 +2434,15 @@ async def _refresh_account_charge(
         # The user hid the row: a re-sync must not move its figures.
         return
     charged = txn_data.amount_in_account_currency
-    if charged is None or _same_cents(transaction.amount_account, charged):
+    if charged is None:
         return
     if transaction.amount_account_source == ACCOUNT_AMOUNT_FROM_USER:
+        return
+    if _same_cents(transaction.amount_account, charged):
+        # Same figure, now confirmed by the bank: record it as the bank's so a
+        # later heal does not work it out again from a rate.
+        if transaction.amount_account is not None:
+            transaction.amount_account_source = ACCOUNT_AMOUNT_FROM_BANK
         return
     if transaction.status == "posted" and txn_data.status == "pending":
         return
@@ -4619,6 +4626,7 @@ async def sync_connection(
                             placeholder.amount_primary = None
                             placeholder.fx_rate_used = None
                             placeholder.amount_account = None
+                            placeholder.amount_account_source = None
                         await _stamp_synced_primary_amount(
                             session, user_id, placeholder, converted,
                             txn_data.amount_in_account_currency, restamp_account=True,

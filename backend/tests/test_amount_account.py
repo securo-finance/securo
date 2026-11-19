@@ -500,3 +500,48 @@ async def test_sync_leaves_an_ignored_row_alone(
         account_currency="BRL", user_currency="BRL",
     )
     assert tx.amount_account == Decimal("545.10")
+
+
+@pytest.mark.asyncio
+async def test_a_bank_charge_equal_to_a_derived_amount_is_recorded_as_the_banks(
+    session: AsyncSession, test_user: User, test_account: Account, rates
+):
+    tx = _bank_row(test_user, test_account, raw_data={"id": "ext-1"})
+    tx.amount_account_source = None  # worked out from a rate, same figure
+    session.add(tx)
+    await session.flush()
+
+    await _refresh_account_charge(
+        session, tx,
+        TransactionData(
+            external_id="ext-1", description="Online store", amount=Decimal("100.00"),
+            date=ON, type="debit", currency="USD",
+            amount_in_account_currency=Decimal("545.10"),
+        ),
+        account_currency="BRL", user_currency="BRL",
+    )
+    assert tx.amount_account == Decimal("545.10")
+    assert tx.amount_account_source == "bank"
+
+
+@pytest.mark.asyncio
+async def test_resending_the_same_amount_keeps_a_typed_account_amount(
+    client: AsyncClient, session: AsyncSession, auth_headers, test_user: User, rates
+):
+    await _set_display_currency(client, auth_headers, test_user, "BRL")
+    account_id = await _account(client, auth_headers, "Card", "BRL")
+    tx_id = await _purchase(client, auth_headers, account_id, amount_primary="545.10")
+
+    # An unchanged save: the typed charge stays.
+    response = await client.patch(
+        f"/api/transactions/{tx_id}", headers=auth_headers, json={"amount": "100.00"}
+    )
+    assert response.status_code == 200, response.text
+    assert await _balance(client, auth_headers, account_id) == Decimal("-545.10")
+
+    # A real change of amount: the old charge no longer applies.
+    response = await client.patch(
+        f"/api/transactions/{tx_id}", headers=auth_headers, json={"amount": "120.00"}
+    )
+    assert response.status_code == 200, response.text
+    assert await _balance(client, auth_headers, account_id) == Decimal("-600.00")
