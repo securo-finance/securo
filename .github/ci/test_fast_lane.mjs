@@ -421,6 +421,44 @@ scenario('a service the rule does not name still merges', async () => {
   assert.ok(merged, `expected a merge, got: ${log}`);
 });
 
+// The four services kept out of the rule on purpose. Blocking them would take
+// most pull requests out of the lane, and none runs a sync or decides a
+// balance the way the named engines do.
+for (const file of [
+  'backend/app/services/transaction_service.py',
+  'backend/app/services/account_service.py',
+  'backend/app/services/import_service.py',
+  'backend/app/services/backup_service.py',
+]) {
+  scenario(`${file.split('/').pop()} stays free, as it was`, async () => {
+    const { merged, log } = await evaluate({ threads: [], files: [{ filename: file }] });
+    assert.ok(merged, `expected a merge, got: ${log}`);
+  });
+}
+
+// The tail accepts a directory of that name: an engine moved into a package is
+// the same engine, and its `__init__.py` would otherwise read as an ordinary
+// service.
+scenario('a package named for an engine refuses', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    files: [{ filename: 'backend/app/services/connection_service/__init__.py' }],
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.match(log, /\(money or bank sync\)/, log);
+});
+
+// The one wildcard in the group takes digits too, so a versioned
+// reconciliation engine is not a way around it.
+scenario('a versioned reconciliation engine refuses', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    files: [{ filename: 'backend/app/services/reconciliation_v2.py' }],
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.match(log, /\(money or bank sync\)/, log);
+});
+
 // Documentation never matches a blocked rule, whatever it sits beside: a page
 // under docs/ and a chart's README describe the engines, they do not run them.
 scenario('documentation about those engines still merges', async () => {
