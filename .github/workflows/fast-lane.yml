@@ -17,6 +17,10 @@ name: fast lane
 #   5. a trusted reviewer other than its author left a verdict comment naming
 #      that same head SHA
 #   6. no unresolved CodeRabbit `Major` or `Critical` thread is left on it
+#   7. CodeRabbit reviewed that same head: no open thread is evidence of a
+#      review only once a review happened, and a rate-limited or paused bot
+#      leaves a completed check run saying so; a review names the commit, and
+#      so does a check run that reports its review as completed
 #
 # A refusal is also said on the pull request itself, in one comment this
 # workflow rewrites in place and deletes once the pull request merges, but only
@@ -412,6 +416,42 @@ jobs:
                 return skip(`changes were requested by ${blocked.map(([u]) => u).join(', ')}`);
               }
 
+              // ---- 3a. the evidence that CodeRabbit reviewed this head ------
+              // Read here, before the thread list below, because the two gates
+              // are only sound in that order: a review that completed after the
+              // threads were read has findings the list does not carry yet, and
+              // the lane would merge on a stale list. With the evidence first,
+              // everything a completed review published is in the list that
+              // follows it.
+              //
+              // Two kinds of evidence name this head exactly. A review names
+              // the commit it judged in `commit_id`. Its check run is bound to
+              // the same sha, and on an incremental push that leaves nothing to
+              // say the bot finishes the review without submitting a review
+              // object — #1612 at `337456b9` carries `success` with "Review
+              // completed" and no review — which is a review of this head all
+              // the same. The bot's summary comment is not accepted: it names no
+              // commit, so it could belong to an older head and reopen the hole.
+              const reviewedByReview = reviews.some((r) => r.user
+                && r.user.login === 'coderabbitai[bot]'
+                && r.commit_id === head);
+              let coderabbitRun = null;
+              if (!reviewedByReview) {
+                try {
+                  const { data } = await github.rest.checks.listForRef(
+                    { owner: OWNER, repo: REPO, ref: head, per_page: 100 });
+                  coderabbitRun = (data.check_runs || [])
+                    .filter((c) => c.name && /coderabbit/i.test(c.name))
+                    .sort((a, b) =>
+                      (b.started_at || '').localeCompare(a.started_at || ''))[0] || null;
+                } catch (e) {
+                  // A check that cannot be read is no evidence, so the refusal
+                  // below stands and the run says why in the log.
+                  core.info(`#${number}: could not read the CodeRabbit ` +
+                    `check: ${e.message}`);
+                }
+              }
+
               // ---- 3b. an unresolved CodeRabbit major thread blocks the merge
               // CodeRabbit only ever leaves a COMMENTED review, so the check
               // above never sees its findings. A thread counts as triaged when
@@ -474,6 +514,35 @@ jobs:
                 if (open.length) {
                   return skip(`it has ${open.length} unresolved CodeRabbit major thread(s)`);
                 }
+              }
+
+              // ---- 3c. CodeRabbit reviewed this very head -------------------
+              // The gate above is only evidence of a review when a review
+              // happened at all: an empty thread list is what a pull request
+              // looks like after a clean review and after one the bot never
+              // opened. CodeRabbit skips a commit while it is rate limited or
+              // paused, and the lane then merged on the App's verdict with
+              // nothing read (seen at #1553 and #1568).
+              //
+              // The evidence itself was read at 3a, before the thread list. A
+              // rate-limited or paused review is `neutral` or `skipped`, and
+              // `success` says nothing unless the output says the review was
+              // completed, so a check run is no evidence on its own.
+              if (!reviewedByReview) {
+                const output = (coderabbitRun && coderabbitRun.output) || {};
+                // Why it did not review is in the same run: a skipped review
+                // ends `neutral` or `skipped` and only the title says what
+                // happened.
+                const why = output.title ? `: its check says "${output.title}"` : '';
+                const byCheck = Boolean(coderabbitRun)
+                  && coderabbitRun.conclusion === 'success'
+                  && /review completed/i.test(
+                    `${output.title || ''} ${output.summary || ''}`);
+                if (!byCheck) {
+                  return skip(`CodeRabbit has no review of this commit${why}`);
+                }
+                core.info(`#${number}: CodeRabbit completed its review without ` +
+                  `a review object; the check run is the evidence`);
               }
 
               // ---- 4. the verdict names the head we are about to merge ------
