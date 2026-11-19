@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-11-19
-- Origin: issue #1381 (stored primary amounts kept the old display currency)
+- Origin: #1632 (issue #1381: stored primary amounts kept the old display currency)
 - Extends: [0008](0008-money-and-currencies.md)
 
 ## Context
