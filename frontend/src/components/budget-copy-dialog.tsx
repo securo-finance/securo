@@ -146,11 +146,15 @@ export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudget
   const adjustmentPercent = adjustmentValid ? (parsedAdjustment ?? 0) : 0
 
   // Same rule as the service: skip a category the target month already
-  // resolves to, and in replace mode also one already at the copied amount.
+  // resolves to, and in replace mode also one already at the copied amount in
+  // the same currency (100 BRL over 100 USD is still replaced).
   // The preview therefore counts what the copy writes, not every source row.
   const preview = useMemo(() => {
-    const targetCents = new Map(
-      targetBudgets.map((budget) => [budget.category_id, adjustedCents(budget.amount, 0)]),
+    const targetLimits = new Map(
+      targetBudgets.map((budget) => [
+        budget.category_id,
+        { cents: adjustedCents(budget.amount, 0), currency: budget.currency ?? null },
+      ]),
     )
     // Two people can each hold an override for the same category; the service
     // keeps one entry per category, so the preview does too instead of
@@ -166,8 +170,11 @@ export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudget
       // The service rejects the whole request over the limit, even for a
       // category it would otherwise skip.
       if (copiedCents >= MAX_BUDGET_CENTS) overLimit = true
-      const existingCents = targetCents.get(categoryId)
-      if (existingCents !== undefined && (!overwriteExisting || existingCents === copiedCents)) continue
+      const existing = targetLimits.get(categoryId)
+      const unchanged = existing !== undefined
+        && existing.cents === copiedCents
+        && existing.currency === (budget.currency ?? null)
+      if (existing !== undefined && (!overwriteExisting || unchanged)) continue
       rows.push(adjustedCents(budgetDisplayAmount(budget), adjustmentPercent))
     }
     return { rows, overLimit }

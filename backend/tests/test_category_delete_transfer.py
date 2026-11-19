@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.budget import Budget
 from app.models.category import Category
+from app.models.fx_rate import FxRate
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.rule import Rule
 from app.models.transaction import Transaction
@@ -84,12 +85,14 @@ async def _make_budget(
     amount: str,
     month: date,
     is_recurring: bool = False,
+    currency: str = "USD",
 ) -> Budget:
     budget = Budget(
         user_id=user.id,
         workspace_id=workspace.id,
         category_id=category_id,
         amount=Decimal(amount),
+        currency=currency,
         month=month,
         is_recurring=is_recurring,
     )
@@ -657,3 +660,51 @@ async def test_transfer_is_one_transaction(
 
     assert (await _reload(session, Transaction, transaction_id)).category_id == source_id
     assert await session.get(Category, source_id) is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("destination_amount", "destination_currency", "expected"),
+    [
+        pytest.param("1000", "BRL", ("1500.00", "BRL"), id="kept-row-in-brl"),
+        pytest.param("50", "USD", ("150.00", "USD"), id="kept-row-in-usd"),
+    ],
+)
+async def test_category_transfer_converts_a_limit_into_the_kept_rows_currency(
+    session: AsyncSession,
+    test_user: User,
+    test_workspace,
+    test_categories: list[Category],
+    destination_amount: str,
+    destination_currency: str,
+    expected: tuple[str, str],
+):
+    """US$ 100 moved onto R$ 1,000 at 5 BRL per USD is R$ 1,500, not 1,100."""
+    source, destination = test_categories[:2]
+    month = date(2025, 3, 1)
+    session.add(FxRate(
+        base_currency="USD", quote_currency="BRL", date=month, rate=Decimal("5"), source="test",
+    ))
+    await session.commit()
+    await _make_budget(
+        session, test_user, test_workspace, source.id,
+        amount="100", month=month, is_recurring=True, currency="USD",
+    )
+    await _make_budget(
+        session, test_user, test_workspace, destination.id,
+        amount=destination_amount, month=month, is_recurring=True,
+        currency=destination_currency,
+    )
+    workspace_id, destination_id = test_workspace.id, destination.id
+
+    assert await category_service.delete_category(
+        session, source.id, workspace_id, transfer_to_id=destination_id
+    )
+
+    session.expire_all()
+    remaining = (
+        await session.execute(select(Budget).where(Budget.workspace_id == workspace_id))
+    ).scalars().all()
+    assert [(b.category_id, b.amount, b.currency) for b in remaining] == [
+        (destination_id, Decimal(expected[0]), expected[1])
+    ]

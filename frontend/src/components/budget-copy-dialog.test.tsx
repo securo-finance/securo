@@ -125,6 +125,20 @@ describe('Budget copy dialog', () => {
     expect(screen.getByText(t('budgets.copyPreviewTotal', { amount: '$330.00' }))).toBeInTheDocument()
   })
 
+  it('replaces a category at the same number in another currency, like the service', async () => {
+    api.budgets.list.mockResolvedValue([{ ...rent, amount: 100, currency: 'BRL', amount_primary: 20 }])
+    const { user } = renderWithProviders(
+      <BudgetCopyDialog open onOpenChange={vi.fn()} targetMonth="2026-10" targetBudgets={[{ ...budget('b-rent-oct', 'rent', 100, '2026-10-01'), currency: 'USD' }]} targetRefreshing={false} />,
+    )
+
+    await waitFor(() => expect(api.budgets.list).toHaveBeenCalled())
+    await user.click(await screen.findByRole('radio', { name: t('budgets.copyOverwrite') }))
+
+    // 100 BRL over 100 USD is a different limit, so the copy replaces it.
+    expect(await screen.findByText(t('budgets.copyPreviewCount', { count: 1 }))).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('budgets.copyConfirm') })).toBeEnabled()
+  })
+
   it('rounds each adjusted amount to cents before summing them', async () => {
     api.budgets.list.mockResolvedValue([
       budget('b-1', 'rent', 100.05),

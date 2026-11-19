@@ -1,6 +1,6 @@
 import uuid
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from itertools import groupby
 from typing import Optional
 
@@ -377,7 +377,8 @@ async def _used_in_card_credit_lines(
     return False
 
 
-_Limit = tuple[Decimal, Decimal | None]
+# (amount, amount_primary, currency) of one member's limit.
+_Limit = tuple[Decimal, Decimal | None, str | None]
 
 
 async def _merge_budgets(
@@ -392,6 +393,9 @@ async def _merge_budgets(
     overrides its own category for that month. Merge those schedules before
     moving the rows, or a later recurring row would hide the earlier limit.
     """
+    # budget_service reaches category_service through dashboard_service.
+    from app.services.budget_service import amount_in_currency
+
     moving = (
         (
             await session.execute(
@@ -426,12 +430,12 @@ async def _merge_budgets(
     # category's carried-over default) lands on a kept row, destination first.
     ordered = sorted([*moving, *existing], key=lambda b: (b.month, not b.is_recurring))
     recurring: dict[uuid.UUID, dict[uuid.UUID, _Limit]] = {}
-    for (_, is_recurring), slot in groupby(ordered, key=lambda b: (b.month, b.is_recurring)):
+    for (month, is_recurring), slot in groupby(ordered, key=lambda b: (b.month, b.is_recurring)):
         rows = list(slot)
         limits: dict[uuid.UUID, dict[uuid.UUID, _Limit]] = {}
         for budget in rows:
             limits.setdefault(budget.category_id, {})[budget.user_id] = (
-                budget.amount, budget.amount_primary,
+                budget.amount, budget.amount_primary, budget.currency,
             )
         if is_recurring:
             # Store immutable amounts before changing any ORM row. An
@@ -452,8 +456,22 @@ async def _merge_budgets(
 
         for user_id, target in kept.items():
             target.category_id = destination_id
-            target.amount = sum((amount for amount, _ in shares[user_id]), Decimal("0"))
-            primary = [value for _, value in shares[user_id] if value is not None]
+            # Limits keep the currency they were typed in, so each part is
+            # brought into the kept row's currency, at the slot's rate, before
+            # the sum: US$ 100 onto R$ 1,000 is R$ 1,500 at 5, not 1,100.
+            currency = target.currency or next(
+                (c for _, _, c in shares[user_id] if c), None
+            )
+            total = Decimal("0")
+            for amount, _, share_currency in shares[user_id]:
+                total += (
+                    await amount_in_currency(session, amount, share_currency, currency, month)
+                    if currency
+                    else amount
+                )
+            target.amount = total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            target.currency = currency
+            primary = [value for _, value, _ in shares[user_id] if value is not None]
             target.amount_primary = (
                 sum(primary, Decimal("0")) if len(primary) == len(shares[user_id]) else None
             )
