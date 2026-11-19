@@ -40,7 +40,7 @@ from app.services._query_filters import (
     is_not_ignored,
     line_amount,
     line_category_id,
-    line_primary_or_amount,
+    line_account_or_amount,
     reporting_date_col,
     signed_amount_expr,
     with_category_lines,
@@ -1141,7 +1141,7 @@ async def get_account_summary(
     # reporting rework, not to the balance helpers, so leave it here.
     effective_amount = case(
         (Transaction.currency == account.currency, Transaction.amount),
-        else_=func.coalesce(Transaction.amount_primary, Transaction.amount),
+        else_=func.coalesce(Transaction.amount_account, Transaction.amount),
     )
 
     # For bank-connected accounts, use the stored balance from the provider
@@ -1323,7 +1323,7 @@ async def get_account_summary(
         summary_filter = counts_as_pnl(line_category_id())
         summary_amount = case(
             (Transaction.currency == account.currency, line_amount()),
-            else_=line_primary_or_amount(),
+            else_=line_account_or_amount(),
         )
 
         def summary_select(column):

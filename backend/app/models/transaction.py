@@ -78,6 +78,10 @@ class Transaction(Base):
     )
     amount_primary: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
     fx_rate_used: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=20, scale=10), nullable=True)
+    # The row's value in its account's currency, for a row in another currency
+    # than its account (ADR 0027). Balances and bills read it; NULL on a row
+    # already in the account's currency, and on one not converted yet.
+    amount_account: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
     # Installment (parcelamento) metadata. Populated from provider data when available.
     # `installment_number` is 1-indexed (e.g. 3 for "3/12"). Storing alongside the
     # raw tx row so the door stays open to a plan view or manual entry later

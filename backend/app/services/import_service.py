@@ -32,7 +32,7 @@ from app.services.credit_card_service import apply_effective_date
 from app.services.category_service import get_assignable_category_ids
 from app.services.rule_engine import apply_rule_actions, evaluate_conditions, merge_notes
 from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
-from app.services.fx_rate_service import stamp_primary_amount
+from app.services.fx_rate_service import stamp_account_amount, stamp_primary_amount
 from app.services.payee_service import get_or_create_payee
 from app.services.transaction_match_service import find_unique_transaction_match
 
@@ -1334,9 +1334,11 @@ async def import_transactions(
                     # converted" until a rate lands.
                     placeholder.amount_primary = None
                     placeholder.fx_rate_used = None
+                    placeholder.amount_account = None
                 if txn_data.fx_rate:
                     placeholder.fx_rate_used = txn_data.fx_rate
                     placeholder.amount_primary = txn_data.amount * txn_data.fx_rate
+                    await stamp_account_amount(session, placeholder)
                 else:
                     await stamp_primary_amount(session, user_id, placeholder)
                 # A split placeholder keeps its split, resized.
@@ -1416,7 +1418,9 @@ async def import_transactions(
             if incoming.category_id is None and not incoming.has_category_lines:
                 incoming.category_id = csv_category_id
 
-        if not txn_data.fx_rate:
+        if txn_data.fx_rate:
+            await stamp_account_amount(session, incoming)
+        else:
             await stamp_primary_amount(session, user_id, incoming)
 
         imported += 1

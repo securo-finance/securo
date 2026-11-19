@@ -35,7 +35,11 @@ from app.services import category_line_service, reconciliation_service, split_se
 from app.services.account_service import get_account, get_running_balances
 from app.services.credit_card_service import apply_effective_date, cc_cycle_bill_due_dates
 from app.services.rule_service import apply_rules_to_transaction
-from app.services.fx_rate_service import stamp_primary_amount, convert as fx_convert
+from app.services.fx_rate_service import (
+    convert as fx_convert,
+    stamp_account_amount,
+    stamp_primary_amount,
+)
 from app.services._query_filters import (
     CATEGORY_LINE,
     any_line_in,
@@ -1002,6 +1006,7 @@ async def create_transaction(
     # Stamp primary currency amount (manual override or auto)
     if data.amount_primary is not None or data.fx_rate_used is not None:
         _apply_fx_override(transaction, data.amount, data.amount_primary, data.fx_rate_used)
+        await stamp_account_amount(session, transaction)
     else:
         await stamp_primary_amount(session, user_id, transaction)
 
@@ -1116,8 +1121,10 @@ async def create_installment_series(
             await apply_rules_to_transaction(session, user_id, tx)
         if base.fx_rate_used is not None:
             _apply_fx_override(tx, tx.amount, None, base.fx_rate_used)
+            await stamp_account_amount(session, tx)
         elif base.amount_primary is not None:
             _apply_fx_override(tx, tx.amount, base.amount_primary, None)
+            await stamp_account_amount(session, tx)
         else:
             await stamp_primary_amount(session, user_id, tx)
         if base.splits is not None:
@@ -1728,8 +1735,13 @@ async def _apply_update_to_row(
                 override_amount_primary,
                 override_fx_rate,
             )
+            await stamp_account_amount(session, tx)
     elif needs_restamp or heals_fx_on_post:
         await stamp_primary_amount(session, user_id, tx)
+    elif "account_id" in update_data:
+        # Moved to another account: its account-currency amount is the new
+        # account's, while the primary stamp does not depend on the account.
+        await stamp_account_amount(session, tx)
 
     # Refresh effective_date when the purchase date, account, or the manual
     # bill-cycle override changed. Also re-link bill_id when the override

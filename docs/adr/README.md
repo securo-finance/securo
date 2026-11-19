@@ -40,3 +40,4 @@ Each file here records one decision about how Securo is built: what we chose, wh
 | [0023](0023-new-bank-providers-are-plugins.md) | New bank sync providers are plugins; the core keeps the pipeline |
 | [0024](0024-client-ip-behind-trusted-proxies.md) | The client IP is read through trusted proxies only |
 | [0026](0026-plugin-icons-outside-the-catalog.md) | Installed plugins show their catalog icon, read from the catalog only while one is on screen |
+| [0027](0027-amount-in-account-currency.md) | A row's value in its account's currency has its own column |

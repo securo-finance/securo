@@ -1230,6 +1230,12 @@ def _prepare_model_data(
             rewritten = None
         data[key] = _deserialize_column(column, rewritten)
 
+    if model is Transaction and "amount_account" not in row:
+        # A backup from before ADR 0027 has no account-currency amount. Its
+        # balances read `amount_primary` for a row in another currency than
+        # its account, and only for such a row, so carrying it over restores
+        # the same balances. Same-currency rows never read the column.
+        data["amount_account"] = data.get("amount_primary")
     if "workspace_id" in columns:
         data["workspace_id"] = target_workspace_id
     if "user_id" in columns:

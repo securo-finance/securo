@@ -79,7 +79,7 @@ from app.services.rule_service import (
 )
 from app.services.card_mirror_service import ignore_mirrored_card_charges
 from app.services.transfer_detection_service import detect_transfer_pairs
-from app.services.fx_rate_service import stamp_primary_amount
+from app.services.fx_rate_service import stamp_account_amount, stamp_primary_amount
 from app.services.payee_service import find_payee_by_name, get_or_create_payee
 from app.services.transaction_match_service import find_unique_transaction_match
 
@@ -1459,16 +1459,24 @@ async def _stamp_synced_primary_amount(
     user_id: uuid.UUID,
     transaction: Transaction,
     converted: Optional[Decimal],
+    account_amount: Optional[Decimal] = None,
 ) -> None:
     """Prefer the bank's conversion (see _bank_converted_amount); else use our FX rates.
+
+    `account_amount` is what the bank charged the account. It is kept as the
+    row's account-currency amount whatever the user's primary currency is,
+    since the account balance must not depend on it (ADR 0027).
 
     The transaction's amount must already be the charged amount.
     """
     if converted is not None:
         transaction.amount_primary = converted
         transaction.fx_rate_used = converted / transaction.amount
+        await stamp_account_amount(session, transaction, bank_amount=account_amount)
     else:
-        await stamp_primary_amount(session, user_id, transaction)
+        await stamp_primary_amount(
+            session, user_id, transaction, account_amount=account_amount
+        )
 
 
 async def _find_installment_category(
@@ -2099,6 +2107,7 @@ async def _run_first_import(
                 user_id,
                 transaction,
                 _bank_converted_amount(txn_data, acct_currency, user_currency),
+                txn_data.amount_in_account_currency,
             )
 
         # After importing the initial batch, reconcile the opening balance so
@@ -2420,7 +2429,8 @@ async def _refresh_provider_values(
         transaction.type = txn_data.type
         converted = _bank_converted_amount(txn_data, account_currency, user_currency)
         await _stamp_synced_primary_amount(
-            session, transaction.user_id, transaction, converted
+            session, transaction.user_id, transaction, converted,
+            txn_data.amount_in_account_currency,
         )
         await category_line_service.rescale_lines(session, transaction, old_amount)
 
@@ -4537,8 +4547,10 @@ async def sync_connection(
                             # lands.
                             placeholder.amount_primary = None
                             placeholder.fx_rate_used = None
+                            placeholder.amount_account = None
                         await _stamp_synced_primary_amount(
-                            session, user_id, placeholder, converted
+                            session, user_id, placeholder, converted,
+                            txn_data.amount_in_account_currency,
                         )
                         # A split placeholder keeps its split, resized.
                         await category_line_service.rescale_lines(
@@ -4595,7 +4607,8 @@ async def sync_connection(
                 _record_sync_category(transaction)
 
                 await _stamp_synced_primary_amount(
-                    session, user_id, transaction, converted
+                    session, user_id, transaction, converted,
+                    txn_data.amount_in_account_currency,
                 )
 
             # Re-read by date the pending rows the listing above no longer returns.
