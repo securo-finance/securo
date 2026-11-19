@@ -1390,7 +1390,7 @@ def _signed_transaction_amount(tx: Transaction) -> float:
     amount = (
         tx.amount
         if same_currency(tx.currency, account_currency)
-        else (tx.amount_primary or 0)
+        else (tx.amount_account or 0)
     )
     signed = amount if tx.type == "credit" else -amount
     return float(signed)

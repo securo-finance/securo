@@ -35,7 +35,12 @@ from app.services import category_line_service, reconciliation_service, split_se
 from app.services.account_service import get_account, get_running_balances
 from app.services.credit_card_service import apply_effective_date, cc_cycle_bill_due_dates
 from app.services.rule_service import apply_rules_to_transaction
-from app.services.fx_rate_service import stamp_primary_amount, convert as fx_convert
+from app.services.fx_rate_service import (
+    ACCOUNT_AMOUNT_FROM_USER,
+    convert as fx_convert,
+    stamp_account_amount,
+    stamp_primary_amount,
+)
 from app.services._query_filters import (
     CATEGORY_LINE,
     any_line_in,
@@ -1073,6 +1078,7 @@ async def create_transaction(
     # Stamp primary currency amount (manual override or auto)
     if data.amount_primary is not None or data.fx_rate_used is not None:
         _apply_fx_override(transaction, data.amount, data.amount_primary, data.fx_rate_used)
+        await stamp_account_amount(session, transaction, typed_primary=True)
     else:
         await stamp_primary_amount(session, user_id, transaction)
 
@@ -1187,8 +1193,10 @@ async def create_installment_series(
             await apply_rules_to_transaction(session, user_id, tx)
         if base.fx_rate_used is not None:
             _apply_fx_override(tx, tx.amount, None, base.fx_rate_used)
+            await stamp_account_amount(session, tx, typed_primary=True)
         elif base.amount_primary is not None:
             _apply_fx_override(tx, tx.amount, base.amount_primary, None)
+            await stamp_account_amount(session, tx, typed_primary=True)
         else:
             await stamp_primary_amount(session, user_id, tx)
         if base.splits is not None:
@@ -1778,11 +1786,23 @@ async def _apply_update_to_row(
         _preserve_original_description(tx)
         tx.description_is_rule_managed = False
 
+    previous_account_id = tx.account_id
+    # Compared before the update: a save that resends the same amount must
+    # not work out the account amount again.
+    account_inputs_changed = any(
+        key in update_data and update_data[key] != getattr(tx, key)
+        for key in ("amount", "currency", "date")
+    )
     fx_keys = {"amount_primary", "fx_rate_used"}
     for key, value in update_data.items():
         if key in fx_keys:
             continue
         setattr(tx, key, value)
+    account_moved = tx.account_id != previous_account_id
+    if account_moved:
+        # The old account's figure means nothing in the new one; NULL until a
+        # stamp below finds the new account's value.
+        tx.amount_account = None
 
     restamp_fields = {"amount", "currency", "date"}
     needs_restamp = bool(restamp_fields & update_data.keys())
@@ -1791,7 +1811,17 @@ async def _apply_update_to_row(
         if override_amount_primary is None and override_fx_rate is None:
             tx.amount_primary = None
             tx.fx_rate_used = None
-            await stamp_primary_amount(session, user_id, tx)
+            # Clearing the typed conversion drops a typed account amount with
+            # it, even when no rate can replace it yet; a bank charge stays
+            # unless the charge itself changed.
+            typed_account_amount = tx.amount_account_source == ACCOUNT_AMOUNT_FROM_USER
+            if typed_account_amount:
+                tx.amount_account = None
+                tx.amount_account_source = None
+            await stamp_primary_amount(
+                session, user_id, tx,
+                restamp_account=account_inputs_changed or account_moved or typed_account_amount,
+            )
         else:
             _apply_fx_override(
                 tx,
@@ -1799,8 +1829,13 @@ async def _apply_update_to_row(
                 override_amount_primary,
                 override_fx_rate,
             )
-    elif needs_restamp or heals_fx_on_post:
-        await stamp_primary_amount(session, user_id, tx)
+            await stamp_account_amount(session, tx, typed_primary=True)
+    elif needs_restamp or heals_fx_on_post or account_moved:
+        # Posting only heals the reporting stamp; the account amount follows
+        # a change of amount, currency, date or account.
+        await stamp_primary_amount(
+            session, user_id, tx, restamp_account=account_inputs_changed or account_moved
+        )
 
     # Refresh effective_date when the purchase date, account, or the manual
     # bill-cycle override changed. Also re-link bill_id when the override
@@ -1861,7 +1896,7 @@ async def _apply_update_to_row(
                         paired_date_changed = update_data[key] != paired_tx.date
                     setattr(paired_tx, key, update_data[key])
             if paired_amount_changed or paired_date_changed:
-                await stamp_primary_amount(session, user_id, paired_tx)
+                await stamp_primary_amount(session, user_id, paired_tx, restamp_account=True)
             if paired_date_changed:
                 paired_account = await session.get(Account, paired_tx.account_id)
                 apply_effective_date(paired_tx, paired_account)
@@ -2563,7 +2598,10 @@ async def post_transaction_today(
 
     account = await session.get(Account, transaction.account_id)
     apply_effective_date(transaction, account)
-    await stamp_primary_amount(session, transaction.user_id, transaction)
+    # Posting moves the date to today: the account amount follows it.
+    await stamp_primary_amount(
+        session, transaction.user_id, transaction, restamp_account=True
+    )
 
     if transaction.transfer_pair_id:
         paired_result = await session.execute(
@@ -2580,7 +2618,9 @@ async def post_transaction_today(
                 paired.date = today
                 paired_account = await session.get(Account, paired.account_id)
                 apply_effective_date(paired, paired_account)
-                await stamp_primary_amount(session, paired.user_id, paired)
+                await stamp_primary_amount(
+                    session, paired.user_id, paired, restamp_account=True
+                )
 
     await session.commit()
     await session.refresh(transaction)

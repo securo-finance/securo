@@ -33,7 +33,7 @@ class Transaction(Base):
     __table_args__ = (
         # Declared here so autogenerate keeps migration 120's composite index.
         Index("ix_transactions_account_card_masked_number", "account_id", "card_masked_number"),
-        # Migration 123: the flagged views and their counts read only flagged rows.
+        # Migration 124: the flagged views and their counts read only flagged rows.
         Index(
             "ix_transactions_flagged",
             "workspace_id",
@@ -85,6 +85,15 @@ class Transaction(Base):
     )
     amount_primary: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
     fx_rate_used: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=20, scale=10), nullable=True)
+    # The row's value in its account's currency, for a row in another currency
+    # than its account (ADR 0027). Balances and bills read it; NULL on a row
+    # already in the account's currency, and on one not converted yet.
+    amount_account: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
+    # Where `amount_account` came from: "bank" (the provider's charge), "user"
+    # (typed in the transaction dialog), or NULL when derived from a rate.
+    # Only a derived value is worked out again when nothing about the row
+    # changed (ADR 0027).
+    amount_account_source: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
     # Installment (parcelamento) metadata. Populated from provider data when available.
     # `installment_number` is 1-indexed (e.g. 3 for "3/12"). Storing alongside the
     # raw tx row so the door stays open to a plan view or manual entry later

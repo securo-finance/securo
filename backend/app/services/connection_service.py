@@ -79,7 +79,12 @@ from app.services.rule_service import (
 )
 from app.services.card_mirror_service import ignore_mirrored_card_charges
 from app.services.transfer_detection_service import detect_transfer_pairs
-from app.services.fx_rate_service import stamp_primary_amount
+from app.services.fx_rate_service import (
+    ACCOUNT_AMOUNT_FROM_BANK,
+    ACCOUNT_AMOUNT_FROM_USER,
+    stamp_account_amount,
+    stamp_primary_amount,
+)
 from app.services.payee_service import find_payee_by_name, get_or_create_payee
 from app.services.transaction_match_service import find_unique_transaction_match
 
@@ -1454,21 +1459,42 @@ def _bank_converted_amount(
     return None
 
 
+def _same_cents(left: Optional[Decimal], right: Optional[Decimal]) -> bool:
+    """Whether two optional money values agree to the cent."""
+    if left is None or right is None:
+        return left is right
+    cent = Decimal("0.01")
+    return Decimal(str(left)).quantize(cent) == Decimal(str(right)).quantize(cent)
+
+
 async def _stamp_synced_primary_amount(
     session: AsyncSession,
     user_id: uuid.UUID,
     transaction: Transaction,
     converted: Optional[Decimal],
+    account_amount: Optional[Decimal] = None,
+    *,
+    restamp_account: bool = False,
 ) -> None:
     """Prefer the bank's conversion (see _bank_converted_amount); else use our FX rates.
+
+    `account_amount` is what the bank charged the account. It is kept as the
+    row's account-currency amount whatever the user's primary currency is,
+    since the account balance must not depend on it (ADR 0027).
 
     The transaction's amount must already be the charged amount.
     """
     if converted is not None:
         transaction.amount_primary = converted
         transaction.fx_rate_used = converted / transaction.amount
+        await stamp_account_amount(
+            session, transaction, bank_amount=account_amount, recompute=restamp_account
+        )
     else:
-        await stamp_primary_amount(session, user_id, transaction)
+        await stamp_primary_amount(
+            session, user_id, transaction,
+            account_amount=account_amount, restamp_account=restamp_account,
+        )
 
 
 async def _find_installment_category(
@@ -1996,6 +2022,10 @@ async def _run_first_import(
                         txn_data,
                         replace_external_id=synced_dup.source == "sync",
                     )
+                    await _refresh_account_charge(
+                        session, synced_dup, txn_data,
+                        account_currency=account.currency, user_currency=user_currency,
+                    )
                     await apply_rules_to_settled_transaction(
                         session, user_id, synced_dup, manual_description=manual_description
                     )
@@ -2099,6 +2129,7 @@ async def _run_first_import(
                 user_id,
                 transaction,
                 _bank_converted_amount(txn_data, acct_currency, user_currency),
+                txn_data.amount_in_account_currency,
             )
 
         # After importing the initial batch, reconcile the opening balance so
@@ -2384,6 +2415,47 @@ def _merge_sync_metadata(
         transaction.payee = txn_data.payee
 
 
+async def _refresh_account_charge(
+    session: AsyncSession,
+    transaction: Transaction,
+    txn_data,
+    *,
+    account_currency: str,
+    user_currency: Optional[str] = None,
+) -> None:
+    """Take a corrected charge in the account's currency (ADR 0027).
+
+    An issuer can settle a foreign purchase at another figure than it first
+    reported (the spread lands later) while the purchase's own amount stays.
+    The new charge replaces the stored one unless the user typed theirs, and
+    a pending re-read never overrides what the posted row was charged.
+    """
+    if transaction.is_ignored:
+        # The user hid the row: a re-sync must not move its figures.
+        return
+    charged = txn_data.amount_in_account_currency
+    if charged is None:
+        return
+    if transaction.amount_account_source == ACCOUNT_AMOUNT_FROM_USER:
+        return
+    if _same_cents(transaction.amount_account, charged):
+        # Same figure, now confirmed by the bank: record it as the bank's so a
+        # later heal does not work it out again from a rate.
+        if transaction.amount_account is not None:
+            transaction.amount_account_source = ACCOUNT_AMOUNT_FROM_BANK
+        return
+    if transaction.status == "posted" and txn_data.status == "pending":
+        return
+    if user_currency is None:
+        owner = await session.get(User, transaction.user_id)
+        user_currency = owner.primary_currency if owner else get_settings().default_currency
+    converted = _bank_converted_amount(txn_data, account_currency, user_currency)
+    await _stamp_synced_primary_amount(
+        session, transaction.user_id, transaction, converted, charged,
+        restamp_account=True,
+    )
+
+
 async def _refresh_provider_values(
     session: AsyncSession,
     provider,
@@ -2404,7 +2476,13 @@ async def _refresh_provider_values(
     differs is the user's and stays. Must run before `_merge_sync_metadata`,
     which merges the new payload into ``raw_data``.
     """
-    if transaction.source != "sync" or not isinstance(transaction.raw_data, dict):
+    if transaction.source != "sync":
+        return
+    await _refresh_account_charge(
+        session, transaction, txn_data,
+        account_currency=account_currency, user_currency=user_currency,
+    )
+    if not isinstance(transaction.raw_data, dict):
         return
     if not isinstance(provider, BankProvider):
         return
@@ -2420,7 +2498,8 @@ async def _refresh_provider_values(
         transaction.type = txn_data.type
         converted = _bank_converted_amount(txn_data, account_currency, user_currency)
         await _stamp_synced_primary_amount(
-            session, transaction.user_id, transaction, converted
+            session, transaction.user_id, transaction, converted,
+            txn_data.amount_in_account_currency, restamp_account=True,
         )
         await category_line_service.rescale_lines(session, transaction, old_amount)
 
@@ -3134,6 +3213,9 @@ async def _promote_settled_pending(
     manual_description = await read_description_is_manual(session, transaction)
     transaction.status = "posted"
     _merge_sync_metadata(transaction, txn_data, replace_external_id=rekeyed)
+    await _refresh_account_charge(
+        session, transaction, txn_data, account_currency=account.currency
+    )
     await apply_rules_to_settled_transaction(
         session, account.user_id, transaction, manual_description=manual_description
     )
@@ -4371,6 +4453,11 @@ async def sync_connection(
                             txn_data,
                             replace_external_id=synced_dup.source == "sync",
                         )
+                        await _refresh_account_charge(
+                            session, synced_dup, txn_data,
+                            account_currency=acc_data.currency or user_currency,
+                            user_currency=user_currency,
+                        )
                         # A hold that named nobody gets the payee only now;
                         # link it like a row inserted with it.
                         linked_payee_id = None
@@ -4520,6 +4607,7 @@ async def sync_connection(
                     if (
                         placeholder.amount != txn_data.amount
                         or converted is not None
+                        or txn_data.amount_in_account_currency is not None
                         or currency_changed
                     ):
                         # Matched under a tolerance, or the bank said what the
@@ -4537,8 +4625,11 @@ async def sync_connection(
                             # lands.
                             placeholder.amount_primary = None
                             placeholder.fx_rate_used = None
+                            placeholder.amount_account = None
+                            placeholder.amount_account_source = None
                         await _stamp_synced_primary_amount(
-                            session, user_id, placeholder, converted
+                            session, user_id, placeholder, converted,
+                            txn_data.amount_in_account_currency, restamp_account=True,
                         )
                         # A split placeholder keeps its split, resized.
                         await category_line_service.rescale_lines(
@@ -4595,7 +4686,8 @@ async def sync_connection(
                 _record_sync_category(transaction)
 
                 await _stamp_synced_primary_amount(
-                    session, user_id, transaction, converted
+                    session, user_id, transaction, converted,
+                    txn_data.amount_in_account_currency,
                 )
 
             # Re-read by date the pending rows the listing above no longer returns.

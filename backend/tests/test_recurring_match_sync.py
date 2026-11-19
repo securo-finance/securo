@@ -811,6 +811,42 @@ async def test_sync_placeholder_keeps_the_banks_conversion(
 
 
 @pytest.mark.asyncio
+async def test_sync_placeholder_takes_the_bank_charge_outside_the_primary_currency(
+    session, test_user, test_workspace, conn_account
+):
+    """Same USD bill on a BRL account, with a USD display currency: the bank's
+    BRL figure is not the primary amount, but it is what the account was
+    charged, so the placeholder keeps it as its account amount (ADR 0027)."""
+    from app.services.fx_rate_service import stamp_primary_amount
+
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "USD"}
+    conn, account = conn_account
+    conn_id, account_id = conn.id, account.id
+    bill = await _make_bill(session, test_workspace, test_user, account,
+                            amount=Decimal("18.43"), currency="USD",
+                            start_date=date(2025, 1, 10))
+    bill_id = bill.id
+    bill.next_occurrence = date(2025, 2, 10)
+    placeholder_id = await _usd_placeholder(
+        session, test_workspace, test_user, account, bill_id
+    )
+    provider = _provider([_tx(external_id="s1", description="NETFLIX SUBSCRIPTION",
+                              amount=Decimal("18.43"), currency="USD",
+                              amount_in_account_currency=Decimal("97.30"),
+                              date=date(2025, 1, 11))])
+
+    await _run_sync(
+        session, conn_id, test_workspace, test_user, provider, stamp=stamp_primary_amount
+    )
+
+    txs = await _all_txs(session, account_id)
+    assert len(txs) == 1
+    assert txs[0].id == placeholder_id
+    assert txs[0].amount_primary == Decimal("18.43")
+    assert txs[0].amount_account == Decimal("97.30")
+
+
+@pytest.mark.asyncio
 async def test_sync_tolerated_placeholder_keeps_the_banks_conversion(
     session, test_user, test_workspace, conn_account
 ):

@@ -32,7 +32,7 @@ from app.services.credit_card_service import apply_effective_date
 from app.services.category_service import get_assignable_category_ids
 from app.services.rule_engine import apply_rule_actions, evaluate_conditions, merge_notes
 from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
-from app.services.fx_rate_service import stamp_primary_amount
+from app.services.fx_rate_service import stamp_account_amount, stamp_primary_amount
 from app.services.payee_service import get_or_create_payee
 from app.services.transaction_match_service import find_unique_transaction_match
 
@@ -1320,7 +1320,8 @@ async def import_transactions(
             # the account's own (#1073): the row takes the charged currency.
             currency_changed = placeholder.currency != txn_currency
             placeholder.currency = txn_currency
-            if placeholder.amount != txn_data.amount or txn_data.fx_rate or currency_changed:
+            amount_changed = placeholder.amount != txn_data.amount
+            if amount_changed or txn_data.fx_rate or currency_changed:
                 # Matched under a tolerance, or the file says what the charge
                 # cost in the primary currency: the row now stands for what was
                 # actually charged, not for what the bill expected.
@@ -1334,11 +1335,21 @@ async def import_transactions(
                     # converted" until a rate lands.
                     placeholder.amount_primary = None
                     placeholder.fx_rate_used = None
+                    placeholder.amount_account = None
+                    placeholder.amount_account_source = None
+                # The file's rate is a reporting value: the account amount
+                # moves only with the charge itself.
+                charge_changed = amount_changed or currency_changed
                 if txn_data.fx_rate:
                     placeholder.fx_rate_used = txn_data.fx_rate
                     placeholder.amount_primary = txn_data.amount * txn_data.fx_rate
+                    await stamp_account_amount(
+                        session, placeholder, recompute=charge_changed
+                    )
                 else:
-                    await stamp_primary_amount(session, user_id, placeholder)
+                    await stamp_primary_amount(
+                        session, user_id, placeholder, restamp_account=charge_changed
+                    )
                 # A split placeholder keeps its split, resized.
                 await category_line_service.rescale_lines(session, placeholder, expected_amount)
             placeholder_split = (
@@ -1416,7 +1427,9 @@ async def import_transactions(
             if incoming.category_id is None and not incoming.has_category_lines:
                 incoming.category_id = csv_category_id
 
-        if not txn_data.fx_rate:
+        if txn_data.fx_rate:
+            await stamp_account_amount(session, incoming)
+        else:
             await stamp_primary_amount(session, user_id, incoming)
 
         imported += 1
