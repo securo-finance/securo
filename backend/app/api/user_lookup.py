@@ -79,4 +79,3 @@ async def list_users_directory(
         select(User).where(User.id.in_(user_ids)).order_by(User.email)
     )
     return list(result.scalars().all())
-    return list(result.scalars().all())
