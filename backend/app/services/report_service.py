@@ -16,6 +16,8 @@ from app.models.transaction import Transaction
 from app.models.category import Category
 from app.models.user import User
 from app.services._query_filters import (
+    _others_share_in_primary,
+    _viewer_member_ids,
     counts_as_pnl,
     counts_as_user_pnl,
     forecast_owner_share_fractions,
@@ -556,71 +558,62 @@ async def get_income_expenses_report(
         data_map[row[0]] = (income, expenses)
 
     # Subtract non-owner shares of the user's own splits per period — the
-    # user shouldn't be charged for the parts they're owed back.
-    from sqlalchemy import or_ as _or_, and_ as _and_
-    from app.models.group import Group as _Group_, GroupMember as _GroupMember_
+    # user shouldn't be charged for the parts they're owed back. Each row's
+    # shares come off at the rate stored on that row, as on the dashboard
+    # (owner_split_offset_pnl), not at today's rate.
     from app.models.transaction_split import TransactionSplit as _TS_
-    from app.services.fx_rate_service import convert as fx_convert
 
-    own_member_ids_sq = (
-        select(_GroupMember_.id)
-        .outerjoin(_Group_, _Group_.id == _GroupMember_.group_id)
-        .where(
-            _or_(
-                _GroupMember_.linked_user_id == user_id,
-                _and_(_GroupMember_.is_self == True, _Group_.user_id == user_id),
-            )
-        )
+    owner_columns = (
+        Transaction.id,
+        Transaction.category_id,
+        Transaction.type,
+        Transaction.currency,
+        Transaction.amount,
+        Transaction.amount_primary,
+        Transaction.date,
     )
-    owner_offset_result = await session.execute(
-        select(
-            label_expr,
-            Transaction.currency,
-            func.sum(
-                case(
-                    (Transaction.type == "credit", _TS_.share_amount),
-                    else_=0,
-                )
-            ),
-            func.sum(
-                case(
-                    (Transaction.type == "debit", _TS_.share_amount),
-                    else_=0,
-                )
-            ),
-        )
+    owner_offset_rows = [] if filtered else (await session.execute(
+        select(label_expr, *owner_columns, func.sum(_TS_.share_amount))
         .select_from(_TS_)
         .join(Transaction, _TS_.transaction_id == Transaction.id)
         .where(
             Transaction.user_id == user_id,
             Transaction.workspace_id == workspace_id,
-            _TS_.group_member_id.notin_(own_member_ids_sq),
+            _TS_.group_member_id.notin_(_viewer_member_ids(user_id)),
             report_date >= start,
             report_date <= axis_end,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
             counts_as_user_pnl(Transaction.category_id),
         )
-        .group_by(label_expr, Transaction.currency)
-    )
-    for row in (owner_offset_result.all() if not filtered else []):
-        period, currency, raw_credit, raw_debit = row
-        sub_inc = 0.0
-        sub_exp = 0.0
-        if raw_credit:
-            inc_pri, _ = await fx_convert(
-                session, Decimal(str(raw_credit)), currency, primary_currency
-            )
-            sub_inc = float(inc_pri)
-        if raw_debit:
-            exp_pri, _ = await fx_convert(
-                session, Decimal(str(raw_debit)), currency, primary_currency
-            )
-            sub_exp = abs(float(exp_pri))
+        .group_by(label_expr, *owner_columns)
+    )).all()
+    owner_rates: dict[tuple[str, date], Optional[Decimal]] = {}
+    # (period, category_id, type, share in primary), reused by the category
+    # trend below so both views take off the same amounts.
+    owner_offsets: list[tuple[str, Optional[uuid.UUID], str, float]] = []
+    # Signed shares are summed per period before the zero floor, so the
+    # result does not depend on the order the rows come back in.
+    period_offsets: dict[str, tuple[float, float]] = {}
+    for row in owner_offset_rows:
+        period, category_id, tx_type = row[0], row[2], row[3]
+        share = await _others_share_in_primary(
+            session, tuple(row[1:]), primary_currency, owner_rates
+        )
+        if share is None:
+            continue
+        owner_offsets.append((period, category_id, tx_type, float(share)))
+        off_income, off_expenses = period_offsets.get(period, (0.0, 0.0))
+        if tx_type == "credit":
+            off_income += float(share)
+        elif tx_type == "debit":
+            off_expenses += float(share)
+        period_offsets[period] = (off_income, off_expenses)
+    for period, (off_income, off_expenses) in period_offsets.items():
         existing_income, existing_expenses = data_map.get(period, (0.0, 0.0))
         data_map[period] = (
-            max(0.0, existing_income - sub_inc),
-            max(0.0, existing_expenses - sub_exp),
+            max(0.0, existing_income - off_income),
+            max(0.0, existing_expenses - off_expenses),
         )
 
     # Layer in the viewer's share from group splits — concert tickets
@@ -1016,45 +1009,26 @@ async def get_income_expenses_report(
         )
 
     # Subtract non-owner shares of own splits per (period, category) — keeps
-    # the per-category trend consistent with the share-only summary.
-    cat_offset_result = await session.execute(
-        select(
-            label_expr,
-            Transaction.category_id,
-            Transaction.currency,
-            func.sum(_TS_.share_amount),
-        )
-        .select_from(_TS_)
-        .join(Transaction, _TS_.transaction_id == Transaction.id)
-        .where(
-            Transaction.user_id == user_id,
-            Transaction.workspace_id == workspace_id,
-            Transaction.type == "debit",
-            _TS_.group_member_id.notin_(own_member_ids_sq),
-            report_date >= start,
-            report_date <= axis_end,
-            Transaction.source != "opening_balance",
-            Transaction.status == "posted",
-            counts_as_user_pnl(Transaction.category_id),
-        )
-        .group_by(label_expr, Transaction.category_id, Transaction.currency)
-    )
-    for period_label, cat_id, currency, raw_total in (cat_offset_result.all() if not filtered else []):
-        if not raw_total:
+    # the per-category trend consistent with the share-only summary, with the
+    # same per-row amounts the summary took off.
+    # Summed per category and per (category, period) before the zero floor,
+    # like the summary, so row order cannot change the result.
+    cat_offsets: dict[tuple[str, str], dict[str, float]] = {}
+    for period_label, cat_id, tx_type, offset in owner_offsets:
+        if tx_type != "debit":
             continue
         cat_key = str(cat_id) if cat_id else "uncategorized"
-        offset_pri, _ = await fx_convert(
-            session, Decimal(str(raw_total)), currency, primary_currency
-        )
-        offset = float(offset_pri)
         map_key = (cat_key, "expenses")
         if map_key not in cat_trend_map:
             continue
-        cat_trend_map[map_key]["total"] = max(
-            0.0, cat_trend_map[map_key]["total"] - offset
-        )
-        cur_period = cat_trend_map[map_key]["periods"].get(period_label, 0.0)
-        cat_trend_map[map_key]["periods"][period_label] = max(0.0, cur_period - offset)
+        by_period = cat_offsets.setdefault(map_key, {})
+        by_period[period_label] = by_period.get(period_label, 0.0) + offset
+    for map_key, by_period in cat_offsets.items():
+        entry = cat_trend_map[map_key]
+        entry["total"] = max(0.0, entry["total"] - sum(by_period.values()))
+        for period_label, offset in by_period.items():
+            cur_period = entry["periods"].get(period_label, 0.0)
+            entry["periods"][period_label] = max(0.0, cur_period - offset)
 
     # Layer in the viewer's share of splits they did not pay for, the same
     # cross-workspace rows the summary above adds (#242). The author guard
