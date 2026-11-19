@@ -2031,7 +2031,7 @@ export const plugins = {
     const { data } = await api.get('/plugins')
     return data
   },
-  /** The catalog: fetched from the index now, so only call it when the user asks. */
+  /** The catalog: fetched from the index now, so only call it when the user asks or a plugin's icon is on screen (ADR 0026). */
   catalog: async (): Promise<PluginCatalogEntry[]> => {
     const { data } = await api.get('/plugins/catalog')
     return data
