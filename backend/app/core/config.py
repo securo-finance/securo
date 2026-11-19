@@ -125,6 +125,10 @@ class Settings(BaseSettings):
     # of any of them.
     storage_max_attachments_per_invoice: int = 20
 
+    # Scheduled backups require one filesystem shared by the API and Celery
+    # worker. Docker Compose provides it; Helm sets this from its backups PVC.
+    backup_storage_shared: bool = True
+
     # S3 storage: blank credentials use the SDK's default credential chain.
     storage_s3_bucket: str = ""
     storage_s3_region: str = ""

@@ -96,7 +96,9 @@ function answerThreads(query, threads) {
 // merge if no gate refused it: open, `risk: low`, a documentation file only,
 // an approving verdict naming the head, the three required checks green, and a
 // CodeRabbit review of that same head.
-async function evaluate({ threads, comments, reviews, checks, order, files }) {
+async function evaluate({
+  threads, comments, reviews, checks, order, files, body = 'Reviewed, green on this head.',
+}) {
   const log = [];
   const merged = [];
   const posted = [];
@@ -109,6 +111,8 @@ async function evaluate({ threads, comments, reviews, checks, order, files }) {
       base: { ref: 'main' },
       head: { sha: HEAD },
       user: { login: 'securo-dev' },
+      title: 'docs: keep the notes current',
+      body,
       labels: [{ name: 'risk: low' }],
       changed_files: changedFiles.length,
     },
@@ -167,7 +171,12 @@ async function evaluate({ threads, comments, reviews, checks, order, files }) {
   const run = new Function('github', 'context', 'core',
     `return (async () => {\n${readScript()}\n})();`);
   await run(github, context, core);
-  return { merged: merged.length > 0, log: log.join('\n'), posted };
+  return {
+    merged: merged.length > 0,
+    mergeParams: merged[0] || null,
+    log: log.join('\n'),
+    posted,
+  };
 }
 
 const scenarios = [];
@@ -462,6 +471,40 @@ scenario('a frontend page outside every group still merges', async () => {
   });
   assert.ok(merged, `expected a merge, got: ${log}`);
 });
+// The bug of #1609: GitHub builds the squash message from the pull request's
+// title and the messages of its commits, and the description — where this
+// repository writes "Closes #N" — is not part of it. The commit landed without
+// a keyword and the issue stayed open (#1356 from #1568). The closing lines of
+// the description have to reach the merge call.
+scenario('the closing keywords of the description reach the squash commit',
+  async () => {
+    const { merged, mergeParams, log } = await evaluate({
+      threads: [],
+      body: '## Summary\n\nSmall fix.\n\nCloses #1356\nFixes: #1357\n',
+    });
+    assert.ok(merged, `expected a merge, got: ${log}`);
+    assert.equal(mergeParams.commit_message, 'Closes #1356\nFixes: #1357',
+      'only the closing lines go into the commit, and both of them do');
+    assert.match(mergeParams.commit_title, /\(#42\)$/,
+      'the title keeps the pull request number GitHub appends by default');
+  });
+
+// No keyword in the description means there is nothing to carry: the call
+// stays as it was and GitHub builds its default message, which already covers
+// a keyword written in a commit. Neither field may be sent: passing either one
+// replaces that message instead of appending to it.
+scenario('a description with no closing keyword leaves the default message',
+  async () => {
+    const { merged, mergeParams, log } = await evaluate({
+      threads: [],
+      body: '## Summary\n\nA cleanup with nothing to close.',
+    });
+    assert.ok(merged, `expected a merge, got: ${log}`);
+    assert.equal(mergeParams.commit_title, undefined,
+      'the title is not sent alone: it would replace the default message');
+    assert.equal(mergeParams.commit_message, undefined,
+      'no closing keyword means GitHub builds the message as before');
+  });
 
 let failed = 0;
 for (const { name, fn } of scenarios) {
