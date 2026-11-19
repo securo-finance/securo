@@ -600,6 +600,9 @@ async def get_income_expenses_report(
     # (period, category_id, type, share in primary), reused by the category
     # trend below so both views take off the same amounts.
     owner_offsets: list[tuple[str, Optional[uuid.UUID], str, float]] = []
+    # Signed shares are summed per period before the zero floor, so the
+    # result does not depend on the order the rows come back in.
+    period_offsets: dict[str, tuple[float, float]] = {}
     for row in owner_offset_rows:
         period, category_id, tx_type = row[0], row[2], row[3]
         share = await _others_share_in_primary(
@@ -608,12 +611,18 @@ async def get_income_expenses_report(
         if share is None:
             continue
         owner_offsets.append((period, category_id, tx_type, float(share)))
-        existing_income, existing_expenses = data_map.get(period, (0.0, 0.0))
+        off_income, off_expenses = period_offsets.get(period, (0.0, 0.0))
         if tx_type == "credit":
-            existing_income = max(0.0, existing_income - float(share))
+            off_income += float(share)
         elif tx_type == "debit":
-            existing_expenses = max(0.0, existing_expenses - float(share))
-        data_map[period] = (existing_income, existing_expenses)
+            off_expenses += float(share)
+        period_offsets[period] = (off_income, off_expenses)
+    for period, (off_income, off_expenses) in period_offsets.items():
+        existing_income, existing_expenses = data_map.get(period, (0.0, 0.0))
+        data_map[period] = (
+            max(0.0, existing_income - off_income),
+            max(0.0, existing_expenses - off_expenses),
+        )
 
     # Layer in the viewer's share from group splits — concert tickets
     # paid by a friend show up as the viewer's expense in their P/L
@@ -1010,6 +1019,9 @@ async def get_income_expenses_report(
     # Subtract non-owner shares of own splits per (period, category) — keeps
     # the per-category trend consistent with the share-only summary, with the
     # same per-row amounts the summary took off.
+    # Summed per category and per (category, period) before the zero floor,
+    # like the summary, so row order cannot change the result.
+    cat_offsets: dict[tuple[str, str], dict[str, float]] = {}
     for period_label, cat_id, tx_type, offset in owner_offsets:
         if tx_type != "debit":
             continue
@@ -1017,11 +1029,14 @@ async def get_income_expenses_report(
         map_key = (cat_key, "expenses")
         if map_key not in cat_trend_map:
             continue
-        cat_trend_map[map_key]["total"] = max(
-            0.0, cat_trend_map[map_key]["total"] - offset
-        )
-        cur_period = cat_trend_map[map_key]["periods"].get(period_label, 0.0)
-        cat_trend_map[map_key]["periods"][period_label] = max(0.0, cur_period - offset)
+        by_period = cat_offsets.setdefault(map_key, {})
+        by_period[period_label] = by_period.get(period_label, 0.0) + offset
+    for map_key, by_period in cat_offsets.items():
+        entry = cat_trend_map[map_key]
+        entry["total"] = max(0.0, entry["total"] - sum(by_period.values()))
+        for period_label, offset in by_period.items():
+            cur_period = entry["periods"].get(period_label, 0.0)
+            entry["periods"][period_label] = max(0.0, cur_period - offset)
 
     # Layer in the viewer's share of splits they did not pay for, the same
     # cross-workspace rows the summary above adds (#242). The author guard
