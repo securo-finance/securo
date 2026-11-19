@@ -36,6 +36,11 @@ interface MobileTransactionRowProps {
   showPayee?: boolean
   /** Localize synthetic opening-balance descriptions only in account detail. */
   localizeOpeningBalance?: boolean
+  /**
+   * Show the "new" dot. Opt-in: only a caller whose click clears the marker
+   * should show it, or the dot would stay after the row is opened.
+   */
+  showUnread?: boolean
 }
 
 export function MobileTransactionRow({
@@ -54,6 +59,7 @@ export function MobileTransactionRow({
   onClick,
   showPayee = false,
   localizeOpeningBalance = false,
+  showUnread = false,
 }: MobileTransactionRowProps) {
   const { mask } = usePrivacyMode()
   const { t } = useTranslation()
@@ -122,6 +128,14 @@ export function MobileTransactionRow({
             <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1 py-0.5 rounded-full shrink-0">
               {tx.is_shared && tx.parent_owner_name ? tx.parent_owner_name : t('splitGroups.ownerRowBadge', { group: groupName ?? '' })}
             </span>
+          )}
+          {showUnread && tx.is_read === false && (
+            <span
+              className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500"
+              title={t('transactions.newBadge')}
+              role="img"
+              aria-label={t('transactions.newBadge')}
+            />
           )}
           {isSplitByCategory(tx) && <CategorySplitBadge tx={tx} compact className="shrink-0 text-[9px] px-1" />}
           {isTransferTransaction(tx) && (

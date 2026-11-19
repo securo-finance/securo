@@ -153,6 +153,12 @@ class PaginatedTransactions(BaseModel):
     summary: Optional[TransactionsSummary] = None
 
 
+class MarkAllReadResult(BaseModel):
+    """How many rows the "mark all as read" action cleared (issue #636)."""
+
+    updated: int
+
+
 def _merge_id_filters(
     single: Optional[uuid.UUID], many: Optional[List[uuid.UUID]]
 ) -> Optional[List[uuid.UUID]]:
@@ -190,6 +196,7 @@ async def list_transactions(
     exclude_transfers: bool = Query(False),
     user_pnl_only: bool = Query(False, description="Return only rows that count toward dashboard/user income/expense totals"),
     exclude_ignored: bool = Query(False, description="Drop rows the user marked ignored, or whose category is ignored"),
+    unread_only: bool = Query(False, description="Only rows nobody has reviewed yet (issue #636)"),
     tags: Optional[List[str]] = Query(None),
     min_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount >= this value (primary currency)."),
     max_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount <= this value (primary currency)."),
@@ -209,6 +216,7 @@ async def list_transactions(
         txn_type=type, exclude_transfers=exclude_transfers,
         user_pnl_only=user_pnl_only,
         exclude_ignored=exclude_ignored,
+        unread_only=unread_only,
         status=status,
         accounting_mode=accounting_mode,
         tags=tags,
@@ -622,6 +630,34 @@ async def toggle_ignore_transaction(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
     primary_currency = ctx.user.primary_currency
     return _tag_fx_fallback(TransactionRead.model_validate(transaction, from_attributes=True), primary_currency)
+
+
+@router.patch("/{transaction_id}/read", response_model=TransactionRead)
+async def mark_transaction_read(
+    transaction_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Clear the "new" marker of one transaction (issue #636). Idempotent."""
+    transaction = await transaction_service.mark_transaction_read(
+        session, transaction_id, ctx.workspace.id
+    )
+    if not transaction:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
+    primary_currency = ctx.user.primary_currency
+    return _tag_fx_fallback(TransactionRead.model_validate(transaction, from_attributes=True), primary_currency)
+
+
+@router.post("/read-all", response_model=MarkAllReadResult)
+async def mark_all_transactions_read(
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Mark every unread transaction of the workspace as read (issue #636)."""
+    updated = await transaction_service.mark_all_transactions_read(
+        session, ctx.workspace.id
+    )
+    return MarkAllReadResult(updated=updated)
 
 
 @router.post("/{transaction_id}/post-today", response_model=TransactionRead)

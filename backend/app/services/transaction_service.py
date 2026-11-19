@@ -148,6 +148,7 @@ async def get_transactions(
     include_summary: bool = False,
     user_pnl_only: bool = False,
     exclude_ignored: bool = False,
+    unread_only: bool = False,
     include_running_balance: bool = False,
     primary_currency: Optional[str] = None,
 ) -> tuple[list[Transaction], int, Optional[dict]]:
@@ -319,6 +320,16 @@ async def get_transactions(
         # filtered set, so the totals a hidden list shows stay the totals of
         # what it is showing.
         base_query = base_query.where(is_not_ignored())
+    if unread_only:
+        # The review queue of issue #636: only rows nobody has looked at yet.
+        # Scoped to this workspace on purpose. The default list also surfaces
+        # shared rows owned by another workspace, and the read endpoints only
+        # clear rows of this one, so counting a shared row here would leave a
+        # queue that never empties.
+        base_query = base_query.where(
+            Transaction.is_read.is_(False),
+            Transaction.workspace_id == workspace_id,
+        )
     if txn_type == "transfer":
         # Not a value of the `type` column: a transfer is still stored as a
         # credit or a debit, so this narrows to the transfer family instead.
@@ -692,7 +703,7 @@ async def get_transactions(
                     txn_type, tags, status, currency, account_types, transaction_ids,
                     min_amount is not None, max_amount is not None,
                     exclude_transfers, user_pnl_only, exclude_ignored,
-                    group_id, bill_id, unbilled_only,
+                    unread_only, group_id, bill_id, unbilled_only,
                     # Without the opening row the walk misses its amount
                     # whenever it falls inside the range.
                     not include_opening_balance,
@@ -2479,6 +2490,57 @@ async def toggle_ignore_transaction(
     await session.commit()
     await session.refresh(transaction)
     return transaction
+
+
+async def mark_transaction_read(
+    session: AsyncSession,
+    transaction_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+) -> Optional[Transaction]:
+    """Clear the "new" marker of one transaction (issue #636).
+
+    Idempotent on purpose: the list calls this when a row is opened, and
+    running it twice must not be an error. It touches no ledger field, so
+    every guard the edit path has (mortgage breakdowns, provider rows) is
+    not needed here.
+    """
+    # The row lock makes a concurrent delete land on the not-found path
+    # instead of failing the UPDATE with StaleDataError. There is no refresh
+    # after the commit: the session does not expire on commit, so the object
+    # already carries is_read=True, and a refresh could race a delete into
+    # ObjectDeletedError.
+    transaction = await get_transaction(
+        session, transaction_id, workspace_id, for_update=True
+    )
+    if not transaction:
+        return None
+    if not transaction.is_read:
+        transaction.is_read = True
+        await session.commit()
+    return transaction
+
+
+async def mark_all_transactions_read(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+) -> int:
+    """Mark every unread transaction in the workspace as read; returns how
+    many rows changed.
+
+    One UPDATE instead of a row loop: the button is meant for a first sync
+    that can land thousands of rows, and the workspace is the boundary, so
+    a shared row owned by another workspace keeps its own state.
+    """
+    result = await session.execute(
+        update(Transaction)
+        .where(
+            Transaction.workspace_id == workspace_id,
+            Transaction.is_read.is_(False),
+        )
+        .values(is_read=True)
+    )
+    await session.commit()
+    return cast(CursorResult, result).rowcount or 0
 
 
 async def unlink_recurring_transaction(
