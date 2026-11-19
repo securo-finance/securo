@@ -500,7 +500,9 @@ async def get_summary(
         # member but not the owner. Their concert ticket paid by a friend
         # is a real expense in their P/L picture.
         shared_income, shared_expenses = await viewer_shared_pnl(
-            session, user_id, month_start, month_end, use_effective_date=False
+            session, user_id, month_start, month_end,
+            use_effective_date=False,
+            exclude_workspace_id=workspace_id,
         )
         monthly_income += shared_income
         monthly_expenses += shared_expenses
@@ -959,6 +961,7 @@ async def get_spending_by_category(
         session, user_id, month_start, month_end,
         use_effective_date=accounting_mode == "accrual",
         primary_currency=primary_currency,
+        exclude_workspace_id=workspace_id,
     )
     if shared_by_cat:
         cat_meta_cache: dict[str, dict] = {}
@@ -1213,6 +1216,7 @@ async def get_monthly_trend(
                 session, user_id, m_start, m_end,
                 use_effective_date=accounting_mode == "accrual",
                 primary_currency=primary_currency,
+                exclude_workspace_id=workspace_id,
             )
         adjusted.append(
             MonthlyTrend(

@@ -20,7 +20,7 @@ from app.models.transaction import Transaction
 from app.models.user import User
 from app.schemas.group import GroupCreate, GroupMemberCreate
 from app.schemas.transaction_split import TransactionSplitInput, TransactionSplitsInput
-from app.services import group_service, split_service, workspace_service
+from app.services import dashboard_service, group_service, split_service, workspace_service
 from app.services._query_filters import viewer_shared_pnl
 from app.services.search_service import search_all
 from app.services.transaction_service import get_transactions
@@ -277,3 +277,42 @@ async def test_reports_count_the_owners_share_of_an_invited_members_expense(
     )
     assert income == pytest.approx(0.0)
     assert expense == pytest.approx(50.0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("linked_self", [False, True])
+async def test_dashboard_counts_a_third_party_row_in_the_owners_workspace_once(
+    session: AsyncSession, test_user, test_workspace, linked_self
+):
+    """A coworker's expense in the owner's workspace is already in the
+    workspace total, whole. Projecting the owner's self-member share of
+    that same row would count it twice, so the projection must leave the
+    current workspace out while still adding the invited member's row
+    from theirs."""
+    _group, me, friend, guest, guest_ws = await _trip_group(
+        session, test_user, test_workspace, linked_self=linked_self
+    )
+    # 100 paid by the invited member inside the owner's workspace, split
+    # with the owner's self-member: someone other than the owner paid, but
+    # the row already sits in the dashboard base total, whole.
+    await _record_split_expense(
+        session, guest, test_workspace, [me, friend], "100.00", "Team lunch"
+    )
+    # 100 paid by the invited member in their own workspace: the owner's
+    # 50 share is not in the base total and must still be projected.
+    await _record_split_expense(
+        session, guest, guest_ws, [me, friend], "100.00", "Groceries"
+    )
+
+    today = date.today()
+    month = today.replace(day=1)
+
+    summary = await dashboard_service.get_summary(
+        session, test_workspace.id, test_user.id, month=month
+    )
+    assert summary.monthly_expenses == pytest.approx(150.0)
+
+    by_category = await dashboard_service.get_spending_by_category(
+        session, test_workspace.id, test_user.id, month=month
+    )
+    assert sum(item.total for item in by_category) == pytest.approx(150.0)

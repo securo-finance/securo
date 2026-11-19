@@ -331,6 +331,7 @@ async def get_budget_vs_actual(
         session, user_id, month_start, month_end,
         use_effective_date=accounting_mode == "accrual",
         primary_currency=primary_currency,
+        exclude_workspace_id=workspace_id,
     )
     for cat_uuid, total in shared_by_cat.items():
         if cat_uuid is None:
@@ -437,6 +438,7 @@ async def get_budget_vs_actual(
         session, user_id, prev_month_start, prev_month_end,
         use_effective_date=accounting_mode == "accrual",
         primary_currency=primary_currency,
+        exclude_workspace_id=workspace_id,
     )
     for cat_uuid, total in prev_shared_by_cat.items():
         if cat_uuid is None:
@@ -657,6 +659,7 @@ async def get_budget_suggestions(
         window_end,
         use_effective_date=accounting_mode == "accrual",
         primary_currency=primary_currency,
+        exclude_workspace_id=workspace_id,
     )
     for cat_uuid, total in shared_by_cat.items():
         if cat_uuid is None:
