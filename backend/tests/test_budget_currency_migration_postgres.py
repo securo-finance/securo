@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select, text
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
+from sqlalchemy import select
 
 from app.models.budget import Budget
 from app.models.user import User
@@ -60,9 +62,15 @@ async def test_each_budget_takes_its_owner_display_currency(
 
     schema = session.bind.get_execution_options()["schema_translate_map"][None]
     conn = await session.connection()
-    # The migration's raw SQL bypasses schema_translate_map.
-    await conn.execute(text(f'SET LOCAL search_path TO "{schema}"'))
-    await conn.execute(text(migration.BACKFILL_SQL).bindparams(fallback="USD"))
+
+    def upgrade(sync_conn) -> None:
+        # The migration's raw SQL bypasses schema_translate_map.
+        sync_conn.exec_driver_sql(f'SET LOCAL search_path TO "{schema}"')
+        with Operations.context(MigrationContext.configure(sync_conn)):
+            migration.upgrade()
+
+    # The instance default is USD, the fallback for an owner with no choice.
+    await conn.run_sync(upgrade)
 
     stored = dict((await session.execute(select(Budget.user_id, Budget.currency))).all())
     assert stored == {test_user.id: "BRL", no_choice.id: "USD"}
