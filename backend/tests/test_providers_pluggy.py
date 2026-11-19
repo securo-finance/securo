@@ -99,6 +99,22 @@ async def test_parser_missing_or_short_card_number_leaves_field_none():
 
 
 @pytest.mark.asyncio
+async def test_parser_ignores_a_card_number_that_is_not_a_string():
+    result = await _fetch([
+        {
+            "id": "tx-card-bool",
+            "description": "ODD PAYLOAD",
+            "amount": -42,
+            "date": "2026-04-10",
+            "type": "DEBIT",
+            "creditCardMetadata": {"cardNumber": True},
+        }
+    ])
+
+    assert result[0].card_masked_number is None
+
+
+@pytest.mark.asyncio
 async def test_parser_no_credit_card_metadata_leaves_fields_none():
     """Non-CC txns (no creditCardMetadata) get null installment fields."""
     result = await _fetch([

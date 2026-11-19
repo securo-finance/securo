@@ -1722,6 +1722,61 @@ async def test_sync_connection_registers_linked_credit_cards(
 
 
 @pytest.mark.asyncio
+async def test_sync_moves_linked_cards_with_a_reassigned_account(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A card registered under an account left in another workspace follows
+    the account back, label included, so its picker and filter still find it."""
+    from app.models.workspace import Workspace
+
+    conn = await _make_connection(session, test_user.id, "Card mover bank")
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "refreshed"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="moved-card-1", name="Cartão",
+            type="credit_card", balance=Decimal("100"), currency="BRL",
+        ),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id="moved-card-tx-1", description="Compra",
+            amount=Decimal("80"), date=date.today(), type="debit", currency="BRL",
+            card_masked_number="5062",
+        ),
+    ])
+    other_ws = Workspace(
+        id=uuid.uuid4(), name="Old Home", kind="personal",
+        created_by_user_id=test_user.id, default_currency="USD", locale="en-US",
+    )
+    session.add(other_ws)
+    await session.commit()
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+        account = await session.scalar(
+            select(Account).where(Account.external_id == "moved-card-1")
+        )
+        card = await session.scalar(
+            select(AccountCard).where(AccountCard.masked_number == "5062")
+        )
+        assert account is not None and card is not None
+        account.workspace_id = other_ws.id
+        card.workspace_id = other_ws.id
+        card.label = "Travel"
+        await session.commit()
+
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    await session.refresh(card)
+    assert card.workspace_id == test_workspace.id
+    assert card.label == "Travel"
+
+
+@pytest.mark.asyncio
 async def test_sync_connection_rate_limited_reports_outcome_and_keeps_last_sync(
     session: AsyncSession, test_user, test_workspace,
 ):

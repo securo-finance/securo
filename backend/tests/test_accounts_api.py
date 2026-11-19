@@ -175,6 +175,30 @@ async def test_linked_cards_can_be_labeled(
     assert workspace_cards.status_code == 200
     assert workspace_cards.json()[0]["id"] == str(linked_card.id)
 
+    # An item without a label is rejected instead of erasing the alias.
+    missing_label = await client.patch(
+        f"/api/accounts/{account.id}/linked-cards",
+        headers=auth_headers,
+        json={"cards": [{"id": str(linked_card.id)}]},
+    )
+    assert missing_label.status_code == 422
+
+    # A NUL character is a validation error, not a database error.
+    nul_label = await client.patch(
+        f"/api/accounts/{account.id}/linked-cards",
+        headers=auth_headers,
+        json={"cards": [{"id": str(linked_card.id), "label": "a\u0000b"}]},
+    )
+    assert nul_label.status_code == 422
+
+    cleared = await client.patch(
+        f"/api/accounts/{account.id}/linked-cards",
+        headers=auth_headers,
+        json={"cards": [{"id": str(linked_card.id), "label": ""}]},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()[0]["label"] is None
+
 
 @pytest.mark.asyncio
 async def test_create_manual_account(client: AsyncClient, auth_headers):

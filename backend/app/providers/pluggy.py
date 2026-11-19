@@ -819,7 +819,14 @@ class PluggyProvider(BankProvider):
                     bill_external_id = (
                         str(bill_external_id_raw) if bill_external_id_raw else None
                     )
-                    card_masked_number = mask_last4(cc_meta.get("cardNumber"))
+                    # Only a string can be a card number; mask_last4 would
+                    # turn a stray boolean into the ending "True".
+                    raw_card_number = cc_meta.get("cardNumber")
+                    card_masked_number = (
+                        mask_last4(raw_card_number)
+                        if isinstance(raw_card_number, str)
+                        else None
+                    )
 
                     all_transactions.append(
                         TransactionData(

@@ -3,7 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 LoanKind = Literal["mortgage", "auto", "personal", "student", "other"]
 LoanRatePeriod = Literal["monthly", "yearly_effective", "yearly_nominal"]
@@ -147,9 +147,17 @@ class AccountCardRead(BaseModel):
 
 class AccountCardLabelUpdate(BaseModel):
     id: uuid.UUID
-    # An empty value clears the optional alias; the final four is never
-    # editable here because it is supplied by the financial institution.
-    label: str = Field(default="", max_length=80)
+    # Required so an item without a label cannot erase one by accident; an
+    # explicit empty value clears the alias. The final four is never editable
+    # here because it is supplied by the financial institution.
+    label: str = Field(max_length=80)
+
+    @field_validator("label")
+    @classmethod
+    def _reject_nul(cls, value: str) -> str:
+        if "\x00" in value:
+            raise ValueError("Label cannot contain a NUL character")
+        return value
 
 
 class AccountCardsUpdate(BaseModel):

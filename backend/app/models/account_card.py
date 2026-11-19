@@ -33,7 +33,7 @@ class AccountCard(Base):
     account_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False
     )
-    # Only a normalized final four is ever stored — never a full PAN.
+    # Only a normalized final four is ever stored, never a full PAN.
     masked_number: Mapped[str] = mapped_column(String(4), nullable=False)
     label: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

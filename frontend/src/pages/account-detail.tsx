@@ -689,9 +689,10 @@ export default function AccountDetailPage() {
       cards: { id: string; label: string }[]
     }) => {
       await accounts.update(id!, settings)
+      if (cards.length === 0) return
       // Settings are already saved even if the label call below fails.
       await queryClient.invalidateQueries({ queryKey: ['accounts'] })
-      return accounts.updateLinkedCards(id!, cards)
+      await accounts.updateLinkedCards(id!, cards)
     },
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
@@ -1953,6 +1954,9 @@ function CreditCardSettingsDialog({
   const [closeDay, setCloseDay] = useState('')
   const [dueDay, setDueDay] = useState('')
   const [cardLabels, setCardLabels] = useState<Record<string, string>>({})
+  // Only labels the user touched are sent, so saving the limit never
+  // overwrites a label someone else changed after this dialog opened.
+  const [editedCardIds, setEditedCardIds] = useState<Set<string>>(() => new Set())
 
   const formKey = JSON.stringify([
     open,
@@ -1976,6 +1980,7 @@ function CreditCardSettingsDialog({
   useEffect(() => {
     if (open && !wasOpenRef.current) {
       setCardLabels(Object.fromEntries(linkedCards.map((card) => [card.id, card.label ?? ''])))
+      setEditedCardIds(new Set())
     }
     wasOpenRef.current = open
   }, [open, linkedCards])
@@ -2014,7 +2019,9 @@ function CreditCardSettingsDialog({
                 statement_close_day: parseDay(closeDay),
                 payment_due_day: parseDay(dueDay),
               },
-              linkedCards.map((card) => ({ id: card.id, label: cardLabels[card.id] ?? '' })),
+              linkedCards
+                .filter((card) => editedCardIds.has(card.id))
+                .map((card) => ({ id: card.id, label: cardLabels[card.id] ?? '' })),
             )
           }}
           className="space-y-4"
@@ -2103,15 +2110,16 @@ function CreditCardSettingsDialog({
                         </div>
                         <div>
                           <Label className="sr-only" htmlFor={inputId}>
-                            {t('accounts.cardLabel')} — {t('accounts.cardEnding', { number: card.masked_number })}
+                            {t('accounts.cardLabel')}: {t('accounts.cardEnding', { number: card.masked_number })}
                           </Label>
                           <Input
                             id={inputId}
                             value={cardLabels[card.id] ?? ''}
-                            onChange={(event) => setCardLabels((current) => ({
-                              ...current,
-                              [card.id]: event.target.value,
-                            }))}
+                            onChange={(event) => {
+                              const value = event.target.value
+                              setCardLabels((current) => ({ ...current, [card.id]: value }))
+                              setEditedCardIds((current) => new Set(current).add(card.id))
+                            }}
                             placeholder={t('accounts.cardLabelPlaceholder')}
                             maxLength={80}
                             disabled={loading}

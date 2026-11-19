@@ -9,8 +9,9 @@ Usage:
     uv run python scripts/backfill_transaction_card_numbers.py
     uv run python scripts/backfill_transaction_card_numbers.py --apply
 
-`--apply` is intentionally separate and only works after migrations 114 and
-115 have created the transaction field and linked-card table.
+`--apply` is intentionally separate and only works after migrations 120 and
+121 have created the transaction field and linked-card table. Stop the Celery
+worker while it runs, so a sync does not register the same card concurrently.
 """
 
 import argparse
@@ -101,17 +102,19 @@ async def main(apply: bool, workspace_id: UUID | None) -> int:
 
         for row in rows:
             transaction_id, transaction_workspace_id, account_id, raw_data, *existing_value = row
+            current_tail = existing_value[0] if existing_value else None
             tail = _tail_from_raw_data(raw_data)
+            # Register the ending the transaction ends up with: the stored one
+            # wins over the payload, since the filter matches stored endings.
+            # Older partial runs may have written it without the linked card.
+            # Credit cards only, matching the sync path and migration 121.
+            final_tail = current_tail or tail
+            if final_tail and account_types.get(account_id) == "credit_card":
+                linked_cards.add((transaction_workspace_id, account_id, final_tail))
             if tail is None:
                 continue
             totals["with_card_number"] += 1
-            # Older partial runs may have populated the transaction field
-            # without registering its linked card. Always repair both sides,
-            # but only for credit cards, matching the sync path and 115.
-            if account_types.get(account_id) == "credit_card":
-                linked_cards.add((transaction_workspace_id, account_id, tail))
 
-            current_tail = existing_value[0] if existing_value else None
             if current_tail is not None:
                 totals["already_backfilled"] += 1
                 continue

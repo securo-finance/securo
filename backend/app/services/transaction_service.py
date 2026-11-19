@@ -7,6 +7,7 @@ from typing import Optional, cast
 from sqlalchemy import CursorResult, and_, case, delete, func, literal, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.app_clock import app_today
 from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
@@ -881,6 +882,9 @@ async def _tag_shared_view(
             # (attachment auth is owner-only). Avoid the dead-end UX
             # by not advertising files he can't open.
             tx.attachment_count = 0
+            # The card ending belongs to the owner's workspace. Committed
+            # value, so a later flush cannot write it back to the row.
+            set_committed_value(tx, "card_masked_number", None)
 
 
 async def get_transaction(

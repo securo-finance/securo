@@ -1371,13 +1371,13 @@ function TransactionForm({
       {transaction?.card_masked_number && (
         <div className="space-y-2">
           <Label>{t('transactions.card')}</Label>
-          <Input
-            value={linkedCardLabel
-              ? `${linkedCardLabel} · •••• ${transaction.card_masked_number}`
-              : `•••• ${transaction.card_masked_number}`}
-            disabled
-            className="bg-muted/40"
-          />
+          {/* Read-only text rather than a disabled input, so a long label
+              wraps and never pushes the ending out of view. */}
+          <div className="flex min-h-9 items-center gap-2 rounded-md border border-input bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground">
+            {linkedCardLabel && <span className="min-w-0 break-words">{linkedCardLabel}</span>}
+            {linkedCardLabel && <span aria-hidden="true">·</span>}
+            <span className="shrink-0 tabular-nums">•••• {transaction.card_masked_number}</span>
+          </div>
         </div>
       )}
       {splitByCategory && (

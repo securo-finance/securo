@@ -372,12 +372,14 @@ export default function TransactionsPage() {
   useEffect(() => {
     if (viewMode === 'calendar') {
       setFilterAccountIds((prev) => prev.length > 1 ? [] : prev)
-      setFilterLinkedCardIds([])
+      // The calendar ignores the card filter, so a card arriving from a link
+      // must not linger here and narrow the export.
+      setFilterLinkedCardIds((prev) => prev.length > 0 ? [] : prev)
       setSelectedIds(new Set())
       setLastSelectedId(null)
       setBulkCategory('')
     }
-  }, [viewMode, filterAccountIds.length])
+  }, [viewMode, filterAccountIds.length, filterLinkedCardIds.length])
 
   // Reset bulk category when selection changes so the same category can be re-applied
   useEffect(() => {

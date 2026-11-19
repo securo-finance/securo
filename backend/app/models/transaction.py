@@ -31,7 +31,7 @@ USER_EDITED_KEY = "securo_user_edited"
 class Transaction(Base):
     __tablename__ = "transactions"
     __table_args__ = (
-        # Declared here so autogenerate keeps migration 114's composite index.
+        # Declared here so autogenerate keeps migration 120's composite index.
         Index("ix_transactions_account_card_masked_number", "account_id", "card_masked_number"),
     )
 
