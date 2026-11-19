@@ -13,10 +13,11 @@ from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.fx_rate import FxRate
+from app.models.transaction import Transaction
 from app.models.user import User
 
 
@@ -319,3 +320,32 @@ async def test_footer_converts_a_shared_row_from_its_own_currency(
     body = await _summary(client, auth_headers)
     assert body["summary"]["expense"] == pytest.approx(250.0)
     assert body["summary"]["currency"] == "BRL"
+
+
+@pytest.mark.asyncio
+async def test_footer_follows_a_shared_row_whose_amount_the_sync_changed(
+    client: AsyncClient, auth_headers: dict, shared_trip: dict, session: AsyncSession
+):
+    """The bank sync rewrites `amount` and rescales the category lines, but
+    leaves the splits alone (connection_service.py). The owner's 40,00 taxi
+    becomes 60,00 while its splits still say 20/20; reading the stored share
+    against the new total would leave the unallocated 20,00 out of the
+    owner's side. The owner's share is what the other member doesn't have:
+    60 - 20 = 40, plus the 50 dinner share = 90, the same figure the
+    dashboard card shows."""
+    taxi_id = uuid.UUID(shared_trip["taxi"]["id"])
+    await session.execute(
+        update(Transaction)
+        .where(Transaction.id == taxi_id)
+        .values(amount=Decimal("60.00"), amount_primary=Decimal("60.00"))
+    )
+    await session.commit()
+
+    body = await _summary(client, auth_headers)
+    assert body["summary"]["expense"] == pytest.approx(90.0)
+
+    dashboard = await client.get("/api/dashboard/summary", headers=auth_headers)
+    assert dashboard.status_code == 200, dashboard.text
+    assert float(dashboard.json()["monthly_expenses"]) == pytest.approx(
+        body["summary"]["expense"]
+    )

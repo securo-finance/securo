@@ -584,12 +584,13 @@ async def get_transactions(
         # same figure the dashboard and reports show — never the whole
         # amount of an expense someone else paid. A row projected from
         # another workspace counts the viewer's split share; a split row
-        # the viewer paid counts their own share too, because the dashboard
-        # subtracts the other members' shares from it. A row of this
-        # workspace that another member created (shared workspace) counts
-        # whole, as it does in the dashboard. Rows without splits count
-        # whole. `share_amount` is in the row's own currency, so the ratio
-        # rides the FX stamp already stored on the row.
+        # the viewer paid counts what the other members' shares leave of
+        # the amount it has now, because the bank sync rewrites `amount`
+        # without touching the splits. A row of this workspace that another
+        # member created (shared workspace) counts whole, as it does in the
+        # dashboard. Rows without splits count whole. `share_amount` is in
+        # the row's own currency, so the ratio rides the FX stamp already
+        # stored on the row.
         from app.models.transaction_split import TransactionSplit
 
         row_has_splits = exists().where(
@@ -603,6 +604,16 @@ async def get_transactions(
             )
             .scalar_subquery()
         )
+        others_share = (
+            select(func.coalesce(func.sum(TransactionSplit.share_amount), 0))
+            .where(
+                TransactionSplit.transaction_id == Transaction.id,
+                TransactionSplit.group_member_id.notin_(
+                    invited_group_member_ids(user_id)
+                ),
+            )
+            .scalar_subquery()
+        )
         viewer_share_fraction = case(
             # Another member's row of this workspace is native here.
             (
@@ -612,6 +623,19 @@ async def get_transactions(
                 ),
                 literal(1),
             ),
+            # The viewer's own split row: their share is what the others
+            # don't have, read against the amount the row has now. The bank
+            # sync rewrites `amount` and rescales the category lines but
+            # never the splits, so dividing the stored shares by the new
+            # total would go stale. Same rule as
+            # `forecast_owner_share_fractions`.
+            (
+                and_(row_has_splits, Transaction.user_id == user_id),
+                literal(1)
+                - others_share / func.nullif(func.abs(Transaction.amount), 0),
+            ),
+            # A row projected from another workspace arrives as the
+            # viewer's split share of a row someone else paid.
             (
                 row_has_splits,
                 viewer_share / func.nullif(func.abs(Transaction.amount), 0),
