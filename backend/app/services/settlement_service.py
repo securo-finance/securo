@@ -1,8 +1,9 @@
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import case, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -223,6 +224,31 @@ async def _validate_transaction(
         raise ValueError("Linked transaction not found")
 
 
+async def _validate_receiver_transaction(
+    session: AsyncSession, data: GroupSettlementCreate, workspace_id: uuid.UUID, user_id: uuid.UUID
+) -> None:
+    """The caller's own credit, in the settlement's currency. One transfer can
+    pay back several debts, so settlements may share it up to its amount."""
+    tx = await session.scalar(
+        select(Transaction).where(
+            Transaction.id == data.receiver_transaction_id,
+            Transaction.workspace_id == workspace_id,
+            Transaction.user_id == user_id,
+            Transaction.type == "credit",
+            Transaction.currency == data.currency,
+        )
+    )
+    if tx is None:
+        raise ValueError("Linked transaction must be your own credit in the settlement's currency")
+    linked = await session.scalar(
+        select(func.coalesce(func.sum(GroupSettlement.amount), 0)).where(
+            GroupSettlement.receiver_transaction_id == tx.id
+        )
+    )
+    if Decimal(str(linked)) + data.amount > tx.amount:
+        raise ValueError("Settlements linked to this transaction would exceed its amount")
+
+
 async def list_settlements(
     session: AsyncSession,
     group_id: uuid.UUID,
@@ -288,6 +314,12 @@ async def create_settlement(
         if receiver_user_id is None and to_meta.is_self:
             receiver_user_id = group.user_id
 
+    receiver_tx_id = data.receiver_transaction_id
+    if receiver_tx_id is not None:
+        if receiver_user_id != user_id:
+            raise ValueError("Only the receiver can link their incoming transaction")
+        await _validate_receiver_transaction(session, data, workspace_id, user_id)
+
     # Optional integration with the real account ledger: create a debit
     # transaction on the payer's account and link it via transaction_id.
     if account_id is not None:
@@ -311,9 +343,9 @@ async def create_settlement(
 
     # Receiver-side mirror credit: when the receiver maps to a Securo
     # user and has a checking/savings account, record the cash-in side
-    # so their books reflect the actual money received.
-    receiver_tx_id = None
-    if receiver_user_id is not None:
+    # so their books reflect the actual money received. Not when the
+    # receiver linked the transaction that really arrived.
+    if receiver_tx_id is None and receiver_user_id is not None:
         receiver_desc = description or f"Acerto · {group.name} · {from_name}"
         receiver_tx = await _create_receiver_credit(
             session,

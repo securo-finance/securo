@@ -15,6 +15,14 @@ import { GroupForm } from '@/components/group-form'
 import { MemberForm } from '@/components/member-form'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
+/** A payback recorded from the transaction: one settlement per payer,
+ *  all linked to it as the receiver's credit. */
+export interface TransactionSettleInput {
+  group_id: string
+  to_member_id: string
+  payers: { member_id: string; amount: number }[]
+}
+
 interface RowState {
   member_id: string
   selected: boolean
@@ -55,23 +63,34 @@ export function TransactionSplitsSection({
   value,
   onChange,
   onValidityChange,
+  settledBy,
+  onSettle,
 }: {
   amount: number
   currency: string
   value: TransactionSplitsInput | null
   onChange: (next: TransactionSplitsInput | null) => void
   onValidityChange?: (valid: boolean) => void
+  // Offered for an incoming transaction: record it as members paying back.
+  onSettle?: (next: TransactionSettleInput | null) => void
+  // Paybacks already recorded on this transaction: it reopens as one.
+  settledBy?: { group_id: string; from_member_id: string }[]
 }) {
   const { t } = useTranslation()
   const locale = useDisplayLocale()
-  const [enabled, setEnabled] = useState(value !== null)
+  const [enabled, setEnabled] = useState(value !== null || !!settledBy?.length)
   const [groupId, setGroupId] = useState<string>('')
   const [shareType, setShareType] = useState<ShareType>(value?.share_type ?? 'equal')
   const [rows, setRows] = useState<RowState[]>([])
+  const [settle, setSettle] = useState(!!settledBy?.length)
   // Snapshot of the initial value so row hydration survives the
   // first push-state-up cycle (which zeros the parent before the
   // group has finished loading).
-  const seedRef = useRef<TransactionSplitsInput | null>(value)
+  const seedRef = useRef<TransactionSplitsInput | null>(
+    value ?? (settledBy?.length
+      ? { share_type: 'equal', splits: settledBy.map((s) => ({ group_member_id: s.from_member_id })) }
+      : null),
+  )
   // Once rows have been hydrated for the seeded value, stop applying
   // it — further edits are user-driven.
   const hydratedRef = useRef(false)
@@ -212,8 +231,27 @@ export function TransactionSplitsSection({
     hydratedRef.current = true
   }, [group])
 
+  // The viewer's own member receives the payback; the others can pay it.
+  const selfId = group?.members.find((m) => m.is_self)?.id
+  const payers = rows.filter((r) => r.selected && r.member_id !== selfId)
+
   // Push state up whenever it changes meaningfully.
   useEffect(() => {
+    if (enabled && settle) {
+      onChange(null)
+      // Equal parts in cents, the leftover cents to the first payers.
+      const cents = Math.round(Math.abs(amount) * 100)
+      onSettle?.(group && selfId && payers.length > 0 ? {
+        group_id: group.id,
+        to_member_id: selfId,
+        payers: payers.map((r, i) => ({
+          member_id: r.member_id,
+          amount: (Math.floor(cents / payers.length) + (i < cents % payers.length ? 1 : 0)) / 100,
+        })),
+      } : null)
+      return
+    }
+    onSettle?.(null)
     if (!enabled) {
       onChange(null)
       return
@@ -240,7 +278,7 @@ export function TransactionSplitsSection({
     })
     onChange({ share_type: shareType, splits })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, shareType, rows])
+  }, [enabled, shareType, rows, settle, group, amount])
 
   // Validation summary
   const total = useMemo(() => {
@@ -262,6 +300,7 @@ export function TransactionSplitsSection({
   // gate its save button instead of relying on a 400 round-trip.
   const isValid = useMemo(() => {
     if (!enabled) return true
+    if (settle) return !!selfId && payers.length > 0
     const selected = rows.filter((r) => r.selected)
     if (selected.length === 0) return false
     if (shareType === 'equal') return true
@@ -271,7 +310,7 @@ export function TransactionSplitsSection({
     }
     const pctSum = selected.reduce((s, r) => s + (parseFloat(r.percent) || 0), 0)
     return Math.abs(pctSum - 100) < 0.005
-  }, [enabled, shareType, rows, amount])
+  }, [enabled, shareType, rows, amount, settle, selfId, payers.length])
 
   useEffect(() => {
     onValidityChange?.(isValid)
@@ -355,12 +394,18 @@ export function TransactionSplitsSection({
                   <Label className="text-xs">{t('splitGroups.shareType')}</Label>
                   <select
                     className="w-full border border-border rounded-md px-2 py-1.5 text-sm bg-card"
-                    value={shareType}
-                    onChange={(e) => setShareType(e.target.value as ShareType)}
+                    value={settle ? 'settlement' : shareType}
+                    onChange={(e) => {
+                      setSettle(e.target.value === 'settlement')
+                      if (e.target.value !== 'settlement') setShareType(e.target.value as ShareType)
+                    }}
                   >
                     <option value="equal">{t('splitGroups.shareEqual')}</option>
                     <option value="exact">{t('splitGroups.shareExact')}</option>
                     <option value="percent">{t('splitGroups.sharePercent')}</option>
+                    {onSettle && (
+                      <option value="settlement">{t('splitGroups.shareSettlement')}</option>
+                    )}
                   </select>
                 </div>
               </div>
@@ -409,10 +454,12 @@ export function TransactionSplitsSection({
                       const absAmount = Math.abs(amount)
                       return group.members.map((m) => {
                         const row = rows.find((r) => r.member_id === m.id)
-                        if (!row) return null
+                        if (!row || (settle && m.id === selfId)) return null
                         const computed: number | null = !row.selected
                           ? null
-                          : shareType === 'equal'
+                          : settle
+                            ? Math.abs(amount) / Math.max(payers.length, 1)
+                            : shareType === 'equal'
                             ? selectedCount > 0
                               ? absAmount / selectedCount
                               : null
@@ -444,7 +491,7 @@ export function TransactionSplitsSection({
                                 {formatCurrency(computed, currency, locale)}
                               </span>
                             )}
-                            {shareType === 'exact' && row.selected && (
+                            {!settle && shareType === 'exact' && row.selected && (
                               <Input
                                 type="number"
                                 step="0.01"
@@ -453,7 +500,7 @@ export function TransactionSplitsSection({
                                 onChange={(e) => updateRow(m.id, { amount: e.target.value })}
                               />
                             )}
-                            {shareType === 'percent' && row.selected && (
+                            {!settle && shareType === 'percent' && row.selected && (
                               <div className="flex items-center gap-1">
                                 <Input
                                   type="number"
@@ -473,7 +520,7 @@ export function TransactionSplitsSection({
                 </div>
               )}
 
-              {total !== null && (
+              {total !== null && !settle && (
                 <div className="text-xs text-muted-foreground">
                   {shareType === 'percent' ? (
                     <span className={total === 100 ? 'text-emerald-600' : 'text-amber-600'}>

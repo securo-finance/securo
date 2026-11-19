@@ -2839,6 +2839,7 @@
     "shareEqual": "Rovným dílem",
     "shareExact": "Přesné částky",
     "sharePercent": "Procenta",
+    "shareSettlement": "Vrácení (vyrovnání)",
     "percentSum": "Součet: {{total}} %",
     "amountSum": "Součet: {{total}} / {{target}} {{currency}}",
     "equalHint": "Každý vybraný člen dostane stejný podíl.",

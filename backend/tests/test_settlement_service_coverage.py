@@ -11,6 +11,7 @@ from decimal import Decimal
 
 import bcrypt as _bcrypt
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -21,6 +22,7 @@ from app.schemas.group_settlement import (
     GroupSettlementCreate,
     GroupSettlementUpdate,
 )
+from app.services.transaction_service import get_transactions
 from app.services import (
     group_service,
     settlement_service,
@@ -221,6 +223,72 @@ async def test_create_settlement_receiver_self_member_owner_fallback(session: As
     assert rx is not None
     assert rx.account_id == owner_account.id
     assert rx.type == "credit"
+
+
+async def _settle_to_me(session, user_id, workspace_id, group, payer, me, amount, tx_id, currency="USD"):
+    return await settlement_service.create_settlement(
+        session, group.id, workspace_id, user_id,
+        GroupSettlementCreate(
+            from_member_id=payer.id, to_member_id=me.id, amount=Decimal(amount),
+            currency=currency, date=date.today(), receiver_transaction_id=tx_id,
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_settlement_links_the_receivers_real_credit(
+    session: AsyncSession, test_user, test_workspace
+):
+    """No synthetic credit, and deleting the settlement leaves the real one."""
+    group, me, bob, _c = await _setup_group(session, test_user.id, test_workspace.id)
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    received = await _make_transaction(session, test_user.id, test_workspace.id, account.id)
+    received.type = "credit"
+
+    s = await _settle_to_me(session, test_user.id, test_workspace.id, group, bob, me, "5.00", received.id)
+
+    assert s is not None and s.receiver_transaction_id == received.id
+    credits = await session.execute(select(Transaction.id).where(Transaction.type == "credit"))
+    assert credits.scalars().all() == [received.id]
+    rows, _, _ = await get_transactions(session, test_workspace.id, test_user.id, transaction_ids=[received.id])
+    assert [(x.id, x.group_id, x.from_member_id) for x in rows[0].settled_by] == [(s.id, group.id, bob.id)]
+    assert await settlement_service.delete_settlement(
+        session, group.id, s.id, test_workspace.id, test_user.id
+    )
+    assert await session.get(Transaction, received.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_one_credit_settles_several_debts_up_to_its_amount(
+    session: AsyncSession, test_user, test_workspace
+):
+    group, me, bob, carol = await _setup_group(session, test_user.id, test_workspace.id)
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    received = await _make_transaction(session, test_user.id, test_workspace.id, account.id)
+    received.type = "credit"
+
+    await _settle_to_me(session, test_user.id, test_workspace.id, group, bob, me, "3.00", received.id)
+    await _settle_to_me(session, test_user.id, test_workspace.id, group, carol, me, "2.00", received.id)
+    with pytest.raises(ValueError, match="exceed its amount"):
+        await _settle_to_me(session, test_user.id, test_workspace.id, group, bob, me, "0.01", received.id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ["debit", "other currency", "not the receiver"])
+async def test_create_settlement_rejects_a_receiver_transaction_that_does_not_fit(
+    session: AsyncSession, test_user, test_workspace, case
+):
+    group, me, bob, _c = await _setup_group(session, test_user.id, test_workspace.id)
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    tx = await _make_transaction(session, test_user.id, test_workspace.id, account.id)
+    tx.type = "debit" if case == "debit" else "credit"
+    payer, receiver = (me, bob) if case == "not the receiver" else (bob, me)
+
+    with pytest.raises(ValueError):
+        await _settle_to_me(
+            session, test_user.id, test_workspace.id, group, payer, receiver, "5.00", tx.id,
+            currency="EUR" if case == "other currency" else "USD",
+        )
 
 
 @pytest.mark.asyncio

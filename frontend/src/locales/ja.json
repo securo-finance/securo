@@ -2687,6 +2687,7 @@
     "shareEqual": "均等",
     "shareExact": "個別金額",
     "sharePercent": "割合",
+    "shareSettlement": "返金（精算）",
     "percentSum": "合計: {{total}}%",
     "amountSum": "合計: {{total}} / {{target}} {{currency}}",
     "equalHint": "選択した各メンバーに均等に配分されます。",

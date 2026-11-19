@@ -2799,6 +2799,7 @@
     "shareEqual": "Po równo",
     "shareExact": "Kwoty dokładne",
     "sharePercent": "Procentowo",
+    "shareSettlement": "Zwrot (rozliczenie)",
     "percentSum": "Suma: {{total}}%",
     "amountSum": "Suma: {{total}} / {{target}} {{currency}}",
     "equalHint": "Każdy wybrany członek otrzymuje równy udział.",

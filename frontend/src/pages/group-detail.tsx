@@ -329,13 +329,16 @@ export default function GroupDetailPage() {
     return () => clearTimeout(id)
   }, [settleTxSearch])
 
-  // The payer's debit transactions, searched server-side and capped —
-  // offered when linking an existing transaction instead of creating one.
+  // Transactions to link instead of creating one, searched server-side and
+  // capped: the payer's debits, or the credit that already arrived when the
+  // viewer is the one being paid.
+  const settleAsReceiver =
+    !!viewerMember && settleTo === viewerMember.id && settleFrom !== viewerMember.id
   const { data: settleTxOptions } = useQuery({
-    queryKey: ['settle-tx-options', settleTxQuery],
+    queryKey: ['settle-tx-options', settleTxQuery, settleAsReceiver],
     queryFn: () =>
       transactionsApi.list({
-        type: 'debit',
+        type: settleAsReceiver ? 'credit' : 'debit',
         q: settleTxQuery || undefined,
         limit: 20,
         sort_by: 'date',
@@ -407,7 +410,7 @@ export default function GroupDetailPage() {
     if (settleTxMode === 'create' && settleAccountId) {
       payload.account_id = settleAccountId
     } else if (settleTxMode === 'existing' && settlePickedTx) {
-      payload.transaction_id = settlePickedTx.id
+      payload[settleAsReceiver ? 'receiver_transaction_id' : 'transaction_id'] = settlePickedTx.id
     }
     settlementMutation.mutate(payload)
   }
@@ -993,7 +996,12 @@ export default function GroupDetailPage() {
               <select
                 className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card"
                 value={settleTo}
-                onChange={(e) => setSettleTo(e.target.value)}
+                onChange={(e) => {
+                  setSettleTo(e.target.value)
+                  setSettleTxMode('none')
+                  setSettlePickedTx(null)
+                  setSettleTxSearch('')
+                }}
               >
                 <option value="">{t('splitGroups.selectMember')}</option>
                 {group.members.map((m) => (
@@ -1008,7 +1016,7 @@ export default function GroupDetailPage() {
                 will back this settlement. When linking an existing
                 transaction, the amount/currency/date below mirror that
                 transaction and lock so the two records can't disagree. */}
-            {viewerIsPayer && (
+            {(viewerIsPayer || settleAsReceiver) && (
                 <div className="space-y-2">
                   <Label>{t('splitGroups.txAction')}</Label>
                   <select
@@ -1022,7 +1030,9 @@ export default function GroupDetailPage() {
                     }}
                   >
                     <option value="none">{t('splitGroups.txActionNone')}</option>
-                    <option value="create">{t('splitGroups.txActionCreate')}</option>
+                    {viewerIsPayer && (
+                      <option value="create">{t('splitGroups.txActionCreate')}</option>
+                    )}
                     <option value="existing">{t('splitGroups.txActionExisting')}</option>
                   </select>
                   {settleTxMode === 'create' && (
@@ -1107,7 +1117,8 @@ export default function GroupDetailPage() {
                   step="0.01"
                   value={settleAmount}
                   onChange={(e) => setSettleAmount(e.target.value)}
-                  disabled={settleTxMode === 'existing'}
+                  // One transfer can pay back for several people.
+                  disabled={settleTxMode === 'existing' && !settleAsReceiver}
                 />
               </div>
               <div className="space-y-2">

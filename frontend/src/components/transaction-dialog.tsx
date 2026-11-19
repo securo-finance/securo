@@ -7,7 +7,7 @@ import { formatAmountInput, formatCurrency, parseAmountInput } from '@/lib/forma
 import { amountToCents, parseCents } from '@/lib/mortgage-split'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
-import { accounts as accountsApi, assets as assetsApi, currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi, mortgagePayments as mortgagePaymentsApi } from '@/lib/api'
+import { accounts as accountsApi, assets as assetsApi, currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi, mortgagePayments as mortgagePaymentsApi, groups as groupsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { extractApiError } from '@/lib/api-errors'
@@ -43,7 +43,7 @@ import { PayeeSelect } from '@/components/payee-select'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { TransactionAttachments } from '@/components/transaction-attachments'
 import type { AttachmentPreview } from '@/components/transaction-attachments'
-import { TransactionSplitsSection } from '@/components/transaction-splits-section'
+import { TransactionSplitsSection, type TransactionSettleInput } from '@/components/transaction-splits-section'
 import { buildInstallmentSeriesInput, hasNonStatusChange, isManualInstallmentSeriesRow } from '@/lib/installment-series'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, CategoryLineShareType, Rule, RuleCondition, RuleConditionNode } from '@/types'
@@ -515,6 +515,8 @@ function TransactionForm({
   // Seeded from the transaction's existing splits so the edit dialog
   // round-trips them rather than appearing empty.
   const [splitsValid, setSplitsValid] = useState(true)
+  // A payback recorded from an incoming transaction (see TransactionSplitsSection).
+  const [settle, setSettle] = useState<TransactionSettleInput | null>(null)
   const [splits, setSplits] = useState<TransactionSplitsInput | null>(() => {
     const existing = (seed as Transaction | null | undefined)?.splits
     if (!existing || existing.length === 0) return null
@@ -1033,7 +1035,33 @@ function TransactionForm({
               status,
             })
           : undefined
-        onSave(txData, recurringData, installmentData, isCreating && pendingFiles.length > 0 ? pendingFiles : undefined, action)
+        const save = () => onSave(txData, recurringData, installmentData, isCreating && pendingFiles.length > 0 ? pendingFiles : undefined, action)
+        // A payback is replaced as a whole, like splits, and only when its
+        // group or payers changed, so amounts already recorded are kept.
+        const before = transaction?.settled_by ?? []
+        const payersKey = (groupId: string | undefined, ids: string[]) => `${groupId}:${[...ids].sort().join()}`
+        if (transaction && payersKey(before[0]?.group_id, before.map((s) => s.from_member_id))
+          !== payersKey(settle?.group_id, settle?.payers.map((p) => p.member_id) ?? [])) {
+          // One at a time so the backend checks the running total.
+          const next = settle
+          Promise.all(before.map((s) => groupsApi.settlements.delete(s.group_id, s.id)))
+            .then(() => next?.payers.reduce<Promise<unknown>>((prev, p) => prev.then(() => groupsApi.settlements.create(next.group_id, {
+              from_member_id: p.member_id,
+              to_member_id: next.to_member_id,
+              amount: p.amount,
+              currency: transaction.currency,
+              date: transaction.date,
+              receiver_transaction_id: transaction.id,
+              notes: notes.trim() || null,
+            })), Promise.resolve()))
+            .then(() => {
+              queryClient.invalidateQueries({ queryKey: ['groups'] })
+              save()
+            })
+            .catch((error) => toast.error(extractApiError(error, t('common.error'))))
+          return
+        }
+        save()
       }}
       className={cn(
         // Always a bounded flex column; the DialogContent caps the overall
@@ -1632,6 +1660,8 @@ function TransactionForm({
           value={splits}
           onChange={setSplits}
           onValidityChange={setSplitsValid}
+          settledBy={transaction?.settled_by}
+          onSettle={transaction?.type === 'credit' ? setSettle : undefined}
         />
       )}
 

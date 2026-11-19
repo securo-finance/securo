@@ -2687,6 +2687,7 @@
     "shareEqual": "बराबर",
     "shareExact": "सटीक राशियाँ",
     "sharePercent": "प्रतिशत",
+    "shareSettlement": "वापसी (निपटान)",
     "percentSum": "योग: {{total}}%",
     "amountSum": "योग: {{total}} / {{target}} {{currency}}",
     "equalHint": "हर चयनित सदस्य को बराबर हिस्सा मिलता है।",

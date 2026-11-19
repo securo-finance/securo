@@ -1082,6 +1082,8 @@ export interface GroupSettlementPayload {
   currency: string
   date: string
   transaction_id?: string | null
+  // The receiver's credit that already arrived, linked instead of creating one.
+  receiver_transaction_id?: string | null
   notes?: string | null
   // When provided, the backend creates a debit transaction on this
   // account and links it via transaction_id. Mutually exclusive with

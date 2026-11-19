@@ -34,6 +34,7 @@ from app.models.account_card import AccountCard
 from app.models.bank_connection import BankConnection
 from app.models.category import Category
 from app.models.group import Group, GroupMember
+from app.models.group_settlement import GroupSettlement
 from app.models.mortgage_payment_allocation import (
     MORTGAGE_PRINCIPAL_SOURCE,
     MortgagePaymentAllocation,
@@ -771,6 +772,17 @@ async def get_transactions(
         # by `group_id`, a linked member sees the owner's transactions
         # and the frontend needs `is_shared` to lock them from edits.
         await _tag_shared_view(session, transactions, user_id, workspace_id)
+        # Paybacks recorded on these rows, so reopening one shows it.
+        settled = await session.execute(
+            select(GroupSettlement).where(
+                GroupSettlement.receiver_transaction_id.in_([tx.id for tx in transactions])
+            )
+        )
+        settled_by: dict[uuid.UUID | None, list[GroupSettlement]] = {}
+        for settlement in settled.scalars():
+            settled_by.setdefault(settlement.receiver_transaction_id, []).append(settlement)
+        for tx in transactions:
+            tx.settled_by = settled_by.get(tx.id, [])
 
         if filter_category_ids:
             # The part of each split row inside the filter, so a drill-down

@@ -201,6 +201,15 @@ class TransactionTransferCounterpart(BaseModel):
     account_name: str
 
 
+
+class TransactionSettledBy(BaseModel):
+    id: uuid.UUID
+    group_id: uuid.UUID
+    from_member_id: uuid.UUID
+    amount: Decimal
+
+    model_config = ConfigDict(from_attributes=True)
+
 class TransactionRead(TransactionBase):
     id: uuid.UUID
     user_id: uuid.UUID
@@ -265,6 +274,8 @@ class TransactionRead(TransactionBase):
     # is_self member at request time. Helps the UI show who paid
     # instead of a generic "shared" badge.
     parent_owner_name: Optional[str] = None
+    # Settlements this credit pays back (it is their receiver transaction).
+    settled_by: list["TransactionSettledBy"] = []
     is_ignored: bool = False
     exclude_from_pnl: bool = False
     is_flagged: bool = False

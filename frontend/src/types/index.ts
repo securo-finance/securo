@@ -374,6 +374,8 @@ export interface Transaction {
   // The recurring bill this transaction fulfills, if any (issue #116).
   recurring_transaction_id?: string | null
   splits: TransactionSplit[]
+  // Settlements this credit pays back.
+  settled_by?: { id: string; group_id: string; from_member_id: string; amount: number }[]
   // Split across several categories (#425): `category_id` is then null and
   // each part lives in `category_lines`, adding up to `amount`.
   has_category_lines?: boolean
