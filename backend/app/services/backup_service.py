@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.database import Base
 from app.models.account import Account
+from app.models.account_card import AccountCard
 from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.app_settings import AppSetting
 from app.models.asset import Asset
@@ -138,6 +139,7 @@ RESTORE_ORDER: list[str] = [
     "assets",
     "accounts",
     "account_reserved_balances",
+    "account_cards",
     "collections",
     "collection_accounts",
     "collection_asset_groups",
@@ -185,6 +187,7 @@ MODEL_SPECS: dict[str, EntitySpec] = {
     "account_reserved_balances": EntitySpec(
         "account_reserved_balances", AccountReservedBalance
     ),
+    "account_cards": EntitySpec("account_cards", AccountCard),
     "asset_groups": EntitySpec("asset_groups", AssetGroup),
     "collections": EntitySpec("collections", Collection),
     "rules": EntitySpec("rules", Rule),
@@ -287,6 +290,7 @@ DATA_NAMES = [
     "payee_mappings",
     "accounts",
     "account_reserved_balances",
+    "account_cards",
     "asset_groups",
     "collections",
     "collection_accounts",
@@ -1481,6 +1485,7 @@ async def _clear_workspace_entities(
         "categories",
         "category_groups",
         "account_reserved_balances",
+        "account_cards",
         "accounts",
         "group_members",
         "groups",

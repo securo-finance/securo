@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.account_card import AccountCard
 from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.asset import Asset
 from app.models.category import Category
@@ -124,7 +125,13 @@ async def _seed_money(
         currency="USD",
         amount=Decimal("1250.40"),
     )
-    session.add_all([opening, payment, recurring, reserved])
+    card = AccountCard(
+        workspace_id=workspace.id,
+        account_id=checking.id,
+        masked_number="4242",
+        label="Additional card",
+    )
+    session.add_all([opening, payment, recurring, reserved, card])
     await session.flush()
     session.add_all(
         [
@@ -271,9 +278,18 @@ async def _money(session: AsyncSession, workspace_id: uuid.UUID) -> dict:
             )
         ).scalars()
     )
+    cards = sorted(
+        (accounts[row.account_id], row.masked_number, row.label)
+        for row in (
+            await session.execute(
+                select(AccountCard).where(AccountCard.workspace_id == workspace_id)
+            )
+        ).scalars()
+    )
     return {
         "balances": balances,
         "reserved": reserved,
+        "cards": cards,
         "lines": lines,
         "recurring_lines": recurring_lines,
         "allocations": sorted(allocations),
@@ -313,6 +329,7 @@ async def test_round_trip_into_a_new_workspace_keeps_every_amount(
     assert len(before["recurring_lines"]) == 2
     assert before["allocations"][0][4] == Decimal("167.76")
     assert before["allocations"][0][5] == MORTGAGE_PRINCIPAL_SOURCE
+    assert before["cards"] == [("Checking", "4242", "Additional card")]
     assert before["reserved"] == [("Checking", "cofrinho-1", "Emergency fund", "USD", Decimal("1250.40"))]
 
     archive = await client.get("/api/export/backup", headers=auth_headers)
