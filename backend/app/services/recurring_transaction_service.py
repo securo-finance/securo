@@ -108,12 +108,6 @@ async def create_recurring_transaction(
     data: RecurringTransactionCreate,
 ) -> RecurringTransaction:
     await _verify_account_in_workspace(session, workspace_id, data.account_id)
-    next_occ = data.start_date
-    if data.skip_first:
-        next_occ = _advance_date(
-            data.start_date, data.frequency,
-            intended_day=data.day_of_month or data.start_date.day,
-        )
     if data.category_id and data.category_lines and data.category_lines.lines:
         raise ValueError("Choose either a category or a split across categories")
     source_transaction = None
@@ -124,12 +118,27 @@ async def create_recurring_transaction(
                     Transaction.id == data.source_transaction_id,
                     Transaction.workspace_id == workspace_id,
                 )
+                # Two requests making a bill from the same charge wait for each
+                # other here, so the second one reads the committed link and
+                # answers 409 instead of building a second bill over it.
+                .with_for_update()
             )
         ).scalar_one_or_none()
         if source_transaction is None:
             raise ValueError("Source transaction not found")
         if source_transaction.recurring_transaction_id is not None:
             raise RecurringConflictError(SOURCE_ALREADY_LINKED_MESSAGE)
+    next_occ = data.start_date
+    # The first occurrence is already covered while skip_first says so, and
+    # while the source transaction itself sits on the start date: generating it
+    # would charge the user twice for the same bill.
+    if data.skip_first or (
+        source_transaction is not None and source_transaction.date == data.start_date
+    ):
+        next_occ = _advance_date(
+            data.start_date, data.frequency,
+            intended_day=data.day_of_month or data.start_date.day,
+        )
     # The same check the uq_recurring_tx constraint makes, done first so the
     # caller gets a readable message instead of an IntegrityError.
     if await _find_duplicate_recurring(
