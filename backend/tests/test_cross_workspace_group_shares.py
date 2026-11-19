@@ -12,6 +12,7 @@ from decimal import Decimal
 
 import bcrypt
 import pytest
+from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -215,6 +216,44 @@ async def test_owner_group_stays_reachable_from_their_other_workspace(
         session, group.id, other_ws.id, test_user.id
     )
     assert visible is not None
+
+
+@pytest.mark.asyncio
+async def test_owner_cannot_edit_or_delete_the_invited_members_row(
+    session: AsyncSession,
+    client: AsyncClient,
+    auth_headers,
+    test_user,
+    test_workspace,
+):
+    """The projected row is read-only for the owner. The API resolves a
+    transaction inside the workspace that owns it, so edit and delete from
+    a workspace where the row only shows up as a share answer 404."""
+    _group, me, friend, guest, guest_ws = await _trip_group(
+        session, test_user, test_workspace, linked_self=False
+    )
+    guest_tx = await _record_split_expense(
+        session, guest, guest_ws, [me, friend], "100.00", "Groceries"
+    )
+    other_ws = await workspace_service.create_workspace(
+        session, name="Second", creator=test_user, self_membership=True
+    )
+    headers = {**auth_headers, "X-Workspace-Id": str(other_ws.id)}
+
+    rows, _, _ = await get_transactions(session, other_ws.id, test_user.id)
+    assert any(row.id == guest_tx.id and row.is_shared for row in rows)
+
+    patched = await client.patch(
+        f"/api/transactions/{guest_tx.id}",
+        json={"description": "Mine now"},
+        headers=headers,
+    )
+    assert patched.status_code == 404, patched.text
+
+    deleted = await client.delete(
+        f"/api/transactions/{guest_tx.id}", headers=headers
+    )
+    assert deleted.status_code == 404, deleted.text
 
 
 @pytest.mark.asyncio
