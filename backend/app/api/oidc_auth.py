@@ -2,6 +2,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import logging
 import secrets
 import time
 from typing import Any
@@ -31,6 +32,8 @@ from app.services.workspace_service import create_personal_workspace_for_user
 
 router = APIRouter(prefix="/api/auth/oidc", tags=["auth"])
 OIDC_STATE_TTL = 600
+
+logger = logging.getLogger(__name__)
 
 
 class OIDCConfigResponse(BaseModel):
@@ -98,6 +101,20 @@ _LOGOUT_DISCOVERY_TIMEOUT = 3.0
 _logout_url_cache: tuple[float, str, str, bool] | None = None
 
 
+def _logout_failure_reason(error: BaseException) -> str:
+    """Why discovery failed, in words an operator can act on. Never a secret:
+    the discovery URL is configuration, the client secret is not read here."""
+    if isinstance(error, (asyncio.TimeoutError, TimeoutError)):
+        return f"discovery timed out after {_LOGOUT_DISCOVERY_TIMEOUT:g}s"
+    if isinstance(error, httpx.HTTPStatusError):
+        return f"discovery answered HTTP {error.response.status_code}"
+    if isinstance(error, httpx.HTTPError):
+        return f"discovery request failed ({type(error).__name__}: {error})"
+    if isinstance(error, HTTPException):
+        return f"discovery is not available (HTTP {error.status_code}: {error.detail})"
+    return f"discovery failed ({type(error).__name__}: {error})"
+
+
 async def _provider_logout_url() -> str:
     """Where to send the browser so the provider's own session ends (#1623).
 
@@ -107,6 +124,11 @@ async def _provider_logout_url() -> str:
     hiccup does not disable provider sign-out for long (#1639). Every failure
     answers "": the local sign-out already happened and must never wait on the
     provider.
+
+    A failure is logged once, where it is cached: `/config` is public and a
+    down provider would otherwise write one line per page load. Until the
+    cache window ends, sign-out is local-only and this warning is the only
+    sign of it.
     """
     global _logout_url_cache
     settings = get_settings()
@@ -122,18 +144,30 @@ async def _provider_logout_url() -> str:
         ttl = _LOGOUT_URL_TTL if discovery_answered else _LOGOUT_URL_FAILURE_TTL
         if now - cached_at < ttl:
             return cached_url
+    failure_reason: str | None = None
     try:
         discovery = await asyncio.wait_for(
             _discover(), timeout=_LOGOUT_DISCOVERY_TIMEOUT
         )
         raw_endpoint = discovery.get("end_session_endpoint") if isinstance(discovery, dict) else None
         endpoint = raw_endpoint if isinstance(raw_endpoint, str) else ""
-    except (HTTPException, httpx.HTTPError, ValueError, asyncio.TimeoutError):
+    except (HTTPException, httpx.HTTPError, ValueError, asyncio.TimeoutError) as exc:
         endpoint = ""
         discovery_answered = False
+        failure_reason = _logout_failure_reason(exc)
     else:
         discovery_answered = True
     url = _safe_logout_url(endpoint, settings.oidc_client_id) if endpoint else ""
+    if failure_reason is None and endpoint and not url:
+        failure_reason = "the end_session_endpoint is not a usable URL"
+    if failure_reason is not None:
+        logger.warning(
+            "OIDC logout discovery failed for %s: %s. SSO sign-out stays off "
+            "until it answers (retried in %gs).",
+            settings.oidc_discovery_url,
+            failure_reason,
+            _LOGOUT_URL_TTL if discovery_answered else _LOGOUT_URL_FAILURE_TTL,
+        )
     _logout_url_cache = (now, cache_key, url, discovery_answered)
     return url
 
