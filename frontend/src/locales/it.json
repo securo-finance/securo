@@ -2229,6 +2229,8 @@
     "soldAssets": "Beni venduti",
     "archivedAssets": "Beni archiviati",
     "noAssets": "Ancora nessun bene",
+    "showArchived": "Mostra archiviati",
+    "archivedNotCounted": "Non contano nel totale del portafoglio.",
     "created": "Bene creato",
     "updated": "Bene aggiornato",
     "deleted": "Bene eliminato",

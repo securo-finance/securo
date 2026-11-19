@@ -2349,6 +2349,8 @@
     "soldAssets": "Predané aktíva",
     "archivedAssets": "Archivované aktíva",
     "noAssets": "Zatiaľ žiadne aktíva",
+    "showArchived": "Zobraziť archivované",
+    "archivedNotCounted": "Nezapočítavajú sa do celkovej hodnoty portfólia.",
     "created": "Aktívum vytvorené",
     "updated": "Aktívum aktualizované",
     "deleted": "Aktívum vymazané",

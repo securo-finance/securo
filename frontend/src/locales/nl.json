@@ -2227,6 +2227,8 @@
     "soldAssets": "Verkochte activa",
     "archivedAssets": "Gearchiveerde activa",
     "noAssets": "Nog geen activa",
+    "showArchived": "Gearchiveerde tonen",
+    "archivedNotCounted": "Niet meegeteld in het totale portfolio.",
     "created": "Item gemaakt",
     "updated": "Item bijgewerkt",
     "deleted": "Item verwijderd",

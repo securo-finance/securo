@@ -2241,6 +2241,8 @@
     "soldAssets": "נכסים שנמכרו",
     "archivedAssets": "נכסים בארכיון",
     "noAssets": "אין עדיין נכסים",
+    "showArchived": "הצג ארכיון",
+    "archivedNotCounted": "לא נכללים בסך התיק.",
     "created": "הנכס נוצר",
     "updated": "הנכס עודכן",
     "deleted": "הנכס נמחק",

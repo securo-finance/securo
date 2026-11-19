@@ -2229,6 +2229,8 @@
     "soldAssets": "Actifs vendus",
     "archivedAssets": "Actifs archivés",
     "noAssets": "Aucun actif pour l'instant",
+    "showArchived": "Afficher les archivés",
+    "archivedNotCounted": "Non comptés dans le total du portefeuille.",
     "created": "Actif créé",
     "updated": "Actif mis à jour",
     "deleted": "Actif supprimé",

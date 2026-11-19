@@ -2226,6 +2226,8 @@
     "soldAssets": "Verkaufte Vermögenswerte",
     "archivedAssets": "Archivierte Vermögenswerte",
     "noAssets": "Noch keine Vermögenswerte",
+    "showArchived": "Archivierte anzeigen",
+    "archivedNotCounted": "Nicht im Gesamtwert des Portfolios enthalten.",
     "created": "Vermögenswert erstellt",
     "updated": "Vermögenswert aktualisiert",
     "deleted": "Vermögenswert gelöscht",

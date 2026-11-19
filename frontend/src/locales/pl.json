@@ -2322,6 +2322,8 @@
     "soldAssets": "Sprzedane",
     "archivedAssets": "Zarchiwizowane",
     "noAssets": "Brak aktywów",
+    "showArchived": "Pokaż zarchiwizowane",
+    "archivedNotCounted": "Nie są liczone do łącznej wartości portfela.",
     "created": "Utworzono aktywo",
     "updated": "Zaktualizowano aktywo",
     "deleted": "Usunięto aktywo",
