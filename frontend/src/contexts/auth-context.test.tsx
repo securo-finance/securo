@@ -429,6 +429,30 @@ describe('AuthProvider sign-out', () => {
     expect(localStorage.getItem('token')).toBeNull()
   })
 
+  it('does not end the provider session when a sign-in finished meanwhile', async () => {
+    localStorage.setItem('token', 'oidc-jwt')
+    localStorage.setItem('oidc_session', '1')
+    auth.me.mockResolvedValue(USER)
+    let shouldRedirect: (() => boolean) | undefined
+    providerLogout.endProviderSession.mockImplementation(
+      (options: { shouldRedirect?: () => boolean }) => {
+        shouldRedirect = options.shouldRedirect
+      },
+    )
+
+    const { result } = await renderAuth()
+    act(() => result.current.logout())
+    expect(shouldRedirect?.()).toBe(true)
+
+    act(() => result.current.loginWithToken('new-jwt'))
+    expect(shouldRedirect?.()).toBe(false)
+
+    // A session that came and went still took over the browser: looking only
+    // at the stored token would let the late provider redirect through.
+    localStorage.removeItem('token')
+    expect(shouldRedirect?.()).toBe(false)
+  })
+
   it('marks a session as OIDC only when loginWithToken says so', async () => {
     auth.me.mockResolvedValue(USER)
 

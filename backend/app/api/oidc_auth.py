@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import hashlib
 import json
@@ -71,7 +72,23 @@ def _with_client_id(url: str, client_id: str) -> str:
     return urlunsplit(parts._replace(query=urlencode(query)))
 
 
+def _safe_logout_url(url: str, client_id: str) -> str:
+    """`_with_client_id`, but an unparsable URL answers "" instead of raising.
+
+    `urlsplit` raises `ValueError` on a broken URL (`https://[broken`). The
+    local sign-out already happened by then, so `/config` must keep answering
+    rather than fail the whole sign-in page over a logout hint.
+    """
+    try:
+        return _with_client_id(url, client_id)
+    except ValueError:
+        return ""
+
+
 _LOGOUT_URL_TTL = 300.0
+# The frontend asks for `/config` with a 5 s timeout; the discovery has to
+# answer well inside it, or the browser silently skips the redirect (#1623).
+_LOGOUT_DISCOVERY_TIMEOUT = 3.0
 # (monotonic time, discovery url + client id it was read for, resolved URL)
 _logout_url_cache: tuple[float, str, str] | None = None
 
@@ -89,7 +106,7 @@ async def _provider_logout_url() -> str:
     if not settings.oidc_login_available:
         return ""
     if settings.oidc_logout_url:
-        return _with_client_id(settings.oidc_logout_url, settings.oidc_client_id)
+        return _safe_logout_url(settings.oidc_logout_url, settings.oidc_client_id)
 
     cache_key = f"{settings.oidc_discovery_url}|{settings.oidc_client_id}"
     now = time.monotonic()
@@ -100,11 +117,14 @@ async def _provider_logout_url() -> str:
     ):
         return _logout_url_cache[2]
     try:
-        discovery = await _discover()
-        endpoint = str(discovery.get("end_session_endpoint") or "")
-    except (HTTPException, httpx.HTTPError, ValueError):
+        discovery = await asyncio.wait_for(
+            _discover(), timeout=_LOGOUT_DISCOVERY_TIMEOUT
+        )
+        raw_endpoint = discovery.get("end_session_endpoint") if isinstance(discovery, dict) else None
+        endpoint = raw_endpoint if isinstance(raw_endpoint, str) else ""
+    except (HTTPException, httpx.HTTPError, ValueError, asyncio.TimeoutError):
         endpoint = ""
-    url = _with_client_id(endpoint, settings.oidc_client_id) if endpoint else ""
+    url = _safe_logout_url(endpoint, settings.oidc_client_id) if endpoint else ""
     _logout_url_cache = (now, cache_key, url)
     return url
 

@@ -21,7 +21,7 @@ describe('endProviderSession', () => {
     auth.oidcConfig.mockResolvedValue(CONFIG)
     const redirect = vi.fn()
 
-    await endProviderSession(redirect)
+    await endProviderSession({ redirect })
 
     expect(redirect).toHaveBeenCalledWith('https://id.example.com/logout?client_id=securo')
   })
@@ -30,7 +30,7 @@ describe('endProviderSession', () => {
     auth.oidcConfig.mockResolvedValue({ ...CONFIG, logout_url: '' })
     const redirect = vi.fn()
 
-    await endProviderSession(redirect)
+    await endProviderSession({ redirect })
 
     expect(redirect).not.toHaveBeenCalled()
   })
@@ -39,7 +39,16 @@ describe('endProviderSession', () => {
     auth.oidcConfig.mockRejectedValue(new Error('network down'))
     const redirect = vi.fn()
 
-    await expect(endProviderSession(redirect)).resolves.toBeUndefined()
+    await expect(endProviderSession({ redirect })).resolves.toBeUndefined()
+    expect(redirect).not.toHaveBeenCalled()
+  })
+
+  it('skips the redirect when a new sign-in won the race', async () => {
+    auth.oidcConfig.mockResolvedValue(CONFIG)
+    const redirect = vi.fn()
+
+    await endProviderSession({ redirect, shouldRedirect: () => false })
+
     expect(redirect).not.toHaveBeenCalled()
   })
 })
