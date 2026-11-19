@@ -22,6 +22,7 @@ from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
 from app.models.bank_connection import LAST_SYNC_FAILURE_KEY, BankConnection
 from app.models.account import Account
+from app.models.account_card import AccountCard
 from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.category import Category
 from app.models.institution import Institution
@@ -88,6 +89,43 @@ LOCAL_IMPORT_SOURCES = {"import", "csv", "ofx", "qif", "camt"}
 settings = get_settings()
 
 _PROVIDER_SELL_DATE_METADATA_KEY = "_securo_provider_sell_date"
+
+
+async def _remember_linked_card(
+    session: AsyncSession,
+    account: Account,
+    masked_number: Optional[str],
+    known_numbers: dict[uuid.UUID, set[str]],
+) -> None:
+    """Register a provider-discovered card final once per credit-card account."""
+    if account.type != "credit_card" or not masked_number:
+        return
+    account_numbers = known_numbers.setdefault(account.id, set())
+    if masked_number in account_numbers:
+        return
+    try:
+        # A manual and a scheduled sync can discover the same card at once.
+        # Keep the uniqueness conflict inside a savepoint, then reuse the row
+        # written by the other sync instead of failing the outer sync.
+        async with session.begin_nested():
+            session.add(
+                AccountCard(
+                    workspace_id=account.workspace_id,
+                    account_id=account.id,
+                    masked_number=masked_number,
+                )
+            )
+            await session.flush()
+    except IntegrityError:
+        existing = await session.scalar(
+            select(AccountCard.id).where(
+                AccountCard.account_id == account.id,
+                AccountCard.masked_number == masked_number,
+            )
+        )
+        if existing is None:
+            raise
+    account_numbers.add(masked_number)
 
 
 def _clean_logo_url(value: object) -> Optional[str]:
@@ -1873,6 +1911,7 @@ async def _run_first_import(
     the authorization.
     """
     new_tx_ids: list[uuid.UUID] = []
+    known_linked_card_numbers: dict[uuid.UUID, set[str]] = {}
     for account, acc_data in accounts:
         bills_by_external_id = await _sync_credit_card_bills(
             session, user_id, account, provider, credentials
@@ -1893,6 +1932,9 @@ async def _run_first_import(
                 continue
             seen_external_ids.add(txn_data.external_id)
 
+            await _remember_linked_card(
+                session, account, txn_data.card_masked_number, known_linked_card_numbers
+            )
             # Pending↔posted twin (and the credit-card installment variant).
             # When the same logical operation comes back under a new external
             # id with a different status, fingerprint match prevents the
@@ -1908,6 +1950,11 @@ async def _run_first_import(
                     )
                 if synced_dup.original_description is None:
                     synced_dup.original_description = txn_data.description
+                if txn_data.card_masked_number is not None and not (
+                    synced_dup.card_masked_number is not None
+                    and synced_dup.status == "posted" and txn_data.status == "pending"
+                ):
+                    synced_dup.card_masked_number = txn_data.card_masked_number
                 if settles:
                     synced_dup.status = "posted"
                     _merge_sync_metadata(
@@ -1989,6 +2036,7 @@ async def _run_first_import(
                 installment_total_amount=txn_data.installment_total_amount,
                 installment_purchase_date=txn_data.installment_purchase_date,
                 bill_id=bill.id if bill else None,
+                card_masked_number=txn_data.card_masked_number,
             )
             apply_effective_date(
                 transaction, account, bill_due_date=bill.due_date if bill else None
@@ -2279,6 +2327,14 @@ def _merge_sync_metadata(
             transaction.original_description = provider_description
     elif provider_description and transaction.original_description is None:
         transaction.original_description = provider_description
+    # A stale pending twin must not replace what the posted row already knows,
+    # but it may still fill an ending the posted row never had.
+    if txn_data.card_masked_number is not None and not (
+        transaction.card_masked_number is not None
+        and transaction.status == "posted"
+        and txn_data.status == "pending"
+    ):
+        transaction.card_masked_number = txn_data.card_masked_number
     if txn_data.payee and not transaction.payee:
         transaction.payee = txn_data.payee
 
@@ -2998,6 +3054,7 @@ async def _promote_settled_pending(
     incoming_external_ids: set[str],
     unseen_pending: dict[str, date],
     bills_by_external_id: dict[str, CreditCardBill],
+    known_linked_card_numbers: dict[uuid.UUID, set[str]],
 ) -> Optional[str]:
     """Mark the pending row a posted `txn_data` settles as posted.
 
@@ -3036,6 +3093,9 @@ async def _promote_settled_pending(
         session, account.user_id, transaction, manual_description=manual_description
     )
     _relink_bill(transaction, txn_data, account, bills_by_external_id)
+    await _remember_linked_card(
+        session, account, txn_data.card_masked_number, known_linked_card_numbers
+    )
     return transaction.external_id
 
 
@@ -3891,6 +3951,14 @@ async def sync_connection(
             else None
         )
         transactions_fetched = 0
+        existing_linked_cards = await session.execute(
+            select(AccountCard.account_id, AccountCard.masked_number)
+            .join(Account, Account.id == AccountCard.account_id)
+            .where(Account.connection_id == connection.id)
+        )
+        known_linked_card_numbers: dict[uuid.UUID, set[str]] = {}
+        for account_id, masked_number in existing_linked_cards:
+            known_linked_card_numbers.setdefault(account_id, set()).add(masked_number)
         incoming_external_ids = {acc.external_id for acc in accounts_data}
         incoming_institution_external_ids = frozenset(
             acc.institution_external_id
@@ -3948,6 +4016,12 @@ async def sync_connection(
                     update(CreditCardBill)
                     .where(CreditCardBill.account_id == account.id)
                     .values(user_id=user_id, workspace_id=connection.workspace_id)
+                )
+                # Linked cards follow their account, labels included.
+                await session.execute(
+                    update(AccountCard)
+                    .where(AccountCard.account_id == account.id)
+                    .values(workspace_id=connection.workspace_id)
                 )
 
             # Honor user intent: a closed connected account stays closed and is
@@ -4140,6 +4214,9 @@ async def sync_connection(
             claims_holds = connection.provider == "enable_banking" and not partial_feed
             hold_live_ids = live_txn_external_ids[account.id] if claims_holds else None
             for txn_data in transactions_data:
+                await _remember_linked_card(
+                    session, account, txn_data.card_masked_number, known_linked_card_numbers
+                )
                 existing = await session.execute(
                     select(Transaction)
                     .where(
@@ -4228,6 +4305,11 @@ async def sync_connection(
                         )
                     if synced_dup.original_description is None:
                         synced_dup.original_description = txn_data.description
+                    if txn_data.card_masked_number is not None and not (
+                        synced_dup.card_masked_number is not None
+                        and synced_dup.status == "posted" and txn_data.status == "pending"
+                    ):
+                        synced_dup.card_masked_number = txn_data.card_masked_number
                     if settles:
                         # Posted truth wins: swap in the new id so subsequent
                         # syncs match by external_id and update raw_data.
@@ -4335,6 +4417,7 @@ async def sync_connection(
                     installment_total_amount=txn_data.installment_total_amount,
                     installment_purchase_date=txn_data.installment_purchase_date,
                     bill_id=bill.id if bill else None,
+                    card_masked_number=txn_data.card_masked_number,
                 )
                 apply_effective_date(
                     transaction,
@@ -4369,6 +4452,8 @@ async def sync_connection(
                     placeholder.source = "sync"
                     placeholder.status = txn_data.status
                     placeholder.raw_data = txn_data.raw_data
+                    if txn_data.card_masked_number is not None:
+                        placeholder.card_masked_number = txn_data.card_masked_number
                     # Same shape as the import path: fold in the `preview` the
                     # rules already produced from the incoming charge instead of
                     # re-running them against the placeholder, whose description
@@ -4519,6 +4604,7 @@ async def sync_connection(
                             incoming_ids,
                             unseen_pending,
                             bills_by_external_id,
+                            known_linked_card_numbers,
                         )
                         if promoted_id:
                             promoted_ids.add(promoted_id)

@@ -10,6 +10,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.account_card import AccountCard
 from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.asset import Asset
 from app.models.bank_connection import BankConnection
@@ -1661,6 +1662,7 @@ async def test_sync_connection_new_transactions(session: AsyncSession, test_user
         TransactionData(
             external_id="sync-tx-1", description="GROCERY",
             amount=Decimal("80"), date=date.today(), type="debit", currency="BRL",
+            card_masked_number="8172",
         ),
     ])
 
@@ -1678,6 +1680,100 @@ async def test_sync_connection_new_transactions(session: AsyncSession, test_user
     )
     assert transaction is not None
     assert transaction.original_description == "GROCERY"
+    assert transaction.card_masked_number == "8172"
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_registers_linked_credit_cards(
+    session: AsyncSession, test_user, test_workspace
+):
+    conn = await _make_connection(session, test_user.id, "Credit card bank")
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "refreshed"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="credit-card-1", name="Cartão",
+            type="credit_card", balance=Decimal("2000"), currency="BRL",
+        ),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id="credit-card-tx-1", description="Compra",
+            amount=Decimal("80"), date=date.today(), type="debit", currency="BRL",
+            card_masked_number="8172",
+        ),
+    ])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+        # A later sync has an empty in-memory card cache. It must reuse the
+        # card persisted by the first sync instead of failing on the unique
+        # constraint or adding a duplicate.
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    linked_cards = (await session.scalars(
+        select(AccountCard).where(AccountCard.masked_number == "8172")
+    )).all()
+    assert len(linked_cards) == 1
+    assert linked_cards[0].label is None
+
+
+@pytest.mark.asyncio
+async def test_sync_moves_linked_cards_with_a_reassigned_account(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A card registered under an account left in another workspace follows
+    the account back, label included, so its picker and filter still find it."""
+    from app.models.workspace import Workspace
+
+    conn = await _make_connection(session, test_user.id, "Card mover bank")
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "refreshed"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="moved-card-1", name="Cartão",
+            type="credit_card", balance=Decimal("100"), currency="BRL",
+        ),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id="moved-card-tx-1", description="Compra",
+            amount=Decimal("80"), date=date.today(), type="debit", currency="BRL",
+            card_masked_number="5062",
+        ),
+    ])
+    other_ws = Workspace(
+        id=uuid.uuid4(), name="Old Home", kind="personal",
+        created_by_user_id=test_user.id, default_currency="USD", locale="en-US",
+    )
+    session.add(other_ws)
+    await session.commit()
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+        account = await session.scalar(
+            select(Account).where(Account.external_id == "moved-card-1")
+        )
+        card = await session.scalar(
+            select(AccountCard).where(AccountCard.masked_number == "5062")
+        )
+        assert account is not None and card is not None
+        account.workspace_id = other_ws.id
+        card.workspace_id = other_ws.id
+        card.label = "Travel"
+        await session.commit()
+
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    await session.refresh(card)
+    assert card.workspace_id == test_workspace.id
+    assert card.label == "Travel"
 
 
 @pytest.mark.asyncio
@@ -7894,7 +7990,7 @@ async def test_sync_upgrades_pending_to_posted_when_twin_arrives(
         external_id="provider-pending",
         description="PIX AGENDADO - DOCTO: 11111",
         amount=Decimal("100.00"), date=date(2026, 4, 20),
-        type="debit", currency="BRL", status="pending",
+        type="debit", currency="BRL", status="pending", card_masked_number="8172",
     )
     mock_provider.get_transactions = AsyncMock(return_value=[pending])
 
@@ -7917,7 +8013,7 @@ async def test_sync_upgrades_pending_to_posted_when_twin_arrives(
         external_id="provider-posted",
         description="PIX AGENDADO - DOCTO: 22222",
         amount=Decimal("100.00"), date=date(2026, 4, 20),
-        type="debit", currency="BRL", status="posted",
+        type="debit", currency="BRL", status="posted", card_masked_number="2338",
     )
     mock_provider.get_transactions = AsyncMock(return_value=[pending, posted])
 
@@ -7938,7 +8034,104 @@ async def test_sync_upgrades_pending_to_posted_when_twin_arrives(
     # so subsequent syncs match by id.
     assert rows[0].status == "posted"
     assert rows[0].external_id == "provider-posted"
+    assert rows[0].card_masked_number == "2338"
     assert rows[0].reporting_date_override == date(2026, 3, 31)
+
+
+@pytest.mark.asyncio
+async def test_stale_pending_twin_keeps_the_posted_card_ending(
+    session: AsyncSession, test_user, test_workspace,
+):
+    conn = await _make_connection(session, test_user.id, "Twin Card Bank")
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="card-acc-1", name="Conta",
+            type="checking", balance=Decimal("0"), currency="BRL",
+        ),
+    ])
+    posted = TransactionData(
+        external_id="provider-posted-card",
+        description="LOJA TESTE",
+        amount=Decimal("50.00"), date=date(2026, 4, 20),
+        type="debit", currency="BRL", status="posted", card_masked_number="2338",
+    )
+    mock_provider.get_transactions = AsyncMock(return_value=[posted])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    stale_pending = TransactionData(
+        external_id="provider-stale-pending-card",
+        description="LOJA TESTE",
+        amount=Decimal("50.00"), date=date(2026, 4, 20),
+        type="debit", currency="BRL", status="pending", card_masked_number="8172",
+    )
+    mock_provider.get_transactions = AsyncMock(return_value=[posted, stale_pending])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    row = (await session.execute(
+        select(Transaction).where(Transaction.source == "sync")
+    )).scalars().one()
+    assert row.status == "posted"
+    assert row.card_masked_number == "2338"
+
+
+@pytest.mark.asyncio
+async def test_pending_twin_fills_a_missing_posted_card_ending(
+    session: AsyncSession, test_user, test_workspace,
+):
+    conn = await _make_connection(session, test_user.id, "Twin Fill Bank")
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="fill-acc-1", name="Conta",
+            type="checking", balance=Decimal("0"), currency="BRL",
+        ),
+    ])
+    posted = TransactionData(
+        external_id="provider-posted-nocard",
+        description="LOJA TESTE",
+        amount=Decimal("50.00"), date=date(2026, 4, 20),
+        type="debit", currency="BRL", status="posted",
+    )
+    mock_provider.get_transactions = AsyncMock(return_value=[posted])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    pending_with_card = TransactionData(
+        external_id="provider-pending-withcard",
+        description="LOJA TESTE",
+        amount=Decimal("50.00"), date=date(2026, 4, 20),
+        type="debit", currency="BRL", status="pending", card_masked_number="8172",
+    )
+    mock_provider.get_transactions = AsyncMock(return_value=[posted, pending_with_card])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    row = (await session.execute(
+        select(Transaction).where(Transaction.source == "sync")
+    )).scalars().one()
+    assert row.status == "posted"
+    assert row.card_masked_number == "8172"
 
 
 @pytest.mark.asyncio
