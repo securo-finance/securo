@@ -881,6 +881,7 @@
     "uncategorizedCta": "{{count}} συναλλαγές χρειάζονται κατηγοριοποίηση",
     "uncategorizedTotal": "{{amount}} συνολικά",
     "categorizeNow": "Κατηγοριοποίηση τώρα",
+    "drillDownQuickCategorize": "Επιλογή κατηγορίας",
     "allCategorized": "Όλα ενημερωμένα!",
     "allCategorizedDesc": "Όλες οι συναλλαγές έχουν κατηγοριοποιηθεί",
     "assetsValue": "Επενδεδυμένα περιουσιακά στοιχεία",

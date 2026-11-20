@@ -889,6 +889,7 @@
     "uncategorizedCta": "{{count}} транзакций нужно категоризировать",
     "uncategorizedTotal": "На сумму {{amount}}",
     "categorizeNow": "Категоризировать сейчас",
+    "drillDownQuickCategorize": "Выбрать категорию",
     "allCategorized": "Всё в порядке!",
     "allCategorizedDesc": "Все транзакции категоризированы",
     "assetsValue": "Инвестированные активы",

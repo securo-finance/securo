@@ -895,6 +895,7 @@
     "uncategorizedCta": "{{count}} תנועות ממתינות לסיווג",
     "uncategorizedTotal": "{{amount}} בסך הכול",
     "categorizeNow": "סיווג עכשיו",
+    "drillDownQuickCategorize": "בחירת קטגוריה",
     "allCategorized": "הכול מעודכן!",
     "allCategorizedDesc": "כל התנועות מסווגות",
     "assetsValue": "נכסים מושקעים",

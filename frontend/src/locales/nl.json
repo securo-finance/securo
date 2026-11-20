@@ -881,6 +881,7 @@
     "uncategorizedCta": "{{count}} transacties moeten worden gecategoriseerd",
     "uncategorizedTotal": "{{amount}} in totaal",
     "categorizeNow": "Categoriseer nu",
+    "drillDownQuickCategorize": "Kies een categorie",
     "allCategorized": "Alles in orde!",
     "allCategorizedDesc": "Alle transacties zijn gecategoriseerd",
     "assetsValue": "Geïnvesteerde activa",

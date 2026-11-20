@@ -897,6 +897,7 @@
     "uncategorizedCta_other": "{{count}} transakcií čaká na kategorizáciu",
     "uncategorizedTotal": "{{amount}} celkom",
     "categorizeNow": "Kategorizovať teraz",
+    "drillDownQuickCategorize": "Vybrať kategóriu",
     "allCategorized": "Všetko hotové!",
     "allCategorizedDesc": "Všetky transakcie majú kategóriu",
     "assetsValue": "Investované aktíva",

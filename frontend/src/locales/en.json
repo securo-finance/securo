@@ -883,6 +883,7 @@
     "uncategorizedCta": "{{count}} transactions need categorizing",
     "uncategorizedTotal": "{{amount}} in total",
     "categorizeNow": "Categorize now",
+    "drillDownQuickCategorize": "Pick a category",
     "allCategorized": "All caught up!",
     "allCategorizedDesc": "All transactions are categorized",
     "assetsValue": "Invested assets",

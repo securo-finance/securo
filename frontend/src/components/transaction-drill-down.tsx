@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo } from 'react'
+import { useEffect, useRef, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery } from '@tanstack/react-query'
@@ -13,7 +13,8 @@ import { hasOpenDialog, isInsideOverlayLayer } from '@/lib/overlay-layers'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAuth } from '@/contexts/auth-context'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
-import type { Transaction } from '@/types'
+import { CategorySelect } from '@/components/category-select'
+import type { Category, CategoryGroup, Transaction } from '@/types'
 import { formatCurrency } from '@/lib/format'
 
 export type DrillDownFilter = {
@@ -64,18 +65,54 @@ type DisplayItem = {
   partOf: number | null
 }
 
+/**
+ * Lets a host categorize uncategorized rows in place, without opening the
+ * transaction dialog for each one. The host saves the change and refreshes
+ * the queries; the panel stays open on the next row.
+ */
+export type DrillDownQuickCategorize = {
+  categories: Category[]
+  groups: CategoryGroup[]
+  onCategorize: (tx: Transaction, categoryId: string) => Promise<unknown>
+}
+
+/** A row the panel can categorize in place: a real, unsplit, own row with no category yet. */
+function canQuickCategorize(tx: Transaction | null): tx is Transaction {
+  return !!tx && !tx.category_id && !tx.is_shared && !isSplitByCategory(tx)
+}
+
 export function TransactionDrillDown({
   filter,
   onClose,
   onTransactionClick,
   useViewerShare = false,
+  quickCategorize,
 }: {
   filter: DrillDownFilter | null
   onClose: () => void
   onTransactionClick?: (tx: Transaction) => void
   useViewerShare?: boolean
+  quickCategorize?: DrillDownQuickCategorize
 }) {
   const { t } = useTranslation()
+  // Rows whose category is being saved, so a second pick can't race the first.
+  const [savingIds, setSavingIds] = useState<ReadonlySet<string>>(() => new Set())
+
+  const handleQuickCategorize = async (tx: Transaction, categoryId: string) => {
+    if (!quickCategorize || !categoryId || savingIds.has(tx.id)) return
+    setSavingIds((prev) => new Set(prev).add(tx.id))
+    try {
+      await quickCategorize.onCategorize(tx, categoryId)
+    } catch {
+      // The host reports the error; the row stays as it was.
+    } finally {
+      setSavingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(tx.id)
+        return next
+      })
+    }
+  }
   const { user } = useAuth()
   const { mask } = usePrivacyMode()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
@@ -402,10 +439,14 @@ export function TransactionDrillDown({
             </p>
           ) : (
             <div className="divide-y divide-border">
-              {displayItems.map((item) => (
+              {displayItems.map((item) => {
+                const quickTx = quickCategorize && canQuickCategorize(item.transaction) ? item.transaction : null
+                const saving = !!quickTx && savingIds.has(quickTx.id)
+                return (
                 <div
                   key={item.key}
-                  className={`flex items-center gap-3 px-5 py-3 hover:bg-muted transition-colors ${!item.isProjected && onTransactionClick ? 'cursor-pointer' : ''}`}
+                  aria-busy={saving || undefined}
+                  className={`flex items-center gap-3 px-5 py-3 hover:bg-muted transition-colors ${!item.isProjected && onTransactionClick ? 'cursor-pointer' : ''} ${saving ? 'opacity-60' : ''}`}
                   onClick={() => {
                     if (!item.isProjected && item.transaction) {
                       onTransactionClick?.(item.transaction)
@@ -448,6 +489,25 @@ export function TransactionDrillDown({
                         value: mask(formatCurrency(item.partOf, item.currency ?? userCurrency, locale)),
                       })}`}
                     </p>
+                    {quickTx && quickCategorize && (
+                      // Picking here must not also open the row's dialog.
+                      <div
+                        className="mt-1.5 max-w-[240px]"
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
+                        <CategorySelect
+                          value=""
+                          onChange={(categoryId) => handleQuickCategorize(quickTx, categoryId)}
+                          categories={quickCategorize.categories}
+                          groups={quickCategorize.groups}
+                          placeholder={t('dashboard.drillDownQuickCategorize')}
+                          disabled={saving}
+                          creatable
+                          className="h-7 px-2 text-xs"
+                        />
+                      </div>
+                    )}
                   </div>
                   <div className="text-end shrink-0">
                     <span
@@ -472,7 +532,8 @@ export function TransactionDrillDown({
                     )}
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>

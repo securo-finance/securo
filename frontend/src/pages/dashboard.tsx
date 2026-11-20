@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react'
+import { useState, useEffect, useMemo, useRef, useContext, type ReactNode } from 'react'
 import { getAccountLabel, getAccountName, sortAccountsByAbsoluteBalance, sumAccountBalances } from '@/lib/account-utils'
 import { currentMonth, shiftMonth, monthLastDay, monthLabel, monthRange } from '@/lib/month-utils'
 import { useTranslation } from 'react-i18next'
@@ -57,6 +57,7 @@ import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useAuth } from '@/contexts/auth-context'
+import { WorkspaceContext } from '@/contexts/workspace-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import type { Rule, Transaction } from '@/types'
@@ -406,6 +407,19 @@ export default function DashboardPage() {
     queryKey: ['goals', 'summary'],
     queryFn: () => goalsApi.summary(3),
     enabled: shows('goals'),
+  })
+
+  // Read the context directly, as the category picker does, so a dashboard
+  // rendered outside a workspace provider still works (read-only).
+  const canWrite = useContext(WorkspaceContext)?.canWrite ?? false
+
+  // Categorizes a row straight from the drill-down. Unlike `updateMutation`
+  // it leaves the panel and any dialog alone, so the next row is one pick away.
+  const quickCategorizeMutation = useMutation({
+    mutationFn: ({ id, categoryId }: { id: string; categoryId: string }) =>
+      transactions.update(id, { category_id: categoryId }),
+    onSuccess: () => invalidateFinancialQueries(queryClient),
+    onError: (err: unknown) => toast.error(extractApiError(err, t('common.error'))),
   })
 
   const updateMutation = useMutation({
@@ -1961,6 +1975,12 @@ export default function DashboardPage() {
         }
         onClose={() => setDrillDown(null)}
         onTransactionClick={(tx) => { setEditingTx(tx); setDialogOpen(true) }}
+        quickCategorize={canWrite ? {
+          categories: categoriesList ?? [],
+          groups: categoryGroupsList ?? [],
+          onCategorize: (tx, categoryId) =>
+            quickCategorizeMutation.mutateAsync({ id: tx.id, categoryId }),
+        } : undefined}
       />
 
       <TransactionDialog

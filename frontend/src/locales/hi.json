@@ -881,6 +881,7 @@
     "uncategorizedCta": "{{count}} लेन-देन को वर्गीकृत करना है",
     "uncategorizedTotal": "कुल {{amount}}",
     "categorizeNow": "अभी वर्गीकृत करें",
+    "drillDownQuickCategorize": "श्रेणी चुनें",
     "allCategorized": "सब हो गया!",
     "allCategorizedDesc": "सभी लेन-देन वर्गीकृत हैं",
     "assetsValue": "निवेशित संपत्तियाँ",

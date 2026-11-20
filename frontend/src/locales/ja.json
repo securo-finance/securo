@@ -881,6 +881,7 @@
     "uncategorizedCta": "{{count}}件の取引にカテゴリが必要です",
     "uncategorizedTotal": "合計{{amount}}",
     "categorizeNow": "今すぐ分類",
+    "drillDownQuickCategorize": "カテゴリを選択",
     "allCategorized": "すべて完了!",
     "allCategorizedDesc": "すべての取引が分類されています",
     "assetsValue": "投資資産額",

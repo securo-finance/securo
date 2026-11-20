@@ -883,6 +883,7 @@
     "uncategorizedCta": "{{count}} transacciones necesitan categorización",
     "uncategorizedTotal": "{{amount}} en total",
     "categorizeNow": "Categorizar ahora",
+    "drillDownQuickCategorize": "Elegir categoría",
     "allCategorized": "¡Todo al día!",
     "allCategorizedDesc": "Todas las transacciones están categorizadas",
     "assetsValue": "Activos invertidos",

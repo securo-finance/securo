@@ -4,7 +4,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { TransactionDrillDown } from '@/components/transaction-drill-down'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { admin, dashboard, transactions } from '@/lib/api'
-import { renderWithProviders } from '@/test/utils'
+import { renderWithProviders, t } from '@/test/utils'
 
 vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => ({ user: { id: 'me', preferences: { currency_display: 'USD' } } }),
@@ -66,6 +66,62 @@ describe('TransactionDrillDown', () => {
     expect(screen.getAllByText('$160.00').length).toBeGreaterThan(0)
     expect(screen.queryByText('$200.00')).not.toBeInTheDocument()
     expect(screen.getByText(/part of €100.00/)).toBeInTheDocument()
+  })
+
+  describe('quick categorize', () => {
+    const groceries = { id: 'cat-groceries', name: 'Groceries', icon: null, color: '#10b981', group_id: null }
+    const row = (overrides: Record<string, unknown>) => ({
+      id: 'tx', description: 'Corner shop', date: '2026-09-05', type: 'debit', amount: 12,
+      amount_primary: 12, currency: 'USD', status: 'posted', category: null, category_id: null,
+      attachment_count: 0, splits: [], viewer_share: null, is_shared: false, user_id: 'me', ...overrides,
+    })
+
+    function renderQuick(items: Record<string, unknown>[], withQuick = true) {
+      vi.mocked(transactions.list).mockResolvedValue({ items, total: items.length } as never)
+      const onCategorize = vi.fn().mockResolvedValue(undefined)
+      const onTransactionClick = vi.fn()
+      const utils = renderWithProviders(
+        <TransactionDrillDown
+          filter={filter}
+          onClose={vi.fn()}
+          onTransactionClick={onTransactionClick}
+          quickCategorize={withQuick
+            ? { categories: [groceries] as never, groups: [], onCategorize }
+            : undefined}
+        />,
+      )
+      return { ...utils, onCategorize, onTransactionClick }
+    }
+
+    it('categorizes a row in place without opening its dialog', async () => {
+      const { user, onCategorize, onTransactionClick } = renderQuick([row({ id: 'shop' })])
+
+      await user.click(await screen.findByRole('button', { name: t('dashboard.drillDownQuickCategorize') }))
+      await user.click(await screen.findByText('Groceries'))
+
+      await waitFor(() => expect(onCategorize).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'shop' }), 'cat-groceries',
+      ))
+      expect(onTransactionClick).not.toHaveBeenCalled()
+    })
+
+    it('offers the picker only on own, unsplit, uncategorized rows', async () => {
+      renderQuick([
+        row({ id: 'plain', description: 'Plain row' }),
+        row({ id: 'shared', description: 'Shared row', is_shared: true }),
+        row({ id: 'done', description: 'Done row', category_id: 'cat-groceries', category: groceries }),
+      ])
+
+      expect(await screen.findByText('Shared row')).toBeInTheDocument()
+      expect(screen.getAllByRole('button', { name: t('dashboard.drillDownQuickCategorize') })).toHaveLength(1)
+    })
+
+    it('shows no picker unless the host opts in', async () => {
+      renderQuick([row({ id: 'plain' })], false)
+
+      expect(await screen.findByText('Corner shop')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: t('dashboard.drillDownQuickCategorize') })).not.toBeInTheDocument()
+    })
   })
 
   it('closes on a click outside the panel', async () => {

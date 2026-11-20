@@ -895,6 +895,7 @@
     "uncategorizedCta_other": "{{count}} transakcji wymaga skategoryzowania",
     "uncategorizedTotal": "łącznie {{amount}}",
     "categorizeNow": "Skategoryzuj teraz",
+    "drillDownQuickCategorize": "Wybierz kategorię",
     "allCategorized": "Wszystko ogarnięte!",
     "allCategorizedDesc": "Wszystkie transakcje są skategoryzowane",
     "assetsValue": "Zainwestowane aktywa",

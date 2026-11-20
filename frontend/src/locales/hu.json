@@ -883,6 +883,7 @@
     "uncategorizedCta": "{{count}} tranzakció vár kategorizálásra",
     "uncategorizedTotal": "Összesen {{amount}}",
     "categorizeNow": "Kategorizálás most",
+    "drillDownQuickCategorize": "Kategória választása",
     "allCategorized": "Minden rendben!",
     "allCategorizedDesc": "Minden tranzakció kategorizálva van",
     "assetsValue": "Befektetett eszközök",

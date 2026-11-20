@@ -915,6 +915,7 @@
     "uncategorizedCta_other": "{{count}} transakcí čeká na kategorizaci",
     "uncategorizedTotal": "{{amount}} celkem",
     "categorizeNow": "Kategorizovat teď",
+    "drillDownQuickCategorize": "Vybrat kategorii",
     "allCategorized": "Vše hotovo!",
     "allCategorizedDesc": "Všechny transakce mají kategorii",
     "assetsValue": "Investovaná aktiva",
