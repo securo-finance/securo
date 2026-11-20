@@ -2496,6 +2496,9 @@ async def _refresh_provider_values(
         old_amount = transaction.amount
         transaction.amount = txn_data.amount
         transaction.type = txn_data.type
+        # A conversion typed for the old amount no longer holds (ADR 0028).
+        transaction.amount_primary_typed = None
+        transaction.amount_primary_typed_currency = None
         converted = _bank_converted_amount(txn_data, account_currency, user_currency)
         await _stamp_synced_primary_amount(
             session, transaction.user_id, transaction, converted,

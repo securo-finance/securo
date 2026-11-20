@@ -483,3 +483,26 @@ async def test_a_typed_amount_survives_a_resave_and_goes_with_a_new_amount(
     await _display(client, auth_headers, test_user, "BRL")
     await session.refresh(tx)
     assert tx.amount_primary == Decimal("1000.00")
+
+
+@pytest.mark.asyncio
+async def test_posting_a_pending_row_today_drops_its_typed_amount(
+    client: AsyncClient, session: AsyncSession, auth_headers, test_user: User, rates
+):
+    """"Post today" moves the date, so the conversion typed for the old date
+    no longer holds and a round trip must not bring it back."""
+    tx_id = await _usd_row_typed_in_brl(client, auth_headers, test_user)
+    tx = await session.get(Transaction, uuid.UUID(tx_id))
+    assert tx is not None
+    tx.status = "pending"
+    await session.commit()
+
+    posted = await client.post(f"/api/transactions/{tx_id}/post-today", headers=auth_headers)
+    assert posted.status_code == 200, posted.text
+    await session.refresh(tx)
+    assert (tx.amount_primary_typed, tx.amount_primary_typed_currency) == (None, None)
+
+    await _display(client, auth_headers, test_user, "USD")
+    await _display(client, auth_headers, test_user, "BRL")
+    await session.refresh(tx)
+    assert tx.amount_primary != Decimal("1560.00")

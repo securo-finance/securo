@@ -2698,7 +2698,9 @@ async def post_transaction_today(
 
     account = await session.get(Account, transaction.account_id)
     apply_effective_date(transaction, account)
-    # Posting moves the date to today: the account amount follows it.
+    # Posting moves the date to today: the account amount follows it, and a
+    # conversion typed for the old date no longer holds (ADR 0028).
+    _drop_typed_primary(transaction)
     await stamp_primary_amount(
         session, transaction.user_id, transaction, restamp_account=True
     )
@@ -2718,6 +2720,7 @@ async def post_transaction_today(
                 paired.date = today
                 paired_account = await session.get(Account, paired.account_id)
                 apply_effective_date(paired, paired_account)
+                _drop_typed_primary(paired)
                 await stamp_primary_amount(
                     session, paired.user_id, paired, restamp_account=True
                 )
