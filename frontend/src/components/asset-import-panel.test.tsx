@@ -252,4 +252,26 @@ describe('AssetImportPanel currencies', () => {
     const row = (await screen.findByText(t('assetImport.kind.buy'))).closest('tr')
     expect(row).toHaveTextContent('R$150.00')
   })
+
+  it('keeps a minor-unit price in the label the file used', async () => {
+    // Intl reads "GBp" as GBP, so formatting 100 pence as a currency would
+    // show GBP 100.00 instead of GBP 1.00.
+    api.previewImport.mockResolvedValue({
+      ...successPreview,
+      orders: [{
+        ...order(2, 'IITU.L', '2026-01-15'),
+        price: 100,
+        currency: 'GBp',
+        converted_price: 1,
+        converted_currency: 'GBP',
+      }],
+    })
+    await uploadFile(renderWithProviders(<AssetImportPanel />))
+
+    const row = (await screen.findByText(t('assetImport.kind.buy'))).closest('tr')
+    expect(row).not.toBeNull()
+    expect(row).toHaveTextContent('100.00 GBp')
+    expect(row).toHaveTextContent('£1.00')
+    expect(row).not.toHaveTextContent('£100.00')
+  })
 })
