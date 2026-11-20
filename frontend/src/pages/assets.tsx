@@ -297,7 +297,11 @@ export default function AssetsPage() {
 
   // Reopen on the tab used last; `?tab=performance` links straight to one.
   const [activeTab, setActiveTabState] = useState<AssetsTab>(readInitialAssetsTab)
+  // When Performance was last opened: an inventory read before that is not
+  // trusted to prune a selection (see performanceInventory).
+  const [performanceOpenedAt, setPerformanceOpenedAt] = useState(() => Date.now())
   const setActiveTab = (tab: AssetsTab) => {
+    if (tab === 'performance' && activeTab !== 'performance') setPerformanceOpenedAt(Date.now())
     setActiveTabState(tab)
     try {
       localStorage.setItem(ASSETS_TAB_STORAGE_KEY, tab)
@@ -1212,15 +1216,18 @@ export default function AssetsPage() {
   })
   const inventoryAssets = inventoryAssetsQuery.data
   const inventoryWallets = inventoryWalletsQuery.data
+  const inventoryCurrent =
+    inventoryAssetsQuery.dataUpdatedAt >= performanceOpenedAt &&
+    inventoryWalletsQuery.dataUpdatedAt >= performanceOpenedAt
   const performanceInventory = useMemo(
     () =>
-      inventoryAssets && inventoryWallets
+      inventoryCurrent && inventoryAssets && inventoryWallets
         ? {
             walletIds: inventoryWallets.map((wallet) => wallet.id),
             assetIds: inventoryAssets.map((asset) => asset.id),
           }
         : null,
-    [inventoryAssets, inventoryWallets],
+    [inventoryCurrent, inventoryAssets, inventoryWallets],
   )
   const inventoryError = inventoryAssetsQuery.isError || inventoryWalletsQuery.isError
   const retryInventory = () => {
