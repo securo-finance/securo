@@ -24,6 +24,9 @@ Conventions:
   drawdown.
 * drawdowns are negative fractions from the running peak: a 10% fall is
   ``-0.10``.
+* annualized return and Calmar need at least five daily returns. Annualizing
+  one good day (a 10% day becomes 2.7e10 per year) says nothing about a
+  portfolio.
 
 The module is deliberately free of database, HTTP and clock access so the
 math is unit-tested on its own and reused by the API, the MCP server and any
@@ -38,6 +41,11 @@ from statistics import fmean, stdev
 from typing import Optional, Sequence
 
 DEFAULT_PERIODS_PER_YEAR = 252
+
+#: Annualizing a window shorter than a trading week turns one good day into a
+#: meaningless figure (a 10% day becomes 2.7e10 per year), so the annualized
+#: return and Calmar stay undefined until there are five daily returns.
+MIN_ANNUALIZATION_OBSERVATIONS = 5
 
 
 class RiskMetricsError(ValueError):
@@ -152,7 +160,11 @@ def compute_risk_metrics(
     returns = [cleaned[i] / cleaned[i - 1] - 1 for i in range(1, len(cleaned))]
     drawdowns = drawdown_series(cleaned)
     scale = math.sqrt(periods_per_year)
-    annualized_return = _annualized_return(cleaned, periods_per_year)
+    annualized_return = (
+        _annualized_return(cleaned, periods_per_year)
+        if len(returns) >= MIN_ANNUALIZATION_OBSERVATIONS
+        else None
+    )
     max_drawdown = min(drawdowns)
     current_drawdown = drawdowns[-1]
 

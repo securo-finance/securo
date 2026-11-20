@@ -27,30 +27,31 @@ def test_drawdown_is_measured_from_the_running_peak():
 
 
 def test_known_series_matches_hand_computed_statistics():
-    values = [100.0, 110.0, 99.0, 108.9]
-    returns = [0.10, -0.10, 0.10]
+    values = [100.0, 110.0, 99.0, 108.9, 98.01, 107.811]
+    returns = [0.10, -0.10, 0.10, -0.10, 0.10]
     daily_mean = sum(returns) / len(returns)
     daily_vol = math.sqrt(
         sum((value - daily_mean) ** 2 for value in returns) / (len(returns) - 1)
     )
     expected_volatility = daily_vol * math.sqrt(DEFAULT_PERIODS_PER_YEAR)
-    expected_annualized = (108.9 / 100.0) ** (DEFAULT_PERIODS_PER_YEAR / 3) - 1
+    expected_annualized = (107.811 / 100.0) ** (DEFAULT_PERIODS_PER_YEAR / 5) - 1
     expected_downside = math.sqrt(
         sum(min(0.0, value) ** 2 for value in returns) / len(returns)
     )
 
     metrics = compute_risk_metrics(values)
 
-    assert metrics.observations == 3
+    assert metrics.observations == 5
     assert metrics.annualized_return == pytest.approx(expected_annualized)
     assert metrics.annualized_volatility == pytest.approx(expected_volatility)
-    assert metrics.max_drawdown == pytest.approx(-0.10)
-    assert metrics.current_drawdown == pytest.approx(-0.01)
+    # The second dip measures against the 110 peak, not the 108.9 one.
+    assert metrics.max_drawdown == pytest.approx(98.01 / 110.0 - 1)
+    assert metrics.current_drawdown == pytest.approx(107.811 / 110.0 - 1)
     assert metrics.sharpe == pytest.approx(daily_mean / daily_vol * math.sqrt(252))
     assert metrics.sortino == pytest.approx(
         daily_mean / expected_downside * math.sqrt(DEFAULT_PERIODS_PER_YEAR)
     )
-    assert metrics.calmar == pytest.approx(expected_annualized / 0.10)
+    assert metrics.calmar == pytest.approx(expected_annualized / (1 - 98.01 / 110.0))
 
 
 def test_risk_free_rate_shifts_sharpe_but_not_volatility():
@@ -94,7 +95,7 @@ def test_two_values_report_a_return_but_no_ratios():
     metrics = compute_risk_metrics([100.0, 110.0])
 
     assert metrics.observations == 1
-    assert metrics.annualized_return == pytest.approx(1.10**252 - 1)
+    assert metrics.annualized_return is None
     assert metrics.annualized_volatility is None
     assert metrics.sharpe is None
     assert metrics.sortino is None

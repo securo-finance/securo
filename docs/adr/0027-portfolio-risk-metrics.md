@@ -30,6 +30,8 @@ the MCP server and later reports:
 - Calmar: annualized return over the absolute maximum drawdown.
 - drawdowns are negative fractions from the running peak; `max_drawdown` is
   the minimum, `current_drawdown` the last.
+- annualized return and Calmar need at least five daily returns; annualizing
+  a single good day produces a meaningless figure.
 - ratios with an undefined denominator are `null`: Sharpe with zero
   volatility, Sortino with no downside days, Calmar with no drawdown. A zero
   would read as a real result.
