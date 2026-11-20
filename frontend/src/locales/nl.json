@@ -1553,6 +1553,8 @@
     "copyPreviewCount": "Te kopiëren categorieën: {{count}}",
     "copyPreviewTotal": "Te kopiëren totaal: {{amount}}",
     "copyPreviewEmpty": "De gekozen maand heeft geen budgetten om te kopiëren.",
+    "copyPreviewAllExist": "Alle categorieën van de bronmaand hebben al een budget in {{month}}. Kies vervangen om de bedragen te kopiëren of de aanpassing toe te passen.",
+    "copyPreviewNoChange": "Alle budgetten van de bronmaand staan in {{month}} al op deze bedragen.",
     "copyPreviewError": "De bronmaand kon niet worden geladen.",
     "copyAmountTooLarge": "Het aangepaste bedrag overschrijdt de budgetlimiet. Verlaag de procentuele aanpassing.",
     "copyConfirm": "Budgetten kopiëren",

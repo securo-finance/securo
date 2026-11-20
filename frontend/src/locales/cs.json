@@ -1635,6 +1635,8 @@
     "copyPreviewCount": "Kategorie ke zkopírování: {{count}}",
     "copyPreviewTotal": "Celkem ke kopírování: {{amount}}",
     "copyPreviewEmpty": "Vybraný měsíc nemá žádné rozpočty ke zkopírování.",
+    "copyPreviewAllExist": "Všechny kategorie zdrojového měsíce už mají v {{month}} rozpočet. Zvolte nahrazení, chcete-li zkopírovat částky nebo použít úpravu.",
+    "copyPreviewNoChange": "Všechny rozpočty zdrojového měsíce už v {{month}} mají tyto částky.",
     "copyPreviewError": "Zdrojový měsíc se nepodařilo načíst.",
     "copyAmountTooLarge": "Upravená částka překračuje limit rozpočtu. Snižte procentní úpravu.",
     "copyConfirm": "Kopírovat rozpočty",

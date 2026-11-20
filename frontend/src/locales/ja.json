@@ -1551,6 +1551,8 @@
     "copyPreviewCount": "コピーするカテゴリ: {{count}}",
     "copyPreviewTotal": "コピーする合計: {{amount}}",
     "copyPreviewEmpty": "選択した月にはコピーできる予算がありません。",
+    "copyPreviewAllExist": "コピー元の月のすべてのカテゴリには、すでに{{month}}の予算があります。金額をコピーするか調整を適用するには「置き換え」を選んでください。",
+    "copyPreviewNoChange": "コピー元の月の予算はすでにすべて{{month}}でこの金額になっています。",
     "copyPreviewError": "コピー元の月を読み込めませんでした。",
     "copyAmountTooLarge": "調整後の金額が予算の上限を超えています。パーセント調整を下げてください。",
     "copyConfirm": "予算をコピー",
