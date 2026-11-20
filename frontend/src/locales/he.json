@@ -932,6 +932,7 @@
     "date": "תאריך",
     "category": "קטגוריה",
     "account": "חשבון",
+    "card": "כרטיס",
     "noCategory": "ללא קטגוריה",
     "searchCategory": "חיפוש קטגוריה...",
     "noCategoryFound": "לא נמצאה קטגוריה.",
@@ -1009,6 +1010,31 @@
     "ignoredShow": "הצגה",
     "ignoredHide": "הסתרה",
     "ignoredHiddenValue": "מוסתר",
+    "flagged": "מסומנת",
+    "flagAction": "סמן",
+    "unflagAction": "הסר סימון",
+    "flagSuccess": "העסקה סומנה",
+    "unflagSuccess": "הסימון הוסר",
+    "flagFilterAll": "כל המסומנות",
+    "flagFilterOverdue": "באיחור",
+    "flagFilterSoon": "השבוע",
+    "flagOverdue": "באיחור",
+    "flagDueOn": "עד {{date}}",
+    "flagReminder": "תזכורת",
+    "flagReminderHint": "אופציונלי",
+    "flagRemindOn": "להזכיר לי",
+    "flagPickDate": "בחירת תאריך",
+    "flagClearDate": "ניקוי תאריך",
+    "flagNote": "הערה",
+    "flagNotePlaceholder": "למשל: מחכה להחזר",
+    "bulkFlagSuccess": "עסקאות שסומנו: {{count}}",
+    "bulkUnflagSuccess": "סימונים שהוסרו: {{count}}",
+    "flagOverdueCount": "סימונים באיחור: {{count}}",
+    "flagPreset": {
+      "tomorrow": "מחר",
+      "nextWeek": "בעוד שבוע",
+      "nextMonth": "בעוד חודש"
+    },
     "statusCleared": "נסגרה",
     "sortAsc": "מיון בסדר עולה",
     "sortDesc": "מיון בסדר יורד",
@@ -1288,6 +1314,12 @@
     "cycleMissing": "הגדרת מחזור",
     "cycleMissingHint": "מלאו את ימי סגירת החשבון והחיוב כדי לאפשר סינון לפי מחזור, התראות על מועד חיוב ותצוגת החיוב.",
     "ccSettingsHint": "שדות אלה אופציונליים, אך מילויים מאפשר סינון לפי מחזור, התראות על מועד חיוב ושיוך רכישות לחיוב הנכון.",
+    "linkedCards": "כרטיסים מקושרים",
+    "linkedCardsHint": "השתמשו בתווית כדי להבדיל ביניהם בתנועות.",
+    "noLinkedCards": "עדיין לא זוהתה סיומת כרטיס.",
+    "cardEnding": "סיומת {{number}}",
+    "cardLabel": "תווית",
+    "cardLabelPlaceholder": "הוספת תווית",
     "created": "החשבון נוצר",
     "updated": "החשבון עודכן",
     "deleted": "החשבון נמחק",
@@ -1531,6 +1563,8 @@
     "copyPreviewCount": "קטגוריות להעתקה: {{count}}",
     "copyPreviewTotal": "סכום להעתקה: {{amount}}",
     "copyPreviewEmpty": "לחודש הנבחר אין תקציבים להעתקה.",
+    "copyPreviewAllExist": "לכל הקטגוריות בחודש המקור כבר יש תקציב ב{{month}}. בחרו החלפה כדי להעתיק את הסכומים או להחיל את ההתאמה.",
+    "copyPreviewNoChange": "כל התקציבים בחודש המקור כבר בסכומים האלה ב{{month}}.",
     "copyPreviewError": "לא ניתן היה לטעון את חודש המקור.",
     "copyAmountTooLarge": "הסכום המותאם עולה על מגבלת התקציב. יש להקטין את ההתאמה באחוזים.",
     "copyConfirm": "העתקת תקציבים",
@@ -1598,6 +1632,7 @@
     "walletHint": "מעקב אחר היעד לפי השווי המשולב של כל הנכסים בארנק שנבחר."
   },
   "recurring": {
+    "makeFromTransaction": "תנועה קבועה חדשה מתנועה זו",
     "title": "תנועות חוזרות",
     "add": "הוספת חוזרת",
     "edit": "עריכת חוזרת",
@@ -1649,7 +1684,13 @@
     "priceChangeAmount": "{{old}} ← {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "אחרי הפסקה של {{days}} ימים",
-    "priceChangeInsufficient": "נדרשים לפחות 3 חיובים תואמים שנרשמו לפני ש-Securo מדווח על שינוי מחיר יציב."
+    "priceChangeInsufficient": "נדרשים לפחות 3 חיובים תואמים שנרשמו לפני ש-Securo מדווח על שינוי מחיר יציב.",
+    "summaryIncome": "הכנסות",
+    "summaryExpenses": "הוצאות",
+    "summaryNet": "נטו",
+    "summaryTransfers": "העברות שלא נכללו: {{count}}",
+    "summaryUnconverted": "ללא שער חליפין, לא נכללו: {{count}}",
+    "summaryFailed": "לא ניתן לטעון את סיכומי החודש"
   },
   "rules": {
     "searchPlaceholder": "חיפוש כללים...",
@@ -1759,6 +1800,7 @@
     "fieldPayee": "מוטב",
     "fieldDate": "תאריך",
     "fieldStatus": "סטטוס",
+    "fieldProviderCategory": "קטגוריית הספק",
     "opContains": "מכיל",
     "opNotContains": "לא מכיל",
     "opEquals": "שווה ל",
@@ -2025,6 +2067,8 @@
     "undoImport": "לבטל את הייבוא?",
     "undoOrdersDescription": "פעולה זו תמחק את {{count}} הפקודות שיובאו מ-{{filename}} ותחשב מחדש את הפוזיציות שהושפעו. אחזקות שנוצרו בייבוא זה יוסרו יחד איתן.",
     "undone": "הייבוא בוטל",
+    "undoOversell": "לא ניתן לבטל את הייבוא הזה: רשומה שנשארת מוכרת {{attempted}} יחידות כשבחזקה {{available}}. ערכו או מחקו את הרשומה הזו קודם.",
+    "undoTooLarge": "לא ניתן לבטל את הייבוא הזה: הפוזיציה שנשארת גדולה מדי לשמירה.",
     "undoDescription": "פעולה זו תמחק {{count}} תנועות שיובאו מ-{{filename}}. לא ניתן לבטל פעולה זו.",
     "deleting": "מוחק...",
     "deleteAll": "מחיקת הכול",
@@ -2096,7 +2140,9 @@
       "fee": "עמלה",
       "kind": "קנייה/מכירה",
       "currency": "מטבע",
-      "notes": "הערות"
+      "notes": "הערות",
+      "old_units": "יחידות לפני",
+      "new_units": "יחידות אחרי"
     },
     "walletWarningTitle": "כבר בתיק שלך",
     "warning": {
@@ -2105,7 +2151,8 @@
     },
     "kind": {
       "buy": "קנייה",
-      "sell": "מכירה"
+      "sell": "מכירה",
+      "split": "פיצול"
     },
     "reason": {
       "missing_ticker": "אין סימול",
@@ -2117,8 +2164,15 @@
       "unknown_ticker": "הסימול לא נמצא אצל ספק המחירים",
       "oversell": "מכירת יותר יחידות ממה שיש בפוזיציה",
       "no_fx_rate": "אין שער חליפין לתאריך הפקודה",
-      "possible_duplicate": "ייתכן שכבר קיים בפוזיציה הזו מייבוא קודם"
-    }
+      "possible_duplicate": "ייתכן שכבר קיים בפוזיציה הזו מייבוא קודם",
+      "invalid_split": "יחס פיצול לא קריא, או פיצול עם כמות, מחיר או עמלה",
+      "split_not_allowed": "אי אפשר לרשום פיצול בנכס שמסונכרן מהבנק",
+      "split_in_future": "פיצול לא יכול להיות בתאריך עתידי",
+      "nothing_held_before_split": "אין יחידות לפני הפיצול",
+      "too_large": "הנכס יהיה גדול מכדי לשמור אותו",
+      "holding_moved": "הפוזיציה שונתה או הועברה לארנק אחר במהלך הייבוא"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "נכסים",
@@ -2221,6 +2275,9 @@
     "soldAssets": "נכסים שנמכרו",
     "archivedAssets": "נכסים בארכיון",
     "noAssets": "אין עדיין נכסים",
+    "showArchived": "הצג ארכיון",
+    "archivedNotCounted": "לא נכללים בסך התיק.",
+    "archivedLoadFailed": "לא ניתן היה לטעון נכסים בארכיון.",
     "created": "הנכס נוצר",
     "updated": "הנכס עודכן",
     "deleted": "הנכס נמחק",
@@ -2377,7 +2434,39 @@
     "statementViewTransactions": "הצגת תנועות",
     "statementUncategorizedIncome": "הכנסות ללא קטגוריה",
     "statementUncategorizedExpense": "הוצאות ללא קטגוריה",
-    "statementToggleGroup": "הצגת הקטגוריות ב{{name}}"
+    "statementToggleGroup": "הצגת הקטגוריות ב{{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "סה״כ הוצאות",
+        "income": "סה״כ הכנסות",
+        "net": "נטו"
+      },
+      "none": {
+        "category": "ללא קטגוריה",
+        "category_group": "ללא קבוצה",
+        "payee": "ללא מוטב",
+        "account": "ללא חשבון",
+        "month": "ללא תאריך"
+      },
+      "groupBy": {
+        "category": "קטגוריה",
+        "category_group": "קבוצה",
+        "payee": "מוטב",
+        "account": "חשבון",
+        "month": "חודש"
+      },
+      "measure": {
+        "expenses": "הוצאות",
+        "income": "הכנסות",
+        "net": "נטו"
+      },
+      "share": "חלק",
+      "computed": "מחושב על ידי התוסף",
+      "totalRow": "סה״כ",
+      "page": "עמוד {{page}} מתוך {{pages}}",
+      "previousPage": "העמוד הקודם",
+      "nextPage": "העמוד הבא"
+    }
   },
   "payees": {
     "noPayeeFound": "לא נמצא מוטב.",
@@ -2538,7 +2627,8 @@
     "download": "הורדה",
     "closePreview": "סגירת התצוגה המקדימה",
     "remove": "הסרה",
-    "invalidAmount": "הזינו סכום תקין, למשל {{example}}."
+    "invalidAmount": "הזינו סכום תקין, למשל {{example}}.",
+    "refresh": "רענון"
   },
   "splitGroups": {
     "searchPlaceholder": "חיפוש קבוצות...",
@@ -2681,6 +2771,15 @@
     "brandSelfHosted": "אירוח עצמי",
     "brandPrivate": "פרטיות מובנית"
   },
+  "accountantExport": {
+    "title": "ייצוא לרואה החשבון",
+    "description": "הורדת התנועות המסווגות ודוח רווח והפסד של תקופה, בפורמט שתוכנת הנהלת החשבונות פותחת ישירות. הסכומים הם השווי המלא של התנועה, לפני חלוקה עם אנשים אחרים.",
+    "startDate": "תאריך התחלה",
+    "endDate": "תאריך סיום",
+    "download": "הורדת החבילה",
+    "error": "לא ניתן היה ליצור את הייצוא",
+    "formatHint": "קובץ zip אחד עם transactions.csv ו-profit-and-loss.csv, עם המפרידים והקידוד שגיליונות אלקטרוניים ותוכנות הנהלת חשבונות קוראים ללא התאמה."
+  },
   "backup": {
     "button": "גיבוי",
     "downloading": "מוריד...",
@@ -2692,7 +2791,90 @@
     "passwordPlaceholder": "השאירו ריק לגיבוי לא מוצפן",
     "passwordTooShort": "השתמשו בלפחות {{min}} תווים",
     "encryptionNote": "הארכיון מוצפן ב-AES-256 ונפתח בכל תוכנת ארכיון סטנדרטית. Securo לא שומר את הסיסמה ואינו יכול לשחזר את הקובץ בלעדיה.",
-    "successEncrypted": "הגיבוי המוצפן הורד בהצלחה"
+    "successEncrypted": "הגיבוי המוצפן הורד בהצלחה",
+    "restoreSuccess": "הגיבוי שוחזר אל {{name}}",
+    "runSuccess": "הגיבוי נוצר",
+    "uploadDescription": "העלו קובץ ZIP של גיבוי Securo, צפו בתצוגה מקדימה ושחזרו אותו לסביבת עבודה חדשה כברירת מחדל.",
+    "menu": "גיבויים",
+    "storedDescription": "גיבויים שנוצרו באמצעות \"הפעלת גיבוי\" או לפי התזמון של סביבת עבודה זו.",
+    "content": {
+      "configuration": "הגדרות בלבד",
+      "data": "נתונים בלבד",
+      "both": "הגדרות ונתונים"
+    },
+    "counts": {
+      "empty": "0 פריטים",
+      "total": "סה\"כ: {{count}}",
+      "accounts_one": "{{count}} חשבון",
+      "accounts_two": "{{count}} חשבונות",
+      "accounts_other": "{{count}} חשבונות",
+      "transactions_one": "{{count}} תנועה",
+      "transactions_two": "{{count}} תנועות",
+      "transactions_other": "{{count}} תנועות",
+      "categories_one": "{{count}} קטגוריה",
+      "categories_two": "{{count}} קטגוריות",
+      "categories_other": "{{count}} קטגוריות",
+      "rules_one": "{{count}} כלל",
+      "rules_two": "{{count}} כללים",
+      "rules_other": "{{count}} כללים",
+      "budgets_one": "{{count}} תקציב",
+      "budgets_two": "{{count}} תקציבים",
+      "budgets_other": "{{count}} תקציבים",
+      "goals_one": "{{count}} יעד",
+      "goals_two": "{{count}} יעדים",
+      "goals_other": "{{count}} יעדים"
+    },
+    "configSaved": "הגדרות הגיבוי נשמרו",
+    "runTitle": "גיבוי עכשיו",
+    "contentLabel": "תוכן הגיבוי",
+    "restore": "שחזור",
+    "previewError": "לא ניתן לקרוא את קובץ הגיבוי",
+    "configError": "לא ניתן לשמור את הגדרות הגיבוי",
+    "configLoadError": "לא ניתן לטעון את הגדרות הגיבוי.",
+    "invalidRetention": "הזינו מספר שלם חיובי.",
+    "unknownWorkspace": "סביבת עבודה לא ידועה",
+    "running": "מריץ…",
+    "emptyStored": "אין עדיין גיבויים שמורים. הריצו גיבוי עכשיו או הפעילו את התזמון.",
+    "listError": "לא ניתן לטעון את הגיבויים השמורים.",
+    "downloadNow": "הורדת ZIP",
+    "subtitle": "ייצוא, תזמון ושחזור של גיבויי סביבת עבודה, ללא נתוני התחברות או פרטי גישה לבנק.",
+    "restoreMode": {
+      "current_workspace": "סביבת העבודה הנוכחית",
+      "new_workspace": "סביבת עבודה חדשה"
+    },
+    "confirmRestoreLabel": "הקלידו RESTORE כדי להחליף את סביבת העבודה הנוכחית",
+    "runDescription": "צרו גיבוי מנוהל בשרת או הורידו קובץ ZIP ישירות.",
+    "restoreModeLabel": "יעד השחזור",
+    "uploadFileLabel": "קובץ ZIP של גיבוי",
+    "lastRun": "הרצה אחרונה",
+    "noFileSelected": "לא נבחר קובץ",
+    "weekly": "שבועי",
+    "runNow": "הפעלת גיבוי",
+    "chooseFile": "בחירת קובץ",
+    "previewing": "קורא את הגיבוי…",
+    "safeBadge": "ללא סודות",
+    "download": "הורדה",
+    "storedTitle": "גיבויים שמורים",
+    "noFile": "בחרו קודם קובץ ZIP של גיבוי.",
+    "daily": "יומי",
+    "destinationHint": "גיבויים שמורים נשמרים לאורך זמן רק כאשר /app/data/backups מחובר כאחסון (BACKUP_HOST_PATH ב-Docker Compose או persistence.backups.enabled ב-Helm).",
+    "noBackupSelected": "בחרו קודם גיבוי שמור.",
+    "currentWorkspaceWarning": "אפשרות הרסנית זו מחליפה את הנתונים התואמים בסביבת העבודה הנוכחית בטרנזקציה אחת. שחזור לסביבת עבודה חדשה בטוח יותר.",
+    "uploadTitle": "שחזור מהעלאה",
+    "retentionDays": "גיל מרבי בימים",
+    "restoring": "משחזר…",
+    "scheduleTitle": "תזמון ושמירה",
+    "retentionCount": "שמירת האחרונים",
+    "nextRun": "הרצה הבאה",
+    "secretNotice": "הגיבויים אינם כוללים במכוון נתוני התחברות של משתמשים, מפתחות גישה (passkeys), פרטי גישה לספקים ואסימוני בנק.",
+    "scheduleLabel": "תזמון",
+    "restoreError": "לא ניתן לשחזר את הגיבוי",
+    "scheduleDescription": "תהליכי רקע בודקים כל שעה את התזמונים הפעילים. יש להפעיל אחסון גיבויים קבוע בהתקנה שלכם כדי שקובצי ה-ZIP המתוזמנים יישמרו לאורך זמן.",
+    "optional": "אופציונלי",
+    "runError": "לא ניתן ליצור גיבוי",
+    "title": "גיבויים",
+    "restoreUpload": "שחזור הגיבוי שהועלה",
+    "restoreStoredTitle": "שחזור גיבוי שמור"
   },
   "update": {
     "title": "עדכון שרת",
@@ -3832,6 +4014,15 @@
       "none": "אין חשבוניות לתשלום בקרוב.",
       "noClient": "ללא לקוח"
     },
+    "flagged": {
+      "title": "עסקאות מסומנות",
+      "hint": "מה שסימנת כדי לחזור אליו, תזכורות באיחור קודם.",
+      "none": "אין עסקאות מסומנות.",
+      "overdue": "באיחור: {{count}}",
+      "dueSoon": "השבוע: {{count}}",
+      "noDate": "ללא תאריך",
+      "more": "מסומנות נוספות: {{count}}"
+    },
     "recurringRevenue": {
       "title": "הכנסה חוזרת",
       "hint": "כמה מכניסות החשבוניות החוזרות בכל חודש, ומה אבד לאחרונה."
@@ -3839,5 +4030,9 @@
   },
   "demo": {
     "banner": "דמו ציבורי — הנתונים נמחקים בכל שעה. אל תזינו מידע שלא הייתם משתפים."
+  },
+  "offline": {
+    "title": "אין חיבור לשרת",
+    "description": "אתם במצב לא מקוון או ש-Securo מופעל מחדש. הנתונים שלכם בטוחים ושום דבר לא השתנה. נתחבר מחדש אוטומטית ברגע שהשרת יגיב."
   }
 }

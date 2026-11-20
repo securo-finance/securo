@@ -895,6 +895,7 @@
   },
   "transactions": {
     "title": "Tranzakciók",
+    "card": "Kártya",
     "mortgageAllocation": "Jelzáloghitel-törlesztés bontása",
     "mortgagePrincipal": "Tőketörlesztés",
     "mortgageInterest": "Kamat",
@@ -997,6 +998,31 @@
     "ignoredShow": "Megjelenítés",
     "ignoredHide": "Elrejtés",
     "ignoredHiddenValue": "Rejtett",
+    "flagged": "Megjelölt",
+    "flagAction": "Megjelölés",
+    "unflagAction": "Jelölés törlése",
+    "flagSuccess": "Tranzakció megjelölve",
+    "unflagSuccess": "Jelölés törölve",
+    "flagFilterAll": "Összes megjelölt",
+    "flagFilterOverdue": "Lejárt",
+    "flagFilterSoon": "Ezen a héten esedékes",
+    "flagOverdue": "Lejárt",
+    "flagDueOn": "Esedékes: {{date}}",
+    "flagReminder": "Emlékeztető",
+    "flagReminderHint": "nem kötelező",
+    "flagRemindOn": "Emlékeztess",
+    "flagPickDate": "Dátum választása",
+    "flagClearDate": "Dátum törlése",
+    "flagNote": "Megjegyzés",
+    "flagNotePlaceholder": "pl. a visszatérítésre várok",
+    "bulkFlagSuccess": "Megjelölt tranzakciók: {{count}}",
+    "bulkUnflagSuccess": "Eltávolított jelölések: {{count}}",
+    "flagOverdueCount": "Lejárt jelölések: {{count}}",
+    "flagPreset": {
+      "tomorrow": "Holnap",
+      "nextWeek": "Egy hét múlva",
+      "nextMonth": "Egy hónap múlva"
+    },
     "statusCleared": "Elszámolt",
     "sortAsc": "Növekvő rendezés",
     "sortDesc": "Csökkenő rendezés",
@@ -1198,6 +1224,12 @@
     "balanceCreditCard": "Tartozás",
     "balanceCreditCardHint": "Add meg pozitív számként, mennyivel tartozol jelenleg ezen a kártyán. Hagyd 0-n, ha nincs tartozásod.",
     "balanceDate": "Egyenleg dátuma",
+    "linkedCards": "Kapcsolt kártyák",
+    "linkedCardsHint": "Címkével különböztetheted meg őket a tranzakciókban.",
+    "noLinkedCards": "Még nem azonosítottunk kártyavégződést.",
+    "cardEnding": "{{number}} végződés",
+    "cardLabel": "Címke",
+    "cardLabelPlaceholder": "Címke hozzáadása",
     "lastSync": "Utolsó szinkronizálás",
     "multiInstitutionLink": "{{provider}} · {{count}} intézmény",
     "sync": "Szinkronizálás",
@@ -1519,6 +1551,8 @@
     "copyPreviewCount": "Másolandó kategóriák: {{count}}",
     "copyPreviewTotal": "Másolandó összeg: {{amount}}",
     "copyPreviewEmpty": "A kiválasztott hónapban nincs másolható költségvetés.",
+    "copyPreviewAllExist": "A forrás hónap minden kategóriájának már van költségvetése ekkor: {{month}}. Az összegek másolásához vagy a módosítás alkalmazásához válaszd a cserét.",
+    "copyPreviewNoChange": "A forrás hónap minden költségvetése már ezeken az összegeken áll ekkor: {{month}}.",
     "copyPreviewError": "A forráshónapot nem sikerült betölteni.",
     "copyAmountTooLarge": "A módosított összeg meghaladja a költségvetési limitet. Csökkentse a százalékos módosítást.",
     "copyConfirm": "Költségvetések másolása",
@@ -1586,6 +1620,7 @@
     "walletHint": "A cél követése a kiválasztott tárcában lévő összes eszköz együttes értéke alapján."
   },
   "recurring": {
+    "makeFromTransaction": "Új ismétlődő tranzakció ebből a tranzakcióból",
     "title": "Ismétlődő tranzakciók",
     "add": "Ismétlődő hozzáadása",
     "edit": "Ismétlődő szerkesztése",
@@ -1637,7 +1672,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "After a {{days}}-day gap",
-    "priceChangeInsufficient": "At least 3 matched posted charges are needed before Securo reports a stable price change."
+    "priceChangeInsufficient": "At least 3 matched posted charges are needed before Securo reports a stable price change.",
+    "summaryIncome": "Bevételek",
+    "summaryExpenses": "Kiadások",
+    "summaryNet": "Nettó",
+    "summaryTransfers": "Kihagyott átvezetések: {{count}}",
+    "summaryUnconverted": "Árfolyam nélkül, kihagyva: {{count}}",
+    "summaryFailed": "Nem sikerült betölteni a hónap összesítőit"
   },
   "rules": {
     "searchPlaceholder": "Szabályok keresése...",
@@ -1743,6 +1784,7 @@
     "fieldPayee": "Partner",
     "fieldDate": "Dátum",
     "fieldStatus": "Állapot",
+    "fieldProviderCategory": "Szolgáltató kategóriája",
     "opContains": "tartalmazza",
     "opNotContains": "nem tartalmazza",
     "opEquals": "egyenlő",
@@ -2009,6 +2051,8 @@
     "undoImport": "Visszavonod az importálást?",
     "undoOrdersDescription": "Ez törli a fájlból ({{filename}}) importált {{count}} megbízást, és újraszámolja az érintett pozíciókat. Az importálás során létrehozott pozíciók is törlődnek.",
     "undone": "Importálás visszavonva",
+    "undoOversell": "Ez az import nem vonható vissza: egy bent maradó tétel {{attempted}} egységet ad el, miközben {{available}} van a birtokban. Előbb szerkessze vagy törölje azt a tételt.",
+    "undoTooLarge": "Ez az import nem vonható vissza: a visszamaradó pozíció túl nagy a tároláshoz.",
     "undoDescription": "Ez törli a fájlból ({{filename}}) importált {{count}} tranzakciót. Ez a művelet nem vonható vissza.",
     "deleting": "Törlés...",
     "deleteAll": "Összes törlése",
@@ -2080,7 +2124,9 @@
       "fee": "Díj",
       "kind": "Vétel/eladás",
       "currency": "Pénznem",
-      "notes": "Jegyzetek"
+      "notes": "Jegyzetek",
+      "old_units": "Darab előtte",
+      "new_units": "Darab utána"
     },
     "walletWarningTitle": "Már szerepel a portfóliódban",
     "warning": {
@@ -2089,7 +2135,8 @@
     },
     "kind": {
       "buy": "Vétel",
-      "sell": "Eladás"
+      "sell": "Eladás",
+      "split": "Felosztás"
     },
     "reason": {
       "missing_ticker": "hiányzó ticker",
@@ -2101,8 +2148,15 @@
       "unknown_ticker": "az árfolyam-szolgáltató nem ismeri a tickert",
       "oversell": "több egységet adnál el, mint amennyi a pozícióban van",
       "no_fx_rate": "nincs árfolyam a megbízás dátumára",
-      "possible_duplicate": "lehet, hogy egy korábbi importból már szerepel ebben a pozícióban"
-    }
+      "possible_duplicate": "lehet, hogy egy korábbi importból már szerepel ebben a pozícióban",
+      "invalid_split": "olvashatatlan felosztási arány, vagy felosztás mennyiséggel, árral vagy díjjal",
+      "split_not_allowed": "bankkal szinkronizált pozíciónál nem rögzíthető felosztás",
+      "split_in_future": "a felosztás nem lehet jövőbeli dátumú",
+      "nothing_held_before_split": "a felosztás előtt nincs darab a pozícióban",
+      "too_large": "a pozíció túl nagy lenne a mentéshez",
+      "holding_moved": "a pozíció az import közben átnevezésre került vagy másik pénztárcába került"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Eszközök",
@@ -2207,6 +2261,9 @@
     "soldAssets": "Eladott eszközök",
     "archivedAssets": "Archivált eszközök",
     "noAssets": "Még nincs eszköz",
+    "showArchived": "Archiváltak megjelenítése",
+    "archivedNotCounted": "Nem számítanak bele a portfólió összértékébe.",
+    "archivedLoadFailed": "Nem sikerült betölteni az archivált eszközöket.",
     "created": "Eszköz létrehozva",
     "updated": "Eszköz frissítve",
     "deleted": "Eszköz törölve",
@@ -2361,7 +2418,39 @@
     "statementViewTransactions": "Tranzakciók megtekintése",
     "statementUncategorizedIncome": "Kategorizálatlan bevétel",
     "statementUncategorizedExpense": "Kategorizálatlan kiadás",
-    "statementToggleGroup": "{{name}} kategóriáinak mutatása"
+    "statementToggleGroup": "{{name}} kategóriáinak mutatása",
+    "pluginReport": {
+      "total": {
+        "expenses": "Összes kiadás",
+        "income": "Összes bevétel",
+        "net": "Egyenleg"
+      },
+      "none": {
+        "category": "Kategória nélkül",
+        "category_group": "Csoport nélkül",
+        "payee": "Kedvezményezett nélkül",
+        "account": "Számla nélkül",
+        "month": "Dátum nélkül"
+      },
+      "groupBy": {
+        "category": "Kategória",
+        "category_group": "Csoport",
+        "payee": "Kedvezményezett",
+        "account": "Számla",
+        "month": "Hónap"
+      },
+      "measure": {
+        "expenses": "Kiadások",
+        "income": "Bevételek",
+        "net": "Egyenleg"
+      },
+      "share": "Arány",
+      "computed": "A bővítmény számolja",
+      "totalRow": "Összesen",
+      "page": "{{page}}. oldal / {{pages}}",
+      "previousPage": "Előző oldal",
+      "nextPage": "Következő oldal"
+    }
   },
   "payees": {
     "noPayeeFound": "Nincs ilyen partner.",
@@ -2522,6 +2611,7 @@
     "download": "Letöltés",
     "closePreview": "Előnézet bezárása",
     "remove": "Eltávolítás",
+    "refresh": "Frissítés",
     "invalidAmount": "Adjon meg egy érvényes összeget, például {{example}}."
   },
   "splitGroups": {
@@ -2665,6 +2755,15 @@
     "brandSelfHosted": "Saját szerveren futó",
     "brandPrivate": "Alapjaiban privát"
   },
+  "accountantExport": {
+    "title": "Export a könyvelőnek",
+    "description": "Töltse le egy időszak kategorizált tranzakcióit és eredménykimutatását olyan formátumban, amelyet a könyvelőprogram közvetlenül megnyit. Az összegek a tranzakció teljes értéke, mielőtt másokkal megosztaná.",
+    "startDate": "Kezdő dátum",
+    "endDate": "Záró dátum",
+    "download": "Csomag letöltése",
+    "error": "Nem sikerült elkészíteni az exportot",
+    "formatHint": "Egy zip a transactions.csv és a profit-and-loss.csv fájllal, olyan elválasztókkal és kódolással, amelyet a táblázatkezelők és könyvelőprogramok módosítás nélkül olvasnak."
+  },
   "backup": {
     "button": "Biztonsági mentés",
     "downloading": "Letöltés...",
@@ -2676,7 +2775,84 @@
     "passwordPlaceholder": "Hagyd üresen titkosítatlan mentéshez",
     "passwordTooShort": "Legalább {{min}} karaktert adj meg",
     "encryptionNote": "Az archívum AES-256 titkosítású, és bármely szabványos tömörítőprogrammal megnyitható. A Securo nem tárolja ezt a jelszót, és nélküle nem tudja helyreállítani a fájlt.",
-    "successEncrypted": "A titkosított biztonsági mentés sikeresen letöltve"
+    "successEncrypted": "A titkosított biztonsági mentés sikeresen letöltve",
+    "restoreSuccess": "A biztonsági mentés visszaállítva a(z) {{name}} munkaterületre",
+    "runSuccess": "Biztonsági mentés létrehozva",
+    "uploadDescription": "Tölts fel egy Securo biztonsági mentést tartalmazó ZIP-fájlt, tekintsd meg az előnézetét, majd állítsd vissza – alapértelmezés szerint egy új munkaterületre.",
+    "menu": "Biztonsági mentések",
+    "storedDescription": "A „Biztonsági mentés indítása” művelettel vagy a munkaterület ütemezése alapján létrehozott mentések.",
+    "content": {
+      "configuration": "Csak konfiguráció",
+      "data": "Csak adatok",
+      "both": "Konfiguráció és adatok"
+    },
+    "counts": {
+      "empty": "0 elem",
+      "total": "Összesen: {{count}}",
+      "accounts_one": "{{count}} számla",
+      "accounts_other": "{{count}} számla",
+      "transactions_one": "{{count}} tranzakció",
+      "transactions_other": "{{count}} tranzakció",
+      "categories_one": "{{count}} kategória",
+      "categories_other": "{{count}} kategória",
+      "rules_one": "{{count}} szabály",
+      "rules_other": "{{count}} szabály",
+      "budgets_one": "{{count}} költségkeret",
+      "budgets_other": "{{count}} költségkeret",
+      "goals_one": "{{count}} cél",
+      "goals_other": "{{count}} cél"
+    },
+    "configSaved": "A biztonsági mentés beállításai mentve",
+    "runTitle": "Biztonsági mentés most",
+    "contentLabel": "A biztonsági mentés tartalma",
+    "restore": "Visszaállítás",
+    "previewError": "Nem sikerült beolvasni a biztonsági mentés fájlját",
+    "configError": "Nem sikerült menteni a biztonsági mentés beállításait",
+    "configLoadError": "Nem sikerült betölteni a biztonsági mentés beállításait.",
+    "invalidRetention": "Adjon meg egy pozitív egész számot.",
+    "unknownWorkspace": "Ismeretlen munkaterület",
+    "running": "Folyamatban…",
+    "emptyStored": "Még nincsenek tárolt biztonsági mentések. Indíts egyet most, vagy engedélyezd az ütemezést.",
+    "listError": "A tárolt biztonsági mentések nem tölthetők be.",
+    "downloadNow": "ZIP letöltése",
+    "subtitle": "Munkaterület biztonsági mentéseinek exportálása, ütemezése és visszaállítása felhasználói hitelesítési és banki hozzáférési adatok nélkül.",
+    "restoreMode": {
+      "current_workspace": "Jelenlegi munkaterület",
+      "new_workspace": "Új munkaterület"
+    },
+    "confirmRestoreLabel": "A jelenlegi munkaterület lecseréléséhez írd be: RESTORE",
+    "runDescription": "Hozz létre egy kezelt biztonsági mentést a szerveren, vagy tölts le közvetlenül egy ZIP-fájlt.",
+    "restoreModeLabel": "Visszaállítás célja",
+    "uploadFileLabel": "Biztonsági mentés ZIP-fájlja",
+    "lastRun": "Legutóbbi futtatás",
+    "noFileSelected": "Nincs fájl kiválasztva",
+    "weekly": "Hetente",
+    "runNow": "Biztonsági mentés indítása",
+    "chooseFile": "Fájl kiválasztása",
+    "previewing": "Biztonsági mentés beolvasása…",
+    "safeBadge": "Titkos adatok nélkül",
+    "download": "Letöltés",
+    "storedTitle": "Tárolt biztonsági mentések",
+    "noFile": "Előbb válassz egy biztonsági mentést tartalmazó ZIP-fájlt.",
+    "daily": "Naponta",
+    "destinationHint": "A tárolt biztonsági mentések csak akkor maradnak meg tartósan, ha a /app/data/backups csatolva van (Docker Compose esetén a BACKUP_HOST_PATH, Helm esetén a persistence.backups.enabled beállítással).",
+    "noBackupSelected": "Előbb válassz egy tárolt biztonsági mentést.",
+    "currentWorkspaceWarning": "Ez az adatvesztéssel járó lehetőség egyetlen tranzakción belül lecseréli a jelenlegi munkaterület egyező adatait. Biztonságosabb új munkaterületre visszaállítani.",
+    "uploadTitle": "Visszaállítás feltöltött fájlból",
+    "retentionDays": "Megőrzési idő (nap)",
+    "restoring": "Visszaállítás…",
+    "scheduleTitle": "Ütemezés és megőrzés",
+    "retentionCount": "Legutóbbi mentések száma",
+    "nextRun": "Következő futtatás",
+    "secretNotice": "A biztonsági mentések szándékosan nem tartalmaznak felhasználói hitelesítési adatokat, jelkulcsokat, szolgáltatói hozzáférési adatokat és banki tokeneket.",
+    "scheduleLabel": "Ütemezés",
+    "restoreError": "Nem sikerült visszaállítani a biztonsági mentést",
+    "scheduleDescription": "Az óránként futó háttérfolyamatok ellenőrzik az engedélyezett ütemezéseket. Ahhoz, hogy az ütemezett ZIP-fájlok tartósan megmaradjanak, a telepítésben engedélyezni kell a biztonsági mentések állandó tárolását.",
+    "optional": "Nem kötelező",
+    "runError": "Nem sikerült létrehozni a biztonsági mentést",
+    "title": "Biztonsági mentések",
+    "restoreUpload": "Feltöltött biztonsági mentés visszaállítása",
+    "restoreStoredTitle": "Tárolt biztonsági mentés visszaállítása"
   },
   "update": {
     "title": "Szerverfrissítés",
@@ -3807,6 +3983,15 @@
       "none": "Nincs esedékes számla.",
       "noClient": "Nincs ügyfél"
     },
+    "flagged": {
+      "title": "Megjelölt tranzakciók",
+      "hint": "Amit visszatérésre megjelöltél, elöl a lejárt emlékeztetők.",
+      "none": "Nincs megjelölt tranzakció.",
+      "overdue": "Lejárt: {{count}}",
+      "dueSoon": "Ezen a héten: {{count}}",
+      "noDate": "Nincs dátum",
+      "more": "További megjelöltek: {{count}}"
+    },
     "recurringRevenue": {
       "title": "Ismétlődő bevétel",
       "hint": "Amit az ismétlődő számlák havonta hoznak, és ami nemrég elveszett."
@@ -3814,5 +3999,9 @@
   },
   "demo": {
     "banner": "Nyilvános demó – az adatok óránként törlődnek. Ne adjon meg semmit, amit nem osztana meg."
+  },
+  "offline": {
+    "title": "A szerver nem érhető el",
+    "description": "Offline vagy, vagy a Securo újraindul. Az adataid biztonságban vannak, és semmi sem változott. Amint a szerver válaszol, automatikusan újracsatlakozunk."
   }
 }

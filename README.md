@@ -80,86 +80,13 @@ retain their original bank date in the transaction list.
 
 Everything beyond the core is off by default, needs a single env flag, and costs nothing until you turn it on. Full setup guides live in the [documentation](https://docs.usesecuro.com/):
 
-- **Bank sync**: Pluggy for Brazilian banks, Enable Banking for ~2500 European PSD2 banks, and SimpleFIN for US and international banks. [Setup guides](https://docs.usesecuro.com/features/bank-sync/) Administrators can also set the credentials in the app, under **Admin Settings → Bank connections**, without a restart ([provider settings](docs/provider-settings.md)).
-- **Login & security**: passkeys (Touch ID, Face ID, security keys), TOTP two-factor, and OIDC single sign-on with account linking and provider role sync. [Guide](https://docs.usesecuro.com/features/security/)
-- **Exchange rates**: a free [Open Exchange Rates](https://openexchangerates.org/) key, set in `.env` or under **Admin Settings → Exchange rates**, enables automatic currency conversion; without one, cross-currency amounts fall back to 1:1 with a visual warning. [Details](https://docs.usesecuro.com/deployment/docker/)
-- **Timezone**: balances, budgets, and due dates turn over at midnight in your application timezone, set once in Admin Settings, with per-workspace overrides. [Details](https://docs.usesecuro.com/features/workspaces/)
+- **Bank sync**: Pluggy for Brazilian banks, Enable Banking for ~2500 European PSD2 banks, and SimpleFIN for US and international banks. [Setup guides](https://docs.usesecuro.com/docs/features/bank-sync/) Administrators can also set the credentials in the app, under **Admin Settings → Bank connections**, without a restart ([provider settings](docs/provider-settings.md)).
+- **Login & security**: passkeys (Touch ID, Face ID, security keys), TOTP two-factor, and OIDC single sign-on with account linking and provider role sync. Signing out also ends the provider's session (RP-initiated logout, using its `end_session_endpoint` or `OIDC_LOGOUT_URL`). [Guide](https://docs.usesecuro.com/docs/features/security/)
+- **Exchange rates**: a free [Open Exchange Rates](https://openexchangerates.org/) key, set in `.env` or under **Admin Settings → Exchange rates**, enables automatic currency conversion; without one, cross-currency amounts fall back to 1:1 with a visual warning. [Details](https://docs.usesecuro.com/docs/deployment/docker/)
+- **Timezone**: balances, budgets, and due dates turn over at midnight in your application timezone, set once in Admin Settings, with per-workspace overrides. [Details](https://docs.usesecuro.com/docs/features/workspaces/)
+- **Attachment storage**: attachments and invoice logos stay on local disk by default; set `STORAGE_PROVIDER=s3` to keep them in a private S3-compatible bucket instead. [Guide](https://docs.usesecuro.com/docs/deployment/docker/#storing-attachments-in-s3)
 - **Plugins**: install community plugins into a workspace from the plugin catalog, with a preview before anything changes. A plugin's icon is served by Securo, which reads it from the catalog, so browsing never sends your browser anywhere else. Data plugins add categories and rules and need only `PLUGINS_ENABLED=true`. Plugins with code, such as sync from a service you use, also need the `plugins` Compose profile: they run in their own containers, without the core secrets or the database, and can reach only the hosts they declare.
-- **AI Agents**: self-hosted assistants over your data, multi-provider, with tool use and a per-agent knowledge base. [Guide](https://docs.usesecuro.com/features/agents/)
-
-## Attachment Storage
-
-Attachments and invoice logos use local disk by default. Set `STORAGE_PROVIDER=s3`
-to store them in a private Amazon S3 or S3-compatible bucket (including Garage
-and MinIO). Create the bucket first; Securo does not create buckets or change
-their access policies. Downloads continue through Securo's existing authorized
-API routes, so no public bucket, browser S3 credentials, or bucket CORS policy
-is needed.
-
-Example for Garage in the root `.env` (Compose) or `backend/.env` (direct install):
-
-```dotenv
-STORAGE_PROVIDER=s3
-STORAGE_S3_BUCKET=securo-attachments
-STORAGE_S3_REGION=garage
-STORAGE_S3_ENDPOINT_URL=https://s3.example.com
-STORAGE_S3_ADDRESSING_STYLE=path
-STORAGE_S3_ACCESS_KEY=your-access-key
-STORAGE_S3_SECRET_KEY=your-secret-key
-```
-
-Use the region configured on your Garage server. S3 support ships in the regular
-backend image, so no special image or tag is needed; the S3 client is only loaded
-when `STORAGE_PROVIDER=s3`. For Amazon S3, omit
-`STORAGE_S3_ENDPOINT_URL`, use the bucket's AWS region, and leave
-`STORAGE_S3_ADDRESSING_STYLE=auto` (the default). `virtual` is also supported.
-Temporary credentials can include `STORAGE_S3_SESSION_TOKEN`. Omit both access
-and secret keys to use the SDK's credential chain, such as an IAM role; the
-container must actually have access to that identity. Standard AWS credential
-environment variables are not automatically forwarded by the bundled Compose
-files. HTTPS certificate verification remains enabled; `http://` endpoints are
-rejected unless `STORAGE_S3_ALLOW_INSECURE_HTTP=true` is set (local development
-only, as data is sent unencrypted).
-
-On AWS, grant `s3:GetObject`, `s3:PutObject`, and `s3:DeleteObject` on the
-bucket's objects, plus `s3:ListBucket` on the bucket so missing objects return
-404 instead of 403. Garage uses its own bucket permissions: grant the dedicated
-application key read and write; owner permissions are not needed. Configure the
-same storage settings for all backend, worker, and MCP processes. After changing
-`.env`, run `docker compose up -d` to recreate containers with the new settings
-(use `docker compose -f docker-compose.prod.yml up -d` for the production file).
-Local attachment volumes are unused in S3 mode. AI knowledge documents and
-embedding caches still use their separate local storage settings.
-
-### Moving existing attachments
-
-The storage setting applies to every attachment; individual records do not
-remember their previous provider. Stop the backend and any worker/MCP processes
-that can write files, then copy the **contents** of the existing attachments
-directory into the bucket, preserving relative paths as object keys. This also
-copies invoice attachments and logos. Verify file counts and contents before
-switching the setting and restarting. No database migration is needed. Keep the
-original copy until verification is complete; reverting after new S3 uploads
-requires copying those objects back to local storage too.
-
-Back up both PostgreSQL and the bucket. Bucket replication does not replace
-backups and a database-only restore does not recover attachment contents.
-
-### Testing an S3-compatible server
-
-Unit tests run without an S3 server. An optional integration test exercises the
-real SDK over HTTP(S), including bytes, content type, and idempotent deletion.
-Use a **dedicated test bucket** and provide these variables only to the test
-process (it writes and deletes randomly prefixed test objects):
-
-```bash
-SECURO_S3_TEST_ENDPOINT=https://s3.example.com \
-SECURO_S3_TEST_REGION=garage \
-SECURO_S3_TEST_BUCKET=securo-storage-tests \
-SECURO_S3_TEST_ACCESS_KEY=test-key \
-SECURO_S3_TEST_SECRET_KEY=test-secret \
-uv run --directory backend --extra dev pytest tests/test_s3_storage_integration.py -v
-```
+- **AI Agents**: self-hosted assistants over your data, multi-provider, with tool use and a per-agent knowledge base. [Guide](https://docs.usesecuro.com/docs/features/agents/)
 
 ## AI-Assisted Development
 

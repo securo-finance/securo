@@ -7,7 +7,7 @@ import { formatAmountInput, formatCurrency, parseAmountInput } from '@/lib/forma
 import { amountToCents, parseCents } from '@/lib/mortgage-split'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
-import { assets as assetsApi, currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi, mortgagePayments as mortgagePaymentsApi } from '@/lib/api'
+import { accounts as accountsApi, assets as assetsApi, currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi, mortgagePayments as mortgagePaymentsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { extractApiError } from '@/lib/api-errors'
@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input'
 import { DescriptionInput } from '@/components/description-input'
 import { Label } from '@/components/ui/label'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
+import { flagDuePresets } from '@/lib/transaction-flag'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import {
@@ -30,7 +31,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { AlertTriangle, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check } from 'lucide-react'
+import { AlertTriangle, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Flag, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -449,6 +450,14 @@ function TransactionForm({
     queryKey: ['payees'],
     queryFn: payeesApi.list,
   })
+  const { data: linkedCards = [] } = useQuery({
+    queryKey: ['accounts', transaction?.account_id, 'linked-cards'],
+    queryFn: () => accountsApi.linkedCards(transaction?.account_id ?? ''),
+    enabled: !!transaction?.account_id && !!transaction.card_masked_number,
+  })
+  const linkedCardLabel = linkedCards.find(
+    (card) => card.masked_number === transaction?.card_masked_number,
+  )?.label
   const seed = transaction ?? duplicateDraft
   const [description, setDescription] = useState(seed?.description ?? '')
   // Amount fields hold display-locale strings (comma decimals on dot_comma),
@@ -617,6 +626,15 @@ function TransactionForm({
     seed?.exclude_from_pnl ?? false,
   )
   const [togglingIgnore, setTogglingIgnore] = useState(false)
+  const [isFlagged, setIsFlagged] = useState(seed?.is_flagged ?? false)
+  const [togglingFlag, setTogglingFlag] = useState(false)
+  const [flagDueDate, setFlagDueDate] = useState(seed?.flag_due_date ?? '')
+  const [flagNote, setFlagNote] = useState(seed?.flag_note ?? '')
+  const [savedFlagNote, setSavedFlagNote] = useState(seed?.flag_note ?? '')
+  const flagReminderRef = useRef<HTMLDivElement>(null)
+  // Flag and reminder saves can overlap (a note saved on blur as Unflag is
+  // clicked); only the latest one's answer is applied.
+  const flagRequestRef = useRef(0)
   const [recurringLinked, setRecurringLinked] = useState(seed?.recurring_transaction_id != null)
   const [unlinkingRecurring, setUnlinkingRecurring] = useState(false)
   const [addToRuleOpen, setAddToRuleOpen] = useState(false)
@@ -722,6 +740,57 @@ function TransactionForm({
       toast.error(t('common.error'))
     } finally {
       setTogglingIgnore(false)
+    }
+  }
+
+  // Like ignore, a flag acts at once and touches no other field, so it never
+  // saves a half-edited form along with it.
+  const handleToggleFlag = async () => {
+    if (!seed?.id || togglingFlag) return
+    setTogglingFlag(true)
+    try {
+      const request = ++flagRequestRef.current
+      const updated = await transactionsApi.update(seed.id, { is_flagged: !isFlagged })
+      if (request !== flagRequestRef.current) return
+      applyFlagResponse(updated)
+      // Bring the reminder fields into view: the footer is far from them.
+      if (updated.is_flagged) {
+        requestAnimationFrame(() => flagReminderRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }))
+      }
+      toast.success(updated.is_flagged
+        ? t('transactions.flagSuccess')
+        : t('transactions.unflagSuccess'))
+      // Not every opener passes onIgnoreChanged (Dashboard, Account Detail),
+      // so refresh the lists the row comes from here; the flag moves no money.
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['drill-down'] })
+      onIgnoreChanged?.()
+    } catch {
+      toast.error(t('common.error'))
+    } finally {
+      setTogglingFlag(false)
+    }
+  }
+
+  function applyFlagResponse(updated: Transaction) {
+    setIsFlagged(updated.is_flagged ?? false)
+    setFlagDueDate(updated.flag_due_date ?? '')
+    setFlagNote(updated.flag_note ?? '')
+    setSavedFlagNote(updated.flag_note ?? '')
+  }
+
+  // The reminder saves on its own, like the flag, so it never carries a
+  // half-edited form along with it.
+  const saveFlagReminder = async (patch: { flag_due_date?: string | null; flag_note?: string | null }) => {
+    if (!seed?.id) return
+    try {
+      const request = ++flagRequestRef.current
+      const updated = await transactionsApi.update(seed.id, patch)
+      if (request === flagRequestRef.current) applyFlagResponse(updated)
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['drill-down'] })
+    } catch {
+      toast.error(t('common.error'))
     }
   }
 
@@ -1360,6 +1429,18 @@ function TransactionForm({
           )}
         </div>
       </div>
+      {transaction?.card_masked_number && (
+        <div className="space-y-2">
+          <Label>{t('transactions.card')}</Label>
+          {/* Read-only text rather than a disabled input, so a long label
+              wraps and never pushes the ending out of view. */}
+          <div className="flex min-h-9 items-center gap-2 rounded-md border border-input bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground">
+            {linkedCardLabel && <span className="min-w-0 break-words">{linkedCardLabel}</span>}
+            {linkedCardLabel && <span aria-hidden="true">·</span>}
+            <span className="shrink-0 tabular-nums">•••• {transaction.card_masked_number}</span>
+          </div>
+        </div>
+      )}
       {splitByCategory && (
         <TransactionCategoryLinesSection
           amount={parseAmountInput(amount, displayLocale) ?? 0}
@@ -1406,6 +1487,77 @@ function TransactionForm({
           </div>
         )}
       </div>
+
+      {seed?.id && isFlagged && (
+        <div
+          ref={flagReminderRef}
+          className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/[0.04] p-3"
+          data-testid="flag-reminder"
+        >
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <Flag size={14} className="fill-current text-amber-600 dark:text-amber-400" />
+            {t('transactions.flagReminder')}
+            <span className="text-xs font-normal text-muted-foreground">{t('transactions.flagReminderHint')}</span>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">{t('transactions.flagRemindOn')}</Label>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {flagDuePresets().map((preset) => (
+                <Button
+                  key={preset.key}
+                  type="button"
+                  size="sm"
+                  variant={flagDueDate === preset.date ? 'secondary' : 'outline'}
+                  className="h-8 text-xs"
+                  onClick={() => saveFlagReminder({ flag_due_date: preset.date })}
+                >
+                  {t(`transactions.flagPreset.${preset.key}`)}
+                </Button>
+              ))}
+              <div className="flex min-w-[150px] flex-1 items-center gap-1">
+                <DatePickerInput
+                  value={flagDueDate}
+                  onChange={(value) => saveFlagReminder({ flag_due_date: value || null })}
+                  placeholder={t('transactions.flagPickDate')}
+                  className="h-8 w-full justify-start text-xs"
+                />
+                {flagDueDate && (
+                  <button
+                    type="button"
+                    className="h-8 w-8 inline-flex shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => saveFlagReminder({ flag_due_date: null })}
+                    title={t('transactions.flagClearDate')}
+                    aria-label={t('transactions.flagClearDate')}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="flag-note" className="text-xs">{t('transactions.flagNote')}</Label>
+            <Input
+              id="flag-note"
+              value={flagNote}
+              maxLength={500}
+              onChange={(e) => setFlagNote(e.target.value)}
+              onBlur={() => {
+                if (flagNote.trim() !== savedFlagNote.trim()) saveFlagReminder({ flag_note: flagNote })
+              }}
+              onKeyDown={(e) => {
+                // Enter saves the note instead of submitting the whole form.
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  e.currentTarget.blur()
+                }
+              }}
+              placeholder={t('transactions.flagNotePlaceholder')}
+              className="h-8 text-sm"
+            />
+          </div>
+        </div>
+      )}
 
       <div className="space-y-2">
         <Label>{t('transactions.notes')} <span className="text-muted-foreground font-normal text-xs">({t('transactions.notesHint')})</span></Label>
@@ -1623,6 +1775,18 @@ function TransactionForm({
             >
               {isIgnored ? <Eye size={14} /> : <EyeClosed size={14} />}
               {isIgnored ? t('transactions.unignoreAction') : t('transactions.ignoreAction')}
+            </Button>
+          )}
+          {seed?.id && (
+            <Button
+              type="button"
+              variant={isFlagged ? 'secondary' : 'outline'}
+              onClick={handleToggleFlag}
+              disabled={loading || togglingFlag}
+              className="gap-1.5 whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
+            >
+              <Flag size={14} className={isFlagged ? 'fill-current text-amber-600 dark:text-amber-400' : undefined} />
+              {isFlagged ? t('transactions.unflagAction') : t('transactions.flagAction')}
             </Button>
           )}
           {transaction && onCreateRule && (

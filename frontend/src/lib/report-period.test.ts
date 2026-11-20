@@ -4,6 +4,7 @@ import {
   addMonthsIso,
   alignedSpanMonths,
   daysBetween,
+  explicitWindow,
   periodWindow,
   rollingStart,
   windowMonths,
@@ -234,5 +235,22 @@ describe('alignedSpanMonths', () => {
 
   it('declines a range that stops short of the month end', () => {
     expect(alignedSpanMonths({ from: '2026-01-01', to: '2026-10-26' })).toBeNull()
+  })
+})
+
+describe('explicitWindow', () => {
+  const today = '2026-09-12'
+  it("dates a preset's current window, which the API otherwise anchors itself", () => {
+    expect(explicitWindow({ kind: 'rolling', months: 12 }, today, 0)).toEqual({ from: rollingStart(today, 12), to: today })
+    expect(explicitWindow({ kind: 'ytd', fyStartMonth: 1 }, today, 0)).toEqual({ from: '2026-01-01', to: today })
+    expect(explicitWindow({ kind: 'ytd', fyStartMonth: 4 }, '2026-02-10', 0)).toEqual({ from: '2025-04-01', to: '2026-02-10' })
+    expect(explicitWindow({ kind: 'days', days: 30 }, today, 0)).toEqual({ from: '2026-08-14', to: today })
+    expect(explicitWindow({ kind: 'month', anchorDelta: 0 }, today, 0)).toEqual({ from: '2026-09-01', to: today })
+  })
+
+  it('keeps a stepped window and a custom range as they are, and has none for a half-picked range', () => {
+    expect(explicitWindow({ kind: 'days', days: 30 }, today, -1)).toEqual(periodWindow({ kind: 'days', days: 30 }, today, -1))
+    expect(explicitWindow({ kind: 'custom' }, today, 0, { from: '2026-01-01', to: '2026-03-31' })).toEqual({ from: '2026-01-01', to: '2026-03-31' })
+    expect(explicitWindow({ kind: 'custom' }, today, 0, { from: '2026-01-01', to: '' })).toBeNull()
   })
 })

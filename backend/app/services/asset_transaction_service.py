@@ -15,7 +15,7 @@ alone, so the average price moves by the inverse ratio (issue #944).
 import logging
 import uuid
 from datetime import date, datetime, timezone
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Optional
 
 from fastapi import HTTPException, status
@@ -48,10 +48,50 @@ _MAX_SPLIT_UNITS = 1_000_000
 _MAX_STORED_VALUE = Decimal("999999999.999999")
 # The most assets.average_price can hold: it is Numeric(18, 6).
 _MAX_STORED_PRICE = Decimal("999999999999.999999")
+# The most asset_transactions.quantity holds, same Numeric(18, 6). A number
+# past it cannot even be rounded to the column's scale.
+_MAX_QUANTITY = Decimal("999999999999.999999")
+
+_TOO_LARGE_DETAIL = (
+    "This would leave the holding too large to store. "
+    "Check the quantity, price and ratio."
+)
 
 
 def _d(value) -> Decimal:
     return Decimal(str(value or 0))
+
+
+# What `asset_transactions.quantity` stores: Numeric(18, 6). A broker file can
+# state more decimals than that, and PostgreSQL would round on the way in, so
+# the number the ledger is checked on has to be the one that lands there. See
+# `stored_quantity`.
+_QUANTITY_QUANTUM = Decimal("0.000001")
+
+
+def fmt_units(value: Decimal) -> str:
+    return f"{value:.6f}".rstrip("0").rstrip(".")
+
+
+def quantity_too_large(value: Decimal) -> bool:
+    """Whether a quantity has more digits than the column (and its scale) holds.
+
+    `stored_quantity` cannot even round a number this size: `quantize` needs
+    more digits of precision than the decimal context keeps, and raises instead
+    of answering. The caller reports it as too large, the way the size check
+    reports the ledgers that the asset's own columns cannot hold.
+    """
+    return abs(value) > _MAX_QUANTITY
+
+
+def stored_quantity(value: Decimal) -> Decimal:
+    """The quantity as the ledger stores it, so checks and storage agree."""
+    if quantity_too_large(value):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=_TOO_LARGE_DETAIL,
+        )
+    return value.quantize(_QUANTITY_QUANTUM, rounding=ROUND_HALF_UP)
 
 
 def _created(tx: AssetTransaction) -> datetime:
@@ -140,11 +180,37 @@ def _detect_oversell(transactions: list[AssetTransaction]) -> Optional[tuple[Dec
     return None
 
 
-async def _load_txs(session: AsyncSession, asset_id: uuid.UUID) -> list[AssetTransaction]:
-    result = await session.execute(
-        select(AssetTransaction).where(AssetTransaction.asset_id == asset_id)
-    )
+async def _load_txs(
+    session: AsyncSession, asset_id: uuid.UUID, *, refresh: bool = False,
+) -> list[AssetTransaction]:
+    """The holding's ledger. ``refresh`` is for a read that follows a lock: a
+    row this session already loaded would otherwise come back with the values
+    it had then, and the checks would run on a ledger somebody has since
+    edited."""
+    statement = select(AssetTransaction).where(AssetTransaction.asset_id == asset_id)
+    if refresh:
+        statement = statement.execution_options(populate_existing=True)
+    result = await session.execute(statement)
     return list(result.scalars().all())
+
+
+async def _reload_transaction(
+    session: AsyncSession, tx_id: uuid.UUID, workspace_id: uuid.UUID
+) -> Optional[AssetTransaction]:
+    """The row as it stands in the database, or None when it is no longer there.
+
+    A reselect rather than `session.refresh`: if another request deleted this
+    entry while this one waited for the holding lock, `refresh` raises and the
+    request answers 500 where the row is simply gone.
+    """
+    result = await session.execute(
+        select(AssetTransaction)
+        .where(
+            AssetTransaction.id == tx_id, AssetTransaction.workspace_id == workspace_id
+        )
+        .execution_options(populate_existing=True)
+    )
+    return result.scalar_one_or_none()
 
 
 def _raise_if_oversell(transactions: list[AssetTransaction]) -> None:
@@ -156,14 +222,45 @@ def _raise_if_oversell(transactions: list[AssetTransaction]) -> None:
     over = _detect_oversell(transactions)
     if over is not None:
         attempted, available = over
-        fmt = lambda q: f"{q:.6f}".rstrip("0").rstrip(".")  # noqa: E731
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=(
-                f"Cannot sell {fmt(attempted)} units — only {fmt(available)} held at that date. "
+                f"Cannot sell {fmt_units(attempted)} units — "
+                f"only {fmt_units(available)} held at that date. "
                 "Short positions aren't supported."
             ),
         )
+
+
+def nothing_held_before(transactions: list[AssetTransaction], on: date) -> bool:
+    """Whether the ledger holds no units just before `on`, where a split would apply.
+
+    Strictly before: a split is applied ahead of the trades on its own date.
+    """
+    return _recompute([t for t in transactions if t.date < on])["units"] <= 0
+
+
+def split_not_allowed(asset: Asset) -> bool:
+    """Splits live in the ledger of holdings tracked here. A synced holding
+    takes its units from the provider, which reflects the split itself."""
+    return asset.valuation_method != "market_price" or asset.connection_id is not None
+
+
+def too_large_to_store(transactions: list[AssetTransaction], asset: Asset) -> bool:
+    """Whether the ledger would leave more units, more value at the current
+    price or a higher average price than the asset's columns hold.
+
+    The ledger's own limits don't rule this out, and the database would only
+    say so while saving. A quote from before a split is never stored against
+    the new quantity, so it doesn't count.
+    """
+    position = _recompute(transactions)
+    units = position["units"]
+    value = Decimal("0") if _quote_predates_a_split(asset, transactions) else units * _d(asset.last_price)
+    return (
+        max(units, value) > _MAX_STORED_VALUE
+        or _d(position["average_price"]) > _MAX_STORED_PRICE
+    )
 
 
 def _raise_if_nothing_held_before(transactions: list[AssetTransaction], on: date) -> None:
@@ -172,8 +269,7 @@ def _raise_if_nothing_held_before(transactions: list[AssetTransaction], on: date
     holding whose units predate the ledger (a "no cost" holding) would
     recompute its units to zero.
     """
-    # Strictly before: a split is applied ahead of the trades on its own date.
-    if _recompute([t for t in transactions if t.date < on])["units"] <= 0:
+    if nothing_held_before(transactions, on):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=(
@@ -198,9 +294,7 @@ def _raise_if_split_in_future(on: date) -> None:
 
 
 def _raise_if_split_not_allowed(asset: Asset) -> None:
-    # Splits live in the ledger of holdings tracked here. A synced holding
-    # takes its units from the provider, which reflects the split itself.
-    if asset.valuation_method != "market_price" or asset.connection_id is not None:
+    if split_not_allowed(asset):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=(
@@ -218,20 +312,10 @@ def _quote_predates_a_split(asset: Asset, transactions: list[AssetTransaction]) 
 
 
 def _raise_if_too_large_to_store(transactions: list[AssetTransaction], asset: Asset) -> None:
-    # The ledger's own limits can still leave more units, more value at the
-    # current price or a higher average price than the columns hold, and the
-    # database would only say so while saving. A quote from before a split is
-    # never stored against the new quantity, so it doesn't count.
-    position = _recompute(transactions)
-    units = position["units"]
-    value = Decimal("0") if _quote_predates_a_split(asset, transactions) else units * _d(asset.last_price)
-    if (
-        max(units, value) > _MAX_STORED_VALUE
-        or _d(position["average_price"]) > _MAX_STORED_PRICE
-    ):
+    if too_large_to_store(transactions, asset):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="This would leave the holding too large to store. Check the quantity, price and ratio.",
+            detail=_TOO_LARGE_DETAIL,
         )
 
 
@@ -312,7 +396,12 @@ async def _lock_asset(
     Every ledger write takes the Asset lock before touching transaction rows,
     the same order delete_asset uses: a refresh holding the Asset cannot end up
     in a lock cycle with an edit or a delete of one of its entries, which would
-    make PostgreSQL abort one of them.
+    make PostgreSQL abort one of them. The order import takes it too: two
+    writers landing together would otherwise each pass on the ledger they read
+    and the later one would commit over the other's units.
+
+    `populate_existing` because, after waiting for the lock, the row is what is
+    stored now, not the copy this session loaded before.
     """
     result = await session.execute(
         select(Asset)
@@ -376,6 +465,16 @@ async def list_workspace_transactions(
     return [_tx_to_read(tx, asset) for tx, asset in result.all()]
 
 
+def split_ratio_in_range(old_units: Optional[int], new_units: Optional[int]) -> bool:
+    """Both sides of a split are whole numbers from 1 to `_MAX_SPLIT_UNITS`."""
+    return (
+        old_units is not None
+        and new_units is not None
+        and 0 < old_units <= _MAX_SPLIT_UNITS
+        and 0 < new_units <= _MAX_SPLIT_UNITS
+    )
+
+
 def _validate(
     kind: str,
     quantity: Optional[Decimal],
@@ -391,12 +490,7 @@ def _validate(
             detail="kind must be 'buy', 'sell' or 'split'",
         )
     if kind == "split":
-        if (
-            old_units is None
-            or new_units is None
-            or not 0 < old_units <= _MAX_SPLIT_UNITS
-            or not 0 < new_units <= _MAX_SPLIT_UNITS
-        ):
+        if not split_ratio_in_range(old_units, new_units):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=(
@@ -438,14 +532,20 @@ async def add_transaction(
     workspace_id: uuid.UUID,
     data: AssetTransactionCreate,
 ) -> Optional[AssetRead]:
-    asset = await _load_asset(session, asset_id, workspace_id)
+    asset = await _lock_asset(session, asset_id, workspace_id)
     if asset is None:
         return None
+    is_split = data.kind == "split"
+    # Only a trade is rounded: a split must state no quantity at all, and that
+    # is a fact about what was entered. Rounded first, 0.0000004 would become a
+    # zero and pass as "no quantity".
+    quantity = None if data.quantity is None else (
+        data.quantity if is_split else stored_quantity(data.quantity)
+    )
     _validate(
-        data.kind, data.quantity, data.price,
+        data.kind, quantity, data.price,
         fee=data.fee, old_units=data.old_units, new_units=data.new_units,
     )
-    is_split = data.kind == "split"
     if is_split:
         _raise_if_split_not_allowed(asset)
         _raise_if_split_in_future(data.date)
@@ -453,7 +553,7 @@ async def add_transaction(
         asset_id=asset.id,
         workspace_id=workspace_id,
         kind=data.kind,
-        quantity=Decimal("0") if is_split else data.quantity,
+        quantity=Decimal("0") if is_split else quantity,
         price=Decimal("0") if is_split else data.price,
         fee=Decimal("0") if is_split else (data.fee or Decimal("0")),
         date=data.date,
@@ -491,8 +591,31 @@ async def update_transaction(
     tx = result.scalar_one_or_none()
     if tx is None:
         return None
+    # Resolve and lock the holding before anything is read off the row or
+    # mutated: a buy this request only adds a note to may have been edited down
+    # to fewer units while it waited, and the checks below have to see the units
+    # that are stored, not the ones this session loaded earlier. Bailing out
+    # after the setattr loop would also leave the edits pending in the session,
+    # so a later commit in the same request would persist an update we reported
+    # failed. The lock is taken before the ledger is read, so nothing lands
+    # between the checks and the write.
+    asset = await _lock_asset(session, tx.asset_id, workspace_id)
+    if asset is None:
+        return None
+    # The row and the ledger it is measured against, as they stand once the
+    # holding is locked (`populate_existing`): an instance already in the
+    # identity map would otherwise come back with the values it had then.
+    tx = await _reload_transaction(session, tx_id, workspace_id)
+    if tx is None:
+        return None
     fields = data.model_dump(exclude_unset=True)
     kind = fields.get("kind", tx.kind)
+    if fields.get("quantity") is not None and kind != "split":
+        # The checks below and the row that is written have to hold the same
+        # number: the column rounds to six decimals, so this does too. A split
+        # is left as stated, so a quantity on it is refused rather than
+        # rounded down to the zero that "no quantity" looks like.
+        fields["quantity"] = stored_quantity(fields["quantity"])
     if (kind == "split") != (tx.kind == "split"):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -518,21 +641,12 @@ async def update_transaction(
         edited.kind, edited.quantity, edited.price,
         fee=edited.fee, old_units=edited.old_units, new_units=edited.new_units,
     )
-    others = [t for t in await _load_txs(session, tx.asset_id) if t.id != tx.id]
+
+    others = [t for t in await _load_txs(session, tx.asset_id, refresh=True) if t.id != tx.id]
     if kind == "split":
         _raise_if_split_in_future(edited.date)
         _raise_if_nothing_held_before(others, edited.date)
     _raise_if_oversell(others + [edited])
-
-    # Resolve the asset before mutating the row: bailing out after the
-    # setattr loop would leave the edits pending in the session, so a later
-    # commit in the same request would persist an update we reported failed.
-    # The lock comes before the flush below for the same reason delete_asset
-    # takes it first: Asset, then its transaction rows, in every writer.
-    asset = await _lock_asset(session, tx.asset_id, workspace_id)
-    if asset is None:
-        return None
-
     _raise_if_too_large_to_store(others + [edited], asset)
     if kind == "split":
         # These stay 0 on a split; validation let through a null, which the
@@ -563,7 +677,13 @@ async def delete_transaction(
     asset = await _lock_asset(session, tx.asset_id, workspace_id)
     if asset is None:
         return None
-    others = [t for t in await _load_txs(session, tx.asset_id) if t.id != tx.id]
+    # What is deleted and what the delete is measured against, as they stand
+    # once the holding is locked: the row this session loaded may have been
+    # edited into (or out of) a split since.
+    tx = await _reload_transaction(session, tx_id, workspace_id)
+    if tx is None:
+        return None
+    others = [t for t in await _load_txs(session, tx.asset_id, refresh=True) if t.id != tx.id]
     # The recompute would clamp a sell that needed the split's units, and that
     # can close the holding.
     if tx.kind == "split" and _detect_oversell(others) is not None:
@@ -592,17 +712,22 @@ async def buy_into_holding(
 ) -> AssetRead:
     """Record a buy, consolidating onto the existing ticker holding in the
     chosen wallet (`group_id`) or creating a new market-priced holding."""
-    _validate("buy", data.quantity, data.price)
+    quantity = stored_quantity(data.quantity)
+    _validate("buy", quantity, data.price)
     await ensure_group_in_workspace(session, data.group_id, workspace_id)
     ticker = data.ticker.upper()
 
     result = await session.execute(
-        select(Asset).where(
+        select(Asset)
+        .where(
             Asset.workspace_id == workspace_id,
             Asset.ticker == ticker,
             Asset.valuation_method == "market_price",
             Asset.group_id == data.group_id,
         )
+        # Locked like the other ledger writes: its units are read below and
+        # written after the quote lookup.
+        .with_for_update()
     )
     asset = result.scalar_one_or_none()
     ledger = [] if asset is None else await _load_txs(session, asset.id)
@@ -634,7 +759,7 @@ async def buy_into_holding(
     new_tx = AssetTransaction(
         workspace_id=workspace_id,
         kind="buy",
-        quantity=data.quantity,
+        quantity=quantity,
         price=data.price,
         fee=data.fee or Decimal("0"),
         date=data.date,

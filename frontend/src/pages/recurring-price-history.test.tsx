@@ -41,6 +41,7 @@ vi.mock('@/lib/api', () => api)
 vi.mock('@/hooks/use-display-locale', () => ({
   useDisplayLocale: () => display.locale,
   useDateLocale: () => 'en-US',
+  useDisplayLocaleSettled: () => true,
 }))
 
 vi.mock('@/contexts/auth-context', () => ({
@@ -491,7 +492,8 @@ describe('Recurring maintainer correction regressions', () => {
     expect(screen.queryByRole('heading', { name: t('recurring.priceChangesTitle') })).not.toBeInTheDocument()
     expect(screen.queryByText(t('recurring.priceChangesEmpty'))).not.toBeInTheDocument()
     // The recurring table remains; no empty card shell is left behind.
-    expect(container.querySelectorAll('.bg-card')).toHaveLength(1)
+    // Cards are rounded-xl; the month stepper's bg-card buttons are not cards.
+    expect(container.querySelectorAll('.bg-card.rounded-xl')).toHaveLength(1)
     expect(historyButton('Netflix')).toBeInTheDocument()
   })
 

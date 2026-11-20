@@ -936,6 +936,7 @@
     "date": "Dátum",
     "category": "Kategória",
     "account": "Účet",
+    "card": "Karta",
     "noCategory": "Bez kategórie",
     "searchCategory": "Hľadať kategóriu...",
     "noCategoryFound": "Nenašla sa žiadna kategória.",
@@ -1017,6 +1018,31 @@
     "ignoredShow": "Zobraziť",
     "ignoredHide": "Skryť",
     "ignoredHiddenValue": "Skryté",
+    "flagged": "Označená",
+    "flagAction": "Označiť",
+    "unflagAction": "Zrušiť označenie",
+    "flagSuccess": "Transakcia označená",
+    "unflagSuccess": "Označenie zrušené",
+    "flagFilterAll": "Všetky označené",
+    "flagFilterOverdue": "Po termíne",
+    "flagFilterSoon": "Tento týždeň",
+    "flagOverdue": "Po termíne",
+    "flagDueOn": "Do {{date}}",
+    "flagReminder": "Pripomienka",
+    "flagReminderHint": "voliteľné",
+    "flagRemindOn": "Pripomenúť",
+    "flagPickDate": "Vybrať dátum",
+    "flagClearDate": "Vymazať dátum",
+    "flagNote": "Poznámka",
+    "flagNotePlaceholder": "napr. čakám na vrátenie peňazí",
+    "bulkFlagSuccess": "Označené transakcie: {{count}}",
+    "bulkUnflagSuccess": "Odstránené označenia: {{count}}",
+    "flagOverdueCount": "Označenia po termíne: {{count}}",
+    "flagPreset": {
+      "tomorrow": "Zajtra",
+      "nextWeek": "O týždeň",
+      "nextMonth": "O mesiac"
+    },
     "statusCleared": "Zaúčtovaná",
     "sortAsc": "Zoradiť vzostupne",
     "sortDesc": "Zoradiť zostupne",
@@ -1340,6 +1366,12 @@
     "cycleMissing": "Nastaviť cyklus",
     "cycleMissingHint": "Vyplň deň uzávierky výpisu a deň splatnosti — odomkneš tým filtrovanie podľa cyklu, upozornenia na splatnosť a zobrazenie vyúčtovania.",
     "ccSettingsHint": "Tieto polia sú voliteľné, ale ich vyplnením odomkneš filtrovanie podľa cyklu, upozornenia na splatnosť a zaraďovanie nákupov do správneho vyúčtovania.",
+    "linkedCards": "Prepojené karty",
+    "linkedCardsHint": "Použi štítok na ich rozlíšenie v transakciách.",
+    "noLinkedCards": "Zatiaľ nebol rozpoznaný žiadny koniec čísla karty.",
+    "cardEnding": "Koniec {{number}}",
+    "cardLabel": "Štítok",
+    "cardLabelPlaceholder": "Pridať štítok",
     "created": "Účet vytvorený",
     "updated": "Účet aktualizovaný",
     "deleted": "Účet vymazaný",
@@ -1587,6 +1619,8 @@
     "copyPreviewCount": "Kategórie na skopírovanie: {{count}}",
     "copyPreviewTotal": "Celkom na kopírovanie: {{amount}}",
     "copyPreviewEmpty": "Vybraný mesiac nemá žiadne rozpočty na skopírovanie.",
+    "copyPreviewAllExist": "Všetky kategórie zdrojového mesiaca už majú v {{month}} rozpočet. Zvoľte nahradenie, ak chcete skopírovať sumy alebo použiť úpravu.",
+    "copyPreviewNoChange": "Všetky rozpočty zdrojového mesiaca už v {{month}} majú tieto sumy.",
     "copyPreviewError": "Zdrojový mesiac sa nepodarilo načítať.",
     "copyAmountTooLarge": "Upravená suma prekračuje limit rozpočtu. Znížte percentuálnu úpravu.",
     "copyConfirm": "Kopírovať rozpočty",
@@ -1662,6 +1696,7 @@
     "walletHint": "Sleduj tento cieľ podľa celkovej hodnoty všetkých aktív vo vybranej peňaženke."
   },
   "recurring": {
+    "makeFromTransaction": "Nová opakovaná transakcia z tejto transakcie",
     "title": "Opakované transakcie",
     "add": "Pridať opakovanú",
     "edit": "Upraviť opakovanú",
@@ -1717,7 +1752,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "Po prestávke {{days}} dní",
-    "priceChangeInsufficient": "Predtým, ako Securo oznámi stabilnú zmenu ceny, sú potrebné aspoň 3 prepojené zaúčtované poplatky."
+    "priceChangeInsufficient": "Predtým, ako Securo oznámi stabilnú zmenu ceny, sú potrebné aspoň 3 prepojené zaúčtované poplatky.",
+    "summaryIncome": "Príjmy",
+    "summaryExpenses": "Výdavky",
+    "summaryNet": "Čistý zostatok",
+    "summaryTransfers": "Vynechané prevody: {{count}}",
+    "summaryUnconverted": "Bez výmenného kurzu, vynechané: {{count}}",
+    "summaryFailed": "Súčty za mesiac sa nepodarilo načítať"
   },
   "rules": {
     "searchPlaceholder": "Hľadať pravidlá...",
@@ -1843,6 +1884,7 @@
     "fieldPayee": "Príjemca",
     "fieldDate": "Dátum",
     "fieldStatus": "Stav",
+    "fieldProviderCategory": "Kategória poskytovateľa",
     "opContains": "obsahuje",
     "opNotContains": "neobsahuje",
     "opEquals": "rovná sa",
@@ -2125,6 +2167,8 @@
     "undoOrdersDescription_many": "Vymaže sa {{count}} pokynu importovaného z {{filename}} a prepočítajú sa pozície, ktorých sa týkal. Aktíva, ktoré tento import vytvoril, sa odstránia spolu s ním.",
     "undoOrdersDescription_other": "Vymaže sa {{count}} pokynov importovaných z {{filename}} a prepočítajú sa pozície, ktorých sa týkali. Aktíva, ktoré tento import vytvoril, sa odstránia spolu s nimi.",
     "undone": "Import vrátený späť",
+    "undoOversell": "Tento import nie je možné vrátiť späť: zostávajúci záznam predáva {{attempted}} jednotiek, pričom je držaných {{available}}. Najprv tento záznam upravte alebo odstráňte.",
+    "undoTooLarge": "Tento import nie je možné vrátiť späť: zostávajúca pozícia je príliš veľká na uloženie.",
     "undoDescription": "Vymaže sa {{count}} importovaných transakcií z {{filename}}. Túto akciu nie je možné vrátiť späť.",
     "undoDescription_one": "Vymaže sa {{count}} importovaná transakcia z {{filename}}. Túto akciu nie je možné vrátiť späť.",
     "undoDescription_few": "Vymažú sa {{count}} importované transakcie z {{filename}}. Túto akciu nie je možné vrátiť späť.",
@@ -2204,7 +2248,9 @@
       "fee": "Poplatok",
       "kind": "Nákup/predaj",
       "currency": "Mena",
-      "notes": "Poznámka"
+      "notes": "Poznámka",
+      "old_units": "Kusy pred",
+      "new_units": "Kusy po"
     },
     "walletWarningTitle": "Už je v tvojom portfóliu",
     "warning": {
@@ -2213,7 +2259,8 @@
     },
     "kind": {
       "buy": "Nákup",
-      "sell": "Predaj"
+      "sell": "Predaj",
+      "split": "Split"
     },
     "reason": {
       "missing_ticker": "chýba ticker",
@@ -2225,8 +2272,15 @@
       "unknown_ticker": "poskytovateľ cien ticker nenašiel",
       "oversell": "predaj väčšieho množstva, než pozícia obsahuje",
       "no_fx_rate": "chýba výmenný kurz k dátumu pokynu",
-      "possible_duplicate": "môže už byť v tejto pozícii z predchádzajúceho importu"
-    }
+      "possible_duplicate": "môže už byť v tejto pozícii z predchádzajúceho importu",
+      "invalid_split": "nečitateľný pomer splitu alebo split s množstvom, cenou alebo poplatkom",
+      "split_not_allowed": "split nemožno zaznamenať pri pozícii synchronizovanej s bankou",
+      "split_in_future": "split nemôže mať budúci dátum",
+      "nothing_held_before_split": "pred splitom nie sú držané žiadne kusy",
+      "too_large": "pozícia by bola príliš veľká na uloženie",
+      "holding_moved": "pozícia bola počas importu premenovaná alebo presunutá do inej peňaženky"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Aktíva",
@@ -2329,6 +2383,9 @@
     "soldAssets": "Predané aktíva",
     "archivedAssets": "Archivované aktíva",
     "noAssets": "Zatiaľ žiadne aktíva",
+    "showArchived": "Zobraziť archivované",
+    "archivedNotCounted": "Nezapočítavajú sa do celkovej hodnoty portfólia.",
+    "archivedLoadFailed": "Archivované aktíva sa nepodarilo načítať.",
     "created": "Aktívum vytvorené",
     "updated": "Aktívum aktualizované",
     "deleted": "Aktívum vymazané",
@@ -2485,7 +2542,39 @@
     "statementViewTransactions": "Zobraziť transakcie",
     "statementUncategorizedIncome": "Príjmy bez kategórie",
     "statementUncategorizedExpense": "Výdavky bez kategórie",
-    "statementToggleGroup": "Zobraziť kategórie v {{name}}"
+    "statementToggleGroup": "Zobraziť kategórie v {{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "Spolu minuté",
+        "income": "Spolu prijaté",
+        "net": "Saldo"
+      },
+      "none": {
+        "category": "Bez kategórie",
+        "category_group": "Bez skupiny",
+        "payee": "Bez príjemcu",
+        "account": "Bez účtu",
+        "month": "Bez dátumu"
+      },
+      "groupBy": {
+        "category": "Kategória",
+        "category_group": "Skupina",
+        "payee": "Príjemca",
+        "account": "Účet",
+        "month": "Mesiac"
+      },
+      "measure": {
+        "expenses": "Výdavky",
+        "income": "Príjmy",
+        "net": "Saldo"
+      },
+      "share": "Podiel",
+      "computed": "Vypočítané pluginom",
+      "totalRow": "Spolu",
+      "page": "Strana {{page}} z {{pages}}",
+      "previousPage": "Predchádzajúca strana",
+      "nextPage": "Ďalšia strana"
+    }
   },
   "payees": {
     "noPayeeFound": "Príjemca sa nenašiel.",
@@ -2658,6 +2747,7 @@
     "download": "Stiahnuť",
     "closePreview": "Zavrieť náhľad",
     "remove": "Odstrániť",
+    "refresh": "Obnoviť",
     "invalidAmount": "Zadajte platnú sumu, napríklad {{example}}."
   },
   "splitGroups": {
@@ -2809,6 +2899,15 @@
     "brandSelfHosted": "Na vlastnom serveri",
     "brandPrivate": "Súkromie od základu"
   },
+  "accountantExport": {
+    "title": "Export pre účtovníka",
+    "description": "Stiahnite si kategorizované transakcie a výkaz ziskov a strát za obdobie vo formáte, ktorý účtovný softvér otvorí priamo. Sumy sú plná hodnota transakcie, pred rozdelením s ďalšími osobami.",
+    "startDate": "Počiatočný dátum",
+    "endDate": "Koncový dátum",
+    "download": "Stiahnuť balík",
+    "error": "Export sa nepodarilo vytvoriť",
+    "formatHint": "Jeden zip s transactions.csv a profit-and-loss.csv, s oddeľovačmi a kódovaním, ktoré tabuľkové procesory a účtovné programy čítajú bez úprav."
+  },
   "backup": {
     "button": "Zálohovať",
     "downloading": "Sťahuje sa...",
@@ -2820,7 +2919,96 @@
     "passwordPlaceholder": "Nechaj prázdne pre nešifrovanú zálohu",
     "passwordTooShort": "Použi aspoň {{min}} znakov",
     "encryptionNote": "Archív je šifrovaný pomocou AES-256 a otvorí sa v ktoromkoľvek bežnom archivátore. Securo toto heslo neukladá a bez neho súbor nedokáže obnoviť.",
-    "successEncrypted": "Šifrovaná záloha úspešne stiahnutá"
+    "successEncrypted": "Šifrovaná záloha úspešne stiahnutá",
+    "restoreSuccess": "Záloha bola obnovená v pracovnom priestore {{name}}",
+    "runSuccess": "Záloha bola vytvorená",
+    "uploadDescription": "Nahraj ZIP so zálohou zo Securo, zobraz jeho náhľad a potom ho predvolene obnov do nového pracovného priestoru.",
+    "menu": "Zálohy",
+    "storedDescription": "Zálohy vytvorené pomocou „Spustiť zálohovanie“ alebo podľa plánu pre tento pracovný priestor.",
+    "content": {
+      "configuration": "Iba konfigurácia",
+      "data": "Iba údaje",
+      "both": "Konfigurácia a údaje"
+    },
+    "counts": {
+      "empty": "0 položiek",
+      "total": "Celkom: {{count}}",
+      "accounts_one": "{{count}} účet",
+      "accounts_few": "{{count}} účty",
+      "accounts_many": "{{count}} účtov",
+      "accounts_other": "{{count}} účtov",
+      "transactions_one": "{{count}} transakcia",
+      "transactions_few": "{{count}} transakcie",
+      "transactions_many": "{{count}} transakcií",
+      "transactions_other": "{{count}} transakcií",
+      "categories_one": "{{count}} kategória",
+      "categories_few": "{{count}} kategórie",
+      "categories_many": "{{count}} kategórií",
+      "categories_other": "{{count}} kategórií",
+      "rules_one": "{{count}} pravidlo",
+      "rules_few": "{{count}} pravidlá",
+      "rules_many": "{{count}} pravidiel",
+      "rules_other": "{{count}} pravidiel",
+      "budgets_one": "{{count}} rozpočet",
+      "budgets_few": "{{count}} rozpočty",
+      "budgets_many": "{{count}} rozpočtov",
+      "budgets_other": "{{count}} rozpočtov",
+      "goals_one": "{{count}} cieľ",
+      "goals_few": "{{count}} ciele",
+      "goals_many": "{{count}} cieľov",
+      "goals_other": "{{count}} cieľov"
+    },
+    "configSaved": "Nastavenia zálohovania boli uložené",
+    "runTitle": "Zálohovať teraz",
+    "contentLabel": "Obsah zálohy",
+    "restore": "Obnoviť",
+    "previewError": "Súbor zálohy sa nepodarilo načítať",
+    "configError": "Nastavenia zálohovania sa nepodarilo uložiť",
+    "configLoadError": "Nastavenia zálohovania sa nepodarilo načítať.",
+    "invalidRetention": "Zadajte kladné celé číslo.",
+    "unknownWorkspace": "Neznámy pracovný priestor",
+    "running": "Prebieha…",
+    "emptyStored": "Zatiaľ nie sú uložené žiadne zálohy. Spusti zálohovanie teraz alebo povoľ plán.",
+    "listError": "Uložené zálohy sa nepodarilo načítať.",
+    "downloadNow": "Stiahnuť ZIP",
+    "subtitle": "Exportuj, plánuj a obnovuj zálohy pracovného priestoru bez prihlasovacích údajov používateľov a bánk.",
+    "restoreMode": {
+      "current_workspace": "Aktuálny pracovný priestor",
+      "new_workspace": "Nový pracovný priestor"
+    },
+    "confirmRestoreLabel": "Na nahradenie aktuálneho pracovného priestoru napíš RESTORE",
+    "runDescription": "Vytvor spravovanú zálohu na serveri alebo stiahni ZIP priamo.",
+    "restoreModeLabel": "Cieľ obnovenia",
+    "uploadFileLabel": "Súbor ZIP so zálohou",
+    "lastRun": "Posledné spustenie",
+    "noFileSelected": "Nie je vybraný žiadny súbor",
+    "weekly": "Týždenne",
+    "runNow": "Spustiť zálohovanie",
+    "chooseFile": "Vybrať súbor",
+    "previewing": "Načítava sa záloha…",
+    "safeBadge": "Citlivé údaje sú vylúčené",
+    "download": "Stiahnuť",
+    "storedTitle": "Uložené zálohy",
+    "noFile": "Najprv vyber ZIP so zálohou.",
+    "daily": "Denne",
+    "destinationHint": "Uložené zálohy sú trvalé iba vtedy, keď je pripojený adresár /app/data/backups (BACKUP_HOST_PATH v Docker Compose alebo persistence.backups.enabled v Helm).",
+    "noBackupSelected": "Najprv vyber uloženú zálohu.",
+    "currentWorkspaceWarning": "Táto deštruktívna možnosť nahradí zodpovedajúce údaje v aktuálnom pracovnom priestore v rámci jednej transakcie. Bezpečnejšie je obnovenie do nového pracovného priestoru.",
+    "uploadTitle": "Obnoviť z nahraného súboru",
+    "retentionDays": "Maximálny vek v dňoch",
+    "restoring": "Obnovuje sa…",
+    "scheduleTitle": "Plán a uchovávanie",
+    "retentionCount": "Ponechať najnovšie",
+    "nextRun": "Ďalšie spustenie",
+    "secretNotice": "Zálohy zámerne neobsahujú prihlasovacie údaje používateľov, prístupové kľúče, poverenia poskytovateľov ani bankové tokeny.",
+    "scheduleLabel": "Plán",
+    "restoreError": "Zálohu sa nepodarilo obnoviť",
+    "scheduleDescription": "Procesy na pozadí každú hodinu kontrolujú povolené plány. Aby boli naplánované súbory ZIP uložené natrvalo, musí byť v nasadení povolené trvalé úložisko záloh.",
+    "optional": "Voliteľné",
+    "runError": "Zálohu sa nepodarilo vytvoriť",
+    "title": "Zálohy",
+    "restoreUpload": "Obnoviť nahranú zálohu",
+    "restoreStoredTitle": "Obnoviť uloženú zálohu"
   },
   "update": {
     "title": "Aktualizácia servera",
@@ -3977,6 +4165,15 @@
       "none": "Žiadne faktúry pred splatnosťou.",
       "noClient": "Bez klienta"
     },
+    "flagged": {
+      "title": "Označené transakcie",
+      "hint": "Čo ste si označili na vybavenie, najprv pripomienky po termíne.",
+      "none": "Nič nie je označené.",
+      "overdue": "Po termíne: {{count}}",
+      "dueSoon": "Tento týždeň: {{count}}",
+      "noDate": "Bez dátumu",
+      "more": "Ďalšie označené: {{count}}"
+    },
     "recurringRevenue": {
       "title": "Opakované príjmy",
       "hint": "Čo mesačne prinášajú opakované faktúry a čo sa nedávno stratilo."
@@ -3984,5 +4181,9 @@
   },
   "demo": {
     "banner": "Verejné demo — dáta sa mažú každú hodinu. Nezadávajte nič, čo by ste nezdieľali."
+  },
+  "offline": {
+    "title": "Server je nedostupný",
+    "description": "Ste offline alebo sa Securo reštartuje. Vaše údaje sú v bezpečí a nič sa nezmenilo. Hneď ako server odpovie, automaticky sa znova pripojíme."
   }
 }

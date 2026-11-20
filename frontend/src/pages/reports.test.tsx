@@ -16,7 +16,11 @@ const api = vi.hoisted(() => ({
     incomeExpenses: vi.fn(),
     cashFlow: vi.fn(),
     dataRange: vi.fn(),
+    plugin: vi.fn(),
   },
+  // Plugins are off unless a test turns them on.
+  info: { get: vi.fn() },
+  plugins: { installed: vi.fn() },
   // The page reads the workspace timezone to tell a balance that is already
   // negative from one that crosses later. Unresolved here, which lands on the
   // browser's own day.
@@ -35,7 +39,9 @@ const api = vi.hoisted(() => ({
   },
 }))
 
-vi.mock('@/lib/api', () => ({ reports: api.reports, timezones: api.timezones, uiLayouts: api.uiLayouts }))
+vi.mock('@/lib/api', () => ({
+  reports: api.reports, timezones: api.timezones, uiLayouts: api.uiLayouts, info: api.info, plugins: api.plugins,
+}))
 
 vi.mock('@/hooks/use-display-locale', () => ({
   useDisplayLocale: () => 'en-US',
@@ -78,6 +84,8 @@ beforeEach(() => {
   api.reports.cashFlow.mockResolvedValue(emptyReport('cash_flow'))
   // No data by default: the year picker stays hidden unless a test opts in.
   api.reports.dataRange.mockResolvedValue({ min_date: null, max_date: null })
+  api.info.get.mockResolvedValue({ features: { plugins: false } })
+  api.plugins.installed.mockResolvedValue([])
 })
 
 afterEach(() => vi.useRealTimers())
@@ -855,5 +863,97 @@ describe('Reports page arranged from the library', () => {
   it('lists all four by default', async () => {
     renderWithProviders(<ReportsPage />)
     await waitFor(() => expect(tabs()).toEqual(REPORT_LABELS))
+  })
+})
+
+describe('Reports page period bar on a phone', () => {
+  const TABS = ['Net Worth', 'Income vs Expenses', 'Cash Flow', 'Money Map']
+
+  it('keeps the presets in a bar that scrolls instead of widening the page', async () => {
+    // Two years of data: the year picker shows up, which is the widest the bar
+    // gets on a phone.
+    api.reports.dataRange.mockResolvedValue({ min_date: '2024-01-01', max_date: '2026-09-12' })
+    const { user } = renderWithProviders(<ReportsPage />)
+    await waitFor(() => expect(api.reports.netWorth).toHaveBeenCalled())
+
+    // The tab bar is the row that ends with the button to choose reports.
+    const tabBar = screen.getByRole('button', { name: t('library.manageReports') }).parentElement!
+    for (const tab of TABS) {
+      await user.click(within(tabBar).getByRole('button', { name: tab }))
+      const bar = screen.queryByTestId('reports-range-bar')
+      expect(bar, `${tab} keeps the range bar`).not.toBeNull()
+      // The bar stays inside the page and scrolls inside itself. A row that
+      // grew past the viewport instead made the whole page scroll sideways.
+      expect(bar).toHaveClass('min-w-0', 'max-w-full', 'overflow-x-auto')
+      // The buttons keep their width, so the overflow belongs to the bar.
+      const buttons = within(bar!).getAllByRole('button')
+      expect(buttons.length).toBeGreaterThanOrEqual(3)
+      for (const button of buttons) expect(button).toHaveClass('shrink-0')
+      // The two that fell off the screen are still there to reach, in the tabs
+      // that offer them: Cash Flow has no custom range and no year picker.
+      if (tab !== 'Cash Flow') {
+        expect(within(bar!).getByRole('button', { name: t('reports.customRange') })).toBeInTheDocument()
+        expect(
+          within(bar!).getByRole('button', { name: new RegExp(`^(${t('reports.year')})`) }),
+        ).toBeInTheDocument()
+      }
+    }
+  })
+})
+
+
+describe('Reports page: a plugin\'s report', () => {
+  beforeEach(() => {
+    api.info.get.mockResolvedValue({ features: { plugins: true } })
+    api.plugins.installed.mockResolvedValue([{
+      plugin_id: 'maria/casa', name: { en: 'Home' }, themes: [],
+      reports: [{ key: 'pets', name: { en: 'Pet spending' }, measure: 'expenses', group_by: 'category', chart: 'table' }],
+    }])
+    api.reports.plugin.mockResolvedValue({
+      key: 'pets', measure: 'expenses', group_by: 'category', chart: 'table', currency: 'USD',
+      rows: [{ key: 'c1', label: 'Vet', value: 120, color: null }], total: 120,
+    })
+  })
+
+  it('shows a kept plugin report as a tab, drawn from the period picked', async () => {
+    layouts.saved = { reports: [{ id: 'net_worth' }, { id: 'plugin:maria/casa:pets' }] }
+    renderWithProviders(<ReportsPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Pet spending' }))
+    expect(await screen.findByText('Vet')).toBeInTheDocument()
+    // The default 1Y preset, sent as dates like every stepped window.
+    expect(api.reports.plugin).toHaveBeenCalledWith('maria/casa', 'pets', '2025-09-01', '2026-09-12', undefined)
+    expect(api.reports.netWorth).toHaveBeenCalledTimes(1)
+  })
+
+  it("isn't a tab until someone adds it, and a removed plugin's tab is left out", async () => {
+    layouts.saved = { reports: [{ id: 'net_worth' }, { id: 'plugin:gone/away:x' }] }
+    renderWithProviders(<ReportsPage />)
+    expect((await screen.findAllByRole('button', { name: t('reports.netWorth') })).length).toBeGreaterThan(0)
+    await waitFor(() => expect(api.plugins.installed).toHaveBeenCalled())
+    expect(screen.queryByRole('button', { name: 'Pet spending' })).not.toBeInTheDocument()
+  })
+
+  it('opens on a saved plugin report that comes first, once the plugins are known', async () => {
+    let release: (value: unknown) => void = () => {}
+    api.plugins.installed.mockReturnValue(new Promise((done) => { release = done }))
+    layouts.saved = { reports: [{ id: 'plugin:maria/casa:pets' }, { id: 'net_worth' }] }
+    renderWithProviders(<ReportsPage />)
+    await waitFor(() => expect(api.plugins.installed).toHaveBeenCalled())
+    release([{
+      plugin_id: 'maria/casa', name: { en: 'Home' }, themes: [],
+      reports: [{ key: 'pets', name: { en: 'Pet spending' }, measure: 'expenses', group_by: 'category', chart: 'table' }],
+    }])
+    expect(await screen.findByText('Vet')).toBeInTheDocument()
+  })
+
+  it("keeps a plugin's tab saved when the plugins can't be read", async () => {
+    api.plugins.installed.mockRejectedValue(new Error('down'))
+    layouts.saved = { reports: [{ id: 'net_worth' }, { id: 'income_expenses' }, { id: 'plugin:maria/casa:pets' }] }
+    renderWithProviders(<ReportsPage />)
+    expect((await screen.findAllByRole('button', { name: t('reports.netWorth') })).length).toBeGreaterThan(0)
+    await waitFor(() => expect(api.plugins.installed).toHaveBeenCalled())
+    // Nothing was saved over the arrangement, and the plugin's tab is still in it.
+    expect(layouts.saves).toEqual([])
+    expect(layouts.saved.reports?.map((item) => item.id)).toContain('plugin:maria/casa:pets')
   })
 })

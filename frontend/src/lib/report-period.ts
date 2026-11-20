@@ -174,3 +174,35 @@ export function periodWindow(
     }
   }
 }
+
+/**
+ * The dates a period covers, always: the stepped window when there is one,
+ * else the current one the API would anchor on its own (a preset's window
+ * up to today, or the custom range). For reports that only take dates, such
+ * as a plugin's (ADR 0028).
+ */
+export function explicitWindow(
+  preset: PeriodPreset,
+  today: string,
+  offset: number,
+  customRange?: PeriodWindow,
+): PeriodWindow | null {
+  const stepped = periodWindow(preset, today, offset, customRange)
+  if (stepped) return stepped
+  switch (preset.kind) {
+    case 'ytd': {
+      const fy = preset.fyStartMonth ?? 1
+      const t = parseIso(today)
+      return { from: iso(t.y - (t.m < fy ? 1 : 0), fy, 1), to: today }
+    }
+    case 'rolling':
+      return { from: rollingStart(today, preset.months), to: today }
+    case 'days':
+      return { from: addDaysIso(today, -(preset.days - 1)), to: today }
+    case 'custom':
+      return customRange?.from && customRange.to ? customRange : null
+    default:
+      return null
+  }
+}
+

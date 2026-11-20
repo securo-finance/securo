@@ -1277,3 +1277,84 @@ async def test_unstamped_foreign_splits_look_up_a_missing_rate_once(
         session, test_user.id, month_start, month_end, primary_currency="BRL"
     ) == (0.0, 0.0)
     assert calls == [("USD", "BRL", today)]
+
+
+@pytest.mark.asyncio
+async def test_income_expenses_report_takes_foreign_split_off_at_the_row_rate(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
+    """USD 300 stamped at BRL 1560 (5.20) with 200 owed by a friend, and
+    today's rate at 5.00. The dashboard and the income-expenses report both
+    keep the owner's BRL 520; the report used to take the friend's part off
+    at today's rate (1000) and keep 560."""
+    from app.services.report_service import get_income_expenses_report
+
+    await _force_user_currency(session, test_user, "BRL")
+    today = date.today()
+    food = test_categories[0]
+    _seed_brl_rate(session, today, "5.00")
+    await _foreign_split(
+        session, test_user, test_workspace, "300.00", "1560.00", "200.00",
+        when=today, category_id=food.id,
+    )
+
+    summary = await dashboard_service.get_summary(
+        session, test_workspace.id, test_user.id, today.replace(day=1)
+    )
+    assert summary.monthly_expenses_primary == pytest.approx(520.0, abs=0.001)
+
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id, currency="BRL",
+        start_date=today.replace(day=1), end_date=today,
+    )
+    totals = {b.key: b.value for b in report.summary.breakdowns}
+    assert totals["expenses"] == pytest.approx(520.0, abs=0.001)
+    point = next(p for p in report.trend if p.date == today.strftime("%Y-%m"))
+    assert point.breakdowns["expenses"] == pytest.approx(520.0, abs=0.001)
+    food_trend = next(
+        ct for ct in report.category_trend
+        if ct.key == str(food.id) and ct.group == "expenses"
+    )
+    assert food_trend.total == pytest.approx(520.0, abs=0.001)
+    food_slice = next(c for c in report.composition if c.key == str(food.id))
+    assert food_slice.value == pytest.approx(520.0, abs=0.001)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("friend_shares", [("300.00", "-200.00"), ("-200.00", "300.00")])
+async def test_income_expenses_report_offsets_do_not_depend_on_row_order(
+    session: AsyncSession, test_user, test_workspace, test_categories, friend_shares
+):
+    """Two USD 100 rows stamped at BRL 500, the friend owing 300 on one and
+    -200 on the other: the owner keeps USD 100 (BRL 500) in all. Taking each
+    row's share off with its own zero floor gave BRL 1000 in one order."""
+    from app.services.report_service import get_income_expenses_report
+
+    await _force_user_currency(session, test_user, "BRL")
+    today = date.today()
+    food = test_categories[0]
+    _seed_brl_rate(session, today, "5.00")
+    for friend_share in friend_shares:
+        await _foreign_split(
+            session, test_user, test_workspace, "100.00", "500.00", friend_share,
+            when=today, category_id=food.id,
+        )
+
+    summary = await dashboard_service.get_summary(
+        session, test_workspace.id, test_user.id, today.replace(day=1)
+    )
+    assert summary.monthly_expenses_primary == pytest.approx(500.0, abs=0.001)
+
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id, currency="BRL",
+        start_date=today.replace(day=1), end_date=today,
+    )
+    totals = {b.key: b.value for b in report.summary.breakdowns}
+    assert totals["expenses"] == pytest.approx(500.0, abs=0.001)
+    food_trend = next(
+        ct for ct in report.category_trend
+        if ct.key == str(food.id) and ct.group == "expenses"
+    )
+    assert food_trend.total == pytest.approx(500.0, abs=0.001)
+    point = next(p for p in food_trend.series if p.date == today.strftime("%Y-%m"))
+    assert point.value == pytest.approx(500.0, abs=0.001)

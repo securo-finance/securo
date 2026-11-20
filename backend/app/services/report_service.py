@@ -4,19 +4,20 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import String, and_, case, desc, func, or_, select
+from sqlalchemy import String, and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.app_clock import app_timezone, app_today
+from app.core.app_clock import app_today
 from app.core.config import get_settings
 from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
 from app.models.account import Account
 from app.models.asset import ASSET_PRICE_DECIMALS, Asset
-from app.models.asset_value import AssetValue
 from app.models.transaction import Transaction
 from app.models.category import Category
 from app.models.user import User
 from app.services._query_filters import (
+    _others_share_in_primary,
+    _viewer_member_ids,
     counts_as_pnl,
     counts_as_user_pnl,
     forecast_owner_share_fractions,
@@ -33,7 +34,11 @@ from app.services._query_filters import (
 )
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.account_service import get_account_name
-from app.services.asset_service import held_on
+from app.services.asset_service import (
+    _fill_forward_at,
+    _load_asset_native_values,
+    held_on,
+)
 from app.services.fx_rate_service import convert
 from app.schemas.report import (
     CategoryTrendItem,
@@ -49,6 +54,7 @@ from app.services.dashboard_service import (
     _account_balance_at,
     _get_forecast_transactions,
     _get_open_accounts,
+    _open_on,
 )
 
 CATEGORY_TREND_TOP_N = 11
@@ -101,44 +107,28 @@ def _report_start_date(
     return start.replace(day=1)
 
 
-async def _asset_value_at(
-    session: AsyncSession, workspace_id: uuid.UUID, cutoff: date,
-    primary_currency: str = "USD",
-    group_ids: Optional[list[uuid.UUID]] = None,
-) -> float:
-    """Sum of all asset values held at a given date, converted to primary currency."""
-    asset_stmt = select(Asset).where(
+async def _get_report_assets(
+    session: AsyncSession, workspace_id: uuid.UUID, since: date,
+    account_ids: Optional[list[uuid.UUID]] = None,
+    asset_group_ids: Optional[list[uuid.UUID]] = None,
+) -> tuple[list[Asset], dict[str, list[tuple[date, float]]]]:
+    """Assets held on ``since`` or later, with their whole native value series.
+
+    The series is whole, not cut at the report's end: a market-priced holding's
+    past values come from replaying its whole ledger, so cutting rows at the end
+    could change an earlier value. It is the series the Assets page chart loads
+    (ledger replay for market-priced holdings, stored amounts otherwise), and one
+    load serves every snapshot of a report.
+    """
+    stmt = select(Asset).where(
         Asset.workspace_id == workspace_id,
         Asset.is_archived == False,
-        held_on(cutoff),
+        held_on(since),
     )
-    if group_ids is not None:
-        asset_stmt = asset_stmt.where(Asset.group_id.in_(group_ids))
-    asset_result = await session.execute(asset_stmt)
-    total = 0.0
-    for asset in asset_result.scalars().all():
-        val_result = await session.execute(
-            select(AssetValue.amount)
-            .where(AssetValue.asset_id == asset.id, AssetValue.date <= cutoff)
-            .order_by(desc(AssetValue.date), desc(AssetValue.id))
-            .limit(1)
-        )
-        val = val_result.scalar_one_or_none()
-        if val is not None:
-            amount = float(val)
-        elif asset.purchase_price is not None and (
-            asset.purchase_date is None or asset.purchase_date <= cutoff
-        ):
-            amount = float(asset.purchase_price)
-        else:
-            amount = 0.0
-        if amount > 0:
-            converted, _ = await convert(
-                session, Decimal(str(amount)), asset.currency, primary_currency, cutoff,
-                decimals=ASSET_PRICE_DECIMALS,
-            )
-            total += float(converted)
-    return total
+    if account_ids is not None:
+        stmt = stmt.where(Asset.group_id.in_(asset_group_ids or []))
+    assets = list((await session.execute(stmt)).scalars().all())
+    return assets, await _load_asset_native_values(session, assets)
 
 
 async def _net_worth_at(
@@ -147,6 +137,7 @@ async def _net_worth_at(
     account_ids: Optional[list[uuid.UUID]] = None,
     asset_group_ids: Optional[list[uuid.UUID]] = None,
     accounts: Optional[list[Account]] = None,
+    assets: Optional[tuple[list[Asset], dict[str, list[tuple[date, float]]]]] = None,
 ) -> ReportDataPoint:
     """Compute a single net worth snapshot at a given date, converted to primary currency.
 
@@ -157,20 +148,16 @@ async def _net_worth_at(
     ``accounts`` lets a caller that already fetched the account list for
     this workspace/filter pass it in, instead of re-querying
     it for every snapshot in a multi-point trend. Omit it to fetch as before.
+
+    ``assets`` is the same for the assets: a caller building a multi-point
+    trend passes the ``_get_report_assets`` result for the whole range in,
+    instead of reloading the value series for every snapshot. Omit it to load
+    them here.
     """
     if accounts is None:
         accounts = await _get_open_accounts(session, workspace_id, account_ids, closed_after=cutoff)
-    # An account closed after the cutoff was still open on it. A closed card on
-    # a shared credit line stays out: its frozen balance can't be reconciled
-    # with the line's live one, and the open cards already carry that debt.
-    accounts = [
-        a for a in accounts
-        if not a.is_closed or (
-            a.closed_at is not None
-            and a.closed_at.astimezone(app_timezone()).date() > cutoff
-            and not (a.type == "credit_card" and a.shared_balance_group)
-        )
-    ]
+    # Same set the dashboard summary counts for this date (_open_on).
+    accounts = [a for a in accounts if _open_on(a, cutoff)]
 
     accounts_total = 0.0
     liabilities_total = 0.0
@@ -225,36 +212,23 @@ async def _net_worth_at(
                     group="accounts",
                 ))
 
-    # Per-asset composition at the cutoff date. An asset sold after the
-    # cutoff was still held on it.
-    filtered = account_ids is not None
-    asset_stmt = select(Asset).where(
-        Asset.workspace_id == workspace_id,
-        Asset.is_archived == False,
-        held_on(cutoff),
-    )
-    if filtered:
-        asset_stmt = asset_stmt.where(Asset.group_id.in_(asset_group_ids or []))
-    asset_result = await session.execute(asset_stmt)
+    # Per-asset composition at the cutoff date, from the same series as the
+    # Assets page and dashboard (ledger replay for market-priced holdings). An
+    # asset sold after the cutoff was still held on it.
+    if assets is None:
+        assets = await _get_report_assets(
+            session, workspace_id, cutoff, account_ids, asset_group_ids
+        )
+    report_assets, asset_values = assets
     # Decimal until the one final rounding: sub-cent holdings must add up
     # exactly the way the wallet rollup does.
     assets_sum = Decimal("0")
-    for asset in asset_result.scalars().all():
-        val_result = await session.execute(
-            select(AssetValue.amount)
-            .where(AssetValue.asset_id == asset.id, AssetValue.date <= cutoff)
-            .order_by(desc(AssetValue.date), desc(AssetValue.id))
-            .limit(1)
-        )
-        val = val_result.scalar_one_or_none()
-        if val is not None:
-            amount = float(val)
-        elif asset.purchase_price is not None and (
-            asset.purchase_date is None or asset.purchase_date <= cutoff
-        ):
-            amount = float(asset.purchase_price)
-        else:
-            amount = 0.0
+    for asset in report_assets:
+        # The preloaded list was selected with held_on(since): re-apply it for
+        # this cutoff.
+        if asset.sell_date is not None and asset.sell_date <= cutoff:
+            continue
+        amount = _fill_forward_at(asset, asset_values[str(asset.id)], cutoff) or 0.0
         if amount > 0:
             converted, _ = await convert(
                 session, Decimal(str(amount)), asset.currency, primary_currency, cutoff,
@@ -410,12 +384,17 @@ async def get_net_worth_report(
     # period; each point below keeps the ones still open on its date.
     accounts = await _get_open_accounts(session, workspace_id, account_ids, closed_after=start)
 
+    # Load the assets once for the whole range.
+    assets = await _get_report_assets(
+        session, workspace_id, start, account_ids, asset_group_ids,
+    )
+
     # Compute snapshot at each date point
     trend: list[ReportDataPoint] = []
     for point in points:
         dp = await _net_worth_at(
             session, workspace_id, point, primary_currency, account_ids, asset_group_ids,
-            accounts=accounts,
+            accounts=accounts, assets=assets,
         )
         dp.date = _format_date_label(point, interval)
         dp.change = round(dp.value - trend[-1].value, 2) if trend else None
@@ -434,7 +413,7 @@ async def get_net_worth_report(
     else:
         baseline = await _net_worth_at(
             session, workspace_id, start, primary_currency, account_ids, asset_group_ids,
-            accounts=accounts,
+            accounts=accounts, assets=assets,
         )
     previous = baseline if trend else current
 
@@ -579,71 +558,62 @@ async def get_income_expenses_report(
         data_map[row[0]] = (income, expenses)
 
     # Subtract non-owner shares of the user's own splits per period — the
-    # user shouldn't be charged for the parts they're owed back.
-    from sqlalchemy import or_ as _or_, and_ as _and_
-    from app.models.group import Group as _Group_, GroupMember as _GroupMember_
+    # user shouldn't be charged for the parts they're owed back. Each row's
+    # shares come off at the rate stored on that row, as on the dashboard
+    # (owner_split_offset_pnl), not at today's rate.
     from app.models.transaction_split import TransactionSplit as _TS_
-    from app.services.fx_rate_service import convert as fx_convert
 
-    own_member_ids_sq = (
-        select(_GroupMember_.id)
-        .outerjoin(_Group_, _Group_.id == _GroupMember_.group_id)
-        .where(
-            _or_(
-                _GroupMember_.linked_user_id == user_id,
-                _and_(_GroupMember_.is_self == True, _Group_.user_id == user_id),
-            )
-        )
+    owner_columns = (
+        Transaction.id,
+        Transaction.category_id,
+        Transaction.type,
+        Transaction.currency,
+        Transaction.amount,
+        Transaction.amount_primary,
+        Transaction.date,
     )
-    owner_offset_result = await session.execute(
-        select(
-            label_expr,
-            Transaction.currency,
-            func.sum(
-                case(
-                    (Transaction.type == "credit", _TS_.share_amount),
-                    else_=0,
-                )
-            ),
-            func.sum(
-                case(
-                    (Transaction.type == "debit", _TS_.share_amount),
-                    else_=0,
-                )
-            ),
-        )
+    owner_offset_rows = [] if filtered else (await session.execute(
+        select(label_expr, *owner_columns, func.sum(_TS_.share_amount))
         .select_from(_TS_)
         .join(Transaction, _TS_.transaction_id == Transaction.id)
         .where(
             Transaction.user_id == user_id,
             Transaction.workspace_id == workspace_id,
-            _TS_.group_member_id.notin_(own_member_ids_sq),
+            _TS_.group_member_id.notin_(_viewer_member_ids(user_id)),
             report_date >= start,
             report_date <= axis_end,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
             counts_as_user_pnl(Transaction.category_id),
         )
-        .group_by(label_expr, Transaction.currency)
-    )
-    for row in (owner_offset_result.all() if not filtered else []):
-        period, currency, raw_credit, raw_debit = row
-        sub_inc = 0.0
-        sub_exp = 0.0
-        if raw_credit:
-            inc_pri, _ = await fx_convert(
-                session, Decimal(str(raw_credit)), currency, primary_currency
-            )
-            sub_inc = float(inc_pri)
-        if raw_debit:
-            exp_pri, _ = await fx_convert(
-                session, Decimal(str(raw_debit)), currency, primary_currency
-            )
-            sub_exp = abs(float(exp_pri))
+        .group_by(label_expr, *owner_columns)
+    )).all()
+    owner_rates: dict[tuple[str, date], Optional[Decimal]] = {}
+    # (period, category_id, type, share in primary), reused by the category
+    # trend below so both views take off the same amounts.
+    owner_offsets: list[tuple[str, Optional[uuid.UUID], str, float]] = []
+    # Signed shares are summed per period before the zero floor, so the
+    # result does not depend on the order the rows come back in.
+    period_offsets: dict[str, tuple[float, float]] = {}
+    for row in owner_offset_rows:
+        period, category_id, tx_type = row[0], row[2], row[3]
+        share = await _others_share_in_primary(
+            session, tuple(row[1:]), primary_currency, owner_rates
+        )
+        if share is None:
+            continue
+        owner_offsets.append((period, category_id, tx_type, float(share)))
+        off_income, off_expenses = period_offsets.get(period, (0.0, 0.0))
+        if tx_type == "credit":
+            off_income += float(share)
+        elif tx_type == "debit":
+            off_expenses += float(share)
+        period_offsets[period] = (off_income, off_expenses)
+    for period, (off_income, off_expenses) in period_offsets.items():
         existing_income, existing_expenses = data_map.get(period, (0.0, 0.0))
         data_map[period] = (
-            max(0.0, existing_income - sub_inc),
-            max(0.0, existing_expenses - sub_exp),
+            max(0.0, existing_income - off_income),
+            max(0.0, existing_expenses - off_expenses),
         )
 
     # Layer in the viewer's share from group splits — concert tickets
@@ -652,8 +622,10 @@ async def get_income_expenses_report(
     # currency so we can FX-convert each bucket to primary correctly.
     from app.models.transaction_split import TransactionSplit
 
-    # Exclude is_self memberships — the owner's own self-member must
-    # not surface their in-Pessoal transactions in Trabalho's report.
+    # The viewer's memberships, self-member included: their share of an
+    # invited member's expense counts here too (#1305). Rows the viewer
+    # created stay out via `user_id != user_id`, so an in-Pessoal
+    # transaction never surfaces in Trabalho's report.
     viewer_member_ids = invited_group_member_ids(user_id)
     shared_result = await session.execute(
         select(
@@ -725,7 +697,8 @@ async def get_income_expenses_report(
         # A day-window range can start mid-month: only project occurrences that
         # fall inside the requested window.
         projections = await _get_recurring_projections(
-            session, workspace_id, max(m_start, start), m_end, account_ids
+            session, workspace_id, max(m_start, start), m_end, account_ids,
+            accounting_mode=accounting_mode,
         )
         for proj in projections:
             # Convert to primary currency
@@ -733,7 +706,9 @@ async def get_income_expenses_report(
                 session, Decimal(str(proj["amount"])), proj["currency"], primary_currency,
             )
             proj_amount = float(converted)
-            label = _format_date_label(cursor, interval)
+            # The projection's own date: in accrual a card charge is due on
+            # its bill's date, which can sit days after the month's cursor.
+            label = _format_date_label(proj["date"], interval)
             existing_income, existing_expenses = forecast_map.get(label, (0.0, 0.0))
             if proj["type"] == "credit":
                 forecast_map[label] = (existing_income + proj_amount, existing_expenses)
@@ -1034,45 +1009,109 @@ async def get_income_expenses_report(
         )
 
     # Subtract non-owner shares of own splits per (period, category) — keeps
-    # the per-category trend consistent with the share-only summary.
-    cat_offset_result = await session.execute(
-        select(
-            label_expr,
-            Transaction.category_id,
-            Transaction.currency,
-            func.sum(_TS_.share_amount),
-        )
-        .select_from(_TS_)
-        .join(Transaction, _TS_.transaction_id == Transaction.id)
-        .where(
-            Transaction.user_id == user_id,
-            Transaction.workspace_id == workspace_id,
-            Transaction.type == "debit",
-            _TS_.group_member_id.notin_(own_member_ids_sq),
-            report_date >= start,
-            report_date <= axis_end,
-            Transaction.source != "opening_balance",
-            Transaction.status == "posted",
-            counts_as_user_pnl(Transaction.category_id),
-        )
-        .group_by(label_expr, Transaction.category_id, Transaction.currency)
-    )
-    for period_label, cat_id, currency, raw_total in (cat_offset_result.all() if not filtered else []):
-        if not raw_total:
+    # the per-category trend consistent with the share-only summary, with the
+    # same per-row amounts the summary took off.
+    # Summed per category and per (category, period) before the zero floor,
+    # like the summary, so row order cannot change the result.
+    cat_offsets: dict[tuple[str, str], dict[str, float]] = {}
+    for period_label, cat_id, tx_type, offset in owner_offsets:
+        if tx_type != "debit":
             continue
         cat_key = str(cat_id) if cat_id else "uncategorized"
-        offset_pri, _ = await fx_convert(
-            session, Decimal(str(raw_total)), currency, primary_currency
-        )
-        offset = float(offset_pri)
         map_key = (cat_key, "expenses")
         if map_key not in cat_trend_map:
             continue
-        cat_trend_map[map_key]["total"] = max(
-            0.0, cat_trend_map[map_key]["total"] - offset
+        by_period = cat_offsets.setdefault(map_key, {})
+        by_period[period_label] = by_period.get(period_label, 0.0) + offset
+    for map_key, by_period in cat_offsets.items():
+        entry = cat_trend_map[map_key]
+        entry["total"] = max(0.0, entry["total"] - sum(by_period.values()))
+        for period_label, offset in by_period.items():
+            cur_period = entry["periods"].get(period_label, 0.0)
+            entry["periods"][period_label] = max(0.0, cur_period - offset)
+
+    # Layer in the viewer's share of splits they did not pay for, the same
+    # cross-workspace rows the summary above adds (#242). The author guard
+    # and the current-workspace exclusion mirror it: a row that lives in the
+    # reported workspace is already counted whole in the composition below.
+    if not filtered:
+        shared_cat_result = await session.execute(
+            select(
+                label_expr,
+                Category.id,
+                Category.name,
+                Category.color,
+                Transaction.type,
+                Transaction.currency,
+                func.sum(TransactionSplit.share_amount),
+            )
+            .select_from(TransactionSplit)
+            .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
+            .outerjoin(Category, Transaction.category_id == Category.id)
+            .where(
+                TransactionSplit.group_member_id.in_(viewer_member_ids),
+                Transaction.user_id != user_id,
+                Transaction.workspace_id != workspace_id,
+                in_bound_workspace(Transaction.workspace_id),
+                report_date >= start,
+                report_date <= axis_end,
+                Transaction.source != "opening_balance",
+                Transaction.status == "posted",
+                counts_as_user_pnl(Transaction.category_id),
+            )
+            .group_by(
+                label_expr,
+                Category.id,
+                Category.name,
+                Category.color,
+                Transaction.type,
+                Transaction.currency,
+            )
         )
-        cur_period = cat_trend_map[map_key]["periods"].get(period_label, 0.0)
-        cat_trend_map[map_key]["periods"][period_label] = max(0.0, cur_period - offset)
+        for (
+            period_label,
+            cat_id,
+            cat_name,
+            cat_color,
+            txn_type,
+            currency,
+            raw_share,
+        ) in shared_cat_result.all():
+            if not raw_share:
+                continue
+            share_primary, _ = await fx_convert(
+                session, Decimal(str(raw_share)), currency, primary_currency
+            )
+            amount = abs(float(share_primary))
+            if amount <= 0:
+                continue
+            cat_key = str(cat_id) if cat_id else "uncategorized"
+            group = "income" if txn_type == "credit" else "expenses"
+            label = cat_name or "Uncategorized"
+            color = cat_color or "#6B7280"
+
+            comp_key = (cat_key, group)
+            if comp_key in comp_map:
+                comp_map[comp_key]["value"] += amount
+            else:
+                comp_map[comp_key] = {
+                    "label": label,
+                    "color": color,
+                    "value": amount,
+                }
+
+            if comp_key not in cat_trend_map:
+                cat_trend_map[comp_key] = {
+                    "label": label,
+                    "color": color,
+                    "total": 0.0,
+                    "periods": {},
+                }
+            cat_trend_map[comp_key]["total"] += amount
+            cat_trend_map[comp_key]["periods"][period_label] = (
+                cat_trend_map[comp_key]["periods"].get(period_label, 0.0) + amount
+            )
+
     # Drop categories that fully zeroed out
     for key in list(cat_trend_map.keys()):
         if cat_trend_map[key]["total"] <= 0:
@@ -1083,9 +1122,12 @@ async def get_income_expenses_report(
     cursor2 = start
     while include_forecasts and cursor2 <= axis_end:
         m_start, m_end = _month_range(cursor2)
-        projections = await _get_recurring_projections(session, workspace_id, m_start, m_end, account_ids)
-        period_label = _format_date_label(cursor2, interval)
+        projections = await _get_recurring_projections(
+            session, workspace_id, m_start, m_end, account_ids,
+            accounting_mode=accounting_mode,
+        )
         for proj in projections:
+            period_label = _format_date_label(proj["date"], interval)
             cat_id_str = str(proj["category_id"]) if proj["category_id"] else "uncategorized"
             group = "income" if proj["type"] == "credit" else "expenses"
 

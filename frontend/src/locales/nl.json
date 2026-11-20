@@ -920,6 +920,7 @@
     "date": "Datum",
     "category": "Categorie",
     "account": "Rekening",
+    "card": "Kaart",
     "noCategory": "Geen categorie",
     "searchCategory": "Categorie zoeken...",
     "noCategoryFound": "Geen categorie gevonden.",
@@ -997,6 +998,31 @@
     "ignoredShow": "Toon",
     "ignoredHide": "Verbergen",
     "ignoredHiddenValue": "Verborgen",
+    "flagged": "Gemarkeerd",
+    "flagAction": "Markeren",
+    "unflagAction": "Markering verwijderen",
+    "flagSuccess": "Transactie gemarkeerd",
+    "unflagSuccess": "Markering verwijderd",
+    "flagFilterAll": "Alle gemarkeerd",
+    "flagFilterOverdue": "Verlopen",
+    "flagFilterSoon": "Deze week",
+    "flagOverdue": "Verlopen",
+    "flagDueOn": "Op {{date}}",
+    "flagReminder": "Herinnering",
+    "flagReminderHint": "optioneel",
+    "flagRemindOn": "Herinner me",
+    "flagPickDate": "Kies een datum",
+    "flagClearDate": "Datum wissen",
+    "flagNote": "Notitie",
+    "flagNotePlaceholder": "bijv. wacht op terugbetaling",
+    "bulkFlagSuccess": "Transacties gemarkeerd: {{count}}",
+    "bulkUnflagSuccess": "Markeringen verwijderd: {{count}}",
+    "flagOverdueCount": "Verlopen markeringen: {{count}}",
+    "flagPreset": {
+      "tomorrow": "Morgen",
+      "nextWeek": "Over een week",
+      "nextMonth": "Over een maand"
+    },
     "statusCleared": "Gewist",
     "sortAsc": "Sorteer oplopend",
     "sortDesc": "Sorteer aflopend",
@@ -1277,6 +1303,12 @@
     "cycleMissing": "Cyclus instellen",
     "cycleMissingHint": "Vul de sluitings- en vervaldagen van het overzicht in om cyclusfiltering, vervaldatumwaarschuwingen en de factuurweergave te ontgrendelen.",
     "ccSettingsHint": "Deze velden zijn optioneel, maar door ze in te vullen worden cyclusfilters, waarschuwingen over de vervaldatum en het plaatsen van aankopen op de juiste factuur ontgrendeld.",
+    "linkedCards": "Gekoppelde kaarten",
+    "linkedCardsHint": "Gebruik een label om ze in transacties te onderscheiden.",
+    "noLinkedCards": "Er is nog geen kaarteinde herkend.",
+    "cardEnding": "Eindigend op {{number}}",
+    "cardLabel": "Label",
+    "cardLabelPlaceholder": "Label toevoegen",
     "created": "Account aangemaakt",
     "updated": "Account bijgewerkt",
     "deleted": "Account verwijderd",
@@ -1521,6 +1553,8 @@
     "copyPreviewCount": "Te kopiëren categorieën: {{count}}",
     "copyPreviewTotal": "Te kopiëren totaal: {{amount}}",
     "copyPreviewEmpty": "De gekozen maand heeft geen budgetten om te kopiëren.",
+    "copyPreviewAllExist": "Alle categorieën van de bronmaand hebben al een budget in {{month}}. Kies vervangen om de bedragen te kopiëren of de aanpassing toe te passen.",
+    "copyPreviewNoChange": "Alle budgetten van de bronmaand staan in {{month}} al op deze bedragen.",
     "copyPreviewError": "De bronmaand kon niet worden geladen.",
     "copyAmountTooLarge": "Het aangepaste bedrag overschrijdt de budgetlimiet. Verlaag de procentuele aanpassing.",
     "copyConfirm": "Budgetten kopiëren",
@@ -1588,6 +1622,7 @@
     "walletHint": "Volg dit doel met de gecombineerde waarde van alle activa in de geselecteerde portemonnee."
   },
   "recurring": {
+    "makeFromTransaction": "Nieuwe terugkerende transactie van deze transactie",
     "title": "Terugkerende transacties",
     "add": "Terugkerend toevoegen",
     "edit": "Bewerken Terugkerend",
@@ -1639,7 +1674,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "Na een onderbreking van {{days}} dagen",
-    "priceChangeInsufficient": "Er zijn minstens 3 gekoppelde geboekte afschrijvingen nodig voordat Securo een stabiele prijswijziging meldt."
+    "priceChangeInsufficient": "Er zijn minstens 3 gekoppelde geboekte afschrijvingen nodig voordat Securo een stabiele prijswijziging meldt.",
+    "summaryIncome": "Inkomsten",
+    "summaryExpenses": "Uitgaven",
+    "summaryNet": "Netto",
+    "summaryTransfers": "Uitgesloten overboekingen: {{count}}",
+    "summaryUnconverted": "Zonder wisselkoers, uitgesloten: {{count}}",
+    "summaryFailed": "De totalen van deze maand konden niet worden geladen"
   },
   "rules": {
     "searchPlaceholder": "Regels zoeken...",
@@ -1743,6 +1784,7 @@
     "fieldPayee": "Begunstigde",
     "fieldDate": "Datum",
     "fieldStatus": "Status",
+    "fieldProviderCategory": "Categorie van de provider",
     "opContains": "bevat",
     "opNotContains": "bevat niet",
     "opEquals": "gelijk aan",
@@ -2004,6 +2046,8 @@
     "undoImport": "Importeren ongedaan maken?",
     "undoOrdersDescription": "Hierdoor worden de {{count}} orders geïmporteerd uit {{filename}} verwijderd en worden de posities die ze hebben aangeraakt opnieuw berekend. De holdings die door deze import zijn aangemaakt, worden samen met deze verwijderd.",
     "undone": "Importeren ongedaan gemaakt",
+    "undoOversell": "Deze import kan niet ongedaan worden gemaakt: een blijvende boeking verkoopt {{attempted}} eenheden terwijl er {{available}} in bezit zijn. Bewerk of verwijder die boeking eerst.",
+    "undoTooLarge": "Deze import kan niet ongedaan worden gemaakt: de resterende positie is te groot om op te slaan.",
     "undoDescription": "Hiermee worden geïmporteerde {{count}} transacties uit {{filename}} verwijderd. Deze actie kan niet ongedaan worden gemaakt.",
     "deleting": "Verwijderen...",
     "deleteAll": "Alles verwijderen",
@@ -2082,7 +2126,9 @@
       "fee": "Vergoeding",
       "kind": "Kopen/verkopen",
       "currency": "Valuta",
-      "notes": "Opmerkingen"
+      "notes": "Opmerkingen",
+      "old_units": "Eenheden voor",
+      "new_units": "Eenheden na"
     },
     "walletWarningTitle": "Al in uw portefeuille",
     "warning": {
@@ -2091,7 +2137,8 @@
     },
     "kind": {
       "buy": "Koop",
-      "sell": "Verkopen"
+      "sell": "Verkopen",
+      "split": "Split"
     },
     "reason": {
       "missing_ticker": "geen tikker",
@@ -2103,8 +2150,15 @@
       "unknown_ticker": "ticker niet gevonden door de prijsaanbieder",
       "oversell": "meer eenheden verkopen dan de positie bevat",
       "no_fx_rate": "geen wisselkoers voor de orderdatum",
-      "possible_duplicate": "staat mogelijk al in deze positie door een eerdere import"
-    }
+      "possible_duplicate": "staat mogelijk al in deze positie door een eerdere import",
+      "invalid_split": "splitverhouding onleesbaar, of een split met een hoeveelheid, prijs of kosten",
+      "split_not_allowed": "splits kunnen niet worden vastgelegd op een positie die met de bank wordt gesynchroniseerd",
+      "split_in_future": "een split kan niet in de toekomst liggen",
+      "nothing_held_before_split": "geen eenheden in bezit vóór de split",
+      "too_large": "zou de positie te groot maken om op te slaan",
+      "holding_moved": "de positie is tijdens de import hernoemd of naar een andere portefeuille verplaatst"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Activa",
@@ -2207,6 +2261,9 @@
     "soldAssets": "Verkochte activa",
     "archivedAssets": "Gearchiveerde activa",
     "noAssets": "Nog geen activa",
+    "showArchived": "Gearchiveerde tonen",
+    "archivedNotCounted": "Niet meegeteld in het totale portfolio.",
+    "archivedLoadFailed": "Gearchiveerde bezittingen konden niet worden geladen.",
     "created": "Item gemaakt",
     "updated": "Item bijgewerkt",
     "deleted": "Item verwijderd",
@@ -2363,7 +2420,39 @@
     "statementViewTransactions": "Transacties bekijken",
     "statementUncategorizedIncome": "Inkomsten zonder categorie",
     "statementUncategorizedExpense": "Uitgaven zonder categorie",
-    "statementToggleGroup": "Categorieën van {{name}} tonen"
+    "statementToggleGroup": "Categorieën van {{name}} tonen",
+    "pluginReport": {
+      "total": {
+        "expenses": "Totaal uitgegeven",
+        "income": "Totaal ontvangen",
+        "net": "Saldo"
+      },
+      "none": {
+        "category": "Zonder categorie",
+        "category_group": "Zonder groep",
+        "payee": "Zonder begunstigde",
+        "account": "Zonder rekening",
+        "month": "Zonder datum"
+      },
+      "groupBy": {
+        "category": "Categorie",
+        "category_group": "Groep",
+        "payee": "Begunstigde",
+        "account": "Rekening",
+        "month": "Maand"
+      },
+      "measure": {
+        "expenses": "Uitgaven",
+        "income": "Inkomsten",
+        "net": "Saldo"
+      },
+      "share": "Aandeel",
+      "computed": "Berekend door de plugin",
+      "totalRow": "Totaal",
+      "page": "Pagina {{page}} van {{pages}}",
+      "previousPage": "Vorige pagina",
+      "nextPage": "Volgende pagina"
+    }
   },
   "payees": {
     "noPayeeFound": "Geen begunstigde gevonden.",
@@ -2524,6 +2613,7 @@
     "download": "Downloaden",
     "closePreview": "Voorbeeld sluiten",
     "remove": "Verwijderen",
+    "refresh": "Vernieuwen",
     "invalidAmount": "Voer een geldig bedrag in, bijvoorbeeld {{example}}."
   },
   "splitGroups": {
@@ -2667,6 +2757,15 @@
     "brandSelfHosted": "Zelf gehost",
     "brandPrivate": "Privé door ontwerp"
   },
+  "accountantExport": {
+    "title": "Export voor de accountant",
+    "description": "Download de gecategoriseerde transacties en de winst-en-verliesrekening van een periode, in het formaat dat de software van je accountant direct opent. De bedragen zijn de volledige transactiewaarde, vóór het splitsen met andere personen.",
+    "startDate": "Begindatum",
+    "endDate": "Einddatum",
+    "download": "Pakket downloaden",
+    "error": "Export kon niet worden gemaakt",
+    "formatHint": "Eén zip met transactions.csv en profit-and-loss.csv, met de scheidingstekens en codering die spreadsheets en boekhoudsoftware zonder aanpassing lezen."
+  },
   "backup": {
     "button": "Back-up",
     "downloading": "Downloaden...",
@@ -2678,7 +2777,84 @@
     "passwordPlaceholder": "Laat leeg voor een niet-versleutelde back-up",
     "passwordTooShort": "Gebruik minimaal {{min}} tekens",
     "encryptionNote": "Het archief is gecodeerd met AES-256 en kan in elk standaard archiveringsprogramma worden geopend. Securo slaat dit wachtwoord niet op en kan het bestand zonder dit wachtwoord niet herstellen.",
-    "successEncrypted": "Gecodeerde back-up succesvol gedownload"
+    "successEncrypted": "Gecodeerde back-up succesvol gedownload",
+    "restoreSuccess": "Back-up hersteld in {{name}}",
+    "runSuccess": "Back-up aangemaakt",
+    "uploadDescription": "Upload een ZIP-bestand met een Securo-back-up, bekijk een voorbeeld en herstel de back-up vervolgens standaard naar een nieuwe workspace.",
+    "menu": "Back-ups",
+    "storedDescription": "Back-ups die zijn aangemaakt met ‘Back-up uitvoeren’ of volgens het schema voor deze workspace.",
+    "content": {
+      "configuration": "Alleen configuratie",
+      "data": "Alleen gegevens",
+      "both": "Configuratie en gegevens"
+    },
+    "counts": {
+      "empty": "0 items",
+      "total": "Totaal: {{count}}",
+      "accounts_one": "{{count}} rekening",
+      "accounts_other": "{{count}} rekeningen",
+      "transactions_one": "{{count}} transactie",
+      "transactions_other": "{{count}} transacties",
+      "categories_one": "{{count}} categorie",
+      "categories_other": "{{count}} categorieën",
+      "rules_one": "{{count}} regel",
+      "rules_other": "{{count}} regels",
+      "budgets_one": "{{count}} budget",
+      "budgets_other": "{{count}} budgetten",
+      "goals_one": "{{count}} doel",
+      "goals_other": "{{count}} doelen"
+    },
+    "configSaved": "Back-upinstellingen opgeslagen",
+    "runTitle": "Nu een back-up maken",
+    "contentLabel": "Inhoud van back-up",
+    "restore": "Herstellen",
+    "previewError": "Kan back-upbestand niet lezen",
+    "configError": "Kan back-upinstellingen niet opslaan",
+    "configLoadError": "De back-upinstellingen konden niet worden geladen.",
+    "invalidRetention": "Voer een positief geheel getal in.",
+    "unknownWorkspace": "Onbekende workspace",
+    "running": "Bezig…",
+    "emptyStored": "Nog geen opgeslagen back-ups. Maak er nu een of schakel het schema in.",
+    "listError": "Opgeslagen back-ups konden niet worden geladen.",
+    "downloadNow": "ZIP downloaden",
+    "subtitle": "Exporteer, plan en herstel back-ups van workspaces zonder inlog- of bankgegevens.",
+    "restoreMode": {
+      "current_workspace": "Huidige workspace",
+      "new_workspace": "Nieuwe workspace"
+    },
+    "confirmRestoreLabel": "Typ RESTORE om de huidige workspace te vervangen",
+    "runDescription": "Maak een back-up die op de server wordt beheerd of download rechtstreeks een ZIP-bestand.",
+    "restoreModeLabel": "Hersteldoel",
+    "uploadFileLabel": "ZIP-bestand met back-up",
+    "lastRun": "Laatst uitgevoerd",
+    "noFileSelected": "Geen bestand geselecteerd",
+    "weekly": "Wekelijks",
+    "runNow": "Back-up uitvoeren",
+    "chooseFile": "Bestand kiezen",
+    "previewing": "Back-up wordt gelezen…",
+    "safeBadge": "Gevoelige gegevens uitgesloten",
+    "download": "Downloaden",
+    "storedTitle": "Opgeslagen back-ups",
+    "noFile": "Kies eerst een ZIP-bestand met een back-up.",
+    "daily": "Dagelijks",
+    "destinationHint": "Opgeslagen back-ups blijven alleen behouden als /app/data/backups is gekoppeld (BACKUP_HOST_PATH in Docker Compose of persistence.backups.enabled in Helm).",
+    "noBackupSelected": "Kies eerst een opgeslagen back-up.",
+    "currentWorkspaceWarning": "Deze destructieve optie vervangt binnen één transactie de overeenkomende gegevens in de huidige workspace. Herstellen naar een nieuwe workspace is veiliger.",
+    "uploadTitle": "Herstellen vanuit upload",
+    "retentionDays": "Maximale bewaartijd in dagen",
+    "restoring": "Herstellen…",
+    "scheduleTitle": "Schema en bewaarbeleid",
+    "retentionCount": "Nieuwste bewaren",
+    "nextRun": "Volgende uitvoering",
+    "secretNotice": "In back-ups worden bewust geen inloggegevens van gebruikers, passkeys, toegangsgegevens van providers of banktokens opgenomen.",
+    "scheduleLabel": "Schema",
+    "restoreError": "Kan back-up niet herstellen",
+    "scheduleDescription": "Achtergrondprocessen controleren elk uur de ingeschakelde schema's. In je installatie moet permanente opslag van back-ups zijn ingeschakeld om geplande ZIP-bestanden blijvend te bewaren.",
+    "optional": "Optioneel",
+    "runError": "Kan back-up niet aanmaken",
+    "title": "Back-ups",
+    "restoreUpload": "Geüploade back-up herstellen",
+    "restoreStoredTitle": "Opgeslagen back-up herstellen"
   },
   "update": {
     "title": "Server-update",
@@ -3809,6 +3985,15 @@
       "none": "Geen facturen die vervallen.",
       "noClient": "Geen klant"
     },
+    "flagged": {
+      "title": "Gemarkeerde transacties",
+      "hint": "Wat je hebt gemarkeerd om op terug te komen, verlopen herinneringen eerst.",
+      "none": "Niets gemarkeerd.",
+      "overdue": "Verlopen: {{count}}",
+      "dueSoon": "Deze week: {{count}}",
+      "noDate": "Geen datum",
+      "more": "Meer gemarkeerd: {{count}}"
+    },
     "recurringRevenue": {
       "title": "Terugkerende omzet",
       "hint": "Wat terugkerende facturen per maand opleveren, en wat onlangs verloren ging."
@@ -3816,5 +4001,9 @@
   },
   "demo": {
     "banner": "Openbare demo — de gegevens worden elk uur gewist. Voer niets in dat u niet zou delen."
+  },
+  "offline": {
+    "title": "Server niet bereikbaar",
+    "description": "Je bent offline of Securo start opnieuw op. Je gegevens zijn veilig en er is niets gewijzigd. We maken automatisch opnieuw verbinding zodra de server antwoordt."
   }
 }

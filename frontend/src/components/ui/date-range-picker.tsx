@@ -163,7 +163,7 @@ export function DateRangePicker({
           <button
             type="button"
             className={cn(
-              'px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors',
+              'shrink-0 px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors',
               active
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',

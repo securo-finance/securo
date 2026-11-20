@@ -922,6 +922,7 @@
     "date": "Date",
     "category": "Catégorie",
     "account": "Compte",
+    "card": "Carte",
     "noCategory": "Aucune catégorie",
     "searchCategory": "Rechercher une catégorie...",
     "noCategoryFound": "Aucune catégorie trouvée.",
@@ -999,6 +1000,31 @@
     "ignoredShow": "Afficher",
     "ignoredHide": "Masquer",
     "ignoredHiddenValue": "Masquées",
+    "flagged": "Signalée",
+    "flagAction": "Signaler",
+    "unflagAction": "Retirer le signalement",
+    "flagSuccess": "Transaction signalée",
+    "unflagSuccess": "Signalement retiré",
+    "flagFilterAll": "Toutes signalées",
+    "flagFilterOverdue": "En retard",
+    "flagFilterSoon": "À traiter cette semaine",
+    "flagOverdue": "En retard",
+    "flagDueOn": "Pour le {{date}}",
+    "flagReminder": "Rappel",
+    "flagReminderHint": "facultatif",
+    "flagRemindOn": "Me rappeler",
+    "flagPickDate": "Choisir une date",
+    "flagClearDate": "Effacer la date",
+    "flagNote": "Note",
+    "flagNotePlaceholder": "ex. : en attente du remboursement",
+    "bulkFlagSuccess": "Transactions signalées : {{count}}",
+    "bulkUnflagSuccess": "Signalements retirés : {{count}}",
+    "flagOverdueCount": "Signalements en retard : {{count}}",
+    "flagPreset": {
+      "tomorrow": "Demain",
+      "nextWeek": "Dans une semaine",
+      "nextMonth": "Dans un mois"
+    },
     "statusCleared": "Rapprochée",
     "sortAsc": "Trier par ordre croissant",
     "sortDesc": "Trier par ordre décroissant",
@@ -1280,6 +1306,12 @@
     "cycleMissing": "Configurer le cycle",
     "cycleMissingHint": "Renseignez les jours de clôture et d'échéance du relevé pour débloquer le filtrage par cycle, les alertes d'échéance et la vue facture.",
     "ccSettingsHint": "Ces champs sont optionnels, mais les remplir débloque le filtrage par cycle, les alertes d'échéance et le rattachement des achats à la bonne facture.",
+    "linkedCards": "Cartes associées",
+    "linkedCardsHint": "Utilisez un libellé pour les distinguer dans les transactions.",
+    "noLinkedCards": "Aucun numéro de carte n'a encore été identifié.",
+    "cardEnding": "Terminaison {{number}}",
+    "cardLabel": "Libellé",
+    "cardLabelPlaceholder": "Ajouter un libellé",
     "created": "Compte créé",
     "updated": "Compte mis à jour",
     "deleted": "Compte supprimé",
@@ -1523,6 +1555,8 @@
     "copyPreviewCount": "Catégories à copier : {{count}}",
     "copyPreviewTotal": "Total à copier : {{amount}}",
     "copyPreviewEmpty": "Le mois sélectionné n'a aucun budget à copier.",
+    "copyPreviewAllExist": "Toutes les catégories du mois source ont déjà un budget en {{month}}. Choisissez remplacer pour copier les montants ou appliquer l'ajustement.",
+    "copyPreviewNoChange": "Tous les budgets du mois source sont déjà à ces montants en {{month}}.",
     "copyPreviewError": "Impossible de charger le mois source.",
     "copyAmountTooLarge": "Le montant ajusté dépasse la limite de budget. Réduisez l'ajustement en pourcentage.",
     "copyConfirm": "Copier les budgets",
@@ -1590,6 +1624,7 @@
     "walletHint": "Suivez cet objectif avec la valeur combinée de tous les actifs du portefeuille sélectionné."
   },
   "recurring": {
+    "makeFromTransaction": "Nouvelle récurrence à partir de cette transaction",
     "title": "Transactions récurrentes",
     "add": "Ajouter une récurrente",
     "edit": "Modifier la récurrente",
@@ -1641,7 +1676,13 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "Après un intervalle de {{days}} jours",
-    "priceChangeInsufficient": "Au moins 3 frais publiés et liés sont nécessaires avant que Securo ne signale une variation de prix stable."
+    "priceChangeInsufficient": "Au moins 3 frais publiés et liés sont nécessaires avant que Securo ne signale une variation de prix stable.",
+    "summaryIncome": "Revenus",
+    "summaryExpenses": "Dépenses",
+    "summaryNet": "Net",
+    "summaryTransfers": "Virements exclus : {{count}}",
+    "summaryUnconverted": "Sans taux de change, exclues : {{count}}",
+    "summaryFailed": "Impossible de charger les totaux du mois"
   },
   "rules": {
     "searchPlaceholder": "Rechercher des règles...",
@@ -1747,6 +1788,7 @@
     "fieldPayee": "Bénéficiaire",
     "fieldDate": "Date",
     "fieldStatus": "Statut",
+    "fieldProviderCategory": "Catégorie du fournisseur",
     "opContains": "contient",
     "opNotContains": "ne contient pas",
     "opEquals": "est égal à",
@@ -2013,6 +2055,8 @@
     "undoImport": "Annuler l'import ?",
     "undoOrdersDescription": "Cela supprimera les {{count}} ordres importés de {{filename}} et recalculera les positions concernées. Les actifs créés par cet import sont supprimés avec eux.",
     "undone": "Import annulé",
+    "undoOversell": "Impossible d'annuler cet import : une écriture qui reste vend {{attempted}} unités alors que {{available}} sont détenues. Modifiez ou supprimez cette écriture d'abord.",
+    "undoTooLarge": "Impossible d'annuler cet import : la position restante est trop grande pour être enregistrée.",
     "undoDescription": "Cela supprimera {{count}} transactions importées depuis {{filename}}. Cette action est irréversible.",
     "deleting": "Suppression...",
     "deleteAll": "Tout supprimer",
@@ -2084,7 +2128,9 @@
       "fee": "Frais",
       "kind": "Achat/Vente",
       "currency": "Devise",
-      "notes": "Notes"
+      "notes": "Notes",
+      "old_units": "Unités avant",
+      "new_units": "Unités après"
     },
     "walletWarningTitle": "Déjà dans votre portefeuille",
     "warning": {
@@ -2093,7 +2139,8 @@
     },
     "kind": {
       "buy": "Achat",
-      "sell": "Vente"
+      "sell": "Vente",
+      "split": "Division"
     },
     "reason": {
       "missing_ticker": "aucun ticker",
@@ -2105,8 +2152,15 @@
       "unknown_ticker": "ticker introuvable chez le fournisseur de cours",
       "oversell": "vente supérieure à la position",
       "no_fx_rate": "aucun taux de change pour la date de l'ordre",
-      "possible_duplicate": "figure peut-être déjà dans cette position via un import précédent"
-    }
+      "possible_duplicate": "figure peut-être déjà dans cette position via un import précédent",
+      "invalid_split": "ratio de division illisible, ou division avec une quantité, un prix ou des frais",
+      "split_not_allowed": "impossible d’enregistrer une division sur une position synchronisée avec la banque",
+      "split_in_future": "une division ne peut pas être datée dans le futur",
+      "nothing_held_before_split": "aucune unité détenue avant la division",
+      "too_large": "rendrait la position trop grande pour être enregistrée",
+      "holding_moved": "la position a été renommée ou a changé de portefeuille pendant l’import"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Actifs",
@@ -2209,6 +2263,9 @@
     "soldAssets": "Actifs vendus",
     "archivedAssets": "Actifs archivés",
     "noAssets": "Aucun actif pour l'instant",
+    "showArchived": "Afficher les archivés",
+    "archivedNotCounted": "Non comptés dans le total du portefeuille.",
+    "archivedLoadFailed": "Impossible de charger les actifs archivés.",
     "created": "Actif créé",
     "updated": "Actif mis à jour",
     "deleted": "Actif supprimé",
@@ -2365,7 +2422,39 @@
     "statementViewTransactions": "Voir les transactions",
     "statementUncategorizedIncome": "Revenus non catégorisés",
     "statementUncategorizedExpense": "Dépenses non catégorisées",
-    "statementToggleGroup": "Afficher les catégories de {{name}}"
+    "statementToggleGroup": "Afficher les catégories de {{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "Total dépensé",
+        "income": "Total reçu",
+        "net": "Solde"
+      },
+      "none": {
+        "category": "Sans catégorie",
+        "category_group": "Sans groupe",
+        "payee": "Sans bénéficiaire",
+        "account": "Sans compte",
+        "month": "Sans date"
+      },
+      "groupBy": {
+        "category": "Catégorie",
+        "category_group": "Groupe",
+        "payee": "Bénéficiaire",
+        "account": "Compte",
+        "month": "Mois"
+      },
+      "measure": {
+        "expenses": "Dépenses",
+        "income": "Revenus",
+        "net": "Solde"
+      },
+      "share": "Part",
+      "computed": "Calculé par le plugin",
+      "totalRow": "Total",
+      "page": "Page {{page}} sur {{pages}}",
+      "previousPage": "Page précédente",
+      "nextPage": "Page suivante"
+    }
   },
   "payees": {
     "noPayeeFound": "Aucun bénéficiaire trouvé.",
@@ -2526,6 +2615,7 @@
     "download": "Télécharger",
     "closePreview": "Fermer l'aperçu",
     "remove": "Supprimer",
+    "refresh": "Actualiser",
     "invalidAmount": "Saisissez un montant valide, par exemple {{example}}."
   },
   "splitGroups": {
@@ -2669,6 +2759,15 @@
     "brandSelfHosted": "Auto-hébergé",
     "brandPrivate": "Confidentiel par conception"
   },
+  "accountantExport": {
+    "title": "Export pour le comptable",
+    "description": "Téléchargez les transactions catégorisées et le compte de résultat d'une période, dans le format que le logiciel de votre comptable ouvre directement. Les montants sont la valeur totale de la transaction, avant tout partage avec d'autres personnes.",
+    "startDate": "Date de début",
+    "endDate": "Date de fin",
+    "download": "Télécharger l'archive",
+    "error": "Impossible de générer l'export",
+    "formatHint": "Un zip avec transactions.csv et profit-and-loss.csv, avec les séparateurs et l'encodage que les tableurs et logiciels comptables lisent sans ajustement."
+  },
   "backup": {
     "button": "Sauvegarde",
     "downloading": "Téléchargement...",
@@ -2680,7 +2779,90 @@
     "passwordPlaceholder": "Laissez vide pour une sauvegarde non chiffrée",
     "passwordTooShort": "Utilisez au moins {{min}} caractères",
     "encryptionNote": "L'archive est chiffrée en AES-256 et s'ouvre avec n'importe quel logiciel d'archivage. Securo ne conserve pas ce mot de passe et ne peut pas récupérer le fichier sans lui.",
-    "successEncrypted": "Sauvegarde chiffrée téléchargée avec succès"
+    "successEncrypted": "Sauvegarde chiffrée téléchargée avec succès",
+    "menu": "Backups",
+    "title": "Backups",
+    "subtitle": "Export, schedule, and restore workspace backups without auth or bank credentials.",
+    "safeBadge": "Secrets excluded",
+    "runTitle": "Backup now",
+    "runDescription": "Create a managed backup on the server or download a ZIP directly.",
+    "contentLabel": "Backup content",
+    "runNow": "Run backup",
+    "running": "Running…",
+    "downloadNow": "Download ZIP",
+    "download": "Download",
+    "secretNotice": "Backups intentionally exclude user auth data, passkeys, provider credentials, and bank tokens.",
+    "scheduleTitle": "Schedule and retention",
+    "scheduleDescription": "Des processus vérifient chaque heure les planifications activées. Votre déploiement doit activer le stockage persistant des sauvegardes afin que les ZIP planifiés soient conservés durablement.",
+    "scheduleLabel": "Schedule",
+    "daily": "Daily",
+    "weekly": "Weekly",
+    "retentionCount": "Keep latest",
+    "retentionDays": "Max age in days",
+    "optional": "Optional",
+    "destinationHint": "Les sauvegardes stockées ne sont durables que si /app/data/backups est monté (BACKUP_HOST_PATH dans Docker Compose ou persistence.backups.enabled dans Helm).",
+    "lastRun": "Last run",
+    "nextRun": "Next run",
+    "storedTitle": "Stored backups",
+    "storedDescription": "Backups created by “Run backup” or the schedule for this workspace.",
+    "emptyStored": "No stored backups yet. Run one now or enable the schedule.",
+    "listError": "Impossible de charger les sauvegardes stockées.",
+    "uploadTitle": "Restore from upload",
+    "uploadDescription": "Upload a Securo backup ZIP, preview it, then restore to a new workspace by default.",
+    "previewing": "Reading backup…",
+    "restoreModeLabel": "Restore target",
+    "restoreUpload": "Restore uploaded backup",
+    "restore": "Restore",
+    "restoring": "Restoring…",
+    "restoreStoredTitle": "Restore stored backup",
+    "confirmRestoreLabel": "Type RESTORE to replace the current workspace",
+    "currentWorkspaceWarning": "This destructive option replaces matching data in the current workspace inside one transaction. New workspace restore is safer.",
+    "unknownWorkspace": "Unknown workspace",
+    "noFile": "Choose a backup ZIP first.",
+    "noBackupSelected": "Choose a stored backup first.",
+    "configSaved": "Backup settings saved",
+    "configError": "Could not save backup settings",
+    "configLoadError": "Impossible de charger les paramètres de sauvegarde.",
+    "invalidRetention": "Saisissez un nombre entier positif.",
+    "runSuccess": "Backup created",
+    "runError": "Could not create backup",
+    "previewError": "Could not read backup file",
+    "restoreSuccess": "Backup restored to {{name}}",
+    "restoreError": "Could not restore backup",
+    "content": {
+      "both": "Configuration and data",
+      "configuration": "Configuration only",
+      "data": "Data only"
+    },
+    "counts": {
+      "empty": "0 élément",
+      "total": "Total : {{count}}",
+      "accounts_one": "{{count}} compte",
+      "accounts_many": "{{count}} comptes",
+      "accounts_other": "{{count}} comptes",
+      "transactions_one": "{{count}} transaction",
+      "transactions_many": "{{count}} transactions",
+      "transactions_other": "{{count}} transactions",
+      "categories_one": "{{count}} catégorie",
+      "categories_many": "{{count}} catégories",
+      "categories_other": "{{count}} catégories",
+      "rules_one": "{{count}} règle",
+      "rules_many": "{{count}} règles",
+      "rules_other": "{{count}} règles",
+      "budgets_one": "{{count}} budget",
+      "budgets_many": "{{count}} budgets",
+      "budgets_other": "{{count}} budgets",
+      "goals_one": "{{count}} objectif",
+      "goals_many": "{{count}} objectifs",
+      "goals_other": "{{count}} objectifs"
+    },
+    "restoreMode": {
+      "new_workspace": "New workspace",
+      "current_workspace": "Current workspace"
+    },
+    "uploadFileLabel": "Backup ZIP file",
+    "chooseFile": "Choose file",
+    "noFileSelected": "No file selected"
   },
   "update": {
     "title": "Mise à jour du serveur",
@@ -3811,6 +3993,15 @@
       "none": "Aucune facture à échéance.",
       "noClient": "Sans client"
     },
+    "flagged": {
+      "title": "Transactions signalées",
+      "hint": "Ce que vous avez signalé pour y revenir, rappels en retard d'abord.",
+      "none": "Rien de signalé.",
+      "overdue": "En retard : {{count}}",
+      "dueSoon": "Cette semaine : {{count}}",
+      "noDate": "Sans date",
+      "more": "Autres signalées : {{count}}"
+    },
     "recurringRevenue": {
       "title": "Revenus récurrents",
       "hint": "Ce que rapportent les factures récurrentes chaque mois, et ce qui a été perdu récemment."
@@ -3818,5 +4009,9 @@
   },
   "demo": {
     "banner": "Démo publique — les données sont réinitialisées toutes les heures. Ne saisissez rien que vous ne partageriez pas."
+  },
+  "offline": {
+    "title": "Serveur injoignable",
+    "description": "Vous êtes hors ligne ou Securo redémarre. Vos données sont en sécurité et rien n'a été modifié. Nous nous reconnecterons automatiquement dès que le serveur répondra."
   }
 }

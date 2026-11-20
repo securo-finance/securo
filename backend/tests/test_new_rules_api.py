@@ -1,10 +1,14 @@
 # backend/tests/test_new_rules_api.py
 import uuid
+from datetime import date, datetime, timezone
+from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.account import Account
+from app.models.transaction import Transaction
 from app.models.user import User
 from app.schemas.rule import RuleAction, RuleCondition, RuleCreate
 from app.services.category_service import create_default_categories
@@ -85,6 +89,57 @@ async def test_create_rule_applies_to_existing_transactions(
     netflix = {t["description"]: t for t in items}.get("NETFLIX")
     assert netflix is not None
     assert netflix["category_id"] == cat_food
+
+
+@pytest.mark.asyncio
+async def test_create_provider_category_rule_applies_to_existing_transactions(
+    client: AsyncClient, auth_headers, session: AsyncSession,
+    test_user, test_workspace, test_categories,
+):
+    """Saving a provider-category rule with apply-to-existing categorises the
+    rows whose stored provider payload already carries that category."""
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Provider category API",
+        type="checking",
+        balance=Decimal("1000"),
+        currency="BRL",
+    )
+    transaction = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        description="RESTAURANT",
+        amount=Decimal("45.00"),
+        date=date(2025, 3, 1),
+        type="debit",
+        source="sync",
+        raw_data={"category": "Eating out"},
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add_all([account, transaction])
+    await session.commit()
+
+    payload = {
+        "name": "Provider category apply",
+        "conditions_op": "and",
+        "conditions": [
+            {"field": "provider_category", "op": "equals", "value": "Eating out"}
+        ],
+        "actions": [{"op": "set_category", "value": str(test_categories[1].id)}],
+        "priority": 5,
+        "is_active": True,
+    }
+    response = await client.post("/api/rules", json=payload, headers=auth_headers)
+    assert response.status_code == 201
+    assert response.json()["applied_count"] == 1
+
+    items = (await client.get("/api/transactions", headers=auth_headers)).json()["items"]
+    stored = next(t for t in items if t["id"] == str(transaction.id))
+    assert stored["category_id"] == str(test_categories[1].id)
 
 
 @pytest.mark.asyncio

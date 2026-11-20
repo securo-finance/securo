@@ -66,6 +66,9 @@ x-backend-base: &backend-base
     - securo-demo-network
   volumes:
     - attachments:/app/data/attachments
+    # Managed/scheduled backup ZIPs are written inside containers to
+    # /app/data/backups; keep them on a named volume so they survive a redeploy.
+    - backups:/app/data/backups
 
 services:
   redis:
@@ -138,6 +141,7 @@ services:
 volumes:
   pgdata:
   attachments:
+  backups:
 
 networks:
   securo-demo-network:

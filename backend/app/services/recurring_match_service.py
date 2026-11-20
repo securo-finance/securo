@@ -196,6 +196,15 @@ def _evaluate_candidate(
     return decision
 
 
+async def occurrence_reach(
+    session: AsyncSession, workspace_id: uuid.UUID, frequency: str,
+) -> tuple[int, int]:
+    """Days a charge may sit before and after an occurrence it fulfills."""
+    return _date_reach(
+        await reconciliation_rule_service.resolve_recurring(session, workspace_id, frequency)
+    )
+
+
 async def find_real_tx_for_occurrence(
     session: AsyncSession,
     recurring: RecurringTransaction,
@@ -215,6 +224,9 @@ async def find_real_tx_for_occurrence(
     before, after = _date_reach(policy)
     result = await session.execute(
         select(Transaction).where(
+            # Sync can move the account to another workspace; its charges
+            # then belong there and never link to this bill.
+            Transaction.workspace_id == recurring.workspace_id,
             Transaction.account_id == recurring.account_id,
             Transaction.recurring_transaction_id.is_(None),
             Transaction.source.in_(_REAL_SOURCES),
@@ -245,6 +257,7 @@ async def find_real_tx_for_occurrence(
         return None
     result = await session.execute(
         select(Transaction).where(
+            Transaction.workspace_id == recurring.workspace_id,
             Transaction.account_id == recurring.account_id,
             Transaction.recurring_transaction_id.is_(None),
             Transaction.source.in_(_REAL_SOURCES),
