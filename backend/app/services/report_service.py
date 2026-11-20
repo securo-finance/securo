@@ -481,6 +481,64 @@ def _interval_label_expr(interval: str, date_col=None):
         return func.to_char(col, 'YYYY-MM')
 
 
+# How far apart the two legs of one unpaired movement may be booked, the
+# same window transfer detection uses for its suggestions.
+MIRRORED_LEG_DAYS = 2
+
+
+def _as_date(value) -> date:
+    return value if isinstance(value, date) else date.fromisoformat(str(value)[:10])
+
+
+def _without_mirrored_legs(rows):
+    """Drop the two legs of one movement that were never paired.
+
+    A card bill paid from a tracked account and imported from two statements
+    is a debit on the account and a credit on the card, both in a
+    `treat_as_transfer` category and neither with a `transfer_pair_id`. They
+    are the same money, so neither is an investment contribution nor a
+    withdrawal (#1551). A credit and a debit cancel when they share the
+    category and the amount, sit on different accounts and are booked within
+    `MIRRORED_LEG_DAYS`. Pairs are a maximum matching, so the result does not
+    depend on row order. Rows are (category id, name, color, type, amount,
+    account id, booking date); the rest come back without account and date.
+    """
+    groups: dict[tuple, tuple[list, list]] = {}
+    for row in rows:
+        key = (row[0], round(abs(float(row[4] or 0)), 2))
+        credits, debits = groups.setdefault(key, ([], []))
+        (credits if row[3] == "credit" else debits).append(row)
+
+    dropped: set[int] = set()
+    for credits, debits in groups.values():
+        fits = [
+            [
+                j for j, debit in enumerate(debits)
+                if debit[5] != credit[5]
+                and abs((_as_date(debit[6]) - _as_date(credit[6])).days) <= MIRRORED_LEG_DAYS
+            ]
+            for credit in credits
+        ]
+        owner: dict[int, int] = {}  # debit index -> credit index
+
+        def claim(i: int, seen: set[int]) -> bool:
+            # Augmenting path: take a free debit, or move its credit elsewhere.
+            for j in fits[i]:
+                if j in seen:
+                    continue
+                seen.add(j)
+                if j not in owner or claim(owner[j], seen):
+                    owner[j] = i
+                    return True
+            return False
+
+        for i in range(len(credits)):
+            claim(i, set())
+        for j, i in owner.items():
+            dropped.update((id(debits[j]), id(credits[i])))
+    return [row[:5] for row in rows if id(row) not in dropped]
+
+
 async def get_income_expenses_report(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -923,7 +981,8 @@ async def get_income_expenses_report(
     # "Investment Contributions" node). Paired account transfers stay excluded via
     # the transfer_pair_id filter, so only one-sided movements appear here:
     # debits are contributions, credits are withdrawals, which the Sankey draws
-    # as a source of money beside income (#1418).
+    # as a source of money beside income (#1418). Rows, not sums: the two legs
+    # of one movement that were never paired are dropped first.
     inv_result = await session.execute(
         with_category_lines(
             select(
@@ -931,7 +990,11 @@ async def get_income_expenses_report(
                 Category.name,
                 Category.color,
                 Transaction.type,
-                func.sum(amount_expr),
+                amount_expr,
+                Transaction.account_id,
+                # Legs pair by when they were booked; the reporting date only
+                # picks the period.
+                Transaction.date,
             ).select_from(Transaction)
         )
         .join(Category, line_category_id() == Category.id)
@@ -948,13 +1011,17 @@ async def get_income_expenses_report(
             Category.is_ignored.is_(False),
             *acct_filter,
         )
-        .group_by(Category.id, Category.name, Category.color, Transaction.type)
     )
-    for cat_id, cat_name, cat_color, txn_type, total_amount in inv_result.all():
-        amount = abs(float(total_amount or 0))
-        if amount <= 0:
-            continue
+    moves: dict[tuple[uuid.UUID, str], list] = {}
+    for cat_id, cat_name, cat_color, txn_type, total_amount in _without_mirrored_legs(
+        list(inv_result.all())
+    ):
         group = "withdrawals" if txn_type == "credit" else "investments"
+        entry = moves.setdefault((cat_id, group), [cat_name, cat_color, 0.0])
+        entry[2] += abs(float(total_amount or 0))
+    for (cat_id, group), (cat_name, cat_color, amount) in moves.items():
+        if round(amount, 2) <= 0:
+            continue
         comp_map[(str(cat_id), group)] = {
             "label": cat_name or "Investments",
             "color": cat_color or "#0EA5E9",
