@@ -4,12 +4,13 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import false, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.expected_income import ExpectedIncome
 from app.models.fx_rate import FxRate
 from app.models.workspace import Workspace
+from app.services import budget_service
 from app.services.budget_service import get_expected_income, set_expected_income
 
 pytestmark = pytest.mark.asyncio
@@ -166,3 +167,33 @@ async def test_the_write_comes_back_with_the_month_and_the_amount(
     assert read.amount == Decimal("3450.01")  # the money scale rounds half up
     # USD stored read as USD: the writer sees the figure they typed, unconverted.
     assert read.amount_primary == Decimal("3450.01")
+
+
+async def test_a_racing_insert_updates_the_row_it_collides_with(
+    session: AsyncSession, test_workspace, monkeypatch
+):
+    # The rollback below expires every loaded object; keep the id at hand.
+    workspace_id = test_workspace.id
+    await set_expected_income(session, workspace_id, _MONTH, Decimal("3450.00"), "USD")
+
+    original_select = budget_service.select
+    calls = {"count": 0}
+
+    def racing_select(*args, **kwargs):
+        calls["count"] += 1
+        statement = original_select(*args, **kwargs)
+        if calls["count"] == 1:
+            # The other request wrote the row between this read and its insert.
+            return statement.where(false())
+        return statement
+
+    monkeypatch.setattr(budget_service, "select", racing_select)
+
+    read = await set_expected_income(
+        session, workspace_id, _MONTH, Decimal("4000.00"), "USD"
+    )
+    assert read.amount == Decimal("4000.00")
+
+    rows = await _stored_rows(session, workspace_id)
+    assert len(rows) == 1
+    assert rows[0].amount == Decimal("4000.00")

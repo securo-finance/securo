@@ -989,18 +989,36 @@ async def set_expected_income(
             await session.commit()
         return ExpectedIncomeRead(month=month_start, amount=None, currency=None, amount_primary=None)
 
+    amount_value = amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     if row is None:
         row = ExpectedIncome(
             workspace_id=workspace_id,
             month=month_start,
-            amount=amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+            amount=amount_value,
             currency=currency,
         )
         session.add(row)
+        try:
+            await session.commit()
+        except IntegrityError:
+            # Another request inserted the same workspace/month between this read
+            # and its write; that row is the one to update now.
+            await session.rollback()
+            row = await session.scalar(
+                select(ExpectedIncome).where(
+                    ExpectedIncome.workspace_id == workspace_id,
+                    ExpectedIncome.month == month_start,
+                )
+            )
+            if row is None:
+                raise
+            row.amount = amount_value
+            row.currency = currency
+            await session.commit()
     else:
-        row.amount = amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        row.amount = amount_value
         row.currency = currency
-    await session.commit()
+        await session.commit()
 
     amount_primary, _ = await convert_or_none(
         session, row.amount, row.currency, currency, target_date=month_start
