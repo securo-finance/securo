@@ -479,7 +479,7 @@ async def update_settlement(
         receiver_tx = await session.get(Transaction, settlement.receiver_transaction_id, with_for_update=True)
         if receiver_tx is not None and receiver_tx.source == "settlement":
             receiver_tx = None
-        if receiver_tx is not None and "to_member_id" in update_data:
+        if receiver_tx is not None and update_data.get("to_member_id", settlement.to_member_id) != settlement.to_member_id:
             raise ValueError("Unlink the incoming transaction before changing who is paid")
 
     for key, value in update_data.items():

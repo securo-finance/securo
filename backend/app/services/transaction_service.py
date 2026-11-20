@@ -2380,9 +2380,22 @@ async def update_transaction(
         await settlement_service.replace_receiver_settlements(
             session, transaction, payback_payload, workspace_id, user_id
         )
-    elif {"amount", "currency", "type"} & update_data.keys():
+    if {"amount", "currency", "type"} & update_data.keys():
+        # Every row the edit reached, and the other leg of a transfer, which
+        # follows the amount.
         await session.flush()
-        for row in rows:
+        reached = list(rows)
+        pair_ids = [row.transfer_pair_id for row in rows if row.transfer_pair_id]
+        if pair_ids:
+            reached += (
+                await session.execute(
+                    select(Transaction).where(
+                        Transaction.transfer_pair_id.in_(pair_ids),
+                        Transaction.id.notin_([row.id for row in rows]),
+                    )
+                )
+            ).scalars().all()
+        for row in reached:
             await settlement_service.check_receiver_settlements(session, row)
 
     await session.commit()

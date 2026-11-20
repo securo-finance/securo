@@ -346,7 +346,7 @@ async def test_a_credit_and_its_settlements_stay_consistent_when_edited(
     received.type = "credit"
     s = await _settle_to_me(session, test_user.id, test_workspace.id, group, bob, me, "5.00", received.id)
     assert s is not None
-    tx_id, settlement_id, group_id = received.id, s.id, group.id
+    tx_id, settlement_id, group_id, me_id = received.id, s.id, group.id, me.id
     workspace_id, user_id = test_workspace.id, test_user.id
 
     with pytest.raises(ValueError, match="pays back group debts"):
@@ -360,6 +360,32 @@ async def test_a_credit_and_its_settlements_stay_consistent_when_edited(
     await session.rollback()
     kept = await session.get(GroupSettlement, settlement_id)
     assert kept is not None and kept.amount == Decimal("5.00")
+    # Resending the same receiver is not a change.
+    await settlement_service.update_settlement(
+        session, group_id, settlement_id, workspace_id, user_id,
+        GroupSettlementUpdate(to_member_id=me_id, amount=Decimal("4.00")),
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_transfer_leg_that_settles_debts_stays_covered(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Editing one leg of a transfer moves the other; that leg is checked too."""
+    group, me, bob, _c = await _setup_group(session, test_user.id, test_workspace.id)
+    sent_from = await _make_account(session, test_user.id, test_workspace.id)
+    received_in = await _make_account(session, test_user.id, test_workspace.id)
+    debit = await _make_transaction(session, test_user.id, test_workspace.id, sent_from.id)
+    credit = await _make_transaction(session, test_user.id, test_workspace.id, received_in.id)
+    credit.type = "credit"
+    debit.transfer_pair_id = credit.transfer_pair_id = uuid.uuid4()
+    await _settle_to_me(session, test_user.id, test_workspace.id, group, bob, me, "5.00", credit.id)
+    debit_id, workspace_id, user_id = debit.id, test_workspace.id, test_user.id
+
+    with pytest.raises(ValueError, match="pays back group debts"):
+        await update_transaction(
+            session, debit_id, workspace_id, user_id, TransactionUpdate(amount=Decimal("4.00"))
+        )
 
 
 @pytest.mark.asyncio
