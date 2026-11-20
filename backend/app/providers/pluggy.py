@@ -19,6 +19,7 @@ from app.providers.base import (
     ConnectionData,
     ConnectTokenData,
     HoldingData,
+    HoldingTradeData,
     RefreshOutcome,
     ReservedBalanceData,
     TransactionData,
@@ -279,6 +280,67 @@ _HOLDING_PROMOTED_KEYS = {
 # — potentially years before the user bought in. Using it as purchase_date
 # would produce badly-wrong evolution charts, so we skip it for those.
 _ISSUE_DATE_IS_PURCHASE_DATE = {"FIXED_INCOME", "COE"}
+
+# Pluggy `type` values of exchange-traded positions (stocks, units, FIIs,
+# BDRs and ETFs): their `quantity` is a share count and their trades replay
+# onto it. Fixed income, funds and pensions are left out for now.
+_EXCHANGE_TRADED_TYPES = {"EQUITY", "ETF"}
+
+# Pluggy investment transaction types that move the position. INTEREST
+# (dividends, JCP), TAX, TRANSFER and AMORTIZATION rows carry no quantity
+# change the ledger can replay, so they stay out of it.
+_TRADE_KINDS = {"BUY": "buy", "SELL": "sell"}
+
+
+def _sum_expenses(expenses) -> Decimal:
+    """Total fee of a trade from Pluggy's `expenses` breakdown.
+
+    Every numeric entry (brokerage, settlement, clearing, exchange, custody,
+    taxes) is part of what executing the trade cost; null entries and an
+    absent block count as zero.
+    """
+    if not isinstance(expenses, dict):
+        return Decimal("0")
+    total = Decimal("0")
+    for value in expenses.values():
+        amount = _decimal_or_none(value) if not isinstance(value, bool) else None
+        if amount is not None and amount > 0:
+            total += amount
+    return total
+
+
+def _build_trade_data(tx: dict) -> Optional[HoldingTradeData]:
+    """Map one row of /investments/{id}/transactions to a ledger trade.
+
+    Returns None for rows that are not a buy or a sell, or that lack what a
+    trade needs (id, date, a positive quantity, a price). `movementType` is
+    not used: Pluggy reports it inverted on some rows.
+    """
+    kind = _TRADE_KINDS.get((tx.get("type") or "").upper())
+    tx_id = tx.get("id")
+    if kind is None or not tx_id:
+        return None
+    quantity = _decimal_or_none(tx.get("quantity"))
+    if quantity is None or quantity <= 0:
+        return None
+    price = _decimal_or_none(tx.get("value"))
+    if price is None:
+        amount = _decimal_or_none(tx.get("amount"))
+        price = abs(amount) / quantity if amount is not None else None
+    if price is None or price < 0:
+        return None
+    trade_date = _date_or_none(tx.get("tradeDate") or tx.get("date"))
+    if trade_date is None:
+        return None
+    return HoldingTradeData(
+        external_id=str(tx_id),
+        kind=kind,
+        date=trade_date,
+        quantity=quantity,
+        price=price,
+        fee=_sum_expenses(tx.get("expenses")),
+    )
+
 
 
 def _build_holding_data(inv: dict) -> HoldingData:
@@ -999,7 +1061,12 @@ class PluggyProvider(BankProvider):
 
                 results = data.get("results", [])
                 for inv in results:
-                    holdings.append(_build_holding_data(inv))
+                    holding = _build_holding_data(inv)
+                    if (inv.get("type") or "").upper() in _EXCHANGE_TRADED_TYPES:
+                        holding.trades = await self._fetch_investment_trades(
+                            client, headers, str(inv["id"])
+                        )
+                    holdings.append(holding)
 
                 total_pages = data.get("totalPages", 1)
                 if page >= total_pages or not results:
@@ -1007,6 +1074,46 @@ class PluggyProvider(BankProvider):
                 page += 1
 
         return holdings
+
+    async def _fetch_investment_trades(
+        self, client: httpx.AsyncClient, headers: dict, investment_id: str
+    ) -> Optional[list[HoldingTradeData]]:
+        """Buys and sells Pluggy reports for one exchange-traded position.
+
+        They feed the asset ledger, which derives the average price, cost
+        basis and realized gain (the /investments payload carries no cost
+        for equities). Only exchange-traded positions are asked: their
+        quantity and unit price mean shares and price per share, so the
+        trades replay onto the reported position. Returns None when the
+        endpoint fails, so the sync keeps the ledger it already has instead
+        of reading the failure as "no trades".
+        """
+        trades: list[HoldingTradeData] = []
+        page = 1
+        try:
+            while True:
+                resp = await client.get(
+                    f"{PLUGGY_API_BASE}/investments/{investment_id}/transactions",
+                    headers=headers,
+                    params={"pageSize": 500, "page": page},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                results = data.get("results", [])
+                for tx in results:
+                    trade = _build_trade_data(tx)
+                    if trade is not None:
+                        trades.append(trade)
+                total_pages = data.get("totalPages", 1)
+                if page >= total_pages or not results:
+                    break
+                page += 1
+        except (httpx.HTTPError, ValueError) as exc:
+            logger.warning(
+                "Pluggy investment transactions unavailable for %s: %s", investment_id, exc
+            )
+            return None
+        return trades
 
     async def get_bills(self, credentials: dict, account_external_id: str) -> list[BillData]:
         """Fetch credit-card bills from Pluggy /bills.
