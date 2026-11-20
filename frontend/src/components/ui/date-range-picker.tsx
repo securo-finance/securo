@@ -245,49 +245,52 @@ export function DateRangePicker({
             />
           </div>
         </div>
-        {draftError && (
-          <div className="flex items-center gap-1.5 px-3 pb-2 text-[11px] text-rose-600 dark:text-rose-400">
-            <AlertCircle size={12} className="shrink-0" />
-            <span>{draftError}</span>
-          </div>
-        )}
-        {/* Pinned to the bottom of the scrolling popover, so Apply stays on
-            screen while the calendars scroll behind it. */}
-        <div className="sticky bottom-0 flex items-center justify-between gap-2 border-t border-border/70 bg-popover px-3 py-2">
-          <button
-            type="button"
-            onClick={() => {
-              setDraftFrom('')
-              setDraftTo('')
-            }}
-            className="text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            {t('transactions.filtersBar.reset')}
-          </button>
-          <div className="flex items-center gap-2">
-            <Button
+        {/* Pinned to the bottom of the scrolling popover, so the reason Apply
+            is disabled and the buttons themselves stay on screen while the
+            calendars scroll behind them. */}
+        <div className="sticky bottom-0 flex flex-col gap-1.5 border-t border-border/70 bg-popover px-3 py-2">
+          {draftError && (
+            <div className="flex items-center gap-1.5 text-[11px] text-rose-600 dark:text-rose-400">
+              <AlertCircle size={12} className="shrink-0" />
+              <span>{draftError}</span>
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-2">
+            <button
               type="button"
-              variant="outline"
-              size="sm"
               onClick={() => {
-                setDraftFrom(from)
-                setDraftTo(to)
-                setOpen(false)
+                setDraftFrom('')
+                setDraftTo('')
               }}
+              className="text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
-              {t('transactions.filtersBar.cancel')}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              disabled={!!draftError}
-              onClick={() => {
-                onChange(normalizedDraft.from, normalizedDraft.to)
-                setOpen(false)
-              }}
-            >
-              {t('transactions.filtersBar.apply')}
-            </Button>
+              {t('transactions.filtersBar.reset')}
+            </button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setDraftFrom(from)
+                  setDraftTo(to)
+                  setOpen(false)
+                }}
+              >
+                {t('transactions.filtersBar.cancel')}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={!!draftError}
+                onClick={() => {
+                  onChange(normalizedDraft.from, normalizedDraft.to)
+                  setOpen(false)
+                }}
+              >
+                {t('transactions.filtersBar.apply')}
+              </Button>
+            </div>
           </div>
         </div>
       </PopoverContent>
