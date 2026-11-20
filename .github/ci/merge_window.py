@@ -18,9 +18,11 @@ Usage:
 
 It always exits 0. The answer is `open=true|false`, written to $GITHUB_OUTPUT
 when that variable is set (or to --github-output), and a line in the log:
-`inside the merge window ...` or `outside the merge window ...`. The workflow
-skips its merge step on `open=false`, which is how a weekend run leaves every
-pull request untouched instead of failing.
+`inside the merge window ...` or `outside the merge window ...`. When it is
+open, `closes_at` carries the instant the window ends, which the workflow
+compares against before every merge. The workflow skips its merge step on
+`open=false`, which is how a weekend run leaves every pull request untouched
+instead of failing.
 
 `workflow_dispatch` is not held by the window: a person asking for a merge by
 hand on a Saturday is asking on purpose. That exception lives in the workflow,
@@ -32,7 +34,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 ZONE = ZoneInfo("America/Sao_Paulo")
@@ -62,6 +64,24 @@ def is_open(now: datetime) -> bool:
     if weekday == MONDAY and minute < OPEN_AGAIN_AT:
         return False
     return True
+
+
+def closes_at(now: datetime) -> datetime | None:
+    """The instant the open window ends, or None when the window is closed.
+
+    An open window always ends at the next Friday 18:00 local. The workflow
+    compares against this before every merge, so a sweep that started at 17:55
+    over a long queue cannot merge at 18:05.
+    """
+    if not is_open(now):
+        return None
+    local = now.astimezone(ZONE)
+    days = (FRIDAY - local.weekday()) % 7
+    day = local.date() + timedelta(days=days)
+    close = datetime.combine(day, time(18, 0), tzinfo=ZONE)
+    if close <= local:
+        close = datetime.combine(day + timedelta(days=7), time(18, 0), tzinfo=ZONE)
+    return close.astimezone(timezone.utc)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -100,6 +120,9 @@ def main(argv: list[str] | None = None) -> int:
     if target:
         with open(target, "a", encoding="utf-8") as output:
             output.write(f"open={'true' if opened else 'false'}\n")
+            deadline = closes_at(now)
+            if deadline:
+                output.write(f"closes_at={deadline.isoformat()}\n")
     return 0
 
 

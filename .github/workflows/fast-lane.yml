@@ -50,7 +50,8 @@ name: fast lane
 #
 # pull_request_target-style events are avoided for the merge itself; this job
 # never checks out the pull request's code, it only reads its file list and
-# calls the API. Nothing from a contribution is executed here.
+# calls the API. The one checkout is `main`, for the merge window module. Nothing
+# from a contribution is executed here.
 
 on:
   workflow_run:
@@ -151,16 +152,49 @@ jobs:
       # UTC cron moves it. Outside the window the step logs
       # "outside the merge window", the merge step below is skipped and nothing
       # is evaluated; the run still ends green, because a weekend is not a fault.
+      #
+      # The module is read from `main`, never from the pull request being
+      # evaluated: `pull_request_review` runs this workflow as the pull request
+      # defines it, and a fork could rewrite the script it would otherwise run.
+      # `ref: main` is the only code checked out here.
+      - uses: actions/checkout@v7
+        if: github.event_name != 'workflow_dispatch'
+        with:
+          ref: main
+          persist-credentials: false
+          sparse-checkout: .github/ci
+
+      # Until this workflow is merged, a `pull_request_review` run uses the
+      # pull request's copy of it while `main` has no module yet. There is no
+      # window to read then, and the run merges nothing: `open` stays empty,
+      # which skips the step below. That is a preview of this file only, and a
+      # preview that merges nothing is what a missing gate should do.
       - name: Merge window
         id: window
         if: github.event_name != 'workflow_dispatch'
-        run: python3 .github/ci/merge_window.py
+        run: |
+          if [ ! -f .github/ci/merge_window.py ]; then
+            echo "merge window module is not on main yet; not merging from this run"
+            exit 0
+          fi
+          python3 .github/ci/merge_window.py
 
       - uses: actions/github-script@v9
         if: github.event_name == 'workflow_dispatch' || steps.window.outputs.open == 'true'
+        env:
+          # The instant the open window ends, for the recheck before each merge.
+          WINDOW_CLOSES_AT: ${{ steps.window.outputs.closes_at }}
         with:
           script: |
             const OWNER = context.repo.owner, REPO = context.repo.repo;
+
+            // The instant the open merge window ends, written by the
+            // `merge_window.py` step above; empty on a manual run, which is
+            // not held by the window. The window can close while this run is
+            // still going: a sweep started at 17:55 over a long queue would
+            // otherwise merge at 18:05, so every merge compares against this
+            // before it happens.
+            const WINDOW_CLOSES_AT = Date.parse(process.env.WINDOW_CLOSES_AT || '');
 
             // Who may leave a verdict. Two identities: the account that pushes
             // (an agent commits as its owner, so its comment is
@@ -333,6 +367,14 @@ jobs:
             // approval, so somebody is waiting on the lane for it. It returns
             // null when it merged or when there is nothing worth saying there.
             async function tryMerge(number) {
+              // The window may have closed since this run started: nothing is
+              // evaluated then, and there is no refusal note to leave, because
+              // a weekend is not a state of the pull request.
+              if (WINDOW_CLOSES_AT && Date.now() >= WINDOW_CLOSES_AT) {
+                core.info(`#${number}: not merging, outside the merge window`);
+                return null;
+              }
+
               let head = null;
               // The verdict for this head, read before the gates only so a skip
               // can tell whether a person already approved it. Gate 4 below is

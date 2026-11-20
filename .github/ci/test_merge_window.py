@@ -70,6 +70,23 @@ class MergeWindowTest(unittest.TestCase):
         self.assertTrue(self.opened("2018-11-05T03:00:00+00:00"))
         self.assertFalse(self.opened("2018-11-05T02:59:00+00:00"))
 
+    def test_an_open_window_ends_at_the_next_friday_1800(self):
+        deadline = merge_window.closes_at(
+            datetime.fromisoformat("2026-11-20T17:59:00-03:00")
+        )
+        self.assertEqual(deadline, datetime.fromisoformat("2026-11-20T21:00:00+00:00"))
+
+    def test_monday_opens_until_that_friday(self):
+        deadline = merge_window.closes_at(
+            datetime.fromisoformat("2026-11-23T01:00:00-03:00")
+        )
+        self.assertEqual(deadline, datetime.fromisoformat("2026-11-27T21:00:00+00:00"))
+
+    def test_a_closed_window_has_no_deadline(self):
+        self.assertIsNone(
+            merge_window.closes_at(datetime.fromisoformat("2026-11-21T12:00:00-03:00"))
+        )
+
     def test_a_naive_datetime_is_refused(self):
         with self.assertRaises(ValueError):
             merge_window.is_open(datetime(2026, 11, 20, 17, 59))
@@ -86,12 +103,20 @@ class MergeWindowTest(unittest.TestCase):
             self.assertEqual(output.read_text().strip(), "open=false")
             self.assertIn("outside the merge window", log.getvalue())
 
-    def test_the_command_says_when_it_is_open(self):
-        log = io.StringIO()
-        with redirect_stdout(log):
-            code = merge_window.main(["--at", "2026-11-23T01:00:00-03:00"])
-        self.assertEqual(code, 0)
-        self.assertIn("inside the merge window", log.getvalue())
+    def test_the_command_says_when_it_is_open_and_when_it_closes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / "github-output"
+            log = io.StringIO()
+            with redirect_stdout(log):
+                code = merge_window.main(
+                    ["--at", "2026-11-23T01:00:00-03:00", "--github-output", str(output)]
+                )
+            self.assertEqual(code, 0)
+            self.assertIn("inside the merge window", log.getvalue())
+            self.assertEqual(
+                output.read_text().splitlines(),
+                ["open=true", "closes_at=2026-11-27T21:00:00+00:00"],
+            )
 
 
 if __name__ == "__main__":
