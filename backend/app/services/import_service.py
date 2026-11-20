@@ -6,7 +6,7 @@ import uuid
 import warnings
 import xml.etree.ElementTree as ET
 from xml.parsers import expat
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from bs4 import XMLParsedAsHTMLWarning
@@ -212,7 +212,10 @@ def _ensure_ofx_sgml_header(text: str, encoding: str) -> str:
 # ofxparse converts a date with a "[+1:CET]" suffix to UTC, so a midnight
 # booking in Europe or Asia lands on the previous day. The bank's day is the
 # one printed, so drop the offset from transaction dates.
-_OFX_TXN_DATE_OFFSET = re.compile(r"(<(?:DTPOSTED|DTUSER)\s*>\s*[0-9.]+)\s*\[[^\]<]*\]", re.IGNORECASE)
+_OFX_TXN_DATE_OFFSET = re.compile(
+    r"(<(?:DTPOSTED|DTUSER)\s*>\s*(?:<!\[CDATA\[)?\s*[0-9.]+)\s*\[[^\]<]*\]",
+    re.IGNORECASE,
+)
 
 
 def _preprocess_ofx(content: bytes) -> bytes:
@@ -1199,14 +1202,18 @@ async def import_transactions(
             # Prefer an external ID (OFX FITID), with date retained because some
             # Brazilian cards reuse one purchase FITID across monthly installments,
             # and amount and type retained because some banks reuse one FITID for
-            # several distinct entries posted on the same day.
+            # several distinct entries posted on the same day. The date may differ
+            # by one day: rows imported before OFX offsets were dropped can sit on
+            # the neighbouring day.
             # Formats without unique IDs fall back to transaction fields; compare
             # both descriptions because rules may have changed the displayed one.
             if txn_data.external_id:
                 existing_statement = select(Transaction).where(
                     Transaction.account_id == account_id,
                     Transaction.external_id == txn_data.external_id,
-                    Transaction.date == txn_data.date,
+                    Transaction.date.between(
+                        txn_data.date - timedelta(days=1), txn_data.date + timedelta(days=1)
+                    ),
                     Transaction.amount == txn_data.amount,
                     Transaction.type == txn_data.type,
                 )
