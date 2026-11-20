@@ -1534,6 +1534,7 @@
     "incomeLeft": "sobram {{amount}}",
     "incomeShort": "faltam {{amount}}",
     "incomeLoadError": "Não foi possível carregar a renda esperada.",
+    "incomeUnsaved": "Orçamentos não salvos",
     "otherCategories": "Outras categorias",
     "noCategories": "Ainda não há categorias",
     "total": "Orçamento {{amount}}",

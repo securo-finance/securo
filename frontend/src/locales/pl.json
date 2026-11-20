@@ -1583,6 +1583,7 @@
     "incomeLeft": "zostaje {{amount}}",
     "incomeShort": "brakuje {{amount}}",
     "incomeLoadError": "Nie udało się wczytać oczekiwanego dochodu.",
+    "incomeUnsaved": "Budżety niezapisane",
     "otherCategories": "Inne kategorie",
     "noCategories": "Brak kategorii",
     "total": "Budżet {{amount}}",

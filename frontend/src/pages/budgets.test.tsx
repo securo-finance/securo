@@ -662,3 +662,46 @@ describe('budget income strip', () => {
     expect(screen.queryByRole('button', { name: t('budgets.incomeClear') })).not.toBeInTheDocument()
   })
 })
+
+describe('budget income chip in the save bar', () => {
+  const savedIncome = { month: '2026-10-01', amount: 1020, currency: 'USD', amount_primary: 1020 }
+
+  it('shows the coverage of the saved limits and the difference', async () => {
+    api.budgets.expectedIncome.get.mockResolvedValue(savedIncome)
+    renderWithProviders(<BudgetsPage />)
+
+    const chip = await screen.findByText(/Income covers 100%/, { selector: 'span.truncate' })
+    expect(chip).toHaveTextContent('$0.00 left')
+    expect(chip.className).toContain('truncate')
+    expect(screen.getByText(t('budgets.total', { amount: '$1,020.00' }))).toBeInTheDocument()
+  })
+
+  it('warns that the budgets are not saved while a draft is edited, and keeps the saved totals', async () => {
+    api.budgets.expectedIncome.get.mockResolvedValue(savedIncome)
+    const { user } = renderWithProviders(<BudgetsPage />)
+
+    const rentInput = await screen.findByRole('textbox', { name: t('budgets.budgetFor', { category: 'Rent' }) })
+    await user.clear(rentInput)
+    await user.type(rentInput, '2000')
+
+    expect(await screen.findByText(t('budgets.incomeUnsaved'))).toBeInTheDocument()
+    expect(screen.queryByText(/Income covers/, { selector: 'span.truncate' })).not.toBeInTheDocument()
+    // The footer keeps the draft total; the chip cannot have followed it.
+    expect(screen.getByText(t('budgets.total', { amount: '$2,120.00' }))).toBeInTheDocument()
+  })
+
+  it('stays on one line with logical classes under RTL at 390px', async () => {
+    document.documentElement.dir = 'rtl'
+    window.innerWidth = 390
+    try {
+      api.budgets.expectedIncome.get.mockResolvedValue(savedIncome)
+      renderWithProviders(<BudgetsPage />)
+      const chip = await screen.findByText(/Income covers 100%/, { selector: 'span.truncate' })
+      expect(chip.className).toContain('truncate')
+      expect(chip.className).not.toMatch(/(^| )((ml|mr|pl|pr)-|text-left|text-right)/)
+    } finally {
+      document.documentElement.dir = 'ltr'
+      window.innerWidth = 1024
+    }
+  })
+})

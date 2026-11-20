@@ -1534,6 +1534,7 @@
     "incomeLeft": "sobran {{amount}}",
     "incomeShort": "faltan {{amount}}",
     "incomeLoadError": "No se pudieron cargar los ingresos esperados.",
+    "incomeUnsaved": "Presupuestos no guardados",
     "otherCategories": "Otras categorías",
     "noCategories": "Aún no hay categorías",
     "total": "Presupuesto {{amount}}",

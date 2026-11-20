@@ -1534,6 +1534,7 @@
     "incomeLeft": "avanzano {{amount}}",
     "incomeShort": "mancano {{amount}}",
     "incomeLoadError": "Impossibile caricare le entrate previste.",
+    "incomeUnsaved": "Budget non salvati",
     "otherCategories": "Altre categorie",
     "noCategories": "Ancora nessuna categoria",
     "total": "Budget {{amount}}",

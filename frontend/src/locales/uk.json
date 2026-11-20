@@ -1547,6 +1547,7 @@
     "incomeLeft": "залишилося {{amount}}",
     "incomeShort": "бракує {{amount}}",
     "incomeLoadError": "Не вдалося завантажити очікуваний дохід.",
+    "incomeUnsaved": "Бюджети не збережено",
     "otherCategories": "Інші категорії",
     "noCategories": "Категорій ще немає",
     "total": "Бюджет {{amount}}",

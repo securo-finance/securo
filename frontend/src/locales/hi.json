@@ -1530,6 +1530,7 @@
     "incomeLeft": "शेष {{amount}}",
     "incomeShort": "कमी {{amount}}",
     "incomeLoadError": "अपेक्षित आय लोड नहीं हो सकी।",
+    "incomeUnsaved": "बजट सहेजे नहीं गए",
     "otherCategories": "अन्य श्रेणियाँ",
     "noCategories": "अभी कोई श्रेणी नहीं",
     "total": "बजट {{amount}}",

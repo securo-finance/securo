@@ -1531,6 +1531,7 @@
     "incomeLeft": "{{amount}} übrig",
     "incomeShort": "{{amount}} fehlt",
     "incomeLoadError": "Erwartetes Einkommen konnte nicht geladen werden.",
+    "incomeUnsaved": "Budgets nicht gespeichert",
     "otherCategories": "Weitere Kategorien",
     "noCategories": "Noch keine Kategorien",
     "total": "Budget {{amount}}",

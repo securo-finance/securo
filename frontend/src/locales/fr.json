@@ -1534,6 +1534,7 @@
     "incomeLeft": "Il reste {{amount}}",
     "incomeShort": "Il manque {{amount}}",
     "incomeLoadError": "Le revenu attendu n'a pas pu être chargé.",
+    "incomeUnsaved": "Budgets non enregistrés",
     "otherCategories": "Autres catégories",
     "noCategories": "Aucune catégorie",
     "total": "Budget {{amount}}",

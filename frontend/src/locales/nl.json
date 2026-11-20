@@ -1532,6 +1532,7 @@
     "incomeLeft": "{{amount}} over",
     "incomeShort": "{{amount}} tekort",
     "incomeLoadError": "Verwachte inkomsten konden niet worden geladen.",
+    "incomeUnsaved": "Budgetten niet opgeslagen",
     "otherCategories": "Overige categorieën",
     "noCategories": "Nog geen categorieën",
     "total": "Budget {{amount}}",

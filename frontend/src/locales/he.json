@@ -1542,6 +1542,7 @@
     "incomeLeft": "נותרו {{amount}}",
     "incomeShort": "חסר {{amount}}",
     "incomeLoadError": "לא ניתן היה לטעון את ההכנסה הצפויה.",
+    "incomeUnsaved": "התקציבים לא נשמרו",
     "otherCategories": "קטגוריות אחרות",
     "noCategories": "אין עדיין קטגוריות",
     "total": "תקציב {{amount}}",

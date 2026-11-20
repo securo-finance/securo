@@ -1530,6 +1530,7 @@
     "incomeLeft": "残り {{amount}}",
     "incomeShort": "不足 {{amount}}",
     "incomeLoadError": "予定収入を読み込めませんでした。",
+    "incomeUnsaved": "予算は保存されていません",
     "otherCategories": "その他のカテゴリ",
     "noCategories": "カテゴリはまだありません",
     "total": "予算 {{amount}}",

@@ -1598,6 +1598,7 @@
     "incomeLeft": "zostáva {{amount}}",
     "incomeShort": "chýba {{amount}}",
     "incomeLoadError": "Očakávaný príjem sa nepodarilo načítať.",
+    "incomeUnsaved": "Rozpočty nie sú uložené",
     "otherCategories": "Ostatné kategórie",
     "noCategories": "Zatiaľ žiadne kategórie",
     "total": "Rozpočet {{amount}}",

@@ -1530,6 +1530,7 @@
     "incomeLeft": "απομένουν {{amount}}",
     "incomeShort": "λείπουν {{amount}}",
     "incomeLoadError": "Δεν ήταν δυνατή η φόρτωση του αναμενόμενου εισοδήματος.",
+    "incomeUnsaved": "Οι προϋπολογισμοί δεν αποθηκεύτηκαν",
     "otherCategories": "Άλλες κατηγορίες",
     "noCategories": "Δεν υπάρχουν ακόμη κατηγορίες",
     "total": "Προϋπολογισμός {{amount}}",

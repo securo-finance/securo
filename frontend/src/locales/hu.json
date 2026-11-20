@@ -1530,6 +1530,7 @@
     "incomeLeft": "{{amount}} maradt",
     "incomeShort": "{{amount}} hiányzik",
     "incomeLoadError": "A várható bevételt nem sikerült betölteni.",
+    "incomeUnsaved": "A költségvetések nincsenek mentve",
     "otherCategories": "Other categories",
     "noCategories": "No categories yet",
     "total": "Budget {{amount}}",

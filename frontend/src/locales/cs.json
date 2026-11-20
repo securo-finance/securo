@@ -1614,6 +1614,7 @@
     "incomeLeft": "zbývá {{amount}}",
     "incomeShort": "chybí {{amount}}",
     "incomeLoadError": "Očekávaný příjem se nepodařilo načíst.",
+    "incomeUnsaved": "Rozpočty nejsou uloženy",
     "otherCategories": "Other categories",
     "noCategories": "No categories yet",
     "total": "Budget {{amount}}",

@@ -30,7 +30,7 @@ import { useSidebarState } from '@/contexts/sidebar-state-context'
 import { cn } from '@/lib/utils'
 import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
-import { parseBudgetDraft, planBudgetChange, type BudgetOperation } from '@/lib/budget-settings-utils'
+import { parseBudgetDraft, planBudgetChange, savedPlannedTotal, type BudgetOperation } from '@/lib/budget-settings-utils'
 import { todayInTimezone } from '@/lib/date-utils'
 import { formatAmountInput, formatCurrency } from '@/lib/format'
 import type { BudgetSuggestion, Category } from '@/types'
@@ -142,6 +142,11 @@ export default function BudgetsPage() {
     queryKey: ['budgets', 'series'],
     queryFn: () => budgetsApi.list(),
   })
+  // The same read as the strip: same key and fetcher, so it is one request.
+  const { data: incomeData } = useQuery({
+    queryKey: ['budgets', 'expected-income', monthParam],
+    queryFn: () => budgetsApi.expectedIncome.get(monthParam),
+  })
   const { data: categoriesList, isLoading: categoriesLoading, isError: categoriesError, error: categoriesLoadError, refetch: refetchCategories } = useQuery({
     queryKey: ['categories'],
     queryFn: categoriesApi.listIncludingHidden,
@@ -205,6 +210,14 @@ export default function BudgetsPage() {
   const changedCategories = new Set(allCategories.filter((category) => dirtyCategoryIds.has(category.id) && planFor(category.id).length > 0).map((category) => category.id))
   const invalidCategories = new Set(allCategories.filter((category) => parsedDraftFor(category.id) === null).map((category) => category.id))
   const totalBudget = allCategories.reduce((sum, category) => sum + (parsedDraftFor(category.id) ?? 0), 0)
+  // The chip's coverage reads the saved limits, never the drafts (D2), so the
+  // figure does not move while the user is still typing.
+  const savedPlanned = savedPlannedTotal(budgetsList ?? [])
+  const chipIncome = incomeData == null ? null : Number(incomeData.amount_primary ?? incomeData.amount)
+  const chipDifference = chipIncome === null ? null : chipIncome - savedPlanned
+  const chipPercent = chipIncome !== null && savedPlanned > 0
+    ? Math.min(Math.round((chipIncome / savedPlanned) * 100), 100)
+    : null
   const rowFor = (suggestion: BudgetSuggestion) =>
     suggestEdits[suggestion.category_id] ?? { checked: !suggestion.existing_budget, amount: String(suggestion.suggested_amount) }
   const suggestionByCategory = new Map((suggestionData?.suggestions ?? []).map((suggestion) => [suggestion.category_id, suggestion]))
@@ -532,6 +545,20 @@ export default function BudgetsPage() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-card border border-border shadow-xl rounded-2xl px-4 py-3">
               <div className="text-sm tabular-nums">
                 <span className="font-semibold text-foreground">{t('budgets.total', { amount: fmt(totalBudget) })}</span>
+                {chipIncome !== null && (
+                  <span className="block max-w-full truncate text-xs text-muted-foreground">
+                    {operations.length > 0
+                      ? t('budgets.incomeUnsaved')
+                      : [
+                          chipPercent !== null ? t('budgets.incomeCovers', { percent: chipPercent }) : null,
+                          chipDifference !== null
+                            ? chipDifference >= 0
+                              ? t('budgets.incomeLeft', { amount: fmt(chipDifference) })
+                              : t('budgets.incomeShort', { amount: fmt(-chipDifference) })
+                            : null,
+                        ].filter(Boolean).join(' · ')}
+                  </span>
+                )}
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <Button variant="outline" size="sm" disabled={operations.length === 0 || saveMutation.isPending} onClick={() => setDraftState(emptyDrafts())}>
