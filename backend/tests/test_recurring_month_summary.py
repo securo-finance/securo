@@ -576,3 +576,28 @@ async def test_summary_route_reads_the_last_supported_month(client, auth_headers
         headers=auth_headers,
     )
     assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_a_paused_business_day_schedule_keeps_the_charge_on_its_real_day(
+    session, test_user, test_workspace, test_account,
+):
+    """A 5th-business-day bill paid on Mon December 7 counts in December.
+
+    The charge sits six days after the nominal December 1, past the default
+    five-day reach, but on the day the rule actually falls; the summary must
+    look for it there.
+    """
+    rec = _recurring(session, test_user, test_workspace, test_account,
+                     "Rent", "1800", "debit", "monthly", date(2026, 11, 1),
+                     next_occurrence_override=date(2027, 1, 1), is_active=False,
+                     business_day=5, holiday_calendar="BR-SC")
+    session.add(Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=test_account.id, description="Rent", amount=Decimal("1800"),
+        currency="BRL", date=date(2026, 12, 7), type="debit", source="recurring",
+        status="posted", recurring_transaction_id=rec.id,
+    ))
+    await session.commit()
+
+    assert (await _summary(session, test_workspace, date(2026, 12, 1))).expenses == Decimal("1800.00")
