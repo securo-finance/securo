@@ -100,6 +100,15 @@ before disabling their PVC. Consult the repository README's Attachment Storage
 section for permissions, migration, and integration testing. S3 mode does not
 move AI knowledge files to object storage.
 
+### Client IP behind the Ingress
+
+Login, second factor and registration are rate limited per client IP, read
+from `X-Forwarded-For` as far as `config.trustedProxyHops` proxies. The default,
+`"1"`, fits the Ingress and the HTTPRoute, which send `/api` straight to the
+backend. When a load balancer in front of the controller also appends to
+`X-Forwarded-For`, set `"2"`; set it too low and every visitor shares the
+address of the nearest proxy, and with it one rate-limit bucket.
+
 ### Extra environment variables, volumes and volume mounts
 
 `backend`, `celeryWorker`, `celeryBeat` and `migration` each accept `extraEnv`,
