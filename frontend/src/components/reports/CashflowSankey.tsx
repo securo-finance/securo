@@ -1,6 +1,7 @@
 import { ltrAmount } from '@/lib/format'
 import {
   LABEL_LINE_HEIGHT,
+  columnLabelSpan,
   placeColumnLabels,
   wrapLabelLines,
   type ColumnLabelPlacement,
@@ -11,6 +12,7 @@ import {
   sankey as d3Sankey,
   sankeyLinkHorizontal,
   sankeyJustify,
+  type SankeyGraph,
 } from 'd3-sankey'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import type { ReportCompositionItem } from '@/types'
@@ -36,6 +38,9 @@ const MAX_NODES_PER_SIDE = 9
 const NODE_WIDTH = 16
 const NODE_PADDING = 16
 const TOP_GUTTER = 30 // header room above the nodes for the centre label
+
+/** Shared empty map, so a chart with no width keeps a stable reference. */
+const NO_LABELS = new Map<number, ColumnLabelPlacement>()
 
 interface SankeyNodeDatum {
   id: string
@@ -237,58 +242,74 @@ export function CashflowSankey({ composition, currency, locale }: CashflowSankey
     const outflowCount = rawNodes.filter((n) => n.side === 'expense' || n.side === 'investment').length
     return Math.max(incomeCount, outflowCount, 1)
   }, [rawNodes])
-  const height = Math.min(780, Math.max(380, maxSide * 60))
-
-  const layout = useMemo(() => {
-    if (!hasData || width === 0) return null
-    const generator = d3Sankey<SankeyNodeDatum, SankeyLinkDatum>()
-      .nodeWidth(NODE_WIDTH)
-      .nodePadding(NODE_PADDING)
-      .nodeAlign(sankeyJustify)
-      .extent([
-        [8, TOP_GUTTER],
-        [width - 8, height - 14],
-      ])
-    // d3-sankey mutates its input — clone so re-renders stay pure.
-    return generator({
-      nodes: rawNodes.map((n) => ({ ...n })),
-      links: rawLinks.map((l) => ({ ...l })),
-    })
-  }, [rawNodes, rawLinks, width, height, hasData])
 
   // Always-on labels: wrap each name into the gap it has before the centre bar
   // and stack the blocks so a long name neither runs under the bar nor into
   // the label below it. On a phone the gap is about 100px, narrower than
-  // "Investment withdrawals", which used to come out cut (#287).
-  const labels = useMemo(() => {
-    const placed = new Map<number, ColumnLabelPlacement>()
-    if (!layout) return placed
-    const centre = layout.nodes.find((n) => n.id === 'center')
-    const sideNodes = layout.nodes.filter((n) => n.id !== 'center')
-    for (const onLeft of [true, false]) {
-      const column = sideNodes
-        .filter((n) => ((n.x0 ?? 0) < width / 2) === onLeft)
-        .sort((a, b) => ((a.y0! + a.y1!) / 2) - ((b.y0! + b.y1!) / 2))
-      if (column.length === 0) continue
-      // The label starts 8px off the node and the centre bar gets 8px of its
-      // own, so the usable width is the distance between them minus 16.
-      const gutter = onLeft
-        ? (centre?.x0 ?? width / 2) - Math.max(...column.map((n) => n.x1 ?? 0)) - 16
-        : Math.min(...column.map((n) => n.x0 ?? width)) - (centre?.x1 ?? width / 2) - 16
-      const placements = placeColumnLabels(
-        column.map((n) => ({
-          center: (n.y0! + n.y1!) / 2,
-          lines: wrapLabelLines(n.name, gutter),
-        })),
-        LABEL_LINE_HEIGHT / 2 + 2,
-        height - 4,
-      )
-      column.forEach((n, i) => {
-        placed.set((n as SankeyNodeDatum & { index: number }).index, placements[i])
+  // "Investment withdrawals", which used to come out cut (#287). The labels
+  // hang off their nodes, so the chart is laid out, measured and laid out again
+  // when the columns need more height than the node spacing asked for.
+  const chart = useMemo(() => {
+    if (!hasData || width === 0) return null
+    const build = (chartHeight: number) => {
+      const generator = d3Sankey<SankeyNodeDatum, SankeyLinkDatum>()
+        .nodeWidth(NODE_WIDTH)
+        .nodePadding(NODE_PADDING)
+        .nodeAlign(sankeyJustify)
+        .extent([
+          [8, TOP_GUTTER],
+          [width - 8, chartHeight - 14],
+        ])
+      // d3-sankey mutates its input — clone so re-renders stay pure.
+      return generator({
+        nodes: rawNodes.map((n) => ({ ...n })),
+        links: rawLinks.map((l) => ({ ...l })),
       })
     }
-    return placed
-  }, [layout, width, height])
+    const columnsFor = (current: SankeyGraph<SankeyNodeDatum, SankeyLinkDatum>) => {
+      const centre = current.nodes.find((n) => n.id === 'center')
+      const sideNodes = current.nodes.filter((n) => n.id !== 'center')
+      return [true, false].map((onLeft) => {
+        const column = sideNodes
+          .filter((n) => ((n.x0 ?? 0) < width / 2) === onLeft)
+          .sort((a, b) => ((a.y0! + a.y1!) / 2) - ((b.y0! + b.y1!) / 2))
+        // The label starts 8px off the node and the centre bar gets 8px of its
+        // own, so the usable width is the distance between them minus 16.
+        const gutter = onLeft
+          ? (centre?.x0 ?? width / 2) - Math.max(...column.map((n) => n.x1 ?? 0)) - 16
+          : Math.min(...column.map((n) => n.x0 ?? width)) - (centre?.x1 ?? width / 2) - 16
+        return {
+          indexes: column.map((n) => (n as SankeyNodeDatum & { index: number }).index),
+          items: column.map((n) => ({
+            center: (n.y0! + n.y1!) / 2,
+            lines: wrapLabelLines(n.name, gutter),
+          })),
+        }
+      })
+    }
+
+    let height = Math.min(780, Math.max(380, maxSide * 60))
+    let layout = build(height)
+    let columns = columnsFor(layout)
+    // Room for the tallest label column, the top gutter and the bottom margin.
+    const needed = Math.max(...columns.map((column) => columnLabelSpan(column.items))) + TOP_GUTTER + 20
+    if (needed > height) {
+      height = needed
+      layout = build(height)
+      columns = columnsFor(layout)
+    }
+
+    const labels = new Map<number, ColumnLabelPlacement>()
+    for (const column of columns) {
+      const placements = placeColumnLabels(column.items, LABEL_LINE_HEIGHT / 2 + 2, height - 4)
+      column.indexes.forEach((index, i) => labels.set(index, placements[i]))
+    }
+    return { layout, height, labels }
+  }, [rawNodes, rawLinks, width, maxSide, hasData])
+
+  const layout = chart?.layout ?? null
+  const height = chart?.height ?? 0
+  const labels = chart?.labels ?? NO_LABELS
 
   // Resolve the current hover into the exact set of links/nodes to keep lit.
   const { activeLinks, activeNodes } = useMemo(() => {

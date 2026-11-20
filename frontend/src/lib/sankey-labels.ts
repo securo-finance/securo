@@ -63,10 +63,26 @@ export interface ColumnLabelPlacement {
 }
 
 /**
+ * Height one column of labels takes when they are stacked back to back: every
+ * block (name lines plus the amount) and a gap between neighbours. The chart
+ * sizes itself from this, so a column with many wrapped names never runs out
+ * of room.
+ */
+export function columnLabelSpan(items: ColumnLabelInput[]): number {
+  if (items.length === 0) return 0
+  return (
+    items.reduce((sum, item) => sum + (item.lines.length + 1) * LABEL_LINE_HEIGHT, 0) +
+    LABEL_BLOCK_GAP * (items.length - 1)
+  )
+}
+
+/**
  * Place one column's labels, in node order. Each block starts at its node's
  * centre and grows downward (name lines, then the amount); a block is pushed
- * down only as far as needed to clear the previous one, and the column is
- * lifted when its last block would leave the chart.
+ * down only as far as needed to clear the previous one. When the last block
+ * would leave the chart, the column is pulled up block by block, each into the
+ * gap above it, so a tall wrapped label at the bottom does not drag the whole
+ * column with it.
  */
 export function placeColumnLabels(
   items: ColumnLabelInput[],
@@ -75,24 +91,30 @@ export function placeColumnLabels(
 ): ColumnLabelPlacement[] {
   // A block covers its name lines plus the amount line.
   const lines = items.map((item) => item.lines.length + 1)
+  // Top edge to bottom edge of the block, measured on the line grid.
+  const blockHeight = lines.map((count) => count * LABEL_LINE_HEIGHT)
   const ys = items.map((item) => item.center)
 
   for (let i = 1; i < items.length; i++) {
-    const clearOfPrevious = ys[i - 1] + lines[i - 1] * LABEL_LINE_HEIGHT + LABEL_BLOCK_GAP
-    if (ys[i] < clearOfPrevious) ys[i] = clearOfPrevious
+    ys[i] = Math.max(ys[i], ys[i - 1] + blockHeight[i - 1] + LABEL_BLOCK_GAP)
   }
 
   const last = items.length - 1
-  if (last >= 0) {
-    const bottomEdge = ys[last] + (lines[last] - 1) * LABEL_LINE_HEIGHT + LABEL_LINE_HEIGHT / 2
-    const overflow = bottomEdge - bottom
-    if (overflow > 0) {
-      // Lift the whole column, but never above the top of the chart.
-      const lift = Math.min(overflow, ys[0] - LABEL_LINE_HEIGHT / 2 - top)
-      if (lift > 0) for (let i = 0; i <= last; i++) ys[i] -= lift
+  if (last >= 0 && ys[last] + (lines[last] - 1) * LABEL_LINE_HEIGHT + LABEL_LINE_HEIGHT / 2 > bottom) {
+    // Sit the last block on the bottom edge, then fit the ones above it into
+    // the space they have instead of moving the whole column together.
+    ys[last] = Math.min(
+      ys[last],
+      bottom - (lines[last] - 1) * LABEL_LINE_HEIGHT - LABEL_LINE_HEIGHT / 2,
+    )
+    for (let i = last - 1; i >= 0; i--) {
+      ys[i] = Math.min(ys[i], ys[i + 1] - blockHeight[i] - LABEL_BLOCK_GAP)
     }
-    const aboveTop = top - (ys[0] - LABEL_LINE_HEIGHT / 2)
-    if (aboveTop > 0) for (let i = 0; i <= last; i++) ys[i] += aboveTop
+    // Anything left above the chart's top edge moves back down.
+    ys[0] = Math.max(ys[0], top + LABEL_LINE_HEIGHT / 2)
+    for (let i = 1; i <= last; i++) {
+      ys[i] = Math.max(ys[i], ys[i - 1] + blockHeight[i - 1] + LABEL_BLOCK_GAP)
+    }
   }
 
   return items.map((item, i) => ({ lines: item.lines, y: ys[i] }))
