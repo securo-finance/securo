@@ -2229,6 +2229,38 @@ async def test_get_transactions_keeps_a_page_whose_status_changed(eb_keys):
 
 
 @pytest.mark.asyncio
+async def test_get_transactions_numbers_a_booked_entry_apart(eb_keys):
+    """A pending spelling and the booked one it settles keep one fingerprint,
+    and a bank can list both in the same response. The booked one is numbered
+    apart, so it holds the id it gets as soon as the pending twin is gone
+    (#1232)."""
+    provider = EnableBankingProvider()
+    coffee = {
+        "transaction_amount": {"amount": "3.20", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": "2026-05-10",
+    }
+    page = {
+        "transactions": {"booked": [dict(coffee)], "pending": [dict(coffee)]},
+        "continuation_key": "",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=page)
+
+    with _patch_client(provider, handler):
+        txns = await provider.get_transactions(
+            {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
+        )
+
+    base = _txn_fingerprint("acc-1", coffee)
+    assert [(t.status, t.external_id) for t in txns] == [
+        ("posted", base),
+        ("pending", base),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_get_transactions_cancelled_entry_keeps_its_slot(eb_keys):
     """A cancelled entry is not imported, but it keeps its place among the
     identical entries of its page, so the one still listed keeps the id it had

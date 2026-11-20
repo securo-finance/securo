@@ -382,8 +382,10 @@ def _repeat_external_id(external_id: str, occurrence: int) -> str:
 
     Two same-amount purchases on one day that the bank lists with nothing
     else (a pending card purchase carries only amount, direction and date)
-    hash to the same id. Each repeat within a page gets its own id; the
-    first keeps the plain one, so rows already stored keep theirs.
+    hash to the same id. Each repeat within the fetch gets its own id; the
+    first keeps the plain one, so rows already stored keep theirs. The
+    booked spelling and the pending one count apart, since they may be the
+    same operation.
     """
     digest = hashlib.sha256(f"{external_id}#{occurrence}".encode("utf-8")).hexdigest()
     return digest[:32]
@@ -1458,11 +1460,12 @@ class EnableBankingProvider(BankProvider):
         pending_keys: dict[tuple[str, str, str, str], int] = {}
         continuation_key: Optional[str] = None
         seen_continuation_keys: set[str] = set()
-        # How many entries with a given base id the fetch has returned so far.
-        # An identical pair can straddle two pages, so the count runs over the
-        # whole fetch; a page the cursor serves twice is dropped whole by its
-        # signature, before its entries could be counted again.
-        occurrences: dict[str, int] = {}
+        # How many entries with a given base id the fetch has returned so far,
+        # counted apart for the booked ones and the rest. An identical pair can
+        # straddle two pages, so the count runs over the whole fetch; a page the
+        # cursor serves twice is dropped whole by its signature, before its
+        # entries could be counted again.
+        occurrences: dict[tuple[str, str], int] = {}
         page_signatures: set[str] = set()
         self.cancelled_transaction_ids.pop(account_external_id, None)
         for _ in range(cap):
@@ -1504,9 +1507,17 @@ class EnableBankingProvider(BankProvider):
                     self.truncated_account_ids.add(account_external_id)
                     continue
                 # Identical entries are distinct transactions, listed with
-                # nothing to tell them apart.
-                occurrence = occurrences.get(parsed.external_id, 0)
-                occurrences[parsed.external_id] = occurrence + 1
+                # nothing to tell them apart. A pending entry and the booked
+                # entry it settles keep the same fingerprint, and both can be
+                # listed in one fetch: the booked ones count apart, so the
+                # booked spelling keeps the id it will have once the pending
+                # twin is gone. A cancelled entry counts with the pending ones,
+                # which is where it came from, so the survivor of a pair keeps
+                # the id it had while both were listed.
+                space = "posted" if status == "posted" else "pending"
+                slot = (space, parsed.external_id)
+                occurrence = occurrences.get(slot, 0)
+                occurrences[slot] = occurrence + 1
                 if occurrence:
                     parsed.external_id = _repeat_external_id(
                         parsed.external_id, occurrence
