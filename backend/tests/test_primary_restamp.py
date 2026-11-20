@@ -23,6 +23,7 @@ from app.models.transaction import Transaction
 from app.models.user import User
 from app.models.workspace import Workspace
 from app.cli import restamp_primary_amounts
+from app.core.app_clock import app_today
 from tests.conftest import TestSessionLocal
 from app.services.primary_restamp_service import (
     fetch_missing_today_rates,
@@ -506,3 +507,30 @@ async def test_posting_a_pending_row_today_drops_its_typed_amount(
     await _display(client, auth_headers, test_user, "BRL")
     await session.refresh(tx)
     assert tx.amount_primary != Decimal("1560.00")
+
+
+@pytest.mark.asyncio
+async def test_posting_a_pending_row_already_dated_today_keeps_its_typed_amount(
+    client: AsyncClient, session: AsyncSession, auth_headers, test_user: User, rates
+):
+    """A row dated today keeps its date when posted, so nothing the conversion
+    depends on changed and a round trip still brings the typed R$ 1,560 back."""
+    tx_id = await _usd_row_typed_in_brl(client, auth_headers, test_user)
+    tx = await session.get(Transaction, uuid.UUID(tx_id))
+    assert tx is not None
+    tx.status = "pending"
+    tx.date = app_today()
+    await session.commit()
+
+    posted = await client.post(f"/api/transactions/{tx_id}/post-today", headers=auth_headers)
+    assert posted.status_code == 200, posted.text
+    await session.refresh(tx)
+    assert tx.status == "posted"
+    assert (tx.amount_primary, tx.amount_primary_typed, tx.amount_primary_typed_currency) == (
+        Decimal("1560.00"), Decimal("1560.00"), "BRL",
+    )
+
+    await _display(client, auth_headers, test_user, "USD")
+    await _display(client, auth_headers, test_user, "BRL")
+    await session.refresh(tx)
+    assert tx.amount_primary == Decimal("1560.00")

@@ -2693,17 +2693,13 @@ async def post_transaction_today(
         raise ValueError("Cannot change amount or date on a synchronized transaction")
 
     today = app_today()
+    previous_date = transaction.date
     transaction.status = "posted"
     transaction.date = today
 
     account = await session.get(Account, transaction.account_id)
     apply_effective_date(transaction, account)
-    # Posting moves the date to today: the account amount follows it, and a
-    # conversion typed for the old date no longer holds (ADR 0028).
-    _drop_typed_primary(transaction)
-    await stamp_primary_amount(
-        session, transaction.user_id, transaction, restamp_account=True
-    )
+    await _restamp_posted_leg(session, transaction, previous_date)
 
     if transaction.transfer_pair_id:
         paired_result = await session.execute(
@@ -2717,17 +2713,35 @@ async def post_transaction_today(
         if paired:
             paired.status = "posted"
             if paired.source != "sync":
+                paired_previous_date = paired.date
                 paired.date = today
                 paired_account = await session.get(Account, paired.account_id)
                 apply_effective_date(paired, paired_account)
-                _drop_typed_primary(paired)
-                await stamp_primary_amount(
-                    session, paired.user_id, paired, restamp_account=True
-                )
+                await _restamp_posted_leg(session, paired, paired_previous_date)
 
     await session.commit()
     await session.refresh(transaction)
     return transaction
+
+
+async def _restamp_posted_leg(
+    session: AsyncSession, transaction: Transaction, previous_date: date
+) -> None:
+    """Stamp a leg that was just posted today.
+
+    When posting moved the date, the account amount follows it and a
+    conversion typed for the old date no longer holds (ADR 0028). A leg
+    already dated today changed nothing a conversion depends on, so what the
+    user typed stays.
+    """
+    date_changed = transaction.date != previous_date
+    if date_changed:
+        _drop_typed_primary(transaction)
+    await stamp_primary_amount(
+        session, transaction.user_id, transaction, restamp_account=date_changed
+    )
+    if not date_changed:
+        await _restore_typed_primary(session, transaction, transaction.user_id)
 
 
 async def toggle_ignore_transaction(
