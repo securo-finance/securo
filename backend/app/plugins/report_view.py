@@ -20,6 +20,10 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 MAX_BLOCKS = 24
 MAX_SERIES = 12
 MAX_POINTS = 1000
+#: Chart points a view draws in all: the blocks are bounded one by one, but a
+#: page with 24 charts each at MAX_POINTS x MAX_SERIES takes minutes to draw
+#: and gigabytes of heap. One chart at those limits is what a report needs.
+MAX_TOTAL_POINTS = 12_000
 MAX_ROWS = 1000
 MAX_COLUMNS = 12
 MAX_TEXT = 2000
@@ -311,6 +315,13 @@ class ReportView(_Model):
     #: The currency `currency` values are in; the viewer's when left out.
     currency: Annotated[str, Field(pattern=r"^[A-Z]{3}$")] | None = None
     blocks: list[Block] = Field(min_length=1, max_length=MAX_BLOCKS)
+
+    @model_validator(mode="after")
+    def _bounded_points(self) -> ReportView:
+        points = sum(len(block.x) * len(block.series) for block in self.blocks if isinstance(block, ChartBlock))
+        if points > MAX_TOTAL_POINTS:
+            raise ValueError(f"a view draws at most {MAX_TOTAL_POINTS} chart points across its charts")
+        return self
 
 
 TreemapItem.model_rebuild()

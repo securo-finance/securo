@@ -21,13 +21,16 @@ The reports page already works as a library: someone keeps the reports they want
   - `table`: sortable, paged, with totals, bars behind values and signed colors;
   - `text`.
 
-  A view is data only: no HTML, script, style or URL; colors are `#RRGGBB`; text is shown as text; every list is capped. A view that breaks those rules is refused before anyone sees it.
+  A view is data only: no HTML, script, style or URL; colors are `#RRGGBB`; text is shown as text; every list is capped: at most 24 blocks, 12 series in a chart, 1,000 points in a series and 12,000 chart points across the whole view, so a page the browser has to draw stays within seconds and a sane amount of memory. A view that breaks those rules is refused before anyone sees it.
+
+  Both kinds read at most 731 days of the workspace's data (`MAX_DAYS` in `backend/app/services/plugin_report_service.py`); a longer period is answered with a 422. The reports page's own ranges run longer than that (the two-year preset spans up to 781 days, and a custom range up to ten years), so `PluginReport` trims the window to the limit, keeps its end, and says on the tab which span it read rather than failing.
 - `GET /api/reports/plugins/{owner}/{name}/{key}` (`get_plugin_report` in `backend/app/api/reports.py`) answers both: a query report's rows, or a code report's checked view. It reads the report from the manifest the workspace installed, never from the catalog, and answers 404 while `PLUGINS_ENABLED` is off or the workspace doesn't have the report, 503 when a code report can't reach the runner, 502 when the plugin fails or returns something that isn't a view. It is a read like any report: whoever can see the workspace, a viewer included, and an access token with `reports:read`.
 - The frontend draws both with one renderer, `ReportView` (`frontend/src/components/reports/ReportView.tsx`), with Securo's chart components, privacy mode and the person's language and currency. A query report's rows become a view first (`frontend/src/lib/plugin-report-view.ts`). The reports library lists the installed plugins' reports next to Securo's own under `plugin:<owner/name>:<key>`; a kept one is a tab, drawn by `PluginReport` (`frontend/src/components/reports/PluginReport.tsx`) with the page's period picker.
 
 ## Consequences
 
 - A plugin can bring a report Securo doesn't have, simple or elaborate, without any of its code reaching the interface.
+- A view that stays inside the per-block limits can still be too big to draw (24 charts of 1,000 points by 12 series each), so the total is capped too: a code report asking for more is a 502 with the reason, and the plugin has to send less.
 - A code report runs the plugin each time it is opened, in the runner's limits (60 seconds and 512 MB a call by default). It is handed at most 20,000 transactions a run; past that, `truncated` says so.
 - What a code report reads, it can send to the hosts it declared: the consent shows both, as for an integration.
 - Removing the plugin takes its reports out of the library; a tab someone kept for it is left out of the page, and their saved arrangement keeps working.
