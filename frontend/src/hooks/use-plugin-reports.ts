@@ -27,5 +27,10 @@ export function usePluginReports(): { entries: PluginReportEntry[] | null; settl
     if (!pluginsEnabled) return []
     return data ? pluginReportEntries(data) : null
   }, [data, flagsLoading, flagsFailed, flagsKnown, pluginsEnabled])
-  return { entries, settled: !flagsLoading && (!pluginsEnabled || data !== undefined || isError) }
+  // Settled once there's nothing left to wait for: the flags failed for good, or they were
+  // read and either plugins are off or their list (or its failure) is in. Not while the
+  // flags are paused offline, so the page waits to open on a saved plugin report.
+  const flagsRead = flagsKnown !== false
+  const settled = !flagsLoading && (flagsFailed || (flagsRead && (!pluginsEnabled || data !== undefined || isError)))
+  return { entries, settled }
 }
