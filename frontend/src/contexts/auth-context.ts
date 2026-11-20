@@ -11,6 +11,10 @@ interface AuthContextType {
   user: User | null
   token: string | null
   isLoading: boolean
+  /** A token is kept but the server did not answer for it (offline, 5xx). */
+  isUnreachable: boolean
+  /** Ask the server for the session again. */
+  retrySession: () => void
   login: (email: string, password: string) => Promise<LoginResult>
   verify2fa: (tempToken: string, code: string) => Promise<void>
   /** `viaOidc` marks the session as coming from the provider, so signing out

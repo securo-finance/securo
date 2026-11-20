@@ -11,13 +11,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const { user, token, isLoading: authLoading } = useAuth()
   const [list, setList] = useState<Workspace[]>([])
   const [currentId, setCurrentId] = useState<string | null>(() => localStorage.getItem(WORKSPACE_STORAGE_KEY))
-  const [isLoading, setIsLoading] = useState(true)
+  const [isFetching, setIsFetching] = useState(true)
+  const [loadFailed, setLoadFailed] = useState(false)
+  // The token the list was last fetched for. Until it matches the current
+  // one the list belongs to no session yet, so the provider is still
+  // loading even in the render before the fetch starts: reporting "done,
+  // no modules" there sends module pages to home (#292).
+  const [loadedToken, setLoadedToken] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
-  const loadWorkspaces = useCallback(async () => {
-    setIsLoading(true)
+  const loadWorkspaces = useCallback(async (requestedFor: string) => {
+    setIsFetching(true)
     try {
       const fetched = await workspacesApi.list()
+      setLoadFailed(false)
       setList(fetched)
       // Reconcile the stored selection against what's actually accessible.
       // If the stored ID is stale (workspace archived, user removed, etc.)
@@ -35,11 +42,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setCurrentId(null)
       }
     } catch {
-      // 401s are handled by the global interceptor; other failures we
-      // just surface as no-data — the user can retry from the UI.
+      // 401s are handled by the global interceptor. Anything else
+      // (offline, 5xx) is flagged so the shell says the server can't be
+      // reached instead of rendering an empty workspace.
       setList([])
+      setLoadFailed(true)
     } finally {
-      setIsLoading(false)
+      setLoadedToken(requestedFor)
+      setIsFetching(false)
     }
   }, [])
 
@@ -52,11 +62,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (!user || !token) {
       setList([])
       setCurrentId(null)
-      setIsLoading(false)
+      setLoadFailed(false)
+      setLoadedToken(null)
+      setIsFetching(false)
       return
     }
-    void loadWorkspaces()
+    void loadWorkspaces(token)
   }, [authLoading, user, token, loadWorkspaces])
+
+  const refresh = useCallback(async () => {
+    if (token) await loadWorkspaces(token)
+  }, [token, loadWorkspaces])
+
+  const isLoading =
+    isFetching || authLoading || (!!user && !!token && loadedToken !== token)
 
   const switchWorkspace = useCallback(
     async (id: string) => {
@@ -99,8 +118,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         current,
         workspaces: list,
         isLoading,
+        loadFailed,
         switchWorkspace,
-        refresh: loadWorkspaces,
+        refresh,
         role,
         canManage,
         canWrite,

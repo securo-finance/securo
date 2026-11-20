@@ -4146,5 +4146,11 @@
       "title": "Opakované príjmy",
       "hint": "Čo mesačne prinášajú opakované faktúry a čo sa nedávno stratilo."
     }
+  },
+  "connection": {
+    "unreachableTitle": "Server nie je dostupný",
+    "offlineTitle": "Ste offline",
+    "description": "Vaše údaje teraz nemožno načítať. Budeme to skúšať ďalej a túto stránku otvoríme, keď server odpovie.",
+    "retry": "Skúsiť znova"
   }
 }

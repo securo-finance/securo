@@ -4112,5 +4112,11 @@
       "title": "Przychody cykliczne",
       "hint": "Ile co miesiąc przynoszą faktury cykliczne i co ostatnio utracono."
     }
+  },
+  "connection": {
+    "unreachableTitle": "Nie można połączyć się z serwerem",
+    "offlineTitle": "Jesteś offline",
+    "description": "Twoich danych nie można teraz wczytać. Będziemy próbować dalej i otworzymy tę stronę, gdy serwer odpowie.",
+    "retry": "Spróbuj ponownie"
   }
 }

@@ -6,6 +6,8 @@ interface WorkspaceContextType {
   current: Workspace | null
   workspaces: Workspace[]
   isLoading: boolean
+  /** The last fetch of the workspace list failed (offline, 5xx). */
+  loadFailed: boolean
   /** Switch the active workspace. Persists to localStorage and invalidates queries. */
   switchWorkspace: (id: string) => Promise<void>
   /** Re-fetch the list of workspaces the user can access. */

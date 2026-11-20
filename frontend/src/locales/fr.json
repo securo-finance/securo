@@ -3974,5 +3974,11 @@
       "title": "Revenus récurrents",
       "hint": "Ce que rapportent les factures récurrentes chaque mois, et ce qui a été perdu récemment."
     }
+  },
+  "connection": {
+    "unreachableTitle": "Impossible de joindre le serveur",
+    "offlineTitle": "Vous êtes hors ligne",
+    "description": "Vos données ne peuvent pas être chargées pour le moment. Nous continuons d'essayer et ouvrirons cette page dès que le serveur répondra.",
+    "retry": "Réessayer"
   }
 }

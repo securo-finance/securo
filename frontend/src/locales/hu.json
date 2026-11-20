@@ -3964,5 +3964,11 @@
       "title": "Ismétlődő bevétel",
       "hint": "Amit az ismétlődő számlák havonta hoznak, és ami nemrég elveszett."
     }
+  },
+  "connection": {
+    "unreachableTitle": "A szerver nem érhető el",
+    "offlineTitle": "Nincs internetkapcsolat",
+    "description": "Az adataid most nem tölthetők be. Tovább próbálkozunk, és megnyitjuk ezt az oldalt, amint a szerver válaszol.",
+    "retry": "Újrapróbálás"
   }
 }

@@ -3966,5 +3966,11 @@
       "title": "Terugkerende omzet",
       "hint": "Wat terugkerende facturen per maand opleveren, en wat onlangs verloren ging."
     }
+  },
+  "connection": {
+    "unreachableTitle": "Server niet bereikbaar",
+    "offlineTitle": "Je bent offline",
+    "description": "Je gegevens kunnen nu niet worden geladen. We blijven het proberen en openen deze pagina zodra de server antwoordt.",
+    "retry": "Opnieuw proberen"
   }
 }

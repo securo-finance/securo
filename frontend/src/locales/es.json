@@ -3974,5 +3974,11 @@
       "title": "Ingresos recurrentes",
       "hint": "Lo que aportan las facturas recurrentes cada mes, y lo perdido recientemente."
     }
+  },
+  "connection": {
+    "unreachableTitle": "No se puede conectar con el servidor",
+    "offlineTitle": "Estás sin conexión",
+    "description": "Tus datos no se pueden cargar ahora. Seguiremos intentándolo y abriremos esta página en cuanto el servidor responda.",
+    "retry": "Reintentar"
   }
 }

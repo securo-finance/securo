@@ -4162,5 +4162,11 @@
       "title": "Opakované příjmy",
       "hint": "Co měsíčně přinášejí opakované faktury a co se nedávno ztratilo."
     }
+  },
+  "connection": {
+    "unreachableTitle": "Server není dostupný",
+    "offlineTitle": "Jste offline",
+    "description": "Vaše data teď nelze načíst. Budeme to zkoušet dál a tuto stránku otevřeme, jakmile server odpoví.",
+    "retry": "Zkusit znovu"
   }
 }

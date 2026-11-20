@@ -15,14 +15,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'))
   const [isLoading, setIsLoading] = useState(true)
   const [retryCount, setRetryCount] = useState(0)
+  // The token is kept but the server could not confirm it (offline, 5xx):
+  // the shell says so instead of rendering pages with no data (#292).
+  const [isUnreachable, setIsUnreachable] = useState(false)
   const queryClient = useQueryClient()
   // Bumped by every sign-in: a provider logout that resolves after a new
   // session started must not redirect and end it (#1623).
   const signInGeneration = useRef(0)
 
-  if (!token && (user !== null || isLoading)) {
+  if (!token && (user !== null || isLoading || isUnreachable)) {
     setUser(null)
     setIsLoading(false)
+    setIsUnreachable(false)
   }
 
   useEffect(() => {
@@ -44,6 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then((me) => {
         if (cancelled) return
         stopRetrying()
+        setIsUnreachable(false)
         setUser(me)
       })
       .catch((error) => {
@@ -59,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return
         }
         setUser(null)
+        setIsUnreachable(true)
       })
       .finally(() => { if (!cancelled) setIsLoading(false) })
     return () => {
@@ -114,6 +120,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     auth.me().then(setUser).catch(() => {})
   }, [])
 
+  const retrySession = useCallback(() => setRetryCount((n) => n + 1), [])
+
   const updateUser = useCallback((updatedUser: User) => {
     setUser(updatedUser)
   }, [])
@@ -147,7 +155,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [queryClient])
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, verify2fa, loginWithToken, register, updateUser, logout }}>
+    <AuthContext.Provider value={{ user, token, isLoading, isUnreachable, retrySession, login, verify2fa, loginWithToken, register, updateUser, logout }}>
       {children}
     </AuthContext.Provider>
   )

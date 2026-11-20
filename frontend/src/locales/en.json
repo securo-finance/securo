@@ -3964,5 +3964,11 @@
       "title": "Recurring revenue",
       "hint": "What recurring invoices bring in each month, and what was lost lately."
     }
+  },
+  "connection": {
+    "unreachableTitle": "Can't reach the server",
+    "offlineTitle": "You're offline",
+    "description": "Your data can't be loaded right now. We'll keep trying and open this page as soon as the server answers.",
+    "retry": "Try again"
   }
 }

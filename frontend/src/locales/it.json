@@ -3974,5 +3974,11 @@
       "title": "Entrate ricorrenti",
       "hint": "Quanto portano le fatture ricorrenti ogni mese, e cosa si è perso di recente."
     }
+  },
+  "connection": {
+    "unreachableTitle": "Impossibile raggiungere il server",
+    "offlineTitle": "Sei offline",
+    "description": "I tuoi dati non possono essere caricati ora. Continueremo a provare e apriremo questa pagina appena il server risponde.",
+    "retry": "Riprova"
   }
 }

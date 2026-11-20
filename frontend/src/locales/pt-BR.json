@@ -3974,5 +3974,11 @@
       "title": "Receita recorrente",
       "hint": "Quanto as cobranças recorrentes trazem por mês, e o que foi perdido recentemente."
     }
+  },
+  "connection": {
+    "unreachableTitle": "Não foi possível conectar ao servidor",
+    "offlineTitle": "Você está offline",
+    "description": "Seus dados não podem ser carregados agora. Vamos continuar tentando e abrir esta página assim que o servidor responder.",
+    "retry": "Tentar de novo"
   }
 }

@@ -84,6 +84,50 @@ describe('loading', () => {
     const { result } = await renderWorkspace()
 
     expect(result.current.workspaces).toEqual([])
+    // The shell tells "server unreachable" apart from "no workspaces" (#292).
+    expect(result.current.loadFailed).toBe(true)
+  })
+
+  it('clears the failure once a retry loads the list', async () => {
+    workspacesApi.list.mockRejectedValueOnce(new Error('network'))
+    workspacesApi.list.mockResolvedValue([makeWorkspace()])
+
+    const { result } = await renderWorkspace()
+    expect(result.current.loadFailed).toBe(true)
+
+    await act(async () => {
+      await result.current.refresh()
+    })
+
+    expect(result.current.loadFailed).toBe(false)
+    expect(result.current.hasModule('transactions')).toBe(true)
+  })
+
+  it('stays loading from the moment a session appears until its list arrives', async () => {
+    // The session comes back after an outage: the render before the fetch
+    // starts must not report "loaded, no modules", or ModuleRoute sends the
+    // page the user asked for to home (#292).
+    useAuth.mockReturnValue({ user: null, token: 'jwt', isLoading: false })
+    let resolveList: (list: Workspace[]) => void = () => {}
+    workspacesApi.list.mockReturnValue(new Promise((resolve) => { resolveList = resolve }))
+
+    const seen: boolean[] = []
+    const { result, rerender } = renderHook(() => {
+      const ctx = useWorkspace()
+      if (!ctx.isLoading) seen.push(ctx.hasModule('transactions'))
+      return ctx
+    }, { wrapper })
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    seen.length = 0
+
+    signedIn()
+    rerender()
+    expect(result.current.isLoading).toBe(true)
+
+    await act(async () => { resolveList([makeWorkspace()]) })
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    expect(seen.every(Boolean)).toBe(true)
   })
 })
 
