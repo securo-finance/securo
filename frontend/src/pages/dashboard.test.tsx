@@ -1209,4 +1209,61 @@ describe('Dashboard uncategorized drill-down', () => {
     expect(await within(next).findByDisplayValue('Third uncategorized')).toBeInTheDocument()
     expect(api.transactions.get).toHaveBeenCalledWith('second')
   })
+
+  async function openPanel(rows: ReturnType<typeof uncategorized>[]) {
+    api.dashboard.summary.mockResolvedValue({ ...summary, pending_categorization: rows.length, pending_categorization_amount: 12 * rows.length })
+    api.transactions.list.mockImplementation(async (params?: { uncategorized?: boolean }) => (
+      params?.uncategorized ? { items: rows, total: rows.length } : { items: [], total: 0 }
+    ))
+    api.transactions.update.mockResolvedValue({})
+    const utils = renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+      { route: '/?month=2026-09' },
+    )
+    await utils.user.click(await screen.findByText(t('dashboard.categorizeNow'), { exact: false }))
+    const open = await screen.findAllByRole('button', { name: t('dashboard.drillDownOpenTransaction') })
+    return { ...utils, open }
+  }
+
+  it('stops at a next row that fails to load, leaving it in the panel', async () => {
+    const rows = [
+      uncategorized('first', 'First row', '2026-09-01'),
+      uncategorized('second', 'Second row', '2026-09-02'),
+      uncategorized('third', 'Third row', '2026-09-03'),
+    ]
+    api.transactions.get.mockImplementation(async (id: string) => {
+      if (id === 'second') throw { response: { status: 503 } }
+      return rows.find((r) => r.id === id)
+    })
+    const { user, open } = await openPanel(rows)
+
+    await user.click(open[0])
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: t('transactions.saveAndNext') }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    // Not skipped past: the third row was never loaded into the dialog.
+    expect(api.transactions.get).not.toHaveBeenCalledWith('third')
+    expect(api.transactions.update).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('Second row')).toBeInTheDocument()
+  })
+
+  it('opens the row clicked last even when an earlier click loads later', async () => {
+    const rows = [uncategorized('first', 'First row', '2026-09-01'), uncategorized('second', 'Second row', '2026-09-02')]
+    let finishFirst: (tx: unknown) => void = () => {}
+    api.transactions.get.mockImplementation((id: string) => (
+      id === 'first' ? new Promise((resolve) => { finishFirst = resolve }) : Promise.resolve(rows[1])
+    ))
+    const { user, open } = await openPanel(rows)
+
+    await user.click(open[0])
+    await user.click(open[1])
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByDisplayValue('Second row')).toBeInTheDocument()
+
+    await act(async () => finishFirst(rows[0]))
+    expect(within(screen.getByRole('dialog')).getByDisplayValue('Second row')).toBeInTheDocument()
+  })
 })

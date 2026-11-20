@@ -435,8 +435,16 @@ export default function DashboardPage() {
     const start = editQueue.findIndex((tx) => tx.id === id)
     if (start < 0) return null
     for (const queued of editQueue.slice(start + 1)) {
-      const fresh = await refreshTx(queued).catch(() => null)
-      if (!fresh) continue
+      let fresh: Transaction
+      try {
+        fresh = await refreshTx(queued)
+      } catch (err) {
+        // A row deleted since the panel loaded is skipped. Any other failure stops
+        // here; the row is still in the panel to open again.
+        if ((err as { response?: { status?: number } })?.response?.status === 404) continue
+        toast.error(extractApiError(err, t('common.error')))
+        return null
+      }
       // A row categorized since the panel loaded no longer belongs in "Categorize now".
       if (drillDown?.uncategorized && (fresh.category_id || isSplitByCategory(fresh))) continue
       return fresh
@@ -444,14 +452,18 @@ export default function DashboardPage() {
     return null
   }
 
+  // Only the latest click opens: an older, slower read must not replace it.
+  const openRequest = useRef(0)
   const openFromDrillDown = async (tx: Transaction, queue: Transaction[]) => {
+    const request = ++openRequest.current
     try {
       const fresh = await refreshTx(tx)
+      if (request !== openRequest.current) return
       setEditQueue(queue)
       setEditingTx(fresh)
       setDialogOpen(true)
     } catch (err) {
-      toast.error(extractApiError(err, t('common.error')))
+      if (request === openRequest.current) toast.error(extractApiError(err, t('common.error')))
     }
   }
 
@@ -2016,7 +2028,7 @@ export default function DashboardPage() {
             }
             : null
         }
-        onClose={() => setDrillDown(null)}
+        onClose={() => { openRequest.current++; setDrillDown(null) }}
         onTransactionClick={openFromDrillDown}
         quickCategorize={canWrite ? {
           categories: categoriesList ?? [],
