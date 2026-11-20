@@ -9,6 +9,13 @@ name: fast lane
 # remove. Merging from inside the repository, with the workflow token, is the
 # only path that is actually unattended.
 #
+# Before any gate, the merge window has to be open. Tassio's rule of 20 Nov
+# 2026: from Friday 18:00 to Monday 01:00 in America/Sao_Paulo nobody merges,
+# this lane included, and from Monday 01:00 to Friday 18:00 it merges as it
+# always did. The check is `.github/ci/merge_window.py`, first step of the job,
+# and a `workflow_dispatch` run skips it: a person asking by hand on a weekend
+# is asking on purpose.
+#
 # The gates, all of which must hold:
 #   1. the PR is against main, not a draft, and has no standing CHANGES_REQUESTED
 #   2. it carries `risk: low` or `risk: medium`
@@ -132,7 +139,25 @@ jobs:
        contains(github.event.comment.body, '<!-- fast-lane: approve -->'))
     runs-on: ubuntu-latest
     steps:
+      # Tassio's rule of 20 Nov 2026: from Friday 18:00 to Monday 01:00 in
+      # America/Sao_Paulo nobody merges, this lane included; from Monday 01:00
+      # to Friday 18:00 it merges as before. The check runs before every gate
+      # and covers every trigger that can merge (the sweep, a CI run on main, a
+      # review, a verdict comment). A manual run is a person asking for it on
+      # purpose, so `workflow_dispatch` is not held by the window.
+      #
+      # The window lives in `.github/ci/merge_window.py` so it can be tested off
+      # the clock: it names the zone, so neither the runner's local time nor the
+      # UTC cron moves it. Outside the window the step logs
+      # "outside the merge window", the merge step below is skipped and nothing
+      # is evaluated; the run still ends green, because a weekend is not a fault.
+      - name: Merge window
+        id: window
+        if: github.event_name != 'workflow_dispatch'
+        run: python3 .github/ci/merge_window.py
+
       - uses: actions/github-script@v9
+        if: github.event_name == 'workflow_dispatch' || steps.window.outputs.open == 'true'
         with:
           script: |
             const OWNER = context.repo.owner, REPO = context.repo.repo;

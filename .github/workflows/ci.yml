@@ -284,6 +284,12 @@ jobs:
       - name: Test the fast lane gates
         run: node .github/ci/test_fast_lane.mjs
 
+      # The merge window is a module, not inline script, so it is pinned off
+      # the clock: both boundaries in America/Sao_Paulo, Saturday and Sunday,
+      # the same instants read through UTC, and a date the zone changed offset.
+      - name: Test the fast lane merge window
+        run: python3 .github/ci/test_merge_window.py
+
       - name: Check the Alembic revision chain
         run: python3 backend/scripts/check_migration_chain.py
 
