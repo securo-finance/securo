@@ -2141,9 +2141,10 @@
     "summaryHoldings": "створено позицій: {{created}}, знайдено: {{matched}}",
     "summarySkipped": "вже імпортовано: {{count}}",
     "rowsSkipped": "Рядків буде пропущено: {{count}}",
+    "reasonColumn": "Причина",
     "rowError": "Рядок {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "і ще {{count}}",
-    "moreRows": "і ще {{count}} заявок",
+    "showAllRows": "Показати всі рядки ({{count}})",
     "field": {
       "ticker": "Тикер",
       "date": "Дата",

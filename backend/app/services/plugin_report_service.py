@@ -16,7 +16,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any, Optional
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
@@ -30,6 +30,9 @@ from app.models.user import User
 from app.models.workspace_plugin import WorkspacePlugin
 from app.plugins.manifest import Manifest, Report, parse_manifest
 from app.services._query_filters import (
+    _others_share_in_primary,
+    _viewer_member_ids,
+    any_line_in,
     counts_as_user_pnl,
     line_category_id,
     line_primary_or_amount,
@@ -131,6 +134,111 @@ def _months_between(start: date, end: date) -> list[str]:
     return months
 
 
+async def _owner_share_offsets(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    report: Report,
+    start: date,
+    end: date,
+    report_date: Any,
+    currency: str,
+    account_ids: Optional[list[uuid.UUID]],
+    category_ids: Optional[set[uuid.UUID]],
+) -> dict[str, tuple[Decimal, Decimal]]:
+    """The non-owner shares of the viewer's own split rows, per report row.
+
+    A split expense the viewer paid counts for the viewer's share only, the
+    share-only model the dashboard and the native reports keep: this reads
+    what the other members owe on the viewer's own split rows, by the same
+    group key and filters the report totals use, so `run_report` takes them
+    off each row. Empty for a workspace without group splits.
+    """
+    from app.models.transaction_split import TransactionSplit
+
+    owner_columns = (
+        Transaction.id,
+        Transaction.category_id,
+        Transaction.type,
+        Transaction.currency,
+        Transaction.amount,
+        Transaction.amount_primary,
+        Transaction.date,
+    )
+    stmt = (
+        select(*owner_columns, func.sum(TransactionSplit.share_amount))
+        .select_from(TransactionSplit)
+        .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
+    )
+    if report.group_by == "category":
+        key_col: Any = Category.id
+        stmt = stmt.outerjoin(Category, Transaction.category_id == Category.id)
+    elif report.group_by == "category_group":
+        key_col = CategoryGroup.id
+        stmt = stmt.outerjoin(Category, Transaction.category_id == Category.id).outerjoin(
+            CategoryGroup, Category.group_id == CategoryGroup.id
+        )
+    elif report.group_by == "payee":
+        key_col = func.coalesce(Payee.name, Transaction.payee)
+        stmt = stmt.outerjoin(Payee, Transaction.payee_id == Payee.id)
+    elif report.group_by == "account":
+        key_col = Account.id
+        stmt = stmt.join(Account, Transaction.account_id == Account.id)
+    else:  # month
+        key_col = report_date
+
+    filters: list[Any] = [
+        Transaction.user_id == user_id,
+        Transaction.workspace_id == workspace_id,
+        TransactionSplit.group_member_id.notin_(_viewer_member_ids(user_id)),
+        report_date >= start,
+        report_date <= end,
+        Transaction.source != "opening_balance",
+        Transaction.status == "posted",
+        counts_as_user_pnl(Transaction.category_id),
+    ]
+    if account_ids is not None:
+        filters.append(Transaction.account_id.in_(account_ids))
+    if category_ids is not None:
+        filters.append(or_(Transaction.category_id.in_(category_ids), any_line_in(category_ids)))
+
+    result = await session.execute(
+        stmt.add_columns(key_col).where(*filters).group_by(*owner_columns, key_col)
+    )
+    offsets: dict[str, tuple[Decimal, Decimal]] = {}
+    rates: dict[tuple[str, date], Optional[Decimal]] = {}
+    for row in result.all():
+        tx_id, category_id, tx_type, currency_code, amount, amount_primary, tx_date = row[:7]
+        others, group = row[7], row[8]
+        # A share comes off at the rate stored on its row, the same value
+        # the total it is subtracted from was built with, never today's.
+        share = await _others_share_in_primary(
+            session, (tx_id, category_id, tx_type, currency_code, amount, amount_primary, tx_date, others),
+            currency, rates,
+        )
+        if not share:
+            continue
+        key = _month(group) if report.group_by == "month" else (
+            str(group) if group is not None else NONE_KEY
+        )
+        credit, debit = offsets.get(key, (Decimal("0"), Decimal("0")))
+        if tx_type == "credit":
+            credit += share
+        else:
+            debit += share
+        offsets[key] = (credit, debit)
+    return offsets
+
+
+def _non_owner_offset(measure: str, credit: Decimal, debit: Decimal) -> Decimal:
+    """The part of a row's total that belongs to the other members."""
+    if measure == "expenses":
+        return debit
+    if measure == "income":
+        return credit
+    return credit - debit
+
+
 async def run_report(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -162,13 +270,14 @@ async def run_report(
         value = case((Transaction.type == "credit", func.abs(amount)), else_=-func.abs(amount))
 
     scope: list[Any] = []
+    category_ids: Optional[set[uuid.UUID]] = None
     if account_ids is not None:
         scope.append(Transaction.account_id.in_(account_ids))
     if report.categories:
-        ids = await _category_ids(session, workspace_id, manifest, report.categories)
-        if not ids:
+        category_ids = await _category_ids(session, workspace_id, manifest, report.categories)
+        if not category_ids:
             return ReportResult(report, currency, [], Decimal("0"))
-        scope.append(line_category_id().in_(ids))
+        scope.append(line_category_id().in_(category_ids))
     filters: list[Any] = [
         Transaction.workspace_id == workspace_id,
         Transaction.type.in_(types),
@@ -179,6 +288,9 @@ async def run_report(
         counts_as_user_pnl(line_category_id()),
         *scope,
     ]
+    offsets = await _owner_share_offsets(
+        session, workspace_id, user_id, report, start, end, report_date, currency, account_ids, category_ids
+    )
 
     if report.group_by == "month":
         stmt = with_category_lines(select(report_date, func.sum(value)).select_from(Transaction))
@@ -187,6 +299,10 @@ async def run_report(
         for day, total in result.all():
             if day is not None:
                 totals[_month(day)] += Decimal(str(total or 0))
+        for month, (credit, debit) in offsets.items():
+            adjusted = totals.get(month, Decimal("0")) - _non_owner_offset(report.measure, credit, debit)
+            # As the dashboard's period totals: a month never goes below zero.
+            totals[month] = adjusted if report.measure == "net" else max(Decimal("0"), adjusted)
         rows = [ReportRow(m, m, totals.get(m, Decimal("0"))) for m in _months_between(start, end)]
         return ReportResult(report, currency, rows, sum((r.value for r in rows), Decimal("0")))
 
@@ -214,9 +330,15 @@ async def run_report(
     for row in result.all():
         key, label, total = row[0], row[1], Decimal(str(row[2] or 0))
         color = row[3] if color_col is not None else None
-        if total == 0:
+        row_key = str(key) if key is not None else NONE_KEY
+        credit, debit = offsets.get(row_key, (Decimal("0"), Decimal("0")))
+        # The shares come off before the row is dropped: a group whose gross
+        # total is zero can still hold a nonzero share of the viewer's own
+        # (a 100 credit beside a 100 split debit where a friend owes 40).
+        total -= _non_owner_offset(report.measure, credit, debit)
+        if total == 0 or (report.measure != "net" and total < 0):
             continue
-        rows.append(ReportRow(str(key) if key is not None else NONE_KEY, label if key is not None else None, total, color))
+        rows.append(ReportRow(row_key, label if key is not None else None, total, color))
     rows.sort(key=lambda r: abs(r.value), reverse=True)
     if len(rows) > report.limit:
         kept, rest = rows[: report.limit - 1], rows[report.limit - 1 :]
@@ -245,13 +367,23 @@ def _money(value: Any) -> str | None:
 async def _transactions_input(
     session: AsyncSession,
     workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    primary_currency: str,
     start: date,
     end: date,
     account_ids: Optional[list[uuid.UUID]],
     report_date: Any,
 ) -> dict[str, Any]:
-    """The period's transactions as the workspace keeps them, split lines included."""
+    """The period's transactions as the workspace keeps them, split lines included.
+
+    Each row carries `my_share_amount` and `my_share_amount_primary`: the
+    viewer's part of it, so a code report adds up what the native figures
+    count. A row the viewer paid with a group split counts only the viewer's
+    share (the other members' shares come off, as in `run_report`); any
+    other row counts whole, and `amount_primary` stays as stored.
+    """
     from app.models.transaction_category_line import TransactionCategoryLine
+    from app.models.transaction_split import TransactionSplit
 
     filters: list[Any] = [Transaction.workspace_id == workspace_id, report_date >= start, report_date <= end]
     if account_ids is not None:
@@ -262,7 +394,7 @@ async def _transactions_input(
                 Transaction.id, report_date, Transaction.description, Transaction.amount, Transaction.type,
                 Transaction.currency, Transaction.amount_primary, Transaction.category_id, Transaction.account_id,
                 func.coalesce(Payee.name, Transaction.payee), Transaction.status, Transaction.source,
-                Transaction.is_ignored,
+                Transaction.is_ignored, Transaction.user_id, Transaction.date,
             )
             .outerjoin(Payee, Transaction.payee_id == Payee.id)
             .where(*filters)
@@ -283,8 +415,44 @@ async def _transactions_input(
         )
         for tx_id, category_id, amount in result.all():
             lines[tx_id].append({"category_id": str(category_id) if category_id else None, "amount": _money(amount)})
-    return {
-        "rows": [
+
+    viewer_member_ids = set((await session.execute(_viewer_member_ids(user_id))).scalars().all())
+    others_by_tx: dict[uuid.UUID, Decimal] = defaultdict(Decimal)
+    # Every share is read, also when the viewer has no member entry of their
+    # own in the group: then each share belongs to someone else, as the query
+    # report counts it, so the two figures stay equal.
+    for chunk in range(0, len(ids), 1000):
+        result = await session.execute(
+            select(
+                TransactionSplit.transaction_id,
+                TransactionSplit.group_member_id,
+                TransactionSplit.share_amount,
+            ).where(TransactionSplit.transaction_id.in_(ids[chunk : chunk + 1000]))
+        )
+        for tx_id, member_id, share in result.all():
+            if member_id not in viewer_member_ids:
+                others_by_tx[tx_id] += Decimal(str(share or 0))
+
+    rates: dict[tuple[str, date], Optional[Decimal]] = {}
+    out: list[dict[str, Any]] = []
+    for (
+        tx_id, day, description, amount, kind, currency, amount_primary, category_id, account_id, payee,
+        status, source, ignored, owner_id, tx_date,
+    ) in rows:
+        full = abs(Decimal(str(amount or 0)))
+        others = others_by_tx.get(tx_id, Decimal("0")) if owner_id == user_id else Decimal("0")
+        my_share = full - others
+        my_share_primary = None if amount_primary is None else abs(Decimal(str(amount_primary)))
+        if others and my_share_primary is not None:
+            shared_primary = await _others_share_in_primary(
+                session,
+                (tx_id, category_id, kind, currency, amount, amount_primary, tx_date, others),
+                primary_currency,
+                rates,
+            )
+            if shared_primary is not None:
+                my_share_primary -= shared_primary
+        out.append(
             {
                 "id": str(tx_id),
                 "date": day.isoformat() if day else None,
@@ -293,6 +461,8 @@ async def _transactions_input(
                 "type": kind,
                 "currency": currency,
                 "amount_primary": _money(amount_primary),
+                "my_share_amount": _money(my_share),
+                "my_share_amount_primary": _money(my_share_primary),
                 "category_id": str(category_id) if category_id else None,
                 "category_lines": lines.get(tx_id, []),
                 "account_id": str(account_id),
@@ -301,11 +471,8 @@ async def _transactions_input(
                 "source": source,
                 "is_ignored": bool(ignored),
             }
-            for tx_id, day, description, amount, kind, currency, amount_primary, category_id, account_id, payee,
-            status, source, ignored in rows
-        ],
-        "truncated": truncated,
-    }
+        )
+    return {"rows": out, "truncated": truncated}
 
 
 async def _accounts_input(session: AsyncSession, workspace_id: uuid.UUID, account_ids: Optional[list[uuid.UUID]]):
@@ -381,7 +548,9 @@ async def run_code_report(
 
     data: dict[str, Any] = {}
     if "transactions" in report.inputs:
-        data["transactions"] = await _transactions_input(session, workspace_id, start, end, account_ids, report_date)
+        data["transactions"] = await _transactions_input(
+            session, workspace_id, user_id, currency, start, end, account_ids, report_date
+        )
     if "accounts" in report.inputs:
         data["accounts"] = await _accounts_input(session, workspace_id, account_ids)
     if "categories" in report.inputs:

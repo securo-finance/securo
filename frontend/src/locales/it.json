@@ -2120,9 +2120,10 @@
     "summaryHoldings": "{{created}} titoli creati, {{matched}} trovati",
     "summarySkipped": "{{count}} già importati",
     "rowsSkipped": "{{count}} righe saranno saltate",
+    "reasonColumn": "Motivo",
     "rowError": "Riga {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "e altri {{count}}",
-    "moreRows": "e altri {{count}} ordini",
+    "showAllRows": "Mostra tutte le {{count}} righe",
     "field": {
       "ticker": "Ticker",
       "date": "Data",

@@ -2116,9 +2116,10 @@
     "summaryHoldings": "{{created}} θέσεις δημιουργήθηκαν, {{matched}} αντιστοιχίστηκαν",
     "summarySkipped": "{{count}} έχουν ήδη εισαχθεί",
     "rowsSkipped": "{{count}} γραμμές θα παραλειφθούν",
+    "reasonColumn": "Αιτία",
     "rowError": "Γραμμή {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "και {{count}} ακόμη",
-    "moreRows": "και {{count}} ακόμη εντολές",
+    "showAllRows": "Εμφάνιση όλων των γραμμών ({{count}})",
     "field": {
       "ticker": "Σύμβολο (Ticker)",
       "date": "Ημερομηνία",

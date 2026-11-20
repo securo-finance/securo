@@ -1,5 +1,7 @@
 import calendar
 import uuid
+from bisect import bisect_left, bisect_right
+from collections import deque
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Optional
@@ -481,6 +483,154 @@ def _interval_label_expr(interval: str, date_col=None):
         return func.to_char(col, 'YYYY-MM')
 
 
+# How far apart the two legs of one unpaired movement may be booked, the
+# same window transfer detection uses for its suggestions.
+MIRRORED_LEG_DAYS = 2
+
+
+def _as_date(value) -> date:
+    return value if isinstance(value, date) else date.fromisoformat(str(value)[:10])
+
+
+def _without_mirrored_legs(rows):
+    """Drop the two legs of one movement that were never paired.
+
+    A card bill paid from a tracked account and imported from two statements
+    is a debit on the account and a credit on the card, both in a
+    `treat_as_transfer` category and neither with a `transfer_pair_id`. They
+    are the same money, so neither is an investment contribution nor a
+    withdrawal (#1551). A credit and a debit cancel when they share the
+    category and the amount, sit on different accounts and are booked within
+    `MIRRORED_LEG_DAYS`. Pairs are a maximum matching, so the result does not
+    depend on row order. Rows are (category id, name, color, type, amount,
+    account id, booking date); the rest come back without account and date.
+
+    Legs of one group on the same account and day are interchangeable, so
+    they are matched as one class with a count: a thousand identical legs
+    are one node, not a thousand (#319).
+    """
+    groups: dict[tuple, tuple[dict, dict]] = {}
+    for index, row in enumerate(rows):
+        key = (row[0], round(abs(float(row[4] or 0)), 2))
+        credits, debits = groups.setdefault(key, ({}, {}))
+        side = credits if row[3] == "credit" else debits
+        side.setdefault((_as_date(row[6]), str(row[5])), []).append(index)
+
+    dropped: set[int] = set()
+    for credits, debits in groups.values():
+        credit_keys = sorted(credits)
+        debit_keys = sorted(debits)
+        debit_days = [day for day, _ in debit_keys]
+        window = timedelta(days=MIRRORED_LEG_DAYS)
+        fits = [
+            [
+                j
+                for j in range(
+                    bisect_left(debit_days, day - window),
+                    bisect_right(debit_days, day + window),
+                )
+                if debit_keys[j][1] != account
+            ]
+            for day, account in credit_keys
+        ]
+        pairs = _max_leg_pairs(
+            [len(credits[k]) for k in credit_keys],
+            [len(debits[k]) for k in debit_keys],
+            fits,
+        )
+        for (i, j), count in pairs.items():
+            dropped.update(credits[credit_keys[i]][:count])
+            del credits[credit_keys[i]][:count]
+            dropped.update(debits[debit_keys[j]][:count])
+            del debits[debit_keys[j]][:count]
+    return [row[:5] for index, row in enumerate(rows) if index not in dropped]
+
+
+def _max_leg_pairs(
+    credit_sizes: list[int], debit_sizes: list[int], fits: list[list[int]]
+) -> dict[tuple[int, int], int]:
+    """How many legs of credit class i pair with debit class j, at most.
+
+    Maximum flow (Dinic) from the credit classes to the debit classes, each
+    with its number of legs as capacity. Iterative, so a large group never
+    runs into the recursion limit.
+    """
+    n_credits = len(credit_sizes)
+    source = n_credits + len(debit_sizes)
+    sink = source + 1
+    graph: list[list[int]] = [[] for _ in range(sink + 1)]
+    to: list[int] = []
+    cap: list[int] = []
+
+    def add(u: int, v: int, w: int) -> int:
+        graph[u].append(len(to))
+        to.append(v)
+        cap.append(w)
+        graph[v].append(len(to))
+        to.append(u)
+        cap.append(0)
+        return len(to) - 2
+
+    for i, size in enumerate(credit_sizes):
+        add(source, i, size)
+    for j, size in enumerate(debit_sizes):
+        add(n_credits + j, sink, size)
+    pair_edges = {
+        (i, j): add(i, n_credits + j, credit_sizes[i])
+        for i, js in enumerate(fits)
+        for j in js
+    }
+
+    while True:
+        level = [-1] * len(graph)
+        level[source] = 0
+        queue = deque([source])
+        while queue:
+            u = queue.popleft()
+            for e in graph[u]:
+                if cap[e] > 0 and level[to[e]] < 0:
+                    level[to[e]] = level[u] + 1
+                    queue.append(to[e])
+        if level[sink] < 0:
+            break
+        next_edge = [0] * len(graph)
+        path: list[int] = []
+        u = source
+        while True:
+            if u == sink:
+                push = min(cap[e] for e in path)
+                for e in path:
+                    cap[e] -= push
+                    cap[e ^ 1] += push
+                path.clear()
+                u = source
+                continue
+            edges = graph[u]
+            while next_edge[u] < len(edges):
+                e = edges[next_edge[u]]
+                if cap[e] > 0 and level[to[e]] == level[u] + 1:
+                    break
+                next_edge[u] += 1
+            if next_edge[u] < len(edges):
+                e = edges[next_edge[u]]
+                path.append(e)
+                u = to[e]
+                continue
+            if not path:
+                break
+            # Dead end: back up and skip the edge that led here.
+            level[u] = -1
+            u = to[path.pop() ^ 1]
+            next_edge[u] += 1
+
+    pairs: dict[tuple[int, int], int] = {}
+    for (i, j), e in pair_edges.items():
+        flow = credit_sizes[i] - cap[e]
+        if flow > 0:
+            pairs[(i, j)] = flow
+    return pairs
+
+
 async def get_income_expenses_report(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -923,7 +1073,8 @@ async def get_income_expenses_report(
     # "Investment Contributions" node). Paired account transfers stay excluded via
     # the transfer_pair_id filter, so only one-sided movements appear here:
     # debits are contributions, credits are withdrawals, which the Sankey draws
-    # as a source of money beside income (#1418).
+    # as a source of money beside income (#1418). Rows, not sums: the two legs
+    # of one movement that were never paired are dropped first.
     inv_result = await session.execute(
         with_category_lines(
             select(
@@ -931,7 +1082,11 @@ async def get_income_expenses_report(
                 Category.name,
                 Category.color,
                 Transaction.type,
-                func.sum(amount_expr),
+                amount_expr,
+                Transaction.account_id,
+                # Legs pair by when they were booked; the reporting date only
+                # picks the period.
+                Transaction.date,
             ).select_from(Transaction)
         )
         .join(Category, line_category_id() == Category.id)
@@ -948,13 +1103,17 @@ async def get_income_expenses_report(
             Category.is_ignored.is_(False),
             *acct_filter,
         )
-        .group_by(Category.id, Category.name, Category.color, Transaction.type)
     )
-    for cat_id, cat_name, cat_color, txn_type, total_amount in inv_result.all():
-        amount = abs(float(total_amount or 0))
-        if amount <= 0:
-            continue
+    moves: dict[tuple[uuid.UUID, str], list] = {}
+    for cat_id, cat_name, cat_color, txn_type, total_amount in _without_mirrored_legs(
+        list(inv_result.all())
+    ):
         group = "withdrawals" if txn_type == "credit" else "investments"
+        entry = moves.setdefault((cat_id, group), [cat_name, cat_color, 0.0])
+        entry[2] += abs(float(total_amount or 0))
+    for (cat_id, group), (cat_name, cat_color, amount) in moves.items():
+        if round(amount, 2) <= 0:
+            continue
         comp_map[(str(cat_id), group)] = {
             "label": cat_name or "Investments",
             "color": cat_color or "#0EA5E9",

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useId, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useId, useMemo, useRef, useContext } from 'react'
 import { getAccountLabel, getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
@@ -7,6 +7,7 @@ import { formatAmountInput, formatCurrency, parseAmountInput } from '@/lib/forma
 import { amountToCents, parseCents } from '@/lib/mortgage-split'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
+import { WorkspaceContext } from '@/contexts/workspace-context'
 import { accounts as accountsApi, assets as assetsApi, currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi, mortgagePayments as mortgagePaymentsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
@@ -31,7 +32,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { AlertTriangle, ArrowRight, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Flag, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check } from 'lucide-react'
+import { AlertTriangle, ArrowRight, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Flag, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check, Pencil } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,13 +41,14 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { CategorySelect } from '@/components/category-select'
 import { PayeeSelect } from '@/components/payee-select'
+import { PayeeFormDialog } from '@/components/payee-form-dialog'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { TransactionAttachments } from '@/components/transaction-attachments'
 import type { AttachmentPreview } from '@/components/transaction-attachments'
 import { TransactionSplitsSection } from '@/components/transaction-splits-section'
 import { buildInstallmentSeriesInput, hasNonStatusChange, isManualInstallmentSeriesRow } from '@/lib/installment-series'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
-import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, CategoryLineShareType, Rule, RuleCondition, RuleConditionNode } from '@/types'
+import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, CategoryLineShareType, Rule, RuleCondition, RuleConditionNode, Payee } from '@/types'
 import { TransactionCategoryLinesSection } from '@/components/transaction-category-lines-section'
 import {
   buildLinesPayload,
@@ -74,6 +76,31 @@ type PendingInstallmentEdit = {
 
 function isImageType(contentType: string): boolean {
   return contentType.startsWith('image/')
+}
+
+/** Whether two rows of the payee list are the same record, field by field.
+ *
+ * A payee carries no revision of its own, so a refetched row is told apart
+ * from the copy a save replaced by comparing what the record holds. Every
+ * field a member can change counts: a differing phone is a newer row, even
+ * when the name still reads the same. */
+function samePayee(a: Payee, b: Payee): boolean {
+  const fields = (p: Payee) => [
+    p.id,
+    p.name,
+    p.type,
+    p.notes,
+    p.email,
+    p.phone,
+    p.address,
+    p.website,
+    p.is_favorite,
+    p.transaction_count,
+    p.tax_ids.map((taxId) => `${taxId.kind}:${taxId.value}`).join('|'),
+  ]
+  const left = fields(a)
+  const right = fields(b)
+  return left.every((value, index) => value === right[index])
 }
 
 function canExtendRuleFromTransaction(rule: Rule): boolean {
@@ -457,6 +484,35 @@ function TransactionForm({
     queryKey: ['payees'],
     queryFn: payeesApi.list,
   })
+  const seed = transaction ?? duplicateDraft
+  const canWrite = useContext(WorkspaceContext)?.canWrite ?? false
+  // The payee form opened from here, and the record it just saved: the
+  // refetched list takes a moment to carry a payee created or edited here.
+  // The row the save replaced is kept too, to tell a refetched row apart from
+  // the stale copy the save already superseded.
+  const [payeeId, setPayeeId] = useState(seed?.payee_id ?? '')
+  const [payeeFormOpen, setPayeeFormOpen] = useState(false)
+  const [payeeFormTarget, setPayeeFormTarget] = useState<Payee | null>(null)
+  const [savedPayee, setSavedPayee] = useState<{ payee: Payee; replaced: Payee | null } | null>(null)
+  // The saved record stands in for the list only while the list's row is the
+  // copy the save replaced: an identical row is the stale one, so the
+  // refetch has not landed. Once the list carries anything else it is the
+  // server's answer — our own save, or another member's later change (a
+  // phone, say) — and substituting the saved copy forever would show their
+  // change as never made and write the old value back on the next edit. A
+  // payee the list does not carry yet stays appended, so a create whose
+  // refetch has not landed never flickers the selection to "no payee".
+  const selectablePayees = useMemo(() => {
+    const list = payeesList ?? []
+    if (!savedPayee) return list
+    const { payee, replaced } = savedPayee
+    const row = list.find((p) => p.id === payee.id)
+    if (!row) return [...list, payee]
+    return replaced && samePayee(row, replaced)
+      ? list.map((p) => (p.id === payee.id ? payee : p))
+      : list
+  }, [payeesList, savedPayee])
+  const selectedPayee = selectablePayees.find((p) => p.id === payeeId) ?? null
   const { data: linkedCards = [] } = useQuery({
     queryKey: ['accounts', transaction?.account_id, 'linked-cards'],
     queryFn: () => accountsApi.linkedCards(transaction?.account_id ?? ''),
@@ -465,7 +521,6 @@ function TransactionForm({
   const linkedCardLabel = linkedCards.find(
     (card) => card.masked_number === transaction?.card_masked_number,
   )?.label
-  const seed = transaction ?? duplicateDraft
   const [description, setDescription] = useState(seed?.description ?? '')
   // Amount fields hold display-locale strings (comma decimals on dot_comma),
   // so seeds from stored numbers go through formatAmountInput — a raw
@@ -488,7 +543,6 @@ function TransactionForm({
       ?? userCurrency
   )
   const [categoryId, setCategoryId] = useState(seed?.category_id ?? '')
-  const [payeeId, setPayeeId] = useState(seed?.payee_id ?? '')
   const [accountId, setAccountId] = useState(seed?.account_id ?? defaultAccountId ?? '')
   const [notes, setNotes] = useState(seed?.notes ?? '')
   // Manual CC bucketing override (issue #92). Empty = auto. Visible only
@@ -1482,13 +1536,52 @@ function TransactionForm({
       )}
       <div className={cn("grid gap-4", isSynced ? "grid-cols-1" : "grid-cols-2")}>
         <div className="space-y-2">
-          <Label htmlFor={`${id}-payee`} id={`${id}-payee-label`}>{t('payees.payee')}</Label>
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor={`${id}-payee`} id={`${id}-payee-label`}>{t('payees.payee')}</Label>
+            {/* Creating and editing the record without leaving the form
+                (#1069): the payees page owns the full form, so it is the
+                same one, opened on this transaction's payee. */}
+            {canWrite && (
+              <div className="flex items-center gap-0.5">
+                {selectedPayee && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    aria-label={t('payees.edit')}
+                    title={t('payees.edit')}
+                    onClick={() => {
+                      setPayeeFormTarget(selectedPayee)
+                      setPayeeFormOpen(true)
+                    }}
+                  >
+                    <Pencil size={13} />
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="size-7"
+                  aria-label={t('payees.add')}
+                  title={t('payees.add')}
+                  onClick={() => {
+                    setPayeeFormTarget(null)
+                    setPayeeFormOpen(true)
+                  }}
+                >
+                  <Plus size={13} />
+                </Button>
+              </div>
+            )}
+          </div>
           <PayeeSelect
             id={`${id}-payee`}
             labelledBy={`${id}-payee-label`}
             value={payeeId}
             onChange={setPayeeId}
-            payees={payeesList ?? []}
+            payees={selectablePayees}
             creatable
           />
           {isSynced && transaction?.payee && (
@@ -1944,6 +2037,21 @@ function TransactionForm({
           initialData={extendRuleDialogProps.initialData}
         />
       )}
+      <PayeeFormDialog
+        open={payeeFormOpen}
+        onOpenChange={setPayeeFormOpen}
+        payee={payeeFormTarget}
+        onSaved={(saved) => {
+          // The row the list held when the save went through is what the save
+          // replaces. The form's own record can be an earlier save's copy,
+          // which the list never carried: using it as the baseline would make
+          // the row still waiting to refresh look like someone else's change,
+          // and the picker would go back to the record before the earlier save.
+          const replaced = payeesList?.find((p) => p.id === saved.id) ?? payeeFormTarget
+          setSavedPayee({ payee: saved, replaced })
+          setPayeeId(saved.id)
+        }}
+      />
     </form>
   )
 }

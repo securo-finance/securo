@@ -33,6 +33,7 @@ const api = vi.hoisted(() => ({
   goals: { summary: vi.fn() },
   groups: { list: vi.fn() },
   payees: { list: vi.fn() },
+  fiscal: { taxIdKinds: vi.fn() },
   rules: { create: vi.fn(), list: vi.fn() },
   settings: { attachments: vi.fn() },
   // Nobody arranged anything: Securo's default layout. Tests that need one set `layouts.saved`.

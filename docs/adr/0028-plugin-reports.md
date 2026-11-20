@@ -31,7 +31,8 @@ The reports page already works as a library: someone keeps the reports they want
 - A code report runs the plugin each time it is opened, in the runner's limits (60 seconds and 512 MB a call by default). It is handed at most 20,000 transactions a run; past that, `truncated` says so.
 - What a code report reads, it can send to the hosts it declared: the consent shows both, as for an integration.
 - Removing the plugin takes its reports out of the library; a tab someone kept for it is left out of the page, and their saved arrangement keeps working.
-- A query report follows Securo's spending rules, so it never disagrees with the dashboard about what counts as an expense. It leaves out the shares of group splits the dashboard adds for members of a group, and recurring projections.
+- A query report follows Securo's spending rules, so it never disagrees with the dashboard about what counts as an expense. A split expense the viewer paid counts for the viewer's share only, as in the dashboard and the native reports (share-only model): `run_report` takes the other members' shares off each group. It leaves out the shares of group splits the dashboard adds for members of a group, and recurring projections.
+- A code report gets the same basis: each transaction in the `transactions` input carries `my_share_amount` and `my_share_amount_primary`, the viewer's part of the row (the whole row when it has no group split, the viewer's share of it when the viewer paid a split), so a report that adds up spending arrives at the native figures.
 
 ## Enforced by
 

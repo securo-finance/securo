@@ -2116,9 +2116,10 @@
     "summaryHoldings": "{{created}} pozíció létrehozva, {{matched}} párosítva",
     "summarySkipped": "{{count}} már importálva",
     "rowsSkipped": "{{count}} sor kimarad",
+    "reasonColumn": "Ok",
     "rowError": "{{row}}. sor ({{ticker}}): {{reason}}",
     "moreErrors": "és még {{count}}",
-    "moreRows": "és még {{count}} megbízás",
+    "showAllRows": "Összes {{count}} sor megjelenítése",
     "field": {
       "ticker": "Ticker",
       "date": "Dátum",

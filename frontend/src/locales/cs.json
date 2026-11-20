@@ -2256,9 +2256,10 @@
     "summaryHoldings": "Vytvořené pozice: {{created}}, spárované: {{matched}}",
     "summarySkipped": "Už importovaných: {{count}}",
     "rowsSkipped": "Řádků k přeskočení: {{count}}",
+    "reasonColumn": "Důvod",
     "rowError": "Řádek {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "a ještě {{count}}",
-    "moreRows": "a dalších {{count}} pokynů",
+    "showAllRows": "Zobrazit všech {{count}} řádků",
     "field": {
       "ticker": "Ticker",
       "date": "Datum",
