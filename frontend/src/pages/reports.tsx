@@ -773,7 +773,7 @@ export default function ReportsPage() {
     <div>
       <PageHeader
         section={t('reports.section')}
-        title={t(currentTab.labelKey)}
+        title={currentTab.label ?? t(currentTab.labelKey)}
         action={isStatement ? (
           <StatementControls
             month={statementMonth}
