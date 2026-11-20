@@ -914,3 +914,27 @@ async def test_cashflow_forecast_liquid_balance_counts_spendable_account_types(s
     )
 
     assert forecast.summary.starting_liquid_balance == Decimal("6200.00")
+
+
+@pytest.mark.asyncio
+async def test_cashflow_forecast_puts_a_business_day_rule_on_its_real_day(session):
+    """The 5th business day with Santa Catarina holidays, not the nominal 1st.
+
+    December 2026: Tue 1 to Fri 4, then Mon 7. January 2027: the 1st is a
+    holiday, so Mon 4 to Fri 8. The forecast must place each occurrence on the
+    same day the Recurring page shows, or the projected balance is off for a week.
+    """
+    user_id, ws, checking = await _forecast_workspace(session, "Forecast Business Day WS")
+    session.add(_manual_recurring(
+        user_id, ws.id, checking.id, "Rent", "monthly", date(2026, 12, 1),
+        business_day=5, holiday_calendar="BR-SC",
+    ))
+    await session.commit()
+
+    forecast = await generate_cashflow_forecast(
+        session, ws.id, horizon_days=60, include_discretionary_burn=False,
+        reference_date=date(2026, 11, 25),
+    )
+
+    charge_days = [p.date for p in forecast.daily_trajectory if p.recurring_outflow > 0]
+    assert charge_days == [date(2026, 12, 7), date(2027, 1, 8)]

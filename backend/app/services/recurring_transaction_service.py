@@ -548,7 +548,7 @@ async def _charged_occurrences(
             range_start=walk_start,
             range_end=walk_end,
             intended_day=rec.day_of_month or rec.start_date.day,
-            weekend_adjustment=rec.weekend_adjustment,
+            **occurrence_rules(rec),
         )):
             in_reach = [
                 day for day in pending
@@ -619,7 +619,7 @@ async def get_month_summary(
             range_start=month_start,
             range_end=month_end,
             intended_day=rec.day_of_month or rec.start_date.day,
-            weekend_adjustment=rec.weekend_adjustment,
+            **occurrence_rules(rec),
         )
         if not rec.is_active:
             occurrences = [day for day in occurrences if day in charged[rec.id]]
