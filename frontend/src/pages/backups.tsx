@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Navigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
@@ -24,6 +25,7 @@ import {
   type BackupRestoreMode,
 } from '@/lib/api'
 import { useWorkspace } from '@/contexts/workspace-context'
+import { useFeatureFlags } from '@/hooks/use-feature-flags'
 import { useDateLocale } from '@/hooks/use-display-locale'
 import { extractApiErrorAsync } from '@/lib/api-errors'
 import { parsePositiveInteger } from '@/lib/backup-validation'
@@ -133,6 +135,16 @@ function PreviewSummary({ preview }: { preview: BackupPreview }) {
 }
 
 export default function BackupPage() {
+  // Backups are off in demo mode: restoring a snapshot would wipe the seeded
+  // workspace the next visitor lands on, and the page is reachable by URL even
+  // though the sidebar does not link it. Guarding the page keeps every hook in
+  // the screen below unconditional.
+  const { demoMode } = useFeatureFlags()
+  if (demoMode) return <Navigate to="/" replace />
+  return <BackupsScreen />
+}
+
+function BackupsScreen() {
   const { t } = useTranslation()
   const dateLocale = useDateLocale()
   const queryClient = useQueryClient()
