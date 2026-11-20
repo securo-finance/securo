@@ -6,6 +6,7 @@ import type { User } from '@/types'
 
 import { AuthContext, type LoginResult } from '@/contexts/auth-context'
 import { endProviderSession } from '@/lib/provider-logout'
+import { reconnectDelay } from '@/lib/reconnect-delay'
 
 /** Marks a session that came from the OIDC provider (issue #1623). */
 const OIDC_SESSION_KEY = 'oidc_session'
@@ -19,20 +20,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // not load" apart (issue #292).
   const [sessionUnreachable, setSessionUnreachable] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
+  // Failed checks in a row while unreachable; paces the automatic retries.
+  const [failedChecks, setFailedChecks] = useState(0)
   const queryClient = useQueryClient()
   // Bumped by every sign-in: a provider logout that resolves after a new
   // session started must not redirect and end it (#1623).
   const signInGeneration = useRef(0)
+  // Bumped by every session check: only the latest one may set the user or
+  // the unreachable flag, so a slow, superseded check cannot undo a newer one.
+  const checkGeneration = useRef(0)
 
-  if (!token && (user !== null || isLoading || sessionUnreachable)) {
+  if (!token && (user !== null || isLoading || sessionUnreachable || failedChecks !== 0)) {
     setUser(null)
     setIsLoading(false)
     setSessionUnreachable(false)
+    setFailedChecks(0)
   }
 
   useEffect(() => {
     if (!token) return
     let cancelled = false
+    const check = ++checkGeneration.current
+    const superseded = () => cancelled || check !== checkGeneration.current
     // Ask again when the connection is back or the tab becomes visible. Listening
     // from the start covers an event that fires while the request is in flight.
     const retry = () => {
@@ -47,13 +56,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     auth.me()
       .then((me) => {
-        if (cancelled) return
+        if (superseded()) return
         stopRetrying()
         setSessionUnreachable(false)
+        setFailedChecks(0)
         setUser(me)
       })
       .catch((error) => {
-        if (cancelled) return
+        if (superseded()) return
         // Only a token the server rejects ends the session. No response (offline,
         // server restarting) or a 5xx says nothing about the token, so keep it and
         // drop any user loaded for a previous token; the listeners retry.
@@ -66,6 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return
         }
         setSessionUnreachable(true)
+        setFailedChecks((n) => n + 1)
         setUser(null)
       })
       .finally(() => { if (!cancelled) setIsLoading(false) })
@@ -74,6 +85,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       stopRetrying()
     }
   }, [token, retryCount])
+
+  // A server that restarts while the browser stays online and the tab visible
+  // fires no event to retry on, so ask again on a timer: 2 s, doubling up to
+  // 30 s. Each failed check schedules the next; recovery, sign-out or unmount
+  // clears it. A hidden tab waits for visibilitychange instead (issue #292).
+  useEffect(() => {
+    if (!sessionUnreachable || !token || failedChecks === 0) return
+    const timer = window.setTimeout(() => {
+      if (document.visibilityState === 'hidden') return
+      setRetryCount((n) => n + 1)
+    }, reconnectDelay(failedChecks))
+    return () => window.clearTimeout(timer)
+  }, [sessionUnreachable, token, failedChecks])
 
   // The offline screen's "Try again": go back to the spinner while the check
   // runs, so the person sees the click was taken.
@@ -127,14 +151,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     else localStorage.removeItem(OIDC_SESSION_KEY)
     signInGeneration.current += 1
     setToken(accessToken)
+    // A new token also starts the effect's check, which supersedes this one;
+    // this one still settles a token that did not change.
+    const check = ++checkGeneration.current
     auth.me()
       .then((me) => {
+        if (check !== checkGeneration.current) return
         setSessionUnreachable(false)
+        setFailedChecks(0)
         setUser(me)
       })
       .catch((error) => {
+        if (check !== checkGeneration.current) return
         if (!(isAxiosError(error) && error.response?.status === 401)) {
           setSessionUnreachable(true)
+          setFailedChecks((n) => n + 1)
         }
       })
   }, [])

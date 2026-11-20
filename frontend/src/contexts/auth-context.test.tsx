@@ -220,6 +220,88 @@ describe('AuthProvider session restore', () => {
   })
 })
 
+describe('AuthProvider automatic reconnect', () => {
+  /** Let pending timers and promise callbacks run, inside act. */
+  async function advance(ms: number) {
+    await act(async () => { await vi.advanceTimersByTimeAsync(ms) })
+  }
+
+  it('checks again by itself when the server returns with no browser event', async () => {
+    // Issue #292: a server restart while the browser stays online and the tab
+    // visible fires neither online nor visibilitychange. The offline screen
+    // says it reconnects on its own, so a timer has to ask again.
+    vi.useFakeTimers()
+    try {
+      localStorage.setItem('token', 'stored-jwt')
+      auth.me
+        .mockRejectedValueOnce(httpError(503))
+        .mockRejectedValueOnce(httpError(503))
+        .mockResolvedValue(USER)
+
+      const { result } = renderHook(() => useAuth(), { wrapper })
+      await advance(0)
+      expect(result.current.sessionUnreachable).toBe(true)
+      expect(auth.me).toHaveBeenCalledTimes(1)
+
+      await advance(1_999)
+      expect(auth.me).toHaveBeenCalledTimes(1)
+      await advance(1)
+      expect(auth.me).toHaveBeenCalledTimes(2)
+      expect(result.current.sessionUnreachable).toBe(true)
+
+      // The wait doubles after a second failure.
+      await advance(3_999)
+      expect(auth.me).toHaveBeenCalledTimes(2)
+      await advance(1)
+      expect(result.current.user).toEqual(USER)
+      expect(result.current.sessionUnreachable).toBe(false)
+
+      // Back online: no more checks.
+      await advance(60_000)
+      expect(auth.me).toHaveBeenCalledTimes(3)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops the automatic checks when the provider unmounts', async () => {
+    vi.useFakeTimers()
+    try {
+      localStorage.setItem('token', 'stored-jwt')
+      auth.me.mockRejectedValue(networkError())
+
+      const { result, unmount } = renderHook(() => useAuth(), { wrapper })
+      await advance(0)
+      expect(result.current.sessionUnreachable).toBe(true)
+
+      unmount()
+      await advance(120_000)
+      expect(auth.me).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not let a superseded loginWithToken check undo a validated session', async () => {
+    // loginWithToken checks the token, and the token change starts the
+    // effect's own check. If the first fails late, after the second loaded the
+    // user, it must not put the offline screen over a working session.
+    const { result } = await renderAuth()
+    let rejectFirst: (error: unknown) => void = () => {}
+    auth.me
+      .mockReturnValueOnce(new Promise((_, reject) => { rejectFirst = reject }))
+      .mockResolvedValue(USER)
+
+    act(() => { result.current.loginWithToken('oidc-jwt', true) })
+    await waitFor(() => expect(result.current.user).toEqual(USER))
+
+    await act(async () => { rejectFirst(networkError()) })
+
+    expect(result.current.sessionUnreachable).toBe(false)
+    expect(result.current.user).toEqual(USER)
+  })
+})
+
 describe('login', () => {
   it('stores the token and loads the user', async () => {
     auth.login.mockResolvedValue({ access_token: 'new-jwt' })

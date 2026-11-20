@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { isAxiosError } from 'axios'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
 import { workspaces as workspacesApi, WORKSPACE_STORAGE_KEY } from '@/lib/api'
 import type { ModuleId } from '@/lib/modules'
+import { reconnectDelay } from '@/lib/reconnect-delay'
 import type { Workspace } from '@/types'
 import { WorkspaceContext } from '@/contexts/workspace-context'
 
@@ -20,13 +21,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // routes read every module as off and send the page home (issue #292).
   const [fetchedFor, setFetchedFor] = useState<string | null>(null)
   const isLoading = loadingList || (!!user && !!token && fetchedFor !== token)
+  // Failed loads in a row; paces the automatic retries.
+  const [failedLoads, setFailedLoads] = useState(0)
+  // Bumped by every load and by sign-out: only the latest load may write its
+  // result, so an older request that fails late cannot flag a list a newer
+  // one already brought back, or clear it.
+  const loadGeneration = useRef(0)
   const queryClient = useQueryClient()
 
   const loadWorkspaces = useCallback(async () => {
+    const load = ++loadGeneration.current
     setLoadingList(true)
     try {
       const fetched = await workspacesApi.list()
+      if (load !== loadGeneration.current) return
       setLoadFailed(false)
+      setFailedLoads(0)
       setList(fetched)
       // Reconcile the stored selection against what's actually accessible.
       // If the stored ID is stale (workspace archived, user removed, etc.)
@@ -44,16 +54,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setCurrentId(null)
       }
     } catch (error) {
+      if (load !== loadGeneration.current) return
       // 401s are handled by the global interceptor. Anything else means the
       // server could not be asked, not that the user has no workspaces: mark
       // it so the shell says so instead of treating every module as off and
       // redirecting the requested page home (issue #292).
       if (!(isAxiosError(error) && error.response?.status === 401)) {
         setLoadFailed(true)
+        setFailedLoads((n) => n + 1)
       }
       setList([])
     } finally {
-      setLoadingList(false)
+      if (load === loadGeneration.current) setLoadingList(false)
     }
   }, [])
 
@@ -64,6 +76,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     // `hasModule` to decide the module is off and redirect away.
     if (authLoading) return
     if (!user || !token) {
+      loadGeneration.current += 1
+      setFailedLoads(0)
       setList([])
       setCurrentId(null)
       setLoadFailed(false)
@@ -93,6 +107,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', retry)
     }
   }, [loadFailed, user, token, loadWorkspaces])
+
+  // The server can come back with no browser event (a restart while the
+  // browser stays online), so also ask again on a timer: 2 s, doubling up to
+  // 30 s. Each failed load schedules the next; recovery, sign-out or unmount
+  // clears it. A hidden tab waits for visibilitychange instead.
+  useEffect(() => {
+    if (!loadFailed || !user || !token || failedLoads === 0) return
+    const timer = window.setTimeout(() => {
+      if (document.visibilityState === 'hidden') return
+      void loadWorkspaces()
+    }, reconnectDelay(failedLoads))
+    return () => window.clearTimeout(timer)
+  }, [loadFailed, user, token, failedLoads, loadWorkspaces])
 
   const switchWorkspace = useCallback(
     async (id: string) => {

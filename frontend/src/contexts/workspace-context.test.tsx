@@ -147,6 +147,83 @@ describe('loading', () => {
     expect(result.current.current?.id).toBe('ws-a')
     expect(workspacesApi.list).toHaveBeenCalledTimes(2)
   })
+
+  it('loads again by itself when the server returns with no browser event', async () => {
+    // Issue #292: a server restart while the browser stays online and the tab
+    // visible fires no event, so a timer asks again: 2 s, then 4 s.
+    vi.useFakeTimers()
+    const advance = async (ms: number) => {
+      await act(async () => { await vi.advanceTimersByTimeAsync(ms) })
+    }
+    try {
+      workspacesApi.list
+        .mockRejectedValueOnce(new Error('503'))
+        .mockRejectedValueOnce(new Error('503'))
+        .mockResolvedValue([makeWorkspace({ id: 'ws-a' })])
+
+      const { result } = renderHook(() => useWorkspace(), { wrapper })
+      await advance(0)
+      expect(result.current.loadFailed).toBe(true)
+      expect(workspacesApi.list).toHaveBeenCalledTimes(1)
+
+      await advance(1_999)
+      expect(workspacesApi.list).toHaveBeenCalledTimes(1)
+      await advance(1)
+      expect(workspacesApi.list).toHaveBeenCalledTimes(2)
+      expect(result.current.loadFailed).toBe(true)
+
+      await advance(3_999)
+      expect(workspacesApi.list).toHaveBeenCalledTimes(2)
+      await advance(1)
+      expect(result.current.loadFailed).toBe(false)
+      expect(result.current.current?.id).toBe('ws-a')
+
+      await advance(60_000)
+      expect(workspacesApi.list).toHaveBeenCalledTimes(3)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops the automatic loads when the provider unmounts', async () => {
+    vi.useFakeTimers()
+    try {
+      workspacesApi.list.mockRejectedValue(new Error('503'))
+
+      const { result, unmount } = renderHook(() => useWorkspace(), { wrapper })
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(result.current.loadFailed).toBe(true)
+
+      unmount()
+      await act(async () => { await vi.advanceTimersByTimeAsync(120_000) })
+      expect(workspacesApi.list).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not let an older failed load undo a newer successful one', async () => {
+    // The online event starts load A, then Retry starts load B. B brings the
+    // list back; A failing afterwards must not flag it or clear it.
+    workspacesApi.list.mockRejectedValueOnce(new Error('network'))
+    const { result } = await renderWorkspace()
+    expect(result.current.loadFailed).toBe(true)
+
+    let rejectOlder: (error: unknown) => void = () => {}
+    workspacesApi.list
+      .mockReturnValueOnce(new Promise((_, reject) => { rejectOlder = reject }))
+      .mockResolvedValueOnce([makeWorkspace({ id: 'ws-a' })])
+
+    act(() => { window.dispatchEvent(new Event('online')) })
+    await act(async () => { await result.current.refresh() })
+    expect(result.current.loadFailed).toBe(false)
+
+    await act(async () => { rejectOlder(new Error('network')) })
+
+    expect(result.current.loadFailed).toBe(false)
+    expect(result.current.current?.id).toBe('ws-a')
+    expect(result.current.isLoading).toBe(false)
+  })
 })
 
 describe('selection', () => {
