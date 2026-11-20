@@ -500,6 +500,11 @@ async def test_update_without_changes_is_refused(
         ({"description": "   "}, "description cannot be empty"),
         ({"amount": 0}, "amount must be greater than zero"),
         ({"amount": -5}, "amount must be greater than zero"),
+        # The column rounds to cents and holds 13 digits (issue #270).
+        ({"amount": 0.001}, "amount must be at least 0.01"),
+        ({"amount": 1e15}, "amount must be at most 9999999999999.99"),
+        ({"amount_primary": 1e15}, "amount_primary must be at most 9999999999999.99"),
+        ({"fx_rate_used": 1e12}, "fx_rate_used must be at most 9999999999.9999999999"),
         ({"date": "not-a-date"}, "invalid date"),
         ({"type": "transfer"}, "type must be 'debit' or 'credit'"),
         ({"currency": "AB"}, "currency must be a 3-letter code"),
@@ -525,6 +530,26 @@ async def test_invalid_values_are_refused_before_the_preview(
     )
 
     assert result["error"] == expected
+
+
+async def test_an_amount_past_the_column_is_refused_without_sql_text(
+    session: AsyncSession, ext_ctx: CallContext, clp_transaction: Transaction
+):
+    """`1e15` used to pass the preview and fail at apply with asyncpg's own
+    message, which then went to the external client (issue #270)."""
+    result = await _call(
+        session=session,
+        ctx=ext_ctx,
+        transaction_id=str(clp_transaction.id),
+        amount=1e15,
+        apply=True,
+    )
+
+    assert set(result) == {"error"}, result
+    assert "asyncpg" not in result["error"]
+    assert "NumericValueOutOfRange" not in result["error"]
+    fresh = await _fresh(session, clp_transaction.id)
+    assert fresh.amount == Decimal("671500")
 
 
 # --- Transfers --------------------------------------------------------------
