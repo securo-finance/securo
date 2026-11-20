@@ -330,10 +330,11 @@ async def run_report(
     for row in result.all():
         key, label, total = row[0], row[1], Decimal(str(row[2] or 0))
         color = row[3] if color_col is not None else None
-        if total == 0:
-            continue
         row_key = str(key) if key is not None else NONE_KEY
         credit, debit = offsets.get(row_key, (Decimal("0"), Decimal("0")))
+        # The shares come off before the row is dropped: a group whose gross
+        # total is zero can still hold a nonzero share of the viewer's own
+        # (a 100 credit beside a 100 split debit where a friend owes 40).
         total -= _non_owner_offset(report.measure, credit, debit)
         if total == 0 or (report.measure != "net" and total < 0):
             continue
@@ -417,18 +418,20 @@ async def _transactions_input(
 
     viewer_member_ids = set((await session.execute(_viewer_member_ids(user_id))).scalars().all())
     others_by_tx: dict[uuid.UUID, Decimal] = defaultdict(Decimal)
-    if viewer_member_ids:
-        for chunk in range(0, len(ids), 1000):
-            result = await session.execute(
-                select(
-                    TransactionSplit.transaction_id,
-                    TransactionSplit.group_member_id,
-                    TransactionSplit.share_amount,
-                ).where(TransactionSplit.transaction_id.in_(ids[chunk : chunk + 1000]))
-            )
-            for tx_id, member_id, share in result.all():
-                if member_id not in viewer_member_ids:
-                    others_by_tx[tx_id] += Decimal(str(share or 0))
+    # Every share is read, also when the viewer has no member entry of their
+    # own in the group: then each share belongs to someone else, as the query
+    # report counts it, so the two figures stay equal.
+    for chunk in range(0, len(ids), 1000):
+        result = await session.execute(
+            select(
+                TransactionSplit.transaction_id,
+                TransactionSplit.group_member_id,
+                TransactionSplit.share_amount,
+            ).where(TransactionSplit.transaction_id.in_(ids[chunk : chunk + 1000]))
+        )
+        for tx_id, member_id, share in result.all():
+            if member_id not in viewer_member_ids:
+                others_by_tx[tx_id] += Decimal(str(share or 0))
 
     rates: dict[tuple[str, date], Optional[Decimal]] = {}
     out: list[dict[str, Any]] = []
