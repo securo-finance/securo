@@ -1700,10 +1700,13 @@
   "rules": {
     "searchPlaceholder": "Поиск правил...",
     "filterAllCategories": "Все категории",
+    "filterByCategory": "Фильтр по категории",
     "filterAllStatuses": "Все статусы",
+    "filterByStatus": "Фильтр по статусу",
     "filterActiveOnly": "Только активные",
     "filterInactiveOnly": "Только неактивные",
     "filterAllActions": "Все действия",
+    "filterByAction": "Фильтр по действию",
     "noFilterResults": "Ни одно правило не соответствует этим фильтрам",
     "preview": "Предпросмотр",
     "previewMatched": "совпадений: {{matched}}",

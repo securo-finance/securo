@@ -1685,10 +1685,13 @@
   "rules": {
     "searchPlaceholder": "Regels zoeken...",
     "filterAllCategories": "Alle categorieën",
+    "filterByCategory": "Filteren op categorie",
     "filterAllStatuses": "Alle statussen",
+    "filterByStatus": "Filteren op status",
     "filterActiveOnly": "Alleen actief",
     "filterInactiveOnly": "Alleen inactief",
     "filterAllActions": "Alle acties",
+    "filterByAction": "Filteren op actie",
     "noFilterResults": "Geen regel voldoet aan deze filters",
     "preview": "Voorbeeld",
     "previewMatched": "{{matched}} overeenkomsten",

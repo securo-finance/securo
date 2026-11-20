@@ -1687,10 +1687,13 @@
   "rules": {
     "searchPlaceholder": "Rechercher des règles...",
     "filterAllCategories": "Toutes les catégories",
+    "filterByCategory": "Filtrer par catégorie",
     "filterAllStatuses": "Tous les statuts",
+    "filterByStatus": "Filtrer par statut",
     "filterActiveOnly": "Actives uniquement",
     "filterInactiveOnly": "Inactives uniquement",
     "filterAllActions": "Toutes les actions",
+    "filterByAction": "Filtrer par action",
     "noFilterResults": "Aucune règle ne correspond à ces filtres",
     "preview": "Aperçu",
     "previewMatched": "{{matched}} correspondances",

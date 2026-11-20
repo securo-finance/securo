@@ -1683,10 +1683,13 @@
   "rules": {
     "searchPlaceholder": "नियम खोजें...",
     "filterAllCategories": "सभी श्रेणियाँ",
+    "filterByCategory": "श्रेणी के अनुसार फ़िल्टर करें",
     "filterAllStatuses": "सभी स्थितियाँ",
+    "filterByStatus": "स्थिति के अनुसार फ़िल्टर करें",
     "filterActiveOnly": "केवल सक्रिय",
     "filterInactiveOnly": "केवल निष्क्रिय",
     "filterAllActions": "सभी कार्रवाइयाँ",
+    "filterByAction": "क्रिया के अनुसार फ़िल्टर करें",
     "noFilterResults": "इन फ़िल्टरों से कोई नियम मेल नहीं खाता",
     "preview": "पूर्वावलोकन",
     "previewMatched": "{{matched}} मिलान",

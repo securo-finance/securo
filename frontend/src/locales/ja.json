@@ -1683,10 +1683,13 @@
   "rules": {
     "searchPlaceholder": "ルールを検索...",
     "filterAllCategories": "すべてのカテゴリ",
+    "filterByCategory": "カテゴリで絞り込む",
     "filterAllStatuses": "すべてのステータス",
+    "filterByStatus": "ステータスで絞り込む",
     "filterActiveOnly": "有効のみ",
     "filterInactiveOnly": "無効のみ",
     "filterAllActions": "すべての操作",
+    "filterByAction": "アクションで絞り込む",
     "noFilterResults": "このフィルタに一致するルールはありません",
     "preview": "プレビュー",
     "previewMatched": "{{matched}}件が一致",
