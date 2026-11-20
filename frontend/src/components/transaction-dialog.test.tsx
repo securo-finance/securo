@@ -820,3 +820,30 @@ describe('TransactionDialog flag (#56)', () => {
     await waitFor(() => expect(screen.queryByTestId('flag-reminder')).not.toBeInTheDocument())
   })
 })
+
+it('shows the bank’s own category when the provider sent one', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture(null, {
+        source: 'sync',
+        provider_category: 'Groceries',
+      })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+      isSynced
+    />,
+  )
+
+  expect(
+    await screen.findByText(`${t('transactions.providerCategory')}: Groceries`),
+  ).toBeInTheDocument()
+})

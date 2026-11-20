@@ -1226,6 +1226,13 @@ function TransactionForm({
         {isSynced && transaction?.payee && transaction.payee !== transaction.description && (
           <p className="text-xs text-muted-foreground">{transaction.payee}</p>
         )}
+        {/* The bank's own category label, untranslated. Rules match this exact
+            text, so the row shows it where the user edits the transaction. */}
+        {transaction?.provider_category && (
+          <p className="text-xs text-muted-foreground">
+            {t('transactions.providerCategory')}: {transaction.provider_category}
+          </p>
+        )}
       </div>
       <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <div className="space-y-2">
