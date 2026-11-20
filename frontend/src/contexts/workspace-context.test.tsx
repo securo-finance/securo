@@ -105,6 +105,34 @@ describe('loading', () => {
     expect(result.current.loadFailed).toBe(false)
   })
 
+  it('stays loading when the session comes back until its list is fetched', async () => {
+    // Issue #292: offline, auth keeps the token with no user, so the provider
+    // settles as "no workspaces". When the user returns, the render before
+    // the fetch starts must not report "loaded, every module off", or
+    // ModuleRoute sends /transactions home.
+    useAuth.mockReturnValue({ user: null, token: 'jwt', isLoading: false })
+    let resolveList: (ws: Workspace[]) => void = () => {}
+    workspacesApi.list.mockReturnValue(
+      new Promise<Workspace[]>((resolve) => { resolveList = resolve }),
+    )
+    const seen: { isLoading: boolean; hasTransactions: boolean }[] = []
+    const { result, rerender } = renderHook(() => {
+      const ws = useWorkspace()
+      seen.push({ isLoading: ws.isLoading, hasTransactions: ws.hasModule('transactions') })
+      return ws
+    }, { wrapper })
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    seen.length = 0
+    signedIn()
+    rerender()
+    await act(async () => { resolveList([makeWorkspace()]) })
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    expect(result.current.hasModule('transactions')).toBe(true)
+    expect(seen.filter((s) => !s.isLoading && !s.hasTransactions)).toEqual([])
+  })
+
   it('loads the workspaces once the connection is back', async () => {
     workspacesApi.list
       .mockRejectedValueOnce(new Error('network'))

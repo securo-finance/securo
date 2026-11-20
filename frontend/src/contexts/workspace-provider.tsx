@@ -12,12 +12,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const { user, token, isLoading: authLoading } = useAuth()
   const [list, setList] = useState<Workspace[]>([])
   const [currentId, setCurrentId] = useState<string | null>(() => localStorage.getItem(WORKSPACE_STORAGE_KEY))
-  const [isLoading, setIsLoading] = useState(true)
+  const [loadingList, setLoadingList] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false)
+  // The token whose list we last fetched (or failed to). A session that comes
+  // back after being unreachable keeps its token but gets a user again; the
+  // render before the fetch starts must still count as loading, or module
+  // routes read every module as off and send the page home (issue #292).
+  const [fetchedFor, setFetchedFor] = useState<string | null>(null)
+  const isLoading = loadingList || (!!user && !!token && fetchedFor !== token)
   const queryClient = useQueryClient()
 
   const loadWorkspaces = useCallback(async () => {
-    setIsLoading(true)
+    setLoadingList(true)
     try {
       const fetched = await workspacesApi.list()
       setLoadFailed(false)
@@ -47,7 +53,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
       setList([])
     } finally {
-      setIsLoading(false)
+      setLoadingList(false)
     }
   }, [])
 
@@ -61,10 +67,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setList([])
       setCurrentId(null)
       setLoadFailed(false)
-      setIsLoading(false)
+      setLoadingList(false)
+      setFetchedFor(null)
       return
     }
-    void loadWorkspaces()
+    let cancelled = false
+    void loadWorkspaces().finally(() => {
+      if (!cancelled) setFetchedFor(token)
+    })
+    return () => { cancelled = true }
   }, [authLoading, user, token, loadWorkspaces])
 
   // A failed list must heal by itself once the connection is back: the URL the
