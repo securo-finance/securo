@@ -19,6 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/page-header'
 import { BudgetSpendingProgress } from '@/components/budget-spending-progress'
 import { BudgetCopyDialog } from '@/components/budget-copy-dialog'
+import { BudgetIncomeStrip } from '@/components/budget-income-strip'
 import { TransactionDrillDown } from '@/components/transaction-drill-down'
 import { CategoryIcon } from '@/components/category-icon'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -320,6 +321,16 @@ export default function BudgetsPage() {
               <Sparkles size={13} /> {t('budgets.suggest')}
             </Button>
           ) : undefined}
+        />
+
+        {/* One line under the header: income, the saved planned total, the difference. */}
+        <BudgetIncomeStrip
+          month={monthParam}
+          savedBudgets={budgetsList ?? []}
+          canWrite={canWrite}
+          currency={userCurrency}
+          locale={locale}
+          fmt={fmt}
         />
 
         {canWrite && !budgetsFetching && budgetsList?.length === 0 && allCategories.length > 0 && (
