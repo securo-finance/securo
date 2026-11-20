@@ -548,6 +548,9 @@ async def _existing_holdings(
             Asset.valuation_method == 'market_price',
             Asset.group_id == group_id,
             Asset.ticker.in_(sorted({t.upper() for t in tickers})),
+            # A bank connection owns a synced holding's position, so imported
+            # orders never land on it (the next sync would rewrite its units).
+            Asset.connection_id.is_(None),
         )
     )
     return {a.ticker.upper(): a for a in result.scalars().all() if a.ticker}

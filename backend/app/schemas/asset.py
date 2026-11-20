@@ -3,7 +3,7 @@ from datetime import date as _date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class AssetCreate(BaseModel):
@@ -178,6 +178,20 @@ class AssetTransactionRead(BaseModel):
     logo_url: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AssetTickerLink(BaseModel):
+    """Market symbol to price a synced holding with (Yahoo format, e.g. PETR4.SA)."""
+
+    ticker: str = Field(min_length=1, max_length=32)
+
+    @field_validator("ticker")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("ticker must not be blank")
+        return value
 
 
 class MarketSymbolQuote(BaseModel):

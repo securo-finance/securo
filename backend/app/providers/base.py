@@ -219,6 +219,13 @@ class HoldingData:
     # report a crypto position put the ticker in both, and only one of them
     # belongs in a 3-char ISO currency field.
     ticker: Optional[str] = None
+    # True when `ticker` is a market-data symbol (Yahoo Finance format, e.g.
+    # "PETR4.SA") the provider derived with confidence. The sync then tries
+    # to price the holding from the market (units from the provider, price
+    # from the quote), the same way a manually added ticker holding works.
+    # False keeps the ticker as a plain label, which is how providers that
+    # report raw broker symbols behave.
+    ticker_quotable: bool = False
     maturity_date: Optional[date] = None
     # Date the provider says `current_value` refers to. A provider can keep
     # serving a frozen figure (a redeemed position it never reports as

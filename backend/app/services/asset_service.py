@@ -1370,6 +1370,61 @@ async def upsert_today_value(
         )
 
 
+class TickerLinkError(Exception):
+    """A ticker could not be linked to a holding.
+
+    `code` is stable so the API and the sync can tell the cases apart:
+    "not_found" (no quote for the symbol) or "currency_mismatch" (the symbol
+    trades in another currency than the holding, so it is a different
+    instrument and pricing the holding with it would be wrong).
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+async def link_market_ticker(
+    session: AsyncSession,
+    asset: Asset,
+    ticker: str,
+    *,
+    market_provider: Optional[MarketPriceProvider] = None,
+) -> None:
+    """Price a holding from the market under `ticker`.
+
+    Used for provider-synced holdings: the provider keeps owning the
+    position (units), while the quote supplies the price, the logo and the
+    daily refresh, exactly like a manually added ticker holding. The symbol
+    is validated before anything is written, so a failed link leaves the
+    asset untouched.
+
+    Raises TickerLinkError when the symbol has no quote or trades in another
+    currency, and lets MarketPriceRateLimitedError through so callers can
+    back off.
+    """
+    symbol = ticker.strip().upper()
+    if not symbol:
+        raise TickerLinkError("not_found", "Empty ticker")
+    provider = market_provider or get_market_price_provider()
+    quote = await provider.get_quote(symbol)
+    if quote is None or quote.price is None:
+        raise TickerLinkError("not_found", f"No quote found for {symbol}")
+    if (quote.currency or "").upper() != (asset.currency or "").upper():
+        raise TickerLinkError(
+            "currency_mismatch",
+            f"{symbol} trades in {quote.currency}, the holding is in {asset.currency}",
+        )
+
+    asset.ticker = symbol
+    asset.ticker_exchange = quote.exchange
+    asset.valuation_method = "market_price"
+    # A re-link to another symbol must not keep the previous company's logo.
+    asset.logo_url = quote.logo_url
+    await _apply_price_to_asset(session, asset, Decimal(str(quote.price)))
+    await session.flush()
+
+
 async def refresh_market_price_asset(
     session: AsyncSession,
     asset: Asset,

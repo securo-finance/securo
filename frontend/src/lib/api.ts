@@ -1633,6 +1633,11 @@ export const assets = {
       throw error
     }
   },
+  // Price a bank-synced holding from the market under `ticker`.
+  linkTicker: async (id: string, ticker: string): Promise<Asset> => {
+    const { data } = await api.post(`/assets/${id}/link-ticker`, { ticker })
+    return data
+  },
   // Transaction ledger (issue #235)
   transactions: async (id: string): Promise<AssetTransaction[]> => {
     const { data } = await api.get(`/assets/${id}/transactions`)

@@ -724,6 +724,9 @@ async def buy_into_holding(
             Asset.ticker == ticker,
             Asset.valuation_method == "market_price",
             Asset.group_id == data.group_id,
+            # A synced holding with the same ticker is the provider's
+            # position; a manual buy gets its own holding instead.
+            Asset.connection_id.is_(None),
         )
         # Locked like the other ledger writes: its units are read below and
         # written after the quote lookup.
