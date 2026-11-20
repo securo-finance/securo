@@ -773,13 +773,14 @@ async def get_transactions(
         # and the frontend needs `is_shared` to lock them from edits.
         await _tag_shared_view(session, transactions, user_id, workspace_id)
         # Paybacks recorded on these rows, so reopening one shows it.
-        # Only on the viewer's own rows: a shared row could point at a group
-        # the viewer can't see.
+        # Only on the viewer's own rows: another member's row could point at
+        # a group the viewer can't see.
         settled = await session.execute(
             select(GroupSettlement).where(
+                GroupSettlement.workspace_id == workspace_id,
                 GroupSettlement.receiver_transaction_id.in_(
-                    [tx.id for tx in transactions if not tx.is_shared]
-                )
+                    [tx.id for tx in transactions if tx.user_id == user_id]
+                ),
             )
         )
         settled_by: dict[uuid.UUID | None, list[GroupSettlement]] = {}
@@ -2372,11 +2373,17 @@ async def update_transaction(
         await _resync_installment_series_total(session, workspace_id, transaction)
 
     # A payback is checked against the amount saved above, in the same commit.
-    if payback_payload is not None:
-        from app.services.settlement_service import replace_receiver_settlements
+    from app.services import settlement_service
 
+    if payback_payload is not None:
         await session.flush()
-        await replace_receiver_settlements(session, transaction, payback_payload, workspace_id, user_id)
+        await settlement_service.replace_receiver_settlements(
+            session, transaction, payback_payload, workspace_id, user_id
+        )
+    elif {"amount", "currency", "type"} & update_data.keys():
+        await session.flush()
+        for row in rows:
+            await settlement_service.check_receiver_settlements(session, row)
 
     await session.commit()
     await session.refresh(transaction, ["category", "payee_entity", "splits", "category_lines"])

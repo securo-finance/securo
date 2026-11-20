@@ -519,6 +519,7 @@ function TransactionForm({
   // Undefined until the section reports one, so a section that never showed
   // leaves the transaction's payback alone.
   const [settle, setSettle] = useState<TransactionSettleInput | null | undefined>(undefined)
+  const singleGroupPayback = new Set((transaction?.settled_by ?? []).map((s) => s.group_id)).size <= 1
   const [splits, setSplits] = useState<TransactionSplitsInput | null>(() => {
     const existing = (seed as Transaction | null | undefined)?.splits
     if (!existing || existing.length === 0) return null
@@ -982,11 +983,14 @@ function TransactionForm({
             : {}
         // The payback goes with the save, like splits, and only when its group
         // or payers changed, so amounts already recorded are kept.
+        // A new amount re-splits a payback that covered the whole transaction.
         const before = transaction?.settled_by ?? []
         const payersKey = (groupId: string | undefined, ids: string[]) => `${groupId}:${[...ids].sort().join()}`
-        const paybackPayload: Pick<TransactionEditPayload, 'payback'> = settle !== undefined
-          && payersKey(before[0]?.group_id, before.map((s) => s.from_member_id))
+        const coveredWhole = Math.abs(before.reduce((sum, s) => sum + Number(s.amount), 0) - Number(transaction?.amount)) < 0.005
+        const paybackPayload: Pick<TransactionEditPayload, 'payback'> = settle !== undefined && !splitByCategory
+          && (payersKey(before[0]?.group_id, before.map((s) => s.from_member_id))
             !== payersKey(settle?.group_id, settle?.payers.map((p) => p.member_id) ?? [])
+            || (!!settle && coveredWhole && parsedAmount != null && Number(transaction?.amount) !== parsedAmount))
           ? { payback: settle ? { group_id: settle.group_id, to_member_id: settle.to_member_id, payers: settle.payers } : { payers: [] } }
           : {}
         const pnlExclusionPayload = transaction
@@ -1647,8 +1651,9 @@ function TransactionForm({
           value={splits}
           onChange={setSplits}
           onValidityChange={setSplitsValid}
-          settledBy={transaction?.settled_by}
-          onSettle={transaction?.type === 'credit' ? setSettle : undefined}
+          // A payback spread over several groups is managed from the group pages.
+          settledBy={singleGroupPayback ? transaction?.settled_by : undefined}
+          onSettle={transaction?.type === 'credit' && singleGroupPayback ? setSettle : undefined}
         />
       )}
 

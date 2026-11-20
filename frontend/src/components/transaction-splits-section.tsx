@@ -403,7 +403,8 @@ export function TransactionSplitsSection({
                     <option value="equal">{t('splitGroups.shareEqual')}</option>
                     <option value="exact">{t('splitGroups.shareExact')}</option>
                     <option value="percent">{t('splitGroups.sharePercent')}</option>
-                    {onSettle && (
+                    {/* Only the group owner can record a payback to themselves. */}
+                    {onSettle && group?.is_owner && (
                       <option value="settlement">{t('splitGroups.shareSettlement')}</option>
                     )}
                   </select>

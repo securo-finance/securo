@@ -100,10 +100,9 @@ class TransactionCreate(TransactionBase):
         return self
 
 
-
 class TransactionPaybackPayer(BaseModel):
     member_id: uuid.UUID
-    amount: Decimal = Field(gt=0)
+    amount: Decimal = Field(gt=0, decimal_places=2)
 
 
 class TransactionPaybackInput(BaseModel):
@@ -111,6 +110,7 @@ class TransactionPaybackInput(BaseModel):
     group_id: Optional[uuid.UUID] = None
     to_member_id: Optional[uuid.UUID] = None
     payers: list[TransactionPaybackPayer] = []
+
 
 class TransactionUpdate(BaseModel):
     description: Optional[str] = None
@@ -216,7 +216,6 @@ class TransactionTransferCounterpart(BaseModel):
     account_name: str
 
 
-
 class TransactionSettledBy(BaseModel):
     id: uuid.UUID
     group_id: uuid.UUID
@@ -224,6 +223,7 @@ class TransactionSettledBy(BaseModel):
     amount: Decimal
 
     model_config = ConfigDict(from_attributes=True)
+
 
 class TransactionRead(TransactionBase):
     id: uuid.UUID

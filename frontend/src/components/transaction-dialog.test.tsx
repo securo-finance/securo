@@ -472,7 +472,7 @@ it('records an incoming transaction as a payback from the members picked', async
   vi.spyOn(currencies, 'list').mockResolvedValue([])
   vi.spyOn(payees, 'list').mockResolvedValue([])
   const member = (id: string, name: string, is_self = false) => ({ id, name, is_self })
-  const trip = { id: 'g1', name: 'Trip', members: [member('m-me', 'Me', true), member('m-jara', 'Jara'), member('m-alatz', 'Alatz')] }
+  const trip = { id: 'g1', name: 'Trip', is_owner: true, members: [member('m-me', 'Me', true), member('m-jara', 'Jara'), member('m-alatz', 'Alatz')] }
   vi.spyOn(groups, 'list').mockResolvedValue([trip] as never)
   vi.spyOn(groups, 'get').mockResolvedValue(trip as never)
   const onSave = vi.fn()
@@ -489,6 +489,7 @@ it('records an incoming transaction as a payback from the members picked', async
       onSave={onSave}
       loading={false}
       error={null}
+      isSynced
     />,
   )
 
@@ -513,7 +514,7 @@ it('records an incoming transaction as a payback from the members picked', async
 it('reopens a payback with its payers, and replaces it only when it changes', async () => {
   vi.spyOn(currencies, 'list').mockResolvedValue([])
   vi.spyOn(payees, 'list').mockResolvedValue([])
-  const trip = { id: 'g1', name: 'Trip', members: [{ id: 'm-me', name: 'Me', is_self: true }, { id: 'm-jara', name: 'Jara', is_self: false }] }
+  const trip = { id: 'g1', name: 'Trip', is_owner: true, members: [{ id: 'm-me', name: 'Me', is_self: true }, { id: 'm-jara', name: 'Jara', is_self: false }] }
   vi.spyOn(groups, 'list').mockResolvedValue([trip] as never)
   vi.spyOn(groups, 'get').mockResolvedValue(trip as never)
   const onSave = vi.fn()

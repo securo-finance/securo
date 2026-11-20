@@ -298,14 +298,83 @@ async def test_a_payback_is_saved_with_its_transaction(
     # The new amount and the new payback are checked together.
     await save([(bob_id, "4.00"), (carol_id, "4.00")], amount="8.00")
     assert await linked() == sorted([(bob_id, "4.00"), (carol_id, "4.00")])
+    # The first payer fits and the second doesn't: nothing is kept.
     with pytest.raises(ValueError, match="exceed its amount"):
-        await save([(bob_id, "9.00")])
+        await save([(bob_id, "5.00"), (carol_id, "4.00")])
     await session.rollback()
     assert await linked() == sorted([(bob_id, "4.00"), (carol_id, "4.00")])
     # An empty payback removes it; the transaction stays.
     await save([])
     assert await linked() == []
     assert await session.get(Transaction, tx_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_a_payback_cannot_replace_a_settlements_own_credit(
+    session: AsyncSession, test_user, test_workspace
+):
+    """The mirror credit a settlement created is managed from that settlement."""
+    await _make_account(session, test_user.id, test_workspace.id)
+    group, me, bob, _c = await _setup_group(session, test_user.id, test_workspace.id)
+    s = await settlement_service.create_settlement(
+        session, group.id, test_workspace.id, test_user.id,
+        GroupSettlementCreate(
+            from_member_id=bob.id, to_member_id=me.id,
+            amount=Decimal("5.00"), currency="USD", date=date.today(),
+        ),
+    )
+    assert s is not None and s.receiver_transaction_id is not None
+    mirror_id, settlement_id = s.receiver_transaction_id, s.id
+
+    with pytest.raises(ValueError, match="created by a settlement"):
+        await update_transaction(
+            session, mirror_id, test_workspace.id, test_user.id,
+            TransactionUpdate(payback=TransactionPaybackInput()),
+        )
+    await session.rollback()
+    assert await session.get(GroupSettlement, settlement_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_a_credit_and_its_settlements_stay_consistent_when_edited(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Neither the credit nor a settlement on it can be edited past the other."""
+    group, me, bob, _c = await _setup_group(session, test_user.id, test_workspace.id)
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    received = await _make_transaction(session, test_user.id, test_workspace.id, account.id)
+    received.type = "credit"
+    s = await _settle_to_me(session, test_user.id, test_workspace.id, group, bob, me, "5.00", received.id)
+    assert s is not None
+    tx_id, settlement_id, group_id = received.id, s.id, group.id
+    workspace_id, user_id = test_workspace.id, test_user.id
+
+    with pytest.raises(ValueError, match="pays back group debts"):
+        await update_transaction(session, tx_id, workspace_id, user_id, TransactionUpdate(amount=Decimal("4.00")))
+    await session.rollback()
+    with pytest.raises(ValueError, match="pays back group debts"):
+        await settlement_service.update_settlement(
+            session, group_id, settlement_id, workspace_id, user_id,
+            GroupSettlementUpdate(amount=Decimal("6.00")),
+        )
+    await session.rollback()
+    kept = await session.get(GroupSettlement, settlement_id)
+    assert kept is not None and kept.amount == Decimal("5.00")
+
+
+@pytest.mark.asyncio
+async def test_settled_by_shows_only_on_the_viewers_own_transactions(
+    session: AsyncSession, test_user, test_workspace
+):
+    group, me, bob, _c = await _setup_group(session, test_user.id, test_workspace.id)
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    received = await _make_transaction(session, test_user.id, test_workspace.id, account.id)
+    received.type = "credit"
+    await _settle_to_me(session, test_user.id, test_workspace.id, group, bob, me, "5.00", received.id)
+
+    # Another member of the workspace lists the same row without its paybacks.
+    rows, _, _ = await get_transactions(session, test_workspace.id, uuid.uuid4(), transaction_ids=[received.id])
+    assert TransactionRead.model_validate(rows[0]).settled_by == []
 
 
 @pytest.mark.asyncio

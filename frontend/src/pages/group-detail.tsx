@@ -333,7 +333,7 @@ export default function GroupDetailPage() {
   // capped: the payer's debits, or the credit that already arrived when the
   // viewer is the one being paid.
   const settleAsReceiver =
-    !!viewerMember && settleTo === viewerMember.id && settleFrom !== viewerMember.id
+    !!group?.is_owner && !!viewerMember && settleTo === viewerMember.id && settleFrom !== viewerMember.id
   const { data: settleTxOptions } = useQuery({
     queryKey: ['settle-tx-options', settleTxQuery, settleAsReceiver],
     queryFn: () =>

@@ -11,11 +11,11 @@ from app.models.group import Group, GroupMember
 from app.models.group_settlement import GroupSettlement
 from app.models.transaction import Transaction
 from app.models.transaction_split import TransactionSplit
-from app.schemas.transaction import TransactionPaybackInput
 from app.schemas.group_settlement import (
     GroupSettlementCreate,
     GroupSettlementUpdate,
 )
+from app.schemas.transaction import TransactionPaybackInput
 
 
 async def _ensure_group_visible(
@@ -384,6 +384,12 @@ async def replace_receiver_settlements(
 ) -> None:
     """Replace the settlements a credit pays back, within the transaction's
     own save, so a failed replacement leaves the previous one in place."""
+    if transaction.source == "settlement":
+        # A settlement's own mirror credit belongs to that settlement, which
+        # may have been recorded by another member.
+        raise ValueError("This credit was created by a settlement; change it from the group")
+    if transaction.user_id != user_id:
+        raise ValueError("Only the transaction's owner can record its payback")
     await session.execute(
         delete(GroupSettlement).where(GroupSettlement.receiver_transaction_id == transaction.id)
     )
@@ -395,12 +401,30 @@ async def replace_receiver_settlements(
             GroupSettlementCreate(
                 from_member_id=payer.member_id, to_member_id=payback.to_member_id,
                 amount=payer.amount, currency=transaction.currency, date=transaction.date,
-                receiver_transaction_id=transaction.id, notes=transaction.notes,
+                receiver_transaction_id=transaction.id,
             ),
             commit=False,
         )
         if settlement is None:
             raise ValueError("Group not found")
+
+
+async def check_receiver_settlements(session: AsyncSession, transaction: Transaction) -> None:
+    """A credit that settles debts stays a credit in their currency, and
+    can't drop below what they add up to."""
+    rows = (
+        await session.execute(
+            select(GroupSettlement.amount, GroupSettlement.currency).where(
+                GroupSettlement.receiver_transaction_id == transaction.id
+            )
+        )
+    ).all()
+    if rows and (
+        transaction.type != "credit"
+        or any(currency != transaction.currency for _, currency in rows)
+        or sum(amount for amount, _ in rows) > transaction.amount
+    ):
+        raise ValueError("This transaction pays back group debts; change its payback too")
 
 
 async def update_settlement(
@@ -448,8 +472,22 @@ async def update_settlement(
     if "transaction_id" in update_data:
         await _validate_transaction(session, update_data["transaction_id"], workspace_id)
 
+    # A transaction that really arrived must still cover what settles it. Its
+    # row is locked before the settlement's, the order a transaction save uses.
+    receiver_tx = None
+    if settlement.receiver_transaction_id is not None and {"amount", "currency", "to_member_id"} & update_data.keys():
+        receiver_tx = await session.get(Transaction, settlement.receiver_transaction_id, with_for_update=True)
+        if receiver_tx is not None and receiver_tx.source == "settlement":
+            receiver_tx = None
+        if receiver_tx is not None and "to_member_id" in update_data:
+            raise ValueError("Unlink the incoming transaction before changing who is paid")
+
     for key, value in update_data.items():
         setattr(settlement, key, value)
+
+    if receiver_tx is not None:
+        await session.flush()
+        await check_receiver_settlements(session, receiver_tx)
 
     await session.commit()
     await session.refresh(settlement)
