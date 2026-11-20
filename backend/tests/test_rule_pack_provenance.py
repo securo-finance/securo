@@ -560,13 +560,27 @@ async def test_api_refuses_a_stale_or_foreign_preview(
         ("STEAMGAMES.COM", "debit", "leisure"),
         # A surname is not a pharmacy chain.
         ("BOLETO JOAO PACHECO", "debit", None),
-        # A telecom name only counts as a whole word: a word that merely
-        # starts with it belongs to another business.
+        # A telecom name only counts as a whole word, and only at the start of
+        # the line, as the bill and the top-up charge write it.
         ("TIM CONTROLE", "debit", "subscriptions"),
         ("VIVO FIBRA", "debit", "subscriptions"),
         ("CLARO NET", "debit", "subscriptions"),
+        ("PAG*CLARO NET", "debit", "subscriptions"),
+        ("PAG* VIVO", "debit", "subscriptions"),
+        ("DEB.AUTOM. TIM CONTROLE", "debit", "subscriptions"),
+        ("DEB AUTOMATICO CLARO", "debit", "subscriptions"),
+        ("DEBITO AUTOMATICO VIVO", "debit", "subscriptions"),
+        ("RECARGA TIM", "debit", "subscriptions"),
         ("TIMBER STORE", "debit", None),
         ("CLAROS CONTABILIDADE", "debit", None),
+        # Anywhere past the start, the name is somebody's or something else's:
+        # a Pix to a person, a show, a bar, a coffee, bottled water.
+        ("PIX ENVIADO TIM SOUZA", "debit", None),
+        ("PIX RECEBIDO MARIA CLARO", "credit", None),
+        ("SHOW AO VIVO INGRESSO", "debit", None),
+        ("BAR VIVO RIO", "debit", None),
+        ("CAFE CLARO", "debit", None),
+        ("AGUA CLARO MINERAL", "debit", None),
         # Vivo Keyd is an esports team, not the carrier: the line falls to the
         # gym rule on ACADEMIA instead of Subscriptions.
         ("VIVO KEYD ACADEMIA", "debit", "health"),
