@@ -77,7 +77,12 @@ from app.schemas.backup import (
     BackupRestoreResult,
 )
 
-FORMAT_VERSION = "1.1"
+FORMAT_VERSION = "1.2"
+# 1.2 is the first format whose budgets carry the currency their limit was
+# typed in. Until then `budgets.currency` held migration 017's default ('BRL')
+# whatever the owner used, and the limit was read as a bare number, so an older
+# archive has to be stamped with the owner's display currency on the way in.
+BUDGET_CURRENCY_FORMAT_VERSION = "1.2"
 BACKUP_PREFIX = "securo-backup"
 CONFIG_KEY_PREFIX = "backup:"
 CONFIG_KEY_SUFFIX = ":config"
@@ -714,6 +719,41 @@ async def build_backup_zip(
         zf.writestr("metadata.json", json.dumps(metadata, indent=2, ensure_ascii=False))
 
     return buf.getvalue()
+
+
+def _format_version_tuple(value: Any) -> tuple[int, ...]:
+    """Split a backup format version into numbers, for comparing two of them.
+
+    An archive whose version cannot be read is treated as the oldest one: it
+    cannot be newer than the code reading it, so it gets the same treatment as
+    a backup written before the version was recorded.
+    """
+    numbers: list[int] = []
+    for part in str(value or "").split("."):
+        try:
+            numbers.append(int(part))
+        except ValueError:
+            return (0,)
+    return tuple(numbers) or (0,)
+
+
+async def _display_currency_of(
+    session: AsyncSession,
+    user_id: Any,
+    cache: dict[str, str],
+) -> str:
+    """The currency a person sees their money in, cached for one restore."""
+    key = str(user_id)
+    if key not in cache:
+        # The User import lives in the restore path; keep it local so the
+        # module's import graph stays free of the auth model.
+        from app.models.user import User
+
+        user = await session.get(User, uuid.UUID(key))
+        cache[key] = (
+            user.primary_currency if user is not None else get_settings().default_currency
+        )
+    return cache[key]
 
 
 def _metadata_from_zip(zf: zipfile.ZipFile) -> tuple[dict[str, Any], list[str]]:
@@ -1684,6 +1724,9 @@ async def restore_backup_bytes(
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
             metadata, _ = _metadata_from_zip(zf)
+            legacy_budget_currency = _format_version_tuple(
+                metadata.get("format_version")
+            ) < _format_version_tuple(BUDGET_CURRENCY_FORMAT_VERSION)
             names = _archive_entity_names(zf, selected_names)
             missing_names = [name for name in selected_names if name not in names]
             if missing_names:
@@ -1740,6 +1783,7 @@ async def restore_backup_bytes(
                 )
 
             uploaded_logo_ids: set[str] = set()
+            currency_cache: dict[str, str] = {}
             collapsed_scope_keys: dict[str, set[tuple[Any, ...]]] = {}
             renamed_user_scoped_entities: set[str] = set()
             for name in RESTORE_ORDER:
@@ -1909,6 +1953,18 @@ async def restore_backup_bytes(
                         owned_reference_ids=owned_reference_ids,
                         workspace_user_ids=workspace_user_ids,
                     )
+                    if model is Budget and legacy_budget_currency:
+                        # An older archive carries the stale column default
+                        # whatever its owner used, and the limit was read as a
+                        # bare number in the viewer's currency. Give the row
+                        # its owner's display currency, the same rule migration
+                        # 125 applied, instead of restoring a limit labeled in
+                        # a currency nobody typed it in.
+                        prepared["currency"] = await _display_currency_of(
+                            session,
+                            prepared.get("user_id"),
+                            currency_cache,
+                        )
                     if model is Rule:
                         await rule_service.validate_rule_definition(
                             session,
