@@ -16,7 +16,7 @@ from typing import Any, Optional
 import pyzipper
 from fastapi import HTTPException, status
 from pydantic import ValidationError
-from sqlalchemy import Date, DateTime, Numeric, delete, insert, select, update
+from sqlalchemy import Date, DateTime, Numeric, delete, insert, or_, select, update
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -252,6 +252,10 @@ GROUPING_FIELDS_BY_ENTITY = {
     "reconciliation_suggestions": ("group_id",),
 }
 ATTACHMENT_ENTITY_NAMES = {"transaction_attachments", "invoice_attachments"}
+# Tables whose rows may carry the same id on purpose: a payee's self-mapping
+# is created with the payee's own id (payee_service.create_payee), and a
+# merge keeps the merged payee's id on its mapping.
+SHARED_ID_TABLES = {frozenset(("payees", "payee_mapping"))}
 NON_PORTABLE_REFERENCE_TABLES = {"bank_connections", "institutions"}
 POLYMORPHIC_EXPECTATION_TABLES = {
     "invoice": "invoices",
@@ -1025,13 +1029,18 @@ def _build_id_map(
                 source_id = str(old_id)
                 previous_table = entity_tables.get(source_id)
                 if previous_table is not None and previous_table != table_name:
-                    raise ValueError(
-                        f"Entity id {source_id} is reused by {previous_table} and {table_name}"
+                    if frozenset((previous_table, table_name)) not in SHARED_ID_TABLES:
+                        raise ValueError(
+                            f"Entity id {source_id} is reused by {previous_table} and {table_name}"
+                        )
+                    # The row deliberately shares its id with the other table's
+                    # row, so it keeps sharing the restored one.
+                    mapped_id = table_map.setdefault(source_id, flat_entities[source_id])
+                else:
+                    mapped_id = table_map.setdefault(
+                        source_id,
+                        str(uuid.uuid4()) if remap else source_id,
                     )
-                mapped_id = table_map.setdefault(
-                    source_id,
-                    str(uuid.uuid4()) if remap else source_id,
-                )
                 entity_tables[source_id] = table_name
                 flat_entities[source_id] = mapped_id
             for field in GROUPING_FIELDS_BY_ENTITY.get(name, ()):
@@ -1092,6 +1101,51 @@ def _rewrite_workspace_reference(
     raise ValueError(
         f"{model.__table__.name}.{column.key} references a record outside the target workspace"
     )
+
+
+async def _split_reference_scope(
+    session: AsyncSession,
+    rows: list[dict[str, Any]],
+    *,
+    id_maps: RestoreIdMaps,
+    owned_reference_ids: dict[str, set[str]],
+    target_user_id: uuid.UUID,
+) -> dict[str, set[str]]:
+    """The reference scope for split rows, with the shared groups added.
+
+    A split may name a member of a group that lives in another workspace
+    (#1305): the archive does not carry that group, but the split is the
+    owner's real share. It stays restorable while the restoring user can
+    still split into that group, by the rule `split_service` applies when
+    the split is made. Only the splits see these ids; every other table
+    keeps the target workspace's own scope.
+    """
+    known = set(id_maps.by_table.get("group_members", {})) | owned_reference_ids.get(
+        "group_members", set()
+    )
+    outside = {
+        str(row["group_member_id"])
+        for row in rows
+        if row.get("group_member_id") and str(row["group_member_id"]) not in known
+    }
+    if not outside:
+        return owned_reference_ids
+    linked_group_ids = select(GroupMember.group_id).where(
+        GroupMember.linked_user_id == target_user_id
+    )
+    result = await session.execute(
+        select(GroupMember.id)
+        .join(Group, GroupMember.group_id == Group.id)
+        .where(
+            GroupMember.id.in_([uuid.UUID(member_id) for member_id in outside]),
+            or_(Group.user_id == target_user_id, Group.id.in_(linked_group_ids)),
+        )
+    )
+    shared = {str(member_id) for member_id in result.scalars()}
+    return {
+        **owned_reference_ids,
+        "group_members": owned_reference_ids.get("group_members", set()) | shared,
+    }
 
 
 def _rewrite_polymorphic_reference(
@@ -1898,6 +1952,26 @@ async def restore_backup_bytes(
                     continue
 
                 count = 0
+                reference_scope = owned_reference_ids
+                if name == "transaction_splits":
+                    reference_scope = await _split_reference_scope(
+                        session,
+                        rows,
+                        id_maps=id_map,
+                        owned_reference_ids=owned_reference_ids,
+                        target_user_id=target_user_id,
+                    )
+                    resolvable = set(id_map.by_table.get("group_members", {})) | reference_scope.get(
+                        "group_members", set()
+                    )
+                    kept = [row for row in rows if str(row.get("group_member_id")) in resolvable]
+                    if len(kept) != len(rows):
+                        warnings.append(
+                            f"Skipped {len(rows) - len(kept)} split(s) with members of a group "
+                            "that is no longer available to you; those transactions are "
+                            "restored without them."
+                        )
+                    rows = kept
                 for row in rows:
                     prepared = _prepare_model_data(
                         model,
@@ -1906,7 +1980,7 @@ async def restore_backup_bytes(
                         target_workspace_id=target_workspace.id,
                         target_user_id=target_user_id,
                         remap=remap,
-                        owned_reference_ids=owned_reference_ids,
+                        owned_reference_ids=reference_scope,
                         workspace_user_ids=workspace_user_ids,
                     )
                     if model is Rule:
