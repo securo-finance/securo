@@ -95,7 +95,7 @@ class Transaction(Base):
     # changed (ADR 0027).
     amount_account_source: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
     # The converted amount the user typed for a foreign row, and the display
-    # currency it was typed in (ADR 0028). `amount_primary` follows the
+    # currency it was typed in (ADR 0031). `amount_primary` follows the
     # display currency; this does not, so switching back restores it.
     amount_primary_typed: Mapped[Optional[Decimal]] = mapped_column(
         Numeric(precision=15, scale=2), nullable=True

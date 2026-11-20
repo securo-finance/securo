@@ -1552,6 +1552,8 @@
     "copyPreviewCount": "Zu kopierende Kategorien: {{count}}",
     "copyPreviewTotal": "Zu kopierender Gesamtbetrag: {{amount}}",
     "copyPreviewEmpty": "Der gewählte Monat hat keine Budgets zum Kopieren.",
+    "copyPreviewAllExist": "Alle Kategorien des Quellmonats haben in {{month}} bereits ein Budget. Wähle Ersetzen, um die Beträge zu kopieren, oder wende die Anpassung an.",
+    "copyPreviewNoChange": "Alle Budgets des Quellmonats haben in {{month}} bereits diese Beträge.",
     "copyPreviewError": "Der Quellmonat konnte nicht geladen werden.",
     "copyAmountTooLarge": "Der angepasste Betrag überschreitet die Budgetgrenze. Verringere die prozentuale Anpassung.",
     "copyConfirm": "Budgets kopieren",
@@ -2112,9 +2114,10 @@
     "summaryHoldings": "{{created}} Positionen angelegt, {{matched}} zugeordnet",
     "summarySkipped": "{{count}} bereits importiert",
     "rowsSkipped": "{{count}} Zeilen werden übersprungen",
+    "reasonColumn": "Grund",
     "rowError": "Zeile {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "und {{count}} weitere",
-    "moreRows": "und {{count}} weitere Orders",
+    "showAllRows": "Alle {{count}} Zeilen anzeigen",
     "field": {
       "ticker": "Ticker",
       "date": "Datum",
@@ -2417,7 +2420,41 @@
     "statementViewTransactions": "Transaktionen anzeigen",
     "statementUncategorizedIncome": "Nicht kategorisierte Einnahmen",
     "statementUncategorizedExpense": "Nicht kategorisierte Ausgaben",
-    "statementToggleGroup": "Kategorien von {{name}} anzeigen"
+    "statementToggleGroup": "Kategorien von {{name}} anzeigen",
+    "pluginReport": {
+      "total": {
+        "expenses": "Ausgaben gesamt",
+        "income": "Einnahmen gesamt",
+        "net": "Saldo"
+      },
+      "none": {
+        "category": "Ohne Kategorie",
+        "category_group": "Ohne Gruppe",
+        "payee": "Ohne Empfänger",
+        "account": "Ohne Konto",
+        "month": "Ohne Datum"
+      },
+      "groupBy": {
+        "category": "Kategorie",
+        "category_group": "Gruppe",
+        "payee": "Empfänger",
+        "account": "Konto",
+        "month": "Monat"
+      },
+      "measure": {
+        "expenses": "Ausgaben",
+        "income": "Einnahmen",
+        "net": "Saldo"
+      },
+      "share": "Anteil",
+      "computed": "Vom Plugin berechnet",
+      "periodTrimmed": "Plugin-Berichte umfassen höchstens zwei Jahre. Angezeigt wird {{from}} bis {{to}}.",
+      "periodTooLong": "Ein Plugin-Bericht umfasst höchstens zwei Jahre. Wähle einen kürzeren Zeitraum.",
+      "totalRow": "Summe",
+      "page": "Seite {{page}} von {{pages}}",
+      "previousPage": "Vorherige Seite",
+      "nextPage": "Nächste Seite"
+    }
   },
   "payees": {
     "noPayeeFound": "Kein Zahlungsempfänger gefunden.",
@@ -3963,5 +4000,9 @@
       "title": "Wiederkehrende Einnahmen",
       "hint": "Was wiederkehrende Rechnungen pro Monat einbringen, und was zuletzt verloren ging."
     }
+  },
+  "offline": {
+    "title": "Server nicht erreichbar",
+    "description": "Du bist offline oder Securo startet gerade neu. Deine Daten sind sicher und nichts wurde geändert. Wir verbinden uns automatisch wieder, sobald der Server antwortet."
   }
 }

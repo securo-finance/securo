@@ -1551,6 +1551,8 @@
     "copyPreviewCount": "कॉपी करने के लिए कैटेगरी: {{count}}",
     "copyPreviewTotal": "कॉपी करने योग्य कुल: {{amount}}",
     "copyPreviewEmpty": "चुने गए महीने में कॉपी करने के लिए कोई बजट नहीं है।",
+    "copyPreviewAllExist": "स्रोत महीने की सभी श्रेणियों का {{month}} में पहले से बजट है। राशियाँ कॉपी करने या समायोजन लागू करने के लिए बदलें चुनें।",
+    "copyPreviewNoChange": "स्रोत महीने के सभी बजट {{month}} में पहले से इन राशियों पर हैं।",
     "copyPreviewError": "स्रोत महीना लोड नहीं हो सका।",
     "copyAmountTooLarge": "समायोजित राशि बजट सीमा से अधिक है। प्रतिशत समायोजन कम करें।",
     "copyConfirm": "बजट कॉपी करें",
@@ -2111,9 +2113,10 @@
     "summaryHoldings": "{{created}} होल्डिंग्स बनीं, {{matched}} मिलान हुईं",
     "summarySkipped": "{{count}} पहले से इंपोर्ट",
     "rowsSkipped": "{{count}} पंक्तियाँ छोड़ी जाएँगी",
+    "reasonColumn": "कारण",
     "rowError": "पंक्ति {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "और {{count}} और",
-    "moreRows": "और {{count}} और ऑर्डर",
+    "showAllRows": "सभी {{count}} पंक्तियाँ दिखाएँ",
     "field": {
       "ticker": "टिकर",
       "date": "तिथि",
@@ -2416,7 +2419,41 @@
     "statementViewTransactions": "लेन-देन देखें",
     "statementUncategorizedIncome": "बिना श्रेणी की आय",
     "statementUncategorizedExpense": "बिना श्रेणी के खर्च",
-    "statementToggleGroup": "{{name}} की श्रेणियाँ दिखाएँ"
+    "statementToggleGroup": "{{name}} की श्रेणियाँ दिखाएँ",
+    "pluginReport": {
+      "total": {
+        "expenses": "कुल खर्च",
+        "income": "कुल प्राप्त",
+        "net": "शुद्ध"
+      },
+      "none": {
+        "category": "बिना श्रेणी",
+        "category_group": "बिना समूह",
+        "payee": "बिना प्राप्तकर्ता",
+        "account": "बिना खाता",
+        "month": "बिना तारीख"
+      },
+      "groupBy": {
+        "category": "श्रेणी",
+        "category_group": "समूह",
+        "payee": "प्राप्तकर्ता",
+        "account": "खाता",
+        "month": "महीना"
+      },
+      "measure": {
+        "expenses": "खर्च",
+        "income": "आय",
+        "net": "शुद्ध"
+      },
+      "share": "हिस्सा",
+      "computed": "प्लगइन द्वारा गणना",
+      "periodTrimmed": "प्लगइन रिपोर्ट अधिकतम दो वर्ष कवर करती हैं। {{from}} से {{to}} दिखाया जा रहा है।",
+      "periodTooLong": "प्लगइन रिपोर्ट अधिकतम दो वर्ष कवर करती है। छोटी अवधि चुनें।",
+      "totalRow": "कुल",
+      "page": "पृष्ठ {{page}} / {{pages}}",
+      "previousPage": "पिछला पृष्ठ",
+      "nextPage": "अगला पृष्ठ"
+    }
   },
   "payees": {
     "noPayeeFound": "कोई प्राप्तकर्ता नहीं मिला।",
@@ -3962,5 +3999,9 @@
       "title": "आवर्ती आय",
       "hint": "आवर्ती इनवॉइस हर महीने कितना लाते हैं, और हाल में क्या खोया।"
     }
+  },
+  "offline": {
+    "title": "सर्वर से संपर्क नहीं हो रहा",
+    "description": "आप ऑफ़लाइन हैं या Securo फिर से शुरू हो रहा है। आपका डेटा सुरक्षित है और कुछ नहीं बदला गया। सर्वर के जवाब देते ही हम अपने आप फिर से जुड़ जाएँगे।"
   }
 }

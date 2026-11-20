@@ -1,4 +1,4 @@
-# 0028. A converted amount the user typed is kept apart from the display-currency cache
+# 0031. A converted amount the user typed is kept apart from the display-currency cache
 
 - Status: Accepted
 - Date: 2026-11-19

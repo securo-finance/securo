@@ -1563,6 +1563,8 @@
     "copyPreviewCount": "קטגוריות להעתקה: {{count}}",
     "copyPreviewTotal": "סכום להעתקה: {{amount}}",
     "copyPreviewEmpty": "לחודש הנבחר אין תקציבים להעתקה.",
+    "copyPreviewAllExist": "לכל הקטגוריות בחודש המקור כבר יש תקציב ב{{month}}. בחרו החלפה כדי להעתיק את הסכומים או להחיל את ההתאמה.",
+    "copyPreviewNoChange": "כל התקציבים בחודש המקור כבר בסכומים האלה ב{{month}}.",
     "copyPreviewError": "לא ניתן היה לטעון את חודש המקור.",
     "copyAmountTooLarge": "הסכום המותאם עולה על מגבלת התקציב. יש להקטין את ההתאמה באחוזים.",
     "copyConfirm": "העתקת תקציבים",
@@ -2127,9 +2129,10 @@
     "summaryHoldings": "{{created}} אחזקות נוצרו, {{matched}} הותאמו",
     "summarySkipped": "{{count}} כבר יובאו",
     "rowsSkipped": "{{count}} שורות ידולגו",
+    "reasonColumn": "סיבה",
     "rowError": "שורה {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "ועוד {{count}}",
-    "moreRows": "ועוד {{count}} פקודות",
+    "showAllRows": "הצג את כל {{count}} השורות",
     "field": {
       "ticker": "סימול",
       "date": "תאריך",
@@ -2432,7 +2435,41 @@
     "statementViewTransactions": "הצגת תנועות",
     "statementUncategorizedIncome": "הכנסות ללא קטגוריה",
     "statementUncategorizedExpense": "הוצאות ללא קטגוריה",
-    "statementToggleGroup": "הצגת הקטגוריות ב{{name}}"
+    "statementToggleGroup": "הצגת הקטגוריות ב{{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "סה״כ הוצאות",
+        "income": "סה״כ הכנסות",
+        "net": "נטו"
+      },
+      "none": {
+        "category": "ללא קטגוריה",
+        "category_group": "ללא קבוצה",
+        "payee": "ללא מוטב",
+        "account": "ללא חשבון",
+        "month": "ללא תאריך"
+      },
+      "groupBy": {
+        "category": "קטגוריה",
+        "category_group": "קבוצה",
+        "payee": "מוטב",
+        "account": "חשבון",
+        "month": "חודש"
+      },
+      "measure": {
+        "expenses": "הוצאות",
+        "income": "הכנסות",
+        "net": "נטו"
+      },
+      "share": "חלק",
+      "computed": "מחושב על ידי התוסף",
+      "periodTrimmed": "דוחות תוספים מכסים עד שנתיים. מוצג {{from}} עד {{to}}.",
+      "periodTooLong": "דוח תוסף מכסה עד שנתיים. בחרו תקופה קצרה יותר.",
+      "totalRow": "סה״כ",
+      "page": "עמוד {{page}} מתוך {{pages}}",
+      "previousPage": "העמוד הקודם",
+      "nextPage": "העמוד הבא"
+    }
   },
   "payees": {
     "noPayeeFound": "לא נמצא מוטב.",
@@ -3993,5 +4030,9 @@
       "title": "הכנסה חוזרת",
       "hint": "כמה מכניסות החשבוניות החוזרות בכל חודש, ומה אבד לאחרונה."
     }
+  },
+  "offline": {
+    "title": "אין חיבור לשרת",
+    "description": "אתם במצב לא מקוון או ש-Securo מופעל מחדש. הנתונים שלכם בטוחים ושום דבר לא השתנה. נתחבר מחדש אוטומטית ברגע שהשרת יגיב."
   }
 }

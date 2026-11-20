@@ -4,7 +4,19 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Literal, Optional, cast
 
-from sqlalchemy import CursorResult, and_, case, delete, func, literal, or_, select, tuple_, update
+from sqlalchemy import (
+    CursorResult,
+    and_,
+    case,
+    delete,
+    exists,
+    func,
+    literal,
+    or_,
+    select,
+    tuple_,
+    update,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import set_committed_value
@@ -128,7 +140,7 @@ def _apply_fx_override(transaction, amount, amount_primary=None, fx_rate_used=No
 async def _keep_typed_primary(
     session: AsyncSession, transaction: Transaction, user_id: uuid.UUID
 ) -> None:
-    """Remember the converted amount the user just typed (ADR 0028).
+    """Remember the converted amount the user just typed (ADR 0031).
 
     `amount_primary` is rewritten when the display currency changes; this
     copy is what brings the typed figure back when it changes back.
@@ -609,12 +621,74 @@ async def get_transactions(
         # custom) and ignored items are kept OUT of income/expense. It reads
         # category parts, so a split row counts part by part and, under a
         # category filter, only its parts in the filtered categories count.
+        # Viewer share (issue #243): the footer is the viewer's P/L, the
+        # same figure the dashboard and reports show — never the whole
+        # amount of an expense someone else paid. A row projected from
+        # another workspace counts the viewer's split share; a split row
+        # the viewer paid counts what the other members' shares leave of
+        # the amount it has now, because the bank sync rewrites `amount`
+        # without touching the splits. A row of this workspace that another
+        # member created (shared workspace) counts whole, as it does in the
+        # dashboard. Rows without splits count whole. `share_amount` is in
+        # the row's own currency, so the ratio rides the FX stamp already
+        # stored on the row.
+        from app.models.transaction_split import TransactionSplit
+
+        row_has_splits = exists().where(
+            TransactionSplit.transaction_id == Transaction.id
+        )
+        viewer_share = (
+            select(func.coalesce(func.sum(TransactionSplit.share_amount), 0))
+            .where(
+                TransactionSplit.transaction_id == Transaction.id,
+                TransactionSplit.group_member_id.in_(invited_group_member_ids(user_id)),
+            )
+            .scalar_subquery()
+        )
+        others_share = (
+            select(func.coalesce(func.sum(TransactionSplit.share_amount), 0))
+            .where(
+                TransactionSplit.transaction_id == Transaction.id,
+                TransactionSplit.group_member_id.notin_(
+                    invited_group_member_ids(user_id)
+                ),
+            )
+            .scalar_subquery()
+        )
+        viewer_share_fraction = case(
+            # Another member's row of this workspace is native here.
+            (
+                and_(
+                    Transaction.workspace_id == workspace_id,
+                    Transaction.user_id != user_id,
+                ),
+                literal(1),
+            ),
+            # The viewer's own split row: their share is what the others
+            # don't have, read against the amount the row has now. The bank
+            # sync rewrites `amount` and rescales the category lines but
+            # never the splits, so dividing the stored shares by the new
+            # total would go stale. Same rule as
+            # `forecast_owner_share_fractions`.
+            (
+                and_(row_has_splits, Transaction.user_id == user_id),
+                literal(1)
+                - others_share / func.nullif(func.abs(Transaction.amount), 0),
+            ),
+            # A row projected from another workspace arrives as the
+            # viewer's split share of a row someone else paid.
+            (
+                row_has_splits,
+                viewer_share / func.nullif(func.abs(Transaction.amount), 0),
+            ),
+            else_=literal(1),
+        )
         pnl_filter = counts_as_pnl(line_category_id())
         parts_query = with_category_lines(
             select(
                 Transaction.type,
                 pnl_filter.label("counts"),
-                func.abs(line_primary_or_amount()).label("amount"),
+                func.abs(line_primary_or_amount() * viewer_share_fraction).label("amount"),
             ).select_from(Transaction)
         ).where(Transaction.id.in_(select(base_query.subquery().c.id)))
         if filter_category_ids:
@@ -2730,7 +2804,7 @@ async def _restamp_posted_leg(
     """Stamp a leg that was just posted today.
 
     When posting moved the date, the account amount follows it and a
-    conversion typed for the old date no longer holds (ADR 0028). A leg
+    conversion typed for the old date no longer holds (ADR 0031). A leg
     already dated today changed nothing a conversion depends on, so what the
     user typed stays.
     """

@@ -606,7 +606,7 @@ async def test_clearing_a_typed_conversion_with_no_rate_leaves_the_row_unconvert
 async def test_a_provider_amount_correction_drops_a_typed_conversion(
     session: AsyncSession, test_user: User, test_account: Account, rates
 ):
-    """The typed conversion was for the old amount (ADR 0028)."""
+    """The typed conversion was for the old amount (ADR 0031)."""
     tx = _bank_row(
         test_user, test_account, raw_data={"id": "ext-1"},
         amount_primary=Decimal("560.00"), fx_rate_used=Decimal("5.6"),

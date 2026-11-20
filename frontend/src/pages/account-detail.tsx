@@ -1114,6 +1114,8 @@ export default function AccountDetailPage() {
               variant="ghost"
               size="sm"
               className="text-muted-foreground hover:text-foreground min-h-[44px] min-w-[44px] px-3 shrink-0"
+              aria-label={t('transactions.clearFilters')}
+              title={t('transactions.clearFilters')}
               onClick={() => {
                 setFilterTouched(false)
                 if (account?.type === 'credit_card') {

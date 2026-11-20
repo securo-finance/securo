@@ -434,7 +434,7 @@ async def test_round_trip_brings_back_a_typed_amount_on_a_same_currency_account(
 ):
     """#1561 treated `amount_primary` as a cache: on a USD row of a USD account
     the typed R$ 1,560 lived nowhere else, and BRL -> USD -> BRL replaced it
-    with 300 x 5 = 1,500 (ADR 0028)."""
+    with 300 x 5 = 1,500 (ADR 0031)."""
     tx_id = await _usd_row_typed_in_brl(client, auth_headers, test_user)
     tx = await session.get(Transaction, uuid.UUID(tx_id))
     assert tx is not None

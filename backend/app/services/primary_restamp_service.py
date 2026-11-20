@@ -14,7 +14,7 @@ new primary currency gets its amount at rate 1. A row in another currency than
 its account, when the new primary is the account's currency, takes what the
 account was charged (`amount_account`, ADR 0027), not a market conversion.
 A converted amount the user typed comes back as typed whenever the display
-currency is again the one it was typed in (`amount_primary_typed`, ADR 0028).
+currency is again the one it was typed in (`amount_primary_typed`, ADR 0031).
 Balances read `amount_account`, which this never writes, so no balance moves
 when the display currency does. A foreign row with no
 resolvable rate is set to NULL, the honest "not converted" state, rather than
@@ -144,7 +144,7 @@ def typed_primary_amount(
     """(amount, rate) the user typed for `tx` in `currency`, if they did.
 
     A converted amount typed in the transaction dialog is kept with the
-    display currency it was typed in (ADR 0028). On a row in its account's
+    display currency it was typed in (ADR 0031). On a row in its account's
     own currency it exists nowhere else, so without it a round trip through
     another display currency would bring back a market conversion.
     """
