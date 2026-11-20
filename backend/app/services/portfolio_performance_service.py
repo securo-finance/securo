@@ -160,8 +160,8 @@ def snapshot_ledger_flows(
     provider running behind would. The share count is the stored one;
     without it, a snapshot on a trade's own date is counted at that day's
     trade price, and a later one takes the trades whose cash best matches
-    its change in value since the previous snapshot. A trade no count-less
-    snapshot shows within a week lands on the snapshot after it. A day
+    its change in value since the previous snapshot; one no such snapshot
+    shows within a week lands on the snapshot after it. A day
     whose trades leave the share count unchanged (sell and buy back) lands
     on its own day's snapshot, as no count can show it. Trades no snapshot
     has caught up with yet are left out until one does. Each flow is
@@ -225,7 +225,9 @@ def snapshot_ledger_flows(
                 landed, shown, cash = 0, abs(change), 0.0
                 for index, (_, _, flow) in enumerate(pending[:eligible], start=1):
                     cash += float(flow)
-                    if abs(change - cash) < shown:
+                    # A tie counts: trades whose cash nets to the change (a
+                    # round trip against no move) are shown by it.
+                    if abs(change - cash) <= shown:
                         landed, shown = index, abs(change - cash)
         else:
             state = position
@@ -258,9 +260,9 @@ def snapshot_ledger_flows(
             landed = best
         land(landed, point_date)
 
-    # A trade no snapshot showed lands on the first snapshot after its date,
-    # so its cash is never dropped while the valuation already moved on.
-    land(len(pending))
+    # Trades still pending are not in any valuation yet: counting their cash
+    # now would read the missing value as a loss or a gain. They count once a
+    # snapshot shows them.
     flows.sort(key=lambda item: (item[0], item[2]))
     return flows
 

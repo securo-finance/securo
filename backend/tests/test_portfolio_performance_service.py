@@ -996,6 +996,23 @@ def test_ledger_flows_wait_for_both_legs_of_a_round_trip_a_lagging_provider_show
     ]
 
 
+def test_ledger_flows_leave_out_a_buy_the_share_counts_do_not_show_yet():
+    """Snapshots through the period's end still hold 10 units: the bought
+    shares are not in the valuation, so their cash is not counted either."""
+    flows = snapshot_ledger_flows(
+        [
+            (date(2026, 9, 1), Decimal("10"), Decimal("1000")),
+            (date(2026, 9, 28), Decimal("5"), Decimal("500")),
+        ],
+        [
+            (date(2026, 9, 1), 1000.0, 10.0),
+            (date(2026, 9, 28), 1000.0, 10.0),
+            (date(2026, 9, 29), 1000.0, 10.0),
+        ],
+    )
+    assert flows == [(date(2026, 9, 1), Decimal("1000"), date(2026, 9, 1))]
+
+
 def test_ledger_flows_never_drop_a_trade_a_later_one_offsets():
     """A buy the provider never shows, sold the next day: both flows count."""
     flows = snapshot_ledger_flows(
