@@ -78,6 +78,31 @@ function isImageType(contentType: string): boolean {
   return contentType.startsWith('image/')
 }
 
+/** Whether two rows of the payee list are the same record, field by field.
+ *
+ * A payee carries no revision of its own, so a refetched row is told apart
+ * from the copy a save replaced by comparing what the record holds. Every
+ * field a member can change counts: a differing phone is a newer row, even
+ * when the name still reads the same. */
+function samePayee(a: Payee, b: Payee): boolean {
+  const fields = (p: Payee) => [
+    p.id,
+    p.name,
+    p.type,
+    p.notes,
+    p.email,
+    p.phone,
+    p.address,
+    p.website,
+    p.is_favorite,
+    p.transaction_count,
+    p.tax_ids.map((taxId) => `${taxId.kind}:${taxId.value}`).join('|'),
+  ]
+  const left = fields(a)
+  const right = fields(b)
+  return left.every((value, index) => value === right[index])
+}
+
 function canExtendRuleFromTransaction(rule: Rule): boolean {
   // Rules that mix AND and OR are left out: appending a top-level condition —
   // and possibly flipping the rule to OR — would silently change what the
@@ -456,20 +481,30 @@ function TransactionForm({
   const seed = transaction ?? duplicateDraft
   const canWrite = useContext(WorkspaceContext)?.canWrite ?? false
   // The payee form opened from here, and the record it just saved: the
-  // refetched list takes a moment to carry a payee created in this dialog.
+  // refetched list takes a moment to carry a payee created or edited here.
+  // The row the save replaced is kept too, to tell a refetched row apart from
+  // the stale copy the save already superseded.
   const [payeeId, setPayeeId] = useState(seed?.payee_id ?? '')
   const [payeeFormOpen, setPayeeFormOpen] = useState(false)
   const [payeeFormTarget, setPayeeFormTarget] = useState<Payee | null>(null)
-  const [savedPayee, setSavedPayee] = useState<Payee | null>(null)
-  // The saved record is the freshest copy this dialog holds: it stands in for
-  // the cached row it replaced, and covers the gap until the refetch carries
-  // a payee created here, so the selection never flickers to "no payee".
+  const [savedPayee, setSavedPayee] = useState<{ payee: Payee; replaced: Payee | null } | null>(null)
+  // The saved record stands in for the list only while the list's row is the
+  // copy the save replaced: an identical row is the stale one, so the
+  // refetch has not landed. Once the list carries anything else it is the
+  // server's answer — our own save, or another member's later change (a
+  // phone, say) — and substituting the saved copy forever would show their
+  // change as never made and write the old value back on the next edit. A
+  // payee the list does not carry yet stays appended, so a create whose
+  // refetch has not landed never flickers the selection to "no payee".
   const selectablePayees = useMemo(() => {
     const list = payeesList ?? []
     if (!savedPayee) return list
-    return list.some((p) => p.id === savedPayee.id)
-      ? list.map((p) => (p.id === savedPayee.id ? savedPayee : p))
-      : [...list, savedPayee]
+    const { payee, replaced } = savedPayee
+    const row = list.find((p) => p.id === payee.id)
+    if (!row) return [...list, payee]
+    return replaced && samePayee(row, replaced)
+      ? list.map((p) => (p.id === payee.id ? payee : p))
+      : list
   }, [payeesList, savedPayee])
   const selectedPayee = selectablePayees.find((p) => p.id === payeeId) ?? null
   const { data: linkedCards = [] } = useQuery({
@@ -1986,7 +2021,7 @@ function TransactionForm({
         onOpenChange={setPayeeFormOpen}
         payee={payeeFormTarget}
         onSaved={(saved) => {
-          setSavedPayee(saved)
+          setSavedPayee({ payee: saved, replaced: payeeFormTarget })
           setPayeeId(saved.id)
         }}
       />

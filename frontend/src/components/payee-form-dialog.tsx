@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -128,10 +128,19 @@ export function PayeeFormDialog({
     }
   }
 
+  // The record the form held when Save was pressed. A save can outlive the
+  // form that started it — the user cancels and opens another payee — and its
+  // completion must not close that newer form or select the older record.
+  const savedKey = useRef<string | null>(null)
+  // What a save writes down belongs to this record; only the part of the
+  // completion that talks to the form is skipped when the form moved on.
+  const stillTheSameForm = () => seedKey === null || seedKey === savedKey.current
+
   const createMutation = useMutation({
     mutationFn: (data: PayeeWritePayload & { name: string }) => payeesApi.create(data),
     onSuccess: (created) => {
       queryClient.invalidateQueries({ queryKey: ['payees'] })
+      if (!stillTheSameForm()) return
       onOpenChange(false)
       toast.success(t('payees.created'))
       onSaved(created)
@@ -143,6 +152,7 @@ export function PayeeFormDialog({
     mutationFn: ({ id, ...data }: PayeeWritePayload & { id: string }) => payeesApi.update(id, data),
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ['payees'] })
+      if (!stillTheSameForm()) return
       onOpenChange(false)
       toast.success(t('payees.updated'))
       onSaved(updated)
@@ -167,6 +177,7 @@ export function PayeeFormDialog({
         .filter((row) => row.value.trim() !== '')
         .map((row) => ({ kind: row.kind, value: row.value })),
     }
+    savedKey.current = seedKey
     if (payee) {
       updateMutation.mutate({ id: payee.id, ...payload })
     } else {

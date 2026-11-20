@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { renderWithProviders, t } from '@/test/utils'
@@ -128,6 +128,41 @@ describe('PayeeFormDialog', () => {
     screen.getByRole('button', { name: t('common.delete') }).click()
     expect(onDelete).toHaveBeenCalledWith(acme)
   })
+
+  // The form stays mounted across records, so a save can outlive the record
+  // it started on: the user cancels and opens another payee while the first
+  // response is in flight. That completion must not close the newer form or
+  // hand its record back as if it were the one on screen.
+  it('leaves a form reopened for another payee alone when an earlier save lands',
+    async () => {
+      let resolveUpdate: (payee: Payee) => void = () => {}
+      update.mockImplementation(() => new Promise<Payee>((resolve) => {
+        resolveUpdate = resolve
+      }))
+      const { user, onOpenChange, onSaved, rerender } = renderForm({ payee: acme })
+
+      await user.click(screen.getByRole('button', { name: t('common.save') }))
+      await waitFor(() => expect(update).toHaveBeenCalledOnce())
+
+      const bakery: Payee = { ...acme, id: 'payee-2', name: 'Corner Bakery', notes: null }
+      rerender(
+        <PayeeFormDialog
+          open
+          onOpenChange={onOpenChange}
+          payee={bakery}
+          onSaved={onSaved}
+        />,
+      )
+      expect(nameInput()).toHaveValue('Corner Bakery')
+
+      await act(async () => {
+        resolveUpdate({ ...acme, name: 'Acme Market Lda' })
+      })
+
+      expect(onOpenChange).not.toHaveBeenCalledWith(false)
+      expect(onSaved).not.toHaveBeenCalled()
+      expect(nameInput()).toHaveValue('Corner Bakery')
+    })
 
   it('reseeds when it is reopened on another payee', () => {
     const { rerender } = renderForm({ payee: acme })
