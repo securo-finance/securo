@@ -2586,6 +2586,8 @@
       },
       "share": "Podíl",
       "computed": "Vypočteno pluginem",
+      "periodTrimmed": "Reporty pluginů pokrývají nejvýše dva roky. Zobrazuje se {{from}} až {{to}}.",
+      "periodTooLong": "Report pluginu pokrývá nejvýše dva roky. Zvolte kratší období.",
       "totalRow": "Celkem",
       "page": "Strana {{page}} z {{pages}}",
       "previousPage": "Předchozí strana",

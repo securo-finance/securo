@@ -2450,6 +2450,8 @@
       },
       "share": "Part",
       "computed": "Calculé par le plugin",
+      "periodTrimmed": "Les rapports d'extension couvrent au plus deux ans. Affichage de {{from}} à {{to}}.",
+      "periodTooLong": "Un rapport d'extension couvre au plus deux ans. Choisissez une période plus courte.",
       "totalRow": "Total",
       "page": "Page {{page}} sur {{pages}}",
       "previousPage": "Page précédente",

@@ -90,6 +90,29 @@ describe('PluginReport', () => {
     expect(await screen.findByRole('button', { name: t('common.retry') })).toBeInTheDocument()
   })
 
+  it('says the period was trimmed to the two years a plugin report reads', async () => {
+    respond([{ key: 'c1', label: 'Rent', value: 750, color: null }])
+    renderWithProviders(
+      <PluginReport entry={entry()} startDate="2024-11-19" endDate="2026-11-20"
+        requestedFrom="2023-01-01" accountIds={undefined} />,
+    )
+    expect(await screen.findByText(t('reports.pluginReport.periodTrimmed', {
+      from: 'Nov 19, 2024', to: 'Nov 20, 2026',
+    }))).toBeInTheDocument()
+    expect(await screen.findByText('Rent')).toBeInTheDocument()
+  })
+
+  it('translates a refused period and does not offer a retry that would fail again', async () => {
+    api.reports.plugin.mockRejectedValue({
+      isAxiosError: true,
+      response: { status: 422, data: { detail: 'the period must run forward and span at most 731 days' } },
+    })
+    renderWithProviders(<PluginReport entry={entry()} startDate="2026-01-01" endDate="2026-11-20" accountIds={undefined} />)
+    expect(await screen.findByText(t('reports.pluginReport.periodTooLong'))).toBeInTheDocument()
+    expect(screen.queryByText(/span at most 731 days/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: t('common.retry') })).not.toBeInTheDocument()
+  })
+
   it("draws a code report's view, and says the plugin computed it", async () => {
     api.reports.plugin.mockResolvedValue({
       key: 'r', code: true, currency: 'USD', rows: [], total: 0,

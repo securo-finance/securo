@@ -3,9 +3,11 @@ import {
   addDaysIso,
   addMonthsIso,
   alignedSpanMonths,
+  clampPeriodWindow,
   daysBetween,
   explicitWindow,
   periodWindow,
+  PLUGIN_REPORT_MAX_DAYS,
   rollingStart,
   windowMonths,
 } from './report-period'
@@ -252,5 +254,28 @@ describe('explicitWindow', () => {
     expect(explicitWindow({ kind: 'days', days: 30 }, today, -1)).toEqual(periodWindow({ kind: 'days', days: 30 }, today, -1))
     expect(explicitWindow({ kind: 'custom' }, today, 0, { from: '2026-01-01', to: '2026-03-31' })).toEqual({ from: '2026-01-01', to: '2026-03-31' })
     expect(explicitWindow({ kind: 'custom' }, today, 0, { from: '2026-01-01', to: '' })).toBeNull()
+  })
+})
+
+describe('clampPeriodWindow', () => {
+  it('leaves a window of at most the cap alone', () => {
+    const year = { from: '2025-09-13', to: '2026-09-12' }
+    expect(clampPeriodWindow(year)).toEqual(year)
+    const atCap = { from: addDaysIso('2026-09-12', -PLUGIN_REPORT_MAX_DAYS), to: '2026-09-12' }
+    expect(clampPeriodWindow(atCap)).toEqual(atCap)
+  })
+
+  it('moves the start forward when the window is longer, keeping its end', () => {
+    expect(clampPeriodWindow({ from: '2023-01-01', to: '2026-11-20' })).toEqual({
+      from: '2024-11-19',
+      to: '2026-11-20',
+    })
+    expect(daysBetween('2024-11-19', '2026-11-20')).toBe(PLUGIN_REPORT_MAX_DAYS)
+  })
+
+  it('fits the 2Y preset on the last day of a 31-day month, when it spans 760 days', () => {
+    const twoYears = explicitWindow({ kind: 'rolling', months: 24 }, '2027-03-31', 0)!
+    expect(twoYears).toEqual({ from: '2025-03-01', to: '2027-03-31' })
+    expect(clampPeriodWindow(twoYears)).toEqual({ from: '2025-03-30', to: '2027-03-31' })
   })
 })

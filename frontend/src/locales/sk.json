@@ -2570,6 +2570,8 @@
       },
       "share": "Podiel",
       "computed": "Vypočítané pluginom",
+      "periodTrimmed": "Reporty pluginov pokrývajú najviac dva roky. Zobrazuje sa {{from}} až {{to}}.",
+      "periodTooLong": "Report pluginu pokrýva najviac dva roky. Zvoľte kratšie obdobie.",
       "totalRow": "Spolu",
       "page": "Strana {{page}} z {{pages}}",
       "previousPage": "Predchádzajúca strana",

@@ -47,7 +47,7 @@ import { formatCompactCurrency, formatCurrency, ltrAmount } from '@/lib/format'
 import { cashFlowBar, cashFlowTopSeries } from '@/lib/cash-flow-bars'
 import { localDateString, todayInTimezone } from '@/lib/date-utils'
 import { monthLabel } from '@/lib/month-utils'
-import { explicitWindow, periodWindow, windowMonths, type PeriodPreset } from '@/lib/report-period'
+import { clampPeriodWindow, explicitWindow, periodWindow, windowMonths, type PeriodPreset } from '@/lib/report-period'
 import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { WorkspaceContext } from '@/contexts/workspace-context'
 import {
@@ -374,9 +374,12 @@ export default function ReportsPage() {
   const apiStart = navWindow ? navWindow.from : hasCustomRange ? customFrom : undefined
   const apiEnd = navWindow ? navWindow.to : hasCustomRange ? customTo : undefined
   // A plugin's report only takes dates: the window the page shows, presets included.
-  const pluginWindow = isPluginReport
+  const pickedPluginWindow = isPluginReport
     ? explicitWindow(periodPreset, todayInTimezone(timeZone), periodOffset, { from: customFrom, to: customTo })
     : null
+  // A plugin's report reads at most two years (ADR 0028). A 2Y preset or a
+  // wider custom range is trimmed rather than left to fail on every tab.
+  const pluginWindow = pickedPluginWindow ? clampPeriodWindow(pickedPluginWindow) : null
   // Label for the period being viewed: the month name for the month presets,
   // the covered span when the window has been stepped back or is custom, and
   // the preset's own name while the window still ends today.
@@ -1004,7 +1007,13 @@ export default function ReportsPage() {
         // A collection with no accounts: nothing to add up, as on Securo's own tabs.
         <p className="py-10 text-center text-sm text-muted-foreground">{t('reports.noData')}</p>
       ) : (
-        <PluginReport entry={pluginReport} startDate={pluginWindow?.from} endDate={pluginWindow?.to} accountIds={acctIds} />
+        <PluginReport
+          entry={pluginReport}
+          startDate={pluginWindow?.from}
+          endDate={pluginWindow?.to}
+          requestedFrom={pickedPluginWindow?.from}
+          accountIds={acctIds}
+        />
       ))}
 
       {!isStatement && !isPluginReport && isError && (

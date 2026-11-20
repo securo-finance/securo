@@ -2446,6 +2446,8 @@
       },
       "share": "割合",
       "computed": "プラグインが計算",
+      "periodTrimmed": "プラグインのレポートは最大2年間を対象とします。{{from}} から {{to}} を表示しています。",
+      "periodTooLong": "プラグインのレポートは最大2年間です。もっと短い期間を選んでください。",
       "totalRow": "合計",
       "page": "{{page}} / {{pages}} ページ",
       "previousPage": "前のページ",

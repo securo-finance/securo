@@ -2543,6 +2543,8 @@
       },
       "share": "Udział",
       "computed": "Obliczone przez wtyczkę",
+      "periodTrimmed": "Raporty wtyczek obejmują najwyżej dwa lata. Wyświetlany zakres: od {{from}} do {{to}}.",
+      "periodTooLong": "Raport wtyczki obejmuje najwyżej dwa lata. Wybierz krótszy okres.",
       "totalRow": "Suma",
       "page": "Strona {{page}} z {{pages}}",
       "previousPage": "Poprzednia strona",

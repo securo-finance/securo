@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
+import { isAxiosError } from 'axios'
 import { useTranslation } from 'react-i18next'
 import { AlertCircle } from 'lucide-react'
 
 import { ReportView } from '@/components/reports/ReportView'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useDateLocale } from '@/hooks/use-display-locale'
 import { reports } from '@/lib/api'
 import { extractApiError } from '@/lib/api-errors'
 import type { PluginReportEntry } from '@/lib/library'
@@ -20,14 +22,18 @@ export function PluginReport({
   entry,
   startDate,
   endDate,
+  requestedFrom,
   accountIds,
 }: {
   entry: PluginReportEntry
   startDate: string | undefined
   endDate: string | undefined
+  /** The start the page picked, when the report's two-year limit trimmed it. */
+  requestedFrom?: string
   accountIds: string[] | undefined
 }) {
   const { t, i18n } = useTranslation()
+  const dateLocale = useDateLocale()
   const { report } = entry
 
   const { data, isLoading, isError, error, refetch } = useQuery<PluginReportResponse>({
@@ -40,6 +46,12 @@ export function PluginReport({
 
   const view = data ? (data.code ? data.view : queryReportView(report, data, t)) : null
   const empty = !view || view.blocks.length === 0 || (!data?.code && data?.rows.every((row) => row.value === 0))
+  const trimmed = !!requestedFrom && !!startDate && requestedFrom !== startDate
+  // A 422 here is the period: the API sends its limit in English, and retrying
+  // the same window would only fail again.
+  const periodRefused = isError && isAxiosError(error) && error.response?.status === 422
+  const day = (iso: string) =>
+    new Date(`${iso}T00:00:00`).toLocaleDateString(dateLocale, { day: 'numeric', month: 'short', year: 'numeric' })
 
   return (
     <div className="space-y-5">
@@ -51,10 +63,23 @@ export function PluginReport({
         </span>
       </div>
 
+      {trimmed && startDate && endDate && (
+        <p className="text-xs text-muted-foreground">
+          {t('reports.pluginReport.periodTrimmed', { from: day(startDate), to: day(endDate) })}
+        </p>
+      )}
+
       {isLoading ? (
         <div className="space-y-5">
           <Skeleton className="h-20 w-full rounded-xl" />
           <Skeleton className="h-72 w-full rounded-xl" />
+        </div>
+      ) : periodRefused ? (
+        <div className="flex items-center gap-3 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 rounded-lg px-4 py-2.5">
+          <AlertCircle size={16} className="shrink-0 text-rose-600 dark:text-rose-400" />
+          <span className="text-sm text-rose-900 dark:text-rose-200">
+            {t('reports.pluginReport.periodTooLong')}
+          </span>
         </div>
       ) : isError ? (
         <div className="flex items-center justify-between gap-3 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 rounded-lg px-4 py-2.5">
