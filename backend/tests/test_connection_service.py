@@ -2736,6 +2736,35 @@ async def test_sync_connection_keeps_a_cancelled_row_the_user_worked_on(
     ]
 
 
+@pytest.mark.asyncio
+async def test_sync_connection_keeps_a_flagged_cancelled_row(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A flag and its reminder note are the user's, so the cleanup leaves
+    that row alone while it still drops an unflagged one next to it (#1232)."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    session.add(_eb_row(
+        test_user.id, test_workspace.id, account, "flagged", _cancelled_entry(), "3.20",
+        date=date(2026, 8, 30), description="Transaction",
+        original_description="Transaction", is_flagged=True,
+        flag_note="check with the shop",
+    ))
+    session.add(_eb_row(
+        test_user.id, test_workspace.id, account, "plain", _cancelled_entry(), "3.20",
+        date=date(2026, 8, 30), description="Transaction",
+        original_description="Transaction",
+    ))
+    await session.commit()
+
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [])
+
+    rows = await _account_rows(session, account_id)
+    assert [(row.external_id, row.flag_note) for row in rows] == [
+        ("flagged", "check with the shop"),
+    ]
+
+
 #: The day the hold tests sync on. The window a feed covers is read from
 #: `last_sync_at`, so both it and `app_today` are pinned to this day.
 _HOLD_TODAY = date(2026, 11, 5)

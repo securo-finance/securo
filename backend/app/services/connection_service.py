@@ -3409,8 +3409,9 @@ async def _remove_cancelled_posted_rows(
     as a posted row, and it stayed next to the booked entries, counted in the
     balance and the reports, for good. Its stored payload still says the
     bank cancelled it; no posted entry ever does. Rows the user worked on,
-    and rows a transfer, a file, a group share or an invoice payment hangs
-    off, are kept.
+    a flag (and the reminder note that goes with it) included, and rows a
+    transfer, a file, a group share or an invoice payment hangs off, are
+    kept.
     """
     result = await session.execute(
         select(Transaction)
@@ -3427,6 +3428,7 @@ async def _remove_cancelled_posted_rows(
         if _entry_never_settled(tx.raw_data)
         and not tx.is_ignored
         and tx.transfer_pair_id is None
+        and not tx.is_flagged
         and not _holds_user_work(tx)
     ]
     if not gone:
