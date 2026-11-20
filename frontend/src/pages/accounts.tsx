@@ -9,6 +9,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { accounts, assets, connections, currencies, plugins as pluginsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
+import { extractApiError } from '@/lib/api-errors'
 import { invalidateFinancialQueries, invalidateSyncedRecords } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -282,7 +283,9 @@ export default function AccountsPage() {
       setDialogOpen(false)
       toast.success(t('accounts.created'))
     },
-    onError: () => toast.error(t('common.error')),
+    // The backend's own sentence ("unsupported currency code: 'X'") says what
+    // to fix; the generic text left the person guessing (issue #296).
+    onError: (error) => toast.error(extractApiError(error, t('common.error'))),
   })
 
   const updateMutation = useMutation({
@@ -1004,6 +1007,19 @@ export function AccountDialog({
     setTermsOpen(account?.loan_original_amount != null)
   }
 
+  // A new account starts on a free preference or the instance default, and the
+  // select only lists the supported codes: without this the list showed one
+  // currency while the form sent another, refused with no way to see why
+  // (issue #296). An account being edited keeps its own currency even when it
+  // is no longer supported.
+  const supportedCodes = supportedCurrencies?.map((c) => c.code)
+  const effectiveCurrency =
+    !account && supportedCodes?.length && !supportedCodes.includes(currency)
+      ? supportedCodes.includes(userCurrency)
+        ? userCurrency
+        : supportedCodes[0]
+      : currency
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent>
@@ -1029,7 +1045,7 @@ export function AccountDialog({
                 name,
                 balance: parseFloat(balance),
                 ...(dateChanged && { balance_date: balanceDate }),
-                currency,
+                currency: effectiveCurrency,
               }),
               type,
               ...(type === 'loan' && {
@@ -1098,7 +1114,7 @@ export function AccountDialog({
                   <Label>{t('accounts.currency')}</Label>
                   <select
                     className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                    value={currency}
+                    value={effectiveCurrency}
                     onChange={(e) => setCurrency(e.target.value)}
                   >
                     {(supportedCurrencies ?? [{ code: userCurrency, symbol: userCurrency, name: userCurrency, flag: '' }]).map((c) => (
