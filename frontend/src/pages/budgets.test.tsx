@@ -537,8 +537,9 @@ describe('Copying the previous month', () => {
 
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: t('budgets.copyTitle') })).toBeInTheDocument()
-    // Pinned to the active workspace, so a switch in another tab cannot move it.
-    expect(api.budgets.list).toHaveBeenCalledWith('2026-09-01', 'ws-1')
+    // Pinned to the active workspace, so a switch in another tab cannot move
+    // it, and read at the target month's rate for the preview total.
+    expect(api.budgets.list).toHaveBeenCalledWith('2026-09-01', 'ws-1', '2026-10-01')
   })
 
   it('offers the copy action in the empty month state', async () => {
