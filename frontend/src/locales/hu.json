@@ -2418,7 +2418,39 @@
     "statementViewTransactions": "Tranzakciók megtekintése",
     "statementUncategorizedIncome": "Kategorizálatlan bevétel",
     "statementUncategorizedExpense": "Kategorizálatlan kiadás",
-    "statementToggleGroup": "{{name}} kategóriáinak mutatása"
+    "statementToggleGroup": "{{name}} kategóriáinak mutatása",
+    "pluginReport": {
+      "total": {
+        "expenses": "Összes kiadás",
+        "income": "Összes bevétel",
+        "net": "Egyenleg"
+      },
+      "none": {
+        "category": "Kategória nélkül",
+        "category_group": "Csoport nélkül",
+        "payee": "Kedvezményezett nélkül",
+        "account": "Számla nélkül",
+        "month": "Dátum nélkül"
+      },
+      "groupBy": {
+        "category": "Kategória",
+        "category_group": "Csoport",
+        "payee": "Kedvezményezett",
+        "account": "Számla",
+        "month": "Hónap"
+      },
+      "measure": {
+        "expenses": "Kiadások",
+        "income": "Bevételek",
+        "net": "Egyenleg"
+      },
+      "share": "Arány",
+      "computed": "A bővítmény számolja",
+      "totalRow": "Összesen",
+      "page": "{{page}}. oldal / {{pages}}",
+      "previousPage": "Előző oldal",
+      "nextPage": "Következő oldal"
+    }
   },
   "payees": {
     "noPayeeFound": "Nincs ilyen partner.",
@@ -3964,8 +3996,7 @@
       "title": "Ismétlődő bevétel",
       "hint": "Amit az ismétlődő számlák havonta hoznak, és ami nemrég elveszett."
     }
-  }
-,
+  },
   "offline": {
     "title": "A szerver nem érhető el",
     "description": "Offline vagy, vagy a Securo újraindul. Az adataid biztonságban vannak, és semmi sem változott. Amint a szerver válaszol, automatikusan újracsatlakozunk."

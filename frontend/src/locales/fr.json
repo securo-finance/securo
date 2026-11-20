@@ -2422,7 +2422,39 @@
     "statementViewTransactions": "Voir les transactions",
     "statementUncategorizedIncome": "Revenus non catégorisés",
     "statementUncategorizedExpense": "Dépenses non catégorisées",
-    "statementToggleGroup": "Afficher les catégories de {{name}}"
+    "statementToggleGroup": "Afficher les catégories de {{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "Total dépensé",
+        "income": "Total reçu",
+        "net": "Solde"
+      },
+      "none": {
+        "category": "Sans catégorie",
+        "category_group": "Sans groupe",
+        "payee": "Sans bénéficiaire",
+        "account": "Sans compte",
+        "month": "Sans date"
+      },
+      "groupBy": {
+        "category": "Catégorie",
+        "category_group": "Groupe",
+        "payee": "Bénéficiaire",
+        "account": "Compte",
+        "month": "Mois"
+      },
+      "measure": {
+        "expenses": "Dépenses",
+        "income": "Revenus",
+        "net": "Solde"
+      },
+      "share": "Part",
+      "computed": "Calculé par le plugin",
+      "totalRow": "Total",
+      "page": "Page {{page}} sur {{pages}}",
+      "previousPage": "Page précédente",
+      "nextPage": "Page suivante"
+    }
   },
   "payees": {
     "noPayeeFound": "Aucun bénéficiaire trouvé.",
@@ -3974,8 +4006,7 @@
       "title": "Revenus récurrents",
       "hint": "Ce que rapportent les factures récurrentes chaque mois, et ce qui a été perdu récemment."
     }
-  }
-,
+  },
   "offline": {
     "title": "Serveur injoignable",
     "description": "Vous êtes hors ligne ou Securo redémarre. Vos données sont en sécurité et rien n'a été modifié. Nous nous reconnecterons automatiquement dès que le serveur répondra."

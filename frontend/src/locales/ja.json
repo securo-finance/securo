@@ -2418,7 +2418,39 @@
     "statementViewTransactions": "取引を表示",
     "statementUncategorizedIncome": "未分類の収入",
     "statementUncategorizedExpense": "未分類の支出",
-    "statementToggleGroup": "{{name}} のカテゴリを表示"
+    "statementToggleGroup": "{{name}} のカテゴリを表示",
+    "pluginReport": {
+      "total": {
+        "expenses": "支出合計",
+        "income": "収入合計",
+        "net": "収支"
+      },
+      "none": {
+        "category": "未分類",
+        "category_group": "グループなし",
+        "payee": "支払先なし",
+        "account": "口座なし",
+        "month": "日付なし"
+      },
+      "groupBy": {
+        "category": "カテゴリ",
+        "category_group": "グループ",
+        "payee": "支払先",
+        "account": "口座",
+        "month": "月"
+      },
+      "measure": {
+        "expenses": "支出",
+        "income": "収入",
+        "net": "収支"
+      },
+      "share": "割合",
+      "computed": "プラグインが計算",
+      "totalRow": "合計",
+      "page": "{{page}} / {{pages}} ページ",
+      "previousPage": "前のページ",
+      "nextPage": "次のページ"
+    }
   },
   "payees": {
     "noPayeeFound": "取引相手が見つかりません。",
@@ -3964,8 +3996,7 @@
       "title": "定期収益",
       "hint": "定期請求書による毎月の収益と、最近失われた分。"
     }
-  }
-,
+  },
   "offline": {
     "title": "サーバーに接続できません",
     "description": "オフラインか、Securo が再起動中です。データは安全で、何も変更されていません。サーバーが応答し次第、自動的に再接続します。"

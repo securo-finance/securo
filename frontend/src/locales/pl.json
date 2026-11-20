@@ -2515,7 +2515,39 @@
     "statementViewTransactions": "Pokaż transakcje",
     "statementUncategorizedIncome": "Przychody bez kategorii",
     "statementUncategorizedExpense": "Wydatki bez kategorii",
-    "statementToggleGroup": "Pokaż kategorie w {{name}}"
+    "statementToggleGroup": "Pokaż kategorie w {{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "Wydano łącznie",
+        "income": "Otrzymano łącznie",
+        "net": "Saldo"
+      },
+      "none": {
+        "category": "Bez kategorii",
+        "category_group": "Bez grupy",
+        "payee": "Bez odbiorcy",
+        "account": "Bez konta",
+        "month": "Bez daty"
+      },
+      "groupBy": {
+        "category": "Kategoria",
+        "category_group": "Grupa",
+        "payee": "Odbiorca",
+        "account": "Konto",
+        "month": "Miesiąc"
+      },
+      "measure": {
+        "expenses": "Wydatki",
+        "income": "Przychody",
+        "net": "Saldo"
+      },
+      "share": "Udział",
+      "computed": "Obliczone przez wtyczkę",
+      "totalRow": "Suma",
+      "page": "Strona {{page}} z {{pages}}",
+      "previousPage": "Poprzednia strona",
+      "nextPage": "Następna strona"
+    }
   },
   "payees": {
     "noPayeeFound": "Nie znaleziono odbiorcy.",
@@ -4112,8 +4144,7 @@
       "title": "Przychody cykliczne",
       "hint": "Ile co miesiąc przynoszą faktury cykliczne i co ostatnio utracono."
     }
-  }
-,
+  },
   "offline": {
     "title": "Brak połączenia z serwerem",
     "description": "Jesteś offline lub Securo się restartuje. Twoje dane są bezpieczne i nic nie zostało zmienione. Połączymy się ponownie automatycznie, gdy tylko serwer odpowie."

@@ -43,6 +43,19 @@ class PluginThemeRead(BaseModel):
     font: Literal["sans", "mono", "serif"] | None = None
 
 
+class PluginReportDefinitionRead(BaseModel):
+    """A report a plugin adds to the library: what it adds up and how it's drawn."""
+
+    key: str
+    name: dict[str, str]
+    description: dict[str, str] | None = None
+    code: bool = False
+    inputs: list[Literal["transactions", "accounts", "categories"]] = []
+    measure: Literal["expenses", "income", "net"]
+    group_by: Literal["category", "category_group", "payee", "account", "month"] | None = None
+    chart: Literal["bar", "line", "area", "pie", "table"]
+
+
 class InstalledPluginRead(BaseModel):
     """A catalog plugin installed in this workspace, as recorded here: no catalog needed."""
 
@@ -58,6 +71,7 @@ class InstalledPluginRead(BaseModel):
         default=None, description="For sign-in integrations: the address to register with the service."
     )
     themes: list[PluginThemeRead] = Field(default=[], description="Themes it adds to the library.")
+    reports: list[PluginReportDefinitionRead] = Field(default=[], description="Reports it adds to the library.")
 
 
 class PluginCatalogRead(BaseModel):
@@ -136,6 +150,7 @@ class PluginContentsRead(BaseModel):
     network: list[PluginHostRead] = []
     api_scopes: list[PluginScopeRead] = []
     themes: list[PluginThemeRead] = []
+    reports: list[PluginReportDefinitionRead] = []
 
 
 class PluginDetailRead(BaseModel):

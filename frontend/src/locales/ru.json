@@ -2443,7 +2443,39 @@
     "statementViewTransactions": "Показать транзакции",
     "statementUncategorizedIncome": "Доходы без категории",
     "statementUncategorizedExpense": "Расходы без категории",
-    "statementToggleGroup": "Показать категории группы {{name}}"
+    "statementToggleGroup": "Показать категории группы {{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "Всего потрачено",
+        "income": "Всего получено",
+        "net": "Итог"
+      },
+      "none": {
+        "category": "Без категории",
+        "category_group": "Без группы",
+        "payee": "Без получателя",
+        "account": "Без счёта",
+        "month": "Без даты"
+      },
+      "groupBy": {
+        "category": "Категория",
+        "category_group": "Группа",
+        "payee": "Получатель",
+        "account": "Счёт",
+        "month": "Месяц"
+      },
+      "measure": {
+        "expenses": "Расходы",
+        "income": "Доходы",
+        "net": "Итог"
+      },
+      "share": "Доля",
+      "computed": "Рассчитано плагином",
+      "totalRow": "Итого",
+      "page": "Страница {{page}} из {{pages}}",
+      "previousPage": "Предыдущая страница",
+      "nextPage": "Следующая страница"
+    }
   },
   "payees": {
     "noPayeeFound": "Получатель не найден.",
@@ -4019,8 +4051,7 @@
       "title": "Регулярная выручка",
       "hint": "Сколько приносят регулярные счета в месяц и что недавно потеряно."
     }
-  }
-,
+  },
   "offline": {
     "title": "Сервер недоступен",
     "description": "Вы не в сети или Securo перезапускается. Ваши данные в безопасности, ничего не изменено. Мы автоматически переподключимся, как только сервер ответит."

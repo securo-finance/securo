@@ -2422,7 +2422,39 @@
     "statementViewTransactions": "Ver transações",
     "statementUncategorizedIncome": "Receita sem categoria",
     "statementUncategorizedExpense": "Despesa sem categoria",
-    "statementToggleGroup": "Mostrar categorias de {{name}}"
+    "statementToggleGroup": "Mostrar categorias de {{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "Total gasto",
+        "income": "Total recebido",
+        "net": "Saldo"
+      },
+      "none": {
+        "category": "Sem categoria",
+        "category_group": "Sem grupo",
+        "payee": "Sem favorecido",
+        "account": "Sem conta",
+        "month": "Sem data"
+      },
+      "groupBy": {
+        "category": "Categoria",
+        "category_group": "Grupo",
+        "payee": "Favorecido",
+        "account": "Conta",
+        "month": "Mês"
+      },
+      "measure": {
+        "expenses": "Gastos",
+        "income": "Receitas",
+        "net": "Saldo"
+      },
+      "share": "Parcela",
+      "computed": "Calculado pelo plugin",
+      "totalRow": "Total",
+      "page": "Página {{page}} de {{pages}}",
+      "previousPage": "Página anterior",
+      "nextPage": "Próxima página"
+    }
   },
   "payees": {
     "noPayeeFound": "Nenhuma pessoa encontrada.",
@@ -3974,8 +4006,7 @@
       "title": "Receita recorrente",
       "hint": "Quanto as cobranças recorrentes trazem por mês, e o que foi perdido recentemente."
     }
-  }
-,
+  },
   "offline": {
     "title": "Não foi possível falar com o servidor",
     "description": "Você está sem conexão ou o Securo está reiniciando. Seus dados estão seguros e nada foi alterado. Vamos reconectar sozinhos assim que o servidor responder."
