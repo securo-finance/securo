@@ -1193,17 +1193,22 @@ export default function AssetsPage() {
   // (kept), so it needs the whole workspace, archived holdings included.
   // Both reads name the workspace, in the key and on the request: another tab
   // switching workspace changes the shared default, and an inventory from the
-  // wrong workspace would prune this one's remembered selection.
+  // wrong workspace would prune this one's remembered selection. They are
+  // read again each time Performance opens (staleTime 0): the page's
+  // mutations refetch only enabled queries, and an inventory missing a
+  // wallet or holding created meanwhile would drop it from the selection.
   const inventoryWorkspaceId = workspace?.id ?? null
   const inventoryAssetsQuery = useQuery({
     queryKey: ['assets', 'including-archived', inventoryWorkspaceId],
     queryFn: () => assets.list(true, inventoryWorkspaceId),
     enabled: activeTab === 'performance' && !!inventoryWorkspaceId,
+    staleTime: 0,
   })
   const inventoryWalletsQuery = useQuery({
     queryKey: ['asset-groups', 'inventory', inventoryWorkspaceId],
     queryFn: () => assetGroups.list(inventoryWorkspaceId),
     enabled: activeTab === 'performance' && !!inventoryWorkspaceId,
+    staleTime: 0,
   })
   const inventoryAssets = inventoryAssetsQuery.data
   const inventoryWallets = inventoryWalletsQuery.data
