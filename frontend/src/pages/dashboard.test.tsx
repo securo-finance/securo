@@ -1228,6 +1228,25 @@ describe('Dashboard uncategorized drill-down', () => {
     return { ...utils, open }
   }
 
+  it('skips a next row that was ignored after the panel loaded', async () => {
+    const rows = [
+      uncategorized('first', 'First row', '2026-09-01'),
+      uncategorized('second', 'Second row', '2026-09-02'),
+      uncategorized('third', 'Third row', '2026-09-03'),
+    ]
+    api.transactions.get.mockImplementation(async (id: string) => {
+      const row = rows.find((r) => r.id === id)!
+      return id === 'second' ? { ...row, is_ignored: true } : row
+    })
+    const { user, open } = await openPanel(rows)
+
+    await user.click(open[0])
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: t('transactions.saveAndNext') }))
+
+    expect(await within(await screen.findByRole('dialog')).findByDisplayValue('Third row')).toBeInTheDocument()
+  })
+
   it('stops at a next row that fails to load, leaving it in the panel', async () => {
     const rows = [
       uncategorized('first', 'First row', '2026-09-01'),

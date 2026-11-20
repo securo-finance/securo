@@ -977,7 +977,7 @@ function TransactionForm({
         const action = pendingActionRef.current
         pendingActionRef.current = 'save'
         // Enter in a text field submits even while Save is disabled.
-        if (!splitsValid || !linesValid) return
+        if (loading || !splitsValid || !linesValid) return
         // Amounts are typed under the display locale's separators (comma
         // decimals on dot_comma), so they must be read back the same way —
         // parseFloat would stop at the first comma and silently save the

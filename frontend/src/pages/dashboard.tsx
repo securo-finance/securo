@@ -431,7 +431,7 @@ export default function DashboardPage() {
   // opens. Shared rows belong to another workspace and can't be re-read here.
   const refreshTx = (tx: Transaction) => (tx.is_shared ? Promise.resolve(tx) : transactions.get(tx.id))
 
-  const findNextToEdit = async (id: string) => {
+  const findNextToEdit = async (id: string, request: number) => {
     const start = editQueue.findIndex((tx) => tx.id === id)
     if (start < 0) return null
     for (const queued of editQueue.slice(start + 1)) {
@@ -442,11 +442,12 @@ export default function DashboardPage() {
         // A row deleted since the panel loaded is skipped. Any other failure stops
         // here; the row is still in the panel to open again.
         if ((err as { response?: { status?: number } })?.response?.status === 404) continue
-        toast.error(extractApiError(err, t('common.error')))
+        if (request === openRequest.current) toast.error(extractApiError(err, t('common.error')))
         return null
       }
-      // A row categorized since the panel loaded no longer belongs in "Categorize now".
-      if (drillDown?.uncategorized && (fresh.category_id || isSplitByCategory(fresh))) continue
+      // A row categorized or ignored since the panel loaded no longer belongs in
+      // "Categorize now" (the panel lists neither).
+      if (drillDown?.uncategorized && (fresh.category_id || fresh.is_ignored || isSplitByCategory(fresh))) continue
       return fresh
     }
     return null
@@ -482,7 +483,7 @@ export default function DashboardPage() {
 
   const openNextAfterSave = async (id: string, request: number) => {
     setLoadingNext(true)
-    const next = await findNextToEdit(id)
+    const next = await findNextToEdit(id, request)
     if (request !== openRequest.current) return
     setLoadingNext(false)
     if (next) setEditingTx(next)
@@ -510,9 +511,7 @@ export default function DashboardPage() {
     mutationFn: (id: string) => transactions.delete(id),
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
-      setDialogOpen(false)
-      setEditingTx(null)
-      setEditQueue([])
+      closeEditDialog()
     },
   })
 
@@ -520,9 +519,7 @@ export default function DashboardPage() {
     mutationFn: (pairId: string) => transactions.unlinkTransfer(pairId),
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
-      setDialogOpen(false)
-      setEditingTx(null)
-      setEditQueue([])
+      closeEditDialog()
     },
   })
 
@@ -2082,9 +2079,7 @@ export default function DashboardPage() {
         }}
         onUnlinkTransfer={(pairId) => unlinkTransferMutation.mutate(pairId)}
         onCreateRule={(tx) => {
-          setDialogOpen(false)
-          setEditingTx(null)
-          setEditQueue([])
+          closeEditDialog()
           handleCreateRuleFromTransaction(tx)
         }}
         loading={updateMutation.isPending || loadingNext || deleteMutation.isPending || unlinkTransferMutation.isPending}

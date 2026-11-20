@@ -716,7 +716,7 @@ describe('TransactionDialog reporting date override', () => {
 })
 
 describe('TransactionDialog save and next', () => {
-  function renderEdit(hasNext: boolean) {
+  function renderEdit(hasNext: boolean, loading = false) {
     vi.spyOn(currencies, 'list').mockResolvedValue([])
     vi.spyOn(payees, 'list').mockResolvedValue([])
     vi.spyOn(groups, 'list').mockResolvedValue([])
@@ -730,7 +730,7 @@ describe('TransactionDialog save and next', () => {
         categoryGroups={[]}
         accounts={accountFixtures}
         onSave={onSave}
-        loading={false}
+        loading={loading}
         error={null}
         isSynced
         hasNext={hasNext}
@@ -779,6 +779,14 @@ describe('TransactionDialog save and next', () => {
     )
 
     expect(screen.queryByText('receipt-a.png')).not.toBeInTheDocument()
+  })
+
+  it('ignores Enter while the host is still busy', async () => {
+    const { onSave, user } = renderEdit(true, true)
+
+    await user.type(screen.getByLabelText(t('transactions.description')), '{Enter}')
+
+    expect(onSave).not.toHaveBeenCalled()
   })
 
   it('offers no save and next without a next row', () => {
