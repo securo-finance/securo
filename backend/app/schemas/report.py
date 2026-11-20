@@ -103,3 +103,25 @@ class CategoryStatementResponse(BaseModel):
     months: list[str]
     income: CategoryStatementSection
     expenses: CategoryStatementSection
+
+
+class PluginReportRow(BaseModel):
+    """One group of a plugin's report: a category, a payee, a month..."""
+
+    key: str
+    #: Null for rows the frontend names itself: `none` (no category or payee) and `other`.
+    label: str | None
+    value: float
+    color: str | None = None
+
+
+class PluginReportResponse(BaseModel):
+    """A plugin's report, added up by Securo for the period asked (ADR 0028)."""
+
+    key: str
+    measure: str
+    group_by: str
+    chart: str
+    currency: str
+    rows: list[PluginReportRow]
+    total: float

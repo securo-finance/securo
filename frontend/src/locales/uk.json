@@ -2443,7 +2443,34 @@
     "statementViewTransactions": "Переглянути транзакції",
     "statementUncategorizedIncome": "Доходи без категорії",
     "statementUncategorizedExpense": "Витрати без категорії",
-    "statementToggleGroup": "Показати категорії групи {{name}}"
+    "statementToggleGroup": "Показати категорії групи {{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "Усього витрачено",
+        "income": "Усього отримано",
+        "net": "Підсумок"
+      },
+      "none": {
+        "category": "Без категорії",
+        "category_group": "Без групи",
+        "payee": "Без отримувача",
+        "account": "Без рахунку",
+        "month": "Без дати"
+      },
+      "groupBy": {
+        "category": "Категорія",
+        "category_group": "Група",
+        "payee": "Отримувач",
+        "account": "Рахунок",
+        "month": "Місяць"
+      },
+      "measure": {
+        "expenses": "Витрати",
+        "income": "Доходи",
+        "net": "Підсумок"
+      },
+      "share": "Частка"
+    }
   },
   "payees": {
     "noPayeeFound": "Отримувача не знайдено.",
@@ -4019,8 +4046,7 @@
       "title": "Регулярний дохід",
       "hint": "Скільки приносять регулярні рахунки щомісяця і що нещодавно втрачено."
     }
-  }
-,
+  },
   "offline": {
     "title": "Сервер недоступний",
     "description": "Ви не в мережі або Securo перезапускається. Ваші дані в безпеці, нічого не змінено. Ми автоматично перепідключимося, щойно сервер відповість."

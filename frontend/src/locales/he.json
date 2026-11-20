@@ -2434,7 +2434,34 @@
     "statementViewTransactions": "הצגת תנועות",
     "statementUncategorizedIncome": "הכנסות ללא קטגוריה",
     "statementUncategorizedExpense": "הוצאות ללא קטגוריה",
-    "statementToggleGroup": "הצגת הקטגוריות ב{{name}}"
+    "statementToggleGroup": "הצגת הקטגוריות ב{{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "סה״כ הוצאות",
+        "income": "סה״כ הכנסות",
+        "net": "נטו"
+      },
+      "none": {
+        "category": "ללא קטגוריה",
+        "category_group": "ללא קבוצה",
+        "payee": "ללא מוטב",
+        "account": "ללא חשבון",
+        "month": "ללא תאריך"
+      },
+      "groupBy": {
+        "category": "קטגוריה",
+        "category_group": "קבוצה",
+        "payee": "מוטב",
+        "account": "חשבון",
+        "month": "חודש"
+      },
+      "measure": {
+        "expenses": "הוצאות",
+        "income": "הכנסות",
+        "net": "נטו"
+      },
+      "share": "חלק"
+    }
   },
   "payees": {
     "noPayeeFound": "לא נמצא מוטב.",
@@ -3995,8 +4022,7 @@
       "title": "הכנסה חוזרת",
       "hint": "כמה מכניסות החשבוניות החוזרות בכל חודש, ומה אבד לאחרונה."
     }
-  }
-,
+  },
   "offline": {
     "title": "אין חיבור לשרת",
     "description": "אתם במצב לא מקוון או ש-Securo מופעל מחדש. הנתונים שלכם בטוחים ושום דבר לא השתנה. נתחבר מחדש אוטומטית ברגע שהשרת יגיב."

@@ -16,7 +16,11 @@ const api = vi.hoisted(() => ({
     incomeExpenses: vi.fn(),
     cashFlow: vi.fn(),
     dataRange: vi.fn(),
+    plugin: vi.fn(),
   },
+  // Plugins are off unless a test turns them on.
+  info: { get: vi.fn() },
+  plugins: { installed: vi.fn() },
   // The page reads the workspace timezone to tell a balance that is already
   // negative from one that crosses later. Unresolved here, which lands on the
   // browser's own day.
@@ -35,7 +39,9 @@ const api = vi.hoisted(() => ({
   },
 }))
 
-vi.mock('@/lib/api', () => ({ reports: api.reports, timezones: api.timezones, uiLayouts: api.uiLayouts }))
+vi.mock('@/lib/api', () => ({
+  reports: api.reports, timezones: api.timezones, uiLayouts: api.uiLayouts, info: api.info, plugins: api.plugins,
+}))
 
 vi.mock('@/hooks/use-display-locale', () => ({
   useDisplayLocale: () => 'en-US',
@@ -78,6 +84,8 @@ beforeEach(() => {
   api.reports.cashFlow.mockResolvedValue(emptyReport('cash_flow'))
   // No data by default: the year picker stays hidden unless a test opts in.
   api.reports.dataRange.mockResolvedValue({ min_date: null, max_date: null })
+  api.info.get.mockResolvedValue({ features: { plugins: false } })
+  api.plugins.installed.mockResolvedValue([])
 })
 
 afterEach(() => vi.useRealTimers())
@@ -890,5 +898,38 @@ describe('Reports page period bar on a phone', () => {
         ).toBeInTheDocument()
       }
     }
+  })
+})
+
+
+describe('Reports page: a plugin\'s report', () => {
+  beforeEach(() => {
+    api.info.get.mockResolvedValue({ features: { plugins: true } })
+    api.plugins.installed.mockResolvedValue([{
+      plugin_id: 'maria/casa', name: { en: 'Home' }, themes: [],
+      reports: [{ key: 'pets', name: { en: 'Pet spending' }, measure: 'expenses', group_by: 'category', chart: 'table' }],
+    }])
+    api.reports.plugin.mockResolvedValue({
+      key: 'pets', measure: 'expenses', group_by: 'category', chart: 'table', currency: 'USD',
+      rows: [{ key: 'c1', label: 'Vet', value: 120, color: null }], total: 120,
+    })
+  })
+
+  it('shows a kept plugin report as a tab, drawn from the period picked', async () => {
+    layouts.saved = { reports: [{ id: 'net_worth' }, { id: 'plugin:maria/casa:pets' }] }
+    renderWithProviders(<ReportsPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Pet spending' }))
+    expect(await screen.findByText('Vet')).toBeInTheDocument()
+    // The default 1Y preset, sent as dates like every stepped window.
+    expect(api.reports.plugin).toHaveBeenCalledWith('maria/casa', 'pets', '2025-09-01', '2026-09-12', undefined)
+    expect(api.reports.netWorth).toHaveBeenCalledTimes(1)
+  })
+
+  it("isn't a tab until someone adds it, and a removed plugin's tab is left out", async () => {
+    layouts.saved = { reports: [{ id: 'net_worth' }, { id: 'plugin:gone/away:x' }] }
+    renderWithProviders(<ReportsPage />)
+    expect((await screen.findAllByRole('button', { name: t('reports.netWorth') })).length).toBeGreaterThan(0)
+    await waitFor(() => expect(api.plugins.installed).toHaveBeenCalled())
+    expect(screen.queryByRole('button', { name: 'Pet spending' })).not.toBeInTheDocument()
   })
 })

@@ -2418,7 +2418,34 @@
     "statementViewTransactions": "View transactions",
     "statementUncategorizedIncome": "Uncategorized income",
     "statementUncategorizedExpense": "Uncategorized expenses",
-    "statementToggleGroup": "Show categories in {{name}}"
+    "statementToggleGroup": "Show categories in {{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "Total spent",
+        "income": "Total received",
+        "net": "Net"
+      },
+      "none": {
+        "category": "Uncategorized",
+        "category_group": "No group",
+        "payee": "No payee",
+        "account": "No account",
+        "month": "No date"
+      },
+      "groupBy": {
+        "category": "Category",
+        "category_group": "Group",
+        "payee": "Payee",
+        "account": "Account",
+        "month": "Month"
+      },
+      "measure": {
+        "expenses": "Spending",
+        "income": "Income",
+        "net": "Net"
+      },
+      "share": "Share"
+    }
   },
   "payees": {
     "noPayeeFound": "No payee found.",
@@ -3964,8 +3991,7 @@
       "title": "Recurring revenue",
       "hint": "What recurring invoices bring in each month, and what was lost lately."
     }
-  }
-,
+  },
   "offline": {
     "title": "Can't reach the server",
     "description": "You're offline or Securo is restarting. Your data is safe and nothing was changed. We'll reconnect automatically as soon as the server answers."

@@ -167,6 +167,21 @@ describe('LibraryDialog', () => {
     expect(remove).toHaveAttribute('title', t('library.lastReport'))
   })
 
+  it("lists an installed plugin's reports and adds one as a tab", async () => {
+    state.installed = [{
+      plugin_id: 'maria/casa', name: { en: 'Home' }, themes: [],
+      reports: [{ key: 'pets', name: { en: 'Pet spending' }, description: { en: 'What the pets cost.' }, measure: 'expenses', group_by: 'month', chart: 'bar' }],
+    }]
+    state.saved = { reports: [{ id: 'net_worth' }] }
+    const { user } = open('reports')
+    await user.click(await screen.findByRole('button', { name: t('library.addTo.reports', { name: 'Pet spending' }) }))
+    await waitFor(() => expect(state.saves.at(-1)?.ids).toEqual(['net_worth', 'plugin:maria/casa:pets']))
+    const row = screen.getByText('Pet spending').closest('li')!
+    expect(within(row).getByText('What the pets cost.')).toBeInTheDocument()
+    expect(within(row).getByText(t('library.fromPlugin', { name: 'Home' }))).toBeInTheDocument()
+    state.installed = []
+  })
+
   it('applies a theme and saves it for the person', async () => {
     const { user } = open('themes')
     const themes = screen.getByRole('group', { name: t('library.kind.themes') })

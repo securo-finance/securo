@@ -2422,7 +2422,34 @@
     "statementViewTransactions": "Visualizza transazioni",
     "statementUncategorizedIncome": "Entrate senza categoria",
     "statementUncategorizedExpense": "Uscite senza categoria",
-    "statementToggleGroup": "Mostra le categorie di {{name}}"
+    "statementToggleGroup": "Mostra le categorie di {{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "Totale speso",
+        "income": "Totale ricevuto",
+        "net": "Saldo"
+      },
+      "none": {
+        "category": "Senza categoria",
+        "category_group": "Senza gruppo",
+        "payee": "Senza beneficiario",
+        "account": "Senza conto",
+        "month": "Senza data"
+      },
+      "groupBy": {
+        "category": "Categoria",
+        "category_group": "Gruppo",
+        "payee": "Beneficiario",
+        "account": "Conto",
+        "month": "Mese"
+      },
+      "measure": {
+        "expenses": "Spese",
+        "income": "Entrate",
+        "net": "Saldo"
+      },
+      "share": "Quota"
+    }
   },
   "payees": {
     "noPayeeFound": "Nessun beneficiario trovato.",
@@ -3974,8 +4001,7 @@
       "title": "Entrate ricorrenti",
       "hint": "Quanto portano le fatture ricorrenti ogni mese, e cosa si è perso di recente."
     }
-  }
-,
+  },
   "offline": {
     "title": "Server non raggiungibile",
     "description": "Sei offline o Securo si sta riavviando. I tuoi dati sono al sicuro e nulla è stato modificato. Ci riconnetteremo automaticamente appena il server risponderà."

@@ -771,6 +771,8 @@ export interface InstalledPlugin {
   redirect_uri: string | null
   /** Themes it adds to the library. */
   themes?: PluginTheme[]
+  /** Reports it adds to the reports library. */
+  reports?: PluginReportDefinition[]
 }
 
 export type PluginConnectionStatus = 'pending' | 'active' | 'error' | 'needs_auth'
@@ -856,6 +858,28 @@ export interface PluginRef {
   default: boolean
 }
 
+/** A report a plugin adds to the library: what it adds up, how it splits it, how it's drawn. */
+export interface PluginReportDefinition {
+  key: string
+  name: LocalizedText
+  description?: LocalizedText | null
+  measure: 'expenses' | 'income' | 'net'
+  group_by: 'category' | 'category_group' | 'payee' | 'account' | 'month'
+  chart: 'bar' | 'line' | 'area' | 'pie' | 'table'
+}
+
+/** A plugin's report, added up by Securo for the period asked. */
+export interface PluginReportResponse {
+  key: string
+  measure: PluginReportDefinition['measure']
+  group_by: PluginReportDefinition['group_by']
+  chart: PluginReportDefinition['chart']
+  currency: string
+  /** `label` is null for the rows the page names: `none` (no category or payee) and `other`. */
+  rows: { key: string; label: string | null; value: number; color: string | null }[]
+  total: number
+}
+
 export interface PluginContents {
   category_groups: { key: string; name: LocalizedText; icon: string; color: string }[]
   categories: {
@@ -878,6 +902,7 @@ export interface PluginContents {
   network?: PluginHost[]
   api_scopes?: PluginScope[]
   themes?: PluginTheme[]
+  reports?: PluginReportDefinition[]
 }
 
 /** One plugin opened from the catalog. */

@@ -2422,7 +2422,34 @@
     "statementViewTransactions": "Ver transacciones",
     "statementUncategorizedIncome": "Ingresos sin categoría",
     "statementUncategorizedExpense": "Gastos sin categoría",
-    "statementToggleGroup": "Mostrar categorías de {{name}}"
+    "statementToggleGroup": "Mostrar categorías de {{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "Total gastado",
+        "income": "Total recibido",
+        "net": "Neto"
+      },
+      "none": {
+        "category": "Sin categoría",
+        "category_group": "Sin grupo",
+        "payee": "Sin beneficiario",
+        "account": "Sin cuenta",
+        "month": "Sin fecha"
+      },
+      "groupBy": {
+        "category": "Categoría",
+        "category_group": "Grupo",
+        "payee": "Beneficiario",
+        "account": "Cuenta",
+        "month": "Mes"
+      },
+      "measure": {
+        "expenses": "Gastos",
+        "income": "Ingresos",
+        "net": "Neto"
+      },
+      "share": "Proporción"
+    }
   },
   "payees": {
     "noPayeeFound": "No se encontró ningún beneficiario.",
@@ -3974,8 +4001,7 @@
       "title": "Ingresos recurrentes",
       "hint": "Lo que aportan las facturas recurrentes cada mes, y lo perdido recientemente."
     }
-  }
-,
+  },
   "offline": {
     "title": "No se puede conectar con el servidor",
     "description": "Estás sin conexión o Securo se está reiniciando. Tus datos están a salvo y nada ha cambiado. Volveremos a conectar automáticamente en cuanto el servidor responda."
