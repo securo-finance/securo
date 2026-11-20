@@ -1,4 +1,10 @@
 import { ltrAmount } from '@/lib/format'
+import {
+  LABEL_LINE_HEIGHT,
+  placeColumnLabels,
+  wrapLabelLines,
+  type ColumnLabelPlacement,
+} from '@/lib/sankey-labels'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -29,9 +35,6 @@ const MAX_NODES_PER_SIDE = 9
 
 const NODE_WIDTH = 16
 const NODE_PADDING = 16
-// Vertical space a two-line label (name + amount) needs; labels are pushed
-// apart to at least this gap so thin adjacent nodes stay readable.
-const LABEL_MIN_GAP = 26
 const TOP_GUTTER = 30 // header room above the nodes for the centre label
 
 interface SankeyNodeDatum {
@@ -253,26 +256,39 @@ export function CashflowSankey({ composition, currency, locale }: CashflowSankey
     })
   }, [rawNodes, rawLinks, width, height, hasData])
 
-  // Always-on labels: place each node's label and push overlapping neighbours
-  // apart per column so even a 1px-tall node keeps a readable name + amount.
-  const labelY = useMemo(() => {
-    const pos = new Map<number, number>()
-    if (!layout) return pos
-    for (const left of [true, false]) {
-      const column = layout.nodes
-        .filter((n) => n.id !== 'center')
-        .filter((n) => ((n.x0 ?? 0) < width / 2) === left)
+  // Always-on labels: wrap each name into the gap it has before the centre bar
+  // and stack the blocks so a long name neither runs under the bar nor into
+  // the label below it. On a phone the gap is about 100px, narrower than
+  // "Investment withdrawals", which used to come out cut (#287).
+  const labels = useMemo(() => {
+    const placed = new Map<number, ColumnLabelPlacement>()
+    if (!layout) return placed
+    const centre = layout.nodes.find((n) => n.id === 'center')
+    const sideNodes = layout.nodes.filter((n) => n.id !== 'center')
+    for (const onLeft of [true, false]) {
+      const column = sideNodes
+        .filter((n) => ((n.x0 ?? 0) < width / 2) === onLeft)
         .sort((a, b) => ((a.y0! + a.y1!) / 2) - ((b.y0! + b.y1!) / 2))
-      let prev = -Infinity
-      for (const n of column) {
-        let y = (n.y0! + n.y1!) / 2
-        if (y < prev + LABEL_MIN_GAP) y = prev + LABEL_MIN_GAP
-        pos.set((n as SankeyNodeDatum & { index: number }).index, y)
-        prev = y
-      }
+      if (column.length === 0) continue
+      // The label starts 8px off the node and the centre bar gets 8px of its
+      // own, so the usable width is the distance between them minus 16.
+      const gutter = onLeft
+        ? (centre?.x0 ?? width / 2) - Math.max(...column.map((n) => n.x1 ?? 0)) - 16
+        : Math.min(...column.map((n) => n.x0 ?? width)) - (centre?.x1 ?? width / 2) - 16
+      const placements = placeColumnLabels(
+        column.map((n) => ({
+          center: (n.y0! + n.y1!) / 2,
+          lines: wrapLabelLines(n.name, gutter),
+        })),
+        LABEL_LINE_HEIGHT / 2 + 2,
+        height - 4,
+      )
+      column.forEach((n, i) => {
+        placed.set((n as SankeyNodeDatum & { index: number }).index, placements[i])
+      })
     }
-    return pos
-  }, [layout, width])
+    return placed
+  }, [layout, width, height])
 
   // Resolve the current hover into the exact set of links/nodes to keep lit.
   const { activeLinks, activeNodes } = useMemo(() => {
@@ -438,7 +454,9 @@ export function CashflowSankey({ composition, currency, locale }: CashflowSankey
 
               const onLeft = x0 < width / 2
               const labelX = onLeft ? x1 + 8 : x0 - 8
-              const ly = labelY.get(i) ?? (y0 + y1) / 2
+              const label = labels.get(i)
+              const labelLines = label?.lines ?? [node.name]
+              const labelY = label?.y ?? (y0 + y1) / 2
               return (
                 <g
                   key={i}
@@ -450,16 +468,20 @@ export function CashflowSankey({ composition, currency, locale }: CashflowSankey
                   </rect>
                   <text
                     x={labelX}
-                    y={ly}
+                    y={labelY}
                     textAnchor={onLeft ? 'start' : 'end'}
                     dominantBaseline="middle"
                     className="fill-foreground"
                     style={{ fontSize: 11, fontWeight: 500 }}
                   >
-                    {node.name}
+                    {labelLines.map((line, li) => (
+                      <tspan key={li} x={labelX} dy={li === 0 ? 0 : LABEL_LINE_HEIGHT}>
+                        {line}
+                      </tspan>
+                    ))}
                     <tspan
                       x={labelX}
-                      dy={13}
+                      dy={LABEL_LINE_HEIGHT}
                       className="fill-muted-foreground"
                       style={{ fontSize: 10, fontFamily: 'var(--font-mono, monospace)' }}
                     >
