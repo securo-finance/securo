@@ -1946,6 +1946,17 @@ class TestParseCsvAccentedHeaders:
         assert transactions[0].notes == "Novembro"
         assert transactions[0].payee_raw == "Imobiliária Sol"
 
+    def test_a_plain_header_wins_over_an_accented_one_next_to_it(self):
+        """A file holding both "Descrição" and "descricao" keeps reading the
+        plain column, as it did before the folded match was added."""
+        csv_content = (
+            "Data;Descrição;descricao;Valor\n"
+            "03/11/2026;Acentuada;Plana;-10,00\n"
+        )
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
+
+        assert transactions[0].description == "Plana"
+
     def test_explicit_mapping_to_an_accented_header_still_works(self):
         csv_content = "Data;Histórico;Valor\n03/11/2026;Mercado;-10,00\n"
         transactions, _ = parse_csv(

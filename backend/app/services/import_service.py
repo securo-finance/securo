@@ -692,7 +692,7 @@ def detect_csv_columns(content: bytes) -> list[str]:
 def _fold_header(name: str) -> str:
     """A lower-cased CSV header with its diacritics stripped ("Descrição" -> "descricao")."""
     decomposed = unicodedata.normalize("NFKD", name)
-    return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).lower()
 
 
 def parse_csv(
@@ -747,11 +747,16 @@ def parse_csv(
     }
 
     # Bank exports write the Portuguese headers with accents ("Descrição",
-    # "Histórico", "Lançamento"); the candidates are plain ASCII, so match on
-    # the header with its diacritics stripped and return the header as is.
+    # "Histórico", "Lançamento"); the candidates are plain ASCII, so fall back
+    # to the header with its diacritics stripped, keeping the header as is.
+    # An exact name wins: a file holding both "Descrição" and "descricao" must
+    # keep reading the plain column, as it did before the folded match.
     folded_fieldnames = {_fold_header(f): f for f in reversed(fieldnames)}
 
     def find_col(candidates):
+        for c in candidates:
+            if c in fieldnames:
+                return c
         for c in candidates:
             if c in folded_fieldnames:
                 return folded_fieldnames[c]
