@@ -1048,6 +1048,16 @@
     "sortDesc": "Zoradiť zostupne",
     "syncedInfo": "Transakcia synchronizovaná z banky: sumu, dátum a účet nemožno upraviť",
     "syncedAmountDateError": "Sumu ani dátum synchronizovanej transakcie nemožno zmeniť",
+    "amountErrors": {
+      "notPositive": "Suma musí byť väčšia ako nula.",
+      "tooSmall": "Suma musí byť aspoň 0,01.",
+      "tooLarge": "Suma je väčšia, ako dokáže Securo uložiť.",
+      "convertedNegative": "Prepočítaná suma nemôže byť záporná.",
+      "convertedTooLarge": "Prepočítaná suma je väčšia, ako dokáže Securo uložiť.",
+      "rateNegative": "Výmenný kurz nemôže byť záporný.",
+      "rateTooLarge": "Výmenný kurz je väčší, ako dokáže Securo uložiť.",
+      "required": "Zadajte sumu."
+    },
     "uncategorized": "Bez kategórie",
     "selected": "vybraných",
     "summaryCount": "{{count}} transakcií",

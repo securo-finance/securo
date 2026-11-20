@@ -143,6 +143,32 @@ describe('localized API errors', () => {
     }))).toBe(expected)
   })
 
+  // A refused amount comes as a 422 list from pydantic ("Value error, ...")
+  // or, when the service works it out, as a plain detail (issue #330).
+  it.each([
+    ['en', 'The converted amount cannot be negative.'],
+    ['pt-BR', 'O valor convertido não pode ser negativo.'],
+  ])('shows a refused converted amount in %s', async (language, expected) => {
+    await i18n.changeLanguage(language)
+
+    expect(extractApiError(apiError([
+      {
+        loc: ['body', 'amount_primary'],
+        msg: 'Value error, amount_primary must be greater than zero',
+      },
+    ]))).toBe(expected)
+    expect(extractApiError(apiError('amount_primary must be greater than zero'))).toBe(expected)
+  })
+
+  it('shows a refused amount in pt-BR and keeps an unknown entry as it was', async () => {
+    await i18n.changeLanguage('pt-BR')
+
+    expect(extractApiError(apiError([
+      { loc: ['body', 'amount'], msg: 'Value error, amount must be at most 9999999999999.99' },
+      { loc: ['body', 'date'], msg: 'Input should be a valid date' },
+    ]))).toBe('O valor é maior do que o Securo consegue guardar., date: Input should be a valid date')
+  })
+
   it('falls back to the message of a code it does not know', async () => {
     await i18n.changeLanguage('pt-BR')
 

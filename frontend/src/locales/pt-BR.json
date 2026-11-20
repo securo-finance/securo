@@ -1030,6 +1030,16 @@
     "sortDesc": "Ordem decrescente",
     "syncedInfo": "Transação sincronizada: valor, data e conta não podem ser editados",
     "syncedAmountDateError": "Não é possível alterar o valor ou a data de uma transação sincronizada",
+    "amountErrors": {
+      "notPositive": "O valor precisa ser maior que zero.",
+      "tooSmall": "O valor precisa ser de pelo menos 0,01.",
+      "tooLarge": "O valor é maior do que o Securo consegue guardar.",
+      "convertedNegative": "O valor convertido não pode ser negativo.",
+      "convertedTooLarge": "O valor convertido é maior do que o Securo consegue guardar.",
+      "rateNegative": "A taxa de câmbio não pode ser negativa.",
+      "rateTooLarge": "A taxa de câmbio é maior do que o Securo consegue guardar.",
+      "required": "Informe um valor."
+    },
     "uncategorized": "Sem categoria",
     "selected": "selecionadas",
     "summaryCount": "{{count}} transações",

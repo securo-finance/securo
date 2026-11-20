@@ -1030,6 +1030,16 @@
     "sortDesc": "Trier par ordre décroissant",
     "syncedInfo": "Transaction synchronisée depuis la banque : le montant, la date et le compte ne peuvent pas être modifiés",
     "syncedAmountDateError": "Le montant ou la date d'une transaction synchronisée ne peuvent pas être modifiés",
+    "amountErrors": {
+      "notPositive": "Le montant doit être supérieur à zéro.",
+      "tooSmall": "Le montant doit être d'au moins 0,01.",
+      "tooLarge": "Le montant dépasse ce que Securo peut enregistrer.",
+      "convertedNegative": "Le montant converti ne peut pas être négatif.",
+      "convertedTooLarge": "Le montant converti dépasse ce que Securo peut enregistrer.",
+      "rateNegative": "Le taux de change ne peut pas être négatif.",
+      "rateTooLarge": "Le taux de change dépasse ce que Securo peut enregistrer.",
+      "required": "Saisissez un montant."
+    },
     "uncategorized": "Non catégorisée",
     "selected": "sélectionnée(s)",
     "summaryCount": "{{count}} transactions",
