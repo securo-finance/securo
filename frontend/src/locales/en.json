@@ -2445,7 +2445,11 @@
         "net": "Net"
       },
       "share": "Share",
-      "computed": "Computed by the plugin"
+      "computed": "Computed by the plugin",
+      "totalRow": "Total",
+      "page": "Page {{page}} of {{pages}}",
+      "previousPage": "Previous page",
+      "nextPage": "Next page"
     }
   },
   "payees": {

@@ -2447,7 +2447,11 @@
         "net": "Saldo"
       },
       "share": "Aandeel",
-      "computed": "Berekend door de plugin"
+      "computed": "Berekend door de plugin",
+      "totalRow": "Totaal",
+      "page": "Pagina {{page}} van {{pages}}",
+      "previousPage": "Vorige pagina",
+      "nextPage": "Volgende pagina"
     }
   },
   "payees": {

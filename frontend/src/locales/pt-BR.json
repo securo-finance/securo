@@ -2449,7 +2449,11 @@
         "net": "Saldo"
       },
       "share": "Parcela",
-      "computed": "Calculado pelo plugin"
+      "computed": "Calculado pelo plugin",
+      "totalRow": "Total",
+      "page": "Página {{page}} de {{pages}}",
+      "previousPage": "Página anterior",
+      "nextPage": "Próxima página"
     }
   },
   "payees": {

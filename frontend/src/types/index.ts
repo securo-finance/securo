@@ -880,21 +880,65 @@ export interface ReportView {
   blocks: ReportViewBlock[]
 }
 
-export type ReportViewBlock =
-  | { type: 'kpi'; title?: string; label: string; value: number | null; format?: ReportViewFormat; delta?: number | null; delta_format?: ReportViewFormat | null; hint?: string | null }
-  | {
-      type: 'chart'
-      title?: string
-      chart: 'bar' | 'stacked_bar' | 'horizontal_bar' | 'line' | 'area' | 'stacked_area' | 'pie' | 'donut' | 'scatter'
-      x: (string | number)[]
-      series: { name: string; values: (number | null)[]; color?: string | null }[]
-      format?: ReportViewFormat
-      x_format?: 'text' | 'date' | 'month' | 'number'
-      /** A color per point, for a pie, a donut or a one-series bar chart. */
-      colors?: (string | null)[] | null
-    }
-  | { type: 'table'; title?: string; columns: { key: string; label: string; format?: ReportViewFormat }[]; rows: Record<string, string | number | null>[] }
-  | { type: 'text'; title?: string; text: string }
+/** How much of a row a block takes, on wide screens; a phone stacks them. */
+export type ReportViewWidth = 'quarter' | 'third' | 'half' | 'two_thirds' | 'full'
+
+export interface ReportViewSeries {
+  name: string
+  values: (number | null)[]
+  color?: string | null
+  /** Drawn as bars, a line or an area, for a chart that mixes them. */
+  kind?: 'bar' | 'line' | 'area' | null
+  axis?: 'left' | 'right'
+  stack?: string | null
+  /** From this x on, a projection: drawn dashed. */
+  projected_from?: string | number | null
+  negative_color?: string | null
+}
+
+export interface ReportViewReference {
+  label?: string | null
+  y?: number | null
+  x?: string | number | null
+  axis?: 'left' | 'right'
+  color?: string | null
+}
+
+interface ReportViewBlockBase {
+  title?: string | null
+  width?: ReportViewWidth | null
+}
+
+export type ReportViewBlock = ReportViewBlockBase &
+  (
+    | { type: 'kpi'; label: string; value: number | null; format?: ReportViewFormat; delta?: number | null; delta_format?: ReportViewFormat | null; delta_good?: 'up' | 'down'; hint?: string | null }
+    | {
+        type: 'chart'
+        chart: 'bar' | 'stacked_bar' | 'horizontal_bar' | 'line' | 'area' | 'stacked_area' | 'pie' | 'donut' | 'scatter' | 'combo'
+        x: (string | number)[]
+        series: ReportViewSeries[]
+        format?: ReportViewFormat
+        y2_format?: ReportViewFormat | null
+        x_format?: 'text' | 'date' | 'month' | 'number'
+        /** A color per point, for a pie, a donut or a one-series bar chart. */
+        colors?: (string | null)[] | null
+        references?: ReportViewReference[]
+      }
+    | { type: 'heatmap'; x: (string | number)[]; y: (string | number)[]; values: (number | null)[][]; format?: ReportViewFormat; x_format?: 'text' | 'date' | 'month' | 'number'; color?: string | null }
+    | { type: 'treemap'; items: { name: string; value?: number | null; color?: string | null; children?: { name: string; value: number; color?: string | null }[] }[]; format?: ReportViewFormat }
+    | { type: 'sankey'; nodes: string[]; links: { source: number; target: number; value: number }[]; format?: ReportViewFormat }
+    | { type: 'waterfall'; steps: { label: string; value: number; total?: boolean }[]; format?: ReportViewFormat }
+    | { type: 'progress'; items: { label: string; value: number; target: number; color?: string | null; hint?: string | null }[]; format?: ReportViewFormat; over_is?: 'bad' | 'good' }
+    | {
+        type: 'table'
+        columns: { key: string; label: string; format?: ReportViewFormat; total?: boolean; bar?: boolean; signed?: boolean }[]
+        rows: Record<string, string | number | null>[]
+        sort_by?: string | null
+        sort_ascending?: boolean
+        page_size?: number
+      }
+    | { type: 'text'; text: string }
+  )
 
 /** A plugin's report, added up by Securo for the period asked. */
 export interface PluginReportResponse {

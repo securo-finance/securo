@@ -2542,7 +2542,11 @@
         "net": "Saldo"
       },
       "share": "Udział",
-      "computed": "Obliczone przez wtyczkę"
+      "computed": "Obliczone przez wtyczkę",
+      "totalRow": "Suma",
+      "page": "Strona {{page}} z {{pages}}",
+      "previousPage": "Poprzednia strona",
+      "nextPage": "Następna strona"
     }
   },
   "payees": {

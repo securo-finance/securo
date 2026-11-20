@@ -392,7 +392,7 @@ def test_a_view_is_data_only():
         {"blocks": [{"type": "chart", "chart": "bar", "x": [1], "series": [{"name": "a", "values": [1],
                                                                             "color": "url(x)"}]}]},
         {"blocks": [{"type": "table", "columns": [{"key": "a", "label": "A"}], "rows": [{"b": 1}]}]},
-        {"blocks": [{"type": "text", "text": "x"}] * 21},
+        {"blocks": [{"type": "text", "text": "x"}] * 25},
     ):
         with pytest.raises(InvalidView):
             parse_view(bad)
@@ -428,7 +428,7 @@ async def test_a_code_report_computes_its_view_from_the_inputs_it_asked_for(
     body = resp.json()
     assert body["code"] is True and body["rows"] == []
     kpi, chart, text = body["view"]["blocks"]
-    assert kpi == {"type": "kpi", "label": "Spent", "value": 2070.0, "format": "currency"}
+    assert (kpi["type"], kpi["label"], kpi["value"], kpi["format"]) == ("kpi", "Spent", 2070.0, "currency")
     assert chart["x"][:2] == ["Rent", "Food"] and chart["series"][0]["values"][:2] == [1500.0, 300.0]
     facts = json.loads(text["text"])
     assert facts["accounts"] == 2 and facts["workspace"] == str(test_workspace.id)
@@ -462,6 +462,18 @@ async def test_a_failing_or_invalid_code_report_is_an_error_for_the_page(
 
 
 @pytest.mark.asyncio
+async def test_a_plugin_with_code_reports_needs_the_runner_to_install(
+    client: AsyncClient, auth_headers: dict, code_catalog, monkeypatch
+):
+    from app.plugins import runner
+
+    code_catalog.manifests[code_plugins.V1] = _code_manifest()
+    monkeypatch.setattr(runner, "configured", lambda: False)
+    (entry,) = (await client.get("/api/plugins/catalog", headers=auth_headers)).json()
+    assert entry["supported"] is False
+
+
+@pytest.mark.asyncio
 async def test_a_code_report_without_the_runner_is_unavailable(
     client: AsyncClient, auth_headers: dict, code_catalog, plugin_runner, monkeypatch
 ):
@@ -480,3 +492,57 @@ async def _ledger_without_plugin(session: AsyncSession, user, workspace) -> dict
     session.add(pets)
     await session.commit()
     return await _ledger(session, user, workspace)
+
+
+def test_a_view_lays_out_and_mixes_every_kind_of_block():
+    view = parse_view({"blocks": [
+        {"type": "kpi", "label": "Spent", "value": 10, "delta": 2, "delta_good": "down", "width": "quarter"},
+        {"type": "chart", "chart": "combo", "width": "two_thirds", "x": ["2026-10", "2026-11", "2026-12"],
+         "x_format": "month", "y2_format": "percent",
+         "series": [
+             {"name": "Income", "values": [5, 6, 7], "kind": "bar"},
+             {"name": "Net", "values": [-1, 2, 3], "kind": "bar", "negative_color": "#FF0000"},
+             {"name": "Savings rate", "values": [10, 20, 30], "kind": "line", "axis": "right",
+              "projected_from": "2026-11"},
+         ],
+         "references": [{"label": "Target", "y": 25, "axis": "right"}, {"label": "Today", "x": "2026-11"}]},
+        {"type": "heatmap", "x": ["Mon", "Tue"], "y": ["Oct", "Nov"], "values": [[1, 2], [None, 4]]},
+        {"type": "treemap", "items": [{"name": "Home", "children": [{"name": "Rent", "value": 10}]},
+                                      {"name": "Fun", "value": 3}]},
+        {"type": "sankey", "nodes": ["Salary", "Rent", "Saved"],
+         "links": [{"source": 0, "target": 1, "value": 10}, {"source": 0, "target": 2, "value": 5}]},
+        {"type": "waterfall", "steps": [{"label": "Start", "value": 100, "total": True}, {"label": "In", "value": 30},
+                                        {"label": "Out", "value": -50}, {"label": "End", "value": 80, "total": True}]},
+        {"type": "progress", "items": [{"label": "Food", "value": 120, "target": 100}], "over_is": "bad"},
+        {"type": "table", "columns": [{"key": "a", "label": "A"}, {"key": "v", "label": "V", "format": "currency",
+                                      "total": True, "bar": True, "signed": True}],
+         "rows": [{"a": "x", "v": -1}], "sort_by": "v", "page_size": 10},
+    ]})
+    assert [b.type for b in view.blocks] == [
+        "kpi", "chart", "heatmap", "treemap", "sankey", "waterfall", "progress", "table",
+    ]
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        {"type": "chart", "chart": "bar", "x": [1], "series": [{"name": "a", "values": [1], "projected_from": 9}]},
+        {"type": "chart", "chart": "pie", "x": [1], "series": [{"name": "a", "values": [1], "axis": "right"}]},
+        {"type": "chart", "chart": "line", "x": [1], "series": [{"name": "a", "values": [1]}],
+         "references": [{"label": "x"}]},
+        {"type": "heatmap", "x": ["a", "b"], "y": ["c"], "values": [[1]]},
+        {"type": "heatmap", "x": list(range(60)), "y": list(range(60)), "values": [[1] * 60] * 60},
+        {"type": "treemap", "items": [{"name": "empty"}]},
+        {"type": "sankey", "nodes": ["a", "b"], "links": [{"source": 0, "target": 5, "value": 1}]},
+        {"type": "sankey", "nodes": ["a", "b"], "links": [{"source": 0, "target": 0, "value": 1}]},
+        {"type": "progress", "items": [{"label": "x", "value": 1, "target": 0}]},
+        {"type": "table", "columns": [{"key": "a", "label": "A"}], "rows": [], "sort_by": "b"},
+        {"type": "kpi", "label": "x", "value": 1, "width": "huge"},
+    ],
+    ids=["projected-from-unknown", "pie-second-axis", "reference-nowhere", "heatmap-shape", "heatmap-too-big",
+         "treemap-empty-item", "sankey-unknown-node", "sankey-loop", "progress-zero-target", "table-sort-unknown",
+         "unknown-width"],
+)
+def test_blocks_that_cant_be_drawn_are_refused(block):
+    with pytest.raises(InvalidView):
+        parse_view({"blocks": [block]})

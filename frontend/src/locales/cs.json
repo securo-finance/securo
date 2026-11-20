@@ -2585,7 +2585,11 @@
         "net": "Saldo"
       },
       "share": "Podíl",
-      "computed": "Vypočteno pluginem"
+      "computed": "Vypočteno pluginem",
+      "totalRow": "Celkem",
+      "page": "Strana {{page}} z {{pages}}",
+      "previousPage": "Předchozí strana",
+      "nextPage": "Další strana"
     }
   },
   "payees": {

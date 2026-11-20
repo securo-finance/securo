@@ -2445,7 +2445,11 @@
         "net": "शुद्ध"
       },
       "share": "हिस्सा",
-      "computed": "प्लगइन द्वारा गणना"
+      "computed": "प्लगइन द्वारा गणना",
+      "totalRow": "कुल",
+      "page": "पृष्ठ {{page}} / {{pages}}",
+      "previousPage": "पिछला पृष्ठ",
+      "nextPage": "अगला पृष्ठ"
     }
   },
   "payees": {

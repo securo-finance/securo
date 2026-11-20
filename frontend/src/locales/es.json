@@ -2449,7 +2449,11 @@
         "net": "Neto"
       },
       "share": "Proporción",
-      "computed": "Calculado por el plugin"
+      "computed": "Calculado por el plugin",
+      "totalRow": "Total",
+      "page": "Página {{page}} de {{pages}}",
+      "previousPage": "Página anterior",
+      "nextPage": "Página siguiente"
     }
   },
   "payees": {

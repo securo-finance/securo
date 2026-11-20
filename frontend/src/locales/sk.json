@@ -2569,7 +2569,11 @@
         "net": "Saldo"
       },
       "share": "Podiel",
-      "computed": "Vypočítané pluginom"
+      "computed": "Vypočítané pluginom",
+      "totalRow": "Spolu",
+      "page": "Strana {{page}} z {{pages}}",
+      "previousPage": "Predchádzajúca strana",
+      "nextPage": "Ďalšia strana"
     }
   },
   "payees": {

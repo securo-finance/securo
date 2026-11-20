@@ -2446,7 +2446,11 @@
         "net": "Saldo"
       },
       "share": "Anteil",
-      "computed": "Vom Plugin berechnet"
+      "computed": "Vom Plugin berechnet",
+      "totalRow": "Summe",
+      "page": "Seite {{page}} von {{pages}}",
+      "previousPage": "Vorherige Seite",
+      "nextPage": "Nächste Seite"
     }
   },
   "payees": {

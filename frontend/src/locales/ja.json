@@ -2445,7 +2445,11 @@
         "net": "収支"
       },
       "share": "割合",
-      "computed": "プラグインが計算"
+      "computed": "プラグインが計算",
+      "totalRow": "合計",
+      "page": "{{page}} / {{pages}} ページ",
+      "previousPage": "前のページ",
+      "nextPage": "次のページ"
     }
   },
   "payees": {

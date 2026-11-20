@@ -2461,7 +2461,11 @@
         "net": "נטו"
       },
       "share": "חלק",
-      "computed": "מחושב על ידי התוסף"
+      "computed": "מחושב על ידי התוסף",
+      "totalRow": "סה״כ",
+      "page": "עמוד {{page}} מתוך {{pages}}",
+      "previousPage": "העמוד הקודם",
+      "nextPage": "העמוד הבא"
     }
   },
   "payees": {
