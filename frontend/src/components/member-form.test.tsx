@@ -101,4 +101,14 @@ describe('MemberForm', () => {
     expect(select.value).toBe('user-outsider')
     expect(select.selectedOptions[0].textContent).toBe('outsider@elsewhere.org')
   })
+
+  // A screen reader announces a field by the label tied to it (issue #282).
+  it('ties each field to its label', () => {
+    directory.mockResolvedValue([])
+    const { getByLabelText } = renderWithProviders(<Harness />)
+
+    expect(getByLabelText('Name').tagName).toBe('INPUT')
+    expect(getByLabelText('Email').tagName).toBe('INPUT')
+    expect(getByLabelText('Linked Securo user').tagName).toBe('SELECT')
+  })
 })

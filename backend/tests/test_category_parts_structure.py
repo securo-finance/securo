@@ -38,6 +38,8 @@ WHOLE_ROW: dict[tuple[str, str], str] = {
         "owner and viewer group-split offsets",
     ("app/services/category_statement_service.py", "get_category_statement"):
         "owner and member group-split offsets",
+    ("app/services/plugin_report_service.py", "_owner_share_offsets"):
+        "group-split shares; a group-split row cannot be split by category",
 }
 
 

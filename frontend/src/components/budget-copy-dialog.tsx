@@ -183,10 +183,11 @@ export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudget
       // query above), so the adjusted copy totals what the target displays.
       rows.push(adjustedCents(budgetDisplayAmount(budget), adjustmentPercent))
     }
-    return { rows, overLimit }
+    return { rows, overLimit, sourceCount: sourceByCategory.size }
   }, [sourceBudgets, targetBudgets, overwriteExisting, adjustmentPercent])
   const rowsToCopy = preview.rows
   const copiedTotal = rowsToCopy.reduce((sum, cents) => sum + cents, 0) / 100
+  const targetLabel = capitalize(monthLabel(targetMonth, uiLocale))
 
   const copyMutation = useMutation({
     // The options and the workspace come from the confirmation, not from the
@@ -220,7 +221,7 @@ export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudget
         </DialogHeader>
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            {t('budgets.copyDescription', { month: capitalize(monthLabel(targetMonth, uiLocale)) })}
+            {t('budgets.copyDescription', { month: targetLabel })}
           </p>
 
           <div className="space-y-1">
@@ -254,8 +255,9 @@ export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudget
 
           <fieldset className="space-y-2">
             <legend className="mb-1 text-sm font-medium text-foreground">{t('budgets.copyExisting')}</legend>
-            <label className="flex cursor-pointer items-start gap-2">
+            <label htmlFor="budget-copy-strategy-missing" className="flex cursor-pointer items-start gap-2">
               <input
+                id="budget-copy-strategy-missing"
                 type="radio"
                 name="budget-copy-strategy"
                 className="mt-0.5"
@@ -264,8 +266,9 @@ export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudget
               />
               <span className="text-sm text-foreground">{t('budgets.copyMissing')}</span>
             </label>
-            <label className="flex cursor-pointer items-start gap-2">
+            <label htmlFor="budget-copy-strategy-overwrite" className="flex cursor-pointer items-start gap-2">
               <input
+                id="budget-copy-strategy-overwrite"
                 type="radio"
                 name="budget-copy-strategy"
                 className="mt-0.5"
@@ -299,7 +302,16 @@ export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudget
             ) : preview.overLimit ? (
               <p role="alert" className="text-destructive">{t('budgets.copyAmountTooLarge')}</p>
             ) : rowsToCopy.length === 0 ? (
-              <p className="text-muted-foreground">{t('budgets.copyPreviewEmpty')}</p>
+              // An empty source month and a target that already holds every
+              // category read the same in the preview but are different
+              // situations: only the second one can be copied over.
+              <p className="text-muted-foreground">
+                {preview.sourceCount === 0
+                  ? t('budgets.copyPreviewEmpty')
+                  : overwriteExisting
+                    ? t('budgets.copyPreviewNoChange', { month: targetLabel })
+                    : t('budgets.copyPreviewAllExist', { month: targetLabel })}
+              </p>
             ) : (
               <>
                 <p className="text-foreground">{t('budgets.copyPreviewCount', { count: rowsToCopy.length })}</p>
