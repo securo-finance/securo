@@ -199,18 +199,8 @@
         "conditions": [
           {
             "field": "description",
-            "op": "starts_with",
-            "value": "CLARO"
-          },
-          {
-            "field": "description",
-            "op": "starts_with",
-            "value": "VIVO"
-          },
-          {
-            "field": "description",
-            "op": "starts_with",
-            "value": "TIM"
+            "op": "regex",
+            "value": "\\b(CLARO|VIVO|TIM)\\b(?!\\s+KEYD)"
           }
         ],
         "actions": [
@@ -724,7 +714,7 @@
           {
             "field": "description",
             "op": "regex",
-            "value": "\\b(DROGARIAS ?PACHECO|PAGUEMENOS)\\b"
+            "value": "\\b(DROGARIAS ?PACHECO|PAGUE ?MENOS)\\b"
           }
         ],
         "actions": [

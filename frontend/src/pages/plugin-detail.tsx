@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, ArrowRight, ExternalLink, Globe, KeyRound, Plug, RefreshCw, ShieldCheck, Star, Trash2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ChartColumnBig, ExternalLink, Globe, KeyRound, Plug, RefreshCw, ShieldCheck, Star, Trash2 } from 'lucide-react'
 
 import { CategoryIcon } from '@/components/category-icon'
 import { PluginAvatar } from '@/components/plugin-avatar'
@@ -365,6 +365,19 @@ function Contents({ contents }: { contents: PluginContents }) {
           </ul>
         </section>
       )}
+      <ContentSection title={t('plugins.kindName.reports')} count={contents.reports?.length ?? 0}>
+        {(contents.reports ?? []).map((report) => (
+          <li key={report.key} className="flex items-center gap-3 px-4 py-2.5">
+            <ChartColumnBig size={15} className="shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate text-sm font-medium">{localized(report.name, lang)}</span>
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {report.code || !report.group_by
+                ? t('reports.pluginReport.computed')
+                : `${t(`reports.pluginReport.measure.${report.measure}`)} · ${t(`reports.pluginReport.groupBy.${report.group_by}`)}`}
+            </span>
+          </li>
+        ))}
+      </ContentSection>
       <ContentSection title={t('plugins.kindName.integrations')} count={contents.integrations?.length ?? 0}>
         {(contents.integrations ?? []).map((integration) => (
           <li key={integration.key} className="flex items-center gap-3 px-4 py-2.5">

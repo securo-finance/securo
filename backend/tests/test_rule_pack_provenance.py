@@ -554,10 +554,22 @@ async def test_api_refuses_a_stale_or_foreign_preview(
         ("PÃO DE AÇÚCAR 1234", "debit", "groceries"),
         ("DROGARIASPACHECO", "debit", "health"),
         ("PAGUEMENOS 0987", "debit", "health"),
+        # The brand is written both glued and with a space.
+        ("PAGUE MENOS 0451", "debit", "health"),
         ("TICKETMASTER BRASIL", "debit", "leisure"),
         ("STEAMGAMES.COM", "debit", "leisure"),
         # A surname is not a pharmacy chain.
         ("BOLETO JOAO PACHECO", "debit", None),
+        # A telecom name only counts as a whole word: a word that merely
+        # starts with it belongs to another business.
+        ("TIM CONTROLE", "debit", "subscriptions"),
+        ("VIVO FIBRA", "debit", "subscriptions"),
+        ("CLARO NET", "debit", "subscriptions"),
+        ("TIMBER STORE", "debit", None),
+        ("CLAROS CONTABILIDADE", "debit", None),
+        # Vivo Keyd is an esports team, not the carrier: the line falls to the
+        # gym rule on ACADEMIA instead of Subscriptions.
+        ("VIVO KEYD ACADEMIA", "debit", "health"),
     ],
 )
 async def test_br_pack_categorizes_utilities_fees_and_brands(

@@ -1555,6 +1555,8 @@
     "copyPreviewCount": "Categorie da copiare: {{count}}",
     "copyPreviewTotal": "Totale da copiare: {{amount}}",
     "copyPreviewEmpty": "Il mese selezionato non ha budget da copiare.",
+    "copyPreviewAllExist": "Tutte le categorie del mese di origine hanno già un budget in {{month}}. Scegli sostituisci per copiare gli importi o applicare l'adeguamento.",
+    "copyPreviewNoChange": "Tutti i budget del mese di origine hanno già questi importi in {{month}}.",
     "copyPreviewError": "Impossibile caricare il mese di origine.",
     "copyAmountTooLarge": "L'importo adeguato supera il limite di budget. Riduci la percentuale di adeguamento.",
     "copyConfirm": "Copia budget",
@@ -2420,7 +2422,41 @@
     "statementViewTransactions": "Visualizza transazioni",
     "statementUncategorizedIncome": "Entrate senza categoria",
     "statementUncategorizedExpense": "Uscite senza categoria",
-    "statementToggleGroup": "Mostra le categorie di {{name}}"
+    "statementToggleGroup": "Mostra le categorie di {{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "Totale speso",
+        "income": "Totale ricevuto",
+        "net": "Saldo"
+      },
+      "none": {
+        "category": "Senza categoria",
+        "category_group": "Senza gruppo",
+        "payee": "Senza beneficiario",
+        "account": "Senza conto",
+        "month": "Senza data"
+      },
+      "groupBy": {
+        "category": "Categoria",
+        "category_group": "Gruppo",
+        "payee": "Beneficiario",
+        "account": "Conto",
+        "month": "Mese"
+      },
+      "measure": {
+        "expenses": "Spese",
+        "income": "Entrate",
+        "net": "Saldo"
+      },
+      "share": "Quota",
+      "computed": "Calcolato dal plugin",
+      "periodTrimmed": "I report dei plugin coprono al massimo due anni. Visualizzazione da {{from}} a {{to}}.",
+      "periodTooLong": "Un report di un plugin copre al massimo due anni. Scegli un periodo più breve.",
+      "totalRow": "Totale",
+      "page": "Pagina {{page}} di {{pages}}",
+      "previousPage": "Pagina precedente",
+      "nextPage": "Pagina successiva"
+    }
   },
   "payees": {
     "noPayeeFound": "Nessun beneficiario trovato.",
@@ -3972,5 +4008,9 @@
       "title": "Entrate ricorrenti",
       "hint": "Quanto portano le fatture ricorrenti ogni mese, e cosa si è perso di recente."
     }
+  },
+  "offline": {
+    "title": "Server non raggiungibile",
+    "description": "Sei offline o Securo si sta riavviando. I tuoi dati sono al sicuro e nulla è stato modificato. Ci riconnetteremo automaticamente appena il server risponderà."
   }
 }

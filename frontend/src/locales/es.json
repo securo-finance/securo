@@ -1555,6 +1555,8 @@
     "copyPreviewCount": "Categorías a copiar: {{count}}",
     "copyPreviewTotal": "Total a copiar: {{amount}}",
     "copyPreviewEmpty": "El mes seleccionado no tiene presupuestos para copiar.",
+    "copyPreviewAllExist": "Todas las categorías del mes de origen ya tienen presupuesto en {{month}}. Elige reemplazar para copiar los importes o aplicar el ajuste.",
+    "copyPreviewNoChange": "Todos los presupuestos del mes de origen ya tienen estos importes en {{month}}.",
     "copyPreviewError": "No se pudo cargar el mes de origen.",
     "copyAmountTooLarge": "El importe ajustado supera el límite de presupuesto. Reduce el ajuste porcentual.",
     "copyConfirm": "Copiar presupuestos",
@@ -2420,7 +2422,41 @@
     "statementViewTransactions": "Ver transacciones",
     "statementUncategorizedIncome": "Ingresos sin categoría",
     "statementUncategorizedExpense": "Gastos sin categoría",
-    "statementToggleGroup": "Mostrar categorías de {{name}}"
+    "statementToggleGroup": "Mostrar categorías de {{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "Total gastado",
+        "income": "Total recibido",
+        "net": "Neto"
+      },
+      "none": {
+        "category": "Sin categoría",
+        "category_group": "Sin grupo",
+        "payee": "Sin beneficiario",
+        "account": "Sin cuenta",
+        "month": "Sin fecha"
+      },
+      "groupBy": {
+        "category": "Categoría",
+        "category_group": "Grupo",
+        "payee": "Beneficiario",
+        "account": "Cuenta",
+        "month": "Mes"
+      },
+      "measure": {
+        "expenses": "Gastos",
+        "income": "Ingresos",
+        "net": "Neto"
+      },
+      "share": "Proporción",
+      "computed": "Calculado por el plugin",
+      "periodTrimmed": "Los informes de complementos cubren como máximo dos años. Mostrando {{from}} a {{to}}.",
+      "periodTooLong": "Un informe de complemento cubre como máximo dos años. Elige un período más corto.",
+      "totalRow": "Total",
+      "page": "Página {{page}} de {{pages}}",
+      "previousPage": "Página anterior",
+      "nextPage": "Página siguiente"
+    }
   },
   "payees": {
     "noPayeeFound": "No se encontró ningún beneficiario.",
@@ -3972,5 +4008,9 @@
       "title": "Ingresos recurrentes",
       "hint": "Lo que aportan las facturas recurrentes cada mes, y lo perdido recientemente."
     }
+  },
+  "offline": {
+    "title": "No se puede conectar con el servidor",
+    "description": "Estás sin conexión o Securo se está reiniciando. Tus datos están a salvo y nada ha cambiado. Volveremos a conectar automáticamente en cuanto el servidor responda."
   }
 }

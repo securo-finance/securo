@@ -102,7 +102,8 @@ async function openCategoryPrompt() {
   })
 
   await view.user.click(await screen.findByText(transaction.description))
-  await view.user.click(await screen.findByRole('button', { name: oldCategory.name }))
+  // The category trigger is named after the field and the category it shows.
+  await view.user.click(await screen.findByRole('button', { name: new RegExp(oldCategory.name) }))
   await view.user.click(await screen.findByText(newCategory.name))
   await view.user.click(screen.getByRole('button', { name: t('common.save') }))
 

@@ -87,7 +87,7 @@ describe('TransactionDialog payee form (#1069)', () => {
     const update = vi.spyOn(payees, 'update').mockResolvedValue({ ...saved, name: 'Padaria Central' })
     const { user } = renderWritable([saved])
 
-    await user.click(await screen.findByRole('button', { name: t('payees.noPayee') }))
+    await user.click(await screen.findByRole('button', { name: new RegExp(t('payees.noPayee')) }))
     await user.click(await screen.findByRole('option', { name: 'Padaria Aurora' }))
     await user.click(screen.getByRole('button', { name: t('payees.edit') }))
 
@@ -125,7 +125,7 @@ describe('TransactionDialog payee form (#1069)', () => {
       </WorkspaceContext.Provider>,
     )
 
-    await screen.findByRole('button', { name: t('payees.noPayee') })
+    await screen.findByRole('button', { name: new RegExp(t('payees.noPayee')) })
     expect(screen.queryByRole('button', { name: t('payees.add') })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: t('payees.edit') })).not.toBeInTheDocument()
   })
