@@ -506,7 +506,7 @@ async def _restore_into_a_new_workspace(
 
 async def _budget_rows(
     session: AsyncSession, workspace_id: uuid.UUID
-) -> list[tuple[Decimal, str]]:
+) -> list[tuple[Decimal, str | None]]:
     session.expire_all()
     rows = (
         await session.execute(select(Budget).where(Budget.workspace_id == workspace_id))
