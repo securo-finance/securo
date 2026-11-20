@@ -1009,7 +1009,7 @@ export function AccountDialog({
   }
   // A changed balance defaults to today in the workspace, once its timezone is known.
   const autoBalanceDate = !!account && !balanceDatePicked && !!timeZone
-    && balance !== '' && parseFloat(balance) !== account.balance
+    && balance !== '' && parseFloat(balance) !== Number(account.balance)
   const effectiveBalanceDate = autoBalanceDate ? todayInTimezone(timeZone) : balanceDate
 
   return (

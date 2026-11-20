@@ -26,7 +26,8 @@ const manual = {
   name: 'Checking',
   display_name: null,
   type: 'checking',
-  balance: 1000,
+  // The API serializes the Decimal balance as a string.
+  balance: '1000.00' as unknown as number,
   currency: 'USD',
   balance_date: '2026-08-01',
   credit_limit: null,
