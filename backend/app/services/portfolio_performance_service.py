@@ -51,6 +51,11 @@ _SYNCED_FIXED_INCOME_TYPES = {
 # Unit-price moves beyond this ratio between two snapshots look like a split
 # or reverse split, where the share count changes without any cash moving.
 _SPLIT_PRICE_RATIO = 0.6
+# Amounts are money: anything this small left after a sale is float residue.
+_HELD_DUST = 1e-6
+# How long a snapshot without a share count may take to show a trade (a
+# weekend, a holiday, settlement) before the trade is dated the old way.
+_SHOWN_WITHIN = timedelta(days=7)
 
 
 def _add_months(value: date, months: int) -> date:
@@ -150,15 +155,17 @@ def snapshot_ledger_flows(
     Trades are shown in the order they were made, so each snapshot is
     matched to the ledger state, among those its pending trades lead
     through, closest to its share count, and the trades up to that state
-    land on it. The share count is the stored one; without it, a snapshot
-    on a trade's own date is counted at that day's trade price, and any
-    other snapshot cannot tell, so the trades before it land there (the
-    next snapshot after a trade). A day whose trades leave the share count
-    unchanged (sell and buy back) lands on its own day's snapshot, as no
-    count can show it. A day whose trades net to no cash has no price to
-    count with. Trades no snapshot has caught up with yet are left out
-    until one does. Each flow is returned as ``(snapshot date, cash, trade
-    date)``.
+    land on it. Trades that leave and return to that count (a buy sold
+    again) wait if the next snapshots show a state in between, as a
+    provider running behind would. The share count is the stored one;
+    without it, a snapshot on a trade's own date is counted at that day's
+    trade price, and a later one takes the trades whose cash best matches
+    its change in value since the previous snapshot. A trade no count-less
+    snapshot shows within a week lands on the snapshot after it. A day
+    whose trades leave the share count unchanged (sell and buy back) lands
+    on its own day's snapshot, as no count can show it. Trades no snapshot
+    has caught up with yet are left out until one does. Each flow is
+    returned as ``(snapshot date, cash, trade date)``.
     """
     by_date: dict[date, tuple[Decimal, Decimal]] = {}
     for trade_date, quantity, flow in trades:
@@ -179,7 +186,19 @@ def snapshot_ledger_flows(
         else:
             pending.append((trade_date, quantity, flow))
 
-    for point_date, value, shares in snapshots:
+    def land(count: int, on: Optional[date] = None) -> None:
+        nonlocal position
+        for trade_date, quantity, flow in pending[:count]:
+            target = on or next((point[0] for point in snapshots if point[0] > trade_date), None)
+            if target is not None:
+                flows.append((target, flow, trade_date))
+            position += quantity
+        del pending[:count]
+
+    previous_value: Optional[float] = None
+    for snapshot_index, (point_date, value, shares) in enumerate(snapshots):
+        change = None if previous_value is None else value - previous_value
+        previous_value = value
         eligible = 0
         while eligible < len(pending) and pending[eligible][0] <= point_date:
             eligible += 1
@@ -193,29 +212,55 @@ def snapshot_ledger_flows(
             # does a same-day round trip, which no count could show. Trades
             # are merged per day, so only the last one can be on this date.
             landed = eligible if last_date < point_date or not last_quantity else eligible - 1
+            if last_date < point_date and change is not None:
+                # A provider running behind (a weekend, settlement) shows the
+                # trade as a move in value the size of its cash. Until one
+                # does, wait; a trade never seen that way within a week is
+                # dated on the snapshot after it, as before.
+                overdue = 0
+                while overdue < eligible and point_date - pending[overdue][0] > _SHOWN_WITHIN:
+                    overdue += 1
+                land(overdue)
+                eligible -= overdue
+                landed, shown, cash = 0, abs(change), 0.0
+                for index, (_, _, flow) in enumerate(pending[:eligible], start=1):
+                    cash += float(flow)
+                    if abs(change - cash) < shown:
+                        landed, shown = index, abs(change - cash)
         else:
             state = position
-            best, best_state = 0, state
+            states = [state]
+            first_best, best, best_state = 0, 0, state
             best_distance = abs(shares - float(state))
             for index, (_, quantity, _) in enumerate(pending[:eligible], start=1):
                 state += quantity
+                states.append(state)
                 distance = abs(shares - float(state))
-                # A trade that leaves the count where it was is shown as much
-                # as the state before it: take it along.
-                if distance < best_distance or (distance == best_distance and state == best_state):
-                    best, best_state, best_distance = index, state, distance
+                if distance < best_distance:
+                    first_best, best, best_state, best_distance = index, index, state, distance
+                elif distance == best_distance and state == best_state:
+                    # Trades that leave the count where it was are shown as
+                    # much as the state before them: take them along.
+                    best = index
+            between = [float(item) for item in states[first_best + 1 : best] if item != best_state]
+            if between:
+                # Trades that went away from this count and came back. A
+                # provider running behind shows the states in between on its
+                # next snapshots; then none of them is shown yet.
+                next_trade = pending[eligible][0] if eligible < len(pending) else None
+                for later_date, _, later_shares in snapshots[snapshot_index + 1 :]:
+                    if later_shares is None or (next_trade is not None and later_date >= next_trade):
+                        break
+                    back = abs(later_shares - float(best_state))
+                    if any(abs(later_shares - item) < back for item in between):
+                        best = first_best
+                        break
             landed = best
-        for trade_date, quantity, flow in pending[:landed]:
-            flows.append((point_date, flow, trade_date))
-            position += quantity
-        del pending[:landed]
+        land(landed, point_date)
 
     # A trade no snapshot showed lands on the first snapshot after its date,
     # so its cash is never dropped while the valuation already moved on.
-    for trade_date, _, flow in pending:
-        later = next((point for point in snapshots if point[0] > trade_date), None)
-        if later is not None:
-            flows.append((later[0], flow, trade_date))
+    land(len(pending))
     flows.sort(key=lambda item: (item[0], item[2]))
     return flows
 
@@ -452,6 +497,9 @@ def time_weighted_returns(
                 if trade.fee > 0 and held > 0:
                     growth *= max(held - trade.fee, 0.0) / held
                 held = max(held + trade.amount, 0.0)
+            if held < _HELD_DUST:
+                # Selling everything leaves float residue, not a holding.
+                held = 0.0
         if held > 0 and ending >= bought:
             growth *= (ending - bought) / held
             if fee > 0 and ending > 0:

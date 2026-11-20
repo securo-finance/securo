@@ -8,6 +8,7 @@ the start value plus anything contributed.
 
 from __future__ import annotations
 
+import random
 import uuid
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -226,6 +227,31 @@ async def test_writing_off_half_of_the_only_holding_is_half_a_loss(
     )
     # Half written off (-50%), then the rest gains 10%.
     assert await portfolio_return(session, test_user, test_workspace) == pytest.approx(-45.0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("seed", range(40))
+async def test_selling_everything_at_an_uneven_price_is_not_a_total_loss(
+    session: AsyncSession, test_user: User, test_workspace, seed
+):
+    """A full sale can leave float residue as the holding; that is not a
+    holding whose value went to zero."""
+    rnd = random.Random(seed)
+    quantity = rnd.randint(1, 500)
+    bought, last, sold = (Decimal(rnd.randint(1000, 9999)) / 100 for _ in range(3))
+    held = await stock(session, test_user, test_workspace, "DUST3")
+    session.add_all(
+        [
+            trade(held, "buy", day(0), str(quantity), str(bought)),
+            close(held, day(0), str(bought), str(quantity)),
+            close(held, day(1), str(last), str(quantity)),
+            trade(held, "sell", day(2), str(quantity), str(sold)),
+        ]
+    )
+    expected = float(sold / bought - 1) * 100
+    assert await portfolio_return(session, test_user, test_workspace) == pytest.approx(
+        expected, abs=1e-3
+    )
 
 
 @pytest.mark.asyncio

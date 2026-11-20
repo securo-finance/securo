@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import Optional
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -947,6 +948,52 @@ def test_ledger_flows_count_shares_at_the_trade_price_only_on_the_trade_date():
         ],
     )
     assert flows[-1] == (date(2026, 9, 11), Decimal("30"), date(2026, 9, 10))
+
+
+@pytest.mark.parametrize("quantity", [Decimal("105"), Decimal("-90")])
+def test_ledger_flows_without_a_count_wait_for_the_value_to_show_the_trade(quantity):
+    """A Friday trade a provider shows on Monday, synced daily with no share
+    count: the weekend snapshots still hold the old value, so the cash waits
+    for the snapshot whose value moved by it."""
+    price = Decimal("110.78")
+    friday = date(2026, 9, 25)
+    snapshots = [
+        (
+            date(2026, 9, 21) + timedelta(days=offset),
+            float((300 + (quantity if offset >= 7 else 0)) * price),
+            None,
+        )
+        for offset in range(11)
+    ]
+    flows = snapshot_ledger_flows(
+        [
+            (date(2026, 9, 2), Decimal("300"), Decimal("300") * price),
+            (friday, quantity, quantity * price),
+        ],
+        snapshots,
+    )
+    assert flows[-1] == (date(2026, 9, 28), quantity * price, friday)
+
+
+def test_ledger_flows_wait_for_both_legs_of_a_round_trip_a_lagging_provider_shows():
+    """Bought on day 10 and sold on day 12 at a provider three days behind: the
+    day 12 count still equals the state after both trades, but the snapshots
+    after it show the buy first, so neither lands on day 12."""
+    start = date(2026, 9, 1)
+    trades = [(0, Decimal("500000")), (10, Decimal("155000")), (12, Decimal("-155000"))]
+    unit = Decimal("0.01007794")
+    snapshots: list[tuple[date, float, Optional[float]]] = []
+    for offset in range(5, 21):
+        shown = sum(quantity for day, quantity in trades if day <= offset - 3)
+        snapshots.append((start + timedelta(days=offset), float(shown * unit), float(shown)))
+    flows = snapshot_ledger_flows(
+        [(start + timedelta(days=day), quantity, quantity * unit) for day, quantity in trades],
+        snapshots,
+    )
+    assert flows[1:] == [
+        (date(2026, 9, 14), Decimal("155000") * unit, date(2026, 9, 11)),
+        (date(2026, 9, 16), Decimal("-155000") * unit, date(2026, 9, 13)),
+    ]
 
 
 def test_ledger_flows_never_drop_a_trade_a_later_one_offsets():
