@@ -30,11 +30,20 @@ router = APIRouter(prefix="/api/budgets", tags=["budgets"])
 @router.get("", response_model=list[BudgetRead])
 async def list_budgets(
     month: Optional[date] = Query(None),
+    primary_month: Optional[date] = Query(None),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
+    """Budgets a month resolves to, with `amount_primary` in the viewer's currency.
+
+    `primary_month` converts `amount_primary` at that month's rate instead of
+    `month`'s, so a copy preview can show a source limit at the rate of the
+    month it is being copied into.
+    """
     budgets = await budget_service.get_budgets(session, ctx.workspace.id, month)
-    return await budget_service.budget_reads(session, budgets, ctx.user_id, month)
+    return await budget_service.budget_reads(
+        session, budgets, ctx.user_id, primary_month or month
+    )
 
 
 @router.post("", response_model=BudgetRead, status_code=status.HTTP_201_CREATED)

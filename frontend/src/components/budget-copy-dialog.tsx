@@ -125,14 +125,18 @@ export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudget
   const [monthPickerOpen, setMonthPickerOpen] = useState(false)
 
   const sourceParam = `${sourceMonth}-01`
+  const targetParam = `${targetMonth}-01`
   const {
     data: sourceBudgets,
     isPending: sourcePending,
     isFetching: sourceFetching,
     isError: sourceError,
   } = useQuery({
-    queryKey: ['budgets', sourceParam],
-    queryFn: () => budgetsApi.list(sourceParam, workspaceId),
+    // Read the source month's limits with `amount_primary` at the target
+    // month's rate: the copy keeps the raw amount and currency, so that is
+    // what the target month will display and what the preview must total.
+    queryKey: ['budgets', sourceParam, targetParam],
+    queryFn: () => budgetsApi.list(sourceParam, workspaceId, targetParam),
     enabled: open,
     // The app keeps queries fresh for five minutes and this dialog is
     // remounted on every opening, so without this a source changed on another
@@ -175,6 +179,8 @@ export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudget
         && existing.cents === copiedCents
         && existing.currency === (budget.currency ?? null)
       if (existing !== undefined && (!overwriteExisting || unchanged)) continue
+      // `amount_primary` is already at the target month's rate (see the
+      // query above), so the adjusted copy totals what the target displays.
       rows.push(adjustedCents(budgetDisplayAmount(budget), adjustmentPercent))
     }
     return { rows, overLimit }

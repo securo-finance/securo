@@ -94,6 +94,34 @@ async def test_limit_is_converted_with_the_spending_and_comes_back_exactly(
 
 
 @pytest.mark.asyncio
+async def test_listing_a_month_at_another_month_rate_for_a_copy_preview(
+    client: AsyncClient, session: AsyncSession, auth_headers, test_user: User, brl_month: Category,
+):
+    # 1 USD = 5 BRL in March (the source month) and 4 BRL in April (the target).
+    for on in (date(2025, 4, 1), date(2025, 4, 10)):
+        session.add(FxRate(base_currency="USD", quote_currency="BRL", date=on, rate=Decimal("4"), source="test"))
+    await session.commit()
+    await client.post(
+        "/api/budgets", headers=auth_headers,
+        json={"category_id": str(brl_month.id), "amount": "1800", "month": MONTH},
+    )
+    await _set_currency(client, auth_headers, test_user, "USD")
+
+    # The copy keeps the raw 1800 BRL, so April displays $450; the preview
+    # asks for the source rows read at the target month's rate.
+    preview = await client.get(
+        "/api/budgets", params={"month": MONTH, "primary_month": "2025-04-01"}, headers=auth_headers,
+    )
+    [budget] = preview.json()
+    assert (Decimal(budget["amount"]), budget["currency"]) == (Decimal("1800.00"), "BRL")
+    assert Decimal(budget["amount_primary"]) == Decimal("450.00")
+
+    # Without it, the limit is still read at its own month's rate.
+    own = await client.get("/api/budgets", params={"month": MONTH}, headers=auth_headers)
+    assert Decimal(own.json()[0]["amount_primary"]) == Decimal("360.00")
+
+
+@pytest.mark.asyncio
 async def test_workspace_currency_switch_converts_the_limit_too(
     client: AsyncClient, auth_headers, test_workspace, brl_month: Category,
 ):
