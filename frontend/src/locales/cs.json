@@ -4163,4 +4163,9 @@
       "hint": "Co měsíčně přinášejí opakované faktury a co se nedávno ztratilo."
     }
   }
+,
+  "offline": {
+    "title": "Server je nedostupný",
+    "description": "Jste offline nebo se Securo restartuje. Vaše data jsou v bezpečí a nic se nezměnilo. Jakmile server odpoví, automaticky se znovu připojíme."
+  }
 }

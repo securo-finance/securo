@@ -3975,4 +3975,9 @@
       "hint": "Quanto portano le fatture ricorrenti ogni mese, e cosa si è perso di recente."
     }
   }
+,
+  "offline": {
+    "title": "Server non raggiungibile",
+    "description": "Sei offline o Securo si sta riavviando. I tuoi dati sono al sicuro e nulla è stato modificato. Ci riconnetteremo automaticamente appena il server risponderà."
+  }
 }

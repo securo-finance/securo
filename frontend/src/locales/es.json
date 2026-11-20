@@ -3975,4 +3975,9 @@
       "hint": "Lo que aportan las facturas recurrentes cada mes, y lo perdido recientemente."
     }
   }
+,
+  "offline": {
+    "title": "No se puede conectar con el servidor",
+    "description": "Estás sin conexión o Securo se está reiniciando. Tus datos están a salvo y nada ha cambiado. Volveremos a conectar automáticamente en cuanto el servidor responda."
+  }
 }

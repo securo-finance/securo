@@ -3975,4 +3975,9 @@
       "hint": "Quanto as faturas recorrentes trazem por mês, e o que se perdeu recentemente."
     }
   }
+,
+  "offline": {
+    "title": "Não foi possível contactar o servidor",
+    "description": "Está sem ligação ou o Securo está a reiniciar. Os seus dados estão seguros e nada foi alterado. Vamos reconectar automaticamente assim que o servidor responder."
+  }
 }
