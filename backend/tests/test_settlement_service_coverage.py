@@ -368,6 +368,31 @@ async def test_a_credit_and_its_settlements_stay_consistent_when_edited(
 
 
 @pytest.mark.asyncio
+async def test_every_installment_an_edit_reaches_stays_covered(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Clearing the opened installment's payback doesn't skip its siblings."""
+    group, me, bob, carol = await _setup_group(session, test_user.id, test_workspace.id)
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    series_id = uuid.uuid4()
+    rows = []
+    for number, payer in ((1, bob), (2, carol)):
+        row = await _make_transaction(session, test_user.id, test_workspace.id, account.id)
+        row.type = "credit"
+        row.installment_series_id = series_id
+        row.installment_number, row.total_installments = number, 2
+        row.installment_purchase_date = date.today()
+        await _settle_to_me(session, test_user.id, test_workspace.id, group, payer, me, "4.00", row.id)
+        rows.append(row.id)
+
+    with pytest.raises(ValueError, match="pays back group debts"):
+        await update_transaction(
+            session, rows[0], test_workspace.id, test_user.id,
+            TransactionUpdate(amount=Decimal("3.00"), apply_to="all", payback=TransactionPaybackInput()),
+        )
+
+
+@pytest.mark.asyncio
 async def test_a_transfer_leg_that_settles_debts_stays_covered(
     session: AsyncSession, test_user, test_workspace
 ):
