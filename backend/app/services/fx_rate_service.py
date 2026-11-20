@@ -414,6 +414,37 @@ async def stamp_account_amount(
         transaction.amount_account_source = None
 
 
+async def resolve_primary_stamp(
+    session: AsyncSession,
+    primary_currency: str,
+    amount: Decimal,
+    currency: str,
+    on_date: Optional[date] = None,
+    *,
+    allow_fetch: bool = True,
+) -> tuple[Optional[Decimal], Optional[Decimal]]:
+    """What a restamp writes for this amount, without writing it.
+
+    Returns ``(amount_primary, fx_rate_used)`` exactly as
+    :func:`_stamp_primary_fields` would set them, or ``(None, None)`` when the
+    row is in a foreign currency and no real rate can be resolved for its
+    date. A preview uses it so it can show the conversion a save will make
+    instead of guessing (issue #271).
+    """
+    amount_dec = Decimal(str(amount))
+
+    # Genuine same-currency 1:1 — always safe to persist.
+    if currency == primary_currency:
+        return amount_dec.quantize(Decimal("0.01")), Decimal("1")
+
+    rate = await _resolve_rate(
+        session, currency, primary_currency, on_date, allow_fetch=allow_fetch
+    )
+    if rate is None:
+        return None, None
+    return (amount_dec * rate).quantize(Decimal("0.01")), rate
+
+
 async def _stamp_primary_fields(
     session: AsyncSession,
     user_id: uuid.UUID,
@@ -443,34 +474,26 @@ async def _stamp_primary_fields(
     if not user:
         return
 
-    primary_currency = user.primary_currency
-    obj_currency = getattr(obj, currency_field, get_settings().default_currency)
     obj_amount = getattr(obj, amount_field, None)
-
     if obj_amount is None:
         return
 
-    amount_dec = Decimal(str(obj_amount))
-
-    # Genuine same-currency 1:1 — always safe to persist.
-    if obj_currency == primary_currency:
-        setattr(obj, primary_field, amount_dec.quantize(Decimal("0.01")))
-        if hasattr(obj, rate_field):
-            setattr(obj, rate_field, Decimal("1"))
-        return
-
-    obj_date = getattr(obj, date_field, None)
-    rate = await _resolve_rate(
-        session, obj_currency, primary_currency, obj_date, allow_fetch=allow_fetch
+    primary, rate = await resolve_primary_stamp(
+        session,
+        user.primary_currency,
+        obj_amount,
+        getattr(obj, currency_field, get_settings().default_currency),
+        getattr(obj, date_field, None),
+        allow_fetch=allow_fetch,
     )
 
-    if rate is None:
+    if primary is None:
         # No real rate available yet. Leave the fields untouched: a brand-new
         # object stays NULL (honest "not converted"), an existing row keeps its
         # current value. Either way we never persist a fake 1:1, and never push a
         # visible transaction into limbo. It heals on a later pass once a rate lands.
         return
 
-    setattr(obj, primary_field, (amount_dec * rate).quantize(Decimal("0.01")))
+    setattr(obj, primary_field, primary)
     if hasattr(obj, rate_field):
         setattr(obj, rate_field, rate)

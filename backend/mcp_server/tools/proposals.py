@@ -37,6 +37,7 @@ from app.models.invoice_schedule import InvoiceSchedule
 from app.models.payee import Payee
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
+from app.models.user import User
 from app.fiscal.registry import TaxIdKind, normalise_and_validate
 from app.schemas.budget import BudgetCreate, BudgetUpdate
 from app.schemas.category import CategoryCreate
@@ -57,6 +58,7 @@ from app.services import (
     category_group_service,
     category_line_service,
     category_service,
+    fx_rate_service,
     goal_service,
     payee_service,
     recurring_transaction_service,
@@ -2247,7 +2249,11 @@ async def _transaction_snapshot(
         "Build a preview for editing one transaction (description, amount, "
         "date, type, currency, account, category, payee, notes, ignored, "
         "excluded from P&L, status). Pass only the fields to change; every "
-        "other field stays as it is. Foreign-currency rows: set "
+        "other field stays as it is, except the FX conversion: changing "
+        "`amount`, `currency` or `date` restamps the row from the market "
+        "rate for its date, which replaces a manual rate, and the preview "
+        "shows the resulting `amount_primary` and `fx_rate_used`. "
+        "Foreign-currency rows: set "
         "`amount_primary` (the value in the primary currency) or "
         "`fx_rate_used`, and the other side is derived the same way the save "
         "derives it. `clear_fx=true` removes a manual FX override and lets "
@@ -2532,6 +2538,46 @@ async def propose_update_transaction(
         preview["derived"] = {"amount_primary": num(primary)}
     elif clear_fx:
         preview["derived"] = {"amount_primary": "auto", "fx_rate_used": "auto"}
+    elif {"amount", "currency", "date"} & set(changes):
+        # Changing the amount, the currency or the date makes the save restamp
+        # the row from the market rate for its date, which replaces a rate the
+        # user typed. The preview has to show that conversion instead of
+        # saying every other field stays as it is (issue #271).
+        user = await session.get(User, ctx.user_id)
+        target_currency = changes.get("currency", tx.currency)
+        if user is not None and target_currency != user.primary_currency:
+            primary, rate = await fx_rate_service.resolve_primary_stamp(
+                session,
+                user.primary_currency,
+                changes.get("amount", tx.amount),
+                target_currency,
+                changes.get("date", tx.date),
+                # A preview does not reach the provider: only a stored rate
+                # can be shown, and a save would not fetch one either when
+                # this row's date already has it.
+                allow_fetch=False,
+            )
+            if primary is None:
+                preview["derived"] = {
+                    "amount_primary": _json_scalar(tx.amount_primary),
+                    "fx_rate_used": _json_scalar(tx.fx_rate_used),
+                    "note": (
+                        "no market rate stored for this date: the row keeps "
+                        "its current conversion"
+                    ),
+                }
+            else:
+                derived: dict[str, Any] = {
+                    "amount_primary": num(primary),
+                    "fx_rate_used": num(rate),
+                }
+                if tx.fx_rate_used is not None and tx.fx_rate_used != rate:
+                    derived["note"] = (
+                        "the stored fx_rate_used is replaced by the market "
+                        "rate for the row's date; pass amount_primary, "
+                        "fx_rate_used or clear_fx to keep a manual conversion"
+                    )
+                preview["derived"] = derived
 
     if tx.transfer_pair_id:
         cascaded_fields = {"amount", "date", "description", "notes"} & set(changes)
