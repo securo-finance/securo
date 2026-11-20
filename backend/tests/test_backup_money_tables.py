@@ -5,7 +5,9 @@ workspace whose totals no longer match the original, so these tests compare the
 money before and after a round trip instead of only counting rows.
 """
 
+import io
 import uuid
+import zipfile
 from datetime import date
 from decimal import Decimal
 
@@ -555,3 +557,32 @@ async def test_configuration_restore_refuses_to_orphan_a_split(
         )
     assert "split uses a category" in str(getattr(refused.value, "detail", refused.value))
     assert await _money(session, ws_id) == before
+
+
+async def test_restore_accepts_an_archive_written_before_the_income_row(
+    session: AsyncSession, test_user: User, test_workspace: Workspace
+):
+    database = await backup_service.build_backup_zip(session, test_workspace)
+    await session.refresh(test_workspace)
+
+    # An archive written before migration 125 simply has no income file: re-pack
+    # one without it, the same shape an older Securo produced.
+    source = zipfile.ZipFile(io.BytesIO(database))
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as older:
+        for item in source.infolist():
+            if item.filename == "expected_incomes.json":
+                continue
+            older.writestr(item, source.read(item.filename))
+
+    response = await backup_service.restore_backup_bytes(
+        session,
+        data=buffer.getvalue(),
+        target_user_id=test_user.id,
+        current_workspace=test_workspace,
+        content=backup_service.BackupContent.both,
+        mode=backup_service.BackupRestoreMode.current_workspace,
+        confirmation="RESTORE",
+    )
+
+    assert any("expected_incomes" in warning for warning in response.warnings)
