@@ -123,7 +123,7 @@ describe('AssetImportPanel column mapping', () => {
     // The preview now succeeds: two orders ready, two rows that will be skipped.
     await screen.findByText(t('assetImport.rowsSkipped', { count: 2 }))
     // The refused row is in the list, where the file has it.
-    expect(screen.getByText(t('assetImport.reason.missing_ticker'))).toBeInTheDocument()
+    expect(screen.getAllByText(t('assetImport.reason.missing_ticker')).length).toBeGreaterThan(0)
 
     // The grid collapses, but the bar stays with the choices the user made,
     // so a wrong column is visible without re-uploading the file.
@@ -192,6 +192,15 @@ describe('AssetImportPanel column mapping', () => {
   })
 })
 
+/** The body row that holds a given file row number. */
+function bodyRow(rendered: ReturnType<typeof renderWithProviders>, row: number): HTMLTableRowElement {
+  const found = [...rendered.container.querySelectorAll('tbody tr')].find(
+    (tr) => tr.querySelector('td')?.textContent?.includes(`#${row}`),
+  )
+  expect(found).not.toBeUndefined()
+  return found as HTMLTableRowElement
+}
+
 describe('AssetImportPanel refused rows', () => {
   it('lists a refused row in the table with its reason instead of only counting it', async () => {
     api.previewImport.mockResolvedValue(successPreview)
@@ -204,17 +213,68 @@ describe('AssetImportPanel refused rows', () => {
     const bodyRows = rendered.container.querySelectorAll('tbody tr')
     expect(bodyRows).toHaveLength(4)
 
-    const noTicker = screen.getByText(t('assetImport.reason.missing_ticker')).closest('tr')
+    const noTicker = bodyRow(rendered, 10)
     expect(noTicker).toHaveTextContent('#10')
     expect(noTicker).toHaveTextContent('—')
+    expect(noTicker).toHaveTextContent(t('assetImport.reason.missing_ticker'))
 
-    const badDate = screen.getByText(t('assetImport.reason.invalid_date')).closest('tr')
+    const badDate = bodyRow(rendered, 11)
     expect(badDate).toHaveTextContent('#11')
     expect(badDate).toHaveTextContent('XPTO')
+    expect(badDate).toHaveTextContent(t('assetImport.reason.invalid_date'))
 
     // An importable row has no reason cell at all.
     const okRow = screen.getByText('AAPL').closest('tr')
     expect(okRow?.querySelectorAll('td')).toHaveLength(6)
+  })
+
+  it('puts the reason under the ticker for a phone and keeps the column for a desktop', async () => {
+    // The reason column is the last one; at 390px it sits past the right edge
+    // of the table. The phone gets the same text inside the row's first cell,
+    // which is on screen at any width.
+    api.previewImport.mockResolvedValue(successPreview)
+    const rendered = renderWithProviders(<AssetImportPanel />)
+    await uploadFile(rendered)
+
+    await screen.findByText(t('assetImport.confirm', { count: 2 }))
+    const row = bodyRow(rendered, 10)
+    const cells = [...row.querySelectorAll('td')]
+    const reason = t('assetImport.reason.missing_ticker')
+
+    // First cell: reachable without scrolling sideways on a phone.
+    expect(cells[0].textContent).toContain(reason)
+    const mobileLine = [...cells[0].querySelectorAll('span')].find((span) =>
+      span.className.includes('sm:hidden'),
+    )
+    expect(mobileLine).toHaveTextContent(reason)
+
+    // Last cell: the column itself, shown only from the sm breakpoint up.
+    const desktopReason = cells[cells.length - 1]
+    expect(desktopReason).toHaveTextContent(reason)
+    expect(desktopReason.className).toContain('hidden')
+    expect(desktopReason.className).toContain('sm:table-cell')
+  })
+
+  it('summarises date, kind, quantity and price under the ticker on a phone', async () => {
+    // The desktop columns are hidden on a phone, so the row itself has to say
+    // what the file holds.
+    api.previewImport.mockResolvedValue(successPreview)
+    const rendered = renderWithProviders(<AssetImportPanel />)
+    await uploadFile(rendered)
+
+    await screen.findByText(t('assetImport.confirm', { count: 2 }))
+    const okRow = screen.getByText('AAPL').closest('tr') as HTMLTableRowElement
+    const tickerCell = okRow.querySelector('td') as HTMLTableCellElement
+    expect(tickerCell).toHaveTextContent('2026-01-15')
+    expect(tickerCell).toHaveTextContent(t('assetImport.kind.buy'))
+    expect(tickerCell).toHaveTextContent('10 × 150')
+    expect(tickerCell).toHaveTextContent(t('assetImport.field.fee'))
+
+    // Every other column stays hidden below the breakpoint.
+    for (const cell of [...okRow.querySelectorAll('td')].slice(1)) {
+      expect(cell.className).toContain('hidden')
+      expect(cell.className).toContain('sm:table-cell')
+    }
   })
 
   it('keeps a refusal past the first page of the table one click away', async () => {
@@ -239,7 +299,7 @@ describe('AssetImportPanel refused rows', () => {
     )
 
     // The whole file is on screen, reason included.
-    const refused = screen.getByText('#99').closest('tr')
+    const refused = bodyRow(rendered, 99)
     expect(refused).toHaveTextContent(t('assetImport.reason.missing_ticker'))
   })
 
@@ -250,7 +310,8 @@ describe('AssetImportPanel refused rows', () => {
 
     await screen.findByText(t('assetImport.nothingToImport'))
     expect(rendered.container.querySelectorAll('tbody tr')).toHaveLength(2)
-    expect(screen.getByText(t('assetImport.reason.missing_ticker'))).toBeInTheDocument()
+    expect(bodyRow(rendered, 10)).toHaveTextContent(t('assetImport.reason.missing_ticker'))
+    expect(bodyRow(rendered, 11)).toHaveTextContent(t('assetImport.reason.invalid_date'))
   })
 })
 

@@ -160,6 +160,8 @@ export function AssetImportPanel() {
     ...(preview?.orders ?? []).map((order) => ({ row: order.row, order })),
     ...rowErrors.map((error) => ({ row: error.row, error })),
   ].sort((a, b) => a.row - b.row)
+  const reasonText = (error: AssetImportRowError) =>
+    t(`assetImport.reason.${error.reason}`, error.reason) + (error.detail ? ` (${error.detail})` : '')
   // Compact view of the explicit choices, shown in the collapsed bar so a
   // wrong column can be spotted without re-opening the grid.
   const mappingSummary = MAPPABLE_FIELDS.map(({ key }) =>
@@ -366,21 +368,30 @@ export function AssetImportPanel() {
                 <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
                   <tr>
                     <th className="px-3 py-2 text-start sm:px-5">{t('assetImport.field.ticker')}</th>
-                    <th className="px-3 py-2 text-start">{t('assetImport.field.date')}</th>
-                    <th className="px-3 py-2 text-start">{t('assetImport.field.kind')}</th>
-                    <th className="px-3 py-2 text-end">{t('assetImport.field.quantity')}</th>
-                    <th className="px-3 py-2 text-end">{t('assetImport.field.price')}</th>
-                    <th className="px-3 py-2 text-end">{t('assetImport.field.fee')}</th>
-                    <th className="px-3 py-2 text-start sm:px-5">{t('assetImport.reasonColumn')}</th>
+                    <th className="hidden px-3 py-2 text-start sm:table-cell">{t('assetImport.field.date')}</th>
+                    <th className="hidden px-3 py-2 text-start sm:table-cell">{t('assetImport.field.kind')}</th>
+                    <th className="hidden px-3 py-2 text-end sm:table-cell">{t('assetImport.field.quantity')}</th>
+                    <th className="hidden px-3 py-2 text-end sm:table-cell">{t('assetImport.field.price')}</th>
+                    <th className="hidden px-3 py-2 text-end sm:table-cell">{t('assetImport.field.fee')}</th>
+                    <th className="hidden px-3 py-2 text-start sm:table-cell sm:px-5">{t('assetImport.reasonColumn')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {(showAllRows ? tableRows : tableRows.slice(0, 50)).map((entry) =>
                     'order' in entry ? (
                       <tr key={entry.row}>
-                        <td className="px-3 py-1.5 font-medium sm:px-5">{entry.order.ticker}</td>
-                        <td className="px-3 py-1.5">{entry.order.date}</td>
-                        <td className="px-3 py-1.5">
+                        <td className="px-3 py-1.5 font-medium sm:px-5">
+                          {entry.order.ticker}
+                          {/* A phone cannot hold every column, so the ticker
+                              cell carries the same row as one readable line. */}
+                          <span className="mt-0.5 block text-xs font-normal text-muted-foreground tabular-nums sm:hidden">
+                            {entry.order.kind === 'split'
+                              ? `${entry.order.date} · ${t('assetImport.kind.split')} · ${t('assetImport.splitRatio', { old: entry.order.old_units, new: entry.order.new_units })}`
+                              : `${entry.order.date} · ${t(`assetImport.kind.${entry.order.kind}`)} · ${entry.order.quantity} × ${entry.order.price}${entry.order.fee ? ` · ${t('assetImport.field.fee')} ${entry.order.fee}` : ''}`}
+                          </span>
+                        </td>
+                        <td className="hidden px-3 py-1.5 sm:table-cell">{entry.order.date}</td>
+                        <td className="hidden px-3 py-1.5 sm:table-cell">
                           <span
                             className={
                               entry.order.kind === 'split'
@@ -394,7 +405,7 @@ export function AssetImportPanel() {
                           </span>
                         </td>
                         {entry.order.kind === 'split' ? (
-                          <td colSpan={3} className="px-3 py-1.5 text-end tabular-nums sm:pe-5">
+                          <td colSpan={3} className="hidden px-3 py-1.5 text-end tabular-nums sm:table-cell sm:pe-5">
                             {t('assetImport.splitRatio', {
                               old: entry.order.old_units,
                               new: entry.order.new_units,
@@ -402,9 +413,9 @@ export function AssetImportPanel() {
                           </td>
                         ) : (
                           <>
-                            <td className="px-3 py-1.5 text-end tabular-nums">{entry.order.quantity}</td>
-                            <td className="px-3 py-1.5 text-end tabular-nums">{entry.order.price}</td>
-                            <td className="px-3 py-1.5 text-end tabular-nums">{entry.order.fee}</td>
+                            <td className="hidden px-3 py-1.5 text-end tabular-nums sm:table-cell">{entry.order.quantity}</td>
+                            <td className="hidden px-3 py-1.5 text-end tabular-nums sm:table-cell">{entry.order.price}</td>
+                            <td className="hidden px-3 py-1.5 text-end tabular-nums sm:table-cell">{entry.order.fee}</td>
                           </>
                         )}
                         {/* No reason cell: an imported row has nothing to explain. */}
@@ -412,17 +423,22 @@ export function AssetImportPanel() {
                     ) : (
                       // A refused row keeps its place in the list: the file's
                       // own row number, whatever ticker it did carry, and the
-                      // reason it will not be imported.
+                      // reason it will not be imported. On a phone the reason
+                      // lives under the ticker, never off to the right.
                       <tr key={entry.row} className="bg-amber-500/5">
                         <td className="px-3 py-1.5 font-medium text-muted-foreground sm:px-5">
                           {entry.error.ticker ?? '—'}
+                          <span className="mt-0.5 block text-xs font-normal sm:hidden">
+                            <span className="text-muted-foreground">#{entry.row}</span>
+                            {' · '}
+                            <span className="text-amber-700 dark:text-amber-400">{reasonText(entry.error)}</span>
+                          </span>
                         </td>
-                        <td colSpan={5} className="px-3 py-1.5 text-xs text-muted-foreground">
+                        <td colSpan={5} className="hidden px-3 py-1.5 text-xs text-muted-foreground sm:table-cell">
                           #{entry.row}
                         </td>
-                        <td className="px-3 py-1.5 text-xs text-amber-700 dark:text-amber-400 sm:px-5">
-                          {t(`assetImport.reason.${entry.error.reason}`, entry.error.reason)}
-                          {entry.error.detail ? ` (${entry.error.detail})` : ''}
+                        <td className="hidden px-3 py-1.5 text-xs text-amber-700 dark:text-amber-400 sm:table-cell sm:px-5">
+                          {reasonText(entry.error)}
                         </td>
                       </tr>
                     ),
