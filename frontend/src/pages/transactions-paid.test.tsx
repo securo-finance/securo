@@ -84,15 +84,27 @@ function row(id: string, description: string, isPaid: boolean): Transaction {
 const PENDING_ROW = row('tx-unpaid', 'Landlord', false)
 const PAID_ROW = row('tx-paid', 'Supermarket', true)
 
+// The server keeps the mark once the click lands, so a refetch of the list
+// answers with the settled row.
+let paidOnServer = false
+
 beforeEach(() => {
   vi.clearAllMocks()
+  paidOnServer = false
   vi.setSystemTime(new Date('2026-10-20T12:00:00'))
   // Answer like the server: under unpaid_only only the unpaid row comes back.
   api.transactions.list.mockImplementation(async (params: { unpaid_only?: boolean }) => {
-    const items = [PENDING_ROW, PAID_ROW].filter((tx) => !params.unpaid_only || !tx.is_paid)
+    const items = [PENDING_ROW, PAID_ROW]
+      .map((tx) => (tx.id === PENDING_ROW.id && paidOnServer ? { ...tx, is_paid: true } : tx))
+      .filter((tx) => !params.unpaid_only || !tx.is_paid)
     return { items, total: items.length, page: 1, limit: 50 }
   })
-  api.transactions.update.mockResolvedValue({ ...PENDING_ROW, is_paid: true })
+  api.transactions.update.mockImplementation(
+    async (id: string, payload: { is_paid?: boolean }) => {
+      if (id === PENDING_ROW.id && payload.is_paid === true) paidOnServer = true
+      return { ...PENDING_ROW, is_paid: true }
+    },
+  )
   api.categories.list.mockResolvedValue([])
   api.categories.listIncludingHidden.mockResolvedValue([])
   api.categoryGroups.list.mockResolvedValue([])
@@ -130,8 +142,38 @@ describe('paid transactions', () => {
     await waitFor(() => {
       expect(api.transactions.update).toHaveBeenCalledWith('tx-unpaid', { is_paid: true })
     })
+    // What the user sees: the badge is gone once the list comes back.
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Mark as paid' })).not.toBeInTheDocument()
+    })
     // No dialog: the edit sheet would have asked for a save.
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('offers the unpaid filter inside the filter menu too, for a phone', async () => {
+    const { user } = renderWithProviders(<TransactionsPage />, {
+      route: '/transactions',
+      path: '/transactions',
+    })
+    await screen.findByText('Supermarket')
+
+    await user.click(screen.getByRole('button', { name: 'Filters' }))
+    // The menu opens on its root; "Only unpaid" is one of its groups. The
+    // desktop group of the same menu is in the document too (it is only hidden
+    // by CSS), so the phone control is the first of a pair.
+    const unpaidItems = screen.getAllByRole('menuitem', { name: 'Only unpaid' })
+    expect(unpaidItems).toHaveLength(2)
+    await user.click(unpaidItems[0])
+    // And the group itself offers the two states. The desktop group of the
+    // same menu is in the document too (it is only hidden by CSS), so the
+    // mobile control is the first of each pair.
+    await user.click(screen.getAllByRole('menuitem', { name: 'Only unpaid' })[0])
+
+    await waitFor(() => {
+      expect(
+        api.transactions.list.mock.calls.some(([params]) => params.unpaid_only === true),
+      ).toBe(true)
+    })
   })
 
   it('asks the server for only the unpaid rows when the URL says so', async () => {

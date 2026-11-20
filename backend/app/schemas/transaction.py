@@ -130,9 +130,12 @@ class TransactionUpdate(BaseModel):
     # user mark a manually-entered transaction as settled once it clears,
     # or flip a synced row back to pending before the next sync.
     status: Optional[Literal["posted", "pending"]] = None
-    # Paid or not (issue #15). Optional, so leaving it out changes nothing:
-    # the sync never sends it, and the user's mark survives a re-sync.
-    is_paid: Optional[bool] = None
+    # Paid or not (issue #15). Not Optional, for the same reason as
+    # `is_flagged`: the column is NOT NULL, so an explicit null is a 422 here
+    # instead of a 500 at commit. Updates use exclude_unset, so leaving it out
+    # changes nothing: the sync never sends it, and the user's mark survives a
+    # re-sync.
+    is_paid: bool = False
     apply_to_transfer_pair: bool = False
     # CC bucketing override (issue #92). Empty string / explicit null clears
     # it back to auto. Only meaningful for credit-card accounts.

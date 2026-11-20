@@ -142,6 +142,42 @@ async def test_leaving_the_field_out_of_an_edit_keeps_the_mark(
 
 
 @pytest.mark.asyncio
+async def test_an_explicit_null_is_a_validation_error(
+    client, auth_headers, test_transactions: list[Transaction]
+):
+    """The column is NOT NULL: a null must bounce as a 422, not fail at commit."""
+    response = await client.patch(
+        f"/api/transactions/{test_transactions[0].id}",
+        json={"is_paid": None},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_export_honours_the_unpaid_filter(
+    client, auth_headers, session: AsyncSession, test_user, test_account: Account
+):
+    await _manual_transaction(
+        client, auth_headers, test_account, description="Water bill"
+    )
+    await _stored(session, test_user.id, test_account, "sync")
+    await session.commit()
+
+    response = await client.get(
+        "/api/transactions/export",
+        params={"unpaid_only": "true"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.content.decode("utf-8-sig")
+    assert "Water bill" in body
+    assert "Row from sync" not in body
+
+
+@pytest.mark.asyncio
 async def test_list_returns_only_unpaid_rows_when_asked(
     client, auth_headers, session: AsyncSession, test_user, test_account: Account
 ):

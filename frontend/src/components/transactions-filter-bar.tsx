@@ -509,6 +509,7 @@ export function TransactionsFilterBar({
                   status: statusLabel,
                   ignored: hideIgnored ? t('transactions.ignoredHide') : undefined,
                   flagged: flagLabel || undefined,
+                  unpaid: filterUnpaid ? t('transactions.onlyUnpaid') : undefined,
                   date: dateLabel,
                   amount: amountLabel,
                 }}
@@ -525,6 +526,8 @@ export function TransactionsFilterBar({
                 onStatusChange={onStatusChange}
                 hideIgnored={hideIgnored}
                 onHideIgnoredChange={onHideIgnoredChange}
+                filterUnpaid={filterUnpaid}
+                onUnpaidChange={onUnpaidChange}
                 flagFilter={filterFlag}
                 flagOptions={flagOptions}
                 onFlagFilterChange={onFlagFilterChange}

@@ -1116,6 +1116,7 @@ export default function TransactionsPage() {
           exclude_ignored: hideIgnored ? true : undefined,
           flagged: filterFlag === 'all' ? true : undefined,
           flag_due: filterFlag === 'overdue' || filterFlag === 'soon' ? filterFlag : undefined,
+          unpaid_only: filterUnpaid ? true : undefined,
         })
       }
       toast.success(t('transactions.exportSuccess'))
@@ -1364,7 +1365,7 @@ export default function TransactionsPage() {
                   e.stopPropagation()
                   togglePaidMutation.mutate(tx)
                 }}
-                disabled={!canWrite || togglePaidMutation.isPending}
+                disabled={!canWrite || tx.is_shared || togglePaidMutation.isPending}
                 title={t('transactions.markPaidHint')}
                 aria-label={t('transactions.markPaid')}
                 className="inline-flex shrink-0 items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400 dark:hover:bg-amber-500/20"

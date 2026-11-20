@@ -881,6 +881,7 @@ export const transactions = {
     exclude_ignored?: boolean
     flagged?: boolean
     flag_due?: FlagDue
+    unpaid_only?: boolean
     transaction_ids?: string[]
   }): Promise<void> => {
     const { data } = await api.get('/transactions/export', {

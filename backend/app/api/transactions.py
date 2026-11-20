@@ -300,6 +300,7 @@ async def export_transactions(
     status: Optional[str] = Query(None),
     exclude_ignored: bool = Query(False, description="Drop rows the user marked ignored, or whose category is ignored"),
     flagged: bool = Query(False, description="Export only rows the user flagged"),
+    unpaid_only: bool = Query(False, description="Export only rows not yet marked as paid (issue #15)"),
     flag_due: Optional[FlagDue] = Query(None, description="Flagged rows past their reminder date (overdue) or due within a week (soon)"),
     tags: Optional[List[str]] = Query(None),
     transaction_ids: Optional[List[uuid.UUID]] = Query(None, description="If set, exports exactly these rows (scoped to the workspace); other filters are ignored."),
@@ -328,6 +329,7 @@ async def export_transactions(
             exclude_ignored=exclude_ignored,
             flagged_only=flagged,
             flag_due=flag_due,
+            unpaid_only=unpaid_only,
             tags=tags,
         )
 
