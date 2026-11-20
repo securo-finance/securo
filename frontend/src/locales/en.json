@@ -2113,9 +2113,10 @@
     "summaryHoldings": "{{created}} holdings created, {{matched}} matched",
     "summarySkipped": "{{count}} already imported",
     "rowsSkipped": "{{count}} rows will be skipped",
+    "reasonColumn": "Reason",
     "rowError": "Row {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "and {{count}} more",
-    "moreRows": "and {{count}} more orders",
+    "showAllRows": "Show all {{count}} rows",
     "field": {
       "ticker": "Ticker",
       "date": "Date",

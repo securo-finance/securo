@@ -2114,9 +2114,10 @@
     "summaryHoldings": "{{created}} Positionen angelegt, {{matched}} zugeordnet",
     "summarySkipped": "{{count}} bereits importiert",
     "rowsSkipped": "{{count}} Zeilen werden übersprungen",
+    "reasonColumn": "Grund",
     "rowError": "Zeile {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "und {{count}} weitere",
-    "moreRows": "und {{count}} weitere Orders",
+    "showAllRows": "Alle {{count}} Zeilen anzeigen",
     "field": {
       "ticker": "Ticker",
       "date": "Datum",

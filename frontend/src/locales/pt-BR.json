@@ -2117,9 +2117,10 @@
     "summaryHoldings": "{{created}} ativos criados, {{matched}} encontrados",
     "summarySkipped": "{{count}} já importadas",
     "rowsSkipped": "{{count}} linhas serão ignoradas",
+    "reasonColumn": "Motivo",
     "rowError": "Linha {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "e mais {{count}}",
-    "moreRows": "e mais {{count}} ordens",
+    "showAllRows": "Mostrar todas as {{count}} linhas",
     "field": {
       "ticker": "Ativo",
       "date": "Data",

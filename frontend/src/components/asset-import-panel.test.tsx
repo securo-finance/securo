@@ -122,13 +122,8 @@ describe('AssetImportPanel column mapping', () => {
 
     // The preview now succeeds: two orders ready, two rows that will be skipped.
     await screen.findByText(t('assetImport.rowsSkipped', { count: 2 }))
-    expect(
-      screen.getByText(
-        (content) =>
-          content.startsWith('Row 10') &&
-          content.includes(t('assetImport.reason.missing_ticker')),
-      ),
-    ).toBeInTheDocument()
+    // The refused row is in the list, where the file has it.
+    expect(screen.getByText(t('assetImport.reason.missing_ticker'))).toBeInTheDocument()
 
     // The grid collapses, but the bar stays with the choices the user made,
     // so a wrong column is visible without re-uploading the file.
@@ -194,6 +189,68 @@ describe('AssetImportPanel column mapping', () => {
     await waitFor(() => expect(confirm).toBeDisabled())
     settle(successPreview)
     await waitFor(() => expect(confirm).toBeEnabled())
+  })
+})
+
+describe('AssetImportPanel refused rows', () => {
+  it('lists a refused row in the table with its reason instead of only counting it', async () => {
+    api.previewImport.mockResolvedValue(successPreview)
+    const rendered = renderWithProviders(<AssetImportPanel />)
+    await uploadFile(rendered)
+
+    await screen.findByText(t('assetImport.confirm', { count: 2 }))
+
+    // Two importable orders and two refused rows, in the file's own order.
+    const bodyRows = rendered.container.querySelectorAll('tbody tr')
+    expect(bodyRows).toHaveLength(4)
+
+    const noTicker = screen.getByText(t('assetImport.reason.missing_ticker')).closest('tr')
+    expect(noTicker).toHaveTextContent('#10')
+    expect(noTicker).toHaveTextContent('—')
+
+    const badDate = screen.getByText(t('assetImport.reason.invalid_date')).closest('tr')
+    expect(badDate).toHaveTextContent('#11')
+    expect(badDate).toHaveTextContent('XPTO')
+
+    // An importable row has no reason cell at all.
+    const okRow = screen.getByText('AAPL').closest('tr')
+    expect(okRow?.querySelectorAll('td')).toHaveLength(6)
+  })
+
+  it('keeps a refusal past the first page of the table one click away', async () => {
+    // 51 orders fill more than the first page of 50: the refused row at the
+    // end of the file would otherwise be counted but never explained.
+    api.previewImport.mockResolvedValue({
+      ...successPreview,
+      orders: Array.from({ length: 51 }, (_, i) => order(i + 2, `T${i}`, '2026-01-15')),
+      errors: [{ row: 99, reason: 'missing_ticker', ticker: null, detail: null }],
+      holdings_created: 51,
+      skipped: 1,
+    })
+    const rendered = renderWithProviders(<AssetImportPanel />)
+    const { user } = rendered
+    await uploadFile(rendered)
+
+    await screen.findByText(t('assetImport.rowsSkipped', { count: 1 }))
+    expect(screen.queryByText('#99')).not.toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', { name: t('assetImport.showAllRows', { count: 52 }) }),
+    )
+
+    // The whole file is on screen, reason included.
+    const refused = screen.getByText('#99').closest('tr')
+    expect(refused).toHaveTextContent(t('assetImport.reason.missing_ticker'))
+  })
+
+  it('lists the refused rows even when nothing in the file can be imported', async () => {
+    api.previewImport.mockResolvedValue({ ...successPreview, orders: [], holdings_created: 0 })
+    const rendered = renderWithProviders(<AssetImportPanel />)
+    await uploadFile(rendered)
+
+    await screen.findByText(t('assetImport.nothingToImport'))
+    expect(rendered.container.querySelectorAll('tbody tr')).toHaveLength(2)
+    expect(screen.getByText(t('assetImport.reason.missing_ticker'))).toBeInTheDocument()
   })
 })
 

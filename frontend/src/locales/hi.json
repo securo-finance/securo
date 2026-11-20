@@ -2113,9 +2113,10 @@
     "summaryHoldings": "{{created}} होल्डिंग्स बनीं, {{matched}} मिलान हुईं",
     "summarySkipped": "{{count}} पहले से इंपोर्ट",
     "rowsSkipped": "{{count}} पंक्तियाँ छोड़ी जाएँगी",
+    "reasonColumn": "कारण",
     "rowError": "पंक्ति {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "और {{count}} और",
-    "moreRows": "और {{count}} और ऑर्डर",
+    "showAllRows": "सभी {{count}} पंक्तियाँ दिखाएँ",
     "field": {
       "ticker": "टिकर",
       "date": "तिथि",
