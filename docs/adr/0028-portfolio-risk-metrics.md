@@ -1,4 +1,4 @@
-# 0027. Risk metrics on the performance series
+# 0028. Risk metrics on the performance series
 
 Status: proposed
 

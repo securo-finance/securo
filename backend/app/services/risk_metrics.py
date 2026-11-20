@@ -102,7 +102,9 @@ def simple_daily_returns(values: Sequence[float]) -> list[float]:
     """Daily simple returns between consecutive positive values."""
 
     cleaned = _validated(values, DEFAULT_PERIODS_PER_YEAR)
-    return [cleaned[i] / cleaned[i - 1] - 1 for i in range(1, len(cleaned))]
+    return _finite_returns(
+        [cleaned[i] / cleaned[i - 1] - 1 for i in range(1, len(cleaned))]
+    )
 
 
 def drawdown_series(values: Sequence[float]) -> list[float]:
@@ -115,6 +117,17 @@ def drawdown_series(values: Sequence[float]) -> list[float]:
         peak = max(peak, value)
         drawdowns.append(value / peak - 1)
     return drawdowns
+
+
+def _finite_returns(returns: list[float]) -> list[float]:
+    """Reject derived returns that overflowed to infinity or NaN."""
+
+    for position, value in enumerate(returns):
+        if not math.isfinite(value):
+            raise RiskMetricsError(
+                f"derived return at position {position} is not finite"
+            )
+    return returns
 
 
 def _annualized_return(cleaned: list[float], periods_per_year: int) -> Optional[float]:
@@ -161,7 +174,9 @@ def compute_risk_metrics(
         else:
             minimum_acceptable_return = number
 
-    returns = [cleaned[i] / cleaned[i - 1] - 1 for i in range(1, len(cleaned))]
+    returns = _finite_returns(
+        [cleaned[i] / cleaned[i - 1] - 1 for i in range(1, len(cleaned))]
+    )
     drawdowns = drawdown_series(cleaned)
     scale = math.sqrt(periods_per_year)
     annualized_return = (

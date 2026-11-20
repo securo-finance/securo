@@ -126,6 +126,13 @@ def test_a_real_performance_window_is_accepted():
     assert metrics.annualized_volatility == pytest.approx(0.0)
 
 
+def test_overflowing_returns_are_rejected():
+    with pytest.raises(RiskMetricsError):
+        simple_daily_returns([1e-308, 1e308])
+    with pytest.raises(RiskMetricsError):
+        compute_risk_metrics([1e-308, 1e308, 1e308])
+
+
 @pytest.mark.parametrize(
     "values",
     [
