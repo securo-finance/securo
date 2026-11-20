@@ -496,7 +496,7 @@ async def test_legs_are_matched_by_booking_date_not_reporting_override(scene):
 
 
 @pytest.mark.parametrize("reverse_credits", [False, True])
-def test_mirrored_legs_do_not_depend_on_row_order(reverse_credits):
+async def test_mirrored_legs_do_not_depend_on_row_order(reverse_credits):
     """Debits on A on the 2nd and 4th, credits on B on the 1st and 3rd: all
     four pair up whichever credit comes first, so none is left over."""
     cat = uuid.uuid4()
