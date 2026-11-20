@@ -1121,7 +1121,10 @@ export function AccountDialog({
                     step="0.01"
                     min={type === 'credit_card' || type === 'loan' ? '0' : undefined}
                     value={balance}
-                    onChange={(e) => setBalance(e.target.value)}
+                    onChange={(e) => {
+                      setBalance(e.target.value)
+                      if (account) setBalanceDate(localDateString())
+                    }}
                   />
                 </div>
                 <div className="space-y-2">
