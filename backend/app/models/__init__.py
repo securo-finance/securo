@@ -17,6 +17,7 @@ from app.models.plugin_logo import PluginLogo
 from app.models.ui_layout import UiLayout
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.budget import Budget
+from app.models.expected_income import ExpectedIncome
 from app.models.import_log import ImportLog
 from app.models.asset import Asset
 from app.models.asset_group import AssetGroup
@@ -79,6 +80,7 @@ __all__ = [
     "UiLayout",
     "RecurringTransaction",
     "Budget",
+    "ExpectedIncome",
     "ImportLog",
     "Asset",
     "AssetGroup",

@@ -19,6 +19,7 @@ from app.models.account_card import AccountCard
 from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.asset import Asset
 from app.models.category import Category
+from app.models.expected_income import ExpectedIncome
 from app.models.mortgage_payment_allocation import (
     MORTGAGE_PRINCIPAL_SOURCE,
     MortgagePaymentAllocation,
@@ -296,6 +297,16 @@ async def _money(session: AsyncSession, workspace_id: uuid.UUID) -> dict:
     }
 
 
+async def _expected_income_rows(session: AsyncSession, workspace_id: uuid.UUID) -> list[tuple]:
+    """The month, figure and currency of every income row of the workspace, sorted by month."""
+    rows = (
+        await session.execute(
+            select(ExpectedIncome).where(ExpectedIncome.workspace_id == workspace_id)
+        )
+    ).scalars().all()
+    return sorted((row.month, row.amount, row.currency) for row in rows)
+
+
 async def test_every_workspace_table_is_backed_up_or_excluded():
     assert backup_service.uncovered_workspace_tables() == set()
 
@@ -376,6 +387,84 @@ async def test_round_trip_into_the_current_workspace_keeps_every_amount(
     )
 
     assert await _money(session, ws_id) == before
+
+
+async def test_expected_income_survives_a_round_trip_into_a_new_workspace(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_workspace: Workspace,
+):
+    session.add_all(
+        [
+            ExpectedIncome(
+                workspace_id=test_workspace.id,
+                month=date(2026, 4, 1),
+                amount=Decimal("3450.00"),
+                currency="USD",
+            ),
+            ExpectedIncome(
+                workspace_id=test_workspace.id,
+                month=date(2026, 5, 1),
+                amount=Decimal("2210.55"),
+                currency="EUR",
+            ),
+        ]
+    )
+    await session.flush()
+    before = await _expected_income_rows(session, test_workspace.id)
+    assert before == [
+        (date(2026, 4, 1), Decimal("3450.00"), "USD"),
+        (date(2026, 5, 1), Decimal("2210.55"), "EUR"),
+    ]
+
+    archive = await client.get("/api/export/backup", headers=auth_headers)
+    assert archive.status_code == 200
+    restored = await client.post(
+        "/api/backups/restore-upload",
+        files={"file": ("backup.zip", archive.content, "application/zip")},
+        data={"content": "both", "mode": "new_workspace"},
+        headers=auth_headers,
+    )
+    assert restored.status_code == 200, restored.text
+    body = restored.json()
+    assert body["restored_counts"]["expected_incomes"] == 2
+
+    after = await _expected_income_rows(session, uuid.UUID(body["workspace_id"]))
+    assert after == before
+
+
+async def test_expected_income_survives_a_round_trip_into_the_current_workspace(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace: Workspace,
+):
+    session.add(
+        ExpectedIncome(
+            workspace_id=test_workspace.id,
+            month=date(2026, 4, 1),
+            amount=Decimal("3450.00"),
+            currency="USD",
+        )
+    )
+    await session.flush()
+    before = await _expected_income_rows(session, test_workspace.id)
+    await session.refresh(test_workspace)
+
+    data = await backup_service.build_backup_zip(session, test_workspace)
+    await backup_service.restore_backup_bytes(
+        session,
+        data=data,
+        target_user_id=test_user.id,
+        current_workspace=test_workspace,
+        content=backup_service.BackupContent.both,
+        mode=backup_service.BackupRestoreMode.current_workspace,
+        confirmation="RESTORE",
+    )
+
+    assert await _expected_income_rows(session, test_workspace.id) == before
 
 
 async def test_configuration_restore_keeps_the_splits_of_existing_transactions(
