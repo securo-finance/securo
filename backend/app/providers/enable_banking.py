@@ -394,12 +394,17 @@ def _page_signature(entries: list[tuple[dict, str]]) -> Optional[str]:
 
     A cursor that serves a page already read is detected by its content
     rather than by the cursor it hands back: the repeat may come with a new
-    cursor. Empty pages are left out, so a feed that ends with a couple of
-    them keeps paging to its real end.
+    cursor. The status the page was served under counts as content, so an
+    operation the feed first lists as pending and then as booked is a new
+    page even when its payload came back unchanged. Empty pages are left
+    out, so a feed that ends with a couple of them keeps paging to its real
+    end.
     """
     if not entries:
         return None
-    payload = json.dumps([raw for raw, _ in entries], sort_keys=True, default=str)
+    payload = json.dumps(
+        [[raw, status] for raw, status in entries], sort_keys=True, default=str
+    )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 

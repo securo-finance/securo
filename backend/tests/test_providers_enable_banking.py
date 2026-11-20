@@ -2184,6 +2184,51 @@ async def test_get_transactions_drops_a_page_served_twice(eb_keys, caplog):
 
 
 @pytest.mark.asyncio
+async def test_get_transactions_keeps_a_page_whose_status_changed(eb_keys):
+    """The same entry served first as pending and then as booked is new
+    content, not a page repeated: the booked spelling is what settles the
+    pending row (#1232)."""
+    provider = EnableBankingProvider()
+    charge = {
+        "entry_reference": "auth-7",
+        "transaction_amount": {"amount": "25.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": "2026-05-10",
+    }
+    pages = [
+        {
+            "transactions": {"booked": [], "pending": [dict(charge)]},
+            "continuation_key": "page-2",
+        },
+        {
+            "transactions": {"booked": [dict(charge)], "pending": []},
+            "continuation_key": "page-3",
+        },
+        {
+            "transactions": {"booked": [_flat_entry("BOOK", "4.00")], "pending": []},
+            "continuation_key": "",
+        },
+    ]
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=pages[len(requests) - 1])
+
+    with _patch_client(provider, handler):
+        txns = await provider.get_transactions(
+            {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
+        )
+
+    # The booked spelling settles the pending one listed on the page before,
+    # so only the booked row reaches the sync.
+    assert len(requests) == 3
+    assert [t.status for t in txns] == ["posted", "posted"]
+    assert [str(t.amount) for t in txns] == ["25.00", "4.00"]
+    assert provider.truncated_account_ids == set()
+
+
+@pytest.mark.asyncio
 async def test_get_transactions_cancelled_entry_keeps_its_slot(eb_keys):
     """A cancelled entry is not imported, but it keeps its place among the
     identical entries of its page, so the one still listed keeps the id it had
