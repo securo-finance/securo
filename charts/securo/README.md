@@ -175,7 +175,7 @@ To rotate, set new `plugins.runner.token` and `plugins.runner.egressSecret` valu
 
 Under GitOps tools (Argo CD, Flux) and plain `helm template`, `lookup` returns nothing, so every sync would generate a new pair and restart those pods for nothing. Manage the Secret yourself there and set `plugins.runner.existingSecret` to it.
 
-Turning the runner on for a release installed before this value existed needs a values file or `helm upgrade --reset-values`. With `--reuse-values`, Helm keeps the old release values and drops the chart's defaults for the new key, so `--reuse-values --set plugins.runner.enabled=true` leaves the rest of `plugins.runner` unset and the render stops.
+Turning the runner on for a release installed before this value existed needs `helm upgrade --reset-then-reuse-values`, which restores the chart defaults for the new key and keeps the previous release values, or a values file that repeats every override the release already has. `--reuse-values --set plugins.runner.enabled=true` leaves the rest of `plugins.runner` unset and the render stops, and plain `--reset-values` drops overrides such as `global.existingSecret`.
 
 When the Secret is yours (`existingSecret`, or tokens managed outside the chart), rotating it does not change any checksum. Restart the consumers afterwards: roll the runner StatefulSet and the backend, worker and beat Deployments so they pick up the new token.
 
