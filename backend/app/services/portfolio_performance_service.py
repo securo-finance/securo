@@ -225,10 +225,13 @@ def snapshot_ledger_flows(
                 landed, shown, cash = 0, abs(change), 0.0
                 for index, (_, _, flow) in enumerate(pending[:eligible], start=1):
                     cash += float(flow)
-                    # A tie counts: trades whose cash nets to the change (a
-                    # round trip against no move) are shown by it.
-                    if abs(change - cash) <= shown:
-                        landed, shown = index, abs(change - cash)
+                    # Closer wins; an exact match also wins a tie, so trades
+                    # whose cash nets to the change (a round trip against no
+                    # move) are shown by it. A tie that is only as far off as
+                    # showing nothing is not a match.
+                    residual = abs(change - cash)
+                    if residual < shown or residual == 0:
+                        landed, shown = index, residual
         else:
             state = position
             states = [state]

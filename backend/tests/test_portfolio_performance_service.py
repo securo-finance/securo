@@ -1013,6 +1013,24 @@ def test_ledger_flows_leave_out_a_buy_the_share_counts_do_not_show_yet():
     assert flows == [(date(2026, 9, 1), Decimal("1000"), date(2026, 9, 1))]
 
 
+def test_ledger_flows_without_a_count_do_not_take_a_trade_on_a_half_move():
+    """A buy of 1000 against a value up 500 is as far off as no trade at all:
+    it waits for the snapshot that moved by its cash."""
+    flows = snapshot_ledger_flows(
+        [
+            (date(2026, 9, 1), Decimal("10"), Decimal("1000")),
+            (date(2026, 9, 10), Decimal("10"), Decimal("1000")),
+        ],
+        [
+            (date(2026, 9, 9), 1000.0, None),
+            (date(2026, 9, 10), 1000.0, None),
+            (date(2026, 9, 11), 1500.0, None),
+            (date(2026, 9, 12), 3000.0, None),
+        ],
+    )
+    assert flows[-1] == (date(2026, 9, 12), Decimal("1000"), date(2026, 9, 10))
+
+
 def test_ledger_flows_never_drop_a_trade_a_later_one_offsets():
     """A buy the provider never shows, sold the next day: both flows count."""
     flows = snapshot_ledger_flows(
