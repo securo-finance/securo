@@ -10,14 +10,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { renderWithProviders } from '@/test/utils'
+import { i18n, renderWithProviders } from '@/test/utils'
 
 function Example({
   onOpenChange,
   showCloseButton,
+  showFooterClose,
 }: {
   onOpenChange?: (open: boolean) => void
   showCloseButton?: boolean
+  showFooterClose?: boolean
 } = {}) {
   return (
     <Dialog onOpenChange={onOpenChange}>
@@ -27,7 +29,7 @@ function Example({
           <DialogTitle>Delete account</DialogTitle>
           <DialogDescription>This cannot be undone.</DialogDescription>
         </DialogHeader>
-        <DialogFooter>
+        <DialogFooter showCloseButton={showFooterClose}>
           <button type="button">Confirm</button>
         </DialogFooter>
       </DialogContent>
@@ -99,5 +101,20 @@ describe('Dialog', () => {
     await screen.findByRole('dialog')
 
     expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument()
+  })
+
+  it('labels both close buttons in the current language', async () => {
+    await i18n.changeLanguage('pt-BR')
+    try {
+      const { user } = renderWithProviders(<Example showFooterClose />)
+
+      await user.click(screen.getByRole('button', { name: 'Open' }))
+      await screen.findByRole('dialog')
+
+      expect(screen.getAllByRole('button', { name: 'Fechar' })).toHaveLength(2)
+      expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument()
+    } finally {
+      await i18n.changeLanguage('en')
+    }
   })
 })
