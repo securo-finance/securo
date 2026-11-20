@@ -55,6 +55,18 @@ def test_provides_must_hang_together(provides):
         parse_manifest(_provider_manifest(provides=provides))
 
 
+def test_complete_feed_is_off_unless_declared():
+    keys, _ = parse_manifest(_provider_manifest()).contributes.integrations
+    assert keys.complete_feed is False
+    keys, _ = parse_manifest(_provider_manifest(complete_feed=True)).contributes.integrations
+    assert keys.complete_feed is True
+
+
+def test_complete_feed_needs_transactions():
+    with pytest.raises(ValidationError):
+        parse_manifest(_provider_manifest(provides=["accounts"], complete_feed=True))
+
+
 def test_provides_and_api_scopes_can_be_declared_together():
     manifest = parse_manifest(_provider_manifest())
     assert manifest.api_scopes and manifest.contributes.integrations[0].provides
@@ -306,6 +318,7 @@ import json  # noqa: E402
 from app.models.plugin_connection import PluginConnection  # noqa: E402
 from app.plugins import connections, vault  # noqa: E402
 from tests.test_code_plugins import V1, _apply, _connect, _tarball  # noqa: E402
+from unittest.mock import patch  # noqa: E402
 
 PROVIDER_SOURCE = (
     "import json\n"
@@ -381,6 +394,24 @@ async def test_a_sync_writes_the_records_and_keeps_the_cursor(session: AsyncSess
     assert connection.state["since"] == (first_sync.date() - timedelta(days=14)).isoformat()
     assert len(await _rows(session, Transaction, account_id=account_id)) == 2
     assert vault.unseal(connection.secrets)["refreshed"] == "2"
+
+
+@pytest.mark.parametrize("vouched", [True, False])
+@pytest.mark.asyncio
+async def test_the_sync_hands_on_whether_the_feed_is_complete(
+    session: AsyncSession, ids, provider_catalog, plugin_runner, vouched
+):
+    provider_catalog.manifests[V1] = _provider_manifest(complete_feed=True) if vouched else _provider_manifest()
+    connection = await _provider_connection(session, ids)
+    seen = []
+
+    async def capture(*args, provider=None, **kwargs):
+        assert provider is not None
+        seen.append(provider.complete_feed)
+
+    with patch("app.services.connection_service.sync_connection", new=capture):
+        await connections.sync(session, connection)
+    assert seen == [vouched]
 
 
 @pytest.mark.asyncio

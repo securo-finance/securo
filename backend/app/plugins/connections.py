@@ -571,7 +571,10 @@ async def _write_payload(
         try:
             await connection_service.sync_connection(
                 session, bank_id, workspace_id, user_id,
-                provider=PluginPayloadProvider(bank.provider, payload, logo_urls, scope=bank.external_id),
+                provider=PluginPayloadProvider(
+                    bank.provider, payload, logo_urls, scope=bank.external_id,
+                    complete_feed=_integration(manifest, connection.integration).complete_feed,
+                ),
             )
         except Exception as exc:  # noqa: BLE001 - recorded on the connection, retried on the next sync
             logger.exception("Writing the records of plugin connection %s failed", connection_id)

@@ -2065,7 +2065,7 @@ def _eb_txn(raw: dict, status: str = "posted") -> TransactionData:
 async def _sync_eb(
     session, conn, workspace_id, user_id, txns: list[TransactionData], *,
     incomplete=False, truncated=False, cancelled: set[str] | None = None,
-    rules=False,
+    rules=False, complete_feed=False,
 ):
     """One Enable Banking sync of `txns`. The user's rules run only with
     `rules=True`."""
@@ -2076,6 +2076,8 @@ async def _sync_eb(
     mock_provider.incomplete_account_ids = {"eb-account"} if incomplete else set()
     mock_provider.truncated_account_ids = {"eb-account"} if truncated else set()
     mock_provider.cancelled_transaction_ids = {"eb-account": cancelled or set()}
+    if complete_feed:
+        mock_provider.complete_feed = True
     mock_provider.refresh_credentials = AsyncMock(return_value={"token": "refreshed"})
     mock_provider.get_accounts = AsyncMock(return_value=[
         AccountData(
@@ -3148,6 +3150,79 @@ async def test_sync_connection_other_provider_keeps_hold_gone_from_feed(
     await _sync_eb(session, conn, test_workspace.id, test_user.id, [])
 
     assert [row.id for row in await _account_rows(session, account_id)] == [held_id]
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("_hold_clock")
+async def test_sync_connection_complete_feed_provider_expires_hold_gone_from_feed(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A provider plugin that vouches for a complete feed (`complete_feed`)
+    gets the same evidence as Enable Banking: a pending row it no longer
+    returns, past the settle window, was cancelled and goes. Its ids carry
+    no Enable Banking account uid, so that check doesn't apply."""
+    conn, account = await _hold_account(session, test_user.id, test_workspace.id)
+    conn.provider = "test"
+    account_id = account.id
+    [(gone_id, _raw), (live_id, live_raw)] = await _hold_blank_holds(
+        session, test_user.id, test_workspace.id, account,
+        [_blank_hold(10, "1.00"), _blank_hold(10, "2.00")], account_uid="another-uid",
+    )
+    live_row = await session.get(Transaction, live_id)
+    assert live_row is not None and live_row.external_id is not None
+    still_listed = TransactionData(
+        external_id=live_row.external_id, description="E-COMM", amount=Decimal("2.00"),
+        date=live_row.date, type="debit", status="pending",
+    )
+
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [still_listed], complete_feed=True)
+
+    assert [row.id for row in await _account_rows(session, account_id)] == [live_id]
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("_hold_clock")
+@pytest.mark.parametrize("case", ["incomplete", "truncated", "not-vouched"])
+async def test_sync_connection_complete_feed_provider_keeps_hold_without_evidence(
+    session: AsyncSession, test_user, test_workspace, case,
+):
+    """Without the vouch, or with a fetch cut short, a plugin's pending row
+    that left the feed stays, as for every provider but Enable Banking."""
+    conn, account = await _hold_account(session, test_user.id, test_workspace.id)
+    conn.provider = "test"
+    account_id = account.id
+    [(held_id, _raw)] = await _hold_blank_holds(
+        session, test_user.id, test_workspace.id, account, [_blank_hold(10)],
+    )
+
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, [],
+        complete_feed=case != "not-vouched",
+        incomplete=case == "incomplete", truncated=case == "truncated",
+    )
+
+    assert [row.id for row in await _account_rows(session, account_id)] == [held_id]
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("_hold_clock")
+async def test_sync_connection_complete_feed_provider_claims_no_eb_hold(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The vouch expires holds; it doesn't turn on Path 6, which compares
+    Enable Banking's own merchant fields."""
+    import app.services.connection_service as connection_module
+
+    conn, account = await _hold_account(session, test_user.id, test_workspace.id)
+    conn.provider = "test"
+    await session.commit()
+    with patch.object(connection_module, "_find_settled_eb_hold", new_callable=AsyncMock) as claim:
+        booked = TransactionData(
+            external_id="booked-1", description="E-COMM", amount=Decimal("5.00"),
+            date=_HOLD_TODAY, type="debit", status="posted",
+        )
+        await _sync_eb(session, conn, test_workspace.id, test_user.id, [booked], complete_feed=True)
+    claim.assert_not_called()
 
 
 @pytest.mark.asyncio

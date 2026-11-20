@@ -3312,8 +3312,10 @@ async def _expire_cancelled_holds(
     account_uid: str,
     live_external_ids: set[str],
     since: date,
+    *,
+    uid_keyed: bool = True,
 ) -> None:
-    """Delete the pending Enable Banking rows the bank dropped without booking.
+    """Delete the pending rows a complete feed dropped without booking.
 
     A card authorization the merchant cancels or lets expire leaves the feed
     and never books, so its row would stay pending, and counted, for good.
@@ -3324,6 +3326,9 @@ async def _expire_cancelled_holds(
     the id of an entry without a reference). Rows the user hid, paired as a
     transfer, attached a file to, shared with a group or otherwise worked on
     are left alone.
+
+    A provider plugin with `complete_feed` keys rows by its own ids, so
+    ``uid_keyed`` is off for it: there is no account uid to check.
     """
     today = app_today()
     window_start = max(since, today - timedelta(days=_EB_SURE_FEED_DAYS))
@@ -3347,7 +3352,7 @@ async def _expire_cancelled_holds(
     gone = [
         tx for tx in result.scalars().all()
         if tx.external_id not in live_external_ids
-        and is_account_txn_id(account_uid, tx.external_id, tx.raw_data)
+        and (not uid_keyed or is_account_txn_id(account_uid, tx.external_id, tx.raw_data))
         and not _holds_user_work(tx)
     ]
     if not gone:
@@ -4418,6 +4423,12 @@ async def sync_connection(
                 isinstance(truncated, set) and acc_data.external_id in truncated
             )
             claims_holds = connection.provider == "enable_banking" and not partial_feed
+            # A pending row that left a complete feed was cancelled. Enable
+            # Banking's feed always is; a provider plugin says so with
+            # `complete_feed` in its manifest. Claiming holds (above) stays
+            # Enable Banking's: it compares that provider's merchant fields.
+            vouches_feed = getattr(provider, "complete_feed", False) is True
+            expires_holds = (connection.provider == "enable_banking" or vouches_feed) and not partial_feed
             hold_live_ids = live_txn_external_ids[account.id] if claims_holds else None
             for txn_data in transactions_data:
                 await _remember_linked_card(
@@ -4827,13 +4838,14 @@ async def sync_connection(
 
             # A hold that left a complete feed and that no booked entry claimed
             # above was cancelled. The first sync has no rows to expire.
-            if claims_holds and since is not None:
+            if expires_holds and since is not None:
                 await _expire_cancelled_holds(
                     session,
                     account.id,
                     acc_data.external_id,
                     live_txn_external_ids[account.id],
                     since,
+                    uid_keyed=connection.provider == "enable_banking",
                 )
 
             # A row an earlier version stored as posted from a cancelled entry
