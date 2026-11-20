@@ -137,6 +137,10 @@ describe('the currency the form sends for a new account (#296)', () => {
     )
 
     fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: 'Wallet' } })
+    // Save only once the supported codes are in: before they arrive the form
+    // has nothing to fall back to, so saving early would pass this test even
+    // if a supported preference were swapped for the first listed code.
+    await screen.findByRole('option', { name: /Real/ })
     fireEvent.click(screen.getByRole('button', { name: t('common.save') }))
 
     expect(onSave.mock.calls[0][0]).toMatchObject({ currency: 'BRL' })
