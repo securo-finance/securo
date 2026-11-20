@@ -2021,7 +2021,13 @@ function TransactionForm({
         onOpenChange={setPayeeFormOpen}
         payee={payeeFormTarget}
         onSaved={(saved) => {
-          setSavedPayee({ payee: saved, replaced: payeeFormTarget })
+          // The row the list held when the save went through is what the save
+          // replaces. The form's own record can be an earlier save's copy,
+          // which the list never carried: using it as the baseline would make
+          // the row still waiting to refresh look like someone else's change,
+          // and the picker would go back to the record before the earlier save.
+          const replaced = payeesList?.find((p) => p.id === saved.id) ?? payeeFormTarget
+          setSavedPayee({ payee: saved, replaced })
           setPayeeId(saved.id)
         }}
       />

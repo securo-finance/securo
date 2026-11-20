@@ -143,6 +143,45 @@ describe('TransactionDialog payee form (#1069)', () => {
       expect(within(reopened).getByLabelText(t('payees.phone'))).toHaveValue('+55 11 98888-7777')
     })
 
+  // The row the list holds is the baseline each save replaces. The record the
+  // form was opened on can be an earlier save's copy, which the list never
+  // carried: with that as the baseline, the still-stale row would read as
+  // someone else's change and the picker would go back to the record before
+  // the earlier save — showing values a later edit would then write back.
+  it('keeps the latest save while the list still holds the row before it',
+    async () => {
+      const central = { ...saved, name: 'Padaria Central' }
+      const ze = { ...saved, name: 'Padaria do Zé' }
+      vi.spyOn(payees, 'update')
+        .mockResolvedValueOnce(central)
+        .mockResolvedValueOnce(ze)
+      const { user } = renderWritable([saved])
+
+      await user.click(await screen.findByRole('button', { name: new RegExp(t('payees.noPayee')) }))
+      await user.click(await screen.findByRole('option', { name: 'Padaria Aurora' }))
+
+      const edit = async (from: string, to: string) => {
+        await user.click(screen.getByRole('button', { name: t('payees.edit') }))
+        const form = await screen.findByRole('dialog', { name: t('payees.edit') })
+        const name = within(form).getByLabelText(t('payees.name'))
+        expect(name).toHaveValue(from)
+        await user.clear(name)
+        await user.type(name, to)
+        await user.click(within(form).getByRole('button', { name: t('common.save') }))
+        await waitFor(() =>
+          expect(screen.queryByRole('dialog', { name: t('payees.edit') })).not.toBeInTheDocument(),
+        )
+      }
+
+      await edit('Padaria Aurora', 'Padaria Central')
+      expect(await screen.findByRole('button', { name: /Padaria Central/ })).toBeInTheDocument()
+
+      // The refetch from the first save has not landed yet: the list still
+      // carries the row from before it.
+      await edit('Padaria Central', 'Padaria do Zé')
+      expect(await screen.findByRole('button', { name: /Padaria do Zé/ })).toBeInTheDocument()
+    })
+
   it('hides both controls from members who cannot write', async () => {
     vi.spyOn(currencies, 'list').mockResolvedValue([])
     vi.spyOn(payees, 'list').mockResolvedValue([saved])

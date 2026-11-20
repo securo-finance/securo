@@ -109,9 +109,16 @@ export function PayeeFormDialog({
   // derived from a changing prop, and it means the first frame already shows
   // the record instead of blank fields.
   const seedKey = open ? (payee?.id ?? `new:${initialName}`) : null
-  const [seededKey, setSeededKey] = useState<string | null>(null)
-  if (seedKey !== seededKey) {
-    setSeededKey(seedKey)
+  // One session per opening, not per record: two openings can carry the same
+  // seed key — Add is reopened on the name already typed, or the same payee is
+  // opened twice — so the key alone cannot tell a save's completion which form
+  // it belongs to.
+  const [seeded, setSeeded] = useState<{ key: string | null; session: number }>({
+    key: null,
+    session: 0,
+  })
+  if (seedKey !== seeded.key) {
+    setSeeded({ key: seedKey, session: seeded.session + 1 })
     if (open) {
       setFormName(payee?.name ?? initialName)
       setFormType(payee?.type ?? '')
@@ -128,13 +135,15 @@ export function PayeeFormDialog({
     }
   }
 
-  // The record the form held when Save was pressed. A save can outlive the
-  // form that started it — the user cancels and opens another payee — and its
-  // completion must not close that newer form or select the older record.
-  const savedKey = useRef<string | null>(null)
-  // What a save writes down belongs to this record; only the part of the
-  // completion that talks to the form is skipped when the form moved on.
-  const stillTheSameForm = () => seedKey === null || seedKey === savedKey.current
+  // The session the form was in when Save was pressed. A save can outlive it:
+  // the user cancels and opens another payee, or reopens Add on the same name,
+  // and its completion must not close that newer form or select the older
+  // record. What a save writes down belongs to this record; only the part of
+  // the completion that talks to the form is skipped when the form moved on,
+  // which includes a form that is no longer open.
+  const savedSession = useRef<number | null>(null)
+  const stillTheSameForm = () =>
+    savedSession.current === null || savedSession.current === seeded.session
 
   const createMutation = useMutation({
     mutationFn: (data: PayeeWritePayload & { name: string }) => payeesApi.create(data),
@@ -177,7 +186,7 @@ export function PayeeFormDialog({
         .filter((row) => row.value.trim() !== '')
         .map((row) => ({ kind: row.kind, value: row.value })),
     }
-    savedKey.current = seedKey
+    savedSession.current = seeded.session
     if (payee) {
       updateMutation.mutate({ id: payee.id, ...payload })
     } else {

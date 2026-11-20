@@ -164,6 +164,65 @@ describe('PayeeFormDialog', () => {
       expect(nameInput()).toHaveValue('Corner Bakery')
     })
 
+  // Two openings can carry the same seed key — Add reopened on the name
+  // already typed — so the record on screen cannot tell the sessions apart.
+  // The earlier save belongs to the earlier opening and must stay silent.
+  it('leaves a reopened Add alone when an earlier save lands', async () => {
+    let resolveCreate: (payee: Payee) => void = () => {}
+    create.mockImplementation(() => new Promise<Payee>((resolve) => {
+      resolveCreate = resolve
+    }))
+    const { user, onOpenChange, onSaved, rerender } = renderForm({ initialName: 'Padaria Aurora' })
+
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
+
+    const closed = {
+      onOpenChange,
+      payee: null,
+      initialName: 'Padaria Aurora',
+      onSaved,
+    }
+    rerender(<PayeeFormDialog open={false} {...closed} />)
+    rerender(<PayeeFormDialog open {...closed} />)
+
+    await act(async () => {
+      resolveCreate({ ...acme, id: 'payee-new', name: 'Padaria Aurora' })
+    })
+
+    expect(onOpenChange).not.toHaveBeenCalledWith(false)
+    expect(onSaved).not.toHaveBeenCalled()
+  })
+
+  // Cancelling does not undo the request, but it does take away the form that
+  // would show the record: selecting it on the transaction afterwards would
+  // act on a dismissal the user made on purpose.
+  it('hands nothing back when the form was closed before the save landed', async () => {
+    let resolveCreate: (payee: Payee) => void = () => {}
+    create.mockImplementation(() => new Promise<Payee>((resolve) => {
+      resolveCreate = resolve
+    }))
+    const { user, onOpenChange, onSaved, rerender } = renderForm({ initialName: 'Padaria Aurora' })
+
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
+    rerender(
+      <PayeeFormDialog
+        open={false}
+        onOpenChange={onOpenChange}
+        payee={null}
+        initialName="Padaria Aurora"
+        onSaved={onSaved}
+      />,
+    )
+
+    await act(async () => {
+      resolveCreate({ ...acme, id: 'payee-new', name: 'Padaria Aurora' })
+    })
+
+    expect(onSaved).not.toHaveBeenCalled()
+  })
+
   it('reseeds when it is reopened on another payee', () => {
     const { rerender } = renderForm({ payee: acme })
     expect(nameInput()).toHaveValue('Acme Market')
