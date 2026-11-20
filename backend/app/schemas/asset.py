@@ -197,6 +197,20 @@ class AssetTransactionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AssetTickerLink(BaseModel):
+    """Market symbol to price a synced holding with (Yahoo format, e.g. PETR4.SA)."""
+
+    ticker: str = Field(min_length=1, max_length=32)
+
+    @field_validator("ticker")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("ticker must not be blank")
+        return value
+
+
 class MarketSymbolQuote(BaseModel):
     """Live quote for a ticker, used by the add-asset form to preview value."""
 

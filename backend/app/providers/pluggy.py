@@ -3,6 +3,7 @@ import calendar
 import hashlib
 import json
 import logging
+import re
 import time
 from datetime import date
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal, InvalidOperation
@@ -297,8 +298,10 @@ _HOLDING_PROMOTED_KEYS = {
 _ISSUE_DATE_IS_PURCHASE_DATE = {"FIXED_INCOME", "COE"}
 
 # Pluggy `type` values of exchange-traded positions (stocks, units, FIIs,
-# BDRs and ETFs): their `quantity` is a share count and their trades replay
-# onto it. Fixed income, funds and pensions are left out for now.
+# BDRs and ETFs): their `quantity` is a share count, their trades replay
+# onto it and their `code` is a B3 trading symbol. Fixed income, funds and
+# pensions reuse `code` for other identifiers (contract numbers, CNPJs), so
+# they are left out.
 _EXCHANGE_TRADED_TYPES = {"EQUITY", "ETF"}
 
 # Pluggy investment transaction types that move the position. INTEREST
@@ -430,6 +433,31 @@ def _split_note_fees(rows: list[tuple[HoldingTradeData, object]]) -> None:
         for trade, share in zip(trades, shares):
             trade.fee = share
 
+# A B3 symbol: a four-character root (letters, or alphanumeric for some ETFs
+# such as "B5P2") plus a one- or two-digit class, optionally followed by the
+# odd-lot "F" suffix ("PETR4F" trades the same share as "PETR4").
+_B3_SYMBOL = re.compile(r"^([A-Z][A-Z0-9]{3}\d{1,2})F?$")
+
+
+def _b3_market_ticker(inv: dict) -> Optional[str]:
+    """Yahoo Finance symbol ("PSSA3.SA") for an exchange-traded B3 holding.
+
+    Returns None whenever the payload does not clearly describe a B3-listed
+    position, so a wrong guess never reaches the market-data lookup: the
+    holding then stays valued by the provider and the user can link a ticker
+    by hand.
+    """
+    if (inv.get("type") or "").upper() not in _EXCHANGE_TRADED_TYPES:
+        return None
+    if (inv.get("currencyCode") or "BRL").upper() != "BRL":
+        return None
+    code = inv.get("code")
+    if not isinstance(code, str):
+        return None
+    match = _B3_SYMBOL.match(code.strip().upper())
+    if match is None:
+        return None
+    return f"{match.group(1)}.SA"
 
 
 def _build_holding_data(inv: dict) -> HoldingData:
@@ -459,6 +487,7 @@ def _build_holding_data(inv: dict) -> HoldingData:
     # would drop a real balance from the user's view.
     position_has_value = current_value != 0 or (quantity is not None and quantity != 0)
     is_withdrawn = pluggy_status == "TOTAL_WITHDRAWAL" and not position_has_value
+    ticker = _b3_market_ticker(inv)
 
     return HoldingData(
         external_id=str(inv["id"]),
@@ -471,6 +500,8 @@ def _build_holding_data(inv: dict) -> HoldingData:
         purchase_price=_decimal_or_none(inv.get("amountOriginal")),
         purchase_date=purchase_date,
         isin=inv.get("isin") or None,
+        ticker=ticker,
+        ticker_quotable=ticker is not None,
         maturity_date=_date_or_none(inv.get("dueDate")),
         value_date=_date_or_none(inv.get("date")),
         is_withdrawn=is_withdrawn,
