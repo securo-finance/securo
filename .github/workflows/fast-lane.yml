@@ -196,6 +196,13 @@ jobs:
             // before it happens.
             const WINDOW_CLOSES_AT = Date.parse(process.env.WINDOW_CLOSES_AT || '');
 
+            // The one place the deadline above is compared: `NaN` (no deadline,
+            // which is every manual run) never closes a window. One comparison
+            // for the whole run also keeps the weekday rule in the module, where
+            // it is tested off the clock.
+            const windowClosed = () =>
+              Boolean(WINDOW_CLOSES_AT) && Date.now() >= WINDOW_CLOSES_AT;
+
             // Who may leave a verdict. Two identities: the account that pushes
             // (an agent commits as its owner, so its comment is
             // indistinguishable from the owner's) and the `securo-review` App,
@@ -369,8 +376,10 @@ jobs:
             async function tryMerge(number) {
               // The window may have closed since this run started: nothing is
               // evaluated then, and there is no refusal note to leave, because
-              // a weekend is not a state of the pull request.
-              if (WINDOW_CLOSES_AT && Date.now() >= WINDOW_CLOSES_AT) {
+              // a weekend is not a state of the pull request. Read again right
+              // before the merge as well: the gates below take many calls, and
+              // only the instant of the merge itself decides it.
+              if (windowClosed()) {
                 core.info(`#${number}: not merging, outside the merge window`);
                 return null;
               }
@@ -674,6 +683,17 @@ jobs:
                 if (c.conclusion !== 'success') {
                   return skip(`the ${name} check ended as ${c.conclusion}`);
                 }
+              }
+
+              // The window is read once more here, with nothing left between
+              // this and the call but building its arguments: the gates above
+              // are several API calls, and a run that started at 17:59 must not
+              // merge at 18:01 because the answer it read was already old. The
+              // same silence as the check at the top: a closed window is not a
+              // state of the pull request, so no note is left on it.
+              if (windowClosed()) {
+                core.info(`#${number}: not merging, outside the merge window`);
+                return null;
               }
 
               // ---- merge, pinned to the head the verdict was given for -----

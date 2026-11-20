@@ -115,7 +115,7 @@ function answerThreads(query, threads) {
 // CodeRabbit review of that same head.
 async function evaluate({
   threads, comments, reviews, checks, order, body = 'Reviewed, green on this head.',
-  commentsError = null,
+  commentsError = null, windowClosesAt = null, slowChecksMs = 0,
 }) {
   const log = [];
   const merged = [];
@@ -176,6 +176,9 @@ async function evaluate({
       checks: {
         listForRef: async () => {
           if (order) order.push('checks');
+          // A slow read is how a run outlives the window it started in: the
+          // gate below is the last call before the merge.
+          if (slowChecksMs) await new Promise((done) => setTimeout(done, slowChecksMs));
           return { data: { check_runs: state.checks } };
         },
       },
@@ -197,7 +200,17 @@ async function evaluate({
   };
   const run = new Function('github', 'context', 'core',
     `return (async () => {\n${readScript()}\n})();`);
-  await run(github, context, core);
+  // The workflow hands the window deadline down as an environment variable, so
+  // the test sets it the same way and puts back whatever was there.
+  const hadWindow = Object.prototype.hasOwnProperty.call(process.env, 'WINDOW_CLOSES_AT');
+  const previousWindow = process.env.WINDOW_CLOSES_AT;
+  if (windowClosesAt) process.env.WINDOW_CLOSES_AT = windowClosesAt;
+  try {
+    await run(github, context, core);
+  } finally {
+    if (hadWindow) process.env.WINDOW_CLOSES_AT = previousWindow;
+    else delete process.env.WINDOW_CLOSES_AT;
+  }
   return {
     merged: merged.length > 0,
     mergeParams: merged[0] || null,
@@ -451,6 +464,47 @@ scenario('a description with no closing keyword leaves the default message',
     assert.equal(mergeParams.commit_message, undefined,
       'no closing keyword means GitHub builds the message as before');
   });
+
+// Tassio's rule of 20 Nov 2026: after Friday 18:00 the lane merges nothing
+// until Monday 01:00. The window step already skipped this run when it opened
+// closed, so this is the other side: a run that the workflow did start and
+// that must still merge nothing, and say nothing on the pull request either,
+// because a weekend is not a state of it.
+scenario('a run whose window has closed merges nothing and comments nothing',
+  async () => {
+    const { merged, log, posted } = await evaluate({
+      threads: [{ comments: [plain()] }],
+      windowClosesAt: new Date(Date.now() - 1000).toISOString(),
+    });
+    assert.ok(!merged, `expected no merge, got one: ${log}`);
+    assert.match(log, /#42: not merging, outside the merge window/, log);
+    assert.deepEqual(posted, [],
+      `a closed window is not a refusal to announce: ${JSON.stringify(posted)}`);
+  });
+
+// A sweep can outlive the window it started in: it reads the deadline before
+// the gates, and the gates take several calls. A run that started at 17:59:55
+// must not merge at 18:00:05 because the answer it read was already old, so
+// the deadline is compared again right before the merge call.
+scenario('a run that outlives its window merges nothing', async () => {
+  const { merged, log } = await evaluate({
+    threads: [{ comments: [plain()] }],
+    windowClosesAt: new Date(Date.now() + 300).toISOString(),
+    slowChecksMs: 600,
+  });
+  assert.ok(!merged, `expected no merge, got one: ${log}`);
+  assert.match(log, /not merging, outside the merge window/, log);
+});
+
+// And an open window is not a refusal: a deadline in the future leaves every
+// gate deciding exactly as it did before.
+scenario('a run inside an open window still merges', async () => {
+  const { merged, log } = await evaluate({
+    threads: [{ comments: [plain()] }],
+    windowClosesAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+  });
+  assert.ok(merged, `expected a merge, got: ${log}`);
+});
 
 let failed = 0;
 for (const { name, fn } of scenarios) {
