@@ -291,6 +291,7 @@ from app.plugins.report_view import (  # noqa: E402
     MAX_POINTS,
     MAX_SERIES,
     MAX_TOTAL_POINTS,
+    ChartBlock,
     InvalidView,
     parse_view,
 )
@@ -395,7 +396,9 @@ def _chart(points: int = MAX_POINTS, series: int = MAX_SERIES) -> dict[str, Any]
 def test_a_view_draws_a_bounded_number_of_points_in_all():
     # One chart at the block limits is a report's own chart, and it is allowed.
     view = parse_view({"blocks": [_chart()]})
-    assert len(view.blocks[0].series) == MAX_SERIES
+    block = view.blocks[0]
+    assert isinstance(block, ChartBlock)
+    assert len(block.series) == MAX_SERIES
     # The charts can't add up past one view's total, however many blocks fit:
     # at the block limits a second chart is already one too many.
     with pytest.raises(InvalidView, match="chart points"):
