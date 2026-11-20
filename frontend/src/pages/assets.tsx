@@ -183,6 +183,9 @@ const GROWTH_FREQUENCIES = ['daily', 'weekly', 'monthly', 'yearly'] as const
 // Ativo · Quant. · Preço Médio · Preço Atual · Rentab. · Saldo · % · actions.
 const HOLDINGS_GRID = 'minmax(0,2.4fr) 0.7fr 1.1fr 1fr 0.9fr 1.3fr 0.6fr 4.5rem'
 
+// Holding types a market ticker can price (a synced CDB or pension has none).
+const LINKABLE_TICKER_TYPES = new Set(['investment', 'stock', 'etf', 'crypto', 'fund'])
+
 /** Whether archived holdings are shown, kept across visits (issue #1046). */
 const SHOW_ARCHIVED_KEY = 'securo:assets:showArchived'
 
@@ -910,6 +913,7 @@ export default function AssetsPage() {
     // priced from the market through a linked ticker.
     const isConnectionSynced = asset.connection_id != null
     const isProviderOwned = isConnectionSynced || (isSynced && !isMarketPriced)
+    const canLinkTicker = isConnectionSynced && !asset.sell_date && LINKABLE_TICKER_TYPES.has(asset.type)
     const hasCost = asset.average_price != null && asset.total_invested != null
     const profit = getAssetProfit(asset)
     // Foreign-currency asset the backend could not convert (no FX rate):
@@ -1048,14 +1052,17 @@ export default function AssetsPage() {
                 <button onClick={(e) => { e.stopPropagation(); setMovingAsset(asset) }} title={t('assets.moveToWallet')} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
                   <FolderInput size={13} />
                 </button>
-                {isConnectionSynced && asset.type === 'investment' && !asset.sell_date && (
+                {/* A synced holding can't be edited, but its ticker can be linked:
+                    that action takes the edit slot so the column keeps its width. */}
+                {canLinkTicker ? (
                   <button onClick={(e) => { e.stopPropagation(); setLinkingAsset(asset) }} title={t('assets.linkTicker')} aria-label={t('assets.linkTicker')} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
                     <Link2 size={13} />
                   </button>
+                ) : (
+                  <button onClick={(e) => { e.stopPropagation(); if (!isProviderOwned) openEdit(asset) }} disabled={isProviderOwned} title={isProviderOwned ? t('assets.syncedReadOnly') : t('common.edit')} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                    <Pencil size={13} />
+                  </button>
                 )}
-                <button onClick={(e) => { e.stopPropagation(); if (!isProviderOwned) openEdit(asset) }} disabled={isProviderOwned} title={isProviderOwned ? t('assets.syncedReadOnly') : t('common.edit')} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
-                  <Pencil size={13} />
-                </button>
                 <button onClick={(e) => { e.stopPropagation(); setDeletingId(asset.id) }} title={t('common.delete')} aria-label={t('common.delete')} className="p-1 rounded text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-colors">
                   <Trash2 size={13} />
                 </button>

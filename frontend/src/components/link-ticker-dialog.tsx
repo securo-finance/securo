@@ -73,7 +73,7 @@ export function LinkTickerDialog({ asset, onClose }: { asset: Asset | null; onCl
           <DialogDescription>{t('assets.linkTickerHint')}</DialogDescription>
         </DialogHeader>
         <form
-          className="space-y-3"
+          className="min-w-0 space-y-3"
           onSubmit={(event) => {
             event.preventDefault()
             if (ticker) mutation.mutate(ticker)
@@ -90,16 +90,19 @@ export function LinkTickerDialog({ asset, onClose }: { asset: Asset | null; onCl
               onChange={(event) => setQuery(event.target.value)}
             />
           </div>
-          <ul className="max-h-56 overflow-y-auto rounded-md border border-border divide-y divide-border" aria-live="polite">
+          <ul className="max-h-56 min-w-0 overflow-y-auto overflow-x-hidden rounded-md border border-border divide-y divide-border" aria-live="polite">
             {matches.map((match) => (
-              <li key={match.symbol}>
+              <li key={match.symbol} className="min-w-0">
                 <button
                   type="button"
                   onClick={() => setQuery(match.symbol)}
-                  className="w-full flex items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
+                  title={[match.symbol, match.name, match.exchange].filter(Boolean).join(' · ')}
+                  className="w-full min-w-0 flex items-center gap-3 px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
                 >
                   <span className="font-medium text-foreground shrink-0">{match.symbol}</span>
-                  <span className="text-xs text-muted-foreground truncate">
+                  {/* Fund names run long ("… FUNDO DE INDICE RESPONSABILIDADE LIMITADA");
+                      they truncate so the dialog never grows wider than its frame. */}
+                  <span className="min-w-0 flex-1 truncate text-right text-xs text-muted-foreground">
                     {[match.name, match.exchange].filter(Boolean).join(' · ')}
                   </span>
                 </button>
