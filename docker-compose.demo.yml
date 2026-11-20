@@ -137,6 +137,22 @@ services:
     # every request comes back 502.
     expose:
       - "8080"
+    # Traefik routing for demo.usesecuro.com. These labels live here, and not
+    # only in the copy Dokploy renders on the server, so a manual rebuild from
+    # this file keeps the site reachable instead of dropping its router.
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.securodemo-app-hgwvvo-web.entrypoints=web
+      - traefik.http.routers.securodemo-app-hgwvvo-web.rule=Host(`demo.usesecuro.com`)
+      - traefik.http.routers.securodemo-app-hgwvvo-web.middlewares=redirect-to-https@file
+      - traefik.http.routers.securodemo-app-hgwvvo-web.service=securodemo-app-hgwvvo-web
+      - traefik.http.routers.securodemo-app-hgwvvo-websecure.entrypoints=websecure
+      - traefik.http.routers.securodemo-app-hgwvvo-websecure.rule=Host(`demo.usesecuro.com`)
+      - traefik.http.routers.securodemo-app-hgwvvo-websecure.service=securodemo-app-hgwvvo-websecure
+      - traefik.http.routers.securodemo-app-hgwvvo-websecure.tls.certresolver=letsencrypt
+      - traefik.http.services.securodemo-app-hgwvvo-web.loadbalancer.server.port=8080
+      - traefik.http.services.securodemo-app-hgwvvo-websecure.loadbalancer.server.port=8080
 
 volumes:
   pgdata:
