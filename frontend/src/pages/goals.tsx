@@ -569,16 +569,20 @@ export default function GoalsPage() {
 
             {/* Icon & Color */}
             <div className="space-y-2">
-              <Label htmlFor={`${id}-icon`}>{t('goals.icon')}</Label>
+              <Label htmlFor={`${id}-icon`} id={`${id}-icon-label`}>{t('goals.icon')}</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <button
                     id={`${id}-icon`}
                     type="button"
+                    // The label names a <button>, which the label association does
+                    // not name: it is joined with the visible text here, so focus
+                    // announces "Icon Choose icon & color".
+                    aria-labelledby={`${id}-icon-label ${id}-icon-value`}
                     className="w-full flex items-center gap-3 border border-border rounded-lg px-3 py-2 text-sm bg-card hover:bg-muted/50 transition-colors text-start"
                   >
                     <CategoryIcon icon={selectedIcon} color={selectedColor} size="lg" />
-                    <span className="flex-1 text-muted-foreground">{t('goals.chooseIconColor')}</span>
+                    <span id={`${id}-icon-value`} className="flex-1 text-muted-foreground">{t('goals.chooseIconColor')}</span>
                     <ChevronDown size={14} className="text-muted-foreground" />
                   </button>
                 </PopoverTrigger>

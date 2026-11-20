@@ -2127,16 +2127,25 @@ function AddTransactionToRuleDialog({
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor={`${id}-existing-rule`}>{t('transactions.existingRule')}</Label>
+            <Label
+              htmlFor={`${id}-existing-rule`}
+              id={`${id}-existing-rule-label`}
+            >
+              {t('transactions.existingRule')}
+            </Label>
             <Popover open={openCombobox} onOpenChange={setOpenCombobox}>
               <PopoverTrigger asChild>
                 <button
                   id={`${id}-existing-rule`}
                   type="button"
+                  // The label names a <button>, which the label association does
+                  // not name: it is joined with the value here, like the other
+                  // pickers, so focus announces "Existing rule" and the rule.
+                  aria-labelledby={`${id}-existing-rule-label ${id}-existing-rule-value`}
                   disabled={loadingRules || rules.length === 0}
                   className="flex w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-3 py-2 text-sm text-start shadow-xs transition-[color,box-shadow] outline-hidden focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 dark:hover:bg-input/50 h-9 cursor-pointer"
                 >
-                  <span className="flex-1 truncate text-start">
+                  <span id={`${id}-existing-rule-value`} className="flex-1 truncate text-start">
                     {loadingRules ? (
                       t('common.loading')
                     ) : selectedRule ? (
