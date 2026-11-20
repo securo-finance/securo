@@ -190,6 +190,50 @@ async def test_a_zero_rate_is_refused_next_to_a_real_conversion(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("send_amount", [True, False])
+async def test_a_rate_rounded_to_zero_on_a_large_amount_can_be_sent_back(
+    client: AsyncClient, auth_headers, test_account, send_amount: bool
+):
+    """0.01 on 9999999999999.99 derives a rate of 1e-15, which the column
+    stores as 0. The dialog sends that pair back on every save, so it has to
+    be accepted next to the conversion it was rounded from."""
+    created = await client.post(
+        "/api/transactions",
+        headers=auth_headers,
+        json=_new(test_account, amount="9999999999999.99", amount_primary="0.01"),
+    )
+    assert created.status_code == 201, created.text
+    row = created.json()
+    assert Decimal(str(row["fx_rate_used"])) == 0
+
+    body = {
+        "description": "edited",
+        "amount_primary": row["amount_primary"],
+        "fx_rate_used": row["fx_rate_used"],
+    }
+    if send_amount:
+        body["amount"] = row["amount"]
+    resp = await _patch(client, auth_headers, row["id"], **body)
+
+    assert resp.status_code == 200, resp.text
+    assert Decimal(str(resp.json()["amount_primary"])) == Decimal("0.01")
+
+
+@pytest.mark.asyncio
+async def test_a_zero_rate_next_to_a_real_conversion_is_refused_on_create(
+    client: AsyncClient, auth_headers, test_account
+):
+    resp = await client.post(
+        "/api/transactions",
+        headers=auth_headers,
+        json=_new(test_account, amount="100", amount_primary="10", fx_rate_used="0"),
+    )
+
+    assert resp.status_code == 422, resp.text
+    assert "fx_rate_used" in resp.text
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "amount",
     ["0", "0.001", "-5", "1000000000000000"],

@@ -67,3 +67,27 @@ def bounded_fx_rate(
     if rounded <= 0 and not allow_zero:
         raise ValueError(f"{field} must be at least 0.0000000001")
     return rounded
+
+
+def check_zero_rate(
+    amount: Decimal | None, amount_primary: Decimal | None, fx_rate_used: Decimal | None
+) -> None:
+    """Refuse a rate of 0 unless it is what the pair itself rounds to.
+
+    A stored rate of 0 comes from `amount_primary / amount` quantized to
+    `RATE_QUANTUM`: a converted amount of 0.00 (issue #330), or one so small
+    next to `amount` that the ratio is under 5e-11 (0.01 on 9999999999999.99).
+    Sent back with the pair that produced it, it is accepted; next to a real
+    conversion it is refused. Without `amount` the check waits for the caller
+    that knows the row's amount.
+    """
+    if fx_rate_used is None or fx_rate_used != 0 or amount_primary == 0:
+        return
+    if amount_primary is not None:
+        if amount is None:
+            return
+        if amount != 0:
+            ratio = (amount_primary / amount).quantize(RATE_QUANTUM, rounding=ROUND_HALF_UP)
+            if ratio == 0:
+                return
+    raise ValueError("fx_rate_used must be greater than zero")

@@ -22,7 +22,12 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.app_clock import app_today
-from app.core.money import MoneyOutOfRange, bounded_fx_rate, bounded_money
+from app.core.money import (
+    MoneyOutOfRange,
+    bounded_fx_rate,
+    bounded_money,
+    check_zero_rate,
+)
 from app.core.shared_scope import (
     in_bound_workspace,
     invited_group_member_ids,
@@ -120,6 +125,11 @@ def _apply_fx_override(transaction, amount, amount_primary=None, fx_rate_used=No
 
     amount = Decimal(str(amount))
     if amount_primary is not None and fx_rate_used is not None:
+        # An edit may leave `amount` out; only here is the row's amount known.
+        try:
+            check_zero_rate(amount, Decimal(str(amount_primary)), Decimal(str(fx_rate_used)))
+        except ValueError as exc:
+            raise MoneyOutOfRange(str(exc)) from exc
         transaction.amount_primary = Decimal(str(amount_primary))
         transaction.fx_rate_used = Decimal(str(fx_rate_used))
     elif amount_primary is not None:

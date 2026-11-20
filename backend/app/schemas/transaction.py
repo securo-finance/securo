@@ -13,7 +13,7 @@ from pydantic import (
 )
 
 from app.core.currency import normalize_currency_code
-from app.core.money import bounded_fx_rate, bounded_money
+from app.core.money import bounded_fx_rate, bounded_money, check_zero_rate
 from app.schemas.category import CategoryRead
 from app.schemas.transaction_category_line import (
     TransactionCategoryLineRead,
@@ -43,15 +43,6 @@ def _bound_money_field(
     if field == "fx_rate_used":
         return bounded_fx_rate(value, field, allow_zero=True)
     return bounded_money(value, field, allow_zero=field == "amount_primary")
-
-
-def _check_zero_rate(
-    amount_primary: Optional[Decimal], fx_rate_used: Optional[Decimal]
-) -> None:
-    # A rate of 0 only comes from a converted amount of 0.00 (derived as
-    # amount_primary / amount), so it is accepted back only next to one.
-    if fx_rate_used is not None and fx_rate_used == 0 and amount_primary != 0:
-        raise ValueError("fx_rate_used must be greater than zero")
 
 
 class TransactionBase(BaseModel):
@@ -109,7 +100,7 @@ class TransactionCreate(TransactionBase):
 
     @model_validator(mode="after")
     def check_derived_conversion(self):
-        _check_zero_rate(self.amount_primary, self.fx_rate_used)
+        check_zero_rate(self.amount, self.amount_primary, self.fx_rate_used)
         # One of the pair is worked out from `amount` when the other is left
         # out; bound that one too, so it is a 422 here and not a database error.
         if self.amount_primary is not None and self.fx_rate_used is None:
@@ -219,7 +210,8 @@ class TransactionUpdate(BaseModel):
 
     @model_validator(mode="after")
     def check_zero_rate(self):
-        _check_zero_rate(self.amount_primary, self.fx_rate_used)
+        # Without `amount`, the service checks against the row's own amount.
+        check_zero_rate(self.amount, self.amount_primary, self.fx_rate_used)
         return self
 
 
