@@ -25,7 +25,6 @@ from app.services._query_filters import (
     line_amount_primary,
     line_category_id,
     line_primary_or_amount,
-    owner_split_offset_by_category,
     reporting_date_col,
     user_pnl_parts,
     user_pnl_ratio,
@@ -858,62 +857,12 @@ async def get_income_expenses_report(
         interval=interval,
     )
 
-    # Build per-category composition for the full date range
-    cat_result = await session.execute(
-        with_category_lines(
-            select(
-                Category.id,
-                Category.name,
-                Category.color,
-                Transaction.type,
-                func.sum(amount_expr),
-            ).select_from(Transaction)
-        )
-        .outerjoin(Category, line_category_id() == Category.id)
-        .where(
-            Transaction.workspace_id == workspace_id,
-            report_date >= start,
-            report_date <= axis_end,
-            Transaction.source != "opening_balance",
-            Transaction.status == "posted",
-            counts_as_user_pnl(line_category_id()),
-            *acct_filter,
-        )
-        .group_by(Category.id, Category.name, Category.color, Transaction.type)
-    )
-
-    # Collect composition into a mutable map so projections can be added
+    # Collect composition into a mutable map so projections can be added.
+    # The P&L entries are filled once the category trend has taken the owner
+    # shares off period by period, so a slice carries the same zero floor as
+    # the summary and the sparkline total (#264).
     # Key: (cat_key, group) -> {label, color, value}
     comp_map: dict[tuple[str, str], dict] = {}
-    for row in cat_result.all():
-        cat_id, cat_name, cat_color, txn_type, total_amount = row
-        amount = abs(float(total_amount or 0))
-        if amount <= 0:
-            continue
-        cat_key = str(cat_id) if cat_id else "uncategorized"
-        group = "income" if txn_type == "credit" else "expenses"
-        comp_map[(cat_key, group)] = {
-            "label": cat_name if cat_name else "Uncategorized",
-            "color": cat_color if cat_color else "#6B7280",
-            "value": amount,
-        }
-
-    # Subtract non-owner shares of own splits from composition (debit only —
-    # owner_split_offset_by_category is debit-only). Keeps the report's
-    # composition consistent with summary totals under share-only model.
-    full_range_offset = {} if filtered else await owner_split_offset_by_category(
-        session, user_id, start, axis_end + timedelta(days=1),
-        use_effective_date=accounting_mode == "accrual",
-        primary_currency=primary_currency,
-        workspace_id=workspace_id,
-    )
-    for cat_uuid, offset_total in full_range_offset.items():
-        cat_key = str(cat_uuid) if cat_uuid else "uncategorized"
-        comp_key = (cat_key, "expenses")
-        if comp_key in comp_map:
-            comp_map[comp_key]["value"] -= offset_total
-            if comp_map[comp_key]["value"] <= 0:
-                comp_map.pop(comp_key)
 
     # Investment-style outflows: transactions in `treat_as_transfer` categories
     # are excluded from P&L by counts_as_user_pnl (an investment application's
@@ -1031,6 +980,18 @@ async def get_income_expenses_report(
             cur_period = entry["periods"].get(period_label, 0.0)
             entry["periods"][period_label] = max(0.0, cur_period - offset)
         entry["total"] = sum(entry["periods"].values())
+
+    # A composition slice reads the same totals the sparkline shows, so the
+    # donut, the trend and the summary cannot disagree when a month hits the
+    # floor, and the category does not disappear from the chart.
+    for (cat_key, group), entry in cat_trend_map.items():
+        if entry["total"] <= 0:
+            continue
+        comp_map[(cat_key, group)] = {
+            "label": entry["label"],
+            "color": entry["color"],
+            "value": entry["total"],
+        }
 
     # Layer in the viewer's share of splits they did not pay for, the same
     # cross-workspace rows the summary above adds (#242). The author guard

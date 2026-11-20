@@ -1397,3 +1397,10 @@ async def test_income_expenses_report_category_total_matches_its_floored_periods
     assert series[last_month.strftime("%Y-%m")] == pytest.approx(0.0, abs=0.001)
     assert series[this_month.strftime("%Y-%m")] == pytest.approx(1000.0, abs=0.001)
     assert food_trend.total == pytest.approx(1000.0, abs=0.001)
+    # The composition slice reads the same total, so the donut keeps the
+    # category instead of dropping it at zero (#264).
+    food_slice = next(
+        c for c in report.composition
+        if c.key == str(food.id) and c.group == "expenses"
+    )
+    assert food_slice.value == pytest.approx(1000.0, abs=0.001)
