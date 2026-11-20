@@ -190,9 +190,12 @@ function CartesianView({ block, f }: { block: Block<'chart'>; f: Formatter }) {
             )
           }
           if (kind === 'area') {
+            // A projected stretch repeats the point it starts at, to join: in a stack of its
+            // own it lies over the real one there instead of adding to it.
+            const areaStack = stackId && projected ? `${stackId}:projected` : stackId
             return (
               <Area {...common} type="monotone" stroke={color(s)} fill={color(s)} fillOpacity={projected ? 0.06 : 0.15} strokeWidth={2}
-                stackId={stackId} strokeDasharray={projected ? '6 4' : undefined} connectNulls />
+                stackId={areaStack} strokeDasharray={projected ? '6 4' : undefined} connectNulls />
             )
           }
           return (
