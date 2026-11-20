@@ -163,7 +163,7 @@ async def _ledger(session: AsyncSession, user, workspace) -> dict[str, Any]:
             id=uuid.uuid4(), user_id=user.id, workspace_id=workspace.id, account_id=acct.id,
             category_id=category.id if category else None, description="x", amount=Decimal(amount), date=day,
             type=kind, source="manual", currency="BRL", status=status, payee=payee,
-            created_at=datetime.now(timezone.utc),
+            amount_primary=Decimal(amount), created_at=datetime.now(timezone.utc),
         )
 
     session.add_all([
@@ -200,6 +200,7 @@ async def installed(client: AsyncClient, auth_headers: dict, catalog, session, t
         {"key": "payees", "name": {"en": "Pets by payee"}, "group_by": "payee", "categories": ["pets"],
          "chart": "table"},
         {"key": "accounts", "name": {"en": "By account"}, "group_by": "account", "categories": ["pets"]},
+        {"key": "groups", "name": {"en": "By group"}, "group_by": "category_group"},
     )
     await _apply(client, auth_headers)
     return await _ledger(session, test_user, test_workspace)
@@ -249,6 +250,283 @@ async def test_a_report_reads_only_the_accounts_picked(client: AsyncClient, auth
     resp = await _report(client, auth_headers, "payees", installed["last_month"], installed["today"],
                          account_ids=[str(installed["card"].id)])
     assert [(r["label"], r["value"]) for r in resp.json()["rows"]] == [("Vet", 60.0)]
+
+
+async def _split_expenses(session: AsyncSession, user, workspace, ledger) -> dict[str, Any]:
+    """Two of the ledger's expenses paid for a group: one in BRL, one in USD.
+
+    A 200 BRL charge where a friend owes 80, and a 100 USD charge stamped at
+    5.50 where the friend owes 40 USD. The viewer's share is 120 and 330.
+    """
+    from app.models.group import Group, GroupMember
+    from app.models.transaction_split import TransactionSplit
+
+    group = Group(id=uuid.uuid4(), user_id=user.id, workspace_id=workspace.id, name="Trip")
+    session.add(group)
+    await session.flush()
+    me = GroupMember(id=uuid.uuid4(), group_id=group.id, workspace_id=workspace.id, name="Me", is_self=True)
+    friend = GroupMember(id=uuid.uuid4(), group_id=group.id, workspace_id=workspace.id, name="Friend")
+    session.add_all([me, friend])
+    await session.flush()
+    pets = (await session.scalars(
+        select(Category).where(Category.workspace_id == workspace.id, Category.source == PLUGIN,
+                               Category.source_key == "pets")
+    )).one()
+    brl = Transaction(
+        id=uuid.uuid4(), user_id=user.id, workspace_id=workspace.id, account_id=ledger["account"].id,
+        category_id=pets.id, description="Aluguel de carro", amount=Decimal("200.00"),
+        amount_primary=Decimal("200.00"), date=ledger["this_month"], type="debit", source="manual",
+        currency="BRL", status="posted", created_at=datetime.now(timezone.utc),
+    )
+    usd = Transaction(
+        id=uuid.uuid4(), user_id=user.id, workspace_id=workspace.id, account_id=ledger["card"].id,
+        category_id=pets.id, description="Hostel", amount=Decimal("100.00"), amount_primary=Decimal("550.00"),
+        date=ledger["this_month"], type="debit", source="manual", currency="USD", status="posted",
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add_all([brl, usd])
+    await session.flush()
+    session.add_all([
+        TransactionSplit(id=uuid.uuid4(), transaction_id=brl.id, workspace_id=workspace.id,
+                         group_member_id=me.id, share_amount=Decimal("120.00")),
+        TransactionSplit(id=uuid.uuid4(), transaction_id=brl.id, workspace_id=workspace.id,
+                         group_member_id=friend.id, share_amount=Decimal("80.00")),
+        TransactionSplit(id=uuid.uuid4(), transaction_id=usd.id, workspace_id=workspace.id,
+                         group_member_id=me.id, share_amount=Decimal("60.00")),
+        TransactionSplit(id=uuid.uuid4(), transaction_id=usd.id, workspace_id=workspace.id,
+                         group_member_id=friend.id, share_amount=Decimal("40.00")),
+    ])
+    await session.commit()
+    return {"brl": brl, "usd": usd, "pets": pets}
+
+
+@pytest.mark.asyncio
+async def test_a_split_expense_counts_only_the_viewers_share(
+    client: AsyncClient, auth_headers: dict, installed, session, test_user, test_workspace
+):
+    """The share-only model, as on the dashboard and the native reports (#305).
+
+    The two split rows count 120 and 330 (the USD row at the rate stored on
+    it), not 200 and 550, in every grouping the report offers.
+    """
+    splits = await _split_expenses(session, test_user, test_workspace, installed)
+    start, end = installed["this_month"], installed["today"]
+
+    body = (await _report(client, auth_headers, "by-category", start, end)).json()
+    pets_row = next(r for r in body["rows"] if r["key"] == str(splits["pets"].id))
+    assert pets_row["value"] == 550.0
+    assert body["total"] == 2420.0
+
+    body = (await _report(client, auth_headers, "pet-spending", start, end)).json()
+    assert [(r["key"], r["value"]) for r in body["rows"]] == [(start.strftime("%Y-%m"), 550.0)]
+
+    body = (await _report(client, auth_headers, "groups", start, end)).json()
+    assert body["total"] == 2420.0
+
+    body = (await _report(client, auth_headers, "payees", start, end)).json()
+    assert [(r["label"], r["value"]) for r in body["rows"]] == [(None, 450.0), ("Vet", 60.0), ("Pet Shop", 40.0)]
+    assert body["total"] == 550.0
+
+    body = (await _report(client, auth_headers, "accounts", start, end)).json()
+    assert [(r["label"], r["value"]) for r in body["rows"]] == [("Card", 390.0), ("Checking", 160.0)]
+
+    body = (await _report(client, auth_headers, "net", start, end)).json()
+    assert sum(r["value"] for r in body["rows"]) == 5000.0 - 2420.0
+
+    # The native report over the same period adds up to the same expense total.
+    native = (await client.get(
+        "/api/reports/income-expenses",
+        params={"start_date": start.isoformat(), "end_date": end.isoformat(), "interval": "monthly"},
+        headers=auth_headers,
+    )).json()
+    expenses = next(b for b in native["summary"]["breakdowns"] if b["key"] == "expenses")
+    assert expenses["value"] == 2420.0
+
+
+@pytest.mark.asyncio
+async def test_the_transactions_input_gives_the_viewers_share(
+    installed, session, test_user, test_workspace
+):
+    """A code report gets the viewer's part of each row, so it can add up
+    what the native figures count (ADR 0028)."""
+    from app.services import plugin_report_service
+    from app.services._query_filters import reporting_date_col
+    from app.services.admin_service import get_credit_card_accounting_mode
+
+    splits = await _split_expenses(session, test_user, test_workspace, installed)
+    report_date = reporting_date_col(await get_credit_card_accounting_mode(session))
+    data = await plugin_report_service._transactions_input(
+        session, test_workspace.id, test_user.id, "BRL",
+        installed["this_month"], installed["today"], None, report_date,
+    )
+    rows = {r["id"]: r for r in data["rows"]}
+    brl, usd = rows[str(splits["brl"].id)], rows[str(splits["usd"].id)]
+    assert (brl["amount"], brl["my_share_amount"], brl["my_share_amount_primary"]) == (
+        "200.00", "120.00", "120.00"
+    )
+    assert (usd["amount"], usd["amount_primary"], usd["my_share_amount"], usd["my_share_amount_primary"]) == (
+        "100.00", "550.00", "60.00", "330.00"
+    )
+    rent = next(r for r in data["rows"] if r["amount"] == "1500.00" and r["type"] == "debit")
+    assert (rent["my_share_amount"], rent["my_share_amount_primary"]) == ("1500.00", "1500.00")
+
+
+async def _group(session, test_user, test_workspace, *, viewer_is_a_member: bool):
+    """A group of the viewer's, with two members."""
+    from app.models.group import Group, GroupMember
+
+    group = Group(id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id, name="Flat")
+    session.add(group)
+    await session.flush()
+    members = [
+        GroupMember(
+            id=uuid.uuid4(), group_id=group.id, workspace_id=test_workspace.id, name=name,
+            is_self=viewer_is_a_member and name == "Me",
+        )
+        for name in ("Me", "Friend")
+    ]
+    session.add_all(members)
+    await session.flush()
+    return group, members[0], members[1]
+
+
+async def _wallet(session, test_user, test_workspace, currency: str = "BRL"):
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id, name="Wallet", type="checking",
+        balance=Decimal("0"), currency=currency,
+    )
+    session.add(account)
+    await session.flush()
+    return account
+
+
+def _row(test_user, test_workspace, account, kind: str, amount: str, *, amount_primary: str | None = None):
+    return Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id, account_id=account.id,
+        description=kind, amount=Decimal(amount),
+        amount_primary=None if amount_primary is None else Decimal(amount_primary),
+        date=app_today(), type=kind, source="manual", currency=account.currency, status="posted",
+        created_at=datetime.now(timezone.utc),
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_group_that_nets_to_zero_gross_keeps_the_viewers_share(session, test_user, test_workspace):
+    """A 100 credit beside a 100 split debit nets to zero gross, but the
+    viewer's own part of it is still 40: the friend's share comes off."""
+    from app.models.transaction_split import TransactionSplit
+    from app.services import plugin_report_service
+
+    account = await _wallet(session, test_user, test_workspace)
+    _, me, friend = await _group(session, test_user, test_workspace, viewer_is_a_member=True)
+    credit = _row(test_user, test_workspace, account, "credit", "100.00", amount_primary="100.00")
+    debit = _row(test_user, test_workspace, account, "debit", "100.00", amount_primary="100.00")
+    session.add_all([credit, debit])
+    await session.flush()
+    session.add_all([
+        TransactionSplit(id=uuid.uuid4(), transaction_id=debit.id, workspace_id=test_workspace.id,
+                         group_member_id=me.id, share_amount=Decimal("60.00")),
+        TransactionSplit(id=uuid.uuid4(), transaction_id=debit.id, workspace_id=test_workspace.id,
+                         group_member_id=friend.id, share_amount=Decimal("40.00")),
+    ])
+    await session.commit()
+
+    manifest = parse_manifest(_manifest({
+        "key": "net-accounts", "name": {"en": "Net by account"}, "measure": "net",
+        "group_by": "account", "chart": "table",
+    }))
+    result = await plugin_report_service.run_report(
+        session, test_workspace.id, test_user.id, manifest, manifest.contributes.reports[0],
+        app_today(), app_today(), [account.id],
+    )
+    assert [(r.label, float(r.value)) for r in result.rows] == [("Wallet", 40.0)]
+
+
+@pytest.mark.asyncio
+async def test_a_group_without_a_viewer_member_entry_counts_the_same_in_both_reports(
+    session, test_user, test_workspace
+):
+    """The viewer paid for two members they don't represent: the query report
+    takes every share off, and the code-report input says the same."""
+    from app.models.transaction_split import TransactionSplit
+    from app.services import plugin_report_service
+    from app.services._query_filters import reporting_date_col
+    from app.services.admin_service import get_credit_card_accounting_mode
+
+    account = await _wallet(session, test_user, test_workspace)
+    _, me, friend = await _group(session, test_user, test_workspace, viewer_is_a_member=False)
+    debit = _row(test_user, test_workspace, account, "debit", "100.00", amount_primary="100.00")
+    session.add(debit)
+    await session.flush()
+    session.add_all([
+        TransactionSplit(id=uuid.uuid4(), transaction_id=debit.id, workspace_id=test_workspace.id,
+                         group_member_id=me.id, share_amount=Decimal("60.00")),
+        TransactionSplit(id=uuid.uuid4(), transaction_id=debit.id, workspace_id=test_workspace.id,
+                         group_member_id=friend.id, share_amount=Decimal("40.00")),
+    ])
+    await session.commit()
+
+    manifest = parse_manifest(_manifest({
+        "key": "by-account", "name": {"en": "By account"}, "group_by": "account", "chart": "table",
+    }))
+    result = await plugin_report_service.run_report(
+        session, test_workspace.id, test_user.id, manifest, manifest.contributes.reports[0],
+        app_today(), app_today(), [account.id],
+    )
+    assert (result.rows, float(result.total)) == ([], 0.0)
+
+    report_date = reporting_date_col(await get_credit_card_accounting_mode(session))
+    data = await plugin_report_service._transactions_input(
+        session, test_workspace.id, test_user.id, "BRL", app_today(), app_today(), [account.id], report_date,
+    )
+    (row,) = data["rows"]
+    assert (row["amount"], row["my_share_amount"], row["my_share_amount_primary"]) == (
+        "100.00", "0.00", "0.00"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_split_row_without_a_stored_conversion_agrees_with_the_native_report(
+    client: AsyncClient, auth_headers: dict, session, test_user, test_workspace
+):
+    """A USD row stored without `amount_primary` counts its raw amount in
+    both reports, so they keep the same figure (ADR 0028)."""
+    from app.models.fx_rate import FxRate
+    from app.models.transaction_split import TransactionSplit
+
+    session.add(FxRate(base_currency="USD", quote_currency="BRL", date=app_today(),
+                       rate=Decimal("5.50"), source="test"))
+    account = await _wallet(session, test_user, test_workspace, currency="USD")
+    _, me, friend = await _group(session, test_user, test_workspace, viewer_is_a_member=True)
+    debit = _row(test_user, test_workspace, account, "debit", "100.00")
+    session.add(debit)
+    await session.flush()
+    session.add_all([
+        TransactionSplit(id=uuid.uuid4(), transaction_id=debit.id, workspace_id=test_workspace.id,
+                         group_member_id=me.id, share_amount=Decimal("60.00")),
+        TransactionSplit(id=uuid.uuid4(), transaction_id=debit.id, workspace_id=test_workspace.id,
+                         group_member_id=friend.id, share_amount=Decimal("40.00")),
+    ])
+    await session.commit()
+
+    today = app_today()
+    native = (await client.get(
+        "/api/reports/income-expenses",
+        params={"start_date": today.isoformat(), "end_date": today.isoformat(), "interval": "monthly"},
+        headers=auth_headers,
+    )).json()
+    expenses = next(b for b in native["summary"]["breakdowns"] if b["key"] == "expenses")
+
+    from app.services import plugin_report_service
+
+    manifest = parse_manifest(_manifest({
+        "key": "by-account", "name": {"en": "By account"}, "group_by": "account", "chart": "table",
+    }))
+    result = await plugin_report_service.run_report(
+        session, test_workspace.id, test_user.id, manifest, manifest.contributes.reports[0],
+        today, today, None,
+    )
+    assert float(result.total) == expenses["value"]
 
 
 @pytest.mark.asyncio
