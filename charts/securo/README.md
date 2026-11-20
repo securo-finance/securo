@@ -102,13 +102,14 @@ move AI knowledge files to object storage.
 
 ### Extra environment variables, volumes and volume mounts
 
-`backend`, `celeryWorker`, `celeryBeat` and `migration` each accept `extraEnv`,
-`extraEnvFrom`, `extraVolumes` and `extraVolumeMounts`, empty by default. The
-entries keep the Kubernetes shapes (`EnvVar`, `EnvFromSource`, `Volume`,
-`VolumeMount`) and are rendered untouched, so `valueFrom` and every volume type
-work. `extraEnv` is read after the ConfigMap and the Secret and therefore wins
-over both, as `env` does over `envFrom` in Kubernetes. `migration` configures
-the post-install/post-upgrade Job, which reaches the database before the pods do.
+`backend`, `celeryWorker`, `celeryBeat`, `migration` and `mcpServer` each
+accept `extraEnv`, `extraEnvFrom`, `extraVolumes` and `extraVolumeMounts`,
+empty by default. The entries keep the Kubernetes shapes (`EnvVar`,
+`EnvFromSource`, `Volume`, `VolumeMount`) and are rendered untouched, so
+`valueFrom` and every volume type work. `extraEnv` is read after the ConfigMap
+and the Secret and therefore wins over both, as `env` does over `envFrom` in
+Kubernetes. `migration` configures the post-install/post-upgrade Job, which
+reaches the database before the pods do.
 
 This is what an external PostgreSQL with TLS client-certificate authentication
 needs, for example:
@@ -134,8 +135,12 @@ backend:
       readOnly: true
 ```
 
-Repeat the block under `celeryWorker`, `celeryBeat` and `migration` if those
-pods connect to the same database.
+Repeat the block under `celeryWorker`, `celeryBeat`, `migration` and `mcpServer`
+if those pods connect to the same database. The MCP server belongs on that list
+even though it is off by default: when `mcpServer.enabled` and
+`config.agentsEnabled` are on, it opens its own database sessions for the agents'
+tools, so without the variables and the mounted certificate those tools fail to
+reach the database.
 
 To mount a PersistentVolumeClaim you already have instead of letting the chart
 create one, set `persistence.attachments.existingClaim`. Keep
