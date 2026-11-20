@@ -1197,37 +1197,32 @@ export default function AssetsPage() {
   // (kept), so it needs the whole workspace, archived holdings included.
   // Both reads name the workspace, in the key and on the request: another tab
   // switching workspace changes the shared default, and an inventory from the
-  // wrong workspace would prune this one's remembered selection. They are
-  // read again each time Performance opens (staleTime 0): the page's
-  // mutations refetch only enabled queries, and an inventory missing a
-  // wallet or holding created meanwhile would drop it from the selection.
+  // wrong workspace would prune this one's remembered selection. Each opening
+  // of Performance is its own read (the opening time is in the key): a copy
+  // cached earlier, or a request still running from the last visit, can miss
+  // a wallet or holding created meanwhile and would drop it from the selection.
   const inventoryWorkspaceId = workspace?.id ?? null
   const inventoryAssetsQuery = useQuery({
-    queryKey: ['assets', 'including-archived', inventoryWorkspaceId],
+    queryKey: ['assets', 'including-archived', inventoryWorkspaceId, performanceOpenedAt],
     queryFn: () => assets.list(true, inventoryWorkspaceId),
     enabled: activeTab === 'performance' && !!inventoryWorkspaceId,
-    staleTime: 0,
   })
   const inventoryWalletsQuery = useQuery({
-    queryKey: ['asset-groups', 'inventory', inventoryWorkspaceId],
+    queryKey: ['asset-groups', 'inventory', inventoryWorkspaceId, performanceOpenedAt],
     queryFn: () => assetGroups.list(inventoryWorkspaceId),
     enabled: activeTab === 'performance' && !!inventoryWorkspaceId,
-    staleTime: 0,
   })
   const inventoryAssets = inventoryAssetsQuery.data
   const inventoryWallets = inventoryWalletsQuery.data
-  const inventoryCurrent =
-    inventoryAssetsQuery.dataUpdatedAt >= performanceOpenedAt &&
-    inventoryWalletsQuery.dataUpdatedAt >= performanceOpenedAt
   const performanceInventory = useMemo(
     () =>
-      inventoryCurrent && inventoryAssets && inventoryWallets
+      inventoryAssets && inventoryWallets
         ? {
             walletIds: inventoryWallets.map((wallet) => wallet.id),
             assetIds: inventoryAssets.map((asset) => asset.id),
           }
         : null,
-    [inventoryCurrent, inventoryAssets, inventoryWallets],
+    [inventoryAssets, inventoryWallets],
   )
   const inventoryError = inventoryAssetsQuery.isError || inventoryWalletsQuery.isError
   const retryInventory = () => {

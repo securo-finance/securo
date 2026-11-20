@@ -118,4 +118,45 @@ describe('performance inventory when the tab is opened again', () => {
     )
     expect(readLastSelection('workspace-a')?.walletIds).toEqual(['wallet-1', 'wallet-2'])
   })
+
+  it('does not prune with a read still running from the last visit', async () => {
+    let finishFirstRead: (wallets: AssetGroup[]) => void = () => undefined
+    let served = [wallet1]
+    let first = true
+    api.assetGroups.list.mockImplementation((workspaceId?: string) => {
+      if (workspaceId && first) {
+        first = false
+        return new Promise<AssetGroup[]>((resolve) => {
+          finishFirstRead = resolve
+        })
+      }
+      return Promise.resolve(served)
+    })
+    writeLastSelection('workspace-a', {
+      scope: 'custom',
+      walletIds: ['wallet-1'],
+      assetIds: [],
+      period: '1y',
+    })
+    const { user } = renderWithProviders(<AssetsPage />, { queryClient: appClient() })
+    await waitFor(() => expect(inventoryReads()).toBe(1))
+    await user.click(screen.getByRole('button', { name: 'Holdings' }))
+
+    // Another browser tab creates wallet-2 and selects it.
+    served = [wallet1, wallet2]
+    writeLastSelection('workspace-a', {
+      scope: 'custom',
+      walletIds: ['wallet-1', 'wallet-2'],
+      assetIds: [],
+      period: '1y',
+    })
+    await user.click(screen.getByRole('button', { name: 'Performance' }))
+    // The first visit's read answers now, without wallet-2.
+    finishFirstRead([wallet1])
+
+    await waitFor(() =>
+      expect(api.assets.performance.mock.calls.at(-1)?.[3]).toEqual(['wallet-1', 'wallet-2']),
+    )
+    expect(readLastSelection('workspace-a')?.walletIds).toEqual(['wallet-1', 'wallet-2'])
+  })
 })
