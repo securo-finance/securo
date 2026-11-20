@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useId, useMemo, useRef } from 'react'
 import { getAccountLabel, getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
@@ -434,6 +434,7 @@ function TransactionForm({
   hasPreview: boolean
 }) {
   const { t } = useTranslation()
+  const id = useId()
   const queryClient = useQueryClient()
   const { user } = useAuth()
   const { privacyMode, MASK } = usePrivacyMode()
@@ -1174,9 +1175,10 @@ function TransactionForm({
         </div>
       )}
       <div className="space-y-2">
-        <Label>{t('transactions.description')}</Label>
+        <Label htmlFor={`${id}-description`}>{t('transactions.description')}</Label>
         {isSynced ? (
           <textarea
+            id={`${id}-description`}
             ref={descriptionRef}
             className="w-full border border-input rounded-md px-3 py-2 text-sm bg-card dark:bg-input/30 shadow-xs resize-none overflow-hidden outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/30 focus-visible:ring-[2px]"
             value={description}
@@ -1193,6 +1195,7 @@ function TransactionForm({
           />
         ) : (
           <DescriptionInput
+            id={`${id}-description`}
             value={description}
             onChange={setDescription}
             // Prefill what was last filed under this description, without
@@ -1230,7 +1233,7 @@ function TransactionForm({
       <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <div className="space-y-2">
           <div className="flex items-center justify-between min-h-5">
-            <Label>{t('transactions.amount')}</Label>
+            <Label htmlFor={`${id}-amount`}>{t('transactions.amount')}</Label>
             {canHideAmounts && (
               <button
                 type="button"
@@ -1245,6 +1248,7 @@ function TransactionForm({
           </div>
           {hideAmounts ? (
             <Input
+              id={`${id}-amount`}
               type="text"
               value={MASK}
               readOnly
@@ -1254,6 +1258,7 @@ function TransactionForm({
           ) : (
             <>
               <Input
+                id={`${id}-amount`}
                 type="text"
                 inputMode="decimal"
                 value={amount}
@@ -1273,8 +1278,9 @@ function TransactionForm({
           )}
         </div>
         <div className="space-y-2">
-          <Label>{t('transactions.currency')}</Label>
+          <Label htmlFor={`${id}-currency`}>{t('transactions.currency')}</Label>
           <select
+            id={`${id}-currency`}
             className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card h-9 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
             value={currency}
             onChange={(e) => handleCurrencyChange(e.target.value)}
@@ -1288,8 +1294,10 @@ function TransactionForm({
       </div>
       <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <div className="space-y-2">
-          <Label>{isSynced ? t('transactions.bankDate') : t('transactions.date')}</Label>
+          <Label htmlFor={`${id}-date`} id={`${id}-date-label`}>{isSynced ? t('transactions.bankDate') : t('transactions.date')}</Label>
           <DatePickerInput
+            id={`${id}-date`}
+            labelledBy={`${id}-date-label`}
             value={date}
             onChange={setDate}
             disabled={isSynced}
@@ -1312,9 +1320,11 @@ function TransactionForm({
       </div>
       {showReportingDateOverride && (
         <div className="space-y-2">
-          <Label>{t('transactions.reportingDate')}</Label>
+          <Label htmlFor={`${id}-reporting-date`} id={`${id}-reporting-date-label`}>{t('transactions.reportingDate')}</Label>
           <div className="flex items-center gap-1">
             <DatePickerInput
+              id={`${id}-reporting-date`}
+              labelledBy={`${id}-reporting-date-label`}
               value={reportingDateOverride}
               onChange={setReportingDateOverride}
               placeholder={t('transactions.reportingDatePlaceholder')}
@@ -1351,9 +1361,10 @@ function TransactionForm({
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
-              <Label className="text-xs">{t('transactions.convertedAmount', { currency: userCurrency })}</Label>
+              <Label htmlFor={`${id}-converted-amount`} className="text-xs">{t('transactions.convertedAmount', { currency: userCurrency })}</Label>
               {hideAmounts ? (
                 <Input
+                  id={`${id}-converted-amount`}
                   type="text"
                   value={MASK}
                   readOnly
@@ -1362,6 +1373,7 @@ function TransactionForm({
                 />
               ) : (
                 <Input
+                  id={`${id}-converted-amount`}
                   type="text"
                   inputMode="decimal"
                   value={convertedAmount}
@@ -1372,8 +1384,9 @@ function TransactionForm({
               )}
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">{t('transactions.exchangeRate')}</Label>
+              <Label htmlFor={`${id}-exchange-rate`} className="text-xs">{t('transactions.exchangeRate')}</Label>
               <Input
+                id={`${id}-exchange-rate`}
                 type="text"
                 inputMode="decimal"
                 value={fxRate}
@@ -1387,8 +1400,9 @@ function TransactionForm({
       )}
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label>{t('transactions.type')}</Label>
+          <Label htmlFor={`${id}-type`}>{t('transactions.type')}</Label>
           <select
+            id={`${id}-type`}
             className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
             value={type}
             onChange={(e) => setType(e.target.value as 'debit' | 'credit')}
@@ -1400,7 +1414,7 @@ function TransactionForm({
         </div>
         <div className="space-y-2">
           <div className="flex items-center justify-between min-h-5">
-            <Label>{t('transactions.category')}</Label>
+            <Label htmlFor={`${id}-category`} id={`${id}-category-label`}>{t('transactions.category')}</Label>
             {canSplitByCategory && !splitByCategory && (
               <button
                 type="button"
@@ -1417,6 +1431,8 @@ function TransactionForm({
             </div>
           ) : (
             <CategorySelect
+              id={`${id}-category`}
+              labelledBy={`${id}-category-label`}
               value={categoryId}
               onChange={setCategoryId}
               categories={displayCategories}
@@ -1431,7 +1447,8 @@ function TransactionForm({
       </div>
       {transaction?.card_masked_number && (
         <div className="space-y-2">
-          <Label>{t('transactions.card')}</Label>
+          {/* Not a <label>: the value below is text, there is no field to name. */}
+          <span className="text-sm font-medium">{t('transactions.card')}</span>
           {/* Read-only text rather than a disabled input, so a long label
               wraps and never pushes the ending out of view. */}
           <div className="flex min-h-9 items-center gap-2 rounded-md border border-input bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground">
@@ -1459,8 +1476,10 @@ function TransactionForm({
       )}
       <div className={cn("grid gap-4", isSynced ? "grid-cols-1" : "grid-cols-2")}>
         <div className="space-y-2">
-          <Label>{t('payees.payee')}</Label>
+          <Label htmlFor={`${id}-payee`} id={`${id}-payee-label`}>{t('payees.payee')}</Label>
           <PayeeSelect
+            id={`${id}-payee`}
+            labelledBy={`${id}-payee-label`}
             value={payeeId}
             onChange={setPayeeId}
             payees={payeesList ?? []}
@@ -1472,8 +1491,9 @@ function TransactionForm({
         </div>
         {!isSynced && (
           <div className="space-y-2">
-            <Label>{t('transactions.account')}</Label>
+            <Label htmlFor={`${id}-account`}>{t('transactions.account')}</Label>
             <select
+              id={`${id}-account`}
               className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
               value={accountId}
               onChange={(e) => setAccountId(e.target.value)}
@@ -1500,7 +1520,7 @@ function TransactionForm({
             <span className="text-xs font-normal text-muted-foreground">{t('transactions.flagReminderHint')}</span>
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">{t('transactions.flagRemindOn')}</Label>
+            <Label htmlFor={`${id}-flag-due-date`} id={`${id}-flag-due-date-label`} className="text-xs">{t('transactions.flagRemindOn')}</Label>
             <div className="flex flex-wrap items-center gap-1.5">
               {flagDuePresets().map((preset) => (
                 <Button
@@ -1516,6 +1536,8 @@ function TransactionForm({
               ))}
               <div className="flex min-w-[150px] flex-1 items-center gap-1">
                 <DatePickerInput
+                  id={`${id}-flag-due-date`}
+                  labelledBy={`${id}-flag-due-date-label`}
                   value={flagDueDate}
                   onChange={(value) => saveFlagReminder({ flag_due_date: value || null })}
                   placeholder={t('transactions.flagPickDate')}
@@ -1560,8 +1582,9 @@ function TransactionForm({
       )}
 
       <div className="space-y-2">
-        <Label>{t('transactions.notes')} <span className="text-muted-foreground font-normal text-xs">({t('transactions.notesHint')})</span></Label>
+        <Label htmlFor={`${id}-notes`}>{t('transactions.notes')} <span className="text-muted-foreground font-normal text-xs">({t('transactions.notesHint')})</span></Label>
         <textarea
+          id={`${id}-notes`}
           className="w-full border border-input rounded-md px-3 py-2 text-sm bg-card resize-none focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-0"
           rows={2}
           value={notes}
@@ -1571,8 +1594,9 @@ function TransactionForm({
       </div>
 
       {transaction && (
-        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3">
+        <label htmlFor={`${id}-exclude-from-reports`} className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3">
           <input
+            id={`${id}-exclude-from-reports`}
             type="checkbox"
             className="mt-0.5 h-4 w-4 rounded border-border accent-primary"
             checked={excludeFromReports}
@@ -1595,7 +1619,7 @@ function TransactionForm({
           whose due_date matches. */}
       {isCreditCardSelected && (
           <div className="space-y-2">
-            <Label>
+            <Label htmlFor={`${id}-effective-bill-date`} id={`${id}-effective-bill-date-label`}>
               {t('transactions.effectiveBillDate', 'Effective bill date')}{' '}
               <span className="text-muted-foreground font-normal text-xs">
                 ({t('transactions.effectiveBillDateHint', 'manual, overrides the automatic cycle')})
@@ -1603,6 +1627,8 @@ function TransactionForm({
             </Label>
             <div className="inline-flex items-center gap-1">
               <DatePickerInput
+                id={`${id}-effective-bill-date`}
+                labelledBy={`${id}-effective-bill-date-label`}
                 value={effectiveBillDate}
                 onChange={setEffectiveBillDate}
                 placeholder={t('transactions.effectiveBillDatePlaceholder', 'Bill due date (optional)')}
@@ -1666,8 +1692,9 @@ function TransactionForm({
       {isCreating && !isSynced && (
         <div className="space-y-3 border rounded-md p-3">
           <div className="flex items-center gap-6">
-            <label className="flex items-center gap-2 cursor-pointer">
+            <label htmlFor={`${id}-recurring`} className="flex items-center gap-2 cursor-pointer">
               <input
+                id={`${id}-recurring`}
                 type="checkbox"
                 checked={isRecurring}
                 onChange={(e) => {
@@ -1678,8 +1705,9 @@ function TransactionForm({
               />
               <span className="text-sm font-medium">{t('transactions.makeRecurring')}</span>
             </label>
-            <label className="flex items-center gap-2 cursor-pointer">
+            <label htmlFor={`${id}-installment`} className="flex items-center gap-2 cursor-pointer">
               <input
+                id={`${id}-installment`}
                 type="checkbox"
                 checked={isInstallment}
                 onChange={(e) => {
@@ -1694,8 +1722,9 @@ function TransactionForm({
           {isRecurring && (
             <div className="grid grid-cols-2 gap-4 pt-1">
               <div className="space-y-2">
-                <Label>{t('recurring.frequency')}</Label>
+                <Label htmlFor={`${id}-frequency`}>{t('recurring.frequency')}</Label>
                 <select
+                  id={`${id}-frequency`}
                   className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
                   value={frequency}
                   onChange={(e) => setFrequency(e.target.value as RecurringTransaction['frequency'])}
@@ -1709,8 +1738,10 @@ function TransactionForm({
                 </select>
               </div>
               <div className="space-y-2">
-                <Label>{t('recurring.endDate')}</Label>
+                <Label htmlFor={`${id}-end-date`} id={`${id}-end-date-label`}>{t('recurring.endDate')}</Label>
                 <DatePickerInput
+                  id={`${id}-end-date`}
+                  labelledBy={`${id}-end-date-label`}
                   value={endDate}
                   onChange={setEndDate}
                   placeholder={t('recurring.endDate')}
@@ -1722,8 +1753,9 @@ function TransactionForm({
           {isInstallment && (
             <div className="grid grid-cols-2 gap-4 pt-1">
               <div className="space-y-2">
-                <Label>{t('transactions.installmentFrequency')}</Label>
+                <Label htmlFor={`${id}-installment-frequency`}>{t('transactions.installmentFrequency')}</Label>
                 <select
+                  id={`${id}-installment-frequency`}
                   className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
                   value={installmentFrequency}
                   onChange={(e) => setInstallmentFrequency(e.target.value as RecurringTransaction['frequency'])}
@@ -1737,8 +1769,9 @@ function TransactionForm({
                 </select>
               </div>
               <div className="space-y-2">
-                <Label>{t('transactions.installmentCount')}</Label>
+                <Label htmlFor={`${id}-installment-count`}>{t('transactions.installmentCount')}</Label>
                 <input
+                  id={`${id}-installment-count`}
                   type="number"
                   min={2}
                   max={360}
@@ -1902,6 +1935,7 @@ function MortgagePaymentEditor({
   accounts: { id: string; name: string; display_name?: string | null; type?: string; currency?: string; secured_asset_id?: string | null }[]
 }) {
   const { t } = useTranslation()
+  const id = useId()
   const queryClient = useQueryClient()
   const loans = useMemo(
     () => accounts.filter(account => account.type === 'loan' && account.secured_asset_id && account.currency === transaction.currency),
@@ -1984,11 +2018,11 @@ function MortgagePaymentEditor({
           <div key={loan.id} className="rounded-md bg-muted/40 p-3 space-y-2">
             <div className="text-sm font-medium">{loan.display_name || loan.name}{propertyName ? <span className="ms-1 text-xs font-normal text-muted-foreground">· {propertyName}</span> : null}</div>
             <div className="grid grid-cols-2 gap-3">
-              <label className="text-xs text-muted-foreground">{t('transactions.mortgagePrincipal')}
-              <Input type="number" min="0" step="0.01" value={value.principal} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }} onChange={e => setDraftAmounts(prev => ({ ...(prev ?? amounts), [loan.id]: { ...value, principal: e.target.value } }))} />
+              <label htmlFor={`${id}-${loan.id}-principal`} className="text-xs text-muted-foreground">{t('transactions.mortgagePrincipal')}
+              <Input id={`${id}-${loan.id}-principal`} type="number" min="0" step="0.01" value={value.principal} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }} onChange={e => setDraftAmounts(prev => ({ ...(prev ?? amounts), [loan.id]: { ...value, principal: e.target.value } }))} />
               </label>
-              <label className="text-xs text-muted-foreground">{t('transactions.mortgageInterest')}
-              <Input type="number" min="0" step="0.01" value={value.interest} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }} onChange={e => setDraftAmounts(prev => ({ ...(prev ?? amounts), [loan.id]: { ...value, interest: e.target.value } }))} />
+              <label htmlFor={`${id}-${loan.id}-interest`} className="text-xs text-muted-foreground">{t('transactions.mortgageInterest')}
+              <Input id={`${id}-${loan.id}-interest`} type="number" min="0" step="0.01" value={value.interest} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }} onChange={e => setDraftAmounts(prev => ({ ...(prev ?? amounts), [loan.id]: { ...value, interest: e.target.value } }))} />
               </label>
             </div>
             <p className="text-xs text-muted-foreground">{t('transactions.mortgageSplitPercentages', { principal: percentage(value.principal, paymentAmount), interest: percentage(value.interest, paymentAmount) })}</p>
@@ -2026,6 +2060,7 @@ function AddTransactionToRuleDialog({
   onSubmit: (rule: Rule) => void
 }) {
   const { t } = useTranslation()
+  const id = useId()
   const [ruleId, setRuleId] = useState('')
   const [openCombobox, setOpenCombobox] = useState(false)
 
@@ -2092,10 +2127,11 @@ function AddTransactionToRuleDialog({
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label>{t('transactions.existingRule')}</Label>
+            <Label htmlFor={`${id}-existing-rule`}>{t('transactions.existingRule')}</Label>
             <Popover open={openCombobox} onOpenChange={setOpenCombobox}>
               <PopoverTrigger asChild>
                 <button
+                  id={`${id}-existing-rule`}
                   type="button"
                   disabled={loadingRules || rules.length === 0}
                   className="flex w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-3 py-2 text-sm text-start shadow-xs transition-[color,box-shadow] outline-hidden focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 dark:hover:bg-input/50 h-9 cursor-pointer"
