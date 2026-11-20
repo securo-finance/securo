@@ -1390,10 +1390,14 @@ async def test_income_expenses_report_category_total_matches_its_floored_periods
     totals = {b.key: b.value for b in report.summary.breakdowns}
     assert totals["expenses"] == pytest.approx(1000.0, abs=0.001)
     food_trend = next(
-        ct for ct in report.category_trend
-        if ct.key == str(food.id) and ct.group == "expenses"
+        (
+            ct for ct in report.category_trend
+            if ct.key == str(food.id) and ct.group == "expenses"
+        ),
+        None,
     )
+    assert food_trend is not None, "the category with a positive month left the trend"
     series = {p.date: p.value for p in food_trend.series}
-    assert series[last_month.strftime("%Y-%m")] == pytest.approx(0.0, abs=0.001)
-    assert series[this_month.strftime("%Y-%m")] == pytest.approx(1000.0, abs=0.001)
+    assert series.get(last_month.strftime("%Y-%m")) == pytest.approx(0.0, abs=0.001)
+    assert series.get(this_month.strftime("%Y-%m")) == pytest.approx(1000.0, abs=0.001)
     assert food_trend.total == pytest.approx(1000.0, abs=0.001)
