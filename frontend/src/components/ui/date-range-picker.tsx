@@ -193,7 +193,14 @@ export function DateRangePicker({
       <PopoverContent
         align="end"
         sideOffset={8}
-        className="w-auto p-0"
+        // The two stacked calendars are about 700px tall. On a phone that is
+        // taller than the space below the trigger, and Radix only moves the
+        // popover around, it never shrinks it, so the footer (Reset, Cancel,
+        // Apply) ended up past the bottom of the screen. Capping it to the
+        // height the popper says is available, and scrolling inside, keeps
+        // every day and every button reachable (#287).
+        collisionPadding={8}
+        className="max-h-[var(--radix-popover-content-available-height)] w-auto overflow-y-auto overscroll-contain p-0"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <div className="border-b border-border/70 px-4 py-3">
@@ -244,7 +251,9 @@ export function DateRangePicker({
             <span>{draftError}</span>
           </div>
         )}
-        <div className="flex items-center justify-between gap-2 border-t border-border/70 px-3 py-2">
+        {/* Pinned to the bottom of the scrolling popover, so Apply stays on
+            screen while the calendars scroll behind it. */}
+        <div className="sticky bottom-0 flex items-center justify-between gap-2 border-t border-border/70 bg-popover px-3 py-2">
           <button
             type="button"
             onClick={() => {
