@@ -703,6 +703,54 @@ describe('TransactionDialog reporting date override', () => {
   })
 })
 
+describe('TransactionDialog save and next', () => {
+  function renderEdit(hasNext: boolean) {
+    vi.spyOn(currencies, 'list').mockResolvedValue([])
+    vi.spyOn(payees, 'list').mockResolvedValue([])
+    vi.spyOn(groups, 'list').mockResolvedValue([])
+    const onSave = vi.fn()
+    const utils = renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={syncedTransaction()}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={onSave}
+        loading={false}
+        error={null}
+        isSynced
+        hasNext={hasNext}
+      />,
+    )
+    return { ...utils, onSave }
+  }
+
+  it('saves with the saveAndNext action when the host has a next row', async () => {
+    const { onSave, user } = renderEdit(true)
+
+    await user.click(screen.getByRole('button', { name: t('transactions.saveAndNext') }))
+
+    expect(onSave).toHaveBeenCalledOnce()
+    expect(onSave.mock.calls[0][4]).toBe('saveAndNext')
+  })
+
+  it('keeps a plain save next to it', async () => {
+    const { onSave, user } = renderEdit(true)
+
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave.mock.calls[0][4]).toBe('save')
+  })
+
+  it('offers no save and next without a next row', () => {
+    renderEdit(false)
+
+    expect(screen.queryByRole('button', { name: t('transactions.saveAndNext') })).not.toBeInTheDocument()
+  })
+})
+
 /** Shows the flag state a mounted list query holds, as a page would. */
 function FlagConsumer({ queryKey, read }: { queryKey: string[]; read: () => Promise<Transaction> }) {
   const { data } = useQuery({ queryKey, queryFn: read })

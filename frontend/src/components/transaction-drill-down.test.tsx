@@ -116,6 +116,21 @@ describe('TransactionDrillDown', () => {
       expect(screen.getAllByRole('button', { name: t('dashboard.drillDownQuickCategorize') })).toHaveLength(1)
     })
 
+    it('opens a row from its button and hands over the rows to step through', async () => {
+      const { user, onTransactionClick } = renderQuick([
+        row({ id: 'first', description: 'First row', date: '2026-09-01' }),
+        row({ id: 'second', description: 'Second row', date: '2026-09-02' }),
+      ])
+
+      const open = await screen.findAllByRole('button', { name: t('dashboard.drillDownOpenTransaction') })
+      await user.click(open[0])
+
+      expect(onTransactionClick).toHaveBeenCalledOnce()
+      const [tx, queue] = onTransactionClick.mock.calls[0]
+      expect(tx.id).toBe('first')
+      expect(queue.map((q: { id: string }) => q.id)).toEqual(['first', 'second'])
+    })
+
     it('shows no picker unless the host opts in', async () => {
       renderQuick([row({ id: 'plain' })], false)
 

@@ -49,7 +49,7 @@ import { CategorySplitBadge, TransactionCategoryIcon } from '@/components/catego
 import { isSplitByCategory, projectedSplitSource } from '@/lib/category-lines'
 import { AccountIcon } from '@/components/account-icon'
 import { TransactionDrillDown, type DrillDownFilter } from '@/components/transaction-drill-down'
-import { TransactionDialog, type TransactionSavePayload } from '@/components/transaction-dialog'
+import { TransactionDialog, type SaveAction, type TransactionSavePayload } from '@/components/transaction-dialog'
 import { extractApiError } from '@/lib/api-errors'
 import { TransactionCalendarView } from '@/components/transaction-calendar-view'
 import { TransactionsViewSwitcher, type TransactionsViewMode } from '@/components/transactions-view-switcher'
@@ -219,6 +219,14 @@ export default function DashboardPage() {
     setSearchParams(params, { replace: true })
   }, [selectedMonth, txViewMode, calendarSelectedDate, setSearchParams])
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
+  // The drill-down rows the dialog was opened from, for "Save & next". A
+  // snapshot: rows a save removes from the panel (e.g. now categorized) must
+  // not shift what "next" means.
+  const [editQueue, setEditQueue] = useState<Transaction[]>([])
+  const nextInQueue = (id: string) => {
+    const index = editQueue.findIndex((tx) => tx.id === id)
+    return index >= 0 ? editQueue[index + 1] ?? null : null
+  }
   const [dialogOpen, setDialogOpen] = useState(false)
   const [createRuleOpen, setCreateRuleOpen] = useState(false)
   const [createRuleInitialData, setCreateRuleInitialData] = useState<RuleDialogInitialData | undefined>(undefined)
@@ -423,12 +431,24 @@ export default function DashboardPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }: TransactionSavePayload & { id: string }) =>
-      transactions.update(id, data),
-    onSuccess: () => {
+    mutationFn: ({ id, ...data }: TransactionSavePayload & { id: string; action?: SaveAction }) => {
+      // `action` only steers what happens after the save; it is not a field.
+      const payload = { ...data }
+      delete payload.action
+      return transactions.update(id, payload)
+    },
+    onSuccess: (_saved, { id, action }) => {
       invalidateFinancialQueries(queryClient)
+      // "Save & next" from a drill-down: load the following row into the
+      // dialog that is already open, instead of closing it.
+      const next = action === 'saveAndNext' ? nextInQueue(id) : null
+      if (next) {
+        setEditingTx(next)
+        return
+      }
       setDialogOpen(false)
       setEditingTx(null)
+      setEditQueue([])
     },
   })
 
@@ -438,6 +458,7 @@ export default function DashboardPage() {
       invalidateFinancialQueries(queryClient)
       setDialogOpen(false)
       setEditingTx(null)
+      setEditQueue([])
     },
   })
 
@@ -447,6 +468,7 @@ export default function DashboardPage() {
       invalidateFinancialQueries(queryClient)
       setDialogOpen(false)
       setEditingTx(null)
+      setEditQueue([])
     },
   })
 
@@ -1974,7 +1996,7 @@ export default function DashboardPage() {
             : null
         }
         onClose={() => setDrillDown(null)}
-        onTransactionClick={(tx) => { setEditingTx(tx); setDialogOpen(true) }}
+        onTransactionClick={(tx, queue) => { setEditQueue(queue); setEditingTx(tx); setDialogOpen(true) }}
         quickCategorize={canWrite ? {
           categories: categoriesList ?? [],
           groups: categoryGroupsList ?? [],
@@ -1985,8 +2007,9 @@ export default function DashboardPage() {
 
       <TransactionDialog
         open={dialogOpen}
-        onClose={() => { setDialogOpen(false); setEditingTx(null) }}
+        onClose={() => { setDialogOpen(false); setEditingTx(null); setEditQueue([]) }}
         transaction={editingTx}
+        hasNext={!!editingTx && !!nextInQueue(editingTx.id)}
         categories={categoriesList ?? []}
         categoryGroups={categoryGroupsList ?? []}
         accounts={(accountsList ?? []).map((a) => ({
@@ -1997,8 +2020,8 @@ export default function DashboardPage() {
           currency: a.currency,
           secured_asset_id: a.secured_asset_id,
         }))}
-        onSave={(data) => {
-          if (editingTx) updateMutation.mutate({ id: editingTx.id, ...data })
+        onSave={(data, _recurring, _installment, _files, action) => {
+          if (editingTx) updateMutation.mutate({ id: editingTx.id, ...data, action })
         }}
         onDelete={() => {
           if (editingTx) deleteMutation.mutate(editingTx.id)
@@ -2007,6 +2030,7 @@ export default function DashboardPage() {
         onCreateRule={(tx) => {
           setDialogOpen(false)
           setEditingTx(null)
+          setEditQueue([])
           handleCreateRuleFromTransaction(tx)
         }}
         loading={updateMutation.isPending || deleteMutation.isPending || unlinkTransferMutation.isPending}

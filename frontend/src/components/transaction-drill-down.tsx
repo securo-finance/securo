@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery } from '@tanstack/react-query'
 import { transactions as transactionsApi, dashboard, admin } from '@/lib/api'
-import { AlertTriangle, Clock, Info, Paperclip, X } from 'lucide-react'
+import { AlertTriangle, ChevronRight, Clock, Info, Paperclip, X } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
 import { TransactionCategoryIcon } from '@/components/category-lines-display'
 import { isSplitByCategory } from '@/lib/category-lines'
@@ -90,7 +90,11 @@ export function TransactionDrillDown({
 }: {
   filter: DrillDownFilter | null
   onClose: () => void
-  onTransactionClick?: (tx: Transaction) => void
+  /**
+   * A row was opened. `queue` is every real transaction the panel lists, in
+   * order, so a host can step to the next one without reopening anything.
+   */
+  onTransactionClick?: (tx: Transaction, queue: Transaction[]) => void
   useViewerShare?: boolean
   quickCategorize?: DrillDownQuickCategorize
 }) {
@@ -321,6 +325,12 @@ export function TransactionDrillDown({
     return items
   }, [data, projectedTxs, filter, noAccounts, useViewerShare, user?.id])
 
+  // The rows a host can step through from the dialog, in the order shown.
+  const queue = useMemo(
+    () => displayItems.flatMap((item) => (!item.isProjected && item.transaction ? [item.transaction] : [])),
+    [displayItems],
+  )
+
   const isOpen = !!filter
   useEffect(() => {
     if (!isOpen) return
@@ -449,7 +459,7 @@ export function TransactionDrillDown({
                   className={`flex items-center gap-3 px-5 py-3 hover:bg-muted transition-colors ${!item.isProjected && onTransactionClick ? 'cursor-pointer' : ''} ${saving ? 'opacity-60' : ''}`}
                   onClick={() => {
                     if (!item.isProjected && item.transaction) {
-                      onTransactionClick?.(item.transaction)
+                      onTransactionClick?.(item.transaction, queue)
                     }
                   }}
                 >
@@ -531,6 +541,22 @@ export function TransactionDrillDown({
                       </div>
                     )}
                   </div>
+                  {onTransactionClick && item.transaction && !item.isProjected && (
+                    // The whole row opens the dialog; this makes that visible,
+                    // most of all when a row also carries the inline picker.
+                    <button
+                      type="button"
+                      aria-label={t('dashboard.drillDownOpenTransaction')}
+                      title={t('dashboard.drillDownOpenTransaction')}
+                      className="-me-2 w-7 h-7 shrink-0 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onTransactionClick(item.transaction!, queue)
+                      }}
+                    >
+                      <ChevronRight size={16} className="rtl-mirror" aria-hidden="true" />
+                    </button>
+                  )}
                 </div>
                 )
               })}
