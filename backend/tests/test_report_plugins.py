@@ -286,7 +286,14 @@ async def test_removing_the_plugin_takes_its_reports(client: AsyncClient, auth_h
 
 # --- Code reports ----------------------------------------------------------------
 
-from app.plugins.report_view import InvalidView, parse_view  # noqa: E402
+from app.plugins.report_view import (  # noqa: E402
+    MAX_BLOCKS,
+    MAX_POINTS,
+    MAX_SERIES,
+    MAX_TOTAL_POINTS,
+    InvalidView,
+    parse_view,
+)
 from tests import test_code_plugins as code_plugins  # noqa: E402
 
 code_catalog = code_plugins.catalog
@@ -306,6 +313,10 @@ class Plugin:
             raise RuntimeError("the numbers don't add up")
         if params["report"] == "bad-view":
             return {"blocks": [{"type": "html", "html": "<script>x</script>"}]}
+        if params["report"] == "huge-view":
+            chart = {"type": "chart", "chart": "line", "x": list(range(1000)),
+                     "series": [{"name": f"s{i}", "values": [0] * 1000} for i in range(12)]}
+            return {"blocks": [chart] * 22}
         names = {c["id"]: c["name"] for c in data.get("categories", [])}
         totals = defaultdict(Decimal)
         for tx in data["transactions"]["rows"]:
@@ -337,7 +348,9 @@ def _code_manifest(**report: Any) -> dict[str, Any]:
     ]
     base = {"key": "insights", "name": {"en": "Insights"}, "code": True,
             "inputs": ["transactions", "accounts", "categories"]}
-    reports = [dict(base, **report)] + [dict(base, key=k, inputs=[]) for k in ("broken", "bad-view")]
+    reports = [dict(base, **report)] + [
+        dict(base, key=k, inputs=[]) for k in ("broken", "bad-view", "huge-view")
+    ]
     manifest["contributes"] = {"reports": reports}
     return manifest
 
@@ -396,6 +409,23 @@ def test_a_view_is_data_only():
     ):
         with pytest.raises(InvalidView):
             parse_view(bad)
+
+
+def _chart(points: int = MAX_POINTS, series: int = MAX_SERIES) -> dict[str, Any]:
+    return {
+        "type": "chart", "chart": "line", "x": list(range(points)),
+        "series": [{"name": f"s{i}", "values": [0] * points} for i in range(series)],
+    }
+
+
+def test_a_view_draws_a_bounded_number_of_points_in_all():
+    """A block is capped one by one, but 24 charts at those limits are minutes of drawing and gigabytes (#307)."""
+    parse_view({"blocks": [_chart()]})  # one chart at the limits is what a report needs
+    for too_many in ([_chart(), _chart()], [_chart() for _ in range(MAX_BLOCKS)]):
+        with pytest.raises(InvalidView, match="chart points"):
+            parse_view({"blocks": too_many})
+    # Up to the total is fine however the charts share it: 24 of 500 points.
+    parse_view({"blocks": [_chart(points=MAX_TOTAL_POINTS // MAX_BLOCKS, series=1) for _ in range(MAX_BLOCKS)]})
 
 
 async def _install_code_report(client, headers, fake) -> None:
@@ -459,6 +489,8 @@ async def test_a_failing_or_invalid_code_report_is_an_error_for_the_page(
     bad = await _code_report(client, auth_headers, "bad-view", today, today)
     assert bad.status_code == 502 and "invalid view" in bad.json()["detail"]
     assert "<script>" not in bad.json()["detail"]
+    huge = await _code_report(client, auth_headers, "huge-view", today, today)
+    assert huge.status_code == 502 and "chart points" in huge.json()["detail"]
 
 
 @pytest.mark.asyncio
