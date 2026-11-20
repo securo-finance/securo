@@ -13,7 +13,7 @@ import { pluginReportEntries, type PluginReportEntry } from '@/lib/library'
  * there's nothing more to wait for.
  */
 export function usePluginReports(): { entries: PluginReportEntry[] | null; settled: boolean } {
-  const { pluginsEnabled, isLoading: flagsLoading, isError: flagsFailed } = useFeatureFlags()
+  const { pluginsEnabled, isLoading: flagsLoading, isError: flagsFailed, isKnown: flagsKnown } = useFeatureFlags()
   const { data, isError } = useQuery({
     queryKey: ['plugins', 'installed'],
     // Read only when fetching: with plugins off the API is never touched.
@@ -22,10 +22,10 @@ export function usePluginReports(): { entries: PluginReportEntry[] | null; settl
     staleTime: 5 * 60 * 1000,
   })
   const entries = useMemo(() => {
-    // Unread flags say nothing about plugins: keep what was saved.
-    if (flagsLoading || flagsFailed) return null
+    // Unread flags (loading, failed, or paused offline) say nothing about plugins: keep what was saved.
+    if (flagsLoading || flagsFailed || flagsKnown === false) return null
     if (!pluginsEnabled) return []
     return data ? pluginReportEntries(data) : null
-  }, [data, flagsLoading, flagsFailed, pluginsEnabled])
+  }, [data, flagsLoading, flagsFailed, flagsKnown, pluginsEnabled])
   return { entries, settled: !flagsLoading && (!pluginsEnabled || data !== undefined || isError) }
 }

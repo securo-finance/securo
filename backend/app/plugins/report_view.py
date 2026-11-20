@@ -194,6 +194,30 @@ class SankeyBlock(_Block):
                 raise ValueError("a link names a node that isn't there")
             if link.source == link.target:
                 raise ValueError("a link can't go from a node to itself")
+        # Flows only go forward: a loop through other nodes can't be laid out.
+        outgoing: dict[int, set[int]] = {}
+        for link in self.links:
+            outgoing.setdefault(link.source, set()).add(link.target)
+        state: dict[int, int] = {}  # 1 while being walked, 2 once done
+
+        def walk(node: int) -> None:
+            stack = [(node, iter(outgoing.get(node, ())))]
+            state[node] = 1
+            while stack:
+                current, children = stack[-1]
+                child = next(children, None)
+                if child is None:
+                    state[current] = 2
+                    stack.pop()
+                elif state.get(child) == 1:
+                    raise ValueError("links can't go round in a loop")
+                elif child not in state:
+                    state[child] = 1
+                    stack.append((child, iter(outgoing.get(child, ()))))
+
+        for node in list(outgoing):
+            if node not in state:
+                walk(node)
         return self
 
 

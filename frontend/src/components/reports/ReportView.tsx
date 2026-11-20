@@ -132,14 +132,16 @@ function CartesianView({ block, f }: { block: Block<'chart'>; f: Formatter }) {
   const color = (s: number) => block.series[s].color ?? PALETTE[s % PALETTE.length]
   const single = block.series.length === 1
 
-  // A projected stretch is its own key, drawn dashed; the point it starts at is in both, so they join.
+  // A projected stretch is its own key, drawn dashed. A line or area repeats the point it
+  // starts at, so the two join; a bar can't, or it would count that point twice.
   const rows = block.x.map((x, i) => {
     const row: Record<string, string | number | null> = { x: f.xLabel(x, block.x_format) }
     block.series.forEach((series, s) => {
       const from = series.projected_from == null ? -1 : block.x.indexOf(series.projected_from)
+      const joins = (series.kind ?? defaultKind) !== 'bar'
       const v = series.values[i] ?? null
       row[`s${s}`] = from >= 0 && i > from ? null : v
-      if (from >= 0) row[`p${s}`] = i >= from ? v : null
+      if (from >= 0) row[`p${s}`] = i > from || (joins && i === from) ? v : null
     })
     return row
   })
@@ -487,7 +489,9 @@ function Table({ block, f }: { block: Block<'table'>; f: Formatter }) {
     })
   }, [block.rows, sort])
   const pages = Math.max(1, Math.ceil(rows.length / size))
-  const shown = rows.slice(page * size, page * size + size)
+  // Fewer rows (a new period) can leave the page past the end: show the last one.
+  const current = Math.min(page, pages - 1)
+  const shown = rows.slice(current * size, current * size + size)
   const largest = (key: string) => Math.max(0, ...block.rows.map((row) => Math.abs(Number(row[key]) || 0)))
   const hasTotals = block.columns.some((c) => c.total)
   const toggle = (key: string) => {
@@ -551,12 +555,12 @@ function Table({ block, f }: { block: Block<'table'>; f: Formatter }) {
       </div>
       {pages > 1 && (
         <div className="mt-3 flex items-center justify-end gap-2 text-xs text-muted-foreground">
-          <span>{t('reports.pluginReport.page', { page: page + 1, pages })}</span>
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" disabled={page === 0} onClick={() => setPage(page - 1)}
+          <span>{t('reports.pluginReport.page', { page: current + 1, pages })}</span>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" disabled={current === 0} onClick={() => setPage(current - 1)}
             aria-label={t('reports.pluginReport.previousPage')}>
             <ChevronLeft size={14} />
           </Button>
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" disabled={page >= pages - 1} onClick={() => setPage(page + 1)}
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" disabled={current >= pages - 1} onClick={() => setPage(current + 1)}
             aria-label={t('reports.pluginReport.nextPage')}>
             <ChevronRight size={14} />
           </Button>

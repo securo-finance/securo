@@ -16,6 +16,8 @@ export function useFeatureFlags() {
     isLoading,
     /** The flags couldn't be read: every feature reads as off, though it may not be. */
     isError: isError && data === undefined,
+    /** The flags were read: off means off. */
+    isKnown: data !== undefined,
     agentsEnabled: !!data?.features?.agents,
     pluginsEnabled: !!data?.features?.plugins,
   }

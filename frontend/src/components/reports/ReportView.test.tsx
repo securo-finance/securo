@@ -141,4 +141,18 @@ describe('ReportView layout and the richer blocks', () => {
     expect(within(total).getByText('$6.00')).toBeInTheDocument()
     expect(screen.getByText('-$8.00').closest('td')?.className).toContain('text-rose-600')
   })
+
+  it('goes back to the last page when the rows shrink under it', async () => {
+    const table = (n: number): View => ({ blocks: [{
+      type: 'table', page_size: 5, columns: [{ key: 'name', label: 'Name' }],
+      rows: Array.from({ length: n }, (_, i) => ({ name: `Row ${i}` })),
+    }] })
+    const { user, rerender } = renderWithProviders(<ReportView currency="USD" view={table(12)} />)
+    await user.click(screen.getByRole('button', { name: t('reports.pluginReport.nextPage') }))
+    await user.click(screen.getByRole('button', { name: t('reports.pluginReport.nextPage') }))
+    expect(screen.getByText('Row 10')).toBeInTheDocument()
+    rerender(<ReportView currency="USD" view={table(6)} />)
+    expect(screen.getByText(t('reports.pluginReport.page', { page: 2, pages: 2 }))).toBeInTheDocument()
+    expect(screen.getByText('Row 5')).toBeInTheDocument()
+  })
 })

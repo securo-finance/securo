@@ -535,12 +535,15 @@ def test_a_view_lays_out_and_mixes_every_kind_of_block():
         {"type": "treemap", "items": [{"name": "empty"}]},
         {"type": "sankey", "nodes": ["a", "b"], "links": [{"source": 0, "target": 5, "value": 1}]},
         {"type": "sankey", "nodes": ["a", "b"], "links": [{"source": 0, "target": 0, "value": 1}]},
+        {"type": "sankey", "nodes": ["a", "b", "c"], "links": [{"source": 0, "target": 1, "value": 1},
+                                                              {"source": 1, "target": 2, "value": 1},
+                                                              {"source": 2, "target": 0, "value": 1}]},
         {"type": "progress", "items": [{"label": "x", "value": 1, "target": 0}]},
         {"type": "table", "columns": [{"key": "a", "label": "A"}], "rows": [], "sort_by": "b"},
         {"type": "kpi", "label": "x", "value": 1, "width": "huge"},
     ],
     ids=["projected-from-unknown", "pie-second-axis", "reference-nowhere", "heatmap-shape", "heatmap-too-big",
-         "treemap-empty-item", "sankey-unknown-node", "sankey-loop", "progress-zero-target", "table-sort-unknown",
+         "treemap-empty-item", "sankey-unknown-node", "sankey-loop", "sankey-cycle", "progress-zero-target", "table-sort-unknown",
          "unknown-width"],
 )
 def test_blocks_that_cant_be_drawn_are_refused(block):

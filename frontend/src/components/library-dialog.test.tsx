@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
   installed: [] as unknown[] | null,
   pluginReadFailed: false,
   flagsFailed: false,
+  flagsUnknown: false,
   mode: 'light' as 'light' | 'dark',
   listeners: new Set<() => void>(),
 }))
@@ -70,7 +71,9 @@ vi.mock('@/contexts/auth-context', async () => {
 })
 
 vi.mock('@/hooks/use-feature-flags', () => ({
-  useFeatureFlags: () => ({ pluginsEnabled: state.pluginsEnabled, agentsEnabled: false, isError: state.flagsFailed }),
+  useFeatureFlags: () => ({
+    pluginsEnabled: state.pluginsEnabled, agentsEnabled: false, isError: state.flagsFailed, isKnown: !state.flagsUnknown,
+  }),
 }))
 
 vi.mock('next-themes', () => ({
@@ -85,6 +88,7 @@ beforeEach(() => {
   state.workspaces = []
   state.pluginsEnabled = true
   state.flagsFailed = false
+  state.flagsUnknown = false
   state.user = {
     id: 'u1',
     email: 'me@example.com',
@@ -210,6 +214,16 @@ describe('LibraryDialog', () => {
     // A failed read of the flags looks like plugins off; it isn't known to be.
     state.pluginsEnabled = false
     state.flagsFailed = true
+    state.saved = { reports: [{ id: 'net_worth' }, { id: 'income_expenses' }, { id: 'plugin:maria/casa:pets' }] }
+    const { user } = open('reports')
+    await user.click(await screen.findByRole('button', { name: t('library.removeFrom.reports', { name: t('reports.incomeExpenses') }) }))
+    await waitFor(() => expect(state.saves.at(-1)?.ids).toEqual(['net_worth', 'plugin:maria/casa:pets']))
+  })
+
+  it("keeps a plugin's saved report while the feature flags are still unread", async () => {
+    // Paused offline: not loading, no error, and no flags either.
+    state.pluginsEnabled = false
+    state.flagsUnknown = true
     state.saved = { reports: [{ id: 'net_worth' }, { id: 'income_expenses' }, { id: 'plugin:maria/casa:pets' }] }
     const { user } = open('reports')
     await user.click(await screen.findByRole('button', { name: t('library.removeFrom.reports', { name: t('reports.incomeExpenses') }) }))
