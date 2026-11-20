@@ -15,7 +15,7 @@ ADR 0028 bounds a plugin's view block by block: 24 blocks, 12 series in a chart,
 
 The total buys what a report needs instead of what the limits allow: one chart at the block limits is 12,000 points, and so are 24 charts of 500 points. A view above it is refused as any invalid view is (`InvalidView`), and the code report answers 502 (`CodeReportFailed`) with the reason, naming the total: the plugin has to send less. Nothing is downsampled behind the plugin's back, because a chart cut silently loses values the plugin chose to show.
 
-The other block types keep their own caps and stay out of the total: a heatmap is 60 by 60 cells at most, a sankey four links per node, a table 1,000 rows of 12 columns. None of them draws one element per value the way a chart does, so the total would charge them for a cost they don't have.
+The other block types keep their own caps and stay out of the total, and each of those caps is its own check: a heatmap takes at most 60 columns and 60 rows and, separately, at most `MAX_CELLS = 2_000` cells in total, so a 50 by 50 grid fits both dimensions and is still refused for its 2,500 cells; a sankey has at most 100 nodes and 400 links (`MAX_NODES * 4`); a table is 1,000 rows of 12 columns. None of them draws one element per value the way a chart does, so the total would charge them for a cost they don't have.
 
 ## Consequences
 
