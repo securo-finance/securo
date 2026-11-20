@@ -28,6 +28,7 @@ The reports page already works as a library: someone keeps the reports they want
 ## Consequences
 
 - A plugin can bring a report Securo doesn't have, simple or elaborate, without any of its code reaching the interface.
+- A view is bounded per block — 24 blocks, 12 series in a chart, 1,000 points in a series — and in all: at most 12,000 chart points across its charts, the series times the points of each. Without that total, a view inside every per-block limit (22 charts of 12 series by 1,000 points, 264,000 points) is accepted and then takes about half a minute and two gigabytes to draw. One chart at the per-block limits is 12,000 points and still fits, and so do 24 charts of 500 points. A code report above the total is a 502 with the reason, as for any other invalid view, and has to send less: nothing is downsampled behind the plugin's back.
 - A code report runs the plugin each time it is opened, in the runner's limits (60 seconds and 512 MB a call by default). It is handed at most 20,000 transactions a run; past that, `truncated` says so.
 - What a code report reads, it can send to the hosts it declared: the consent shows both, as for an integration.
 - Removing the plugin takes its reports out of the library; a tab someone kept for it is left out of the page, and their saved arrangement keeps working.
