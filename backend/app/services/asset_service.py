@@ -1166,6 +1166,7 @@ async def get_portfolio_trend(
         # The drop to 0 needs a point after the sale; without one the last
         # row, and so the total, still counts the sold asset.
         if vals and asset.sell_date is not None and asset.sell_date < app_today():
+            all_dates.add(asset.sell_date)
             all_dates.add(asset.sell_date + timedelta(days=1))
 
     if not all_dates:
