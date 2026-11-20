@@ -245,8 +245,12 @@ update_repo() {
     return
   fi
 
-  if ! git rev-parse --git-dir > /dev/null 2>&1; then
-    warn "Not a git checkout, skipping the repository update"
+  # git also answers from an enclosing checkout, so only pull when the
+  # repository root is this folder: the pull must never touch another project.
+  local worktree_root
+  worktree_root=$(git rev-parse --show-toplevel 2>/dev/null || true)
+  if [ "$worktree_root" != "$(pwd -P)" ]; then
+    warn "Not a git checkout of Securo, skipping the repository update"
     return
   fi
 
@@ -261,6 +265,7 @@ update_repo() {
 setup_repo() {
   if [ -f "$COMPOSE_FILE" ]; then
     info "Found $COMPOSE_FILE in current directory"
+    update_repo
     return
   fi
 

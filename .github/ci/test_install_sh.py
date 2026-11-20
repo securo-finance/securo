@@ -176,6 +176,21 @@ class InstallerTest(unittest.TestCase):
         self.assertTrue((install / "NEWS.md").is_file())
         self.assertIn("Repository updated", result.stdout)
 
+    def test_an_install_inside_another_checkout_is_not_pulled(self):
+        enclosing = self.home
+        self.git(enclosing, "init", "-q", "-b", "main")
+        (enclosing / "project.txt").write_text("another project\n")
+        self.commit_all(enclosing, "another project")
+        self.install()
+
+        result = self.run_installer(with_clone_stub=False)
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn("Not a git checkout", result.stdout)
+        self.assertNotIn("Repository updated", result.stdout)
+        self.assertNotIn("Could not update the repository", result.stdout)
+        self.assertEqual(2, self.docker_calls().count("up -d"))
+
     def test_a_pull_that_fails_does_not_stop_the_install(self):
         _, install = self.install()
         self.git(install, "init", "-q", "-b", "main")
@@ -198,6 +213,29 @@ class InstallerTest(unittest.TestCase):
         self.assertEqual(clones, len(self.clone_calls()))
         self.assertEqual(before, self.environment_fingerprint(install))
         self.assertIn(f"Found {COMPOSE} in current directory", result.stdout)
+
+    def test_running_inside_a_checkout_updates_it(self):
+        _, install = self.install()
+        origin = self.root / "origin.git"
+        self.git(self.root, "init", "--bare", "-q", "-b", "main", str(origin))
+        self.git(install, "init", "-q", "-b", "main")
+        self.commit_all(install, "installed")
+        self.git(install, "remote", "add", "origin", str(origin))
+        self.git(install, "push", "-q", "-u", "origin", "main")
+
+        publisher = self.root / "publisher"
+        self.git(self.root, "clone", "-q", str(origin), str(publisher))
+        (publisher / "NEWS.md").write_text("a newer version\n")
+        self.commit_all(publisher, "newer version")
+        self.git(publisher, "push", "-q", "origin", "main")
+
+        before = self.environment_fingerprint(install)
+        result = self.run_installer(cwd=install, with_clone_stub=False)
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertTrue((install / "NEWS.md").is_file())
+        self.assertIn("Repository updated", result.stdout)
+        self.assertEqual(before, self.environment_fingerprint(install))
 
     def test_a_file_named_securo_gets_a_clear_error(self):
         (self.home / "securo").write_text("not a folder\n")
