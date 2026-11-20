@@ -1344,6 +1344,11 @@ export interface AssetOrderImport {
   external_id: string | null
   old_units?: number | null
   new_units?: number | null
+  /** Preview only: what the price and the fee become in the holding's currency
+   *  when the file paid in another one. Never read back by the import. */
+  converted_price?: number | null
+  converted_fee?: number | null
+  converted_currency?: string | null
 }
 
 export interface AssetImportRowError {

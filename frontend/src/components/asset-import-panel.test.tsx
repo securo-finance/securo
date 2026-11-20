@@ -217,3 +217,39 @@ describe('AssetImportPanel split rows', () => {
     expect(row?.querySelectorAll('td')).toHaveLength(4)
   })
 })
+
+describe('AssetImportPanel currencies', () => {
+  it('shows the currency the file paid in and what the row becomes', async () => {
+    api.previewImport.mockResolvedValue({
+      ...successPreview,
+      orders: [{
+        ...order(2, 'AAPL', '2026-01-15'),
+        price: 400,
+        fee: 2,
+        currency: 'EUR',
+        converted_price: 500,
+        converted_fee: 2.5,
+        converted_currency: 'USD',
+      }],
+    })
+    await uploadFile(renderWithProviders(<AssetImportPanel />))
+
+    const row = (await screen.findByText(t('assetImport.kind.buy'))).closest('tr')
+    expect(row).not.toBeNull()
+    expect(row).toHaveTextContent('€400.00')
+    expect(row).toHaveTextContent('$500.00')
+    expect(row).toHaveTextContent('€2.00')
+    expect(row).toHaveTextContent('$2.50')
+  })
+
+  it('shows the holding currency the backend filled in', async () => {
+    api.previewImport.mockResolvedValue({
+      ...successPreview,
+      orders: [{ ...order(2, 'AAPL', '2026-01-15'), currency: 'BRL' }],
+    })
+    await uploadFile(renderWithProviders(<AssetImportPanel />))
+
+    const row = (await screen.findByText(t('assetImport.kind.buy'))).closest('tr')
+    expect(row).toHaveTextContent('R$150.00')
+  })
+})

@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, Download, FileText, Info, Settings2, Upload, X } from 'lucide-react'
 
 import { assets as assetsApi, assetGroups as assetGroupsApi } from '@/lib/api'
+import { formatCurrency, forwardArrow } from '@/lib/format'
 import type { AssetImportPreview, AssetOrderImport } from '@/types'
 import { ImportHistory } from '@/components/import-history'
 import { Button } from '@/components/ui/button'
@@ -30,6 +31,26 @@ const SELECT_CLASS =
   'border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]'
 
 /**
+ * A price or fee cell: the amount in the currency the file paid it in, and,
+ * when the order was converted, what the row becomes in the holding's
+ * currency. A file that states no currency was already read in the holding's,
+ * so the amount alone is what it is.
+ */
+function moneyCell(order: AssetOrderImport, field: 'price' | 'fee', locale: string) {
+  const amount = order[field]
+  const stated = order.currency ? formatCurrency(amount, order.currency, locale) : String(amount)
+  const converted = field === 'price' ? order.converted_price : order.converted_fee
+  if (converted == null || !order.converted_currency) return stated
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="text-muted-foreground">{stated}</span>
+      <span aria-hidden="true">{forwardArrow()}</span>
+      <span>{formatCurrency(converted, order.converted_currency, locale)}</span>
+    </span>
+  )
+}
+
+/**
  * The investments half of the import page.
  *
  * Deliberately built from the same pieces as the transaction importer: one
@@ -38,7 +59,8 @@ const SELECT_CLASS =
  * there. Two importers that look different teach the same person two habits.
  */
 export function AssetImportPanel() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const locale = i18n.resolvedLanguage ?? i18n.language
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { canWrite } = useWorkspace()
@@ -401,8 +423,8 @@ export function AssetImportPanel() {
                       ) : (
                         <>
                           <td className="px-3 py-1.5 text-end tabular-nums">{order.quantity}</td>
-                          <td className="px-3 py-1.5 text-end tabular-nums">{order.price}</td>
-                          <td className="px-3 py-1.5 text-end tabular-nums sm:px-5">{order.fee}</td>
+                          <td className="px-3 py-1.5 text-end tabular-nums">{moneyCell(order, 'price', locale)}</td>
+                          <td className="px-3 py-1.5 text-end tabular-nums sm:px-5">{moneyCell(order, 'fee', locale)}</td>
                         </>
                       )}
                     </tr>
