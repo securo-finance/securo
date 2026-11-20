@@ -9,7 +9,7 @@ from sqlalchemy import select, func, desc, or_, update as sa_update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.app_clock import app_today
+from app.core.app_clock import app_timezone, app_today
 from app.models.account import Account
 from app.models.asset import (
     ASSET_PRICE_DECIMALS,
@@ -1392,6 +1392,18 @@ async def refresh_market_price_asset(
     if quote is None or quote.price is None:
         return False
 
+    # The quote carries no trading day. On a split day, before the market
+    # opens, it is the previous session's close per pre-split unit, and stored
+    # under today it would be multiplied by the units after the split (issue
+    # #1357). Ask for the latest close's day and wait for one from the split
+    # day on, as the batch refresh does.
+    split_on = (await _last_split_dates(session, [asset.id])).get(asset.id)
+    if split_on is not None and quote_may_predate_split(asset.last_price_at, split_on):
+        closes = await provider.get_latest_closes([asset.ticker])
+        close = closes.get(asset.ticker.upper())
+        if close is None or close.on is None or close.on < split_on:
+            return False
+
     await _apply_price_to_asset(session, asset, Decimal(str(quote.price)))
     # Opportunistic logo backfill: assets created before Brandfetch was
     # configured have no logo_url. On the next single-asset refresh (which
@@ -1402,6 +1414,24 @@ async def refresh_market_price_asset(
         asset.logo_url = quote.logo_url
     await session.flush()
     return True
+
+
+def quote_may_predate_split(last_price_at: Optional[datetime], split_on: Optional[date]) -> bool:
+    """Whether a price quoted at ``last_price_at`` can be per pre-split unit.
+
+    A quote taken on the split day itself counts: before the market opens it
+    is still the previous session's close, and the time it was taken doesn't
+    tell which session it came from.
+    """
+    if split_on is None:
+        return False
+    if last_price_at is None:
+        # Never quoted: only a split dated today leaves the latest close
+        # possibly from before it.
+        return split_on >= app_today()
+    if last_price_at.tzinfo is None:
+        last_price_at = last_price_at.replace(tzinfo=timezone.utc)
+    return split_on >= last_price_at.astimezone(app_timezone()).date()
 
 
 async def _last_split_dates(
@@ -1560,6 +1590,11 @@ async def refresh_all_market_prices(
         price: Optional[Decimal] = close.price if close is not None else None
         logo_url: Optional[str] = None
         if price is None and current.ticker:
+            if quote_may_predate_split(current.last_price_at, split_on):
+                # A single quote has no trading day, so on a split day it
+                # can't be told from the previous session's pre-split close.
+                skipped += 1
+                continue
             # Only a quote for the ticker the holding has now: one fetched
             # for the ticker it used to have belongs to another holding.
             price = fallback_quotes.get(current.ticker)

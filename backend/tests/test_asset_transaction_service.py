@@ -1596,6 +1596,147 @@ async def test_the_refresh_reads_split_dates_after_locking_the_holdings(
     assert other.last_price == Decimal("61")
 
 
+class _QuoteWithoutBatch(_FakeProvider):
+    """A feed whose batch misses every symbol, so the sweep falls back to quotes."""
+
+    async def get_latest_prices(self, symbols: list[str]) -> dict[str, Optional[Decimal]]:
+        return {}
+
+
+class _DatedClosesAndLiveQuote(_FakeProvider):
+    """A live quote with no day, and a batch close that says its day."""
+
+    def __init__(self, quote: MarketSymbolQuote, close: Optional[LatestClose]):
+        super().__init__({quote.symbol.upper(): quote})
+        self._close = close
+        self.close_calls = 0
+
+    async def get_latest_closes(self, symbols: list[str]) -> dict[str, Optional[LatestClose]]:
+        self.close_calls += 1
+        return {s.upper(): self._close for s in symbols}
+
+
+# The split-day guard from issue #1357 covered only the batch close. The per-row
+# refresh, the sweep's per-asset fallback and recording the split itself
+# still stored the previous session's close for the units after the split.
+
+
+@pytest.mark.asyncio
+async def test_the_single_refresh_skips_a_close_from_before_the_split(session, test_workspace, market_asset):
+    quoted_at = await _holding_quoted_yesterday(session, test_workspace, market_asset)
+    today = app_today()
+    await _add_split(session, test_workspace, market_asset, 1, 100, today)
+    feed = _DatedClosesAndLiveQuote(
+        _quote("PETR4.SA", 500.0), LatestClose(Decimal("500"), today - timedelta(days=1))
+    )
+
+    ok = await asset_service.refresh_market_price_asset(session, market_asset, market_provider=feed)
+    await session.commit()
+
+    assert ok is False
+    assert await _today_value(session, market_asset) is None
+    await session.refresh(market_asset)
+    assert market_asset.last_price == Decimal("500")
+    assert market_asset.last_price_at.replace(tzinfo=None) == quoted_at.replace(tzinfo=None)
+    assert (await _trend(session, test_workspace, market_asset))[today.isoformat()] == pytest.approx(1500)
+
+
+@pytest.mark.asyncio
+async def test_the_single_refresh_skips_when_the_close_has_no_day(session, test_workspace, market_asset):
+    await _holding_quoted_yesterday(session, test_workspace, market_asset)
+    await _add_split(session, test_workspace, market_asset, 1, 100, app_today())
+    feed = _DatedClosesAndLiveQuote(_quote("PETR4.SA", 500.0), LatestClose(Decimal("500"), None))
+
+    ok = await asset_service.refresh_market_price_asset(session, market_asset, market_provider=feed)
+
+    assert ok is False
+    assert await _today_value(session, market_asset) is None
+
+
+@pytest.mark.asyncio
+async def test_the_single_refresh_stores_a_quote_from_the_split_day(session, test_workspace, market_asset):
+    await _holding_quoted_yesterday(session, test_workspace, market_asset)
+    today = app_today()
+    await _add_split(session, test_workspace, market_asset, 1, 100, today)
+    feed = _DatedClosesAndLiveQuote(_quote("PETR4.SA", 5.05), LatestClose(Decimal("5.02"), today))
+
+    ok = await asset_service.refresh_market_price_asset(session, market_asset, market_provider=feed)
+    await session.commit()
+
+    assert ok is True
+    stored = await _today_value(session, market_asset)
+    assert stored is not None
+    assert stored.price == Decimal("5.05")
+    assert stored.amount == pytest.approx(Decimal("1515"))
+
+
+@pytest.mark.asyncio
+async def test_the_single_refresh_asks_no_close_after_an_old_split(session, test_workspace, market_asset):
+    await _holding_quoted_yesterday(session, test_workspace, market_asset)
+    await _add_split(session, test_workspace, market_asset, 1, 100, app_today() - timedelta(days=10))
+    feed = _DatedClosesAndLiveQuote(_quote("PETR4.SA", 5.10), None)
+
+    ok = await asset_service.refresh_market_price_asset(session, market_asset, market_provider=feed)
+    await session.commit()
+
+    assert ok is True
+    assert feed.close_calls == 0
+    stored = await _today_value(session, market_asset)
+    assert stored is not None
+    assert stored.amount == pytest.approx(Decimal("1530"))
+
+
+@pytest.mark.asyncio
+async def test_the_refresh_fallback_skips_a_quote_on_the_split_day(session, test_workspace, market_asset):
+    quoted_at = await _holding_quoted_yesterday(session, test_workspace, market_asset)
+    await _add_split(session, test_workspace, market_asset, 1, 100, app_today())
+    feed = _QuoteWithoutBatch({"PETR4.SA": _quote("PETR4.SA", 500.0)})
+
+    result = await asset_service.refresh_all_market_prices(session, market_provider=feed)
+
+    assert result == {"refreshed": 0, "skipped": 1, "rate_limited": 0}
+    assert await _today_value(session, market_asset) is None
+    await session.refresh(market_asset)
+    assert market_asset.last_price_at.replace(tzinfo=None) == quoted_at.replace(tzinfo=None)
+
+
+@pytest.mark.asyncio
+async def test_the_refresh_fallback_still_quotes_after_an_old_split(session, test_workspace, market_asset):
+    await _holding_quoted_yesterday(session, test_workspace, market_asset)
+    await _add_split(session, test_workspace, market_asset, 1, 100, app_today() - timedelta(days=10))
+    feed = _QuoteWithoutBatch({"PETR4.SA": _quote("PETR4.SA", 5.10)})
+
+    result = await asset_service.refresh_all_market_prices(session, market_provider=feed)
+
+    assert result == {"refreshed": 1, "skipped": 0, "rate_limited": 0}
+    stored = await _today_value(session, market_asset)
+    assert stored is not None
+    assert stored.amount == pytest.approx(Decimal("1530"))
+
+
+@pytest.mark.asyncio
+async def test_a_split_recorded_the_day_it_was_quoted_keeps_today_at_the_old_value(
+    session, test_workspace, market_asset
+):
+    # The morning sweep stored the previous session's close under today; the
+    # split recorded later that day must not multiply it by the new units.
+    await _holding_quoted_yesterday(session, test_workspace, market_asset)
+    today = app_today()
+    market_asset.last_price_at = datetime.combine(today, time(6), tzinfo=app_timezone())
+    session.add(AssetValue(
+        asset_id=market_asset.id, workspace_id=test_workspace.id, amount=Decimal("1500"),
+        price=Decimal("500"), date=today, source="sync",
+    ))
+    await session.commit()
+
+    read = await _add_split(session, test_workspace, market_asset, 1, 100, today)
+
+    assert read.units == 300
+    stored = await _today_value(session, market_asset)
+    assert stored is not None
+    assert stored.amount == pytest.approx(Decimal("1500"))
+
+
 @pytest.mark.asyncio
 async def test_a_trade_without_splits_updates_today_but_not_the_quote_time(session, test_workspace, market_asset):
     quoted_at = await _holding_quoted_yesterday(session, test_workspace, market_asset)
@@ -1621,19 +1762,34 @@ async def test_a_quote_from_before_a_split_doesnt_count_towards_the_size_limit(s
 
 
 @pytest.mark.parametrize(
-    ("quoted_at", "split_on", "predates"),
+    ("quoted_at", "split_on", "recorded_at", "predates"),
     [
-        (_QUOTED_AT, date(2020, 1, 2), True),
-        (_QUOTED_AT, date(2020, 1, 1), False),
-        (_QUOTED_AT, date(2019, 12, 31), False),
-        # 23:30 UTC on Jan 1 is already Jan 2 in Madrid, so a Jan 2 split isn't newer.
-        (datetime(2020, 1, 1, 23, 30, tzinfo=timezone.utc), date(2020, 1, 2), False),
-        (None, date(2020, 1, 2), False),
+        (_QUOTED_AT, date(2020, 1, 2), None, True),
+        (_QUOTED_AT, date(2019, 12, 31), None, False),
+        # Quoted on the split day before the split was recorded: possibly the
+        # previous session's close.
+        (_QUOTED_AT, date(2020, 1, 1), None, True),
+        (_QUOTED_AT, date(2020, 1, 1), _QUOTED_AT + timedelta(hours=1), True),
+        # Quoted after the split was recorded: the refresh checked its session.
+        (_QUOTED_AT, date(2020, 1, 1), _QUOTED_AT - timedelta(hours=1), False),
+        # 23:30 UTC on Jan 1 is already Jan 2 in Madrid, so it is a split-day
+        # quote, newer than a split recorded at 23:00 UTC.
+        (
+            datetime(2020, 1, 1, 23, 30, tzinfo=timezone.utc), date(2020, 1, 2),
+            datetime(2020, 1, 1, 23, 0, tzinfo=timezone.utc), False,
+        ),
+        (
+            datetime(2020, 1, 1, 22, 30, tzinfo=timezone.utc), date(2020, 1, 2),
+            datetime(2020, 1, 1, 22, 0, tzinfo=timezone.utc), True,
+        ),
+        (None, date(2020, 1, 2), None, False),
     ],
 )
-def test_quote_predates_a_split_reads_the_workspace_calendar(quoted_at, split_on, predates):
+def test_quote_predates_a_split_reads_the_workspace_calendar(quoted_at, split_on, recorded_at, predates):
     asset = Asset(last_price_at=quoted_at)
-    ledger = [_tx("buy", "1", "10", date(2019, 1, 1)), _split(1, 2, split_on)]
+    split = _split(1, 2, split_on)
+    split.created_at = recorded_at
+    ledger = [_tx("buy", "1", "10", date(2019, 1, 1)), split]
     with use_resolved_timezone(ZoneInfo("Europe/Madrid")):
         assert asset_transaction_service._quote_predates_a_split(asset, ledger) is predates
 
