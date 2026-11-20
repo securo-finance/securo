@@ -2116,7 +2116,7 @@
     "reasonColumn": "Reden",
     "rowError": "Rij {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "en {{count}} meer",
-    "moreRows": "en {{count}} meer bestellingen",
+    "showAllRows": "Alle {{count}} rijen tonen",
     "field": {
       "ticker": "Tikker",
       "date": "Datum",

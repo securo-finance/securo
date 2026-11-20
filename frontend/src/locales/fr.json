@@ -2118,7 +2118,7 @@
     "reasonColumn": "Motif",
     "rowError": "Ligne {{row}} ({{ticker}}) : {{reason}}",
     "moreErrors": "et {{count}} de plus",
-    "moreRows": "et {{count}} ordres de plus",
+    "showAllRows": "Afficher les {{count}} lignes",
     "field": {
       "ticker": "Ticker",
       "date": "Date",

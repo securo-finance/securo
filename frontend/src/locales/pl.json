@@ -2211,7 +2211,7 @@
     "reasonColumn": "Powód",
     "rowError": "Wiersz {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "i {{count}} więcej",
-    "moreRows": "i {{count}} zleceń więcej",
+    "showAllRows": "Pokaż wszystkie wiersze ({{count}})",
     "field": {
       "ticker": "Ticker",
       "date": "Data",

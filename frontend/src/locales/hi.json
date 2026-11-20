@@ -2114,7 +2114,7 @@
     "reasonColumn": "कारण",
     "rowError": "पंक्ति {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "और {{count}} और",
-    "moreRows": "और {{count}} और ऑर्डर",
+    "showAllRows": "सभी {{count}} पंक्तियाँ दिखाएँ",
     "field": {
       "ticker": "टिकर",
       "date": "तिथि",

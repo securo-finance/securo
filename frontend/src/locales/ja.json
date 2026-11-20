@@ -2114,7 +2114,7 @@
     "reasonColumn": "理由",
     "rowError": "{{row}}行目({{ticker}}): {{reason}}",
     "moreErrors": "他{{count}}件",
-    "moreRows": "他{{count}}件の注文",
+    "showAllRows": "{{count}} 行をすべて表示",
     "field": {
       "ticker": "ティッカー",
       "date": "日付",

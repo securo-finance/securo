@@ -2130,7 +2130,7 @@
     "reasonColumn": "סיבה",
     "rowError": "שורה {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "ועוד {{count}}",
-    "moreRows": "ועוד {{count}} פקודות",
+    "showAllRows": "הצג את כל {{count}} השורות",
     "field": {
       "ticker": "סימול",
       "date": "תאריך",

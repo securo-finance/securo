@@ -2114,7 +2114,7 @@
     "reasonColumn": "Ok",
     "rowError": "{{row}}. sor ({{ticker}}): {{reason}}",
     "moreErrors": "és még {{count}}",
-    "moreRows": "és még {{count}} megbízás",
+    "showAllRows": "Összes {{count}} sor megjelenítése",
     "field": {
       "ticker": "Ticker",
       "date": "Dátum",

@@ -48,6 +48,9 @@ export function AssetImportPanel() {
   const [preview, setPreview] = useState<AssetImportPreview | null>(null)
   const [mapping, setMapping] = useState<Record<string, string>>({})
   const [mappingOpen, setMappingOpen] = useState(false)
+  // The table shows the file's first page by default; a long file reaches the
+  // rest through one button.
+  const [showAllRows, setShowAllRows] = useState(false)
   const [groupId, setGroupId] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [importing, setImporting] = useState(false)
@@ -71,6 +74,7 @@ export function AssetImportPanel() {
         group_id: nextGroup || null,
       })
       setPreview(result)
+      setShowAllRows(false)
       // The mapping panel opens while a required column is missing. A file
       // that reads cleanly closes it, but the collapsed bar keeps the column
       // choices reachable: a wrong guess shows up as skipped rows, and the
@@ -371,7 +375,7 @@ export function AssetImportPanel() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {tableRows.slice(0, 50).map((entry) =>
+                  {(showAllRows ? tableRows : tableRows.slice(0, 50)).map((entry) =>
                     'order' in entry ? (
                       <tr key={entry.row}>
                         <td className="px-3 py-1.5 font-medium sm:px-5">{entry.order.ticker}</td>
@@ -425,10 +429,18 @@ export function AssetImportPanel() {
                   )}
                 </tbody>
               </table>
-              {tableRows.length > 50 && (
-                <p className="border-t border-border px-4 py-2 text-xs text-muted-foreground sm:px-5">
-                  {t('assetImport.moreRows', { count: tableRows.length - 50 })}
-                </p>
+              {tableRows.length > 50 && !showAllRows && (
+                // The first page holds 50 rows; a refused row can sit past
+                // them, and its reason has to stay one click away.
+                <div className="border-t border-border px-4 py-2 sm:px-5">
+                  <button
+                    type="button"
+                    onClick={() => setShowAllRows(true)}
+                    className="text-xs font-medium text-primary hover:underline"
+                  >
+                    {t('assetImport.showAllRows', { count: tableRows.length })}
+                  </button>
+                </div>
               )}
             </div>
           )}

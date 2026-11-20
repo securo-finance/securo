@@ -2114,7 +2114,7 @@
     "reasonColumn": "Αιτία",
     "rowError": "Γραμμή {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "και {{count}} ακόμη",
-    "moreRows": "και {{count}} ακόμη εντολές",
+    "showAllRows": "Εμφάνιση όλων των γραμμών ({{count}})",
     "field": {
       "ticker": "Σύμβολο (Ticker)",
       "date": "Ημερομηνία",
