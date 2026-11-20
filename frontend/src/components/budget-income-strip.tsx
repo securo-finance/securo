@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -31,6 +31,7 @@ export function BudgetIncomeStrip({ month, savedBudgets, canWrite, currency, loc
   const { t } = useTranslation()
   const { mask, privacyMode } = usePrivacyMode()
   const queryClient = useQueryClient()
+  const errorId = useId()
   const [draft, setDraft] = useState('')
   const [focused, setFocused] = useState(false)
 
@@ -73,6 +74,7 @@ export function BudgetIncomeStrip({ month, savedBudgets, canWrite, currency, loc
     : null
   const parsed = parseBudgetDraft(draft, locale)
   const canSet = parsed !== null && parsed > 0
+  const invalidDraft = parsed === null && draft.trim() !== ''
 
   if (income === null) {
     if (!canWrite) {
@@ -99,6 +101,8 @@ export function BudgetIncomeStrip({ month, savedBudgets, canWrite, currency, loc
             inputMode="decimal"
             placeholder="0"
             aria-label={t('budgets.incomeLabel')}
+            aria-invalid={invalidDraft}
+            aria-describedby={invalidDraft ? errorId : undefined}
             value={privacyMode && !focused && draft ? mask(draft) : draft}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
@@ -106,8 +110,8 @@ export function BudgetIncomeStrip({ month, savedBudgets, canWrite, currency, loc
             className="h-8 w-full min-w-0 bg-transparent text-end text-sm font-semibold tabular-nums text-foreground outline-none placeholder:text-muted-foreground/50"
           />
         </div>
-        {parsed === null && draft.trim() !== '' && (
-          <span className="text-xs text-destructive">{t('budgets.invalidAmount')}</span>
+        {invalidDraft && (
+          <span id={errorId} className="text-xs text-destructive">{t('budgets.invalidAmount')}</span>
         )}
         <Button size="sm" variant="outline" type="submit" disabled={!canSet || saveIncome.isPending}>
           {t('budgets.incomeSet')}

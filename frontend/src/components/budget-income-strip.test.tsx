@@ -128,6 +128,17 @@ describe('BudgetIncomeStrip', () => {
     await waitFor(() => expect(api.budgets.expectedIncome.get).toHaveBeenCalledTimes(1))
   })
 
+  it('marks an invalid draft and points its message at the field', async () => {
+    const { user } = await strip([rent])
+    const input = await screen.findByRole('textbox', { name: t('budgets.incomeLabel') })
+    await user.type(input, 'abc')
+
+    expect(input).toHaveAttribute('aria-invalid', 'true')
+    const describedBy = input.getAttribute('aria-describedby')
+    expect(describedBy).toBeTruthy()
+    expect(document.getElementById(describedBy as string)).toHaveTextContent(t('budgets.invalidAmount'))
+  })
+
   it('reports a failed read', async () => {
     api.budgets.expectedIncome.get.mockRejectedValue(new Error('boom'))
     await strip([rent])
