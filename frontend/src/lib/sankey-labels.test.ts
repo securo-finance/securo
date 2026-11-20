@@ -71,6 +71,29 @@ describe('placeColumnLabels (#287)', () => {
     expect(placed[1].y).toBeGreaterThanOrEqual(placed[0].y + 3 * LABEL_LINE_HEIGHT + LABEL_BLOCK_GAP)
   })
 
+  it('keeps the last small income label whole, as Gal measured on 2025 (#287)', () => {
+    // Node centres taken from a 316px chart: salary, freelance, interest and a
+    // tiny withdrawal squeezed against the bottom edge, as in Ana's 2025.
+    const centres = [335, 547, 577, 593]
+    const names = ['Salary', 'Freelance', 'Interest', 'Investment withdrawals']
+    const placed = placeColumnLabels(
+      centres.map((center, i) => ({ center, lines: wrapLabelLines(names[i], 110) })),
+      8.5,
+      596,
+    )
+    const blocks = placed.map((p) => ({
+      top: p.y - LABEL_LINE_HEIGHT / 2,
+      bottom: p.y + (p.lines.length - 1) * LABEL_LINE_HEIGHT + LABEL_LINE_HEIGHT,
+    }))
+    for (const block of blocks) {
+      expect(block.top).toBeGreaterThanOrEqual(8.5)
+      expect(block.bottom).toBeLessThanOrEqual(596)
+    }
+    for (let i = 1; i < blocks.length; i++) {
+      expect(blocks[i].top - blocks[i - 1].bottom).toBeGreaterThanOrEqual(4)
+    }
+  })
+
   it('lifts the column so the last amount line stays inside the chart', () => {
     const placed = placeColumnLabels(
       [

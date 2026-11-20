@@ -13,8 +13,12 @@
 export const LABEL_CHAR_WIDTH = 6
 /** Baseline-to-baseline distance between the lines of one label block. */
 export const LABEL_LINE_HEIGHT = 13
-/** Smallest free space kept between two stacked label blocks. */
-export const LABEL_BLOCK_GAP = 2
+/**
+ * Smallest free space kept between two stacked label blocks. The glyph boxes
+ * are about 5px shorter than their 13px line step, so a 2px gap printed as a
+ * visible 0.3px and read as one run of text; 6 leaves about 4px between blocks.
+ */
+export const LABEL_BLOCK_GAP = 6
 
 /**
  * Split a label into lines that fit `maxWidth`, breaking between words and
