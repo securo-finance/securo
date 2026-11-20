@@ -1076,13 +1076,20 @@ class TestParseOfx:
         assert transactions[0].amount == Decimal("985.50")
         assert transactions[0].type == "debit"
 
-    @pytest.mark.parametrize("dtposted", ["20260115000000[+1:CET]", "20260115235900[-8:PST]"])
+    @pytest.mark.parametrize(
+        "dtposted",
+        [
+            "<DTPOSTED>20260115000000[+1:CET]",
+            "<DTPOSTED>20260115235900[-8:PST]",
+            "<DTPOSTED >20260115000000[+1:CET]",
+        ],
+    )
     def test_parse_ofx_keeps_the_bank_date_with_a_timezone_offset(self, dtposted):
         """DTPOSTED with a [offset:TZ] suffix keeps the day the bank printed."""
         ofx = self._make_ofx(
             "<STMTTRN>\n"
             "<TRNTYPE>DEBIT\n"
-            f"<DTPOSTED>{dtposted}\n"
+            f"{dtposted}\n"
             "<TRNAMT>-10.00\n"
             "<FITID>TZ1\n"
             "<MEMO>CARD PAYMENT\n"
