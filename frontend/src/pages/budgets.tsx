@@ -146,6 +146,7 @@ export default function BudgetsPage() {
   const { data: incomeData } = useQuery({
     queryKey: ['budgets', 'expected-income', monthParam],
     queryFn: () => budgetsApi.expectedIncome.get(monthParam),
+    staleTime: 60_000,
   })
   const { data: categoriesList, isLoading: categoriesLoading, isError: categoriesError, error: categoriesLoadError, refetch: refetchCategories } = useQuery({
     queryKey: ['categories'],
@@ -336,15 +337,19 @@ export default function BudgetsPage() {
           ) : undefined}
         />
 
-        {/* One line under the header: income, the saved planned total, the difference. */}
-        <BudgetIncomeStrip
-          month={monthParam}
-          savedBudgets={budgetsList ?? []}
-          canWrite={canWrite}
-          currency={userCurrency}
-          locale={locale}
-          fmt={fmt}
-        />
+        {/* One line under the header: income, the saved planned total, the difference.
+            Only once the month's limits are known: with the list missing or failed,
+            the planned total would read as zero next to a real income. */}
+        {budgetsList !== undefined && !budgetsError && (
+          <BudgetIncomeStrip
+            month={monthParam}
+            savedBudgets={budgetsList}
+            canWrite={canWrite}
+            currency={userCurrency}
+            locale={locale}
+            fmt={fmt}
+          />
+        )}
 
         {canWrite && !budgetsFetching && budgetsList?.length === 0 && allCategories.length > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/20 px-4 py-3 sm:px-5">

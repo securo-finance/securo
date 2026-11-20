@@ -663,6 +663,22 @@ describe('budget income strip', () => {
     expect(screen.queryByRole('button', { name: t('budgets.incomeSet') })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: t('budgets.incomeClear') })).not.toBeInTheDocument()
   })
+
+  it('keeps the income strip out while the budgets are unknown', async () => {
+    api.budgets.list.mockRejectedValue(new Error('boom'))
+    renderWithProviders(<BudgetsPage />)
+
+    expect(await screen.findByRole('button', { name: t('common.retry') })).toBeInTheDocument()
+    expect(screen.queryByText(t('budgets.incomeLabel'))).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: t('budgets.incomeSet') })).not.toBeInTheDocument()
+  })
+
+  it('still offers the setter for a month without any budget', async () => {
+    api.budgets.list.mockResolvedValue([])
+    renderWithProviders(<BudgetsPage />)
+
+    expect(await screen.findByRole('button', { name: t('budgets.incomeSet') })).toBeInTheDocument()
+  })
 })
 
 describe('budget income chip in the save bar', () => {

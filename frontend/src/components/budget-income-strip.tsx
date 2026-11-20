@@ -37,6 +37,9 @@ export function BudgetIncomeStrip({ month, savedBudgets, canWrite, currency, loc
   const { data: income, isError: incomeLoadError } = useQuery({
     queryKey: ['budgets', 'expected-income', month],
     queryFn: () => budgetsApi.expectedIncome.get(month),
+    // The value changes only through the PUT below (which invalidates the key),
+    // so a remount need not refetch behind the page's own read.
+    staleTime: 60_000,
   })
 
   const saveIncome = useMutation({
