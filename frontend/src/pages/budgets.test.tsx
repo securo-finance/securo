@@ -645,11 +645,13 @@ describe('budget income strip', () => {
 
   it('masks the income row in privacy mode, on the page too', async () => {
     api.privacyMode = true
-    api.mask.mockImplementation((value: string) => value)
+    api.mask.mockImplementation((value: string) => `M${value}`)
     api.budgets.expectedIncome.get.mockResolvedValue({ month: '2026-10-01', amount: 5000, currency: 'USD', amount_primary: 5000 })
     renderWithProviders(<BudgetsPage />)
 
-    expect(await screen.findByText(t('budgets.incomePlanned', { amount: '$1,020.00' }))).toBeInTheDocument()
+    expect(await screen.findByText(t('budgets.incomePlanned', { amount: 'M$1,020.00' }))).toBeInTheDocument()
+    expect(screen.getByText(t('budgets.incomeLeft', { amount: 'M$3,980.00' }))).toBeInTheDocument()
+    expect(screen.getByText('M$5,000.00')).toBeInTheDocument()
   })
 
   it('hides the setter and the clear control from a viewer', async () => {
