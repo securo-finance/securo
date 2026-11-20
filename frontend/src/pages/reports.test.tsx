@@ -857,3 +857,38 @@ describe('Reports page arranged from the library', () => {
     await waitFor(() => expect(tabs()).toEqual(REPORT_LABELS))
   })
 })
+
+describe('Reports page period bar on a phone', () => {
+  const TABS = ['Net Worth', 'Income vs Expenses', 'Cash Flow', 'Money Map']
+
+  it('keeps the presets in a bar that scrolls instead of widening the page', async () => {
+    // Two years of data: the year picker shows up, which is the widest the bar
+    // gets on a phone.
+    api.reports.dataRange.mockResolvedValue({ min_date: '2024-01-01', max_date: '2026-09-12' })
+    const { user } = renderWithProviders(<ReportsPage />)
+    await waitFor(() => expect(api.reports.netWorth).toHaveBeenCalled())
+
+    // The tab bar is the row that ends with the button to choose reports.
+    const tabBar = screen.getByRole('button', { name: t('library.manageReports') }).parentElement!
+    for (const tab of TABS) {
+      await user.click(within(tabBar).getByRole('button', { name: tab }))
+      const bar = screen.queryByTestId('reports-range-bar')
+      expect(bar, `${tab} keeps the range bar`).not.toBeNull()
+      // The bar stays inside the page and scrolls inside itself. A row that
+      // grew past the viewport instead made the whole page scroll sideways.
+      expect(bar).toHaveClass('min-w-0', 'max-w-full', 'overflow-x-auto')
+      // The buttons keep their width, so the overflow belongs to the bar.
+      const buttons = within(bar!).getAllByRole('button')
+      expect(buttons.length).toBeGreaterThanOrEqual(3)
+      for (const button of buttons) expect(button).toHaveClass('shrink-0')
+      // The two that fell off the screen are still there to reach, in the tabs
+      // that offer them: Cash Flow has no custom range and no year picker.
+      if (tab !== 'Cash Flow') {
+        expect(within(bar!).getByRole('button', { name: t('reports.customRange') })).toBeInTheDocument()
+        expect(
+          within(bar!).getByRole('button', { name: new RegExp(`^(${t('reports.year')})`) }),
+        ).toBeInTheDocument()
+      }
+    }
+  })
+})

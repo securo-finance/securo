@@ -751,7 +751,7 @@ export default function ReportsPage() {
             onSettingsChange={updateStatementSettings}
           />
         ) : (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             {isCashFlow && (
               <div
                 className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
@@ -788,12 +788,19 @@ export default function ReportsPage() {
                 </span>
               </div>
             )}
-            <div className="flex items-center rounded-lg border border-border bg-card overflow-hidden">
+            {/* On a phone the presets, the custom range and the year picker do
+                not fit in one row, and a row that cannot shrink pushes the whole
+                page sideways. The group keeps the viewport width and scrolls
+                inside itself instead. */}
+            <div
+              className="flex min-w-0 max-w-full items-center overflow-x-auto rounded-lg border border-border bg-card"
+              data-testid="reports-range-bar"
+            >
               {rangeOptions.map((opt) => (
                 <button
                   key={opt.key}
                   onClick={() => { setRangeKey(opt.key); setPeriodOffset(0); setSelectedDate(null) }}
-                  className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  className={`shrink-0 whitespace-nowrap px-3 py-1.5 text-xs font-semibold transition-colors ${
                     rangeKey === opt.key
                       ? 'bg-primary text-primary-foreground'
                       : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
@@ -830,7 +837,7 @@ export default function ReportsPage() {
                       type="button"
                       aria-label={activeYear !== undefined ? `${t('reports.year')} ${activeYear}` : t('reports.year')}
                       title={t('reports.yearPickerHelp')}
-                      className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      className={`shrink-0 whitespace-nowrap px-3 py-1.5 text-xs font-semibold transition-colors ${
                         activeYear !== undefined
                           ? 'bg-primary text-primary-foreground'
                           : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'

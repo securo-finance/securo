@@ -473,30 +473,36 @@ export function CashflowSankey({ composition, currency, locale }: CashflowSankey
         </svg>
       )}
 
-      {/* Accessible table fallback — also a non-visual summary of the flows. */}
-      <table className="sr-only">
-        <caption>{t('reports.flowChartAria')}</caption>
-        <thead>
-          <tr>
-            <th>{t('reports.category')}</th>
-            <th>{t('reports.amount')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rawNodes
-            .filter((n) => n.side !== 'center')
-            .map((n, i) => {
-              const idx = rawNodes.indexOf(n)
-              const value = layout?.nodes[idx]?.value ?? 0
-              return (
-                <tr key={i}>
-                  <td>{n.name}</td>
-                  <td>{fmtAmount(value)}</td>
-                </tr>
-              )
-            })}
-        </tbody>
-      </table>
+      {/* Accessible table fallback — also a non-visual summary of the flows.
+          `sr-only` goes on a wrapper, never on the table: `overflow` does not
+          apply to table boxes, so a clipped-looking table kept its cells at
+          their natural width and made the whole page 504px wide on a 390px
+          screen. */}
+      <div className="sr-only">
+        <table>
+          <caption>{t('reports.flowChartAria')}</caption>
+          <thead>
+            <tr>
+              <th>{t('reports.category')}</th>
+              <th>{t('reports.amount')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rawNodes
+              .filter((n) => n.side !== 'center')
+              .map((n, i) => {
+                const idx = rawNodes.indexOf(n)
+                const value = layout?.nodes[idx]?.value ?? 0
+                return (
+                  <tr key={i}>
+                    <td>{n.name}</td>
+                    <td>{fmtAmount(value)}</td>
+                  </tr>
+                )
+              })}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
