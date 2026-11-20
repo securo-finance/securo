@@ -278,6 +278,18 @@ async def test_a_period_that_runs_backwards_or_too_long_is_refused(client: Async
 
 
 @pytest.mark.asyncio
+async def test_a_two_year_window_at_the_end_of_a_31_day_month_is_read(
+    client: AsyncClient, auth_headers: dict, installed
+):
+    # The plugin tabs trim their 2Y preset, which spans 760 days on this date,
+    # to the 731 days the API reads (frontend/src/lib/report-period.ts); one
+    # day more is still refused.
+    end = date(2027, 3, 31)
+    assert (await _report(client, auth_headers, "pet-spending", end - timedelta(days=731), end)).status_code == 200
+    assert (await _report(client, auth_headers, "pet-spending", end - timedelta(days=732), end)).status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_removing_the_plugin_takes_its_reports(client: AsyncClient, auth_headers: dict, installed):
     await _apply(client, auth_headers, "remove")
     today = installed["today"]

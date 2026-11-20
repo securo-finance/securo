@@ -2448,6 +2448,8 @@
       },
       "share": "Aandeel",
       "computed": "Berekend door de plugin",
+      "periodTrimmed": "Plugin-rapporten beslaan maximaal twee jaar. Getoond: {{from}} tot {{to}}.",
+      "periodTooLong": "Een plugin-rapport beslaat maximaal twee jaar. Kies een kortere periode.",
       "totalRow": "Totaal",
       "page": "Pagina {{page}} van {{pages}}",
       "previousPage": "Vorige pagina",

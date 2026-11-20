@@ -2450,6 +2450,8 @@
       },
       "share": "Parcela",
       "computed": "Calculado pelo plugin",
+      "periodTrimmed": "Os relatórios de plugin cobrem no máximo dois anos. A mostrar {{from}} a {{to}}.",
+      "periodTooLong": "Um relatório de plugin cobre no máximo dois anos. Escolha um período mais curto.",
       "totalRow": "Total",
       "page": "Página {{page}} de {{pages}}",
       "previousPage": "Página anterior",

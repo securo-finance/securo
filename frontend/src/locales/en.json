@@ -2446,6 +2446,8 @@
       },
       "share": "Share",
       "computed": "Computed by the plugin",
+      "periodTrimmed": "Plugin reports cover up to two years. Showing {{from}} to {{to}}.",
+      "periodTooLong": "A plugin report covers up to two years. Pick a shorter period.",
       "totalRow": "Total",
       "page": "Page {{page}} of {{pages}}",
       "previousPage": "Previous page",

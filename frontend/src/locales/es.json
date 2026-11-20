@@ -2450,6 +2450,8 @@
       },
       "share": "Proporción",
       "computed": "Calculado por el plugin",
+      "periodTrimmed": "Los informes de complementos cubren como máximo dos años. Mostrando {{from}} a {{to}}.",
+      "periodTooLong": "Un informe de complemento cubre como máximo dos años. Elige un período más corto.",
       "totalRow": "Total",
       "page": "Página {{page}} de {{pages}}",
       "previousPage": "Página anterior",

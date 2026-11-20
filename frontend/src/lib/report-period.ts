@@ -206,3 +206,20 @@ export function explicitWindow(
   }
 }
 
+/** The longest period a plugin report reads: the API's own cap (ADR 0028). */
+export const PLUGIN_REPORT_MAX_DAYS = 731
+
+/**
+ * A window trimmed to `maxDays` at most, keeping its end.
+ *
+ * A plugin's report reads at most two years, while the presets and the custom
+ * picker can ask for more: the 2Y preset starts on the 1st of the month 720
+ * days back, so its window runs up to 781 days, and the custom picker takes
+ * any range up to ten years. Trimming the start here keeps the report on the
+ * right period instead of handing the API a window it refuses outright.
+ */
+export function clampPeriodWindow(window: PeriodWindow, maxDays = PLUGIN_REPORT_MAX_DAYS): PeriodWindow {
+  if (daysBetween(window.from, window.to) <= maxDays) return window
+  return { from: addDaysIso(window.to, -maxDays), to: window.to }
+}
+

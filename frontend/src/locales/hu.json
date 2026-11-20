@@ -2446,6 +2446,8 @@
       },
       "share": "Arány",
       "computed": "A bővítmény számolja",
+      "periodTrimmed": "A bővítményjelentések legfeljebb két évet fednek le. Megjelenítve: {{from}} és {{to}} között.",
+      "periodTooLong": "Egy bővítményjelentés legfeljebb két évet fed le. Válassz rövidebb időszakot.",
       "totalRow": "Összesen",
       "page": "{{page}}. oldal / {{pages}}",
       "previousPage": "Előző oldal",

@@ -2447,6 +2447,8 @@
       },
       "share": "Anteil",
       "computed": "Vom Plugin berechnet",
+      "periodTrimmed": "Plugin-Berichte umfassen höchstens zwei Jahre. Angezeigt wird {{from}} bis {{to}}.",
+      "periodTooLong": "Ein Plugin-Bericht umfasst höchstens zwei Jahre. Wähle einen kürzeren Zeitraum.",
       "totalRow": "Summe",
       "page": "Seite {{page}} von {{pages}}",
       "previousPage": "Vorherige Seite",
