@@ -508,7 +508,8 @@ async def test_update_without_changes_is_refused(
         ({"date": "not-a-date"}, "invalid date"),
         ({"type": "transfer"}, "type must be 'debit' or 'credit'"),
         ({"currency": "AB"}, "currency must be a 3-letter code"),
-        ({"amount_primary": 0}, "amount_primary must be greater than zero"),
+        # 0.00 is a real conversion (issue #330); a negative one is not.
+        ({"amount_primary": -1}, "amount_primary must be greater than zero"),
         ({"fx_rate_used": -1}, "fx_rate_used must be greater than zero"),
         ({"status": "done"}, "status must be 'posted' or 'pending'"),
         ({"account_id": "not-a-uuid"}, "invalid account_id"),

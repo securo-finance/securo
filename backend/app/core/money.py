@@ -22,32 +22,48 @@ def _finite(value: Decimal, field: str) -> None:
         raise ValueError(f"{field} must be a finite number")
 
 
-def bounded_money(value: Decimal, field: str = "amount") -> Decimal:
+class MoneyOutOfRange(ValueError):
+    """A value worked out from other inputs (a converted amount, a derived
+    rate) that the column cannot hold. Routes answer it with 422, like the
+    same bound on a value the client sent."""
+
+
+def bounded_money(
+    value: Decimal, field: str = "amount", *, allow_zero: bool = False
+) -> Decimal:
     """`value` as the column stores it, or a readable error.
 
     Returns the amount rounded to cents, so the caller saves exactly what was
     validated. A value that rounds to zero is refused instead of being written
     as 0.00, and one past the column is refused instead of failing at commit.
+
+    `allow_zero` is for a converted amount (`amount_primary`): 0.01 BRL at a
+    rate of 0.2 is 0.002 USD, which the column stores as 0.00. That is a
+    real conversion, not a typo, so it is kept as 0.00 (issue #330).
     """
     _finite(value, field)
-    if value <= 0:
+    if value < 0 or (value == 0 and not allow_zero):
         raise ValueError(f"{field} must be greater than zero")
     if value > MAX_MONEY_AMOUNT:
         raise ValueError(f"{field} must be at most {MAX_MONEY_AMOUNT}")
     rounded = value.quantize(CENTS, rounding=ROUND_HALF_UP)
-    if rounded <= 0:
+    if rounded <= 0 and not allow_zero:
         raise ValueError(f"{field} must be at least 0.01")
     return rounded
 
 
-def bounded_fx_rate(value: Decimal, field: str = "fx_rate_used") -> Decimal:
-    """`value` as the rate column stores it, or a readable error."""
+def bounded_fx_rate(
+    value: Decimal, field: str = "fx_rate_used", *, allow_zero: bool = False
+) -> Decimal:
+    """`value` as the rate column stores it, or a readable error.
+
+    `allow_zero` is for a rate derived from a converted amount of 0.00."""
     _finite(value, field)
-    if value <= 0:
+    if value < 0 or (value == 0 and not allow_zero):
         raise ValueError(f"{field} must be greater than zero")
     if value > MAX_FX_RATE:
         raise ValueError(f"{field} must be at most {MAX_FX_RATE}")
     rounded = value.quantize(RATE_QUANTUM, rounding=ROUND_HALF_UP)
-    if rounded <= 0:
+    if rounded <= 0 and not allow_zero:
         raise ValueError(f"{field} must be at least 0.0000000001")
     return rounded

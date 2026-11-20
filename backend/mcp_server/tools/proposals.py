@@ -2492,7 +2492,7 @@ async def propose_update_transaction(
     if amount_primary is not None:
         try:
             changes["amount_primary"] = bounded_money(
-                Decimal(str(amount_primary)), "amount_primary"
+                Decimal(str(amount_primary)), "amount_primary", allow_zero=True
             )
         except ValueError as exc:
             return {"error": str(exc)}
