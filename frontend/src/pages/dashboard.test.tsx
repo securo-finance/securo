@@ -22,7 +22,7 @@ const api = vi.hoisted(() => ({
     balanceHistoryMonths: vi.fn(),
     projectedTransactions: vi.fn(),
   },
-  transactions: { list: vi.fn(), calendar: vi.fn() },
+  transactions: { list: vi.fn(), calendar: vi.fn(), update: vi.fn() },
   budgets: { comparison: vi.fn() },
   categories: { list: vi.fn(), listIncludingHidden: vi.fn() },
   categoryGroups: { list: vi.fn(), listIncludingHidden: vi.fn() },
@@ -1113,5 +1113,56 @@ describe('Dashboard arranged from the library', () => {
 
     await user.click(screen.getByRole('button', { name: t('library.done') }))
     expect(screen.queryByText(t('library.editingDashboard'))).not.toBeInTheDocument()
+  })
+})
+
+describe('Dashboard uncategorized drill-down', () => {
+  const uncategorized = (id: string, description: string, date: string) => ({
+    id, description, date, account_id: 'checking', category_id: null, category: null,
+    payee: null, payee_id: null, amount: 12, amount_primary: 12, currency: 'USD', type: 'debit',
+    status: 'posted', source: 'manual', notes: null, attachment_count: 0, splits: [],
+    viewer_share: null, is_shared: false, user_id: 'user-1', transfer_pair_id: null,
+    is_ignored: false, tags: [],
+  })
+
+  it('saves a row and loads the next one into the open dialog with Save & Next', async () => {
+    api.dashboard.summary.mockResolvedValue({ ...summary, pending_categorization: 2, pending_categorization_amount: 24 })
+    api.transactions.list.mockImplementation(async (params?: { uncategorized?: boolean }) => (
+      params?.uncategorized
+        ? {
+            items: [
+              uncategorized('first', 'First uncategorized', '2026-09-01'),
+              uncategorized('second', 'Second uncategorized', '2026-09-02'),
+            ],
+            total: 2,
+          }
+        : { items: [], total: 0 }
+    ))
+    api.transactions.update.mockResolvedValue({})
+
+    const { user } = renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+      { route: '/?month=2026-09' },
+    )
+
+    await user.click(await screen.findByText(t('dashboard.categorizeNow'), { exact: false }))
+    const open = await screen.findAllByRole('button', { name: t('dashboard.drillDownOpenTransaction') })
+    await user.click(open[0])
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByDisplayValue('First uncategorized')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: t('transactions.saveAndNext') }))
+
+    await waitFor(() => expect(api.transactions.update).toHaveBeenCalledTimes(1))
+    const [savedId, payload] = api.transactions.update.mock.calls[0]
+    expect(savedId).toBe('first')
+    expect(payload).not.toHaveProperty('action')
+
+    // Same dialog, now on the next row; it was the last one, so no next again.
+    const next = await screen.findByRole('dialog')
+    expect(await within(next).findByDisplayValue('Second uncategorized')).toBeInTheDocument()
+    expect(within(next).queryByRole('button', { name: t('transactions.saveAndNext') })).not.toBeInTheDocument()
   })
 })
