@@ -68,6 +68,7 @@ from app.models.workspace import Workspace, WorkspaceMember, WorkspaceTaxId
 from app.providers import get_storage_provider
 from app.services import invoice_logo_service, rule_service, workspace_service
 from app.services.attachment_service import sanitize_filename
+from app.services.group_service import _visible_predicate
 from app.schemas.backup import (
     BackupConfig,
     BackupContent,
@@ -1110,6 +1111,7 @@ async def _split_reference_scope(
     id_maps: RestoreIdMaps,
     owned_reference_ids: dict[str, set[str]],
     target_user_id: uuid.UUID,
+    target_workspace_id: uuid.UUID,
 ) -> dict[str, set[str]]:
     """The reference scope for split rows, with the shared groups added.
 
@@ -1138,6 +1140,7 @@ async def _split_reference_scope(
         .join(Group, GroupMember.group_id == Group.id)
         .where(
             GroupMember.id.in_([uuid.UUID(member_id) for member_id in outside]),
+            _visible_predicate(target_workspace_id, target_user_id),
             or_(Group.user_id == target_user_id, Group.id.in_(linked_group_ids)),
         )
     )
@@ -1960,18 +1963,26 @@ async def restore_backup_bytes(
                         id_maps=id_map,
                         owned_reference_ids=owned_reference_ids,
                         target_user_id=target_user_id,
+                        target_workspace_id=target_workspace.id,
                     )
                     resolvable = set(id_map.by_table.get("group_members", {})) | reference_scope.get(
                         "group_members", set()
                     )
-                    kept = [row for row in rows if str(row.get("group_member_id")) in resolvable]
-                    if len(kept) != len(rows):
+                    # A transaction's shares add up to its amount, so they are
+                    # kept or dropped together: keeping the 40.00 of a 40/60
+                    # split would leave a distribution split_service refuses.
+                    broken = {
+                        str(row.get("transaction_id"))
+                        for row in rows
+                        if str(row.get("group_member_id")) not in resolvable
+                    }
+                    if broken:
                         warnings.append(
-                            f"Skipped {len(rows) - len(kept)} split(s) with members of a group "
-                            "that is no longer available to you; those transactions are "
-                            "restored without them."
+                            f"Skipped the splits of {len(broken)} transaction(s) with members "
+                            "of a group that is no longer available to you; those "
+                            "transactions are restored without them."
                         )
-                    rows = kept
+                        rows = [row for row in rows if str(row.get("transaction_id")) not in broken]
                 for row in rows:
                     prepared = _prepare_model_data(
                         model,

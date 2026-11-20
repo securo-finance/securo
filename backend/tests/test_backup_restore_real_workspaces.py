@@ -245,6 +245,151 @@ async def test_restore_skips_split_into_a_group_the_user_cannot_reach(
     assert await _count(session, TransactionSplit, result.workspace_id) == 0
 
 
+def _split_archive(workspace: Workspace, account, transactions, splits: list[tuple]) -> bytes:
+    """An archive with these transactions and (transaction, member, amount) splits."""
+    return backup_service.build_backup_archive(
+        {
+            "metadata.json": {
+                "format_version": backup_service.FORMAT_VERSION,
+                "content": "data",
+                "workspace_id": str(workspace.id),
+                "workspace_name": workspace.name,
+                "entity_counts": {
+                    "accounts": 1,
+                    "transactions": len(transactions),
+                    "transaction_splits": len(splits),
+                },
+                "warnings": [],
+            },
+            "accounts.json": [backup_service._serialize_model(account)],
+            "transactions.json": [backup_service._serialize_model(t) for t in transactions],
+            "transaction_splits.json": [
+                {
+                    "id": str(uuid.uuid4()),
+                    "transaction_id": str(transaction.id),
+                    "workspace_id": str(workspace.id),
+                    "group_member_id": str(member_id),
+                    "share_amount": amount,
+                    "share_type": "exact",
+                }
+                for transaction, member_id, amount in splits
+            ],
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_restore_drops_every_share_of_a_transaction_with_a_lost_member(
+    session: AsyncSession,
+    test_user: User,
+    test_workspace: Workspace,
+    test_account,
+    test_transactions,
+):
+    stranger = User(
+        email="stranger@example.com", hashed_password="x", is_active=True, is_verified=True
+    )
+    session.add(stranger)
+    await session.flush()
+    me, partner = await _shared_group(session, test_user, member_of=True)
+    _, foreign_member = await _shared_group(session, stranger, member_of=False)
+    await session.commit()
+
+    broken, whole = test_transactions[0], test_transactions[1]
+    archive = _split_archive(
+        test_workspace,
+        test_account,
+        [broken, whole],
+        [
+            # 40/60 where the 60 went to a group the user lost: keeping the
+            # 40 alone would no longer add up to the transaction.
+            (broken, me.id, "40.00"),
+            (broken, foreign_member.id, "60.00"),
+            (whole, me.id, "5.00"),
+            (whole, partner.id, "5.00"),
+        ],
+    )
+
+    result = await backup_service.restore_backup_bytes(
+        session,
+        data=archive,
+        target_user_id=test_user.id,
+        current_workspace=test_workspace,
+        content=backup_service.BackupContent.data,
+        mode=backup_service.BackupRestoreMode.new_workspace,
+    )
+
+    assert result.restored_counts["transactions"] == 2
+    assert result.restored_counts["transaction_splits"] == 2
+    assert any("split" in warning for warning in result.warnings)
+    restored = (
+        await session.execute(
+            select(TransactionSplit).where(TransactionSplit.workspace_id == result.workspace_id)
+        )
+    ).scalars().all()
+    assert {split.group_member_id for split in restored} == {me.id, partner.id}
+    assert {split.share_amount for split in restored} == {Decimal("5.00")}
+    assert len({split.transaction_id for split in restored}) == 1
+
+
+@pytest.mark.asyncio
+async def test_restore_into_a_managed_workspace_keeps_the_split_visibility_rule(
+    session: AsyncSession,
+    test_user: User,
+    test_workspace: Workspace,
+    test_account,
+    test_transactions,
+):
+    """A manager restoring into a workspace they are not a member of cannot
+    bring in splits of their own group from elsewhere through an unlinked
+    self-member: split_service and the group pages hide that group there."""
+    client_owner = User(
+        email="client@example.com", hashed_password="x", is_active=True, is_verified=True
+    )
+    session.add(client_owner)
+    await session.flush()
+    managed = Workspace(
+        name="Cliente", kind="business", created_by_user_id=client_owner.id,
+        default_currency="BRL",
+    )
+    session.add(managed)
+    await session.flush()
+    session.add(WorkspaceMember(workspace_id=managed.id, user_id=client_owner.id, role="owner"))
+    me, partner = await _shared_group(session, test_user, member_of=False)
+    me.linked_user_id = None
+    await session.commit()
+
+    source = test_transactions[0]
+    archive = _split_archive(
+        test_workspace,
+        test_account,
+        [source],
+        [(source, me.id, "5.00"), (source, partner.id, "5.00")],
+    )
+    # Restoring into a workspace keeps the archive's ids, so the rows it was
+    # taken from go first, as when the archive came from another instance.
+    for transaction in test_transactions:
+        await session.delete(transaction)
+    await session.flush()
+    await session.delete(test_account)
+    await session.commit()
+
+    result = await backup_service.restore_backup_bytes(
+        session,
+        data=archive,
+        target_user_id=test_user.id,
+        current_workspace=managed,
+        content=backup_service.BackupContent.data,
+        mode=backup_service.BackupRestoreMode.current_workspace,
+        confirmation="RESTORE",
+    )
+
+    assert result.restored_counts["transactions"] == 1
+    assert result.restored_counts["transaction_splits"] == 0
+    assert any("split" in warning for warning in result.warnings)
+    assert await _count(session, TransactionSplit, managed.id) == 0
+
+
 def _archive(files: dict[str, list[dict]]) -> zipfile.ZipFile:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as zf:
