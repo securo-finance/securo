@@ -1277,6 +1277,23 @@ def _reconciled_trades(
     return None
 
 
+async def _assets_with_trades_of_other_source(
+    session: AsyncSession, assets: list[Asset], source: str
+) -> set[uuid.UUID]:
+    """The assets whose ledger has trades not written by this provider."""
+    if not assets:
+        return set()
+    found = await session.scalars(
+        select(AssetTransaction.asset_id)
+        .where(
+            AssetTransaction.asset_id.in_([asset.id for asset in assets]),
+            AssetTransaction.source != source,
+        )
+        .distinct()
+    )
+    return set(found)
+
+
 def _trade_from_row(tx: AssetTransaction) -> HoldingTradeData:
     return HoldingTradeData(
         external_id=tx.external_id or "",
@@ -1341,19 +1358,38 @@ async def _source_trade_rows(
     return by_asset
 
 
-def _ledger_candidates(
-    holdings: list[HoldingData], synced_assets: dict[str, Asset]
+async def _ledger_candidates(
+    session: AsyncSession,
+    holdings: list[HoldingData],
+    synced_assets: dict[str, Asset],
+    source: str,
 ) -> list[HoldingData]:
     """Holdings whose trades can be mirrored into the asset ledger."""
-    return [
+    present = [
         holding
         for holding in holdings
-        if (asset := synced_assets.get(holding.external_id)) is not None
-        # A market-priced asset is valued from its own ledger (units x
-        # quote): the user took over tracking it, so its trades stay theirs.
-        and asset.valuation_method != "market_price"
+        if synced_assets.get(holding.external_id) is not None
         # Without a quantity there is nothing to check the trades against.
         and _trade_target(holding) is not None
+    ]
+    # A market-priced asset whose ledger holds trades the user entered is one
+    # they took over tracking (units x quote from their own buys), so its
+    # trades stay theirs. One priced from a ticker linked to the provider's
+    # position still takes the provider's trades: only its price source
+    # changed. Read for the whole batch at once.
+    taken_over = await _assets_with_trades_of_other_source(
+        session,
+        [
+            synced_assets[holding.external_id]
+            for holding in present
+            if synced_assets[holding.external_id].valuation_method == "market_price"
+        ],
+        source,
+    )
+    return [
+        holding
+        for holding in present
+        if synced_assets[holding.external_id].id not in taken_over
     ]
 
 
@@ -1392,7 +1428,7 @@ async def _sync_holding_trades(
 
     reported = [
         holding
-        for holding in _ledger_candidates(holdings, synced_assets)
+        for holding in await _ledger_candidates(session, holdings, synced_assets, source)
         if holding.trades is not None
     ]
     if not reported:
@@ -1472,7 +1508,7 @@ async def _import_holding_trades(
     issues: dict[str, HoldingTradeIssueStatus] = dict(settings.get(_HOLDING_TRADE_ISSUES) or {})
     holdings = [
         holding
-        for holding in _ledger_candidates(holdings, synced_assets)
+        for holding in await _ledger_candidates(session, holdings, synced_assets, source)
         if holding.trades is None
     ]
     stored_rows: dict[uuid.UUID, list[AssetTransaction]] = {}
