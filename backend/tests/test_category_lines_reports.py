@@ -14,6 +14,8 @@ again:
 `test_category_lines_reports_postgres.py` runs the same tests on PostgreSQL.
 """
 
+import itertools
+import random
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
@@ -512,6 +514,69 @@ async def test_mirrored_legs_do_not_depend_on_row_order(reverse_credits):
 
     assert _without_mirrored_legs(debits + credits) == []
     assert _without_mirrored_legs(credits + debits) == []
+
+
+async def test_a_thousand_identical_legs_pair_without_recursion():
+    """1,300 debits and 1,300 credits of 77.77 on one day, in two accounts
+    (#319): they all pair up instead of hitting the recursion limit."""
+    cat, a, b = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    day = date(2020, 1, 15)
+    debits = [(cat, "Inv", "#000", "debit", Decimal("77.77"), a, day)] * 1300
+    credits = [(cat, "Inv", "#000", "credit", Decimal("77.77"), b, day)] * 1300
+    extra = (cat, "Inv", "#000", "credit", Decimal("77.77"), b, day)
+
+    assert _without_mirrored_legs(debits + credits) == []
+    assert _without_mirrored_legs(credits + [extra] + debits) == [extra[:5]]
+
+
+async def test_two_thousand_daily_pairs_all_cancel():
+    """One debit and one credit a day for 2,000 days: each pairs with its own
+    day, and nothing is left over."""
+    cat, a, b = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    start = date(2015, 1, 1)
+    rows = []
+    for n in range(2000):
+        day = start + timedelta(days=n)
+        rows.append((cat, "Inv", "#000", "debit", Decimal("10.00"), a, day))
+        rows.append((cat, "Inv", "#000", "credit", Decimal("10.00"), b, day))
+
+    assert _without_mirrored_legs(rows) == []
+
+
+@pytest.mark.parametrize("seed", range(40))
+async def test_mirrored_legs_match_a_brute_force_count(seed):
+    """Random small groups over three accounts and a week: as many legs are
+    dropped as the largest set of disjoint fitting pairs allows."""
+    rng = random.Random(seed)
+    cat = uuid.uuid4()
+    accounts = [uuid.uuid4() for _ in range(3)]
+    rows = [
+        (
+            cat, "Bill", "#000", rng.choice(["debit", "credit"]), Decimal("50.00"),
+            rng.choice(accounts), date(2026, 11, rng.randint(1, 7)),
+        )
+        for _ in range(rng.randint(1, 9))
+    ]
+    credits = [r for r in rows if r[3] == "credit"]
+    debits = [r for r in rows if r[3] == "debit"]
+
+    def fits(c, d):
+        return c[5] != d[5] and abs((c[6] - d[6]).days) <= 2
+
+    best = 0
+    for size in range(min(len(credits), len(debits)), 0, -1):
+        if any(
+            all(fits(credits[i], debits[j]) for i, j in zip(cs, ds))
+            for cs in itertools.combinations(range(len(credits)), size)
+            for ds in itertools.permutations(range(len(debits)), size)
+        ):
+            best = size
+            break
+
+    left = _without_mirrored_legs(rows)
+    assert len(left) == len(rows) - 2 * best
+    for kind in ("credit", "debit"):
+        assert sum(r[3] == kind for r in left) == sum(r[3] == kind for r in rows) - best
 
 
 async def test_a_movement_in_one_account_only_still_counts(scene):
