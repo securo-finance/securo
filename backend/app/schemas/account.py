@@ -26,7 +26,9 @@ class AccountCreate(BaseModel):
     type: str
     balance: Decimal = Decimal("0.00")
     balance_date: Optional[date] = None
-    currency: str = "USD"
+    # `validate_default` so an instance that does not support USD refuses the
+    # omitted field too instead of storing it unvalidated.
+    currency: str = Field(default="USD", validate_default=True)
     secured_asset_id: Optional[uuid.UUID] = None
     credit_limit: Optional[Decimal] = None
     statement_close_day: Optional[int] = None

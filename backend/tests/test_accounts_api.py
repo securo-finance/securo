@@ -1151,6 +1151,33 @@ async def test_create_account_refuses_an_unsupported_currency(
 
 
 @pytest.mark.asyncio
+async def test_create_account_validates_the_default_currency_too(
+    client: AsyncClient, auth_headers, monkeypatch
+):
+    """With an instance that does not offer USD, omitting the currency must
+    be refused like an explicit unsupported one, not stored as USD."""
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "supported_currencies", "EUR")
+
+    omitted = await client.post(
+        "/api/accounts",
+        json={"name": "Wise", "type": "checking", "balance": 1000},
+        headers=auth_headers,
+    )
+    assert omitted.status_code == 422
+    assert "unsupported currency code" in omitted.text
+
+    supported = await client.post(
+        "/api/accounts",
+        json={"name": "Wise", "type": "checking", "balance": 1000, "currency": "eur"},
+        headers=auth_headers,
+    )
+    assert supported.status_code == 201, supported.text
+    assert supported.json()["currency"] == "EUR"
+
+
+@pytest.mark.asyncio
 async def test_update_account_leaves_the_currency_alone(
     client: AsyncClient, auth_headers
 ):
