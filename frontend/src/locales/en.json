@@ -2444,7 +2444,8 @@
         "income": "Income",
         "net": "Net"
       },
-      "share": "Share"
+      "share": "Share",
+      "computed": "Computed by the plugin"
     }
   },
   "payees": {

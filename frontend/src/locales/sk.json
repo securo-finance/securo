@@ -2568,7 +2568,8 @@
         "income": "Príjmy",
         "net": "Saldo"
       },
-      "share": "Podiel"
+      "share": "Podiel",
+      "computed": "Vypočítané pluginom"
     }
   },
   "payees": {

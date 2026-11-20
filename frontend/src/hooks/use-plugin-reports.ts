@@ -8,9 +8,11 @@ import { pluginReportEntries, type PluginReportEntry } from '@/lib/library'
 /**
  * The reports the workspace's installed plugins add to the library (ADR 0028).
  * Read from what was installed, never the catalog; none while plugins are off.
- * `entries` is null until it's known, so a saved tab isn't dropped meanwhile.
+ * `entries` is null while it isn't known (still loading, or the read
+ * failed), so a saved tab is never dropped for it; `settled` turns true once
+ * there's nothing more to wait for.
  */
-export function usePluginReports(): { entries: PluginReportEntry[] | null } {
+export function usePluginReports(): { entries: PluginReportEntry[] | null; settled: boolean } {
   const { pluginsEnabled, isLoading: flagsLoading } = useFeatureFlags()
   const { data, isError } = useQuery({
     queryKey: ['plugins', 'installed'],
@@ -21,8 +23,8 @@ export function usePluginReports(): { entries: PluginReportEntry[] | null } {
   })
   const entries = useMemo(() => {
     if (flagsLoading) return null
-    if (!pluginsEnabled || isError) return []
+    if (!pluginsEnabled) return []
     return data ? pluginReportEntries(data) : null
-  }, [data, flagsLoading, isError, pluginsEnabled])
-  return { entries }
+  }, [data, flagsLoading, pluginsEnabled])
+  return { entries, settled: !flagsLoading && (!pluginsEnabled || data !== undefined || isError) }
 }

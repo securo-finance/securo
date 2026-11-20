@@ -49,8 +49,10 @@ class PluginReportDefinitionRead(BaseModel):
     key: str
     name: dict[str, str]
     description: dict[str, str] | None = None
+    code: bool = False
+    inputs: list[Literal["transactions", "accounts", "categories"]] = []
     measure: Literal["expenses", "income", "net"]
-    group_by: Literal["category", "category_group", "payee", "account", "month"]
+    group_by: Literal["category", "category_group", "payee", "account", "month"] | None = None
     chart: Literal["bar", "line", "area", "pie", "table"]
 
 

@@ -36,7 +36,7 @@ NAME_MAX = 100
 DATA_KINDS = frozenset({"category_groups", "categories", "rules"})
 #: Contributions that run the plugin's code, in the plugin runner.
 CODE_KINDS = frozenset({"integrations"})
-#: Contributions to the interface, drawn by Securo's own components: nothing runs.
+#: Contributions to the interface, drawn by Securo's own components (a code report computes its view in the runner).
 UI_KINDS = frozenset({"themes", "reports"})
 ALL_KINDS = DATA_KINDS | CODE_KINDS | UI_KINDS
 #: Design tokens a theme may color; the same list as the frontend's THEME_TOKENS.
@@ -372,19 +372,32 @@ ReportChart = Literal["bar", "line", "area", "pie", "table"]
 TIME_CHARTS = frozenset({"line", "area"})
 
 
-class Report(_Model):
-    """A report for the reports page: a query and a chart, run and drawn by Securo.
+#: Data a code report can ask for, and the read scope each one needs in `api_scopes`.
+REPORT_INPUTS: dict[str, str] = {
+    "transactions": "transactions:read",
+    "accounts": "accounts:read",
+    "categories": "categories:read",
+}
+ReportInput = Literal["transactions", "accounts", "categories"]
 
-    Nothing of the plugin runs. Securo adds up the workspace's transactions
-    with the same rules as its own reports, for whoever is looking and in the
-    period and accounts they picked.
+
+class Report(_Model):
+    """A report for the reports page.
+
+    Either a query Securo runs (`measure`, `group_by`...), or, with `code`, the
+    plugin's own: Securo hands its `report` method the `inputs` it asked for,
+    read for whoever is looking, and draws the view it returns (ADR 0028).
     """
 
     key: str = Field(pattern=KEY_PATTERN)
     name: Name
     description: Text | None = None
+    code: bool = False
+    """Computed by the plugin's code in the runner; needs a runtime."""
+    inputs: list[ReportInput] = Field(default=[], max_length=len(REPORT_INPUTS))
+    """For a code report: the workspace data it gets, each covered by a read scope in `api_scopes`."""
     measure: ReportMeasure = "expenses"
-    group_by: ReportGroup
+    group_by: ReportGroup | None = None
     categories: list[Annotated[str, Field(pattern=KEY_PATTERN)]] = Field(default=[], max_length=50)
     """Only these categories: keys of the plugin's own, or of Securo's defaults. None means all."""
     chart: ReportChart = "bar"
@@ -393,6 +406,16 @@ class Report(_Model):
 
     @model_validator(mode="after")
     def _drawable(self) -> Report:
+        if len(self.inputs) != len(set(self.inputs)):
+            raise ValueError(f"report {self.key}: inputs must be unique")
+        if self.code:
+            if self.group_by is not None or self.categories:
+                raise ValueError(f"report {self.key}: a code report computes its own view; leave out group_by and categories")
+            return self
+        if self.inputs:
+            raise ValueError(f"report {self.key}: inputs are for a code report")
+        if self.group_by is None:
+            raise ValueError(f"report {self.key}: needs group_by, or code: true")
         if self.chart in TIME_CHARTS and self.group_by != "month":
             raise ValueError(f"report {self.key}: a {self.chart} chart reads along time, so it needs group_by month")
         if self.chart == "pie" and (self.group_by == "month" or self.measure == "net"):
@@ -477,8 +500,17 @@ class Manifest(_Model):
             raise ValueError("network, api_scopes and logos are only for plugins with a runtime")
         if any(".." in path.split("/") for path in self.logos.values()):
             raise ValueError("logos must be paths inside the package")
-        if self.runtime is not None and not self.contributes.integrations:
-            raise ValueError("a runtime needs something to run: add an integration")
+        code_reports = [r for r in self.contributes.reports if r.code]
+        if code_reports and self.runtime is None:
+            raise ValueError("code reports need a runtime")
+        if self.runtime is not None and not (self.contributes.integrations or code_reports):
+            raise ValueError("a runtime needs something to run: add an integration or a code report")
+        granted = {a.scope for a in self.api_scopes}
+        for report in code_reports:
+            for name in report.inputs:
+                read = REPORT_INPUTS[name]
+                if read not in granted and read.replace(":read", ":write") not in granted:
+                    raise ValueError(f"report {report.key}: input {name} needs {read} in api_scopes")
         if len(self.workspaces) != len(set(self.workspaces)):
             raise ValueError("workspaces must be unique")
         hosts = [h.host for h in self.network]

@@ -863,21 +863,52 @@ export interface PluginReportDefinition {
   key: string
   name: LocalizedText
   description?: LocalizedText | null
+  /** Computed by the plugin's code, which returns a view; otherwise a query Securo runs. */
+  code?: boolean
+  inputs?: ('transactions' | 'accounts' | 'categories')[]
   measure: 'expenses' | 'income' | 'net'
-  group_by: 'category' | 'category_group' | 'payee' | 'account' | 'month'
+  group_by?: 'category' | 'category_group' | 'payee' | 'account' | 'month' | null
   chart: 'bar' | 'line' | 'area' | 'pie' | 'table'
 }
+
+/** How a value in a view is shown. A percent is the number itself: 12.5 is 12.5%. */
+export type ReportViewFormat = 'currency' | 'number' | 'percent' | 'text' | 'date'
+
+/** A report's view: blocks Securo draws with its own components (ADR 0028). */
+export interface ReportView {
+  currency?: string
+  blocks: ReportViewBlock[]
+}
+
+export type ReportViewBlock =
+  | { type: 'kpi'; title?: string; label: string; value: number | null; format?: ReportViewFormat; delta?: number | null; delta_format?: ReportViewFormat | null; hint?: string | null }
+  | {
+      type: 'chart'
+      title?: string
+      chart: 'bar' | 'stacked_bar' | 'horizontal_bar' | 'line' | 'area' | 'stacked_area' | 'pie' | 'donut' | 'scatter'
+      x: (string | number)[]
+      series: { name: string; values: (number | null)[]; color?: string | null }[]
+      format?: ReportViewFormat
+      x_format?: 'text' | 'date' | 'month' | 'number'
+      /** A color per point, for a pie, a donut or a one-series bar chart. */
+      colors?: (string | null)[] | null
+    }
+  | { type: 'table'; title?: string; columns: { key: string; label: string; format?: ReportViewFormat }[]; rows: Record<string, string | number | null>[] }
+  | { type: 'text'; title?: string; text: string }
 
 /** A plugin's report, added up by Securo for the period asked. */
 export interface PluginReportResponse {
   key: string
-  measure: PluginReportDefinition['measure']
-  group_by: PluginReportDefinition['group_by']
-  chart: PluginReportDefinition['chart']
+  code?: boolean
+  measure?: PluginReportDefinition['measure'] | null
+  group_by?: PluginReportDefinition['group_by']
+  chart?: PluginReportDefinition['chart'] | null
   currency: string
-  /** `label` is null for the rows the page names: `none` (no category or payee) and `other`. */
+  /** A query report's groups. `label` is null for the rows the page names: `none` and `other`. */
   rows: { key: string; label: string | null; value: number; color: string | null }[]
   total: number
+  /** A code report's view, as the plugin drew it. */
+  view?: ReportView | null
 }
 
 export interface PluginContents {

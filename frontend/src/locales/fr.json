@@ -2448,7 +2448,8 @@
         "income": "Revenus",
         "net": "Solde"
       },
-      "share": "Part"
+      "share": "Part",
+      "computed": "Calculé par le plugin"
     }
   },
   "payees": {

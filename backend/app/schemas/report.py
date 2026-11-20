@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -116,12 +118,18 @@ class PluginReportRow(BaseModel):
 
 
 class PluginReportResponse(BaseModel):
-    """A plugin's report, added up by Securo for the period asked (ADR 0028)."""
+    """A plugin's report for the period asked (ADR 0028).
+
+    A query report comes back as `rows` Securo added up; a code report as the
+    `view` the plugin computed, already checked.
+    """
 
     key: str
-    measure: str
-    group_by: str
-    chart: str
+    code: bool = False
+    measure: str | None = None
+    group_by: str | None = None
+    chart: str | None = None
     currency: str
-    rows: list[PluginReportRow]
-    total: float
+    rows: list[PluginReportRow] = []
+    total: float = 0
+    view: dict[str, Any] | None = None

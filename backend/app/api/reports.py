@@ -231,11 +231,26 @@ async def get_plugin_report(
     if not feature_flag("PLUGINS_ENABLED"):
         raise HTTPException(status_code=404, detail="Plugins are not enabled")
     try:
-        manifest, report = await plugin_report_service.installed_report(
+        record, manifest, report = await plugin_report_service.installed_report(
             session, ctx.workspace.id, f"{owner}/{name}", key
         )
     except plugin_report_service.PluginReportNotFound:
         raise HTTPException(status_code=404, detail="Report not found") from None
+    if report.code:
+        try:
+            view = await plugin_report_service.run_code_report(
+                session, ctx.workspace.id, ctx.user_id, record, report, start_date, end_date, account_ids,
+                lang=(ctx.user.preferences or {}).get("language") or "en",
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        except plugin_report_service.CodeReportUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from None
+        except plugin_report_service.CodeReportFailed as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from None
+        return PluginReportResponse(
+            key=report.key, code=True, currency=view.currency or "USD", view=view.model_dump(exclude_none=True)
+        )
     try:
         result = await plugin_report_service.run_report(
             session, ctx.workspace.id, ctx.user_id, manifest, report, start_date, end_date, account_ids

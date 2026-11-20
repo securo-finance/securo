@@ -371,7 +371,9 @@ function Contents({ contents }: { contents: PluginContents }) {
             <ChartColumnBig size={15} className="shrink-0 text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate text-sm font-medium">{localized(report.name, lang)}</span>
             <span className="shrink-0 text-xs text-muted-foreground">
-              {t(`reports.pluginReport.measure.${report.measure}`)} · {t(`reports.pluginReport.groupBy.${report.group_by}`)}
+              {report.code || !report.group_by
+                ? t('reports.pluginReport.computed')
+                : `${t(`reports.pluginReport.measure.${report.measure}`)} · ${t(`reports.pluginReport.groupBy.${report.group_by}`)}`}
             </span>
           </li>
         ))}

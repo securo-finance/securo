@@ -2444,7 +2444,8 @@
         "income": "収入",
         "net": "収支"
       },
-      "share": "割合"
+      "share": "割合",
+      "computed": "プラグインが計算"
     }
   },
   "payees": {

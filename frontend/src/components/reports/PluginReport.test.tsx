@@ -89,4 +89,22 @@ describe('PluginReport', () => {
     renderWithProviders(<PluginReport entry={entry()} startDate="2026-01-01" endDate="2026-11-20" accountIds={undefined} />)
     expect(await screen.findByRole('button', { name: t('common.retry') })).toBeInTheDocument()
   })
+
+  it("draws a code report's view, and says the plugin computed it", async () => {
+    api.reports.plugin.mockResolvedValue({
+      key: 'r', code: true, currency: 'USD', rows: [], total: 0,
+      view: { currency: 'USD', blocks: [{ type: 'kpi', label: 'Burn rate', value: 321 }, { type: 'text', text: 'Hello from pandas' }] },
+    })
+    renderWithProviders(<PluginReport entry={entry({ code: true })} startDate="2026-01-01" endDate="2026-11-20" accountIds={undefined} />)
+    expect(await screen.findByText('Burn rate')).toBeInTheDocument()
+    expect(screen.getByText('$321.00')).toBeInTheDocument()
+    expect(screen.getByText('Hello from pandas')).toBeInTheDocument()
+    expect(screen.getByText(new RegExp(t('reports.pluginReport.computed')))).toBeInTheDocument()
+  })
+
+  it("shows what a failing code report said", async () => {
+    api.reports.plugin.mockRejectedValue({ isAxiosError: true, response: { status: 502, data: { detail: "RuntimeError: the numbers don't add up" } } })
+    renderWithProviders(<PluginReport entry={entry({ code: true })} startDate="2026-01-01" endDate="2026-11-20" accountIds={undefined} />)
+    expect(await screen.findByRole('button', { name: t('common.retry') })).toBeInTheDocument()
+  })
 })

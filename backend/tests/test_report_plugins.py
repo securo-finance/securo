@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -119,6 +120,8 @@ async def test_installed_plugins_list_their_reports(client: AsyncClient, auth_he
         "key": "pet-spending",
         "name": {"en": "Pet spending", "pt-BR": "Gastos com bichos"},
         "description": {"en": "What the pets cost, month by month."},
+        "code": False,
+        "inputs": [],
         "measure": "expenses",
         "group_by": "month",
         "chart": "bar",
@@ -279,3 +282,201 @@ async def test_removing_the_plugin_takes_its_reports(client: AsyncClient, auth_h
     await _apply(client, auth_headers, "remove")
     today = installed["today"]
     assert (await _report(client, auth_headers, "pet-spending", today, today)).status_code == 404
+
+
+# --- Code reports ----------------------------------------------------------------
+
+from app.plugins.report_view import InvalidView, parse_view  # noqa: E402
+from tests import test_code_plugins as code_plugins  # noqa: E402
+
+code_catalog = code_plugins.catalog
+plugin_runner = code_plugins.plugin_runner
+CODE_PLUGIN = code_plugins.PLUGIN
+
+REPORT_SOURCE = '''
+import json
+from collections import defaultdict
+from decimal import Decimal
+
+
+class Plugin:
+    def report(self, params, context):
+        data = params["data"]
+        if params["report"] == "broken":
+            raise RuntimeError("the numbers don't add up")
+        if params["report"] == "bad-view":
+            return {"blocks": [{"type": "html", "html": "<script>x</script>"}]}
+        names = {c["id"]: c["name"] for c in data.get("categories", [])}
+        totals = defaultdict(Decimal)
+        for tx in data["transactions"]["rows"]:
+            if tx["type"] == "debit" and tx["status"] == "posted":
+                totals[names.get(tx["category_id"], "None")] += Decimal(tx["amount"])
+        top = sorted(totals.items(), key=lambda kv: -kv[1])
+        return {
+            "blocks": [
+                {"type": "kpi", "label": "Spent", "value": float(sum(totals.values()))},
+                {"type": "chart", "chart": "horizontal_bar", "x": [k for k, _ in top],
+                 "series": [{"name": "Spent", "values": [float(v) for _, v in top]}]},
+                {"type": "text", "text": json.dumps({
+                    "accounts": len(data.get("accounts", [])), "period": [params["start_date"], params["end_date"]],
+                    "currency": params["currency"], "workspace": context.securo["workspace_id"],
+                })},
+            ]
+        }
+
+plugin = Plugin()
+'''
+
+
+def _code_manifest(**report: Any) -> dict[str, Any]:
+    manifest: dict[str, Any] = copy.deepcopy(code_plugins.MANIFEST)
+    manifest["api_scopes"] = [
+        {"scope": "transactions:read", "purpose": "Reads your spending for its reports"},
+        {"scope": "accounts:read", "purpose": "Reads your accounts for its reports"},
+        {"scope": "categories:read", "purpose": "Names your categories in its reports"},
+    ]
+    base = {"key": "insights", "name": {"en": "Insights"}, "code": True,
+            "inputs": ["transactions", "accounts", "categories"]}
+    reports = [dict(base, **report)] + [dict(base, key=k, inputs=[]) for k in ("broken", "bad-view")]
+    manifest["contributes"] = {"reports": reports}
+    return manifest
+
+
+def test_a_code_report_reads_only_what_its_scopes_grant():
+    parse_manifest(_code_manifest())
+    manifest = _code_manifest()
+    manifest["api_scopes"] = [{"scope": "transactions:read", "purpose": "x"}]
+    with pytest.raises(ValidationError, match="input accounts needs accounts:read"):
+        parse_manifest(manifest)
+    manifest["api_scopes"] = [
+        {"scope": s, "purpose": "x"} for s in ("transactions:write", "accounts:write", "categories:write")
+    ]
+    parse_manifest(manifest)  # write includes read
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        (lambda m: m.pop("runtime"), "runtime"),
+        (lambda m: m["contributes"]["reports"][0].update(group_by="month"), "computes its own view"),
+        (lambda m: m["contributes"]["reports"][0].update(code=False), "inputs are for a code report"),
+        (lambda m: m["contributes"]["reports"][0].update(inputs=["transactions", "transactions"]), "unique"),
+        (lambda m: m["contributes"]["reports"][0].update(inputs=["passwords"]), "inputs"),
+    ],
+    ids=["no-runtime", "query-fields", "inputs-without-code", "duplicate-input", "unknown-input"],
+)
+def test_code_reports_that_break_the_rules_are_refused(change, message):
+    manifest = _code_manifest()
+    change(manifest)
+    with pytest.raises(ValidationError, match=message):
+        parse_manifest(manifest)
+
+
+def test_a_view_is_data_only():
+    view = parse_view({"blocks": [
+        {"type": "kpi", "label": "Spent", "value": 10.5, "delta": -2, "format": "currency"},
+        {"type": "chart", "chart": "stacked_bar", "x": ["2026-10", "2026-11"], "x_format": "month",
+         "series": [{"name": "Food", "values": [1, 2], "color": "#112233"}, {"name": "Rent", "values": [3, None]}]},
+        {"type": "table", "columns": [{"key": "name", "label": "Name"}, {"key": "v", "label": "V", "format": "number"}],
+         "rows": [{"name": "a", "v": 1}]},
+        {"type": "text", "text": "<b>shown as text</b>"},
+    ]})
+    assert [b.type for b in view.blocks] == ["kpi", "chart", "table", "text"]
+    for bad in (
+        {"blocks": []},
+        {"blocks": [{"type": "html", "html": "<script>"}]},
+        {"blocks": [{"type": "kpi", "label": "x", "value": 1, "onclick": "x"}]},
+        {"blocks": [{"type": "chart", "chart": "bar", "x": [1, 2], "series": [{"name": "a", "values": [1]}]}]},
+        {"blocks": [{"type": "chart", "chart": "pie", "x": [1], "series": [{"name": "a", "values": [1]},
+                                                                           {"name": "b", "values": [1]}]}]},
+        {"blocks": [{"type": "chart", "chart": "bar", "x": [1], "series": [{"name": "a", "values": [1],
+                                                                            "color": "url(x)"}]}]},
+        {"blocks": [{"type": "table", "columns": [{"key": "a", "label": "A"}], "rows": [{"b": 1}]}]},
+        {"blocks": [{"type": "text", "text": "x"}] * 21},
+    ):
+        with pytest.raises(InvalidView):
+            parse_view(bad)
+
+
+async def _install_code_report(client, headers, fake) -> None:
+    fake.manifests[code_plugins.V1] = _code_manifest()
+    fake.archives[code_plugins.V1] = code_plugins._tarball(REPORT_SOURCE)
+    plan = (await client.get(f"/api/plugins/{CODE_PLUGIN}/plan", params={"action": "install"}, headers=headers)).json()
+    body = {"action": "install", "commit": plan["commit"], "token": plan["token"]}
+    resp = await client.post(f"/api/plugins/{CODE_PLUGIN}/apply", json=body, headers=headers)
+    assert resp.status_code == 200, resp.text
+
+
+async def _code_report(client, headers, key, start, end, **params):
+    return await client.get(
+        f"/api/reports/plugins/{CODE_PLUGIN}/{key}",
+        params={"start_date": start.isoformat(), "end_date": end.isoformat(), **params},
+        headers=headers,
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_code_report_computes_its_view_from_the_inputs_it_asked_for(
+    client: AsyncClient, auth_headers: dict, code_catalog, plugin_runner, session, test_user, test_workspace
+):
+    await _install_code_report(client, auth_headers, code_catalog)
+    installed = (await client.get("/api/plugins", headers=auth_headers)).json()
+    assert installed[0]["reports"][0]["code"] is True
+    ledger = await _ledger_without_plugin(session, test_user, test_workspace)
+    resp = await _code_report(client, auth_headers, "insights", ledger["last_month"], ledger["today"])
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["code"] is True and body["rows"] == []
+    kpi, chart, text = body["view"]["blocks"]
+    assert kpi == {"type": "kpi", "label": "Spent", "value": 2070.0, "format": "currency"}
+    assert chart["x"][:2] == ["Rent", "Food"] and chart["series"][0]["values"][:2] == [1500.0, 300.0]
+    facts = json.loads(text["text"])
+    assert facts["accounts"] == 2 and facts["workspace"] == str(test_workspace.id)
+    assert facts["period"] == [ledger["last_month"].isoformat(), ledger["today"].isoformat()]
+    assert body["view"]["currency"] == facts["currency"]
+
+
+@pytest.mark.asyncio
+async def test_a_code_report_reads_only_the_accounts_picked(
+    client: AsyncClient, auth_headers: dict, code_catalog, plugin_runner, session, test_user, test_workspace
+):
+    await _install_code_report(client, auth_headers, code_catalog)
+    ledger = await _ledger_without_plugin(session, test_user, test_workspace)
+    resp = await _code_report(client, auth_headers, "insights", ledger["last_month"], ledger["today"],
+                              account_ids=[str(ledger["card"].id)])
+    kpi, _, text = resp.json()["view"]["blocks"]
+    assert kpi["value"] == 60.0 and json.loads(text["text"])["accounts"] == 1
+
+
+@pytest.mark.asyncio
+async def test_a_failing_or_invalid_code_report_is_an_error_for_the_page(
+    client: AsyncClient, auth_headers: dict, code_catalog, plugin_runner
+):
+    await _install_code_report(client, auth_headers, code_catalog)
+    today = app_today()
+    broken = await _code_report(client, auth_headers, "broken", today, today)
+    assert broken.status_code == 502 and "the numbers don't add up" in broken.json()["detail"]
+    bad = await _code_report(client, auth_headers, "bad-view", today, today)
+    assert bad.status_code == 502 and "invalid view" in bad.json()["detail"]
+    assert "<script>" not in bad.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_a_code_report_without_the_runner_is_unavailable(
+    client: AsyncClient, auth_headers: dict, code_catalog, plugin_runner, monkeypatch
+):
+    await _install_code_report(client, auth_headers, code_catalog)
+    from app.plugins import runner
+
+    monkeypatch.setattr(runner, "configured", lambda: False)
+    today = app_today()
+    assert (await _code_report(client, auth_headers, "insights", today, today)).status_code == 503
+
+
+async def _ledger_without_plugin(session: AsyncSession, user, workspace) -> dict[str, Any]:
+    """The same spending as `_ledger`, with a category of its own instead of the plugin's."""
+    pets = Category(id=uuid.uuid4(), user_id=user.id, workspace_id=workspace.id, name="Pets", icon="dog",
+                    color="#F97316", source=PLUGIN, source_key="pets")
+    session.add(pets)
+    await session.commit()
+    return await _ledger(session, user, workspace)

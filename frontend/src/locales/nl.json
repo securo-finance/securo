@@ -2446,7 +2446,8 @@
         "income": "Inkomsten",
         "net": "Saldo"
       },
-      "share": "Aandeel"
+      "share": "Aandeel",
+      "computed": "Berekend door de plugin"
     }
   },
   "payees": {

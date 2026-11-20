@@ -70,7 +70,7 @@ class ReportResult:
 
 async def installed_report(
     session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str, key: str
-) -> tuple[Manifest, Report]:
+) -> tuple[WorkspacePlugin, Manifest, Report]:
     """The report as the workspace installed it (never from the catalog)."""
     record = await session.scalar(
         select(WorkspacePlugin).where(
@@ -83,7 +83,7 @@ async def installed_report(
     report = next((r for r in manifest.contributes.reports if r.key == key), None)
     if report is None:
         raise PluginReportNotFound
-    return manifest, report
+    return record, manifest, report
 
 
 async def _category_ids(
@@ -222,3 +222,206 @@ async def run_report(
         kept, rest = rows[: report.limit - 1], rows[report.limit - 1 :]
         rows = kept + [ReportRow(OTHER_KEY, None, sum((r.value for r in rest), Decimal("0")))]
     return ReportResult(report, currency, rows, sum((r.value for r in rows), Decimal("0")))
+
+
+# --- Code reports ---------------------------------------------------------------
+
+#: Most transactions handed to a code report in one run.
+MAX_INPUT_TRANSACTIONS = 20_000
+
+
+class CodeReportUnavailable(Exception):
+    """Plugins with code can't run here (no runner), or the runner can't be reached."""
+
+
+class CodeReportFailed(Exception):
+    """The plugin's report raised, timed out, or returned something that isn't a view."""
+
+
+def _money(value: Any) -> str | None:
+    return None if value is None else str(value)
+
+
+async def _transactions_input(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    start: date,
+    end: date,
+    account_ids: Optional[list[uuid.UUID]],
+    report_date: Any,
+) -> dict[str, Any]:
+    """The period's transactions as the workspace keeps them, split lines included."""
+    from app.models.transaction_category_line import TransactionCategoryLine
+
+    filters: list[Any] = [Transaction.workspace_id == workspace_id, report_date >= start, report_date <= end]
+    if account_ids is not None:
+        filters.append(Transaction.account_id.in_(account_ids))
+    rows = (
+        await session.execute(
+            select(
+                Transaction.id, report_date, Transaction.description, Transaction.amount, Transaction.type,
+                Transaction.currency, Transaction.amount_primary, Transaction.category_id, Transaction.account_id,
+                func.coalesce(Payee.name, Transaction.payee), Transaction.status, Transaction.source,
+                Transaction.is_ignored,
+            )
+            .outerjoin(Payee, Transaction.payee_id == Payee.id)
+            .where(*filters)
+            .order_by(report_date, Transaction.id)
+            .limit(MAX_INPUT_TRANSACTIONS + 1)
+        )
+    ).all()
+    truncated = len(rows) > MAX_INPUT_TRANSACTIONS
+    rows = rows[:MAX_INPUT_TRANSACTIONS]
+    ids = [row[0] for row in rows]
+    lines: dict[uuid.UUID, list[dict[str, Any]]] = defaultdict(list)
+    for chunk in range(0, len(ids), 1000):
+        result = await session.execute(
+            select(TransactionCategoryLine.transaction_id, TransactionCategoryLine.category_id,
+                   TransactionCategoryLine.amount)
+            .where(TransactionCategoryLine.transaction_id.in_(ids[chunk : chunk + 1000]))
+            .order_by(TransactionCategoryLine.position)
+        )
+        for tx_id, category_id, amount in result.all():
+            lines[tx_id].append({"category_id": str(category_id) if category_id else None, "amount": _money(amount)})
+    return {
+        "rows": [
+            {
+                "id": str(tx_id),
+                "date": day.isoformat() if day else None,
+                "description": description,
+                "amount": _money(amount),
+                "type": kind,
+                "currency": currency,
+                "amount_primary": _money(amount_primary),
+                "category_id": str(category_id) if category_id else None,
+                "category_lines": lines.get(tx_id, []),
+                "account_id": str(account_id),
+                "payee": payee,
+                "status": status,
+                "source": source,
+                "is_ignored": bool(ignored),
+            }
+            for tx_id, day, description, amount, kind, currency, amount_primary, category_id, account_id, payee,
+            status, source, ignored in rows
+        ],
+        "truncated": truncated,
+    }
+
+
+async def _accounts_input(session: AsyncSession, workspace_id: uuid.UUID, account_ids: Optional[list[uuid.UUID]]):
+    from app.services.account_service import get_accounts
+
+    picked = {str(a) for a in account_ids} if account_ids is not None else None
+    return [
+        {
+            "id": str(a["id"]),
+            "name": a.get("display_name") or a["name"],
+            "type": a["type"],
+            "currency": a["currency"],
+            "balance": a["current_balance"],
+            "institution": a.get("institution_name"),
+            "connected": a.get("connection_id") is not None,
+        }
+        for a in await get_accounts(session, workspace_id)
+        if picked is None or str(a["id"]) in picked
+    ]
+
+
+async def _categories_input(session: AsyncSession, workspace_id: uuid.UUID) -> list[dict[str, Any]]:
+    rows = (
+        await session.execute(
+            select(
+                Category.id, Category.name, Category.color, Category.icon, Category.group_id, CategoryGroup.name,
+                Category.treat_as_transfer, Category.is_ignored, Category.source, Category.source_key,
+            )
+            .outerjoin(CategoryGroup, Category.group_id == CategoryGroup.id)
+            .where(Category.workspace_id == workspace_id)
+            .order_by(Category.name)
+        )
+    ).all()
+    return [
+        {
+            "id": str(cid), "name": name, "color": color, "icon": icon,
+            "group_id": str(group_id) if group_id else None, "group": group,
+            "treat_as_transfer": bool(transfer), "is_ignored": bool(ignored),
+            # A category the report's plugin created, by its key in the manifest.
+            "plugin_key": key if source else None, "plugin": source,
+        }
+        for cid, name, color, icon, group_id, group, transfer, ignored, source, key in rows
+    ]
+
+
+async def run_code_report(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    record: WorkspacePlugin,
+    report: Report,
+    start: date,
+    end: date,
+    account_ids: Optional[list[uuid.UUID]] = None,
+    lang: str = "en",
+) -> Any:
+    """Run a plugin's own report in the runner and return the view it drew (ADR 0028).
+
+    The plugin gets only the inputs its manifest names, read for this
+    workspace with the period and accounts the viewer picked, and returns a
+    view of blocks; what it returns is checked before anyone sees it.
+    """
+    from app.plugins import runner
+    from app.plugins.report_view import InvalidView, parse_view
+
+    if end < start or (end - start).days > MAX_DAYS:
+        raise ValueError(f"the period must run forward and span at most {MAX_DAYS} days")
+    if not runner.configured():
+        raise CodeReportUnavailable("plugins with code need the plugin runner (the `plugins` profile)")
+    user = await session.get(User, user_id)
+    currency = user.primary_currency if user else get_settings().default_currency
+    report_date = reporting_date_col(await get_credit_card_accounting_mode(session))
+
+    data: dict[str, Any] = {}
+    if "transactions" in report.inputs:
+        data["transactions"] = await _transactions_input(session, workspace_id, start, end, account_ids, report_date)
+    if "accounts" in report.inputs:
+        data["accounts"] = await _accounts_input(session, workspace_id, account_ids)
+    if "categories" in report.inputs:
+        data["categories"] = await _categories_input(session, workspace_id)
+    params = {
+        "report": report.key,
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+        "today": app_today().isoformat(),
+        "currency": currency,
+        "lang": lang,
+        "account_ids": [str(a) for a in account_ids] if account_ids is not None else None,
+        "data": data,
+    }
+    securo = {"workspace_id": str(workspace_id), "report": report.key}
+
+    async def call() -> Any:
+        async with runner.RunnerClient() as client:
+            return await client.call(record.plugin_id, "report", params, securo=securo, commit=record.commit)
+
+    try:
+        try:
+            result = await call()
+        except runner.RunnerRefused as exc:
+            # The runner lost this commit (a new volume): put it back once, as a sync does.
+            from app.plugins.connections import _reinstall
+
+            if exc.status != 404 or not await _reinstall(record):
+                raise
+            result = await call()
+    except runner.PluginCallFailed as exc:
+        raise CodeReportFailed(f"{exc.kind}: {exc.message}"[:500]) from None
+    except runner.RunnerRefused as exc:
+        raise CodeReportUnavailable(f"the plugin runner refused the report ({exc.status})") from None
+    except runner.RunnerUnavailable as exc:
+        raise CodeReportUnavailable(str(exc)) from None
+    try:
+        view = parse_view(result)
+    except InvalidView as exc:
+        raise CodeReportFailed(str(exc)[:500]) from None
+    if view.currency is None:
+        view.currency = currency
+    return view

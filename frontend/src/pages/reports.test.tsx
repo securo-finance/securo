@@ -932,4 +932,28 @@ describe('Reports page: a plugin\'s report', () => {
     await waitFor(() => expect(api.plugins.installed).toHaveBeenCalled())
     expect(screen.queryByRole('button', { name: 'Pet spending' })).not.toBeInTheDocument()
   })
+
+  it('opens on a saved plugin report that comes first, once the plugins are known', async () => {
+    let release: (value: unknown) => void = () => {}
+    api.plugins.installed.mockReturnValue(new Promise((done) => { release = done }))
+    layouts.saved = { reports: [{ id: 'plugin:maria/casa:pets' }, { id: 'net_worth' }] }
+    renderWithProviders(<ReportsPage />)
+    await waitFor(() => expect(api.plugins.installed).toHaveBeenCalled())
+    release([{
+      plugin_id: 'maria/casa', name: { en: 'Home' }, themes: [],
+      reports: [{ key: 'pets', name: { en: 'Pet spending' }, measure: 'expenses', group_by: 'category', chart: 'table' }],
+    }])
+    expect(await screen.findByText('Vet')).toBeInTheDocument()
+  })
+
+  it("keeps a plugin's tab saved when the plugins can't be read", async () => {
+    api.plugins.installed.mockRejectedValue(new Error('down'))
+    layouts.saved = { reports: [{ id: 'net_worth' }, { id: 'income_expenses' }, { id: 'plugin:maria/casa:pets' }] }
+    renderWithProviders(<ReportsPage />)
+    expect((await screen.findAllByRole('button', { name: t('reports.netWorth') })).length).toBeGreaterThan(0)
+    await waitFor(() => expect(api.plugins.installed).toHaveBeenCalled())
+    // Nothing was saved over the arrangement, and the plugin's tab is still in it.
+    expect(layouts.saves).toEqual([])
+    expect(layouts.saved.reports?.map((item) => item.id)).toContain('plugin:maria/casa:pets')
+  })
 })

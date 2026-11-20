@@ -2445,7 +2445,8 @@
         "income": "Einnahmen",
         "net": "Saldo"
       },
-      "share": "Anteil"
+      "share": "Anteil",
+      "computed": "Vom Plugin berechnet"
     }
   },
   "payees": {

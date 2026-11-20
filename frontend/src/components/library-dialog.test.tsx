@@ -13,7 +13,8 @@ const state = vi.hoisted(() => ({
   saves: [] as { surface: string; ids: string[]; items: { id: string; span?: number }[] }[],
   user: null as unknown as User,
   pluginsEnabled: true,
-  installed: [] as unknown[],
+  installed: [] as unknown[] | null,
+  pluginReadFailed: false,
   mode: 'light' as 'light' | 'dark',
   listeners: new Set<() => void>(),
 }))
@@ -37,7 +38,15 @@ const api = vi.hoisted(() => ({
   },
   auth: { updateMe: vi.fn(), me: vi.fn() },
   admin: { defaultColors: async () => ({ light: null, dark: null }) },
-  plugins: { installed: async () => state.installed },
+  plugins: {
+    installed: async () => {
+      if (state.installed === null) {
+        state.pluginReadFailed = true
+        throw new Error('down')
+      }
+      return state.installed
+    },
+  },
 }))
 
 vi.mock('@/lib/api', () => api)
@@ -179,6 +188,19 @@ describe('LibraryDialog', () => {
     const row = screen.getByText('Pet spending').closest('li')!
     expect(within(row).getByText('What the pets cost.')).toBeInTheDocument()
     expect(within(row).getByText(t('library.fromPlugin', { name: 'Home' }))).toBeInTheDocument()
+    state.installed = []
+  })
+
+  it("keeps a plugin's saved report when the plugins can't be read", async () => {
+    state.installed = null
+    state.saved = { reports: [{ id: 'net_worth' }, { id: 'income_expenses' }, { id: 'plugin:maria/casa:pets' }] }
+    const { user } = open('reports')
+    const remove = await screen.findByRole('button', { name: t('library.removeFrom.reports', { name: t('reports.incomeExpenses') }) })
+    // Only once the read has failed: before that, nothing is known either way.
+    await waitFor(() => expect(state.pluginReadFailed).toBe(true))
+    await new Promise((settle) => setTimeout(settle, 20))
+    await user.click(remove)
+    await waitFor(() => expect(state.saves.at(-1)?.ids).toEqual(['net_worth', 'plugin:maria/casa:pets']))
     state.installed = []
   })
 

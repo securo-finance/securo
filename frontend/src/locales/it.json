@@ -2448,7 +2448,8 @@
         "income": "Entrate",
         "net": "Saldo"
       },
-      "share": "Quota"
+      "share": "Quota",
+      "computed": "Calcolato dal plugin"
     }
   },
   "payees": {

@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { CalendarClock, CalendarRange, ChartArea, ChartColumnBig, ChartPie, ChartSpline, CreditCard, FileClock, Flag, Gauge, HandCoins, Hourglass, LayoutList, Network, PiggyBank, Receipt, Repeat, Scale, Sparkles, Table2, Tags, Target, TrendingUp, Wallet } from 'lucide-react'
+import { CalendarClock, CalendarRange, ChartArea, ChartColumnBig, ChartPie, ChartSpline, Sigma, CreditCard, FileClock, Flag, Gauge, HandCoins, Hourglass, LayoutList, Network, PiggyBank, Receipt, Repeat, Scale, Sparkles, Table2, Tags, Target, TrendingUp, Wallet } from 'lucide-react'
 
 import type { ModuleId } from '@/lib/modules'
 import type { InstalledPlugin, LocalizedText, PluginReportDefinition } from '@/types'
@@ -53,7 +53,7 @@ export function pluginReportEntries(plugins: InstalledPlugin[]): PluginReportEnt
       id: pluginItemId(plugin.plugin_id, report.key),
       titleKey: '',
       descriptionKey: '',
-      icon: CHART_ICONS[report.chart] ?? ChartColumnBig,
+      icon: report.code ? Sigma : (CHART_ICONS[report.chart] ?? ChartColumnBig),
       plugin: { id: plugin.plugin_id, name: plugin.name, title: report.name, description: report.description },
       report,
     })),

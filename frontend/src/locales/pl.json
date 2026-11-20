@@ -2541,7 +2541,8 @@
         "income": "Przychody",
         "net": "Saldo"
       },
-      "share": "Udział"
+      "share": "Udział",
+      "computed": "Obliczone przez wtyczkę"
     }
   },
   "payees": {

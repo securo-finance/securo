@@ -136,7 +136,7 @@ def _installed_read(record) -> InstalledPluginRead:
         else None,
         themes=[t.model_dump() for t in manifest.contributes.themes] if manifest else [],
         reports=[
-            r.model_dump(include={"key", "name", "description", "measure", "group_by", "chart"})
+            r.model_dump(include={"key", "name", "description", "code", "inputs", "measure", "group_by", "chart"})
             for r in manifest.contributes.reports
         ]
         if manifest

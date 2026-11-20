@@ -244,7 +244,7 @@ export default function ReportsPage() {
   const customDefaults = defaultCustomRange()
   // The reports this person keeps, in their order (all four by default).
   // The installed plugins' reports join the library and, once added, the tabs (ADR 0028).
-  const { entries: pluginReports } = usePluginReports()
+  const { entries: pluginReports, settled: pluginReportsSettled } = usePluginReports()
   const reportsLayout = useLayout('reports', pluginReports)
   const { openLibrary } = useLibrary()
   const allTabs = useMemo<ReportTab[]>(
@@ -429,7 +429,8 @@ export default function ReportsPage() {
   const activeShown = shownTabs.some((tab) => tab.key === activeTab)
   const openedOnLayout = useRef(false)
   useEffect(() => {
-    if (!reportsLayout.ready) return
+    // The first saved report may be a plugin's: wait until the plugins are known too.
+    if (!reportsLayout.ready || !pluginReportsSettled) return
     if (!openedOnLayout.current) {
       openedOnLayout.current = true
       if (activeTab !== firstShown) handleSelectTab(firstShown)
@@ -438,7 +439,7 @@ export default function ReportsPage() {
     if (!activeShown) handleSelectTab(firstShown)
     // handleSelectTab and activeTab change each render; what matters is the list and whether the active tab is on it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reportsLayout.ready, activeShown, firstShown])
+  }, [reportsLayout.ready, pluginReportsSettled, activeShown, firstShown])
 
   // Year picker (issue #765): one entry per year the workspace's data
   // covers, from this year back to the oldest transaction. Hidden until the
@@ -952,7 +953,9 @@ export default function ReportsPage() {
       />
 
       {/* Tab Bar */}
-      <div className="flex items-center gap-1 mb-5 border-b border-border overflow-x-auto">
+      {/* Every report shows: tabs wrap on wider screens, and scroll by swipe on a phone. */}
+      <div className="flex items-start gap-1 mb-5 border-b border-border">
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible">
         {shownTabs.map((tab) => (
           <button
             key={tab.key}
@@ -977,10 +980,11 @@ export default function ReportsPage() {
             )}
           </button>
         ))}
+        </div>
         <Button
           variant="ghost"
           size="sm"
-          className="ms-auto mb-1 h-8 shrink-0 gap-1.5 px-2 text-muted-foreground"
+          className="ms-auto mt-1 mb-1 h-8 shrink-0 gap-1.5 px-2 text-muted-foreground"
           aria-label={t('library.manageReports')}
           title={t('library.manageReports')}
           onClick={() => openLibrary('reports')}

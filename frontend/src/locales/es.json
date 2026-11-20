@@ -2448,7 +2448,8 @@
         "income": "Ingresos",
         "net": "Neto"
       },
-      "share": "Proporción"
+      "share": "Proporción",
+      "computed": "Calculado por el plugin"
     }
   },
   "payees": {
