@@ -95,6 +95,24 @@ async def test_a_negative_amount_is_refused(client, auth_headers):
 
 
 @pytest.mark.asyncio
+async def test_a_currency_longer_than_the_code_column_is_refused(client, auth_headers):
+    too_long = await client.put(
+        "/api/budgets/expected-income",
+        json={"month": _MONTH, "amount": "10.00", "currency": "ABCD"},
+        headers=auth_headers,
+    )
+    assert too_long.status_code == 422
+
+    ok = await client.put(
+        "/api/budgets/expected-income",
+        json={"month": _MONTH, "amount": "10.00", "currency": "USD"},
+        headers=auth_headers,
+    )
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["currency"] == "USD"
+
+
+@pytest.mark.asyncio
 async def test_a_viewer_reads_but_cannot_write(client, auth_headers, viewer_auth_headers):
     await client.put(
         "/api/budgets/expected-income",

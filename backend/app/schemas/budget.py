@@ -119,7 +119,7 @@ class BudgetForecastResponse(BaseModel):
 class ExpectedIncomeCreate(BaseModel):
     month: _Date  # Any day of the month is answered by the same row
     amount: Optional[Decimal] = Field(default=None, ge=Decimal("0"))
-    currency: Optional[str] = None
+    currency: Optional[str] = Field(default=None, max_length=3)
 
 
 class ExpectedIncomeRead(BaseModel):
