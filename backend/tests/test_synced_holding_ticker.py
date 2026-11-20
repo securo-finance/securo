@@ -493,3 +493,33 @@ async def test_buy_by_ticker_never_lands_on_a_synced_holding(
     assert bought.id != synced_asset.id
     await session.refresh(synced_asset)
     assert synced_asset.units == Decimal("7")
+
+
+@pytest.mark.asyncio
+async def test_linked_holding_gets_average_price_from_the_reported_trades(
+    session: AsyncSession, test_user: User, conn: BankConnection, market: _FakeMarket
+):
+    from app.providers.base import HoldingTradeData
+    from app.services.asset_service import get_asset
+
+    market.quotes["ITUB4.SA"] = _quote("ITUB4.SA", 40.00)
+    holding = _b3_holding(ticker="ITUB4.SA")
+    holding.trades = [
+        HoldingTradeData(external_id="b1", kind="buy", date=date(2026, 10, 22),
+                         quantity=Decimal("2"), price=Decimal("48.59"), fee=Decimal("0.22")),
+        HoldingTradeData(external_id="b2", kind="buy", date=date(2026, 10, 28),
+                         quantity=Decimal("5"), price=Decimal("39.85"), fee=Decimal("0.09")),
+    ]
+    _MockProvider._holdings = [holding]
+
+    await _sync(session, test_user, conn)
+
+    asset = await _only_asset(session, test_user)
+    assert asset.valuation_method == "market_price"
+    assert asset.units == Decimal("7")
+    # (2 x 48.59 + 0.22 + 5 x 39.85 + 0.09) / 7
+    assert Decimal(str(asset.average_price)).quantize(Decimal("0.01")) == Decimal("42.39")
+    read = await get_asset(session, asset.id, asset.workspace_id)
+    assert read is not None
+    assert read.current_value == pytest.approx(280.0)
+    assert read.gain_loss == pytest.approx(280.0 - 296.74, abs=0.01)

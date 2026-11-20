@@ -1122,6 +1122,16 @@ def _reconciled_trades(
     return ordered if abs(position - target) <= tolerance else None
 
 
+async def _has_trades_of_other_source(session: AsyncSession, asset: Asset, source: str) -> bool:
+    """Whether the asset's ledger has trades not written by this provider."""
+    found = await session.scalar(
+        select(AssetTransaction.id)
+        .where(AssetTransaction.asset_id == asset.id, AssetTransaction.source != source)
+        .limit(1)
+    )
+    return found is not None
+
+
 def _trade_from_row(tx: AssetTransaction) -> HoldingTradeData:
     return HoldingTradeData(
         external_id=tx.external_id or "",
@@ -1169,10 +1179,7 @@ async def _sync_holding_trades(
         holding
         for holding in holdings
         if holding.trades is not None
-        and (asset := synced_assets.get(holding.external_id)) is not None
-        # A market-priced asset is valued from its own ledger (units x
-        # quote): the user took over tracking it, so its trades stay theirs.
-        and asset.valuation_method != "market_price"
+        and synced_assets.get(holding.external_id) is not None
         and _trade_target(holding) is not None
     ]
     if not reported:
@@ -1180,6 +1187,15 @@ async def _sync_holding_trades(
     await session.flush()
     for holding in reported:
         asset = synced_assets[holding.external_id]
+        # A market-priced asset whose ledger holds trades the user entered is
+        # one they took over tracking (units x quote from their own buys), so
+        # its trades stay theirs. One priced from a ticker linked to the
+        # provider's position still takes the provider's trades: only its
+        # price source changed.
+        if asset.valuation_method == "market_price" and await _has_trades_of_other_source(
+            session, asset, source
+        ):
+            continue
         rows = (
             await session.execute(
                 select(AssetTransaction).where(
