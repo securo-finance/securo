@@ -567,7 +567,6 @@ async def test_api_refuses_a_stale_or_foreign_preview(
         ("CLARO NET", "debit", "subscriptions"),
         ("CLARO NET VIRTUA", "debit", "subscriptions"),
         ("TIM CELULAR", "debit", "subscriptions"),
-        ("TIM HORTONS", "debit", "subscriptions"),
         ("PAG*CLARO NET", "debit", "subscriptions"),
         ("PAG*CLARO RECARGA", "debit", "subscriptions"),
         ("PAG* VIVO", "debit", "subscriptions"),
@@ -583,6 +582,9 @@ async def test_api_refuses_a_stale_or_foreign_preview(
         ("CLAROS RESTAURANTE", "debit", None),
         ("VIVOBOX", "debit", None),
         ("TIM KEYD", "debit", None),
+        # A coffee chain that opens with a carrier's three letters.
+        ("TIM HORTONS", "debit", None),
+        ("PAG*TIM HORTONS", "debit", None),
         # Anywhere past the start, the name is somebody's or something else's:
         # a Pix to a person, a show, a bar, a coffee, bottled water.
         ("PIX ENVIADO TIM SOUZA", "debit", None),

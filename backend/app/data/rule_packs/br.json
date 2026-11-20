@@ -205,7 +205,7 @@
           {
             "field": "description",
             "op": "regex",
-            "value": "^(?:(?:PAG\\*|DEB(?:ITO)?\\.? ?AUTOM(?:ATICO|ATICA)?|RECARGA)[.\\s]*)?(CLARO|VIVO|TIM)\\b(?!\\s+KEYD)"
+            "value": "^(?:(?:PAG\\*|DEB(?:ITO)?\\.? ?AUTOM(?:ATICO|ATICA)?|RECARGA)[.\\s]*)?(CLARO|VIVO|TIM)\\b(?!\\s+(?:KEYD|HORTONS))"
           }
         ],
         "actions": [
