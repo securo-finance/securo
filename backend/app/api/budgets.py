@@ -5,6 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.core.database import get_async_session
 from app.core.workspace_context import (
     WorkspaceContext,
@@ -21,6 +22,8 @@ from app.schemas.budget import (
     BudgetSuggestionResponse,
     BudgetUpdate,
     BudgetVsActual,
+    ExpectedIncomeCreate,
+    ExpectedIncomeRead,
 )
 from app.services import budget_service
 
@@ -159,4 +162,35 @@ async def get_budget_forecast_endpoint(
         user_id=ctx.user_id,
         start_month=start_month,
         num_months=months,
+    )
+
+
+@router.get("/expected-income", response_model=Optional[ExpectedIncomeRead])
+async def get_expected_income_endpoint(
+    month: Optional[date] = Query(None),
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """The month's income typed by hand, read in the reader's display currency."""
+    return await budget_service.get_expected_income(
+        session,
+        ctx.workspace.id,
+        month or app_today(),
+        ctx.user.primary_currency,
+    )
+
+
+@router.put("/expected-income", response_model=ExpectedIncomeRead)
+async def put_expected_income_endpoint(
+    data: ExpectedIncomeCreate,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Save the month's income typed by hand, or clear it with a null amount."""
+    return await budget_service.set_expected_income(
+        session,
+        ctx.workspace.id,
+        data.month,
+        data.amount,
+        data.currency or ctx.user.primary_currency,
     )
