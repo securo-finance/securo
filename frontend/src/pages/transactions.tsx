@@ -47,7 +47,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Clock, HelpCircle, Info, Paperclip, Repeat, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, Flag, SlidersHorizontal, Receipt } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, CircleDashed, Clock, HelpCircle, Info, Paperclip, Repeat, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, Flag, SlidersHorizontal, Receipt } from 'lucide-react'
 import type { Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, TransactionEditPayload, ReconciliationSuggestion } from '@/types'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { TransactionFlagMarker } from '@/components/transaction-flag-marker'
@@ -194,6 +194,11 @@ export default function TransactionsPage() {
   const [filterGroupId, setFilterGroupId] = useState<string>(searchParams.get('group_id') ?? '')
   const [filterType, setFilterType] = useState<string>(searchParams.get('type') ?? '')
   const [filterStatus, setFilterStatus] = useState<string>(searchParams.get('status') ?? '')
+  // "Only unpaid" narrows the ledger to the rows the user still has to settle
+  // (issue #15). Kept in the URL so a link shows the same list.
+  const [filterUnpaid, setFilterUnpaid] = useState<boolean>(
+    searchParams.get('unpaid') === '1',
+  )
   // Hiding ignored rows is a reading preference, not a query someone re-picks
   // every visit, so it outlives the page the way page size and columns do. The
   // URL still wins when present, so a shared link shows what its sender saw.
@@ -289,6 +294,7 @@ export default function TransactionsPage() {
     setFilterGroupId(searchParams.get('group_id') ?? '')
     setFilterType(searchParams.get('type') ?? '')
     setFilterStatus(searchParams.get('status') ?? '')
+    setFilterUnpaid(searchParams.get('unpaid') === '1')
     setFilterFlag(parseFlagFilter(searchParams.get('flagged')))
     const urlHideIgnored = searchParams.get('hide_ignored')
     if (urlHideIgnored !== null) setHideIgnored(urlHideIgnored === 'true')
@@ -329,6 +335,7 @@ export default function TransactionsPage() {
         ['group_id', filterGroupId],
         ['type', filterType],
         ['status', filterStatus],
+        ['unpaid', filterUnpaid ? '1' : ''],
         ['flagged', flagFilterToParam(filterFlag)],
         ['category_id', filterCategoryIds.join(',')],
         ['uncategorized', filterUncategorized ? '1' : ''],
@@ -356,6 +363,7 @@ export default function TransactionsPage() {
     filterGroupId,
     filterType,
     filterStatus,
+    filterUnpaid,
     filterFlag,
     filterCategoryIds,
     filterUncategorized,
@@ -435,7 +443,7 @@ export default function TransactionsPage() {
     && activeAccountIds !== null && activeAccountIds.length === 0
 
   const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ['transactions', page, limit, effectiveAccountIds, filterLinkedCardIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterFlag, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
+    queryKey: ['transactions', page, limit, effectiveAccountIds, filterLinkedCardIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterUnpaid, filterFlag, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
     enabled: !noAccounts,
     queryFn: () =>
       transactions.list({
@@ -448,6 +456,7 @@ export default function TransactionsPage() {
         group_id: filterGroupId || undefined,
         type: filterType || undefined,
         status: filterStatus || undefined,
+        unpaid_only: filterUnpaid || undefined,
         uncategorized: filterUncategorized ? true : undefined,
         from: filterFrom || undefined,
         to: filterTo || undefined,
@@ -502,6 +511,7 @@ export default function TransactionsPage() {
     group_id: filterGroupId || undefined,
     type: filterType || undefined,
     status: filterStatus || undefined,
+    unpaid_only: filterUnpaid || undefined,
     flagged: filterFlag || undefined,
     uncategorized: filterUncategorized || undefined,
     from: filterFrom || undefined,
@@ -643,6 +653,20 @@ export default function TransactionsPage() {
     onSuccess: () => {
       invalidateAfterTxMutation()
       toast.success(t('transactions.updated'))
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
+  })
+
+  // The row's paid mark (issue #15): one click, no dialog, and no money moves.
+  const togglePaidMutation = useMutation({
+    mutationFn: (tx: Transaction) => transactions.update(tx.id, { is_paid: !tx.is_paid }),
+    onSuccess: (updated) => {
+      invalidateAfterTxMutation()
+      toast.success(updated.is_paid
+        ? t('transactions.paidSuccess')
+        : t('transactions.unpaidSuccess'))
     },
     onError: (error) => {
       toast.error(extractApiError(error))
@@ -1330,6 +1354,25 @@ export default function TransactionsPage() {
               </span>
             )}
             <TransactionFlagMarker tx={tx} locale={dateLocale} />
+            {/* The paid mark (issue #15): a badge while the money has not
+                moved, and the badge itself is the way to settle it. A paid
+                row gets nothing here, so the list stays quiet. */}
+            {tx.is_paid === false && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  togglePaidMutation.mutate(tx)
+                }}
+                disabled={!canWrite || togglePaidMutation.isPending}
+                title={t('transactions.markPaidHint')}
+                aria-label={t('transactions.markPaid')}
+                className="inline-flex shrink-0 items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400 dark:hover:bg-amber-500/20"
+              >
+                <CircleDashed size={11} className="shrink-0" />
+                <span className="truncate">{t('transactions.unpaid')}</span>
+              </button>
+            )}
             {tx.recurring_transaction_id != null && (
               <span
                 className="inline-flex max-w-full items-center text-[10px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1.5 py-0.5 rounded-full"
@@ -1608,6 +1651,8 @@ export default function TransactionsPage() {
         onTypeChange={(v) => { setFilterType(v); setPage(1) }}
         filterStatus={filterStatus}
         onStatusChange={(v) => { setFilterStatus(v); setPage(1) }}
+        filterUnpaid={filterUnpaid}
+        onUnpaidChange={(v) => { setFilterUnpaid(v); setPage(1) }}
         hideIgnored={hideIgnored}
         onHideIgnoredChange={handleHideIgnoredChange}
         filterFlag={filterFlag}
@@ -1629,6 +1674,7 @@ export default function TransactionsPage() {
           setFilterGroupId('')
           setFilterType('')
           setFilterStatus('')
+          setFilterUnpaid(false)
           setFilterFlag('')
           setFilterMinAmount('')
           setFilterMaxAmount('')
