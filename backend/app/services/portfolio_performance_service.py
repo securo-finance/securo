@@ -145,70 +145,78 @@ def snapshot_ledger_flows(
     cash must land on the snapshot that first includes the trade, or the
     chart shows a gain or drawdown that is really just timing. Providers
     differ: one day's snapshot already shows a same-day redemption while
-    another only shows a purchase days later. Each trade therefore lands on
-    the first snapshot, from its own date on, whose share count is closer to
-    the ledger's position with the trade than without it. The share count is
-    the stored one when known, else the snapshot value at the trade's own
-    price. If no later snapshot shows the trade, it lands on the next one,
-    so its cash is never dropped. A day whose trades leave the share count
-    unchanged (sell and buy back) moves no shares for a snapshot to show, so
-    its net cash lands on that day's own snapshot. A day whose trades net to
-    no cash has no price to count with, so it waits for the next snapshot.
-    Trades with no snapshot on or after their date are left out until one
-    arrives. Each flow is returned as ``(snapshot date, cash, trade date)``.
+    another only shows a purchase days later.
+
+    Trades are shown in the order they were made, so each snapshot is
+    matched to the ledger state, among those its pending trades lead
+    through, closest to its share count, and the trades up to that state
+    land on it. The share count is the stored one; without it, a snapshot
+    on a trade's own date is counted at that day's trade price, and any
+    other snapshot cannot tell, so the trades before it land there (the
+    next snapshot after a trade). A day whose trades leave the share count
+    unchanged (sell and buy back) lands on its own day's snapshot, as no
+    count can show it. A day whose trades net to no cash has no price to
+    count with. Trades no snapshot has caught up with yet are left out
+    until one does. Each flow is returned as ``(snapshot date, cash, trade
+    date)``.
     """
     by_date: dict[date, tuple[Decimal, Decimal]] = {}
     for trade_date, quantity, flow in trades:
         held_quantity, held_flow = by_date.get(trade_date, (Decimal("0"), Decimal("0")))
         by_date[trade_date] = (held_quantity + quantity, held_flow + flow)
+    days = sorted(by_date.items())
     if not snapshots:
-        return [
-            (trade_date, flow, trade_date) for trade_date, (_, flow) in sorted(by_date.items())
-        ]
+        return [(trade_date, flow, trade_date) for trade_date, (_, flow) in days]
 
     first_snapshot = snapshots[0][0]
-    days = sorted(by_date.items())
-    trade_dates = [trade_date for trade_date, _ in days]
-    positions: list[Decimal] = []
-    running = Decimal("0")
-    for _, (quantity, _) in days:
-        running += quantity
-        positions.append(running)
-
-    def position_on(point_date: date) -> Decimal:
-        index = bisect_right(trade_dates, point_date) - 1
-        return positions[index] if index >= 0 else Decimal("0")
-
     flows: list[tuple[date, Decimal, date]] = []
+    position = Decimal("0")
+    pending: list[tuple[date, Decimal, Decimal]] = []
     for trade_date, (quantity, flow) in days:
         if trade_date < first_snapshot:
             flows.append((trade_date, flow, trade_date))
-            continue
-        candidates = [point for point in snapshots if point[0] >= trade_date]
-        if not candidates:
-            continue
-        if not quantity:
-            # Sold and bought back: the share count is the same either way.
-            flows.append((candidates[0][0], flow, trade_date))
-            continue
+            position += quantity
+        else:
+            pending.append((trade_date, quantity, flow))
 
-        def shows_trade(point: tuple[date, float, Optional[float]]) -> bool:
-            point_date, value, shares = point
-            if shares is None and flow:
-                shares = value / float(abs(flow) / abs(quantity))
-            if shares is None:
-                return False
-            # Later trades may have moved the position since; compare with
-            # the ledger as of the snapshot, with and without this trade.
-            with_trade = float(position_on(point_date))
-            return abs(shares - with_trade) < abs(shares - (with_trade - float(quantity)))
+    for point_date, value, shares in snapshots:
+        eligible = 0
+        while eligible < len(pending) and pending[eligible][0] <= point_date:
+            eligible += 1
+        if not eligible:
+            continue
+        last_date, last_quantity, last_flow = pending[eligible - 1]
+        if shares is None and last_date == point_date and last_quantity and last_flow:
+            shares = value / float(abs(last_flow) / abs(last_quantity))
+        if shares is None:
+            # No count to tell by: trades before this date land here, and so
+            # does a same-day round trip, which no count could show. Trades
+            # are merged per day, so only the last one can be on this date.
+            landed = eligible if last_date < point_date or not last_quantity else eligible - 1
+        else:
+            state = position
+            best, best_state = 0, state
+            best_distance = abs(shares - float(state))
+            for index, (_, quantity, _) in enumerate(pending[:eligible], start=1):
+                state += quantity
+                distance = abs(shares - float(state))
+                # A trade that leaves the count where it was is shown as much
+                # as the state before it: take it along.
+                if distance < best_distance or (distance == best_distance and state == best_state):
+                    best, best_state, best_distance = index, state, distance
+            landed = best
+        for trade_date, quantity, flow in pending[:landed]:
+            flows.append((point_date, flow, trade_date))
+            position += quantity
+        del pending[:landed]
 
-        reflected = next((point for point in candidates if shows_trade(point)), None)
-        if reflected is None:
-            later = [point for point in candidates if point[0] > trade_date]
-            reflected = later[0] if later else None
-        if reflected is not None:
-            flows.append((reflected[0], flow, trade_date))
+    # A trade no snapshot showed lands on the first snapshot after its date,
+    # so its cash is never dropped while the valuation already moved on.
+    for trade_date, _, flow in pending:
+        later = next((point for point in snapshots if point[0] > trade_date), None)
+        if later is not None:
+            flows.append((later[0], flow, trade_date))
+    flows.sort(key=lambda item: (item[0], item[2]))
     return flows
 
 
@@ -659,14 +667,17 @@ class MarketTrade(NamedTuple):
 
     ``mark`` is the holding marked to the trade's price just before it, and
     ``amount`` the value bought (positive) or sold (negative) at that price.
-    A buy at no price (free shares, such as a split recorded as a buy) says
-    nothing about what the holding is worth, so its ``mark`` is None.
+    A trade at no price says nothing about what the holding is worth, so
+    its ``mark`` is None: a buy (free shares, such as a split recorded as a
+    buy) leaves the holding's value as it was, and a sale (a write-off)
+    takes ``written_off``, the share of the holding sold, out of it.
     """
 
     asset_key: str
     mark: Optional[float]
     amount: float
     fee: float
+    written_off: float = 0.0
 
 
 @dataclass
@@ -810,13 +821,15 @@ async def _cash_flows(
             positions[asset.id] = held_before + (quantity if tx.kind == "buy" else -quantity)
             if start_date < tx.date <= end_date:
                 price = Decimal(str(tx.price))
-                mark = (
-                    None
-                    if tx.kind == "buy" and price <= 0
-                    else await in_primary(
+                written_off = 0.0
+                if price > 0:
+                    mark = await in_primary(
                         max(held_before, Decimal("0")) * price, asset.currency, tx.date
                     )
-                )
+                else:
+                    mark = None
+                    if tx.kind == "sell" and held_before > 0:
+                        written_off = float(min(quantity / held_before, Decimal("1")))
                 amount = await in_primary(gross, asset.currency, tx.date)
                 converted_fee = await in_primary(fee, asset.currency, tx.date) if fee else 0.0
                 flows.trades.setdefault(tx.date, []).append(
@@ -825,6 +838,7 @@ async def _cash_flows(
                         mark,
                         amount if tx.kind == "buy" else -amount,
                         converted_fee,
+                        written_off,
                     )
                 )
                 flows.dates.add(tx.date)
@@ -1123,7 +1137,7 @@ async def get_portfolio_performance_multi(
             last_mark = marks.get(trade.asset_key)
             if last_mark is None:
                 last_mark = asset_value(asset_by_key[trade.asset_key], previous_date)
-            mark = last_mark if trade.mark is None else trade.mark
+            mark = last_mark * (1.0 - trade.written_off) if trade.mark is None else trade.mark
             intraday.setdefault(point_date, []).append(
                 IntradayTrade(mark - last_mark, trade.amount, trade.fee)
             )

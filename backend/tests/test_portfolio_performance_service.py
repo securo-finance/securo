@@ -908,6 +908,47 @@ def test_ledger_flows_count_a_same_day_round_trip_on_its_own_day():
     assert flows[-1] == (day, Decimal("-100"), day)
 
 
+def test_ledger_flows_match_each_trade_when_two_are_in_flight():
+    """Buys on consecutive days, each shown the next day: a snapshot that shows
+    the first buy but not yet the second takes only the first."""
+    flows = snapshot_ledger_flows(
+        [
+            (date(2026, 9, 1), Decimal("100"), Decimal("1000")),
+            (date(2026, 9, 10), Decimal("10"), Decimal("100")),
+            (date(2026, 9, 11), Decimal("10"), Decimal("100")),
+        ],
+        [
+            (date(2026, 9, 1), 1000.0, 100.0),
+            (date(2026, 9, 10), 1000.0, 100.0),
+            (date(2026, 9, 11), 1100.0, 110.0),
+            (date(2026, 9, 12), 1200.0, 120.0),
+        ],
+    )
+    assert flows[1:] == [
+        (date(2026, 9, 11), Decimal("100"), date(2026, 9, 10)),
+        (date(2026, 9, 12), Decimal("100"), date(2026, 9, 11)),
+    ]
+
+
+def test_ledger_flows_count_shares_at_the_trade_price_only_on_the_trade_date():
+    """Without a stored count, a later snapshot's value at the trade's price
+    says more about the price since than about the shares: the trade lands
+    on the next snapshot instead of waiting for the price to come back."""
+    flows = snapshot_ledger_flows(
+        [
+            (date(2026, 9, 1), Decimal("100"), Decimal("1000")),
+            (date(2026, 9, 10), Decimal("3"), Decimal("30")),
+        ],
+        [
+            (date(2026, 9, 1), 1000.0, None),
+            (date(2026, 9, 10), 1009.4, None),  # 103 units at 9.80
+            (date(2026, 9, 11), 1009.4, None),
+            (date(2026, 9, 24), 1019.7, None),  # 103 units at 9.90
+        ],
+    )
+    assert flows[-1] == (date(2026, 9, 11), Decimal("30"), date(2026, 9, 10))
+
+
 def test_ledger_flows_never_drop_a_trade_a_later_one_offsets():
     """A buy the provider never shows, sold the next day: both flows count."""
     flows = snapshot_ledger_flows(

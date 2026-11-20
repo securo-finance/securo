@@ -211,6 +211,24 @@ async def test_writing_off_the_only_holding_is_a_total_loss(
 
 
 @pytest.mark.asyncio
+async def test_writing_off_half_of_the_only_holding_is_half_a_loss(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    held = await stock(session, test_user, test_workspace, "HALF3")
+    session.add_all(
+        [
+            trade(held, "buy", day(0), "10", "100"),
+            close(held, day(0), "100"),
+            trade(held, "sell", day(1), "5", "0"),
+            close(held, day(1), "100", quantity="5"),
+            close(held, day(2), "110", quantity="5"),
+        ]
+    )
+    # Half written off (-50%), then the rest gains 10%.
+    assert await portfolio_return(session, test_user, test_workspace) == pytest.approx(-45.0)
+
+
+@pytest.mark.asyncio
 async def test_a_big_buy_on_a_day_the_price_moves_does_not_dilute_that_day(
     session: AsyncSession, test_user: User, test_workspace
 ):
