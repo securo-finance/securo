@@ -193,6 +193,7 @@ async def list_transactions(
     user_pnl_only: bool = Query(False, description="Return only rows that count toward dashboard/user income/expense totals"),
     exclude_ignored: bool = Query(False, description="Drop rows the user marked ignored, or whose category is ignored"),
     flagged: bool = Query(False, description="Return only rows the user flagged"),
+    unpaid_only: bool = Query(False, description="Return only rows not yet marked as paid (issue #15)"),
     flag_due: Optional[FlagDue] = Query(None, description="Flagged rows past their reminder date (overdue) or due within a week (soon)"),
     tags: Optional[List[str]] = Query(None),
     min_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount >= this value (primary currency)."),
@@ -216,6 +217,7 @@ async def list_transactions(
         exclude_ignored=exclude_ignored,
         flagged_only=flagged,
         flag_due=flag_due,
+        unpaid_only=unpaid_only,
         status=status,
         accounting_mode=accounting_mode,
         tags=tags,
@@ -298,6 +300,7 @@ async def export_transactions(
     status: Optional[str] = Query(None),
     exclude_ignored: bool = Query(False, description="Drop rows the user marked ignored, or whose category is ignored"),
     flagged: bool = Query(False, description="Export only rows the user flagged"),
+    unpaid_only: bool = Query(False, description="Export only rows not yet marked as paid (issue #15)"),
     flag_due: Optional[FlagDue] = Query(None, description="Flagged rows past their reminder date (overdue) or due within a week (soon)"),
     tags: Optional[List[str]] = Query(None),
     transaction_ids: Optional[List[uuid.UUID]] = Query(None, description="If set, exports exactly these rows (scoped to the workspace); other filters are ignored."),
@@ -326,6 +329,7 @@ async def export_transactions(
             exclude_ignored=exclude_ignored,
             flagged_only=flagged,
             flag_due=flag_due,
+            unpaid_only=unpaid_only,
             tags=tags,
         )
 
