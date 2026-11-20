@@ -49,4 +49,14 @@ describe('goal form labels', () => {
       name: `${t('goals.icon')} ${t('goals.chooseIconColor')}`,
     })).toBeInTheDocument()
   })
+
+  it('focuses the field when its label is clicked', async () => {
+    const { user } = renderWithProviders(<GoalsPage />)
+
+    await user.click(await screen.findByRole('button', { name: t('goals.add') }))
+
+    const nameField = screen.getByLabelText(t('goals.name'))
+    await user.click(screen.getByText(t('goals.name')))
+    expect(nameField).toHaveFocus()
+  })
 })
