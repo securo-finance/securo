@@ -497,27 +497,43 @@ def _without_mirrored_legs(rows):
     are the same money, so neither is an investment contribution nor a
     withdrawal (#1551). A credit and a debit cancel when they share the
     category and the amount, sit on different accounts and are booked within
-    `MIRRORED_LEG_DAYS`. Rows are (category id, name, color, type, amount,
-    account id, date); the rest come back without account and date.
+    `MIRRORED_LEG_DAYS`. Pairs are a maximum matching, so the result does not
+    depend on row order. Rows are (category id, name, color, type, amount,
+    account id, booking date); the rest come back without account and date.
     """
-    debits: dict[tuple, list] = {}
+    groups: dict[tuple, tuple[list, list]] = {}
     for row in rows:
-        if row[3] != "credit":
-            debits.setdefault((row[0], round(abs(float(row[4] or 0)), 2)), []).append(row)
-    dropped: set[int] = set()
-    for row in rows:
-        if row[3] != "credit":
-            continue
         key = (row[0], round(abs(float(row[4] or 0)), 2))
-        on = _as_date(row[6])
-        for debit in debits.get(key, ()):
-            if (
-                id(debit) not in dropped
-                and debit[5] != row[5]
-                and abs((_as_date(debit[6]) - on).days) <= MIRRORED_LEG_DAYS
-            ):
-                dropped.update((id(debit), id(row)))
-                break
+        credits, debits = groups.setdefault(key, ([], []))
+        (credits if row[3] == "credit" else debits).append(row)
+
+    dropped: set[int] = set()
+    for credits, debits in groups.values():
+        fits = [
+            [
+                j for j, debit in enumerate(debits)
+                if debit[5] != credit[5]
+                and abs((_as_date(debit[6]) - _as_date(credit[6])).days) <= MIRRORED_LEG_DAYS
+            ]
+            for credit in credits
+        ]
+        owner: dict[int, int] = {}  # debit index -> credit index
+
+        def claim(i: int, seen: set[int]) -> bool:
+            # Augmenting path: take a free debit, or move its credit elsewhere.
+            for j in fits[i]:
+                if j in seen:
+                    continue
+                seen.add(j)
+                if j not in owner or claim(owner[j], seen):
+                    owner[j] = i
+                    return True
+            return False
+
+        for i in range(len(credits)):
+            claim(i, set())
+        for j, i in owner.items():
+            dropped.update((id(debits[j]), id(credits[i])))
     return [row[:5] for row in rows if id(row) not in dropped]
 
 
@@ -983,7 +999,9 @@ async def get_income_expenses_report(
                 Transaction.type,
                 amount_expr,
                 Transaction.account_id,
-                report_date,
+                # Legs pair by when they were booked; the reporting date only
+                # picks the period.
+                Transaction.date,
             ).select_from(Transaction)
         )
         .join(Category, line_category_id() == Category.id)

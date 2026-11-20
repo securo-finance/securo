@@ -15,7 +15,7 @@ again:
 """
 
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -25,6 +25,8 @@ from httpx import AsyncClient
 import mcp_server.tools  # noqa: F401 -- registers the MCP handlers
 from app.core.app_clock import app_today
 from app.models.category import Category
+from app.models.transaction import Transaction
+from app.services.report_service import _without_mirrored_legs
 from mcp_server.auth import CallContext
 from mcp_server.registry import REGISTRY
 from tests.conftest import sqlite_to_char
@@ -460,6 +462,56 @@ async def test_an_unpaired_card_bill_payment_is_neither_a_withdrawal_nor_a_contr
     assert ("withdrawals", "Pagamento de fatura") not in after["composition"]
     assert ("investments", "Pagamento de fatura") not in after["composition"]
     assert after["report"] == before["report"]
+
+
+async def test_legs_are_matched_by_booking_date_not_reporting_override(scene):
+    """A credit booked nine days after the debit is another movement, even
+    when its reporting date was moved onto the debit's day."""
+    bill = Category(
+        id=uuid.uuid4(), user_id=scene["user"].id, name="Pagamento de fatura",
+        icon="credit-card", color="#64748B", treat_as_transfer=True,
+    )
+    scene["session"].add(bill)
+    await scene["session"].commit()
+    resp = await scene["client"].post(
+        "/api/accounts", headers=scene["headers"],
+        json={"name": "Itaú Azul", "type": "credit_card", "balance": 0, "currency": CURRENCY},
+    )
+    assert resp.status_code in (200, 201), resp.text
+    day = scene["day"]
+
+    await scene["create"](2500, "credit", bill, account_id=resp.json()["id"])
+    debit = await scene["create"](
+        2500, "debit", bill, date=(day + timedelta(days=9)).isoformat(),
+    )
+    # The override is only offered on a synced row of a non-card account.
+    row = await scene["session"].get(Transaction, uuid.UUID(debit["id"]))
+    row.source = "sync"
+    row.reporting_date_override = day
+    await scene["session"].commit()
+    snap = await _snapshot(scene)
+
+    assert snap["composition"][("investments", "Pagamento de fatura")] == 2500
+    assert snap["composition"][("withdrawals", "Pagamento de fatura")] == 2500
+
+
+@pytest.mark.parametrize("reverse_credits", [False, True])
+def test_mirrored_legs_do_not_depend_on_row_order(reverse_credits):
+    """Debits on A on the 2nd and 4th, credits on B on the 1st and 3rd: all
+    four pair up whichever credit comes first, so none is left over."""
+    cat = uuid.uuid4()
+    a, b = uuid.uuid4(), uuid.uuid4()
+
+    def row(kind, account, day):
+        return (cat, "Bill", "#000", kind, Decimal("100.00"), account, date(2026, 11, day))
+
+    debits = [row("debit", a, 2), row("debit", a, 4)]
+    credits = [row("credit", b, 3), row("credit", b, 1)]
+    if reverse_credits:
+        credits.reverse()
+
+    assert _without_mirrored_legs(debits + credits) == []
+    assert _without_mirrored_legs(credits + debits) == []
 
 
 async def test_a_movement_in_one_account_only_still_counts(scene):
