@@ -245,6 +245,9 @@ function SortableWalletSection({
 // Ativo · Quant. · Preço Médio · Preço Atual · Rentab. · Saldo · % · actions.
 const HOLDINGS_GRID = 'minmax(0,2.4fr) 0.7fr 1.1fr 1fr 0.9fr 1.3fr 0.6fr 4.5rem'
 
+// Holding types a market ticker can price (a synced CDB or pension has none).
+const LINKABLE_TICKER_TYPES = new Set(['investment', 'stock', 'etf', 'crypto', 'fund'])
+
 /** Whether archived holdings are shown, kept across visits (issue #1046). */
 const SHOW_ARCHIVED_KEY = 'securo:assets:showArchived'
 
@@ -1082,7 +1085,7 @@ export default function AssetsPage() {
         hint: isProviderOwned ? t('assets.syncedReadOnly') : undefined,
       },
     ]
-    if (isConnectionSynced && asset.type === 'investment' && !asset.sell_date) {
+    if (isConnectionSynced && !asset.sell_date && LINKABLE_TICKER_TYPES.has(asset.type)) {
       actions.push({ key: 'link-ticker', label: t('assets.linkTicker'), icon: Link2, onSelect: () => setLinkingAsset(asset) })
     }
     if (isMarketPriced) {
