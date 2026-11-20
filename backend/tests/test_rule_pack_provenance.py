@@ -560,19 +560,29 @@ async def test_api_refuses_a_stale_or_foreign_preview(
         ("STEAMGAMES.COM", "debit", "leisure"),
         # A surname is not a pharmacy chain.
         ("BOLETO JOAO PACHECO", "debit", None),
-        # A telecom name only counts as a whole word, and only at the start of
-        # the line, as the bill and the top-up charge write it.
+        # A telecom name only counts as a whole word, at the start of the line
+        # and on a debit, as the bill and the top-up charge write it.
         ("TIM CONTROLE", "debit", "subscriptions"),
         ("VIVO FIBRA", "debit", "subscriptions"),
         ("CLARO NET", "debit", "subscriptions"),
+        ("CLARO NET VIRTUA", "debit", "subscriptions"),
+        ("TIM CELULAR", "debit", "subscriptions"),
+        ("TIM HORTONS", "debit", "subscriptions"),
         ("PAG*CLARO NET", "debit", "subscriptions"),
+        ("PAG*CLARO RECARGA", "debit", "subscriptions"),
         ("PAG* VIVO", "debit", "subscriptions"),
         ("DEB.AUTOM. TIM CONTROLE", "debit", "subscriptions"),
         ("DEB AUTOMATICO CLARO", "debit", "subscriptions"),
+        ("DEB AUTOM TIM S A", "debit", "subscriptions"),
         ("DEBITO AUTOMATICO VIVO", "debit", "subscriptions"),
         ("RECARGA TIM", "debit", "subscriptions"),
+        ("RECARGA VIVO", "debit", "subscriptions"),
         ("TIMBER STORE", "debit", None),
+        ("TIMBER STEAKHOUSE", "debit", None),
         ("CLAROS CONTABILIDADE", "debit", None),
+        ("CLAROS RESTAURANTE", "debit", None),
+        ("VIVOBOX", "debit", None),
+        ("TIM KEYD", "debit", None),
         # Anywhere past the start, the name is somebody's or something else's:
         # a Pix to a person, a show, a bar, a coffee, bottled water.
         ("PIX ENVIADO TIM SOUZA", "debit", None),
@@ -581,6 +591,8 @@ async def test_api_refuses_a_stale_or_foreign_preview(
         ("BAR VIVO RIO", "debit", None),
         ("CAFE CLARO", "debit", None),
         ("AGUA CLARO MINERAL", "debit", None),
+        # Money coming back from the carrier is not the subscription charge.
+        ("CLARO NET VIRTUA", "credit", None),
         # Vivo Keyd is an esports team, not the carrier: the line falls to the
         # gym rule on ACADEMIA instead of Subscriptions.
         ("VIVO KEYD ACADEMIA", "debit", "health"),

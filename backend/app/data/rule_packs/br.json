@@ -195,8 +195,13 @@
       {
         "key": "claro-vivo-tim",
         "name": "Claro / Vivo / Tim",
-        "conditions_op": "or",
+        "conditions_op": "and",
         "conditions": [
+          {
+            "field": "type",
+            "op": "equals",
+            "value": "debit"
+          },
           {
             "field": "description",
             "op": "regex",
