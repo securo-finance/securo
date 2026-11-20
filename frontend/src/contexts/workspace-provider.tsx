@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { isAxiosError } from 'axios'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
 import { workspaces as workspacesApi, WORKSPACE_STORAGE_KEY } from '@/lib/api'
@@ -12,12 +13,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [list, setList] = useState<Workspace[]>([])
   const [currentId, setCurrentId] = useState<string | null>(() => localStorage.getItem(WORKSPACE_STORAGE_KEY))
   const [isLoading, setIsLoading] = useState(true)
+  const [loadFailed, setLoadFailed] = useState(false)
   const queryClient = useQueryClient()
 
   const loadWorkspaces = useCallback(async () => {
     setIsLoading(true)
     try {
       const fetched = await workspacesApi.list()
+      setLoadFailed(false)
       setList(fetched)
       // Reconcile the stored selection against what's actually accessible.
       // If the stored ID is stale (workspace archived, user removed, etc.)
@@ -34,9 +37,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         localStorage.removeItem(WORKSPACE_STORAGE_KEY)
         setCurrentId(null)
       }
-    } catch {
-      // 401s are handled by the global interceptor; other failures we
-      // just surface as no-data — the user can retry from the UI.
+    } catch (error) {
+      // 401s are handled by the global interceptor. Anything else means the
+      // server could not be asked, not that the user has no workspaces: mark
+      // it so the shell says so instead of treating every module as off and
+      // redirecting the requested page home (issue #292).
+      if (!(isAxiosError(error) && error.response?.status === 401)) {
+        setLoadFailed(true)
+      }
       setList([])
     } finally {
       setIsLoading(false)
@@ -52,11 +60,28 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (!user || !token) {
       setList([])
       setCurrentId(null)
+      setLoadFailed(false)
       setIsLoading(false)
       return
     }
     void loadWorkspaces()
   }, [authLoading, user, token, loadWorkspaces])
+
+  // A failed list must heal by itself once the connection is back: the URL the
+  // person opened is still there and the page can load without a new sign-in.
+  useEffect(() => {
+    if (!loadFailed || !user || !token) return
+    const retry = () => {
+      if (document.visibilityState === 'hidden') return
+      void loadWorkspaces()
+    }
+    window.addEventListener('online', retry)
+    document.addEventListener('visibilitychange', retry)
+    return () => {
+      window.removeEventListener('online', retry)
+      document.removeEventListener('visibilitychange', retry)
+    }
+  }, [loadFailed, user, token, loadWorkspaces])
 
   const switchWorkspace = useCallback(
     async (id: string) => {
@@ -99,6 +124,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         current,
         workspaces: list,
         isLoading,
+        loadFailed,
         switchWorkspace,
         refresh: loadWorkspaces,
         role,

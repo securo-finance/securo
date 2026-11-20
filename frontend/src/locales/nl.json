@@ -3965,4 +3965,9 @@
       "hint": "Wat terugkerende facturen per maand opleveren, en wat onlangs verloren ging."
     }
   }
+,
+  "offline": {
+    "title": "Server niet bereikbaar",
+    "description": "Je bent offline of Securo start opnieuw op. Je gegevens zijn veilig en er is niets gewijzigd. We maken automatisch opnieuw verbinding zodra de server antwoordt."
+  }
 }

@@ -85,6 +85,40 @@ describe('loading', () => {
 
     expect(result.current.workspaces).toEqual([])
   })
+
+  it('flags a failed fetch as unreachable, not as "no workspaces"', async () => {
+    // Issue #292: an empty list made hasModule() false and sent module routes
+    // home. The flag tells the shell the workspace is unknown, not empty.
+    workspacesApi.list.mockRejectedValue(new Error('network'))
+
+    const { result } = await renderWorkspace()
+
+    expect(result.current.loadFailed).toBe(true)
+    expect(result.current.current).toBeNull()
+  })
+
+  it('does not flag a successful fetch', async () => {
+    workspacesApi.list.mockResolvedValue([makeWorkspace()])
+
+    const { result } = await renderWorkspace()
+
+    expect(result.current.loadFailed).toBe(false)
+  })
+
+  it('loads the workspaces once the connection is back', async () => {
+    workspacesApi.list
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValue([makeWorkspace({ id: 'ws-a' })])
+
+    const { result } = await renderWorkspace()
+    expect(result.current.loadFailed).toBe(true)
+
+    act(() => { window.dispatchEvent(new Event('online')) })
+
+    await waitFor(() => expect(result.current.loadFailed).toBe(false))
+    expect(result.current.current?.id).toBe('ws-a')
+    expect(workspacesApi.list).toHaveBeenCalledTimes(2)
+  })
 })
 
 describe('selection', () => {

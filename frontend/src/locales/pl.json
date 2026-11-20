@@ -4111,4 +4111,9 @@
       "hint": "Ile co miesiąc przynoszą faktury cykliczne i co ostatnio utracono."
     }
   }
+,
+  "offline": {
+    "title": "Brak połączenia z serwerem",
+    "description": "Jesteś offline lub Securo się restartuje. Twoje dane są bezpieczne i nic nie zostało zmienione. Połączymy się ponownie automatycznie, gdy tylko serwer odpowie."
+  }
 }

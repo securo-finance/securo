@@ -14,15 +14,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'))
   const [isLoading, setIsLoading] = useState(true)
+  // The stored token is still good; we just could not ask the server. Kept
+  // apart from `user === null` so the shell can tell "signed out" and "could
+  // not load" apart (issue #292).
+  const [sessionUnreachable, setSessionUnreachable] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
   const queryClient = useQueryClient()
   // Bumped by every sign-in: a provider logout that resolves after a new
   // session started must not redirect and end it (#1623).
   const signInGeneration = useRef(0)
 
-  if (!token && (user !== null || isLoading)) {
+  if (!token && (user !== null || isLoading || sessionUnreachable)) {
     setUser(null)
     setIsLoading(false)
+    setSessionUnreachable(false)
   }
 
   useEffect(() => {
@@ -44,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then((me) => {
         if (cancelled) return
         stopRetrying()
+        setSessionUnreachable(false)
         setUser(me)
       })
       .catch((error) => {
@@ -55,9 +61,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           stopRetrying()
           localStorage.removeItem('token')
           localStorage.removeItem(OIDC_SESSION_KEY)
+          setSessionUnreachable(false)
           setToken(null)
           return
         }
+        setSessionUnreachable(true)
         setUser(null)
       })
       .finally(() => { if (!cancelled) setIsLoading(false) })
@@ -66,6 +74,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       stopRetrying()
     }
   }, [token, retryCount])
+
+  // The offline screen's "Try again": go back to the spinner while the check
+  // runs, so the person sees the click was taken.
+  const retrySession = useCallback(() => {
+    if (!localStorage.getItem('token')) return
+    setIsLoading(true)
+    setRetryCount((n) => n + 1)
+  }, [])
 
   // Sync token across tabs via storage events
   useEffect(() => {
@@ -111,7 +127,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     else localStorage.removeItem(OIDC_SESSION_KEY)
     signInGeneration.current += 1
     setToken(accessToken)
-    auth.me().then(setUser).catch(() => {})
+    auth.me()
+      .then((me) => {
+        setSessionUnreachable(false)
+        setUser(me)
+      })
+      .catch((error) => {
+        if (!(isAxiosError(error) && error.response?.status === 401)) {
+          setSessionUnreachable(true)
+        }
+      })
   }, [])
 
   const updateUser = useCallback((updatedUser: User) => {
@@ -147,7 +172,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [queryClient])
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, verify2fa, loginWithToken, register, updateUser, logout }}>
+    <AuthContext.Provider value={{ user, token, isLoading, sessionUnreachable, retrySession, login, verify2fa, loginWithToken, register, updateUser, logout }}>
       {children}
     </AuthContext.Provider>
   )

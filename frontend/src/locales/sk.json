@@ -4145,4 +4145,9 @@
       "hint": "Čo mesačne prinášajú opakované faktúry a čo sa nedávno stratilo."
     }
   }
+,
+  "offline": {
+    "title": "Server je nedostupný",
+    "description": "Ste offline alebo sa Securo reštartuje. Vaše údaje sú v bezpečí a nič sa nezmenilo. Hneď ako server odpovie, automaticky sa znova pripojíme."
+  }
 }

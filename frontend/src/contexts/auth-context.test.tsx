@@ -119,6 +119,51 @@ describe('AuthProvider session restore', () => {
     expect(localStorage.getItem('token')).toBe('stored-jwt')
   })
 
+  it('marks an unreachable session, so the shell can say the data is unavailable', async () => {
+    // Issue #292: keeping the token but rendering the app left the user with
+    // an empty dashboard. The flag lets the shell show an offline state.
+    localStorage.setItem('token', 'stored-jwt')
+    auth.me.mockRejectedValue(networkError())
+
+    const { result } = await renderAuth()
+
+    expect(result.current.sessionUnreachable).toBe(true)
+    expect(result.current.token).toBe('stored-jwt')
+  })
+
+  it('does not mark a rejected token as unreachable', async () => {
+    localStorage.setItem('token', 'expired-jwt')
+    auth.me.mockRejectedValue(httpError(401))
+
+    const { result } = await renderAuth()
+
+    expect(result.current.sessionUnreachable).toBe(false)
+  })
+
+  it('checks the session again when the person asks to retry', async () => {
+    localStorage.setItem('token', 'stored-jwt')
+    auth.me.mockRejectedValueOnce(networkError()).mockResolvedValue(USER)
+
+    const { result } = await renderAuth()
+    expect(result.current.sessionUnreachable).toBe(true)
+
+    act(() => { result.current.retrySession() })
+
+    await waitFor(() => expect(result.current.user).toEqual(USER))
+    expect(result.current.sessionUnreachable).toBe(false)
+    expect(auth.me).toHaveBeenCalledTimes(2)
+  })
+
+  it('marks a token adopted from OIDC as unreachable when it cannot be checked', async () => {
+    auth.me.mockRejectedValue(networkError())
+
+    const { result } = await renderAuth()
+    act(() => { result.current.loginWithToken('oidc-jwt', true) })
+
+    await waitFor(() => expect(result.current.sessionUnreachable).toBe(true))
+    expect(result.current.token).toBe('oidc-jwt')
+  })
+
   it('loads the user once the connection is back', async () => {
     localStorage.setItem('token', 'stored-jwt')
     auth.me.mockRejectedValueOnce(networkError()).mockResolvedValue(USER)

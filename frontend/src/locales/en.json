@@ -3963,4 +3963,9 @@
       "hint": "What recurring invoices bring in each month, and what was lost lately."
     }
   }
+,
+  "offline": {
+    "title": "Can't reach the server",
+    "description": "You're offline or Securo is restarting. Your data is safe and nothing was changed. We'll reconnect automatically as soon as the server answers."
+  }
 }

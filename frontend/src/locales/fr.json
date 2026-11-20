@@ -3973,4 +3973,9 @@
       "hint": "Ce que rapportent les factures récurrentes chaque mois, et ce qui a été perdu récemment."
     }
   }
+,
+  "offline": {
+    "title": "Serveur injoignable",
+    "description": "Vous êtes hors ligne ou Securo redémarre. Vos données sont en sécurité et rien n'a été modifié. Nous nous reconnecterons automatiquement dès que le serveur répondra."
+  }
 }

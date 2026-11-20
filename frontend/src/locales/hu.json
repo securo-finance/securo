@@ -3963,4 +3963,9 @@
       "hint": "Amit az ismétlődő számlák havonta hoznak, és ami nemrég elveszett."
     }
   }
+,
+  "offline": {
+    "title": "A szerver nem érhető el",
+    "description": "Offline vagy, vagy a Securo újraindul. Az adataid biztonságban vannak, és semmi sem változott. Amint a szerver válaszol, automatikusan újracsatlakozunk."
+  }
 }

@@ -3973,4 +3973,9 @@
       "hint": "Quanto as cobranças recorrentes trazem por mês, e o que foi perdido recentemente."
     }
   }
+,
+  "offline": {
+    "title": "Não foi possível falar com o servidor",
+    "description": "Você está sem conexão ou o Securo está reiniciando. Seus dados estão seguros e nada foi alterado. Vamos reconectar sozinhos assim que o servidor responder."
+  }
 }
