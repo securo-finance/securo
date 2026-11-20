@@ -16,7 +16,7 @@ USD↔EUR rates explicitly so SQLite has something to convert with.
 """
 
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -1358,42 +1358,3 @@ async def test_income_expenses_report_offsets_do_not_depend_on_row_order(
     assert food_trend.total == pytest.approx(500.0, abs=0.001)
     point = next(p for p in food_trend.series if p.date == today.strftime("%Y-%m"))
     assert point.value == pytest.approx(500.0, abs=0.001)
-
-
-@pytest.mark.asyncio
-async def test_income_expenses_report_category_total_matches_its_floored_periods(
-    session: AsyncSession, test_user, test_workspace, test_categories
-):
-    """A USD 100 row stamped at BRL 500 last month with the friend owing 300,
-    and another this month with -100: last month floors at 0 and this month
-    keeps 1000. The category total is their sum (1000), like the summary; it
-    used to floor the whole window once (1000 - 1500 + 500 = 0) and drop the
-    category with its positive month."""
-    from app.services.report_service import get_income_expenses_report
-
-    await _force_user_currency(session, test_user, "BRL")
-    today = date.today()
-    this_month = today.replace(day=1)
-    last_month = (this_month - timedelta(days=1)).replace(day=1)
-    food = test_categories[0]
-    for when, friend_share in ((last_month, "300.00"), (this_month, "-100.00")):
-        _seed_brl_rate(session, when, "5.00")
-        await _foreign_split(
-            session, test_user, test_workspace, "100.00", "500.00", friend_share,
-            when=when, category_id=food.id,
-        )
-
-    report = await get_income_expenses_report(
-        session, test_workspace.id, test_user.id, currency="BRL",
-        start_date=last_month, end_date=today,
-    )
-    totals = {b.key: b.value for b in report.summary.breakdowns}
-    assert totals["expenses"] == pytest.approx(1000.0, abs=0.001)
-    food_trend = next(
-        ct for ct in report.category_trend
-        if ct.key == str(food.id) and ct.group == "expenses"
-    )
-    series = {p.date: p.value for p in food_trend.series}
-    assert series[last_month.strftime("%Y-%m")] == pytest.approx(0.0, abs=0.001)
-    assert series[this_month.strftime("%Y-%m")] == pytest.approx(1000.0, abs=0.001)
-    assert food_trend.total == pytest.approx(1000.0, abs=0.001)

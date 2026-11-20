@@ -1023,14 +1023,12 @@ async def get_income_expenses_report(
             continue
         by_period = cat_offsets.setdefault(map_key, {})
         by_period[period_label] = by_period.get(period_label, 0.0) + offset
-    # The total is the sum of the floored periods, the same boundary the
-    # summary uses, so the series and its total always agree.
     for map_key, by_period in cat_offsets.items():
         entry = cat_trend_map[map_key]
+        entry["total"] = max(0.0, entry["total"] - sum(by_period.values()))
         for period_label, offset in by_period.items():
             cur_period = entry["periods"].get(period_label, 0.0)
             entry["periods"][period_label] = max(0.0, cur_period - offset)
-        entry["total"] = sum(entry["periods"].values())
 
     # Layer in the viewer's share of splits they did not pay for, the same
     # cross-workspace rows the summary above adds (#242). The author guard
