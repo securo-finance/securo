@@ -1563,6 +1563,8 @@
     "copyPreviewCount": "קטגוריות להעתקה: {{count}}",
     "copyPreviewTotal": "סכום להעתקה: {{amount}}",
     "copyPreviewEmpty": "לחודש הנבחר אין תקציבים להעתקה.",
+    "copyPreviewAllExist": "לכל הקטגוריות בחודש המקור כבר יש תקציב ב{{month}}. בחרו החלפה כדי להעתיק את הסכומים או להחיל את ההתאמה.",
+    "copyPreviewNoChange": "כל התקציבים בחודש המקור כבר בסכומים האלה ב{{month}}.",
     "copyPreviewError": "לא ניתן היה לטעון את חודש המקור.",
     "copyAmountTooLarge": "הסכום המותאם עולה על מגבלת התקציב. יש להקטין את ההתאמה באחוזים.",
     "copyConfirm": "העתקת תקציבים",

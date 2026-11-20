@@ -1555,6 +1555,8 @@
     "copyPreviewCount": "Categorías a copiar: {{count}}",
     "copyPreviewTotal": "Total a copiar: {{amount}}",
     "copyPreviewEmpty": "El mes seleccionado no tiene presupuestos para copiar.",
+    "copyPreviewAllExist": "Todas las categorías del mes de origen ya tienen presupuesto en {{month}}. Elige reemplazar para copiar los importes o aplicar el ajuste.",
+    "copyPreviewNoChange": "Todos los presupuestos del mes de origen ya tienen estos importes en {{month}}.",
     "copyPreviewError": "No se pudo cargar el mes de origen.",
     "copyAmountTooLarge": "El importe ajustado supera el límite de presupuesto. Reduce el ajuste porcentual.",
     "copyConfirm": "Copiar presupuestos",

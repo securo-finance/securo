@@ -1551,6 +1551,8 @@
     "copyPreviewCount": "Categories to copy: {{count}}",
     "copyPreviewTotal": "Total to copy: {{amount}}",
     "copyPreviewEmpty": "The selected month has no budgets to copy.",
+    "copyPreviewAllExist": "All categories in the source month already have a budget in {{month}}. Choose Replace to copy the amounts or apply the adjustment.",
+    "copyPreviewNoChange": "Every budget in the source month is already at these amounts in {{month}}.",
     "copyPreviewError": "Could not load the source month.",
     "copyAmountTooLarge": "The adjusted amount is too large for the budget limit. Lower the percentage adjustment.",
     "copyConfirm": "Copy budgets",
