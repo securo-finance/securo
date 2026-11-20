@@ -155,13 +155,17 @@ export function TransactionDrillDown({
       // share, the owner the amount less everyone else's shares, and anyone
       // else the full amount.
       const splits = tx.splits ?? []
+      // A credit's settled part is a payback, not income, as on the card.
+      const settled = tx.type === 'credit'
+        ? (tx.settled_by ?? []).reduce((sum, s) => sum + Number(s.amount), 0)
+        : 0
       const countsShare = tx.type === 'debit' || (tx.type === 'credit' && !!filter?.ownShareCredits)
       const ownShare = viewerShare != null || !filter?.ownShare || !countsShare
         ? null
         : tx.is_shared
           ? Number(tx.viewer_share ?? 0)
-          : splits.length > 0 && tx.user_id === user?.id
-            ? parentAmount - (splits.reduce((sum, s) => sum + Number(s.share_amount), 0) - Number(tx.viewer_share ?? 0))
+          : (splits.length > 0 || settled > 0) && tx.user_id === user?.id
+            ? parentAmount - (splits.reduce((sum, s) => sum + Number(s.share_amount), 0) - Number(tx.viewer_share ?? 0)) - settled
             : null
       const share = viewerShare ?? ownShare
       // Shares are in the row's own currency, so the primary amount scales

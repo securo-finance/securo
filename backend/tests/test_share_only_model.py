@@ -281,6 +281,110 @@ async def test_summary_drops_settlement_credits_from_income(
 
 
 @pytest.mark.asyncio
+async def test_summary_leaves_a_linked_payback_out_of_income(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A payback linked to the credit that really arrived leaves income the
+    way a settlement's own credit does; what the credit holds beyond the
+    settled part stays income."""
+    await _force_user_currency(session, test_user, "USD")
+    today = date.today()
+    account = await _make_account(session, test_user.id)
+    tx = await _make_tx(session, test_user.id, account.id, "60.00", when=today)
+    _, members = await _setup_group(session, test_user, test_workspace.id, "Me", "Friend")
+    me, friend = members
+    await split_service.replace_splits(
+        session, tx,
+        TransactionSplitsInput(share_type="equal", splits=[
+            TransactionSplitInput(group_member_id=me.id),
+            TransactionSplitInput(group_member_id=friend.id),
+        ]),
+        test_user.id,
+    )
+    def payback(receiver_transaction_id=None) -> GroupSettlementCreate:
+        return GroupSettlementCreate(
+            from_member_id=friend.id, to_member_id=me.id, amount=Decimal("30.00"),
+            currency="USD", date=today, receiver_transaction_id=receiver_transaction_id,
+        )
+
+    async def summary():
+        return await dashboard_service.get_summary(session, test_workspace.id, test_user.id, today.replace(day=1))
+
+    # The settle-up flow: the settlement's own credit.
+    s = await settlement_service.create_settlement(
+        session, me.group_id, test_workspace.id, test_user.id, payback()
+    )
+    assert s is not None
+    through_settlement = await summary()
+    await settlement_service.delete_settlement(session, me.group_id, s.id, test_workspace.id, test_user.id)
+
+    # The transfer that really arrived: 30 paid back and 10 more.
+    received = await _make_tx(session, test_user.id, account.id, "40.00", type_="credit", when=today)
+    received.workspace_id = test_workspace.id
+    await settlement_service.create_settlement(
+        session, me.group_id, test_workspace.id, test_user.id,
+        payback(received.id),
+    )
+    through_link = await summary()
+
+    assert through_settlement.monthly_income_primary == 0.0
+    assert through_link.monthly_income_primary == pytest.approx(10.0, abs=0.01)
+    assert through_link.monthly_expenses_primary == pytest.approx(
+        through_settlement.monthly_expenses_primary, abs=0.01
+    )
+
+
+@pytest.mark.asyncio
+async def test_income_expenses_report_leaves_a_linked_payback_out_of_income(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
+    """The report takes the settled part of a linked credit off income in its
+    totals, its category trend and its composition, like the dashboard: a
+    payback filed under the expense's own category doesn't show up there as
+    income."""
+    from app.services.report_service import get_income_expenses_report
+
+    await _force_user_currency(session, test_user, "USD")
+    today = date.today()
+    food = test_categories[0]
+    account = await _make_account(session, test_user.id)
+    tx = await _make_tx(session, test_user.id, account.id, "60.00", when=today, category_id=food.id)
+    _, members = await _setup_group(session, test_user, test_workspace.id, "Me", "Friend")
+    me, friend = members
+    await split_service.replace_splits(
+        session, tx,
+        TransactionSplitsInput(share_type="equal", splits=[
+            TransactionSplitInput(group_member_id=me.id),
+            TransactionSplitInput(group_member_id=friend.id),
+        ]),
+        test_user.id,
+    )
+    received = await _make_tx(
+        session, test_user.id, account.id, "40.00", type_="credit", when=today, category_id=food.id
+    )
+    received.workspace_id = test_workspace.id
+    await settlement_service.create_settlement(
+        session, me.group_id, test_workspace.id, test_user.id,
+        GroupSettlementCreate(
+            from_member_id=friend.id, to_member_id=me.id, amount=Decimal("30.00"),
+            currency="USD", date=today, receiver_transaction_id=received.id,
+        ),
+    )
+
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id, currency="USD",
+        start_date=today.replace(day=1), end_date=today,
+    )
+    totals = {b.key: b.value for b in report.summary.breakdowns}
+    assert totals["income"] == pytest.approx(10.0, abs=0.01)
+    assert totals["expenses"] == pytest.approx(30.0, abs=0.01)
+    food_income = [c.value for c in report.composition if c.key == str(food.id) and c.group == "income"]
+    assert sum(food_income) == pytest.approx(10.0, abs=0.01)
+    food_trend = [ct.total for ct in report.category_trend if ct.key == str(food.id) and ct.group == "income"]
+    assert sum(food_trend) == pytest.approx(10.0, abs=0.01)
+
+
+@pytest.mark.asyncio
 async def test_summary_settlement_debit_excluded_for_payer(
     session: AsyncSession, test_user, test_workspace
 ):

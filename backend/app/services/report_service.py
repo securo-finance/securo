@@ -572,22 +572,35 @@ async def get_income_expenses_report(
         Transaction.amount_primary,
         Transaction.date,
     )
-    owner_offset_rows = [] if filtered else (await session.execute(
-        select(label_expr, *owner_columns, func.sum(_TS_.share_amount))
-        .select_from(_TS_)
-        .join(Transaction, _TS_.transaction_id == Transaction.id)
-        .where(
-            Transaction.user_id == user_id,
-            Transaction.workspace_id == workspace_id,
-            _TS_.group_member_id.notin_(_viewer_member_ids(user_id)),
-            report_date >= start,
-            report_date <= axis_end,
-            Transaction.source != "opening_balance",
-            Transaction.status == "posted",
-            counts_as_user_pnl(Transaction.category_id),
-        )
-        .group_by(label_expr, *owner_columns)
-    )).all()
+    from app.models.group_settlement import GroupSettlement as _GS_
+
+    owner_filters = (
+        Transaction.user_id == user_id,
+        Transaction.workspace_id == workspace_id,
+        report_date >= start,
+        report_date <= axis_end,
+        Transaction.source != "opening_balance",
+        Transaction.status == "posted",
+        counts_as_user_pnl(Transaction.category_id),
+    )
+    owner_offset_rows = [] if filtered else [
+        *(await session.execute(
+            select(label_expr, *owner_columns, func.sum(_TS_.share_amount))
+            .select_from(_TS_)
+            .join(Transaction, _TS_.transaction_id == Transaction.id)
+            .where(*owner_filters, _TS_.group_member_id.notin_(_viewer_member_ids(user_id)))
+            .group_by(label_expr, *owner_columns)
+        )).all(),
+        # A credit's settled part is money paid back, not income, as on the
+        # dashboard (_owner_split_rows).
+        *(await session.execute(
+            select(label_expr, *owner_columns, func.sum(_GS_.amount))
+            .select_from(_GS_)
+            .join(Transaction, _GS_.receiver_transaction_id == Transaction.id)
+            .where(*owner_filters, Transaction.type == "credit")
+            .group_by(label_expr, *owner_columns)
+        )).all(),
+    ]
     owner_rates: dict[tuple[str, date], Optional[Decimal]] = {}
     # (period, category_id, type, share in primary), reused by the category
     # trend below so both views take off the same amounts.
@@ -914,6 +927,19 @@ async def get_income_expenses_report(
             comp_map[comp_key]["value"] -= offset_total
             if comp_map[comp_key]["value"] <= 0:
                 comp_map.pop(comp_key)
+    # Credits the same way, from the period offsets above: the others' shares
+    # of a split credit and the settled part of a linked one aren't income.
+    income_offsets: dict[str, float] = {}
+    for _period, cat_uuid, tx_type, offset in owner_offsets:
+        if tx_type == "credit":
+            cat_key = str(cat_uuid) if cat_uuid else "uncategorized"
+            income_offsets[cat_key] = income_offsets.get(cat_key, 0.0) + offset
+    for cat_key, offset_total in income_offsets.items():
+        comp_key = (cat_key, "income")
+        if comp_key in comp_map:
+            comp_map[comp_key]["value"] -= offset_total
+            if comp_map[comp_key]["value"] <= 0:
+                comp_map.pop(comp_key)
 
     # Investment-style outflows: transactions in `treat_as_transfer` categories
     # are excluded from P&L by counts_as_user_pnl (an investment application's
@@ -1015,10 +1041,10 @@ async def get_income_expenses_report(
     # like the summary, so row order cannot change the result.
     cat_offsets: dict[tuple[str, str], dict[str, float]] = {}
     for period_label, cat_id, tx_type, offset in owner_offsets:
-        if tx_type != "debit":
+        if tx_type not in ("debit", "credit"):
             continue
         cat_key = str(cat_id) if cat_id else "uncategorized"
-        map_key = (cat_key, "expenses")
+        map_key = (cat_key, "expenses" if tx_type == "debit" else "income")
         if map_key not in cat_trend_map:
             continue
         by_period = cat_offsets.setdefault(map_key, {})
