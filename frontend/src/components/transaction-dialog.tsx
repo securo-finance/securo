@@ -144,11 +144,7 @@ export function TransactionDialog({
   formResetKey?: number
   /** Account preselected when creating a new transaction. */
   defaultAccountId?: string
-  /**
-   * The host has another transaction queued after this one (e.g. the next row
-   * of a drill-down). Editing then offers "Save & next", which saves with the
-   * `saveAndNext` action so the host can load that row into the open dialog.
-   */
+  /** Offer "Save & next" (the `saveAndNext` action) when the host has another row queued. */
   hasNext?: boolean
 }) {
   const { t } = useTranslation()

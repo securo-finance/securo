@@ -219,9 +219,7 @@ export default function DashboardPage() {
     setSearchParams(params, { replace: true })
   }, [selectedMonth, txViewMode, calendarSelectedDate, setSearchParams])
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
-  // The drill-down rows the dialog was opened from, for "Save & next". A
-  // snapshot: rows a save removes from the panel (e.g. now categorized) must
-  // not shift what "next" means.
+  // Snapshot of the drill-down rows for "Save & next", so rows a save removes don't shift "next".
   const [editQueue, setEditQueue] = useState<Transaction[]>([])
   const nextInQueue = (id: string) => {
     const index = editQueue.findIndex((tx) => tx.id === id)
@@ -417,12 +415,10 @@ export default function DashboardPage() {
     enabled: shows('goals'),
   })
 
-  // Read the context directly, as the category picker does, so a dashboard
-  // rendered outside a workspace provider still works (read-only).
+  // Not useWorkspace(): the dashboard also renders outside a workspace provider.
   const canWrite = useContext(WorkspaceContext)?.canWrite ?? false
 
-  // Categorizes a row straight from the drill-down. Unlike `updateMutation`
-  // it leaves the panel and any dialog alone, so the next row is one pick away.
+  // Unlike updateMutation, this leaves the panel and dialog open.
   const quickCategorizeMutation = useMutation({
     mutationFn: ({ id, categoryId }: { id: string; categoryId: string }) =>
       transactions.update(id, { category_id: categoryId }),
@@ -439,8 +435,6 @@ export default function DashboardPage() {
     },
     onSuccess: (_saved, { id, action }) => {
       invalidateFinancialQueries(queryClient)
-      // "Save & next" from a drill-down: load the following row into the
-      // dialog that is already open, instead of closing it.
       const next = action === 'saveAndNext' ? nextInQueue(id) : null
       if (next) {
         setEditingTx(next)

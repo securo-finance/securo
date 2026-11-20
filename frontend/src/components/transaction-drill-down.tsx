@@ -65,18 +65,13 @@ type DisplayItem = {
   partOf: number | null
 }
 
-/**
- * Lets a host categorize uncategorized rows in place, without opening the
- * transaction dialog for each one. The host saves the change and refreshes
- * the queries; the panel stays open on the next row.
- */
+/** Categorize uncategorized rows in place; the host saves and refreshes. */
 export type DrillDownQuickCategorize = {
   categories: Category[]
   groups: CategoryGroup[]
   onCategorize: (tx: Transaction, categoryId: string) => Promise<unknown>
 }
 
-/** A row the panel can categorize in place: a real, unsplit, own row with no category yet. */
 function canQuickCategorize(tx: Transaction | null): tx is Transaction {
   return !!tx && !tx.category_id && !tx.is_shared && !isSplitByCategory(tx)
 }
@@ -90,16 +85,13 @@ export function TransactionDrillDown({
 }: {
   filter: DrillDownFilter | null
   onClose: () => void
-  /**
-   * A row was opened. `queue` is every real transaction the panel lists, in
-   * order, so a host can step to the next one without reopening anything.
-   */
+  /** `queue` lists the panel's transactions in order, for stepping to the next one. */
   onTransactionClick?: (tx: Transaction, queue: Transaction[]) => void
   useViewerShare?: boolean
   quickCategorize?: DrillDownQuickCategorize
 }) {
   const { t } = useTranslation()
-  // Rows whose category is being saved, so a second pick can't race the first.
+  // Rows being saved, so a second pick can't race the first.
   const [savingIds, setSavingIds] = useState<ReadonlySet<string>>(() => new Set())
 
   const handleQuickCategorize = async (tx: Transaction, categoryId: string) => {
@@ -325,7 +317,6 @@ export function TransactionDrillDown({
     return items
   }, [data, projectedTxs, filter, noAccounts, useViewerShare, user?.id])
 
-  // The rows a host can step through from the dialog, in the order shown.
   const queue = useMemo(
     () => displayItems.flatMap((item) => (!item.isProjected && item.transaction ? [item.transaction] : [])),
     [displayItems],
@@ -542,8 +533,7 @@ export function TransactionDrillDown({
                     )}
                   </div>
                   {onTransactionClick && item.transaction && !item.isProjected && (
-                    // The whole row opens the dialog; this makes that visible,
-                    // most of all when a row also carries the inline picker.
+                    // Makes the row's dialog discoverable next to the picker.
                     <button
                       type="button"
                       aria-label={t('dashboard.drillDownOpenTransaction')}
