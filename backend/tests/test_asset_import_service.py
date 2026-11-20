@@ -405,6 +405,27 @@ async def test_orders_in_another_currency_are_converted_at_their_date(
 
 
 @pytest.mark.asyncio
+async def test_a_converted_row_keeps_its_file_price_for_the_table(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    """The preview shows both numbers: what the file paid, and what the row
+    becomes at its own date's rate."""
+    await _eur_rate(session, date(2026, 1, 15), "0.8")
+
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,fee,kind,currency",
+        "AAPL,2026-01-15,1,400,2,buy,EUR",
+    ), provider, dry_run=True)
+
+    [row] = summary["orders"]
+    assert row.currency == "EUR"
+    assert row.price == Decimal("400")
+    assert row.converted_currency == "USD"
+    assert row.converted_price == Decimal("500.000000")
+    assert row.converted_fee == Decimal("2.50")
+
+
+@pytest.mark.asyncio
 async def test_orders_onto_an_existing_holding_take_its_currency(
     session: AsyncSession, test_user: User, test_workspace: Workspace, provider
 ):
