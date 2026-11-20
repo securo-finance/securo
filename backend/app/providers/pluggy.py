@@ -292,6 +292,22 @@ _EXCHANGE_TRADED_TYPES = {"EQUITY", "ETF"}
 _B3_SYMBOL = re.compile(r"^([A-Z][A-Z0-9]{3}\d{1,2})F?$")
 
 
+def _asset_type(inv: dict) -> Optional[str]:
+    """Securo asset type for an exchange-traded position, else None.
+
+    Stocks, units and BDRs are `stock`, FIIs `fund` and ETFs `etf`, so they
+    get their own icon and the market-ticker actions. Every other position
+    (fixed income, pensions, mutual funds) keeps the generic `investment`.
+    The sync only replaces the generic type, never one the user picked.
+    """
+    pluggy_type = (inv.get("type") or "").upper()
+    if pluggy_type == "ETF":
+        return "etf"
+    if pluggy_type == "EQUITY":
+        return "fund" if (inv.get("subtype") or "").upper() == "REAL_ESTATE_FUND" else "stock"
+    return None
+
+
 def _b3_market_ticker(inv: dict) -> Optional[str]:
     """Yahoo Finance symbol ("PSSA3.SA") for an exchange-traded B3 holding.
 
@@ -341,6 +357,7 @@ def _build_holding_data(inv: dict) -> HoldingData:
     position_has_value = current_value != 0 or (quantity is not None and quantity != 0)
     is_withdrawn = pluggy_status == "TOTAL_WITHDRAWAL" and not position_has_value
     ticker = _b3_market_ticker(inv)
+    asset_type = _asset_type(inv)
 
     return HoldingData(
         external_id=str(inv["id"]),
@@ -354,6 +371,7 @@ def _build_holding_data(inv: dict) -> HoldingData:
         isin=inv.get("isin") or None,
         ticker=ticker,
         ticker_quotable=ticker is not None,
+        asset_type=asset_type,
         maturity_date=_date_or_none(inv.get("dueDate")),
         value_date=_date_or_none(inv.get("date")),
         is_withdrawn=is_withdrawn,
