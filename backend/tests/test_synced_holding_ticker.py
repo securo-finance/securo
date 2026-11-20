@@ -523,3 +523,20 @@ async def test_linked_holding_gets_average_price_from_the_reported_trades(
     assert read is not None
     assert read.current_value == pytest.approx(280.0)
     assert read.gain_loss == pytest.approx(280.0 - 296.74, abs=0.01)
+
+
+@pytest.mark.parametrize(
+    ("inv", "expected"),
+    [
+        ({"type": "EQUITY", "subtype": "STOCK"}, "stock"),
+        ({"type": "EQUITY", "subtype": "BDR"}, "stock"),
+        ({"type": "EQUITY", "subtype": "REAL_ESTATE_FUND"}, "fund"),
+        ({"type": "ETF"}, "etf"),
+        ({"type": "FIXED_INCOME", "subtype": "CDB"}, None),
+        ({"type": "MUTUAL_FUND"}, None),
+        ({"type": "SECURITY", "subtype": "PGBL"}, None),
+    ],
+)
+def test_exchange_traded_positions_get_their_asset_type(inv: dict, expected: Optional[str]):
+    holding = _build_holding_data({"id": "x", "balance": 1, **inv})
+    assert holding.asset_type == expected
