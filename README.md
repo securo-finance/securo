@@ -30,6 +30,8 @@ We believe personal finance should actually be <em>personal</em>. No corporation
 curl -fsSL https://usesecuro.com/install.sh | bash
 ```
 
+Run the same command again from the same folder to update; it finds the folder it created before, keeps the environment file and the data, and pulls the new version.
+
 **Windows:** Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), then:
 
 ```bash
