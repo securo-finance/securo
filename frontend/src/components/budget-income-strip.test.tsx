@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 
 import { BudgetIncomeStrip } from '@/components/budget-income-strip'
+import i18n, { i18nReady } from '@/lib/i18n'
 import { renderWithProviders, t } from '@/test/utils'
 import type { Budget, ExpectedIncome } from '@/types'
 
@@ -134,15 +135,21 @@ describe('BudgetIncomeStrip', () => {
   })
 
   it('keeps the layout logical under RTL, in Hebrew', async () => {
-    document.documentElement.dir = 'rtl'
+    await i18nReady
+    await i18n.changeLanguage('he')
     try {
+      expect(document.documentElement.dir).toBe('rtl')
       api.budgets.expectedIncome.get.mockResolvedValue(income)
       await strip([rent, hidden])
       await screen.findByText(t('budgets.incomePlanned', { amount: '$1020.00' }))
       const container = screen.getByText(t('budgets.incomeCovers', { percent: 100 })).closest('div')
       expect(container?.className ?? '').not.toMatch(/(^| )((ml|mr|pl|pr|left|right)-|text-left|text-right)/)
     } finally {
-      document.documentElement.dir = 'ltr'
+      await i18n.changeLanguage('en')
     }
   })
+})
+
+afterAll(async () => {
+  await i18n.changeLanguage('en')
 })
