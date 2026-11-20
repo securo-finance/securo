@@ -184,6 +184,12 @@ export function TransactionDialog({
   }, [])
 
   if (!open && preview) setPreview(null)
+  // "Save & next" swaps the transaction under an open dialog; drop the last one's preview.
+  const [previewTxId, setPreviewTxId] = useState(transaction?.id)
+  if (transaction?.id !== previewTxId) {
+    setPreviewTxId(transaction?.id)
+    if (preview) setPreview(null)
+  }
   useEffect(() => () => {
     if (preview?.url) URL.revokeObjectURL(preview.url)
   }, [preview])

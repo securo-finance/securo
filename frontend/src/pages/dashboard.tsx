@@ -468,25 +468,41 @@ export default function DashboardPage() {
     }
   }
 
+  // Kept apart from the save, so a lookup the user walked away from can't keep
+  // a newly opened dialog busy.
+  const [loadingNext, setLoadingNext] = useState(false)
+
+  const closeEditDialog = () => {
+    openRequest.current++
+    setLoadingNext(false)
+    setDialogOpen(false)
+    setEditingTx(null)
+    setEditQueue([])
+  }
+
+  const openNextAfterSave = async (id: string, request: number) => {
+    setLoadingNext(true)
+    const next = await findNextToEdit(id)
+    if (request !== openRequest.current) return
+    setLoadingNext(false)
+    if (next) setEditingTx(next)
+    else closeEditDialog()
+  }
+
   const updateMutation = useMutation({
-    // `action` only steers what happens after the save; it is not a field.
-    mutationFn: async ({ id, action, ...data }: TransactionSavePayload & { id: string; action?: SaveAction }) => {
-      const request = openRequest.current
-      await transactions.update(id, data)
-      const next = action === 'saveAndNext' ? await findNextToEdit(id) : null
-      return { next, stale: request !== openRequest.current }
+    mutationFn: ({ id, ...data }: TransactionSavePayload & { id: string; action?: SaveAction }) => {
+      // `action` only steers what happens after the save; it is not a field.
+      const payload = { ...data }
+      delete payload.action
+      return transactions.update(id, payload)
     },
-    onSuccess: ({ next, stale }) => {
+    onMutate: () => openRequest.current,
+    onSuccess: (_saved, { id, action }, request) => {
       invalidateFinancialQueries(queryClient)
-      // The dialog was closed (and maybe another row opened) while this ran.
-      if (stale) return
-      if (next) {
-        setEditingTx(next)
-        return
-      }
-      setDialogOpen(false)
-      setEditingTx(null)
-      setEditQueue([])
+      // The dialog was closed (and maybe another row opened) during the save.
+      if (request !== openRequest.current) return
+      if (action === 'saveAndNext') void openNextAfterSave(id, request)
+      else closeEditDialog()
     },
   })
 
@@ -2045,7 +2061,7 @@ export default function DashboardPage() {
 
       <TransactionDialog
         open={dialogOpen}
-        onClose={() => { openRequest.current++; setDialogOpen(false); setEditingTx(null); setEditQueue([]) }}
+        onClose={closeEditDialog}
         transaction={editingTx}
         hasNext={!!editingTx && !!nextInQueue(editingTx.id)}
         categories={categoriesList ?? []}
@@ -2071,7 +2087,7 @@ export default function DashboardPage() {
           setEditQueue([])
           handleCreateRuleFromTransaction(tx)
         }}
-        loading={updateMutation.isPending || deleteMutation.isPending || unlinkTransferMutation.isPending}
+        loading={updateMutation.isPending || loadingNext || deleteMutation.isPending || unlinkTransferMutation.isPending}
         error={updateMutation.error ? extractApiError(updateMutation.error) : deleteMutation.error ? extractApiError(deleteMutation.error) : null}
         isSynced={editingTx?.source === 'sync'}
       />

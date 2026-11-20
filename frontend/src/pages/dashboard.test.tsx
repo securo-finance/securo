@@ -1291,7 +1291,10 @@ describe('Dashboard uncategorized drill-down', () => {
     fireEvent.keyDown(dialog, { key: 'Escape' })
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     await user.click(screen.getAllByRole('button', { name: t('dashboard.drillDownOpenTransaction') })[2])
-    expect(await within(await screen.findByRole('dialog')).findByDisplayValue('Third row')).toBeInTheDocument()
+    const third = await screen.findByRole('dialog')
+    expect(await within(third).findByDisplayValue('Third row')).toBeInTheDocument()
+    // The abandoned lookup doesn't keep the new dialog busy.
+    expect(within(third).getByRole('button', { name: t('common.save') })).toBeEnabled()
 
     await act(async () => finishSecond(rows[1]))
     expect(within(screen.getByRole('dialog')).getByDisplayValue('Third row')).toBeInTheDocument()

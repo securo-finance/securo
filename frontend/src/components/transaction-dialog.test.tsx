@@ -15,6 +15,18 @@ vi.mock('@/hooks/use-display-locale', () => ({
   useDisplayLocale: () => 'en-US',
 }))
 
+// Stands in for the attachment list: one button opens a preview, as a real file would.
+vi.mock('@/components/transaction-attachments', () => ({
+  TransactionAttachments: ({ onPreviewChange }: { onPreviewChange: (p: unknown) => void }) => (
+    <button
+      type="button"
+      onClick={() => onPreviewChange({ attachmentId: 'att-1', url: 'blob:receipt', contentType: 'image/png', filename: 'receipt-a.png' })}
+    >
+      Preview receipt
+    </button>
+  ),
+}))
+
 vi.mock('@/components/ui/date-picker-input', () => ({
   DatePickerInput: ({
     value,
@@ -742,6 +754,31 @@ describe('TransactionDialog save and next', () => {
     await user.click(screen.getByRole('button', { name: t('common.save') }))
 
     expect(onSave.mock.calls[0][4]).toBe('save')
+  })
+
+  it('drops the previous transaction preview when the next one loads', async () => {
+    const { user, rerender } = renderEdit(true)
+
+    await user.click(screen.getByRole('button', { name: 'Preview receipt' }))
+    expect(screen.getAllByText('receipt-a.png').length).toBeGreaterThan(0)
+
+    rerender(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={syncedTransaction({ id: 'tx-next' })}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={vi.fn()}
+        loading={false}
+        error={null}
+        isSynced
+        hasNext={false}
+      />,
+    )
+
+    expect(screen.queryByText('receipt-a.png')).not.toBeInTheDocument()
   })
 
   it('offers no save and next without a next row', () => {
