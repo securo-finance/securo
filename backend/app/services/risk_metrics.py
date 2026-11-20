@@ -47,6 +47,10 @@ DEFAULT_PERIODS_PER_YEAR = 252
 #: return and Calmar stay undefined until there are five daily returns.
 MIN_ANNUALIZATION_OBSERVATIONS = 5
 
+#: Below this, daily deviation is floating-point noise from a perfectly smooth
+#: series, and dividing by it produces ratios like 3e14.
+ZERO_DEVIATION_EPSILON = 1e-12
+
 
 class RiskMetricsError(ValueError):
     """A series that cannot produce risk statistics was passed in."""
@@ -178,14 +182,14 @@ def compute_risk_metrics(
         volatility = daily_volatility * scale
         daily_risk_free = (1 + risk_free_rate) ** (1 / periods_per_year) - 1
         excess_mean = fmean(returns) - daily_risk_free
-        if daily_volatility > 0:
+        if daily_volatility > ZERO_DEVIATION_EPSILON:
             sharpe = excess_mean / daily_volatility * scale
 
         daily_mar = (1 + minimum_acceptable_return) ** (1 / periods_per_year) - 1
         downside = math.sqrt(
             fmean([min(0.0, value - daily_mar) ** 2 for value in returns])
         )
-        if downside > 0:
+        if downside > ZERO_DEVIATION_EPSILON:
             sortino = (fmean(returns) - daily_mar) / downside * scale
 
     if max_drawdown < 0 and annualized_return is not None:
