@@ -452,7 +452,8 @@ export default function DashboardPage() {
     return null
   }
 
-  // Only the latest click opens: an older, slower read must not replace it.
+  // Only the latest click opens: an older, slower read must not replace it. Closing
+  // the dialog also moves it on, so a late "Save & next" can't reopen anything.
   const openRequest = useRef(0)
   const openFromDrillDown = async (tx: Transaction, queue: Transaction[]) => {
     const request = ++openRequest.current
@@ -470,11 +471,15 @@ export default function DashboardPage() {
   const updateMutation = useMutation({
     // `action` only steers what happens after the save; it is not a field.
     mutationFn: async ({ id, action, ...data }: TransactionSavePayload & { id: string; action?: SaveAction }) => {
+      const request = openRequest.current
       await transactions.update(id, data)
-      return action === 'saveAndNext' ? findNextToEdit(id) : null
+      const next = action === 'saveAndNext' ? await findNextToEdit(id) : null
+      return { next, stale: request !== openRequest.current }
     },
-    onSuccess: (next) => {
+    onSuccess: ({ next, stale }) => {
       invalidateFinancialQueries(queryClient)
+      // The dialog was closed (and maybe another row opened) while this ran.
+      if (stale) return
       if (next) {
         setEditingTx(next)
         return
@@ -2040,7 +2045,7 @@ export default function DashboardPage() {
 
       <TransactionDialog
         open={dialogOpen}
-        onClose={() => { setDialogOpen(false); setEditingTx(null); setEditQueue([]) }}
+        onClose={() => { openRequest.current++; setDialogOpen(false); setEditingTx(null); setEditQueue([]) }}
         transaction={editingTx}
         hasNext={!!editingTx && !!nextInQueue(editingTx.id)}
         categories={categoriesList ?? []}

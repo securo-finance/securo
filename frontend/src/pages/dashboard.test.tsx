@@ -1267,4 +1267,33 @@ describe('Dashboard uncategorized drill-down', () => {
     await act(async () => finishFirst(rows[0]))
     expect(within(screen.getByRole('dialog')).getByDisplayValue('Second row')).toBeInTheDocument()
   })
+
+  it('keeps a row opened after closing the dialog when an earlier Save & next finishes late', async () => {
+    const rows = [
+      uncategorized('first', 'First row', '2026-09-01'),
+      uncategorized('second', 'Second row', '2026-09-02'),
+      uncategorized('third', 'Third row', '2026-09-03'),
+    ]
+    let finishSecond: (tx: unknown) => void = () => {}
+    api.transactions.get.mockImplementation((id: string) => (
+      id === 'second'
+        ? new Promise((resolve) => { finishSecond = resolve })
+        : Promise.resolve(rows.find((r) => r.id === id))
+    ))
+    const { user, open } = await openPanel(rows)
+
+    await user.click(open[0])
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: t('transactions.saveAndNext') }))
+    await waitFor(() => expect(api.transactions.get).toHaveBeenCalledWith('second'))
+
+    // Leave while the next row is still loading, and open another one.
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await user.click(screen.getAllByRole('button', { name: t('dashboard.drillDownOpenTransaction') })[2])
+    expect(await within(await screen.findByRole('dialog')).findByDisplayValue('Third row')).toBeInTheDocument()
+
+    await act(async () => finishSecond(rows[1]))
+    expect(within(screen.getByRole('dialog')).getByDisplayValue('Third row')).toBeInTheDocument()
+  })
 })
