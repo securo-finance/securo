@@ -1,5 +1,6 @@
 """The expected-income routes: GET reads, PUT writes under the write gate."""
 import uuid
+from decimal import Decimal
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -110,6 +111,24 @@ async def test_a_currency_longer_than_the_code_column_is_refused(client, auth_he
     )
     assert ok.status_code == 200, ok.text
     assert ok.json()["currency"] == "USD"
+
+
+@pytest.mark.asyncio
+async def test_an_amount_beyond_the_money_column_is_refused(client, auth_headers):
+    too_big = await client.put(
+        "/api/budgets/expected-income",
+        json={"month": _MONTH, "amount": "10000000000000.00"},
+        headers=auth_headers,
+    )
+    assert too_big.status_code == 422
+
+    boundary = await client.put(
+        "/api/budgets/expected-income",
+        json={"month": _MONTH, "amount": "9999999999999.99"},
+        headers=auth_headers,
+    )
+    assert boundary.status_code == 200, boundary.text
+    assert Decimal(str(boundary.json()["amount"])) == Decimal("9999999999999.99")
 
 
 @pytest.mark.asyncio
