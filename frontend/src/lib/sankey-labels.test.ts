@@ -102,7 +102,8 @@ describe('placeColumnLabels (#287)', () => {
     )
     const edges = placed.map((p) => ({
       top: p.y - LABEL_LINE_HEIGHT / 2,
-      bottom: p.y + (p.lines.length - 1) * LABEL_LINE_HEIGHT + LABEL_LINE_HEIGHT / 2,
+      // Name lines, then the amount line, measured to its lower edge.
+      bottom: p.y + p.lines.length * LABEL_LINE_HEIGHT + LABEL_LINE_HEIGHT / 2,
     }))
     for (const edge of edges) {
       expect(edge.top).toBeGreaterThanOrEqual(8.5)
@@ -125,7 +126,8 @@ describe('placeColumnLabels (#287)', () => {
     )
     const blocks = placed.map((p) => ({
       top: p.y - LABEL_LINE_HEIGHT / 2,
-      bottom: p.y + (p.lines.length - 1) * LABEL_LINE_HEIGHT + LABEL_LINE_HEIGHT,
+      // Name lines, then the amount line, measured to its lower edge.
+      bottom: p.y + p.lines.length * LABEL_LINE_HEIGHT + LABEL_LINE_HEIGHT / 2,
     }))
     for (const block of blocks) {
       expect(block.top).toBeGreaterThanOrEqual(8.5)
