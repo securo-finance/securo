@@ -33,6 +33,7 @@ from app.providers.enable_banking import (
     _account_identifier,
     _entry_reference_external_id,
     _map_cash_account_type,
+    _repeat_external_id,
     _txn_fingerprint,
 )
 from app.providers.psu import PsuContext, psu_present
@@ -2090,6 +2091,96 @@ async def test_get_transactions_keeps_identical_entries_of_one_day(eb_keys):
             {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
         )
     assert [t.external_id for t in again] == [t.external_id for t in txns]
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_keeps_identical_entries_split_across_pages(eb_keys):
+    """Two identical purchases can straddle a page boundary, so the count of
+    a repeated id runs over the whole fetch, not one page: both are imported,
+    with the same ids on the next fetch (#1232)."""
+    provider = EnableBankingProvider()
+    coffee = {
+        "transaction_amount": {"amount": "3.20", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": "2026-05-10",
+    }
+    rented_bike = {
+        "transaction_amount": {"amount": "1.10", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": "2026-05-09",
+    }
+    pages = [
+        {
+            "transactions": {"booked": [], "pending": [dict(rented_bike), dict(coffee)]},
+            "continuation_key": "page-2",
+        },
+        {
+            "transactions": {"booked": [], "pending": [dict(coffee)]},
+            "continuation_key": "",
+        },
+    ]
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=pages[len(requests) - 1])
+
+    with _patch_client(provider, handler):
+        txns = await provider.get_transactions(
+            {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
+        )
+
+    assert len(requests) == 2
+    assert [t.amount for t in txns] == [Decimal("1.10"), Decimal("3.20"), Decimal("3.20")]
+    coffee_ids = [t.external_id for t in txns if t.amount == Decimal("3.20")]
+    assert coffee_ids[0] == _txn_fingerprint("acc-1", coffee)
+    assert coffee_ids[1] == _repeat_external_id(coffee_ids[0], 1)
+    assert provider.truncated_account_ids == set()
+
+    requests.clear()
+    with _patch_client(provider, handler):
+        again = await provider.get_transactions(
+            {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
+        )
+    assert [t.external_id for t in again] == [t.external_id for t in txns]
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_drops_a_page_served_twice(eb_keys, caplog):
+    """A broken cursor can serve a page already read with a fresh cursor
+    instead of looping. Its entries must not land twice (#1232)."""
+    provider = EnableBankingProvider()
+    entry = _flat_entry("BOOK", "10.00")
+    pages = [
+        {
+            "transactions": [dict(entry, entry_reference="ref-1")],
+            "continuation_key": "page-2",
+        },
+        {
+            "transactions": [dict(entry, entry_reference="ref-1")],
+            "continuation_key": "page-3",
+        },
+        {
+            "transactions": [dict(entry, entry_reference="ref-2")],
+            "continuation_key": "",
+        },
+    ]
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=pages[len(requests) - 1])
+
+    with _patch_client(provider, handler), caplog.at_level("WARNING"):
+        txns = await provider.get_transactions(
+            {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
+        )
+
+    # The repeated page ends the read: the page after it may well repeat too.
+    assert len(requests) == 2
+    assert [t.status for t in txns] == ["posted"]
+    assert provider.truncated_account_ids == {"acc-1"}
+    assert "pagination loop detected" in caplog.text
 
 
 @pytest.mark.asyncio
