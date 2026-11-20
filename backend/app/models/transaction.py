@@ -212,7 +212,6 @@ class Transaction(Base):
     matched_amount = cast(Optional[Decimal], None)
     matched_amount_primary = cast(Optional[Decimal], None)
     reporting_date = cast(Optional[_date], None)
-    settled_by = cast(list, [])
 
 
 # Safety net: `effective_date` is NOT NULL. For non-CC transactions it always

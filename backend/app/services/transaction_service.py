@@ -782,7 +782,9 @@ async def get_transactions(
         for settlement in settled.scalars():
             settled_by.setdefault(settlement.receiver_transaction_id, []).append(settlement)
         for tx in transactions:
-            tx.settled_by = settled_by.get(tx.id, [])
+            # A per-request field for TransactionRead, not a column; set with
+            # setattr so the model doesn't need to declare it.
+            setattr(tx, "settled_by", settled_by.get(tx.id, []))
 
         if filter_category_ids:
             # The part of each split row inside the filter, so a drill-down
