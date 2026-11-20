@@ -4,7 +4,7 @@ import { renderWithProviders, t } from '@/test/utils'
 import { localDateString } from '@/lib/date-utils'
 import type { Account } from '@/types'
 
-const timezone = vi.hoisted(() => ({ value: 'UTC' }))
+const timezone = vi.hoisted(() => ({ value: 'UTC' as string | undefined }))
 vi.mock('@/hooks/use-timezone', () => ({ useEffectiveTimezone: () => timezone.value }))
 vi.mock('@/contexts/auth-context', () => ({ useAuth: () => ({ user: null }) }))
 vi.mock('@/lib/api', async (importOriginal) => ({
@@ -91,6 +91,32 @@ it('allows a different date to be selected after changing the balance', () => {
   fireEvent.click(screen.getByRole('button', { name: t('common.save') }))
 
   expect(onSave.mock.calls[0][0]).toMatchObject({ balance: 1200, balance_date: '2026-07-15' })
+})
+
+it('restores the saved date when the balance returns to its saved value', () => {
+  const onSave = renderDialog(manual)
+
+  fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '1200' } })
+  fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '1000' } })
+
+  expect(screen.getByLabelText('balance date')).toHaveValue('2026-08-01')
+  fireEvent.click(screen.getByRole('button', { name: t('common.save') }))
+  expect(onSave.mock.calls[0][0]).not.toHaveProperty('balance_date')
+})
+
+it('waits for the workspace timezone before dating a changed balance', () => {
+  timezone.value = undefined
+  try {
+    const onSave = renderDialog(manual)
+
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '1200' } })
+
+    expect(screen.getByLabelText('balance date')).toHaveValue('2026-08-01')
+    fireEvent.click(screen.getByRole('button', { name: t('common.save') }))
+    expect(onSave.mock.calls[0][0]).not.toHaveProperty('balance_date')
+  } finally {
+    timezone.value = 'UTC'
+  }
 })
 
 it('keeps a selected date when entering a new account balance', () => {

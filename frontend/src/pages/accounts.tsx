@@ -971,6 +971,7 @@ export function AccountDialog({
   // or one without an opening balance.
   const initialBalanceDate = () => account?.balance_date ?? localDateString()
   const [balanceDate, setBalanceDate] = useState(initialBalanceDate)
+  const [balanceDatePicked, setBalanceDatePicked] = useState(false)
   const [creditLimit, setCreditLimit] = useState(account?.credit_limit?.toString() ?? '')
   const [statementCloseDay, setStatementCloseDay] = useState(account?.statement_close_day?.toString() ?? '')
   const [paymentDueDay, setPaymentDueDay] = useState(account?.payment_due_day?.toString() ?? '')
@@ -998,6 +999,7 @@ export function AccountDialog({
     setBalance(account?.balance?.toString() ?? '0')
     setCurrency(account?.currency ?? userCurrency)
     setBalanceDate(date)
+    setBalanceDatePicked(false)
     setCreditLimit(account?.credit_limit?.toString() ?? '')
     setStatementCloseDay(account?.statement_close_day?.toString() ?? '')
     setPaymentDueDay(account?.payment_due_day?.toString() ?? '')
@@ -1005,6 +1007,10 @@ export function AccountDialog({
     setLoanTerms(loanTermsFrom(account, account?.currency ?? userCurrency))
     setTermsOpen(account?.loan_original_amount != null)
   }
+  // A changed balance defaults to today in the workspace, once its timezone is known.
+  const autoBalanceDate = !!account && !balanceDatePicked && !!timeZone
+    && balance !== '' && parseFloat(balance) !== account.balance
+  const effectiveBalanceDate = autoBalanceDate ? todayInTimezone(timeZone) : balanceDate
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -1025,12 +1031,12 @@ export function AccountDialog({
             }
             const isConnected = !!account?.connection_id
             // Editing: only move the opening balance when the date was changed.
-            const dateChanged = !account || balanceDate !== formSource?.balanceDate
+            const dateChanged = !account || effectiveBalanceDate !== formSource?.balanceDate
             onSave({
               ...(!isConnected && {
                 name,
                 balance: parseFloat(balance),
-                ...(dateChanged && { balance_date: balanceDate }),
+                ...(dateChanged && { balance_date: effectiveBalanceDate }),
                 currency,
               }),
               type,
@@ -1123,17 +1129,17 @@ export function AccountDialog({
                     step="0.01"
                     min={type === 'credit_card' || type === 'loan' ? '0' : undefined}
                     value={balance}
-                    onChange={(e) => {
-                      setBalance(e.target.value)
-                      if (account) setBalanceDate(todayInTimezone(timeZone))
-                    }}
+                    onChange={(e) => setBalance(e.target.value)}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>{t('accounts.balanceDate')}</Label>
                   <DatePickerInput
-                    value={balanceDate}
-                    onChange={setBalanceDate}
+                    value={effectiveBalanceDate}
+                    onChange={(date) => {
+                      setBalanceDate(date)
+                      setBalanceDatePicked(true)
+                    }}
                     className="w-full justify-start"
                   />
                 </div>
