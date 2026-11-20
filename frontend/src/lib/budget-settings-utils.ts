@@ -125,3 +125,21 @@ export function planBudgetChange({
   }
   return [{ type: 'create', data: { category_id: categoryId, amount, month, is_recurring: false } }]
 }
+
+/**
+ * The month's planned total over the *saved* limits — the one source for
+ * that figure; the draft total the save bar shows lives apart, on the page.
+ *
+ * `savedBudgets` are the resolved rows of `GET /api/budgets?month=`: month
+ * overrides and recurring defaults are already merged, one row per budgetable
+ * category. A tombstone row carries amount zero and sums zero, masking the
+ * series it stops. The effective limit today is only `amount` — PR 2 switches
+ * this to min/max, PR 3 adds group budgets, PR 4 dedups overlapping scopes,
+ * and the income-share epic reads a derived limit here.
+ *
+ * The API sends decimals as strings; `Number` reads them, and every stored
+ * row counts once.
+ */
+export function savedPlannedTotal(savedBudgets: Budget[]): number {
+  return savedBudgets.reduce((total, budget) => total + Number(budget.amount), 0)
+}

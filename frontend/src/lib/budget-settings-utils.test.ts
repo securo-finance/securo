@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Budget } from '@/types'
-import { normalizeBudgetComparisonRows, parseBudgetDraft, planBudgetChange } from '@/lib/budget-settings-utils'
+import { normalizeBudgetComparisonRows, parseBudgetDraft, planBudgetChange, savedPlannedTotal } from '@/lib/budget-settings-utils'
 
 function budget(overrides: Partial<Budget>): Budget {
   return { id: 'b1', user_id: 'u', category_id: 'food', amount: 100, month: '2026-08-01', is_recurring: true, ...overrides }
@@ -30,6 +30,28 @@ describe('budget settings helpers', () => {
     }])[0]).toMatchObject({ budget_amount: 1200.5, actual_amount: 2.25, percentage_used: 0.2 })
   })
 
+})
+
+describe('savedPlannedTotal', () => {
+  it('sums the saved limits of the resolved rows once', () => {
+    // The API sends decimals as strings; Number reads them.
+    expect(savedPlannedTotal([
+      budget({ category_id: 'food', amount: '1200.50' as unknown as number }),
+      budget({ category_id: 'bus', amount: 80, id: 'b2' }),
+    ])).toBe(1280.5)
+  })
+
+  it('counts a zero tombstone as zero so the masked series adds nothing', () => {
+    expect(savedPlannedTotal([
+      budget({ category_id: 'food', amount: 0 }),
+      budget({ category_id: 'bus', amount: 80, id: 'b2' }),
+    ])).toBe(80)
+  })
+
+  it('reads only the stored rows it is given — no draft is involved', () => {
+    expect(savedPlannedTotal([])).toBe(0)
+    expect(savedPlannedTotal([budget({ amount: 0 })])).toBe(0)
+  })
 })
 
 describe('planBudgetChange', () => {
