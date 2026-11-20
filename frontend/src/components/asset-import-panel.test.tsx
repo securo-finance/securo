@@ -194,8 +194,8 @@ describe('AssetImportPanel column mapping', () => {
 
 /** The body row that holds a given file row number. */
 function bodyRow(rendered: ReturnType<typeof renderWithProviders>, row: number): HTMLTableRowElement {
-  const found = [...rendered.container.querySelectorAll('tbody tr')].find(
-    (tr) => tr.querySelector('td')?.textContent?.includes(`#${row}`),
+  const found = [...rendered.container.querySelectorAll('tbody tr')].find((tr) =>
+    tr.textContent?.includes(`#${row}`),
   )
   expect(found).not.toBeUndefined()
   return found as HTMLTableRowElement
