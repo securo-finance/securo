@@ -4019,10 +4019,6 @@ async def sync_connection(
         # read. Providers that don't expose an on-demand refresh return
         # "skipped" via the default implementation and we proceed normally.
         if trigger_provider_refresh:
-            connection.settings = {
-                **conn_settings,
-                "last_provider_refresh_at": datetime.now(timezone.utc).isoformat(),
-            }
             outcome = await provider.trigger_refresh(credentials)
             if outcome == "needs_user_action":
                 # Surfacing reconnect immediately is better than silently
@@ -4033,6 +4029,16 @@ async def sync_connection(
                     "Provider needs the user to reconnect before fetching fresh data",
                     code="credentials_invalid",
                 )
+            if outcome == "refreshed":
+                # Only a refresh the provider actually ran may rest this
+                # connection: the beat reads this stamp to decide whether to
+                # ask again, so recording an attempt that was skipped or
+                # failed would keep it quiet for a whole
+                # PROVIDER_REFRESH_THRESHOLD (#1252).
+                connection.settings = {
+                    **conn_settings,
+                    "last_provider_refresh_at": datetime.now(timezone.utc).isoformat(),
+                }
             # "refreshed", "skipped", or "failed" all fall through to a read.
             # On "failed" we read whatever cached copy the provider has —
             # better than aborting the entire sync over a transient hiccup.
