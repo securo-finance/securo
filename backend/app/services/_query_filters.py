@@ -516,7 +516,12 @@ async def _owner_split_rows(
 ):
     """One row per posted split transaction of the user's: the non-owner
     shares summed in the row's own currency, next to what is needed to
-    bring them into the primary currency."""
+    bring them into the primary currency.
+
+    A credit that settles group debts (their receiver transaction) gives a
+    row too: the settled part is money paid back, not income, the way a
+    settlement's own credit never counts. Any remainder stays income."""
+    from app.models.group_settlement import GroupSettlement
     from app.models.transaction_split import TransactionSplit
 
     date_col = reporting_date_col("accrual" if use_effective_date else "cash")
@@ -529,28 +534,30 @@ async def _owner_split_rows(
         Transaction.amount_primary,
         Transaction.date,
     )
+    filters = (
+        Transaction.user_id == user_id,
+        *([Transaction.workspace_id == workspace_id] if workspace_id is not None else []),
+        *extra_filters,
+        Transaction.source != "opening_balance",
+        date_col >= month_start,
+        date_col < month_end,
+        date_col <= app_today(),
+        Transaction.status == "posted",
+        counts_as_user_pnl(Transaction.category_id),
+    )
     result = await session.execute(
         select(*columns, func.sum(TransactionSplit.share_amount))
         .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
-        .where(
-            Transaction.user_id == user_id,
-            *(
-                [Transaction.workspace_id == workspace_id]
-                if workspace_id is not None
-                else []
-            ),
-            *extra_filters,
-            TransactionSplit.group_member_id.notin_(_viewer_member_ids(user_id)),
-            Transaction.source != "opening_balance",
-            date_col >= month_start,
-            date_col < month_end,
-            date_col <= app_today(),
-            Transaction.status == "posted",
-            counts_as_user_pnl(Transaction.category_id),
-        )
+        .where(*filters, TransactionSplit.group_member_id.notin_(_viewer_member_ids(user_id)))
         .group_by(*columns)
     )
-    return result.all()
+    settled = await session.execute(
+        select(*columns, func.sum(GroupSettlement.amount))
+        .join(Transaction, GroupSettlement.receiver_transaction_id == Transaction.id)
+        .where(*filters, Transaction.type == "credit")
+        .group_by(*columns)
+    )
+    return [*result.all(), *settled.all()]
 
 
 async def _others_share_in_primary(

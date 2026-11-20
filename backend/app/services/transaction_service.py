@@ -34,6 +34,7 @@ from app.models.account_card import AccountCard
 from app.models.bank_connection import BankConnection
 from app.models.category import Category
 from app.models.group import Group, GroupMember
+from app.models.group_settlement import GroupSettlement
 from app.models.mortgage_payment_allocation import (
     MORTGAGE_PRINCIPAL_SOURCE,
     MortgagePaymentAllocation,
@@ -771,6 +772,24 @@ async def get_transactions(
         # by `group_id`, a linked member sees the owner's transactions
         # and the frontend needs `is_shared` to lock them from edits.
         await _tag_shared_view(session, transactions, user_id, workspace_id)
+        # Paybacks recorded on these rows, so reopening one shows it.
+        # Only on the viewer's own rows: another member's row could point at
+        # a group the viewer can't see.
+        settled = await session.execute(
+            select(GroupSettlement).where(
+                GroupSettlement.workspace_id == workspace_id,
+                GroupSettlement.receiver_transaction_id.in_(
+                    [tx.id for tx in transactions if tx.user_id == user_id]
+                ),
+            )
+        )
+        settled_by: dict[uuid.UUID | None, list[GroupSettlement]] = {}
+        for settlement in settled.scalars():
+            settled_by.setdefault(settlement.receiver_transaction_id, []).append(settlement)
+        for tx in transactions:
+            # A per-request field for TransactionRead, not a column; set with
+            # setattr so the model doesn't need to declare it.
+            setattr(tx, "settled_by", settled_by.get(tx.id, []))
 
         if filter_category_ids:
             # The part of each split row inside the filter, so a drill-down
@@ -2143,6 +2162,8 @@ async def update_transaction(
     update_data.pop("splits", None)
     lines_payload = data.category_lines if "category_lines" in update_data else None
     update_data.pop("category_lines", None)
+    payback_payload = data.payback if "payback" in update_data else None
+    update_data.pop("payback", None)
     _normalize_flag_update(transaction, update_data)
     _check_category_lines_update(transaction, update_data, lines_payload)
 
@@ -2350,6 +2371,32 @@ async def update_transaction(
     if amount_changed and _is_installment(transaction):
         await session.flush()
         await _resync_installment_series_total(session, workspace_id, transaction)
+
+    # A payback is checked against the amount saved above, in the same commit.
+    from app.services import settlement_service
+
+    if payback_payload is not None:
+        await session.flush()
+        await settlement_service.replace_receiver_settlements(
+            session, transaction, payback_payload, workspace_id, user_id
+        )
+    if {"amount", "currency", "type"} & update_data.keys():
+        # Every row the edit reached, and the other leg of a transfer, which
+        # follows the amount.
+        await session.flush()
+        reached = list(rows)
+        pair_ids = [row.transfer_pair_id for row in rows if row.transfer_pair_id]
+        if pair_ids:
+            reached += (
+                await session.execute(
+                    select(Transaction).where(
+                        Transaction.transfer_pair_id.in_(pair_ids),
+                        Transaction.id.notin_([row.id for row in rows]),
+                    )
+                )
+            ).scalars().all()
+        for row in reached:
+            await settlement_service.check_receiver_settlements(session, row)
 
     await session.commit()
     await session.refresh(transaction, ["category", "payee_entity", "splits", "category_lines"])

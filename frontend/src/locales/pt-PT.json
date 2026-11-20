@@ -2728,6 +2728,7 @@
     "shareEqual": "Igual",
     "shareExact": "Valores manuais",
     "sharePercent": "Porcentagens",
+    "shareSettlement": "Reembolso (acerto)",
     "percentSum": "Soma: {{total}}%",
     "amountSum": "Soma: {{total}} / {{target}} {{currency}}",
     "equalHint": "Cada membro selecionado recebe uma parcela igual.",

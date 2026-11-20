@@ -2728,6 +2728,7 @@
     "shareEqual": "Igual",
     "shareExact": "Importes exactos",
     "sharePercent": "Porcentajes",
+    "shareSettlement": "Devolución (liquidación)",
     "percentSum": "Suma: {{total}}%",
     "amountSum": "Suma: {{total}} / {{target}} {{currency}}",
     "equalHint": "Cada miembro seleccionado obtiene una parte igual.",

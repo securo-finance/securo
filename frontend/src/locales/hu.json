@@ -2724,6 +2724,7 @@
     "shareEqual": "Egyenlő",
     "shareExact": "Pontos összegek",
     "sharePercent": "Százalékok",
+    "shareSettlement": "Visszafizetés (kiegyenlítés)",
     "percentSum": "Összesen: {{total}}%",
     "amountSum": "Összesen: {{total}} / {{target}} {{currency}}",
     "equalHint": "Minden kiválasztott tag egyenlő részt kap.",

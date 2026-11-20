@@ -2749,6 +2749,7 @@
     "shareEqual": "Порівну",
     "shareExact": "Точні суми",
     "sharePercent": "Відсотки",
+    "shareSettlement": "Повернення (розрахунок)",
     "percentSum": "Сума: {{total}}%",
     "amountSum": "Сума: {{total}} / {{target}} {{currency}}",
     "equalHint": "Кожен обраний учасник отримує рівну частку.",

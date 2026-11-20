@@ -2728,6 +2728,7 @@
     "shareEqual": "Uguale",
     "shareExact": "Importi esatti",
     "sharePercent": "Percentuali",
+    "shareSettlement": "Rimborso (saldo)",
     "percentSum": "Somma: {{total}}%",
     "amountSum": "Somma: {{total}} / {{target}} {{currency}}",
     "equalHint": "Ogni membro selezionato riceve una quota uguale.",

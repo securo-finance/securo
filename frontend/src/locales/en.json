@@ -2724,6 +2724,7 @@
     "shareEqual": "Equal",
     "shareExact": "Exact amounts",
     "sharePercent": "Percentages",
+    "shareSettlement": "Payback (settlement)",
     "percentSum": "Sum: {{total}}%",
     "amountSum": "Sum: {{total}} / {{target}} {{currency}}",
     "equalHint": "Each selected member gets an equal share.",

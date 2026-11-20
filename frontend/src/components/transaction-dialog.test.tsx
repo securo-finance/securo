@@ -468,6 +468,116 @@ it('reopens a transaction split among people with its members still selected', a
   expect(screen.getByDisplayValue('Trip')).toBeInTheDocument()
 })
 
+it('records an incoming transaction as a payback from the members picked', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  const member = (id: string, name: string, is_self = false) => ({ id, name, is_self })
+  const trip = { id: 'g1', name: 'Trip', is_owner: true, members: [member('m-me', 'Me', true), member('m-jara', 'Jara'), member('m-alatz', 'Alatz')] }
+  vi.spyOn(groups, 'list').mockResolvedValue([trip] as never)
+  vi.spyOn(groups, 'get').mockResolvedValue(trip as never)
+  const onSave = vi.fn()
+  const { user } = renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture('unused', {
+        id: 'tx-in', type: 'credit', amount: 66.01, source: 'sync', transfer_pair_id: null,
+      })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      onSave={onSave}
+      loading={false}
+      error={null}
+      isSynced
+    />,
+  )
+
+  await user.click(screen.getByRole('checkbox', { name: t('splitGroups.splitTransaction') }))
+  await user.selectOptions(await screen.findByDisplayValue(t('splitGroups.shareEqual')), 'settlement')
+  await user.click(await screen.findByRole('checkbox', { name: 'Jara' }))
+  await user.click(screen.getByRole('checkbox', { name: 'Alatz' }))
+  // You receive the payback, so you are not offered as a payer.
+  expect(screen.queryByText('Me')).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+  await vi.waitFor(() => expect(onSave).toHaveBeenCalled())
+  // The payback goes with the transaction's own save, like splits.
+  expect(onSave.mock.calls[0][0].payback).toEqual({
+    group_id: 'g1',
+    to_member_id: 'm-me',
+    payers: [{ member_id: 'm-jara', amount: 33.01 }, { member_id: 'm-alatz', amount: 33 }],
+  })
+  expect(onSave.mock.calls[0][0]).not.toHaveProperty('splits')
+})
+
+it('reopens a payback with its payers, and replaces it only when it changes', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  const trip = { id: 'g1', name: 'Trip', is_owner: true, members: [{ id: 'm-me', name: 'Me', is_self: true }, { id: 'm-jara', name: 'Jara', is_self: false }] }
+  vi.spyOn(groups, 'list').mockResolvedValue([trip] as never)
+  vi.spyOn(groups, 'get').mockResolvedValue(trip as never)
+  const onSave = vi.fn()
+  const { user } = renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture('unused', {
+        id: 'tx-in', type: 'credit', amount: 20, source: 'sync', transfer_pair_id: null,
+        settled_by: [{ id: 'set-1', group_id: 'g1', from_member_id: 'm-jara', amount: 20 }],
+      })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      onSave={onSave}
+      loading={false}
+      error={null}
+    />,
+  )
+
+  expect(screen.getByRole('checkbox', { name: t('splitGroups.splitTransaction') })).toBeChecked()
+  expect(await screen.findByRole('checkbox', { name: 'Jara' })).toBeChecked()
+  expect(screen.getByDisplayValue(t('splitGroups.shareSettlement'))).toBeInTheDocument()
+  // Saving it unchanged leaves the settlement as it is.
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+  await vi.waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+  expect(onSave.mock.calls[0][0]).not.toHaveProperty('payback')
+
+  // Turning it off removes the settlement; the transaction stays.
+  await user.click(screen.getByRole('checkbox', { name: t('splitGroups.splitTransaction') }))
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+  await vi.waitFor(() => expect(onSave).toHaveBeenCalledTimes(2))
+  expect(onSave.mock.calls[1][0].payback).toEqual({ payers: [] })
+})
+
+it('leaves the payback of a credit a settlement created alone when it is saved', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  const onSave = vi.fn()
+  const { user } = renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture('unused', {
+        id: 'tx-acerto', type: 'credit', amount: 20, source: 'settlement', transfer_pair_id: null,
+        settled_by: [{ id: 'set-1', group_id: 'g1', from_member_id: 'm-jara', amount: 20 }],
+      })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      onSave={onSave}
+      loading={false}
+      error={null}
+    />,
+  )
+
+  // The split section doesn't show for it, so saving must not read that as a removal.
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+  await vi.waitFor(() => expect(onSave).toHaveBeenCalled())
+  expect(onSave.mock.calls[0][0]).not.toHaveProperty('payback')
+})
+
 function splitFixture(): Transaction {
   const food = { id: 'cat-food', name: 'Food', icon: 'utensils', color: '#f59e0b' }
   const home = { id: 'cat-home', name: 'Home', icon: 'house', color: '#3b82f6' }

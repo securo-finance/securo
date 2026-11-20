@@ -108,6 +108,18 @@ class TransactionCreate(TransactionBase):
         return self
 
 
+class TransactionPaybackPayer(BaseModel):
+    member_id: uuid.UUID
+    amount: Decimal = Field(gt=0, decimal_places=2)
+
+
+class TransactionPaybackInput(BaseModel):
+    """Group members paying back an incoming transaction, one settlement each."""
+    group_id: Optional[uuid.UUID] = None
+    to_member_id: Optional[uuid.UUID] = None
+    payers: list[TransactionPaybackPayer] = []
+
+
 class TransactionUpdate(BaseModel):
     description: Optional[str] = None
     amount: Optional[Decimal] = None
@@ -144,6 +156,9 @@ class TransactionUpdate(BaseModel):
     # When provided, replaces the transaction's splits wholesale. Pass
     # an object with an empty `splits` list to clear them.
     splits: Optional[TransactionSplitsInput] = None
+    # When provided, replaces the settlements this credit pays back, like
+    # `splits`; an empty `payers` list removes them.
+    payback: Optional[TransactionPaybackInput] = None
     # When provided, replaces the category split wholesale; an empty `lines`
     # list undoes it. Required alongside a new `amount` on a split row.
     category_lines: Optional[TransactionCategoryLinesInput] = None
@@ -224,6 +239,15 @@ class TransactionTransferCounterpart(BaseModel):
     account_name: str
 
 
+class TransactionSettledBy(BaseModel):
+    id: uuid.UUID
+    group_id: uuid.UUID
+    from_member_id: uuid.UUID
+    amount: Decimal
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class TransactionRead(TransactionBase):
     id: uuid.UUID
     user_id: uuid.UUID
@@ -288,6 +312,8 @@ class TransactionRead(TransactionBase):
     # is_self member at request time. Helps the UI show who paid
     # instead of a generic "shared" badge.
     parent_owner_name: Optional[str] = None
+    # Settlements this credit pays back (it is their receiver transaction).
+    settled_by: list["TransactionSettledBy"] = []
     is_ignored: bool = False
     exclude_from_pnl: bool = False
     is_flagged: bool = False

@@ -154,4 +154,25 @@ describe('TransactionDrillDown', () => {
     expect(await screen.findByText('+$50.00')).toBeInTheDocument()
     expect(screen.getByText(/part of \$100\.00/)).toBeInTheDocument()
   })
+
+  it('leaves the settled part of a credit out of income, keeping the rest', async () => {
+    vi.mocked(transactions.list).mockResolvedValue({
+      items: [{
+        id: 'bizum', description: 'Transfer from a friend', date: '2026-11-05', type: 'credit', amount: 40,
+        amount_primary: 40, currency: 'USD', status: 'posted', category: null, attachment_count: 0,
+        splits: [], is_shared: false, user_id: 'me',
+        settled_by: [{ id: 's1', group_id: 'g1', from_member_id: 'm1', amount: 30 }],
+      }],
+      total: 1,
+    } as never)
+
+    renderWithProviders(
+      <TransactionDrillDown
+        filter={{ title: 'Income', type: 'credit', from: '2026-11-01', to: '2026-11-30', ownShare: true, ownShareCredits: true }}
+        onClose={vi.fn()}
+      />,
+    )
+    expect(await screen.findByText('+$10.00')).toBeInTheDocument()
+    expect(screen.getByText(/part of \$40\.00/)).toBeInTheDocument()
+  })
 })

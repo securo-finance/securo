@@ -45,7 +45,7 @@ import { PayeeFormDialog } from '@/components/payee-form-dialog'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { TransactionAttachments } from '@/components/transaction-attachments'
 import type { AttachmentPreview } from '@/components/transaction-attachments'
-import { TransactionSplitsSection } from '@/components/transaction-splits-section'
+import { TransactionSplitsSection, type TransactionSettleInput } from '@/components/transaction-splits-section'
 import { buildInstallmentSeriesInput, hasNonStatusChange, isManualInstallmentSeriesRow } from '@/lib/installment-series'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, CategoryLineShareType, Rule, RuleCondition, RuleConditionNode, Payee } from '@/types'
@@ -570,6 +570,11 @@ function TransactionForm({
   // Seeded from the transaction's existing splits so the edit dialog
   // round-trips them rather than appearing empty.
   const [splitsValid, setSplitsValid] = useState(true)
+  // A payback recorded from an incoming transaction (see TransactionSplitsSection).
+  // Undefined until the section reports one, so a section that never showed
+  // leaves the transaction's payback alone.
+  const [settle, setSettle] = useState<TransactionSettleInput | null | undefined>(undefined)
+  const singleGroupPayback = new Set((transaction?.settled_by ?? []).map((s) => s.group_id)).size <= 1
   const [splits, setSplits] = useState<TransactionSplitsInput | null>(() => {
     const existing = (seed as Transaction | null | undefined)?.splits
     if (!existing || existing.length === 0) return null
@@ -1031,6 +1036,18 @@ function TransactionForm({
           : hadInitialLines
             ? { category_lines: { share_type: 'exact', lines: [] } }
             : {}
+        // The payback goes with the save, like splits, and only when its group
+        // or payers changed, so amounts already recorded are kept.
+        // A new amount re-splits a payback that covered the whole transaction.
+        const before = transaction?.settled_by ?? []
+        const payersKey = (groupId: string | undefined, ids: string[]) => `${groupId}:${[...ids].sort().join()}`
+        const coveredWhole = Math.abs(before.reduce((sum, s) => sum + Number(s.amount), 0) - Number(transaction?.amount)) < 0.005
+        const paybackPayload: Pick<TransactionEditPayload, 'payback'> = settle !== undefined && !splitByCategory
+          && (payersKey(before[0]?.group_id, before.map((s) => s.from_member_id))
+            !== payersKey(settle?.group_id, settle?.payers.map((p) => p.member_id) ?? [])
+            || (!!settle && coveredWhole && parsedAmount != null && Number(transaction?.amount) !== parsedAmount))
+          ? { payback: settle ? { group_id: settle.group_id, to_member_id: settle.to_member_id, payers: settle.payers } : { payers: [] } }
+          : {}
         const pnlExclusionPayload = transaction
           ? { exclude_from_pnl: excludeFromReports }
           : {}
@@ -1044,6 +1061,7 @@ function TransactionForm({
               ...pnlExclusionPayload,
               ...overridePayload,
               ...splitsPayload,
+              ...paybackPayload,
               ...categoryLinesPayload,
             } as TransactionEditPayload
           : {
@@ -1064,6 +1082,7 @@ function TransactionForm({
               ...fxFields,
               ...overridePayload,
               ...splitsPayload,
+              ...paybackPayload,
               ...categoryLinesPayload,
             } as TransactionEditPayload
         const recurringData = isCreating && isRecurring
@@ -1751,6 +1770,9 @@ function TransactionForm({
           value={splits}
           onChange={setSplits}
           onValidityChange={setSplitsValid}
+          // A payback spread over several groups is managed from the group pages.
+          settledBy={singleGroupPayback ? transaction?.settled_by : undefined}
+          onSettle={transaction?.type === 'credit' && singleGroupPayback ? setSettle : undefined}
         />
       )}
 
