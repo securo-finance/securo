@@ -749,3 +749,64 @@ async def test_category_transfer_refuses_limits_in_two_currencies_without_a_rate
         (True, Decimal("100.00"), "USD"),
     ]
     assert await session.get(Category, source_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_category_transfer_does_not_commit_halfway_while_looking_up_a_rate(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace,
+    test_account: Account,
+    test_categories: list[Category],
+    monkeypatch,
+):
+    """A provider that answers without the BRL rate must not commit the moves made so far.
+
+    The on-demand sync commits the session it is given. Called in the middle of
+    a transfer, it would store the repointed transactions, and the refusal that
+    follows would leave them in the destination with the source still there.
+    """
+    source, destination = test_categories[:2]
+    month = date(2025, 3, 1)
+    transaction = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=test_account.id,
+        category_id=source.id,
+        description="UBER TRIP",
+        amount=Decimal("25.50"),
+        date=month,
+        type="debit",
+        source="manual",
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(transaction)
+    await session.commit()
+    await _make_budget(
+        session, test_user, test_workspace, source.id,
+        amount="100", month=month, is_recurring=True, currency="USD",
+    )
+    await _make_budget(
+        session, test_user, test_workspace, destination.id,
+        amount="1000", month=month, is_recurring=True, currency="BRL",
+    )
+    source_id, destination_id, transaction_id = source.id, destination.id, transaction.id
+
+    async def provider_without_brl(sync_session, *_args, **_kwargs):
+        await sync_session.commit()
+        return 1
+
+    monkeypatch.setattr("app.services.fx_rate_service.sync_rates", provider_without_brl)
+
+    response = await client.delete(
+        f"/api/categories/{source_id}",
+        headers=auth_headers,
+        params={"transfer_to_category_id": str(destination_id)},
+    )
+
+    assert response.status_code == 400
+    session.expire_all()
+    assert (await _reload(session, Transaction, transaction_id)).category_id == source_id
+    assert await session.get(Category, source_id) is not None

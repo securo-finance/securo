@@ -472,9 +472,12 @@ async def _merge_budgets(
                     total += amount
                     continue
                 # A missing rate must stop the move: the 1:1 read fallback
-                # would store US$ 100 onto R$ 1,000 as 1,100.
+                # would store US$ 100 onto R$ 1,000 as 1,100. Stored rates
+                # only: the on-demand sync commits the session, which would
+                # keep the moves made so far even when the transfer is refused.
                 converted, _ = await convert_or_none(
-                    session, amount, share_currency, currency, min(month, app_today())
+                    session, amount, share_currency, currency, min(month, app_today()),
+                    allow_fetch=False,
                 )
                 if converted is None:
                     raise CategoryTransferError(_MERGE_NEEDS_RATE)
