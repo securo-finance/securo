@@ -109,6 +109,19 @@ backend. When a load balancer in front of the controller also appends to
 `X-Forwarded-For`, set `"2"`; set it too low and every visitor shares the
 address of the nearest proxy, and with it one rate-limit bucket.
 
+A hop is only crossed while the address in hand is in `TRUSTED_PROXY_NETWORKS`
+(loopback and the private ranges by default). If that load balancer reaches
+the controller from a public address, `"2"` alone still stops at the load
+balancer and every visitor keeps sharing its bucket: add its address range to
+`TRUSTED_PROXY_NETWORKS` through `backend.extraEnv` as well.
+
+Trusting a hop also means the backend reads `X-Forwarded-For` from any peer in
+those private ranges, which includes any pod in the cluster that reaches the
+backend Service directly. The chart renders no NetworkPolicy, so on a cluster
+that runs workloads you do not trust, restrict ingress to the backend pods to
+the Ingress controller or gateway (and the frontend pods); otherwise such a pod
+can pick a new rate-limit bucket on every request.
+
 ### Extra environment variables, volumes and volume mounts
 
 `backend`, `celeryWorker`, `celeryBeat` and `migration` each accept `extraEnv`,
