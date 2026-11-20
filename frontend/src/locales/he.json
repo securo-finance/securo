@@ -2127,6 +2127,7 @@
     "summaryHoldings": "{{created}} אחזקות נוצרו, {{matched}} הותאמו",
     "summarySkipped": "{{count}} כבר יובאו",
     "rowsSkipped": "{{count}} שורות ידולגו",
+    "reasonColumn": "סיבה",
     "rowError": "שורה {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "ועוד {{count}}",
     "moreRows": "ועוד {{count}} פקודות",

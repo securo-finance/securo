@@ -2115,6 +2115,7 @@
     "summaryHoldings": "{{created}} actifs créés, {{matched}} trouvés",
     "summarySkipped": "{{count}} déjà importés",
     "rowsSkipped": "{{count}} lignes seront ignorées",
+    "reasonColumn": "Motif",
     "rowError": "Ligne {{row}} ({{ticker}}) : {{reason}}",
     "moreErrors": "et {{count}} de plus",
     "moreRows": "et {{count}} ordres de plus",

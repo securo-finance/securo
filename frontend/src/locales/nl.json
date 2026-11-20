@@ -2113,6 +2113,7 @@
     "summaryHoldings": "{{created}} holdings gemaakt, {{matched}} gematcht",
     "summarySkipped": "{{count}} is al geïmporteerd",
     "rowsSkipped": "{{count}} rijen worden overgeslagen",
+    "reasonColumn": "Reden",
     "rowError": "Rij {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "en {{count}} meer",
     "moreRows": "en {{count}} meer bestellingen",

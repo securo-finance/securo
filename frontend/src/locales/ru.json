@@ -2136,6 +2136,7 @@
     "summaryHoldings": "создано позиций: {{created}}, найдено: {{matched}}",
     "summarySkipped": "уже импортировано: {{count}}",
     "rowsSkipped": "Строк будет пропущено: {{count}}",
+    "reasonColumn": "Причина",
     "rowError": "Строка {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "и ещё {{count}}",
     "moreRows": "и ещё {{count}} заявок",

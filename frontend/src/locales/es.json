@@ -2115,6 +2115,7 @@
     "summaryHoldings": "{{created}} activos creados, {{matched}} encontrados",
     "summarySkipped": "{{count}} ya importadas",
     "rowsSkipped": "{{count}} filas se omitirán",
+    "reasonColumn": "Motivo",
     "rowError": "Fila {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "y {{count}} más",
     "moreRows": "y {{count}} órdenes más",

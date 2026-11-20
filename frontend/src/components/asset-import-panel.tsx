@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, Download, FileText, Info, Settings2, Upload, X } from 'lucide-react'
 
 import { assets as assetsApi, assetGroups as assetGroupsApi } from '@/lib/api'
-import type { AssetImportPreview, AssetOrderImport } from '@/types'
+import type { AssetImportPreview, AssetImportRowError, AssetOrderImport } from '@/types'
 import { ImportHistory } from '@/components/import-history'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -146,6 +146,16 @@ export function AssetImportPanel() {
   const rowErrors = preview?.errors ?? []
   const walletWarnings = preview?.warnings ?? []
   const needsMapping = !!preview?.parse_error
+  // Every row the file had that the import will not take, refused ones
+  // included, in the order the file lists them. A refused row is shown where
+  // the user expects to find it — in the list, next to the rows that do read —
+  // so a wrong column is something to look at, not a line in a footnote.
+  const tableRows: Array<
+    { row: number; order: AssetOrderImport } | { row: number; error: AssetImportRowError }
+  > = [
+    ...(preview?.orders ?? []).map((order) => ({ row: order.row, order })),
+    ...rowErrors.map((error) => ({ row: error.row, error })),
+  ].sort((a, b) => a.row - b.row)
   // Compact view of the explicit choices, shown in the collapsed bar so a
   // wrong column can be spotted without re-opening the grid.
   const mappingSummary = MAPPABLE_FIELDS.map(({ key }) =>
@@ -327,43 +337,26 @@ export function AssetImportPanel() {
           )}
 
           {rowErrors.length > 0 && (
-            <div className="border-b border-border bg-amber-500/10 px-4 py-3 sm:px-5">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-400">
-                  <AlertTriangle size={14} />
-                  {t('assetImport.rowsSkipped', { count: rowErrors.length })}
-                </p>
-                {/* The usual cause of a skipped row is a column picked for the
-                    wrong field; send the user straight to the grid. */}
-                {!needsMapping && !mappingOpen && (
-                  <button
-                    type="button"
-                    onClick={() => setMappingOpen(true)}
-                    className="shrink-0 text-xs font-medium text-primary hover:underline"
-                  >
-                    {t('assetImport.adjustMapping')}
-                  </button>
-                )}
-              </div>
-              <ul className="space-y-1 text-xs text-muted-foreground">
-                {rowErrors.slice(0, 8).map((err) => (
-                  <li key={`${err.row}-${err.reason}`}>
-                    {t('assetImport.rowError', {
-                      row: err.row,
-                      ticker: err.ticker ?? '—',
-                      reason: t(`assetImport.reason.${err.reason}`, err.reason),
-                    })}
-                    {err.detail ? ` (${err.detail})` : ''}
-                  </li>
-                ))}
-                {rowErrors.length > 8 && (
-                  <li>{t('assetImport.moreErrors', { count: rowErrors.length - 8 })}</li>
-                )}
-              </ul>
+            <div className="flex items-center justify-between gap-3 border-b border-border bg-amber-500/10 px-4 py-3 sm:px-5">
+              <p className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-400">
+                <AlertTriangle size={14} />
+                {t('assetImport.rowsSkipped', { count: rowErrors.length })}
+              </p>
+              {/* The usual cause of a skipped row is a column picked for the
+                  wrong field; send the user straight to the grid. */}
+              {!needsMapping && !mappingOpen && (
+                <button
+                  type="button"
+                  onClick={() => setMappingOpen(true)}
+                  className="shrink-0 text-xs font-medium text-primary hover:underline"
+                >
+                  {t('assetImport.adjustMapping')}
+                </button>
+              )}
             </div>
           )}
 
-          {importable > 0 && (
+          {tableRows.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
@@ -373,45 +366,68 @@ export function AssetImportPanel() {
                     <th className="px-3 py-2 text-start">{t('assetImport.field.kind')}</th>
                     <th className="px-3 py-2 text-end">{t('assetImport.field.quantity')}</th>
                     <th className="px-3 py-2 text-end">{t('assetImport.field.price')}</th>
-                    <th className="px-3 py-2 text-end sm:px-5">{t('assetImport.field.fee')}</th>
+                    <th className="px-3 py-2 text-end">{t('assetImport.field.fee')}</th>
+                    <th className="px-3 py-2 text-start sm:px-5">{t('assetImport.reasonColumn')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {preview.orders.slice(0, 50).map((order) => (
-                    <tr key={order.row}>
-                      <td className="px-3 py-1.5 font-medium sm:px-5">{order.ticker}</td>
-                      <td className="px-3 py-1.5">{order.date}</td>
-                      <td className="px-3 py-1.5">
-                        <span
-                          className={
-                            order.kind === 'split'
-                              ? 'text-muted-foreground'
-                              : order.kind === 'sell'
-                                ? 'text-rose-500'
-                                : 'text-emerald-500'
-                          }
-                        >
-                          {t(`assetImport.kind.${order.kind}`)}
-                        </span>
-                      </td>
-                      {order.kind === 'split' ? (
-                        <td colSpan={3} className="px-3 py-1.5 text-end tabular-nums sm:pe-5">
-                          {t('assetImport.splitRatio', { old: order.old_units, new: order.new_units })}
+                  {tableRows.slice(0, 50).map((entry) =>
+                    'order' in entry ? (
+                      <tr key={entry.row}>
+                        <td className="px-3 py-1.5 font-medium sm:px-5">{entry.order.ticker}</td>
+                        <td className="px-3 py-1.5">{entry.order.date}</td>
+                        <td className="px-3 py-1.5">
+                          <span
+                            className={
+                              entry.order.kind === 'split'
+                                ? 'text-muted-foreground'
+                                : entry.order.kind === 'sell'
+                                  ? 'text-rose-500'
+                                  : 'text-emerald-500'
+                            }
+                          >
+                            {t(`assetImport.kind.${entry.order.kind}`)}
+                          </span>
                         </td>
-                      ) : (
-                        <>
-                          <td className="px-3 py-1.5 text-end tabular-nums">{order.quantity}</td>
-                          <td className="px-3 py-1.5 text-end tabular-nums">{order.price}</td>
-                          <td className="px-3 py-1.5 text-end tabular-nums sm:px-5">{order.fee}</td>
-                        </>
-                      )}
-                    </tr>
-                  ))}
+                        {entry.order.kind === 'split' ? (
+                          <td colSpan={3} className="px-3 py-1.5 text-end tabular-nums sm:pe-5">
+                            {t('assetImport.splitRatio', {
+                              old: entry.order.old_units,
+                              new: entry.order.new_units,
+                            })}
+                          </td>
+                        ) : (
+                          <>
+                            <td className="px-3 py-1.5 text-end tabular-nums">{entry.order.quantity}</td>
+                            <td className="px-3 py-1.5 text-end tabular-nums">{entry.order.price}</td>
+                            <td className="px-3 py-1.5 text-end tabular-nums">{entry.order.fee}</td>
+                          </>
+                        )}
+                        {/* No reason cell: an imported row has nothing to explain. */}
+                      </tr>
+                    ) : (
+                      // A refused row keeps its place in the list: the file's
+                      // own row number, whatever ticker it did carry, and the
+                      // reason it will not be imported.
+                      <tr key={entry.row} className="bg-amber-500/5">
+                        <td className="px-3 py-1.5 font-medium text-muted-foreground sm:px-5">
+                          {entry.error.ticker ?? '—'}
+                        </td>
+                        <td colSpan={5} className="px-3 py-1.5 text-xs text-muted-foreground">
+                          #{entry.row}
+                        </td>
+                        <td className="px-3 py-1.5 text-xs text-amber-700 dark:text-amber-400 sm:px-5">
+                          {t(`assetImport.reason.${entry.error.reason}`, entry.error.reason)}
+                          {entry.error.detail ? ` (${entry.error.detail})` : ''}
+                        </td>
+                      </tr>
+                    ),
+                  )}
                 </tbody>
               </table>
-              {preview.orders.length > 50 && (
+              {tableRows.length > 50 && (
                 <p className="border-t border-border px-4 py-2 text-xs text-muted-foreground sm:px-5">
-                  {t('assetImport.moreRows', { count: preview.orders.length - 50 })}
+                  {t('assetImport.moreRows', { count: tableRows.length - 50 })}
                 </p>
               )}
             </div>
