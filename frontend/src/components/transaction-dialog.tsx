@@ -7,7 +7,7 @@ import { formatAmountInput, formatCurrency, parseAmountInput } from '@/lib/forma
 import { amountToCents, parseCents } from '@/lib/mortgage-split'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
-import { accounts as accountsApi, assets as assetsApi, currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi, mortgagePayments as mortgagePaymentsApi, groups as groupsApi } from '@/lib/api'
+import { accounts as accountsApi, assets as assetsApi, currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi, mortgagePayments as mortgagePaymentsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { extractApiError } from '@/lib/api-errors'
@@ -516,7 +516,9 @@ function TransactionForm({
   // round-trips them rather than appearing empty.
   const [splitsValid, setSplitsValid] = useState(true)
   // A payback recorded from an incoming transaction (see TransactionSplitsSection).
-  const [settle, setSettle] = useState<TransactionSettleInput | null>(null)
+  // Undefined until the section reports one, so a section that never showed
+  // leaves the transaction's payback alone.
+  const [settle, setSettle] = useState<TransactionSettleInput | null | undefined>(undefined)
   const [splits, setSplits] = useState<TransactionSplitsInput | null>(() => {
     const existing = (seed as Transaction | null | undefined)?.splits
     if (!existing || existing.length === 0) return null
@@ -978,6 +980,15 @@ function TransactionForm({
           : hadInitialLines
             ? { category_lines: { share_type: 'exact', lines: [] } }
             : {}
+        // The payback goes with the save, like splits, and only when its group
+        // or payers changed, so amounts already recorded are kept.
+        const before = transaction?.settled_by ?? []
+        const payersKey = (groupId: string | undefined, ids: string[]) => `${groupId}:${[...ids].sort().join()}`
+        const paybackPayload: Pick<TransactionEditPayload, 'payback'> = settle !== undefined
+          && payersKey(before[0]?.group_id, before.map((s) => s.from_member_id))
+            !== payersKey(settle?.group_id, settle?.payers.map((p) => p.member_id) ?? [])
+          ? { payback: settle ? { group_id: settle.group_id, to_member_id: settle.to_member_id, payers: settle.payers } : { payers: [] } }
+          : {}
         const pnlExclusionPayload = transaction
           ? { exclude_from_pnl: excludeFromReports }
           : {}
@@ -991,6 +1002,7 @@ function TransactionForm({
               ...pnlExclusionPayload,
               ...overridePayload,
               ...splitsPayload,
+              ...paybackPayload,
               ...categoryLinesPayload,
             } as TransactionEditPayload
           : {
@@ -1011,6 +1023,7 @@ function TransactionForm({
               ...fxFields,
               ...overridePayload,
               ...splitsPayload,
+              ...paybackPayload,
               ...categoryLinesPayload,
             } as TransactionEditPayload
         const recurringData = isCreating && isRecurring
@@ -1035,33 +1048,7 @@ function TransactionForm({
               status,
             })
           : undefined
-        const save = () => onSave(txData, recurringData, installmentData, isCreating && pendingFiles.length > 0 ? pendingFiles : undefined, action)
-        // A payback is replaced as a whole, like splits, and only when its
-        // group or payers changed, so amounts already recorded are kept.
-        const before = transaction?.settled_by ?? []
-        const payersKey = (groupId: string | undefined, ids: string[]) => `${groupId}:${[...ids].sort().join()}`
-        if (transaction && payersKey(before[0]?.group_id, before.map((s) => s.from_member_id))
-          !== payersKey(settle?.group_id, settle?.payers.map((p) => p.member_id) ?? [])) {
-          // One at a time so the backend checks the running total.
-          const next = settle
-          Promise.all(before.map((s) => groupsApi.settlements.delete(s.group_id, s.id)))
-            .then(() => next?.payers.reduce<Promise<unknown>>((prev, p) => prev.then(() => groupsApi.settlements.create(next.group_id, {
-              from_member_id: p.member_id,
-              to_member_id: next.to_member_id,
-              amount: p.amount,
-              currency: transaction.currency,
-              date: transaction.date,
-              receiver_transaction_id: transaction.id,
-              notes: notes.trim() || null,
-            })), Promise.resolve()))
-            .then(() => {
-              queryClient.invalidateQueries({ queryKey: ['groups'] })
-              save()
-            })
-            .catch((error) => toast.error(extractApiError(error, t('common.error'))))
-          return
-        }
-        save()
+        onSave(txData, recurringData, installmentData, isCreating && pendingFiles.length > 0 ? pendingFiles : undefined, action)
       }}
       className={cn(
         // Always a bounded flex column; the DialogContent caps the overall

@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.group_settlement import GroupSettlement
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.schemas.group import GroupCreate, GroupMemberCreate
@@ -22,7 +23,8 @@ from app.schemas.group_settlement import (
     GroupSettlementCreate,
     GroupSettlementUpdate,
 )
-from app.services.transaction_service import get_transactions
+from app.schemas.transaction import TransactionPaybackInput, TransactionPaybackPayer, TransactionRead, TransactionUpdate
+from app.services.transaction_service import get_transactions, update_transaction
 from app.services import (
     group_service,
     settlement_service,
@@ -251,11 +253,59 @@ async def test_create_settlement_links_the_receivers_real_credit(
     credits = await session.execute(select(Transaction.id).where(Transaction.type == "credit"))
     assert credits.scalars().all() == [received.id]
     rows, _, _ = await get_transactions(session, test_workspace.id, test_user.id, transaction_ids=[received.id])
-    assert [(x.id, x.group_id, x.from_member_id) for x in rows[0].settled_by] == [(s.id, group.id, bob.id)]
+    settled_by = TransactionRead.model_validate(rows[0]).settled_by
+    assert [(x.id, x.group_id, x.from_member_id) for x in settled_by] == [(s.id, group.id, bob.id)]
     assert await settlement_service.delete_settlement(
         session, group.id, s.id, test_workspace.id, test_user.id
     )
     assert await session.get(Transaction, received.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_a_payback_is_saved_with_its_transaction(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Replaced as a whole against the amount being saved, and left as it was
+    when the replacement doesn't fit."""
+    group, me, bob, carol = await _setup_group(session, test_user.id, test_workspace.id)
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    received = await _make_transaction(session, test_user.id, test_workspace.id, account.id)
+    received.type = "credit"
+    await session.commit()
+    # Plain ids: a rollback below expires the ORM objects.
+    group_id, me_id, bob_id, carol_id, tx_id = group.id, me.id, bob.id, carol.id, received.id
+    workspace_id, user_id = test_workspace.id, test_user.id
+
+    async def save(payers, amount=None):
+        payback = TransactionPaybackInput(
+            group_id=group_id, to_member_id=me_id,
+            payers=[TransactionPaybackPayer(member_id=m, amount=Decimal(a)) for m, a in payers],
+        )
+        update = TransactionUpdate.model_validate(
+            {"payback": payback, **({"amount": Decimal(amount)} if amount else {})}
+        )
+        await update_transaction(session, tx_id, workspace_id, user_id, update)
+
+    async def linked():
+        rows = await session.execute(
+            select(GroupSettlement.from_member_id, GroupSettlement.amount)
+            .where(GroupSettlement.receiver_transaction_id == tx_id)
+        )
+        return sorted((m, str(a)) for m, a in rows.all())
+
+    await save([(bob_id, "5.00")])
+    assert await linked() == [(bob_id, "5.00")]
+    # The new amount and the new payback are checked together.
+    await save([(bob_id, "4.00"), (carol_id, "4.00")], amount="8.00")
+    assert await linked() == sorted([(bob_id, "4.00"), (carol_id, "4.00")])
+    with pytest.raises(ValueError, match="exceed its amount"):
+        await save([(bob_id, "9.00")])
+    await session.rollback()
+    assert await linked() == sorted([(bob_id, "4.00"), (carol_id, "4.00")])
+    # An empty payback removes it; the transaction stays.
+    await save([])
+    assert await linked() == []
+    assert await session.get(Transaction, tx_id) is not None
 
 
 @pytest.mark.asyncio

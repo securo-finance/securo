@@ -512,6 +512,8 @@ export interface FlaggedSummary {
 export type TransactionEditPayload = Omit<Partial<Transaction>, 'splits' | 'category_lines'> & {
   splits?: TransactionSplitsInput | null
   category_lines?: TransactionCategoryLinesInput
+  // Replaces the settlements this credit pays back; no payers removes them.
+  payback?: { group_id?: string; to_member_id?: string; payers: { member_id: string; amount: number }[] }
 }
 
 export type GroupKind = 'social' | 'cost_center' | 'project' | 'client' | 'other'

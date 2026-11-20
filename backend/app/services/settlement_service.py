@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import case, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -11,6 +11,7 @@ from app.models.group import Group, GroupMember
 from app.models.group_settlement import GroupSettlement
 from app.models.transaction import Transaction
 from app.models.transaction_split import TransactionSplit
+from app.schemas.transaction import TransactionPaybackInput
 from app.schemas.group_settlement import (
     GroupSettlementCreate,
     GroupSettlementUpdate,
@@ -236,7 +237,7 @@ async def _validate_receiver_transaction(
             Transaction.user_id == user_id,
             Transaction.type == "credit",
             Transaction.currency == data.currency,
-        )
+        ).with_for_update()
     )
     if tx is None:
         raise ValueError("Linked transaction must be your own credit in the settlement's currency")
@@ -271,6 +272,8 @@ async def create_settlement(
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
     data: GroupSettlementCreate,
+    *,
+    commit: bool = True,
 ) -> Optional[GroupSettlement]:
     group = await _ensure_group_visible(session, group_id, workspace_id, user_id)
     if not group:
@@ -364,9 +367,40 @@ async def create_settlement(
         group_id=group_id, workspace_id=workspace_id, **payload
     )
     session.add(settlement)
+    if not commit:
+        await session.flush()
+        return settlement
     await session.commit()
     await session.refresh(settlement)
     return settlement
+
+
+async def replace_receiver_settlements(
+    session: AsyncSession,
+    transaction: Transaction,
+    payback: TransactionPaybackInput,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> None:
+    """Replace the settlements a credit pays back, within the transaction's
+    own save, so a failed replacement leaves the previous one in place."""
+    await session.execute(
+        delete(GroupSettlement).where(GroupSettlement.receiver_transaction_id == transaction.id)
+    )
+    for payer in payback.payers:
+        if payback.group_id is None or payback.to_member_id is None:
+            raise ValueError("A payback needs its group and the member being paid")
+        settlement = await create_settlement(
+            session, payback.group_id, workspace_id, user_id,
+            GroupSettlementCreate(
+                from_member_id=payer.member_id, to_member_id=payback.to_member_id,
+                amount=payer.amount, currency=transaction.currency, date=transaction.date,
+                receiver_transaction_id=transaction.id, notes=transaction.notes,
+            ),
+            commit=False,
+        )
+        if settlement is None:
+            raise ValueError("Group not found")
 
 
 async def update_settlement(
