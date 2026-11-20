@@ -426,16 +426,43 @@ export default function DashboardPage() {
     onError: (err: unknown) => toast.error(extractApiError(err, t('common.error'))),
   })
 
+  // The queue only fixes the order. A save can change other rows (a quick pick, or
+  // an installment saved for the whole series), so each row is re-read before it
+  // opens. Shared rows belong to another workspace and can't be re-read here.
+  const refreshTx = (tx: Transaction) => (tx.is_shared ? Promise.resolve(tx) : transactions.get(tx.id))
+
+  const findNextToEdit = async (id: string) => {
+    const start = editQueue.findIndex((tx) => tx.id === id)
+    if (start < 0) return null
+    for (const queued of editQueue.slice(start + 1)) {
+      const fresh = await refreshTx(queued).catch(() => null)
+      if (!fresh) continue
+      // A row categorized since the panel loaded no longer belongs in "Categorize now".
+      if (drillDown?.uncategorized && (fresh.category_id || isSplitByCategory(fresh))) continue
+      return fresh
+    }
+    return null
+  }
+
+  const openFromDrillDown = async (tx: Transaction, queue: Transaction[]) => {
+    try {
+      const fresh = await refreshTx(tx)
+      setEditQueue(queue)
+      setEditingTx(fresh)
+      setDialogOpen(true)
+    } catch (err) {
+      toast.error(extractApiError(err, t('common.error')))
+    }
+  }
+
   const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }: TransactionSavePayload & { id: string; action?: SaveAction }) => {
-      // `action` only steers what happens after the save; it is not a field.
-      const payload = { ...data }
-      delete payload.action
-      return transactions.update(id, payload)
+    // `action` only steers what happens after the save; it is not a field.
+    mutationFn: async ({ id, action, ...data }: TransactionSavePayload & { id: string; action?: SaveAction }) => {
+      await transactions.update(id, data)
+      return action === 'saveAndNext' ? findNextToEdit(id) : null
     },
-    onSuccess: (_saved, { id, action }) => {
+    onSuccess: (next) => {
       invalidateFinancialQueries(queryClient)
-      const next = action === 'saveAndNext' ? nextInQueue(id) : null
       if (next) {
         setEditingTx(next)
         return
@@ -1990,7 +2017,7 @@ export default function DashboardPage() {
             : null
         }
         onClose={() => setDrillDown(null)}
-        onTransactionClick={(tx, queue) => { setEditQueue(queue); setEditingTx(tx); setDialogOpen(true) }}
+        onTransactionClick={openFromDrillDown}
         quickCategorize={canWrite ? {
           categories: categoriesList ?? [],
           groups: categoryGroupsList ?? [],

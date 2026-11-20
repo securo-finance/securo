@@ -22,7 +22,7 @@ const api = vi.hoisted(() => ({
     balanceHistoryMonths: vi.fn(),
     projectedTransactions: vi.fn(),
   },
-  transactions: { list: vi.fn(), calendar: vi.fn(), update: vi.fn() },
+  transactions: { list: vi.fn(), calendar: vi.fn(), update: vi.fn(), get: vi.fn() },
   budgets: { comparison: vi.fn() },
   categories: { list: vi.fn(), listIncludingHidden: vi.fn() },
   categoryGroups: { list: vi.fn(), listIncludingHidden: vi.fn() },
@@ -1139,6 +1139,11 @@ describe('Dashboard uncategorized drill-down', () => {
         : { items: [], total: 0 }
     ))
     api.transactions.update.mockResolvedValue({})
+    api.transactions.get.mockImplementation(async (id: string) => (
+      id === 'first'
+        ? uncategorized('first', 'First uncategorized', '2026-09-01')
+        : uncategorized('second', 'Second uncategorized', '2026-09-02')
+    ))
 
     const { user } = renderWithProviders(
       <TooltipProvider delayDuration={0}>
@@ -1164,5 +1169,44 @@ describe('Dashboard uncategorized drill-down', () => {
     const next = await screen.findByRole('dialog')
     expect(await within(next).findByDisplayValue('Second uncategorized')).toBeInTheDocument()
     expect(within(next).queryByRole('button', { name: t('transactions.saveAndNext') })).not.toBeInTheDocument()
+  })
+
+  it('re-reads the next row and skips it once a save has categorized it', async () => {
+    // Saving the first installment for the whole series also categorizes the second.
+    const rows = [
+      uncategorized('first', 'Phone 1/2', '2026-09-01'),
+      uncategorized('second', 'Phone 2/2', '2026-09-02'),
+      uncategorized('third', 'Third uncategorized', '2026-09-03'),
+    ]
+    api.dashboard.summary.mockResolvedValue({ ...summary, pending_categorization: 3, pending_categorization_amount: 36 })
+    api.transactions.list.mockImplementation(async (params?: { uncategorized?: boolean }) => (
+      params?.uncategorized ? { items: rows, total: rows.length } : { items: [], total: 0 }
+    ))
+    api.transactions.update.mockResolvedValue({})
+    api.transactions.get.mockImplementation(async (id: string) => {
+      const row = rows.find((r) => r.id === id)!
+      return id === 'second' && api.transactions.update.mock.calls.length > 0
+        ? { ...row, category_id: 'cat-phone' }
+        : row
+    })
+
+    const { user } = renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+      { route: '/?month=2026-09' },
+    )
+
+    await user.click(await screen.findByText(t('dashboard.categorizeNow'), { exact: false }))
+    const open = await screen.findAllByRole('button', { name: t('dashboard.drillDownOpenTransaction') })
+    await user.click(open[0])
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByDisplayValue('Phone 1/2')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: t('transactions.saveAndNext') }))
+
+    const next = await screen.findByRole('dialog')
+    expect(await within(next).findByDisplayValue('Third uncategorized')).toBeInTheDocument()
+    expect(api.transactions.get).toHaveBeenCalledWith('second')
   })
 })

@@ -80,17 +80,18 @@ describe('TransactionDrillDown', () => {
       vi.mocked(transactions.list).mockResolvedValue({ items, total: items.length } as never)
       const onCategorize = vi.fn().mockResolvedValue(undefined)
       const onTransactionClick = vi.fn()
+      const onClose = vi.fn()
       const utils = renderWithProviders(
         <TransactionDrillDown
           filter={filter}
-          onClose={vi.fn()}
+          onClose={onClose}
           onTransactionClick={onTransactionClick}
           quickCategorize={withQuick
             ? { categories: [groceries] as never, groups: [], onCategorize }
             : undefined}
         />,
       )
-      return { ...utils, onCategorize, onTransactionClick }
+      return { ...utils, onCategorize, onTransactionClick, onClose }
     }
 
     it('categorizes a row in place without opening its dialog', async () => {
@@ -129,6 +130,30 @@ describe('TransactionDrillDown', () => {
       const [tx, queue] = onTransactionClick.mock.calls[0]
       expect(tx.id).toBe('first')
       expect(queue.map((q: { id: string }) => q.id)).toEqual(['first', 'second'])
+    })
+
+    it('does not open a row while its category is being saved', async () => {
+      const { user, onCategorize, onTransactionClick } = renderQuick([row({ id: 'shop' })])
+      onCategorize.mockReturnValue(new Promise(() => {}))
+
+      await user.click(await screen.findByRole('button', { name: t('dashboard.drillDownQuickCategorize') }))
+      await user.click(await screen.findByText('Groceries'))
+      await waitFor(() => expect(onCategorize).toHaveBeenCalledOnce())
+
+      fireEvent.click(screen.getByRole('button', { name: t('dashboard.drillDownOpenTransaction') }))
+      fireEvent.click(screen.getByText('Corner shop'))
+
+      expect(onTransactionClick).not.toHaveBeenCalled()
+    })
+
+    it('still closes the panel on Escape from a closed picker', async () => {
+      const { onClose } = renderQuick([row({ id: 'shop' })])
+
+      const trigger = await screen.findByRole('button', { name: t('dashboard.drillDownQuickCategorize') })
+      trigger.focus()
+      fireEvent.keyDown(trigger, { key: 'Escape' })
+
+      await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
     })
 
     it('shows no picker unless the host opts in', async () => {

@@ -442,14 +442,15 @@ export function TransactionDrillDown({
             <div className="divide-y divide-border">
               {displayItems.map((item) => {
                 const quickTx = quickCategorize && canQuickCategorize(item.transaction) ? item.transaction : null
-                const saving = !!quickTx && savingIds.has(quickTx.id)
+                // Opening a row mid-save would show it without the category being saved.
+                const saving = !!item.transaction && savingIds.has(item.transaction.id)
                 return (
                 <div
                   key={item.key}
                   aria-busy={saving || undefined}
                   className={`flex items-center gap-3 px-5 py-3 hover:bg-muted transition-colors ${!item.isProjected && onTransactionClick ? 'cursor-pointer' : ''} ${saving ? 'opacity-60' : ''}`}
                   onClick={() => {
-                    if (!item.isProjected && item.transaction) {
+                    if (!item.isProjected && item.transaction && !saving) {
                       onTransactionClick?.(item.transaction, queue)
                     }
                   }}
@@ -495,7 +496,8 @@ export function TransactionDrillDown({
                       <div
                         className="mt-1.5 max-w-[240px]"
                         onClick={(e) => e.stopPropagation()}
-                        onKeyDown={(e) => e.stopPropagation()}
+                        // Escape still reaches the panel; an open picker handles it first.
+                        onKeyDown={(e) => { if (e.key !== 'Escape') e.stopPropagation() }}
                       >
                         <CategorySelect
                           value=""
@@ -538,7 +540,8 @@ export function TransactionDrillDown({
                       type="button"
                       aria-label={t('dashboard.drillDownOpenTransaction')}
                       title={t('dashboard.drillDownOpenTransaction')}
-                      className="-me-2 w-7 h-7 shrink-0 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
+                      disabled={saving}
+                      className="-me-2 w-7 h-7 shrink-0 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-background transition-colors disabled:pointer-events-none"
                       onClick={(e) => {
                         e.stopPropagation()
                         onTransactionClick(item.transaction!, queue)
