@@ -86,6 +86,10 @@ class RecurringTransactionCreate(BaseModel):
     category_id: Optional[uuid.UUID] = None
     skip_first: bool = False  # Set true when first occurrence already created as a transaction
     auto_generate: bool = True  # Materialize occurrences; when false, wait for the real charge
+    # The existing transaction this bill is made from. It is linked to the new
+    # bill, so it stops offering "make recurring" and counts as the first
+    # occurrence the series already has.
+    source_transaction_id: Optional[uuid.UUID] = None
     # Split across categories; every occurrence starts with these parts.
     category_lines: Optional[TransactionCategoryLinesInput] = None
 

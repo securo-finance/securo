@@ -414,6 +414,30 @@ async def get_rules(session: AsyncSession, workspace_id: uuid.UUID) -> list[Rule
     return list(result.scalars().all())
 
 
+async def list_provider_categories(
+    session: AsyncSession, workspace_id: uuid.UUID
+) -> list[str]:
+    """Distinct provider categories the workspace's transactions already carry.
+
+    The `provider_category` condition compares against the exact label the
+    provider sent (often an English name such as "Groceries"), so the rule
+    editor offers these values instead of letting people guess a translation
+    (#280). Values arrive in different cases across providers, so they are
+    ordered case-insensitively.
+    """
+    value = Transaction.raw_data["category"].as_string()
+    result = await session.execute(
+        select(value)
+        .where(
+            Transaction.workspace_id == workspace_id,
+            Transaction.raw_data.is_not(None),
+        )
+        .distinct()
+    )
+    return sorted(
+        {v for v in result.scalars() if isinstance(v, str) and v.strip()},
+        key=str.casefold,
+    )
 
 
 async def export_rules(session: AsyncSession, workspace_id: uuid.UUID) -> RuleExportPayload:

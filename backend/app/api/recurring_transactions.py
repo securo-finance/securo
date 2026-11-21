@@ -115,6 +115,8 @@ async def create_recurring_transaction(
         return await recurring_transaction_service.create_recurring_transaction(
             session, ctx.workspace.id, ctx.user_id, data
         )
+    except recurring_transaction_service.RecurringConflictError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 

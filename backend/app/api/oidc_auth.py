@@ -86,20 +86,27 @@ def _safe_logout_url(url: str, client_id: str) -> str:
 
 
 _LOGOUT_URL_TTL = 300.0
+# A discovery that failed is cached too, but briefly: caching the empty answer
+# for the full TTL turned one hiccup into five minutes without provider logout
+# (#1639). Long enough to spare a down provider a burst of sign-outs.
+_LOGOUT_URL_FAILURE_TTL = 30.0
 # The frontend asks for `/config` with a 5 s timeout; the discovery has to
 # answer well inside it, or the browser silently skips the redirect (#1623).
 _LOGOUT_DISCOVERY_TIMEOUT = 3.0
-# (monotonic time, discovery url + client id it was read for, resolved URL)
-_logout_url_cache: tuple[float, str, str] | None = None
+# (monotonic time, discovery url + client id it was read for, resolved URL,
+# whether the discovery answered at all)
+_logout_url_cache: tuple[float, str, str, bool] | None = None
 
 
 async def _provider_logout_url() -> str:
     """Where to send the browser so the provider's own session ends (#1623).
 
     An explicit `OIDC_LOGOUT_URL` wins; otherwise the discovery document's
-    `end_session_endpoint`. Cached for a few minutes because `/config` is
-    public and the document rarely changes. Every failure answers "": the
-    local sign-out already happened and must never wait on the provider.
+    `end_session_endpoint`. Cached because `/config` is public and the document
+    rarely changes: a few minutes for an answer, seconds for a failure, so one
+    hiccup does not disable provider sign-out for long (#1639). Every failure
+    answers "": the local sign-out already happened and must never wait on the
+    provider.
     """
     global _logout_url_cache
     settings = get_settings()
@@ -110,12 +117,11 @@ async def _provider_logout_url() -> str:
 
     cache_key = f"{settings.oidc_discovery_url}|{settings.oidc_client_id}"
     now = time.monotonic()
-    if (
-        _logout_url_cache is not None
-        and _logout_url_cache[1] == cache_key
-        and now - _logout_url_cache[0] < _LOGOUT_URL_TTL
-    ):
-        return _logout_url_cache[2]
+    if _logout_url_cache is not None and _logout_url_cache[1] == cache_key:
+        cached_at, _cached_key, cached_url, discovery_answered = _logout_url_cache
+        ttl = _LOGOUT_URL_TTL if discovery_answered else _LOGOUT_URL_FAILURE_TTL
+        if now - cached_at < ttl:
+            return cached_url
     try:
         discovery = await asyncio.wait_for(
             _discover(), timeout=_LOGOUT_DISCOVERY_TIMEOUT
@@ -124,8 +130,11 @@ async def _provider_logout_url() -> str:
         endpoint = raw_endpoint if isinstance(raw_endpoint, str) else ""
     except (HTTPException, httpx.HTTPError, ValueError, asyncio.TimeoutError):
         endpoint = ""
+        discovery_answered = False
+    else:
+        discovery_answered = True
     url = _safe_logout_url(endpoint, settings.oidc_client_id) if endpoint else ""
-    _logout_url_cache = (now, cache_key, url)
+    _logout_url_cache = (now, cache_key, url, discovery_answered)
     return url
 
 
