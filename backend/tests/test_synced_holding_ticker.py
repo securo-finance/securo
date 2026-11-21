@@ -162,6 +162,10 @@ async def _sync(session: AsyncSession, user: User, conn: BankConnection) -> None
         ({"type": "EQUITY", "code": None}, None),
         ({"type": "EQUITY"}, None),
         ({"code": "PSSA3"}, None),
+        # Unexpected field types read as ineligible instead of raising.
+        ({"type": "EQUITY", "code": "PSSA3", "currencyCode": 123}, None),
+        ({"type": 7, "code": "PSSA3"}, None),
+        ({"type": "EQUITY", "code": "PSSA3", "currencyCode": None}, "PSSA3.SA"),
     ],
 )
 def test_b3_market_ticker(inv: dict, expected: Optional[str]):
@@ -586,6 +590,7 @@ async def test_linked_holding_gets_average_price_from_the_reported_trades(
         # An unexpected subtype reads as unknown instead of failing the sync.
         ({"type": "EQUITY", "subtype": 123}, "stock"),
         ({"type": "EQUITY", "subtype": None}, "stock"),
+        ({"type": 7, "subtype": "STOCK"}, None),
     ],
 )
 def test_exchange_traded_positions_get_their_asset_type(inv: dict, expected: Optional[str]):

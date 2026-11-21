@@ -215,6 +215,13 @@ def _parse_day(value) -> Optional[int]:
         return None
 
 
+def _upper_text(value) -> str:
+    """An enum-like payload field, upper-cased. A missing or non-string value
+    reads as "" (unknown), so an unexpected field type never aborts the
+    holdings refresh."""
+    return value.upper() if isinstance(value, str) else ""
+
+
 def _decimal_or_none(value) -> Optional[Decimal]:
     if value is None:
         return None
@@ -303,7 +310,7 @@ def _asset_type(inv: dict) -> Optional[str]:
     (fixed income, pensions, mutual funds) keeps the generic `investment`.
     The sync only replaces the generic type, never one the user picked.
     """
-    pluggy_type = (inv.get("type") or "").upper()
+    pluggy_type = _upper_text(inv.get("type"))
     if pluggy_type == "ETF":
         return "etf"
     if pluggy_type == "EQUITY":
@@ -322,9 +329,12 @@ def _b3_market_ticker(inv: dict) -> Optional[str]:
     holding then stays valued by the provider and the user can link a ticker
     by hand.
     """
-    if (inv.get("type") or "").upper() not in _EXCHANGE_TRADED_TYPES:
+    if _upper_text(inv.get("type")) not in _EXCHANGE_TRADED_TYPES:
         return None
-    if (inv.get("currencyCode") or "BRL").upper() != "BRL":
+    # A non-string currency is unreadable, so the position is not taken as
+    # B3-listed: it stays provider-valued instead of failing the refresh.
+    currency = inv.get("currencyCode")
+    if currency not in (None, "") and _upper_text(currency) != "BRL":
         return None
     code = inv.get("code")
     if not isinstance(code, str):
@@ -475,8 +485,8 @@ def _build_holding_data(inv: dict) -> HoldingData:
     """
     current_value = _decimal_or_none(inv.get("balance")) or Decimal("0")
     quantity = _decimal_or_none(inv.get("quantity"))
-    pluggy_status = (inv.get("status") or "").upper()
-    pluggy_type = (inv.get("type") or "").upper()
+    pluggy_status = _upper_text(inv.get("status"))
+    pluggy_type = _upper_text(inv.get("type"))
 
     purchase_date: Optional[date] = None
     if pluggy_type in _ISSUE_DATE_IS_PURCHASE_DATE:
