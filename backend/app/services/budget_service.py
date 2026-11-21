@@ -966,6 +966,8 @@ async def set_expected_income(
     month: date,
     amount: Optional[Decimal],
     currency: str,
+    *,
+    reader_currency: str,
 ) -> ExpectedIncomeRead:
     """Upsert or clear the workspace's income row of one month.
 
@@ -1033,7 +1035,7 @@ async def set_expected_income(
         session.expire(row)
 
     amount_primary, _ = await convert_or_none(
-        session, amount_value, currency, currency, target_date=month_start
+        session, amount_value, currency, reader_currency, target_date=month_start
     )
     return ExpectedIncomeRead(
         month=month_start,

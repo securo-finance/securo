@@ -1,10 +1,12 @@
 """The expected-income routes: GET reads, PUT writes under the write gate."""
 import uuid
+from datetime import date
 from decimal import Decimal
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.fx_rate import FxRate
 from app.models.workspace import Workspace, WorkspaceMember
 
 pytestmark = pytest.mark.asyncio
@@ -189,3 +191,33 @@ async def test_a_neighbouring_workspace_neither_sees_nor_touches_the_row(
         "/api/budgets/expected-income", params={"month": _MONTH}, headers=auth_headers
     )
     assert float(own.json()["amount"]) == 3450.00
+
+
+@pytest.mark.asyncio
+async def test_the_put_response_uses_the_reader_currency_like_the_get(
+    client, auth_headers, session
+):
+    session.add(
+        FxRate(
+            base_currency="USD",
+            quote_currency="BRL",
+            date=date(2026, 4, 1),
+            rate=Decimal("5.0"),
+            source="test",
+        )
+    )
+    await session.flush()
+
+    put = await client.put(
+        "/api/budgets/expected-income",
+        json={"month": _MONTH, "amount": "10.00", "currency": "USD"},
+        headers=auth_headers,
+    )
+    assert put.status_code == 200, put.text
+    assert Decimal(str(put.json()["amount_primary"])) == Decimal("50.00")
+
+    get = await client.get(
+        "/api/budgets/expected-income", params={"month": _MONTH}, headers=auth_headers
+    )
+    assert get.status_code == 200
+    assert Decimal(str(get.json()["amount_primary"])) == Decimal("50.00")

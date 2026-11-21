@@ -193,4 +193,5 @@ async def put_expected_income_endpoint(
         data.month,
         data.amount,
         data.currency or ctx.user.primary_currency,
+        reader_currency=ctx.user.primary_currency,
     )

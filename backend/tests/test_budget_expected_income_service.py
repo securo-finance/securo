@@ -28,7 +28,7 @@ async def _stored_rows(session: AsyncSession, workspace_id) -> list[ExpectedInco
 async def test_set_creates_a_row_keeping_the_currency_it_was_typed_in(
     session: AsyncSession, test_workspace
 ):
-    read = await set_expected_income(session, test_workspace.id, _MONTH, Decimal("3450.00"), "USD")
+    read = await set_expected_income(session, test_workspace.id, _MONTH, Decimal("3450.00"), "USD", reader_currency="BRL")
     assert read.month == _MONTH
     assert read.amount == Decimal("3450.00")
     assert read.currency == "USD"
@@ -42,11 +42,11 @@ async def test_set_creates_a_row_keeping_the_currency_it_was_typed_in(
 async def test_the_second_write_updates_the_same_row_instead_of_adding_one(
     session: AsyncSession, test_workspace
 ):
-    await set_expected_income(session, test_workspace.id, _MONTH, Decimal("3450.00"), "USD")
+    await set_expected_income(session, test_workspace.id, _MONTH, Decimal("3450.00"), "USD", reader_currency="BRL")
     first_id = (await _stored_rows(session, test_workspace.id))[0].id
 
     second = await set_expected_income(
-        session, test_workspace.id, _MONTH, Decimal("4000.555"), "USD"
+        session, test_workspace.id, _MONTH, Decimal("4000.555"), "USD", reader_currency="BRL"
     )
     assert second.amount == Decimal("4000.56")  # quantized to the money scale
 
@@ -58,7 +58,8 @@ async def test_the_second_write_updates_the_same_row_instead_of_adding_one(
 
 async def test_the_month_is_normalized_to_its_first_day(session: AsyncSession, test_workspace):
     await set_expected_income(
-        session, test_workspace.id, date(2026, 4, 17), Decimal("3450.00"), "USD"
+        session, test_workspace.id, date(2026, 4, 17), Decimal("3450.00"), "USD",
+        reader_currency="BRL",
     )
     rows = await _stored_rows(session, test_workspace.id)
     assert [row.month for row in rows] == [_MONTH]
@@ -71,14 +72,14 @@ async def test_the_month_is_normalized_to_its_first_day(session: AsyncSession, t
 async def test_clearing_removes_the_row_and_clearing_an_absent_one_creates_nothing(
     session: AsyncSession, test_workspace
 ):
-    await set_expected_income(session, test_workspace.id, _MONTH, Decimal("3450.00"), "USD")
-    read = await set_expected_income(session, test_workspace.id, _MONTH, None, "USD")
+    await set_expected_income(session, test_workspace.id, _MONTH, Decimal("3450.00"), "USD", reader_currency="BRL")
+    read = await set_expected_income(session, test_workspace.id, _MONTH, None, "USD", reader_currency="BRL")
     assert read.month == _MONTH
     assert read.amount is None
     assert read.currency is None
     assert await _stored_rows(session, test_workspace.id) == []
 
-    again = await set_expected_income(session, test_workspace.id, _MONTH, None, "USD")
+    again = await set_expected_income(session, test_workspace.id, _MONTH, None, "USD", reader_currency="BRL")
     assert again.amount is None
     assert await _stored_rows(session, test_workspace.id) == []
 
@@ -86,7 +87,7 @@ async def test_clearing_removes_the_row_and_clearing_an_absent_one_creates_nothi
 async def test_a_neighbouring_workspace_ne_sees_nor_touches_the_row(
     session: AsyncSession, test_user, test_workspace
 ):
-    await set_expected_income(session, test_workspace.id, _MONTH, Decimal("3450.00"), "USD")
+    await set_expected_income(session, test_workspace.id, _MONTH, Decimal("3450.00"), "USD", reader_currency="BRL")
 
     other = Workspace(
         id=uuid.uuid4(),
@@ -100,7 +101,7 @@ async def test_a_neighbouring_workspace_ne_sees_nor_touches_the_row(
     await session.flush()
 
     assert await get_expected_income(session, other.id, _MONTH, "BRL") is None
-    await set_expected_income(session, other.id, _MONTH, Decimal("9000.00"), "USD")
+    await set_expected_income(session, other.id, _MONTH, Decimal("9000.00"), "USD", reader_currency="BRL")
 
     rows = await _stored_rows(session, test_workspace.id)
     assert len(rows) == 1 and rows[0].amount == Decimal("3450.00")
@@ -120,7 +121,7 @@ async def test_the_read_converts_at_the_month_rate_without_storing_it(
     )
     await session.flush()
 
-    await set_expected_income(session, test_workspace.id, _MONTH, Decimal("3450.00"), "USD")
+    await set_expected_income(session, test_workspace.id, _MONTH, Decimal("3450.00"), "USD", reader_currency="BRL")
     read = await get_expected_income(session, test_workspace.id, _MONTH, "BRL")
     assert read is not None
     assert read.amount == Decimal("3450.00")  # the stored figure keeps its currency
@@ -134,7 +135,7 @@ async def test_the_read_converts_at_the_month_rate_without_storing_it(
 async def test_a_missing_rate_leaves_the_primary_amount_empty_not_one_to_one(
     session: AsyncSession, test_workspace
 ):
-    await set_expected_income(session, test_workspace.id, _MONTH, Decimal("3450.00"), "USD")
+    await set_expected_income(session, test_workspace.id, _MONTH, Decimal("3450.00"), "USD", reader_currency="BRL")
     read = await get_expected_income(session, test_workspace.id, _MONTH, "BRL")
     assert read is not None
     assert read.amount == Decimal("3450.00")
@@ -144,7 +145,7 @@ async def test_a_missing_rate_leaves_the_primary_amount_empty_not_one_to_one(
 async def test_changing_the_reader_currency_keeps_the_stored_figure(
     session: AsyncSession, test_workspace
 ):
-    await set_expected_income(session, test_workspace.id, _MONTH, Decimal("3450.00"), "USD")
+    await set_expected_income(session, test_workspace.id, _MONTH, Decimal("3450.00"), "USD", reader_currency="BRL")
 
     # The same workspace read as USD now: the stored row does not move.
     read = await get_expected_income(session, test_workspace.id, _MONTH, "USD")
@@ -161,7 +162,7 @@ async def test_the_write_comes_back_with_the_month_and_the_amount(
     session: AsyncSession, test_workspace
 ):
     read = await set_expected_income(
-        session, test_workspace.id, _MONTH, Decimal("3450.005"), "USD"
+        session, test_workspace.id, _MONTH, Decimal("3450.005"), "USD", reader_currency="USD"
     )
     assert read.month == _MONTH
     assert read.amount == Decimal("3450.01")  # the money scale rounds half up
@@ -174,7 +175,7 @@ async def test_a_racing_insert_updates_the_row_it_collides_with(
 ):
     # The rollback below expires every loaded object; keep the id at hand.
     workspace_id = test_workspace.id
-    await set_expected_income(session, workspace_id, _MONTH, Decimal("3450.00"), "USD")
+    await set_expected_income(session, workspace_id, _MONTH, Decimal("3450.00"), "USD", reader_currency="BRL")
 
     original_select = budget_service.select
     calls = {"count": 0}
@@ -190,7 +191,7 @@ async def test_a_racing_insert_updates_the_row_it_collides_with(
     monkeypatch.setattr(budget_service, "select", racing_select)
 
     read = await set_expected_income(
-        session, workspace_id, _MONTH, Decimal("4000.00"), "USD"
+        session, workspace_id, _MONTH, Decimal("4000.00"), "USD", reader_currency="BRL"
     )
     assert read.amount == Decimal("4000.00")
 
@@ -202,7 +203,7 @@ async def test_a_racing_insert_updates_the_row_it_collides_with(
 async def test_the_update_writes_amount_and_currency_together(
     session: AsyncSession, test_workspace
 ):
-    await set_expected_income(session, test_workspace.id, _MONTH, Decimal("3450.00"), "USD")
+    await set_expected_income(session, test_workspace.id, _MONTH, Decimal("3450.00"), "USD", reader_currency="BRL")
 
     statements: list[str] = []
 
@@ -215,9 +216,9 @@ async def test_the_update_writes_amount_and_currency_together(
     try:
         # Same currency, new amount: attribute tracking would have written the
         # amount alone and let a concurrent save of the currency through.
-        await set_expected_income(session, test_workspace.id, _MONTH, Decimal("4000.00"), "USD")
+        await set_expected_income(session, test_workspace.id, _MONTH, Decimal("4000.00"), "USD", reader_currency="BRL")
         # Same amount, new currency: the mirror case.
-        await set_expected_income(session, test_workspace.id, _MONTH, Decimal("4000.00"), "EUR")
+        await set_expected_income(session, test_workspace.id, _MONTH, Decimal("4000.00"), "EUR", reader_currency="BRL")
     finally:
         event.remove(engine, "before_cursor_execute", capture)
 
@@ -225,3 +226,28 @@ async def test_the_update_writes_amount_and_currency_together(
     for statement in statements:
         assert "amount" in statement
         assert "currency" in statement
+
+
+async def test_the_write_response_converts_to_the_reader_currency(
+    session: AsyncSession, test_workspace
+):
+    session.add(
+        FxRate(
+            base_currency="USD",
+            quote_currency="BRL",
+            date=date(2026, 4, 1),
+            rate=Decimal("5.0"),
+            source="test",
+        )
+    )
+    await session.flush()
+
+    read = await set_expected_income(
+        session, test_workspace.id, _MONTH, Decimal("10.00"), "USD", reader_currency="BRL"
+    )
+    assert read.amount == Decimal("10.00")  # the row keeps what was typed
+    assert read.currency == "USD"
+    assert read.amount_primary == Decimal("50.00")  # priced for the reader
+
+    stored = await get_expected_income(session, test_workspace.id, _MONTH, "BRL")
+    assert stored is not None and stored.amount_primary == Decimal("50.00")
