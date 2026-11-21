@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 
@@ -45,17 +47,19 @@ async def _search_path(session):
     return conn
 
 
-async def _run_operation(session, monkeypatch, operation) -> None:
+async def _run_operation(session, operation) -> None:
     conn = await _search_path(session)
 
     def run(sync_conn):
-        monkeypatch.setattr(migration.op, "get_bind", lambda: sync_conn)
-        operation()
+        # The migration calls alembic.op, whose proxy only exists inside an
+        # Operations context (what `alembic upgrade` installs for it).
+        with Operations.context(MigrationContext.configure(sync_conn)):
+            operation()
 
     await conn.run_sync(run)
 
 
-async def _drop_model_table(session, monkeypatch) -> None:
+async def _drop_model_table(session) -> None:
     """Drop the table create_all built from the model so upgrade() has to make it."""
     conn = await _search_path(session)
     await conn.execute(text("DROP TABLE IF EXISTS expected_incomes CASCADE"))
@@ -78,11 +82,9 @@ async def _seed_income(session, workspace_id) -> ExpectedIncome:
     return row
 
 
-async def test_upgrade_creates_a_table_that_keeps_the_typed_income(
-    session, test_workspace, monkeypatch
-):
-    await _drop_model_table(session, monkeypatch)
-    await _run_operation(session, monkeypatch, migration.upgrade)
+async def test_upgrade_creates_a_table_that_keeps_the_typed_income(session, test_workspace):
+    await _drop_model_table(session)
+    await _run_operation(session, migration.upgrade)
     assert await _table_exists(session)
 
     row = await _seed_income(session, test_workspace.id)
@@ -96,10 +98,10 @@ async def test_upgrade_creates_a_table_that_keeps_the_typed_income(
 
 
 async def test_unique_refuses_a_second_income_for_the_same_workspace_month(
-    session, test_workspace, monkeypatch
+    session, test_workspace
 ):
-    await _drop_model_table(session, monkeypatch)
-    await _run_operation(session, monkeypatch, migration.upgrade)
+    await _drop_model_table(session)
+    await _run_operation(session, migration.upgrade)
 
     await _seed_income(session, test_workspace.id)
     session.add(
@@ -114,10 +116,10 @@ async def test_unique_refuses_a_second_income_for_the_same_workspace_month(
         await session.flush()
 
 
-async def test_downgrade_makes_the_table_gone(session, monkeypatch):
-    await _drop_model_table(session, monkeypatch)
-    await _run_operation(session, monkeypatch, migration.upgrade)
+async def test_downgrade_makes_the_table_gone(session):
+    await _drop_model_table(session)
+    await _run_operation(session, migration.upgrade)
     assert await _table_exists(session)
 
-    await _run_operation(session, monkeypatch, migration.downgrade)
+    await _run_operation(session, migration.downgrade)
     assert not await _table_exists(session)
