@@ -436,6 +436,7 @@ async def test_an_update_during_the_call_does_not_vouch_for_the_old_reply(
         return result
 
     async def capture(*args, provider=None, **kwargs):
+        assert provider is not None
         seen.append(provider.complete_feed)
 
     with (
