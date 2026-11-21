@@ -69,9 +69,17 @@ export function BudgetIncomeStrip({ month, savedBudgets, canWrite, currency, loc
   const incomeValue = income === null ? null : Number(income.amount_primary ?? income.amount)
   const planned = savedPlannedTotal(savedBudgets)
   const difference = incomeValue === null ? null : incomeValue - planned
-  const covers = incomeValue !== null && planned > 0
-    ? Math.min(Math.round((incomeValue / planned) * 100), 100)
+  // Share of the income left, or the share it falls short by. Floored so the
+  // figure never promises more than the raw ratio; with no income there is no
+  // base to divide by, and the row falls back to the amount alone.
+  const share = incomeValue !== null && incomeValue > 0 && difference !== null
+    ? Math.floor((Math.abs(difference) / incomeValue) * 100)
     : null
+  const shareClass = difference === null || difference === 0
+    ? 'text-muted-foreground'
+    : difference > 0
+      ? 'text-emerald-700 dark:text-emerald-300'
+      : 'text-rose-700 dark:text-rose-300'
   const parsed = parseBudgetDraft(draft, locale)
   const canSet = parsed !== null && parsed > 0
   const invalidDraft = parsed === null && draft.trim() !== ''
@@ -127,14 +135,15 @@ export function BudgetIncomeStrip({ month, savedBudgets, canWrite, currency, loc
         <span className="text-sm font-semibold tabular-nums text-foreground">{fmt(incomeValue ?? 0)}</span>
         <span className="text-xs text-muted-foreground tabular-nums">{t('budgets.incomePlanned', { amount: fmt(planned) })}</span>
         {difference !== null && (
-          <span className="text-xs text-muted-foreground tabular-nums">
-            {difference >= 0
-              ? t('budgets.incomeLeft', { amount: fmt(difference) })
-              : t('budgets.incomeShort', { amount: fmt(-difference) })}
+          <span className={`text-xs tabular-nums ${shareClass}`}>
+            {difference < 0
+              ? share !== null
+                ? t('budgets.incomeShortShare', { percent: share, amount: fmt(-difference) })
+                : t('budgets.incomeShort', { amount: fmt(-difference) })
+              : share !== null
+                ? t('budgets.incomeLeftShare', { percent: share, amount: fmt(difference) })
+                : t('budgets.incomeLeft', { amount: fmt(difference) })}
           </span>
-        )}
-        {covers !== null && (
-          <span className="text-xs text-muted-foreground tabular-nums">{t('budgets.incomeCovers', { percent: covers })}</span>
         )}
       </div>
       {canWrite && (

@@ -59,27 +59,35 @@ describe('BudgetIncomeStrip', () => {
     expect(api.budgets.expectedIncome.get).toHaveBeenCalledWith('2026-10-01')
   })
 
-  it('shows the difference and the coverage when the income is set', async () => {
+  it('shows the share of the income left and the amount', async () => {
     api.budgets.expectedIncome.get.mockResolvedValue(income)
     await strip([rent, hidden])
 
     expect(await screen.findByText(t('budgets.incomePlanned', { amount: '$1020.00' }))).toBeInTheDocument()
-    expect(screen.getByText(t('budgets.incomeLeft', { amount: '$3980.00' }))).toBeInTheDocument()
-    expect(screen.getByText(t('budgets.incomeCovers', { percent: 100 }))).toBeInTheDocument()
+    const share = screen.getByText(t('budgets.incomeLeftShare', { percent: 79, amount: '$3980.00' }))
+    expect(share).toHaveClass('text-emerald-700')
   })
 
-  it('shows how short the income is and never divides by a zero planned total', async () => {
+  it('shows the share the income is short by, and never divides by a zero planned total', async () => {
     api.budgets.expectedIncome.get.mockResolvedValue({ ...income, amount: 500, amount_primary: 500 })
     const withLimits = await strip([rent, hidden])
 
-    expect(await screen.findByText(t('budgets.incomeShort', { amount: '$520.00' }))).toBeInTheDocument()
-    expect(screen.queryByText(t('budgets.incomeCovers', { percent: 100 }))).not.toBeInTheDocument()
+    // 520 short of a 500 income is 104% of it.
+    const short = await screen.findByText(t('budgets.incomeShortShare', { percent: 104, amount: '$520.00' }))
+    expect(short).toHaveClass('text-rose-700')
 
-    // A month without saved limits has nothing to cover: only the surplus shows.
+    // A month without saved limits leaves the whole income: 100%.
     withLimits.unmount()
     await strip([])
-    expect(await screen.findByText(t('budgets.incomeLeft', { amount: '$500.00' }))).toBeInTheDocument()
-    expect(screen.queryByText(/Income covers/)).not.toBeInTheDocument()
+    expect(await screen.findByText(t('budgets.incomeLeftShare', { percent: 100, amount: '$500.00' }))).toBeInTheDocument()
+  })
+
+  it('leaves the percent out when there is no income to take a share of', async () => {
+    api.budgets.expectedIncome.get.mockResolvedValue({ ...income, amount: 0, amount_primary: 0 })
+    await strip([rent])
+
+    const short = await screen.findByText(t('budgets.incomeShort', { amount: '$900.00' }))
+    expect(short).toHaveClass('text-rose-700')
   })
 
   it('clears through a null amount', async () => {
@@ -102,7 +110,7 @@ describe('BudgetIncomeStrip', () => {
 
     expect(await screen.findByText('M$5000.00')).toBeInTheDocument()
     expect(screen.getByText(t('budgets.incomePlanned', { amount: 'M$900.00' }))).toBeInTheDocument()
-    expect(screen.getByText(t('budgets.incomeLeft', { amount: 'M$4100.00' }))).toBeInTheDocument()
+    expect(screen.getByText(t('budgets.incomeLeftShare', { percent: 82, amount: 'M$4100.00' }))).toBeInTheDocument()
   })
 
   it('hides the setter and the clear button from a viewer', async () => {
@@ -120,7 +128,7 @@ describe('BudgetIncomeStrip', () => {
     await strip([rent])
 
     expect(await screen.findByText('$1400.00')).toBeInTheDocument()
-    expect(screen.getByText(t('budgets.incomeLeft', { amount: '$500.00' }))).toBeInTheDocument()
+    expect(screen.getByText(t('budgets.incomeLeftShare', { percent: 35, amount: '$500.00' }))).toBeInTheDocument()
   })
 
   it('reads the month in the strip and the page query once', async () => {
@@ -153,7 +161,7 @@ describe('BudgetIncomeStrip', () => {
       api.budgets.expectedIncome.get.mockResolvedValue(income)
       await strip([rent, hidden])
       await screen.findByText(t('budgets.incomePlanned', { amount: '$1020.00' }))
-      const container = screen.getByText(t('budgets.incomeCovers', { percent: 100 })).closest('div')
+      const container = screen.getByText(t('budgets.incomeLeftShare', { percent: 79, amount: '$3980.00' })).closest('div')
       expect(container?.className ?? '').not.toMatch(/(^| )((ml|mr|pl|pr|left|right)-|text-left|text-right)/)
     } finally {
       await i18n.changeLanguage('en')

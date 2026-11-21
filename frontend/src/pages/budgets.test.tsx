@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
 
 import { monthLabel, monthRange } from '@/lib/month-utils'
+import { formatCurrency } from '@/lib/format'
 
 import BudgetsPage from '@/pages/budgets'
 import { renderWithProviders, t } from '@/test/utils'
@@ -627,8 +628,9 @@ describe('budget income strip', () => {
     renderWithProviders(<BudgetsPage />)
 
     expect(await screen.findByText(t('budgets.incomePlanned', { amount: '$1,020.00' }))).toBeInTheDocument()
-    expect(screen.getByText(t('budgets.incomeLeft', { amount: '$3,980.00' }))).toBeInTheDocument()
-    expect(screen.getByText(t('budgets.incomeCovers', { percent: 100 }))).toBeInTheDocument()
+    expect(
+      screen.getByText(t('budgets.incomeLeftShare', { percent: 79, amount: '$3,980.00' }), { selector: 'span:not(.truncate)' }),
+    ).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: t('budgets.incomeSet') })).not.toBeInTheDocument()
   })
 
@@ -650,7 +652,9 @@ describe('budget income strip', () => {
     renderWithProviders(<BudgetsPage />)
 
     expect(await screen.findByText(t('budgets.incomePlanned', { amount: 'M$1,020.00' }))).toBeInTheDocument()
-    expect(screen.getByText(t('budgets.incomeLeft', { amount: 'M$3,980.00' }))).toBeInTheDocument()
+    expect(
+      screen.getByText(t('budgets.incomeLeftShare', { percent: 79, amount: 'M$3,980.00' }), { selector: 'span:not(.truncate)' }),
+    ).toBeInTheDocument()
     expect(screen.getByText('M$5,000.00')).toBeInTheDocument()
   })
 
@@ -688,8 +692,9 @@ describe('budget income chip in the save bar', () => {
     api.budgets.expectedIncome.get.mockResolvedValue(savedIncome)
     renderWithProviders(<BudgetsPage />)
 
-    const chip = await screen.findByText(/Income covers 100%/, { selector: 'span.truncate' })
-    expect(chip).toHaveTextContent('$0.00 left')
+    // Income equals the planned total: a zero share, neutral rather than green.
+    const chip = await screen.findByText(t('budgets.incomeLeftShare', { percent: 0, amount: '$0.00' }), { selector: 'span.truncate' })
+    expect(chip).toHaveClass('text-muted-foreground')
     expect(chip.className).toContain('truncate')
     expect(screen.getByText(t('budgets.total', { amount: '$1,020.00' }))).toBeInTheDocument()
   })
@@ -703,9 +708,22 @@ describe('budget income chip in the save bar', () => {
     await user.type(rentInput, '2000')
 
     expect(await screen.findByText(t('budgets.incomeUnsaved'))).toBeInTheDocument()
-    expect(screen.queryByText(/Income covers/, { selector: 'span.truncate' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(t('budgets.incomeLeftShare', { percent: 0, amount: '$0.00' }), { selector: 'span.truncate' }),
+    ).not.toBeInTheDocument()
     // The footer keeps the draft total; the chip cannot have followed it.
     expect(screen.getByText(t('budgets.total', { amount: '$2,120.00' }))).toBeInTheDocument()
+  })
+
+  it('shows the share the income falls short by, in red', async () => {
+    api.budgets.expectedIncome.get.mockResolvedValue({ month: '2026-10-01', amount: 500, currency: 'USD', amount_primary: 500 })
+    renderWithProviders(<BudgetsPage />)
+
+    const chip = await screen.findByText(
+      t('budgets.incomeShortShare', { percent: 104, amount: '$520.00' }),
+      { selector: 'span.truncate' },
+    )
+    expect(chip).toHaveClass('text-rose-700')
   })
 
   it('stays on one line with logical classes under RTL at 390px', async () => {
@@ -714,7 +732,12 @@ describe('budget income chip in the save bar', () => {
     try {
       api.budgets.expectedIncome.get.mockResolvedValue(savedIncome)
       renderWithProviders(<BudgetsPage />)
-      const chip = await screen.findByText(/Income covers 100%/, { selector: 'span.truncate' })
+      // Under RTL, formatCurrency wraps the amount in LTR isolate marks.
+      const amount = formatCurrency(0, 'USD', 'en-US')
+      const chip = await screen.findByText(
+        t('budgets.incomeLeftShare', { percent: 0, amount }),
+        { selector: 'span.truncate' },
+      )
       expect(chip.className).toContain('truncate')
       expect(chip.className).not.toMatch(/(^| )((ml|mr|pl|pr)-|text-left|text-right)/)
     } finally {

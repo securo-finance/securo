@@ -216,9 +216,25 @@ export default function BudgetsPage() {
   const savedPlanned = savedPlannedTotal(budgetsList ?? [])
   const chipIncome = incomeData == null ? null : Number(incomeData.amount_primary ?? incomeData.amount)
   const chipDifference = chipIncome === null ? null : chipIncome - savedPlanned
-  const chipPercent = chipIncome !== null && savedPlanned > 0
-    ? Math.min(Math.round((chipIncome / savedPlanned) * 100), 100)
+  // The chip says what share of the income is left (green) or short (red),
+  // floored and always relative to the income, like the strip's sentence.
+  const chipShare = chipIncome !== null && chipIncome > 0 && chipDifference !== null
+    ? Math.floor((Math.abs(chipDifference) / chipIncome) * 100)
     : null
+  const chipShareClass = chipDifference === null || chipDifference === 0
+    ? 'text-muted-foreground'
+    : chipDifference > 0
+      ? 'text-emerald-700 dark:text-emerald-300'
+      : 'text-rose-700 dark:text-rose-300'
+  const chipLine = chipDifference === null
+    ? null
+    : chipDifference < 0
+      ? chipShare !== null
+        ? t('budgets.incomeShortShare', { percent: chipShare, amount: fmt(-chipDifference) })
+        : t('budgets.incomeShort', { amount: fmt(-chipDifference) })
+      : chipShare !== null
+        ? t('budgets.incomeLeftShare', { percent: chipShare, amount: fmt(chipDifference) })
+        : t('budgets.incomeLeft', { amount: fmt(chipDifference) })
   const rowFor = (suggestion: BudgetSuggestion) =>
     suggestEdits[suggestion.category_id] ?? { checked: !suggestion.existing_budget, amount: String(suggestion.suggested_amount) }
   const suggestionByCategory = new Map((suggestionData?.suggestions ?? []).map((suggestion) => [suggestion.category_id, suggestion]))
@@ -551,17 +567,8 @@ export default function BudgetsPage() {
               <div className="text-sm tabular-nums">
                 <span className="font-semibold text-foreground">{t('budgets.total', { amount: fmt(totalBudget) })}</span>
                 {chipIncome !== null && (
-                  <span className="block max-w-full truncate text-xs text-muted-foreground">
-                    {operations.length > 0
-                      ? t('budgets.incomeUnsaved')
-                      : [
-                          chipPercent !== null ? t('budgets.incomeCovers', { percent: chipPercent }) : null,
-                          chipDifference !== null
-                            ? chipDifference >= 0
-                              ? t('budgets.incomeLeft', { amount: fmt(chipDifference) })
-                              : t('budgets.incomeShort', { amount: fmt(-chipDifference) })
-                            : null,
-                        ].filter(Boolean).join(' · ')}
+                  <span className={`block max-w-full truncate text-xs ${operations.length > 0 ? 'text-muted-foreground' : chipShareClass}`}>
+                    {operations.length > 0 ? t('budgets.incomeUnsaved') : chipLine}
                   </span>
                 )}
               </div>
