@@ -1067,6 +1067,16 @@
     "sortDesc": "Seřadit sestupně",
     "syncedInfo": "Transakce synchronizovaná z banky: částku, datum a účet nelze upravit",
     "syncedAmountDateError": "Částku ani datum synchronizované transakce nelze změnit",
+    "amountErrors": {
+      "notPositive": "Částka musí být větší než nula.",
+      "tooSmall": "Částka musí být alespoň 0,01.",
+      "tooLarge": "Částka je větší, než Securo dokáže uložit.",
+      "convertedNegative": "Přepočtená částka nemůže být záporná.",
+      "convertedTooLarge": "Přepočtená částka je větší, než Securo dokáže uložit.",
+      "rateNegative": "Směnný kurz nemůže být záporný.",
+      "rateTooLarge": "Směnný kurz je větší, než Securo dokáže uložit.",
+      "required": "Zadejte částku."
+    },
     "uncategorized": "Bez kategorie",
     "selected": "vybraných",
     "summaryCount": "{{count}} transakcí",

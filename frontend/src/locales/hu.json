@@ -1031,6 +1031,16 @@
     "sortDesc": "Csökkenő rendezés",
     "syncedInfo": "Bankkal szinkronizált tranzakció: az összeg, a dátum és a számla nem szerkeszthető",
     "syncedAmountDateError": "Szinkronizált tranzakció összege vagy dátuma nem módosítható",
+    "amountErrors": {
+      "notPositive": "Az összegnek nagyobbnak kell lennie nullánál.",
+      "tooSmall": "Az összegnek legalább 0,01-nek kell lennie.",
+      "tooLarge": "Az összeg nagyobb annál, amit a Securo tárolni tud.",
+      "convertedNegative": "Az átváltott összeg nem lehet negatív.",
+      "convertedTooLarge": "Az átváltott összeg nagyobb annál, amit a Securo tárolni tud.",
+      "rateNegative": "Az árfolyam nem lehet negatív.",
+      "rateTooLarge": "Az árfolyam nagyobb annál, amit a Securo tárolni tud.",
+      "required": "Adjon meg egy összeget."
+    },
     "uncategorized": "Kategorizálatlan",
     "selected": "kijelölve",
     "summaryCount": "{{count}} tranzakció",

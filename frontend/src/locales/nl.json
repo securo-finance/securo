@@ -1031,6 +1031,16 @@
     "sortDesc": "Sorteer aflopend",
     "syncedInfo": "Bankgesynchroniseerde transactie: bedrag, datum en rekening kunnen niet worden bewerkt",
     "syncedAmountDateError": "Het bedrag of de datum van een gesynchroniseerde transactie kan niet worden gewijzigd",
+    "amountErrors": {
+      "notPositive": "Het bedrag moet groter dan nul zijn.",
+      "tooSmall": "Het bedrag moet minstens 0,01 zijn.",
+      "tooLarge": "Het bedrag is groter dan Securo kan opslaan.",
+      "convertedNegative": "Het omgerekende bedrag kan niet negatief zijn.",
+      "convertedTooLarge": "Het omgerekende bedrag is groter dan Securo kan opslaan.",
+      "rateNegative": "De wisselkoers kan niet negatief zijn.",
+      "rateTooLarge": "De wisselkoers is groter dan Securo kan opslaan.",
+      "required": "Voer een bedrag in."
+    },
     "uncategorized": "Niet gecategoriseerd",
     "selected": "geselecteerd",
     "summaryCount": "{{count}} transacties",
