@@ -292,6 +292,19 @@ _EXCHANGE_TRADED_TYPES = {"EQUITY", "ETF"}
 _TRADE_KINDS: dict[str, Literal["buy", "sell"]] = {"BUY": "buy", "SELL": "sell"}
 
 
+def _finite_decimal_or_none(value) -> Optional[Decimal]:
+    """A trade figure as a Decimal, or None when it is missing or unusable.
+
+    NaN and infinities parse (JSON accepts them too) but break comparisons
+    and arithmetic: `Decimal("NaN") <= 0` raises. They read as missing, as
+    do booleans.
+    """
+    if isinstance(value, bool):
+        return None
+    parsed = _decimal_or_none(value)
+    return parsed if parsed is not None and parsed.is_finite() else None
+
+
 def _sum_expenses(expenses) -> Decimal:
     """Total fee of a trade from Pluggy's `expenses` breakdown.
 
@@ -303,7 +316,7 @@ def _sum_expenses(expenses) -> Decimal:
         return Decimal("0")
     total = Decimal("0")
     for value in expenses.values():
-        amount = _decimal_or_none(value) if not isinstance(value, bool) else None
+        amount = _finite_decimal_or_none(value)
         if amount is not None and amount > 0:
             total += amount
     return total
@@ -320,12 +333,12 @@ def _build_trade_data(tx: dict) -> Optional[HoldingTradeData]:
     tx_id = tx.get("id")
     if kind is None or not tx_id:
         return None
-    quantity = _decimal_or_none(tx.get("quantity"))
+    quantity = _finite_decimal_or_none(tx.get("quantity"))
     if quantity is None or quantity <= 0:
         return None
-    price = _decimal_or_none(tx.get("value"))
+    price = _finite_decimal_or_none(tx.get("value"))
     if price is None:
-        amount = _decimal_or_none(tx.get("amount"))
+        amount = _finite_decimal_or_none(tx.get("amount"))
         price = abs(amount) / quantity if amount is not None else None
     if price is None or price < 0:
         return None

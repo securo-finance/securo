@@ -60,6 +60,12 @@ def test_sell_maps_to_sell():
         {"value": -1},
         {"tradeDate": None, "date": None},
         {"tradeDate": "not a date", "date": None},
+        # Non-finite figures read as missing instead of raising.
+        {"quantity": "NaN"},
+        {"quantity": float("inf")},
+        {"quantity": True},
+        {"value": "NaN", "amount": "NaN"},
+        {"value": "-Infinity", "amount": None},
     ],
 )
 def test_rows_that_are_not_trades_are_dropped(overrides):
@@ -74,6 +80,24 @@ def test_price_falls_back_to_amount_over_quantity():
 def test_trade_date_is_preferred_over_settlement_date():
     trade = _build_trade_data(_tx(tradeDate="2026-10-22T03:00:00.000Z", date="2026-10-24T03:00:00.000Z"))
     assert trade is not None and trade.date == date(2026, 10, 22)
+
+
+def test_non_finite_price_falls_back_to_amount():
+    trade = _build_trade_data(_tx(value="NaN", amount=231.16))
+    assert trade is not None and trade.price == Decimal("115.58")
+
+
+def test_non_finite_fees_are_ignored():
+    assert _sum_expenses({"a": "NaN", "b": float("inf"), "c": "-Infinity", "d": 0.1}) == Decimal("0.1")
+
+
+@pytest.mark.asyncio
+async def test_a_nan_row_does_not_block_the_holdings_refresh():
+    holdings, _ = await _holdings(
+        [{"id": "eq", "type": "EQUITY", "code": "PSSA3", "balance": 312.62, "quantity": 7}],
+        {"eq": [_tx(id="bad", quantity="NaN", expenses={"settlementFee": "NaN"}), _tx(id="b1", quantity=7, value=44)]},
+    )
+    assert [t.external_id for t in holdings[0].trades] == ["b1"]
 
 
 def test_expenses_sum_ignores_null_negative_and_non_numeric_entries():
