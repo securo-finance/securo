@@ -36,7 +36,9 @@ export function BudgetIncomeStrip({ month, savedBudgets, canWrite, currency, loc
   const [focused, setFocused] = useState(false)
 
   const { data: income, isError: incomeLoadError } = useQuery({
-    queryKey: ['budgets', 'expected-income', month],
+    // The response is converted to the display currency, so the currency is
+    // part of the cache identity; the page's chip uses the same key.
+    queryKey: ['budgets', 'expected-income', month, currency],
     queryFn: () => budgetsApi.expectedIncome.get(month),
     // The value changes only through the PUT below (which invalidates the key),
     // so a remount need not refetch behind the page's own read.

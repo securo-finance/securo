@@ -142,9 +142,10 @@ export default function BudgetsPage() {
     queryKey: ['budgets', 'series'],
     queryFn: () => budgetsApi.list(),
   })
-  // The same read as the strip: same key and fetcher, so it is one request.
+  // The same read as the strip: same key (currency included, the response is
+  // converted to it) and fetcher, so it is one request.
   const { data: incomeData } = useQuery({
-    queryKey: ['budgets', 'expected-income', monthParam],
+    queryKey: ['budgets', 'expected-income', monthParam, userCurrency],
     queryFn: () => budgetsApi.expectedIncome.get(monthParam),
     staleTime: 60_000,
   })

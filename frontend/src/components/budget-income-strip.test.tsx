@@ -173,6 +173,34 @@ describe('BudgetIncomeStrip', () => {
     await waitFor(() => expect(api.budgets.expectedIncome.get).toHaveBeenCalledTimes(1))
   })
 
+  it('keys the read by the display currency', async () => {
+    api.budgets.expectedIncome.get.mockResolvedValue(income)
+    const { rerender } = renderWithProviders(
+      <BudgetIncomeStrip
+        month="2026-10-01"
+        savedBudgets={[rent]}
+        canWrite
+        currency="USD"
+        locale="en-US"
+        fmt={(amount) => `$${amount.toFixed(2)}`}
+      />,
+    )
+    await waitFor(() => expect(api.budgets.expectedIncome.get).toHaveBeenCalledTimes(1))
+
+    rerender(
+      <BudgetIncomeStrip
+        month="2026-10-01"
+        savedBudgets={[rent]}
+        canWrite
+        currency="EUR"
+        locale="en-US"
+        fmt={(amount) => `€${amount.toFixed(2)}`}
+      />,
+    )
+
+    await waitFor(() => expect(api.budgets.expectedIncome.get).toHaveBeenCalledTimes(2))
+  })
+
   it('marks an invalid draft and points its message at the field', async () => {
     const { user } = await strip([rent])
     const input = await screen.findByRole('textbox', { name: t('budgets.incomeLabel') })
