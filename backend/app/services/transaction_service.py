@@ -643,11 +643,14 @@ async def get_transactions(
             else_=literal(1),
         )
         pnl_filter = counts_as_pnl(line_category_id())
+        # The part takes the abs, the fraction keeps its sign: a sync that
+        # shrinks the row below the other members' shares leaves the viewer
+        # a negative remainder, and the dashboard counts it that way.
         parts_query = with_category_lines(
             select(
                 Transaction.type,
                 pnl_filter.label("counts"),
-                func.abs(line_primary_or_amount() * viewer_share_fraction).label("amount"),
+                (func.abs(line_primary_or_amount()) * viewer_share_fraction).label("amount"),
             ).select_from(Transaction)
         ).where(Transaction.id.in_(select(base_query.subquery().c.id)))
         if filter_category_ids:
