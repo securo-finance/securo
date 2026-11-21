@@ -37,10 +37,23 @@ async def test_get_without_a_stored_value_returns_null_body(client, auth_headers
 
 
 @pytest.mark.asyncio
-async def test_get_without_a_month_reads_the_current_one(client, auth_headers):
+async def test_get_without_a_month_reads_the_current_one(client, auth_headers, monkeypatch):
+    # Freezing the clock makes a wrong default month fail even with rows present.
+    monkeypatch.setattr("app.api.budgets.app_today", lambda: date(2026, 4, 15))
+    for month, amount in (("2026-03-10", "100.00"), ("2026-04-10", "200.00")):
+        written = await client.put(
+            "/api/budgets/expected-income",
+            json={"month": month, "amount": amount},
+            headers=auth_headers,
+        )
+        assert written.status_code == 200, written.text
+
     resp = await client.get("/api/budgets/expected-income", headers=auth_headers)
+
     assert resp.status_code == 200
-    assert resp.json() is None
+    body = resp.json()
+    assert body["month"] == "2026-04-01"
+    assert Decimal(str(body["amount"])) == Decimal("200.00")
 
 
 @pytest.mark.asyncio
