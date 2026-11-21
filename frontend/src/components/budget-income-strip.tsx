@@ -65,8 +65,25 @@ export function BudgetIncomeStrip({ month, savedBudgets, canWrite, currency, loc
   // Nothing to compare against while the read is in flight: the rows keep their place.
   if (income === undefined) return null
 
-  // A missing rate leaves amount_primary null: fall back to the raw amount (D5).
-  const incomeValue = income === null ? null : Number(income.amount_primary ?? income.amount)
+  // A missing rate leaves amount_primary null: the raw amount is only
+  // comparable when it is already in the display currency. Otherwise it is
+  // shown in its own currency and the comparison is withheld (D5) instead of
+  // being priced as if it were the display currency.
+  const rawIncome = income === null ? null : Number(income.amount)
+  const rawCurrency = income === null ? currency : (income.currency ?? currency)
+  const rawInDisplayCurrency = rawCurrency.toUpperCase() === currency.toUpperCase()
+  const incomeValue = income === null
+    ? null
+    : income.amount_primary !== null
+      ? Number(income.amount_primary)
+      : rawInDisplayCurrency ? rawIncome : null
+  const incomeText = income === null
+    ? ''
+    : income.amount_primary !== null
+      ? fmt(Number(income.amount_primary))
+      : rawInDisplayCurrency
+        ? fmt(rawIncome ?? 0)
+        : mask(formatCurrency(rawIncome ?? 0, rawCurrency, locale))
   const planned = savedPlannedTotal(savedBudgets)
   // Signed difference and its share of the income, in minor units, so tenths
   // and floored percentages stay exact; no income means no share to divide by.
@@ -128,7 +145,7 @@ export function BudgetIncomeStrip({ month, savedBudgets, canWrite, currency, loc
     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border bg-muted/20 px-4 py-3 sm:px-5">
       <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="text-sm font-medium text-foreground">{t('budgets.incomeLabel')}</span>
-        <span className="text-sm font-semibold tabular-nums text-foreground">{fmt(incomeValue ?? 0)}</span>
+        <span className="text-sm font-semibold tabular-nums text-foreground">{incomeText}</span>
         <span className="text-xs text-muted-foreground tabular-nums">{t('budgets.incomePlanned', { amount: fmt(planned) })}</span>
         {share !== null && (
           <span className={`text-xs tabular-nums ${shareClass}`}>

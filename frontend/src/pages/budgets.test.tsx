@@ -725,6 +725,17 @@ describe('budget income chip in the save bar', () => {
     expect(screen.getByText(t('budgets.total', { amount: '$2,120.00' }))).toBeInTheDocument()
   })
 
+  it('withholds the chip while the income cannot be converted', async () => {
+    api.budgets.expectedIncome.get.mockResolvedValue({ month: '2026-10-01', amount: 1400, currency: 'EUR', amount_primary: null })
+    renderWithProviders(<BudgetsPage />)
+
+    // The strip still shows the row, in the currency it was typed in.
+    expect(await screen.findByText('€1,400.00')).toBeInTheDocument()
+    expect(
+      screen.queryByText(/of income left|of income short/, { selector: 'span.truncate' }),
+    ).not.toBeInTheDocument()
+  })
+
   it('warns about an invalid edit that cannot be saved', async () => {
     api.budgets.expectedIncome.get.mockResolvedValue(savedIncome)
     const { user } = renderWithProviders(<BudgetsPage />)

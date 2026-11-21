@@ -144,12 +144,28 @@ describe('BudgetIncomeStrip', () => {
     expect(screen.queryByRole('button', { name: t('budgets.incomeSet') })).not.toBeInTheDocument()
   })
 
-  it('falls back to the raw amount when the primary amount has no rate yet', async () => {
+  it('compares the raw amount when it is already in the display currency', async () => {
     api.budgets.expectedIncome.get.mockResolvedValue({ ...income, amount: 1400, amount_primary: null })
     await strip([rent])
 
     expect(await screen.findByText('$1400.00')).toBeInTheDocument()
     expect(screen.getByText(t('budgets.incomeLeftShare', { percent: 35, amount: '$500.00' }))).toBeInTheDocument()
+  })
+
+  it('shows an unconverted income in its own currency and withholds the comparison', async () => {
+    api.budgets.expectedIncome.get.mockResolvedValue({
+      ...income,
+      amount: 1400,
+      currency: 'EUR',
+      amount_primary: null,
+    })
+    await strip([rent])
+
+    expect(await screen.findByText('€1,400.00')).toBeInTheDocument()
+    expect(
+      screen.queryByText(t('budgets.incomeLeftShare', { percent: 35, amount: '$500.00' })),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText(/of income left|of income short/)).not.toBeInTheDocument()
   })
 
   it('reads the month in the strip and the page query once', async () => {

@@ -217,7 +217,16 @@ export default function BudgetsPage() {
   // The chip's coverage reads the saved limits, never the drafts (D2), so the
   // figure does not move while the user is still typing.
   const savedPlanned = savedPlannedTotal(budgetsList ?? [])
-  const chipIncome = incomeData == null ? null : Number(incomeData.amount_primary ?? incomeData.amount)
+  const chipCurrency = incomeData?.currency ?? userCurrency
+  // A row with no rate is only comparable when it is already in the display
+  // currency; otherwise the chip has no figure to show.
+  const chipIncome = incomeData == null
+    ? null
+    : incomeData.amount_primary !== null
+      ? Number(incomeData.amount_primary)
+      : chipCurrency.toUpperCase() === userCurrency.toUpperCase()
+        ? Number(incomeData.amount)
+        : null
   // The chip says what share of the income is left (green) or short (red), in
   // minor units, like the strip's sentence.
   const chipShare = incomeShare(chipIncome, savedPlanned)
