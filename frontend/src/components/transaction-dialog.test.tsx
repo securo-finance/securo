@@ -3,9 +3,9 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { TransactionDialog } from '@/components/transaction-dialog'
-import { assets, currencies, groups, mortgagePayments, payees, transactions } from '@/lib/api'
+import { assets, categories, categoryGroups, currencies, groups, mortgagePayments, payees, rules, transactions } from '@/lib/api'
 import { renderWithProviders, t } from '@/test/utils'
-import type { Account, RecurringTransaction, Transaction } from '@/types'
+import type { Account, RecurringTransaction, Rule, Transaction } from '@/types'
 
 vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => ({ user: { preferences: { currency_display: 'USD' } } }),
@@ -13,6 +13,18 @@ vi.mock('@/contexts/auth-context', () => ({
 vi.mock('@/hooks/use-display-locale', () => ({
   useDateLocale: () => 'en-US',
   useDisplayLocale: () => 'en-US',
+}))
+
+// Stands in for the attachment list: one button opens a preview, as a real file would.
+vi.mock('@/components/transaction-attachments', () => ({
+  TransactionAttachments: ({ onPreviewChange }: { onPreviewChange: (p: unknown) => void }) => (
+    <button
+      type="button"
+      onClick={() => onPreviewChange({ attachmentId: 'att-1', url: 'blob:receipt', contentType: 'image/png', filename: 'receipt-a.png' })}
+    >
+      Preview receipt
+    </button>
+  ),
 }))
 
 vi.mock('@/components/ui/date-picker-input', () => ({
@@ -703,6 +715,87 @@ describe('TransactionDialog reporting date override', () => {
   })
 })
 
+describe('TransactionDialog save and next', () => {
+  function renderEdit(hasNext: boolean, loading = false) {
+    vi.spyOn(currencies, 'list').mockResolvedValue([])
+    vi.spyOn(payees, 'list').mockResolvedValue([])
+    vi.spyOn(groups, 'list').mockResolvedValue([])
+    const onSave = vi.fn()
+    const utils = renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={syncedTransaction()}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={onSave}
+        loading={loading}
+        error={null}
+        isSynced
+        hasNext={hasNext}
+      />,
+    )
+    return { ...utils, onSave }
+  }
+
+  it('saves with the saveAndNext action when the host has a next row', async () => {
+    const { onSave, user } = renderEdit(true)
+
+    await user.click(screen.getByRole('button', { name: t('transactions.saveAndNext') }))
+
+    expect(onSave).toHaveBeenCalledOnce()
+    expect(onSave.mock.calls[0][4]).toBe('saveAndNext')
+  })
+
+  it('keeps a plain save next to it', async () => {
+    const { onSave, user } = renderEdit(true)
+
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave.mock.calls[0][4]).toBe('save')
+  })
+
+  it('drops the previous transaction preview when the next one loads', async () => {
+    const { user, rerender } = renderEdit(true)
+
+    await user.click(screen.getByRole('button', { name: 'Preview receipt' }))
+    expect(screen.getAllByText('receipt-a.png').length).toBeGreaterThan(0)
+
+    rerender(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={syncedTransaction({ id: 'tx-next' })}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={vi.fn()}
+        loading={false}
+        error={null}
+        isSynced
+        hasNext={false}
+      />,
+    )
+
+    expect(screen.queryByText('receipt-a.png')).not.toBeInTheDocument()
+  })
+
+  it('ignores Enter while the host is still busy', async () => {
+    const { onSave, user } = renderEdit(true, true)
+
+    await user.type(screen.getByLabelText(t('transactions.description')), '{Enter}')
+
+    expect(onSave).not.toHaveBeenCalled()
+  })
+
+  it('offers no save and next without a next row', () => {
+    renderEdit(false)
+
+    expect(screen.queryByRole('button', { name: t('transactions.saveAndNext') })).not.toBeInTheDocument()
+  })
+})
+
 /** Shows the flag state a mounted list query holds, as a page would. */
 function FlagConsumer({ queryKey, read }: { queryKey: string[]; read: () => Promise<Transaction> }) {
   const { data } = useQuery({ queryKey, queryFn: read })
@@ -819,4 +912,50 @@ describe('TransactionDialog flag (#56)', () => {
 
     await waitFor(() => expect(screen.queryByTestId('flag-reminder')).not.toBeInTheDocument())
   })
+})
+
+it('names the existing-rule picker after the field and the chosen rule', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  const groceriesRule: Rule = {
+    id: 'rule-groceries',
+    user_id: 'synthetic-user',
+    name: 'Groceries rule',
+    conditions_op: 'and',
+    conditions: [{ field: 'description', op: 'contains', value: 'market' }],
+    actions: [{ op: 'set_category', value: 'cat-food' }],
+    priority: 0,
+    is_active: true,
+  }
+  vi.spyOn(rules, 'list').mockResolvedValue([groceriesRule])
+  vi.spyOn(categories, 'listIncludingHidden').mockResolvedValue([])
+  vi.spyOn(categoryGroups, 'listIncludingHidden').mockResolvedValue([])
+
+  const { user } = renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture(null, {
+        id: 'tx-rule-source',
+        description: 'Market run',
+      })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      onCreateRule={vi.fn()}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+    />,
+  )
+
+  await user.click(await screen.findByRole('button', { name: t('transactions.ruleActions') }))
+  await user.click(await screen.findByRole('menuitem', { name: t('transactions.addToExistingRule') }))
+
+  // A <label for> naming a <button> does not name it, so the button carries the
+  // label and the selected rule: losing either leaves the field unannounced.
+  expect(await screen.findByRole('button', {
+    name: `${t('transactions.existingRule')} ${groceriesRule.name}`,
+  })).toBeInTheDocument()
 })

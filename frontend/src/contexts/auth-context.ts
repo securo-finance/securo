@@ -11,6 +11,15 @@ interface AuthContextType {
   user: User | null
   token: string | null
   isLoading: boolean
+  /**
+   * True when the stored session could not be checked because the server was
+   * unreachable (offline, restarting, 5xx). The token is kept: this is not a
+   * sign-out, and the shell shows that the data cannot be loaded instead of
+   * rendering an empty app (issue #292).
+   */
+  sessionUnreachable: boolean
+  /** Ask again right now, instead of waiting for the connection to come back. */
+  retrySession: () => void
   login: (email: string, password: string) => Promise<LoginResult>
   verify2fa: (tempToken: string, code: string) => Promise<void>
   /** `viaOidc` marks the session as coming from the provider, so signing out

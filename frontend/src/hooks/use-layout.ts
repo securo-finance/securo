@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 
 import { uiLayouts, type UiLayouts } from '@/lib/api'
-import { resolveLayout, type LayoutItem, type Surface } from '@/lib/library'
+import { resolveLayout, type LayoutItem, type LibraryEntry, type Surface } from '@/lib/library'
 import { WorkspaceContext } from '@/contexts/workspace-context'
 
 // Per workspace and surface: the write in flight, and how many were made.
@@ -14,6 +14,8 @@ const latestWrite = new Map<string, number>()
 // the server is known to have, which is what a failed save goes back to.
 const pendingWrites = new Map<string, number>()
 const confirmed = new Map<string, LayoutItem[] | null>()
+// One empty list for every caller without plugin items, so the arrangement stays the same object.
+const NO_EXTRA: LibraryEntry[] = []
 
 interface LayoutWrite {
   next: LayoutItem[] | null
@@ -25,8 +27,11 @@ interface LayoutWrite {
  * to change it. When they never made one, or it can't be read, it's Securo's
  * default. `ready` turns true once that's known, so a page can hold back data
  * for items that may turn out not to be there.
+ *
+ * `extra` are the plugins' items for the surface, or null while they're still
+ * being read (a plugin's saved item is then kept as it is).
  */
-export function useLayout(surface: Surface) {
+export function useLayout(surface: Surface, extra: LibraryEntry[] | null = NO_EXTRA) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   // Read through the context object so a page still renders outside a WorkspaceProvider.
@@ -40,7 +45,7 @@ export function useLayout(surface: Surface) {
     retry: 1,
   })
   const saved = data?.[surface] ?? null
-  const items = useMemo(() => resolveLayout(surface, saved), [surface, saved])
+  const items = useMemo(() => resolveLayout(surface, saved, extra), [surface, saved, extra])
   const ids = useMemo(() => items.map((item) => item.id), [items])
 
   /**

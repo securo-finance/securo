@@ -26,6 +26,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
 from app.core.currency import normalize_currency_code, same_currency
+from app.core.money import (
+    MAX_FX_RATE,
+    MAX_MONEY_AMOUNT,
+    bounded_fx_rate,
+    bounded_money,
+)
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.budget import Budget
@@ -782,6 +788,7 @@ def _budget_target(budget: Budget, category_name: str | None) -> dict[str, Any]:
             "amount": {
                 "type": "number",
                 "exclusiveMinimum": 0,
+                "maximum": float(MAX_MONEY_AMOUNT),
                 "description": "Absolute value, always positive — direction comes from `type`",
             },
             "type": {
@@ -2277,6 +2284,7 @@ async def _transaction_snapshot(
             "amount": {
                 "type": "number",
                 "exclusiveMinimum": 0,
+                "maximum": float(MAX_MONEY_AMOUNT),
                 "description": "Absolute value, always positive — direction comes from `type`",
             },
             "date": {"type": "string", "format": "date"},
@@ -2297,6 +2305,7 @@ async def _transaction_snapshot(
             "amount_primary": {
                 "type": "number",
                 "exclusiveMinimum": 0,
+                "maximum": float(MAX_MONEY_AMOUNT),
                 "description": (
                     "Value in the primary currency. Setting it alone derives "
                     "fx_rate_used = amount_primary / amount."
@@ -2305,6 +2314,7 @@ async def _transaction_snapshot(
             "fx_rate_used": {
                 "type": "number",
                 "exclusiveMinimum": 0,
+                "maximum": float(MAX_FX_RATE),
                 "description": (
                     "Rate from the transaction currency to the primary "
                     "currency. Setting it alone derives "
@@ -2397,10 +2407,13 @@ async def propose_update_transaction(
             }
         changes["description"] = cleaned
     if amount is not None:
-        parsed_amount = Decimal(str(amount))
-        if parsed_amount <= 0:
-            return {"error": "amount must be greater than zero"}
-        changes["amount"] = parsed_amount
+        # The same bound the PATCH applies: a value the column would round to
+        # zero or refuse used to slip through the preview and come back from
+        # the database as raw SQL text (issue #270).
+        try:
+            changes["amount"] = bounded_money(Decimal(str(amount)))
+        except ValueError as exc:
+            return {"error": str(exc)}
     if date is not None:
         try:
             parsed_date = parse_date(date)
@@ -2483,15 +2496,17 @@ async def propose_update_transaction(
             return {"error": f"notes must be {NOTES_MAX_LENGTH} characters or fewer"}
         changes["notes"] = new_notes
     if amount_primary is not None:
-        parsed_primary = Decimal(str(amount_primary))
-        if parsed_primary <= 0:
-            return {"error": "amount_primary must be greater than zero"}
-        changes["amount_primary"] = parsed_primary
+        try:
+            changes["amount_primary"] = bounded_money(
+                Decimal(str(amount_primary)), "amount_primary"
+            )
+        except ValueError as exc:
+            return {"error": str(exc)}
     if fx_rate_used is not None:
-        parsed_rate = Decimal(str(fx_rate_used))
-        if parsed_rate <= 0:
-            return {"error": "fx_rate_used must be greater than zero"}
-        changes["fx_rate_used"] = parsed_rate
+        try:
+            changes["fx_rate_used"] = bounded_fx_rate(Decimal(str(fx_rate_used)))
+        except ValueError as exc:
+            return {"error": str(exc)}
     if is_ignored is not None:
         changes["is_ignored"] = bool(is_ignored)
     if exclude_from_pnl is not None:
