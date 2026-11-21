@@ -6,7 +6,7 @@ import logging
 import time
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from typing import Optional
+from typing import Literal, Optional
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -289,7 +289,7 @@ _EXCHANGE_TRADED_TYPES = {"EQUITY", "ETF"}
 # Pluggy investment transaction types that move the position. INTEREST
 # (dividends, JCP), TAX, TRANSFER and AMORTIZATION rows carry no quantity
 # change the ledger can replay, so they stay out of it.
-_TRADE_KINDS = {"BUY": "buy", "SELL": "sell"}
+_TRADE_KINDS: dict[str, Literal["buy", "sell"]] = {"BUY": "buy", "SELL": "sell"}
 
 
 def _sum_expenses(expenses) -> Decimal:
@@ -340,6 +340,50 @@ def _build_trade_data(tx: dict) -> Optional[HoldingTradeData]:
         price=price,
         fee=_sum_expenses(tx.get("expenses")),
     )
+
+
+def _note_key(trade: HoldingTradeData, expenses) -> Optional[tuple]:
+    """Which brokerage note a row's `expenses` block belongs to.
+
+    Pluggy repeats the note's fee total on every execution row of that note,
+    across tickers, so rows of one trade date that carry the very same block
+    are one note. None when the row has no fee to share.
+    """
+    if not isinstance(expenses, dict) or _sum_expenses(expenses) == 0:
+        return None
+    block = tuple(sorted((str(k), str(v)) for k, v in expenses.items()))
+    return (trade.date, block)
+
+
+def _split_note_fees(rows: list[tuple[HoldingTradeData, object]]) -> None:
+    """Spread each brokerage note's fee over its rows by traded amount.
+
+    `rows` pairs each trade with the `expenses` block it came with, for every
+    exchange-traded position of the item, since one note covers all tickers
+    traded that day. Summing the block per row would charge the note once per
+    execution. Each share is rounded to the cent (the ledger stores two
+    places) and the rounding remainder goes to the largest row, so a note's
+    shares add up to exactly its total. A row alone in its note keeps its fee.
+    """
+    notes: dict[tuple, list[HoldingTradeData]] = {}
+    for trade, expenses in rows:
+        key = _note_key(trade, expenses)
+        if key is not None:
+            notes.setdefault(key, []).append(trade)
+
+    cent = Decimal("0.01")
+    for trades in notes.values():
+        if len(trades) < 2:
+            continue
+        total_fee = trades[0].fee
+        weights = [t.quantity * t.price for t in trades]
+        total_weight = sum(weights, Decimal("0"))
+        if total_weight <= 0:
+            continue
+        for trade, weight in zip(trades, weights):
+            trade.fee = (total_fee * weight / total_weight).quantize(cent)
+        largest = max(range(len(trades)), key=lambda i: weights[i])
+        trades[largest].fee += total_fee - sum((t.fee for t in trades), Decimal("0"))
 
 
 
@@ -1047,6 +1091,9 @@ class PluggyProvider(BankProvider):
         item_id = credentials["item_id"]
         headers = await self._headers()
         holdings: list[HoldingData] = []
+        # Every trade of the item with its `expenses` block: one brokerage
+        # note's fee spans all tickers traded that day (_split_note_fees).
+        trade_rows: list[tuple[HoldingTradeData, object]] = []
         page = 1
 
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -1063,9 +1110,12 @@ class PluggyProvider(BankProvider):
                 for inv in results:
                     holding = _build_holding_data(inv)
                     if (inv.get("type") or "").upper() in _EXCHANGE_TRADED_TYPES:
-                        holding.trades = await self._fetch_investment_trades(
+                        rows = await self._fetch_investment_trades(
                             client, headers, str(inv["id"])
                         )
+                        if rows is not None:
+                            holding.trades = [trade for trade, _ in rows]
+                            trade_rows.extend(rows)
                     holdings.append(holding)
 
                 total_pages = data.get("totalPages", 1)
@@ -1073,11 +1123,12 @@ class PluggyProvider(BankProvider):
                     break
                 page += 1
 
+        _split_note_fees(trade_rows)
         return holdings
 
     async def _fetch_investment_trades(
         self, client: httpx.AsyncClient, headers: dict, investment_id: str
-    ) -> Optional[list[HoldingTradeData]]:
+    ) -> Optional[list[tuple[HoldingTradeData, object]]]:
         """Buys and sells Pluggy reports for one exchange-traded position.
 
         They feed the asset ledger, which derives the average price, cost
@@ -1086,9 +1137,13 @@ class PluggyProvider(BankProvider):
         quantity and unit price mean shares and price per share, so the
         trades replay onto the reported position. Returns None when the
         endpoint fails, so the sync keeps the ledger it already has instead
-        of reading the failure as "no trades".
+        of reading the failure as "no trades". A response that is not a page
+        of rows counts as a failure too.
+
+        Each trade comes paired with its raw `expenses` block: the fee there
+        is per brokerage note, and get_holdings splits it across the note.
         """
-        trades: list[HoldingTradeData] = []
+        rows: list[tuple[HoldingTradeData, object]] = []
         page = 1
         try:
             while True:
@@ -1099,13 +1154,17 @@ class PluggyProvider(BankProvider):
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                results = data.get("results", [])
+                results = data.get("results") if isinstance(data, dict) else None
+                if not isinstance(results, list):
+                    raise ValueError("response has no list of results")
                 for tx in results:
+                    if not isinstance(tx, dict):
+                        continue
                     trade = _build_trade_data(tx)
                     if trade is not None:
-                        trades.append(trade)
+                        rows.append((trade, tx.get("expenses")))
                 total_pages = data.get("totalPages", 1)
-                if page >= total_pages or not results:
+                if not isinstance(total_pages, int) or page >= total_pages or not results:
                     break
                 page += 1
         except (httpx.HTTPError, ValueError) as exc:
@@ -1113,7 +1172,7 @@ class PluggyProvider(BankProvider):
                 "Pluggy investment transactions unavailable for %s: %s", investment_id, exc
             )
             return None
-        return trades
+        return rows
 
     async def get_bills(self, credentials: dict, account_external_id: str) -> list[BillData]:
         """Fetch credit-card bills from Pluggy /bills.

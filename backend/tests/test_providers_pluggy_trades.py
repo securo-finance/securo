@@ -154,3 +154,88 @@ async def test_a_position_without_trades_reports_an_empty_list():
         {"eq": []},
     )
     assert holdings[0].trades == []
+
+
+# Pluggy repeats a brokerage note's fee total on every execution row of that
+# note, across tickers (seen on real B3 data: three buys on one day, each with
+# settlementFee 0.9 + stockExchangeFee 0.2, a 1.10 note).
+_NOTE = {"settlementFee": 0.9, "stockExchangeFee": 0.2}
+
+
+@pytest.mark.asyncio
+async def test_a_note_fee_is_split_across_its_rows_by_amount_not_repeated():
+    holdings, _ = await _holdings(
+        [{"id": "eq", "type": "EQUITY", "code": "HGLG11", "balance": 4000, "quantity": 525}],
+        {"eq": [
+            _tx(id="a", quantity=77, value=7.73, expenses=_NOTE),
+            _tx(id="b", quantity=99, value=7.73, expenses=_NOTE),
+            _tx(id="c", quantity=349, value=7.73, expenses=_NOTE),
+        ]},
+    )
+    fees = {t.external_id: t.fee for t in holdings[0].trades}
+    assert sum(fees.values()) == Decimal("1.10")
+    assert fees == {"a": Decimal("0.16"), "b": Decimal("0.21"), "c": Decimal("0.73")}
+
+
+@pytest.mark.asyncio
+async def test_one_note_spans_every_ticker_traded_that_day():
+    holdings, _ = await _holdings(
+        [
+            {"id": "a", "type": "EQUITY", "code": "AAAA11", "balance": 1240, "quantity": 200},
+            {"id": "b", "type": "EQUITY", "code": "BBBB11", "balance": 798, "quantity": 100},
+        ],
+        {
+            "a": [_tx(id="a1", quantity=100, value=10, expenses=_NOTE)],
+            "b": [_tx(id="b1", quantity=100, value=30, expenses=_NOTE)],
+        },
+    )
+    by_id = {h.external_id: h.trades[0].fee for h in holdings}
+    assert by_id == {"a": Decimal("0.28"), "b": Decimal("0.82")}
+
+
+@pytest.mark.asyncio
+async def test_rows_with_their_own_fee_are_not_pooled():
+    holdings, _ = await _holdings(
+        [{"id": "eq", "type": "EQUITY", "code": "ITUB4", "balance": 280, "quantity": 7}],
+        {"eq": [
+            _tx(id="b1", quantity=5, value=39.85, expenses={"brokerageFee": 4.9}),
+            _tx(id="b2", quantity=2, value=48.59, expenses={"brokerageFee": 2.5}),
+            # Same block on another day is another note.
+            _tx(id="b3", quantity=1, value=40, tradeDate="2026-10-23", expenses={"brokerageFee": 2.5}),
+        ]},
+    )
+    fees = {t.external_id: t.fee for t in holdings[0].trades}
+    assert fees == {"b1": Decimal("4.9"), "b2": Decimal("2.5"), "b3": Decimal("2.5")}
+
+
+@pytest.mark.parametrize("body", [{"results": None}, {"results": "x"}, [], {"totalPages": 1}])
+@pytest.mark.asyncio
+async def test_an_unreadable_transactions_page_leaves_trades_unknown(body):
+    investments = [{"id": "eq", "type": "EQUITY", "code": "PSSA3", "balance": 312.62, "quantity": 7}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/investments":
+            return httpx.Response(200, json={"results": investments, "totalPages": 1})
+        return httpx.Response(200, json=body)
+
+    def client_factory(*args, **kwargs):
+        kwargs["transport"] = httpx.MockTransport(handler)
+        kwargs["base_url"] = "https://api.pluggy.ai"
+        return _REAL_ASYNC_CLIENT(*args, **kwargs)
+
+    with patch.object(PluggyProvider, "_headers", new=AsyncMock(return_value={"X-API-KEY": "k"})), \
+         patch("app.providers.pluggy.PLUGGY_API_BASE", ""), \
+         patch("app.providers.pluggy.httpx.AsyncClient", side_effect=client_factory):
+        holdings = await PluggyProvider().get_holdings({"item_id": "item"})
+
+    # The holding itself still syncs; only its trades are unknown.
+    assert len(holdings) == 1 and holdings[0].trades is None
+
+
+@pytest.mark.asyncio
+async def test_non_object_rows_are_skipped():
+    holdings, _ = await _holdings(
+        [{"id": "eq", "type": "EQUITY", "code": "PSSA3", "balance": 312.62, "quantity": 7}],
+        {"eq": [None, "row", _tx(id="b1", quantity=7, value=44)]},
+    )
+    assert [t.external_id for t in holdings[0].trades] == ["b1"]
