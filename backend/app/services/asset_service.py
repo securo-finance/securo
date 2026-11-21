@@ -1433,9 +1433,11 @@ async def _retain_provider_value(session: AsyncSession, asset: Asset) -> None:
     The sync stores the provider's figure under PROVIDER_VALUE_METADATA_KEY,
     but a holding last synced before that key existed has none, and the link
     is about to overwrite today's point with units x quote. While the holding
-    is still provider-valued, its latest point is the provider's figure, so
-    it is kept there for unlink_market_ticker. The next sync replaces it with
-    a fresh one.
+    is still provider-valued, its latest synced point is the provider's
+    figure, so it is kept there for unlink_market_ticker. Only synced points
+    count: a manual valuation added since would otherwise come back on
+    unlink labelled as the provider's. The next sync replaces it with a
+    fresh one.
     """
     if asset.connection_id is None or asset.valuation_method == "market_price":
         return
@@ -1444,7 +1446,7 @@ async def _retain_provider_value(session: AsyncSession, asset: Asset) -> None:
         return
     latest = await session.execute(
         select(AssetValue.amount)
-        .where(AssetValue.asset_id == asset.id)
+        .where(AssetValue.asset_id == asset.id, AssetValue.source == "sync")
         .order_by(desc(AssetValue.date), desc(AssetValue.id))
         .limit(1)
     )
