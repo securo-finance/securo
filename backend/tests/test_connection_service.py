@@ -2334,6 +2334,111 @@ async def test_sync_connection_enable_banking_rekeys_changed_payload(
     assert rows[0].external_id == refetched.external_id
 
 
+# The references Bankinter sends for one of its own entries on three fetches
+# in a row: the long prefix holds and its tail is re-minted every time (#612).
+_BANKINTER_REFS = (
+    "000000000000948TAB040031669678",
+    "000000000000948TAB040031673544",
+    "000000000000948TAB040031675001",
+)
+
+
+def _bankinter_row(user_id, workspace_id, account, txn: TransactionData):
+    return _eb_row(
+        user_id, workspace_id, account, txn.external_id, txn.raw_data,
+        str(txn.amount), description=txn.description,
+        original_description=txn.description, date=txn.date,
+        currency=txn.currency,
+    )
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_rekeys_a_reissued_reference(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """#612: Bankinter gives every entry of the last weeks a new
+    entry_reference on each fetch, and the EB id hashes the reference, so a
+    second sync used to insert the same rows again and a third tripled them.
+    The held row takes the new id instead of gaining a twin."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    first = _eb_txn(_eb_payload(
+        _BANKINTER_REFS[0], "80.00", remittance="COMPRA 4455 PINGO DOCE",
+    ))
+    held = _bankinter_row(test_user.id, test_workspace.id, account, first)
+    session.add(held)
+    await session.commit()
+    held_id = held.id
+
+    for reference in _BANKINTER_REFS[1:]:
+        refetched = _eb_txn(_eb_payload(
+            reference, "80.00", remittance="COMPRA 4455 PINGO DOCE",
+        ))
+        assert refetched.external_id != held.external_id
+        await _sync_eb(session, conn, test_workspace.id, test_user.id, [refetched])
+
+        rows = await _account_rows(session, account_id)
+        assert [row.id for row in rows] == [held_id]
+        assert rows[0].external_id == refetched.external_id
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_reissued_reference_leaves_another_purchase_alone(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Same day and amount, another merchant: a purchase the feed carries for
+    the first time is its own row, even though its reference is re-issued
+    like every other one."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    first = _eb_txn(_eb_payload(
+        _BANKINTER_REFS[0], "80.00", remittance="COMPRA 4455 PINGO DOCE",
+    ))
+    session.add(_bankinter_row(test_user.id, test_workspace.id, account, first))
+    await session.commit()
+
+    other = _eb_txn(_eb_payload(
+        _BANKINTER_REFS[1], "80.00", remittance="COMPRA 9001 FARMACIA SOL",
+    ))
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [other])
+
+    rows = await _account_rows(session, account_id)
+    assert {row.external_id for row in rows} == {first.external_id, other.external_id}
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_reissued_reference_pairs_identical_purchases(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Two equal purchases on one day stay two rows: each re-issued reference
+    takes one of the held rows and none is inserted again."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    for reference in (
+        _BANKINTER_REFS[0], "000000000000948TAB040031669999",
+    ):
+        txn = _eb_txn(_eb_payload(
+            reference, "80.00", remittance="COMPRA 4455 PINGO DOCE",
+        ))
+        session.add(_bankinter_row(test_user.id, test_workspace.id, account, txn))
+    await session.commit()
+
+    incoming = [
+        _eb_txn(_eb_payload(
+            _BANKINTER_REFS[1], "80.00", remittance="COMPRA 4455 PINGO DOCE",
+        )),
+        _eb_txn(_eb_payload(
+            "000000000000948TAB040031677777", "80.00",
+            remittance="COMPRA 4455 PINGO DOCE",
+        )),
+    ]
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, incoming)
+
+    rows = await _account_rows(session, account_id)
+    assert len(rows) == 2
+    assert {row.external_id for row in rows} == {txn.external_id for txn in incoming}
+
+
 @pytest.mark.asyncio
 async def test_sync_connection_enable_banking_keeps_returned_sibling_apart(
     session: AsyncSession, test_user, test_workspace,
