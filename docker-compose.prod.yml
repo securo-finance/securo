@@ -207,10 +207,8 @@ services:
 
   frontend:
     image: ghcr.io/securo-finance/securo-frontend:latest
-    # Open to the network by default. Set FRONTEND_BIND_ADDRESS=127.0.0.1 when
-    # a reverse proxy on the same host is the only way in.
     ports:
-      - "${FRONTEND_BIND_ADDRESS:-0.0.0.0}:${FRONTEND_PORT:-3000}:8080"
+      - "${FRONTEND_PORT:-3000}:8080"
     environment:
       BACKEND_URL: http://backend:8000
       FRONTEND_URL: http://localhost:3000
