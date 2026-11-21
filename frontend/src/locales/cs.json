@@ -915,6 +915,8 @@
     "uncategorizedCta_other": "{{count}} transakcí čeká na kategorizaci",
     "uncategorizedTotal": "{{amount}} celkem",
     "categorizeNow": "Kategorizovat teď",
+    "drillDownQuickCategorize": "Vybrat kategorii",
+    "drillDownOpenTransaction": "Otevřít transakci",
     "allCategorized": "Vše hotovo!",
     "allCategorizedDesc": "Všechny transakce mají kategorii",
     "assetsValue": "Investovaná aktiva",
@@ -971,6 +973,7 @@
     "addedToExistingRule": "Pravidlo aktualizováno. Budoucí shody dostanou tuto kategorii.",
     "duplicateRuleCondition": "Toto pravidlo už tuto shodu obsahuje.",
     "saveAndNew": "Uložit a nová",
+    "saveAndNext": "Uložit a další",
     "saveAndDuplicate": "Uložit a duplikovat",
     "moreSaveOptions": "Další možnosti uložení",
     "created": "Transakce vytvořena",
@@ -1635,6 +1638,8 @@
     "copyPreviewCount": "Kategorie ke zkopírování: {{count}}",
     "copyPreviewTotal": "Celkem ke kopírování: {{amount}}",
     "copyPreviewEmpty": "Vybraný měsíc nemá žádné rozpočty ke zkopírování.",
+    "copyPreviewAllExist": "Všechny kategorie zdrojového měsíce už mají v {{month}} rozpočet. Zvolte nahrazení, chcete-li zkopírovat částky nebo použít úpravu.",
+    "copyPreviewNoChange": "Všechny rozpočty zdrojového měsíce už v {{month}} mají tyto částky.",
     "copyPreviewError": "Zdrojový měsíc se nepodařilo načíst.",
     "copyAmountTooLarge": "Upravená částka překračuje limit rozpočtu. Snižte procentní úpravu.",
     "copyConfirm": "Kopírovat rozpočty",
@@ -1777,10 +1782,13 @@
   "rules": {
     "searchPlaceholder": "Hledat pravidla...",
     "filterAllCategories": "Všechny kategorie",
+    "filterByCategory": "Filtrovat podle kategorie",
     "filterAllStatuses": "Všechny stavy",
+    "filterByStatus": "Filtrovat podle stavu",
     "filterActiveOnly": "Pouze aktivní",
     "filterInactiveOnly": "Pouze neaktivní",
     "filterAllActions": "Všechny akce",
+    "filterByAction": "Filtrovat podle akce",
     "noFilterResults": "Těmto filtrům neodpovídá žádné pravidlo",
     "preview": "Náhled",
     "previewMatched": "Shody: {{matched}}",
@@ -2251,9 +2259,10 @@
     "summaryHoldings": "Vytvořené pozice: {{created}}, spárované: {{matched}}",
     "summarySkipped": "Už importovaných: {{count}}",
     "rowsSkipped": "Řádků k přeskočení: {{count}}",
+    "reasonColumn": "Důvod",
     "rowError": "Řádek {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "a ještě {{count}}",
-    "moreRows": "a dalších {{count}} pokynů",
+    "showAllRows": "Zobrazit všech {{count}} řádků",
     "field": {
       "ticker": "Ticker",
       "date": "Datum",
@@ -2375,9 +2384,21 @@
     "lastUpdated": "Aktualizováno {{when}}",
     "refreshPrice": "Obnovit cenu",
     "refreshAllPrices": "Obnovit ceny",
-    "refreshAllPricesDone": "Aktualizováno {{refreshed}} cen, {{skipped}} bez nové ceny",
+    "refreshAllPricesDone": "{{updated}}, {{skipped}}",
+    "refreshAllPricesUpdated_one": "Aktualizována {{count}} cena",
+    "refreshAllPricesUpdated_few": "Aktualizovány {{count}} ceny",
+    "refreshAllPricesUpdated_many": "Aktualizováno {{count}} cen",
+    "refreshAllPricesUpdated_other": "Aktualizováno {{count}} cen",
+    "refreshAllPricesNoQuote_one": "{{count}} bez nové ceny",
+    "refreshAllPricesNoQuote_few": "{{count}} bez nové ceny",
+    "refreshAllPricesNoQuote_many": "{{count}} bez nové ceny",
+    "refreshAllPricesNoQuote_other": "{{count}} bez nové ceny",
+    "refreshAllPricesLeftOut_one": "{{count}} vynechána",
+    "refreshAllPricesLeftOut_few": "{{count}} vynechány",
+    "refreshAllPricesLeftOut_many": "{{count}} vynecháno",
+    "refreshAllPricesLeftOut_other": "{{count}} vynecháno",
     "refreshAllPricesNone": "Žádná aktiva s tržní cenou k obnovení",
-    "refreshAllPricesRateLimited": "Poskytovatel tržních dat nyní omezuje požadavky. Před zastavením se aktualizovalo {{refreshed}} cen a {{skipped}} bylo vynecháno. Zkuste to znovu za minutu.",
+    "refreshAllPricesRateLimited": "Poskytovatel tržních dat nyní omezuje požadavky. Před zastavením: {{updated}}, {{skipped}}. Zkuste to znovu za minutu.",
     "priceRefreshed": "Cena obnovena",
     "purchaseDate": "Datum nákupu",
     "purchasePrice": "Nákupní cena",
@@ -2556,7 +2577,41 @@
     "statementViewTransactions": "Zobrazit transakce",
     "statementUncategorizedIncome": "Nezařazené příjmy",
     "statementUncategorizedExpense": "Nezařazené výdaje",
-    "statementToggleGroup": "Zobrazit kategorie ve skupině {{name}}"
+    "statementToggleGroup": "Zobrazit kategorie ve skupině {{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "Celkem utraceno",
+        "income": "Celkem přijato",
+        "net": "Saldo"
+      },
+      "none": {
+        "category": "Bez kategorie",
+        "category_group": "Bez skupiny",
+        "payee": "Bez příjemce",
+        "account": "Bez účtu",
+        "month": "Bez data"
+      },
+      "groupBy": {
+        "category": "Kategorie",
+        "category_group": "Skupina",
+        "payee": "Příjemce",
+        "account": "Účet",
+        "month": "Měsíc"
+      },
+      "measure": {
+        "expenses": "Výdaje",
+        "income": "Příjmy",
+        "net": "Saldo"
+      },
+      "share": "Podíl",
+      "computed": "Vypočteno pluginem",
+      "periodTrimmed": "Reporty pluginů pokrývají nejvýše dva roky. Zobrazuje se {{from}} až {{to}}.",
+      "periodTooLong": "Report pluginu pokrývá nejvýše dva roky. Zvolte kratší období.",
+      "totalRow": "Celkem",
+      "page": "Strana {{page}} z {{pages}}",
+      "previousPage": "Předchozí strana",
+      "nextPage": "Další strana"
+    }
   },
   "payees": {
     "noPayeeFound": "Příjemce nebyl nalezen.",
@@ -4160,5 +4215,9 @@
       "title": "Opakované příjmy",
       "hint": "Co měsíčně přinášejí opakované faktury a co se nedávno ztratilo."
     }
+  },
+  "offline": {
+    "title": "Server je nedostupný",
+    "description": "Jste offline nebo se Securo restartuje. Vaše data jsou v bezpečí a nic se nezměnilo. Jakmile server odpoví, automaticky se znovu připojíme."
   }
 }

@@ -15,6 +15,7 @@ warn()    { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error()   { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 
 REPO_URL="https://github.com/securo-finance/securo.git"
+INSTALL_DIR="securo"
 COMPOSE_FILE="docker-compose.prod.yml"
 HEALTH_URL="http://localhost:8000/api/health"
 HEALTH_TIMEOUT=60
@@ -238,15 +239,53 @@ wait_for_container_runtime() {
 }
 
 # ── Repository Setup ─────────────────────────────────────────────────────────
+update_repo() {
+  if ! command -v git > /dev/null 2>&1; then
+    warn "git is not installed, skipping the repository update"
+    return
+  fi
+
+  # git also answers from an enclosing checkout, so only pull when the
+  # repository root is this folder: the pull must never touch another project.
+  local worktree_root
+  worktree_root=$(git rev-parse --show-toplevel 2>/dev/null || true)
+  if [ "$worktree_root" != "$(pwd -P)" ]; then
+    warn "Not a git checkout of Securo, skipping the repository update"
+    return
+  fi
+
+  info "Updating Securo repository..."
+  if git pull --ff-only --quiet; then
+    success "Repository updated"
+  else
+    warn "Could not update the repository files. Continuing with the version already here."
+  fi
+}
+
 setup_repo() {
   if [ -f "$COMPOSE_FILE" ]; then
     info "Found $COMPOSE_FILE in current directory"
+    update_repo
+    return
+  fi
+
+  if [ -e "$INSTALL_DIR" ] && [ ! -d "$INSTALL_DIR" ]; then
+    error "'$INSTALL_DIR' already exists and is not a directory. Move it out of the way or run this script from another directory."
+  fi
+
+  if [ -d "$INSTALL_DIR" ]; then
+    if [ ! -f "$INSTALL_DIR/$COMPOSE_FILE" ]; then
+      error "'$INSTALL_DIR' already exists but does not look like a Securo installation (no $COMPOSE_FILE in it). Move it out of the way or run this script from another directory."
+    fi
+    info "Found an existing Securo installation in $INSTALL_DIR"
+    cd "$INSTALL_DIR"
+    update_repo
     return
   fi
 
   info "Cloning Securo repository..."
-  git clone "$REPO_URL" securo
-  cd securo
+  git clone "$REPO_URL" "$INSTALL_DIR"
+  cd "$INSTALL_DIR"
   success "Repository cloned"
 }
 
@@ -312,6 +351,8 @@ wait_for_health() {
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 main() {
+  LAUNCH_DIR="$(pwd)"
+
   echo ""
   echo -e "${BOLD}╔══════════════════════════════════════╗${NC}"
   echo -e "${BOLD}║         Securo Installer             ║${NC}"
@@ -336,6 +377,9 @@ main() {
   echo -e "    ${BLUE}$COMPOSE_CMD_DISPLAY -f $COMPOSE_FILE logs -f${NC}    # View logs"
   echo -e "    ${BLUE}$COMPOSE_CMD_DISPLAY -f $COMPOSE_FILE ps${NC}         # Container status"
   echo -e "    ${BLUE}$COMPOSE_CMD_DISPLAY -f $COMPOSE_FILE down${NC}       # Stop Securo"
+  echo ""
+  echo -e "  To update, run this installer again from:"
+  echo -e "    ${BLUE}${LAUNCH_DIR}${NC}"
   echo ""
 }
 
