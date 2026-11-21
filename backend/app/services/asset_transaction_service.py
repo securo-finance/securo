@@ -305,10 +305,32 @@ def _raise_if_split_not_allowed(asset: Asset) -> None:
 
 
 def _quote_predates_a_split(asset: Asset, transactions: list[AssetTransaction]) -> bool:
-    if asset.last_price_at is None:
+    """Whether the cached quote can be per unit from before a recorded split.
+
+    A quote from a day before the split is. One from the split day itself is
+    too, unless it was stored after the split was recorded: every refresh path
+    then made sure it came from the split day's session, while a
+    quote stored earlier that day may still be the previous session's close.
+    """
+    quoted_at = asset.last_price_at
+    if quoted_at is None:
         return False
-    quoted_on = asset.last_price_at.astimezone(app_timezone()).date()
-    return any(tx.kind == "split" and tx.date > quoted_on for tx in transactions)
+    if quoted_at.tzinfo is None:
+        quoted_at = quoted_at.replace(tzinfo=timezone.utc)
+    quoted_on = quoted_at.astimezone(app_timezone()).date()
+    for tx in transactions:
+        if tx.kind != "split" or tx.date < quoted_on:
+            continue
+        if tx.date > quoted_on:
+            return True
+        recorded_at = tx.created_at
+        if recorded_at is None:
+            return True
+        if recorded_at.tzinfo is None:
+            recorded_at = recorded_at.replace(tzinfo=timezone.utc)
+        if quoted_at <= recorded_at:
+            return True
+    return False
 
 
 def _raise_if_too_large_to_store(transactions: list[AssetTransaction], asset: Asset) -> None:
