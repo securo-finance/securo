@@ -677,6 +677,183 @@ async def test_token_reconnect_updates_existing_connection_without_deleting_acco
     mock_provider.handle_oauth_callback.assert_awaited_once_with("fresh-setup-token")
 
 
+# ---------------------------------------------------------------------------
+# handle_oauth_callback: a second consent re-uses the connection (#1224)
+# ---------------------------------------------------------------------------
+
+
+def _linked_account(
+    session: AsyncSession, user_id, workspace_id, connection: BankConnection,
+    external_id: str, stable_external_id: str | None, name: str = "Giro",
+) -> Account:
+    account = Account(
+        id=uuid.uuid4(), user_id=user_id, workspace_id=workspace_id,
+        connection_id=connection.id, external_id=external_id,
+        stable_external_id=stable_external_id, name=name, type="checking",
+        balance=Decimal("0"), currency="EUR",
+    )
+    session.add(account)
+    return account
+
+
+async def _connect_again(
+    session: AsyncSession, workspace_id, user_id, connection_data: ConnectionData,
+) -> BankConnection:
+    """Run the callback of a fresh Enable Banking consent."""
+    mock_provider = AsyncMock()
+    mock_provider.handle_oauth_callback = AsyncMock(return_value=connection_data)
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        return await handle_oauth_callback(
+            session, workspace_id, user_id, "auth-code", "enable_banking"
+        )
+
+
+@pytest.mark.asyncio
+async def test_handle_oauth_callback_reuses_the_connection_holding_the_same_account(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """#1224: connecting again re-authorises the connection already holding the bank.
+
+    The user closed one account at the bank, opened another and connected DKB
+    again from the Accounts page. Enable Banking scopes an account's `uid` to
+    one session, so the unchanged checking account that anchors the consent
+    comes back under a new uid; the identification hash names the same real
+    account. Nothing matched on the old connect path, so it created a second
+    connection and a second row for the anchor and its siblings.
+    """
+    conn = await _make_connection(session, test_user.id, "DKB")
+    conn.provider = "enable_banking"
+    conn.workspace_id = test_workspace.id
+    conn.external_id = "old-session"
+    conn.credentials = {"session_id_enc": "old"}
+    conn.last_sync_at = datetime.now(timezone.utc)
+    checking = _linked_account(
+        session, test_user.id, test_workspace.id, conn, "uid-old", "hash-checking",
+    )
+    retired = _linked_account(
+        session, test_user.id, test_workspace.id, conn, "uid-retired", "hash-retired",
+        name="Money market",
+    )
+    await session.commit()
+
+    reconnected = await _connect_again(
+        session, test_workspace.id, test_user.id,
+        ConnectionData(
+            external_id="new-session",
+            institution_name="DKB",
+            credentials={"session_id_enc": "new"},
+            accounts=[
+                AccountData(
+                    external_id="uid-new", name="Giro", type="checking",
+                    balance=Decimal("12"), currency="EUR",
+                    stable_external_id="hash-checking",
+                ),
+                AccountData(
+                    external_id="uid-market", name="Money market", type="savings",
+                    balance=Decimal("0"), currency="EUR",
+                    stable_external_id="hash-market-new",
+                ),
+            ],
+        ),
+    )
+
+    assert reconnected.id == conn.id
+    assert reconnected.external_id == "new-session"
+    assert reconnected.credentials == {"session_id_enc": "new"}
+    assert reconnected.status == "active"
+    # The next sync reconciles the accounts against the new session's ids.
+    assert reconnected.last_sync_at is None
+    connections = (await session.execute(select(BankConnection))).scalars().all()
+    assert [c.id for c in connections] == [conn.id]
+    rows = (await session.execute(select(Account).order_by(Account.name))).scalars().all()
+    assert [a.id for a in rows] == [checking.id, retired.id]
+
+
+@pytest.mark.asyncio
+async def test_handle_oauth_callback_opens_a_connection_for_other_accounts(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A login naming accounts no connection holds is a new connection."""
+    conn = await _make_connection(session, test_user.id, "DKB")
+    conn.provider = "enable_banking"
+    conn.workspace_id = test_workspace.id
+    _linked_account(
+        session, test_user.id, test_workspace.id, conn, "uid-old", "hash-other",
+    )
+    await session.commit()
+
+    created = await _connect_again(
+        session, test_workspace.id, test_user.id,
+        ConnectionData(
+            external_id="other-session",
+            institution_name="DKB",
+            credentials={"session_id_enc": "other"},
+            accounts=[
+                AccountData(
+                    external_id="uid-own", name="Giro", type="checking",
+                    balance=Decimal("0"), currency="EUR",
+                    stable_external_id="hash-own",
+                ),
+            ],
+        ),
+    )
+
+    assert created.id != conn.id
+    connections = (await session.execute(select(BankConnection))).scalars().all()
+    assert len(connections) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "situation", ["two connections hold the account", "the holder is disconnected"],
+)
+async def test_handle_oauth_callback_does_not_guess_between_connections(
+    session: AsyncSession, test_user, test_workspace, situation,
+):
+    """A shared hash (a joint account) or a dead connection picks nothing."""
+    first = await _make_connection(session, test_user.id, "DKB")
+    first.provider = "enable_banking"
+    first.workspace_id = test_workspace.id
+    _linked_account(
+        session, test_user.id, test_workspace.id, first, "uid-joint", "hash-joint",
+    )
+    if situation == "two connections hold the account":
+        second = await _make_connection(session, test_user.id, "DKB")
+        second.provider = "enable_banking"
+        second.workspace_id = test_workspace.id
+        _linked_account(
+            session, test_user.id, test_workspace.id, second, "uid-joint-2", "hash-joint",
+        )
+    else:
+        first.status = "disconnected"
+    await session.commit()
+
+    created = await _connect_again(
+        session, test_workspace.id, test_user.id,
+        ConnectionData(
+            external_id="third-session",
+            institution_name="DKB",
+            credentials={"session_id_enc": "third"},
+            accounts=[
+                AccountData(
+                    external_id="uid-joint-3", name="Giro", type="checking",
+                    balance=Decimal("0"), currency="EUR",
+                    stable_external_id="hash-joint",
+                ),
+            ],
+        ),
+    )
+
+    assert created.id != first.id
+    connections = (await session.execute(select(BankConnection))).scalars().all()
+    expected_connections = 3 if situation == "two connections hold the account" else 2
+    assert len(connections) == expected_connections
+
+
 @pytest.mark.asyncio
 async def test_token_reconnect_rejects_provider_mismatch(
     session: AsyncSession, test_user, test_workspace
