@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { DragDropProvider } from "@dnd-kit/react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { move } from "@dnd-kit/helpers";
@@ -14,6 +14,13 @@ import { useWorkspace } from "@/contexts/workspace-context";
 import { getAccountLabel } from "@/lib/account-utils";
 import { accounts as accountsApi } from "@/lib/api";
 import type { Account } from "@/types";
+
+function reconcileIds(localIds: string[], serverIds: string[]) {
+  const serverSet = new Set(serverIds);
+  const retained = localIds.filter((id) => serverSet.has(id));
+  const retainedSet = new Set(retained);
+  return [...retained, ...serverIds.filter((id) => !retainedSet.has(id))];
+}
 
 function SortableAccount({
   account,
@@ -71,20 +78,43 @@ export default function AccountSectionDnd({
   const { canWrite } = useWorkspace();
   const queryClient = useQueryClient();
 
-  const [localItems, setLocalItems] = useState<Account[]>(accounts);
-  const beforeDrag = useRef<Account[] | null>(null);
-  const hasChanges = localItems.some(
-    (account, index) => account.id !== accounts[index]?.id,
-  );
-
-  useEffect(() => {
-    setLocalItems(accounts);
-  }, [accounts]);
+  const serverIds = accounts.map((account) => account.id);
+  const serverIdsKey = serverIds.join(",");
+  const [ordering, setOrdering] = useState(() => ({
+    sourceIdsKey: serverIdsKey,
+    localIds: serverIds,
+    dirty: false,
+  }));
+  if (ordering.sourceIdsKey !== serverIdsKey) {
+    setOrdering({
+      sourceIdsKey: serverIdsKey,
+      localIds: ordering.dirty
+        ? reconcileIds(ordering.localIds, serverIds)
+        : serverIds,
+      dirty: ordering.dirty,
+    });
+  }
+  const accountsById = new Map(accounts.map((account) => [account.id, account]));
+  const localItems = ordering.localIds
+    .map((accountId) => accountsById.get(accountId))
+    .filter((account): account is Account => account !== undefined);
+  const beforeDrag = useRef<{
+    localIds: string[];
+    dirty: boolean;
+  } | null>(null);
 
   const { mutate, isPending } = useMutation({
     mutationFn: accountsApi.bulkOrdering,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      const refreshed =
+        queryClient.getQueryData<Account[]>(["accounts"]) ?? localItems;
+      const refreshedIds = refreshed.map((account) => account.id);
+      setOrdering({
+        sourceIdsKey: refreshedIds.join(","),
+        localIds: refreshedIds,
+        dirty: false,
+      });
     },
     onError: (error) => {
       const detail = axios.isAxiosError(error)
@@ -104,7 +134,7 @@ export default function AccountSectionDnd({
           <Button
             type="button"
             size="sm"
-            disabled={!hasChanges || isPending}
+            disabled={!ordering.dirty || isPending}
             onClick={() =>
               mutate(
                 localItems.map((account, order) => ({
@@ -120,19 +150,40 @@ export default function AccountSectionDnd({
       </div>
       <DragDropProvider
         onDragStart={() => {
-          beforeDrag.current = localItems;
+          beforeDrag.current = {
+            localIds: ordering.localIds,
+            dirty: ordering.dirty,
+          };
         }}
         onDragEnd={(event) => {
+          const snapshot = beforeDrag.current;
+          beforeDrag.current = null;
           if (event.canceled) {
-            setLocalItems(beforeDrag.current || []);
+            setOrdering({
+              sourceIdsKey: serverIdsKey,
+              localIds: snapshot
+                ? reconcileIds(snapshot.localIds, serverIds)
+                : serverIds,
+              dirty: snapshot?.dirty ?? false,
+            });
             return;
           }
           const reordered = move(localItems, event);
           if (reordered === localItems) {
-            setLocalItems(beforeDrag.current || []);
+            setOrdering({
+              sourceIdsKey: serverIdsKey,
+              localIds: snapshot
+                ? reconcileIds(snapshot.localIds, serverIds)
+                : serverIds,
+              dirty: snapshot?.dirty ?? false,
+            });
             return;
           }
-          setLocalItems(reordered);
+          setOrdering({
+            sourceIdsKey: serverIdsKey,
+            localIds: reordered.map((account) => account.id),
+            dirty: true,
+          });
         }}
       >
         <div className="divide-y divide-muted">

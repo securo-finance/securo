@@ -1295,6 +1295,8 @@
     "balanceCreditCard": "Dlužná částka",
     "balanceCreditCardHint": "Zadejte jako kladné číslo, kolik na této kartě aktuálně dlužíte. Pokud nemáte dluh, nechte 0.",
     "balanceDate": "Datum zůstatku",
+    "order": "Pozice v seznamu",
+    "accountOrder": "Pořadí účtů",
     "linkedCards": "Propojené karty",
     "linkedCardsHint": "Pomocí štítku je v transakcích rozlišíte.",
     "noLinkedCards": "Zatím nebyla rozpoznána žádná koncovka karty.",

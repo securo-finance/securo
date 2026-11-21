@@ -35,6 +35,9 @@ vi.mock('@dnd-kit/react', async () => {
           },
         }),
       }, 'end drag'),
+      createElement('button', {
+        onClick: () => onDragEnd({ canceled: true }),
+      }, 'cancel drag'),
       children,
     ),
   }
@@ -63,4 +66,56 @@ it('persists reordered active accounts only after clicking save', async () => {
     { account_id: 'second', order: 0 },
     { account_id: 'first', order: 1 },
   ], expect.anything()))
+})
+
+it('keeps accounts received while a drag is active when the drag is canceled', async () => {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const initialAccounts = [
+    { id: 'first', name: 'First', order: 0 },
+    { id: 'second', name: 'Second', order: 1 },
+  ] as Account[]
+  const renderSection = (accounts: Account[]) => (
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter><AccountSectionDnd accounts={accounts} /></MemoryRouter>
+    </QueryClientProvider>
+  )
+  const { rerender } = render(renderSection(initialAccounts))
+
+  fireEvent.click(screen.getByRole('button', { name: 'start drag' }))
+  rerender(renderSection([
+    ...initialAccounts,
+    { id: 'third', name: 'Third', order: 2 } as Account,
+  ]))
+  await screen.findByText('3. Third')
+
+  fireEvent.click(screen.getByRole('button', { name: 'cancel drag' }))
+
+  expect(screen.getByText('3. Third')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'common.save' })).toBeDisabled()
+})
+
+it('keeps a dirty order while refreshing account data', async () => {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const initialAccounts = [
+    { id: 'first', name: 'First', order: 0 },
+    { id: 'second', name: 'Second', order: 1 },
+  ] as Account[]
+  const renderSection = (accounts: Account[]) => (
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter><AccountSectionDnd accounts={accounts} /></MemoryRouter>
+    </QueryClientProvider>
+  )
+  const { rerender } = render(renderSection(initialAccounts))
+  fireEvent.click(screen.getByRole('button', { name: 'start drag' }))
+  fireEvent.click(screen.getByRole('button', { name: 'end drag' }))
+  expect(screen.getByText('1. Second')).toBeInTheDocument()
+
+  rerender(renderSection([
+    { ...initialAccounts[0], name: 'First refreshed' },
+    { ...initialAccounts[1], name: 'Second refreshed' },
+  ]))
+
+  expect(screen.getByText('1. Second refreshed')).toBeInTheDocument()
+  expect(screen.getByText('2. First refreshed')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'common.save' })).toBeEnabled()
 })

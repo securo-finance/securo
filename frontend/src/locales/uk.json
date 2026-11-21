@@ -1241,6 +1241,8 @@
     "balanceCreditCard": "Заборгованість",
     "balanceCreditCardHint": "Введіть додатне число — скільки ви винні за цією карткою. Залиште 0, якщо боргу немає.",
     "balanceDate": "Дата балансу",
+    "order": "Позиція у списку",
+    "accountOrder": "Порядок рахунків",
     "lastSync": "Остання синхронізація",
     "multiInstitutionLink_one": "{{provider}} · {{count}} установа",
     "multiInstitutionLink_few": "{{provider}} · {{count}} установи",

@@ -1227,6 +1227,8 @@
     "balanceCreditCard": "Tartozás",
     "balanceCreditCardHint": "Add meg pozitív számként, mennyivel tartozol jelenleg ezen a kártyán. Hagyd 0-n, ha nincs tartozásod.",
     "balanceDate": "Egyenleg dátuma",
+    "order": "Pozíció a listában",
+    "accountOrder": "Számlák sorrendje",
     "linkedCards": "Kapcsolt kártyák",
     "linkedCardsHint": "Címkével különböztetheted meg őket a tranzakciókban.",
     "noLinkedCards": "Még nem azonosítottunk kártyavégződést.",

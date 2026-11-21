@@ -1239,6 +1239,8 @@
     "balanceCreditCard": "סכום לתשלום",
     "balanceCreditCardHint": "הזינו כמה אתם חייבים כרגע בכרטיס זה כמספר חיובי. השאירו 0 אם אין חוב.",
     "balanceDate": "תאריך היתרה",
+    "order": "מיקום ברשימה",
+    "accountOrder": "סדר החשבונות",
     "lastSync": "סנכרון אחרון",
     "multiInstitutionLink": "{{provider}} · {{count}} מוסדות",
     "sync": "סנכרון",

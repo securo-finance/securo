@@ -141,6 +141,36 @@ it('starts a new transaction with the first account returned by the API', () => 
   expect(screen.queryByText(t('transactions.createCounterpartSelectAccount'))).not.toBeInTheDocument()
 })
 
+it('uses the first account currency when selecting that account implicitly', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([
+    { code: 'USD', symbol: '$', name: 'US Dollar', flag: '🇺🇸' },
+    { code: 'EUR', symbol: '€', name: 'Euro', flag: '🇪🇺' },
+  ])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={null}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={[
+        { ...accountFixtures[0], currency: 'EUR' },
+        accountFixtures[1],
+      ]}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+    />,
+  )
+
+  expect(screen.getByRole('option', { name: 'Zeta Bank' }).closest('select')).toHaveValue('acc-z')
+  await waitFor(() => {
+    expect(screen.getByRole('combobox', { name: t('transactions.currency') })).toHaveValue('EUR')
+  })
+})
+
 it('keeps preselecting the account the form was opened from', () => {
   const accountSelect = renderNewTransaction('acc-z')
 

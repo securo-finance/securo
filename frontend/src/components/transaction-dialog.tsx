@@ -541,14 +541,16 @@ function TransactionForm({
   const [date, setDate] = useState(seed?.date ?? localDateString())
   const [type, setType] = useState<'debit' | 'credit'>(seed?.type ?? 'debit')
   const [status, setStatus] = useState<'posted' | 'pending'>(seed?.status ?? 'posted')
-  // Opened from an account page, start in that account's currency.
+  const initialAccountId = seed?.account_id ?? defaultAccountId ?? accounts[0]?.id ?? ''
+  const initialAccount = accounts.find((account) => account.id === initialAccountId)
+  // Start in the implicitly or explicitly selected account's currency.
   const [currency, setCurrency] = useState(
     seed?.currency
-      ?? (defaultAccountId ? accounts.find(a => a.id === defaultAccountId)?.currency : undefined)
+      ?? initialAccount?.currency
       ?? userCurrency
   )
   const [categoryId, setCategoryId] = useState(seed?.category_id ?? '')
-  const [accountId, setAccountId] = useState(seed?.account_id ?? defaultAccountId ?? accounts[0]?.id ?? '')
+  const [accountId, setAccountId] = useState(initialAccountId)
   const [notes, setNotes] = useState(seed?.notes ?? '')
   // Manual CC bucketing override (issue #92). Empty = auto. Visible only
   // when the selected account is a credit card.

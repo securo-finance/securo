@@ -1229,6 +1229,8 @@
     "balanceCreditCard": "Importe adeudado",
     "balanceCreditCardHint": "Introduce cuánto debes actualmente en esta tarjeta como un número positivo. Déjalo en 0 si no tienes deuda.",
     "balanceDate": "Fecha de saldo",
+    "order": "Posición en la lista",
+    "accountOrder": "Orden de cuentas",
     "lastSync": "Última sincronización",
     "multiInstitutionLink_one": "{{provider}} · {{count}} institución",
     "multiInstitutionLink_many": "{{provider}} · {{count}} instituciones",

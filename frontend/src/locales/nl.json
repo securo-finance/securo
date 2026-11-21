@@ -1227,6 +1227,8 @@
     "balanceCreditCard": "Verschuldigd bedrag",
     "balanceCreditCardHint": "Voer in een positief getal in hoeveel u momenteel op deze kaart verschuldigd bent. Laat op 0 staan ​​als u geen schulden heeft.",
     "balanceDate": "Saldodatum",
+    "order": "Positie in de lijst",
+    "accountOrder": "Rekeningvolgorde",
     "lastSync": "Laatste synchronisatie",
     "multiInstitutionLink_one": "{{provider}} · {{count}} instelling",
     "multiInstitutionLink_other": "{{provider}} · {{count}} instellingen",
