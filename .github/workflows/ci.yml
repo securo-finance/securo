@@ -396,3 +396,25 @@ jobs:
           sudo mv kubeconform /usr/local/bin/
 
           helm template securo-test charts/securo | kubeconform -summary -strict
+
+      # The default values keep the MCP server off, so the render above never
+      # reaches its Deployment. Render it with values for an external
+      # PostgreSQL behind a TLS client certificate and check the four extras
+      # reach the pod: a renamed values key would otherwise be silently ignored.
+      - name: Check the MCP server pod takes the extra settings
+        if: steps.helm-changes.outputs.run_helm != 'false'
+        run: |
+          helm template securo-test charts/securo \
+            --show-only templates/mcp-server/deployment.yaml \
+            --set mcpServer.enabled=true \
+            --set config.agentsEnabled=true \
+            --set-json 'mcpServer.extraEnv=[{"name":"PGSSLMODE","value":"verify-full"}]' \
+            --set-json 'mcpServer.extraEnvFrom=[{"secretRef":{"name":"mcp-extra-env"}}]' \
+            --set-json 'mcpServer.extraVolumes=[{"name":"pg-client-tls","secret":{"secretName":"pg-client-tls"}}]' \
+            --set-json 'mcpServer.extraVolumeMounts=[{"name":"pg-client-tls","mountPath":"/etc/pg-tls","readOnly":true}]' \
+            > mcp-server.yaml
+          grep -q 'name: PGSSLMODE' mcp-server.yaml
+          grep -q 'name: mcp-extra-env' mcp-server.yaml
+          grep -q 'mountPath: /etc/pg-tls' mcp-server.yaml
+          grep -q 'secretName: pg-client-tls' mcp-server.yaml
+          kubeconform -summary -strict mcp-server.yaml
