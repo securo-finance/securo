@@ -1625,6 +1625,8 @@
   },
   "recurring": {
     "makeFromTransaction": "この取引から定期取引を作成",
+    "duplicate": "同じ説明・頻度・開始日の定期取引はすでに存在します",
+    "alreadyLinked": "この取引はすでに定期取引に属しています",
     "title": "定期取引",
     "add": "定期取引を追加",
     "edit": "定期取引を編集",

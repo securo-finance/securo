@@ -1625,6 +1625,8 @@
   },
   "recurring": {
     "makeFromTransaction": "New recurring from this transaction",
+    "duplicate": "A recurring transaction with the same description, frequency and start date already exists",
+    "alreadyLinked": "This transaction already belongs to a recurring transaction",
     "title": "Recurring Transactions",
     "add": "Add Recurring",
     "edit": "Edit Recurring",

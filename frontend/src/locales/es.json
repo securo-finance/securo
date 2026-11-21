@@ -1629,6 +1629,8 @@
   },
   "recurring": {
     "makeFromTransaction": "Nueva recurrente a partir de esta transacción",
+    "duplicate": "Ya existe una recurrente con la misma descripción, frecuencia y fecha de inicio",
+    "alreadyLinked": "Esta transacción ya pertenece a una recurrente",
     "title": "Transacciones recurrentes",
     "add": "Agregar recurrente",
     "edit": "Editar recurrente",
