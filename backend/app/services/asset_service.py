@@ -1417,6 +1417,7 @@ async def link_market_ticker(
             f"{symbol} trades in {quote.currency}, the holding is in {asset.currency}",
         )
 
+    await _retain_provider_value(session, asset)
     asset.ticker = symbol
     asset.ticker_exchange = quote.exchange
     asset.valuation_method = "market_price"
@@ -1424,6 +1425,34 @@ async def link_market_ticker(
     asset.logo_url = quote.logo_url
     await _apply_price_to_asset(session, asset, Decimal(str(quote.price)))
     await session.flush()
+
+
+async def _retain_provider_value(session: AsyncSession, asset: Asset) -> None:
+    """Keep a synced holding's provider value before a link reprices it.
+
+    The sync stores the provider's figure under PROVIDER_VALUE_METADATA_KEY,
+    but a holding last synced before that key existed has none, and the link
+    is about to overwrite today's point with units x quote. While the holding
+    is still provider-valued, its latest point is the provider's figure, so
+    it is kept there for unlink_market_ticker. The next sync replaces it with
+    a fresh one.
+    """
+    if asset.connection_id is None or asset.valuation_method == "market_price":
+        return
+    metadata = asset.external_metadata or {}
+    if metadata.get(PROVIDER_VALUE_METADATA_KEY) is not None:
+        return
+    latest = await session.execute(
+        select(AssetValue.amount)
+        .where(AssetValue.asset_id == asset.id)
+        .order_by(desc(AssetValue.date), desc(AssetValue.id))
+        .limit(1)
+    )
+    amount = latest.scalar_one_or_none()
+    if amount is None:
+        return
+    # A new dict, so the JSON column registers the change.
+    asset.external_metadata = {**metadata, PROVIDER_VALUE_METADATA_KEY: str(amount)}
 
 
 async def unlink_market_ticker(session: AsyncSession, asset: Asset) -> None:

@@ -19,7 +19,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.asset import Asset
+from app.models.asset import PROVIDER_VALUE_METADATA_KEY, Asset
 from app.models.asset_value import AssetValue
 from app.models.bank_connection import BankConnection
 from app.models.user import User
@@ -679,6 +679,36 @@ async def test_unlink_returns_an_auto_linked_holding_to_the_provider_value(
     assert body["current_value"] == pytest.approx(300.0)
     await session.refresh(asset)
     row = await _today_row(session, asset)
+    assert Decimal(str(row.amount)) == Decimal("300.00")
+    assert row.price is None
+
+
+@pytest.mark.asyncio
+async def test_unlink_restores_the_provider_value_of_a_holding_synced_before_the_key(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession, synced_asset: Asset,
+    market: _FakeMarket,
+):
+    # A holding last synced before the provider value was kept in its
+    # metadata: today's point (300) is the only record of the provider's figure.
+    synced_asset.external_metadata = {
+        key: value
+        for key, value in (synced_asset.external_metadata or {}).items()
+        if key != PROVIDER_VALUE_METADATA_KEY
+    }
+    await session.commit()
+    market.quotes["PSSA3.SA"] = _quote("PSSA3.SA", 44.00)
+
+    linked = await client.post(
+        f"/api/assets/{synced_asset.id}/link-ticker", json={"ticker": "PSSA3.SA"}, headers=auth_headers
+    )
+    assert linked.json()["current_value"] == pytest.approx(308.0)
+
+    response = await client.delete(f"/api/assets/{synced_asset.id}/link-ticker", headers=auth_headers)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["current_value"] == pytest.approx(300.0)
+    await session.refresh(synced_asset)
+    row = await _today_row(session, synced_asset)
     assert Decimal(str(row.amount)) == Decimal("300.00")
     assert row.price is None
 
