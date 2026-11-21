@@ -215,6 +215,13 @@ def _parse_day(value) -> Optional[int]:
         return None
 
 
+def _upper_text(value) -> str:
+    """An enum-like payload field, upper-cased. A missing or non-string value
+    reads as "" (unknown), so an unexpected field type never aborts the
+    holdings refresh."""
+    return value.upper() if isinstance(value, str) else ""
+
+
 def _decimal_or_none(value) -> Optional[Decimal]:
     if value is None:
         return None
@@ -303,6 +310,55 @@ _ISSUE_DATE_IS_PURCHASE_DATE = {"FIXED_INCOME", "COE"}
 # pensions reuse `code` for other identifiers (contract numbers, CNPJs), so
 # they are left out.
 _EXCHANGE_TRADED_TYPES = {"EQUITY", "ETF"}
+
+# A B3 symbol: a four-character root (letters, or alphanumeric for some ETFs
+# such as "B5P2") plus a one- or two-digit class, optionally followed by the
+# odd-lot "F" suffix ("PETR4F" trades the same share as "PETR4").
+_B3_SYMBOL = re.compile(r"^([A-Z][A-Z0-9]{3}\d{1,2})F?$")
+
+
+def _asset_type(inv: dict) -> Optional[str]:
+    """Securo asset type for an exchange-traded position, else None.
+
+    Stocks, units and BDRs are `stock`, FIIs `fund` and ETFs `etf`, so they
+    get their own icon and the market-ticker actions. Every other position
+    (fixed income, pensions, mutual funds) keeps the generic `investment`.
+    The sync only replaces the generic type, never one the user picked.
+    """
+    pluggy_type = _upper_text(inv.get("type"))
+    if pluggy_type == "ETF":
+        return "etf"
+    if pluggy_type == "EQUITY":
+        # An unexpected (non-string) subtype reads as unknown: a plain stock.
+        subtype = inv.get("subtype")
+        is_fii = isinstance(subtype, str) and subtype.upper() == "REAL_ESTATE_FUND"
+        return "fund" if is_fii else "stock"
+    return None
+
+
+def _b3_market_ticker(inv: dict) -> Optional[str]:
+    """Yahoo Finance symbol ("PSSA3.SA") for an exchange-traded B3 holding.
+
+    Returns None whenever the payload does not clearly describe a B3-listed
+    position, so a wrong guess never reaches the market-data lookup: the
+    holding then stays valued by the provider and the user can link a ticker
+    by hand.
+    """
+    if _upper_text(inv.get("type")) not in _EXCHANGE_TRADED_TYPES:
+        return None
+    # A non-string currency is unreadable, so the position is not taken as
+    # B3-listed: it stays provider-valued instead of failing the refresh.
+    currency = inv.get("currencyCode")
+    if currency not in (None, "") and _upper_text(currency) != "BRL":
+        return None
+    code = inv.get("code")
+    if not isinstance(code, str):
+        return None
+    match = _B3_SYMBOL.match(code.strip().upper())
+    if match is None:
+        return None
+    return f"{match.group(1)}.SA"
+
 
 # Pluggy investment transaction types that move the position. INTEREST
 # (dividends, JCP), TAX, TRANSFER and AMORTIZATION rows carry no quantity
@@ -433,51 +489,6 @@ def _split_note_fees(rows: list[tuple[HoldingTradeData, object]]) -> None:
         for trade, share in zip(trades, shares):
             trade.fee = share
 
-# A B3 symbol: a four-character root (letters, or alphanumeric for some ETFs
-# such as "B5P2") plus a one- or two-digit class, optionally followed by the
-# odd-lot "F" suffix ("PETR4F" trades the same share as "PETR4").
-_B3_SYMBOL = re.compile(r"^([A-Z][A-Z0-9]{3}\d{1,2})F?$")
-
-
-def _asset_type(inv: dict) -> Optional[str]:
-    """Securo asset type for an exchange-traded position, else None.
-
-    Stocks, units and BDRs are `stock`, FIIs `fund` and ETFs `etf`, so they
-    get their own icon and the market-ticker actions. Every other position
-    (fixed income, pensions, mutual funds) keeps the generic `investment`.
-    The sync only replaces the generic type, never one the user picked.
-    """
-    pluggy_type = (inv.get("type") or "").upper()
-    if pluggy_type == "ETF":
-        return "etf"
-    if pluggy_type == "EQUITY":
-        # An unexpected (non-string) subtype reads as unknown: a plain stock.
-        subtype = inv.get("subtype")
-        is_fii = isinstance(subtype, str) and subtype.upper() == "REAL_ESTATE_FUND"
-        return "fund" if is_fii else "stock"
-    return None
-
-
-def _b3_market_ticker(inv: dict) -> Optional[str]:
-    """Yahoo Finance symbol ("PSSA3.SA") for an exchange-traded B3 holding.
-
-    Returns None whenever the payload does not clearly describe a B3-listed
-    position, so a wrong guess never reaches the market-data lookup: the
-    holding then stays valued by the provider and the user can link a ticker
-    by hand.
-    """
-    if (inv.get("type") or "").upper() not in _EXCHANGE_TRADED_TYPES:
-        return None
-    if (inv.get("currencyCode") or "BRL").upper() != "BRL":
-        return None
-    code = inv.get("code")
-    if not isinstance(code, str):
-        return None
-    match = _B3_SYMBOL.match(code.strip().upper())
-    if match is None:
-        return None
-    return f"{match.group(1)}.SA"
-
 
 def _build_holding_data(inv: dict) -> HoldingData:
     """Map a Pluggy investment payload to HoldingData.
@@ -489,8 +500,8 @@ def _build_holding_data(inv: dict) -> HoldingData:
     """
     current_value = _decimal_or_none(inv.get("balance")) or Decimal("0")
     quantity = _decimal_or_none(inv.get("quantity"))
-    pluggy_status = (inv.get("status") or "").upper()
-    pluggy_type = (inv.get("type") or "").upper()
+    pluggy_status = _upper_text(inv.get("status"))
+    pluggy_type = _upper_text(inv.get("type"))
 
     purchase_date: Optional[date] = None
     if pluggy_type in _ISSUE_DATE_IS_PURCHASE_DATE:
