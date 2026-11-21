@@ -4019,5 +4019,25 @@
   "offline": {
     "title": "サーバーに接続できません",
     "description": "オフラインか、Securo が再起動中です。データは安全で、何も変更されていません。サーバーが応答し次第、自動的に再接続します。"
+  },
+  "goalChart": {
+    "region": "Progress for {{name}}",
+    "title": "History & projection",
+    "historyFailed": "History could not be loaded. The forecast uses the current goal amount.",
+    "retry": "Retry",
+    "loading": "Loading history…",
+    "hidden": "Chart hidden in privacy mode",
+    "chartLabel": "{{name}} history and projection in {{currency}}",
+    "target": "Target",
+    "today": "Today",
+    "deadline": "Deadline",
+    "actual": "Historical amount",
+    "projected": "Projection",
+    "current": "Current amount",
+    "notes": {
+      "missing": "No usable history was returned for this period.",
+      "currency": "History is unavailable in this goal’s currency. The forecast uses the goal’s current amount; no exchange rate is assumed.",
+      "partial": "Some valuations are missing; incomplete wallet totals are omitted."
+    }
   }
 }
