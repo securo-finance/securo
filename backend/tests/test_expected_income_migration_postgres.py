@@ -1,4 +1,4 @@
-"""Migration 125 on real PostgreSQL: what the created table enforces."""
+"""Migration 125 on real PostgreSQL: what the table enforces and the upsert."""
 import importlib.util
 from datetime import date
 from decimal import Decimal
@@ -12,6 +12,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 
 from app.models.expected_income import ExpectedIncome
+from app.services.budget_service import set_expected_income
 
 pytestmark = pytest.mark.asyncio
 
@@ -123,3 +124,34 @@ async def test_downgrade_makes_the_table_gone(session):
 
     await _run_operation(session, migration.downgrade)
     assert not await _table_exists(session)
+
+
+async def test_the_postgres_upsert_keeps_one_row_and_the_last_values(
+    session, test_workspace
+):
+    month = date(2026, 4, 1)
+    await set_expected_income(
+        session, test_workspace.id, month, Decimal("3450.00"), "USD", reader_currency="USD"
+    )
+    await set_expected_income(
+        session, test_workspace.id, month, Decimal("4000.55"), "EUR", reader_currency="EUR"
+    )
+
+    rows = (
+        await session.execute(
+            select(ExpectedIncome).where(ExpectedIncome.workspace_id == test_workspace.id)
+        )
+    ).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].amount == Decimal("4000.55")
+    assert rows[0].currency == "EUR"
+
+    cleared = await set_expected_income(
+        session, test_workspace.id, month, None, "EUR", reader_currency="EUR"
+    )
+    assert cleared.amount is None
+    assert (
+        await session.scalar(
+            select(ExpectedIncome).where(ExpectedIncome.workspace_id == test_workspace.id)
+        )
+    ) is None
