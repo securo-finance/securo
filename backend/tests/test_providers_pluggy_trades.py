@@ -52,6 +52,8 @@ def test_sell_maps_to_sell():
         {"type": "TAX"},
         {"type": "TRANSFER"},
         {"type": None},
+        {"type": 1},
+        {"type": ["BUY"]},
         {"id": None},
         {"quantity": None},
         {"quantity": 0},
@@ -283,7 +285,47 @@ async def test_rows_with_their_own_fee_are_not_pooled():
     assert fees == {"b1": Decimal("4.9"), "b2": Decimal("2.5"), "b3": Decimal("2.5")}
 
 
-@pytest.mark.parametrize("body", [{"results": None}, {"results": "x"}, [], {"totalPages": 1}])
+@pytest.mark.asyncio
+async def test_a_zero_price_note_is_charged_once_split_by_quantity():
+    # Two zero-price rows on one 1.10 note: keeping each row's full fee
+    # charged the note twice (2.20).
+    holdings, _ = await _holdings(
+        [{"id": "eq", "type": "EQUITY", "code": "HGLG11", "balance": 0, "quantity": 4}],
+        {"eq": [
+            _tx(id="a", quantity=1, value=0, expenses=_NOTE),
+            _tx(id="b", quantity=3, value=0, expenses=_NOTE),
+        ]},
+    )
+    fees = {t.external_id: t.fee for t in holdings[0].trades}
+    assert sum(fees.values()) == Decimal("1.10")
+    # Exact shares 0.275 and 0.825 lose the same to rounding; the tie keeps
+    # row order, so the leftover cent goes to the first row.
+    assert fees == {"a": Decimal("0.28"), "b": Decimal("0.82")}
+
+
+@pytest.mark.asyncio
+async def test_a_non_string_type_row_does_not_block_the_holdings_refresh():
+    holdings, _ = await _holdings(
+        [{"id": "eq", "type": "EQUITY", "code": "PSSA3", "balance": 312.62, "quantity": 7}],
+        {"eq": [_tx(id="bad", type=1), _tx(id="b1", quantity=7, value=44)]},
+    )
+    assert [t.external_id for t in holdings[0].trades] == ["b1"]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"results": None},
+        {"results": "x"},
+        [],
+        {"totalPages": 1},
+        # A page of rows whose paging cannot be read may not be the last one.
+        {"results": [_tx()], "totalPages": None},
+        {"results": [_tx()], "totalPages": "2"},
+        {"results": [_tx()], "totalPages": True},
+        {"results": [_tx()], "totalPages": 0},
+    ],
+)
 @pytest.mark.asyncio
 async def test_an_unreadable_transactions_page_leaves_trades_unknown(body):
     investments = [{"id": "eq", "type": "EQUITY", "code": "PSSA3", "balance": 312.62, "quantity": 7}]

@@ -329,7 +329,8 @@ def _build_trade_data(tx: dict) -> Optional[HoldingTradeData]:
     trade needs (id, date, a positive quantity, a price). `movementType` is
     not used: Pluggy reports it inverted on some rows.
     """
-    kind = _TRADE_KINDS.get((tx.get("type") or "").upper())
+    tx_type = tx.get("type")
+    kind = _TRADE_KINDS.get(tx_type.upper()) if isinstance(tx_type, str) else None
     tx_id = tx.get("id")
     if kind is None or not tx_id:
         return None
@@ -378,8 +379,9 @@ def _split_note_fees(rows: list[tuple[HoldingTradeData, object]]) -> None:
     row first gets its exact share rounded down, then the cents left over go
     one each to the rows that lost the most to that rounding, so a note's
     shares add up to exactly its total and none is negative. A total finer
-    than a cent leaves its sub-cent residue on the largest row. A row alone
-    in its note keeps its fee.
+    than a cent leaves its sub-cent residue on the largest row. A note whose
+    rows all have a zero price is split by quantity instead, so it is still
+    charged once. A row alone in its note keeps its fee.
     """
     notes: dict[tuple, list[HoldingTradeData]] = {}
     for trade, expenses in rows:
@@ -395,7 +397,10 @@ def _split_note_fees(rows: list[tuple[HoldingTradeData, object]]) -> None:
         weights = [t.quantity * t.price for t in trades]
         total_weight = sum(weights, Decimal("0"))
         if total_weight <= 0:
-            continue
+            # Every row traded at zero price: amounts cannot weigh the note,
+            # but quantities (always positive) can.
+            weights = [t.quantity for t in trades]
+            total_weight = sum(weights, Decimal("0"))
         exact = [total_fee * weight / total_weight for weight in weights]
         shares = [value.quantize(cent, rounding=ROUND_DOWN) for value in exact]
         leftover_cents = int(
@@ -1203,8 +1208,15 @@ class PluggyProvider(BankProvider):
                     trade = _build_trade_data(tx)
                     if trade is not None:
                         rows.append((trade, tx.get("expenses")))
+                if not results:
+                    break
                 total_pages = data.get("totalPages", 1)
-                if not isinstance(total_pages, int) or page >= total_pages or not results:
+                # Unreadable paging could hide later pages: a dropped
+                # buy/sell pair leaves the quantity unchanged, so the
+                # partial history would still reconcile.
+                if isinstance(total_pages, bool) or not isinstance(total_pages, int) or total_pages < 1:
+                    raise ValueError(f"invalid totalPages {total_pages!r}")
+                if page >= total_pages:
                     break
                 page += 1
         except (httpx.HTTPError, ValueError) as exc:
