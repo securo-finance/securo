@@ -914,6 +914,33 @@ describe('TransactionDialog flag (#56)', () => {
   })
 })
 
+it('shows the bank’s own category when the provider sent one', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture(null, {
+        source: 'sync',
+        provider_category: 'Groceries',
+      })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+      isSynced
+    />,
+  )
+
+  expect(
+    await screen.findByText(`${t('transactions.providerCategory')}: Groceries`),
+  ).toBeInTheDocument()
+})
+
 it('names the existing-rule picker after the field and the chosen rule', async () => {
   vi.spyOn(currencies, 'list').mockResolvedValue([])
   vi.spyOn(payees, 'list').mockResolvedValue([])

@@ -329,6 +329,9 @@ export interface Transaction {
   external_id: string | null
   description: string
   original_description: string | null
+  /** The category the bank/provider sent for this row, in its own words
+   *  (not translated by the app). Read-only; null when it has none. */
+  provider_category?: string | null
   amount: number
   currency: string
   date: string

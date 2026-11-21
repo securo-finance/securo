@@ -1197,6 +1197,12 @@ export const rules = {
     const { data } = await api.get('/rules')
     return data
   },
+  /** Provider categories the workspace already received, for the
+   * `provider_category` condition's suggestions. */
+  providerCategories: async (): Promise<string[]> => {
+    const { data } = await api.get('/rules/provider-categories')
+    return data
+  },
   create: async (rule: Omit<Rule, 'id' | 'user_id'>): Promise<Rule & { applied_count: number }> => {
     const { data } = await api.post('/rules', rule)
     return data
