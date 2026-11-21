@@ -725,6 +725,22 @@ describe('budget income chip in the save bar', () => {
     expect(screen.getByText(t('budgets.total', { amount: '$2,120.00' }))).toBeInTheDocument()
   })
 
+  it('warns about an invalid edit that cannot be saved', async () => {
+    api.budgets.expectedIncome.get.mockResolvedValue(savedIncome)
+    const { user } = renderWithProviders(<BudgetsPage />)
+
+    const rentInput = await screen.findByRole('textbox', { name: t('budgets.budgetFor', { category: 'Rent' }) })
+    await user.clear(rentInput)
+    await user.type(rentInput, 'invalid')
+
+    expect(await screen.findByText(t('budgets.incomeUnsaved'))).toBeInTheDocument()
+    expect(
+      screen.queryByText(t('budgets.incomeLeftShare', { percent: 0, amount: '$0.00' }), { selector: 'span.truncate' }),
+    ).not.toBeInTheDocument()
+    // The invalid draft counts as zero in the footer, so the figure moved.
+    expect(screen.getByText(t('budgets.total', { amount: '$120.00' }))).toBeInTheDocument()
+  })
+
   it('shows the share the income falls short by, in red', async () => {
     api.budgets.expectedIncome.get.mockResolvedValue({ month: '2026-10-01', amount: 500, currency: 'USD', amount_primary: 500 })
     renderWithProviders(<BudgetsPage />)

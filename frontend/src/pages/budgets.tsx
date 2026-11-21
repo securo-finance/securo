@@ -210,6 +210,9 @@ export default function BudgetsPage() {
   const operations = allCategories.flatMap((category) => dirtyCategoryIds.has(category.id) ? planFor(category.id) : [])
   const changedCategories = new Set(allCategories.filter((category) => dirtyCategoryIds.has(category.id) && planFor(category.id).length > 0).map((category) => category.id))
   const invalidCategories = new Set(allCategories.filter((category) => parsedDraftFor(category.id) === null).map((category) => category.id))
+  // An invalid draft has no operation to save, but it is still an unsaved edit:
+  // the chip must warn instead of showing the saved zero-difference sentence.
+  const hasPendingEdits = operations.length > 0 || invalidCategories.size > 0
   const totalBudget = allCategories.reduce((sum, category) => sum + (parsedDraftFor(category.id) ?? 0), 0)
   // The chip's coverage reads the saved limits, never the drafts (D2), so the
   // figure does not move while the user is still typing.
@@ -565,8 +568,8 @@ export default function BudgetsPage() {
               <div className="text-sm tabular-nums">
                 <span className="font-semibold text-foreground">{t('budgets.total', { amount: fmt(totalBudget) })}</span>
                 {chipIncome !== null && (
-                  <span className={`block max-w-full truncate text-xs ${operations.length > 0 ? 'text-muted-foreground' : chipShareClass}`}>
-                    {operations.length > 0 ? t('budgets.incomeUnsaved') : chipLine}
+                  <span className={`block max-w-full truncate text-xs ${hasPendingEdits ? 'text-muted-foreground' : chipShareClass}`}>
+                    {hasPendingEdits ? t('budgets.incomeUnsaved') : chipLine}
                   </span>
                 )}
               </div>
