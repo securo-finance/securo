@@ -1,1 +1,4 @@
-export { default, AccountDialog } from './account/page'
+import AccountsPage, { AccountDialog } from './account/page'
+
+export { AccountDialog }
+export default AccountsPage
