@@ -3153,6 +3153,8 @@ def test_infer_decimal_separator():
     assert infer_decimal_separator(["1.234,56", "12,50"]) == ","
     assert infer_decimal_separator(["25,000", "3,000"]) == "."
     assert infer_decimal_separator(["0,125"]) is None
+    # A "0," cell is not a grouped number, so "1,125" beside it is not one either.
+    assert infer_decimal_separator(["0,125", "1,125"]) is None
     assert infer_decimal_separator(["10", ""]) is None
 
 

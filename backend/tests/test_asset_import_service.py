@@ -116,6 +116,17 @@ def test_comma_decimal_quantities_stay_fractional():
     assert [o.quantity for o in orders] == [Decimal("1.5"), Decimal("2.000")]
 
 
+def test_zero_led_comma_quantities_are_decimals():
+    """With "0,125" in the column, "1,125" is one and an eighth, not 1125."""
+    orders, errors, _ = asset_import_service.parse_orders_csv(_csv(
+        "ticker;date;quantity;price",
+        "BTC;2026-02-10;0,125;38,50",
+        "ETH;2026-02-11;1,125;12,00",
+    ))
+    assert errors == []
+    assert [o.quantity for o in orders] == [Decimal("0.125"), Decimal("1.125")]
+
+
 def test_negative_quantity_reads_as_a_sale():
     """The convention most broker exports use for a sale."""
     orders, _, _ = asset_import_service.parse_orders_csv(_csv(

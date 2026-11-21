@@ -1519,6 +1519,9 @@ def infer_decimal_separator(values) -> str | None:
     """
     votes: set[str] = set()
     comma_thousands = False
+    # "0,125" is never a grouped number, so a column with one cannot be read
+    # as comma-thousands, even if its other cells look like it ("1,125").
+    zero_comma = False
     for raw in values:
         if not raw:
             continue
@@ -1531,11 +1534,13 @@ def infer_decimal_separator(values) -> str | None:
             votes.add(',')
         elif _DOT_DECIMAL_TAIL.search(s):
             votes.add('.')
-        elif _COMMA_THOUSANDS.match(s) and not s.startswith('0,'):
+        elif _ZERO_COMMA_DECIMAL.match(s):
+            zero_comma = True
+        elif _COMMA_THOUSANDS.match(s):
             comma_thousands = True
     if len(votes) == 1:
         return votes.pop()
-    if not votes and comma_thousands:
+    if not votes and comma_thousands and not zero_comma:
         return '.'
     return None
 
