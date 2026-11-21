@@ -1398,13 +1398,24 @@ async def refresh_market_price_asset(
     # #1357). Ask for the latest close's day and wait for one from the split
     # day on, as the batch refresh does.
     split_on = (await _last_split_dates(session, [asset.id])).get(asset.id)
+    price = Decimal(str(quote.price))
     if split_on is not None and quote_may_predate_split(asset.last_price_at, split_on):
-        closes = await provider.get_latest_closes([asset.ticker])
+        try:
+            closes = await provider.get_latest_closes([asset.ticker])
+        except MarketPriceRateLimitedError:
+            raise
+        except Exception as e:
+            logger.warning("Latest close lookup failed for %s: %s", asset.ticker, e)
+            return False
         close = closes.get(asset.ticker.upper())
         if close is None or close.on is None or close.on < split_on:
             return False
+        # The validated close carries both the trading day and the price that
+        # belongs to it. Keeping the live quote's price here would pair an
+        # undated, possibly pre-split quote with a post-split close date.
+        price = close.price
 
-    await _apply_price_to_asset(session, asset, Decimal(str(quote.price)))
+    await _apply_price_to_asset(session, asset, price)
     # Opportunistic logo backfill: assets created before Brandfetch was
     # configured have no logo_url. On the next single-asset refresh (which
     # goes through the full get_quote → website lookup), stamp it in.

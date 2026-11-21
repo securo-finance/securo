@@ -21,7 +21,7 @@ from app.models.asset import Asset
 from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
 from app.models.user import User
-from app.providers.market_price import LatestClose, MarketPriceProvider
+from app.providers.market_price import LatestClose, MarketPriceProvider, MarketPriceRateLimitedError
 from app.schemas.asset import (
     AssetBuyCreate,
     AssetCreate,
@@ -1616,6 +1616,18 @@ class _DatedClosesAndLiveQuote(_FakeProvider):
         return {s.upper(): self._close for s in symbols}
 
 
+class _ClosesThatFail(_DatedClosesAndLiveQuote):
+    """A feed whose latest-close lookup raises, as a provider outage does."""
+
+    def __init__(self, quote: MarketSymbolQuote, error: Exception):
+        super().__init__(quote, None)
+        self._error = error
+
+    async def get_latest_closes(self, symbols: list[str]) -> dict[str, Optional[LatestClose]]:
+        self.close_calls += 1
+        raise self._error
+
+
 # The split-day guard from issue #1357 covered only the batch close. The per-row
 # refresh, the sweep's per-asset fallback and recording the split itself
 # still stored the previous session's close for the units after the split.
@@ -1654,7 +1666,38 @@ async def test_the_single_refresh_skips_when_the_close_has_no_day(session, test_
 
 
 @pytest.mark.asyncio
-async def test_the_single_refresh_stores_a_quote_from_the_split_day(session, test_workspace, market_asset):
+async def test_the_single_refresh_survives_a_failed_close_lookup(session, test_workspace, market_asset):
+    quoted_at = await _holding_quoted_yesterday(session, test_workspace, market_asset)
+    await _add_split(session, test_workspace, market_asset, 1, 100, app_today())
+    feed = _ClosesThatFail(_quote("PETR4.SA", 5.05), RuntimeError("upstream down"))
+
+    ok = await asset_service.refresh_market_price_asset(session, market_asset, market_provider=feed)
+
+    assert ok is False
+    assert await _today_value(session, market_asset) is None
+    await session.refresh(market_asset)
+    assert market_asset.last_price == Decimal("500")
+    assert market_asset.last_price_at.replace(tzinfo=None) == quoted_at.replace(tzinfo=None)
+
+
+@pytest.mark.asyncio
+async def test_the_single_refresh_still_reports_a_rate_limited_close_lookup(
+    session, test_workspace, market_asset
+):
+    await _holding_quoted_yesterday(session, test_workspace, market_asset)
+    await _add_split(session, test_workspace, market_asset, 1, 100, app_today())
+    feed = _ClosesThatFail(_quote("PETR4.SA", 5.05), MarketPriceRateLimitedError("slow down"))
+
+    with pytest.raises(MarketPriceRateLimitedError):
+        await asset_service.refresh_market_price_asset(session, market_asset, market_provider=feed)
+
+    assert await _today_value(session, market_asset) is None
+
+
+@pytest.mark.asyncio
+async def test_the_single_refresh_stores_the_validated_close_price_on_the_split_day(
+    session, test_workspace, market_asset
+):
     await _holding_quoted_yesterday(session, test_workspace, market_asset)
     today = app_today()
     await _add_split(session, test_workspace, market_asset, 1, 100, today)
@@ -1664,10 +1707,13 @@ async def test_the_single_refresh_stores_a_quote_from_the_split_day(session, tes
     await session.commit()
 
     assert ok is True
+    # The dated close is the observation whose day passed the split guard, so
+    # its price is the one stored: the live quote has no trading day and may
+    # still be the previous session's pre-split close.
     stored = await _today_value(session, market_asset)
     assert stored is not None
-    assert stored.price == Decimal("5.05")
-    assert stored.amount == pytest.approx(Decimal("1515"))
+    assert stored.price == Decimal("5.02")
+    assert stored.amount == pytest.approx(Decimal("1506"))
 
 
 @pytest.mark.asyncio
@@ -1722,7 +1768,7 @@ async def test_a_split_recorded_the_day_it_was_quoted_keeps_today_at_the_old_val
     # split recorded later that day must not multiply it by the new units.
     await _holding_quoted_yesterday(session, test_workspace, market_asset)
     today = app_today()
-    market_asset.last_price_at = datetime.combine(today, time(6), tzinfo=app_timezone())
+    market_asset.last_price_at = datetime.combine(today, time.min, tzinfo=app_timezone())
     session.add(AssetValue(
         asset_id=market_asset.id, workspace_id=test_workspace.id, amount=Decimal("1500"),
         price=Decimal("500"), date=today, source="sync",
