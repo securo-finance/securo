@@ -279,11 +279,19 @@ function RecurringTab() {
                   className="gap-1.5 h-8"
                   onClick={() => generateMutation.mutate()}
                   disabled={generateMutation.isPending}
+                  aria-label={t('recurring.generatePending')}
+                  title={t('recurring.generatePending')}
                 >
                   <RefreshCw size={12} />
                   <span className="hidden sm:inline">{t('recurring.generatePending')}</span>
                 </Button>
-                <Button size="sm" className="gap-1.5 h-8" onClick={() => { setEditing(null); setDialogOpen(true) }}>
+                <Button
+                  size="sm"
+                  className="gap-1.5 h-8"
+                  onClick={() => { setEditing(null); setDialogOpen(true) }}
+                  aria-label={t('recurring.add')}
+                  title={t('recurring.add')}
+                >
                   <Plus size={13} /> <span className="hidden sm:inline">{t('recurring.add')}</span>
                 </Button>
               </div>

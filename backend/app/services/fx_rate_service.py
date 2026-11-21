@@ -10,7 +10,10 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.core.app_clock import app_today
 from app.core.config import get_settings
+from app.core.currency import same_currency
+from app.models.account import Account
 from app.models.fx_rate import FxRate
+from app.models.transaction import Transaction
 from app.models.user import User
 from app.providers.openexchangerates import OpenExchangeRatesProvider
 from app.services.provider_settings import resolve_settings
@@ -313,6 +316,115 @@ async def stamp_primary_amount(
     currency_field: str = "currency",
     *,
     allow_fetch: bool = True,
+    account_amount: Optional[Decimal] = None,
+    restamp_account: bool = False,
+) -> None:
+    """Stamp obj's primary amount and, for a transaction, its account amount.
+
+    `account_amount` is the figure the bank charged the account, when the
+    provider reports one. Pass `restamp_account` when the row's amount,
+    currency, date or account changed; a stamp that only heals the reporting
+    value keeps the account amount (see `stamp_account_amount`).
+    """
+    await _stamp_primary_fields(
+        session, user_id, obj, amount_field, primary_field, rate_field,
+        date_field, currency_field, allow_fetch=allow_fetch,
+    )
+    if isinstance(obj, Transaction) and primary_field == "amount_primary":
+        await stamp_account_amount(
+            session,
+            obj,
+            bank_amount=account_amount,
+            allow_fetch=allow_fetch,
+            recompute=restamp_account,
+        )
+
+
+# Where a stored `amount_account` came from. NULL is a derived value: a copy of
+# `amount_primary` or a conversion at a stored rate, safe to work out again.
+ACCOUNT_AMOUNT_FROM_BANK = "bank"
+ACCOUNT_AMOUNT_FROM_USER = "user"
+
+
+async def stamp_account_amount(
+    session: AsyncSession,
+    transaction: Transaction,
+    *,
+    bank_amount: Optional[Decimal] = None,
+    typed_primary: bool = False,
+    allow_fetch: bool = True,
+    recompute: bool = True,
+) -> None:
+    """Set `amount_account`: the row's value in its account's currency (ADR 0027).
+
+    Balances and bills read it for a row in another currency than its account,
+    so it must not follow the owner's display currency the way
+    `amount_primary` does. In order of preference:
+
+    - the amount the bank charged the account, when the provider reports it;
+    - `amount_primary`, when the account is in the owner's primary currency,
+      since the two are then the same figure. `typed_primary` says the user
+      typed that amount in the transaction dialog;
+    - the stored rate from the row's currency into the account's, for its date.
+
+    With none of these the field is left as it is, like `amount_primary`.
+    A row in its account's own currency gets NULL; readers use `amount`.
+
+    `amount_account_source` records which one it was. Without `recompute` (a
+    stamp that only heals the reporting value: posting a pending row, the FX
+    healers) a value from the bank or the user is kept; only a derived one is
+    worked out again.
+    """
+    account = await session.get(Account, transaction.account_id)
+    if account is None:
+        return
+    if same_currency(transaction.currency, account.currency):
+        transaction.amount_account = None
+        transaction.amount_account_source = None
+        return
+    if bank_amount is not None:
+        transaction.amount_account = Decimal(str(bank_amount)).quantize(Decimal("0.01"))
+        transaction.amount_account_source = ACCOUNT_AMOUNT_FROM_BANK
+        return
+    if (
+        not recompute
+        and transaction.amount_account is not None
+        and transaction.amount_account_source is not None
+    ):
+        return
+    user = await session.get(User, transaction.user_id)
+    primary = user.primary_currency if user else get_settings().default_currency
+    if same_currency(account.currency, primary):
+        if transaction.amount_primary is not None:
+            transaction.amount_account = transaction.amount_primary
+            transaction.amount_account_source = (
+                ACCOUNT_AMOUNT_FROM_USER if typed_primary else None
+            )
+        return
+    if transaction.amount is None:
+        return
+    rate = await _resolve_rate(
+        session, transaction.currency, account.currency, transaction.date,
+        allow_fetch=allow_fetch,
+    )
+    if rate is not None:
+        transaction.amount_account = (
+            Decimal(str(transaction.amount)) * rate
+        ).quantize(Decimal("0.01"))
+        transaction.amount_account_source = None
+
+
+async def _stamp_primary_fields(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    obj,
+    amount_field: str,
+    primary_field: str,
+    rate_field: str,
+    date_field: str,
+    currency_field: str,
+    *,
+    allow_fetch: bool,
 ) -> None:
     """Set obj's primary amount and fx_rate_used based on user's primary currency.
 

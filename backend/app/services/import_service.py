@@ -2,6 +2,7 @@ import csv
 import hashlib
 import io
 import re
+import unicodedata
 import uuid
 import warnings
 import xml.etree.ElementTree as ET
@@ -32,7 +33,7 @@ from app.services.credit_card_service import apply_effective_date
 from app.services.category_service import get_assignable_category_ids
 from app.services.rule_engine import apply_rule_actions, evaluate_conditions, merge_notes
 from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
-from app.services.fx_rate_service import stamp_primary_amount
+from app.services.fx_rate_service import stamp_account_amount, stamp_primary_amount
 from app.services.payee_service import get_or_create_payee
 from app.services.transaction_match_service import find_unique_transaction_match
 
@@ -373,6 +374,29 @@ def _qif_records(text: str) -> list[tuple[int, list[str]]]:
     return records
 
 
+# A comma-grouped QIF amount: "-1,250", "1,250,000".
+_QIF_GROUPED_COMMA = re.compile(r'^[+-]?\d{1,3}(,\d{3})+$')
+
+
+def _qif_amount(raw: str) -> str:
+    """A QIF amount in the separator convention its own value shows.
+
+    QIF has no column types, so a comma is a thousands separator when the
+    value is grouped ("-1,250", "-1,250,000") and the decimal separator
+    otherwise ("25,50"). With both separators the last one is the decimal,
+    which normalize_amount already reads. The minus may arrive as an en dash
+    (0x96) from a Windows tool, so it is folded to ASCII before the shape
+    is checked.
+    """
+    value = raw.strip().translate(_UNICODE_MINUS)
+    if ',' in value and '.' not in value:
+        if _QIF_GROUPED_COMMA.match(value):
+            value = value.replace(',', '')
+        else:
+            value = value.replace(',', '.')
+    return normalize_amount(value)
+
+
 def parse_qif(content: bytes, date_format: str | None = None) -> tuple[list[TransactionImport], list[FailedRow]]:
     """Parse QIF file content and return transactions.
 
@@ -383,11 +407,7 @@ def parse_qif(content: bytes, date_format: str | None = None) -> tuple[list[Tran
     that disagree) are not guessed at: they come back in the second element
     so the preview can show them per line, like the CSV path does.
     """
-    # Try UTF-8 first, fall back to Latin-1 for legacy software (e.g. Microsoft Money)
-    try:
-        text = content.decode('utf-8-sig')
-    except UnicodeDecodeError:
-        text = content.decode('latin-1')
+    text = _decode_text(content)
     transactions = []
     failed_rows = []
 
@@ -420,10 +440,10 @@ def parse_qif(content: bytes, date_format: str | None = None) -> tuple[list[Tran
                     except ValueError:
                         continue
             elif tag == 'T' or tag == 'U':
-                raw = value.strip().replace(',', '')
+                raw = value.strip()
                 amount_raws.append(raw)
                 try:
-                    amounts.append(Decimal(raw))
+                    amounts.append(Decimal(normalize_amount(_qif_amount(raw))))
                 except Exception:
                     pass
             elif tag == 'P':
@@ -633,16 +653,46 @@ def _sniff_csv_dialect(text: str):
         return csv.excel
 
 
+def _decode_text(content: bytes) -> str:
+    """UTF-8 (with or without BOM), else Windows-1252, else Latin-1.
+
+    Excel's plain "CSV", broker exports and legacy QIF software are not UTF-8.
+    0x80-0x9F are typographic characters (en dash, euro sign) in Windows-1252,
+    as in _normalize_ofx_encoding; Latin-1 maps them to C1 controls, which the
+    amount parser strips, so a minus sign would be lost. cp1252 leaves 0x81,
+    0x8D, 0x8F, 0x90 and 0x9D undefined, so Latin-1 is the last resort.
+    """
+    try:
+        return content.decode('utf-8-sig')
+    except UnicodeDecodeError:
+        pass
+    try:
+        return content.decode('cp1252')
+    except UnicodeDecodeError:
+        return content.decode('latin-1')
+
+
+def _decode_csv(content: bytes) -> str:
+    """A CSV upload: see _decode_text."""
+    return _decode_text(content)
+
+
 def detect_csv_columns(content: bytes) -> list[str]:
     """Return the CSV header column names exactly as they appear in the file.
 
     Used by the import preview so the UI can offer accurate column-mapping
     dropdowns instead of guessing headers client-side.
     """
-    text = content.decode('utf-8-sig')  # Handle BOM
+    text = _decode_csv(content)
     dialect = _sniff_csv_dialect(text)
     reader = csv.DictReader(io.StringIO(text), dialect=dialect)
     return [f.strip() for f in (reader.fieldnames or []) if f and f.strip()]
+
+
+def _fold_header(name: str) -> str:
+    """A lower-cased CSV header with its diacritics stripped ("Descrição" -> "descricao")."""
+    decomposed = unicodedata.normalize("NFKD", name)
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).lower()
 
 
 def parse_csv(
@@ -666,7 +716,7 @@ def parse_csv(
     - column_mapping: explicit Securo-field -> CSV-header map. Any field
       present here overrides auto-detection; unmapped fields still auto-detect.
     """
-    text = content.decode('utf-8-sig')  # Handle BOM
+    text = _decode_csv(content)
     dialect = _sniff_csv_dialect(text)
     reader = csv.DictReader(io.StringIO(text), dialect=dialect)
 
@@ -696,10 +746,20 @@ def parse_csv(
         if field in CSV_MAPPABLE_FIELDS and value and value.strip()
     }
 
+    # Bank exports write the Portuguese headers with accents ("Descrição",
+    # "Histórico", "Lançamento"); the candidates are plain ASCII, so fall back
+    # to the header with its diacritics stripped, keeping the header as is.
+    # An exact name wins: a file holding both "Descrição" and "descricao" must
+    # keep reading the plain column, as it did before the folded match.
+    folded_fieldnames = {_fold_header(f): f for f in reversed(fieldnames)}
+
     def find_col(candidates):
         for c in candidates:
             if c in fieldnames:
                 return c
+        for c in candidates:
+            if c in folded_fieldnames:
+                return folded_fieldnames[c]
         return None
 
     def resolve_col(field, candidates):
@@ -1277,7 +1337,8 @@ async def import_transactions(
             # the account's own (#1073): the row takes the charged currency.
             currency_changed = placeholder.currency != txn_currency
             placeholder.currency = txn_currency
-            if placeholder.amount != txn_data.amount or txn_data.fx_rate or currency_changed:
+            amount_changed = placeholder.amount != txn_data.amount
+            if amount_changed or txn_data.fx_rate or currency_changed:
                 # Matched under a tolerance, or the file says what the charge
                 # cost in the primary currency: the row now stands for what was
                 # actually charged, not for what the bill expected.
@@ -1291,11 +1352,21 @@ async def import_transactions(
                     # converted" until a rate lands.
                     placeholder.amount_primary = None
                     placeholder.fx_rate_used = None
+                    placeholder.amount_account = None
+                    placeholder.amount_account_source = None
+                # The file's rate is a reporting value: the account amount
+                # moves only with the charge itself.
+                charge_changed = amount_changed or currency_changed
                 if txn_data.fx_rate:
                     placeholder.fx_rate_used = txn_data.fx_rate
                     placeholder.amount_primary = txn_data.amount * txn_data.fx_rate
+                    await stamp_account_amount(
+                        session, placeholder, recompute=charge_changed
+                    )
                 else:
-                    await stamp_primary_amount(session, user_id, placeholder)
+                    await stamp_primary_amount(
+                        session, user_id, placeholder, restamp_account=charge_changed
+                    )
                 # A split placeholder keeps its split, resized.
                 await category_line_service.rescale_lines(session, placeholder, expected_amount)
             placeholder_split = (
@@ -1373,7 +1444,9 @@ async def import_transactions(
             if incoming.category_id is None and not incoming.has_category_lines:
                 incoming.category_id = csv_category_id
 
-        if not txn_data.fx_rate:
+        if txn_data.fx_rate:
+            await stamp_account_amount(session, incoming)
+        else:
             await stamp_primary_amount(session, user_id, incoming)
 
         imported += 1

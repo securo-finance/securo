@@ -73,7 +73,6 @@ add_index reconciliation_suggestions ix_reconciliation_suggestions_group_id
 # (an insert the model allows fails), so each one is a decision: declare it on
 # the model, or drop it in a migration.
 remove_constraint group_members unique(group_id,name)
-remove_constraint groups unique(user_id,name)
 remove_constraint transaction_splits unique(transaction_id,group_member_id)
 
 # Columns NOT NULL in the model but nullable in the database.

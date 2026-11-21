@@ -13,7 +13,7 @@ export function ModuleRoute({
   module: ModuleId
   children: React.ReactNode
 }) {
-  const { hasModule, isLoading } = useWorkspace()
+  const { hasModule, isLoading, loadFailed } = useWorkspace()
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -21,6 +21,9 @@ export function ModuleRoute({
       </div>
     )
   }
+  // A workspace list we could not load says nothing about the modules.
+  // Redirecting would throw away the page the person asked for (issue #292).
+  if (loadFailed) return <>{children}</>
   if (!hasModule(module)) return <Navigate to="/" replace />
   return <>{children}</>
 }
