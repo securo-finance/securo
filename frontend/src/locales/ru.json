@@ -889,6 +889,8 @@
     "uncategorizedCta": "{{count}} транзакций нужно категоризировать",
     "uncategorizedTotal": "На сумму {{amount}}",
     "categorizeNow": "Категоризировать сейчас",
+    "drillDownQuickCategorize": "Выбрать категорию",
+    "drillDownOpenTransaction": "Открыть операцию",
     "allCategorized": "Всё в порядке!",
     "allCategorizedDesc": "Все транзакции категоризированы",
     "assetsValue": "Инвестированные активы",
@@ -947,6 +949,7 @@
     "addedToExistingRule": "Правило обновлено. Будущие совпадения будут использовать эту категорию.",
     "duplicateRuleCondition": "Это правило уже содержит такое совпадение.",
     "saveAndNew": "Сохранить и добавить",
+    "saveAndNext": "Сохранить и далее",
     "saveAndDuplicate": "Сохранить и дублировать",
     "moreSaveOptions": "Другие варианты сохранения",
     "created": "Транзакция создана",
@@ -1700,10 +1703,13 @@
   "rules": {
     "searchPlaceholder": "Поиск правил...",
     "filterAllCategories": "Все категории",
+    "filterByCategory": "Фильтр по категории",
     "filterAllStatuses": "Все статусы",
+    "filterByStatus": "Фильтр по статусу",
     "filterActiveOnly": "Только активные",
     "filterInactiveOnly": "Только неактивные",
     "filterAllActions": "Все действия",
+    "filterByAction": "Фильтр по действию",
     "noFilterResults": "Ни одно правило не соответствует этим фильтрам",
     "preview": "Предпросмотр",
     "previewMatched": "совпадений: {{matched}}",
@@ -2138,9 +2144,10 @@
     "summaryHoldings": "создано позиций: {{created}}, найдено: {{matched}}",
     "summarySkipped": "уже импортировано: {{count}}",
     "rowsSkipped": "Строк будет пропущено: {{count}}",
+    "reasonColumn": "Причина",
     "rowError": "Строка {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "и ещё {{count}}",
-    "moreRows": "и ещё {{count}} заявок",
+    "showAllRows": "Показать все строки ({{count}})",
     "field": {
       "ticker": "Тикер",
       "date": "Дата",
@@ -2260,9 +2267,21 @@
     "lastUpdated": "Обновлено {{when}}",
     "refreshPrice": "Обновить цену",
     "refreshAllPrices": "Обновить цены",
-    "refreshAllPricesDone": "Обновлено {{refreshed}} цен, {{skipped}} без новой котировки",
+    "refreshAllPricesDone": "{{updated}}, {{skipped}}",
+    "refreshAllPricesUpdated_one": "Обновлена {{count}} цена",
+    "refreshAllPricesUpdated_few": "Обновлены {{count}} цены",
+    "refreshAllPricesUpdated_many": "Обновлено {{count}} цен",
+    "refreshAllPricesUpdated_other": "Обновлено {{count}} цены",
+    "refreshAllPricesNoQuote_one": "{{count}} без новой котировки",
+    "refreshAllPricesNoQuote_few": "{{count}} без новой котировки",
+    "refreshAllPricesNoQuote_many": "{{count}} без новой котировки",
+    "refreshAllPricesNoQuote_other": "{{count}} без новой котировки",
+    "refreshAllPricesLeftOut_one": "{{count}} пропущена",
+    "refreshAllPricesLeftOut_few": "{{count}} пропущены",
+    "refreshAllPricesLeftOut_many": "{{count}} пропущено",
+    "refreshAllPricesLeftOut_other": "{{count}} пропущено",
     "refreshAllPricesNone": "Нет активов с рыночной ценой для обновления",
-    "refreshAllPricesRateLimited": "Поставщик рыночных данных сейчас ограничивает запросы. До остановки обновилось {{refreshed}} цен, а {{skipped}} пропущено. Повторите попытку через минуту.",
+    "refreshAllPricesRateLimited": "Поставщик рыночных данных сейчас ограничивает запросы. До остановки: {{updated}}, {{skipped}}. Повторите попытку через минуту.",
     "priceRefreshed": "Цена обновлена",
     "purchaseDate": "Дата покупки",
     "purchasePrice": "Цена покупки",
@@ -2443,7 +2462,41 @@
     "statementViewTransactions": "Показать транзакции",
     "statementUncategorizedIncome": "Доходы без категории",
     "statementUncategorizedExpense": "Расходы без категории",
-    "statementToggleGroup": "Показать категории группы {{name}}"
+    "statementToggleGroup": "Показать категории группы {{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "Всего потрачено",
+        "income": "Всего получено",
+        "net": "Итог"
+      },
+      "none": {
+        "category": "Без категории",
+        "category_group": "Без группы",
+        "payee": "Без получателя",
+        "account": "Без счёта",
+        "month": "Без даты"
+      },
+      "groupBy": {
+        "category": "Категория",
+        "category_group": "Группа",
+        "payee": "Получатель",
+        "account": "Счёт",
+        "month": "Месяц"
+      },
+      "measure": {
+        "expenses": "Расходы",
+        "income": "Доходы",
+        "net": "Итог"
+      },
+      "share": "Доля",
+      "computed": "Рассчитано плагином",
+      "periodTrimmed": "Отчёты плагинов охватывают не более двух лет. Показан период с {{from}} по {{to}}.",
+      "periodTooLong": "Отчёт плагина охватывает не более двух лет. Выберите более короткий период.",
+      "totalRow": "Итого",
+      "page": "Страница {{page}} из {{pages}}",
+      "previousPage": "Предыдущая страница",
+      "nextPage": "Следующая страница"
+    }
   },
   "payees": {
     "noPayeeFound": "Получатель не найден.",
@@ -4019,8 +4072,7 @@
       "title": "Регулярная выручка",
       "hint": "Сколько приносят регулярные счета в месяц и что недавно потеряно."
     }
-  }
-,
+  },
   "offline": {
     "title": "Сервер недоступен",
     "description": "Вы не в сети или Securo перезапускается. Ваши данные в безопасности, ничего не изменено. Мы автоматически переподключимся, как только сервер ответит."

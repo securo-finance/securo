@@ -1,3 +1,4 @@
+import { createContext } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 
@@ -34,6 +35,7 @@ vi.mock('@/lib/api', () => ({
     getReauthUrl: vi.fn(),
   },
   currencies: { list: api.currenciesList },
+  timezones: { list: vi.fn().mockResolvedValue({ zones: [], default: 'UTC' }) },
   info: { get: vi.fn().mockResolvedValue({ features: { plugins: false } }) },
   plugins: {
     installed: api.pluginsInstalled,
@@ -50,6 +52,9 @@ vi.mock('@/contexts/auth-context', () => ({
 }))
 
 vi.mock('@/contexts/workspace-context', () => ({
+  // The dialog reads the context object itself through useEffectiveTimezone,
+  // so it has to be a real one, not just the hook.
+  WorkspaceContext: createContext<{ canWrite: boolean } | undefined>({ canWrite: true }),
   useWorkspace: () => ({ canWrite: true }),
 }))
 
