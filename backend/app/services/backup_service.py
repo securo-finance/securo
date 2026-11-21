@@ -1117,10 +1117,12 @@ async def _split_reference_scope(
 
     A split may name a member of a group that lives in another workspace
     (#1305): the archive does not carry that group, but the split is the
-    owner's real share. It stays restorable while the restoring user can
-    still split into that group, by the rule `split_service` applies when
-    the split is made. Only the splits see these ids; every other table
-    keeps the target workspace's own scope.
+    owner's real share. When the restore puts the transaction back in the
+    workspace it came from, the split stays restorable while the restoring
+    user can still split into that group, by the rule `split_service`
+    applies when the split is made. Any other restore makes a copy, and the
+    caller drops these splits instead (#344). Only the splits see these ids;
+    every other table keeps the target workspace's own scope.
     """
     known = set(id_maps.by_table.get("group_members", {})) | owned_reference_ids.get(
         "group_members", set()
@@ -1956,7 +1958,14 @@ async def restore_backup_bytes(
 
                 count = 0
                 reference_scope = owned_reference_ids
-                if name == "transaction_splits":
+                # A split into a group of another workspace is a share in that
+                # group's balance, and every linked member reads it in their
+                # reports. Only a restore that puts the transaction back where
+                # it came from, under its own id, may bring it back: anywhere
+                # else the transaction is a copy, and its split would add the
+                # same expense to the group a second time (#344).
+                returns_to_source = not remap and preview.workspace_id == target_workspace.id
+                if name == "transaction_splits" and returns_to_source:
                     reference_scope = await _split_reference_scope(
                         session,
                         rows,
@@ -1965,6 +1974,7 @@ async def restore_backup_bytes(
                         target_user_id=target_user_id,
                         target_workspace_id=target_workspace.id,
                     )
+                if name == "transaction_splits":
                     resolvable = set(id_map.by_table.get("group_members", {})) | reference_scope.get(
                         "group_members", set()
                     )
@@ -1976,13 +1986,20 @@ async def restore_backup_bytes(
                         for row in rows
                         if str(row.get("group_member_id")) not in resolvable
                     }
-                    if broken:
+                    if broken and returns_to_source:
                         warnings.append(
                             f"Skipped the splits of {len(broken)} transaction(s) with members "
                             "of a group that is no longer available to you; those "
                             "transactions are restored without them."
                         )
-                        rows = [row for row in rows if str(row.get("transaction_id")) not in broken]
+                    elif broken:
+                        warnings.append(
+                            f"Skipped the splits of {len(broken)} transaction(s) into a group "
+                            "of another workspace: the restored copy would count them in "
+                            "that group a second time. The original transactions keep "
+                            "them, and the copies are restored without them."
+                        )
+                    rows = [row for row in rows if str(row.get("transaction_id")) not in broken]
                 for row in rows:
                     prepared = _prepare_model_data(
                         model,

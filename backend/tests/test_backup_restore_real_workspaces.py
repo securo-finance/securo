@@ -147,7 +147,10 @@ async def test_round_trip_with_api_payee_and_shared_group_split(
     session.expire_all()
     assert await _count(session, Transaction, restored_id) == tx_count
     assert await _count(session, Account, restored_id) == account_count
-    assert await _summary(client, auth_headers, restored_id) == before
+    # The group lives in another workspace, so the copy comes back without
+    # its split (#344): the dinner counts in full there, and once in the group.
+    assert await _summary(client, auth_headers, restored_id) == unsplit
+    assert any("another workspace" in w for w in restore_resp.json()["warnings"])
 
     restored_payee = (
         await session.execute(
@@ -162,13 +165,7 @@ async def test_round_trip_with_api_payee_and_shared_group_split(
     # tells a payee's own mapping from the ones folded into it.
     assert mapping.id == restored_payee.id == mapping.target_id
 
-    restored_splits = (
-        await session.execute(
-            select(TransactionSplit).where(TransactionSplit.workspace_id == restored_id)
-        )
-    ).scalars().all()
-    assert {split.group_member_id for split in restored_splits} == member_ids
-    assert {split.share_amount for split in restored_splits} == {Decimal("22.50")}
+    assert await _count(session, TransactionSplit, restored_id) == 0
 
     current_resp = await client.post(
         f"/api/backups/{backup_id}/restore",
@@ -179,6 +176,15 @@ async def test_round_trip_with_api_payee_and_shared_group_split(
     session.expire_all()
     assert await _count(session, Transaction, source_id) == tx_count
     assert await _summary(client, auth_headers, source_id) == before
+    # Back in its own workspace the transaction keeps its id, so its split
+    # into the shared group comes back with it.
+    current_splits = (
+        await session.execute(
+            select(TransactionSplit).where(TransactionSplit.workspace_id == source_id)
+        )
+    ).scalars().all()
+    assert {split.group_member_id for split in current_splits} == member_ids
+    assert {split.share_amount for split in current_splits} == {Decimal("22.50")}
     current_mapping = (
         await session.execute(select(PayeeMapping).where(PayeeMapping.workspace_id == source_id))
     ).scalar_one()
@@ -316,7 +322,8 @@ async def test_restore_drops_every_share_of_a_transaction_with_a_lost_member(
         target_user_id=test_user.id,
         current_workspace=test_workspace,
         content=backup_service.BackupContent.data,
-        mode=backup_service.BackupRestoreMode.new_workspace,
+        mode=backup_service.BackupRestoreMode.current_workspace,
+        confirmation="RESTORE",
     )
 
     assert result.restored_counts["transactions"] == 2
@@ -330,6 +337,116 @@ async def test_restore_drops_every_share_of_a_transaction_with_a_lost_member(
     assert {split.group_member_id for split in restored} == {me.id, partner.id}
     assert {split.share_amount for split in restored} == {Decimal("5.00")}
     assert len({split.transaction_id for split in restored}) == 1
+
+
+async def _expenses(client: AsyncClient, headers: dict, workspace_id, day) -> str:
+    month_start = day.replace(day=1)
+    resp = await client.get(
+        "/api/reports/income-expenses",
+        params={
+            "start_date": month_start.isoformat(),
+            "end_date": day.isoformat(),
+            "interval": "monthly",
+        },
+        headers={**headers, "X-Workspace-Id": str(workspace_id)},
+    )
+    assert resp.status_code == 200, resp.text
+    return json.dumps(resp.json(), sort_keys=True)
+
+
+@pytest.mark.asyncio
+async def test_restored_copies_leave_the_shared_group_and_its_members_alone(
+    client: AsyncClient,
+    auth_headers,
+    backup_dir,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace: Workspace,
+    test_account,
+    test_transactions,
+):
+    """#344: Ana's backup has a dinner split with Bruno in "Casal", a group of
+    the shared "Casa" workspace. Restoring it into a new workspace, by Ana or
+    by Bruno, makes a copy of the dinner; its split would add the dinner to
+    the group again and move both members' balances and reports."""
+    from app.services.balance_service import compute_balances
+
+    bruno = User(email="bruno@example.com", hashed_password="x", is_active=True, is_verified=True)
+    session.add(bruno)
+    await session.flush()
+    bruno_home = Workspace(name="Bruno", created_by_user_id=bruno.id, default_currency="BRL")
+    session.add(bruno_home)
+    await session.flush()
+    session.add(WorkspaceMember(workspace_id=bruno_home.id, user_id=bruno.id, role="owner"))
+    ana_member, bruno_member = await _shared_group(session, test_user, member_of=True)
+    bruno_member.linked_user_id = bruno.id
+    casa_id, group_id = ana_member.workspace_id, ana_member.group_id
+    session.add(WorkspaceMember(workspace_id=casa_id, user_id=bruno.id, role="editor"))
+    dinner = next(t for t in test_transactions if t.description == "IFOOD RESTAURANTE")
+    session.add_all(
+        TransactionSplit(
+            transaction_id=dinner.id,
+            workspace_id=test_workspace.id,
+            group_member_id=member.id,
+            share_amount=Decimal("22.50"),
+            share_type="equal",
+        )
+        for member in (ana_member, bruno_member)
+    )
+    await session.commit()
+    ana_id, bruno_id, ana_home_id = test_user.id, bruno.id, test_workspace.id
+    bruno_home_id = bruno_home.id
+    member_ids = [ana_member.id, bruno_member.id]
+    bruno_member_id, day = bruno_member.id, dinner.date
+
+    async def group_state() -> tuple:
+        session.expire_all()
+        balances = [
+            await compute_balances(session, group_id, casa_id, user_id)
+            for user_id in (ana_id, bruno_id)
+        ]
+        splits = await session.scalar(
+            select(func.count())
+            .select_from(TransactionSplit)
+            .where(TransactionSplit.group_member_id.in_(member_ids))
+        )
+        return json.dumps(balances, sort_keys=True, default=str), splits
+
+    group_before = await group_state()
+    assert group_before[1] == 2
+    report_before = await _expenses(client, auth_headers, ana_home_id, day)
+
+    run_resp = await client.post("/api/backups/run", json={"content": "both"}, headers=auth_headers)
+    assert run_resp.status_code == 200, run_resp.text
+    _, archive = await backup_service.get_stored_backup_bytes(
+        session, ana_home_id, run_resp.json()["id"]
+    )
+
+    for restorer_id, home_id in ((ana_id, ana_home_id), (bruno_id, bruno_home_id)):
+        home = await session.get(Workspace, home_id)
+        assert home is not None
+        result = await backup_service.restore_backup_bytes(
+            session,
+            data=archive,
+            target_user_id=restorer_id,
+            current_workspace=home,
+            content=backup_service.BackupContent.both,
+            mode=backup_service.BackupRestoreMode.new_workspace,
+        )
+        assert await group_state() == group_before
+        assert await _expenses(client, auth_headers, ana_home_id, day) == report_before
+        assert result.restored_counts["transaction_splits"] == 0
+        assert any("another workspace" in warning for warning in result.warnings)
+
+    # Bruno never becomes the payer of a copy of Ana's dinner in the group.
+    payers = (
+        await session.execute(
+            select(Transaction.user_id)
+            .join(TransactionSplit, TransactionSplit.transaction_id == Transaction.id)
+            .where(TransactionSplit.group_member_id == bruno_member_id)
+        )
+    ).scalars().all()
+    assert payers == [ana_id]
 
 
 @pytest.mark.asyncio
