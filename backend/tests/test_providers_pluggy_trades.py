@@ -218,6 +218,57 @@ async def test_one_note_spans_every_ticker_traded_that_day():
 
 
 @pytest.mark.asyncio
+async def test_a_failed_position_leaves_every_traded_position_of_the_item_unknown():
+    # A and B share one note. With B unread, A alone would take the whole
+    # 1.10 instead of its 0.28, and that fee would replace A's stored trade.
+    holdings, _ = await _holdings(
+        [
+            {"id": "a", "type": "EQUITY", "code": "AAAA11", "balance": 1240, "quantity": 100},
+            {"id": "b", "type": "EQUITY", "code": "BBBB11", "balance": 798, "quantity": 100},
+            {"id": "cdb", "type": "FIXED_INCOME", "code": "0001-02", "balance": 1000, "quantity": 1},
+        ],
+        {"a": [_tx(id="a1", quantity=100, value=10, expenses=_NOTE)], "b": 503},
+    )
+    by_id = {h.external_id: h for h in holdings}
+    # The holdings themselves still sync; only their trades are unknown.
+    assert set(by_id) == {"a", "b", "cdb"}
+    assert by_id["a"].trades is None
+    assert by_id["b"].trades is None
+    assert by_id["cdb"].trades is None
+
+
+@pytest.mark.asyncio
+async def test_a_note_split_never_hands_out_a_negative_fee():
+    # Seven equal rows sharing 0.04: rounding each to the nearest cent gives
+    # 0.01 apiece (0.07), and taking the excess off one row left it at -0.02.
+    holdings, _ = await _holdings(
+        [{"id": "eq", "type": "EQUITY", "code": "HGLG11", "balance": 70, "quantity": 7}],
+        {"eq": [
+            _tx(id=f"r{i}", quantity=1, value=10, expenses={"settlementFee": 0.03, "stockExchangeFee": 0.01})
+            for i in range(7)
+        ]},
+    )
+    fees = [t.fee for t in holdings[0].trades]
+    assert all(fee >= 0 for fee in fees)
+    assert sum(fees) == Decimal("0.04")
+    assert sorted(fees) == [Decimal("0.00")] * 3 + [Decimal("0.01")] * 4
+
+
+@pytest.mark.asyncio
+async def test_a_sub_cent_note_total_still_adds_up_exactly():
+    holdings, _ = await _holdings(
+        [{"id": "eq", "type": "EQUITY", "code": "HGLG11", "balance": 40, "quantity": 4}],
+        {"eq": [
+            _tx(id="a", quantity=1, value=10, expenses={"settlementFee": 0.025}),
+            _tx(id="b", quantity=3, value=10, expenses={"settlementFee": 0.025}),
+        ]},
+    )
+    fees = {t.external_id: t.fee for t in holdings[0].trades}
+    assert all(fee >= 0 for fee in fees.values())
+    assert sum(fees.values()) == Decimal("0.025")
+
+
+@pytest.mark.asyncio
 async def test_rows_with_their_own_fee_are_not_pooled():
     holdings, _ = await _holdings(
         [{"id": "eq", "type": "EQUITY", "code": "ITUB4", "balance": 280, "quantity": 7}],

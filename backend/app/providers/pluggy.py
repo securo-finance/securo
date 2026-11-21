@@ -5,7 +5,7 @@ import json
 import logging
 import time
 from datetime import date
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_DOWN, Decimal, InvalidOperation
 from typing import Literal, Optional
 from urllib.parse import parse_qs, urlparse
 
@@ -374,9 +374,12 @@ def _split_note_fees(rows: list[tuple[HoldingTradeData, object]]) -> None:
     `rows` pairs each trade with the `expenses` block it came with, for every
     exchange-traded position of the item, since one note covers all tickers
     traded that day. Summing the block per row would charge the note once per
-    execution. Each share is rounded to the cent (the ledger stores two
-    places) and the rounding remainder goes to the largest row, so a note's
-    shares add up to exactly its total. A row alone in its note keeps its fee.
+    execution. Shares are whole cents (the ledger stores two places): each
+    row first gets its exact share rounded down, then the cents left over go
+    one each to the rows that lost the most to that rounding, so a note's
+    shares add up to exactly its total and none is negative. A total finer
+    than a cent leaves its sub-cent residue on the largest row. A row alone
+    in its note keeps its fee.
     """
     notes: dict[tuple, list[HoldingTradeData]] = {}
     for trade, expenses in rows:
@@ -393,10 +396,19 @@ def _split_note_fees(rows: list[tuple[HoldingTradeData, object]]) -> None:
         total_weight = sum(weights, Decimal("0"))
         if total_weight <= 0:
             continue
-        for trade, weight in zip(trades, weights):
-            trade.fee = (total_fee * weight / total_weight).quantize(cent)
+        exact = [total_fee * weight / total_weight for weight in weights]
+        shares = [value.quantize(cent, rounding=ROUND_DOWN) for value in exact]
+        leftover_cents = int(
+            ((total_fee - sum(shares, Decimal("0"))) / cent).to_integral_value(rounding=ROUND_DOWN)
+        )
+        # Largest rounding loss first; the sort is stable, so ties keep row order.
+        order = sorted(range(len(trades)), key=lambda i: exact[i] - shares[i], reverse=True)
+        for i in order[:leftover_cents]:
+            shares[i] += cent
         largest = max(range(len(trades)), key=lambda i: weights[i])
-        trades[largest].fee += total_fee - sum((t.fee for t in trades), Decimal("0"))
+        shares[largest] += total_fee - sum(shares, Decimal("0"))
+        for trade, share in zip(trades, shares):
+            trade.fee = share
 
 
 
@@ -1104,9 +1116,12 @@ class PluggyProvider(BankProvider):
         item_id = credentials["item_id"]
         headers = await self._headers()
         holdings: list[HoldingData] = []
-        # Every trade of the item with its `expenses` block: one brokerage
-        # note's fee spans all tickers traded that day (_split_note_fees).
-        trade_rows: list[tuple[HoldingTradeData, object]] = []
+        # Every exchange-traded holding of the item with its trades and their
+        # `expenses` blocks: one brokerage note's fee spans all tickers traded
+        # that day (_split_note_fees), so the trades are only handed out once
+        # every position of the item has answered.
+        traded: list[tuple[HoldingData, list[tuple[HoldingTradeData, object]]]] = []
+        trades_unknown = False
         page = 1
 
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -1122,13 +1137,17 @@ class PluggyProvider(BankProvider):
                 results = data.get("results", [])
                 for inv in results:
                     holding = _build_holding_data(inv)
-                    if (inv.get("type") or "").upper() in _EXCHANGE_TRADED_TYPES:
+                    if (
+                        not trades_unknown
+                        and (inv.get("type") or "").upper() in _EXCHANGE_TRADED_TYPES
+                    ):
                         rows = await self._fetch_investment_trades(
                             client, headers, str(inv["id"])
                         )
-                        if rows is not None:
-                            holding.trades = [trade for trade, _ in rows]
-                            trade_rows.extend(rows)
+                        if rows is None:
+                            trades_unknown = True
+                        else:
+                            traded.append((holding, rows))
                     holdings.append(holding)
 
                 total_pages = data.get("totalPages", 1)
@@ -1136,7 +1155,15 @@ class PluggyProvider(BankProvider):
                     break
                 page += 1
 
-        _split_note_fees(trade_rows)
+        # A position whose trades could not be read hides its share of every
+        # note it was on, and the others would take the whole fee. Report
+        # every exchange-traded position's trades as unknown instead, so the
+        # sync keeps the ledgers it has until a run reads them all.
+        if trades_unknown:
+            return holdings
+        _split_note_fees([row for _, rows in traded for row in rows])
+        for holding, rows in traded:
+            holding.trades = [trade for trade, _ in rows]
         return holdings
 
     async def _fetch_investment_trades(
