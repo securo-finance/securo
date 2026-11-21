@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import event, false, select
+from sqlalchemy import delete, event, false, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.expected_income import ExpectedIncome
@@ -251,3 +251,39 @@ async def test_the_write_response_converts_to_the_reader_currency(
 
     stored = await get_expected_income(session, test_workspace.id, _MONTH, "BRL")
     assert stored is not None and stored.amount_primary == Decimal("50.00")
+
+
+async def test_a_clear_between_the_read_and_the_update_still_stores_the_value(
+    session: AsyncSession, test_workspace, monkeypatch
+):
+    workspace_id = test_workspace.id
+    await set_expected_income(
+        session, workspace_id, _MONTH, Decimal("3450.00"), "USD", reader_currency="BRL"
+    )
+
+    original_execute = AsyncSession.execute
+    raced = {"done": False}
+
+    async def racing_execute(self, statement, *args, **kwargs):
+        if not raced["done"] and getattr(statement, "is_update", False):
+            # The clear from another tab lands after our read, before the update.
+            raced["done"] = True
+            await original_execute(
+                self,
+                delete(ExpectedIncome).where(
+                    ExpectedIncome.workspace_id == workspace_id,
+                    ExpectedIncome.month == _MONTH,
+                ),
+            )
+        return await original_execute(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncSession, "execute", racing_execute)
+
+    read = await set_expected_income(
+        session, workspace_id, _MONTH, Decimal("4000.00"), "USD", reader_currency="BRL"
+    )
+
+    assert read.amount == Decimal("4000.00")
+    rows = await _stored_rows(session, workspace_id)
+    assert len(rows) == 1
+    assert rows[0].amount == Decimal("4000.00")

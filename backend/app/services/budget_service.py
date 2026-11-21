@@ -1,9 +1,10 @@
 import uuid
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Optional
+from typing import Optional, cast
 
 from sqlalchemy import select, func, and_, case, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1004,6 +1005,39 @@ async def set_expected_income(
         .values(amount=amount_value, currency=currency)
         .execution_options(synchronize_session=False)
     )
+    async def write_row() -> bool:
+        """Write the month's row, inserting it when a clear removed it first.
+
+        Returns True when the existing row was updated (the loaded instance is
+        stale now) and False when a new row had to be inserted.
+        """
+        result = cast(CursorResult, await session.execute(write_values))
+        if result.rowcount:
+            await session.commit()
+            return True
+
+        # A clear from another tab removed the row between our read and this
+        # write: store the value instead of answering 200 with nothing saved.
+        session.add(
+            ExpectedIncome(
+                workspace_id=workspace_id,
+                month=month_start,
+                amount=amount_value,
+                currency=currency,
+            )
+        )
+        try:
+            await session.commit()
+        except IntegrityError:
+            # The other tab re-inserted first; update the row it wrote.
+            await session.rollback()
+            retried = cast(CursorResult, await session.execute(write_values))
+            if not retried.rowcount:
+                raise
+            await session.commit()
+            return True
+        return False
+
     if row is None:
         row = ExpectedIncome(
             workspace_id=workspace_id,
@@ -1026,13 +1060,11 @@ async def set_expected_income(
             )
             if row is None:
                 raise
-            await session.execute(write_values)
-            await session.commit()
-            session.expire(row)
+            if await write_row():
+                session.expire(row)
     else:
-        await session.execute(write_values)
-        await session.commit()
-        session.expire(row)
+        if await write_row():
+            session.expire(row)
 
     amount_primary, _ = await convert_or_none(
         session, amount_value, currency, reader_currency, target_date=month_start
