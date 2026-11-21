@@ -1227,6 +1227,8 @@
     "balanceCreditCard": "बकाया राशि",
     "balanceCreditCardHint": "इस कार्ड पर अभी आप पर जितना बकाया है उसे धनात्मक संख्या के रूप में डालें। क़र्ज़ न होने पर 0 पर छोड़ें।",
     "balanceDate": "शेष तिथि",
+    "order": "सूची में स्थान",
+    "accountOrder": "खातों का क्रम",
     "lastSync": "आख़िरी सिंक",
     "multiInstitutionLink": "{{provider}} · {{count}} संस्थान",
     "sync": "सिंक करें",

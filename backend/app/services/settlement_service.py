@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import case, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -126,8 +126,8 @@ async def _pick_default_account_for_user(
     """
     from app.models.workspace import WorkspaceMember
 
-    # Resolve the workspaces the user can write to. Pick the first
-    # account the user owns in any of them; ties broken by name. A shared
+    # Resolve the workspaces the user can write to. Pick the first account the
+    # user owns in any of them. A shared
     # workspace also holds other members' accounts, which must never
     # receive this user's credit.
     user_workspaces_subq = select(WorkspaceMember.workspace_id).where(
@@ -143,7 +143,8 @@ async def _pick_default_account_for_user(
         )
         .order_by(
             case((Account.workspace_id == preferred_workspace_id, 0), else_=1),
-            Account.name,
+            Account.order,
+            func.coalesce(Account.display_name, Account.name),
         )
     )
     return result.scalars().first()

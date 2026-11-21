@@ -1227,6 +1227,8 @@
     "balanceCreditCard": "未払い金額",
     "balanceCreditCardHint": "このカードの現在の未払い金額を正の数で入力してください。未払いがなければ0のままにします。",
     "balanceDate": "残高の基準日",
+    "order": "リスト内の位置",
+    "accountOrder": "口座の順序",
     "lastSync": "最終同期",
     "multiInstitutionLink": "{{provider}} · {{count}}機関",
     "sync": "同期",

@@ -16,6 +16,7 @@ from app.core.workspace_context import (
 )
 from app.schemas.account import (
     AccountCreate,
+    AccountOrdering,
     AccountCardRead,
     AccountCardsUpdate,
     AccountRead,
@@ -44,28 +45,12 @@ async def list_accounts(
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    accounts = await account_service.get_accounts(session, ctx.workspace.id, include_closed=include_closed)
-    for acc in accounts:
-        await _convert_to_primary(session, acc, ctx.user.primary_currency)
-    return accounts
-
-
-async def _convert_to_primary(session: AsyncSession, acc: dict, primary_currency: str) -> None:
-    """Fill the primary-currency balance and open bill of a serialized account."""
-    if acc["currency"] == primary_currency:
-        return
-    # Use the real rate only: the 1:1 fallback would present a foreign
-    # balance as already converted (issue #1165). Leaving it unset makes
-    # the UI show the native currency and flag the missing rate.
-    rate = await _resolve_rate(session, acc["currency"], primary_currency)
-    if rate is None:
-        acc["fx_fallback"] = True
-        return
-    converted = Decimal(str(acc["current_balance"])) * rate
-    acc["balance_primary"] = float(converted.quantize(Decimal("0.01")))
-    if acc["open_bill_total"] is not None:
-        bill = Decimal(str(acc["open_bill_total"])) * rate
-        acc["open_bill_total_primary"] = float(bill.quantize(Decimal("0.01")))
+    accounts = await account_service.get_accounts(
+        session, ctx.workspace.id, include_closed=include_closed,
+    )
+    return await account_service.convert_and_sort_accounts(
+        session, accounts, ctx.user.primary_currency,
+    )
 
 
 @router.get("/linked-cards", response_model=list[AccountCardRead])
@@ -271,7 +256,9 @@ async def get_account(
     account = await account_service.get_account_with_balances(session, account_id, ctx.workspace.id)
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
-    await _convert_to_primary(session, account, ctx.user.primary_currency)
+    await account_service.convert_account_to_primary(
+        session, account, ctx.user.primary_currency
+    )
     return account
 
 
@@ -286,6 +273,20 @@ async def create_account(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return account_service.serialize_account(account, None, None)
+
+
+@router.patch("/bulk_ordering", status_code=status.HTTP_204_NO_CONTENT)
+async def bulk_order_accounts(
+    ordering: list[AccountOrdering],
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        await account_service.bulk_order_accounts(session, ctx.workspace.id, ordering)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except LookupError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
 @router.patch("/{account_id}", response_model=AccountRead)

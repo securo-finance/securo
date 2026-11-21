@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
+import { getAccountName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDisplayLocaleSettled, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -584,7 +584,6 @@ function RecurringFormFields({
   const { t } = useTranslation()
   const { user } = useAuth()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
-  const sortedAccounts = useMemo(() => sortAccountsByDisplayName(accounts), [accounts])
   const { data: supportedCurrencies } = useQuery({
     queryKey: ['currencies'],
     queryFn: currenciesApi.list,
@@ -816,7 +815,7 @@ function RecurringFormFields({
             required
           >
             {!accountId && <option value="" disabled hidden>{t('transactions.createCounterpartSelectAccount')}</option>}
-            {sortedAccounts.map((acc) => (
+            {accounts.map((acc) => (
               <option key={acc.id} value={acc.id}>{getAccountName(acc)}</option>
             ))}
           </select>
