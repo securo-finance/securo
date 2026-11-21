@@ -1782,10 +1782,13 @@
   "rules": {
     "searchPlaceholder": "Hledat pravidla...",
     "filterAllCategories": "Všechny kategorie",
+    "filterByCategory": "Filtrovat podle kategorie",
     "filterAllStatuses": "Všechny stavy",
+    "filterByStatus": "Filtrovat podle stavu",
     "filterActiveOnly": "Pouze aktivní",
     "filterInactiveOnly": "Pouze neaktivní",
     "filterAllActions": "Všechny akce",
+    "filterByAction": "Filtrovat podle akce",
     "noFilterResults": "Těmto filtrům neodpovídá žádné pravidlo",
     "preview": "Náhled",
     "previewMatched": "Shody: {{matched}}",

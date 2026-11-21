@@ -1703,10 +1703,13 @@
   "rules": {
     "searchPlaceholder": "Пошук правил...",
     "filterAllCategories": "Усі категорії",
+    "filterByCategory": "Фільтр за категорією",
     "filterAllStatuses": "Усі статуси",
+    "filterByStatus": "Фільтр за статусом",
     "filterActiveOnly": "Лише активні",
     "filterInactiveOnly": "Лише неактивні",
     "filterAllActions": "Усі дії",
+    "filterByAction": "Фільтр за дією",
     "noFilterResults": "Жодне правило не відповідає цим фільтрам",
     "preview": "Попередній перегляд",
     "previewMatched": "збігів: {{matched}}",

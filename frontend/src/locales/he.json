@@ -1698,10 +1698,13 @@
   "rules": {
     "searchPlaceholder": "חיפוש כללים...",
     "filterAllCategories": "כל הקטגוריות",
+    "filterByCategory": "סינון לפי קטגוריה",
     "filterAllStatuses": "כל הסטטוסים",
+    "filterByStatus": "סינון לפי סטטוס",
     "filterActiveOnly": "פעילים בלבד",
     "filterInactiveOnly": "לא פעילים בלבד",
     "filterAllActions": "כל הפעולות",
+    "filterByAction": "סינון לפי פעולה",
     "noFilterResults": "אין כלל שתואם סינונים אלה",
     "preview": "תצוגה מקדימה",
     "previewMatched": "{{matched}} התאמות",

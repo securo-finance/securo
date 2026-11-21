@@ -1686,10 +1686,13 @@
   "rules": {
     "searchPlaceholder": "Szabályok keresése...",
     "filterAllCategories": "Minden kategória",
+    "filterByCategory": "Szűrés kategória szerint",
     "filterAllStatuses": "Minden állapot",
+    "filterByStatus": "Szűrés állapot szerint",
     "filterActiveOnly": "Csak aktívak",
     "filterInactiveOnly": "Csak inaktívak",
     "filterAllActions": "Minden művelet",
+    "filterByAction": "Szűrés művelet szerint",
     "noFilterResults": "Egy szabály sem felel meg ezeknek a szűrőknek",
     "preview": "Előnézet",
     "previewMatched": "{{matched}} egyezés",

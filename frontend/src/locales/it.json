@@ -1690,10 +1690,13 @@
   "rules": {
     "searchPlaceholder": "Cerca regole...",
     "filterAllCategories": "Tutte le categorie",
+    "filterByCategory": "Filtra per categoria",
     "filterAllStatuses": "Tutti gli stati",
+    "filterByStatus": "Filtra per stato",
     "filterActiveOnly": "Solo attive",
     "filterInactiveOnly": "Solo inattive",
     "filterAllActions": "Tutte le azioni",
+    "filterByAction": "Filtra per azione",
     "noFilterResults": "Nessuna regola corrisponde a questi filtri",
     "preview": "Anteprima",
     "previewMatched": "{{matched}} corrispondenze",

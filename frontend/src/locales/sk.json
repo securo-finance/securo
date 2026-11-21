@@ -1766,10 +1766,13 @@
   "rules": {
     "searchPlaceholder": "Hľadať pravidlá...",
     "filterAllCategories": "Všetky kategórie",
+    "filterByCategory": "Filtrovať podľa kategórie",
     "filterAllStatuses": "Všetky stavy",
+    "filterByStatus": "Filtrovať podľa stavu",
     "filterActiveOnly": "Iba aktívne",
     "filterInactiveOnly": "Iba neaktívne",
     "filterAllActions": "Všetky akcie",
+    "filterByAction": "Filtrovať podľa akcie",
     "noFilterResults": "Žiadne pravidlo nezodpovedá týmto filtrom",
     "preview": "Náhľad",
     "previewMatched": "Zhody: {{matched}}",

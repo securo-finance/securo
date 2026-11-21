@@ -1748,10 +1748,13 @@
   "rules": {
     "searchPlaceholder": "Szukaj reguł...",
     "filterAllCategories": "Wszystkie kategorie",
+    "filterByCategory": "Filtruj według kategorii",
     "filterAllStatuses": "Wszystkie statusy",
+    "filterByStatus": "Filtruj według statusu",
     "filterActiveOnly": "Tylko aktywne",
     "filterInactiveOnly": "Tylko nieaktywne",
     "filterAllActions": "Wszystkie akcje",
+    "filterByAction": "Filtruj według akcji",
     "noFilterResults": "Żadna reguła nie pasuje do tych filtrów",
     "preview": "Podgląd",
     "previewMatched": "dopasowania: {{matched}}",

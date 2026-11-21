@@ -1686,10 +1686,13 @@
   "rules": {
     "searchPlaceholder": "Αναζήτηση κανόνων...",
     "filterAllCategories": "Όλες οι κατηγορίες",
+    "filterByCategory": "Φιλτράρισμα κατά κατηγορία",
     "filterAllStatuses": "Όλες οι καταστάσεις",
+    "filterByStatus": "Φιλτράρισμα κατά κατάσταση",
     "filterActiveOnly": "Μόνο ενεργοί",
     "filterInactiveOnly": "Μόνο ανενεργοί",
     "filterAllActions": "Όλες οι ενέργειες",
+    "filterByAction": "Φιλτράρισμα κατά ενέργεια",
     "noFilterResults": "Κανένας κανόνας δεν ταιριάζει με αυτά τα φίλτρα",
     "preview": "Προεπισκόπηση",
     "previewMatched": "{{matched}} αντιστοιχίσεις",
