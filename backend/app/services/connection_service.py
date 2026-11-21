@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from sqlalchemy import delete, exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
@@ -40,7 +40,7 @@ from app.models.transaction_category_line import TransactionCategoryLine
 from app.models.user import User
 from app.plugins.provider import is_plugin_provider
 from app.providers import get_provider
-from app.providers.enable_banking import is_account_txn_id
+from app.providers.enable_banking import SKIPPED_TRANSACTION_STATUSES, is_account_txn_id
 from app.providers.base import (
     AccountData,
     BankProvider,
@@ -3352,9 +3352,23 @@ async def _expire_cancelled_holds(
     ]
     if not gone:
         return
-    gone_ids = [tx.id for tx in gone]
-    # A file, a group share or an invoice payment hangs off the row and
-    # would go with it: deleting an allocated hold would reopen the invoice.
+    kept = await _rows_with_links(session, [tx.id for tx in gone])
+    for tx in gone:
+        if tx.id not in kept:
+            await session.delete(tx)
+
+
+async def _rows_with_links(
+    session: AsyncSession, transaction_ids: list[uuid.UUID],
+) -> set[uuid.UUID]:
+    """The rows among ``transaction_ids`` something else hangs off.
+
+    A file, a group share or an invoice payment would go with the row:
+    deleting an allocated hold would reopen the invoice, and a deleted row
+    loses what the user attached to it.
+    """
+    if not transaction_ids:
+        return set()
     kept: set[uuid.UUID] = set()
     for column in (
         TransactionAttachment.transaction_id,
@@ -3363,10 +3377,63 @@ async def _expire_cancelled_holds(
     ):
         kept.update(
             tx_id for tx_id in (await session.execute(
-                select(column).where(column.in_(gone_ids))
+                select(column).where(column.in_(transaction_ids))
             )).scalars()
             if tx_id is not None
         )
+    return kept
+
+
+def _entry_never_settled(raw: Any) -> bool:
+    """Whether a stored payload says the bank cancelled or rejected the entry.
+
+    A posted entry never carries one of these statuses, so a row stored as
+    posted whose payload does was made by the parser that imported them
+    (#1232).
+    """
+    if not isinstance(raw, dict):
+        return False
+    status = raw.get("status")
+    return (
+        isinstance(status, str)
+        and status.strip().upper() in SKIPPED_TRANSACTION_STATUSES
+    )
+
+
+async def _remove_cancelled_posted_rows(
+    session: AsyncSession, account_id: uuid.UUID,
+) -> None:
+    """Delete the posted rows an earlier version made of a cancelled entry.
+
+    Before #1560 a flat Enable Banking entry with status CNCL or RJCT landed
+    as a posted row, and it stayed next to the booked entries, counted in the
+    balance and the reports, for good. Its stored payload still says the
+    bank cancelled it; no posted entry ever does. Rows the user worked on,
+    a flag (and the reminder note that goes with it) included, and rows a
+    transfer, a file, a group share or an invoice payment hangs off, are
+    kept.
+    """
+    result = await session.execute(
+        select(Transaction)
+        .where(
+            Transaction.account_id == account_id,
+            Transaction.source == "sync",
+            Transaction.status == "posted",
+            Transaction.raw_data.is_not(None),
+        )
+        .with_for_update()
+    )
+    gone = [
+        tx for tx in result.scalars().all()
+        if _entry_never_settled(tx.raw_data)
+        and not tx.is_ignored
+        and tx.transfer_pair_id is None
+        and not tx.is_flagged
+        and not _holds_user_work(tx)
+    ]
+    if not gone:
+        return
+    kept = await _rows_with_links(session, [tx.id for tx in gone])
     for tx in gone:
         if tx.id not in kept:
             await session.delete(tx)
@@ -4768,6 +4835,11 @@ async def sync_connection(
                     live_txn_external_ids[account.id],
                     since,
                 )
+
+            # A row an earlier version stored as posted from a cancelled entry
+            # never moved money; its own payload still says so (#1232).
+            if connection.provider == "enable_banking":
+                await _remove_cancelled_posted_rows(session, account.id)
 
             # Reconcile the opening balance after any new transactions land so
             # SUM(all txs) keeps matching account.balance from the provider.

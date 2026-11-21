@@ -23,6 +23,10 @@ import {
 } from 'recharts'
 import { AlertCircle, CalendarDays, ChevronLeft, ChevronRight, HelpCircle, LibraryBig, X } from 'lucide-react'
 import { useLayout } from '@/hooks/use-layout'
+import { usePluginReports } from '@/hooks/use-plugin-reports'
+import { isPluginItemId } from '@/lib/library'
+import { localized } from '@/lib/localized-text'
+import { PluginReport } from '@/components/reports/PluginReport'
 import { useLibrary } from '@/contexts/library-context'
 import { reports } from '@/lib/api'
 import { extractApiError } from '@/lib/api-errors'
@@ -43,7 +47,7 @@ import { formatCompactCurrency, formatCurrency, ltrAmount } from '@/lib/format'
 import { cashFlowBar, cashFlowTopSeries } from '@/lib/cash-flow-bars'
 import { localDateString, todayInTimezone } from '@/lib/date-utils'
 import { monthLabel } from '@/lib/month-utils'
-import { periodWindow, windowMonths, type PeriodPreset } from '@/lib/report-period'
+import { clampPeriodWindow, explicitWindow, periodWindow, windowMonths, type PeriodPreset } from '@/lib/report-period'
 import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { WorkspaceContext } from '@/contexts/workspace-context'
 import {
@@ -163,6 +167,8 @@ function defaultCustomRange(): { from: string; to: string } {
 interface ReportTab {
   key: string
   labelKey: string
+  /** A plugin's report names itself (ADR 0028); Securo's own use `labelKey`. */
+  label?: string
   enabled: boolean
   rangeOptions: readonly RangeOption[]
   intervalOptions: readonly { key: string; value: string }[]
@@ -237,14 +243,33 @@ export default function ReportsPage() {
 
   const customDefaults = defaultCustomRange()
   // The reports this person keeps, in their order (all four by default).
-  const reportsLayout = useLayout('reports')
+  // The installed plugins' reports join the library and, once added, the tabs (ADR 0028).
+  const { entries: pluginReports, settled: pluginReportsSettled } = usePluginReports()
+  const reportsLayout = useLayout('reports', pluginReports)
   const { openLibrary } = useLibrary()
+  const allTabs = useMemo<ReportTab[]>(
+    () => [
+      ...REPORT_TABS,
+      ...(pluginReports ?? []).map((entry) => ({
+        key: entry.id,
+        labelKey: '',
+        label: localized(entry.plugin.title, i18n.language),
+        enabled: true,
+        rangeOptions: HISTORICAL_RANGE_OPTIONS,
+        intervalOptions: HISTORICAL_INTERVAL_OPTIONS,
+        supportsCustomRange: true,
+        fallbackRangeKey: '1y',
+        fallbackInterval: 'monthly',
+      })),
+    ],
+    [pluginReports, i18n.language],
+  )
   const shownTabs = useMemo(() => {
     const tabs = reportsLayout.ids
-      .map((id) => REPORT_TABS.find((tab) => tab.key === id))
+      .map((id) => allTabs.find((tab) => tab.key === id))
       .filter((tab): tab is ReportTab => tab !== undefined)
     return tabs.length > 0 ? tabs : REPORT_TABS
-  }, [reportsLayout.ids])
+  }, [reportsLayout.ids, allTabs])
   // The page opens on the first tab with the range last used there (issue
   // #1053), or that tab's defaults if what was stored doesn't apply to it.
   const [initialRange] = useState<ReportsRange>(() => storedReportsRange(shownTabs[0]) ?? {
@@ -291,7 +316,9 @@ export default function ReportsPage() {
   // the wallets' assets) is meaningful.
   const noAccounts = activeAccountIds !== null && activeAccountIds.length === 0
 
-  const currentTab = REPORT_TABS.find((tab) => tab.key === activeTab) ?? REPORT_TABS[0]
+  const currentTab = allTabs.find((tab) => tab.key === activeTab) ?? REPORT_TABS[0]
+  const isPluginReport = isPluginItemId(activeTab)
+  const pluginReport = isPluginReport ? (pluginReports ?? []).find((entry) => entry.id === activeTab) : undefined
 
   const isCashFlow = activeTab === 'cash_flow'
   // The Money Map (Sankey) tab is driven by the same income/expenses
@@ -346,6 +373,13 @@ export default function ReportsPage() {
   const days = navWindow || isCustomRange ? undefined : selectedRange.days
   const apiStart = navWindow ? navWindow.from : hasCustomRange ? customFrom : undefined
   const apiEnd = navWindow ? navWindow.to : hasCustomRange ? customTo : undefined
+  // A plugin's report only takes dates: the window the page shows, presets included.
+  const pickedPluginWindow = isPluginReport
+    ? explicitWindow(periodPreset, todayInTimezone(timeZone), periodOffset, { from: customFrom, to: customTo })
+    : null
+  // A plugin's report reads at most two years (ADR 0028). A 2Y preset or a
+  // wider custom range is trimmed rather than left to fail on every tab.
+  const pluginWindow = pickedPluginWindow ? clampPeriodWindow(pickedPluginWindow) : null
   // Label for the period being viewed: the month name for the month presets,
   // the covered span when the window has been stepped back or is custom, and
   // the preset's own name while the window still ends today.
@@ -360,7 +394,7 @@ export default function ReportsPage() {
           : t(`reports.${RANGE_LABELS[selectedRange.key]}`)
 
   const handleSelectTab = (key: string) => {
-    const nextTab = REPORT_TABS.find((tab) => tab.key === key) ?? REPORT_TABS[0]
+    const nextTab = allTabs.find((tab) => tab.key === key) ?? REPORT_TABS[0]
     setActiveTab(key)
     setCompositionView(key === 'net_worth' ? 'netWorth' : 'net')
     setSparklinePage(0)
@@ -398,7 +432,8 @@ export default function ReportsPage() {
   const activeShown = shownTabs.some((tab) => tab.key === activeTab)
   const openedOnLayout = useRef(false)
   useEffect(() => {
-    if (!reportsLayout.ready) return
+    // The first saved report may be a plugin's: wait until the plugins are known too.
+    if (!reportsLayout.ready || !pluginReportsSettled) return
     if (!openedOnLayout.current) {
       openedOnLayout.current = true
       if (activeTab !== firstShown) handleSelectTab(firstShown)
@@ -407,7 +442,7 @@ export default function ReportsPage() {
     if (!activeShown) handleSelectTab(firstShown)
     // handleSelectTab and activeTab change each render; what matters is the list and whether the active tab is on it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reportsLayout.ready, activeShown, firstShown])
+  }, [reportsLayout.ready, pluginReportsSettled, activeShown, firstShown])
 
   // Year picker (issue #765): one entry per year the workspace's data
   // covers, from this year back to the oldest transaction. Hidden until the
@@ -450,7 +485,7 @@ export default function ReportsPage() {
           ? reports.incomeExpenses(months, interval, acctIds, period, days, apiStart, apiEnd, !isCustomRange)
           : reports.netWorth(months, interval, acctIds, walletIds, period, apiStart, apiEnd),
     // Only request a custom report with both committed endpoints.
-    enabled: currentTab.enabled && reportsLayout.ready && activeShown && !isStatement && !(noAccounts && activeTab !== 'net_worth') && (!isCustomRange || hasCustomRange),
+    enabled: currentTab.enabled && reportsLayout.ready && activeShown && !isStatement && !isPluginReport && !(noAccounts && activeTab !== 'net_worth') && (!isCustomRange || hasCustomRange),
   })
 
   // Waiting on the saved list of reports counts as loading, not as an empty report.
@@ -742,7 +777,7 @@ export default function ReportsPage() {
     <div>
       <PageHeader
         section={t('reports.section')}
-        title={t(currentTab.labelKey)}
+        title={currentTab.label ?? t(currentTab.labelKey)}
         action={isStatement ? (
           <StatementControls
             month={statementMonth}
@@ -901,7 +936,7 @@ export default function ReportsPage() {
                 </button>
               </div>
             )}
-            <div className={`flex items-center rounded-lg border border-border bg-card overflow-hidden ${isMoneyMap ? 'hidden' : ''}`}>
+            <div className={`flex items-center rounded-lg border border-border bg-card overflow-hidden ${isMoneyMap || isPluginReport ? 'hidden' : ''}`}>
               {intervalOptions.map((opt) => (
                 <button
                   key={opt.key}
@@ -921,7 +956,9 @@ export default function ReportsPage() {
       />
 
       {/* Tab Bar */}
-      <div className="flex items-center gap-1 mb-5 border-b border-border overflow-x-auto">
+      {/* Every report shows: tabs wrap on wider screens, and scroll by swipe on a phone. */}
+      <div className="flex items-start gap-1 mb-5 border-b border-border">
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible">
         {shownTabs.map((tab) => (
           <button
             key={tab.key}
@@ -935,7 +972,7 @@ export default function ReportsPage() {
                   : 'text-muted-foreground/50 cursor-not-allowed'
             }`}
           >
-            {t(tab.labelKey)}
+            {tab.label ?? t(tab.labelKey)}
             {!tab.enabled && (
               <span className="ms-1.5 text-[10px] text-muted-foreground/50">
                 {t('reports.comingSoon')}
@@ -946,10 +983,11 @@ export default function ReportsPage() {
             )}
           </button>
         ))}
+        </div>
         <Button
           variant="ghost"
           size="sm"
-          className="ms-auto mb-1 h-8 shrink-0 gap-1.5 px-2 text-muted-foreground"
+          className="ms-auto mt-1 mb-1 h-8 shrink-0 gap-1.5 px-2 text-muted-foreground"
           aria-label={t('library.manageReports')}
           title={t('library.manageReports')}
           onClick={() => openLibrary('reports')}
@@ -965,7 +1003,20 @@ export default function ReportsPage() {
         <IncomeExpenseStatement accountIds={acctIds} month={statementMonth} settings={statementSettings} />
       ))}
 
-      {!isStatement && isError && (
+      {isPluginReport && pluginReport && (noAccounts ? (
+        // A collection with no accounts: nothing to add up, as on Securo's own tabs.
+        <p className="py-10 text-center text-sm text-muted-foreground">{t('reports.noData')}</p>
+      ) : (
+        <PluginReport
+          entry={pluginReport}
+          startDate={pluginWindow?.from}
+          endDate={pluginWindow?.to}
+          requestedFrom={pickedPluginWindow?.from}
+          accountIds={acctIds}
+        />
+      ))}
+
+      {!isStatement && !isPluginReport && isError && (
         <div className="flex items-center justify-between gap-3 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 rounded-lg px-4 py-2.5 mb-5">
           <div className="flex items-center gap-2.5 min-w-0">
             <AlertCircle size={16} className="shrink-0 text-rose-600 dark:text-rose-400" />
@@ -983,7 +1034,7 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {!isStatement && !isError && (
+      {!isStatement && !isPluginReport && !isError && (
       <>
       {/* Hero Card */}
       <div className="bg-card rounded-xl border border-border shadow-sm mb-5">

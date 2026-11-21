@@ -883,6 +883,8 @@
     "uncategorizedCta": "{{count}} transações precisam de ser categorizadas",
     "uncategorizedTotal": "{{amount}} no total",
     "categorizeNow": "Categorizar agora",
+    "drillDownQuickCategorize": "Escolher categoria",
+    "drillDownOpenTransaction": "Abrir transação",
     "allCategorized": "Tudo em dia!",
     "allCategorizedDesc": "Todas as transações estão categorizadas",
     "assetsValue": "Património investido",
@@ -941,6 +943,7 @@
     "addedToExistingRule": "Regra atualizada. Próximas correspondências usarão esta categoria.",
     "duplicateRuleCondition": "Essa regra já inclui esta correspondência.",
     "saveAndNew": "Guardar e novo",
+    "saveAndNext": "Guardar e seguinte",
     "saveAndDuplicate": "Guardar e duplicar",
     "moreSaveOptions": "Mais opções de guardar",
     "created": "Transação criada",
@@ -1687,10 +1690,13 @@
   "rules": {
     "searchPlaceholder": "Procurar regras...",
     "filterAllCategories": "Todas as categorias",
+    "filterByCategory": "Filtrar por categoria",
     "filterAllStatuses": "Todos os estados",
+    "filterByStatus": "Filtrar por estado",
     "filterActiveOnly": "Apenas ativas",
     "filterInactiveOnly": "Apenas inativas",
     "filterAllActions": "Todas as ações",
+    "filterByAction": "Filtrar por ação",
     "noFilterResults": "Nenhuma regra corresponde a estes filtros",
     "preview": "Pré-visualizar",
     "previewMatched": "{{matched}} correspondências",
@@ -2117,9 +2123,10 @@
     "summaryHoldings": "{{created}} ativos criados, {{matched}} encontrados",
     "summarySkipped": "{{count}} já importadas",
     "rowsSkipped": "{{count}} linhas serão ignoradas",
+    "reasonColumn": "Motivo",
     "rowError": "Linha {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "e mais {{count}}",
-    "moreRows": "e mais {{count}} ordens",
+    "showAllRows": "Mostrar todas as {{count}} linhas",
     "field": {
       "ticker": "Ativo",
       "date": "Data",
@@ -2239,9 +2246,18 @@
     "lastUpdated": "Atualizado {{when}}",
     "refreshPrice": "Atualizar cotação",
     "refreshAllPrices": "Atualizar preços",
-    "refreshAllPricesDone": "{{refreshed}} preços atualizados, {{skipped}} sem cotação nova",
+    "refreshAllPricesDone": "{{updated}}, {{skipped}}",
+    "refreshAllPricesUpdated_one": "{{count}} preço atualizado",
+    "refreshAllPricesUpdated_many": "{{count}} preços atualizados",
+    "refreshAllPricesUpdated_other": "{{count}} preços atualizados",
+    "refreshAllPricesNoQuote_one": "{{count}} sem cotação nova",
+    "refreshAllPricesNoQuote_many": "{{count}} sem cotação nova",
+    "refreshAllPricesNoQuote_other": "{{count}} sem cotação nova",
+    "refreshAllPricesLeftOut_one": "{{count}} ficou de fora",
+    "refreshAllPricesLeftOut_many": "{{count}} ficaram de fora",
+    "refreshAllPricesLeftOut_other": "{{count}} ficaram de fora",
     "refreshAllPricesNone": "Nenhum ativo com preço de mercado para atualizar",
-    "refreshAllPricesRateLimited": "O fornecedor de cotações está a limitar os pedidos agora. {{refreshed}} preços foram atualizados e {{skipped}} ficaram de fora antes de parar, tente novamente dentro de um minuto.",
+    "refreshAllPricesRateLimited": "O fornecedor de cotações está a limitar os pedidos agora. Antes de parar: {{updated}}, {{skipped}}. Tente novamente dentro de um minuto.",
     "priceRefreshed": "Cotação atualizada",
     "purchaseDate": "Data de Compra",
     "purchasePrice": "Preço de Compra",
@@ -2422,7 +2438,41 @@
     "statementViewTransactions": "Ver transações",
     "statementUncategorizedIncome": "Receita sem categoria",
     "statementUncategorizedExpense": "Despesa sem categoria",
-    "statementToggleGroup": "Mostrar categorias de {{name}}"
+    "statementToggleGroup": "Mostrar categorias de {{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "Total gasto",
+        "income": "Total recebido",
+        "net": "Saldo"
+      },
+      "none": {
+        "category": "Sem categoria",
+        "category_group": "Sem grupo",
+        "payee": "Sem beneficiário",
+        "account": "Sem conta",
+        "month": "Sem data"
+      },
+      "groupBy": {
+        "category": "Categoria",
+        "category_group": "Grupo",
+        "payee": "Beneficiário",
+        "account": "Conta",
+        "month": "Mês"
+      },
+      "measure": {
+        "expenses": "Despesas",
+        "income": "Receitas",
+        "net": "Saldo"
+      },
+      "share": "Parcela",
+      "computed": "Calculado pelo plugin",
+      "periodTrimmed": "Os relatórios de plugin cobrem no máximo dois anos. A mostrar {{from}} a {{to}}.",
+      "periodTooLong": "Um relatório de plugin cobre no máximo dois anos. Escolha um período mais curto.",
+      "totalRow": "Total",
+      "page": "Página {{page}} de {{pages}}",
+      "previousPage": "Página anterior",
+      "nextPage": "Página seguinte"
+    }
   },
   "payees": {
     "noPayeeFound": "Nenhuma entidade encontrada.",
@@ -3974,8 +4024,7 @@
       "title": "Receita recorrente",
       "hint": "Quanto as faturas recorrentes trazem por mês, e o que se perdeu recentemente."
     }
-  }
-,
+  },
   "offline": {
     "title": "Não foi possível contactar o servidor",
     "description": "Está sem ligação ou o Securo está a reiniciar. Os seus dados estão seguros e nada foi alterado. Vamos reconectar automaticamente assim que o servidor responder."

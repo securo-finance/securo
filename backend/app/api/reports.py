@@ -8,8 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.app_clock import app_today
 from app.core.database import get_async_session
 from app.core.workspace_context import WorkspaceContext, current_workspace
-from app.schemas.report import CategoryStatementResponse, ReportDataRange, ReportResponse
-from app.services import category_statement_service, report_service
+from app.core.feature_flags import feature_flag
+from app.schemas.report import (
+    CategoryStatementResponse,
+    PluginReportResponse,
+    PluginReportRow,
+    ReportDataRange,
+    ReportResponse,
+)
+from app.services import category_statement_service, plugin_report_service, report_service
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -202,4 +209,60 @@ async def get_category_statement(
     return await category_statement_service.get_category_statement(
         session, ctx.workspace.id, ctx.user_id, selected, months,
         primary_currency=ctx.user.primary_currency, account_ids=account_ids,
+    )
+
+
+@router.get("/plugins/{owner}/{name}/{key}", response_model=PluginReportResponse)
+async def get_plugin_report(
+    owner: str,
+    name: str,
+    key: str,
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    account_ids: Optional[list[uuid.UUID]] = Query(None),
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """A report an installed plugin declares, added up by Securo (ADR 0028).
+
+    Read as any report is: by whoever can see the workspace, over the period
+    and accounts they picked. Nothing of the plugin runs.
+    """
+    if not feature_flag("PLUGINS_ENABLED"):
+        raise HTTPException(status_code=404, detail="Plugins are not enabled")
+    try:
+        record, manifest, report = await plugin_report_service.installed_report(
+            session, ctx.workspace.id, f"{owner}/{name}", key
+        )
+    except plugin_report_service.PluginReportNotFound:
+        raise HTTPException(status_code=404, detail="Report not found") from None
+    if report.code:
+        try:
+            view = await plugin_report_service.run_code_report(
+                session, ctx.workspace.id, ctx.user_id, record, report, start_date, end_date, account_ids,
+                lang=(ctx.user.preferences or {}).get("language") or "en",
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        except plugin_report_service.CodeReportUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from None
+        except plugin_report_service.CodeReportFailed as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from None
+        return PluginReportResponse(
+            key=report.key, code=True, currency=view.currency or "USD", view=view.model_dump(exclude_none=True)
+        )
+    try:
+        result = await plugin_report_service.run_report(
+            session, ctx.workspace.id, ctx.user_id, manifest, report, start_date, end_date, account_ids
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    return PluginReportResponse(
+        key=report.key,
+        measure=report.measure,
+        group_by=report.group_by,
+        chart=report.chart,
+        currency=result.currency,
+        rows=[PluginReportRow(key=r.key, label=r.label, value=float(r.value), color=r.color) for r in result.rows],
+        total=float(result.total),
     )

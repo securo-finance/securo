@@ -883,6 +883,8 @@
     "uncategorizedCta": "{{count}} transazioni da categorizzare",
     "uncategorizedTotal": "{{amount}} in totale",
     "categorizeNow": "Categorizza ora",
+    "drillDownQuickCategorize": "Scegli una categoria",
+    "drillDownOpenTransaction": "Apri transazione",
     "allCategorized": "Tutto in ordine!",
     "allCategorizedDesc": "Tutte le transazioni sono categorizzate",
     "assetsValue": "Beni investiti",
@@ -941,6 +943,7 @@
     "addedToExistingRule": "Regola aggiornata. Le prossime corrispondenze useranno questa categoria.",
     "duplicateRuleCondition": "Questa regola include gia questa corrispondenza.",
     "saveAndNew": "Salva e nuova",
+    "saveAndNext": "Salva e successivo",
     "saveAndDuplicate": "Salva e duplica",
     "moreSaveOptions": "Altre opzioni di salvataggio",
     "created": "Transazione creata",
@@ -1687,10 +1690,13 @@
   "rules": {
     "searchPlaceholder": "Cerca regole...",
     "filterAllCategories": "Tutte le categorie",
+    "filterByCategory": "Filtra per categoria",
     "filterAllStatuses": "Tutti gli stati",
+    "filterByStatus": "Filtra per stato",
     "filterActiveOnly": "Solo attive",
     "filterInactiveOnly": "Solo inattive",
     "filterAllActions": "Tutte le azioni",
+    "filterByAction": "Filtra per azione",
     "noFilterResults": "Nessuna regola corrisponde a questi filtri",
     "preview": "Anteprima",
     "previewMatched": "{{matched}} corrispondenze",
@@ -2117,9 +2123,10 @@
     "summaryHoldings": "{{created}} titoli creati, {{matched}} trovati",
     "summarySkipped": "{{count}} già importati",
     "rowsSkipped": "{{count}} righe saranno saltate",
+    "reasonColumn": "Motivo",
     "rowError": "Riga {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "e altri {{count}}",
-    "moreRows": "e altri {{count}} ordini",
+    "showAllRows": "Mostra tutte le {{count}} righe",
     "field": {
       "ticker": "Ticker",
       "date": "Data",
@@ -2239,9 +2246,18 @@
     "lastUpdated": "Aggiornato {{when}}",
     "refreshPrice": "Aggiorna prezzo",
     "refreshAllPrices": "Aggiorna prezzi",
-    "refreshAllPricesDone": "{{refreshed}} prezzi aggiornati, {{skipped}} senza nuova quotazione",
+    "refreshAllPricesDone": "{{updated}}, {{skipped}}",
+    "refreshAllPricesUpdated_one": "{{count}} prezzo aggiornato",
+    "refreshAllPricesUpdated_many": "{{count}} prezzi aggiornati",
+    "refreshAllPricesUpdated_other": "{{count}} prezzi aggiornati",
+    "refreshAllPricesNoQuote_one": "{{count}} senza nuova quotazione",
+    "refreshAllPricesNoQuote_many": "{{count}} senza nuova quotazione",
+    "refreshAllPricesNoQuote_other": "{{count}} senza nuova quotazione",
+    "refreshAllPricesLeftOut_one": "{{count}} saltato",
+    "refreshAllPricesLeftOut_many": "{{count}} saltati",
+    "refreshAllPricesLeftOut_other": "{{count}} saltati",
     "refreshAllPricesNone": "Nessun cespite a prezzo di mercato da aggiornare",
-    "refreshAllPricesRateLimited": "Il fornitore dei dati di mercato sta limitando le richieste. {{refreshed}} prezzi sono stati aggiornati e {{skipped}} saltati prima dello stop; riprova tra un minuto.",
+    "refreshAllPricesRateLimited": "Il fornitore dei dati di mercato sta limitando le richieste. Prima dello stop: {{updated}}, {{skipped}}. Riprova tra un minuto.",
     "priceRefreshed": "Prezzo aggiornato",
     "purchaseDate": "Data di acquisto",
     "purchasePrice": "Prezzo di acquisto",
@@ -2422,7 +2438,41 @@
     "statementViewTransactions": "Visualizza transazioni",
     "statementUncategorizedIncome": "Entrate senza categoria",
     "statementUncategorizedExpense": "Uscite senza categoria",
-    "statementToggleGroup": "Mostra le categorie di {{name}}"
+    "statementToggleGroup": "Mostra le categorie di {{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "Totale speso",
+        "income": "Totale ricevuto",
+        "net": "Saldo"
+      },
+      "none": {
+        "category": "Senza categoria",
+        "category_group": "Senza gruppo",
+        "payee": "Senza beneficiario",
+        "account": "Senza conto",
+        "month": "Senza data"
+      },
+      "groupBy": {
+        "category": "Categoria",
+        "category_group": "Gruppo",
+        "payee": "Beneficiario",
+        "account": "Conto",
+        "month": "Mese"
+      },
+      "measure": {
+        "expenses": "Spese",
+        "income": "Entrate",
+        "net": "Saldo"
+      },
+      "share": "Quota",
+      "computed": "Calcolato dal plugin",
+      "periodTrimmed": "I report dei plugin coprono al massimo due anni. Visualizzazione da {{from}} a {{to}}.",
+      "periodTooLong": "Un report di un plugin copre al massimo due anni. Scegli un periodo più breve.",
+      "totalRow": "Totale",
+      "page": "Pagina {{page}} di {{pages}}",
+      "previousPage": "Pagina precedente",
+      "nextPage": "Pagina successiva"
+    }
   },
   "payees": {
     "noPayeeFound": "Nessun beneficiario trovato.",
@@ -3974,8 +4024,7 @@
       "title": "Entrate ricorrenti",
       "hint": "Quanto portano le fatture ricorrenti ogni mese, e cosa si è perso di recente."
     }
-  }
-,
+  },
   "offline": {
     "title": "Server non raggiungibile",
     "description": "Sei offline o Securo si sta riavviando. I tuoi dati sono al sicuro e nulla è stato modificato. Ci riconnetteremo automaticamente appena il server risponderà."

@@ -3663,7 +3663,7 @@ wheels = [
 
 [[package]]
 name = "securo-backend"
-version = "0.20.0"
+version = "0.21.0"
 source = { virtual = "." }
 dependencies = [
     { name = "aiobotocore" },

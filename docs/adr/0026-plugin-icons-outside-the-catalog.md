@@ -14,7 +14,7 @@ Only the catalog knows which icon belongs to a plugin. Recording the icon's name
 ## Decision
 
 - The frontend reads the catalog to find an installed plugin's icon: `usePluginIcons` (`frontend/src/hooks/use-plugin-icons.ts`) shares the Plugins page's catalog query and maps a plugin id to its `icon_url`. No backend change, nothing recorded at install.
-- It reads the catalog only while a plugin's avatar is on screen: the Connect Bank dialog (`frontend/src/components/connector-select-dialog.tsx`) asks only when it lists a plugin, and Accounts (`frontend/src/pages/accounts.tsx`) asks only when it shows a plugin connection without a logo of its own. A failed request isn't retried and leaves the badge.
+- It reads the catalog only while a plugin's avatar is on screen: the Connect Bank dialog (`frontend/src/components/connector-select-dialog.tsx`) asks only when it lists a plugin, and Accounts (`frontend/src/pages/accounts.tsx`) asks only when it shows a plugin connection without a logo of its own. A failed request is retried once; if that fails too, the badge stays.
 - This amends ADR 0015 and the row for the plugin index in ADR 0016: the index is fetched when someone opens the catalog and, now, when one of these screens shows a plugin's avatar:
 
 | Call | Where | Happens only when |
