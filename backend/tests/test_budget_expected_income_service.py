@@ -4,13 +4,12 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import delete, event, false, select
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.expected_income import ExpectedIncome
 from app.models.fx_rate import FxRate
 from app.models.workspace import Workspace
-from app.services import budget_service
 from app.services.budget_service import get_expected_income, set_expected_income
 
 pytestmark = pytest.mark.asyncio
@@ -170,37 +169,7 @@ async def test_the_write_comes_back_with_the_month_and_the_amount(
     assert read.amount_primary == Decimal("3450.01")
 
 
-async def test_a_racing_insert_updates_the_row_it_collides_with(
-    session: AsyncSession, test_workspace, monkeypatch
-):
-    # The rollback below expires every loaded object; keep the id at hand.
-    workspace_id = test_workspace.id
-    await set_expected_income(session, workspace_id, _MONTH, Decimal("3450.00"), "USD", reader_currency="BRL")
-
-    original_select = budget_service.select
-    calls = {"count": 0}
-
-    def racing_select(*args, **kwargs):
-        calls["count"] += 1
-        statement = original_select(*args, **kwargs)
-        if calls["count"] == 1:
-            # The other request wrote the row between this read and its insert.
-            return statement.where(false())
-        return statement
-
-    monkeypatch.setattr(budget_service, "select", racing_select)
-
-    read = await set_expected_income(
-        session, workspace_id, _MONTH, Decimal("4000.00"), "USD", reader_currency="BRL"
-    )
-    assert read.amount == Decimal("4000.00")
-
-    rows = await _stored_rows(session, workspace_id)
-    assert len(rows) == 1
-    assert rows[0].amount == Decimal("4000.00")
-
-
-async def test_the_update_writes_amount_and_currency_together(
+async def test_the_write_upserts_amount_and_currency_together(
     session: AsyncSession, test_workspace
 ):
     await set_expected_income(session, test_workspace.id, _MONTH, Decimal("3450.00"), "USD", reader_currency="BRL")
@@ -208,22 +177,22 @@ async def test_the_update_writes_amount_and_currency_together(
     statements: list[str] = []
 
     def capture(conn, cursor, statement, parameters, context, executemany):
-        if statement.lstrip().upper().startswith("UPDATE"):
+        if statement.lstrip().upper().startswith("INSERT INTO EXPECTED_INCOMES"):
             statements.append(statement)
 
     engine = session.bind.sync_engine
     event.listen(engine, "before_cursor_execute", capture)
     try:
-        # Same currency, new amount: attribute tracking would have written the
-        # amount alone and let a concurrent save of the currency through.
+        # One row per workspace/month: the second write updates in place, and
+        # the statement carries both columns so no save can split the row.
         await set_expected_income(session, test_workspace.id, _MONTH, Decimal("4000.00"), "USD", reader_currency="BRL")
-        # Same amount, new currency: the mirror case.
         await set_expected_income(session, test_workspace.id, _MONTH, Decimal("4000.00"), "EUR", reader_currency="BRL")
     finally:
         event.remove(engine, "before_cursor_execute", capture)
 
     assert len(statements) == 2
     for statement in statements:
+        assert "ON CONFLICT" in statement.upper()
         assert "amount" in statement
         assert "currency" in statement
 
@@ -251,39 +220,3 @@ async def test_the_write_response_converts_to_the_reader_currency(
 
     stored = await get_expected_income(session, test_workspace.id, _MONTH, "BRL")
     assert stored is not None and stored.amount_primary == Decimal("50.00")
-
-
-async def test_a_clear_between_the_read_and_the_update_still_stores_the_value(
-    session: AsyncSession, test_workspace, monkeypatch
-):
-    workspace_id = test_workspace.id
-    await set_expected_income(
-        session, workspace_id, _MONTH, Decimal("3450.00"), "USD", reader_currency="BRL"
-    )
-
-    original_execute = AsyncSession.execute
-    raced = {"done": False}
-
-    async def racing_execute(self, statement, *args, **kwargs):
-        if not raced["done"] and getattr(statement, "is_update", False):
-            # The clear from another tab lands after our read, before the update.
-            raced["done"] = True
-            await original_execute(
-                self,
-                delete(ExpectedIncome).where(
-                    ExpectedIncome.workspace_id == workspace_id,
-                    ExpectedIncome.month == _MONTH,
-                ),
-            )
-        return await original_execute(self, statement, *args, **kwargs)
-
-    monkeypatch.setattr(AsyncSession, "execute", racing_execute)
-
-    read = await set_expected_income(
-        session, workspace_id, _MONTH, Decimal("4000.00"), "USD", reader_currency="BRL"
-    )
-
-    assert read.amount == Decimal("4000.00")
-    rows = await _stored_rows(session, workspace_id)
-    assert len(rows) == 1
-    assert rows[0].amount == Decimal("4000.00")

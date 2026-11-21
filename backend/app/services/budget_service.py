@@ -1,10 +1,11 @@
 import uuid
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Optional, cast
+from typing import Optional
 
-from sqlalchemy import select, func, and_, case, update
-from sqlalchemy.engine import CursorResult
+from sqlalchemy import select, func, and_, case, delete
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -980,91 +981,36 @@ async def set_expected_income(
     currency after a display switch.
     """
     month_start = month.replace(day=1)
-    row = await session.scalar(
-        select(ExpectedIncome).where(
-            ExpectedIncome.workspace_id == workspace_id,
-            ExpectedIncome.month == month_start,
-        )
-    )
     if amount is None:
-        if row is not None:
-            await session.delete(row)
-            await session.commit()
+        await session.execute(
+            delete(ExpectedIncome).where(
+                ExpectedIncome.workspace_id == workspace_id,
+                ExpectedIncome.month == month_start,
+            )
+        )
+        await session.commit()
         return ExpectedIncomeRead(month=month_start, amount=None, currency=None, amount_primary=None)
 
     amount_value = amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    # Always write both columns: SQLAlchemy only emits the attributes whose value
-    # changed, so two concurrent saves could each write one column and leave a
-    # row neither caller sent (100 USD + 100 EUR ending as 200 EUR).
-    write_values = (
-        update(ExpectedIncome)
-        .where(
-            ExpectedIncome.workspace_id == workspace_id,
-            ExpectedIncome.month == month_start,
-        )
-        .values(amount=amount_value, currency=currency)
-        .execution_options(synchronize_session=False)
-    )
-    async def write_row() -> bool:
-        """Write the month's row, inserting it when a clear removed it first.
-
-        Returns True when the existing row was updated (the loaded instance is
-        stale now) and False when a new row had to be inserted.
-        """
-        result = cast(CursorResult, await session.execute(write_values))
-        if result.rowcount:
-            await session.commit()
-            return True
-
-        # A clear from another tab removed the row between our read and this
-        # write: store the value instead of answering 200 with nothing saved.
-        session.add(
-            ExpectedIncome(
-                workspace_id=workspace_id,
-                month=month_start,
-                amount=amount_value,
-                currency=currency,
-            )
-        )
-        try:
-            await session.commit()
-        except IntegrityError:
-            # The other tab re-inserted first; update the row it wrote.
-            await session.rollback()
-            retried = cast(CursorResult, await session.execute(write_values))
-            if not retried.rowcount:
-                raise
-            await session.commit()
-            return True
-        return False
-
-    if row is None:
-        row = ExpectedIncome(
+    # One atomic statement: a concurrent clear or re-insert cannot lose this save
+    # or turn it into a 500, and both columns are written together (attribute
+    # tracking could otherwise let two saves write one column each).
+    if session.bind is not None and session.bind.dialect.name == "postgresql":
+        insert_stmt = pg_insert(ExpectedIncome)
+    else:
+        insert_stmt = sqlite_insert(ExpectedIncome)
+    await session.execute(
+        insert_stmt.values(
             workspace_id=workspace_id,
             month=month_start,
             amount=amount_value,
             currency=currency,
+        ).on_conflict_do_update(
+            index_elements=["workspace_id", "month"],
+            set_={"amount": amount_value, "currency": currency},
         )
-        session.add(row)
-        try:
-            await session.commit()
-        except IntegrityError:
-            # Another request inserted the same workspace/month between this read
-            # and its write; that row is the one to update now.
-            await session.rollback()
-            row = await session.scalar(
-                select(ExpectedIncome).where(
-                    ExpectedIncome.workspace_id == workspace_id,
-                    ExpectedIncome.month == month_start,
-                )
-            )
-            if row is None:
-                raise
-            if await write_row():
-                session.expire(row)
-    else:
-        if await write_row():
-            session.expire(row)
+    )
+    await session.commit()
 
     amount_primary, _ = await convert_or_none(
         session, amount_value, currency, reader_currency, target_date=month_start
