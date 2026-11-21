@@ -17,6 +17,10 @@ spec:
             matchLabels:
               {{- include "securo.selectorLabels" . | nindent 14 }}
               app.kubernetes.io/component: backend
+        - podSelector:
+            matchLabels:
+              {{- include "securo.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: celery-worker
       ports:
         - port: {{ .Values.pluginRunner.service.port }}
           protocol: TCP
