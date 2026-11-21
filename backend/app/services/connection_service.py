@@ -17,7 +17,11 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.core.app_clock import app_today
 from app.core.config import get_settings
 from app.core.money import MoneyOutOfRange, bounded_asset_value
-from app.models.asset import PROVIDER_VALUE_DATE_METADATA_KEY, Asset
+from app.models.asset import (
+    PROVIDER_VALUE_DATE_METADATA_KEY,
+    PROVIDER_VALUE_METADATA_KEY,
+    Asset,
+)
 from app.models.asset_group import AssetGroup
 from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
@@ -1602,7 +1606,7 @@ def _provider_metadata(holding: HoldingData) -> Optional[dict]:
     return {
         key: value
         for key, value in (holding.metadata or {}).items()
-        if key != PROVIDER_VALUE_DATE_METADATA_KEY
+        if key not in (PROVIDER_VALUE_DATE_METADATA_KEY, PROVIDER_VALUE_METADATA_KEY)
     } or None
 
 
@@ -1616,6 +1620,10 @@ def _holding_metadata(holding: HoldingData) -> Optional[dict]:
     metadata = _provider_metadata(holding) or {}
     if holding.value_date is not None:
         metadata[PROVIDER_VALUE_DATE_METADATA_KEY] = holding.value_date.isoformat()
+    if holding.current_value is not None:
+        # Kept so unlinking a ticker can put the provider's figure back at once
+        # (asset_service.unlink_market_ticker) instead of waiting for a sync.
+        metadata[PROVIDER_VALUE_METADATA_KEY] = str(holding.current_value)
     return metadata or None
 
 
@@ -1662,6 +1670,21 @@ def _holding_value_for_today(asset: Asset, holding: HoldingData):
     if asset.valuation_method == "market_price" and asset.last_price is not None and asset.units:
         return Decimal(str(asset.last_price)) * Decimal(str(asset.units))
     return holding.current_value
+
+
+def _holding_price_for_today(asset: Asset, holding: HoldingData) -> Optional[Decimal]:
+    """Per-share price behind today's point.
+
+    When the point is units × quote, the quote: stored on the AssetValue
+    like a manual market-priced holding's, so the history rebuild recomputes
+    the point from the ledger quantity when a later trade correction moves
+    units across dates, instead of keeping a baked amount. A provider-valued
+    point keeps the unit price the provider reported (None when it sends
+    none), which the chart uses between syncs.
+    """
+    if asset.valuation_method == "market_price" and asset.last_price is not None and asset.units:
+        return Decimal(str(asset.last_price))
+    return holding.unit_price
 
 
 async def _upsert_asset_from_holding(
@@ -1742,7 +1765,10 @@ async def _upsert_asset_from_holding(
         asset.purchase_date = holding.purchase_date
     if holding.isin:
         asset.isin = holding.isin
-    if holding.ticker and not holding.ticker_quotable:
+    # A raw label never replaces the symbol a market-priced holding is quoted
+    # under: that ticker was confirmed by a quote or linked by the user, and
+    # its price and logo belong to it.
+    if holding.ticker and not holding.ticker_quotable and asset.valuation_method != "market_price":
         asset.ticker = holding.ticker
     if holding.maturity_date:
         asset.maturity_date = holding.maturity_date
@@ -1878,7 +1904,7 @@ async def _store_todays_snapshot(
         _holding_value_for_today(asset, holding),
         today,
         gross_amount=holding.gross_value,
-        price=_snapshot_unit_price(holding),
+        price=_holding_price_for_today(asset, holding),
     )
     if not stored:
         _drop_provider_value_date(asset)
