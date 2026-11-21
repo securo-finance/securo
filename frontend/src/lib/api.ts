@@ -63,6 +63,7 @@ import type {
   Budget,
   BudgetVsActual,
   BudgetSuggestionResponse,
+  ExpectedIncome,
   Rule,
   RuleAction,
   RuleConditionNode,
@@ -1470,6 +1471,19 @@ export const budgets = {
   }, workspaceId?: string | null): Promise<Budget[]> => {
     const { data } = await api.post('/budgets/copy-month', payload, workspaceHeader(workspaceId))
     return data
+  },
+  // One hand-typed income row per workspace and month. The amount travels as
+  // a string so no binary rounding is applied before the backend's Decimal
+  // sees it; a null amount clears the row.
+  expectedIncome: {
+    get: async (month: string, workspaceId?: string | null): Promise<ExpectedIncome | null> => {
+      const { data } = await api.get('/budgets/expected-income', { params: { month }, ...workspaceHeader(workspaceId) })
+      return data
+    },
+    put: async (payload: { month: string; amount: string | null }): Promise<ExpectedIncome> => {
+      const { data } = await api.put('/budgets/expected-income', payload)
+      return data
+    },
   },
 }
 

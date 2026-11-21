@@ -2,9 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
 
 import { monthLabel, monthRange } from '@/lib/month-utils'
+import { formatCurrency } from '@/lib/format'
 
 import BudgetsPage from '@/pages/budgets'
-import { renderWithProviders, t } from '@/test/utils'
+import { createTestQueryClient, renderWithProviders, t } from '@/test/utils'
 import type { Budget, BudgetVsActual, Category } from '@/types'
 
 const api = vi.hoisted(() => ({
@@ -15,7 +16,7 @@ const api = vi.hoisted(() => ({
   dashboard: { spendingByCategory: vi.fn(), projectedTransactions: vi.fn() },
   transactions: { list: vi.fn() },
   admin: { accountingMode: vi.fn() },
-  budgets: { list: vi.fn(), comparison: vi.fn(), suggestions: vi.fn(), createBatch: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), copyMonth: vi.fn() },
+  budgets: { list: vi.fn(), comparison: vi.fn(), suggestions: vi.fn(), createBatch: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), copyMonth: vi.fn(), expectedIncome: { get: vi.fn(), put: vi.fn() } },
   categories: { listIncludingHidden: vi.fn() },
   categoryGroups: { listIncludingHidden: vi.fn() },
 }))
@@ -82,6 +83,8 @@ beforeEach(() => {
     '2026-08-01': [comparisonRow('food', 2000)],
     '2026-07-01': [comparisonRow('food', 340)],
   }[month] ?? []))
+  api.budgets.expectedIncome.get.mockResolvedValue(null)
+  api.budgets.expectedIncome.put.mockResolvedValue({ month: '2026-10-01', amount: null, currency: null, amount_primary: null })
   api.budgets.update.mockResolvedValue(rent)
   api.budgets.create.mockResolvedValue(rent)
 })
@@ -602,5 +605,190 @@ describe('Copying the previous month', () => {
     await screen.findByRole('textbox', { name: t('budgets.budgetFor', { category: 'Rent' }) })
 
     expect(screen.queryByRole('button', { name: t('budgets.copyAction') })).not.toBeInTheDocument()
+  })
+})
+
+describe('budget income strip', () => {
+  it('shows the setter while the income is not defined, inside the month card', async () => {
+    const { user } = renderWithProviders(<BudgetsPage />)
+    expect(await screen.findByText(t('budgets.monthBudgets', { month: monthLabel('2026-10', 'en-US') }))).toBeInTheDocument()
+    const setButton = await screen.findByRole('button', { name: t('budgets.incomeSet') })
+    expect(setButton).toBeDisabled()
+
+    await user.type(screen.getByRole('textbox', { name: t('budgets.incomeLabel') }), '5000')
+    await user.click(setButton)
+
+    await waitFor(() => {
+      expect(api.budgets.expectedIncome.put).toHaveBeenCalledWith({ month: '2026-10-01', amount: '5000' })
+    })
+  })
+
+  it('shows the saved total, the difference and the coverage when the income is set', async () => {
+    api.budgets.expectedIncome.get.mockResolvedValue({ month: '2026-10-01', amount: 5000, currency: 'USD', amount_primary: 5000 })
+    renderWithProviders(<BudgetsPage />)
+
+    expect(await screen.findByText(t('budgets.incomePlanned', { amount: '$1,020.00' }))).toBeInTheDocument()
+    expect(
+      screen.getByText(t('budgets.incomeLeftShare', { percent: 79, amount: '$3,980.00' }), { selector: 'span:not(.truncate)' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: t('budgets.incomeSet') })).not.toBeInTheDocument()
+  })
+
+  it('keeps the strip and the page reading the income once per month', async () => {
+    api.budgets.expectedIncome.get.mockResolvedValue({ month: '2026-10-01', amount: 5000, currency: 'USD', amount_primary: 5000 })
+    renderWithProviders(<BudgetsPage />)
+
+    expect(await screen.findByText(t('budgets.incomePlanned', { amount: '$1,020.00' }))).toBeInTheDocument()
+    await waitFor(() => {
+      expect(api.budgets.expectedIncome.get).toHaveBeenCalledTimes(1)
+    })
+    expect(api.budgets.expectedIncome.get).toHaveBeenCalledWith('2026-10-01')
+  })
+
+  it('masks the income row in privacy mode, on the page too', async () => {
+    api.privacyMode = true
+    api.mask.mockImplementation((value: string) => `M${value}`)
+    api.budgets.expectedIncome.get.mockResolvedValue({ month: '2026-10-01', amount: 5000, currency: 'USD', amount_primary: 5000 })
+    renderWithProviders(<BudgetsPage />)
+
+    expect(await screen.findByText(t('budgets.incomePlanned', { amount: 'M$1,020.00' }))).toBeInTheDocument()
+    expect(
+      screen.getByText(t('budgets.incomeLeftShare', { percent: 79, amount: 'M$3,980.00' }), { selector: 'span:not(.truncate)' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('M$5,000.00')).toBeInTheDocument()
+  })
+
+  it('hides the setter and the clear control from a viewer', async () => {
+    api.canWrite = false
+    api.budgets.expectedIncome.get.mockResolvedValue({ month: '2026-10-01', amount: 5000, currency: 'USD', amount_primary: 5000 })
+    renderWithProviders(<BudgetsPage />)
+
+    expect(await screen.findByText(t('budgets.incomePlanned', { amount: '$1,020.00' }))).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: t('budgets.incomeSet') })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: t('budgets.incomeClear') })).not.toBeInTheDocument()
+  })
+
+  it('keeps the income strip out while the budgets are unknown', async () => {
+    api.budgets.list.mockRejectedValue(new Error('boom'))
+    renderWithProviders(<BudgetsPage />)
+
+    expect(await screen.findByRole('button', { name: t('common.retry') })).toBeInTheDocument()
+    expect(screen.queryByText(t('budgets.incomeLabel'))).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: t('budgets.incomeSet') })).not.toBeInTheDocument()
+  })
+
+  it('still offers the setter for a month without any budget', async () => {
+    api.budgets.list.mockResolvedValue([])
+    renderWithProviders(<BudgetsPage />)
+
+    expect(await screen.findByRole('button', { name: t('budgets.incomeSet') })).toBeInTheDocument()
+  })
+  it('resets the income draft when the month changes', async () => {
+    const queryClient = createTestQueryClient()
+    // The test client collects inactive queries at once; keep September alive so
+    // the strip stays mounted across the switch (uncached, it unmounts with the
+    // budgets query and this test would pass without the key).
+    queryClient.setDefaultOptions({
+      queries: { ...queryClient.getDefaultOptions().queries, gcTime: Infinity },
+    })
+    queryClient.setQueryData(['budgets', '2026-09'], [])
+    const { user } = renderWithProviders(<BudgetsPage />, { queryClient })
+    const input = await screen.findByRole('textbox', { name: t('budgets.incomeLabel') })
+    await user.type(input, '5000')
+    expect(input).toHaveValue('5000')
+
+    await user.click(screen.getByRole('button', { name: t('budgets.previousMonth') }))
+
+    expect(await screen.findByRole('textbox', { name: t('budgets.incomeLabel') })).toHaveValue('')
+    expect(api.budgets.expectedIncome.get).toHaveBeenCalledWith('2026-09-01')
+  })
+})
+
+describe('budget income chip in the save bar', () => {
+  const savedIncome = { month: '2026-10-01', amount: 1020, currency: 'USD', amount_primary: 1020 }
+
+  it('shows the coverage of the saved limits and the difference', async () => {
+    api.budgets.expectedIncome.get.mockResolvedValue(savedIncome)
+    renderWithProviders(<BudgetsPage />)
+
+    // Income equals the planned total: a zero share, neutral rather than green.
+    const chip = await screen.findByText(t('budgets.incomeLeftShare', { percent: 0, amount: '$0.00' }), { selector: 'span.truncate' })
+    expect(chip).toHaveClass('text-muted-foreground')
+    expect(chip.className).toContain('truncate')
+    expect(screen.getByText(t('budgets.total', { amount: '$1,020.00' }))).toBeInTheDocument()
+  })
+
+  it('warns that the budgets are not saved while a draft is edited, and keeps the saved totals', async () => {
+    api.budgets.expectedIncome.get.mockResolvedValue(savedIncome)
+    const { user } = renderWithProviders(<BudgetsPage />)
+
+    const rentInput = await screen.findByRole('textbox', { name: t('budgets.budgetFor', { category: 'Rent' }) })
+    await user.clear(rentInput)
+    await user.type(rentInput, '2000')
+
+    expect(await screen.findByText(t('budgets.incomeUnsaved'))).toBeInTheDocument()
+    expect(
+      screen.queryByText(t('budgets.incomeLeftShare', { percent: 0, amount: '$0.00' }), { selector: 'span.truncate' }),
+    ).not.toBeInTheDocument()
+    // The footer keeps the draft total; the chip cannot have followed it.
+    expect(screen.getByText(t('budgets.total', { amount: '$2,120.00' }))).toBeInTheDocument()
+  })
+
+  it('withholds the chip while the income cannot be converted', async () => {
+    api.budgets.expectedIncome.get.mockResolvedValue({ month: '2026-10-01', amount: 1400, currency: 'EUR', amount_primary: null })
+    renderWithProviders(<BudgetsPage />)
+
+    // The strip still shows the row, in the currency it was typed in.
+    expect(await screen.findByText('€1,400.00')).toBeInTheDocument()
+    expect(
+      screen.queryByText(/of income left|of income short/, { selector: 'span.truncate' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('warns about an invalid edit that cannot be saved', async () => {
+    api.budgets.expectedIncome.get.mockResolvedValue(savedIncome)
+    const { user } = renderWithProviders(<BudgetsPage />)
+
+    const rentInput = await screen.findByRole('textbox', { name: t('budgets.budgetFor', { category: 'Rent' }) })
+    await user.clear(rentInput)
+    await user.type(rentInput, 'invalid')
+
+    expect(await screen.findByText(t('budgets.incomeUnsaved'))).toBeInTheDocument()
+    expect(
+      screen.queryByText(t('budgets.incomeLeftShare', { percent: 0, amount: '$0.00' }), { selector: 'span.truncate' }),
+    ).not.toBeInTheDocument()
+    // The invalid draft counts as zero in the footer, so the figure moved.
+    expect(screen.getByText(t('budgets.total', { amount: '$120.00' }))).toBeInTheDocument()
+  })
+
+  it('shows the share the income falls short by, in red', async () => {
+    api.budgets.expectedIncome.get.mockResolvedValue({ month: '2026-10-01', amount: 500, currency: 'USD', amount_primary: 500 })
+    renderWithProviders(<BudgetsPage />)
+
+    const chip = await screen.findByText(
+      t('budgets.incomeShortShare', { percent: 104, amount: '$520.00' }),
+      { selector: 'span.truncate' },
+    )
+    expect(chip).toHaveClass('text-rose-700')
+  })
+
+  it('stays on one line with logical classes under RTL at 390px', async () => {
+    document.documentElement.dir = 'rtl'
+    window.innerWidth = 390
+    try {
+      api.budgets.expectedIncome.get.mockResolvedValue(savedIncome)
+      renderWithProviders(<BudgetsPage />)
+      // Under RTL, formatCurrency wraps the amount in LTR isolate marks.
+      const amount = formatCurrency(0, 'USD', 'en-US')
+      const chip = await screen.findByText(
+        t('budgets.incomeLeftShare', { percent: 0, amount }),
+        { selector: 'span.truncate' },
+      )
+      expect(chip.className).toContain('truncate')
+      expect(chip.className).not.toMatch(/(^| )((ml|mr|pl|pr)-|text-left|text-right)/)
+    } finally {
+      document.documentElement.dir = 'ltr'
+      window.innerWidth = 1024
+    }
   })
 })

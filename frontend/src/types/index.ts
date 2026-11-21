@@ -1347,6 +1347,13 @@ export interface Budget {
   is_recurring: boolean
 }
 
+export interface ExpectedIncome {
+  month: string
+  amount: number | null
+  currency: string | null
+  amount_primary: number | null
+}
+
 export interface BudgetVsActual {
   category_id: string
   category_name: string

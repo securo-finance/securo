@@ -3,7 +3,9 @@ from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
-from sqlalchemy import select, func, and_, case
+from sqlalchemy import select, func, and_, case, delete
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +13,7 @@ from app.core.app_clock import app_today
 from app.models.budget import Budget
 from app.models.category import Category
 from app.models.category_group import CategoryGroup
+from app.models.expected_income import ExpectedIncome
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.schemas.budget import (
@@ -20,6 +23,7 @@ from app.schemas.budget import (
     BudgetSuggestionResponse,
     BudgetUpdate,
     BudgetVsActual,
+    ExpectedIncomeRead,
 )
 from app.services._query_filters import (
     counts_as_user_pnl,
@@ -36,7 +40,7 @@ from app.services.dashboard_service import (
     _get_forecast_transactions,
     _get_recurring_projections,
 )
-from app.services.fx_rate_service import convert
+from app.services.fx_rate_service import convert, convert_or_none
 from app.core.config import get_settings
 
 
@@ -923,3 +927,97 @@ async def get_multi_month_forecast(
         "forecast_months": num_months,
         "items": items,
     }
+
+
+async def get_expected_income(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    month: date,
+    reader_currency: str,
+) -> Optional[ExpectedIncomeRead]:
+    """The month's income for this workspace, in the reader's display currency.
+
+    The stored figure keeps the currency it was typed in; `amount_primary` is
+    computed here, at the rate of the month's first day, and stays None when
+    no rate resolves — never a fake 1:1 — so the reader sees the raw amount
+    instead (issue #574). No day-of-month lookup: any day answers the row of
+    that month, stored as day 1.
+    """
+    row = await session.scalar(
+        select(ExpectedIncome).where(
+            ExpectedIncome.workspace_id == workspace_id,
+            ExpectedIncome.month == month.replace(day=1),
+        )
+    )
+    if row is None:
+        return None
+    amount_primary, _ = await convert_or_none(
+        session, row.amount, row.currency, reader_currency, target_date=row.month
+    )
+    return ExpectedIncomeRead(
+        month=row.month,
+        amount=row.amount,
+        currency=row.currency,
+        amount_primary=amount_primary,
+    )
+
+
+async def set_expected_income(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    month: date,
+    amount: Optional[Decimal],
+    currency: str,
+    *,
+    reader_currency: str,
+) -> ExpectedIncomeRead:
+    """Upsert or clear the workspace's income row of one month.
+
+    The month is normalized to day 1, so any day of it names the same row.
+    `amount` None clears the row, and an absent row with `amount` None writes
+    nothing at all. The stored currency is the writer's display currency; the
+    conversion itself is never persisted (ADR 0008), because the restamp of
+    #1561 does not cover this table and a stored cache would stay in the old
+    currency after a display switch.
+    """
+    month_start = month.replace(day=1)
+    if amount is None:
+        await session.execute(
+            delete(ExpectedIncome).where(
+                ExpectedIncome.workspace_id == workspace_id,
+                ExpectedIncome.month == month_start,
+            )
+        )
+        await session.commit()
+        return ExpectedIncomeRead(month=month_start, amount=None, currency=None, amount_primary=None)
+
+    amount_value = amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    # One atomic statement: a concurrent clear or re-insert cannot lose this save
+    # or turn it into a 500, and both columns are written together (attribute
+    # tracking could otherwise let two saves write one column each).
+    if session.bind is not None and session.bind.dialect.name == "postgresql":
+        insert_stmt = pg_insert(ExpectedIncome)
+    else:
+        insert_stmt = sqlite_insert(ExpectedIncome)
+    await session.execute(
+        insert_stmt.values(
+            workspace_id=workspace_id,
+            month=month_start,
+            amount=amount_value,
+            currency=currency,
+        ).on_conflict_do_update(
+            index_elements=["workspace_id", "month"],
+            set_={"amount": amount_value, "currency": currency},
+        )
+    )
+    await session.commit()
+
+    amount_primary, _ = await convert_or_none(
+        session, amount_value, currency, reader_currency, target_date=month_start
+    )
+    return ExpectedIncomeRead(
+        month=month_start,
+        amount=amount_value,
+        currency=currency,
+        amount_primary=amount_primary,
+    )

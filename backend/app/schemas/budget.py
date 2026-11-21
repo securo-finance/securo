@@ -114,3 +114,20 @@ class BudgetMultiMonthForecastItem(BaseModel):
 class BudgetForecastResponse(BaseModel):
     forecast_months: int
     items: list[BudgetMultiMonthForecastItem]
+
+
+class ExpectedIncomeCreate(BaseModel):
+    month: _Date  # Any day of the month is answered by the same row
+    amount: Optional[Decimal] = Field(
+        default=None, ge=Decimal("0"), le=Decimal("9999999999999.99")
+    )
+    currency: Optional[str] = Field(default=None, max_length=3)
+
+
+class ExpectedIncomeRead(BaseModel):
+    month: _Date
+    amount: Optional[Decimal] = None
+    currency: Optional[str] = None
+    amount_primary: Optional[Decimal] = None
+
+    model_config = ConfigDict(from_attributes=True)

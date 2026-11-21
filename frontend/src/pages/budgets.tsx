@@ -19,6 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/page-header'
 import { BudgetSpendingProgress } from '@/components/budget-spending-progress'
 import { BudgetCopyDialog } from '@/components/budget-copy-dialog'
+import { BudgetIncomeStrip } from '@/components/budget-income-strip'
 import { TransactionDrillDown } from '@/components/transaction-drill-down'
 import { CategoryIcon } from '@/components/category-icon'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -29,7 +30,7 @@ import { useSidebarState } from '@/contexts/sidebar-state-context'
 import { cn } from '@/lib/utils'
 import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
-import { parseBudgetDraft, planBudgetChange, type BudgetOperation } from '@/lib/budget-settings-utils'
+import { incomeShare, parseBudgetDraft, planBudgetChange, savedPlannedTotal, type BudgetOperation } from '@/lib/budget-settings-utils'
 import { todayInTimezone } from '@/lib/date-utils'
 import { formatAmountInput, formatCurrency } from '@/lib/format'
 import type { BudgetSuggestion, Category } from '@/types'
@@ -141,6 +142,13 @@ export default function BudgetsPage() {
     queryKey: ['budgets', 'series'],
     queryFn: () => budgetsApi.list(),
   })
+  // The same read as the strip: same key (currency included, the response is
+  // converted to it) and fetcher, so it is one request.
+  const { data: incomeData } = useQuery({
+    queryKey: ['budgets', 'expected-income', monthParam, userCurrency],
+    queryFn: () => budgetsApi.expectedIncome.get(monthParam),
+    staleTime: 60_000,
+  })
   const { data: categoriesList, isLoading: categoriesLoading, isError: categoriesError, error: categoriesLoadError, refetch: refetchCategories } = useQuery({
     queryKey: ['categories'],
     queryFn: categoriesApi.listIncludingHidden,
@@ -203,7 +211,40 @@ export default function BudgetsPage() {
   const operations = allCategories.flatMap((category) => dirtyCategoryIds.has(category.id) ? planFor(category.id) : [])
   const changedCategories = new Set(allCategories.filter((category) => dirtyCategoryIds.has(category.id) && planFor(category.id).length > 0).map((category) => category.id))
   const invalidCategories = new Set(allCategories.filter((category) => parsedDraftFor(category.id) === null).map((category) => category.id))
+  // An invalid draft has no operation to save, but it is still an unsaved edit:
+  // the chip must warn instead of showing the saved zero-difference sentence.
+  const hasPendingEdits = operations.length > 0 || invalidCategories.size > 0
   const totalBudget = allCategories.reduce((sum, category) => sum + (parsedDraftFor(category.id) ?? 0), 0)
+  // The chip's coverage reads the saved limits, never the drafts (D2), so the
+  // figure does not move while the user is still typing.
+  const savedPlanned = savedPlannedTotal(budgetsList ?? [])
+  const chipCurrency = incomeData?.currency ?? userCurrency
+  // A row with no rate is only comparable when it is already in the display
+  // currency; otherwise the chip has no figure to show.
+  const chipIncome = incomeData == null
+    ? null
+    : incomeData.amount_primary !== null
+      ? Number(incomeData.amount_primary)
+      : chipCurrency.toUpperCase() === userCurrency.toUpperCase()
+        ? Number(incomeData.amount)
+        : null
+  // The chip says what share of the income is left (green) or short (red), in
+  // minor units, like the strip's sentence.
+  const chipShare = incomeShare(chipIncome, savedPlanned)
+  const chipShareClass = chipShare === null || chipShare.cents === 0
+    ? 'text-muted-foreground'
+    : chipShare.cents > 0
+      ? 'text-emerald-700 dark:text-emerald-300'
+      : 'text-rose-700 dark:text-rose-300'
+  const chipLine = chipShare === null
+    ? null
+    : chipShare.cents < 0
+      ? chipShare.percent !== null
+        ? t('budgets.incomeShortShare', { percent: chipShare.percent, amount: fmt(Math.abs(chipShare.cents) / 100) })
+        : t('budgets.incomeShort', { amount: fmt(Math.abs(chipShare.cents) / 100) })
+      : chipShare.percent !== null
+        ? t('budgets.incomeLeftShare', { percent: chipShare.percent, amount: fmt(chipShare.cents / 100) })
+        : t('budgets.incomeLeft', { amount: fmt(chipShare.cents / 100) })
   const rowFor = (suggestion: BudgetSuggestion) =>
     suggestEdits[suggestion.category_id] ?? { checked: !suggestion.existing_budget, amount: String(suggestion.suggested_amount) }
   const suggestionByCategory = new Map((suggestionData?.suggestions ?? []).map((suggestion) => [suggestion.category_id, suggestion]))
@@ -321,6 +362,21 @@ export default function BudgetsPage() {
             </Button>
           ) : undefined}
         />
+
+        {/* One line under the header: income, the saved planned total, the difference.
+            Only once the month's limits are known: with the list missing or failed,
+            the planned total would read as zero next to a real income. */}
+        {budgetsList !== undefined && !budgetsError && (
+          <BudgetIncomeStrip
+            key={monthParam}
+            month={monthParam}
+            savedBudgets={budgetsList}
+            canWrite={canWrite}
+            currency={userCurrency}
+            locale={locale}
+            fmt={fmt}
+          />
+        )}
 
         {canWrite && !budgetsFetching && budgetsList?.length === 0 && allCategories.length > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/20 px-4 py-3 sm:px-5">
@@ -521,6 +577,11 @@ export default function BudgetsPage() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-card border border-border shadow-xl rounded-2xl px-4 py-3">
               <div className="text-sm tabular-nums">
                 <span className="font-semibold text-foreground">{t('budgets.total', { amount: fmt(totalBudget) })}</span>
+                {chipIncome !== null && (
+                  <span className={`block max-w-full truncate text-xs ${hasPendingEdits ? 'text-muted-foreground' : chipShareClass}`}>
+                    {hasPendingEdits ? t('budgets.incomeUnsaved') : chipLine}
+                  </span>
+                )}
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <Button variant="outline" size="sm" disabled={operations.length === 0 || saveMutation.isPending} onClick={() => setDraftState(emptyDrafts())}>

@@ -519,3 +519,46 @@ async def test_token_group_filter_stays_in_its_workspace(client: AsyncClient, au
     token = (await _create(client, auth_headers, ["transactions:read"]))["token"]
     by_token = (await client.get("/api/transactions", headers=_bearer(token), params=params)).json()["items"]
     assert [t["description"] for t in by_token] == ["Hotel"]
+
+
+# --- Budgets scopes -------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_budgets_read_scope_reads_income_and_cannot_write(
+    client: AsyncClient, auth_headers: dict
+):
+    token = (await _create(client, auth_headers, ["budgets:read"]))["token"]
+    assert (await client.get("/api/budgets/expected-income", headers=_bearer(token))).status_code == 200
+    resp = await client.put(
+        "/api/budgets/expected-income",
+        json={"month": "2026-04-28", "amount": "3450.00"},
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_budgets_write_scope_can_store_income(client: AsyncClient, auth_headers: dict):
+    token = (await _create(client, auth_headers, ["budgets:write"]))["token"]
+    put = await client.put(
+        "/api/budgets/expected-income",
+        json={"month": "2026-04-28", "amount": "3450.00"},
+        headers=_bearer(token),
+    )
+    assert put.status_code == 200, put.text
+    # A write token also reads.
+    assert (await client.get("/api/budgets/expected-income", headers=_bearer(token))).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_a_token_without_budgets_scope_is_refused(client: AsyncClient, auth_headers: dict):
+    token = (await _create(client, auth_headers, ["goals:read"]))["token"]
+    assert (await client.get("/api/budgets/expected-income", headers=_bearer(token))).status_code == 403
+    assert (
+        await client.put(
+            "/api/budgets/expected-income",
+            json={"month": "2026-04-28", "amount": "3450.00"},
+            headers=_bearer(token),
+        )
+    ).status_code == 403
