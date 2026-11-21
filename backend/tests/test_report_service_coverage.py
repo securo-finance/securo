@@ -5,18 +5,18 @@ These exercise the large uncovered blocks: get_income_expenses_report
 branches, and the net-worth credit-card / asset composition branches.
 
 `get_income_expenses_report` builds its period buckets with PostgreSQL's
-``to_char`` (and ``extract`` for weekly). Tests run on SQLite, so we register
-a ``to_char`` user-defined function on the shared test engine for the
-daily / monthly / yearly intervals (weekly relies on ``extract('isoyear')``
-which SQLite cannot compile and is therefore not exercised here — its label
-helper is covered by the existing pure-function tests).
+``to_char`` (and ``extract`` for weekly). Tests run on SQLite, so
+``tests/conftest.py`` registers a ``to_char`` user-defined function on the
+shared test engine for the daily / monthly / yearly intervals (weekly relies
+on ``extract('isoyear')`` which SQLite cannot compile and is therefore not
+exercised here; its label helper is covered by the existing pure-function
+tests).
 """
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -33,52 +33,6 @@ from app.services.report_service import (
     get_income_expenses_report,
     get_net_worth_report,
 )
-
-from tests.conftest import engine as _test_engine
-
-
-# ---------------------------------------------------------------------------
-# Register a `to_char` UDF on the SQLite test engine so the income/expenses
-# report (which uses Postgres `to_char`) can run. Idempotent across tests.
-# ---------------------------------------------------------------------------
-
-
-def _py_to_char(value, fmt):
-    """Minimal emulation of PostgreSQL to_char(date, fmt) for the formats
-    the report uses: 'YYYY-MM-DD', 'YYYY-MM', 'YYYY'."""
-    if value is None:
-        return None
-    s = str(value)[:10]  # 'YYYY-MM-DD'
-    y, m, d = s.split("-")
-    if fmt == "YYYY-MM-DD":
-        return f"{y}-{m}-{d}"
-    if fmt == "YYYY-MM":
-        return f"{y}-{m}"
-    if fmt == "YYYY":
-        return y
-    return s
-
-
-@event.listens_for(_test_engine.sync_engine, "connect")
-def _register_to_char(dbapi_connection, _connection_record):
-    dbapi_connection.create_function("to_char", 2, _py_to_char)
-
-
-@pytest.fixture(autouse=True)
-async def _ensure_to_char(session: AsyncSession):
-    """Make sure the UDF is registered on the live connection.
-
-    The `connect` listener covers fresh connections; for the StaticPool's
-    already-open connection we register directly via the raw DBAPI handle.
-    """
-    raw = await session.connection()
-
-    def _do(sync_conn):
-        dbapi = sync_conn.connection.dbapi_connection
-        dbapi.create_function("to_char", 2, _py_to_char)
-
-    await raw.run_sync(_do)
-    yield
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +181,31 @@ async def test_income_expenses_basic_structure(session, test_user, test_workspac
     assert "income" in groups
     for ct in report.category_trend:
         assert len(ct.series) == len(report.trend)
+
+
+async def test_income_expenses_uses_reporting_date_override(session, test_user, test_workspace):
+    bank_date = date.today().replace(day=1)
+    reporting_date = bank_date - timedelta(days=1)
+    account = await _make_account(session, test_user.id, "Reporting Date Account")
+    transaction = await _add_txn(
+        session,
+        test_user.id,
+        account.id,
+        100,
+        "debit",
+        bank_date,
+        source="sync",
+    )
+    transaction.reporting_date_override = reporting_date
+    await session.commit()
+
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id, months=2, interval="monthly"
+    )
+    trend = {point.date: point.breakdowns for point in report.trend}
+
+    assert trend[reporting_date.strftime("%Y-%m")]["expenses"] == pytest.approx(100.0)
+    assert trend[bank_date.strftime("%Y-%m")]["expenses"] == pytest.approx(0.0)
 
 
 async def test_income_expenses_empty_data(session, test_user, test_workspace):
@@ -534,6 +513,185 @@ async def test_cash_flow_monthly_interval_aggregation(session, test_user, test_w
     for dp in report.trend:
         assert "inflow" in dp.breakdowns
         assert "outflow" in dp.breakdowns
+
+
+@pytest.mark.parametrize("status", ["posted", "pending"])
+async def test_cash_flow_override_moves_reporting_bucket_not_balance(
+    session, test_user, test_workspace, status,
+):
+    account = await _make_account(session, test_user.id, "CF Reporting Date")
+    today = date.today()
+    bank_date = today - timedelta(days=1)
+    reporting_date = today + timedelta(days=2)
+    await _add_txn(
+        session, test_user.id, account.id, 1000, "credit",
+        today - timedelta(days=10), source="opening_balance",
+    )
+    transaction = await _add_txn(
+        session, test_user.id, account.id, 100, "debit", bank_date,
+        source="sync", status=status,
+    )
+    transaction.reporting_date_override = reporting_date
+    await session.commit()
+
+    report = await get_cash_flow_report(
+        session, test_workspace.id, test_user.id, months=1, interval="daily",
+    )
+    trend = {point.date: point for point in report.trend}
+
+    assert trend[today.isoformat()].value == pytest.approx(900 if status == "posted" else 1000)
+    assert trend[reporting_date.isoformat()].breakdowns["outflow"] == pytest.approx(100.0)
+    assert trend[reporting_date.isoformat()].value == pytest.approx(900.0)
+    assert trend[(bank_date - timedelta(days=1)).isoformat()].value == pytest.approx(1000.0)
+
+
+@pytest.mark.parametrize("accounting_mode", ["cash", "accrual"])
+@pytest.mark.parametrize("override", [False, True])
+async def test_cash_flow_uses_movement_or_reporting_date_not_invoice_attribution(
+    session, test_user, test_workspace, accounting_mode, override,
+):
+    from app.models.app_settings import AppSetting
+
+    session.add(AppSetting(key="credit_card_accounting_mode", value=accounting_mode))
+    await session.commit()
+    account = await _make_account(session, test_user.id, "CF Invoice Attribution")
+    today = date.today()
+    bank_date = today + timedelta(days=2)
+    accrual_date = today + timedelta(days=4)
+    invoice_date = today + timedelta(days=8)
+    reporting_date = today + timedelta(days=6)
+    await _add_txn(
+        session, test_user.id, account.id, 1000, "credit",
+        today - timedelta(days=10), source="opening_balance",
+    )
+    transaction = await _add_txn(
+        session, test_user.id, account.id, 100, "debit", bank_date,
+        source="sync", status="posted", effective_date=accrual_date,
+    )
+    transaction.effective_bill_date = invoice_date
+    transaction.reporting_date_override = reporting_date if override else None
+    await session.commit()
+
+    report = await get_cash_flow_report(
+        session, test_workspace.id, test_user.id, months=1, interval="daily",
+    )
+    trend = {point.date: point for point in report.trend}
+    movement_date = accrual_date if accounting_mode == "accrual" else bank_date
+    flow_date = reporting_date if override else movement_date
+
+    assert trend[flow_date.isoformat()].breakdowns["outflow"] == pytest.approx(100)
+    assert trend[invoice_date.isoformat()].breakdowns["outflow"] == 0
+    assert sum(point.breakdowns["outflow"] for point in report.trend) == pytest.approx(100)
+    assert trend[(movement_date - timedelta(days=1)).isoformat()].value == pytest.approx(1000)
+    assert trend[movement_date.isoformat()].value == pytest.approx(900)
+    assert trend[flow_date.isoformat()].value == pytest.approx(900)
+
+
+async def test_cash_flow_posted_cash_mode_keeps_manual_bill_override_on_bank_date(
+    session, test_user, test_workspace,
+):
+    account = await _make_account(
+        session, test_user.id, "CF Manual Card Invoice", acc_type="credit_card",
+    )
+    today = date.today()
+    bank_date = today + timedelta(days=2)
+    invoice_date = today + timedelta(days=8)
+    transaction = await _add_txn(
+        session, test_user.id, account.id, 100, "debit", bank_date,
+        status="posted", effective_date=invoice_date,
+    )
+    transaction.effective_bill_date = invoice_date
+    await session.commit()
+
+    report = await get_cash_flow_report(
+        session, test_workspace.id, test_user.id, months=1, interval="daily",
+    )
+    trend = {point.date: point for point in report.trend}
+
+    assert trend[bank_date.isoformat()].breakdowns["outflow"] == pytest.approx(100)
+    assert trend[bank_date.isoformat()].value == pytest.approx(-100)
+    assert trend[invoice_date.isoformat()].breakdowns["outflow"] == 0
+    assert trend[invoice_date.isoformat()].value == pytest.approx(-100)
+
+
+@pytest.mark.parametrize("accounting_mode", ["cash", "accrual"])
+@pytest.mark.parametrize("bank_days", [-2, 2, 90])
+@pytest.mark.parametrize("bill_days", [-1, 0, 8, 90])
+@pytest.mark.parametrize("connected", [False, True])
+async def test_cash_flow_pending_card_forecasts_on_manual_bill_date(
+    session, test_user, test_workspace, test_connection, monkeypatch,
+    accounting_mode, bank_days, bill_days, connected,
+):
+    from app.models.app_settings import AppSetting
+
+    today = date(2026, 1, 15)
+    monkeypatch.setattr("app.services.report_service.app_today", lambda: today)
+    monkeypatch.setattr("app.services.dashboard_service.app_today", lambda: today)
+    session.add(AppSetting(key="credit_card_accounting_mode", value=accounting_mode))
+    await session.commit()
+    account = await _make_account(
+        session, test_user.id, "CF Pending Card Invoice", acc_type="credit_card",
+        connection_id=test_connection.id if connected else None,
+    )
+    bank_date = today + timedelta(days=bank_days)
+    bill_date = today + timedelta(days=bill_days)
+    transaction = await _add_txn(
+        session, test_user.id, account.id, 100, "debit", bank_date,
+        source="sync" if connected else "manual", status="pending",
+        effective_date=bill_date,
+    )
+    transaction.effective_bill_date = bill_date
+    await session.commit()
+
+    report = await get_cash_flow_report(
+        session, test_workspace.id, test_user.id, months=1, interval="daily",
+    )
+    trend = {point.date: point for point in report.trend}
+    end = date(2026, 2, 28)
+    assert trend[today.isoformat()].value == 0
+    assert all(
+        point.breakdowns["outflow"] == 0
+        for point in report.trend if point.date <= today.isoformat()
+    )
+    future_outflow = 100 if today < bill_date <= end else 0
+    assert sum(point.breakdowns["outflow"] for point in report.trend) == future_outflow
+    if today < bill_date <= end:
+        assert trend[bill_date.isoformat()].breakdowns["outflow"] == 100
+        assert trend[(bill_date - timedelta(days=1)).isoformat()].value == 0
+    expected_balance = -100 if (
+        today < bill_date <= end or (bill_date <= today and not connected)
+    ) else 0
+    assert trend[end.isoformat()].value == expected_balance
+    if bill_date <= today:
+        assert trend[(today + timedelta(days=1)).isoformat()].value == expected_balance
+
+
+@pytest.mark.parametrize("accounting_mode", ["cash", "accrual"])
+async def test_cash_flow_baseline_ignores_invoice_attribution(
+    session, test_user, test_workspace, accounting_mode,
+):
+    account = await _make_account(session, test_user.id, "CF Baseline Invoice")
+    today = date.today()
+    bank_date = today - timedelta(days=10)
+    accrual_date = today - timedelta(days=5)
+    transaction = await _add_txn(
+        session, test_user.id, account.id, 100, "debit", bank_date,
+        effective_date=accrual_date,
+    )
+    transaction.effective_bill_date = today + timedelta(days=8)
+    await session.commit()
+
+    async def to_primary(amount, currency):
+        return float(amount)
+
+    projections, lookback = await _get_baseline_projection(
+        session, test_workspace.id, today, today + timedelta(days=1),
+        "BRL", to_primary, accounting_mode=accounting_mode,
+    )
+
+    assert lookback == (5 if accounting_mode == "accrual" else 10)
+    assert len(projections) == 1
+    assert projections[0]["amount"] == pytest.approx(100 / lookback)
 
 
 async def test_cash_flow_weekly_interval_aggregation(session, test_user, test_workspace):
@@ -961,3 +1119,62 @@ async def test_custom_income_expenses_only_include_in_range_actuals(
     }
     for item in report.category_trend:
         assert sum(point.value for point in item.series) == item.total
+
+
+async def test_preset_month_window_keeps_projections(
+    session, test_user, test_workspace, monkeypatch,
+):
+    """Issue #1408: "This month" is sent as explicit dates, yet it is a
+    preset, so it projects the same pending and recurring rows as the
+    month does inside the rolling 1Y preset."""
+    from app.services import report_service
+
+    today = date(2026, 11, 8)
+    monkeypatch.setattr(report_service, 'app_today', lambda: today)
+    currency = test_user.primary_currency
+    account = await _make_account(session, test_user.id, 'This month', currency=currency)
+    await _add_txn(session, test_user.id, account.id, 100, 'credit', date(2026, 11, 2),
+                   currency=currency)
+    await _add_txn(session, test_user.id, account.id, 2000, 'credit', date(2026, 11, 13),
+                   status='pending', currency=currency)
+    await _add_txn(session, test_user.id, account.id, 480, 'debit', date(2026, 11, 7),
+                   status='pending', currency=currency)
+    # Pending in the month before: in the 1Y view, but not in this month's window.
+    await _add_txn(session, test_user.id, account.id, 999, 'debit', date(2026, 10, 20),
+                   status='pending', currency=currency)
+    recurring = await _make_recurring(
+        session, test_user.id, account.id, 35, 'debit',
+        next_occurrence=date(2026, 11, 20), currency=currency,
+    )
+    recurring.start_date = date(2026, 1, 1)
+    await session.commit()
+
+    async def totals(**kwargs):
+        report = await get_income_expenses_report(
+            session, test_workspace.id, test_user.id, interval='monthly', **kwargs,
+        )
+        return report, {item.key: item.value for item in report.summary.breakdowns}
+
+    month, month_totals = await totals(
+        months=1, start_date=date(2026, 11, 1), end_date=today, include_forecasts=True,
+    )
+    year, _ = await totals(months=12)
+
+    assert month_totals['income'] == 100
+    assert month_totals['projectedIncome'] == 2000
+    assert month_totals['projectedExpenses'] == 515
+    november = next(point for point in year.trend if point.date == '2026-11')
+    assert month.trend[-1].breakdowns == november.breakdowns
+
+    # A window that ends before today stops projecting at its own end: the
+    # months after it (November here) stay out of its summary.
+    _, october = await totals(
+        months=1, start_date=date(2026, 10, 1), end_date=date(2026, 10, 31),
+        include_forecasts=True,
+    )
+    assert october['projectedExpenses'] == 999
+    assert october['projectedIncome'] == 0
+
+    # Custom ranges stay actual-only.
+    _, custom = await totals(months=1, start_date=date(2026, 11, 1), end_date=today)
+    assert custom['projectedIncome'] == custom['projectedExpenses'] == 0

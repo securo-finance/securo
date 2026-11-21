@@ -420,7 +420,7 @@ export function TransactionAttachments({
 
                 {/* Hover action bar — floats over bottom of thumbnail */}
                 {!isUploading && (
-                <div className={`absolute left-0 right-0 bottom-[44px] flex items-center justify-center gap-1 px-2 py-1.5 transition-all duration-200 ${
+                <div className={`absolute start-0 end-0 bottom-[44px] flex items-center justify-center gap-1 px-2 py-1.5 transition-all duration-200 ${
                   isConfirming
                     ? 'opacity-100 translate-y-0'
                     : 'opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0'

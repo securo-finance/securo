@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { History, Trash2 } from 'lucide-react'
 
 import { importLogs as importLogsApi } from '@/lib/api'
+import { extractApiError } from '@/lib/api-errors'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { formatCurrency } from '@/lib/format'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
@@ -57,7 +58,7 @@ export function ImportHistory({ entity }: ImportHistoryProps) {
       setDeleteTarget(null)
       toast.success(t('import.undone'))
     },
-    onError: () => toast.error(t('common.error')),
+    onError: (error) => toast.error(extractApiError(error, t('common.error'))),
   })
 
   const rows = logs.filter((log) => (log.entity ?? 'transactions') === entity)
@@ -79,17 +80,17 @@ export function ImportHistory({ entity }: ImportHistoryProps) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border">
-                <th className="px-3 py-3 text-left font-medium text-muted-foreground sm:px-4">{t('import.historyDate')}</th>
-                <th className="px-3 py-3 text-left font-medium text-muted-foreground sm:px-4">{t('import.historyFile')}</th>
-                <th className="hidden px-4 py-3 text-left font-medium text-muted-foreground lg:table-cell">{t('import.historyFormat')}</th>
+                <th className="px-3 py-3 text-start font-medium text-muted-foreground sm:px-4">{t('import.historyDate')}</th>
+                <th className="px-3 py-3 text-start font-medium text-muted-foreground sm:px-4">{t('import.historyFile')}</th>
+                <th className="hidden px-4 py-3 text-start font-medium text-muted-foreground lg:table-cell">{t('import.historyFormat')}</th>
                 {isStatement && (
-                  <th className="hidden px-4 py-3 text-left font-medium text-muted-foreground md:table-cell">{t('import.historyAccount')}</th>
+                  <th className="hidden px-4 py-3 text-start font-medium text-muted-foreground md:table-cell">{t('import.historyAccount')}</th>
                 )}
-                <th className="px-3 py-3 text-right font-medium text-muted-foreground sm:px-4">{t('import.historyCount')}</th>
+                <th className="px-3 py-3 text-end font-medium text-muted-foreground sm:px-4">{t('import.historyCount')}</th>
                 {isStatement && (
                   <>
-                    <th className="hidden px-4 py-3 text-right font-medium text-muted-foreground sm:table-cell">{t('import.historyCredit')}</th>
-                    <th className="hidden px-4 py-3 text-right font-medium text-muted-foreground sm:table-cell">{t('import.historyDebit')}</th>
+                    <th className="hidden px-4 py-3 text-end font-medium text-muted-foreground sm:table-cell">{t('import.historyCredit')}</th>
+                    <th className="hidden px-4 py-3 text-end font-medium text-muted-foreground sm:table-cell">{t('import.historyDebit')}</th>
                   </>
                 )}
                 <th className="px-3 py-3 sm:px-4" aria-label={t('common.more')}></th>
@@ -112,18 +113,18 @@ export function ImportHistory({ entity }: ImportHistoryProps) {
                   {isStatement && (
                     <td className="hidden px-4 py-3 text-muted-foreground md:table-cell">{log.account_name || '—'}</td>
                   )}
-                  <td className="px-3 py-3 text-right text-foreground sm:px-4">{log.transaction_count}</td>
+                  <td className="px-3 py-3 text-end text-foreground sm:px-4">{log.transaction_count}</td>
                   {isStatement && (
                     <>
-                      <td className="hidden px-4 py-3 text-right font-medium text-emerald-600 sm:table-cell">
+                      <td className="hidden px-4 py-3 text-end font-medium text-emerald-600 sm:table-cell">
                         {formatCurrency(log.total_credit, log.account_currency ?? userCurrency, locale)}
                       </td>
-                      <td className="hidden px-4 py-3 text-right font-medium text-rose-600 sm:table-cell">
+                      <td className="hidden px-4 py-3 text-end font-medium text-rose-600 sm:table-cell">
                         {formatCurrency(log.total_debit, log.account_currency ?? userCurrency, locale)}
                       </td>
                     </>
                   )}
-                  <td className="px-3 py-3 text-right sm:px-4">
+                  <td className="px-3 py-3 text-end sm:px-4">
                     {canWrite && (
                       <button
                         onClick={() => setDeleteTarget(log)}

@@ -162,7 +162,7 @@ export function ReconciliationQueue({ canWrite }: { canWrite: boolean }) {
         <p className="text-sm font-semibold text-foreground">
           {t('reconciliation.queue.title')}
           {suggestions.length > 0 && (
-            <span className="ml-2 text-[10px] font-semibold bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300 px-1.5 py-0.5 rounded-full">
+            <span className="ms-2 text-[10px] font-semibold bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300 px-1.5 py-0.5 rounded-full">
               {suggestions.length}
             </span>
           )}
@@ -271,6 +271,8 @@ export function ReconciliationQueue({ canWrite }: { canWrite: boolean }) {
                         className="h-8 gap-1"
                         onClick={() => accept.mutate(suggestion.id)}
                         disabled={accept.isPending || decline.isPending}
+                        aria-label={t('reconciliation.queue.accept')}
+                        title={t('reconciliation.queue.accept')}
                       >
                         <Check size={13} />
                         <span className="hidden sm:inline">

@@ -16,7 +16,7 @@ from typing import Any, Optional
 import httpx
 
 from app.agents.config import get_agent_settings
-from app.agents.mcp.auth import mint_token
+from app.agents.mcp.auth import extra_server_audience, mint_token
 from app.agents.providers.base import ToolDefinition
 
 logger = logging.getLogger(__name__)
@@ -38,9 +38,17 @@ class _ServerSpec:
     url: str
 
 
+BUILTIN_SERVER_NAME = "securo"
+
+
+# agent_tools.server's and agent_tools.tool_name's lengths.
+_MAX_SERVER_NAME = 500
+_MAX_TOOL_NAME = 255
+
+
 def _parse_servers() -> list[_ServerSpec]:
     s = get_agent_settings()
-    out = [_ServerSpec(name="securo", url=s.builtin_mcp_url)]
+    out = [_ServerSpec(name=BUILTIN_SERVER_NAME, url=s.builtin_mcp_url)]
     extra = (s.extra_mcp_servers or "").strip()
     if extra:
         for raw in extra.split(","):
@@ -51,7 +59,39 @@ def _parse_servers() -> list[_ServerSpec]:
                 url, name = raw.split("|", 1)
             else:
                 url, name = raw, raw
-            out.append(_ServerSpec(name=name.strip(), url=url.strip()))
+            name = name.strip()
+            if name == BUILTIN_SERVER_NAME:
+                # The built-in name is reserved: an extra server registered
+                # under it would replace the built-in one in the registry and
+                # receive tokens the built-in server accepts.
+                logger.warning(
+                    "Ignoring extra MCP server %r: the name %r is reserved "
+                    "for the built-in server.",
+                    url.strip(),
+                    BUILTIN_SERVER_NAME,
+                )
+                continue
+            if len(name) > _MAX_SERVER_NAME:
+                # agent_tools.server holds the name as is; never truncated,
+                # since it routes calls.
+                logger.warning(
+                    "Ignoring extra MCP server %r: its name is longer than %d characters; "
+                    "give it a shorter alias (url|alias).",
+                    url.strip()[:80],
+                    _MAX_SERVER_NAME,
+                )
+                continue
+            if not name or "__" in name or name.endswith("_"):
+                # Tools are called as `<server>__<tool>`, split at the first
+                # "__". A server name holding "__" or ending in "_" makes that
+                # split land elsewhere, so a call could reach another server.
+                logger.warning(
+                    "Ignoring extra MCP server %r: its name %r can't contain '__' or end with '_'.",
+                    url.strip(),
+                    name,
+                )
+                continue
+            out.append(_ServerSpec(name=name, url=url.strip()))
     return out
 
 
@@ -225,11 +265,20 @@ class MCPClient:
         result = await self._post("tools/list", {}, token=token)
         out: list[ToolHandle] = []
         for t in (result or {}).get("tools", []):
+            name = t.get("name") or ""
+            if len(name) > _MAX_TOOL_NAME:
+                # agent_tools.tool_name holds the name as is: a longer one
+                # can't be recorded, and truncating would call another tool.
+                logger.warning(
+                    "Ignoring tool %r from MCP server %r: names over %d characters aren't supported.",
+                    name[:60] + "...", self.name, _MAX_TOOL_NAME,
+                )
+                continue
             meta = t.get("_meta") if isinstance(t.get("_meta"), dict) else {}
             extras = meta.get(_SECURO_TOOL_META_KEY) or t.get("_securo") or {}
             out.append(ToolHandle(
                 server=self.name,
-                name=t.get("name") or "",
+                name=name,
                 description=t.get("description") or "",
                 parameters=t.get("inputSchema") or {"type": "object", "properties": {}},
                 is_proposal=bool(extras.get("is_proposal", False)),
@@ -270,6 +319,10 @@ class MCPRegistry:
     two servers expose tools with the same name.
     """
 
+    # Servers the last discover() could not reach. A partial tool list must
+    # not be recorded as an agent's whole tool list.
+    unreachable: tuple[str, ...] = ()
+
     def __init__(self):
         self._servers: dict[str, MCPClient] = {}
         for spec in _parse_servers():
@@ -277,6 +330,18 @@ class MCPRegistry:
 
     def server_names(self) -> list[str]:
         return list(self._servers.keys())
+
+    @staticmethod
+    def _token_for(server_name: str, **claims: Any) -> str:
+        """Mint a token only `server_name` accepts.
+
+        The built-in server gets its own audience. Every other server gets
+        an audience bound to its name, so a third-party server cannot replay
+        what it receives against the built-in one and read the workspace.
+        """
+        if server_name == BUILTIN_SERVER_NAME:
+            return mint_token(**claims)
+        return mint_token(audience=extra_server_audience(server_name), **claims)
 
     async def discover(
         self,
@@ -286,17 +351,19 @@ class MCPRegistry:
         conversation_id: Optional[uuid.UUID] = None,
         agent_id: Optional[uuid.UUID] = None,
     ) -> list[ToolHandle]:
-        token = mint_token(
+        claims = dict(
             user_id=user_id,
             workspace_id=workspace_id,
             conversation_id=conversation_id,
             agent_id=agent_id,
         )
         out: list[ToolHandle] = []
-        for client in self._servers.values():
+        unreachable: list[str] = []
+        for server_name, client in self._servers.items():
             try:
-                tools = await client.list_tools(token=token)
+                tools = await client.list_tools(token=self._token_for(server_name, **claims))
             except Exception as exc:
+                unreachable.append(server_name)
                 # A server that can't be reached costs the agent every tool it
                 # exposes, and the chat still answers, just without any data.
                 # Say so in the log: otherwise the only symptom is an assistant
@@ -310,7 +377,15 @@ class MCPRegistry:
                 )
                 continue
             out.extend(tools)
+        self.unreachable = tuple(unreachable)
         return out
+
+    def complete_pairs(self, handles: list[ToolHandle]) -> Optional[list[tuple[str, str]]]:
+        """(server, tool_name) pairs of `handles` when the discovery that
+        produced them reached every server, else None."""
+        if self.unreachable or not handles:
+            return None
+        return list(dict.fromkeys((h.server, h.name) for h in handles))
 
     @staticmethod
     def to_provider_tools(handles: list[ToolHandle], *, allowed: Optional[set[tuple[str, str]]] = None) -> list[ToolDefinition]:
@@ -344,7 +419,7 @@ class MCPRegistry:
         # Pass agent_id so per-agent tools (search_knowledge_base) can
         # scope their results. Without this, MCP-side ctx.agent_id is
         # None and the knowledge tool refuses.
-        token = mint_token(
+        claims = dict(
             user_id=user_id,
             workspace_id=workspace_id,
             conversation_id=conversation_id,
@@ -356,12 +431,15 @@ class MCPRegistry:
             server, tool_name = wire_name.split("__", 1)
             client = self._servers.get(server)
             if client is not None:
-                return await client.call_tool(name=tool_name, arguments=arguments, token=token)
+                return await client.call_tool(
+                    name=tool_name, arguments=arguments, token=self._token_for(server, **claims)
+                )
 
         # Fallback: many LLMs drop the namespace prefix and emit just the
         # bare tool name. Resolve by scanning every registered server.
         bare = wire_name.split("__", 1)[-1]
         for server_name, client in self._servers.items():
+            token = self._token_for(server_name, **claims)
             try:
                 handles = await client.list_tools(token=token)
             except Exception as exc:

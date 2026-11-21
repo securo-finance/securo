@@ -1,6 +1,7 @@
 # backend/app/services/rule_service.py
 import uuid
-from typing import Any, Optional, cast
+from collections.abc import Iterable
+from typing import Optional
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,7 +42,7 @@ class DuplicateRuleError(Exception):
 
 _ALLOWED_CONDITION_FIELDS = {
     "description", "payee", "notes", "amount", "type", "account_id", "payee_id", "date",
-    "status",
+    "status", "provider_category",
 }
 # Status is a closed set, so only equality makes sense and the value must be one
 # of the statuses a transaction can carry.
@@ -53,6 +54,12 @@ _ALLOWED_CONDITION_OPS = {
 }
 _ALLOWED_ACTION_OPS = {
     "set_category", "set_payee", "set_description", "append_notes", "ignore",
+}
+# The provider category is free text, so a numeric comparison would read the
+# label as 0 and match every row, including those without provider data.
+_PROVIDER_CATEGORY_CONDITION_OPS = {
+    "contains", "not_contains", "equals", "not_equals", "starts_with",
+    "ends_with", "regex",
 }
 
 
@@ -77,7 +84,7 @@ def _flatten_conditions(conditions: list) -> list:
     return leaves
 
 
-async def _validate_rule_definition(
+async def validate_rule_definition(
     session: AsyncSession,
     workspace_id: uuid.UUID,
     conditions: list,
@@ -86,14 +93,30 @@ async def _validate_rule_definition(
     for condition in _flatten_conditions(conditions):
         field = _rule_item_value(condition, "field")
         op = _rule_item_value(condition, "op")
-        if field not in _ALLOWED_CONDITION_FIELDS or op not in _ALLOWED_CONDITION_OPS:
-            raise ValueError("Invalid rule condition")
-        if field == "status" and (
-            op not in _STATUS_CONDITION_OPS
-            or str(_rule_item_value(condition, "value") or "").strip().lower()
-            not in _STATUS_CONDITION_VALUES
-        ):
-            raise ValueError("Invalid rule condition")
+        if field not in _ALLOWED_CONDITION_FIELDS:
+            raise ValueError(f"Invalid condition: unsupported field {field!r}")
+        if op not in _ALLOWED_CONDITION_OPS:
+            raise ValueError(
+                f"Invalid condition: unsupported op {op!r} for field {field!r}"
+            )
+        if field == "status":
+            if op not in _STATUS_CONDITION_OPS:
+                raise ValueError(
+                    f"Invalid condition: unsupported op {op!r} for field 'status'; "
+                    "status supports only 'equals' and 'not_equals'"
+                )
+            value = str(_rule_item_value(condition, "value") or "").strip().lower()
+            if value not in _STATUS_CONDITION_VALUES:
+                raise ValueError(
+                    f"Invalid condition: unsupported status value {value!r}; "
+                    "use 'pending' or 'posted'"
+                )
+        if field == "provider_category" and op not in _PROVIDER_CATEGORY_CONDITION_OPS:
+            raise ValueError(
+                f"Invalid condition: unsupported op {op!r} for field 'provider_category'; "
+                "provider_category accepts only contains, not_contains, equals, "
+                "not_equals, starts_with, ends_with and regex"
+            )
         if op == "regex":
             compile_rule_regex(str(_rule_item_value(condition, "value") or ""))
 
@@ -101,7 +124,7 @@ async def _validate_rule_definition(
         op = _rule_item_value(action, "op")
         value = _rule_item_value(action, "value")
         if op not in _ALLOWED_ACTION_OPS:
-            raise ValueError("Invalid rule action")
+            raise ValueError(f"Invalid action: unsupported op {op!r}")
         if op == "set_category":
             try:
                 category_id = uuid.UUID(str(value))
@@ -174,392 +197,7 @@ UNIVERSAL_RULES = [
     ], "actions": [{"op": "set_category", "value": "investments"}], "priority": 20},
 ]
 
-# ─── Country-specific rule packs (optional, not auto-applied) ───
-RULE_PACKS: dict[str, dict[str, Any]] = {
-    "BR": {
-        "name": "Brazil",
-        "flag": "\U0001F1E7\U0001F1F7",
-        "rules": [
-            {"name": "99 (Ride-hailing)", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "99"},
-                {"field": "description", "op": "starts_with", "value": "99POP"},
-            ], "actions": [{"op": "set_category", "value": "transport"}], "priority": 10},
-
-            {"name": "iFood / Rappi", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "IFOOD"},
-                {"field": "description", "op": "starts_with", "value": "RAPPI"},
-            ], "actions": [{"op": "set_category", "value": "food"}], "priority": 10},
-
-            {"name": "Mercado Livre", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "MERCADOLIVRE"},
-                {"field": "description", "op": "starts_with", "value": "MERCADO LIVRE"},
-            ], "actions": [{"op": "set_category", "value": "shopping"}], "priority": 10},
-
-            {"name": "Pix Recebido", "conditions_op": "and", "conditions": [
-                {"field": "description", "op": "regex", "value": "PIX.*RECEBIDO"},
-            ], "actions": [{"op": "set_category", "value": "transfers"}], "priority": 50},
-
-            {"name": "Transferência", "conditions_op": "and", "conditions": [
-                {"field": "description", "op": "contains", "value": "TRANSFERENCIA"},
-            ], "actions": [{"op": "set_category", "value": "transfers"}], "priority": 90},
-
-            {"name": "Shopee / Magazine Luiza", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "SHOPEE"},
-                {"field": "description", "op": "starts_with", "value": "MAGALU"},
-                {"field": "description", "op": "starts_with", "value": "MAGAZINE LUIZA"},
-            ], "actions": [{"op": "set_category", "value": "shopping"}], "priority": 10},
-
-            {"name": "Drogaria / Farmácia", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "DROGARIA"},
-                {"field": "description", "op": "contains", "value": "FARMACIA"},
-                {"field": "description", "op": "contains", "value": "DROGA RAIA"},
-                {"field": "description", "op": "contains", "value": "DROGASIL"},
-            ], "actions": [{"op": "set_category", "value": "health"}], "priority": 10},
-
-            {"name": "Uber Eats", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "UBER EATS"},
-                {"field": "description", "op": "starts_with", "value": "UBEREATS"},
-            ], "actions": [{"op": "set_category", "value": "food"}], "priority": 5},
-
-            {"name": "Claro / Vivo / Tim", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "CLARO"},
-                {"field": "description", "op": "starts_with", "value": "VIVO"},
-                {"field": "description", "op": "starts_with", "value": "TIM"},
-            ], "actions": [{"op": "set_category", "value": "subscriptions"}], "priority": 10},
-
-            {"name": "Posto / Shell (Combustível)", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "POSTO"},
-                {"field": "description", "op": "starts_with", "value": "SHELL"},
-                {"field": "description", "op": "contains", "value": "COMBUSTIVEL"},
-            ], "actions": [{"op": "set_category", "value": "transport"}], "priority": 10},
-
-            {"name": "Supermercado / Carrefour / Assaí", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "SUPERMERCADO"},
-                {"field": "description", "op": "starts_with", "value": "CARREFOUR"},
-                {"field": "description", "op": "starts_with", "value": "ASSAI"},
-            ], "actions": [{"op": "set_category", "value": "groceries"}], "priority": 10},
-
-            {"name": "Smart Fit / Academia", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "SMART FIT"},
-                {"field": "description", "op": "contains", "value": "ACADEMIA"},
-            ], "actions": [{"op": "set_category", "value": "health"}], "priority": 10},
-
-            {"name": "Aluguel", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "ALUGUEL"},
-            ], "actions": [{"op": "set_category", "value": "housing"}], "priority": 10},
-
-            {"name": "Salário / Folha", "conditions_op": "and", "conditions": [
-                {"field": "description", "op": "regex", "value": "SALARIO|FOLHA|PGTO.*SALARIO"},
-            ], "actions": [{"op": "set_category", "value": "salary"}], "priority": 10},
-
-            {"name": "Dízimo / Doação", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "DIZIMO"},
-                {"field": "description", "op": "contains", "value": "DOACAO"},
-                {"field": "description", "op": "contains", "value": "CARIDADE"},
-            ], "actions": [{"op": "set_category", "value": "donations"}], "priority": 10},
-
-            {"name": "Pix Enviado", "conditions_op": "and", "conditions": [
-                {"field": "description", "op": "regex", "value": "PIX.*ENVIADO|PIX.*TRANSF"},
-            ], "actions": [{"op": "set_category", "value": "transfers"}], "priority": 50},
-
-            {"name": "Estacionamento / Pedágio", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "ESTACIONAMENTO"},
-                {"field": "description", "op": "contains", "value": "PEDAGIO"},
-                {"field": "description", "op": "contains", "value": "SEM PARAR"},
-            ], "actions": [{"op": "set_category", "value": "transport"}], "priority": 10},
-
-            {"name": "Barbearia / Salão", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "BARBEARIA"},
-                {"field": "description", "op": "contains", "value": "SALAO"},
-                {"field": "description", "op": "contains", "value": "CABELEIREIRO"},
-            ], "actions": [{"op": "set_category", "value": "personal_care"}], "priority": 10},
-
-            {"name": "IPTU / IPVA / Imposto", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "IPTU"},
-                {"field": "description", "op": "contains", "value": "IPVA"},
-                {"field": "description", "op": "contains", "value": "IMPOSTO"},
-                {"field": "description", "op": "contains", "value": "DARF"},
-            ], "actions": [{"op": "set_category", "value": "taxes"}], "priority": 10},
-
-            {"name": "Condomínio", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "CONDOMINIO"},
-            ], "actions": [{"op": "set_category", "value": "housing"}], "priority": 10},
-
-            {"name": "Curso / Escola / Faculdade", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "ESCOLA"},
-                {"field": "description", "op": "contains", "value": "FACULDADE"},
-                {"field": "description", "op": "contains", "value": "UNIVERSIDADE"},
-                {"field": "description", "op": "contains", "value": "UDEMY"},
-                {"field": "description", "op": "contains", "value": "ALURA"},
-            ], "actions": [{"op": "set_category", "value": "education"}], "priority": 10},
-        ],
-    },
-    "US": {
-        "name": "United States",
-        "flag": "\U0001F1FA\U0001F1F8",
-        "rules": [
-            {"name": "Lyft", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "LYFT"},
-            ], "actions": [{"op": "set_category", "value": "transport"}], "priority": 10},
-
-            {"name": "DoorDash / Grubhub", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "DOORDASH"},
-                {"field": "description", "op": "starts_with", "value": "GRUBHUB"},
-            ], "actions": [{"op": "set_category", "value": "food"}], "priority": 10},
-
-            {"name": "Walmart / Target / Costco", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "WALMART"},
-                {"field": "description", "op": "starts_with", "value": "TARGET"},
-                {"field": "description", "op": "starts_with", "value": "COSTCO"},
-            ], "actions": [{"op": "set_category", "value": "groceries"}], "priority": 10},
-
-            {"name": "Venmo / Zelle / CashApp", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "VENMO"},
-                {"field": "description", "op": "contains", "value": "ZELLE"},
-                {"field": "description", "op": "contains", "value": "CASH APP"},
-            ], "actions": [{"op": "set_category", "value": "transfers"}], "priority": 50},
-
-            {"name": "Starbucks / Dunkin", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "STARBUCKS"},
-                {"field": "description", "op": "starts_with", "value": "DUNKIN"},
-            ], "actions": [{"op": "set_category", "value": "food"}], "priority": 10},
-
-            {"name": "Chevron / Shell / Exxon (Fuel)", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "CHEVRON"},
-                {"field": "description", "op": "starts_with", "value": "SHELL"},
-                {"field": "description", "op": "starts_with", "value": "EXXON"},
-            ], "actions": [{"op": "set_category", "value": "transport"}], "priority": 10},
-
-            {"name": "Whole Foods / Trader Joe's / Kroger", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "WHOLE FOODS"},
-                {"field": "description", "op": "starts_with", "value": "TRADER JOE"},
-                {"field": "description", "op": "starts_with", "value": "KROGER"},
-            ], "actions": [{"op": "set_category", "value": "groceries"}], "priority": 10},
-
-            {"name": "CVS / Walgreens", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "CVS"},
-                {"field": "description", "op": "starts_with", "value": "WALGREENS"},
-            ], "actions": [{"op": "set_category", "value": "health"}], "priority": 10},
-
-            {"name": "T-Mobile / AT&T / Verizon", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "T-MOBILE"},
-                {"field": "description", "op": "starts_with", "value": "ATT"},
-                {"field": "description", "op": "starts_with", "value": "AT&T"},
-                {"field": "description", "op": "starts_with", "value": "VERIZON"},
-            ], "actions": [{"op": "set_category", "value": "subscriptions"}], "priority": 10},
-
-            {"name": "Comcast / Xfinity", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "COMCAST"},
-                {"field": "description", "op": "starts_with", "value": "XFINITY"},
-            ], "actions": [{"op": "set_category", "value": "subscriptions"}], "priority": 10},
-
-            {"name": "Home Depot / Lowe's", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "HOME DEPOT"},
-                {"field": "description", "op": "starts_with", "value": "LOWES"},
-                {"field": "description", "op": "starts_with", "value": "LOWE'S"},
-            ], "actions": [{"op": "set_category", "value": "housing"}], "priority": 10},
-
-            {"name": "Planet Fitness / YMCA", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "PLANET FITNESS"},
-                {"field": "description", "op": "starts_with", "value": "YMCA"},
-            ], "actions": [{"op": "set_category", "value": "health"}], "priority": 10},
-
-            {"name": "Chipotle / McDonald's / Subway", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "CHIPOTLE"},
-                {"field": "description", "op": "starts_with", "value": "MCDONALD"},
-                {"field": "description", "op": "starts_with", "value": "SUBWAY"},
-            ], "actions": [{"op": "set_category", "value": "food"}], "priority": 10},
-
-            {"name": "Paycheck / Direct Deposit", "conditions_op": "and", "conditions": [
-                {"field": "description", "op": "regex", "value": "PAYROLL|DIRECT DEP|ADP|GUSTO"},
-            ], "actions": [{"op": "set_category", "value": "salary"}], "priority": 10},
-
-            {"name": "Donations / Charity", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "DONATION"},
-                {"field": "description", "op": "contains", "value": "CHARITY"},
-                {"field": "description", "op": "contains", "value": "TITHE"},
-                {"field": "description", "op": "contains", "value": "RED CROSS"},
-            ], "actions": [{"op": "set_category", "value": "donations"}], "priority": 10},
-
-            {"name": "Taxes / IRS", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "IRS"},
-                {"field": "description", "op": "contains", "value": "TAX PAYMENT"},
-                {"field": "description", "op": "contains", "value": "PROPERTY TAX"},
-            ], "actions": [{"op": "set_category", "value": "taxes"}], "priority": 10},
-
-            {"name": "Rent / Mortgage", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "RENT PAYMENT"},
-                {"field": "description", "op": "contains", "value": "MORTGAGE"},
-            ], "actions": [{"op": "set_category", "value": "housing"}], "priority": 10},
-        ],
-    },
-    "EU": {
-        "name": "Europe",
-        "flag": "\U0001F1EA\U0001F1FA",
-        "rules": [
-            {"name": "Bolt / FreeNow", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "BOLT"},
-                {"field": "description", "op": "starts_with", "value": "FREENOW"},
-            ], "actions": [{"op": "set_category", "value": "transport"}], "priority": 10},
-
-            {"name": "Deliveroo / Just Eat / Glovo", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "DELIVEROO"},
-                {"field": "description", "op": "starts_with", "value": "JUST EAT"},
-                {"field": "description", "op": "starts_with", "value": "GLOVO"},
-            ], "actions": [{"op": "set_category", "value": "food"}], "priority": 10},
-
-            {"name": "Lidl / Aldi / Carrefour", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "LIDL"},
-                {"field": "description", "op": "starts_with", "value": "ALDI"},
-                {"field": "description", "op": "starts_with", "value": "CARREFOUR"},
-            ], "actions": [{"op": "set_category", "value": "groceries"}], "priority": 10},
-
-            {"name": "SEPA Transfer", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "SEPA"},
-                {"field": "description", "op": "contains", "value": "WIRE TRANSFER"},
-            ], "actions": [{"op": "set_category", "value": "transfers"}], "priority": 50},
-
-            {"name": "Wolt", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "WOLT"},
-            ], "actions": [{"op": "set_category", "value": "food"}], "priority": 10},
-
-            {"name": "Flixbus / BlaBlaCar", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "FLIXBUS"},
-                {"field": "description", "op": "starts_with", "value": "BLABLACAR"},
-            ], "actions": [{"op": "set_category", "value": "transport"}], "priority": 10},
-
-            {"name": "Rossmann / DM", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "ROSSMANN"},
-                {"field": "description", "op": "starts_with", "value": "DM "},
-            ], "actions": [{"op": "set_category", "value": "health"}], "priority": 10},
-
-            {"name": "IKEA", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "IKEA"},
-            ], "actions": [{"op": "set_category", "value": "housing"}], "priority": 10},
-
-            {"name": "Deutsche Bahn / SNCF / Renfe", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "DEUTSCHE BAHN"},
-                {"field": "description", "op": "starts_with", "value": "DB "},
-                {"field": "description", "op": "starts_with", "value": "SNCF"},
-                {"field": "description", "op": "starts_with", "value": "RENFE"},
-            ], "actions": [{"op": "set_category", "value": "transport"}], "priority": 10},
-
-            {"name": "Albert Heijn / Rewe / Mercadona / Edeka", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "ALBERT HEIJN"},
-                {"field": "description", "op": "starts_with", "value": "REWE"},
-                {"field": "description", "op": "starts_with", "value": "MERCADONA"},
-                {"field": "description", "op": "starts_with", "value": "EDEKA"},
-            ], "actions": [{"op": "set_category", "value": "groceries"}], "priority": 10},
-
-            {"name": "Miete / Loyer (Rent)", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "MIETE"},
-                {"field": "description", "op": "contains", "value": "LOYER"},
-            ], "actions": [{"op": "set_category", "value": "housing"}], "priority": 10},
-
-            {"name": "Gehalt / Salaire (Salary)", "conditions_op": "and", "conditions": [
-                {"field": "description", "op": "regex", "value": "GEHALT|SALAIRE|LOHN|SALARY|STIPENDIO"},
-            ], "actions": [{"op": "set_category", "value": "salary"}], "priority": 10},
-
-            {"name": "Spende / Don (Donation)", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "SPENDE"},
-                {"field": "description", "op": "contains", "value": "DONATION"},
-                {"field": "description", "op": "contains", "value": "DON "},
-            ], "actions": [{"op": "set_category", "value": "donations"}], "priority": 10},
-
-            {"name": "Steuer / Impôt (Tax)", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "STEUER"},
-                {"field": "description", "op": "contains", "value": "IMPOT"},
-                {"field": "description", "op": "contains", "value": "FINANZAMT"},
-            ], "actions": [{"op": "set_category", "value": "taxes"}], "priority": 10},
-        ],
-    },
-    "GB": {
-        "name": "United Kingdom",
-        "flag": "\U0001F1EC\U0001F1E7",
-        "rules": [
-            {"name": "Tesco / Sainsbury's / Asda", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "TESCO"},
-                {"field": "description", "op": "starts_with", "value": "SAINSBURY"},
-                {"field": "description", "op": "starts_with", "value": "ASDA"},
-            ], "actions": [{"op": "set_category", "value": "groceries"}], "priority": 10},
-
-            {"name": "Deliveroo / Just Eat", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "DELIVEROO"},
-                {"field": "description", "op": "starts_with", "value": "JUST EAT"},
-            ], "actions": [{"op": "set_category", "value": "food"}], "priority": 10},
-
-            {"name": "TfL / Trainline", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "TFL"},
-                {"field": "description", "op": "starts_with", "value": "TRAINLINE"},
-            ], "actions": [{"op": "set_category", "value": "transport"}], "priority": 10},
-
-            {"name": "Greggs / Costa / Pret", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "GREGGS"},
-                {"field": "description", "op": "starts_with", "value": "COSTA"},
-                {"field": "description", "op": "starts_with", "value": "PRET"},
-            ], "actions": [{"op": "set_category", "value": "food"}], "priority": 10},
-
-            {"name": "Shell / BP / Esso (Fuel)", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "SHELL"},
-                {"field": "description", "op": "starts_with", "value": "BP "},
-                {"field": "description", "op": "starts_with", "value": "ESSO"},
-            ], "actions": [{"op": "set_category", "value": "transport"}], "priority": 10},
-
-            {"name": "Boots / Superdrug", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "BOOTS"},
-                {"field": "description", "op": "starts_with", "value": "SUPERDRUG"},
-            ], "actions": [{"op": "set_category", "value": "health"}], "priority": 10},
-
-            {"name": "Sky / BT / Virgin Media", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "SKY"},
-                {"field": "description", "op": "starts_with", "value": "BT "},
-                {"field": "description", "op": "starts_with", "value": "VIRGIN MEDIA"},
-            ], "actions": [{"op": "set_category", "value": "subscriptions"}], "priority": 10},
-
-            {"name": "Argos", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "ARGOS"},
-            ], "actions": [{"op": "set_category", "value": "groceries"}], "priority": 10},
-
-            {"name": "M&S", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "M&S"},
-                {"field": "description", "op": "starts_with", "value": "MARKS"},
-            ], "actions": [{"op": "set_category", "value": "groceries"}], "priority": 10},
-
-            {"name": "Aldi / Lidl / Morrisons / Waitrose", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "ALDI"},
-                {"field": "description", "op": "starts_with", "value": "LIDL"},
-                {"field": "description", "op": "starts_with", "value": "MORRISONS"},
-                {"field": "description", "op": "starts_with", "value": "WAITROSE"},
-            ], "actions": [{"op": "set_category", "value": "groceries"}], "priority": 10},
-
-            {"name": "HMRC / Council Tax", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "COUNCIL TAX"},
-                {"field": "description", "op": "contains", "value": "HMRC"},
-            ], "actions": [{"op": "set_category", "value": "taxes"}], "priority": 10},
-
-            {"name": "NHS / Bupa", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "starts_with", "value": "NHS"},
-                {"field": "description", "op": "starts_with", "value": "BUPA"},
-            ], "actions": [{"op": "set_category", "value": "health"}], "priority": 10},
-
-            {"name": "Salary / Wages", "conditions_op": "and", "conditions": [
-                {"field": "description", "op": "regex", "value": "SALARY|WAGES|PAYROLL"},
-            ], "actions": [{"op": "set_category", "value": "salary"}], "priority": 10},
-
-            {"name": "Charity / Donation", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "CHARITY"},
-                {"field": "description", "op": "contains", "value": "DONATION"},
-                {"field": "description", "op": "contains", "value": "JUST GIVING"},
-            ], "actions": [{"op": "set_category", "value": "donations"}], "priority": 10},
-
-            {"name": "Rent / Mortgage", "conditions_op": "or", "conditions": [
-                {"field": "description", "op": "contains", "value": "RENT"},
-                {"field": "description", "op": "contains", "value": "MORTGAGE"},
-                {"field": "description", "op": "contains", "value": "OPENRENT"},
-            ], "actions": [{"op": "set_category", "value": "housing"}], "priority": 10},
-        ],
-    },
-}
+# ─── Country-specific rule packs: see app.services.rule_packs ───
 
 # Map currency code -> default rule pack country
 CURRENCY_TO_PACK = {
@@ -570,7 +208,7 @@ CURRENCY_TO_PACK = {
 }
 
 
-def _resolve_categories_by_internal_key(
+def resolve_default_category_keys(
     categories_by_name: dict[str, str],
 ) -> dict[str, str]:
     """Map default-category internal keys (e.g. 'transport') to the user's actual
@@ -627,14 +265,6 @@ def _build_rules_from_templates(
     return resolved, unresolved
 
 
-async def _get_existing_rule_names(session: AsyncSession, user_id: uuid.UUID) -> set[str]:
-    """Get the set of existing rule names for a user."""
-    result = await session.execute(
-        select(Rule.name).where(Rule.user_id == user_id)
-    )
-    return {row[0] for row in result.all()}
-
-
 async def create_default_rules(
     session: AsyncSession,
     user_id: uuid.UUID,
@@ -657,7 +287,7 @@ async def create_default_rules(
         cat_query = cat_query.where(Category.user_id == user_id)
     result = await session.execute(cat_query)
     categories = {cat.name: str(cat.id) for cat in result.scalars().all()}
-    key_to_id = _resolve_categories_by_internal_key(categories)
+    key_to_id = resolve_default_category_keys(categories)
 
     resolved, _unresolved = _build_rules_from_templates(UNIVERSAL_RULES, key_to_id)
 
@@ -680,33 +310,7 @@ async def create_default_rules(
     return rules
 
 
-class RulePackInstallResult:
-    """Outcome of installing a country-specific rule pack."""
-
-    __slots__ = ("rules", "unresolved", "categories_created")
-
-    def __init__(
-        self,
-        rules: list[Rule],
-        unresolved: int,
-        categories_created: int = 0,
-    ) -> None:
-        self.rules = rules
-        self.unresolved = unresolved
-        self.categories_created = categories_created
-
-
-def _required_internal_keys(pack: dict) -> set[str]:
-    """Return the set of category internal keys referenced by a pack's rules."""
-    keys: set[str] = set()
-    for rule in pack["rules"]:
-        for action in rule["actions"]:
-            if action["op"] == "set_category":
-                keys.add(action["value"])
-    return keys
-
-
-async def _ensure_categories_for_keys(
+async def ensure_default_categories(
     session: AsyncSession,
     workspace_id: Optional[uuid.UUID],
     user_id: uuid.UUID,
@@ -718,6 +322,7 @@ async def _ensure_categories_for_keys(
     Idempotent — categories are matched across language variants, so a
     user with English defaults won't get Portuguese duplicates if `lang`
     happens to be pt-BR. Returns the count of newly-created categories.
+    Flushes but doesn't commit: it runs inside the caller's transaction.
     """
     from app.models.category_group import CategoryGroup
 
@@ -796,99 +401,8 @@ async def _ensure_categories_for_keys(
             treat_as_transfer=data.get("treat_as_transfer", False),
         )
         session.add(cat)
-    await session.commit()
+    await session.flush()
     return len(missing_keys)
-
-
-async def install_rule_pack(
-    session: AsyncSession,
-    workspace_id_or_user_id: uuid.UUID,
-    user_id_or_pack_code: uuid.UUID | str,
-    pack_code: Optional[str] = None,
-    lang: str = "pt-BR",
-    create_missing_categories: bool = False,
-) -> RulePackInstallResult:
-    """Install a country-specific rule pack for a user. Skips rules whose name already exists.
-
-    When `create_missing_categories=True`, creates any default categories
-    referenced by the pack that the user is missing — so users in a
-    degenerate state (or who never had defaults seeded) can opt into
-    "install pack, fill in what's needed". `lang` controls the names of
-    any newly-created categories.
-    """
-    if pack_code is None:
-        workspace_id = None
-        user_id = workspace_id_or_user_id
-        pack_code = str(user_id_or_pack_code)
-    else:
-        workspace_id = workspace_id_or_user_id
-        # Narrowed by the branch: `pack_code` being set means the caller used
-        # the workspace-scoped signature, so this argument is the user id.
-        user_id = cast(uuid.UUID, user_id_or_pack_code)
-
-    pack = RULE_PACKS.get(pack_code)
-    if not pack:
-        return RulePackInstallResult([], 0)
-
-    categories_created = 0
-    if create_missing_categories:
-        categories_created = await _ensure_categories_for_keys(
-            session, workspace_id, user_id, _required_internal_keys(pack), lang
-        )
-
-    result = await session.execute(
-        select(Category).where(
-            Category.workspace_id == workspace_id
-            if workspace_id is not None
-            else Category.user_id == user_id
-        )
-    )
-    categories = {cat.name: str(cat.id) for cat in result.scalars().all()}
-    key_to_id = _resolve_categories_by_internal_key(categories)
-
-    resolved, unresolved = _build_rules_from_templates(pack["rules"], key_to_id)
-
-    existing_names = (
-        await _get_existing_rule_names_for_workspace(session, workspace_id)
-        if workspace_id is not None
-        else await _get_existing_rule_names(session, user_id)
-    )
-
-    rules: list[Rule] = []
-    for rule_data in resolved:
-        if rule_data["name"] in existing_names:
-            continue
-        rule = Rule(
-            user_id=user_id,
-            workspace_id=workspace_id,
-            name=rule_data["name"],
-            conditions_op=rule_data["conditions_op"],
-            conditions=rule_data["conditions"],
-            actions=rule_data["actions"],
-            priority=rule_data["priority"],
-            is_active=True,
-        )
-        session.add(rule)
-        rules.append(rule)
-
-    await session.commit()
-    return RulePackInstallResult(rules, unresolved, categories_created)
-
-
-async def get_installed_packs(
-    session: AsyncSession, workspace_id: uuid.UUID, user_id: Optional[uuid.UUID] = None
-) -> dict[str, bool]:
-    """Check which rule packs are fully installed for a user."""
-    existing_names = (
-        await _get_existing_rule_names_for_workspace(session, workspace_id)
-        if user_id is not None
-        else await _get_existing_rule_names(session, workspace_id)
-    )
-    result = {}
-    for code, pack in RULE_PACKS.items():
-        pack_names = {r["name"] for r in pack["rules"]}
-        result[code] = pack_names.issubset(existing_names)
-    return result
 
 
 async def get_rules(session: AsyncSession, workspace_id: uuid.UUID) -> list[Rule]:
@@ -984,7 +498,7 @@ async def import_rules(
             skipped += 1
             continue
         try:
-            await _validate_rule_definition(
+            await validate_rule_definition(
                 session,
                 workspace_id,
                 [condition.model_dump() for condition in incoming.conditions],
@@ -1030,11 +544,11 @@ async def create_rule(
     user_id: uuid.UUID,
     data: RuleCreate,
 ) -> Rule:
-    existing_names = await _get_existing_rule_names_for_workspace(session, workspace_id)
+    existing_names = await existing_rule_names(session, workspace_id)
     if data.name in existing_names:
         raise DuplicateRuleError(f"A rule named '{data.name}' already exists")
 
-    await _validate_rule_definition(session, workspace_id, data.conditions, data.actions)
+    await validate_rule_definition(session, workspace_id, data.conditions, data.actions)
 
     rule = Rule(
         user_id=user_id,
@@ -1065,7 +579,7 @@ async def update_rule(
     )
 
     if "name" in update_data and update_data["name"] != rule.name:
-        existing_names = await _get_existing_rule_names_for_workspace(session, workspace_id)
+        existing_names = await existing_rule_names(session, workspace_id)
         if update_data["name"] in existing_names:
             raise DuplicateRuleError(f"A rule named '{update_data['name']}' already exists")
 
@@ -1074,7 +588,7 @@ async def update_rule(
     if data.actions is not None:
         update_data["actions"] = [a.model_dump() for a in data.actions]
 
-    await _validate_rule_definition(
+    await validate_rule_definition(
         session,
         workspace_id,
         update_data.get("conditions", rule.conditions or []),
@@ -1098,7 +612,7 @@ async def delete_rule(session: AsyncSession, rule_id: uuid.UUID, workspace_id: u
     return True
 
 
-async def _get_existing_rule_names_for_workspace(
+async def existing_rule_names(
     session: AsyncSession, workspace_id: uuid.UUID
 ) -> set[str]:
     """Get the set of existing rule names in a workspace."""
@@ -1111,7 +625,8 @@ async def _get_existing_rule_names_for_workspace(
 # Exactly the columns `_rule_preview` copies. Anything reading a column that is
 # not here off a transaction loaded with `load_only(*_PREVIEW_COLUMNS)` would
 # trigger a lazy refresh — which raises under async — so the two lists move
-# together.
+# together. `raw_data` joins this list only for conditions that read the
+# provider category, since the payload dwarfs the rest of the row.
 _PREVIEW_COLUMNS = (
     Transaction.user_id,
     Transaction.workspace_id,
@@ -1130,10 +645,12 @@ _PREVIEW_COLUMNS = (
     Transaction.payee_id,
     Transaction.notes,
     Transaction.is_ignored,
+    Transaction.has_category_lines,
+    Transaction.transfer_pair_id,
 )
 
 
-def _rule_preview(transaction: Transaction) -> Transaction:
+def _rule_preview(transaction: Transaction, *, include_raw_data: bool = True) -> Transaction:
     """Build a detached transaction-shaped object for side-effect-free rule evaluation."""
     return Transaction(
         user_id=transaction.user_id,
@@ -1153,6 +670,8 @@ def _rule_preview(transaction: Transaction) -> Transaction:
         payee_id=transaction.payee_id,
         notes=transaction.notes,
         is_ignored=transaction.is_ignored,
+        transfer_pair_id=transaction.transfer_pair_id,
+        raw_data=transaction.raw_data if include_raw_data else None,
     )
 
 
@@ -1175,6 +694,9 @@ async def preview_rules_for_transaction(
     user_id: uuid.UUID,
     transaction: Transaction,
     skip_category_rules: bool = False,
+    *,
+    skip_description: bool = False,
+    skip_payee: bool = False,
 ) -> Transaction:
     """Apply active rules to a detached preview and return it without persistence."""
     preview = _rule_preview(transaction)
@@ -1183,13 +705,165 @@ async def preview_rules_for_transaction(
         user_id,
         preview,
         skip_category_rules=skip_category_rules,
+        skip_description=skip_description,
+        skip_payee=skip_payee,
     )
     return preview
+
+
+def description_is_manual(transaction: Transaction) -> bool:
+    """Whether the row's description must survive a rule pass.
+
+    Read it before a sync merges the provider's text into the row: a user who
+    renamed a placeholder to exactly what the bank later sends would otherwise
+    look like provider text. A row with no provenance is kept as it is, the
+    same way the sync merge treats it.
+    """
+    return not transaction.description_is_rule_managed and (
+        transaction.original_description is None
+        or transaction.description != transaction.original_description
+    )
+
+
+async def read_description_is_manual(
+    session: AsyncSession, transaction: Transaction,
+) -> bool:
+    """Lock a settling row, re-read its description and say if it is the user's.
+
+    Call it before the sync merges the provider's text: a rename the user
+    saved after the sync loaded the row would otherwise look like provider
+    text, so the merge would write over it and a rule could rename it.
+    """
+    # Write the sync's own changes first, since a refresh would drop them.
+    await session.flush()
+    await session.refresh(
+        transaction,
+        ["description", "original_description", "description_is_rule_managed"],
+        with_for_update=True,
+    )
+    return description_is_manual(transaction)
+
+
+async def apply_rules_to_settled_transaction(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    transaction: Transaction,
+    *,
+    manual_description: bool,
+    synced_payee_id: uuid.UUID | None = None,
+) -> None:
+    """Run the rules again on a row whose pending entry just posted.
+
+    A pending entry often carries placeholder text and no counterparty, so
+    the rules that ran on it matched nothing; the posted entry brings the real
+    description and payee. What the row already holds wins: the rules fill an
+    empty category or payee, append their notes and may ignore the row, and
+    they replace the description only when the user did not write it
+    (`manual_description`, from `description_is_manual` before the merge).
+    The rules run with those fields pinned, so a later rule never acts on a
+    value the row will not keep. A row the user ignored is left alone.
+    `synced_payee_id` is a payee the sync itself linked to a row that had
+    none: the rules may replace it, and it stays when none does.
+    """
+    if transaction.is_ignored:
+        return
+    # Write the sync's own changes first, since a refresh would drop them,
+    # then read what the rules check under a row lock: a category, split,
+    # payee or note the user saved since the sync loaded the row is kept.
+    await session.flush()
+    await session.refresh(
+        transaction,
+        [
+            "notes",
+            "category_id",
+            "has_category_lines",
+            "payee_id",
+            "is_ignored",
+        ],
+        with_for_update=True,
+    )
+    if transaction.is_ignored:
+        return
+    preview = await preview_rules_for_transaction(
+        session,
+        user_id,
+        transaction,
+        skip_category_rules=transaction.has_category_lines,
+        skip_description=manual_description,
+        skip_payee=(
+            transaction.payee_id is not None
+            and transaction.payee_id != synced_payee_id
+        ),
+    )
+    transaction.category_id = preview.category_id
+    transaction.payee_id = preview.payee_id
+    transaction.description = preview.description
+    transaction.original_description = preview.original_description
+    transaction.description_is_rule_managed = preview.description_is_rule_managed
+    # The preview started from the row's notes, so its notes keep the user's.
+    transaction.notes = preview.notes
+    transaction.is_ignored = preview.is_ignored
+
+
+def rule_payee_ids(rules: Iterable[Rule]) -> set[uuid.UUID]:
+    """Ids of the payees the rules' `set_payee` actions name."""
+    payee_ids: set[uuid.UUID] = set()
+    for rule in rules:
+        for action in rule.actions or []:
+            if _rule_item_value(action, "op") != "set_payee":
+                continue
+            try:
+                payee_ids.add(uuid.UUID(str(_rule_item_value(action, "value"))))
+            except ValueError:
+                continue
+    return payee_ids
+
+
+async def get_existing_rule_payee_ids(
+    session: AsyncSession, rules: Iterable[Rule],
+) -> set[uuid.UUID]:
+    """The payees the rules' `set_payee` actions name that still exist.
+
+    A rule keeps the payee id in a JSON action with no foreign key behind it,
+    so it can outlive the payee. Writing that id fails the flush and takes the
+    whole import or sync batch with it.
+    """
+    payee_ids = rule_payee_ids(rules)
+    if not payee_ids:
+        return set()
+    result = await session.execute(select(Payee.id).where(Payee.id.in_(payee_ids)))
+    return set(result.scalars().all())
+
+
+async def get_transfer_unsafe_category_ids(
+    session: AsyncSession,
+    workspace_id: uuid.UUID | None,
+    transactions: Iterable[Transaction],
+) -> set[uuid.UUID]:
+    """Ignored categories a rule must not put a transfer leg in.
+
+    An ignored category drops the row from its account's balance, so filing
+    only one leg there unbalances the transfer. Empty when none of
+    `transactions` is a transfer leg, which spares the query on the common path.
+    """
+    if workspace_id is None or not any(
+        tx.transfer_pair_id is not None for tx in transactions
+    ):
+        return set()
+    result = await session.execute(
+        select(Category.id).where(
+            Category.workspace_id == workspace_id, Category.is_ignored.is_(True)
+        )
+    )
+    return set(result.scalars().all())
 
 
 async def apply_rules_to_transaction(
     session: AsyncSession, user_id: uuid.UUID, transaction: Transaction,
     skip_category_rules: bool = False,
+    *,
+    skip_description: bool = False,
+    skip_payee: bool = False,
 ) -> None:
     """Apply all active rules to a transaction, modifying it in-place. Commits nothing.
 
@@ -1207,14 +881,24 @@ async def apply_rules_to_transaction(
         .order_by(Rule.priority, Rule.id)
     )
     rules = result.scalars().all()
+    existing_payees = await get_existing_rule_payee_ids(session, rules)
 
-    category_set = transaction.category_id is not None or skip_category_rules
+    # A row split across categories is categorized: its lines hold the
+    # categories and its own category_id stays null.
+    category_set = (
+        transaction.category_id is not None
+        or transaction.has_category_lines
+        or skip_category_rules
+    )
     # None means "do not filter": a transaction with no workspace at hand
     # has no category list to check against.
     assignable_categories = (
         await get_assignable_category_ids(session, transaction.workspace_id)
         if getattr(transaction, "workspace_id", None) is not None
         else None
+    )
+    transfer_unsafe_categories = await get_transfer_unsafe_category_ids(
+        session, getattr(transaction, "workspace_id", None), [transaction]
     )
 
     for rule in rules:
@@ -1225,7 +909,11 @@ async def apply_rules_to_transaction(
                 actions,
                 transaction,
                 category_set,
+                skip_description=skip_description,
+                skip_payee=skip_payee,
                 assignable_category_ids=assignable_categories,
+                existing_payee_ids=existing_payees,
+                ignored_category_ids=transfer_unsafe_categories,
             )
 
 
@@ -1276,15 +964,24 @@ async def preview_rule(
     changing, because saving would change nothing.
     """
     will_apply = is_active and apply_to_existing
-    await _validate_rule_definition(session, workspace_id, conditions, actions or [])
+    await validate_rule_definition(session, workspace_id, conditions, actions or [])
 
+    needs_raw_data = any(
+        _rule_item_value(leaf, "field") == "provider_category"
+        for leaf in _flatten_conditions(conditions or [])
+    )
     # Every transaction is evaluated in Python, so only the columns the engine
-    # reads and `_rule_preview` copies are worth fetching — notably not
-    # `raw_data`, whose provider payloads dwarf the rest of the row and which
-    # no condition or action can see.
+    # reads and `_rule_preview` copies are worth fetching. Provider payloads in
+    # `raw_data` dwarf the rest of the row, so it comes along only when a
+    # condition can see it.
+    preview_columns = (
+        (*_PREVIEW_COLUMNS, Transaction.raw_data)
+        if needs_raw_data
+        else _PREVIEW_COLUMNS
+    )
     result = await session.execute(
         select(Transaction)
-        .options(load_only(*_PREVIEW_COLUMNS))
+        .options(load_only(*preview_columns))
         .where(
             Transaction.workspace_id == workspace_id,
             Transaction.source != "opening_balance",
@@ -1308,6 +1005,9 @@ async def preview_rule(
     # The save path skips `set_category` at an unavailable target, so a preview that
     # did not would promise a move that saving never makes.
     assignable_categories = await get_assignable_category_ids(session, workspace_id)
+    transfer_unsafe_categories = await get_transfer_unsafe_category_ids(
+        session, workspace_id, transactions
+    )
 
     matched = 0
     changed = 0
@@ -1318,7 +1018,7 @@ async def preview_rule(
         # A rule that renamed this row before should still recognise it, so a
         # miss is retried against the original text — same as apply_single_rule.
         if not matches and tx.original_description is not None:
-            original_target = _rule_preview(tx)
+            original_target = _rule_preview(tx, include_raw_data=needs_raw_data)
             original_target.description = tx.original_description
             matches = evaluate_conditions(conditions_op, conditions or [], original_target)
         if not matches:
@@ -1326,17 +1026,19 @@ async def preview_rule(
         matched += 1
         # An untouched copy when nothing is applied, so `new_category_*` below
         # simply mirrors what the transaction already has.
-        draft = _rule_preview(tx)
+        draft = _rule_preview(tx, include_raw_data=needs_raw_data)
         will_change = False
         if will_apply:
             before = _rule_effect_state(draft)
             apply_rule_actions(
                 action_dicts,
                 draft,
-                category_already_set=tx.category_id is not None
-                and not overwrite_existing_categories,
+                # Overwriting never undoes a split across categories.
+                category_already_set=tx.has_category_lines
+                or (tx.category_id is not None and not overwrite_existing_categories),
                 skip_description=_has_manual_description(tx),
                 assignable_category_ids=assignable_categories,
+                ignored_category_ids=transfer_unsafe_categories,
             )
             will_change = _rule_effect_state(draft) != before
             if will_change:
@@ -1354,6 +1056,7 @@ async def preview_rule(
                     type=tx.type,
                     current_category_id=tx.category_id,
                     current_category_name=category_names.get(tx.category_id),
+                    current_has_category_lines=bool(tx.has_category_lines),
                     new_category_id=draft.category_id,
                     new_category_name=category_names.get(draft.category_id),
                     will_change=will_change,
@@ -1400,6 +1103,10 @@ async def apply_single_rule(
     actions = rule.actions or []
 
     assignable_categories = await get_assignable_category_ids(session, workspace_id)
+    existing_payees = await get_existing_rule_payee_ids(session, [rule])
+    transfer_unsafe_categories = await get_transfer_unsafe_category_ids(
+        session, workspace_id, transactions
+    )
     count = 0
     for tx in transactions:
         matches = evaluate_conditions(rule.conditions_op, conditions, tx)
@@ -1424,10 +1131,13 @@ async def apply_single_rule(
         apply_rule_actions(
             actions,
             tx,
-            category_already_set=tx.category_id is not None
-            and not overwrite_existing_categories,
+            # Overwriting never undoes a split across categories.
+            category_already_set=tx.has_category_lines
+            or (tx.category_id is not None and not overwrite_existing_categories),
             skip_description=_has_manual_description(tx),
             assignable_category_ids=assignable_categories,
+            existing_payee_ids=existing_payees,
+            ignored_category_ids=transfer_unsafe_categories,
         )
         after = (
             tx.category_id,
@@ -1463,6 +1173,10 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
     rules = rules_result.scalars().all()
 
     assignable_categories = await get_assignable_category_ids(session, workspace_id)
+    existing_payees = await get_existing_rule_payee_ids(session, rules)
+    transfer_unsafe_categories = await get_transfer_unsafe_category_ids(
+        session, workspace_id, transactions
+    )
     count = 0
     for tx in transactions:
         preserve_manual_description = _has_manual_description(tx)
@@ -1480,13 +1194,15 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
                 tx.description = tx.original_description
             tx.description_is_rule_managed = False
         matched = False
-        category_set = False
+        # A split row keeps its lines through a re-apply.
+        category_set = tx.has_category_lines
         for rule in rules:
             conditions = rule.conditions or []
             actions = rule.actions or []
             if evaluate_conditions(rule.conditions_op, conditions, tx):
                 if not matched:
-                    tx.category_id = None
+                    if not tx.has_category_lines:
+                        tx.category_id = None
                     tx.notes = None
                     matched = True
                 category_set = apply_rule_actions(
@@ -1495,6 +1211,8 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
                     category_set,
                     skip_description=preserve_manual_description,
                     assignable_category_ids=assignable_categories,
+                    existing_payee_ids=existing_payees,
+                    ignored_category_ids=transfer_unsafe_categories,
                 )
 
         after = (

@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from typing import Any
 from unittest.mock import patch
 
 import httpx
@@ -23,14 +24,18 @@ from app.providers.base import (
     mask_last4,
 )
 from app.providers.enable_banking import (
+    ACCOUNT_DETAILS_KEY,
     DEFAULT_HISTORY_DAYS,
     FALLBACK_HISTORY_DAYS,
+    INITIAL_HISTORY_DAYS,
+    INITIAL_TRANSACTION_PAGE_LIMIT,
     EnableBankingProvider,
     _account_identifier,
     _entry_reference_external_id,
     _map_cash_account_type,
     _txn_fingerprint,
 )
+from app.providers.psu import PsuContext, psu_present
 
 
 def _rsa_pem() -> tuple[str, str]:
@@ -240,6 +245,33 @@ async def test_get_oauth_url_returns_consent_url(eb_keys):
 
 
 @pytest.mark.asyncio
+async def test_get_oauth_url_keeps_consent_under_the_bank_max(eb_keys):
+    """Trade Republic allows exactly 90 days of consent and EB rejects even a
+    second more, so asking for the bank's max must land safely below it."""
+    provider = EnableBankingProvider()
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json as _json
+
+        captured.update(_json.loads(request.read().decode()))
+        return httpx.Response(200, json={"url": "https://consent.enablebanking.com/abc"})
+
+    with _patch_client(provider, handler):
+        await provider.get_oauth_url(
+            "https://app.example.com/oauth/callback",
+            "state-xyz",
+            flow_params={
+                "country": "es",
+                "institution_name": "Trade Republic",
+                "valid_until_days": 90,
+            },
+        )
+    valid_until = datetime.fromisoformat(captured["access"]["valid_until"])
+    assert valid_until < datetime.now(timezone.utc) + timedelta(days=90) - timedelta(minutes=5)
+
+
+@pytest.mark.asyncio
 async def test_get_oauth_url_rejects_missing_flow_params(eb_keys):
     provider = EnableBankingProvider()
     with pytest.raises(ValueError):
@@ -372,6 +404,234 @@ async def test_loan_account_keeps_the_bank_reported_balance(eb_keys, reported):
     assert acc.balance == Decimal(reported)
 
 
+# ----- card balances (issue #624) -----
+
+
+def _balance(balance_type: str, amount: str, currency: str = "PLN") -> dict:
+    return {
+        "balance_type": balance_type,
+        "balance_amount": {"amount": amount, "currency": currency},
+    }
+
+
+def _card_credentials() -> dict:
+    # Fresh per test: get_accounts caches account details in the credentials.
+    return {"session_id": "sess-x", "valid_until": "2099-01-01T00:00:00Z"}
+
+
+def _card_bank(balances: list[dict], *, details: dict | None = None):
+    """An EB bank with one CARD account: session, details and balances."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/sessions/sess-x":
+            return httpx.Response(
+                200,
+                json={"status": "AUTHORIZED", "accounts_data": [{"uid": "card-1"}]},
+            )
+        if path == "/accounts/card-1/details":
+            return httpx.Response(
+                200,
+                json={
+                    "uid": "card-1",
+                    "display_name": "WORLD MASTERCARD",
+                    "currency": "PLN",
+                    "cash_account_type": "CARD",
+                    **(details or {}),
+                },
+            )
+        if path == "/accounts/card-1/balances":
+            return httpx.Response(200, json={"balances": balances})
+        raise AssertionError(f"unexpected path {path}")
+
+    return handler
+
+
+@pytest.mark.asyncio
+async def test_card_debt_is_what_the_limit_leaves_available(eb_keys):
+    """mBank reports the credit limit as the booked balance and the real free
+    credit as the available one (issue #624). Stored as the debt, that card
+    owes the limit minus what is available (100), not the 4900 available."""
+    provider = EnableBankingProvider()
+    handler = _card_bank(
+        [_balance("ITBD", "5000.00"), _balance("ITAV", "4900.00")],
+        details={"credit_limit": {"amount": "5000.00", "currency": "PLN"}},
+    )
+
+    with _patch_client(provider, handler):
+        accounts = await provider.get_accounts(_card_credentials())
+
+    card = accounts[0]
+    assert card.type == "credit_card"
+    assert card.balance == Decimal("100.00")
+    assert card.available_credit == Decimal("4900.00")
+    assert card.credit_limit == Decimal("5000.00")
+
+
+@pytest.mark.asyncio
+async def test_card_available_credit_without_a_limit_waits_for_the_sync(eb_keys):
+    """When the bank sends no limit, the free credit comes out on its own so
+    the sync can state the debt from the limit the account row holds."""
+    provider = EnableBankingProvider()
+    handler = _card_bank([_balance("ITAV", "4900.00")])
+
+    with _patch_client(provider, handler):
+        accounts = await provider.get_accounts(_card_credentials())
+
+    card = accounts[0]
+    assert card.credit_limit is None
+    assert card.available_credit == Decimal("4900.00")
+    assert card.balance == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_card_with_only_a_booked_balance_keeps_the_banks_sign(eb_keys):
+    """EB signs a card from the holder's side: a negative booked figure is
+    debt, which is what Securo stores."""
+    provider = EnableBankingProvider()
+    handler = _card_bank([_balance("CLBD", "-100.00")])
+
+    with _patch_client(provider, handler):
+        accounts = await provider.get_accounts(_card_credentials())
+
+    card = accounts[0]
+    assert card.balance == Decimal("100.00")
+    assert card.available_credit is None
+
+
+@pytest.mark.asyncio
+async def test_card_without_a_limit_keeps_a_booked_debt_signed_by_the_bank(eb_keys):
+    """Free credit alone cannot state the debt when no limit is known, but a
+    booked figure EB signs as money owed still does, so the card does not read
+    as free while the sync waits for a limit."""
+    provider = EnableBankingProvider()
+    handler = _card_bank([_balance("CLBD", "-100.00"), _balance("ITAV", "4900.00")])
+
+    with _patch_client(provider, handler):
+        accounts = await provider.get_accounts(_card_credentials())
+
+    card = accounts[0]
+    assert card.credit_limit is None
+    assert card.balance == Decimal("100.00")
+    assert card.available_credit == Decimal("4900.00")
+
+
+@pytest.mark.asyncio
+async def test_card_balance_without_a_usable_amount_is_not_the_whole_limit(eb_keys):
+    """A balance entry that carries no amount says nothing about the card. Read
+    as zero free credit it would show the whole limit spent."""
+    provider = EnableBankingProvider()
+    handler = _card_bank(
+        [
+            {"balance_type": "ITAV", "balance_amount": {"currency": "PLN"}},
+            _balance("CLBD", "-100.00"),
+        ],
+        details={"credit_limit": {"amount": "5000.00", "currency": "PLN"}},
+    )
+
+    with _patch_client(provider, handler):
+        accounts = await provider.get_accounts(_card_credentials())
+
+    card = accounts[0]
+    # The booked figure states the debt on its own.
+    assert card.balance == Decimal("100.00")
+    assert card.available_credit is None
+
+
+@pytest.mark.asyncio
+async def test_card_balance_without_a_usable_amount_does_not_hide_the_other_type(eb_keys):
+    """ITAV and CLAV mean the same thing, so an entry without an amount must
+    not hide the usable one of the other type."""
+    provider = EnableBankingProvider()
+    handler = _card_bank(
+        [
+            {"balance_type": "ITAV", "balance_amount": {"currency": "PLN"}},
+            _balance("CLAV", "4900.00"),
+        ],
+        details={"credit_limit": {"amount": "5000.00", "currency": "PLN"}},
+    )
+
+    with _patch_client(provider, handler):
+        accounts = await provider.get_accounts(_card_credentials())
+
+    card = accounts[0]
+    assert card.available_credit == Decimal("4900.00")
+    assert card.balance == Decimal("100.00")
+
+
+@pytest.mark.asyncio
+async def test_background_sync_does_not_claim_a_cached_credit_limit(eb_keys):
+    """A background sync reads the cached details and never calls /details. It
+    reports the free credit and no limit, so the debt is stated against the
+    limit the account row holds and a cached figure cannot overwrite it."""
+    provider = EnableBankingProvider()
+    credentials = {
+        "session_id": "sess-x",
+        ACCOUNT_DETAILS_KEY: {
+            "card-1": {
+                "name": "WORLD MASTERCARD",
+                "cash_account_type": "CARD",
+                "currency": "PLN",
+                "masked_number": "**** 4242",
+                "credit_limit": "5000.00",
+            }
+        },
+    }
+    calls: list[str] = []
+    inner = _card_bank([_balance("ITBD", "5000.00"), _balance("ITAV", "4900.00")])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return inner(request)
+
+    with _patch_client(provider, handler):
+        accounts = await provider.get_accounts(credentials)
+
+    assert "/accounts/card-1/details" not in calls
+    card = accounts[0]
+    assert card.credit_limit is None
+    assert card.available_credit == Decimal("4900.00")
+    # The booked figure here is the limit itself, so it states no debt.
+    assert card.balance == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_checking_account_balance_reading_is_unchanged(eb_keys):
+    """The card rule is card-only: on the same provider, a checking account
+    keeps reading exactly as before (issue #624 asked for no bank-wide flip)."""
+    provider = EnableBankingProvider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/sessions/sess-x":
+            return httpx.Response(
+                200,
+                json={"status": "AUTHORIZED", "accounts_data": [{"uid": "acc-1"}]},
+            )
+        if path == "/accounts/acc-1/details":
+            return httpx.Response(
+                200,
+                json={
+                    "uid": "acc-1",
+                    "display_name": "Girokonto",
+                    "currency": "PLN",
+                    "cash_account_type": "CACC",
+                },
+            )
+        if path == "/accounts/acc-1/balances":
+            return httpx.Response(
+                200, json={"balances": [_balance("ITAV", "4900.00")]}
+            )
+        raise AssertionError(f"unexpected path {path}")
+
+    with _patch_client(provider, handler):
+        accounts = await provider.get_accounts(_card_credentials())
+
+    checking = accounts[0]
+    assert checking.balance == Decimal("4900.00")
+    assert checking.available_credit is None
+
+
 @pytest.mark.asyncio
 async def test_get_transactions_parses_nested_and_flat_shapes(eb_keys):
     """Both `transactions:{booked,pending}` and flat list must produce the
@@ -420,6 +680,8 @@ async def test_get_transactions_parses_nested_and_flat_shapes(eb_keys):
     )
     credit = next(t for t in nested if t.type == "credit")
     assert credit.status == "pending"
+    # The last page carried no cursor, so the whole feed was read.
+    assert provider.truncated_account_ids == set()
 
     flat_page = {
         "transactions": [
@@ -493,6 +755,38 @@ async def test_get_transactions_stops_on_repeated_continuation_key(eb_keys, capl
     )
     assert [transaction.external_id for transaction in transactions] == [expected_id]
     assert "pagination loop detected" in caplog.text
+    # The loop hid whatever came after the repeated cursor.
+    assert provider.truncated_account_ids == {"acc-1"}
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_marks_account_truncated_at_page_cap(eb_keys, caplog):
+    """Pages that still carry a cursor at the safety cap leave the rest of the
+    feed unread, so the account is reported as truncated."""
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={
+            "transactions": [],
+            "continuation_key": f"cursor-{len(requests)}",
+        })
+
+    credentials = {
+        "session_id": "sess-x",
+        "valid_until": "2099-01-01T00:00:00Z",
+    }
+    with (
+        patch("app.providers.enable_banking.TRANSACTION_PAGE_LIMIT", 3),
+        _patch_client(provider, handler),
+        caplog.at_level("WARNING"),
+    ):
+        await provider.get_transactions(credentials, "acc-1", date(2026, 5, 1))
+
+    assert len(requests) == 3
+    assert provider.truncated_account_ids == {"acc-1"}
+    assert "more than 3 transaction pages" in caplog.text
 
 
 _WRONG_PERIOD_BODY = {
@@ -513,6 +807,8 @@ def _span_days(request: httpx.Request) -> int:
 
 @pytest.mark.asyncio
 async def test_get_transactions_default_window_is_90_days_inclusive(eb_keys):
+    """A background fetch (no user present) keeps the ordinary 90-day window;
+    the longest history is only asked for on the user's own request."""
     provider = EnableBankingProvider()
     requests: list[httpx.Request] = []
 
@@ -524,8 +820,262 @@ async def test_get_transactions_default_window_is_90_days_inclusive(eb_keys):
         await provider.get_transactions(_CREDENTIALS, "acc-1")
 
     assert len(requests) == 1
-    assert requests[0].url.params["date_to"] == date.today().isoformat()
+    assert requests[0].url.params["date_to"] == _utc_today().isoformat()
+    assert requests[0].url.params.get("strategy") is None
     assert _span_days(requests[0]) == DEFAULT_HISTORY_DAYS == 90
+
+
+_USER_PRESENT_HEADERS = {
+    "Psu-Ip-Address": "203.0.113.7",
+    "Psu-User-Agent": "Mozilla/5.0 (Securo test)",
+}
+
+
+def _user_present():
+    """The fetch is driven by the user's own request, PSU headers and all."""
+    return psu_present(PsuContext(headers=dict(_USER_PRESENT_HEADERS)))
+
+
+def _utc_today() -> date:
+    """The day the provider itself uses, so tests do not depend on the host zone."""
+    return datetime.now(timezone.utc).date()
+
+
+def _booked_entry(reference: str, *, days_ago: int) -> dict:
+    """One booked entry of the bank's own payload, dated in the past."""
+    return {
+        "entry_reference": reference,
+        "status": "BOOK",
+        "transaction_amount": {"amount": "10.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": (_utc_today() - timedelta(days=days_ago)).isoformat(),
+        "remittance_information": [reference],
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_initial_fetch_asks_for_the_longest_history(eb_keys):
+    """A fresh fetch made with the user present asks Enable Banking for the
+    longest period the bank serves, bounded by INITIAL_HISTORY_DAYS, and does
+    not pick the end date itself (issue #792)."""
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200, json={"transactions": [_booked_entry("tx-old", days_ago=400)]}
+        )
+
+    with _patch_client(provider, handler), _user_present():
+        transactions = await provider.get_transactions(_CREDENTIALS, "acc-1")
+
+    assert len(requests) == 1
+    params = requests[0].url.params
+    assert params["strategy"] == "longest"
+    assert "date_to" not in params
+    assert params["date_from"] == (
+        _utc_today() - timedelta(days=INITIAL_HISTORY_DAYS - 1)
+    ).isoformat()
+    assert len(transactions) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_initial_fetch_reads_every_page(eb_keys):
+    """The paged answer is collected to the last page: the bank's cursor is
+    followed, each page is part of the same longest request."""
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+    pages = [
+        {
+            "transactions": [_booked_entry("tx-new", days_ago=3)],
+            "continuation_key": "page-2",
+        },
+        {
+            "transactions": [_booked_entry("tx-mid", days_ago=400)],
+            "continuation_key": "page-3",
+        },
+        {
+            "transactions": [_booked_entry("tx-old", days_ago=1200)],
+            "continuation_key": "",
+        },
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=pages[len(requests) - 1])
+
+    with _patch_client(provider, handler), _user_present():
+        transactions = await provider.get_transactions(_CREDENTIALS, "acc-1")
+
+    assert len(requests) == 3
+    assert requests[0].url.params.get("continuation_key") is None
+    assert requests[1].url.params["continuation_key"] == "page-2"
+    assert requests[2].url.params["continuation_key"] == "page-3"
+    assert [r.url.params.get("strategy") for r in requests] == ["longest"] * 3
+    assert {r.url.params["date_from"] for r in requests} == {
+        (_utc_today() - timedelta(days=INITIAL_HISTORY_DAYS - 1)).isoformat()
+    }
+    assert len(transactions) == 3
+    assert provider.truncated_account_ids == set()
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_initial_fetch_pages_past_the_incremental_cap(eb_keys):
+    """The initial cap is wider than the incremental one: a busy account's
+    history is not cut at the 50th page, where what is left out would never be
+    fetched again (later syncs only move forward)."""
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if len(requests) >= 60:
+            return httpx.Response(200, json={"transactions": []})
+        return httpx.Response(
+            200,
+            json={"transactions": [], "continuation_key": f"cursor-{len(requests)}"},
+        )
+
+    with _patch_client(provider, handler), _user_present():
+        await provider.get_transactions(_CREDENTIALS, "acc-1")
+
+    assert len(requests) == 60
+    assert provider.truncated_account_ids == set()
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_initial_fetch_stops_at_its_page_cap(eb_keys, caplog):
+    """Even the wider cap ends the loop: a feed that never stops paging is cut
+    and the account is reported as truncated."""
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+    cap = 3
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={"transactions": [], "continuation_key": f"cursor-{len(requests)}"},
+        )
+
+    with (
+        patch("app.providers.enable_banking.INITIAL_TRANSACTION_PAGE_LIMIT", cap),
+        _patch_client(provider, handler),
+        _user_present(),
+        caplog.at_level("WARNING"),
+    ):
+        await provider.get_transactions(_CREDENTIALS, "acc-1")
+
+    assert cap < INITIAL_TRANSACTION_PAGE_LIMIT
+    assert len(requests) == cap
+    assert provider.truncated_account_ids == {"acc-1"}
+    assert f"more than {cap} transaction pages" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_initial_fetch_falls_back_when_longest_is_refused(
+    eb_keys,
+):
+    """A bank that rejects the longest period still gets the ordinary window:
+    the connection is not failed over an attempt at more history."""
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.params.get("strategy") == "longest":
+            return httpx.Response(422, json=_WRONG_PERIOD_BODY)
+        return httpx.Response(
+            200, json={"transactions": [_booked_entry("tx-1", days_ago=10)]}
+        )
+
+    with _patch_client(provider, handler), _user_present():
+        transactions = await provider.get_transactions(_CREDENTIALS, "acc-1")
+
+    assert [r.url.params.get("strategy") for r in requests] == ["longest", None]
+    assert _span_days(requests[1]) == DEFAULT_HISTORY_DAYS
+    assert len(transactions) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_initial_fetch_falls_back_when_the_strategy_is_refused(
+    eb_keys,
+):
+    """A refusal that is not about the period (a bank without the strategy)
+    gets the same answer as a refused period: the ordinary window."""
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.params.get("strategy") == "longest":
+            return httpx.Response(
+                400,
+                json={
+                    "code": 400,
+                    "error": "ASPSP_ERROR",
+                    "message": "strategy is not supported",
+                },
+            )
+        return httpx.Response(200, json={"transactions": []})
+
+    with _patch_client(provider, handler), _user_present():
+        transactions = await provider.get_transactions(_CREDENTIALS, "acc-1")
+
+    assert transactions == []
+    assert [r.url.params.get("strategy") for r in requests] == ["longest", None]
+    assert _span_days(requests[1]) == DEFAULT_HISTORY_DAYS
+
+
+@pytest.mark.parametrize("status", [408, 503])
+@pytest.mark.asyncio
+async def test_get_transactions_initial_fetch_surfaces_a_transient_failure(
+    eb_keys, status
+):
+    """A failing bank (a timeout or a server error) is not a refusal of the
+    longest history: the error reaches the sync so it is retried, instead of
+    a shorter history being reported as a complete one and the rest never
+    asked for again."""
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            status, json={"code": status, "message": "temporarily unavailable"}
+        )
+
+    with (
+        _patch_client(provider, handler),
+        _user_present(),
+        pytest.raises(httpx.HTTPStatusError),
+    ):
+        await provider.get_transactions(_CREDENTIALS, "acc-1")
+
+    assert len(requests) == 1
+    assert requests[0].url.params["strategy"] == "longest"
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_incremental_fetch_never_asks_for_the_longest(eb_keys):
+    """A sync that already has a starting point stays on its own window: the
+    longest strategy is for the first, full fetch only."""
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"transactions": []})
+
+    with _patch_client(provider, handler), _user_present():
+        await provider.get_transactions(
+            _CREDENTIALS, "acc-1", _utc_today() - timedelta(days=5)
+        )
+
+    assert len(requests) == 1
+    assert requests[0].url.params.get("strategy") is None
+    assert _span_days(requests[0]) == 6
 
 
 @pytest.mark.asyncio
@@ -568,8 +1118,10 @@ async def test_get_transactions_retries_shorter_window_on_wrong_period(eb_keys):
 
 
 @pytest.mark.asyncio
-async def test_get_transactions_wrong_period_with_explicit_since_raises(eb_keys):
-    """An explicit ``since`` is the caller's choice; never silently shorten it."""
+async def test_get_transactions_wrong_period_with_explicit_since_retries_once(eb_keys):
+    """A refused ``since`` older than 90 days is retried once with the last 90
+    days (the cut is logged and kept for a later sync); when that is refused
+    too, the error is the caller's, with no further shortening."""
     provider = EnableBankingProvider()
     requests: list[httpx.Request] = []
 
@@ -582,7 +1134,12 @@ async def test_get_transactions_wrong_period_with_explicit_since_raises(eb_keys)
             _CREDENTIALS, "acc-1", date.today() - timedelta(days=200)
         )
 
-    assert len(requests) == 1
+    assert len(requests) == 2
+    retry = requests[1].url.params
+    retry_days = (
+        date.fromisoformat(retry["date_to"]) - date.fromisoformat(retry["date_from"])
+    ).days + 1
+    assert retry_days == 90
 
 
 @pytest.mark.asyncio
@@ -841,6 +1398,58 @@ def test_mask_last4_handles_exactly_four():
     assert mask_last4("1234") == "1234"
 
 
+# ----- direction without credit_debit_indicator (issue #937) -----
+
+
+def _signed_entry(amount: str, indicator: str | None) -> dict:
+    raw: dict = {
+        "transaction_amount": {"amount": amount, "currency": "SEK"},
+        "booking_date": "2026-08-20",
+        "remittance_information": [],
+        "creditor": {"name": "ICA Kvantum"},
+        "debtor": {"name": "Account Holder"},
+    }
+    if indicator is not None:
+        raw["credit_debit_indicator"] = indicator
+    return raw
+
+
+@pytest.mark.parametrize(
+    ("amount", "indicator", "expected"),
+    [
+        ("-249.00", None, "debit"),
+        ("-249.00", "", "debit"),
+        ("249.00", None, "credit"),
+        ("249.00", "DBIT", "debit"),
+        ("249.00", "CRDT", "credit"),
+    ],
+)
+def test_build_transaction_direction(amount, indicator, expected):
+    """A bank that sends no indicator signs the amount instead (SEB's reserved
+    card purchases): a negative amount is money out. The amount is stored
+    unsigned either way, and the payee is the party across the direction."""
+    tx = EnableBankingProvider()._build_transaction(
+        "acc-1", _signed_entry(amount, indicator), "posted", "auto"
+    )
+    assert tx is not None
+    assert (tx.type, tx.amount) == (expected, Decimal("249.00"))
+    assert tx.description == ("ICA Kvantum" if expected == "debit" else "Account Holder")
+
+
+def test_build_transaction_reserved_and_booked_purchase_agree():
+    """SEB lists the reservation signed with no indicator and the booking with
+    DBIT; both are the same purchase, so both are debits."""
+    provider = EnableBankingProvider()
+    reserved = provider._build_transaction(
+        "acc-1", _signed_entry("-249.00", None), "pending", "auto"
+    )
+    booked = provider._build_transaction(
+        "acc-1", _signed_entry("249.00", "DBIT"), "posted", "auto"
+    )
+    assert reserved is not None and booked is not None
+    assert (reserved.type, reserved.amount) == (booked.type, booked.amount)
+
+
 # ----- counterparty fallback / transaction_date (issue #734, #753) -----
 
 
@@ -928,6 +1537,53 @@ def test_build_transaction_description_falls_back_to_generic_transaction():
     assert tx.description == "Transaction"
 
 
+# ----- payee comes from the counterparty only (issue #1042) -----
+
+
+def _payee_raw(indicator: str, creditor: str | None, debtor: str | None) -> dict:
+    return {
+        "transaction_amount": {"amount": "7.12", "currency": "EUR"},
+        "credit_debit_indicator": indicator,
+        "booking_date": "2026-09-28",
+        "remittance_information": ["SUP BTC"],
+        "creditor": {"name": creditor} if creditor else None,
+        "debtor": {"name": debtor} if debtor else None,
+    }
+
+
+@pytest.mark.parametrize(
+    ("indicator", "creditor", "debtor", "expected"),
+    [
+        # The #1042 payloads: the bank fills the holder's side and leaves
+        # the counterparty out, so there is no payee to take.
+        ("DBIT", None, "HOLDER", None),
+        ("CRDT", "HOLDER", None, None),
+        # With the counterparty present, it is the payee.
+        ("DBIT", "MUZEUM NEONOW", "HOLDER", "MUZEUM NEONOW"),
+        ("CRDT", "HOLDER", "Employer Inc", "Employer Inc"),
+    ],
+)
+def test_build_transaction_payee_reads_only_the_counterparty(
+    indicator, creditor, debtor, expected
+):
+    provider = EnableBankingProvider()
+    tx = provider._build_transaction(
+        "acc-1", _payee_raw(indicator, creditor, debtor), "posted", "auto"
+    )
+    assert tx is not None
+    assert tx.payee == expected
+
+
+@pytest.mark.parametrize("source", ["none", "description"])
+def test_build_transaction_payee_off_when_the_connection_says_so(source):
+    provider = EnableBankingProvider()
+    tx = provider._build_transaction(
+        "acc-1", _payee_raw("DBIT", "MUZEUM NEONOW", "HOLDER"), "posted", source
+    )
+    assert tx is not None
+    assert tx.payee is None
+
+
 def test_build_transaction_falls_back_to_transaction_date():
     provider = EnableBankingProvider()
     raw = {
@@ -940,6 +1596,89 @@ def test_build_transaction_falls_back_to_transaction_date():
     assert tx is not None
     assert tx.date == date(2026, 8, 29)
     assert tx.description == "Coffee Shop"
+
+
+def test_build_transaction_prefers_transaction_date_over_booking_date():
+    """#790: a card purchase belongs to the day it happened, not the day it booked.
+
+    The fixture mirrors the reported card entry: the purchase on 4 June was
+    booked on 2 September, so booking first moved three months of spending
+    onto a single statement date.
+    """
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "46.88", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-09-02",
+        "value_date": "2026-09-01",
+        "transaction_date": "2026-06-04",
+        "remittance_information": ["CARD PURCHASE"],
+        "creditor": {"name": "Shop"},
+    }
+    tx = provider._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.date == date(2026, 6, 4)
+    # The booking date stays in the stored payload, it is only not the date.
+    assert tx.raw_data is not None
+    assert tx.raw_data["booking_date"] == "2026-09-02"
+
+
+def test_build_transaction_falls_back_to_booking_date_without_transaction_date():
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "20.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-09-02",
+        "value_date": "2026-09-01",
+    }
+    tx = provider._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.date == date(2026, 9, 2)
+
+
+def test_build_transaction_falls_back_to_value_date_without_the_other_two():
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "20.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": None,
+        "value_date": "2026-09-01",
+        "transaction_date": None,
+    }
+    tx = provider._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.date == date(2026, 9, 1)
+
+
+def test_date_choice_keeps_the_external_id_of_both_id_recipes():
+    """The id hashes the three dates, so choosing another one moves no row.
+
+    A row stored before this change was keyed from the same payload, so the
+    next sync still finds it by id instead of importing a second copy.
+    """
+    provider = EnableBankingProvider()
+    fallback_raw: dict[str, Any] = {
+        "transaction_amount": {"amount": "12.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-09-02",
+        "value_date": "2026-09-01",
+        "transaction_date": "2026-06-04",
+        "remittance_information": ["CARD PURCHASE"],
+        "creditor_account": {"iban": "PT50000201231234567890154"},
+    }
+    tx = provider._build_transaction("acc-1", fallback_raw, "posted", "auto")
+    assert tx is not None
+    assert tx.external_id == _txn_fingerprint("acc-1", fallback_raw)
+
+    reference_raw: dict[str, Any] = {
+        **fallback_raw,
+        "entry_reference": "auth-1",
+    }
+    referenced = provider._build_transaction("acc-1", reference_raw, "posted", "auto")
+    assert referenced is not None
+    assert referenced.external_id == _entry_reference_external_id(
+        "auth-1", reference_raw["transaction_amount"], reference_raw
+    )
 
 
 def test_build_transaction_ignores_non_string_transaction_date():
@@ -1271,3 +2010,114 @@ async def test_get_transactions_keeps_pending_siblings_sharing_a_reference(eb_ke
 
     assert sorted(t.status for t in txns) == ["pending", "pending", "posted"]
     assert len({t.external_id for t in txns}) == 3
+
+
+def _flat_entry(status: str, amount: str) -> dict:
+    return {
+        "status": status,
+        "transaction_amount": {"amount": amount, "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": "2026-05-10",
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_maps_every_flat_status(eb_keys):
+    """A cancelled or rejected entry moved no money, so it is skipped; a held
+    or scheduled one has not settled, so it is pending (#1232)."""
+    provider = EnableBankingProvider()
+    page = {
+        "transactions": [
+            _flat_entry("BOOK", "1.00"),
+            _flat_entry("PDNG", "2.00"),
+            _flat_entry("HOLD", "3.00"),
+            _flat_entry("SCHD", "4.00"),
+            _flat_entry("CNCL", "5.00"),
+            _flat_entry("RJCT", "6.00"),
+            _flat_entry("", "7.00"),
+        ],
+        "continuation_key": "",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=page)
+
+    with _patch_client(provider, handler):
+        txns = await provider.get_transactions(
+            {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
+        )
+
+    assert [(t.amount, t.status) for t in txns] == [
+        (Decimal("1.00"), "posted"),
+        (Decimal("2.00"), "pending"),
+        (Decimal("3.00"), "pending"),
+        (Decimal("4.00"), "pending"),
+        (Decimal("7.00"), "posted"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_keeps_identical_entries_of_one_day(eb_keys):
+    """Two coffees of the same price on one day, listed pending with only the
+    amount, the direction and the date, are two transactions. The first keeps
+    the plain id, and a repeated page adds nothing (#1232)."""
+    provider = EnableBankingProvider()
+    coffee = {
+        "transaction_amount": {"amount": "3.20", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": "2026-05-10",
+    }
+    page = {
+        "transactions": {"booked": [], "pending": [dict(coffee), dict(coffee)]},
+        "continuation_key": "cursor-a",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=page)
+
+    with _patch_client(provider, handler):
+        txns = await provider.get_transactions(
+            {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
+        )
+
+    assert [t.status for t in txns] == ["pending", "pending"]
+    assert txns[0].external_id == _txn_fingerprint("acc-1", coffee)
+    assert txns[1].external_id != txns[0].external_id
+
+    # The ids are the same on the next fetch.
+    with _patch_client(provider, handler):
+        again = await provider.get_transactions(
+            {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
+        )
+    assert [t.external_id for t in again] == [t.external_id for t in txns]
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_cancelled_entry_keeps_its_slot(eb_keys):
+    """A cancelled entry is not imported, but it keeps its place among the
+    identical entries of its page, so the one still listed keeps the id it had
+    while both were pending, and its id is reported as still listed (#1232)."""
+    provider = EnableBankingProvider()
+    coffee = {
+        "transaction_amount": {"amount": "3.20", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": "2026-05-10",
+    }
+    both_pending = [{**coffee, "status": "PDNG"}, {**coffee, "status": "PDNG"}]
+    one_cancelled = [{**coffee, "status": "CNCL"}, {**coffee, "status": "PDNG"}]
+    fetched = []
+    for entries in (both_pending, one_cancelled):
+        page = {"transactions": entries, "continuation_key": ""}
+
+        def handler(request: httpx.Request, page=page) -> httpx.Response:
+            return httpx.Response(200, json=page)
+
+        with _patch_client(provider, handler):
+            fetched.append(await provider.get_transactions(
+                {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
+            ))
+
+    before, after = fetched
+    assert [t.status for t in after] == ["pending"]
+    assert after[0].external_id == before[1].external_id
+    assert provider.cancelled_transaction_ids == {"acc-1": {before[0].external_id}}

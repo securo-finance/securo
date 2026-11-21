@@ -23,7 +23,7 @@ from app.services.category_service import (
     get_category,
     update_category,
 )
-from app.services.rule_service import _ensure_categories_for_keys
+from app.services.rule_service import ensure_default_categories
 
 
 # ---------------------------------------------------------------------------
@@ -126,7 +126,7 @@ async def test_create_default_categories_english(session: AsyncSession, test_use
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "lang", ["es", "it", "pl", "ru", "uk", "nl", "sk", "hu", "cs", "el", "hi", "ja"]
+    "lang", ["es", "it", "pl", "ru", "uk", "nl", "sk", "hu", "cs", "el", "hi", "ja", "he"]
 )
 async def test_create_default_categories_localized(session: AsyncSession, test_user, test_workspace, lang):
     categories = await create_default_categories(session, test_user.id, lang=lang)
@@ -198,7 +198,7 @@ async def test_ensure_categories_reuses_group_under_former_spanish_name(
     session.add(legacy)
     await session.flush()
 
-    created = await _ensure_categories_for_keys(
+    created = await ensure_default_categories(
         session, test_workspace.id, test_user.id, {"housing"}, "es"
     )
 

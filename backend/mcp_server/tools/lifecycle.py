@@ -26,7 +26,7 @@ from mcp_server.tools._helpers import num, parse_date, parse_uuid, resolve_works
 
 
 # Mirrors asset_transaction_service._VALID_KINDS, which is private.
-_LEDGER_KINDS = frozenset({"buy", "sell"})
+_LEDGER_KINDS = frozenset({"buy", "sell", "split"})
 
 
 async def _group_names(session: AsyncSession, workspace_id) -> dict[str, str]:
@@ -74,6 +74,21 @@ async def list_recurring_transactions(
             "end_date": r.end_date.isoformat() if r.end_date else None,
             "is_active": bool(getattr(r, "is_active", True)),
             "category_id": str(r.category_id) if getattr(r, "category_id", None) else None,
+            # Split template: category_id is null on purpose and every
+            # occurrence starts with these parts.
+            "category_lines": (
+                [
+                    {
+                        "category_id": str(line.category_id),
+                        "category_name": line.category.name if line.category else None,
+                        "amount": num(line.amount),
+                        "share_pct": num(line.share_pct),
+                    }
+                    for line in r.category_lines
+                ]
+                if r.has_category_lines
+                else None
+            ),
             "account_id": str(r.account_id) if getattr(r, "account_id", None) else None,
         }
         for r in rows
@@ -160,19 +175,22 @@ async def list_assets(
 @tool(
     name="list_asset_transactions",
     description=(
-        "List the buy/sell entries of the user's investment ledger, newest "
-        "first. Use for 'when did I buy X?', 'what did I pay for X?' or "
-        "'show my orders'. Filter by asset_id, ticker, kind (buy/sell) and "
+        "List the buy, sell and split entries of the user's investment "
+        "ledger, newest first. Use for 'when did I buy X?', 'what did I pay "
+        "for X?' or 'show my orders'. Filter by asset_id, ticker, kind "
+        "(buy/sell/split) and "
         "date range; every filter is applied before the limit, so narrowing "
         "a range returns the newest rows inside it. Each row carries "
         "quantity, price per unit (in the asset's currency), fee, date, "
-        "source and the asset's name and ticker. `total` counts the rows "
+        "source and the asset's name and ticker. A split row has no "
+        "quantity, price or fee: `old_units` became `new_units` on its date "
+        "(a 100-for-1 split is 1 -> 100). `total` counts the rows "
         "returned; `has_more` is true when more rows match than the limit "
         "let through, so narrow the range or raise the limit (up to 500) "
         "before treating the list as complete. There is no offset: if a "
         "single day alone holds more than 500 matching rows, the rest of "
         "that day cannot be listed. Dividends and staking rewards are "
-        "NOT here: the ledger only records buys and sells, and any other "
+        "NOT here: the ledger only records buys, sells and splits, and any other "
         "`kind` is rejected. For the resulting position and cost basis use "
         "list_assets."
     ),
@@ -181,7 +199,7 @@ async def list_assets(
         "properties": {
             "asset_id": {"type": "string", "format": "uuid", "description": "Restrict to one holding (id from list_assets)"},
             "ticker": {"type": "string", "description": "Restrict by ticker, e.g. 'MSFT' or 'BTC-EUR'. Case-insensitive."},
-            "kind": {"type": "string", "enum": ["buy", "sell"], "description": "Only purchases or only sales"},
+            "kind": {"type": "string", "enum": ["buy", "sell", "split"], "description": "Only purchases, sales or stock splits"},
             "from_date": {"type": "string", "format": "date", "description": "Inclusive lower bound (YYYY-MM-DD)"},
             "to_date": {"type": "string", "format": "date", "description": "Inclusive upper bound (YYYY-MM-DD)"},
             "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100, "description": "Max rows (default 100, capped at 500)"},
@@ -209,7 +227,7 @@ async def list_asset_transactions(
         kind = kind.lower()
         if kind not in _LEDGER_KINDS:
             raise ValueError(
-                f"kind must be 'buy' or 'sell', got {kind!r}: the ledger "
+                f"kind must be 'buy', 'sell' or 'split', got {kind!r}: the ledger "
                 "does not record dividends or staking rewards"
             )
     capped = max(1, min(int(limit if limit is not None else 100), 500))
@@ -241,6 +259,8 @@ async def list_asset_transactions(
             "date": t.date.isoformat() if t.date else None,
             "source": t.source,
             "notes": t.notes,
+            "old_units": t.old_units,
+            "new_units": t.new_units,
         }
         for t in rows
     ]

@@ -14,11 +14,12 @@ import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useSidebarState } from '@/contexts/sidebar-state-context'
 import { CollectionSelector } from '@/components/collection-selector'
-import { auth as authApi, admin as adminApi } from '@/lib/api'
+import { ConnectionLost } from '@/components/connection-lost'
+import { auth as authApi } from '@/lib/api'
 import { resolveSupportedLang } from '@/lib/i18n'
 import { OnboardingTour } from '@/components/onboarding-tour'
 import { useTheme } from 'next-themes'
-import { accounts as accountsApi } from '@/lib/api'
+import { accounts as accountsApi, transactions as transactionsApi } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
@@ -56,6 +57,8 @@ import {
   Shield,
   ShieldCheck,
   Fingerprint,
+  Palette,
+  AlertCircle,
 } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { ChangePasswordDialog } from '@/components/change-password-dialog'
@@ -66,8 +69,11 @@ import { CommandPalette } from '@/components/command-palette'
 import { useCommandPaletteHotkey } from '@/hooks/use-command-palette-hotkey'
 import { GlobalChatPanel } from '@/components/global-chat-panel'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
-import { Bot, Plus, Search, Sparkles } from 'lucide-react'
-import { setThemeBasedOnSystem } from '@/lib/theme-utils'
+import { Bot, Flag, Plus, Puzzle, Search, Sparkles } from 'lucide-react'
+import { useAppTheme } from '@/hooks/use-app-theme'
+import { LibraryProvider } from '@/components/library-provider'
+import { useLibrary } from '@/contexts/library-context'
+import { AssistantContext } from '@/contexts/assistant-context'
 import { nextTheme, THEME_LABEL_KEY } from '@/lib/theme-cycle'
 import { useLocalAuthEnabled } from '@/hooks/use-local-auth'
 import { formatCurrency } from '@/lib/format'
@@ -101,7 +107,9 @@ export function AppLayout() {
   const { activeAccountIds } = useCollectionFilter()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const locale = useDisplayLocale()
-  const { theme, setTheme, resolvedTheme } = useTheme()
+  const { theme, setTheme } = useTheme()
+  // The theme picked from the library, kept on the page in light and dark.
+  useAppTheme()
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [quickAddOpen, setQuickAddOpen] = useState(false)
@@ -115,10 +123,18 @@ export function AppLayout() {
   const [backupOpen, setBackupOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
+  // A message the assistant widget sent, waiting for the chat to pick it up.
+  const [chatMessage, setChatMessage] = useState<string | null>(null)
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false)
   useCommandPaletteHotkey(setPaletteOpen)
   const { agentsEnabled } = useFeatureFlags()
-  const { hasModule, isLoading: workspaceLoading, canWrite } = useWorkspace()
+  const {
+    hasModule,
+    isLoading: workspaceLoading,
+    loadFailed: workspaceLoadFailed,
+    refresh: refreshWorkspaces,
+    canWrite,
+  } = useWorkspace()
   // The chat is offered only to members who can write. Sending a message
   // reaches a tool set that persists — `propose_create_transaction` and its
   // siblings — so the backend refuses it for a read-only role. Showing the
@@ -137,10 +153,6 @@ export function AppLayout() {
   // Gated on agentsEnabled so the hotkey is a no-op when the feature is
   // off — keeps ⌘J free for browsers/other tools.
   useEffect(() => {
-    adminApi.defaultColors().then(({ light, dark }) => {
-      setThemeBasedOnSystem(light, dark, resolvedTheme)
-    }).catch(() => {})
-    
     if (!chatAvailable) return
     const handler = (e: KeyboardEvent) => {
       const isMod = e.metaKey || e.ctrlKey
@@ -151,7 +163,7 @@ export function AppLayout() {
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [chatAvailable, resolvedTheme])
+  }, [chatAvailable])
   // The "Agents" management page used to live in the sidebar, but it's
   // a configuration surface (KB upload, providers, default selection),
   // not a daily destination. Moved to the user menu (Change password,
@@ -183,6 +195,17 @@ export function AppLayout() {
     }
   }, [user, updateUser])
 
+  const assistant = useMemo(
+    () => ({
+      available: chatAvailable,
+      ask: (message: string) => {
+        setChatMessage(message)
+        setChatOpen(true)
+      },
+    }),
+    [chatAvailable],
+  )
+
   const userInitial = user?.email?.charAt(0).toUpperCase() ?? '?'
   // The button shows, and switches to, the next theme in the cycle.
   const upcomingTheme = nextTheme(theme)
@@ -193,7 +216,19 @@ export function AppLayout() {
   const { data: accountsList } = useQuery({
     queryKey: ['accounts'],
     queryFn: () => accountsApi.list(),
+    // Without a workspace the request has no scope and can only fail.
+    enabled: !workspaceLoadFailed,
   })
+
+  // Flagged rows past their reminder date, counted next to Transactions.
+  // Under the 'transactions' key so any edit to a row refreshes it.
+  const { data: flaggedSummary } = useQuery({
+    queryKey: ['transactions', 'flagged-summary'],
+    queryFn: () => transactionsApi.flaggedSummary(),
+    enabled: hasModule('transactions'),
+    staleTime: 60_000,
+  })
+  const overdueFlags = flaggedSummary?.overdue ?? 0
 
   const allAccounts = sidebarAccounts(accountsList ?? [])
   // When a collection is active, the sidebar list + total reflect only its
@@ -202,10 +237,26 @@ export function AppLayout() {
     ? allAccounts.filter((a) => activeAccountIds.includes(a.id))
     : allAccounts
   const totalBalance = sumAccountsTotal(visibleAccounts)
+  // A foreign account without a real rate adds its native amount, so the
+  // total is an estimate; flag it like the dashboard does (#1165, #1474).
+  const totalHasFxFallback = visibleAccounts.some((a) => a.fx_fallback)
   const versionA11yLabel = t('app.versionAriaLabel', { version: APP_VERSION })
 
+  // The workspace list could not be fetched: nothing here is "off", the data
+  // is simply unavailable. Rendering the shell would show an accountless
+  // sidebar and an empty page, so say what happened and keep the URL (#292).
+  if (workspaceLoadFailed) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-background">
+        <ConnectionLost onRetry={() => { void refreshWorkspaces() }} />
+      </div>
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-background">
+    <AssistantContext.Provider value={assistant}>
+    <LibraryProvider>
+    <div className="min-h-dvh bg-background">
       {/* Mobile header */}
       <header className="sticky top-0 z-40 flex h-14 items-center gap-3 bg-sidebar border-b border-sidebar-border px-4 lg:hidden">
         <button
@@ -226,7 +277,7 @@ export function AppLayout() {
             {t('app.name')}
           </span>
         </Link>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ms-auto flex items-center gap-2">
           <button
             onClick={() => setPaletteOpen(true)}
             className="text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1"
@@ -291,8 +342,8 @@ export function AppLayout() {
         <aside
           data-collapsed={desktopSidebarCollapsed}
           className={cn(
-            'group/sidebar fixed inset-y-0 left-0 z-50 w-60 bg-sidebar border-r border-sidebar-border flex flex-col transform transition-[transform,width] duration-300 ease-in-out motion-reduce:transition-none lg:translate-x-0 shrink-0',
-            sidebarOpen ? 'translate-x-0' : '-translate-x-full',
+            'group/sidebar fixed inset-y-0 start-0 z-50 w-60 bg-sidebar border-e border-sidebar-border flex flex-col transform transition-[transform,width] duration-300 ease-in-out motion-reduce:transition-none lg:translate-x-0 shrink-0',
+            sidebarOpen ? 'translate-x-0' : 'max-lg:-translate-x-full max-lg:rtl:translate-x-full',
             desktopSidebarCollapsed ? 'lg:w-16' : 'lg:w-60',
           )}
         >
@@ -374,7 +425,7 @@ export function AppLayout() {
           <button
             type="button"
             onClick={toggleDesktopSidebar}
-            className="hidden lg:flex absolute top-1/2 -right-3 -translate-y-1/2 h-6 w-6 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/sidebar:opacity-100"
+            className="hidden lg:flex absolute top-1/2 -end-3 -translate-y-1/2 h-6 w-6 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/sidebar:opacity-100"
             title={desktopSidebarCollapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
             aria-label={desktopSidebarCollapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
             aria-expanded={!desktopSidebarCollapsed}
@@ -396,7 +447,7 @@ export function AppLayout() {
               aria-label={t('cmdk.triggerAria')}
             >
               <Search size={13} className="shrink-0" />
-              <span className={cn('flex-1 text-left', desktopSidebarCollapsed && 'lg:hidden')}>{t('cmdk.triggerLabel')}</span>
+              <span className={cn('flex-1 text-start', desktopSidebarCollapsed && 'lg:hidden')}>{t('cmdk.triggerLabel')}</span>
               <kbd className={cn('hidden lg:inline-flex h-[17px] items-center rounded border border-sidebar-border bg-sidebar px-1 font-mono text-[9.5px] font-semibold text-sidebar-muted/80', desktopSidebarCollapsed && 'lg:hidden')}>
                 {isMac ? '⌘' : 'Ctrl'}&nbsp;K
               </kbd>
@@ -446,9 +497,9 @@ export function AppLayout() {
                   className={cn(
                     'flex items-center gap-3 text-[13px] font-medium transition-all rounded-lg px-3 py-2',
                     isActive
-                      ? 'bg-primary/[0.08] text-primary border-l-[3px] border-primary pl-[9px]'
+                      ? 'bg-primary/[0.08] text-primary border-s-[3px] border-primary ps-[9px]'
                       : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground',
-                    desktopSidebarCollapsed && 'lg:h-10 lg:w-10 lg:justify-center lg:border-l-0 lg:px-0 lg:pl-0',
+                    desktopSidebarCollapsed && 'lg:h-10 lg:w-10 lg:justify-center lg:border-s-0 lg:px-0 lg:ps-0',
                   )}
                 >
                   <Icon
@@ -462,7 +513,32 @@ export function AppLayout() {
                   <span className={cn(desktopSidebarCollapsed && 'lg:hidden')}>{t(`nav.${item.key}`)}</span>
                 </Link>
               )
-              if (!showQuickAdd) return link
+              const overdueBadge = item.key === 'transactions' && overdueFlags > 0 ? (
+                <Link
+                  to="/transactions?flagged=overdue"
+                  onClick={() => setSidebarOpen(false)}
+                  title={t('transactions.flagOverdueCount', { count: overdueFlags })}
+                  aria-label={t('transactions.flagOverdueCount', { count: overdueFlags })}
+                  data-testid="nav-overdue-flags"
+                  className={cn(
+                    'absolute inline-flex h-5 min-w-5 items-center justify-center gap-0.5 rounded-full bg-rose-500/15 px-1.5 text-[10px] font-semibold text-rose-600 transition-colors hover:bg-rose-500/25 dark:text-rose-400',
+                    showQuickAdd ? 'end-9' : 'end-2',
+                    desktopSidebarCollapsed && 'lg:end-0.5 lg:top-0.5 lg:h-4 lg:min-w-4 lg:px-1 lg:text-[9px]',
+                  )}
+                >
+                  <Flag size={10} className={cn('fill-current', desktopSidebarCollapsed && 'lg:hidden')} />
+                  {overdueFlags > 99 ? '99+' : overdueFlags}
+                </Link>
+              ) : null
+              if (!showQuickAdd && !overdueBadge) return link
+              if (!showQuickAdd) {
+                return (
+                  <div key={item.key} className="relative flex items-center">
+                    <div className="min-w-0 flex-1">{link}</div>
+                    {overdueBadge}
+                  </div>
+                )
+              }
               return (
                 <div key={item.key} className="relative flex items-center">
                   <div className="min-w-0 flex-1">{link}</div>
@@ -475,12 +551,13 @@ export function AppLayout() {
                     title={t('transactions.addManual')}
                     aria-label={t('transactions.addManual')}
                     className={cn(
-                      'absolute right-2 flex h-6 w-6 items-center justify-center rounded-md border border-sidebar-border bg-sidebar text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground',
+                      'absolute end-2 flex h-6 w-6 items-center justify-center rounded-md border border-sidebar-border bg-sidebar text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground',
                       desktopSidebarCollapsed && 'lg:hidden',
                     )}
                   >
                     <Plus size={14} />
                   </button>
+                  {overdueBadge}
                 </div>
               )
             })}
@@ -497,6 +574,9 @@ export function AppLayout() {
                   {t('accounts.title')}
                 </span>
                 <div className="flex items-center gap-2">
+                  {totalHasFxFallback && (
+                    <AlertCircle size={12} aria-hidden="true" className="shrink-0 text-amber-500" />
+                  )}
                   <span
                     className={`tabular-nums font-medium text-xs ${totalBalance < 0 ? 'text-rose-400' : 'text-sidebar-muted'}`}
                   >
@@ -511,6 +591,12 @@ export function AppLayout() {
                   />
                 </div>
               </button>
+              {/* Visible text, not a hover title, so keyboard and touch users can read it. */}
+              {totalHasFxFallback && (
+                <p className="px-3 pb-1 text-[11px] text-amber-700 dark:text-amber-400">
+                  {t('transactions.fxFallbackBanner')}
+                </p>
+              )}
               {accountsExpanded && (
                 <div className="mt-1 space-y-0.5">
                   {visibleAccounts.slice(0, accountsShowAll ? visibleAccounts.length : 3).map((acc) => {
@@ -532,7 +618,7 @@ export function AppLayout() {
                             {acc.shared_balance_group && ` · ${t('accounts.sharedCreditBalance')}`}
                           </span>
                         </div>
-                        <div className="text-right shrink-0 ml-2">
+                        <div className="text-end shrink-0 ms-2">
                           <span className={`block tabular-nums font-medium text-xs ${balance < 0 ? 'text-rose-400' : 'text-sidebar-foreground'}`}>
                             {mask(formatCurrency(balance, balanceCurrency, locale))}
                           </span>
@@ -596,8 +682,8 @@ export function AppLayout() {
 
         {/* Main content */}
         <main className={cn(
-          'flex-1 min-h-screen overflow-x-hidden transition-[margin] duration-300 ease-in-out motion-reduce:transition-none',
-          desktopSidebarCollapsed ? 'lg:ml-16' : 'lg:ml-60',
+          'flex-1 min-h-dvh overflow-x-hidden transition-[margin] duration-300 ease-in-out motion-reduce:transition-none',
+          desktopSidebarCollapsed ? 'lg:ms-16' : 'lg:ms-60',
         )}>
           <div className="p-6 max-w-7xl mx-auto">
             {/* Active-collection filter (issue #105): sticky bar above the
@@ -635,12 +721,21 @@ export function AppLayout() {
       {/* Slide-over global chat — opened from the sidebar pill or via
           ⌘J. The previous floating bottom-right button was removed
           since the entry point now lives in the sidebar next to ⌘K. */}
-      {chatAvailable && <GlobalChatPanel open={chatOpen} onOpenChange={setChatOpen} />}
+      {chatAvailable && (
+        <GlobalChatPanel
+          open={chatOpen}
+          onOpenChange={setChatOpen}
+          initialMessage={chatMessage}
+          onInitialMessageSent={() => setChatMessage(null)}
+        />
+      )}
       <UpdateAvailableDialog
         open={updateDialogOpen}
         onClose={() => setUpdateDialogOpen(false)}
       />
     </div>
+    </LibraryProvider>
+    </AssistantContext.Provider>
   )
 }
 
@@ -670,6 +765,8 @@ function UserMenu({
   const { user } = useAuth()
   const { t, i18n } = useTranslation()
   const nav = useNavigate()
+  const { openLibrary } = useLibrary()
+  const { pluginsEnabled } = useFeatureFlags()
   const currentLang = resolveSupportedLang(i18n.resolvedLanguage ?? i18n.language)
   return (
     <DropdownMenu>
@@ -745,6 +842,22 @@ function UserMenu({
             {t('nav.aiAgents')}
           </DropdownMenuItem>
         )}
+        {pluginsEnabled && (
+          <DropdownMenuItem
+            onClick={() => nav('/plugins')}
+            className="flex items-center gap-2"
+          >
+            <Puzzle size={14} />
+            {t('plugins.title')}
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem
+          onClick={() => openLibrary('themes')}
+          className="flex items-center gap-2"
+        >
+          <Palette size={14} />
+          {t('library.appearance')}
+        </DropdownMenuItem>
         <DropdownMenuSub>
           <DropdownMenuSubTrigger className="flex items-center gap-2">
             <Languages size={14} />
@@ -908,6 +1021,15 @@ function UserMenu({
               >
                 <span className="flex-1">日本語</span>
                 {currentLang === 'ja' && (
+                  <Check size={13} className="text-primary" />
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => i18n.changeLanguage('he')}
+                className="flex items-center gap-2"
+              >
+                <span className="flex-1">עברית</span>
+                {currentLang === 'he' && (
                   <Check size={13} className="text-primary" />
                 )}
               </DropdownMenuItem>

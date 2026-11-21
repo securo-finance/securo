@@ -13,6 +13,7 @@ import uuid
 from datetime import date, timedelta
 from decimal import Decimal
 from unittest.mock import patch
+from urllib.parse import quote
 
 import pytest
 import pytest_asyncio
@@ -20,6 +21,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.fx_rate import FxRate
 from app.models.payee import Payee
 from app.models.transaction import Transaction
 
@@ -445,6 +447,102 @@ async def test_same_transaction_twice_on_one_invoice_is_refused(
 
 
 @pytest.mark.asyncio
+async def test_one_payment_settles_no_more_than_it_carried_across_invoices(
+    client: AsyncClient, biz_headers, inflow
+):
+    """3000 arrived. 2000 of it closes the first invoice, so the second
+    can only take the 1000 that is left, not another 2000."""
+    first = await _create(client, biz_headers, total="2000.00")
+    second = await _create(client, biz_headers, total="2000.00")
+
+    linked = await client.post(
+        f"/api/invoices/{first['id']}/allocations",
+        headers=biz_headers,
+        json={"transaction_id": str(inflow.id)},
+    )
+    assert linked.status_code == 201, linked.text
+    assert linked.json()["state"] == "paid"
+
+    rest = await client.post(
+        f"/api/invoices/{second['id']}/allocations",
+        headers=biz_headers,
+        json={"transaction_id": str(inflow.id)},
+    )
+    assert rest.status_code == 201, rest.text
+    body = rest.json()
+    assert body["state"] == "partial"
+    assert body["balance"] == "1000.00"
+    assert [a["amount"] for a in body["allocations"]] == ["1000.00"]
+
+    summary = await client.get("/api/invoices/summary", headers=biz_headers)
+    assert summary.json()["outstanding"] == "1000.00"
+
+
+@pytest.mark.asyncio
+async def test_relinking_a_fully_used_payment_to_the_same_invoice_says_already_linked(
+    client: AsyncClient, biz_headers, inflow
+):
+    """3000 is all on a 5000 invoice. Linking it there again is a repeat,
+    not a payment that ran out, and the answer says so."""
+    invoice = await _create(client, biz_headers, total="5000.00")
+    first = await client.post(
+        f"/api/invoices/{invoice['id']}/allocations",
+        headers=biz_headers,
+        json={"transaction_id": str(inflow.id)},
+    )
+    assert first.status_code == 201, first.text
+    assert first.json()["balance"] == "2000.00"
+
+    again = await client.post(
+        f"/api/invoices/{invoice['id']}/allocations",
+        headers=biz_headers,
+        json={"transaction_id": str(inflow.id)},
+    )
+    assert again.status_code == 400
+    assert again.json()["detail"]["code"] == "already_allocated"
+
+
+@pytest.mark.asyncio
+async def test_cannot_link_more_than_is_left_of_a_payment(
+    client: AsyncClient, biz_headers, inflow
+):
+    first = await _create(client, biz_headers, total="2000.00")
+    second = await _create(client, biz_headers, total="2000.00")
+    third = await _create(client, biz_headers, total="500.00")
+    await client.post(
+        f"/api/invoices/{first['id']}/allocations",
+        headers=biz_headers,
+        json={"transaction_id": str(inflow.id), "amount": "2000.00"},
+    )
+
+    too_much = await client.post(
+        f"/api/invoices/{second['id']}/allocations",
+        headers=biz_headers,
+        json={"transaction_id": str(inflow.id), "amount": "1500.00"},
+    )
+    assert too_much.status_code == 400
+    assert too_much.json()["detail"]["code"] == "transaction_over_allocation"
+
+    exact = await client.post(
+        f"/api/invoices/{second['id']}/allocations",
+        headers=biz_headers,
+        json={"transaction_id": str(inflow.id), "amount": "1000.00"},
+    )
+    assert exact.status_code == 201, exact.text
+
+    spent = await client.post(
+        f"/api/invoices/{third['id']}/allocations",
+        headers=biz_headers,
+        json={"transaction_id": str(inflow.id)},
+    )
+    assert spent.status_code == 400
+    assert spent.json()["detail"]["code"] == "transaction_over_allocation"
+    invoice = await client.get(f"/api/invoices/{third['id']}", headers=biz_headers)
+    assert invoice.json()["state"] == "open"
+    assert invoice.json()["balance"] == "500.00"
+
+
+@pytest.mark.asyncio
 async def test_transaction_from_another_workspace_is_not_found(
     client: AsyncClient, auth_headers, biz_headers, session: AsyncSession, test_user, personal_ws
 ):
@@ -799,6 +897,43 @@ async def test_the_summary_is_not_scoped_by_year(client: AsyncClient, biz_header
                   issue_date="2024-06-10", due_date="2024-07-10")
     summary = (await client.get("/api/invoices/summary", headers=biz_headers)).json()
     assert summary["outstanding"] == "900.00"
+
+
+@pytest.mark.asyncio
+async def test_summary_adds_invoices_in_the_reader_currency(
+    client: AsyncClient, biz_headers, session: AsyncSession, inflow: Transaction
+):
+    """A user reading in BRL bills one client in BRL and another in USD.
+    The summary is one figure in BRL, so the USD amounts are converted
+    before they are added, not summed as if they were BRL.
+
+    The only stored rate is a few days old, as on a day the provider has
+    not published yet: the summary uses the latest stored rate."""
+    session.add(FxRate(
+        base_currency="USD", quote_currency="BRL", date=date.today() - timedelta(days=3),
+        rate=Decimal("5"), source="test",
+    ))
+    await session.commit()
+    await client.patch("/api/invoices/settings", headers=biz_headers, json={"preset": "tracking"})
+    await _create(client, biz_headers, total="200.00", currency="BRL",
+                  due_date=str(date.today() + timedelta(days=5)))
+    await _create(client, biz_headers, total="100.00", currency="USD",
+                  issue_date=str(date.today() - timedelta(days=60)),
+                  due_date=str(date.today() - timedelta(days=45)))
+    paid = await _create(client, biz_headers, total="3000.00", currency="USD")
+    resp = await client.post(
+        f"/api/invoices/{paid['id']}/allocations",
+        headers=biz_headers,
+        json={"transaction_id": str(inflow.id)},
+    )
+    assert resp.status_code == 201, resp.text
+
+    summary = (await client.get("/api/invoices/summary", headers=biz_headers)).json()
+    assert summary["outstanding"] == "700.00"
+    assert summary["overdue_amount"] == "500.00"
+    assert summary["buckets"]["current"] == "200.00"
+    assert summary["buckets"]["d31_60"] == "500.00"
+    assert summary["received_this_month"] == "15000.00"
 
 
 @pytest.mark.asyncio
@@ -1570,3 +1705,57 @@ async def test_an_imported_document_is_never_given_a_page_we_wrote(
         f"/api/invoices/{imported['id']}/pdf", headers=biz_headers
     )
     assert served.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# Download filenames come from free text and must survive any script
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prefix", ["Τιμ-", "№", 'Q"1-'])
+async def test_pdf_downloads_survive_any_number_prefix(
+    client: AsyncClient, biz_headers, client_payee, prefix
+):
+    """The prefix is free text and the UI ships Greek, Cyrillic and CJK.
+    Header values go out as latin-1, so a raw `Τιμ-` used to turn every
+    download of the document into a 500, the client's public link included."""
+    await client.patch(
+        "/api/invoices/settings", headers=biz_headers, json={"number_prefix": prefix}
+    )
+    invoice = await _create(client, biz_headers, payee_id=str(client_payee.id))
+    assert invoice["number"], "created invoices are issued, which files a copy"
+    attachments_url = f"/api/invoices/{invoice['id']}/attachments"
+    filed = (await client.get(attachments_url, headers=biz_headers)).json()
+    primary = [a for a in filed if a["is_primary"]]
+    assert len(primary) == 1, filed
+    token = (
+        await client.post(f"/api/invoices/{invoice['id']}/share", headers=biz_headers)
+    ).json()["token"]
+
+    async def assert_downloads(url, headers):
+        resp = await client.get(url, headers=headers)
+        assert resp.status_code == 200, f"{url} -> {resp.status_code}"
+        assert resp.content.startswith(b"%PDF")
+        disposition = resp.headers["content-disposition"]
+        assert disposition.count('"') == 2, disposition
+        assert "filename*=UTF-8''" in disposition
+        return disposition
+
+    pdf_url = f"/api/invoices/{invoice['id']}/pdf"
+    # The rendered routes go first: they are the ones that raised on
+    # `main`, while `/pdf` serves the filed copy under an ASCII name.
+    for url, headers in [
+        (f"/api/invoices/{invoice['id']}/statement", biz_headers),
+        (f"/api/public/invoices/{token}/pdf", {}),
+    ]:
+        await assert_downloads(url, headers)
+
+    # `/pdf` serves the filed copy under that attachment's name.
+    filed_disposition = await assert_downloads(pdf_url, biz_headers)
+    served_name = quote(primary[0]["filename"], safe="")
+    assert f"filename*=UTF-8''{served_name}" in filed_disposition
+
+    # Without the filed copy the page is rendered live under the raw
+    # number, prefix and all.
+    for attachment in filed:
+        await client.delete(f"{attachments_url}/{attachment['id']}", headers=biz_headers)
+    await assert_downloads(pdf_url, biz_headers)

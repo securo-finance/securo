@@ -1,9 +1,11 @@
+import asyncio
 import base64
 import hashlib
 import json
 import secrets
+import time
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -35,6 +37,9 @@ class OIDCConfigResponse(BaseModel):
     enabled: bool
     provider_name: str = "OIDC"
     local_auth_enabled: bool = True
+    # Where the browser goes after the local sign-out so the provider's own
+    # session ends too (#1623); empty when there is nowhere to send it.
+    logout_url: str = ""
 
 
 async def _discover() -> dict[str, Any]:
@@ -54,6 +59,76 @@ def _redirect_uri() -> str:
     return settings.oidc_redirect_uri or f"{settings.frontend_url.rstrip('/')}/api/auth/oidc/callback"
 
 
+def _with_client_id(url: str, client_id: str) -> str:
+    """Add `client_id` to a logout URL that doesn't carry it yet.
+
+    Keycloak needs either `id_token_hint` or `client_id` to end the session;
+    Securo keeps only its own JWT, so the client id is what it can send.
+    """
+    parts = urlsplit(url)
+    query = parse_qsl(parts.query, keep_blank_values=True)
+    if client_id and not any(key == "client_id" for key, _ in query):
+        query.append(("client_id", client_id))
+    return urlunsplit(parts._replace(query=urlencode(query)))
+
+
+def _safe_logout_url(url: str, client_id: str) -> str:
+    """`_with_client_id`, but an unparsable URL answers "" instead of raising.
+
+    `urlsplit` raises `ValueError` on a broken URL (`https://[broken`). The
+    local sign-out already happened by then, so `/config` must keep answering
+    rather than fail the whole sign-in page over a logout hint.
+    """
+    try:
+        return _with_client_id(url, client_id)
+    except ValueError:
+        return ""
+
+
+_LOGOUT_URL_TTL = 300.0
+# The frontend asks for `/config` with a 5 s timeout; the discovery has to
+# answer well inside it, or the browser silently skips the redirect (#1623).
+_LOGOUT_DISCOVERY_TIMEOUT = 3.0
+# (monotonic time, discovery url + client id it was read for, resolved URL)
+_logout_url_cache: tuple[float, str, str] | None = None
+
+
+async def _provider_logout_url() -> str:
+    """Where to send the browser so the provider's own session ends (#1623).
+
+    An explicit `OIDC_LOGOUT_URL` wins; otherwise the discovery document's
+    `end_session_endpoint`. Cached for a few minutes because `/config` is
+    public and the document rarely changes. Every failure answers "": the
+    local sign-out already happened and must never wait on the provider.
+    """
+    global _logout_url_cache
+    settings = get_settings()
+    if not settings.oidc_login_available:
+        return ""
+    if settings.oidc_logout_url:
+        return _safe_logout_url(settings.oidc_logout_url, settings.oidc_client_id)
+
+    cache_key = f"{settings.oidc_discovery_url}|{settings.oidc_client_id}"
+    now = time.monotonic()
+    if (
+        _logout_url_cache is not None
+        and _logout_url_cache[1] == cache_key
+        and now - _logout_url_cache[0] < _LOGOUT_URL_TTL
+    ):
+        return _logout_url_cache[2]
+    try:
+        discovery = await asyncio.wait_for(
+            _discover(), timeout=_LOGOUT_DISCOVERY_TIMEOUT
+        )
+        raw_endpoint = discovery.get("end_session_endpoint") if isinstance(discovery, dict) else None
+        endpoint = raw_endpoint if isinstance(raw_endpoint, str) else ""
+    except (HTTPException, httpx.HTTPError, ValueError, asyncio.TimeoutError):
+        endpoint = ""
+    url = _safe_logout_url(endpoint, settings.oidc_client_id) if endpoint else ""
+    _logout_url_cache = (now, cache_key, url)
+    return url
+
+
 @router.get("/config", response_model=OIDCConfigResponse)
 async def oidc_config():
     settings = get_settings()
@@ -61,6 +136,7 @@ async def oidc_config():
         enabled=settings.oidc_login_available,
         provider_name=settings.oidc_provider_name or "OIDC",
         local_auth_enabled=settings.local_auth_enabled,
+        logout_url=await _provider_logout_url(),
     )
 
 
@@ -333,7 +409,7 @@ async def _get_or_create_oidc_user(
     except UserAlreadyExists:
         user = (await session.execute(select(User).where(func.lower(User.email) == email))).scalar_one()
 
-    db_session = user_manager.user_db.session
+    db_session = user_manager.db_session
     await db_session.execute(
         sql_update(User)
         .where(User.id == user.id)

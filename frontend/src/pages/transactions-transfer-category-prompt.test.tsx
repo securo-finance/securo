@@ -30,6 +30,9 @@ const api = vi.hoisted(() => ({
   settings: { attachments: vi.fn() },
   assets: { list: vi.fn() },
   mortgagePayments: { get: vi.fn(), replace: vi.fn(), remove: vi.fn() },
+  // The payee form the transaction dialog opens asks for the documents the
+  // workspace files under.
+  fiscal: { taxIdKinds: vi.fn() },
 }))
 
 vi.mock('@/lib/api', () => api)
@@ -85,8 +88,8 @@ const transaction: Transaction = {
   transfer_counterpart: { account_id: counterpartAccount.id, account_name: counterpartAccount.name },
   amount_primary: null, fx_rate_used: null, fx_fallback: false, installment_number: null,
   total_installments: null, installment_total_amount: null, installment_purchase_date: null,
-  installment_series_id: null, bill_id: null, effective_bill_date: null, splits: [],
-  is_ignored: false,
+  installment_series_id: null, bill_id: null, effective_bill_date: null,
+  reporting_date_override: null, splits: [], is_ignored: false,
 }
 const counterpart: Transaction = {
   ...transaction, id: 'transaction-2', account_id: counterpartAccount.id,
@@ -99,7 +102,8 @@ async function openCategoryPrompt() {
   })
 
   await view.user.click(await screen.findByText(transaction.description))
-  await view.user.click(await screen.findByRole('button', { name: oldCategory.name }))
+  // The category trigger is named after the field and the category it shows.
+  await view.user.click(await screen.findByRole('button', { name: new RegExp(oldCategory.name) }))
   await view.user.click(await screen.findByText(newCategory.name))
   await view.user.click(screen.getByRole('button', { name: t('common.save') }))
 

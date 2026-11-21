@@ -31,6 +31,8 @@ from app.services.dashboard_service import (
     get_summary,
 )
 
+from tests.conftest import sqlite_to_char
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -419,41 +421,36 @@ async def test_balance_history_with_future_projections(
 
 def test_signed_expr_helpers_smoke():
     """The signed-amount SQL expression helpers compile without a bound query.
-    Covers the empty-currency branch of _signed_balance_expr and
-    _signed_primary_expr (used elsewhere / kept for reuse)."""
+    Covers the shared account-currency expressions and _signed_primary_expr
+    (used elsewhere / kept for reuse)."""
+    from app.services._query_filters import (
+        amount_in_account_currency,
+        signed_amount_expr,
+    )
     from app.services.dashboard_service import (
-        _signed_balance_expr,
         _signed_primary_expr,
         _primary_amount_expr,
     )
 
-    # Empty currency arg -> simple effective=amount branch
-    expr_empty = _signed_balance_expr("")
-    expr_cur = _signed_balance_expr("BRL")
+    expr_amount = amount_in_account_currency("BRL")
+    expr_signed = signed_amount_expr("BRL")
     expr_primary = _signed_primary_expr()
     expr_amt = _primary_amount_expr()
     # They should be SQLAlchemy ColumnElements that render to SQL strings
-    assert all(str(e) for e in (expr_empty, expr_cur, expr_primary, expr_amt))
+    assert all(str(e) for e in (expr_amount, expr_signed, expr_primary, expr_amt))
 
 
 async def _register_sqlite_to_char(session):
-    """Register a SQLite UDF emulating Postgres to_char(date, 'YYYY-MM').
+    """Register a SQLite UDF emulating Postgres to_char(date, fmt).
 
     get_monthly_trend uses func.to_char which only exists on Postgres in
     production. To exercise that code path under the SQLite test backend
-    we install a matching scalar function on the underlying connection.
+    we install the shared conftest emulation on the underlying connection.
     """
-    def _to_char(value, fmt):
-        if value is None:
-            return None
-        # value comes through as an ISO date/datetime string
-        s = str(value)
-        return s[:7]  # 'YYYY-MM'
-
     raw = await session.connection()
 
     def _install(dbapi_conn):
-        dbapi_conn.create_function("to_char", 2, _to_char)
+        dbapi_conn.create_function("to_char", 2, sqlite_to_char)
 
     await raw.run_sync(lambda conn: _install(conn.connection.dbapi_connection))
 
@@ -603,3 +600,50 @@ async def test_balance_at_multi_currency_conversion(session, test_user, test_wor
     total = await _balance_at(session, test_workspace.id, today, primary_currency_hint="BRL")
     # 500 BRL + (100 USD * 5.0 = 500 BRL) = 1000
     assert total == pytest.approx(1000.0, abs=5.0)
+
+
+@pytest.mark.asyncio
+async def test_summary_splits_cash_from_investment_accounts(session, test_user, test_workspace):
+    """Cash (checking/savings/wallet) must not include brokerage investment accounts.
+
+    Net worth (total_balance) still includes investment accounts; they are just
+    labelled separately so the UI never calls them available cash (#959).
+    """
+    today = date.today()
+    checking = await _make_account(
+        session, test_user.id, test_workspace.id, acc_type="checking", name="Checking",
+    )
+    savings = await _make_account(
+        session, test_user.id, test_workspace.id, acc_type="savings", name="Savings",
+    )
+    wallet = await _make_account(
+        session, test_user.id, test_workspace.id, acc_type="wallet", name="Cash",
+    )
+    investment = await _make_account(
+        session, test_user.id, test_workspace.id, acc_type="investment", name="Broker",
+    )
+    await _add_txn(
+        session, test_user.id, checking.id, test_workspace.id, 1000, "credit", today,
+        source="opening_balance",
+    )
+    await _add_txn(
+        session, test_user.id, savings.id, test_workspace.id, 500, "credit", today,
+        source="opening_balance",
+    )
+    await _add_txn(
+        session, test_user.id, wallet.id, test_workspace.id, 50, "credit", today,
+        source="opening_balance",
+    )
+    await _add_txn(
+        session, test_user.id, investment.id, test_workspace.id, 8000, "credit", today,
+        source="opening_balance",
+    )
+
+    summary = await get_summary(session, test_workspace.id, test_user.id, month=today.replace(day=1))
+
+    assert summary.cash_balance.get("BRL") == pytest.approx(1550.0)
+    assert summary.cash_balance_primary == pytest.approx(1550.0)
+    assert summary.investment_accounts.get("BRL") == pytest.approx(8000.0)
+    assert summary.investment_accounts_primary == pytest.approx(8000.0)
+    # Net worth still includes investment accounts (no assets in this fixture).
+    assert summary.total_balance.get("BRL") == pytest.approx(9550.0)

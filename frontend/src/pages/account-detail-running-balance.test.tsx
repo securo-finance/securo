@@ -5,8 +5,8 @@
  * balance, so every row past the 500th was never applied: the Balance column,
  * the chart and the Projected Balance card all stopped short of the truth.
  * A non-credit-card account now pages through the list and takes each row's
- * balance, and the chart's series, from the server. A credit card keeps its
- * cycle math, over every page of the cycle.
+ * balance, and the chart's series, from the server. A credit card pages
+ * through its cycle and takes each row's balance from the server as well.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
@@ -75,7 +75,7 @@ function tx(index: number, date: string, runningBalance: number | null): Transac
     fx_rate_used: null, fx_fallback: false, installment_number: null,
     total_installments: null, installment_total_amount: null,
     installment_purchase_date: null, installment_series_id: null, bill_id: null,
-    effective_bill_date: null, splits: [], is_ignored: false,
+    effective_bill_date: null, reporting_date_override: null, splits: [], is_ignored: false,
     running_balance: runningBalance, running_balance_primary: null,
   }
 }
@@ -123,6 +123,13 @@ describe('a non-credit-card account with more rows than one page', () => {
   beforeEach(() => {
     api.accounts.get.mockResolvedValue(checking)
     api.transactions.list.mockImplementation(async (args) => listPage(ledger, args))
+    api.accounts.runningBalance.mockResolvedValue(
+      Array.from({ length: 30 }, (_, i) => ({
+        date: `2026-09-${String(i + 1).padStart(2, '0')}`,
+        balance: 9000,
+        balance_primary: null,
+      })),
+    )
     api.dashboard.projectedTransactions.mockResolvedValue([{
       recurring_id: 'rec-1', account_id: 'acc-1', description: 'Rent', amount: 500,
       amount_primary: null, currency: 'BRL', type: 'debit', date: '2026-09-28',
@@ -145,12 +152,36 @@ describe('a non-credit-card account with more rows than one page', () => {
     }))
   })
 
-  it('takes the Projected Balance card from the newest row', async () => {
+  it('includes recurring commitments in the period-end Projected Balance card', async () => {
     await renderPage()
 
     const card = (await screen.findByText('Projected Balance')).parentElement!
     await waitFor(() => expect(within(card).getByText('R$8,500.00')).toBeVisible())
     expect(within(card).getByText('Not settled: R$500.00')).toBeVisible()
+  })
+
+  it.each([
+    ['outside the reporting range', []],
+    ['ordered by reporting date', [
+      { ...tx(0, '2026-08-31', 9100), reporting_date_override: '2026-09-30' },
+      tx(1, '2026-09-15', 8900),
+    ]],
+  ])('keeps the projected balance on the bank ledger when rows are %s', async (_name, rows) => {
+    api.accounts.summary.mockResolvedValue({
+      opening_balance: 9000, current_balance: 8900, monthly_income: 0, monthly_expenses: 0,
+      projected_income: 0, projected_expenses: 0,
+    })
+    api.transactions.list.mockImplementation(async (args) => listPage(rows, args))
+    api.dashboard.projectedTransactions.mockResolvedValue([])
+    api.accounts.runningBalance.mockResolvedValue([
+      { date: '2026-09-30', balance: 8900, balance_primary: null },
+    ])
+
+    await renderPage()
+
+    const card = (await screen.findByText('Projected Balance')).parentElement!
+    await waitFor(() => expect(within(card).getByText('R$8,900.00')).toBeVisible())
+    expect(within(card).queryByText(/Not settled/)).not.toBeInTheDocument()
   })
 
   it('appends the next page when asked to show more', async () => {
@@ -177,8 +208,8 @@ describe('a non-credit-card account with more rows than one page', () => {
 
     await renderPage()
 
-    // The axis ticks are compact, so the series shows up as "R$20.0K".
-    expect(await screen.findByText('R$20.0K')).toBeInTheDocument()
+    // The axis ticks are compact, so the series shows up as "R$20K".
+    expect(await screen.findByText('R$20K')).toBeInTheDocument()
     expect(api.accounts.runningBalance).toHaveBeenCalledWith('acc-1', '2026-09-01', '2026-09-30')
   })
 })
@@ -187,18 +218,20 @@ describe('a credit-card cycle with more rows than one page', () => {
   it('loads every page of the cycle', async () => {
     api.accounts.get.mockResolvedValue(card)
     // One charge past a full page, newest first, 25 a day from 2026-09-21.
+    // The server stamps the balance after each row, seeded with the debt the
+    // cycle started with; the newest is -R$501.00 (#920).
     const cycle = Array.from({ length: 501 }, (_, i) =>
-      tx(i, `2026-09-${String(21 - Math.floor(i / 25)).padStart(2, '0')}`, null),
+      tx(i, `2026-09-${String(21 - Math.floor(i / 25)).padStart(2, '0')}`, -(501 - i)),
     )
     api.transactions.list.mockImplementation(async (args) => listPage(cycle, args))
 
     await renderPage()
 
     expect(await screen.findByText('Payment 500')).toBeInTheDocument()
-    // The top row carries the cumulative cycle spend: all 501 charges, not
-    // the first 500.
+    // The top row carries the balance after the newest charge, which the
+    // server walked over the whole cycle, not just the 500 rows first loaded.
     const topRow = screen.getAllByRole('row')[1]
-    expect(topRow.querySelectorAll('td')[4]).toHaveTextContent('R$501.00')
+    expect(topRow.querySelectorAll('td')[4]).toHaveTextContent('-R$501.00')
     expect(api.transactions.list).toHaveBeenCalledWith(expect.objectContaining({ page: 2, limit: 500 }))
     expect(api.accounts.runningBalance).not.toHaveBeenCalled()
     expect(screen.queryByRole('button', { name: /more$/ })).not.toBeInTheDocument()

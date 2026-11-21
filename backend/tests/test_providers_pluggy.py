@@ -65,6 +65,56 @@ async def test_parser_captures_full_installment_metadata():
 
 
 @pytest.mark.asyncio
+async def test_parser_captures_only_masked_card_number():
+    """The transaction keeps only the card tail, never the provider PAN."""
+    result = await _fetch([
+        {
+            "id": "tx-card-1",
+            "description": "RESTAURANT",
+            "amount": -42,
+            "date": "2026-04-10",
+            "type": "DEBIT",
+            "creditCardMetadata": {"cardNumber": "**** **** **** 8172"},
+        }
+    ])
+
+    assert result[0].card_masked_number == "8172"
+    assert len(result[0].card_masked_number) == 4
+
+
+@pytest.mark.asyncio
+async def test_parser_missing_or_short_card_number_leaves_field_none():
+    result = await _fetch([
+        {
+            "id": "tx-card-none",
+            "description": "NO CARD",
+            "amount": -42,
+            "date": "2026-04-10",
+            "type": "DEBIT",
+            "creditCardMetadata": {"cardNumber": "123"},
+        }
+    ])
+
+    assert result[0].card_masked_number is None
+
+
+@pytest.mark.asyncio
+async def test_parser_ignores_a_card_number_that_is_not_a_string():
+    result = await _fetch([
+        {
+            "id": "tx-card-bool",
+            "description": "ODD PAYLOAD",
+            "amount": -42,
+            "date": "2026-04-10",
+            "type": "DEBIT",
+            "creditCardMetadata": {"cardNumber": True},
+        }
+    ])
+
+    assert result[0].card_masked_number is None
+
+
+@pytest.mark.asyncio
 async def test_parser_no_credit_card_metadata_leaves_fields_none():
     """Non-CC txns (no creditCardMetadata) get null installment fields."""
     result = await _fetch([
@@ -426,6 +476,38 @@ async def test_get_transactions_follows_cursor_until_next_is_null():
     assert client.get.await_args_list[1].kwargs["params"]["after"] == "CUR2"
 
 
+@pytest.mark.asyncio
+async def test_get_transactions_by_date_filters_on_transaction_date():
+    """The pending re-read (#844) lists by `dateFrom`, never `createdAtFrom`,
+    and pages like the regular listing."""
+    page1 = MagicMock(raise_for_status=MagicMock())
+    page1.json = MagicMock(return_value={
+        "results": [_txn("t1")],
+        "next": "https://api.pluggy.ai/v2/transactions?accountId=a&after=CUR2",
+    })
+    page2 = MagicMock(raise_for_status=MagicMock())
+    page2.json = MagicMock(return_value={"results": [_txn("t2")], "next": None})
+
+    client = MagicMock()
+    client.get = AsyncMock(side_effect=[page1, page2])
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=None)
+
+    provider = PluggyProvider()
+    with patch.object(
+        PluggyProvider, "_ensure_api_key", new=AsyncMock(return_value="k")
+    ), patch("app.providers.pluggy.httpx.AsyncClient", return_value=client):
+        txns = await provider.get_transactions_by_date(
+            {"item_id": "i"}, "acc", date(2026, 3, 5)
+        )
+
+    assert [t.external_id for t in txns] == ["t1", "t2"]
+    first = client.get.await_args_list[0].kwargs["params"]
+    assert first == {"accountId": "acc", "dateFrom": "2026-03-05"}
+    second = client.get.await_args_list[1].kwargs["params"]
+    assert second == {"accountId": "acc", "dateFrom": "2026-03-05", "after": "CUR2"}
+
+
 # ----- masked account number (issue #408) -----
 
 
@@ -658,6 +740,171 @@ def test_auto_invested_balance_accepts_string_numbers():
     assert _auto_invested_balance({"bankData": {"automaticallyInvestedBalance": 100.00}}) == Decimal("100.00")
     assert _auto_invested_balance({}) == Decimal("0")
     assert _auto_invested_balance({"bankData": "oops"}) == Decimal("0")
+
+
+# --- reserved balances (bankData.reservedBalances: Mercado Pago cofrinhos) ---
+
+
+def _band(amount, currency="BRL"):
+    return {"amount": amount, "currencyCode": currency}
+
+
+def _reservation(identification, name, bands):
+    entry = {"identification": identification, "availableAmounts": bands}
+    if name is not None:
+        entry["name"] = name
+    return entry
+
+
+def test_reserved_balances_parse_the_mercado_pago_payload():
+    """A representative payload: three cofrinhos, one of them zeroed, reported
+    beside the balance the provider sends."""
+    from app.providers.pluggy import _build_account_data
+
+    acc = _bb_account(
+        1000.00,
+        {
+            "automaticallyInvestedBalance": 1000.00,
+            "hasReservedBalance": True,
+            "reservedBalances": [
+                _reservation("emergency-fund", "Emergency fund", [_band(0)]),
+                _reservation(
+                    "round-up",
+                    "Round-up savings",
+                    [_band(2000)],
+                ),
+                _reservation("marketplace", "Marketplace savings", [_band(2000)]),
+            ],
+        },
+    )
+
+    out = _build_account_data(acc, PluggyProvider._map_account_type)
+
+    # The reported balance and the auto-invested portion are untouched.
+    assert out.balance == Decimal("1000.00")
+    assert out.auto_invested_balance == Decimal("1000.00")
+
+    reserved = out.reserved_balances
+    assert reserved is not None
+    by_id = {r.external_id: r for r in reserved}
+    assert set(by_id) == {"emergency-fund", "round-up", "marketplace"}
+    assert by_id["emergency-fund"].amount == Decimal("0")
+    assert by_id["emergency-fund"].name == "Emergency fund"
+    assert by_id["round-up"].amount == Decimal("2000")
+    assert by_id["round-up"].currency == "BRL"
+    assert by_id["marketplace"].amount == Decimal("2000")
+    # Ordered for determinism.
+    assert [r.external_id for r in reserved] == sorted(by_id)
+
+
+def test_reserved_balances_sum_remuneration_bands_per_currency():
+    """`availableAmounts` carries one entry per remuneration band, so a
+    reservation's bands are summed per currency, not treated as separate
+    pockets."""
+    from app.providers.pluggy import _reserved_balances
+
+    rows = _reserved_balances(
+        {
+            "id": "acc-1",
+            "bankData": {
+                "reservedBalances": [
+                    _reservation(
+                        "pocket-1",
+                        "Cofrinho",
+                        [_band(1000.04), _band(500, "BRL"), _band(75, "USD")],
+                    )
+                ]
+            },
+        }
+    )
+
+    assert rows is not None
+    assert [(r.external_id, r.currency, r.amount) for r in rows] == [
+        ("pocket-1", "BRL", Decimal("1500.04")),
+        ("pocket-1", "USD", Decimal("75")),
+    ]
+
+
+def test_reserved_balances_absent_versus_empty():
+    """Absent means the provider did not report the collection (stored rows
+    stay); an empty list or `hasReservedBalance: false` means none active."""
+    from app.providers.pluggy import _reserved_balances
+
+    assert _reserved_balances({"bankData": {}}) is None
+    assert _reserved_balances({"bankData": {"hasReservedBalance": True}}) is None
+    assert _reserved_balances({"bankData": "oops"}) is None
+    assert _reserved_balances({}) is None
+    assert _reserved_balances({"bankData": {"hasReservedBalance": False}}) == []
+    assert _reserved_balances({"bankData": {"reservedBalances": []}}) == []
+    assert (
+        _reserved_balances({"bankData": {"hasReservedBalance": False, "reservedBalances": []}})
+        == []
+    )
+
+
+def test_reserved_balances_reject_partial_collections():
+    """One unreadable reservation makes the whole collection unknown."""
+    from app.providers.pluggy import _reserved_balances
+
+    rows = _reserved_balances(
+        {
+            "id": "acc-1",
+            "bankData": {
+                "reservedBalances": [
+                    "not-a-dict",
+                    {"name": "no identification", "availableAmounts": [_band(10)]},
+                    _reservation("", "empty identification", [_band(10)]),
+                    _reservation("bool", "b", [_band(True)]),
+                    _reservation("nan", "n", [_band(float("nan"))]),
+                    _reservation("negative", "neg", [_band(-5)]),
+                    _reservation("abc", "a", [_band("abc")]),
+                    _reservation("no-bands", "nb", []),
+                    _reservation("good", "ok", [_band(12.5)]),
+                ]
+            },
+        }
+    )
+
+    assert rows is None
+
+    # Every entry unusable → None, never [] (which would delete stored rows).
+    assert (
+        _reserved_balances(
+            {
+                "id": "acc-1",
+                "bankData": {
+                    "reservedBalances": [
+                        {"name": "no identification", "availableAmounts": [_band(10)]},
+                        _reservation("abc", "a", [_band("abc")]),
+                    ]
+                },
+            }
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize("bands", [10, True, "invalid", {"amount": 10}, None])
+def test_reserved_balances_reject_non_list_bands(bands):
+    from app.providers.pluggy import _build_account_data
+
+    account = _bb_account(1000, {"reservedBalances": [
+        _reservation("good", "Good", [_band(2000)]),
+        _reservation("bad", "Bad", bands),
+    ]})
+    parsed = _build_account_data(account, PluggyProvider._map_account_type)
+
+    assert parsed.balance == Decimal("1000")
+    assert parsed.reserved_balances is None
+
+
+@pytest.mark.parametrize("band", [None, {}, _band(True), _band("NaN"), _band(-1)])
+def test_reserved_balances_reject_partially_readable_bands(band):
+    from app.providers.pluggy import _reserved_balances
+
+    assert _reserved_balances({"bankData": {"reservedBalances": [
+        _reservation("pocket", "Pocket", [_band(2000), band]),
+    ]}}) is None
 
 
 @pytest.mark.parametrize(
@@ -920,3 +1167,15 @@ def test_holding_active_status_is_never_withdrawn():
     ))
 
     assert holding.is_withdrawn is False
+
+
+def test_holding_carries_the_provider_value_date():
+    """The investment's `date` is the day its balance refers to. It is the
+    only sign that a position stopped updating, so it must survive mapping."""
+    from app.providers.pluggy import _build_holding_data
+
+    frozen = _investment(balance=1000)
+    frozen["date"] = "2026-03-17T00:00:00.000Z"
+
+    assert _build_holding_data(frozen).value_date == date(2026, 3, 17)
+    assert _build_holding_data(_investment(balance=1000)).value_date is None

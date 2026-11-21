@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useId, useMemo, useRef, useContext } from 'react'
 import { getAccountLabel, getAccountName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
@@ -7,7 +7,8 @@ import { formatAmountInput, formatCurrency, parseAmountInput } from '@/lib/forma
 import { amountToCents, parseCents } from '@/lib/mortgage-split'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
-import { assets as assetsApi, currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi, mortgagePayments as mortgagePaymentsApi } from '@/lib/api'
+import { WorkspaceContext } from '@/contexts/workspace-context'
+import { accounts as accountsApi, assets as assetsApi, currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi, mortgagePayments as mortgagePaymentsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { extractApiError } from '@/lib/api-errors'
@@ -20,6 +21,7 @@ import { Input } from '@/components/ui/input'
 import { DescriptionInput } from '@/components/description-input'
 import { Label } from '@/components/ui/label'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
+import { flagDuePresets } from '@/lib/transaction-flag'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import {
@@ -30,7 +32,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { AlertTriangle, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check } from 'lucide-react'
+import { AlertTriangle, ArrowRight, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Flag, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check, Pencil } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,16 +41,26 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { CategorySelect } from '@/components/category-select'
 import { PayeeSelect } from '@/components/payee-select'
+import { PayeeFormDialog } from '@/components/payee-form-dialog'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { TransactionAttachments } from '@/components/transaction-attachments'
 import type { AttachmentPreview } from '@/components/transaction-attachments'
 import { TransactionSplitsSection } from '@/components/transaction-splits-section'
 import { buildInstallmentSeriesInput, hasNonStatusChange, isManualInstallmentSeriesRow } from '@/lib/installment-series'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
-import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, Rule, RuleCondition, RuleConditionNode } from '@/types'
+import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, CategoryLineShareType, Rule, RuleCondition, RuleConditionNode, Payee } from '@/types'
+import { TransactionCategoryLinesSection } from '@/components/transaction-category-lines-section'
+import {
+  buildLinesPayload,
+  checkLines,
+  emptyRow,
+  rowCents,
+  rowsFromLines,
+  type CategoryLineRow,
+} from '@/lib/category-lines'
 import { toast } from 'sonner'
 
-export type SaveAction = 'save' | 'saveAndNew' | 'saveAndDuplicate'
+export type SaveAction = 'save' | 'saveAndNew' | 'saveAndDuplicate' | 'saveAndNext'
 
 export type TransactionSavePayload = TransactionEditPayload & {
   apply_to?: TransactionApplyScope
@@ -64,6 +76,31 @@ type PendingInstallmentEdit = {
 
 function isImageType(contentType: string): boolean {
   return contentType.startsWith('image/')
+}
+
+/** Whether two rows of the payee list are the same record, field by field.
+ *
+ * A payee carries no revision of its own, so a refetched row is told apart
+ * from the copy a save replaced by comparing what the record holds. Every
+ * field a member can change counts: a differing phone is a newer row, even
+ * when the name still reads the same. */
+function samePayee(a: Payee, b: Payee): boolean {
+  const fields = (p: Payee) => [
+    p.id,
+    p.name,
+    p.type,
+    p.notes,
+    p.email,
+    p.phone,
+    p.address,
+    p.website,
+    p.is_favorite,
+    p.transaction_count,
+    p.tax_ids.map((taxId) => `${taxId.kind}:${taxId.value}`).join('|'),
+  ]
+  const left = fields(a)
+  const right = fields(b)
+  return left.every((value, index) => value === right[index])
 }
 
 function canExtendRuleFromTransaction(rule: Rule): boolean {
@@ -113,6 +150,7 @@ export function TransactionDialog({
   duplicateDraft = null,
   formResetKey = 0,
   defaultAccountId,
+  hasNext = false,
 }: {
   open: boolean
   onClose: () => void
@@ -133,6 +171,8 @@ export function TransactionDialog({
   formResetKey?: number
   /** Account preselected when creating a new transaction. */
   defaultAccountId?: string
+  /** Offer "Save & next" (the `saveAndNext` action) when the host has another row queued. */
+  hasNext?: boolean
 }) {
   const { t } = useTranslation()
   const [preview, setPreview] = useState<AttachmentPreview | null>(null)
@@ -144,6 +184,12 @@ export function TransactionDialog({
   }, [])
 
   if (!open && preview) setPreview(null)
+  // "Save & next" swaps the transaction under an open dialog; drop the last one's preview.
+  const [previewTxId, setPreviewTxId] = useState(transaction?.id)
+  if (transaction?.id !== previewTxId) {
+    setPreviewTxId(transaction?.id)
+    if (preview) setPreview(null)
+  }
   useEffect(() => () => {
     if (preview?.url) URL.revokeObjectURL(preview.url)
   }, [preview])
@@ -212,7 +258,7 @@ export function TransactionDialog({
           : 'flex flex-col min-h-0 flex-1'}>
           {/* Left column: form */}
           <div className={isEditing
-            ? 'flex flex-col min-w-0 min-h-0 flex-1 overflow-hidden sm:pr-6'
+            ? 'flex flex-col min-w-0 min-h-0 flex-1 overflow-hidden sm:pe-6'
             : 'flex flex-col min-h-0 flex-1'}>
             <DialogHeader className="mb-4">
               <DialogTitle>
@@ -240,14 +286,15 @@ export function TransactionDialog({
               onPreviewChange={handlePreviewChange}
               activePreviewId={preview?.attachmentId ?? null}
               hasPreview={hasPreview}
+              hasNext={hasNext}
             />
           </div>
 
           {/* Desktop: side panel */}
           <div
             className={cn(
-              'hidden sm:flex shrink-0 border-l flex-col overflow-hidden transition-[width] duration-300 ease-in-out',
-              hasPreview ? 'w-[420px]' : 'w-0 border-l-0'
+              'hidden sm:flex shrink-0 border-s flex-col overflow-hidden transition-[width] duration-300 ease-in-out',
+              hasPreview ? 'w-[420px]' : 'w-0 border-s-0'
             )}
           >
             {preview && (
@@ -295,7 +342,7 @@ export function TransactionDialog({
 
         {/* Mobile: full-screen overlay */}
         {hasPreview && (
-          <div className="sm:hidden fixed inset-0 z-[100] bg-background flex flex-col animate-in slide-in-from-right duration-200">
+          <div className="sm:hidden fixed inset-0 z-[100] bg-background flex flex-col animate-in slide-in-from-right rtl:slide-in-from-left duration-200">
             <div className="flex-1 overflow-hidden">
               {preview.contentType === 'application/pdf' ? (
                 <iframe
@@ -402,6 +449,7 @@ function TransactionForm({
   onPreviewChange,
   activePreviewId,
   hasPreview,
+  hasNext,
 }: {
   transaction: Transaction | null
   duplicateDraft: TransactionEditPayload | null
@@ -422,8 +470,10 @@ function TransactionForm({
   onPreviewChange: (preview: AttachmentPreview | null) => void
   activePreviewId: string | null
   hasPreview: boolean
+  hasNext: boolean
 }) {
   const { t } = useTranslation()
+  const id = useId()
   const queryClient = useQueryClient()
   const { user } = useAuth()
   const { privacyMode, MASK } = usePrivacyMode()
@@ -440,6 +490,42 @@ function TransactionForm({
     queryFn: payeesApi.list,
   })
   const seed = transaction ?? duplicateDraft
+  const canWrite = useContext(WorkspaceContext)?.canWrite ?? false
+  // The payee form opened from here, and the record it just saved: the
+  // refetched list takes a moment to carry a payee created or edited here.
+  // The row the save replaced is kept too, to tell a refetched row apart from
+  // the stale copy the save already superseded.
+  const [payeeId, setPayeeId] = useState(seed?.payee_id ?? '')
+  const [payeeFormOpen, setPayeeFormOpen] = useState(false)
+  const [payeeFormTarget, setPayeeFormTarget] = useState<Payee | null>(null)
+  const [savedPayee, setSavedPayee] = useState<{ payee: Payee; replaced: Payee | null } | null>(null)
+  // The saved record stands in for the list only while the list's row is the
+  // copy the save replaced: an identical row is the stale one, so the
+  // refetch has not landed. Once the list carries anything else it is the
+  // server's answer — our own save, or another member's later change (a
+  // phone, say) — and substituting the saved copy forever would show their
+  // change as never made and write the old value back on the next edit. A
+  // payee the list does not carry yet stays appended, so a create whose
+  // refetch has not landed never flickers the selection to "no payee".
+  const selectablePayees = useMemo(() => {
+    const list = payeesList ?? []
+    if (!savedPayee) return list
+    const { payee, replaced } = savedPayee
+    const row = list.find((p) => p.id === payee.id)
+    if (!row) return [...list, payee]
+    return replaced && samePayee(row, replaced)
+      ? list.map((p) => (p.id === payee.id ? payee : p))
+      : list
+  }, [payeesList, savedPayee])
+  const selectedPayee = selectablePayees.find((p) => p.id === payeeId) ?? null
+  const { data: linkedCards = [] } = useQuery({
+    queryKey: ['accounts', transaction?.account_id, 'linked-cards'],
+    queryFn: () => accountsApi.linkedCards(transaction?.account_id ?? ''),
+    enabled: !!transaction?.account_id && !!transaction.card_masked_number,
+  })
+  const linkedCardLabel = linkedCards.find(
+    (card) => card.masked_number === transaction?.card_masked_number,
+  )?.label
   const [description, setDescription] = useState(seed?.description ?? '')
   // Amount fields hold display-locale strings (comma decimals on dot_comma),
   // so seeds from stored numbers go through formatAmountInput — a raw
@@ -448,6 +534,10 @@ function TransactionForm({
   const [amount, setAmount] = useState(
     seed?.amount != null ? formatAmountInput(seed.amount, displayLocale, 8) : ''
   )
+  // A typed amount that doesn't read under the workspace format was rejected
+  // with a bare "Error" toast (issue #1072). Point at the field instead.
+  const parsedAmount = parseAmountInput(amount, displayLocale)
+  const amountInvalid = !isSynced && amount !== '' && parsedAmount == null
   const [date, setDate] = useState(seed?.date ?? localDateString())
   const [type, setType] = useState<'debit' | 'credit'>(seed?.type ?? 'debit')
   const [status, setStatus] = useState<'posted' | 'pending'>(seed?.status ?? 'posted')
@@ -458,12 +548,14 @@ function TransactionForm({
       ?? userCurrency
   )
   const [categoryId, setCategoryId] = useState(seed?.category_id ?? '')
-  const [payeeId, setPayeeId] = useState(seed?.payee_id ?? '')
-  const [accountId, setAccountId] = useState(seed?.account_id ?? defaultAccountId ?? '')
+  const [accountId, setAccountId] = useState(seed?.account_id ?? defaultAccountId ?? accounts[0]?.id ?? '')
   const [notes, setNotes] = useState(seed?.notes ?? '')
   // Manual CC bucketing override (issue #92). Empty = auto. Visible only
   // when the selected account is a credit card.
   const [effectiveBillDate, setEffectiveBillDate] = useState(seed?.effective_bill_date ?? '')
+  const [reportingDateOverride, setReportingDateOverride] = useState(
+    seed?.reporting_date_override ?? '',
+  )
   const [convertedAmount, setConvertedAmount] = useState(
     seed?.amount_primary != null ? formatAmountInput(seed.amount_primary, displayLocale, 8) : ''
   )
@@ -507,7 +599,31 @@ function TransactionForm({
     const existing = (seed as Transaction | null | undefined)?.splits
     return !!(existing && existing.length > 0)
   })
+  // Split across several categories (#425). `null` = one category (or none).
+  // Seeded from the transaction's lines, so editing round-trips them and
+  // duplicating a split row copies its parts.
+  const [lineRows, setLineRows] = useState<CategoryLineRow[] | null>(() => {
+    const source = seed as Transaction | null | undefined
+    if (!source?.has_category_lines || !source.category_lines?.length) return null
+    return rowsFromLines(source.category_lines, (v) => formatAmountInput(v, displayLocale))
+  })
+  const [lineShareType, setLineShareType] = useState<CategoryLineShareType>(
+    () => (seed as Transaction | null | undefined)?.category_lines?.[0]?.share_type ?? 'exact',
+  )
+  // Editing a row that was split: undoing it must be sent explicitly.
+  const [hadInitialLines] = useState<boolean>(
+    () => !!transaction?.has_category_lines && !!transaction.category_lines?.length,
+  )
+  const splitByCategory = lineRows !== null
+  // The parts as the dialog opened, to tell an edited split from a resend.
+  const initialLinesJson = useRef<string | null>(
+    lineRows ? JSON.stringify(buildLinesPayload(lineRows, lineShareType, displayLocale)) : null,
+  )
   const isCreating = !transaction
+  const selectedAccount = accounts.find(a => a.id === accountId)
+  const isCreditCardSelected = selectedAccount?.type === 'credit_card'
+  const showReportingDateOverride =
+    isSynced && selectedAccount != null && !isCreditCardSelected
   const showConversion = currency !== userCurrency && !isSynced
   // Privacy mode hides monetary values across the app, but the edit modal
   // surfaced the raw amount anyway (issue #323). Only existing transactions
@@ -534,10 +650,57 @@ function TransactionForm({
     el.style.height = `${el.scrollHeight + border}px`
   }, [description, isSynced])
   const [isIgnored, setIsIgnored] = useState(seed?.is_ignored ?? false)
+  const linesValid = !lineRows || checkLines(
+    lineRows, lineShareType, parseAmountInput(amount, displayLocale) ?? 0, displayLocale,
+  ).valid
+  // The backend refuses these anyway; hiding the action keeps the user from
+  // building a split that cannot be saved. A split among people and a split
+  // across categories are exclusive.
+  const canSplitByCategory =
+    !splits &&
+    !isIgnored &&
+    !transaction?.transfer_pair_id &&
+    !['settlement', 'opening_balance'].includes(seed?.source ?? '') &&
+    !seed?.external_id?.startsWith('bill_charge:')
+  const startCategorySplit = () => {
+    // The chosen category becomes the first part. Shares start empty, so the
+    // editor shows the whole amount as left to allocate. A recurring entry or
+    // an installment series carries the same parts to every occurrence.
+    const first = emptyRow()
+    first.categoryId = categoryId
+    setLineShareType('exact')
+    setLineRows([first, emptyRow()])
+    setCategoryId('')
+  }
+  const undoCategorySplit = () => {
+    // Same rule as the backend: the largest part's category stays.
+    let best: CategoryLineRow | null = null
+    for (const row of lineRows ?? []) {
+      if (!row.categoryId) continue
+      const value = lineShareType === 'exact'
+        ? rowCents(row.amount, displayLocale) ?? 0
+        : Number(row.percent.replace(',', '.')) || 0
+      const bestValue = !best ? -1 : lineShareType === 'exact'
+        ? rowCents(best.amount, displayLocale) ?? 0
+        : Number(best.percent.replace(',', '.')) || 0
+      if (value > bestValue) best = row
+    }
+    setCategoryId(best?.categoryId ?? '')
+    setLineRows(null)
+  }
   const [excludeFromReports, setExcludeFromReports] = useState(
     seed?.exclude_from_pnl ?? false,
   )
   const [togglingIgnore, setTogglingIgnore] = useState(false)
+  const [isFlagged, setIsFlagged] = useState(seed?.is_flagged ?? false)
+  const [togglingFlag, setTogglingFlag] = useState(false)
+  const [flagDueDate, setFlagDueDate] = useState(seed?.flag_due_date ?? '')
+  const [flagNote, setFlagNote] = useState(seed?.flag_note ?? '')
+  const [savedFlagNote, setSavedFlagNote] = useState(seed?.flag_note ?? '')
+  const flagReminderRef = useRef<HTMLDivElement>(null)
+  // Flag and reminder saves can overlap (a note saved on blur as Unflag is
+  // clicked); only the latest one's answer is applied.
+  const flagRequestRef = useRef(0)
   const [recurringLinked, setRecurringLinked] = useState(seed?.recurring_transaction_id != null)
   const [unlinkingRecurring, setUnlinkingRecurring] = useState(false)
   const [addToRuleOpen, setAddToRuleOpen] = useState(false)
@@ -610,7 +773,8 @@ function TransactionForm({
     mutationFn: (data: Partial<Rule>) => rulesApi.update(extendRuleTarget!.id, data),
     onSuccess: (updatedRule) => {
       const targetCategoryId = getRuleCategoryId(updatedRule)
-      if (targetCategoryId) setCategoryId(targetCategoryId)
+      // Rules never overwrite a split, so the form keeps its parts too.
+      if (targetCategoryId && !splitByCategory) setCategoryId(targetCategoryId)
       queryClient.invalidateQueries({ queryKey: ['rules'] })
       const applied = updatedRule.applied_count ?? 0
       if (applied > 0) {
@@ -642,6 +806,57 @@ function TransactionForm({
       toast.error(t('common.error'))
     } finally {
       setTogglingIgnore(false)
+    }
+  }
+
+  // Like ignore, a flag acts at once and touches no other field, so it never
+  // saves a half-edited form along with it.
+  const handleToggleFlag = async () => {
+    if (!seed?.id || togglingFlag) return
+    setTogglingFlag(true)
+    try {
+      const request = ++flagRequestRef.current
+      const updated = await transactionsApi.update(seed.id, { is_flagged: !isFlagged })
+      if (request !== flagRequestRef.current) return
+      applyFlagResponse(updated)
+      // Bring the reminder fields into view: the footer is far from them.
+      if (updated.is_flagged) {
+        requestAnimationFrame(() => flagReminderRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }))
+      }
+      toast.success(updated.is_flagged
+        ? t('transactions.flagSuccess')
+        : t('transactions.unflagSuccess'))
+      // Not every opener passes onIgnoreChanged (Dashboard, Account Detail),
+      // so refresh the lists the row comes from here; the flag moves no money.
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['drill-down'] })
+      onIgnoreChanged?.()
+    } catch {
+      toast.error(t('common.error'))
+    } finally {
+      setTogglingFlag(false)
+    }
+  }
+
+  function applyFlagResponse(updated: Transaction) {
+    setIsFlagged(updated.is_flagged ?? false)
+    setFlagDueDate(updated.flag_due_date ?? '')
+    setFlagNote(updated.flag_note ?? '')
+    setSavedFlagNote(updated.flag_note ?? '')
+  }
+
+  // The reminder saves on its own, like the flag, so it never carries a
+  // half-edited form along with it.
+  const saveFlagReminder = async (patch: { flag_due_date?: string | null; flag_note?: string | null }) => {
+    if (!seed?.id) return
+    try {
+      const request = ++flagRequestRef.current
+      const updated = await transactionsApi.update(seed.id, patch)
+      if (request === flagRequestRef.current) applyFlagResponse(updated)
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['drill-down'] })
+    } catch {
+      toast.error(t('common.error'))
     }
   }
 
@@ -760,15 +975,14 @@ function TransactionForm({
         e.preventDefault()
         const action = pendingActionRef.current
         pendingActionRef.current = 'save'
+        // Enter in a text field submits even while Save is disabled.
+        if (loading || !splitsValid || !linesValid) return
         // Amounts are typed under the display locale's separators (comma
         // decimals on dot_comma), so they must be read back the same way —
         // parseFloat would stop at the first comma and silently save the
-        // wrong value.
-        const parsedAmount = parseAmountInput(amount, displayLocale)
-        if (!isSynced && parsedAmount == null) {
-          toast.error(t('common.error'))
-          return
-        }
+        // wrong value. An unreadable amount already shows under the field
+        // (`amountInvalid`), so it blocks the save without a toast.
+        if (!isSynced && parsedAmount == null) return
         const fxFields: Partial<Transaction> = {}
         const parsedConverted = parseAmountInput(convertedAmount, displayLocale)
         const parsedFxRate = parseAmountInput(fxRate, displayLocale)
@@ -793,15 +1007,14 @@ function TransactionForm({
           fxFields.amount_primary = null
           fxFields.fx_rate_used = null
         }
-        // Active CC account ⇒ surface effective_bill_date in the payload
-        // (sent both for synced and manual edits since the user can hand-
-        // correct the bucketing on either; null clears the override back to
-        // auto bucketing).
-        const selectedAcc = accounts.find(a => a.id === accountId)
-        const isCcSelected = selectedAcc?.type === 'credit_card'
-        const overridePayload: Partial<Transaction> = isCcSelected
+        // Credit-card bill assignment and general period attribution are
+        // distinct controls. Synchronized non-card rows can move between
+        // report periods without changing their immutable bank date.
+        const overridePayload: Partial<Transaction> = isCreditCardSelected
           ? { effective_bill_date: effectiveBillDate || null }
-          : {}
+          : showReportingDateOverride
+            ? { reporting_date_override: reportingDateOverride || null }
+            : {}
         // Splits ride along on the same payload — the backend treats a
         // missing `splits` field as untouched and a present payload as
         // full replacement. To clear existing splits when the user
@@ -810,6 +1023,24 @@ function TransactionForm({
           ? { splits }
           : hadInitialSplits
             ? { splits: { share_type: 'equal', splits: [] } }
+            : {}
+        // Category parts follow the same rule as `splits`: absent keeps them,
+        // a list replaces them, an empty list undoes the split. While split,
+        // the row has no category of its own.
+        // Parts are sent only when they changed (or the amount did): an edit
+        // to "this and future" installments would otherwise copy this row's
+        // split over siblings that have their own.
+        const builtLines = lineRows ? buildLinesPayload(lineRows, lineShareType, displayLocale) : null
+        const linesEdited =
+          !hadInitialLines ||
+          JSON.stringify(builtLines) !== initialLinesJson.current ||
+          (transaction != null && parsedAmount != null && Number(transaction.amount) !== parsedAmount)
+        const categoryLinesPayload: Pick<TransactionEditPayload, 'category_lines' | 'category_id'> = builtLines
+          ? linesEdited
+            ? { category_lines: builtLines, category_id: null }
+            : { category_id: null }
+          : hadInitialLines
+            ? { category_lines: { share_type: 'exact', lines: [] } }
             : {}
         const pnlExclusionPayload = transaction
           ? { exclude_from_pnl: excludeFromReports }
@@ -824,6 +1055,7 @@ function TransactionForm({
               ...pnlExclusionPayload,
               ...overridePayload,
               ...splitsPayload,
+              ...categoryLinesPayload,
             } as TransactionEditPayload
           : {
               description,
@@ -843,6 +1075,7 @@ function TransactionForm({
               ...fxFields,
               ...overridePayload,
               ...splitsPayload,
+              ...categoryLinesPayload,
             } as TransactionEditPayload
         const recurringData = isCreating && isRecurring
           ? { frequency, end_date: endDate || undefined }
@@ -860,6 +1093,7 @@ function TransactionForm({
               notes,
               fxFields,
               splits,
+              categoryLines: lineRows ? buildLinesPayload(lineRows, lineShareType, displayLocale) : null,
               installmentCount,
               installmentFrequency,
               status,
@@ -874,7 +1108,7 @@ function TransactionForm({
         hasPreview && 'mt-4'
       )}
     >
-      <div className="space-y-4 overflow-y-auto flex-1 min-h-0 pb-2 sm:pr-3">
+      <div className="space-y-4 overflow-y-auto flex-1 min-h-0 pb-2 sm:pe-3">
       {error && (
         <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
           {error}
@@ -887,8 +1121,8 @@ function TransactionForm({
       )}
       {!!transaction?.transfer_pair_id && (
         <div className="p-3 text-sm bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-md text-blue-700 dark:text-blue-300 space-y-2">
-          <div className="flex items-start justify-between gap-3">
-            <div className="space-y-1 min-w-0">
+          <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
+            <div className="space-y-1 min-w-0 w-full sm:w-auto">
               <p>{t('transactions.transferInfo')}</p>
               {transferPair && (() => {
                 const pairAccount = accounts.find(a => a.id === transferPair.account_id)
@@ -913,12 +1147,14 @@ function TransactionForm({
                     {' · '}
                     {new Date(transferPair.date + 'T00:00:00').toLocaleDateString(dateLocale)}
                     {' · '}
-                    {sign}
-                    {formatCurrency(
-                      Math.abs(Number(transferPair.amount)),
-                      transferPair.currency ?? undefined,
-                      displayLocale,
-                    )}
+                    <span dir="ltr">
+                      {sign}
+                      {formatCurrency(
+                        Math.abs(Number(transferPair.amount)),
+                        transferPair.currency ?? undefined,
+                        displayLocale,
+                      )}
+                    </span>
                   </p>
                 )
               })()}
@@ -938,13 +1174,23 @@ function TransactionForm({
                 {/* Confirms the unlink: dropping the pair link re-reports the
                     other leg, which changes reported totals (issue #1160). */}
                 <Dialog open={unlinkConfirmOpen} onOpenChange={setUnlinkConfirmOpen}>
-                  <DialogContent className="sm:max-w-md">
+                  <DialogContent
+                    className="sm:max-w-md"
+                    aria-describedby="unlink-transfer-confirm unlink-transfer-report-warning"
+                  >
                     <DialogHeader>
                       <DialogTitle>{t('transactions.unlinkTransfer')}</DialogTitle>
-                      <DialogDescription>
+                      <DialogDescription id="unlink-transfer-confirm">
                         {t('transactions.unlinkTransferConfirm')}
                       </DialogDescription>
                     </DialogHeader>
+                    <div
+                      id="unlink-transfer-report-warning"
+                      className="flex items-start gap-2 p-2 rounded-md bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400"
+                    >
+                      <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                      <span className="text-xs">{t('transactions.unlinkTransferReportWarning')}</span>
+                    </div>
                     <DialogFooter>
                       <Button type="button" variant="outline" onClick={() => setUnlinkConfirmOpen(false)}>
                         {t('common.cancel')}
@@ -994,9 +1240,10 @@ function TransactionForm({
         </div>
       )}
       <div className="space-y-2">
-        <Label>{t('transactions.description')}</Label>
+        <Label htmlFor={`${id}-description`}>{t('transactions.description')}</Label>
         {isSynced ? (
           <textarea
+            id={`${id}-description`}
             ref={descriptionRef}
             className="w-full border border-input rounded-md px-3 py-2 text-sm bg-card dark:bg-input/30 shadow-xs resize-none overflow-hidden outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/30 focus-visible:ring-[2px]"
             value={description}
@@ -1013,12 +1260,13 @@ function TransactionForm({
           />
         ) : (
           <DescriptionInput
+            id={`${id}-description`}
             value={description}
             onChange={setDescription}
             // Prefill what was last filed under this description, without
             // overwriting anything the user already chose (issue #1127).
             onPick={(suggestion) => {
-              if (!categoryId && suggestion.category_id) setCategoryId(suggestion.category_id)
+              if (!categoryId && !splitByCategory && suggestion.category_id) setCategoryId(suggestion.category_id)
               if (!payeeId && suggestion.payee_id) setPayeeId(suggestion.payee_id)
             }}
             required
@@ -1050,7 +1298,7 @@ function TransactionForm({
       <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <div className="space-y-2">
           <div className="flex items-center justify-between min-h-5">
-            <Label>{t('transactions.amount')}</Label>
+            <Label htmlFor={`${id}-amount`}>{t('transactions.amount')}</Label>
             {canHideAmounts && (
               <button
                 type="button"
@@ -1065,6 +1313,7 @@ function TransactionForm({
           </div>
           {hideAmounts ? (
             <Input
+              id={`${id}-amount`}
               type="text"
               value={MASK}
               readOnly
@@ -1072,20 +1321,31 @@ function TransactionForm({
               className="bg-muted/40 text-muted-foreground cursor-default select-none"
             />
           ) : (
-            <Input
-              type="text"
-              inputMode="decimal"
-              value={amount}
-              onChange={(e) => handleAmountChange(e.target.value)}
-              required
-              disabled={isSynced}
-              className="bg-card"
-            />
+            <>
+              <Input
+                id={`${id}-amount`}
+                type="text"
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => handleAmountChange(e.target.value)}
+                required
+                disabled={isSynced}
+                aria-invalid={amountInvalid}
+                aria-describedby={amountInvalid ? 'transaction-amount-error' : undefined}
+                className="bg-card"
+              />
+              {amountInvalid && (
+                <p id="transaction-amount-error" role="alert" className="text-xs text-destructive">
+                  {t('common.invalidAmount', { example: formatAmountInput(1234.56, displayLocale) })}
+                </p>
+              )}
+            </>
           )}
         </div>
         <div className="space-y-2">
-          <Label>{t('transactions.currency')}</Label>
+          <Label htmlFor={`${id}-currency`}>{t('transactions.currency')}</Label>
           <select
+            id={`${id}-currency`}
             className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card h-9 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
             value={currency}
             onChange={(e) => handleCurrencyChange(e.target.value)}
@@ -1099,8 +1359,10 @@ function TransactionForm({
       </div>
       <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <div className="space-y-2">
-          <Label>{t('transactions.date')}</Label>
+          <Label htmlFor={`${id}-date`} id={`${id}-date-label`}>{isSynced ? t('transactions.bankDate') : t('transactions.date')}</Label>
           <DatePickerInput
+            id={`${id}-date`}
+            labelledBy={`${id}-date-label`}
             value={date}
             onChange={setDate}
             disabled={isSynced}
@@ -1108,8 +1370,9 @@ function TransactionForm({
           />
         </div>
         <div className="space-y-2">
-          <Label>{t('transactions.colStatus')}</Label>
+          <Label htmlFor="transaction-status">{t('transactions.colStatus')}</Label>
           <select
+            id="transaction-status"
             className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card h-9 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
             value={status}
             onChange={(e) => setStatus(e.target.value as 'posted' | 'pending')}
@@ -1120,6 +1383,35 @@ function TransactionForm({
           </select>
         </div>
       </div>
+      {showReportingDateOverride && (
+        <div className="space-y-2">
+          <Label htmlFor={`${id}-reporting-date`} id={`${id}-reporting-date-label`}>{t('transactions.reportingDate')}</Label>
+          <div className="flex items-center gap-1">
+            <DatePickerInput
+              id={`${id}-reporting-date`}
+              labelledBy={`${id}-reporting-date-label`}
+              value={reportingDateOverride}
+              onChange={setReportingDateOverride}
+              placeholder={t('transactions.reportingDatePlaceholder')}
+              className="w-full justify-start"
+            />
+            {reportingDateOverride && (
+              <button
+                type="button"
+                className="h-9 w-9 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors shrink-0"
+                onClick={() => setReportingDateOverride('')}
+                title={t('transactions.clearReportingDate')}
+                aria-label={t('transactions.clearReportingDate')}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {t('transactions.reportingDateHint')}
+          </p>
+        </div>
+      )}
       {showConversion && (
         <div className="border border-border rounded-md p-3 space-y-2">
           {transaction?.fx_fallback && (
@@ -1130,13 +1422,14 @@ function TransactionForm({
           )}
           <div>
             <span className="text-sm font-medium">{t('transactions.conversion')}</span>
-            <span className="text-xs text-muted-foreground ml-2">({t('transactions.conversionHint')})</span>
+            <span className="text-xs text-muted-foreground ms-2">({t('transactions.conversionHint')})</span>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
-              <Label className="text-xs">{t('transactions.convertedAmount', { currency: userCurrency })}</Label>
+              <Label htmlFor={`${id}-converted-amount`} className="text-xs">{t('transactions.convertedAmount', { currency: userCurrency })}</Label>
               {hideAmounts ? (
                 <Input
+                  id={`${id}-converted-amount`}
                   type="text"
                   value={MASK}
                   readOnly
@@ -1145,6 +1438,7 @@ function TransactionForm({
                 />
               ) : (
                 <Input
+                  id={`${id}-converted-amount`}
                   type="text"
                   inputMode="decimal"
                   value={convertedAmount}
@@ -1155,8 +1449,9 @@ function TransactionForm({
               )}
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">{t('transactions.exchangeRate')}</Label>
+              <Label htmlFor={`${id}-exchange-rate`} className="text-xs">{t('transactions.exchangeRate')}</Label>
               <Input
+                id={`${id}-exchange-rate`}
                 type="text"
                 inputMode="decimal"
                 value={fxRate}
@@ -1170,8 +1465,9 @@ function TransactionForm({
       )}
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label>{t('transactions.type')}</Label>
+          <Label htmlFor={`${id}-type`}>{t('transactions.type')}</Label>
           <select
+            id={`${id}-type`}
             className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
             value={type}
             onChange={(e) => setType(e.target.value as 'debit' | 'credit')}
@@ -1182,26 +1478,115 @@ function TransactionForm({
           </select>
         </div>
         <div className="space-y-2">
-          <Label>{t('transactions.category')}</Label>
-          <CategorySelect
-            value={categoryId}
-            onChange={setCategoryId}
-            categories={displayCategories}
-            groups={displayCategoryGroups}
-            currentCategory={seed?.category}
-            allowNone={true}
-            creatable
-            className="bg-card"
-          />
+          <div className="flex items-center justify-between min-h-5">
+            <Label htmlFor={`${id}-category`} id={`${id}-category-label`}>{t('transactions.category')}</Label>
+            {canSplitByCategory && !splitByCategory && (
+              <button
+                type="button"
+                onClick={startCategorySplit}
+                className="text-xs text-primary hover:underline font-medium cursor-pointer"
+              >
+                {t('categoryLines.start')}
+              </button>
+            )}
+          </div>
+          {splitByCategory ? (
+            <div className="h-9 flex items-center px-3 rounded-md border border-dashed border-violet-300 dark:border-violet-800 text-sm text-violet-700 dark:text-violet-300">
+              {t('categoryLines.badge', { count: lineRows.length })}
+            </div>
+          ) : (
+            <CategorySelect
+              id={`${id}-category`}
+              labelledBy={`${id}-category-label`}
+              value={categoryId}
+              onChange={setCategoryId}
+              categories={displayCategories}
+              groups={displayCategoryGroups}
+              currentCategory={seed?.category}
+              allowNone={true}
+              creatable
+              className="bg-card"
+            />
+          )}
         </div>
       </div>
+      {transaction?.card_masked_number && (
+        <div className="space-y-2">
+          {/* Not a <label>: the value below is text, there is no field to name. */}
+          <span className="text-sm font-medium">{t('transactions.card')}</span>
+          {/* Read-only text rather than a disabled input, so a long label
+              wraps and never pushes the ending out of view. */}
+          <div className="flex min-h-9 items-center gap-2 rounded-md border border-input bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground">
+            {linkedCardLabel && <span className="min-w-0 break-words">{linkedCardLabel}</span>}
+            {linkedCardLabel && <span aria-hidden="true">·</span>}
+            <span className="shrink-0 tabular-nums">•••• {transaction.card_masked_number}</span>
+          </div>
+        </div>
+      )}
+      {splitByCategory && (
+        <TransactionCategoryLinesSection
+          amount={parseAmountInput(amount, displayLocale) ?? 0}
+          currency={currency}
+          rows={lineRows}
+          shareType={lineShareType}
+          onChange={(rows, shareType) => {
+            setLineRows(rows)
+            setLineShareType(shareType)
+          }}
+          onUndo={undoCategorySplit}
+          categories={displayCategories}
+          groups={displayCategoryGroups}
+          hideAmounts={hideAmounts}
+        />
+      )}
       <div className={cn("grid gap-4", isSynced ? "grid-cols-1" : "grid-cols-2")}>
         <div className="space-y-2">
-          <Label>{t('payees.payee')}</Label>
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor={`${id}-payee`} id={`${id}-payee-label`}>{t('payees.payee')}</Label>
+            {/* Creating and editing the record without leaving the form
+                (#1069): the payees page owns the full form, so it is the
+                same one, opened on this transaction's payee. */}
+            {canWrite && (
+              <div className="flex items-center gap-0.5">
+                {selectedPayee && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    aria-label={t('payees.edit')}
+                    title={t('payees.edit')}
+                    onClick={() => {
+                      setPayeeFormTarget(selectedPayee)
+                      setPayeeFormOpen(true)
+                    }}
+                  >
+                    <Pencil size={13} />
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="size-7"
+                  aria-label={t('payees.add')}
+                  title={t('payees.add')}
+                  onClick={() => {
+                    setPayeeFormTarget(null)
+                    setPayeeFormOpen(true)
+                  }}
+                >
+                  <Plus size={13} />
+                </Button>
+              </div>
+            )}
+          </div>
           <PayeeSelect
+            id={`${id}-payee`}
+            labelledBy={`${id}-payee-label`}
             value={payeeId}
             onChange={setPayeeId}
-            payees={payeesList ?? []}
+            payees={selectablePayees}
             creatable
           />
           {isSynced && transaction?.payee && (
@@ -1210,8 +1595,9 @@ function TransactionForm({
         </div>
         {!isSynced && (
           <div className="space-y-2">
-            <Label>{t('transactions.account')}</Label>
+            <Label htmlFor={`${id}-account`}>{t('transactions.account')}</Label>
             <select
+              id={`${id}-account`}
               className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
               value={accountId}
               onChange={(e) => setAccountId(e.target.value)}
@@ -1226,9 +1612,83 @@ function TransactionForm({
         )}
       </div>
 
+      {seed?.id && isFlagged && (
+        <div
+          ref={flagReminderRef}
+          className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/[0.04] p-3"
+          data-testid="flag-reminder"
+        >
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <Flag size={14} className="fill-current text-amber-600 dark:text-amber-400" />
+            {t('transactions.flagReminder')}
+            <span className="text-xs font-normal text-muted-foreground">{t('transactions.flagReminderHint')}</span>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor={`${id}-flag-due-date`} id={`${id}-flag-due-date-label`} className="text-xs">{t('transactions.flagRemindOn')}</Label>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {flagDuePresets().map((preset) => (
+                <Button
+                  key={preset.key}
+                  type="button"
+                  size="sm"
+                  variant={flagDueDate === preset.date ? 'secondary' : 'outline'}
+                  className="h-8 text-xs"
+                  onClick={() => saveFlagReminder({ flag_due_date: preset.date })}
+                >
+                  {t(`transactions.flagPreset.${preset.key}`)}
+                </Button>
+              ))}
+              <div className="flex min-w-[150px] flex-1 items-center gap-1">
+                <DatePickerInput
+                  id={`${id}-flag-due-date`}
+                  labelledBy={`${id}-flag-due-date-label`}
+                  value={flagDueDate}
+                  onChange={(value) => saveFlagReminder({ flag_due_date: value || null })}
+                  placeholder={t('transactions.flagPickDate')}
+                  className="h-8 w-full justify-start text-xs"
+                />
+                {flagDueDate && (
+                  <button
+                    type="button"
+                    className="h-8 w-8 inline-flex shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => saveFlagReminder({ flag_due_date: null })}
+                    title={t('transactions.flagClearDate')}
+                    aria-label={t('transactions.flagClearDate')}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="flag-note" className="text-xs">{t('transactions.flagNote')}</Label>
+            <Input
+              id="flag-note"
+              value={flagNote}
+              maxLength={500}
+              onChange={(e) => setFlagNote(e.target.value)}
+              onBlur={() => {
+                if (flagNote.trim() !== savedFlagNote.trim()) saveFlagReminder({ flag_note: flagNote })
+              }}
+              onKeyDown={(e) => {
+                // Enter saves the note instead of submitting the whole form.
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  e.currentTarget.blur()
+                }
+              }}
+              placeholder={t('transactions.flagNotePlaceholder')}
+              className="h-8 text-sm"
+            />
+          </div>
+        </div>
+      )}
+
       <div className="space-y-2">
-        <Label>{t('transactions.notes')} <span className="text-muted-foreground font-normal text-xs">({t('transactions.notesHint')})</span></Label>
+        <Label htmlFor={`${id}-notes`}>{t('transactions.notes')} <span className="text-muted-foreground font-normal text-xs">({t('transactions.notesHint')})</span></Label>
         <textarea
+          id={`${id}-notes`}
           className="w-full border border-input rounded-md px-3 py-2 text-sm bg-card resize-none focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-0"
           rows={2}
           value={notes}
@@ -1238,8 +1698,9 @@ function TransactionForm({
       </div>
 
       {transaction && (
-        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3">
+        <label htmlFor={`${id}-exclude-from-reports`} className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3">
           <input
+            id={`${id}-exclude-from-reports`}
             type="checkbox"
             className="mt-0.5 h-4 w-4 rounded border-border accent-primary"
             checked={excludeFromReports}
@@ -1260,12 +1721,9 @@ function TransactionForm({
           input = use auto bucketing (Pluggy bill_id when available, cycle
           math otherwise). Setting the date forces this tx into the bill
           whose due_date matches. */}
-      {(() => {
-        const selectedAcc = accounts.find(a => a.id === accountId)
-        if (selectedAcc?.type !== 'credit_card') return null
-        return (
+      {isCreditCardSelected && (
           <div className="space-y-2">
-            <Label>
+            <Label htmlFor={`${id}-effective-bill-date`} id={`${id}-effective-bill-date-label`}>
               {t('transactions.effectiveBillDate', 'Effective bill date')}{' '}
               <span className="text-muted-foreground font-normal text-xs">
                 ({t('transactions.effectiveBillDateHint', 'manual, overrides the automatic cycle')})
@@ -1273,6 +1731,8 @@ function TransactionForm({
             </Label>
             <div className="inline-flex items-center gap-1">
               <DatePickerInput
+                id={`${id}-effective-bill-date`}
+                labelledBy={`${id}-effective-bill-date-label`}
                 value={effectiveBillDate}
                 onChange={setEffectiveBillDate}
                 placeholder={t('transactions.effectiveBillDatePlaceholder', 'Bill due date (optional)')}
@@ -1289,14 +1749,13 @@ function TransactionForm({
               )}
             </div>
           </div>
-        )
-      })()}
+      )}
 
       {/* A settlement-sourced transaction *is* the movement clearing a
           group debt; splitting it would create circular accounting
           (the share would settle a debt that this debit is already
           settling). Hide the section entirely in that case. */}
-      {transaction?.source !== 'settlement' && (
+      {transaction?.source !== 'settlement' && !splitByCategory && (
         <TransactionSplitsSection
           amount={parseAmountInput(amount, displayLocale) ?? 0}
           currency={currency}
@@ -1306,7 +1765,7 @@ function TransactionForm({
         />
       )}
 
-      {!isCreating && transaction?.type === 'debit' && transaction.status === 'posted' && !transaction.is_ignored && !transaction.transfer_pair_id && !transaction.category?.is_ignored && Number(transaction.amount) > 0 && accounts.find(a => a.id === transaction.account_id)?.type !== 'loan' && accounts.some(a => a.type === 'loan' && a.secured_asset_id) && (
+      {!isCreating && !splitByCategory && !transaction?.has_category_lines && transaction?.type === 'debit' && transaction.status === 'posted' && !transaction.is_ignored && !transaction.transfer_pair_id && !transaction.category?.is_ignored && Number(transaction.amount) > 0 && accounts.find(a => a.id === transaction.account_id)?.type !== 'loan' && accounts.some(a => a.type === 'loan' && a.secured_asset_id) && (
         <MortgagePaymentEditor transaction={transaction} accounts={accounts} />
       )}
 
@@ -1337,8 +1796,9 @@ function TransactionForm({
       {isCreating && !isSynced && (
         <div className="space-y-3 border rounded-md p-3">
           <div className="flex items-center gap-6">
-            <label className="flex items-center gap-2 cursor-pointer">
+            <label htmlFor={`${id}-recurring`} className="flex items-center gap-2 cursor-pointer">
               <input
+                id={`${id}-recurring`}
                 type="checkbox"
                 checked={isRecurring}
                 onChange={(e) => {
@@ -1349,8 +1809,9 @@ function TransactionForm({
               />
               <span className="text-sm font-medium">{t('transactions.makeRecurring')}</span>
             </label>
-            <label className="flex items-center gap-2 cursor-pointer">
+            <label htmlFor={`${id}-installment`} className="flex items-center gap-2 cursor-pointer">
               <input
+                id={`${id}-installment`}
                 type="checkbox"
                 checked={isInstallment}
                 onChange={(e) => {
@@ -1365,8 +1826,9 @@ function TransactionForm({
           {isRecurring && (
             <div className="grid grid-cols-2 gap-4 pt-1">
               <div className="space-y-2">
-                <Label>{t('recurring.frequency')}</Label>
+                <Label htmlFor={`${id}-frequency`}>{t('recurring.frequency')}</Label>
                 <select
+                  id={`${id}-frequency`}
                   className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
                   value={frequency}
                   onChange={(e) => setFrequency(e.target.value as RecurringTransaction['frequency'])}
@@ -1380,8 +1842,10 @@ function TransactionForm({
                 </select>
               </div>
               <div className="space-y-2">
-                <Label>{t('recurring.endDate')}</Label>
+                <Label htmlFor={`${id}-end-date`} id={`${id}-end-date-label`}>{t('recurring.endDate')}</Label>
                 <DatePickerInput
+                  id={`${id}-end-date`}
+                  labelledBy={`${id}-end-date-label`}
                   value={endDate}
                   onChange={setEndDate}
                   placeholder={t('recurring.endDate')}
@@ -1393,8 +1857,9 @@ function TransactionForm({
           {isInstallment && (
             <div className="grid grid-cols-2 gap-4 pt-1">
               <div className="space-y-2">
-                <Label>{t('transactions.installmentFrequency')}</Label>
+                <Label htmlFor={`${id}-installment-frequency`}>{t('transactions.installmentFrequency')}</Label>
                 <select
+                  id={`${id}-installment-frequency`}
                   className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
                   value={installmentFrequency}
                   onChange={(e) => setInstallmentFrequency(e.target.value as RecurringTransaction['frequency'])}
@@ -1408,8 +1873,9 @@ function TransactionForm({
                 </select>
               </div>
               <div className="space-y-2">
-                <Label>{t('transactions.installmentCount')}</Label>
+                <Label htmlFor={`${id}-installment-count`}>{t('transactions.installmentCount')}</Label>
                 <input
+                  id={`${id}-installment-count`}
                   type="number"
                   min={2}
                   max={360}
@@ -1448,13 +1914,25 @@ function TransactionForm({
               {isIgnored ? t('transactions.unignoreAction') : t('transactions.ignoreAction')}
             </Button>
           )}
+          {seed?.id && (
+            <Button
+              type="button"
+              variant={isFlagged ? 'secondary' : 'outline'}
+              onClick={handleToggleFlag}
+              disabled={loading || togglingFlag}
+              className="gap-1.5 whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
+            >
+              <Flag size={14} className={isFlagged ? 'fill-current text-amber-600 dark:text-amber-400' : undefined} />
+              {isFlagged ? t('transactions.unflagAction') : t('transactions.flagAction')}
+            </Button>
+          )}
           {transaction && onCreateRule && (
             <div className="inline-flex">
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => onCreateRule(transaction)}
-                className="gap-1.5 rounded-r-none whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
+                className="gap-1.5 rounded-e-none whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
                 title={t('transactions.createRule')}
               >
                 <SlidersHorizontal size={14} />
@@ -1466,7 +1944,7 @@ function TransactionForm({
                     type="button"
                     variant="outline"
                     aria-label={t('transactions.ruleActions')}
-                    className="rounded-l-none border-l-0 px-1.5 sm:px-2 has-[>svg]:px-1.5 sm:has-[>svg]:px-2 h-8 sm:h-9"
+                    className="rounded-s-none border-s-0 px-1.5 sm:px-2 has-[>svg]:px-1.5 sm:has-[>svg]:px-2 h-8 sm:h-9"
                     disabled={updateRuleMutation.isPending}
                   >
                     <ChevronDown size={14} />
@@ -1482,7 +1960,7 @@ function TransactionForm({
             </div>
           )}
         </div>
-        <div className="flex flex-wrap gap-2 justify-end sm:ml-auto">
+        <div className="flex flex-wrap gap-2 justify-end sm:ms-auto">
           <Button type="button" variant="outline" onClick={onCancel} className="whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9">
             {t('common.cancel')}
           </Button>
@@ -1490,8 +1968,8 @@ function TransactionForm({
             <div className="inline-flex">
               <Button
                 type="submit"
-                disabled={loading || !splitsValid}
-                className="rounded-r-none whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
+                disabled={loading || !splitsValid || !linesValid}
+                className="rounded-e-none whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
               >
                 {loading ? t('common.loading') : t('common.save')}
               </Button>
@@ -1499,9 +1977,9 @@ function TransactionForm({
                 <DropdownMenuTrigger asChild>
                   <Button
                     type="button"
-                    disabled={loading || !splitsValid}
+                    disabled={loading || !splitsValid || !linesValid}
                     aria-label={t('transactions.moreSaveOptions')}
-                    className="rounded-l-none border-l border-l-primary-foreground/20 px-1.5 sm:px-2 has-[>svg]:px-1.5 sm:has-[>svg]:px-2 h-8 sm:h-9"
+                    className="rounded-s-none border-s border-s-primary-foreground/20 px-1.5 sm:px-2 has-[>svg]:px-1.5 sm:has-[>svg]:px-2 h-8 sm:h-9"
                   >
                     <ChevronDown size={14} />
                   </Button>
@@ -1516,8 +1994,23 @@ function TransactionForm({
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
+          ) : !isCreating && hasNext ? (
+            <>
+              <Button type="submit" variant="outline" disabled={loading || !splitsValid || !linesValid} className="whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9">
+                {loading ? t('common.loading') : t('common.save')}
+              </Button>
+              <Button
+                type="button"
+                onClick={() => triggerSubmit('saveAndNext')}
+                disabled={loading || !splitsValid || !linesValid}
+                className="gap-1.5 whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
+              >
+                {t('transactions.saveAndNext')}
+                <ArrowRight size={14} className="rtl-mirror" aria-hidden="true" />
+              </Button>
+            </>
           ) : (
-            <Button type="submit" disabled={loading || !splitsValid} className="whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9">
+            <Button type="submit" disabled={loading || !splitsValid || !linesValid} className="whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9">
               {loading ? t('common.loading') : t('common.save')}
             </Button>
           )}
@@ -1549,6 +2042,21 @@ function TransactionForm({
           initialData={extendRuleDialogProps.initialData}
         />
       )}
+      <PayeeFormDialog
+        open={payeeFormOpen}
+        onOpenChange={setPayeeFormOpen}
+        payee={payeeFormTarget}
+        onSaved={(saved) => {
+          // The row the list held when the save went through is what the save
+          // replaces. The form's own record can be an earlier save's copy,
+          // which the list never carried: using it as the baseline would make
+          // the row still waiting to refresh look like someone else's change,
+          // and the picker would go back to the record before the earlier save.
+          const replaced = payeesList?.find((p) => p.id === saved.id) ?? payeeFormTarget
+          setSavedPayee({ payee: saved, replaced })
+          setPayeeId(saved.id)
+        }}
+      />
     </form>
   )
 }
@@ -1561,6 +2069,7 @@ function MortgagePaymentEditor({
   accounts: { id: string; name: string; display_name?: string | null; type?: string; currency?: string; secured_asset_id?: string | null }[]
 }) {
   const { t } = useTranslation()
+  const id = useId()
   const queryClient = useQueryClient()
   const loans = useMemo(
     () => accounts.filter(account => account.type === 'loan' && account.secured_asset_id && account.currency === transaction.currency),
@@ -1630,7 +2139,7 @@ function MortgagePaymentEditor({
   const percentage = (value: string, totalAmount: number) => totalAmount ? (Number(value || 0) / totalAmount * 100).toFixed(1) : '0.0'
   return (
     <section className="rounded-lg border border-border p-3 space-y-3">
-      <button type="button" className="w-full text-left text-sm font-medium" onClick={() => setExpandedOverride(!isExpanded)}>
+      <button type="button" className="w-full text-start text-sm font-medium" onClick={() => setExpandedOverride(!isExpanded)}>
         {t('transactions.mortgageAllocation')}
         {data?.allocations.length ? ' · ' + data.allocations.length : ''}
       </button>
@@ -1641,13 +2150,13 @@ function MortgagePaymentEditor({
         const propertyName = propertyAssets?.find(asset => asset.id === loan.secured_asset_id)?.name
         return (
           <div key={loan.id} className="rounded-md bg-muted/40 p-3 space-y-2">
-            <div className="text-sm font-medium">{loan.display_name || loan.name}{propertyName ? <span className="ml-1 text-xs font-normal text-muted-foreground">· {propertyName}</span> : null}</div>
+            <div className="text-sm font-medium">{loan.display_name || loan.name}{propertyName ? <span className="ms-1 text-xs font-normal text-muted-foreground">· {propertyName}</span> : null}</div>
             <div className="grid grid-cols-2 gap-3">
-              <label className="text-xs text-muted-foreground">{t('transactions.mortgagePrincipal')}
-              <Input type="number" min="0" step="0.01" value={value.principal} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }} onChange={e => setDraftAmounts(prev => ({ ...(prev ?? amounts), [loan.id]: { ...value, principal: e.target.value } }))} />
+              <label htmlFor={`${id}-${loan.id}-principal`} className="text-xs text-muted-foreground">{t('transactions.mortgagePrincipal')}
+              <Input id={`${id}-${loan.id}-principal`} type="number" min="0" step="0.01" value={value.principal} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }} onChange={e => setDraftAmounts(prev => ({ ...(prev ?? amounts), [loan.id]: { ...value, principal: e.target.value } }))} />
               </label>
-              <label className="text-xs text-muted-foreground">{t('transactions.mortgageInterest')}
-              <Input type="number" min="0" step="0.01" value={value.interest} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }} onChange={e => setDraftAmounts(prev => ({ ...(prev ?? amounts), [loan.id]: { ...value, interest: e.target.value } }))} />
+              <label htmlFor={`${id}-${loan.id}-interest`} className="text-xs text-muted-foreground">{t('transactions.mortgageInterest')}
+              <Input id={`${id}-${loan.id}-interest`} type="number" min="0" step="0.01" value={value.interest} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }} onChange={e => setDraftAmounts(prev => ({ ...(prev ?? amounts), [loan.id]: { ...value, interest: e.target.value } }))} />
               </label>
             </div>
             <p className="text-xs text-muted-foreground">{t('transactions.mortgageSplitPercentages', { principal: percentage(value.principal, paymentAmount), interest: percentage(value.interest, paymentAmount) })}</p>
@@ -1685,6 +2194,7 @@ function AddTransactionToRuleDialog({
   onSubmit: (rule: Rule) => void
 }) {
   const { t } = useTranslation()
+  const id = useId()
   const [ruleId, setRuleId] = useState('')
   const [openCombobox, setOpenCombobox] = useState(false)
 
@@ -1751,15 +2261,25 @@ function AddTransactionToRuleDialog({
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label>{t('transactions.existingRule')}</Label>
+            <Label
+              htmlFor={`${id}-existing-rule`}
+              id={`${id}-existing-rule-label`}
+            >
+              {t('transactions.existingRule')}
+            </Label>
             <Popover open={openCombobox} onOpenChange={setOpenCombobox}>
               <PopoverTrigger asChild>
                 <button
+                  id={`${id}-existing-rule`}
                   type="button"
+                  // The label names a <button>, which the label association does
+                  // not name: it is joined with the value here, like the other
+                  // pickers, so focus announces "Existing rule" and the rule.
+                  aria-labelledby={`${id}-existing-rule-label ${id}-existing-rule-value`}
                   disabled={loadingRules || rules.length === 0}
-                  className="flex w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-3 py-2 text-sm text-left shadow-xs transition-[color,box-shadow] outline-hidden focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 dark:hover:bg-input/50 h-9 cursor-pointer"
+                  className="flex w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-3 py-2 text-sm text-start shadow-xs transition-[color,box-shadow] outline-hidden focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 dark:hover:bg-input/50 h-9 cursor-pointer"
                 >
-                  <span className="flex-1 truncate text-left">
+                  <span id={`${id}-existing-rule-value`} className="flex-1 truncate text-start">
                     {loadingRules ? (
                       t('common.loading')
                     ) : selectedRule ? (
@@ -1910,7 +2430,7 @@ function PendingAttachmentsSection({
                   </div>
 
                   {/* Remove button */}
-                  <div className="absolute left-0 right-0 bottom-[44px] flex items-center justify-center gap-1 px-2 py-1.5 opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200">
+                  <div className="absolute start-0 end-0 bottom-[44px] flex items-center justify-center gap-1 px-2 py-1.5 opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200">
                     <div className="flex items-center gap-1 bg-background/90 dark:bg-card/90 backdrop-blur-sm rounded-lg ring-1 ring-border/50 shadow-lg shadow-black/10 px-1 py-0.5">
                       <button
                         type="button"

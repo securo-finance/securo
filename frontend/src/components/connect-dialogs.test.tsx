@@ -1,16 +1,41 @@
-import { act, screen } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/test/utils'
 import { ConnectorSelectDialog } from './connector-select-dialog'
 import { OAuthConnectDialog } from './oauth-connect-dialog'
 import { BankConnectDialog } from './bank-connect-dialog'
 
-const api = vi.hoisted(() => ({ getProviders: vi.fn(), listInstitutions: vi.fn(), getReconnectToken: vi.fn(), getConnectToken: vi.fn(), toastError: vi.fn() }))
-vi.mock('@/lib/api', () => ({ connections: api, auth: api }))
+const api = vi.hoisted(() => ({ getProviders: vi.fn(), listInstitutions: vi.fn(), getReconnectToken: vi.fn(), getConnectToken: vi.fn(), toastError: vi.fn(), catalog: vi.fn() }))
+const authState = vi.hoisted(() => ({ isAdmin: true }))
+vi.mock('@/lib/api', () => ({ connections: api, auth: api, plugins: { catalog: api.catalog } }))
+vi.mock('@/contexts/auth-context', () => ({ useAuth: () => ({ user: { is_superuser: authState.isAdmin } }) }))
 vi.mock('sonner', () => ({ toast: { error: api.toastError } }))
 vi.mock('react-pluggy-connect', () => ({ PluggyConnect: ({ connectToken }: { connectToken: string }) => <div>{connectToken}</div> }))
 
-beforeEach(() => { vi.resetAllMocks() })
+beforeEach(() => { vi.resetAllMocks(); authState.isAdmin = true })
+
+it('links each unconfigured connector to admin setup without selecting it', async () => {
+  api.getProviders.mockResolvedValue([
+    { name: 'pluggy', display_name: 'Pluggy', description: 'Bank connection', configured: false },
+    { name: 'simplefin', display_name: 'SimpleFIN', description: 'Bank connection', configured: false },
+  ])
+  const onSelect = vi.fn()
+  renderWithProviders(<ConnectorSelectDialog open onClose={vi.fn()} onSelect={onSelect} />)
+
+  const links = await screen.findAllByRole('link', { name: /set up (Pluggy|SimpleFIN)/i })
+  expect(links).toHaveLength(2)
+  for (const link of links) expect(link).toHaveAttribute('href', '/admin#provider-connections')
+  expect(onSelect).not.toHaveBeenCalled()
+})
+
+it('asks non-admin users to contact an administrator for unconfigured connectors', async () => {
+  authState.isAdmin = false
+  api.getProviders.mockResolvedValue([{ name: 'pluggy', display_name: 'Pluggy', description: 'Bank connection', configured: false }])
+  renderWithProviders(<ConnectorSelectDialog open onClose={vi.fn()} onSelect={vi.fn()} />)
+
+  expect(await screen.findByText(/Ask an administrator to configure it/)).toBeVisible()
+  expect(screen.queryByRole('link', { name: /Set up Pluggy/ })).not.toBeInTheDocument()
+})
 
 it('ignores provider responses from a closed session when reopened', async () => {
   let finish!: (data: unknown) => void
@@ -21,6 +46,9 @@ it('ignores provider responses from a closed session when reopened', async () =>
   rerender(<ConnectorSelectDialog open={false} {...props} />)
   rerender(<ConnectorSelectDialog open {...props} />)
   await screen.findByText('New provider')
+  // `finish` is only set once the pending request has started: wait for it
+  // before settling, or a slow run settles an undefined resolve.
+  await waitFor(() => expect(api.getProviders).toHaveBeenCalledTimes(2))
   await act(async () => { finish([{ name: 'old', display_name: 'Old provider', configured: true }]) })
   expect(screen.queryByText('Old provider')).not.toBeInTheDocument()
   expect(screen.getByText('New provider')).toBeInTheDocument()
@@ -36,6 +64,7 @@ it('ignores an earlier country request after back navigation and another selecti
   await user.click(screen.getByRole('button', { name: 'Back' }))
   await user.click(screen.getByText('GB'))
   await screen.findByText('New bank')
+  await waitFor(() => expect(api.listInstitutions).toHaveBeenCalledTimes(3))
   await act(async () => { finish({ institutions: [{ country: 'DE', name: 'old', display_name: 'Old bank' }] }) })
   expect(screen.queryByText('Old bank')).not.toBeInTheDocument()
   expect(screen.getByText('New bank')).toBeInTheDocument()
@@ -48,6 +77,9 @@ it('waits for banks in the remembered country instead of showing an empty result
     .mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
   renderWithProviders(<OAuthConnectDialog open provider="synthetic" onClose={vi.fn()} />)
   await screen.findByRole('button', { name: 'Back' })
+  // The Back button shows up with the country list, before the remembered
+  // country's banks are requested; `finish` is only set by that second call.
+  await waitFor(() => expect(api.listInstitutions).toHaveBeenCalledTimes(2))
   expect(screen.queryByText('No institutions found.')).not.toBeInTheDocument()
   await act(async () => { finish({ institutions: [{ country: 'DE', name: 'bank', display_name: 'Remembered bank' }] }) })
   expect(screen.getByText('Remembered bank')).toBeInTheDocument()
@@ -60,7 +92,7 @@ it('uses the latest close callback without restarting a bank token request', asy
   const latestClose = vi.fn()
   const { rerender } = renderWithProviders(<BankConnectDialog open reconnectConnectionId="synthetic" onClose={firstClose} />)
   rerender(<BankConnectDialog open reconnectConnectionId="synthetic" onClose={latestClose} />)
-  expect(api.getReconnectToken).toHaveBeenCalledTimes(1)
+  await waitFor(() => expect(api.getReconnectToken).toHaveBeenCalledTimes(1))
   await act(async () => { reject(new Error('synthetic failure')) })
   expect(firstClose).not.toHaveBeenCalled()
   expect(latestClose).toHaveBeenCalledOnce()
@@ -73,7 +105,75 @@ it('ignores token failures after the bank dialog closes', async () => {
   const onClose = vi.fn()
   const { rerender } = renderWithProviders(<BankConnectDialog open reconnectConnectionId="synthetic" onClose={onClose} />)
   rerender(<BankConnectDialog open={false} reconnectConnectionId="synthetic" onClose={onClose} />)
+  await waitFor(() => expect(api.getReconnectToken).toHaveBeenCalledTimes(1))
   await act(async () => { reject(new Error('late failure')) })
   expect(onClose).not.toHaveBeenCalled()
   expect(api.toastError).not.toHaveBeenCalled()
+})
+
+const ledgerIntegration = {
+  key: 'keys', name: { en: 'Ledger (API key)' }, description: { en: 'Your payouts' }, auth: 'credentials' as const,
+  fields: [], sync_minutes: 60, provides: ['accounts' as const],
+}
+const ledgerPlugin = {
+  plugin_id: 'acme/ledger', name: { en: 'Ledger' }, version: '1.0.0', commit: '1'.repeat(40),
+  installed_at: '2026-11-12T00:00:00Z', integrations: [ledgerIntegration], network: [], api_scopes: [], redirect_uri: null,
+}
+const LEDGER_ICON = `/api/plugins/icons/${'a'.repeat(64)}.png`
+
+it('offers the installed plugins that sync as a bank, after the providers', async () => {
+  api.getProviders.mockResolvedValue([{ name: 'pluggy', display_name: 'Pluggy', description: 'Bank connection', configured: true }])
+  api.catalog.mockResolvedValue([])
+  const integration = ledgerIntegration
+  const plugin = ledgerPlugin
+  const onSelectPlugin = vi.fn()
+  const { user } = renderWithProviders(
+    <ConnectorSelectDialog open onClose={vi.fn()} onSelect={vi.fn()} plugins={[{ plugin, integration }]} onSelectPlugin={onSelectPlugin} />,
+  )
+  await screen.findByText('Pluggy')
+  expect(screen.getByText('From your plugins')).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: /Ledger \(API key\)/ }))
+  expect(onSelectPlugin).toHaveBeenCalledWith({ plugin, integration })
+})
+
+
+it("shows a plugin's catalog icon instead of its generated badge", async () => {
+  api.getProviders.mockResolvedValue([])
+  api.catalog.mockResolvedValue([{ id: 'acme/ledger', icon_url: LEDGER_ICON }, { id: 'acme/other', icon_url: null }])
+  renderWithProviders(
+    <ConnectorSelectDialog open onClose={vi.fn()} onSelect={vi.fn()} plugins={[{ plugin: ledgerPlugin, integration: ledgerIntegration }]} />,
+  )
+  const button = await screen.findByRole('button', { name: /Ledger \(API key\)/ })
+  await waitFor(() => expect(button.querySelector('img')).toHaveAttribute('src', LEDGER_ICON))
+})
+
+it('keeps the generated badge when the catalog lists the plugin without an icon', async () => {
+  api.getProviders.mockResolvedValue([])
+  api.catalog.mockResolvedValue([{ id: 'acme/ledger', icon_url: null }])
+  renderWithProviders(
+    <ConnectorSelectDialog open onClose={vi.fn()} onSelect={vi.fn()} plugins={[{ plugin: ledgerPlugin, integration: ledgerIntegration }]} />,
+  )
+  const button = await screen.findByRole('button', { name: /Ledger \(API key\)/ })
+  await waitFor(() => expect(api.catalog).toHaveBeenCalled())
+  expect(button.querySelector('img')).toBeNull()
+  expect(button).toHaveTextContent('LE')
+})
+
+it('keeps the generated badge when the catalog has no icon for the plugin or cannot be reached', async () => {
+  api.getProviders.mockResolvedValue([])
+  api.catalog.mockRejectedValue(new Error('index unreachable'))
+  renderWithProviders(
+    <ConnectorSelectDialog open onClose={vi.fn()} onSelect={vi.fn()} plugins={[{ plugin: ledgerPlugin, integration: ledgerIntegration }]} />,
+  )
+  const button = await screen.findByRole('button', { name: /Ledger \(API key\)/ })
+  await waitFor(() => expect(api.catalog).toHaveBeenCalled())
+  expect(button.querySelector('img')).toBeNull()
+  expect(button).toHaveTextContent('LE')
+})
+
+it('does not ask the catalog for icons when no plugin is offered', async () => {
+  api.getProviders.mockResolvedValue([{ name: 'pluggy', display_name: 'Pluggy', description: 'Bank connection', configured: true }])
+  renderWithProviders(<ConnectorSelectDialog open onClose={vi.fn()} onSelect={vi.fn()} />)
+  await screen.findByText('Pluggy')
+  expect(api.catalog).not.toHaveBeenCalled()
 })

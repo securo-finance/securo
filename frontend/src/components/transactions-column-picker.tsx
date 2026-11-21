@@ -16,7 +16,7 @@ export function TransactionsColumnPicker({ state }: Props) {
     <Popover>
       <PopoverTrigger asChild>
         <Button variant="outline" title={t('transactions.columnsTooltip')}>
-          <Columns3 size={16} className="mr-1.5" />
+          <Columns3 size={16} className="me-1.5" />
           {t('transactions.columns')}
         </Button>
       </PopoverTrigger>
@@ -52,7 +52,7 @@ export function TransactionsColumnPicker({ state }: Props) {
           <button
             type="button"
             onClick={() => state.resetColumns()}
-            className="w-full rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="w-full rounded-md px-2 py-1.5 text-start text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             {t('transactions.resetColumns')}
           </button>

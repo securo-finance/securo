@@ -1,3 +1,4 @@
+import { forwardArrow } from '@/lib/format'
 import { useRef, useState, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -12,14 +13,17 @@ import { Label } from '@/components/ui/label'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import type { Category, Payee, Rule, RuleAction, RuleCondition, RuleConditionNode, RuleExportPayload } from '@/types'
-import { isConditionGroup } from '@/lib/rule-conditions'
+import type { Category, Payee, Rule, RuleAction, RuleExportPayload, RulePack } from '@/types'
+import { conditionSummary } from '@/lib/rule-summary'
 import { normalizeRuleMatchValue, ruleSearchText } from '@/lib/rule-match-utils'
 import { Trash2, Plus, RefreshCw, Package, Check, ArrowUpDown, ArrowUp, ArrowDown, Download, Upload, Search, Power } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { localized } from '@/lib/localized-text'
 import { PageHeader } from '@/components/page-header'
 import { PageRefreshButton } from '@/components/page-refresh-button'
 import { useWorkspace } from '@/contexts/workspace-context'
@@ -63,92 +67,22 @@ function SectionHeader({
   )
 }
 
-const CONDITION_FIELDS = [
-  { value: 'description', label: 'rules.fieldDescription' },
-  { value: 'payee', label: 'rules.fieldRawPayee' },
-  { value: 'notes', label: 'rules.fieldNotes' },
-  { value: 'amount', label: 'rules.fieldAmount' },
-  { value: 'type', label: 'rules.fieldType' },
-  { value: 'account_id', label: 'rules.fieldAccount' },
-  { value: 'payee_id', label: 'rules.fieldPayee' },
-  { value: 'date', label: 'rules.fieldDate' },
-  { value: 'status', label: 'rules.fieldStatus' },
-] as const
-
-const STRING_OPS = [
-  { value: 'contains', label: 'rules.opContains' },
-  { value: 'not_contains', label: 'rules.opNotContains' },
-  { value: 'equals', label: 'rules.opEquals' },
-  { value: 'not_equals', label: 'rules.opNotEquals' },
-  { value: 'starts_with', label: 'rules.opStartsWith' },
-  { value: 'ends_with', label: 'rules.opEndsWith' },
-  { value: 'regex', label: 'rules.opRegex' },
-]
-
-const NUMERIC_OPS = [
-  { value: 'equals', label: '=' },
-  { value: 'gt', label: '>' },
-  { value: 'gte', label: '>=' },
-  { value: 'lt', label: '<' },
-  { value: 'lte', label: '<=' },
-]
-
-function getOpsForField(field: string) {
-  if (field === 'amount' || field === 'date') return NUMERIC_OPS
-  if (field === 'type') return [{ value: 'equals', label: 'rules.opIs' }]
-  if (field === 'payee_id' || field === 'account_id' || field === 'status') return [
-    { value: 'equals', label: 'rules.opIs' },
-    { value: 'not_equals', label: 'rules.opIsNot' },
-  ]
-  return STRING_OPS
-}
-
-function conditionSummary(conditions: RuleConditionNode[], conditionsOp: string, t: (key: string) => string, payeesList: Payee[]): string {
-  const fieldLabel = (f: string) => {
-    const key = CONDITION_FIELDS.find(x => x.value === f)?.label
-    return key ? t(key) : f
-  }
-  const opLabel = (f: string, op: string) => {
-    const key = getOpsForField(f).find(x => x.value === op)?.label
-    return key ? t(key) : op
-  }
-  const valueLabel = (c: RuleCondition) => {
-    if (c.field === 'payee_id') {
-      const p = payeesList.find(p => p.id === c.value)
-      return p ? p.name : String(c.value)
-    }
-    if (c.field === 'status') {
-      if (c.value === 'pending') return t('rules.statusPending')
-      if (c.value === 'posted') return t('rules.statusPosted')
-    }
-    return String(c.value)
-  }
-  const leafSummary = (c: RuleCondition) => `${fieldLabel(c.field)} ${opLabel(c.field, c.op)} "${valueLabel(c)}"`
-  const joiner = (op: string) => ` ${op === 'or' ? t('rules.orOp') : t('rules.andOp')} `
-  // Groups get parentheses so a mixed AND/OR rule reads unambiguously.
-  const parts = conditions.map(node => (
-    isConditionGroup(node)
-      ? `(${node.conditions.map(leafSummary).join(joiner(node.op))})`
-      : leafSummary(node)
-  ))
-  return parts.join(joiner(conditionsOp)) || t('rules.noConditions')
-}
-
 function actionSummary(actions: RuleAction[], categories: Category[], payeesList: Payee[], t: (key: string) => string): string {
+  const arrow = forwardArrow()
   return actions.map(a => {
     if (a.op === 'set_category') {
       const cat = findCategoryReference(categories, a.value)
-      return cat ? `→ ${cat.name}` : `→ ${t('transactions.category')}`
+      return cat ? `${arrow} ${cat.name}` : `${arrow} ${t('transactions.category')}`
     }
     if (a.op === 'set_payee') {
       const p = payeesList.find(p => p.id === a.value)
-      return p ? `→ ${t('payees.payee')}: ${p.name}` : `→ ${t('payees.payee')}`
+      return p ? `${arrow} ${t('payees.payee')}: ${p.name}` : `${arrow} ${t('payees.payee')}`
     }
     if (a.op === 'set_description') {
-      return `→ ${t('rules.fieldDescription')}: ${a.value}`
+      return `${arrow} ${t('rules.fieldDescription')}: ${a.value}`
     }
-    if (a.op === 'append_notes') return `→ ${t('rules.fieldNotes')}: ${a.value}`
-    if (a.op === 'ignore') return `→ ${t('rules.ignoreAction')}`
+    if (a.op === 'append_notes') return `${arrow} ${t('rules.fieldNotes')}: ${a.value}`
+    if (a.op === 'ignore') return `${arrow} ${t('rules.ignoreAction')}`
     return a.op
   }).join('  ') || t('rules.noActions')
 }
@@ -512,6 +446,8 @@ export default function RulesPage() {
                   className="gap-1.5 h-8"
                   onClick={() => exportMutation.mutate()}
                   disabled={exportMutation.isPending}
+                  aria-label={t('rules.export')}
+                  title={t('rules.export')}
                 >
                   <Download size={12} />
                   <span className="hidden sm:inline">{t('rules.export')}</span>
@@ -522,6 +458,8 @@ export default function RulesPage() {
                   className="gap-1.5 h-8"
                   onClick={() => importInputRef.current?.click()}
                   disabled={importMutation.isPending}
+                  aria-label={t('rules.import')}
+                  title={t('rules.import')}
                 >
                   <Upload size={12} />
                   <span className="hidden sm:inline">{t('rules.import')}</span>
@@ -531,6 +469,8 @@ export default function RulesPage() {
                   size="sm"
                   className="gap-1.5 h-8"
                   onClick={() => setPacksDialogOpen(true)}
+                  aria-label={t('rules.packs')}
+                  title={t('rules.packs')}
                 >
                   <Package size={12} />
                   <span className="hidden sm:inline">{t('rules.packs')}</span>
@@ -545,11 +485,19 @@ export default function RulesPage() {
                     }
                   }}
                   disabled={applyAllMutation.isPending}
+                  aria-label={t('rules.resetAndReapplyAll', 'Reset and reapply')}
+                  title={t('rules.resetAndReapplyAll', 'Reset and reapply')}
                 >
                   <RefreshCw size={12} />
                   <span className="hidden sm:inline">{t('rules.resetAndReapplyAll', 'Reset and reapply')}</span>
                 </Button>
-                <Button size="sm" className="gap-1.5 h-8" onClick={openCreate}>
+                <Button
+                  size="sm"
+                  className="gap-1.5 h-8"
+                  onClick={openCreate}
+                  aria-label={t('rules.add')}
+                  title={t('rules.add')}
+                >
                   <Plus size={13} /> <span className="hidden sm:inline">{t('rules.add')}</span>
                 </Button>
               </div>
@@ -654,7 +602,7 @@ export default function RulesPage() {
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground font-mono truncate">
-                      {conditionSummary(rule.conditions, rule.conditions_op, t, payees)}
+                      {conditionSummary(rule.conditions, rule.conditions_op, t, (c) => c.field === 'payee_id' ? (payees.find(p => p.id === c.value)?.name ?? String(c.value)) : undefined)}
                     </p>
                     <p className="text-xs text-emerald-600 font-medium mt-0.5">
                       {actionSummary(rule.actions, displayCategories, payees, t)}
@@ -782,9 +730,10 @@ export default function RulesPage() {
 }
 
 function RulePacksDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const queryClient = useQueryClient()
   const [createMissingCategories, setCreateMissingCategories] = useState(true)
+  const [removing, setRemoving] = useState<RulePack | null>(null)
 
   const { data: rulePacks } = useQuery({
     queryKey: ['rule-packs'],
@@ -849,7 +798,7 @@ function RulePacksDialog({ open, onClose }: { open: boolean; onClose: () => void
             >
               <span className="text-2xl">{pack.flag}</span>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-foreground">{pack.name}</p>
+                <p className="text-sm font-semibold text-foreground">{localized(pack.names, i18n.language)}</p>
                 <p className="text-xs text-muted-foreground">
                   {t('rules.packRuleCount', { count: pack.rule_count })}
                 </p>
@@ -871,9 +820,125 @@ function RulePacksDialog({ open, onClose }: { open: boolean; onClose: () => void
                   {t('rules.installPack')}
                 </Button>
               )}
+              {pack.rules_from_pack > 0 && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                  onClick={() => setRemoving(pack)}
+                  aria-label={t('rules.removePackAria', { name: localized(pack.names, i18n.language) })}
+                  title={t('rules.removePack')}
+                >
+                  <Trash2 size={13} />
+                </Button>
+              )}
             </div>
           ))}
         </div>
+      </DialogContent>
+      {removing && <RemovePackDialog pack={removing} onClose={() => setRemoving(null)} />}
+    </Dialog>
+  )
+}
+
+/** Edited rules listed by name before the rest are summed up as "and N more". */
+const KEPT_NAMES_SHOWN = 5
+
+function RemovePackDialog({ pack, onClose }: { pack: RulePack; onClose: () => void }) {
+  const { t, i18n } = useTranslation()
+  const queryClient = useQueryClient()
+
+  const { data: plan, isFetching, isError, refetch } = useQuery({
+    queryKey: ['rule-pack-removal', pack.code],
+    queryFn: () => rulesApi.packRemoval(pack.code),
+    // Every opening starts from a fresh preview, never a cached one.
+    gcTime: 0,
+    // Fail fast to the retry button rather than sit on "Loading" for seconds.
+    retry: 1,
+  })
+
+  const removeMutation = useMutation({
+    mutationFn: (token: string) => rulesApi.removePack(pack.code, token),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['rules'] })
+      queryClient.invalidateQueries({ queryKey: ['rule-packs'] })
+      toast.success(t('rules.packRemoved', { count: result.remove.length }), {
+        description: result.keep.length > 0
+          ? t('rules.packKeptEdited', { count: result.keep.length })
+          : undefined,
+      })
+      onClose()
+    },
+    onError: (error: unknown) => {
+      const err = error as { response?: { status?: number } }
+      if (err?.response?.status === 409) {
+        // The rules changed since this preview: show the current plan instead.
+        toast.error(t('rules.removePackChanged'))
+        void refetch()
+      } else {
+        toast.error(t('common.error'))
+      }
+    },
+  })
+
+  const pending = removeMutation.isPending
+  // A failed refresh counts as failed even with an older plan on screen:
+  // that plan is exactly what the server would refuse, so it isn't shown.
+  const failed = isError && !isFetching
+  const kept = !failed && plan ? plan.keep : []
+  // Confirm only the plan just fetched, and only if removing does something:
+  // delete untouched rules, or hand edited ones over to the user.
+  const confirmable =
+    plan !== undefined && !isFetching && !isError && plan.remove.length + plan.keep.length > 0
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open && !pending) onClose() }}>
+      <DialogContent className="sm:max-w-md" showCloseButton={!pending}>
+        <DialogHeader>
+          <DialogTitle>{t('rules.removePackTitle', { name: localized(pack.names, i18n.language) })}</DialogTitle>
+          <DialogDescription>
+            {failed
+              ? t('rules.removePackPreviewFailed')
+              : plan
+                ? t('rules.removePackSummary', { count: plan.remove.length })
+                : t('common.loading')}
+          </DialogDescription>
+        </DialogHeader>
+        {kept.length > 0 && (
+          <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-xs">
+            <p className="font-medium text-foreground">
+              {t('rules.removePackKeeps', { count: kept.length })}
+            </p>
+            <ul className="mt-1.5 space-y-0.5 text-muted-foreground">
+              {kept.slice(0, KEPT_NAMES_SHOWN).map((rule) => (
+                <li key={rule.id} className="truncate">{rule.name}</li>
+              ))}
+              {kept.length > KEPT_NAMES_SHOWN && (
+                <li>{t('rules.removePackMore', { count: kept.length - KEPT_NAMES_SHOWN })}</li>
+              )}
+            </ul>
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={pending}>
+            {t('common.cancel')}
+          </Button>
+          {failed ? (
+            <Button variant="outline" onClick={() => void refetch()} disabled={isFetching}>
+              <RefreshCw size={14} className="me-1" />
+              {t('common.retry')}
+            </Button>
+          ) : (
+            <Button
+              variant="destructive"
+              onClick={() => plan && removeMutation.mutate(plan.token)}
+              disabled={pending || !confirmable}
+            >
+              <Trash2 size={14} className="me-1" />
+              {t('rules.removePackConfirm')}
+            </Button>
+          )}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

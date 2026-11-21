@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { Link2 } from 'lucide-react'
@@ -25,13 +26,22 @@ export function MemberForm({
 }: MemberFormProps) {
   const { t } = useTranslation()
   const { user } = useAuth()
+  const id = useId()
 
-  // Directory of all Securo users on the instance
+  // You and the users who share a workspace with you. Anyone else is
+  // linked by typing their exact email below.
   const { data: userDirectory } = useQuery({
     queryKey: ['users', 'directory'],
     queryFn: () => usersApi.directory(),
     staleTime: 60_000,
   })
+
+  // A member linked to someone outside your workspaces is not in the
+  // directory; keep their link as an option so the select doesn't read
+  // "not linked" while the fields stay locked to that user.
+  const linkedOutsideDirectory =
+    linkedUserId !== null &&
+    !(userDirectory ?? []).some((u) => u.id === linkedUserId)
 
   // Resolve a typed email to an existing Securo user
   const trimmedEmail = email.trim()
@@ -46,8 +56,9 @@ export function MemberForm({
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <Label>{t('splitGroups.linkedUser')}</Label>
+        <Label htmlFor={`${id}-linked-user`}>{t('splitGroups.linkedUser')}</Label>
         <select
+          id={`${id}-linked-user`}
           className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card h-9 focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
           value={linkedUserId ?? ''}
           onChange={(e) => {
@@ -57,12 +68,19 @@ export function MemberForm({
               const picked = userDirectory?.find((u) => u.id === id)
               if (picked) {
                 onChangeEmail(picked.email)
-                onChangeName(picked.email.split('@')[0])
+                // The linked person's own name; the local part of the address
+                // is only a stand-in for someone who never set one.
+                onChangeName(
+                  picked.display_name?.trim() || picked.email.split('@')[0],
+                )
               }
             }
           }}
         >
           <option value="">{t('splitGroups.linkedUserNone')}</option>
+          {linkedOutsideDirectory && (
+            <option value={linkedUserId}>{email || linkedUserId}</option>
+          )}
           {(userDirectory ?? []).map((u) => (
             <option key={u.id} value={u.id}>
               {u.email}
@@ -76,8 +94,9 @@ export function MemberForm({
       </div>
 
       <div className="space-y-2">
-        <Label>{t('splitGroups.memberName')}</Label>
+        <Label htmlFor={`${id}-member-name`}>{t('splitGroups.memberName')}</Label>
         <Input
+          id={`${id}-member-name`}
           value={name}
           onChange={(e) => onChangeName(e.target.value)}
           disabled={linkedUserId !== null}
@@ -85,8 +104,9 @@ export function MemberForm({
       </div>
 
       <div className="space-y-2">
-        <Label>{t('splitGroups.memberEmail')}</Label>
+        <Label htmlFor={`${id}-member-email`}>{t('splitGroups.memberEmail')}</Label>
         <Input
+          id={`${id}-member-email`}
           type="email"
           value={email}
           onChange={(e) => onChangeEmail(e.target.value)}

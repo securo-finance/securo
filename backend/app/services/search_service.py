@@ -17,6 +17,7 @@ from typing import Any, Literal, Optional
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
 from app.models.account import Account
 from app.models.asset import Asset
 from app.models.category import Category
@@ -95,16 +96,21 @@ async def search_all(
     hits: list[SearchHit] = []
 
     # -- Transactions -------------------------------------------------------
-    from app.models.group import GroupMember
     from app.models.transaction_split import TransactionSplit
 
-    viewer_member_ids = select(GroupMember.id).where(
-        GroupMember.linked_user_id == user_id,
-        GroupMember.is_self.is_(False),
-    )
+    # Same projection the statement uses (#1305): the viewer's shares from
+    # another workspace, minus the rows they created (native in their own
+    # workspace, never "shared").
+    viewer_member_ids = invited_group_member_ids(user_id)
     shared_tx_ids = (
         select(TransactionSplit.transaction_id)
-        .where(TransactionSplit.group_member_id.in_(viewer_member_ids))
+        .join(Transaction, Transaction.id == TransactionSplit.transaction_id)
+        .where(
+            TransactionSplit.group_member_id.in_(viewer_member_ids),
+            Transaction.workspace_id != workspace_id,
+            Transaction.user_id != user_id,
+            in_bound_workspace(Transaction.workspace_id),
+        )
         .distinct()
     )
     tx_result = await session.execute(
@@ -136,6 +142,8 @@ async def search_all(
                 meta={
                     "account_id": str(tx.account_id),
                     "category_id": str(tx.category_id) if tx.category_id else None,
+                    # Split across categories: no category of its own.
+                    "has_category_lines": bool(tx.has_category_lines),
                     "tx_type": tx.type,
                     "source": tx.source,
                 },

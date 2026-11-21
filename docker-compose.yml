@@ -9,7 +9,9 @@ x-podman:
 
 x-backend-env: &backend-env
   DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/securo
-  SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-production}
+  # Optional. Left empty, Securo generates a unique key on first start and
+  # keeps it in the database. Set one (openssl rand -hex 32) to manage it yourself.
+  SECRET_KEY: ${SECRET_KEY:-}
   DEBUG: ${DEBUG:-true}
   # Not nested (${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-3000}}):
   # podman-compose before 1.6.0 leaves a stray "}" on such values (#1162).
@@ -50,7 +52,24 @@ x-backend-env: &backend-env
   OPENEXCHANGERATES_APP_ID: ${OPENEXCHANGERATES_APP_ID:-}
   FX_SYNC_MODE: ${FX_SYNC_MODE:-on_demand}
   TESOURO_DIRETO_ENABLED: ${TESOURO_DIRETO_ENABLED:-true}
+  # Data plugins (categories and rules) from the plugin catalog, opt-in.
+  # No extra container: the catalog is fetched only when someone opens it.
+  PLUGINS_ENABLED: ${PLUGINS_ENABLED:-false}
+  PLUGINS_INDEX_URL: ${PLUGINS_INDEX_URL:-https://plugins.usesecuro.com/v1/index.json}
+  # Plugins with code run in the plugins-runner container below, started only
+  # with `--profile plugins`. Blank PLUGINS_RUNNER_URL: no plugin with code.
+  PLUGINS_RUNNER_URL: ${PLUGINS_RUNNER_URL:-}
+  PLUGINS_RUNNER_TOKEN: ${PLUGINS_RUNNER_TOKEN:-}
+  STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
   STORAGE_LOCAL_PATH: /app/data/attachments
+  STORAGE_S3_BUCKET: ${STORAGE_S3_BUCKET:-}
+  STORAGE_S3_REGION: ${STORAGE_S3_REGION:-}
+  STORAGE_S3_ENDPOINT_URL: ${STORAGE_S3_ENDPOINT_URL:-}
+  STORAGE_S3_ALLOW_INSECURE_HTTP: ${STORAGE_S3_ALLOW_INSECURE_HTTP:-false}
+  STORAGE_S3_ADDRESSING_STYLE: ${STORAGE_S3_ADDRESSING_STYLE:-auto}
+  STORAGE_S3_ACCESS_KEY: ${STORAGE_S3_ACCESS_KEY:-}
+  STORAGE_S3_SECRET_KEY: ${STORAGE_S3_SECRET_KEY:-}
+  STORAGE_S3_SESSION_TOKEN: ${STORAGE_S3_SESSION_TOKEN:-}
   AGENTS_KNOWLEDGE_STORAGE_PATH: /app/data/agent_knowledge
   # Agents/LLM feature, opt-in. Off by default so existing users pay
   # zero cost. Run `docker compose --profile agents up` after enabling.
@@ -61,7 +80,15 @@ x-backend-env: &backend-env
   # (host:8765). Set when the MCP server sits behind an ingress/reverse proxy.
   AGENTS_EXTERNAL_MCP_URL: ${AGENTS_EXTERNAL_MCP_URL:-}
   AGENTS_EXTRA_MCP_SERVERS: ${AGENTS_EXTRA_MCP_SERVERS:-}
-  AGENTS_MCP_JWT_SECRET: ${AGENTS_MCP_JWT_SECRET:-dev-mcp-secret-change-in-production}
+  # Per-IP ceiling on assistant chat messages, in requests per minute. Every
+  # message spends provider tokens, so lower it (5, for example) on a public
+  # demo. A turn that runs several tools is still one request. 0 turns off.
+  AGENTS_CHAT_RATE_LIMIT_PER_MINUTE: ${AGENTS_CHAT_RATE_LIMIT_PER_MINUTE:-30}
+  # Signs the MCP server's JWTs. Empty derives it from SECRET_KEY, so an
+  # install with a random SECRET_KEY needs no extra configuration. There is no
+  # default value on purpose: a public one would let anyone mint a token for
+  # any user (#1174). A known public value is refused at startup.
+  AGENTS_MCP_JWT_SECRET: ${AGENTS_MCP_JWT_SECRET:-}
   # TTL for tokens minted from /agents/connections → "External MCP access".
   # Used by Claude Desktop, n8n, custom clients plugging into Securo.
   AGENTS_MCP_EXTERNAL_TTL_DAYS: ${AGENTS_MCP_EXTERNAL_TTL_DAYS:-90}
@@ -101,8 +128,15 @@ x-backend-base: &backend-base
     - ./backend:/app
     - ./secrets:/app/secrets:ro
     - attachments:/app/data/attachments
+    # Managed/scheduled backup ZIPs are written inside containers to /app/data/backups.
+    # Set BACKUP_HOST_PATH to expose that internal directory wherever you want on
+    # the host, e.g. BACKUP_HOST_PATH=/srv/securo/backups.
+    - ${BACKUP_HOST_PATH:-./data/backups}:/app/data/backups
     - agent_knowledge:/app/data/agent_knowledge
     - agent_embedding_models:/app/data/embedding_models
+  # `plugins` is internal: it lets the backend reach the plugin runner and
+  # nothing else. It costs nothing while the `plugins` profile is off.
+  networks: [default, plugins]
   restart: unless-stopped
 
 services:
@@ -203,7 +237,70 @@ services:
     ports:
       - "${AGENTS_MCP_EXTERNAL_HOST_PORT:-127.0.0.1:8765}:8765"
 
+  # Optional: plugins with code. Only start under the `plugins` profile
+  # (`docker compose --profile plugins up`, with PLUGINS_ENABLED=true,
+  # PLUGINS_RUNNER_URL=http://plugins-runner:8090, and PLUGINS_RUNNER_TOKEN and
+  # PLUGINS_EGRESS_SECRET set to long random values: there is no default, since
+  # plugin code runs next to the runner's API). Same image as the backend,
+  # but none of its environment: no SECRET_KEY, no database, no provider keys.
+  # The runner sits only on the internal `plugins` network, so it can't reach
+  # the database, Redis or the internet; each plugin runs as its own user and
+  # goes out only through plugins-egress, to the hosts it declared.
+  plugins-runner:
+    build: ./backend
+    profiles: [plugins]
+    command: uvicorn --factory plugin_runner.main:create_app --host 0.0.0.0 --port 8090
+    environment:
+      PLUGINS_RUNNER_TOKEN: ${PLUGINS_RUNNER_TOKEN:-}
+      PLUGINS_EGRESS_SECRET: ${PLUGINS_EGRESS_SECRET:-}
+      PLUGINS_EGRESS_PROXY: plugins-egress:3128
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      # Only the runner's own code, never the whole backend folder: a plugin
+      # could read backend/.env or secrets from it.
+      - ./backend/plugin_runner:/app/plugin_runner:ro
+      - plugins:/var/lib/securo-plugins
+    networks: [plugins]
+    read_only: true
+    tmpfs: [/tmp]
+    # Root only to hand each plugin its own user and clean up after it.
+    cap_drop: [ALL]
+    cap_add: [SETUID, SETGID, CHOWN, DAC_OVERRIDE, FOWNER, KILL]
+    security_opt: ["no-new-privileges:true"]
+    # An init reaps what killed plugin processes leave behind (the runner isn't PID 1).
+    init: true
+    # Caps for everything plugins start together (each call also has its own limits).
+    pids_limit: 512
+    mem_limit: ${PLUGINS_RUNNER_MEMORY:-2g}
+    restart: unless-stopped
+
+  # The plugins' only way out: a CONNECT proxy that checks each plugin's signed
+  # pass against the hosts it declared and refuses private addresses. TLS goes
+  # through untouched (client certificates keep working).
+  plugins-egress:
+    build: ./backend
+    profiles: [plugins]
+    command: python -m plugin_runner.egress
+    environment:
+      PLUGINS_EGRESS_SECRET: ${PLUGINS_EGRESS_SECRET:-}
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ./backend/plugin_runner:/app/plugin_runner:ro
+    networks: [default, plugins]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    user: "65534:65534"
+    restart: unless-stopped
+
+networks:
+  # Declared so podman-compose accepts services that name it alongside `plugins`.
+  default: {}
+  plugins:
+    internal: true
+
 volumes:
+  plugins:
   pgdata:
   attachments:
   agent_knowledge:

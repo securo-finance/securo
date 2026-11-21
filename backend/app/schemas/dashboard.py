@@ -24,6 +24,12 @@ class DashboardSummary(BaseModel):
     pending_categorization_amount: float
     assets_value: dict[str, float] = Field(default_factory=dict)  # currency -> total asset value
     assets_value_primary: float = 0.0
+    # Liquid / near-liquid cash (checking + savings + wallet). Not investments.
+    cash_balance: dict[str, float] = Field(default_factory=dict)
+    cash_balance_primary: float = 0.0
+    # Brokerage / investment *accounts* (type=investment). Distinct from assets_value.
+    investment_accounts: dict[str, float] = Field(default_factory=dict)
+    investment_accounts_primary: float = 0.0
     primary_currency: str = "USD"
     # No real FX rate for at least one currency bucket: the *_primary totals
     # sum that bucket at 1:1, so they are an estimate, not a conversion.
@@ -76,6 +82,17 @@ class BalanceHistory(BaseModel):
     comparison_opening_balance: Optional[float] = None
 
 
+class ProjectedCategoryLine(BaseModel):
+    """One part of a projected occurrence of a split recurring template."""
+
+    category_id: str
+    category_name: Optional[str] = None
+    category_icon: Optional[str] = None
+    category_color: Optional[str] = None
+    amount: float
+    treat_as_transfer: bool = False
+
+
 class ProjectedTransaction(BaseModel):
     recurring_id: str
     account_id: Optional[str] = None
@@ -85,8 +102,14 @@ class ProjectedTransaction(BaseModel):
     currency: str
     type: str  # debit, credit
     date: str  # YYYY-MM-DD
+    # The date the month list files it under: the card bill's due date in
+    # accrual mode, else ``date``.
+    reporting_date: Optional[str] = None
     category_id: Optional[str]
     category_name: Optional[str]
     category_icon: Optional[str]
     category_color: Optional[str] = None
     category_treat_as_transfer: bool = False
+    # Split template: `category_*` are empty and the parts are listed here.
+    has_category_lines: bool = False
+    category_lines: list[ProjectedCategoryLine] = []

@@ -40,6 +40,9 @@ import { cn } from '@/lib/utils'
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** A message to send to the active agent as soon as the panel is ready. */
+  initialMessage?: string | null
+  onInitialMessageSent?: () => void
 }
 
 const STORAGE_KEY = 'securo.global-chat'
@@ -68,7 +71,7 @@ function writeState(s: PersistedState) {
   }
 }
 
-export function GlobalChatPanel({ open, onOpenChange }: Props) {
+export function GlobalChatPanel({ open, onOpenChange, initialMessage, onInitialMessageSent }: Props) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const [view, setView] = useState<'chat' | 'history'>('chat')
@@ -85,13 +88,19 @@ export function GlobalChatPanel({ open, onOpenChange }: Props) {
     enabled: open,
     staleTime: 1000 * 30,
   })
-  const { data: defaultAgent } = useQuery({
+  // A saved choice counts only while that agent still exists; otherwise the
+  // default is looked up, as when nothing was saved.
+  const savedAgentExists = Boolean(persisted.agentId && agentsList?.some((a) => a.id === persisted.agentId))
+  const { data: defaultAgent, isFetched: defaultChecked } = useQuery({
     queryKey: ['agents-default'],
     queryFn: () => agents.getDefault(),
-    enabled: open && !persisted.agentId,
+    enabled: open && !savedAgentExists,
     retry: false,
     staleTime: 1000 * 60,
   })
+  // A message from elsewhere waits until we know which agent gets it: the
+  // saved choice, or the default once that lookup is done (failed counts as done).
+  const agentSettled = savedAgentExists || defaultChecked
 
   // Resolve which agent is active. Order: persisted choice → default →
   // first in the list. The picked id always points at an agent that
@@ -166,10 +175,11 @@ export function GlobalChatPanel({ open, onOpenChange }: Props) {
         <DialogPrimitive.Content
           aria-describedby={undefined}
           className={cn(
-            'fixed right-0 top-0 z-50 h-full w-full sm:w-[440px] md:w-[480px] bg-background border-l shadow-xl',
+            'fixed end-0 top-0 z-50 h-full w-full sm:w-[440px] md:w-[480px] bg-background border-s shadow-xl',
             'flex flex-col outline-none',
             'data-[state=open]:animate-in data-[state=closed]:animate-out',
             'data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right',
+            'rtl:data-[state=closed]:slide-out-to-left rtl:data-[state=open]:slide-in-from-left',
             'duration-200',
           )}
         >
@@ -184,7 +194,7 @@ export function GlobalChatPanel({ open, onOpenChange }: Props) {
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="-ml-1 px-1.5"
+                    className="-ms-1 px-1.5"
                     onClick={() => setView('chat')}
                     aria-label={t('agents.globalChat.backToChat')}
                   >
@@ -203,7 +213,7 @@ export function GlobalChatPanel({ open, onOpenChange }: Props) {
                     aria-label={t('agents.globalChat.selectAgent', 'Select agent')}
                     className={cn(
                       'h-8 gap-1.5 border-0 bg-transparent shadow-none focus-visible:ring-0',
-                      'px-2 -ml-1 hover:bg-muted text-sm font-medium',
+                      'px-2 -ms-1 hover:bg-muted text-sm font-medium',
                       'data-[size=default]:h-8',
                     )}
                   >
@@ -234,7 +244,7 @@ export function GlobalChatPanel({ open, onOpenChange }: Props) {
                   </SelectContent>
                 </Select>
               ) : (
-                <div className="inline-flex items-center gap-2 px-2 -ml-1">
+                <div className="inline-flex items-center gap-2 px-2 -ms-1">
                   <span
                     className="inline-block h-2 w-2 rounded-full shrink-0"
                     style={{ backgroundColor: activeAgent?.color ?? 'transparent' }}
@@ -337,6 +347,8 @@ export function GlobalChatPanel({ open, onOpenChange }: Props) {
                 }}
                 focusSignal={focusBump}
                 getPageContext={() => getEffectivePageChatContext()}
+                initialMessage={agentSettled ? initialMessage : null}
+                onInitialMessageSent={onInitialMessageSent}
               />
             )}
             {activeAgent && view === 'history' && (
@@ -414,7 +426,7 @@ function ConversationRow({
       type="button"
       onClick={onClick}
       className={cn(
-        'w-full text-left px-3 py-2.5 hover:bg-muted transition-colors flex flex-col gap-0.5',
+        'w-full text-start px-3 py-2.5 hover:bg-muted transition-colors flex flex-col gap-0.5',
         isActive && 'bg-muted',
       )}
     >

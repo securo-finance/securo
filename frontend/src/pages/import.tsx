@@ -136,6 +136,7 @@ function TransactionImportPanel() {
         payee_raw: rt.payee_raw ?? undefined,
         notes: rt.notes ?? undefined,
         category_name: rt.category_name ?? undefined,
+        category_lines: rt.category_lines ?? undefined,
         excluded: rt.excluded,
         category_id: rt.selected_category_id !== undefined
           ? (rt.selected_category_id ?? undefined)
@@ -432,7 +433,7 @@ function TransactionImportPanel() {
                     </span>
                     <button
                       type="button"
-                      className="ml-2 font-semibold underline hover:text-amber-800 focus:outline-none"
+                      className="ms-2 font-semibold underline hover:text-amber-800 focus:outline-none"
                       onClick={() => setIsFailedRowsOpen(true)}
                     >
                       {t('import.viewDetails')}
@@ -610,7 +611,7 @@ function TransactionImportPanel() {
             </DialogDescription>
           </DialogHeader>
           <div className="flex-1 border border-border rounded-lg overflow-hidden bg-card text-foreground mt-4 max-h-[50vh] overflow-y-auto">
-            <table className="w-full text-left text-xs border-collapse">
+            <table className="w-full text-start text-xs border-collapse">
               <thead>
                 <tr className="bg-muted text-muted-foreground border-b border-border sticky top-0">
                   <th className="px-3 py-2 font-semibold w-16">{t('import.lineNumber')}</th>

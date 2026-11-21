@@ -22,6 +22,7 @@ from __future__ import annotations
 import base64
 import binascii
 import logging
+import re
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
@@ -30,6 +31,7 @@ from urllib.parse import unquote, urlsplit, urlunsplit
 import httpx
 
 from app.agents.services.crypto import decrypt, encrypt
+from app.core.config import Settings
 from app.providers.favicon import favicon_url_for
 from app.providers.base import (
     AccountData,
@@ -141,6 +143,74 @@ def _iso_currency(value: Any, fallback: Optional[str]) -> Optional[str]:
     return fallback
 
 
+# Words that name a credit card, in the languages the bridge's connectors
+# carry. A bare "card" is not one of them: "debit card" and "credit union"
+# both contain a card word and neither is a card (issue #352).
+_CREDIT_CARD_WORDS = (
+    "credit card",
+    "creditcard",
+    "visa",
+    "mastercard",
+    "master card",
+    "amex",
+    "american express",
+    "carta di credito",
+    "carte de crédit",
+    "cartão de crédito",
+)
+_SAVINGS_WORDS = ("savings", "saving", "poupança", "poupanca")
+_CHECKING_WORDS = ("checking", "chequing", "conta corrente")
+# A word that reads like a card's but names something else; the card match is
+# skipped for these, so "Debit Card" stays a cash account.
+_NOT_A_CARD_WORDS = ("debit", "débito", "debito", "credit union")
+
+
+def _infer_account_type(name: str, balance: Decimal) -> str:
+    """The best default type for an account SimpleFIN does not type.
+
+    The protocol exposes no account-type field, so every account used to land
+    as ``checking`` and the user had to fix each card, savings and brokerage
+    one by hand after the first connect (issue #352). This is only a default:
+    the type override the user picks survives every later sync (#271 / #305),
+    so a wrong guess costs the one click it already cost for every account.
+
+    The name is read before the sign, so an overdrawn checking account is not
+    taken for a card. Only a name that says nothing leaves the sign to decide,
+    where a negative balance means what the account owes — how this protocol
+    reports a card.
+    """
+    lowered = " ".join((name or "").lower().split())
+
+    def says(words: tuple[str, ...]) -> bool:
+        # Whole words only: "Visalia Money Market" is not a Visa card.
+        return any(re.search(rf"(?<!\w){re.escape(word)}(?!\w)", lowered) for word in words)
+
+    is_cash = says(_SAVINGS_WORDS + _CHECKING_WORDS)
+    says_card = says(_CREDIT_CARD_WORDS)
+    says_not_a_card = says(_NOT_A_CARD_WORDS)
+    if says_card and not says_not_a_card and not is_cash:
+        return "credit_card"
+    if says(_SAVINGS_WORDS):
+        return "savings"
+    if is_cash:
+        return "checking"
+    return "credit_card" if balance < 0 else "checking"
+
+
+def _account_currency(raw_acc: dict) -> str:
+    """The currency an account is stored in, as ``_parse_accounts`` stores it.
+
+    Every read of an account's currency goes through here. ``get_holdings``
+    used to fall back to the raw value, so a loosely formatted account
+    currency (``"usd"``, or a custom-currency URL, which the SimpleFIN spec
+    allows) gave a holding without its own currency a different label from
+    its account. The sync matches the two exactly before deducting the
+    holding from the balance, so the portfolio was counted twice again
+    (issue #343); a URL would also overflow ``assets.currency``.
+    """
+    return _iso_currency(raw_acc.get("currency"), "USD") or "USD"
+
+
 def _ticker(value: Any) -> Optional[str]:
     """Normalize a holding's symbol for the ``assets.ticker`` column.
 
@@ -183,10 +253,47 @@ def _surface_errors(
     return reauth
 
 
+def _positions_value(raw_acc: dict) -> Decimal:
+    """Market value of the positions SimpleFIN lists inside this account.
+
+    SimpleFIN returns a brokerage as one account whose ``balance`` is the
+    whole portfolio (positions plus cash), with the positions themselves
+    under ``holdings``. The holdings sync stores those as assets, so the
+    account balance would count the same money again (issue #343, the
+    SimpleFIN shape of #843). The provider only reports the portion here;
+    the sync decides whether to subtract it, and only while a live holding
+    is counted for this account (connection_service._auto_invested_deductions).
+
+    Counts a position only when it carries an id and a market value (the
+    same two things get_holdings requires before importing it) and is
+    quoted in the account's currency; a position in another currency cannot
+    be subtracted from this balance, so it is left in. Not clamped to the
+    balance: positions worth more than the balance mean a margin debit, and
+    the negative cash residual is what the reports count as the liability,
+    so net worth still equals the balance the broker reported.
+    """
+    acc_currency = _account_currency(raw_acc)
+    total = Decimal("0")
+    for raw in raw_acc.get("holdings") or []:
+        if not isinstance(raw, dict):
+            continue
+        if not str(raw.get("id") or ""):
+            continue
+        value = _to_decimal(raw.get("market_value"))
+        # NaN would raise on the comparison below; Infinity is not a value.
+        if value is None or not value.is_finite() or value <= 0:
+            continue
+        if (_iso_currency(raw.get("currency"), acc_currency) or acc_currency) != acc_currency:
+            continue
+        total += value
+    return total
+
+
 class SimpleFinProvider(BankProvider):
     """SimpleFIN Bridge connector."""
 
-    def __init__(self) -> None:
+    def __init__(self, settings: Settings | None = None) -> None:
+        super().__init__(settings)
         self.action_required_warnings: list[dict] = []
         # External ids of accounts whose transaction fetch stopped early on
         # an authorization failure. Their result is partial (earlier chunks
@@ -432,7 +539,7 @@ class SimpleFinProvider(BankProvider):
         accounts: list[AccountData] = []
         for raw in payload.get("accounts") or []:
             balance = _to_decimal(raw.get("balance")) or Decimal("0")
-            currency = _iso_currency(raw.get("currency"), "USD") or "USD"
+            currency = _account_currency(raw)
             account_id = str(raw.get("id") or "")
             if not account_id:
                 continue
@@ -445,12 +552,13 @@ class SimpleFinProvider(BankProvider):
                 AccountData(
                     external_id=account_id,
                     name=name,
-                    type="checking",  # SimpleFIN doesn't expose an account type
+                    type=_infer_account_type(name, balance),
                     balance=balance,
                     currency=currency,
                     institution_external_id=inst_ext,
                     institution_name=inst_name,
                     institution_logo_url=inst_logo,
+                    auto_invested_balance=_positions_value(raw),
                 )
             )
         return institution_name or "SimpleFIN Connection", accounts
@@ -580,6 +688,11 @@ class SimpleFinProvider(BankProvider):
             cursor = chunk_end
         return transactions
 
+    def parse_raw_transaction(
+        self, raw: dict, payee_source: str = "auto"
+    ) -> Optional[TransactionData]:
+        return self._build_transaction(raw, payee_source)
+
     @staticmethod
     def _build_transaction(raw: dict, payee_source: str) -> Optional[TransactionData]:
         txn_id = str(raw.get("id") or "")
@@ -632,7 +745,7 @@ class SimpleFinProvider(BankProvider):
         self.action_required_warnings.extend(warnings)
         holdings: list[HoldingData] = []
         for raw_acc in payload.get("accounts") or []:
-            acc_currency = raw_acc.get("currency") or "USD"
+            acc_currency = _account_currency(raw_acc)
             acc_id = str(raw_acc.get("id") or "") or None
             acc_name = raw_acc.get("name")
             for raw in raw_acc.get("holdings") or []:

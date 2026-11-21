@@ -178,14 +178,16 @@ async def test_shared_workspace_sync_imports_as_connection_owner(
 
 
 @pytest.mark.asyncio
-async def test_get_oauth_url(test_user, test_workspace):
+async def test_get_oauth_url(session, test_user, test_workspace):
     mock_provider = AsyncMock()
     mock_provider.redirect_uri = "https://app/redirect"
     mock_provider.get_oauth_url = AsyncMock(return_value="https://bank/authorize?state=xyz")
     with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
          patch("app.services.connection_service.oauth_state.store_state",
                new_callable=AsyncMock, return_value="state-token"):
-        url = await get_oauth_url("pluggy", test_user.id, test_workspace.id, {"country": "BR"})
+        url = await get_oauth_url(
+            "pluggy", test_user.id, test_workspace.id, {"country": "BR"}, session=session
+        )
     assert url == "https://bank/authorize?state=xyz"
     mock_provider.get_oauth_url.assert_awaited_once()
 
@@ -215,7 +217,7 @@ async def test_get_reauth_url_not_found(session: AsyncSession, test_user, test_w
 
 
 @pytest.mark.asyncio
-async def test_list_provider_institutions():
+async def test_list_provider_institutions(session):
     mock_provider = AsyncMock()
     mock_provider.list_institutions = AsyncMock(return_value=InstitutionListData(
         countries=["DE", "FR"],
@@ -228,7 +230,7 @@ async def test_list_provider_institutions():
         ],
     ))
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        result = await list_provider_institutions("enable_banking", "DE")
+        result = await list_provider_institutions("enable_banking", "DE", session=session)
     assert result["countries"] == ["DE", "FR"]
     assert len(result["institutions"]) == 1
     inst = result["institutions"][0]
@@ -481,7 +483,9 @@ async def test_sync_holdings_archives_disappeared(session: AsyncSession, test_us
 
 @pytest.mark.asyncio
 async def test_sync_trigger_refresh_needs_user_action(session: AsyncSession, test_user, test_workspace):
-    conn = await _make_connection(session, test_user.id, "RefreshBank")
+    conn = await _make_connection(
+        session, test_user.id, "RefreshBank", settings={"payee_source": "auto"}
+    )
     mock_provider = AsyncMock()
     mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
     mock_provider.trigger_refresh = AsyncMock(return_value="needs_user_action")
@@ -498,8 +502,9 @@ async def test_sync_trigger_refresh_needs_user_action(session: AsyncSession, tes
         select(BankConnection).where(BankConnection.id == conn.id)
     )).scalar_one()
     assert refreshed.status == "error"
-    assert refreshed.settings is not None
-    assert "last_provider_refresh_at" in refreshed.settings
+    # The refresh never ran, so this attempt must not rest the connection:
+    # the beat reads this stamp to decide when to ask again (#1252).
+    assert "last_provider_refresh_at" not in (refreshed.settings or {})
 
 
 @pytest.mark.asyncio
@@ -524,6 +529,41 @@ async def test_sync_trigger_refresh_refreshed_then_reads(session: AsyncSession, 
     assert result.status == "active"
     assert result.settings is not None
     assert "last_provider_refresh_at" in result.settings
+    mock_provider.trigger_refresh.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["failed", "skipped"])
+async def test_sync_trigger_refresh_soft_failure_does_not_stamp_the_refresh(
+    session: AsyncSession, test_user, test_workspace, outcome
+):
+    """A skipped or soft-failed refresh must not rest the connection (#1252).
+
+    `last_provider_refresh_at` is what the background sync reads to decide
+    whether to ask the provider again; recording an attempt the provider
+    never ran keeps the beat quiet for a whole PROVIDER_REFRESH_THRESHOLD.
+    """
+    conn = await _make_connection(
+        session, test_user.id, "RefreshSoftFail", settings={"payee_source": "auto"}
+    )
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.trigger_refresh = AsyncMock(return_value=outcome)
+    mock_provider.get_accounts = AsyncMock(return_value=[])
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+
+    p1, p2, p3 = _patch_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         p1, p2, p3:
+        result, _, _ = await sync_connection(
+            session, conn.id, test_workspace.id, test_user.id,
+            trigger_provider_refresh=True,
+        )
+
+    # The read still happens on the provider's cached copy: only the stamp
+    # stays off, so the next background sync asks again.
+    assert result.status == "active"
+    assert "last_provider_refresh_at" not in (result.settings or {})
     mock_provider.trigger_refresh.assert_awaited_once()
 
 

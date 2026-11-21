@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { AppDirection } from '@/components/app-direction'
 import { ThemeProvider } from '@/components/theme-provider'
 import { AuthProvider } from '@/contexts/auth-provider'
 import { WorkspaceProvider } from '@/contexts/workspace-provider'
@@ -12,6 +13,7 @@ import { useCrossTabRefresh } from '@/hooks/use-cross-tab-refresh'
 import { ProtectedRoute } from '@/components/protected-route'
 import { AdminRoute } from '@/components/admin-route'
 import { AgentsRoute } from '@/components/agents-route'
+import { PluginsRoute } from '@/components/plugins-route'
 import { ModuleRoute } from '@/components/module-route'
 import { AppLayout } from '@/components/app-layout'
 
@@ -23,6 +25,7 @@ const TransactionsPage = lazy(() => import('@/pages/transactions'))
 const AccountsPage = lazy(() => import('@/pages/account/page'))
 const AccountDetailPage = lazy(() => import('@/pages/account-detail'))
 const ImportPage = lazy(() => import('@/pages/import'))
+const BackupPage = lazy(() => import('@/pages/backups'))
 const RulesPage = lazy(() => import('@/pages/rules'))
 const CategoriesPage = lazy(() => import('@/pages/categories'))
 const CollectionsPage = lazy(() => import('@/pages/collections'))
@@ -36,6 +39,8 @@ const GroupsPage = lazy(() => import('@/pages/groups'))
 const GroupDetailPage = lazy(() => import('@/pages/group-detail'))
 const AdminSettingsPage = lazy(() => import('@/pages/admin/settings'))
 const AgentsListPage = lazy(() => import('@/pages/agents-list'))
+const PluginsPage = lazy(() => import('@/pages/plugins'))
+const PluginDetailPage = lazy(() => import('@/pages/plugin-detail'))
 const AgentDetailPage = lazy(() => import('@/pages/agent-detail'))
 const AgentConnectionsPage = lazy(() => import('@/pages/agent-connections'))
 const InvoicesPage = lazy(() => import('@/pages/invoices'))
@@ -46,6 +51,7 @@ const InvoiceDetailPage = lazy(() => import('@/pages/invoice-detail'))
 const SharedInvoicePage = lazy(() => import('@/pages/shared-invoice'))
 const WorkspaceSettingsPage = lazy(() => import('@/pages/workspace-settings'))
 const OAuthCallbackPage = lazy(() => import('@/pages/oauth-callback'))
+const PluginOAuthCallbackPage = lazy(() => import('@/pages/plugin-oauth-callback'))
 const OIDCCallbackPage = lazy(() => import('@/pages/oidc-callback'))
 
 const queryClient = new QueryClient({
@@ -80,6 +86,7 @@ function App() {
     <ThemeProvider>
       <QueryClientProvider client={queryClient}>
         <CrossTabRefresh />
+        <AppDirection>
         <TooltipProvider>
         <BrowserRouter>
           <AuthProvider>
@@ -113,6 +120,8 @@ function App() {
                   <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
                   <Route path="/enable-banking" element={<OAuthCallbackPage />} />
                   <Route path="/import" element={<ModuleRoute module="import"><ImportPage /></ModuleRoute>} />
+                  <Route path="/backup" element={<Navigate to="/backups" replace />} />
+                  <Route path="/backups" element={<BackupPage />} />
                   <Route path="/rules" element={<ModuleRoute module="rules"><RulesPage /></ModuleRoute>} />
                   <Route path="/categories" element={<ModuleRoute module="categories"><CategoriesPage /></ModuleRoute>} />
                   <Route path="/collections" element={<CollectionsPage />} />
@@ -133,6 +142,9 @@ function App() {
                   <Route path="/invoices/products" element={<ModuleRoute module="invoices"><ProductsPage /></ModuleRoute>} />
                   <Route path="/invoices/:id" element={<ModuleRoute module="invoices"><InvoiceDetailPage /></ModuleRoute>} />
                   <Route path="/workspace/settings" element={<WorkspaceSettingsPage />} />
+                  <Route path="/plugins" element={<PluginsRoute><PluginsPage /></PluginsRoute>} />
+                  <Route path="/plugins/oauth/callback" element={<PluginsRoute><PluginOAuthCallbackPage /></PluginsRoute>} />
+                  <Route path="/plugins/:owner/:name" element={<PluginsRoute><PluginDetailPage /></PluginsRoute>} />
                   <Route path="/admin" element={<AdminRoute><AdminSettingsPage /></AdminRoute>} />
                   <Route path="/agents" element={<AgentsRoute><AgentsListPage /></AgentsRoute>} />
                   <Route path="/agents/connections" element={<AgentsRoute><AgentConnectionsPage /></AgentsRoute>} />
@@ -145,6 +157,7 @@ function App() {
           </AuthProvider>
         </BrowserRouter>
         </TooltipProvider>
+        </AppDirection>
       </QueryClientProvider>
     </ThemeProvider>
   )

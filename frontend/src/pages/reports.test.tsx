@@ -2,8 +2,14 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 
 import ReportsPage from '@/pages/reports'
+import { saveReportsRange } from '@/lib/remembered-range'
 import { renderWithProviders, t } from '@/test/utils'
 import type { ReportResponse } from '@/types'
+
+const layouts = vi.hoisted(() => ({
+  saved: {} as Record<string, { id: string }[] | null>,
+  saves: [] as { surface: string; ids: string[]; items: { id: string; span?: number }[] }[],
+}))
 
 const api = vi.hoisted(() => ({
   reports: {
@@ -11,14 +17,32 @@ const api = vi.hoisted(() => ({
     incomeExpenses: vi.fn(),
     cashFlow: vi.fn(),
     dataRange: vi.fn(),
+    plugin: vi.fn(),
   },
+  // Plugins are off unless a test turns them on.
+  info: { get: vi.fn() },
+  plugins: { installed: vi.fn() },
   // The page reads the workspace timezone to tell a balance that is already
   // negative from one that crosses later. Unresolved here, which lands on the
   // browser's own day.
   timezones: { list: vi.fn().mockResolvedValue({ timezones: [], default: null }) },
+  // Nobody arranged anything: Securo's default layout. Tests that need one set `layouts.saved`.
+  uiLayouts: {
+    get: async () => ({ dashboard: null, reports: null, ...layouts.saved }),
+    // Like the server: what was saved is what the next read returns.
+    save: async (surface: string, items: { id: string; span?: number }[]) => {
+      layouts.saves.push({ surface, ids: items.map((item) => item.id), items })
+      layouts.saved = { ...layouts.saved, [surface]: items }
+    },
+    reset: async (surface: string) => {
+      layouts.saved = { ...layouts.saved, [surface]: null }
+    },
+  },
 }))
 
-vi.mock('@/lib/api', () => ({ reports: api.reports, timezones: api.timezones }))
+vi.mock('@/lib/api', () => ({
+  reports: api.reports, timezones: api.timezones, uiLayouts: api.uiLayouts, info: api.info, plugins: api.plugins,
+}))
 
 vi.mock('@/hooks/use-display-locale', () => ({
   useDisplayLocale: () => 'en-US',
@@ -53,12 +77,16 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(2026, 8, 12, 12))
   vi.clearAllMocks()
+  layouts.saved = {}
+  layouts.saves = []
   privacy.on = false
   api.reports.netWorth.mockResolvedValue(emptyReport('net_worth'))
   api.reports.incomeExpenses.mockResolvedValue(emptyReport('income_expenses'))
   api.reports.cashFlow.mockResolvedValue(emptyReport('cash_flow'))
   // No data by default: the year picker stays hidden unless a test opts in.
   api.reports.dataRange.mockResolvedValue({ min_date: null, max_date: null })
+  api.info.get.mockResolvedValue({ features: { plugins: false } })
+  api.plugins.installed.mockResolvedValue([])
 })
 
 afterEach(() => vi.useRealTimers())
@@ -152,7 +180,8 @@ it.each([
   await user.click(custom)
   await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
   const reportApi = tab === 'reports.netWorth' ? api.reports.netWorth : api.reports.incomeExpenses
-  await waitFor(() => expect(reportApi.mock.calls.at(-1)?.slice(-2)).toEqual([
+  // Both report calls carry the window at positions 5 and 6.
+  await waitFor(() => expect(reportApi.mock.calls.at(-1)?.slice(5, 7)).toEqual([
     '2026-01-01', '2026-09-12',
   ]))
   await user.click(custom)
@@ -161,7 +190,7 @@ it.each([
   await waitFor(() => {
     expect(screen.getByRole('button', { name: t(fallback) })).toHaveClass('bg-primary')
     expect(reportApi.mock.calls.at(-1)?.[0]).toBe(months)
-    expect(reportApi.mock.calls.at(-1)?.slice(-2)).toEqual([undefined, undefined])
+    expect(reportApi.mock.calls.at(-1)?.slice(5, 7)).toEqual([undefined, undefined])
   })
   expect(custom).toHaveTextContent(t('reports.customRange'))
 })
@@ -173,12 +202,12 @@ it('preserves saved custom dates across supported tabs and preset dismissal', as
   await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
   for (const tab of ['reports.incomeExpenses', 'reports.moneyMap']) {
     await user.click(screen.getByRole('button', { name: t(tab) }))
-    await waitFor(() => expect(api.reports.incomeExpenses.mock.calls.at(-1)?.slice(-2))
+    await waitFor(() => expect(api.reports.incomeExpenses.mock.calls.at(-1)?.slice(5, 7))
       .toEqual(['2026-01-01', '2026-09-12']))
     expect(custom).toHaveClass('bg-primary')
   }
   await user.click(screen.getByRole('button', { name: t('reports.range6m') }))
-  await waitFor(() => expect(api.reports.incomeExpenses.mock.calls.at(-1)?.slice(-2))
+  await waitFor(() => expect(api.reports.incomeExpenses.mock.calls.at(-1)?.slice(5, 7))
     .toEqual([undefined, undefined]))
   const count = api.reports.incomeExpenses.mock.calls.length
   await user.click(custom)
@@ -188,7 +217,7 @@ it('preserves saved custom dates across supported tabs and preset dismissal', as
   expect(screen.getByRole('button', { name: t('reports.range6m') })).toHaveClass('bg-primary')
   await user.click(custom)
   await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
-  await waitFor(() => expect(api.reports.incomeExpenses.mock.calls.at(-1)?.slice(-2))
+  await waitFor(() => expect(api.reports.incomeExpenses.mock.calls.at(-1)?.slice(5, 7))
     .toEqual(['2026-01-01', '2026-09-12']))
   await user.click(screen.getByRole('button', { name: t('reports.cashFlow') }))
   await waitFor(() => expect(api.reports.cashFlow).toHaveBeenCalled())
@@ -347,7 +376,7 @@ describe('Reports page: month presets and period navigation (issue #519)', () =>
     expect(await screen.findByRole('heading', { name: 'Net Worth' })).toBeInTheDocument()
 
     // The default preset (1Y) keeps the API-anchored window: no explicit dates.
-    expect(api.reports.netWorth.mock.calls.at(-1)?.slice(-2)).toEqual([undefined, undefined])
+    await waitFor(() => expect(api.reports.netWorth.mock.calls.at(-1)?.slice(-2)).toEqual([undefined, undefined]))
 
     await user.click(screen.getByRole('button', { name: 'This Month' }))
     expect(api.reports.netWorth.mock.calls.at(-1)?.slice(-2)).toEqual(['2026-09-01', '2026-09-12'])
@@ -356,6 +385,23 @@ describe('Reports page: month presets and period navigation (issue #519)', () =>
     await user.click(screen.getByRole('button', { name: 'Last Month' }))
     expect(api.reports.netWorth.mock.calls.at(-1)?.slice(-2)).toEqual(['2026-08-01', '2026-08-31'])
     expect(screen.getByTestId('reports-period-label')).toHaveTextContent('August 2026')
+  })
+
+  it('asks for projections on This Month but not on a custom range (issue #1408)', async () => {
+    const { user } = renderWithProviders(<ReportsPage />)
+    await screen.findByRole('heading', { name: 'Net Worth' })
+    await user.click(screen.getByRole('button', { name: t('reports.incomeExpenses') }))
+
+    await user.click(screen.getByRole('button', { name: 'This Month' }))
+    await waitFor(() => expect(api.reports.incomeExpenses.mock.calls.at(-1)?.slice(5)).toEqual([
+      '2026-09-01', '2026-09-12', true,
+    ]))
+
+    await user.click(screen.getByRole('button', { name: t('reports.customRange') }))
+    await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
+    await waitFor(() => expect(api.reports.incomeExpenses.mock.calls.at(-1)?.slice(5)).toEqual([
+      '2026-01-01', '2026-09-12', false,
+    ]))
   })
 
   it('steps the active period back and forward with the arrows', async () => {
@@ -494,8 +540,8 @@ describe('Reports page - year picker (issue #765)', () => {
 })
 
 describe('Reports page, cash-flow bars end at net flow (issue #1241)', () => {
-  const INFLOW_COLOR = 'rgb(16, 185, 129)'
-  const OUTFLOW_COLOR = 'rgb(244, 63, 94)'
+  const INFLOW_COLOR = 'var(--chart-income)'
+  const OUTFLOW_COLOR = 'var(--chart-expense)'
 
   // Bars grow in over animation frames. Report every frame as long past the
   // animation so the chart lands on its final geometry straight away.
@@ -560,7 +606,7 @@ describe('Reports page, cash-flow bars end at net flow (issue #1241)', () => {
       const x = Number(path.getAttribute('x'))
       const column = byX.get(x) ?? { x, width: Number(path.getAttribute('width')) }
       const segment: Segment = { ...box(path), rounded: path.getAttribute('d')!.includes('A') }
-      if (path.getAttribute('fill') === '#10B981') column.inflow = segment
+      if (path.getAttribute('fill') === 'var(--chart-income)') column.inflow = segment
       else column.outflow = segment
       byX.set(x, column)
     }
@@ -794,5 +840,149 @@ describe('Reports page, cash-flow bars end at net flow (issue #1241)', () => {
     expect(tooltip).toHaveTextContent(`${t('reports.liabilities')}: -$2,500.00`)
     expect(tooltip).not.toHaveTextContent(t('reports.netFlow'))
     expect(screen.queryByTestId('cash-flow-net')).not.toBeInTheDocument()
+  })
+})
+
+describe('Reports page arranged from the library', () => {
+  // The tab bar is the row that ends with the button to choose reports.
+  const tabs = () =>
+    within(screen.getByRole('button', { name: t('library.manageReports') }).parentElement!)
+      .getAllByRole('button')
+      .map((b) => b.textContent)
+      .filter((label) => REPORT_LABELS.includes(label ?? ''))
+  const REPORT_LABELS = ['Net Worth', 'Income vs Expenses', 'Cash Flow', 'Money Map']
+
+  it('lists the reports someone kept, in their order, and opens on the first', async () => {
+    layouts.saved = { reports: [{ id: 'cash_flow' }, { id: 'income_expenses' }] }
+    renderWithProviders(<ReportsPage />)
+    await waitFor(() => expect(tabs()).toEqual(['Cash Flow', 'Income vs Expenses']))
+    await waitFor(() => expect(api.reports.cashFlow).toHaveBeenCalled())
+    // A report left out never loads.
+    expect(api.reports.netWorth).not.toHaveBeenCalled()
+  })
+
+  it('lists all four by default', async () => {
+    renderWithProviders(<ReportsPage />)
+    await waitFor(() => expect(tabs()).toEqual(REPORT_LABELS))
+  })
+})
+
+describe('Reports page period bar on a phone', () => {
+  const TABS = ['Net Worth', 'Income vs Expenses', 'Cash Flow', 'Money Map']
+
+  it('keeps the presets in a bar that scrolls instead of widening the page', async () => {
+    // Two years of data: the year picker shows up, which is the widest the bar
+    // gets on a phone.
+    api.reports.dataRange.mockResolvedValue({ min_date: '2024-01-01', max_date: '2026-09-12' })
+    const { user } = renderWithProviders(<ReportsPage />)
+    await waitFor(() => expect(api.reports.netWorth).toHaveBeenCalled())
+
+    // The tab bar is the row that ends with the button to choose reports.
+    const tabBar = screen.getByRole('button', { name: t('library.manageReports') }).parentElement!
+    for (const tab of TABS) {
+      await user.click(within(tabBar).getByRole('button', { name: tab }))
+      const bar = screen.queryByTestId('reports-range-bar')
+      expect(bar, `${tab} keeps the range bar`).not.toBeNull()
+      // The bar stays inside the page and scrolls inside itself. A row that
+      // grew past the viewport instead made the whole page scroll sideways.
+      expect(bar).toHaveClass('min-w-0', 'max-w-full', 'overflow-x-auto')
+      // The buttons keep their width, so the overflow belongs to the bar.
+      const buttons = within(bar!).getAllByRole('button')
+      expect(buttons.length).toBeGreaterThanOrEqual(3)
+      for (const button of buttons) expect(button).toHaveClass('shrink-0')
+      // The two that fell off the screen are still there to reach, in the tabs
+      // that offer them: Cash Flow has no custom range and no year picker.
+      if (tab !== 'Cash Flow') {
+        expect(within(bar!).getByRole('button', { name: t('reports.customRange') })).toBeInTheDocument()
+        expect(
+          within(bar!).getByRole('button', { name: new RegExp(`^(${t('reports.year')})`) }),
+        ).toBeInTheDocument()
+      }
+    }
+  })
+})
+
+
+describe('Reports page: a plugin\'s report', () => {
+  beforeEach(() => {
+    api.info.get.mockResolvedValue({ features: { plugins: true } })
+    api.plugins.installed.mockResolvedValue([{
+      plugin_id: 'maria/casa', name: { en: 'Home' }, themes: [],
+      reports: [{ key: 'pets', name: { en: 'Pet spending' }, measure: 'expenses', group_by: 'category', chart: 'table' }],
+    }])
+    api.reports.plugin.mockResolvedValue({
+      key: 'pets', measure: 'expenses', group_by: 'category', chart: 'table', currency: 'USD',
+      rows: [{ key: 'c1', label: 'Vet', value: 120, color: null }], total: 120,
+    })
+  })
+
+  it('shows a kept plugin report as a tab, drawn from the period picked', async () => {
+    layouts.saved = { reports: [{ id: 'net_worth' }, { id: 'plugin:maria/casa:pets' }] }
+    renderWithProviders(<ReportsPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Pet spending' }))
+    expect(await screen.findByText('Vet')).toBeInTheDocument()
+    // The default 1Y preset, sent as dates like every stepped window.
+    expect(api.reports.plugin).toHaveBeenCalledWith('maria/casa', 'pets', '2025-09-01', '2026-09-12', undefined)
+    expect(api.reports.netWorth).toHaveBeenCalledTimes(1)
+  })
+
+  it("isn't a tab until someone adds it, and a removed plugin's tab is left out", async () => {
+    layouts.saved = { reports: [{ id: 'net_worth' }, { id: 'plugin:gone/away:x' }] }
+    renderWithProviders(<ReportsPage />)
+    expect((await screen.findAllByRole('button', { name: t('reports.netWorth') })).length).toBeGreaterThan(0)
+    await waitFor(() => expect(api.plugins.installed).toHaveBeenCalled())
+    expect(screen.queryByRole('button', { name: 'Pet spending' })).not.toBeInTheDocument()
+  })
+
+  it('opens on a saved plugin report that comes first, once the plugins are known', async () => {
+    let release: (value: unknown) => void = () => {}
+    api.plugins.installed.mockReturnValue(new Promise((done) => { release = done }))
+    layouts.saved = { reports: [{ id: 'plugin:maria/casa:pets' }, { id: 'net_worth' }] }
+    renderWithProviders(<ReportsPage />)
+    await waitFor(() => expect(api.plugins.installed).toHaveBeenCalled())
+    release([{
+      plugin_id: 'maria/casa', name: { en: 'Home' }, themes: [],
+      reports: [{ key: 'pets', name: { en: 'Pet spending' }, measure: 'expenses', group_by: 'category', chart: 'table' }],
+    }])
+    expect(await screen.findByText('Vet')).toBeInTheDocument()
+  })
+
+  it('trims a custom range older than the two years a plugin report reads', async () => {
+    saveReportsRange('plugin:maria/casa:pets', {
+      rangeKey: 'custom', from: '2023-01-01', to: '2026-09-12', interval: 'monthly', periodOffset: 0,
+    })
+    layouts.saved = { reports: [{ id: 'net_worth' }, { id: 'plugin:maria/casa:pets' }] }
+    renderWithProviders(<ReportsPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Pet spending' }))
+    await waitFor(() => expect(api.reports.plugin).toHaveBeenCalledWith(
+      'maria/casa', 'pets', '2024-09-11', '2026-09-12', undefined,
+    ))
+    expect(await screen.findByText(t('reports.pluginReport.periodTrimmed', {
+      from: 'Sep 11, 2024', to: 'Sep 12, 2026',
+    }))).toBeInTheDocument()
+  })
+
+  it('fits the 2Y preset, which spans more than 731 days, into the plugin report limit', async () => {
+    layouts.saved = { reports: [{ id: 'net_worth' }, { id: 'plugin:maria/casa:pets' }] }
+    const { user } = renderWithProviders(<ReportsPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Pet spending' }))
+    await waitFor(() => expect(api.reports.plugin).toHaveBeenCalled())
+
+    await user.click(screen.getByRole('button', { name: t('reports.range2y') }))
+    // The preset's own window is 2024-09-01 through today (741 days).
+    await waitFor(() => expect(api.reports.plugin).toHaveBeenLastCalledWith(
+      'maria/casa', 'pets', '2024-09-11', '2026-09-12', undefined,
+    ))
+  })
+
+  it("keeps a plugin's tab saved when the plugins can't be read", async () => {
+    api.plugins.installed.mockRejectedValue(new Error('down'))
+    layouts.saved = { reports: [{ id: 'net_worth' }, { id: 'income_expenses' }, { id: 'plugin:maria/casa:pets' }] }
+    renderWithProviders(<ReportsPage />)
+    expect((await screen.findAllByRole('button', { name: t('reports.netWorth') })).length).toBeGreaterThan(0)
+    await waitFor(() => expect(api.plugins.installed).toHaveBeenCalled())
+    // Nothing was saved over the arrangement, and the plugin's tab is still in it.
+    expect(layouts.saves).toEqual([])
+    expect(layouts.saved.reports?.map((item) => item.id)).toContain('plugin:maria/casa:pets')
   })
 })

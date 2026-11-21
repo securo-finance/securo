@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useFeatureFlags } from '@/hooks/use-feature-flags'
 import { useTranslation } from 'react-i18next'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -46,8 +47,11 @@ import {
   ShieldCheck,
   Sparkles,
   Fingerprint,
+  Palette,
+  Puzzle,
 } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
+import { useLibrary } from '@/contexts/library-context'
 import {
   WORKSPACE_KINDS,
   WORKSPACE_KIND_ICON,
@@ -114,7 +118,9 @@ export function WorkspaceSwitcher({
   collapsed = false,
 }: AccountMenuProps) {
   const { t, i18n } = useTranslation()
+  const { openLibrary } = useLibrary()
   const navigate = useNavigate()
+  const { pluginsEnabled } = useFeatureFlags()
   const { current, workspaces, switchWorkspace, refresh } = useWorkspace()
   const { user, logout } = useAuth()
   const [createOpen, setCreateOpen] = useState(false)
@@ -161,7 +167,7 @@ export function WorkspaceSwitcher({
         <DropdownMenuTrigger asChild>
           <button
             className={cn(
-              'flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-sm hover:bg-sidebar-accent transition-colors text-left',
+              'flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-sm hover:bg-sidebar-accent transition-colors text-start',
               collapsed && 'lg:justify-center lg:px-2',
             )}
             aria-label={current.name}
@@ -178,7 +184,7 @@ export function WorkspaceSwitcher({
               <p className="text-[10px] text-sidebar-muted/70 truncate">
                 {user.email}
                 {roleLabel && (
-                  <span className="ml-1 uppercase tracking-wide">· {roleLabel}</span>
+                  <span className="ms-1 uppercase tracking-wide">· {roleLabel}</span>
                 )}
               </p>
             </div>
@@ -210,7 +216,7 @@ export function WorkspaceSwitcher({
                     <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
                       {w.role && ROLE_LABEL_KEY[w.role] && t(ROLE_LABEL_KEY[w.role])}
                     </span>
-                    {isActive && <Check size={12} className="text-primary ml-1" />}
+                    {isActive && <Check size={12} className="text-primary ms-1" />}
                   </DropdownMenuItem>
                 )
               })}
@@ -291,6 +297,16 @@ export function WorkspaceSwitcher({
             </DropdownMenuItem>
           )}
 
+          {pluginsEnabled && (
+            <DropdownMenuItem
+              onClick={() => navigate('/plugins')}
+              className="flex items-center gap-2"
+            >
+              <Puzzle size={14} />
+              {t('plugins.title')}
+            </DropdownMenuItem>
+          )}
+
           <DropdownMenuItem
             onClick={onUpdateAvailable}
             className="flex items-center gap-2"
@@ -304,6 +320,14 @@ export function WorkspaceSwitcher({
           >
             <BookOpen size={14} />
             {t('nav.documentation')}
+          </DropdownMenuItem>
+
+          <DropdownMenuItem
+            onClick={() => openLibrary('themes')}
+            className="flex items-center gap-2"
+          >
+            <Palette size={14} />
+            {t('library.appearance')}
           </DropdownMenuItem>
 
           {/* Language sub-menu */}
@@ -439,6 +463,13 @@ export function WorkspaceSwitcher({
                   <span className="flex-1">日本語</span>
                   {currentLang === 'ja' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => i18n.changeLanguage('he')}
+                  className="flex items-center gap-2"
+                >
+                  <span className="flex-1">עברית</span>
+                  {currentLang === 'he' && <Check size={13} className="text-primary" />}
+                </DropdownMenuItem>
               </DropdownMenuSubContent>
             </DropdownMenuPortal>
           </DropdownMenuSub>
@@ -493,7 +524,7 @@ export function WorkspaceSwitcher({
                       type="button"
                       onClick={() => setNewKind(kind)}
                       aria-pressed={isSelected}
-                      className={`flex items-center gap-2.5 rounded-lg border p-3 text-left transition-colors ${
+                      className={`flex items-center gap-2.5 rounded-lg border p-3 text-start transition-colors ${
                         isSelected
                           ? 'border-primary bg-primary/5'
                           : 'border-input hover:bg-muted/40'

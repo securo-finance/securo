@@ -62,6 +62,7 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     ("DELETE", "/api/admin/users/{user_id}"): "superuser-gated instance administration",
     ("PATCH", "/api/admin/settings/{key}"): "superuser-gated instance administration",
     ("DELETE", "/api/admin/settings/{key}"): "superuser-gated instance administration",
+    ("PATCH", "/api/admin/provider-settings/{provider}"): "superuser-gated instance administration",
     # Workspace administration: uses its own, stricter owner floor via
     # `require_membership(min_role="owner")` inside the handler. Converting
     # these to the write gate would *widen* access, since editors can write.
@@ -79,6 +80,7 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     # And for a rule being written: the draft has to be a body, and the answer
     # is which existing transactions it would match. Reads rules' own scope.
     ("POST", "/api/rules/preview"): "evaluates an unsaved rule against transactions; writes nothing",
+    ("POST", "/api/backups/preview-upload"): "parses an uploaded archive and returns a preview; writes nothing",
     # A read that has to be a POST: the backup password belongs in a body,
     # not in a query string. Same read permission as GET /api/export/backup.
     ("POST", "/api/export/backup"): "exports the workspace it can already read; writes nothing",
@@ -96,6 +98,17 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     # touched. Flagged here so a future rate limit or admin floor is a
     # decision rather than an oversight.
     ("POST", "/api/fx-rates/refresh"): "refreshes instance-wide FX rates, no workspace data",
+    # A member's own credentials. Any member may issue one, but its scopes are
+    # capped by their role (a viewer only gets read scopes) and every request
+    # made with it still runs under that role. Revoking is limited to one's
+    # own tokens unless the member is an owner.
+    ("POST", "/api/access-tokens"): "the requester's own token, scopes capped by their role",
+    ("DELETE", "/api/access-tokens/{token_id}"): "the requester's own token, or any as owner",
+    # How a member arranged their own view of the workspace (dashboard
+    # widgets, listed reports), keyed by their user id. Workspace data is
+    # untouched, so a viewer may arrange their view too.
+    ("PUT", "/api/ui/layouts/{surface}"): "the requester's own view of the workspace, no workspace data",
+    ("DELETE", "/api/ui/layouts/{surface}"): "the requester's own view of the workspace, no workspace data",
 }
 
 # These routes establish authentication (or end it), so requiring an existing

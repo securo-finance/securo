@@ -30,6 +30,8 @@ We believe personal finance should actually be <em>personal</em>. No corporation
 curl -fsSL https://usesecuro.com/install.sh | bash
 ```
 
+Run the same command again from the same folder to update; it finds the folder it created before, keeps the environment file and the data, and pulls the new version.
+
 **Windows:** Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), then:
 
 ```bash
@@ -59,15 +61,34 @@ Open [http://localhost:3000](http://localhost:3000) and create an account. That'
 - Bank sync via providers (Pluggy, Enable Banking, SimpleFIN, extensible)
 - AI Agents (optional): self-hosted LLM chat with tool-use over your data
 
+### Reporting dates and bank balances
+
+Synchronized transactions can have a reporting-date override without changing
+the bank's booking date. Clear the override to restore automatic attribution;
+later bank syncs preserve the override.
+
+Reporting periods and transaction-list dates follow the override. Account
+running balances and posted cash-flow balance movements still follow the bank
+date (or the effective movement date in accrual mode). A posted expense
+attributed to a future period appears in that period's cash-flow outflow, but
+is not deducted from the projected balance a second time. Pending card rows
+retain their manually selected bill date for forecast outflow and projected
+balance timing, including in cash mode.
+
+The calendar offers separate reporting-date and bank-date views. Moved rows
+retain their original bank date in the transaction list.
+
 ## Optional capabilities
 
 Everything beyond the core is off by default, needs a single env flag, and costs nothing until you turn it on. Full setup guides live in the [documentation](https://docs.usesecuro.com/):
 
-- **Bank sync**: Pluggy for Brazilian banks, Enable Banking for ~2500 European PSD2 banks, and SimpleFIN for US and international banks. [Setup guides](https://docs.usesecuro.com/features/bank-sync/)
-- **Login & security**: passkeys (Touch ID, Face ID, security keys), TOTP two-factor, and OIDC single sign-on with account linking and provider role sync. [Guide](https://docs.usesecuro.com/features/security/)
-- **Exchange rates**: a free [Open Exchange Rates](https://openexchangerates.org/) key enables automatic currency conversion; without one, cross-currency amounts fall back to 1:1 with a visual warning. [Details](https://docs.usesecuro.com/deployment/docker/)
-- **Timezone**: balances, budgets, and due dates turn over at midnight in your application timezone, set once in Admin Settings, with per-workspace overrides. [Details](https://docs.usesecuro.com/features/workspaces/)
-- **AI Agents**: self-hosted assistants over your data, multi-provider, with tool use and a per-agent knowledge base. [Guide](https://docs.usesecuro.com/features/agents/)
+- **Bank sync**: Pluggy for Brazilian banks, Enable Banking for ~2500 European PSD2 banks, and SimpleFIN for US and international banks. [Setup guides](https://docs.usesecuro.com/docs/features/bank-sync/) Administrators can also set the credentials in the app, under **Admin Settings → Bank connections**, without a restart ([provider settings](docs/provider-settings.md)).
+- **Login & security**: passkeys (Touch ID, Face ID, security keys), TOTP two-factor, and OIDC single sign-on with account linking and provider role sync. Signing out also ends the provider's session (RP-initiated logout, using its `end_session_endpoint` or `OIDC_LOGOUT_URL`). [Guide](https://docs.usesecuro.com/docs/features/security/)
+- **Exchange rates**: a free [Open Exchange Rates](https://openexchangerates.org/) key, set in `.env` or under **Admin Settings → Exchange rates**, enables automatic currency conversion; without one, cross-currency amounts fall back to 1:1 with a visual warning. [Details](https://docs.usesecuro.com/docs/deployment/docker/)
+- **Timezone**: balances, budgets, and due dates turn over at midnight in your application timezone, set once in Admin Settings, with per-workspace overrides. [Details](https://docs.usesecuro.com/docs/features/workspaces/)
+- **Attachment storage**: attachments and invoice logos stay on local disk by default; set `STORAGE_PROVIDER=s3` to keep them in a private S3-compatible bucket instead. [Guide](https://docs.usesecuro.com/docs/deployment/docker/#storing-attachments-in-s3)
+- **Plugins**: install community plugins into a workspace from the plugin catalog, with a preview before anything changes. A plugin's icon is served by Securo, which reads it from the catalog, so browsing never sends your browser anywhere else. Data plugins add categories and rules and need only `PLUGINS_ENABLED=true`. Plugins with code, such as sync from a service you use, also need the `plugins` Compose profile: they run in their own containers, without the core secrets or the database, and can reach only the hosts they declare.
+- **AI Agents**: self-hosted assistants over your data, multi-provider, with tool use and a per-agent knowledge base. [Guide](https://docs.usesecuro.com/docs/features/agents/)
 
 ## AI-Assisted Development
 

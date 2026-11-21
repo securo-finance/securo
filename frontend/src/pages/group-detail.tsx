@@ -113,7 +113,7 @@ function KpiCard({
     <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4">
       <button
         type="button"
-        className={`w-full text-left ${hasBreakdown ? 'cursor-pointer' : 'cursor-default'}`}
+        className={`w-full text-start ${hasBreakdown ? 'cursor-pointer' : 'cursor-default'}`}
         onClick={() => hasBreakdown && setOpen((o) => !o)}
         disabled={!hasBreakdown}
         aria-expanded={open}
@@ -547,7 +547,7 @@ export default function GroupDetailPage() {
               </span>
             )}
             <Button variant="outline" onClick={() => navigate('/groups')}>
-              <ArrowLeft size={14} className="mr-1" />
+              <ArrowLeft size={14} className="me-1" />
               {t('common.back')}
             </Button>
           </div>
@@ -839,7 +839,7 @@ export default function GroupDetailPage() {
                   </p>
                 </div>
                 <span
-                  className={`text-sm font-semibold tabular-nums ml-3 ${
+                  className={`text-sm font-semibold tabular-nums ms-3 ${
                     tx.type === 'debit' ? 'text-rose-500' : 'text-emerald-600'
                   }`}
                 >
@@ -935,7 +935,7 @@ export default function GroupDetailPage() {
                 onClick={() => deleteMemberMutation.mutate(editingMember.id)}
                 disabled={deleteMemberMutation.isPending}
               >
-                <Trash2 size={14} className="mr-1" />
+                <Trash2 size={14} className="me-1" />
                 {t('common.delete')}
               </Button>
             )}
@@ -1073,7 +1073,7 @@ export default function GroupDetailPage() {
                                   setSettleCurrency(tx.currency)
                                   setSettleDate(tx.date)
                                 }}
-                                className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-3 ${
+                                className={`w-full text-start px-3 py-2 text-sm flex items-center justify-between gap-3 ${
                                   picked ? 'bg-primary/10' : 'hover:bg-muted/50'
                                 }`}
                               >

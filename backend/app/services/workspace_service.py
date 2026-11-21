@@ -11,6 +11,7 @@ from typing import Optional
 from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.models.user import User
 from app.models.workspace import (
@@ -294,6 +295,27 @@ async def list_members(session: AsyncSession, workspace_id: uuid.UUID) -> list[t
     user_rows = await session.execute(select(User).where(User.id.in_(user_ids)))
     users_by_id = {u.id: u for u in user_rows.scalars().all()}
     return [(m, users_by_id[m.user_id]) for m in members if m.user_id in users_by_id]
+
+
+async def list_directory_users(session: AsyncSession, user_id: uuid.UUID) -> list[User]:
+    """The user and everyone who shares a workspace with them, by email.
+
+    This is all the member directory may show (#1173): anyone else is found
+    only by their exact address. Two queries, for the same GUID/UUID reason
+    as ``list_members``.
+    """
+    callers = aliased(WorkspaceMember)
+    callers_workspaces = select(callers.workspace_id).where(callers.user_id == user_id)
+    co_members = await session.execute(
+        select(WorkspaceMember.user_id).where(
+            WorkspaceMember.workspace_id.in_(callers_workspaces)
+        )
+    )
+    user_ids = set(co_members.scalars().all()) | {user_id}
+    result = await session.execute(
+        select(User).where(User.id.in_(user_ids)).order_by(User.email)
+    )
+    return list(result.scalars().all())
 
 
 async def add_member(

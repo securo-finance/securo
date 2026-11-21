@@ -57,10 +57,21 @@ spec:
                 {{- else }}
                 name: {{ include "securo.fullname" . }}-secrets
                 {{- end }}
+            {{- with .Values.backend.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.backend.extraEnv }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           volumeMounts:
             {{- if .Values.persistence.attachments.enabled }}
             - name: attachments
               mountPath: /app/data/attachments
+            {{- end }}
+            {{- if .Values.persistence.backups.enabled }}
+            - name: backups
+              mountPath: /app/data/backups
             {{- end }}
             {{- if and (eq (.Values.config.agentsEnabled | toString) "true") .Values.persistence.agentKnowledge.enabled }}
             - name: agent-knowledge
@@ -70,6 +81,9 @@ spec:
             - name: agent-embedding-models
               mountPath: /app/data/embedding_models
             {{- end }}
+            {{- with .Values.backend.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- if .Values.backend.resources }}
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
@@ -78,7 +92,12 @@ spec:
         {{- if .Values.persistence.attachments.enabled }}
         - name: attachments
           persistentVolumeClaim:
-            claimName: {{ include "securo.fullname" . }}-attachments
+            claimName: {{ include "securo.attachmentsClaimName" . }}
+        {{- end }}
+        {{- if .Values.persistence.backups.enabled }}
+        - name: backups
+          persistentVolumeClaim:
+            claimName: {{ include "securo.fullname" . }}-backups
         {{- end }}
         {{- if and (eq (.Values.config.agentsEnabled | toString) "true") .Values.persistence.agentKnowledge.enabled }}
         - name: agent-knowledge
@@ -89,4 +108,7 @@ spec:
         - name: agent-embedding-models
           persistentVolumeClaim:
             claimName: {{ include "securo.fullname" . }}-agent-embedding-models
+        {{- end }}
+        {{- with .Values.backend.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
         {{- end }}

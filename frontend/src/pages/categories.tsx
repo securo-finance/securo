@@ -94,6 +94,7 @@ export default function CategoriesPage() {
   const updateCatMutation = useMutation({
     mutationFn: ({ id, ...data }: Partial<Category> & { id: string }) => categoriesApi.update(id, data),
     onSuccess: () => { invalidateAll(); setCatDialogOpen(false); setEditingCat(null); toast.success(t('categories.updated')) },
+    onError: (err: unknown) => toast.error(extractApiError(err, t('common.error'))),
   })
 
   // Hiding is its own mutation: it can also retire the rules that assign the
@@ -255,7 +256,7 @@ export default function CategoriesPage() {
   )
 
   const renderCategoryItem = (cat: Category) => (
-    <div key={cat.id} className={`flex items-center gap-3 px-4 sm:px-5 pl-6 sm:pl-12 py-2.5 border-b border-border last:border-0 hover:bg-muted transition-colors ${cat.is_hidden ? 'opacity-60' : ''}`}>
+    <div key={cat.id} className={`flex items-center gap-3 px-4 sm:px-5 ps-6 sm:ps-12 py-2.5 border-b border-border last:border-0 hover:bg-muted transition-colors ${cat.is_hidden ? 'opacity-60' : ''}`}>
       <CategoryIcon icon={cat.icon} color={cat.color} size="md" />
       <div className="flex-1 min-w-0 flex items-center gap-2">
         <span className="text-sm font-medium text-foreground truncate">{cat.name}</span>
@@ -282,7 +283,7 @@ export default function CategoriesPage() {
         <span className="text-xs text-muted-foreground font-mono">{cat.color}</span>
       </div>
       {canWrite && (
-        <div className="flex items-center gap-1 shrink-0 ml-2">
+        <div className="flex items-center gap-1 shrink-0 ms-2">
           <button
             className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
             onClick={() => openCatDialog(cat)}
@@ -353,10 +354,23 @@ export default function CategoriesPage() {
           action={
             canWrite ? (
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="gap-1.5 h-8" onClick={() => openGroupDialog(null)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 h-8"
+                  onClick={() => openGroupDialog(null)}
+                  aria-label={t('groups.add')}
+                  title={t('groups.add')}
+                >
                   <Plus size={13} /> <span className="hidden sm:inline">{t('groups.add')}</span>
                 </Button>
-                <Button size="sm" className="gap-1.5 h-8" onClick={() => openCatDialog(null)}>
+                <Button
+                  size="sm"
+                  className="gap-1.5 h-8"
+                  onClick={() => openCatDialog(null)}
+                  aria-label={t('categories.addCategory')}
+                  title={t('categories.addCategory')}
+                >
                   <Plus size={13} /> <span className="hidden sm:inline">{t('categories.addCategory')}</span>
                 </Button>
               </div>
@@ -370,7 +384,7 @@ export default function CategoriesPage() {
               <div key={group.id} className={group.is_hidden ? 'opacity-60' : ''}>
                 <div className="flex items-center gap-2 px-4 sm:px-5 py-3 border-b border-border bg-muted/40">
                   <button
-                    className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                    className="flex items-center gap-2 flex-1 min-w-0 text-start"
                     onClick={() => toggleCollapse(group.id)}
                   >
                     {isCollapsed ? <ChevronRight size={14} className="text-muted-foreground shrink-0" /> : <ChevronDown size={14} className="text-muted-foreground shrink-0" />}
@@ -451,7 +465,7 @@ export default function CategoriesPage() {
             }}
             className="flex min-h-0 flex-1 flex-col"
           >
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-3">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pe-3">
               <div className="space-y-2">
                 <Label>{t('groups.name')}</Label>
                 <Input name="name" defaultValue={editingCat?.name ?? ''} required />
@@ -650,7 +664,7 @@ export default function CategoriesPage() {
                 })
               }
             >
-              <Trash2 size={14} className="mr-1" />
+              <Trash2 size={14} className="me-1" />
               {t('categories.deleteAndTransfer')}
             </Button>
           </DialogFooter>

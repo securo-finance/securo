@@ -1,14 +1,17 @@
 import { getAccountName } from '@/lib/account-utils'
 import { AccountIcon } from '@/components/account-icon'
-import { CategoryIcon } from '@/components/category-icon'
+import { CategorySplitBadge, TransactionCategoryIcon } from '@/components/category-lines-display'
+import { isSplitByCategory } from '@/lib/category-lines'
 import type { Transaction, Account } from '@/types'
 import { AlertTriangle, ArrowLeftRight, CalendarClock, ChartNoAxesColumn, Clock, EyeClosed, Paperclip } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
+import { TransactionFlagMarker } from '@/components/transaction-flag-marker'
 import { useTranslation } from 'react-i18next'
-import { formatCurrency } from '@/lib/format'
+import { formatCurrency, ltrAmount } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { isTransferTransaction } from '@/lib/transaction-transfer'
 import { transactionDescription } from '@/lib/transaction-description'
+import { ReportingDateBadge } from '@/components/reporting-date-badge'
 
 /** Keep long merchant references on one line when there are no word breaks. */
 function hasWordBreaks(text: string): boolean {
@@ -25,6 +28,8 @@ interface MobileTransactionRowProps {
   highlighted: boolean
   highlightedRowRef?: React.Ref<HTMLDivElement>
   locale: string
+  /** Locale for dates (follows the date-format setting); defaults to `locale`. */
+  dateLocale?: string
   userCurrency: string
   onSelect: (id: string, shiftKey: boolean) => void
   onClick: (tx: Transaction) => void
@@ -44,6 +49,7 @@ export function MobileTransactionRow({
   highlighted,
   highlightedRowRef,
   locale,
+  dateLocale,
   userCurrency,
   onSelect,
   onClick,
@@ -71,7 +77,7 @@ export function MobileTransactionRow({
   return (
     <div
       ref={highlighted ? highlightedRowRef : undefined}
-      className={`flex items-center gap-3 pl-3 pr-3 py-3 border-b border-border last:border-0 transition-colors ${
+      className={`flex items-center gap-3 ps-3 pe-3 py-3 border-b border-border last:border-0 transition-colors ${
         selected ? 'bg-primary/5' : 'bg-card'
       } ${highlighted ? 'securo-highlight-flash' : ''} ${
         virtual ? 'opacity-80' : ''
@@ -103,7 +109,7 @@ export function MobileTransactionRow({
 
       {/* Category Icon */}
       <div className="shrink-0">
-        <CategoryIcon icon={tx.category?.icon} color={tx.category?.color} size="md" />
+        <TransactionCategoryIcon tx={tx} size="md" />
       </div>
 
       {/* Content */}
@@ -118,6 +124,7 @@ export function MobileTransactionRow({
               {tx.is_shared && tx.parent_owner_name ? tx.parent_owner_name : t('splitGroups.ownerRowBadge', { group: groupName ?? '' })}
             </span>
           )}
+          {isSplitByCategory(tx) && <CategorySplitBadge tx={tx} compact className="shrink-0 text-[9px] px-1" />}
           {isTransferTransaction(tx) && (
             <ArrowLeftRight
               className="h-3 w-3 text-blue-600 shrink-0"
@@ -136,6 +143,7 @@ export function MobileTransactionRow({
               aria-label={t('transactions.excludedFromReports')}
             />
           )}
+          <TransactionFlagMarker tx={tx} locale={dateLocale ?? locale} className="[&>svg]:h-3 [&>svg]:w-3" />
           {tx.recurring_transaction_id != null && !virtual && (
             <span className="text-[9px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1 py-0.5 rounded-full shrink-0">
               R
@@ -184,17 +192,18 @@ export function MobileTransactionRow({
             </div>
           )
         )}
+        <ReportingDateBadge tx={tx} locale={dateLocale ?? locale} />
       </div>
 
       {/* Amount */}
-      <div className="shrink-0 text-right">
+      <div className="shrink-0 text-end">
         <span className={`text-sm font-bold tabular-nums ${amountColor}`}>
           {mask(
-            `${tx.is_ignored ? ' ' : tx.type === 'credit' ? '+' : '\u2212'}${formatCurrency(
+            ltrAmount(`${tx.is_ignored ? ' ' : tx.type === 'credit' ? '+' : '\u2212'}${formatCurrency(
               Math.abs(displayAmount),
               tx.currency,
               locale,
-            )}`,
+            )}`),
           )}
         </span>
         {tx.amount_primary != null && tx.currency !== userCurrency && (

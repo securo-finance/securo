@@ -244,6 +244,45 @@ async def test_download_attachment(
 
 
 @pytest.mark.asyncio
+async def test_download_attachment_missing_from_storage_returns_404(
+    client: AsyncClient,
+    auth_headers,
+    test_transactions: list[Transaction],
+    monkeypatch,
+    tmp_path,
+):
+    """The row is there and the file is not: 404, not 500.
+
+    A copy that missed a file, or a bucket whose policy hides it, leaves
+    exactly this state: the ledger has the attachment and storage does
+    not have the bytes.
+    """
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "storage_local_path", str(tmp_path))
+    txn = test_transactions[0]
+
+    upload_resp = await client.post(
+        f"/api/transactions/{txn.id}/attachments",
+        headers=auth_headers,
+        files={"file": ("receipt.png", TINY_PNG, "image/png")},
+    )
+    assert upload_resp.status_code == 201, upload_resp.text
+    attachment_id = upload_resp.json()["id"]
+
+    for path in tmp_path.rglob("*"):
+        if path.is_file():
+            path.unlink()
+
+    response = await client.get(
+        f"/api/transactions/{txn.id}/attachments/{attachment_id}",
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Attachment file is missing from storage"
+
+
+@pytest.mark.asyncio
 async def test_download_attachment_not_found(
     client: AsyncClient, auth_headers, test_transactions: list[Transaction]
 ):
@@ -446,3 +485,24 @@ async def test_upload_unauthenticated(
         files={"file": ("receipt.png", TINY_PNG, "image/png")},
     )
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_download_serves_the_extension_type_not_the_claimed_one(
+    client: AsyncClient, auth_headers, test_transactions: list[Transaction]
+):
+    txn = test_transactions[0]
+    mock_storage = _make_mock_storage()
+    with patch(STORAGE_PATCH, return_value=mock_storage):
+        upload_resp = await client.post(
+            f"/api/transactions/{txn.id}/attachments",
+            headers=auth_headers,
+            files={"file": ("receipt.pdf", b"<script>1</script>", "text/html")},
+        )
+        assert upload_resp.json()["content_type"] == "application/pdf"
+
+        response = await client.get(
+            f"/api/transactions/{txn.id}/attachments/{upload_resp.json()['id']}",
+            headers=auth_headers,
+        )
+    assert response.headers["content-type"] == "application/pdf"
