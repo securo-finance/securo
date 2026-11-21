@@ -131,13 +131,16 @@ x-backend-base: &backend-base
     db: { condition: service_healthy }
     redis: { condition: service_healthy }
     migrate: { condition: service_completed_successfully }
+  # `z` lets containers read the host folders on SELinux hosts (Fedora, RHEL)
+  # by relabelling them; elsewhere it does nothing.
   volumes:
-    - ./secrets:/app/secrets:ro
+    - ./secrets:/app/secrets:ro,z
     - attachments:/app/data/attachments
     # Managed/scheduled backup ZIPs are written inside containers to /app/data/backups.
     # Set BACKUP_HOST_PATH to expose that internal directory wherever you want on
-    # the host, e.g. BACKUP_HOST_PATH=/srv/securo/backups.
-    - ${BACKUP_HOST_PATH:-./data/backups}:/app/data/backups
+    # the host, e.g. BACKUP_HOST_PATH=/srv/securo/backups. Use a folder kept for
+    # backups alone: on SELinux hosts it is relabelled for container use.
+    - ${BACKUP_HOST_PATH:-./data/backups}:/app/data/backups:z
     - agent_knowledge:/app/data/agent_knowledge
     - agent_embedding_models:/app/data/embedding_models
   # `plugins` is internal: it lets the backend reach the plugin runner and
