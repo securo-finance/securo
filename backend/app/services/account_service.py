@@ -308,6 +308,7 @@ def _accounts_with_balances_query(
             .where(
                 Transaction.account_id == Account.id,
                 Transaction.source == "opening_balance",
+                Transaction.currency == Account.currency,
             )
             .correlate(Account)
             .scalar_subquery()
@@ -739,6 +740,7 @@ async def update_account(
             select(Transaction).where(
                 Transaction.account_id == account_id,
                 Transaction.source == "opening_balance",
+                Transaction.currency == account.currency,
             )
         )
         opening_tx = existing_opening.scalar_one_or_none()
@@ -772,6 +774,7 @@ async def update_account(
             select(Transaction).where(
                 Transaction.account_id == account_id,
                 Transaction.source == "opening_balance",
+                Transaction.currency == account.currency,
             )
         )
         opening_tx = existing_opening.scalar_one_or_none()
@@ -921,6 +924,7 @@ async def sync_opening_balance_for_connected_account(
         .where(
             Transaction.account_id == account.id,
             Transaction.source == "opening_balance",
+            Transaction.currency == account.currency,
         )
         .order_by(Transaction.created_at.desc(), Transaction.id.desc())
     )

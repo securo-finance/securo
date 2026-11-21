@@ -299,6 +299,50 @@ async def test_update_account_balance_updates_existing_opening(session: AsyncSes
 
 
 @pytest.mark.asyncio
+async def test_update_account_balance_ignores_opening_in_other_currency(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A foreign-currency opening_balance row must not break editing the account.
+
+    A card with a limit shared between a local- and a foreign-currency
+    statement carries one opening_balance transaction per currency. Before
+    the lookup was scoped by currency, this read with scalar_one_or_none(),
+    and a second currency's row made it raise MultipleResultsFound, 500ing
+    the request.
+    """
+    data = AccountCreate(
+        name="Shared Limit Card", type="credit_card", balance=Decimal("1000.00"), currency="BRL"
+    )
+    account = await create_account(session, test_workspace.id, test_user.id, data)
+
+    # The same account's foreign-currency opening, as a shared-limit card
+    # carries on its USD-denominated statement.
+    foreign_opening = await _add_txn(
+        session, test_user.id, account.id, 50, "debit", date.today(),
+        source="opening_balance", currency="USD",
+    )
+
+    update_data = AccountUpdate(balance=Decimal("2000.00"))
+    updated = await update_account(session, account.id, test_workspace.id, update_data)
+    assert updated is not None
+    assert updated.balance == Decimal("2000.00")
+
+    from sqlalchemy import select
+    result = await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == account.id,
+            Transaction.source == "opening_balance",
+            Transaction.currency == "BRL",
+        )
+    )
+    local_opening = result.scalar_one()
+    assert local_opening.amount == Decimal("2000.00")
+
+    await session.refresh(foreign_opening)
+    assert foreign_opening.amount == Decimal("50.00")
+
+
+@pytest.mark.asyncio
 async def test_update_account_balance_to_zero_removes_opening(session: AsyncSession, test_user, test_workspace):
     """Setting balance to 0 removes the opening_balance transaction."""
     data = AccountCreate(name="Zero Test", type="checking", balance=Decimal("500.00"), currency="BRL")
@@ -698,6 +742,38 @@ async def test_get_accounts_previous_balance_uses_each_account_currency(
 
     assert by_id[brl_account.id]["previous_balance"] == pytest.approx(100.0)
     assert by_id[usd_account.id]["previous_balance"] == pytest.approx(20.0)
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_balance_date_ignores_opening_in_other_currency(
+    session: AsyncSession, test_user, test_workspace
+):
+    """balance_date must come from the account-currency opening, not whichever currency is earliest.
+
+    The subquery aggregated with func.min across every opening_balance row
+    for the account regardless of currency, so a foreign-currency opening
+    dated earlier than the real one (issue #1204) made the edit form offer
+    the wrong date, and saving moved the real opening balance to it.
+    """
+    today = date.today()
+    thirty_days_ago = today - timedelta(days=30)
+
+    data = AccountCreate(
+        name="Shared Limit Card", type="credit_card", balance=Decimal("1000.00"),
+        currency="BRL", balance_date=today,
+    )
+    account = await create_account(session, test_workspace.id, test_user.id, data)
+
+    # A much older foreign-currency opening on the same account must not win
+    # the func.min(date) aggregate.
+    await _add_txn(
+        session, test_user.id, account.id, 50, "debit", thirty_days_ago,
+        source="opening_balance", currency="USD",
+    )
+
+    accounts = await get_accounts(session, test_workspace.id)
+    by_id = {acc["id"]: acc for acc in accounts}
+    assert by_id[account.id]["balance_date"] == today
 
 
 @pytest.mark.asyncio
@@ -1333,6 +1409,50 @@ async def test_sync_opening_balance_tolerates_duplicate_openings(
         assert openings == []
     else:
         assert [(o.id, o.type, o.amount) for o in openings] == [(newer.id, "credit", expected)]
+
+
+@pytest.mark.asyncio
+async def test_sync_opening_balance_ignores_other_currency_opening(
+    session, test_user, test_workspace, test_connection
+):
+    """A foreign-currency opening_balance row must survive the sync untouched.
+
+    The dedup step treated every opening_balance row on the account as a
+    duplicate of the one being reconciled, regardless of currency, and the
+    kept row had its amount, type and currency overwritten. A shared-limit
+    card's foreign-currency opening is a second, legitimate row, not a
+    duplicate: it must be left alone while the account-currency opening
+    still reconciles normally.
+    """
+    account = await _make_account(
+        session, test_user.id, "Shared Limit Card", acc_type="credit_card", balance="600.00",
+        connection_id=test_connection.id,
+    )
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 500, "credit", today - timedelta(days=5))
+    foreign_opening = await _add_txn(
+        session, test_user.id, account.id, 50, "debit", today - timedelta(days=30),
+        source="opening_balance", currency="USD",
+    )
+
+    await sync_opening_balance_for_connected_account(session, account)
+    await session.commit()
+
+    from sqlalchemy import select
+    local_opening = (await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == account.id,
+            Transaction.source == "opening_balance",
+            Transaction.currency == "BRL",
+        )
+    )).scalar_one()
+    # A card stores positive debt, so the sync targets -600: against the 500
+    # credit that leaves an offset of -1100, i.e. a debit opening.
+    assert local_opening.amount == Decimal("1100.00")
+    assert local_opening.type == "debit"
+
+    await session.refresh(foreign_opening)
+    assert foreign_opening.amount == Decimal("50.00")
 
 
 @pytest.mark.asyncio
