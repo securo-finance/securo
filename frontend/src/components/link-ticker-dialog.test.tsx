@@ -61,6 +61,26 @@ describe('LinkTickerDialog', () => {
     expect(marketSearch).toHaveBeenCalledWith('PSSA3', 8)
   })
 
+  it('drops the matches of a search the user already typed past', async () => {
+    let resolveOld: (v: unknown) => void = () => {}
+    marketSearch.mockImplementation((q: string) =>
+      q === 'PSSA3'
+        ? new Promise((resolve) => { resolveOld = resolve })
+        : Promise.resolve([{ symbol: 'PETR4.SA', name: 'Petrobras', exchange: 'SAO', quote_type: 'EQUITY' }]),
+    )
+    renderDialog()
+
+    await waitFor(() => expect(marketSearch).toHaveBeenCalledWith('PSSA3', 8))
+    fireEvent.change(screen.getByLabelText(t('assets.linkTickerLabel')), { target: { value: 'PETR4' } })
+    expect(await screen.findByText('PETR4.SA')).toBeInTheDocument()
+
+    // The older PSSA3 search answers last; its matches must not replace PETR4's.
+    resolveOld([{ symbol: 'PSSA3.SA', name: 'Porto Seguro', exchange: 'SAO', quote_type: 'EQUITY' }])
+    await new Promise((r) => setTimeout(r, 0))
+    expect(screen.queryByText('PSSA3.SA')).not.toBeInTheDocument()
+    expect(screen.getByText('PETR4.SA')).toBeInTheDocument()
+  })
+
   it('starts from the current link when the holding already has one', () => {
     renderDialog(syncedHolding({ ticker: 'PSSA3.SA', valuation_method: 'market_price' }))
 

@@ -39,19 +39,27 @@ export function LinkTickerDialog({ asset, onClose }: { asset: Asset | null; onCl
     const q = query.trim()
     if (!asset || q.length < 1) {
       setMatches([])
+      setSearching(false)
       return
     }
+    // A slower search for an older query must not overwrite the matches of
+    // the current one: its results are dropped once the query changes.
+    let ignored = false
     setSearching(true)
     const handle = window.setTimeout(async () => {
       try {
-        setMatches(await assets.marketSearch(q, 8))
+        const found = await assets.marketSearch(q, 8)
+        if (!ignored) setMatches(found)
       } catch {
-        setMatches([])
+        if (!ignored) setMatches([])
       } finally {
-        setSearching(false)
+        if (!ignored) setSearching(false)
       }
     }, SEARCH_DEBOUNCE_MS)
-    return () => window.clearTimeout(handle)
+    return () => {
+      ignored = true
+      window.clearTimeout(handle)
+    }
   }, [asset, query])
 
   // The valuation changes, so the chart and total (portfolio-trend) refresh
