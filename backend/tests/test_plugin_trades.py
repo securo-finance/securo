@@ -285,3 +285,30 @@ async def test_hand_trades_alone_do_not_switch_a_synced_holding(session: AsyncSe
                                  price=Decimal("10"), fee=Decimal("0"), date=date(2026, 11, 1), source="manual"))
     await session.commit()
     assert await _chart(session, asset) == {app_today(): 210.0}
+
+
+@pytest.mark.asyncio
+async def test_a_ledger_that_no_longer_adds_up_falls_back_to_stored_values(
+    session: AsyncSession, bank_connection, test_user
+):
+    trades = [_trade("b1", "buy", 2, "2", "50"), _trade("b2", "buy", 5, "1", "60")]
+    await _pipeline(session, bank_connection, holding("3", trades, unit_price="70", current_value="210"), test_user)
+    # A later sync whose trades don't reach the reported units keeps the old ledger.
+    await _pipeline(session, bank_connection, holding("6", trades, unit_price="70", current_value="420"), test_user)
+    asset = await _asset(session, bank_connection)
+    chart = await _chart(session, asset)
+    assert date(2026, 11, 5) not in chart  # no replayed trade point
+    assert chart[app_today()] == 420.0
+
+
+@pytest.mark.asyncio
+async def test_hand_trades_are_not_replayed_with_provider_trades(session: AsyncSession, bank_connection, test_user):
+    trades = [_trade("b1", "buy", 2, "2", "50"), _trade("b2", "buy", 5, "1", "60")]
+    await _pipeline(session, bank_connection, holding("3", trades, unit_price="70", current_value="210"), test_user)
+    asset = await _asset(session, bank_connection)
+    session.add(AssetTransaction(asset_id=asset.id, workspace_id=asset.workspace_id, kind="buy", quantity=Decimal("3"),
+                                 price=Decimal("10"), fee=Decimal("0"), date=date(2026, 11, 1), source="manual"))
+    await session.commit()
+    chart = await _chart(session, asset)
+    assert date(2026, 11, 1) not in chart
+    assert (chart[date(2026, 11, 2)], chart[date(2026, 11, 5)], chart[app_today()]) == (100.0, 180.0, 210.0)

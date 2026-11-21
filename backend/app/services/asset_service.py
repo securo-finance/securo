@@ -430,17 +430,37 @@ def build_market_value_series(
 
 
 
-def _ledger_valued(asset: Asset, sources: set[str]) -> bool:
+def _replays_provider_ledger(asset: Asset) -> bool:
+    """A synced holding whose chart may come from its provider's trades."""
+    return asset.valuation_method != "market_price" and asset.connection_id is not None and bool(asset.source)
+
+
+def _ledger_valued(asset: Asset, provider_units: Optional[Decimal]) -> bool:
     """Whether the asset's chart is its ledger replayed (units held each day x price).
 
     Market-priced holdings always are. A holding a bank connection syncs is
-    once its ledger holds trades from that connection's provider: they carry
+    while its provider's trades (`provider_units`: their buys minus sells,
+    None without any) add up to the units the provider reports: they carry
     each buy and sale on its own date, which the stored values (one per sync)
-    cannot. Trades entered by hand alone don't switch it.
+    cannot. A set that stopped adding up (the sync kept an older ledger) falls
+    back to the stored values, and trades entered by hand never count.
     """
     if asset.valuation_method == "market_price":
         return True
-    return asset.connection_id is not None and bool(asset.source) and asset.source in sources
+    if not _replays_provider_ledger(asset) or provider_units is None or asset.units is None:
+        return False
+    units = Decimal(str(asset.units))
+    tolerance = max(Decimal("0.0001"), abs(units) * Decimal("0.000001"))
+    return abs(provider_units - units) <= tolerance
+
+
+def _provider_units(asset: Asset, rows) -> Optional[Decimal]:
+    """Buys minus sells of the asset's own provider among `rows` of (kind, quantity, source)."""
+    mine = [(kind, qty) for kind, qty, source in rows if source == asset.source and kind in ("buy", "sell")]
+    if not mine:
+        return None
+    return sum((Decimal(str(q)) if k == "buy" else -Decimal(str(q)) for k, q in mine), Decimal(0))
+
 
 async def _load_asset_native_values(
     session: AsyncSession,
@@ -479,7 +499,8 @@ async def _load_asset_native_values(
     # Holdings with any trade, before the cutoff: whether a holding has a
     # ledger must not depend on where the range ends.
     ledger_ids: set[str] = set()
-    sources_by_aid: dict[str, set[str]] = {}
+    by_id = {str(a.id): a for a in assets}
+    provider_rows: dict[str, list[tuple[str, Any, Optional[str]]]] = {}
     if market_ids:
         tq = select(
             AssetTransaction.asset_id, AssetTransaction.date,
@@ -487,7 +508,12 @@ async def _load_asset_native_values(
             AssetTransaction.old_units, AssetTransaction.new_units, AssetTransaction.source,
         ).where(AssetTransaction.asset_id.in_(market_ids))
         for aid, d, kind, qty, price, old_units, new_units, source in (await session.execute(tq)).all():
-            sources_by_aid.setdefault(str(aid), set()).add(source or "")
+            owner = by_id[str(aid)]
+            if _replays_provider_ledger(owner):
+                # A synced holding replays only its provider's trades.
+                if source != owner.source:
+                    continue
+                provider_rows.setdefault(str(aid), []).append((kind, qty, source))
             if kind != "split":
                 ledger_ids.add(str(aid))
             if up_to_date is not None and d > up_to_date:
@@ -504,7 +530,7 @@ async def _load_asset_native_values(
     values_map: dict[str, list[tuple[date, float]]] = {}
     for asset in assets:
         aid = str(asset.id)
-        if _ledger_valued(asset, sources_by_aid.get(aid, set())):
+        if _ledger_valued(asset, _provider_units(asset, provider_rows.get(aid, []))):
             values_map[aid] = build_market_value_series(
                 raw[aid], txs_by_aid.get(aid, []), splits_by_aid.get(aid, []),
                 has_ledger=aid in ledger_ids,
@@ -1096,7 +1122,9 @@ async def get_asset_value_trend(
                 .where(AssetTransaction.asset_id == asset_id)
             )
         ).all()
-    if _ledger_valued(asset, {source or "" for *_, source in txs}):
+    if _replays_provider_ledger(asset):
+        txs = [tx for tx in txs if tx[-1] == asset.source]
+    if _ledger_valued(asset, _provider_units(asset, [(k, q, src) for _, k, q, _, _, _, src in txs])):
         series = build_market_value_series(
             [(d, a, p) for d, a, p in rows],
             [
