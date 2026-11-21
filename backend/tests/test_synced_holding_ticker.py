@@ -714,6 +714,39 @@ async def test_unlink_restores_the_provider_value_of_a_holding_synced_before_the
 
 
 @pytest.mark.asyncio
+async def test_a_later_manual_value_is_not_kept_as_the_provider_value(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession, synced_asset: Asset,
+    market: _FakeMarket,
+):
+    # A holding synced before the key, then valued by hand after the sync:
+    # the manual 999 is the newest point, but not the provider's figure.
+    synced_asset.external_metadata = {
+        key: value
+        for key, value in (synced_asset.external_metadata or {}).items()
+        if key != PROVIDER_VALUE_METADATA_KEY
+    }
+    session.add(
+        AssetValue(
+            asset_id=synced_asset.id,
+            amount=Decimal("999.00"),
+            date=date.fromordinal(date.today().toordinal() + 1),
+            source="manual",
+        )
+    )
+    await session.commit()
+    market.quotes["PSSA3.SA"] = _quote("PSSA3.SA", 44.00)
+
+    linked = await client.post(
+        f"/api/assets/{synced_asset.id}/link-ticker", json={"ticker": "PSSA3.SA"}, headers=auth_headers
+    )
+    assert linked.status_code == 200, linked.text
+
+    await session.refresh(synced_asset)
+    metadata = synced_asset.external_metadata or {}
+    assert Decimal(metadata[PROVIDER_VALUE_METADATA_KEY]) == Decimal("300")
+
+
+@pytest.mark.asyncio
 async def test_an_unlinked_holding_is_not_linked_again_by_the_sync(
     client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user: User,
     conn: BankConnection, market: _FakeMarket,
