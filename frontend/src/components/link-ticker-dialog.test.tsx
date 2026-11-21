@@ -1,0 +1,167 @@
+import { useQuery } from '@tanstack/react-query'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { LinkTickerDialog } from '@/components/link-ticker-dialog'
+import { renderWithProviders, t } from '@/test/utils'
+import type { Asset } from '@/types'
+
+const marketSearch = vi.fn()
+const linkTicker = vi.fn()
+const unlinkTicker = vi.fn()
+
+vi.mock('@/lib/api', () => ({
+  assets: {
+    marketSearch: (q: string, limit: number) => marketSearch(q, limit),
+    linkTicker: (id: string, ticker: string) => linkTicker(id, ticker),
+    unlinkTicker: (id: string) => unlinkTicker(id),
+  },
+}))
+
+const toastSuccess = vi.fn()
+const toastError = vi.fn()
+vi.mock('sonner', () => ({
+  toast: { success: (m: string) => toastSuccess(m), error: (m: string) => toastError(m) },
+}))
+
+function syncedHolding(overrides: Partial<Asset> = {}): Asset {
+  return {
+    id: 'asset-1',
+    name: 'PSSA3',
+    type: 'investment',
+    currency: 'BRL',
+    ticker: null,
+    connection_id: 'conn-1',
+    source: 'pluggy',
+    valuation_method: 'manual',
+    ...overrides,
+  } as Asset
+}
+
+function renderDialog(asset: Asset | null = syncedHolding(), onClose = vi.fn()) {
+  renderWithProviders(<LinkTickerDialog asset={asset} onClose={onClose} />)
+  return onClose
+}
+
+describe('LinkTickerDialog', () => {
+  beforeEach(() => {
+    marketSearch.mockReset().mockResolvedValue([])
+    linkTicker.mockReset()
+    unlinkTicker.mockReset()
+    toastSuccess.mockReset()
+    toastError.mockReset()
+  })
+
+  it('starts from the holding name and searches it', async () => {
+    marketSearch.mockResolvedValue([{ symbol: 'PSSA3.SA', name: 'Porto Seguro', exchange: 'SAO', quote_type: 'EQUITY' }])
+    renderDialog()
+
+    expect(screen.getByLabelText(t('assets.linkTickerLabel'))).toHaveValue('PSSA3')
+    expect(await screen.findByText('PSSA3.SA')).toBeInTheDocument()
+    expect(marketSearch).toHaveBeenCalledWith('PSSA3', 8)
+  })
+
+  it('drops the matches of a search the user already typed past', async () => {
+    let resolveOld: (v: unknown) => void = () => {}
+    marketSearch.mockImplementation((q: string) =>
+      q === 'PSSA3'
+        ? new Promise((resolve) => { resolveOld = resolve })
+        : Promise.resolve([{ symbol: 'PETR4.SA', name: 'Petrobras', exchange: 'SAO', quote_type: 'EQUITY' }]),
+    )
+    renderDialog()
+
+    await waitFor(() => expect(marketSearch).toHaveBeenCalledWith('PSSA3', 8))
+    fireEvent.change(screen.getByLabelText(t('assets.linkTickerLabel')), { target: { value: 'PETR4' } })
+    expect(await screen.findByText('PETR4.SA')).toBeInTheDocument()
+
+    // The older PSSA3 search answers last; its matches must not replace PETR4's.
+    resolveOld([{ symbol: 'PSSA3.SA', name: 'Porto Seguro', exchange: 'SAO', quote_type: 'EQUITY' }])
+    await new Promise((r) => setTimeout(r, 0))
+    expect(screen.queryByText('PSSA3.SA')).not.toBeInTheDocument()
+    expect(screen.getByText('PETR4.SA')).toBeInTheDocument()
+  })
+
+  it('starts from the current link when the holding already has one', () => {
+    renderDialog(syncedHolding({ ticker: 'PSSA3.SA', valuation_method: 'market_price' }))
+
+    expect(screen.getByLabelText(t('assets.linkTickerLabel'))).toHaveValue('PSSA3.SA')
+  })
+
+  it('links the picked symbol and closes', async () => {
+    marketSearch.mockResolvedValue([{ symbol: 'PSSA3.SA', name: 'Porto Seguro', exchange: 'SAO', quote_type: 'EQUITY' }])
+    linkTicker.mockResolvedValue(syncedHolding({ ticker: 'PSSA3.SA', valuation_method: 'market_price' }))
+    const onClose = renderDialog()
+
+    fireEvent.click(await screen.findByText('PSSA3.SA'))
+    fireEvent.click(screen.getByRole('button', { name: t('assets.linkTickerAction') }))
+
+    await waitFor(() => expect(linkTicker).toHaveBeenCalledWith('asset-1', 'PSSA3.SA'))
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(toastSuccess).toHaveBeenCalledWith(t('assets.linkTickerLinked', { ticker: 'PSSA3.SA' }))
+  })
+
+  it('keeps the dialog open and reports a rejected symbol', async () => {
+    linkTicker.mockRejectedValue({ isAxiosError: true, response: { data: { detail: 'No quote found for NOPE3.SA' } } })
+    const onClose = renderDialog()
+
+    fireEvent.change(screen.getByLabelText(t('assets.linkTickerLabel')), { target: { value: 'NOPE3.SA' } })
+    fireEvent.click(screen.getByRole('button', { name: t('assets.linkTickerAction') }))
+
+    await waitFor(() => expect(toastError).toHaveBeenCalled())
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('offers the way back to the bank value only for a holding priced from a ticker', () => {
+    renderDialog()
+
+    expect(screen.queryByRole('button', { name: t('assets.linkTickerUnlink') })).not.toBeInTheDocument()
+  })
+
+  it('returns a linked holding to the bank value, refreshes the views showing it and closes', async () => {
+    // What the holding row and the portfolio chart read: units × quote (308)
+    // while linked, the bank's figure (300) once the server has unlinked it.
+    let serverValue = 308
+    const listAssets = vi.fn(async () => [{ id: 'asset-1', current_value: serverValue }])
+    const portfolioTrend = vi.fn(async () => ({ total: serverValue }))
+    function AssetViews() {
+      const list = useQuery({ queryKey: ['assets'], queryFn: listAssets })
+      const trend = useQuery({ queryKey: ['portfolio-trend'], queryFn: portfolioTrend })
+      return (
+        <>
+          <p>holding {list.data?.[0].current_value ?? '…'}</p>
+          <p>portfolio {trend.data?.total ?? '…'}</p>
+        </>
+      )
+    }
+    unlinkTicker.mockImplementation(async () => {
+      serverValue = 300
+      return syncedHolding({ ticker: 'PSSA3.SA', valuation_method: 'manual' })
+    })
+    const onClose = vi.fn()
+    renderWithProviders(
+      <>
+        <AssetViews />
+        <LinkTickerDialog asset={syncedHolding({ ticker: 'PSSA3.SA', valuation_method: 'market_price' })} onClose={onClose} />
+      </>,
+    )
+    expect(await screen.findByText('holding 308')).toBeInTheDocument()
+    expect(await screen.findByText('portfolio 308')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: t('assets.linkTickerUnlink') }))
+
+    await waitFor(() => expect(unlinkTicker).toHaveBeenCalledWith('asset-1'))
+    expect(await screen.findByText('holding 300')).toBeInTheDocument()
+    expect(await screen.findByText('portfolio 300')).toBeInTheDocument()
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(toastSuccess).toHaveBeenCalledWith(t('assets.linkTickerUnlinked'))
+    expect(linkTicker).not.toHaveBeenCalled()
+  })
+
+  it('cannot submit a blank ticker', () => {
+    renderDialog()
+
+    fireEvent.change(screen.getByLabelText(t('assets.linkTickerLabel')), { target: { value: '   ' } })
+
+    expect(screen.getByRole('button', { name: t('assets.linkTickerAction') })).toBeDisabled()
+  })
+})

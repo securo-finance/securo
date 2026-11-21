@@ -16,7 +16,11 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.app_clock import app_today
 from app.core.config import get_settings
-from app.models.asset import PROVIDER_VALUE_DATE_METADATA_KEY, Asset
+from app.models.asset import (
+    PROVIDER_VALUE_DATE_METADATA_KEY,
+    PROVIDER_VALUE_METADATA_KEY,
+    Asset,
+)
 from app.models.asset_group import AssetGroup
 from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
@@ -52,7 +56,9 @@ from app.providers.base import (
     SessionExpiredError,
     TransactionData,
 )
+from app.providers.market_price import MarketPriceRateLimitedError
 from app.services.provider_settings import resolve_settings
+from app.services import asset_service
 from app.services import oauth_state
 from app.services import admin_service
 from app.services import category_line_service, reconciliation_service, recurring_match_service
@@ -932,6 +938,7 @@ async def _sync_holdings(
     existing_by_external: dict[str, Asset] = {
         asset.external_id: asset for asset in existing_assets if asset.external_id
     }
+    ticker_linker = _QuotableTickerLinker()
     archive_candidates: dict[str, Asset] = {
         asset.external_id: asset
         for asset in existing_assets
@@ -1049,7 +1056,14 @@ async def _sync_holdings(
         # reports the position. Historical values stay; current totals
         # already exclude it via the sell_date filter in rollups.
         if asset.sell_date is None:
-            await _upsert_asset_value_for_today(session, asset, holding.current_value, today)
+            await ticker_linker.link(session, asset, holding)
+            await _upsert_asset_value_for_today(
+                session,
+                asset,
+                _holding_value_for_today(asset, holding),
+                today,
+                price=_holding_price_for_today(asset),
+            )
 
     for ext_id, asset in archive_candidates.items():
         if ext_id not in seen and not asset.is_archived:
@@ -1116,6 +1130,16 @@ def _reconciled_trades(
     return ordered if abs(position - target) <= tolerance else None
 
 
+async def _has_trades_of_other_source(session: AsyncSession, asset: Asset, source: str) -> bool:
+    """Whether the asset's ledger has trades not written by this provider."""
+    found = await session.scalar(
+        select(AssetTransaction.id)
+        .where(AssetTransaction.asset_id == asset.id, AssetTransaction.source != source)
+        .limit(1)
+    )
+    return found is not None
+
+
 def _trade_from_row(tx: AssetTransaction) -> HoldingTradeData:
     return HoldingTradeData(
         external_id=tx.external_id or "",
@@ -1163,10 +1187,7 @@ async def _sync_holding_trades(
         holding
         for holding in holdings
         if holding.trades is not None
-        and (asset := synced_assets.get(holding.external_id)) is not None
-        # A market-priced asset is valued from its own ledger (units x
-        # quote): the user took over tracking it, so its trades stay theirs.
-        and asset.valuation_method != "market_price"
+        and synced_assets.get(holding.external_id) is not None
         and _trade_target(holding) is not None
     ]
     if not reported:
@@ -1174,6 +1195,15 @@ async def _sync_holding_trades(
     await session.flush()
     for holding in reported:
         asset = synced_assets[holding.external_id]
+        # A market-priced asset whose ledger holds trades the user entered is
+        # one they took over tracking (units x quote from their own buys), so
+        # its trades stay theirs. One priced from a ticker linked to the
+        # provider's position still takes the provider's trades: only its
+        # price source changed.
+        if asset.valuation_method == "market_price" and await _has_trades_of_other_source(
+            session, asset, source
+        ):
+            continue
         rows = (
             await session.execute(
                 select(AssetTransaction).where(
@@ -1238,7 +1268,13 @@ async def _sync_holding_trades(
         if was_sold and asset.sell_date is None and not holding.is_withdrawn:
             # Reopened by this sync: the value step above skipped it while it
             # still read as sold, so record today's value now.
-            await _upsert_asset_value_for_today(session, asset, holding.current_value, app_today())
+            await _upsert_asset_value_for_today(
+                session,
+                asset,
+                _holding_value_for_today(asset, holding),
+                app_today(),
+                price=_holding_price_for_today(asset),
+            )
 
 
 def _provider_metadata(holding: HoldingData) -> Optional[dict]:
@@ -1250,7 +1286,7 @@ def _provider_metadata(holding: HoldingData) -> Optional[dict]:
     return {
         key: value
         for key, value in (holding.metadata or {}).items()
-        if key != PROVIDER_VALUE_DATE_METADATA_KEY
+        if key not in (PROVIDER_VALUE_DATE_METADATA_KEY, PROVIDER_VALUE_METADATA_KEY)
     } or None
 
 
@@ -1264,7 +1300,80 @@ def _holding_metadata(holding: HoldingData) -> Optional[dict]:
     metadata = _provider_metadata(holding) or {}
     if holding.value_date is not None:
         metadata[PROVIDER_VALUE_DATE_METADATA_KEY] = holding.value_date.isoformat()
+    if holding.current_value is not None:
+        # Kept so unlinking a ticker can put the provider's figure back at once
+        # (asset_service.unlink_market_ticker) instead of waiting for a sync.
+        metadata[PROVIDER_VALUE_METADATA_KEY] = str(holding.current_value)
     return metadata or None
+
+
+class _QuotableTickerLinker:
+    """Links provider-derived market tickers to synced holdings, once.
+
+    A holding whose provider reports a quotable ticker is priced from the
+    market after the symbol is confirmed by a live quote. An asset that
+    already has a ticker is never touched: that ticker is either an earlier
+    confirmed link or one the user chose by hand, and the user's choice must
+    survive every later sync. A failed lookup leaves the holding valued by
+    the provider and is retried on the next sync. After a rate limit the
+    remaining holdings wait for the next sync instead of piling on requests.
+    """
+
+    def __init__(self) -> None:
+        self._rate_limited = False
+
+    async def link(self, session: AsyncSession, asset: Asset, holding: HoldingData) -> None:
+        if self._rate_limited or asset.ticker or not (holding.ticker_quotable and holding.ticker):
+            return
+        # Read before the savepoint: a rollback expires the asset's attributes.
+        external_id = asset.external_id
+        try:
+            # A savepoint keeps a failure to this one holding: a database error
+            # in the price write would otherwise leave the whole sync's
+            # transaction aborted, and the asset holding a ticker that the
+            # next sync never retries.
+            async with session.begin_nested():
+                await asset_service.link_market_ticker(session, asset, holding.ticker)
+            return
+        except asset_service.TickerLinkError as exc:
+            logger.info(
+                "Holding %s keeps provider valuation: %s", external_id, exc
+            )
+        except MarketPriceRateLimitedError:
+            self._rate_limited = True
+            logger.warning("Market data rate-limited; ticker linking resumes next sync")
+        except Exception:  # noqa: BLE001 - a quote failure must never fail the sync
+            logger.warning(
+                "Ticker lookup failed for holding %s", external_id, exc_info=True
+            )
+        # The rolled-back savepoint expired what the link had set on the asset;
+        # reload it so the rest of the sync reads the stored (unlinked) state.
+        await session.refresh(asset)
+
+
+def _holding_value_for_today(asset: Asset, holding: HoldingData):
+    """Today's valuation point for a synced holding.
+
+    A market-priced holding is worth units × last quote, the same figure the
+    asset list shows, so the chart and the header agree. Every other holding
+    uses the provider's reported balance.
+    """
+    if asset.valuation_method == "market_price" and asset.last_price is not None and asset.units:
+        return Decimal(str(asset.last_price)) * Decimal(str(asset.units))
+    return holding.current_value
+
+
+def _holding_price_for_today(asset: Asset) -> Optional[Decimal]:
+    """Per-share price behind today's point, when it is units × quote.
+
+    Stored on the AssetValue like a manual market-priced holding's, so the
+    history rebuild recomputes the point from the ledger quantity when a
+    later trade correction moves units across dates, instead of keeping a
+    baked amount. None for a provider-valued point.
+    """
+    if asset.valuation_method == "market_price" and asset.last_price is not None and asset.units:
+        return Decimal(str(asset.last_price))
+    return None
 
 
 async def _upsert_asset_from_holding(
@@ -1298,7 +1407,10 @@ async def _upsert_asset_from_holding(
             purchase_price=holding.purchase_price,
             purchase_date=holding.purchase_date,
             isin=holding.isin,
-            ticker=holding.ticker,
+            # A quotable ticker is only stored once the market confirms it
+            # (see _QuotableTickerLinker); until then the holding stays
+            # valued by the provider.
+            ticker=None if holding.ticker_quotable else holding.ticker,
             maturity_date=holding.maturity_date,
             external_metadata=_holding_metadata(holding),
             valuation_method="manual",
@@ -1342,7 +1454,10 @@ async def _upsert_asset_from_holding(
         asset.purchase_date = holding.purchase_date
     if holding.isin:
         asset.isin = holding.isin
-    if holding.ticker:
+    # A raw label never replaces the symbol a market-priced holding is quoted
+    # under: that ticker was confirmed by a quote or linked by the user, and
+    # its price and logo belong to it.
+    if holding.ticker and not holding.ticker_quotable and asset.valuation_method != "market_price":
         asset.ticker = holding.ticker
     if holding.maturity_date:
         asset.maturity_date = holding.maturity_date
@@ -1384,11 +1499,15 @@ async def _upsert_asset_value_for_today(
     asset: Asset,
     amount,
     today: date,
+    *,
+    price: Optional[Decimal] = None,
 ) -> None:
     """One sync-sourced AssetValue per asset per day.
 
     Re-syncing the same day updates the amount in place; a later day
     creates a new row so we build a daily valuation history over time.
+    `price` is the per-share quote when the amount is units × quote, and
+    None for a provider-valued amount (which also clears a stale one).
     """
     existing = await session.execute(
         select(AssetValue).where(
@@ -1400,11 +1519,13 @@ async def _upsert_asset_value_for_today(
     row = existing.scalar_one_or_none()
     if row is not None:
         row.amount = amount
+        row.price = price
     else:
         session.add(
             AssetValue(
                 asset_id=asset.id,
                 amount=amount,
+                price=price,
                 date=today,
                 source="sync",
             )

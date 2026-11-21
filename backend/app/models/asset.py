@@ -30,6 +30,11 @@ ASSET_PRICE_DECIMALS = 6
 # provider stopped moving still looks current; this date is what exposes it.
 PROVIDER_VALUE_DATE_METADATA_KEY = "_securo_provider_value_date"
 
+# external_metadata key for the value the provider last reported for a synced
+# holding. A holding priced from a linked ticker shows units x quote instead,
+# so unlinking the ticker restores today's point from this figure.
+PROVIDER_VALUE_METADATA_KEY = "_securo_provider_value"
+
 
 class Asset(Base):
     __tablename__ = "assets"

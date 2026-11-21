@@ -29,6 +29,7 @@ Securo's promise is that a person's financial data stays on their own infrastruc
 - Extended by [0019](0019-s3-storage.md), which adds S3-compatible object storage for files, called only with `STORAGE_PROVIDER=s3`.
 - Extended by [0021](0021-plugin-icons.md), which adds plugin icons, fetched from the plugin catalog's host when a browser asks Securo for one.
 - Extended by [0026](0026-plugin-icons-outside-the-catalog.md), which also fetches the plugin index when Connect Bank or Accounts shows an installed plugin's avatar.
+- Extended by [0031](0031-synced-holdings-priced-by-a-market-ticker.md), which also asks Yahoo Finance during a bank sync to confirm a ticker the provider reports for a holding.
 - The browser makes three requests of its own: the GitHub releases API to show the update banner (every 6 hours, can be turned off per browser), Google Fonts from `frontend/index.html`, and institution favicons from Google (the backend only builds the URL).
 
 ## Consequences

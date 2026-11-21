@@ -15,6 +15,7 @@ from app.models.asset import (
     ASSET_PRICE_DECIMALS,
     LOAN_COLLATERAL_TYPES,
     PROVIDER_VALUE_DATE_METADATA_KEY,
+    PROVIDER_VALUE_METADATA_KEY,
     Asset,
 )
 from app.models.asset_transaction import AssetTransaction
@@ -1378,6 +1379,139 @@ async def upsert_today_value(
                 source="sync",
             )
         )
+
+
+class TickerLinkError(Exception):
+    """A ticker could not be linked to a holding.
+
+    `code` is stable so the API and the sync can tell the cases apart:
+    "not_found" (no quote for the symbol) or "currency_mismatch" (the symbol
+    trades in another currency than the holding, so it is a different
+    instrument and pricing the holding with it would be wrong).
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+async def link_market_ticker(
+    session: AsyncSession,
+    asset: Asset,
+    ticker: str,
+    *,
+    market_provider: Optional[MarketPriceProvider] = None,
+) -> None:
+    """Price a holding from the market under `ticker`.
+
+    Used for provider-synced holdings: the provider keeps owning the
+    position (units), while the quote supplies the price, the logo and the
+    daily refresh, exactly like a manually added ticker holding. The symbol
+    is validated before anything is written, so a failed link leaves the
+    asset untouched.
+
+    Raises TickerLinkError when the symbol has no quote or trades in another
+    currency, and lets MarketPriceRateLimitedError through so callers can
+    back off.
+    """
+    symbol = ticker.strip().upper()
+    if not symbol:
+        raise TickerLinkError("not_found", "Empty ticker")
+    provider = market_provider or get_market_price_provider()
+    quote = await provider.get_quote(symbol)
+    if quote is None or quote.price is None:
+        raise TickerLinkError("not_found", f"No quote found for {symbol}")
+    if (quote.currency or "").upper() != (asset.currency or "").upper():
+        raise TickerLinkError(
+            "currency_mismatch",
+            f"{symbol} trades in {quote.currency}, the holding is in {asset.currency}",
+        )
+
+    await _retain_provider_value(session, asset)
+    asset.ticker = symbol
+    asset.ticker_exchange = quote.exchange
+    asset.valuation_method = "market_price"
+    # A re-link to another symbol must not keep the previous company's logo.
+    asset.logo_url = quote.logo_url
+    await _apply_price_to_asset(session, asset, Decimal(str(quote.price)))
+    await session.flush()
+
+
+async def _retain_provider_value(session: AsyncSession, asset: Asset) -> None:
+    """Keep a synced holding's provider value before a link reprices it.
+
+    The sync stores the provider's figure under PROVIDER_VALUE_METADATA_KEY,
+    but a holding last synced before that key existed has none, and the link
+    is about to overwrite today's point with units x quote. While the holding
+    is still provider-valued, its latest synced point is the provider's
+    figure, so it is kept there for unlink_market_ticker. Only synced points
+    count: a manual valuation added since would otherwise come back on
+    unlink labelled as the provider's. The next sync replaces it with a
+    fresh one.
+    """
+    if asset.connection_id is None or asset.valuation_method == "market_price":
+        return
+    metadata = asset.external_metadata or {}
+    if metadata.get(PROVIDER_VALUE_METADATA_KEY) is not None:
+        return
+    latest = await session.execute(
+        select(AssetValue.amount)
+        .where(AssetValue.asset_id == asset.id, AssetValue.source == "sync")
+        .order_by(desc(AssetValue.date), desc(AssetValue.id))
+        .limit(1)
+    )
+    amount = latest.scalar_one_or_none()
+    if amount is None:
+        return
+    # A new dict, so the JSON column registers the change.
+    asset.external_metadata = {**metadata, PROVIDER_VALUE_METADATA_KEY: str(amount)}
+
+
+async def unlink_market_ticker(session: AsyncSession, asset: Asset) -> None:
+    """Return a synced holding to the value its provider reports.
+
+    Undoes link_market_ticker (by hand or by the sync): the holding stops
+    being priced as units × quote and drops out of the daily price refresh.
+    The ticker itself stays on the asset as a label, which is also what keeps
+    the sync from linking it again (_QuotableTickerLinker skips any asset
+    with a ticker); linking a ticker by hand prices it from the market again.
+
+    Today's point is put back to the provider's last reported value right
+    away, without its per-share price, so the chart and the header show the
+    provider's figure before the next sync. A no-op for a holding that is not
+    market-priced.
+    """
+    if asset.valuation_method != "market_price":
+        return
+    asset.valuation_method = "manual"
+    asset.last_price = None
+    asset.last_price_at = None
+
+    raw = (asset.external_metadata or {}).get(PROVIDER_VALUE_METADATA_KEY)
+    try:
+        provider_value = Decimal(str(raw)) if raw is not None else None
+    except (ArithmeticError, ValueError):
+        provider_value = None
+    if provider_value is not None:
+        today = app_today()
+        existing = await session.execute(
+            select(AssetValue)
+            .where(AssetValue.asset_id == asset.id, AssetValue.date == today)
+            .order_by(desc(AssetValue.id))
+            .limit(1)
+        )
+        today_value = existing.scalar_one_or_none()
+        if today_value is not None:
+            today_value.amount = provider_value
+            today_value.price = None
+            today_value.source = "sync"
+        else:
+            session.add(
+                AssetValue(
+                    asset_id=asset.id, amount=provider_value, price=None, date=today, source="sync"
+                )
+            )
+    await session.flush()
 
 
 async def refresh_market_price_asset(

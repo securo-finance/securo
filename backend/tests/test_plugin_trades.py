@@ -195,9 +195,30 @@ async def test_a_market_priced_asset_keeps_its_own_trades(session: AsyncSession,
     await _pipeline(session, bank_connection, holding("10", None), test_user)
     asset = await _asset(session, bank_connection)
     asset.valuation_method = "market_price"  # the user tracks it by its quote and their own buys
+    session.add(AssetTransaction(asset_id=asset.id, workspace_id=asset.workspace_id, kind="buy",
+                                 quantity=Decimal("10"), price=Decimal("90"), date=date(2026, 11, 1), source="manual"))
     await session.commit()
     await _pipeline(session, bank_connection, holding("10", [_trade("b1", "buy", 2, "10")]), test_user)
-    assert await _ledger(session, await _asset(session, bank_connection)) == {}
+    ledger = await _ledger(session, await _asset(session, bank_connection))
+    assert [value[3] for value in ledger.values()] == ["manual"]
+
+
+@pytest.mark.asyncio
+async def test_a_holding_priced_by_a_linked_ticker_still_takes_the_reported_trades(
+    session: AsyncSession, bank_connection, test_user
+):
+    # Linking a ticker only changes where the price comes from; the position,
+    # and so its trades, stays the provider's (#1731).
+    await _pipeline(session, bank_connection, holding("10", None), test_user)
+    asset = await _asset(session, bank_connection)
+    asset.valuation_method, asset.ticker, asset.last_price = "market_price", "ABCD3.SA", Decimal("110")
+    await session.commit()
+    await _pipeline(session, bank_connection, holding("10", [_trade("b1", "buy", 2, "10", "98.5", "1")]), test_user)
+    asset = await _asset(session, bank_connection)
+    assert await _ledger(session, asset) == {"b1": ("buy", Decimal("10"), Decimal("98.5"), SOURCE)}
+    assert Decimal(str(asset.average_price)) == Decimal("98.6")
+    assert asset.units == Decimal("10")
+    assert asset.valuation_method == "market_price"
 
 
 @pytest.mark.asyncio
