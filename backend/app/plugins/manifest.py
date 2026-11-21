@@ -242,6 +242,13 @@ class Integration(_Model):
     fields: list[FormField] = Field(default=[], max_length=20)
     sync_minutes: int | None = Field(default=None, ge=15, le=7 * 24 * 60)
     provides: list[ProvidedKind] | None = None
+    complete_feed: bool = False
+    """The plugin returns every entry, pending ones included, from `since` on.
+
+    Then a pending row it stops returning was cancelled, and Securo expires it
+    as it does Enable Banking's (`_expire_cancelled_holds`). Only for an
+    integration that provides transactions.
+    """
 
     @model_validator(mode="after")
     def _unique_fields(self) -> Integration:
@@ -252,6 +259,8 @@ class Integration(_Model):
 
     @model_validator(mode="after")
     def _provides_what_it_needs(self) -> Integration:
+        if self.complete_feed and "transactions" not in (self.provides or []):
+            raise ValueError(f"integration {self.key}: complete_feed needs provides to include transactions")
         if self.provides is None:
             return self
         if not self.provides:
