@@ -324,6 +324,53 @@ async def test_quote_errors_never_fail_the_sync(
 
 
 @pytest.mark.asyncio
+async def test_a_database_error_while_linking_stays_with_that_holding(
+    session: AsyncSession, test_user: User, conn: BankConnection, market: _FakeMarket,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from sqlalchemy import text
+
+    from app.services import asset_service
+
+    market.quotes["PSSA3.SA"] = _quote("PSSA3.SA", 44.00)
+    market.quotes["BBSE3.SA"] = _quote("BBSE3.SA", 37.00)
+    real_apply = asset_service._apply_price_to_asset
+
+    async def failing_apply(session_, asset, price, **kwargs):
+        if asset.ticker == "PSSA3.SA":
+            # A real statement error, after the link has set the asset's fields.
+            await session_.execute(text("SELECT * FROM no_such_table"))
+        await real_apply(session_, asset, price, **kwargs)
+
+    monkeypatch.setattr(asset_service, "_apply_price_to_asset", failing_apply)
+    _MockProvider._holdings = [
+        _b3_holding(),
+        _b3_holding(external_id="inv-2", ticker="BBSE3.SA", current_value=Decimal("250.00")),
+    ]
+
+    await _sync(session, test_user, conn)
+
+    rows = await session.execute(select(Asset).where(Asset.user_id == test_user.id))
+    by_ext = {a.external_id: a for a in rows.scalars().all()}
+    failed, linked = by_ext["inv-1"], by_ext["inv-2"]
+    # The failed link left nothing behind, so the next sync retries it.
+    assert failed.ticker is None
+    assert failed.valuation_method == "manual"
+    assert failed.last_price is None
+    assert await _today_value(session, failed) == Decimal("300.00")
+    # The rest of the sync carried on.
+    assert linked.ticker == "BBSE3.SA"
+    assert linked.valuation_method == "market_price"
+    assert await _today_value(session, linked) == Decimal("259.00")
+
+    monkeypatch.setattr(asset_service, "_apply_price_to_asset", real_apply)
+    await _sync(session, test_user, conn)
+    await session.refresh(failed)
+    assert failed.ticker == "PSSA3.SA"
+    assert failed.valuation_method == "market_price"
+
+
+@pytest.mark.asyncio
 async def test_non_quotable_ticker_stays_a_label(
     session: AsyncSession, test_user: User, conn: BankConnection, market: _FakeMarket
 ):

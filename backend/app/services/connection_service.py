@@ -1325,19 +1325,30 @@ class _QuotableTickerLinker:
     async def link(self, session: AsyncSession, asset: Asset, holding: HoldingData) -> None:
         if self._rate_limited or asset.ticker or not (holding.ticker_quotable and holding.ticker):
             return
+        # Read before the savepoint: a rollback expires the asset's attributes.
+        external_id = asset.external_id
         try:
-            await asset_service.link_market_ticker(session, asset, holding.ticker)
+            # A savepoint keeps a failure to this one holding: a database error
+            # in the price write would otherwise leave the whole sync's
+            # transaction aborted, and the asset holding a ticker that the
+            # next sync never retries.
+            async with session.begin_nested():
+                await asset_service.link_market_ticker(session, asset, holding.ticker)
+            return
         except asset_service.TickerLinkError as exc:
             logger.info(
-                "Holding %s keeps provider valuation: %s", asset.external_id, exc
+                "Holding %s keeps provider valuation: %s", external_id, exc
             )
         except MarketPriceRateLimitedError:
             self._rate_limited = True
             logger.warning("Market data rate-limited; ticker linking resumes next sync")
         except Exception:  # noqa: BLE001 - a quote failure must never fail the sync
             logger.warning(
-                "Ticker lookup failed for holding %s", asset.external_id, exc_info=True
+                "Ticker lookup failed for holding %s", external_id, exc_info=True
             )
+        # The rolled-back savepoint expired what the link had set on the asset;
+        # reload it so the rest of the sync reads the stored (unlinked) state.
+        await session.refresh(asset)
 
 
 def _holding_value_for_today(asset: Asset, holding: HoldingData):
