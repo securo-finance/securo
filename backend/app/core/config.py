@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     enable_banking_private_key_file: str = ""  # path to PEM file; takes precedence
     enable_banking_api_url: str = "https://api.enablebanking.com"
     enable_banking_oauth_redirect_uri: str = ""  # empty derives from FRONTEND_URL
+    # Comma-separated BalanceStatus codes, most preferred first. Booked
+    # balances lead: available ones can include the credit line.
+    enable_banking_balance_priority: str = "ITBD,CLBD,OPBD,ITAV,CLAV,XPCD,OPAV"
 
     # SimpleFIN Bridge (US/intl banks, paste-a-token flow). Off by default.
     # The bridge URL defaults to the beta/sandbox host so users can test with
@@ -169,6 +172,18 @@ class Settings(BaseSettings):
     # spaces to be quoted, and some panels (PaaS env vars, manual exports)
     # keep those quotes in the value. Drop one pair of surrounding quotes so
     # the provider always receives clean scope tokens (#887).
+    @field_validator("enable_banking_balance_priority")
+    @classmethod
+    def validate_balance_priority(cls, value: str) -> str:
+        codes = [code.strip().upper() for code in value.split(",")]
+        valid = {
+            "CLAV", "CLBD", "FWAV", "INFO", "ITAV", "ITBD", "OPAV", "OPBD",
+            "OTHR", "PRCD", "VALU", "XPCD",
+        }
+        if not codes or any(code not in valid for code in codes) or len(set(codes)) != len(codes):
+            raise ValueError("Balance priority must contain unique, valid BalanceStatus codes")
+        return ",".join(codes)
+
     @field_validator("oidc_scopes")
     @classmethod
     def _strip_oidc_scopes_quotes(cls, value: str) -> str:
