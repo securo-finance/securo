@@ -22,6 +22,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.app_clock import app_today
+from app.core.currency import same_currency
 from app.core.shared_scope import (
     in_bound_workspace,
     invited_group_member_ids,
@@ -39,6 +40,7 @@ from app.models.mortgage_payment_allocation import (
     MortgagePaymentAllocation,
 )
 from app.models.payee import Payee
+from app.models.user import User
 from app.schemas.transaction import (
     DescriptionSuggestion,
     InstallmentSeriesCreate,
@@ -49,6 +51,7 @@ from app.schemas.transaction import (
 from app.schemas.transaction_split import TransactionSplitInput, TransactionSplitsInput
 from app.services import category_line_service, reconciliation_service, split_service
 from app.services.account_service import get_account, get_running_balances
+from app.services.primary_restamp_service import typed_primary_amount
 from app.services.credit_card_service import apply_effective_date, cc_cycle_bill_due_dates
 from app.services.rule_service import apply_rules_to_transaction
 from app.services.fx_rate_service import (
@@ -132,6 +135,44 @@ def _apply_fx_override(transaction, amount, amount_primary=None, fx_rate_used=No
         transaction.amount_primary = (amount * Decimal(str(fx_rate_used))).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP
         )
+
+
+async def _keep_typed_primary(
+    session: AsyncSession, transaction: Transaction, user_id: uuid.UUID
+) -> None:
+    """Remember the converted amount the user just typed (ADR 0031).
+
+    `amount_primary` is rewritten when the display currency changes; this
+    copy is what brings the typed figure back when it changes back.
+    """
+    user = await session.get(User, user_id)
+    if (
+        user is None
+        or transaction.amount_primary is None
+        or same_currency(transaction.currency, user.primary_currency)
+    ):
+        _drop_typed_primary(transaction)
+        return
+    transaction.amount_primary_typed = Decimal(str(transaction.amount_primary)).quantize(
+        Decimal("0.01")
+    )
+    transaction.amount_primary_typed_currency = user.primary_currency
+
+
+def _drop_typed_primary(transaction: Transaction) -> None:
+    """Forget a typed conversion once the primary amount is derived again."""
+    transaction.amount_primary_typed = None
+    transaction.amount_primary_typed_currency = None
+
+
+async def _restore_typed_primary(
+    session: AsyncSession, transaction: Transaction, user_id: uuid.UUID
+) -> None:
+    """Put back the typed conversion after a stamp derived it from a rate."""
+    user = await session.get(User, user_id)
+    typed = typed_primary_amount(transaction, user.primary_currency) if user else None
+    if typed is not None:
+        transaction.amount_primary, transaction.fx_rate_used = typed
 
 
 FlagDue = Literal["overdue", "soon"]
@@ -1201,6 +1242,7 @@ async def create_transaction(
     # Stamp primary currency amount (manual override or auto)
     if data.amount_primary is not None or data.fx_rate_used is not None:
         _apply_fx_override(transaction, data.amount, data.amount_primary, data.fx_rate_used)
+        await _keep_typed_primary(session, transaction, user_id)
         await stamp_account_amount(session, transaction, typed_primary=True)
     else:
         await stamp_primary_amount(session, user_id, transaction)
@@ -1316,9 +1358,11 @@ async def create_installment_series(
             await apply_rules_to_transaction(session, user_id, tx)
         if base.fx_rate_used is not None:
             _apply_fx_override(tx, tx.amount, None, base.fx_rate_used)
+            await _keep_typed_primary(session, tx, user_id)
             await stamp_account_amount(session, tx, typed_primary=True)
         elif base.amount_primary is not None:
             _apply_fx_override(tx, tx.amount, base.amount_primary, None)
+            await _keep_typed_primary(session, tx, user_id)
             await stamp_account_amount(session, tx, typed_primary=True)
         else:
             await stamp_primary_amount(session, user_id, tx)
@@ -1941,6 +1985,7 @@ async def _apply_update_to_row(
             if typed_account_amount:
                 tx.amount_account = None
                 tx.amount_account_source = None
+            _drop_typed_primary(tx)
             await stamp_primary_amount(
                 session, user_id, tx,
                 restamp_account=account_inputs_changed or account_moved or typed_account_amount,
@@ -1952,13 +1997,18 @@ async def _apply_update_to_row(
                 override_amount_primary,
                 override_fx_rate,
             )
+            await _keep_typed_primary(session, tx, user_id)
             await stamp_account_amount(session, tx, typed_primary=True)
     elif needs_restamp or heals_fx_on_post or account_moved:
         # Posting only heals the reporting stamp; the account amount follows
         # a change of amount, currency, date or account.
+        if account_inputs_changed or account_moved:
+            _drop_typed_primary(tx)
         await stamp_primary_amount(
             session, user_id, tx, restamp_account=account_inputs_changed or account_moved
         )
+        # A save that resends the same amount keeps what the user typed.
+        await _restore_typed_primary(session, tx, user_id)
 
     # Refresh effective_date when the purchase date, account, or the manual
     # bill-cycle override changed. Also re-link bill_id when the override
@@ -2019,6 +2069,7 @@ async def _apply_update_to_row(
                         paired_date_changed = update_data[key] != paired_tx.date
                     setattr(paired_tx, key, update_data[key])
             if paired_amount_changed or paired_date_changed:
+                _drop_typed_primary(paired_tx)
                 await stamp_primary_amount(session, user_id, paired_tx, restamp_account=True)
             if paired_date_changed:
                 paired_account = await session.get(Account, paired_tx.account_id)
@@ -2716,15 +2767,13 @@ async def post_transaction_today(
         raise ValueError("Cannot change amount or date on a synchronized transaction")
 
     today = app_today()
+    previous_date = transaction.date
     transaction.status = "posted"
     transaction.date = today
 
     account = await session.get(Account, transaction.account_id)
     apply_effective_date(transaction, account)
-    # Posting moves the date to today: the account amount follows it.
-    await stamp_primary_amount(
-        session, transaction.user_id, transaction, restamp_account=True
-    )
+    await _restamp_posted_leg(session, transaction, previous_date)
 
     if transaction.transfer_pair_id:
         paired_result = await session.execute(
@@ -2738,16 +2787,35 @@ async def post_transaction_today(
         if paired:
             paired.status = "posted"
             if paired.source != "sync":
+                paired_previous_date = paired.date
                 paired.date = today
                 paired_account = await session.get(Account, paired.account_id)
                 apply_effective_date(paired, paired_account)
-                await stamp_primary_amount(
-                    session, paired.user_id, paired, restamp_account=True
-                )
+                await _restamp_posted_leg(session, paired, paired_previous_date)
 
     await session.commit()
     await session.refresh(transaction)
     return transaction
+
+
+async def _restamp_posted_leg(
+    session: AsyncSession, transaction: Transaction, previous_date: date
+) -> None:
+    """Stamp a leg that was just posted today.
+
+    When posting moved the date, the account amount follows it and a
+    conversion typed for the old date no longer holds (ADR 0031). A leg
+    already dated today changed nothing a conversion depends on, so what the
+    user typed stays.
+    """
+    date_changed = transaction.date != previous_date
+    if date_changed:
+        _drop_typed_primary(transaction)
+    await stamp_primary_amount(
+        session, transaction.user_id, transaction, restamp_account=date_changed
+    )
+    if not date_changed:
+        await _restore_typed_primary(session, transaction, transaction.user_id)
 
 
 async def toggle_ignore_transaction(

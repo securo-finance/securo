@@ -2494,14 +2494,19 @@ async def _refresh_provider_values(
     incoming = (txn_data.amount, txn_data.type)
     if stored == (previous.amount, previous.type) and incoming != stored:
         old_amount = transaction.amount
-        transaction.amount = txn_data.amount
         transaction.type = txn_data.type
-        converted = _bank_converted_amount(txn_data, account_currency, user_currency)
-        await _stamp_synced_primary_amount(
-            session, transaction.user_id, transaction, converted,
-            txn_data.amount_in_account_currency, restamp_account=True,
-        )
-        await category_line_service.rescale_lines(session, transaction, old_amount)
+        if incoming[0] != stored[0]:
+            transaction.amount = txn_data.amount
+            # A conversion typed for the old amount no longer holds (ADR 0031).
+            # A type-only correction keeps the amount, so the conversion stays.
+            transaction.amount_primary_typed = None
+            transaction.amount_primary_typed_currency = None
+            converted = _bank_converted_amount(txn_data, account_currency, user_currency)
+            await _stamp_synced_primary_amount(
+                session, transaction.user_id, transaction, converted,
+                txn_data.amount_in_account_currency, restamp_account=True,
+            )
+            await category_line_service.rescale_lines(session, transaction, old_amount)
 
     if transaction.payee == previous.payee and txn_data.payee != previous.payee:
         transaction.payee = txn_data.payee
