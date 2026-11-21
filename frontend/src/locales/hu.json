@@ -1525,7 +1525,7 @@
     "incomeSet": "Várható bevétel beállítása",
     "incomeClear": "Bevétel törlése",
     "incomeSaved": "Várható bevétel mentve",
-    "incomePlanned": "Beütemezve {{amount}}",
+    "incomePlanned": "Költségvetés: {{amount}}",
     "incomeLeft": "{{amount}} maradt",
     "incomeShort": "{{amount}} hiányzik",
     "incomeLeftShare": "A bevétel {{percent}}%-a maradt: {{amount}}",
