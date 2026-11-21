@@ -881,6 +881,8 @@
     "uncategorizedCta": "{{count}} लेन-देन को वर्गीकृत करना है",
     "uncategorizedTotal": "कुल {{amount}}",
     "categorizeNow": "अभी वर्गीकृत करें",
+    "drillDownQuickCategorize": "श्रेणी चुनें",
+    "drillDownOpenTransaction": "लेन-देन खोलें",
     "allCategorized": "सब हो गया!",
     "allCategorizedDesc": "सभी लेन-देन वर्गीकृत हैं",
     "assetsValue": "निवेशित संपत्तियाँ",
@@ -920,6 +922,7 @@
     "date": "तिथि",
     "category": "श्रेणी",
     "account": "खाता",
+    "card": "कार्ड",
     "noCategory": "कोई श्रेणी नहीं",
     "searchCategory": "श्रेणी खोजें...",
     "noCategoryFound": "कोई श्रेणी नहीं मिली।",
@@ -938,6 +941,7 @@
     "addedToExistingRule": "नियम अपडेट हुआ। भविष्य के मिलान इस श्रेणी का उपयोग करेंगे।",
     "duplicateRuleCondition": "उस नियम में यह मिलान पहले से शामिल है।",
     "saveAndNew": "सहेजें और नया",
+    "saveAndNext": "सहेजें और अगला",
     "saveAndDuplicate": "सहेजें और कॉपी बनाएँ",
     "moreSaveOptions": "और सहेजने के विकल्प",
     "created": "लेन-देन बना",
@@ -997,6 +1001,31 @@
     "ignoredShow": "दिखाएँ",
     "ignoredHide": "छिपाएँ",
     "ignoredHiddenValue": "छिपा हुआ",
+    "flagged": "चिह्नित",
+    "flagAction": "चिह्नित करें",
+    "unflagAction": "चिह्न हटाएँ",
+    "flagSuccess": "लेन-देन चिह्नित किया गया",
+    "unflagSuccess": "चिह्न हटा दिया गया",
+    "flagFilterAll": "सभी चिह्नित",
+    "flagFilterOverdue": "समय निकल गया",
+    "flagFilterSoon": "इस सप्ताह",
+    "flagOverdue": "समय निकल गया",
+    "flagDueOn": "{{date}} तक",
+    "flagReminder": "रिमाइंडर",
+    "flagReminderHint": "वैकल्पिक",
+    "flagRemindOn": "याद दिलाएँ",
+    "flagPickDate": "तारीख चुनें",
+    "flagClearDate": "तारीख हटाएँ",
+    "flagNote": "नोट",
+    "flagNotePlaceholder": "जैसे: रिफ़ंड का इंतज़ार",
+    "bulkFlagSuccess": "चिह्नित लेनदेन: {{count}}",
+    "bulkUnflagSuccess": "हटाए गए चिह्न: {{count}}",
+    "flagOverdueCount": "समय निकले चिह्न: {{count}}",
+    "flagPreset": {
+      "tomorrow": "कल",
+      "nextWeek": "एक सप्ताह में",
+      "nextMonth": "एक महीने में"
+    },
     "statusCleared": "क्लियर",
     "sortAsc": "बढ़ते क्रम में लगाएँ",
     "sortDesc": "घटते क्रम में लगाएँ",
@@ -1276,6 +1305,12 @@
     "cycleMissing": "चक्र सेट करें",
     "cycleMissingHint": "चक्र फ़िल्टरिंग, देय-तिथि अलर्ट और बिल दृश्य चालू करने के लिए स्टेटमेंट बंद होने और देय दिन भरें।",
     "ccSettingsHint": "ये फ़ील्ड वैकल्पिक हैं, लेकिन इन्हें भरने से चक्र फ़िल्टरिंग, देय-तिथि अलर्ट और खरीद को सही बिल में डालना चालू हो जाता है।",
+    "linkedCards": "लिंक किए गए कार्ड",
+    "linkedCardsHint": "लेन-देन में उन्हें अलग पहचानने के लिए एक लेबल का उपयोग करें।",
+    "noLinkedCards": "अभी तक किसी कार्ड की अंतिम संख्या की पहचान नहीं हुई है।",
+    "cardEnding": "अंत {{number}}",
+    "cardLabel": "लेबल",
+    "cardLabelPlaceholder": "लेबल जोड़ें",
     "created": "खाता बना",
     "updated": "खाता अपडेट हुआ",
     "deleted": "खाता हटाया गया",
@@ -1292,6 +1327,7 @@
       "syncNow": "अभी सिंक करें"
     },
     "connected": "बैंक सफलतापूर्वक कनेक्ट हुआ",
+    "connectedImportFailed": "बैंक जुड़ गया, लेकिन पहला आयात विफल रहा। पूरा करने के लिए सिंक दोहराएँ।",
     "connectError": "बैंक कनेक्ट करने में विफल",
     "disconnected": "कनेक्शन हटाया गया",
     "confirmDisconnectTitle": "बैंक कनेक्शन डिस्कनेक्ट करें?",
@@ -1518,6 +1554,8 @@
     "copyPreviewCount": "कॉपी करने के लिए कैटेगरी: {{count}}",
     "copyPreviewTotal": "कॉपी करने योग्य कुल: {{amount}}",
     "copyPreviewEmpty": "चुने गए महीने में कॉपी करने के लिए कोई बजट नहीं है।",
+    "copyPreviewAllExist": "स्रोत महीने की सभी श्रेणियों का {{month}} में पहले से बजट है। राशियाँ कॉपी करने या समायोजन लागू करने के लिए बदलें चुनें।",
+    "copyPreviewNoChange": "स्रोत महीने के सभी बजट {{month}} में पहले से इन राशियों पर हैं।",
     "copyPreviewError": "स्रोत महीना लोड नहीं हो सका।",
     "copyAmountTooLarge": "समायोजित राशि बजट सीमा से अधिक है। प्रतिशत समायोजन कम करें।",
     "copyConfirm": "बजट कॉपी करें",
@@ -1585,6 +1623,7 @@
     "walletHint": "चयनित वॉलेट की सभी संपत्तियों के कुल मूल्य से इस लक्ष्य को ट्रैक करें।"
   },
   "recurring": {
+    "makeFromTransaction": "इस लेन-देन से नई आवर्ती",
     "title": "आवर्ती लेन-देन",
     "add": "आवर्ती जोड़ें",
     "edit": "आवर्ती संपादित करें",
@@ -1636,15 +1675,24 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "{{days}} दिनों के अंतराल के बाद",
-    "priceChangeInsufficient": "Securo द्वारा स्थिर कीमत परिवर्तन रिपोर्ट करने से पहले कम से कम 3 लिंक किए गए पोस्ट किए गए चार्ज आवश्यक हैं।"
+    "priceChangeInsufficient": "Securo द्वारा स्थिर कीमत परिवर्तन रिपोर्ट करने से पहले कम से कम 3 लिंक किए गए पोस्ट किए गए चार्ज आवश्यक हैं।",
+    "summaryIncome": "आय",
+    "summaryExpenses": "खर्च",
+    "summaryNet": "शुद्ध",
+    "summaryTransfers": "शामिल नहीं किए गए ट्रांसफ़र: {{count}}",
+    "summaryUnconverted": "विनिमय दर नहीं, शामिल नहीं: {{count}}",
+    "summaryFailed": "इस महीने के कुल लोड नहीं हो सके"
   },
   "rules": {
     "searchPlaceholder": "नियम खोजें...",
     "filterAllCategories": "सभी श्रेणियाँ",
+    "filterByCategory": "श्रेणी के अनुसार फ़िल्टर करें",
     "filterAllStatuses": "सभी स्थितियाँ",
+    "filterByStatus": "स्थिति के अनुसार फ़िल्टर करें",
     "filterActiveOnly": "केवल सक्रिय",
     "filterInactiveOnly": "केवल निष्क्रिय",
     "filterAllActions": "सभी कार्रवाइयाँ",
+    "filterByAction": "क्रिया के अनुसार फ़िल्टर करें",
     "noFilterResults": "इन फ़िल्टरों से कोई नियम मेल नहीं खाता",
     "preview": "पूर्वावलोकन",
     "previewMatched": "{{matched}} मिलान",
@@ -1737,6 +1785,7 @@
     "fieldPayee": "प्राप्तकर्ता",
     "fieldDate": "तिथि",
     "fieldStatus": "स्थिति",
+    "fieldProviderCategory": "प्रदाता श्रेणी",
     "opContains": "शामिल है",
     "opNotContains": "शामिल नहीं है",
     "opEquals": "बराबर है",
@@ -2008,6 +2057,8 @@
     "undoImport": "इंपोर्ट पूर्ववत करें?",
     "undoOrdersDescription": "इससे {{filename}} से इंपोर्ट किए गए {{count}} ऑर्डर हट जाएँगे और उनसे प्रभावित पोज़िशन दोबारा गणना की जाएँगी। इस इंपोर्ट से बनी होल्डिंग्स उनके साथ हट जाती हैं।",
     "undone": "इंपोर्ट पूर्ववत हुआ",
+    "undoOversell": "इस आयात को पूर्ववत नहीं किया जा सकता: बची हुई एक प्रविष्टि {{attempted}} इकाइयाँ बेचती है जबकि {{available}} पास हैं। पहले उस प्रविष्टि को संपादित या हटाएँ।",
+    "undoTooLarge": "इस आयात को पूर्ववत नहीं किया जा सकता: बची हुई होल्डिंग संग्रहीत करने के लिए बहुत बड़ी है।",
     "undoDescription": "इससे {{filename}} से {{count}} इंपोर्ट किए गए लेन-देन हट जाएँगे। यह कार्रवाई पूर्ववत नहीं की जा सकती।",
     "deleting": "हट रहा है...",
     "deleteAll": "सब हटाएँ",
@@ -2068,9 +2119,10 @@
     "summaryHoldings": "{{created}} होल्डिंग्स बनीं, {{matched}} मिलान हुईं",
     "summarySkipped": "{{count}} पहले से इंपोर्ट",
     "rowsSkipped": "{{count}} पंक्तियाँ छोड़ी जाएँगी",
+    "reasonColumn": "कारण",
     "rowError": "पंक्ति {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "और {{count}} और",
-    "moreRows": "और {{count}} और ऑर्डर",
+    "showAllRows": "सभी {{count}} पंक्तियाँ दिखाएँ",
     "field": {
       "ticker": "टिकर",
       "date": "तिथि",
@@ -2079,7 +2131,9 @@
       "fee": "शुल्क",
       "kind": "खरीद/बिक्री",
       "currency": "मुद्रा",
-      "notes": "नोट्स"
+      "notes": "नोट्स",
+      "old_units": "पहले की इकाइयाँ",
+      "new_units": "बाद की इकाइयाँ"
     },
     "walletWarningTitle": "पहले से आपके पोर्टफ़ोलियो में",
     "warning": {
@@ -2088,7 +2142,8 @@
     },
     "kind": {
       "buy": "खरीद",
-      "sell": "बिक्री"
+      "sell": "बिक्री",
+      "split": "स्प्लिट"
     },
     "reason": {
       "missing_ticker": "कोई टिकर नहीं",
@@ -2100,8 +2155,15 @@
       "unknown_ticker": "मूल्य प्रदाता को टिकर नहीं मिला",
       "oversell": "पोज़िशन में मौजूद इकाइयों से ज़्यादा बेचना",
       "no_fx_rate": "ऑर्डर की तारीख के लिए कोई विनिमय दर नहीं",
-      "possible_duplicate": "शायद पिछले आयात से यह पहले से इस होल्डिंग में है"
-    }
+      "possible_duplicate": "शायद पिछले आयात से यह पहले से इस होल्डिंग में है",
+      "invalid_split": "स्प्लिट अनुपात पढ़ा नहीं जा सका, या मात्रा, मूल्य या शुल्क वाला स्प्लिट",
+      "split_not_allowed": "बैंक से सिंक होने वाली होल्डिंग पर स्प्लिट दर्ज नहीं किया जा सकता",
+      "split_in_future": "स्प्लिट की तारीख भविष्य की नहीं हो सकती",
+      "nothing_held_before_split": "स्प्लिट से पहले कोई इकाई नहीं है",
+      "too_large": "होल्डिंग सहेजने के लिए बहुत बड़ी हो जाएगी",
+      "holding_moved": "आयात के दौरान होल्डिंग का नाम बदला गया या उसे किसी अन्य वॉलेट में ले जाया गया"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "संपत्तियाँ",
@@ -2179,6 +2241,16 @@
     "marketPriceSourceTooltip": "बाज़ार डेटा से मूल्य अपने आप रीफ़्रेश होता है",
     "lastUpdated": "अपडेट हुआ {{when}}",
     "refreshPrice": "मूल्य रीफ़्रेश करें",
+    "refreshAllPrices": "कीमतें रीफ़्रेश करें",
+    "refreshAllPricesDone": "{{updated}}, {{skipped}}",
+    "refreshAllPricesUpdated_one": "{{count}} कीमत अपडेट हुई",
+    "refreshAllPricesUpdated_other": "{{count}} कीमतें अपडेट हुईं",
+    "refreshAllPricesNoQuote_one": "{{count}} बिना नई कीमत",
+    "refreshAllPricesNoQuote_other": "{{count}} बिना नई कीमत",
+    "refreshAllPricesLeftOut_one": "{{count}} छोड़ी गई",
+    "refreshAllPricesLeftOut_other": "{{count}} छोड़ी गईं",
+    "refreshAllPricesNone": "रीफ़्रेश करने के लिए कोई बाज़ार-मूल्य संपत्ति नहीं",
+    "refreshAllPricesRateLimited": "मार्केट डेटा प्रदाता अभी अनुरोध सीमित कर रहा है। रुकने से पहले: {{updated}}, {{skipped}}। एक मिनट बाद फिर कोशिश करें।",
     "priceRefreshed": "मूल्य रीफ़्रेश हुआ",
     "purchaseDate": "खरीद तिथि",
     "purchasePrice": "खरीद मूल्य",
@@ -2200,6 +2272,9 @@
     "soldAssets": "बेची गई संपत्तियाँ",
     "archivedAssets": "संग्रहीत संपत्तियाँ",
     "noAssets": "अभी कोई संपत्ति नहीं",
+    "showArchived": "संग्रहीत दिखाएँ",
+    "archivedNotCounted": "कुल पोर्टफोलियो में शामिल नहीं।",
+    "archivedLoadFailed": "संग्रहीत परिसंपत्तियाँ लोड नहीं हो सकीं।",
     "created": "संपत्ति बनी",
     "updated": "संपत्ति अपडेट हुई",
     "deleted": "संपत्ति हटाई गई",
@@ -2356,7 +2431,41 @@
     "statementViewTransactions": "लेन-देन देखें",
     "statementUncategorizedIncome": "बिना श्रेणी की आय",
     "statementUncategorizedExpense": "बिना श्रेणी के खर्च",
-    "statementToggleGroup": "{{name}} की श्रेणियाँ दिखाएँ"
+    "statementToggleGroup": "{{name}} की श्रेणियाँ दिखाएँ",
+    "pluginReport": {
+      "total": {
+        "expenses": "कुल खर्च",
+        "income": "कुल प्राप्त",
+        "net": "शुद्ध"
+      },
+      "none": {
+        "category": "बिना श्रेणी",
+        "category_group": "बिना समूह",
+        "payee": "बिना प्राप्तकर्ता",
+        "account": "बिना खाता",
+        "month": "बिना तारीख"
+      },
+      "groupBy": {
+        "category": "श्रेणी",
+        "category_group": "समूह",
+        "payee": "प्राप्तकर्ता",
+        "account": "खाता",
+        "month": "महीना"
+      },
+      "measure": {
+        "expenses": "खर्च",
+        "income": "आय",
+        "net": "शुद्ध"
+      },
+      "share": "हिस्सा",
+      "computed": "प्लगइन द्वारा गणना",
+      "periodTrimmed": "प्लगइन रिपोर्ट अधिकतम दो वर्ष कवर करती हैं। {{from}} से {{to}} दिखाया जा रहा है।",
+      "periodTooLong": "प्लगइन रिपोर्ट अधिकतम दो वर्ष कवर करती है। छोटी अवधि चुनें।",
+      "totalRow": "कुल",
+      "page": "पृष्ठ {{page}} / {{pages}}",
+      "previousPage": "पिछला पृष्ठ",
+      "nextPage": "अगला पृष्ठ"
+    }
   },
   "payees": {
     "noPayeeFound": "कोई प्राप्तकर्ता नहीं मिला।",
@@ -2517,6 +2626,7 @@
     "download": "डाउनलोड करें",
     "closePreview": "पूर्वावलोकन बंद करें",
     "remove": "हटाएँ",
+    "refresh": "रिफ्रेश करें",
     "invalidAmount": "मान्य राशि दर्ज करें, जैसे {{example}}।"
   },
   "splitGroups": {
@@ -2660,6 +2770,15 @@
     "brandSelfHosted": "सेल्फ़-होस्टेड",
     "brandPrivate": "डिज़ाइन से ही निजी"
   },
+  "accountantExport": {
+    "title": "अकाउंटेंट के लिए निर्यात",
+    "description": "किसी अवधि के वर्गीकृत लेन-देन और लाभ-हानि विवरण उस प्रारूप में डाउनलोड करें जिसे आपका अकाउंटिंग सॉफ़्टवेयर सीधे खोलता है। राशियाँ लेन-देन का पूरा मूल्य हैं, दूसरे लोगों के साथ बाँटने से पहले।",
+    "startDate": "आरंभ तिथि",
+    "endDate": "अंतिम तिथि",
+    "download": "पैकेज डाउनलोड करें",
+    "error": "निर्यात बनाया नहीं जा सका",
+    "formatHint": "एक zip जिसमें transactions.csv और profit-and-loss.csv हैं, उन विभाजकों और एन्कोडिंग के साथ जिन्हें स्प्रेडशीट और अकाउंटिंग सॉफ़्टवेयर बिना बदलाव के पढ़ते हैं।"
+  },
   "backup": {
     "button": "बैकअप",
     "downloading": "डाउनलोड हो रहा है...",
@@ -2671,7 +2790,84 @@
     "passwordPlaceholder": "बिना एन्क्रिप्ट किए बैकअप के लिए खाली छोड़ें",
     "passwordTooShort": "कम से कम {{min}} अक्षर उपयोग करें",
     "encryptionNote": "आर्काइव AES-256 से एन्क्रिप्ट किया गया है और किसी भी सामान्य आर्काइवर में खुलता है। Securo यह पासवर्ड संग्रहीत नहीं करता और इसके बिना फ़ाइल बहाल नहीं कर सकता।",
-    "successEncrypted": "एन्क्रिप्ट किया गया बैकअप सफलतापूर्वक डाउनलोड हुआ"
+    "successEncrypted": "एन्क्रिप्ट किया गया बैकअप सफलतापूर्वक डाउनलोड हुआ",
+    "restoreSuccess": "बैकअप {{name}} में बहाल किया गया",
+    "runSuccess": "बैकअप बनाया गया",
+    "uploadDescription": "Securo बैकअप ZIP अपलोड करें, उसका पूर्वावलोकन करें, फिर डिफ़ॉल्ट रूप से उसे नए वर्कस्पेस में बहाल करें।",
+    "menu": "बैकअप",
+    "storedDescription": "इस वर्कस्पेस के लिए “बैकअप चलाएँ” या शेड्यूल से बनाए गए बैकअप।",
+    "content": {
+      "configuration": "केवल कॉन्फ़िगरेशन",
+      "data": "केवल डेटा",
+      "both": "कॉन्फ़िगरेशन और डेटा"
+    },
+    "counts": {
+      "empty": "0 आइटम",
+      "total": "कुल: {{count}}",
+      "accounts_one": "{{count}} खाता",
+      "accounts_other": "{{count}} खाते",
+      "transactions_one": "{{count}} लेन-देन",
+      "transactions_other": "{{count}} लेन-देन",
+      "categories_one": "{{count}} श्रेणी",
+      "categories_other": "{{count}} श्रेणियाँ",
+      "rules_one": "{{count}} नियम",
+      "rules_other": "{{count}} नियम",
+      "budgets_one": "{{count}} बजट",
+      "budgets_other": "{{count}} बजट",
+      "goals_one": "{{count}} लक्ष्य",
+      "goals_other": "{{count}} लक्ष्य"
+    },
+    "configSaved": "बैकअप सेटिंग्स सहेजी गईं",
+    "runTitle": "अभी बैकअप बनाएँ",
+    "contentLabel": "बैकअप की सामग्री",
+    "restore": "बहाल करें",
+    "previewError": "बैकअप फ़ाइल पढ़ी नहीं जा सकी",
+    "configError": "बैकअप सेटिंग्स सहेजी नहीं जा सकीं",
+    "configLoadError": "बैकअप सेटिंग्स लोड नहीं हो सकीं।",
+    "invalidRetention": "एक धनात्मक पूर्णांक दर्ज करें।",
+    "unknownWorkspace": "अज्ञात वर्कस्पेस",
+    "running": "चल रहा है…",
+    "emptyStored": "अभी कोई संग्रहीत बैकअप नहीं है। अभी एक बैकअप बनाएँ या शेड्यूल चालू करें।",
+    "listError": "संग्रहीत बैकअप लोड नहीं किए जा सके।",
+    "downloadNow": "ZIP डाउनलोड करें",
+    "subtitle": "प्रमाणीकरण या बैंक लॉगिन जानकारी शामिल किए बिना वर्कस्पेस बैकअप एक्सपोर्ट करें, शेड्यूल करें और बहाल करें।",
+    "restoreMode": {
+      "current_workspace": "मौजूदा वर्कस्पेस",
+      "new_workspace": "नया वर्कस्पेस"
+    },
+    "confirmRestoreLabel": "मौजूदा वर्कस्पेस को बदलने के लिए RESTORE टाइप करें",
+    "runDescription": "सर्वर पर प्रबंधित बैकअप बनाएँ या सीधे ZIP डाउनलोड करें।",
+    "restoreModeLabel": "बहाली का लक्ष्य",
+    "uploadFileLabel": "बैकअप ZIP फ़ाइल",
+    "lastRun": "आख़िरी बार चलाया गया",
+    "noFileSelected": "कोई फ़ाइल नहीं चुनी गई",
+    "weekly": "साप्ताहिक",
+    "runNow": "बैकअप चलाएँ",
+    "chooseFile": "फ़ाइल चुनें",
+    "previewing": "बैकअप पढ़ा जा रहा है…",
+    "safeBadge": "गोपनीय जानकारी शामिल नहीं",
+    "download": "डाउनलोड करें",
+    "storedTitle": "संग्रहीत बैकअप",
+    "noFile": "पहले कोई बैकअप ZIP चुनें।",
+    "daily": "दैनिक",
+    "destinationHint": "संग्रहीत बैकअप केवल तभी स्थायी रहते हैं, जब /app/data/backups माउंट किया गया हो (Docker Compose में BACKUP_HOST_PATH या Helm में persistence.backups.enabled)।",
+    "noBackupSelected": "पहले कोई संग्रहीत बैकअप चुनें।",
+    "currentWorkspaceWarning": "यह विनाशकारी विकल्प मौजूदा वर्कस्पेस के मेल खाते डेटा को एक ही ट्रांज़ैक्शन में बदल देता है। नए वर्कस्पेस में बहाल करना अधिक सुरक्षित है।",
+    "uploadTitle": "अपलोड से बहाल करें",
+    "retentionDays": "अधिकतम आयु (दिनों में)",
+    "restoring": "बहाल किया जा रहा है…",
+    "scheduleTitle": "शेड्यूल और संग्रह अवधि",
+    "retentionCount": "नवीनतम इतने रखें",
+    "nextRun": "अगली बार चलने का समय",
+    "secretNotice": "बैकअप में जानबूझकर उपयोगकर्ता प्रमाणीकरण डेटा, पासकी, प्रदाता लॉगिन जानकारी और बैंक टोकन शामिल नहीं किए जाते।",
+    "scheduleLabel": "शेड्यूल",
+    "restoreError": "बैकअप बहाल नहीं किया जा सका",
+    "scheduleDescription": "हर घंटे चलने वाले वर्कर चालू शेड्यूल की जाँच करते हैं। शेड्यूल किए गए ZIP को स्थायी रूप से सुरक्षित रखने के लिए आपके डिप्लॉयमेंट में स्थायी बैकअप स्टोरेज चालू होना चाहिए।",
+    "optional": "वैकल्पिक",
+    "runError": "बैकअप नहीं बनाया जा सका",
+    "title": "बैकअप",
+    "restoreUpload": "अपलोड किया गया बैकअप बहाल करें",
+    "restoreStoredTitle": "संग्रहीत बैकअप बहाल करें"
   },
   "update": {
     "title": "सर्वर अपडेट",
@@ -3802,9 +3998,22 @@
       "none": "कोई इनवॉइस देय नहीं।",
       "noClient": "कोई ग्राहक नहीं"
     },
+    "flagged": {
+      "title": "चिह्नित लेनदेन",
+      "hint": "जिन्हें आपने बाद में देखने के लिए चिह्नित किया, पहले समय निकले रिमाइंडर।",
+      "none": "कुछ भी चिह्नित नहीं।",
+      "overdue": "समय निकला: {{count}}",
+      "dueSoon": "इस सप्ताह: {{count}}",
+      "noDate": "कोई तारीख नहीं",
+      "more": "और चिह्नित: {{count}}"
+    },
     "recurringRevenue": {
       "title": "आवर्ती आय",
       "hint": "आवर्ती इनवॉइस हर महीने कितना लाते हैं, और हाल में क्या खोया।"
     }
+  },
+  "offline": {
+    "title": "सर्वर से संपर्क नहीं हो रहा",
+    "description": "आप ऑफ़लाइन हैं या Securo फिर से शुरू हो रहा है। आपका डेटा सुरक्षित है और कुछ नहीं बदला गया। सर्वर के जवाब देते ही हम अपने आप फिर से जुड़ जाएँगे।"
   }
 }

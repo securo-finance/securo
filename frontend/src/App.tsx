@@ -25,6 +25,7 @@ const TransactionsPage = lazy(() => import('@/pages/transactions'))
 const AccountsPage = lazy(() => import('@/pages/accounts'))
 const AccountDetailPage = lazy(() => import('@/pages/account-detail'))
 const ImportPage = lazy(() => import('@/pages/import'))
+const BackupPage = lazy(() => import('@/pages/backups'))
 const RulesPage = lazy(() => import('@/pages/rules'))
 const CategoriesPage = lazy(() => import('@/pages/categories'))
 const CollectionsPage = lazy(() => import('@/pages/collections'))
@@ -148,6 +149,8 @@ function App() {
                             </ModuleRoute>
                           }
                         />
+                        <Route path="/backup" element={<Navigate to="/backups" replace />} />
+                        <Route path="/backups" element={<BackupPage />} />
                         <Route
                           path="/rules"
                           element={

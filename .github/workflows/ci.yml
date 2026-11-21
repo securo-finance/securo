@@ -276,6 +276,14 @@ jobs:
       - name: Test CI change selection
         run: python3 .github/ci/test_changes.py
 
+      # The fast lane's gates are inline JavaScript in its workflow, so there
+      # is no module to import: the test reads the script out of the workflow
+      # and runs it against a fake GitHub. A page size that hides a finding,
+      # or a gate that stops deciding, is caught here instead of on the next
+      # pull request the lane is supposed to merge.
+      - name: Test the fast lane gates
+        run: node .github/ci/test_fast_lane.mjs
+
       - name: Check the Alembic revision chain
         run: python3 backend/scripts/check_migration_chain.py
 
@@ -292,6 +300,21 @@ jobs:
 
       - name: Check the paths AGENTS.md and the ADRs cite
         run: python3 .github/ci/check_doc_paths.py
+
+  installer:
+    name: Installer Script
+    runs-on: ubuntu-latest
+
+    steps:
+      # The installer is the first thing someone self-hosting runs, and the
+      # paths it takes on a second run only show up against a real folder. The
+      # test drives it with stub docker, curl and git, so it needs no daemon.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Test the installer
+        run: python3 .github/ci/test_install_sh.py
 
   frontend-checks:
     name: Frontend Checks

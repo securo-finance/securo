@@ -7,7 +7,7 @@ import type { ModuleId } from '@/lib/modules'
  *  rendering it. Hiding the nav link alone leaves the page reachable.
  *  Mirrors AdminRoute / AgentsRoute. */
 export function ModuleRoute({ module, children }: { module: ModuleId; children: React.ReactNode }) {
-  const { hasModule, isLoading } = useWorkspace()
+  const { hasModule, isLoading, loadFailed } = useWorkspace()
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -15,6 +15,9 @@ export function ModuleRoute({ module, children }: { module: ModuleId; children: 
       </div>
     )
   }
+  // A workspace list we could not load says nothing about the modules.
+  // Redirecting would throw away the page the person asked for (issue #292).
+  if (loadFailed) return <>{children}</>
   if (!hasModule(module)) return <Navigate to="/" replace />
   return <>{children}</>
 }

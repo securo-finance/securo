@@ -1066,6 +1066,23 @@ async def test_portfolio_trend_with_assets(session: AsyncSession, test_user: Use
 
 
 @pytest.mark.asyncio
+async def test_portfolio_trend_total_drops_asset_sold_after_last_value(
+    session: AsyncSession, test_user: User, test_workspace,
+):
+    car = Asset(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id, name="Car",
+        type="vehicle", currency=test_user.primary_currency, valuation_method="manual",
+        purchase_date=date(2025, 1, 1), purchase_price=Decimal("30000"), position=0,
+        sell_date=date(2025, 3, 15), sell_price=Decimal("28000"),
+    )
+    session.add(car)
+    await session.commit()
+
+    result = await get_portfolio_trend(session, test_workspace.id, test_user.id)
+    assert result["total"] == 0.0
+
+
+@pytest.mark.asyncio
 async def test_portfolio_trend_total_consistent_with_get_asset_values_at(
     session: AsyncSession, test_user: User, test_workspace,
 ):

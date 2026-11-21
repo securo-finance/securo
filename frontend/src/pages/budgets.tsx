@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -83,6 +83,7 @@ function SpendHistory({ values, labels }: { values: number[]; labels: string[] }
 
 export default function BudgetsPage() {
   const { t, i18n } = useTranslation()
+  const id = useId()
   const { mask, privacyMode } = usePrivacyMode()
   const { user } = useAuth()
   const { canWrite } = useWorkspace()
@@ -594,8 +595,9 @@ export default function BudgetsPage() {
           <div className="space-y-4">
             <div className="flex items-center gap-4">
               <div className="space-y-1">
-                <Label>{t('budgets.suggestPeriod')}</Label>
+                <Label htmlFor={`${id}-suggest-period`}>{t('budgets.suggestPeriod')}</Label>
                 <select
+                  id={`${id}-suggest-period`}
                   value={suggestMonths}
                   onChange={(event) => {
                     setSuggestMonths(Number(event.target.value))
@@ -610,8 +612,9 @@ export default function BudgetsPage() {
                   ))}
                 </select>
               </div>
-              <label className="flex items-center gap-2 cursor-pointer mt-5">
+              <label htmlFor={`${id}-suggest-recurring`} className="flex items-center gap-2 cursor-pointer mt-5">
                 <input
+                  id={`${id}-suggest-recurring`}
                   type="checkbox"
                   checked={suggestRecurring}
                   onChange={(event) => setSuggestRecurring(event.target.checked)}

@@ -883,6 +883,8 @@
     "uncategorizedCta": "{{count}} transazioni da categorizzare",
     "uncategorizedTotal": "{{amount}} in totale",
     "categorizeNow": "Categorizza ora",
+    "drillDownQuickCategorize": "Scegli una categoria",
+    "drillDownOpenTransaction": "Apri transazione",
     "allCategorized": "Tutto in ordine!",
     "allCategorizedDesc": "Tutte le transazioni sono categorizzate",
     "assetsValue": "Beni investiti",
@@ -922,6 +924,7 @@
     "date": "Data",
     "category": "Categoria",
     "account": "Conto",
+    "card": "Carta",
     "noCategory": "Nessuna categoria",
     "searchCategory": "Cerca categoria...",
     "noCategoryFound": "Nessuna categoria trovata.",
@@ -940,6 +943,7 @@
     "addedToExistingRule": "Regola aggiornata. Le prossime corrispondenze useranno questa categoria.",
     "duplicateRuleCondition": "Questa regola include gia questa corrispondenza.",
     "saveAndNew": "Salva e nuova",
+    "saveAndNext": "Salva e successivo",
     "saveAndDuplicate": "Salva e duplica",
     "moreSaveOptions": "Altre opzioni di salvataggio",
     "created": "Transazione creata",
@@ -999,6 +1003,31 @@
     "ignoredShow": "Mostra",
     "ignoredHide": "Nascondi",
     "ignoredHiddenValue": "Nascoste",
+    "flagged": "Contrassegnata",
+    "flagAction": "Contrassegna",
+    "unflagAction": "Rimuovi contrassegno",
+    "flagSuccess": "Transazione contrassegnata",
+    "unflagSuccess": "Contrassegno rimosso",
+    "flagFilterAll": "Tutte contrassegnate",
+    "flagFilterOverdue": "Scadute",
+    "flagFilterSoon": "In scadenza questa settimana",
+    "flagOverdue": "Scaduta",
+    "flagDueOn": "Entro il {{date}}",
+    "flagReminder": "Promemoria",
+    "flagReminderHint": "facoltativo",
+    "flagRemindOn": "Ricordamelo",
+    "flagPickDate": "Scegli una data",
+    "flagClearDate": "Cancella data",
+    "flagNote": "Nota",
+    "flagNotePlaceholder": "es. in attesa del rimborso",
+    "bulkFlagSuccess": "Transazioni contrassegnate: {{count}}",
+    "bulkUnflagSuccess": "Contrassegni rimossi: {{count}}",
+    "flagOverdueCount": "Contrassegni scaduti: {{count}}",
+    "flagPreset": {
+      "tomorrow": "Domani",
+      "nextWeek": "Tra una settimana",
+      "nextMonth": "Tra un mese"
+    },
     "statusCleared": "Contabilizzata",
     "sortAsc": "Ordine crescente",
     "sortDesc": "Ordine decrescente",
@@ -1280,6 +1309,12 @@
     "cycleMissing": "Configura ciclo",
     "cycleMissingHint": "Compila i giorni di chiusura e scadenza dell'estratto per attivare il filtro per ciclo, gli avvisi di scadenza e la vista estratto conto.",
     "ccSettingsHint": "Questi campi sono facoltativi, ma compilandoli attivi il filtro per ciclo, gli avvisi di scadenza e l'assegnazione degli acquisti all'estratto conto corretto.",
+    "linkedCards": "Carte collegate",
+    "linkedCardsHint": "Usa un'etichetta per distinguerle nelle transazioni.",
+    "noLinkedCards": "Non è stata ancora identificata alcuna finale della carta.",
+    "cardEnding": "Finale {{number}}",
+    "cardLabel": "Etichetta",
+    "cardLabelPlaceholder": "Aggiungi etichetta",
     "created": "Conto creato",
     "updated": "Conto aggiornato",
     "deleted": "Conto eliminato",
@@ -1296,6 +1331,7 @@
       "syncNow": "Sincronizza ora"
     },
     "connected": "Banca collegata con successo",
+    "connectedImportFailed": "Banca collegata, ma la prima importazione non è riuscita. Ripeti la sincronizzazione per completare.",
     "connectError": "Impossibile collegare la banca",
     "disconnected": "Connessione rimossa",
     "confirmDisconnectTitle": "Disconnettere la connessione bancaria?",
@@ -1522,6 +1558,8 @@
     "copyPreviewCount": "Categorie da copiare: {{count}}",
     "copyPreviewTotal": "Totale da copiare: {{amount}}",
     "copyPreviewEmpty": "Il mese selezionato non ha budget da copiare.",
+    "copyPreviewAllExist": "Tutte le categorie del mese di origine hanno già un budget in {{month}}. Scegli sostituisci per copiare gli importi o applicare l'adeguamento.",
+    "copyPreviewNoChange": "Tutti i budget del mese di origine hanno già questi importi in {{month}}.",
     "copyPreviewError": "Impossibile caricare il mese di origine.",
     "copyAmountTooLarge": "L'importo adeguato supera il limite di budget. Riduci la percentuale di adeguamento.",
     "copyConfirm": "Copia budget",
@@ -1589,6 +1627,7 @@
     "walletHint": "Monitora questo obiettivo con il valore combinato di tutti gli asset nel portafoglio selezionato."
   },
   "recurring": {
+    "makeFromTransaction": "Nuova ricorrente da questa transazione",
     "title": "Transazioni ricorrenti",
     "add": "Aggiungi ricorrente",
     "edit": "Modifica ricorrente",
@@ -1640,15 +1679,24 @@
     "priceChangeAmount": "{{old}} → {{new}}",
     "priceChangeDelta": "{{absolute}} ({{percent}})",
     "priceChangeGap": "Dopo un intervallo di {{days}} giorni",
-    "priceChangeInsufficient": "Sono necessari almeno 3 addebiti pubblicati e collegati prima che Securo segnali una variazione di prezzo stabile."
+    "priceChangeInsufficient": "Sono necessari almeno 3 addebiti pubblicati e collegati prima che Securo segnali una variazione di prezzo stabile.",
+    "summaryIncome": "Entrate",
+    "summaryExpenses": "Uscite",
+    "summaryNet": "Netto",
+    "summaryTransfers": "Trasferimenti esclusi: {{count}}",
+    "summaryUnconverted": "Senza tasso di cambio, esclusi: {{count}}",
+    "summaryFailed": "Impossibile caricare i totali del mese"
   },
   "rules": {
     "searchPlaceholder": "Cerca regole...",
     "filterAllCategories": "Tutte le categorie",
+    "filterByCategory": "Filtra per categoria",
     "filterAllStatuses": "Tutti gli stati",
+    "filterByStatus": "Filtra per stato",
     "filterActiveOnly": "Solo attive",
     "filterInactiveOnly": "Solo inattive",
     "filterAllActions": "Tutte le azioni",
+    "filterByAction": "Filtra per azione",
     "noFilterResults": "Nessuna regola corrisponde a questi filtri",
     "preview": "Anteprima",
     "previewMatched": "{{matched}} corrispondenze",
@@ -1746,6 +1794,7 @@
     "fieldPayee": "Beneficiario",
     "fieldDate": "Data",
     "fieldStatus": "Stato",
+    "fieldProviderCategory": "Categoria del provider",
     "opContains": "contiene",
     "opNotContains": "non contiene",
     "opEquals": "uguale a",
@@ -2012,6 +2061,8 @@
     "undoImport": "Annullare l'importazione?",
     "undoOrdersDescription": "Verranno eliminati i {{count}} ordini importati da {{filename}} e ricalcolate le posizioni interessate. I titoli creati da questa importazione vengono rimossi con essi.",
     "undone": "Importazione annullata",
+    "undoOversell": "Impossibile annullare questa importazione: un movimento che resta vende {{attempted}} unità con {{available}} possedute. Modifica o elimina prima quel movimento.",
+    "undoTooLarge": "Impossibile annullare questa importazione: la posizione che resta è troppo grande da salvare.",
     "undoDescription": "Questo eliminerà {{count}} transazioni importate da {{filename}}. Questa azione non può essere annullata.",
     "deleting": "Eliminazione...",
     "deleteAll": "Elimina tutto",
@@ -2072,9 +2123,10 @@
     "summaryHoldings": "{{created}} titoli creati, {{matched}} trovati",
     "summarySkipped": "{{count}} già importati",
     "rowsSkipped": "{{count}} righe saranno saltate",
+    "reasonColumn": "Motivo",
     "rowError": "Riga {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "e altri {{count}}",
-    "moreRows": "e altri {{count}} ordini",
+    "showAllRows": "Mostra tutte le {{count}} righe",
     "field": {
       "ticker": "Ticker",
       "date": "Data",
@@ -2083,7 +2135,9 @@
       "fee": "Commissioni",
       "kind": "Acquisto/Vendita",
       "currency": "Valuta",
-      "notes": "Note"
+      "notes": "Note",
+      "old_units": "Unità prima",
+      "new_units": "Unità dopo"
     },
     "walletWarningTitle": "Già nel tuo portafoglio",
     "warning": {
@@ -2092,7 +2146,8 @@
     },
     "kind": {
       "buy": "Acquisto",
-      "sell": "Vendita"
+      "sell": "Vendita",
+      "split": "Frazionamento"
     },
     "reason": {
       "missing_ticker": "nessun ticker",
@@ -2104,8 +2159,15 @@
       "unknown_ticker": "ticker non trovato dal fornitore di prezzi",
       "oversell": "vendita superiore alla posizione",
       "no_fx_rate": "nessun tasso di cambio per la data dell'ordine",
-      "possible_duplicate": "potrebbe essere già in questa posizione da un'importazione precedente"
-    }
+      "possible_duplicate": "potrebbe essere già in questa posizione da un'importazione precedente",
+      "invalid_split": "rapporto di frazionamento illeggibile, o frazionamento con quantità, prezzo o commissione",
+      "split_not_allowed": "non si possono registrare frazionamenti su una posizione sincronizzata con la banca",
+      "split_in_future": "un frazionamento non può avere una data futura",
+      "nothing_held_before_split": "nessuna unità detenuta prima del frazionamento",
+      "too_large": "renderebbe la posizione troppo grande da salvare",
+      "holding_moved": "la posizione è stata rinominata o spostata in un altro portafoglio durante l’importazione"
+    },
+    "splitRatio": "{{old}} → {{new}}"
   },
   "assets": {
     "title": "Beni",
@@ -2183,6 +2245,19 @@
     "marketPriceSourceTooltip": "Prezzo aggiornato automaticamente dai dati di mercato",
     "lastUpdated": "Aggiornato {{when}}",
     "refreshPrice": "Aggiorna prezzo",
+    "refreshAllPrices": "Aggiorna prezzi",
+    "refreshAllPricesDone": "{{updated}}, {{skipped}}",
+    "refreshAllPricesUpdated_one": "{{count}} prezzo aggiornato",
+    "refreshAllPricesUpdated_many": "{{count}} prezzi aggiornati",
+    "refreshAllPricesUpdated_other": "{{count}} prezzi aggiornati",
+    "refreshAllPricesNoQuote_one": "{{count}} senza nuova quotazione",
+    "refreshAllPricesNoQuote_many": "{{count}} senza nuova quotazione",
+    "refreshAllPricesNoQuote_other": "{{count}} senza nuova quotazione",
+    "refreshAllPricesLeftOut_one": "{{count}} saltato",
+    "refreshAllPricesLeftOut_many": "{{count}} saltati",
+    "refreshAllPricesLeftOut_other": "{{count}} saltati",
+    "refreshAllPricesNone": "Nessun cespite a prezzo di mercato da aggiornare",
+    "refreshAllPricesRateLimited": "Il fornitore dei dati di mercato sta limitando le richieste. Prima dello stop: {{updated}}, {{skipped}}. Riprova tra un minuto.",
     "priceRefreshed": "Prezzo aggiornato",
     "purchaseDate": "Data di acquisto",
     "purchasePrice": "Prezzo di acquisto",
@@ -2204,6 +2279,9 @@
     "soldAssets": "Beni venduti",
     "archivedAssets": "Beni archiviati",
     "noAssets": "Ancora nessun bene",
+    "showArchived": "Mostra archiviati",
+    "archivedNotCounted": "Non contano nel totale del portafoglio.",
+    "archivedLoadFailed": "Impossibile caricare gli asset archiviati.",
     "created": "Bene creato",
     "updated": "Bene aggiornato",
     "deleted": "Bene eliminato",
@@ -2360,7 +2438,41 @@
     "statementViewTransactions": "Visualizza transazioni",
     "statementUncategorizedIncome": "Entrate senza categoria",
     "statementUncategorizedExpense": "Uscite senza categoria",
-    "statementToggleGroup": "Mostra le categorie di {{name}}"
+    "statementToggleGroup": "Mostra le categorie di {{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "Totale speso",
+        "income": "Totale ricevuto",
+        "net": "Saldo"
+      },
+      "none": {
+        "category": "Senza categoria",
+        "category_group": "Senza gruppo",
+        "payee": "Senza beneficiario",
+        "account": "Senza conto",
+        "month": "Senza data"
+      },
+      "groupBy": {
+        "category": "Categoria",
+        "category_group": "Gruppo",
+        "payee": "Beneficiario",
+        "account": "Conto",
+        "month": "Mese"
+      },
+      "measure": {
+        "expenses": "Spese",
+        "income": "Entrate",
+        "net": "Saldo"
+      },
+      "share": "Quota",
+      "computed": "Calcolato dal plugin",
+      "periodTrimmed": "I report dei plugin coprono al massimo due anni. Visualizzazione da {{from}} a {{to}}.",
+      "periodTooLong": "Un report di un plugin copre al massimo due anni. Scegli un periodo più breve.",
+      "totalRow": "Totale",
+      "page": "Pagina {{page}} di {{pages}}",
+      "previousPage": "Pagina precedente",
+      "nextPage": "Pagina successiva"
+    }
   },
   "payees": {
     "noPayeeFound": "Nessun beneficiario trovato.",
@@ -2521,6 +2633,7 @@
     "download": "Scarica",
     "closePreview": "Chiudi anteprima",
     "remove": "Rimuovi",
+    "refresh": "Aggiorna",
     "invalidAmount": "Inserisci un importo valido, ad esempio {{example}}."
   },
   "splitGroups": {
@@ -2664,6 +2777,15 @@
     "brandSelfHosted": "Self-hosted",
     "brandPrivate": "Privato per progettazione"
   },
+  "accountantExport": {
+    "title": "Esportazione per il commercialista",
+    "description": "Scarica le transazioni categorizzate e il conto economico di un periodo, nel formato che il software del tuo commercialista apre direttamente. Gli importi sono il valore intero della transazione, prima di dividerlo con altre persone.",
+    "startDate": "Data iniziale",
+    "endDate": "Data finale",
+    "download": "Scarica pacchetto",
+    "error": "Impossibile generare l'esportazione",
+    "formatHint": "Uno zip con transactions.csv e profit-and-loss.csv, con i separatori e la codifica che fogli di calcolo e software contabili leggono senza modifiche."
+  },
   "backup": {
     "button": "Backup",
     "downloading": "Download...",
@@ -2675,7 +2797,90 @@
     "passwordPlaceholder": "Lascia vuoto per un backup non cifrato",
     "passwordTooShort": "Usa almeno {{min}} caratteri",
     "encryptionNote": "L'archivio è cifrato con AES-256 e si apre con qualsiasi programma di compressione. Securo non conserva questa password e non può recuperare il file senza di essa.",
-    "successEncrypted": "Backup cifrato scaricato con successo"
+    "successEncrypted": "Backup cifrato scaricato con successo",
+    "restoreSuccess": "Backup restored to {{name}}",
+    "runSuccess": "Backup created",
+    "uploadDescription": "Upload a Securo backup ZIP, preview it, then restore to a new workspace by default.",
+    "menu": "Backups",
+    "storedDescription": "Backups created by “Run backup” or the schedule for this workspace.",
+    "content": {
+      "configuration": "Configuration only",
+      "data": "Data only",
+      "both": "Configuration and data"
+    },
+    "counts": {
+      "empty": "0 elementi",
+      "total": "Totale: {{count}}",
+      "accounts_one": "{{count}} conto",
+      "accounts_many": "{{count}} conti",
+      "accounts_other": "{{count}} conti",
+      "transactions_one": "{{count}} transazione",
+      "transactions_many": "{{count}} transazioni",
+      "transactions_other": "{{count}} transazioni",
+      "categories_one": "{{count}} categoria",
+      "categories_many": "{{count}} categorie",
+      "categories_other": "{{count}} categorie",
+      "rules_one": "{{count}} regola",
+      "rules_many": "{{count}} regole",
+      "rules_other": "{{count}} regole",
+      "budgets_one": "{{count}} budget",
+      "budgets_many": "{{count}} budget",
+      "budgets_other": "{{count}} budget",
+      "goals_one": "{{count}} obiettivo",
+      "goals_many": "{{count}} obiettivi",
+      "goals_other": "{{count}} obiettivi"
+    },
+    "configSaved": "Backup settings saved",
+    "runTitle": "Backup now",
+    "contentLabel": "Backup content",
+    "restore": "Restore",
+    "previewError": "Could not read backup file",
+    "configError": "Could not save backup settings",
+    "configLoadError": "Impossibile caricare le impostazioni di backup.",
+    "invalidRetention": "Inserisci un numero intero positivo.",
+    "unknownWorkspace": "Unknown workspace",
+    "running": "Running…",
+    "emptyStored": "No stored backups yet. Run one now or enable the schedule.",
+    "listError": "Impossibile caricare i backup archiviati.",
+    "downloadNow": "Download ZIP",
+    "subtitle": "Export, schedule, and restore workspace backups without auth or bank credentials.",
+    "restoreMode": {
+      "current_workspace": "Current workspace",
+      "new_workspace": "New workspace"
+    },
+    "confirmRestoreLabel": "Type RESTORE to replace the current workspace",
+    "runDescription": "Create a managed backup on the server or download a ZIP directly.",
+    "restoreModeLabel": "Restore target",
+    "uploadFileLabel": "Backup ZIP file",
+    "lastRun": "Last run",
+    "noFileSelected": "No file selected",
+    "weekly": "Weekly",
+    "runNow": "Run backup",
+    "chooseFile": "Choose file",
+    "previewing": "Reading backup…",
+    "safeBadge": "Secrets excluded",
+    "download": "Download",
+    "storedTitle": "Stored backups",
+    "noFile": "Choose a backup ZIP first.",
+    "daily": "Daily",
+    "destinationHint": "I backup archiviati vengono conservati in modo permanente solo se il percorso /app/data/backups è montato (BACKUP_HOST_PATH in Docker Compose oppure persistence.backups.enabled in Helm).",
+    "noBackupSelected": "Choose a stored backup first.",
+    "currentWorkspaceWarning": "This destructive option replaces matching data in the current workspace inside one transaction. New workspace restore is safer.",
+    "uploadTitle": "Restore from upload",
+    "retentionDays": "Max age in days",
+    "restoring": "Restoring…",
+    "scheduleTitle": "Schedule and retention",
+    "retentionCount": "Keep latest",
+    "nextRun": "Next run",
+    "secretNotice": "Backups intentionally exclude user auth data, passkeys, provider credentials, and bank tokens.",
+    "scheduleLabel": "Schedule",
+    "restoreError": "Could not restore backup",
+    "scheduleDescription": "I processi controllano ogni ora le pianificazioni abilitate. La distribuzione deve abilitare l'archiviazione persistente dei backup affinché i ZIP pianificati vengano conservati in modo permanente.",
+    "optional": "Optional",
+    "runError": "Could not create backup",
+    "title": "Backups",
+    "restoreUpload": "Restore uploaded backup",
+    "restoreStoredTitle": "Restore stored backup"
   },
   "update": {
     "title": "Aggiornamento del server",
@@ -3806,9 +4011,22 @@
       "none": "Nessuna fattura in scadenza.",
       "noClient": "Nessun cliente"
     },
+    "flagged": {
+      "title": "Transazioni contrassegnate",
+      "hint": "Ciò che hai contrassegnato da rivedere, prima i promemoria scaduti.",
+      "none": "Niente di contrassegnato.",
+      "overdue": "Scadute: {{count}}",
+      "dueSoon": "Questa settimana: {{count}}",
+      "noDate": "Senza data",
+      "more": "Altre contrassegnate: {{count}}"
+    },
     "recurringRevenue": {
       "title": "Entrate ricorrenti",
       "hint": "Quanto portano le fatture ricorrenti ogni mese, e cosa si è perso di recente."
     }
+  },
+  "offline": {
+    "title": "Server non raggiungibile",
+    "description": "Sei offline o Securo si sta riavviando. I tuoi dati sono al sicuro e nulla è stato modificato. Ci riconnetteremo automaticamente appena il server risponderà."
   }
 }

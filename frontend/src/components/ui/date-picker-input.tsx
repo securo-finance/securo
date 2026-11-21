@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { format } from 'date-fns'
 import { CalendarIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -15,9 +15,26 @@ interface DatePickerInputProps {
   className?: string
   disabled?: boolean
   align?: 'start' | 'center' | 'end'
+  /** The id of the trigger button, so a `<Label htmlFor>` names this field. */
+  id?: string
+  /**
+   * The id of the label naming this field. The trigger is named after it and
+   * the date it shows, so a screen reader announces both on focus.
+   */
+  labelledBy?: string
 }
 
-function DatePickerInput({ value, onChange, placeholder, className, disabled, align = 'start' }: DatePickerInputProps) {
+function DatePickerInput({
+  value,
+  onChange,
+  placeholder,
+  className,
+  disabled,
+  align = 'start',
+  id,
+  labelledBy,
+}: DatePickerInputProps) {
+  const valueId = useId()
   const { i18n } = useTranslation()
   const [open, setOpen] = useState(false)
   const dateFnsLocale = resolveDateFnsLocale(i18n.resolvedLanguage ?? i18n.language)
@@ -30,8 +47,10 @@ function DatePickerInput({ value, onChange, placeholder, className, disabled, al
     <Popover open={open} onOpenChange={disabled ? undefined : setOpen}>
       <PopoverTrigger asChild>
         <button
+          id={id}
           type="button"
           disabled={disabled}
+          aria-labelledby={labelledBy ? `${labelledBy} ${valueId}` : undefined}
           className={cn(
             'inline-flex items-center gap-2 border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground hover:bg-muted/50 transition-colors cursor-pointer disabled:opacity-50 disabled:pointer-events-none min-w-[120px]',
             !value && 'text-muted-foreground',
@@ -39,7 +58,7 @@ function DatePickerInput({ value, onChange, placeholder, className, disabled, al
           )}
         >
           <CalendarIcon className="size-3.5 text-muted-foreground shrink-0" />
-          {displayText}
+          <span id={valueId}>{displayText}</span>
         </button>
       </PopoverTrigger>
       <PopoverContent align={align} className="w-auto p-0">

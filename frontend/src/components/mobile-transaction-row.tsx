@@ -13,6 +13,7 @@ import {
   Paperclip,
 } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
+import { TransactionFlagMarker } from '@/components/transaction-flag-marker'
 import { useTranslation } from 'react-i18next'
 import { formatCurrency, ltrAmount } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
@@ -137,6 +138,7 @@ export function MobileTransactionRow({
               aria-label={t('transactions.excludedFromReports')}
             />
           )}
+          <TransactionFlagMarker tx={tx} locale={dateLocale ?? locale} className="[&>svg]:h-3 [&>svg]:w-3" />
           {tx.recurring_transaction_id != null && !virtual && (
             <span className="text-[9px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1 py-0.5 rounded-full shrink-0">
               R

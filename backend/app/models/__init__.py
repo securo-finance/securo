@@ -7,6 +7,7 @@ from app.models.category_group import CategoryGroup
 from app.models.bank_connection import BankConnection
 from app.models.institution import Institution
 from app.models.account import Account
+from app.models.account_card import AccountCard
 from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.transaction import Transaction
 from app.models.rule import Rule
@@ -69,6 +70,7 @@ __all__ = [
     "BankConnection",
     "Institution",
     "Account",
+    "AccountCard",
     "AccountReservedBalance",
     "Transaction",
     "Rule",

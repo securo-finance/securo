@@ -6,6 +6,7 @@ import { connections } from '@/lib/api'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Building2, Settings2 } from 'lucide-react'
 import { PluginAvatar } from '@/components/plugin-avatar'
+import { usePluginIcons } from '@/hooks/use-plugin-icons'
 import { localized } from '@/lib/localized-text'
 import type { PluginConnector } from '@/lib/plugin-connectors'
 
@@ -38,6 +39,7 @@ function ConnectorSelectSession({ open, onClose, onSelect, plugins = [], onSelec
   const { user } = useAuth()
   const [providers, setProviders] = useState<Provider[]>([])
   const [loading, setLoading] = useState(true)
+  const icons = usePluginIcons(plugins.length > 0)
 
   useEffect(() => {
     let cancelled = false
@@ -147,6 +149,7 @@ function ConnectorSelectSession({ open, onClose, onSelect, plugins = [], onSelec
                     <PluginAvatar
                       seed={connector.plugin.plugin_id}
                       label={localized(connector.plugin.name, lang)}
+                      src={icons.get(connector.plugin.plugin_id)}
                       className="w-9 h-9 rounded-lg text-xs mt-0.5"
                     />
                     <div className="min-w-0 flex-1">

@@ -9,6 +9,7 @@ import { useLayout } from '@/hooks/use-layout'
 import { useEntryAvailability } from '@/hooks/use-entry-availability'
 import { useAppTheme } from '@/hooks/use-app-theme'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
+import { usePluginReports } from '@/hooks/use-plugin-reports'
 import { SURFACE_ENTRIES, type LibraryEntry, type LibraryKind, type Surface } from '@/lib/library'
 import { ThemePreview } from '@/components/theme-preview'
 import { localized } from '@/lib/localized-text'
@@ -92,17 +93,22 @@ export function LibraryDialog({
 
 /** Each item of a surface, added or not, with the switch that adds or removes it. */
 function SurfaceItems({ surface }: { surface: Surface }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  // The installed plugins' reports join Securo's own (ADR 0028).
+  const { entries: pluginReports } = usePluginReports()
+  const pluginEntries = surface === 'reports' ? pluginReports : []
   // Until the saved arrangement is in, a change would be made to the default and overwrite it.
-  const { items, ids, save, reset, isCustom, ready } = useLayout(surface)
+  const { items, ids, save, reset, isCustom, ready } = useLayout(surface, pluginEntries)
   const unavailable = useEntryAvailability()
   const placed = new Set(ids)
   // Everything is listed; what can't work in this workspace sits at the end, said why.
-  const entries = [...SURFACE_ENTRIES[surface]].sort(
+  const entries = [...SURFACE_ENTRIES[surface], ...(pluginEntries ?? [])].sort(
     (a, b) => Number(unavailable(a) !== null) - Number(unavailable(b) !== null),
   )
-  // The reports page can't be left empty; the dashboard can.
-  const lastReport = surface === 'reports' && ids.length === 1
+  const title = (entry: LibraryEntry) =>
+    entry.plugin ? localized(entry.plugin.title, i18n.language) : t(entry.titleKey)
+  // The reports page can't be left empty; the dashboard can. Only what it can show counts.
+  const lastReport = surface === 'reports' && entries.filter((entry) => placed.has(entry.id)).length === 1
 
   return (
     <div className="space-y-2">
@@ -120,8 +126,21 @@ function SurfaceItems({ surface }: { surface: Surface }) {
               <div className={cn('flex min-w-0 flex-1 items-center gap-3', reason && 'opacity-60')}>
                 <EntryIcon entry={entry} />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium leading-tight">{t(entry.titleKey)}</p>
-                  <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{t(entry.descriptionKey)}</p>
+                  <p className="text-sm font-medium leading-tight">{title(entry)}</p>
+                  {entry.plugin ? (
+                    <>
+                      {entry.plugin.description && (
+                        <p className="mt-0.5 text-xs leading-snug text-muted-foreground">
+                          {localized(entry.plugin.description, i18n.language)}
+                        </p>
+                      )}
+                      <p className="mt-0.5 text-xs leading-snug text-muted-foreground">
+                        {t('library.fromPlugin', { name: localized(entry.plugin.name, i18n.language) })}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{t(entry.descriptionKey)}</p>
+                  )}
                   {reason && <p className="mt-1 text-xs font-medium leading-snug text-muted-foreground">{t(reason)}</p>}
                 </div>
               </div>
@@ -132,7 +151,7 @@ function SurfaceItems({ surface }: { surface: Surface }) {
                   className="shrink-0"
                   disabled={locked || !ready}
                   title={locked ? t('library.lastReport') : undefined}
-                  aria-label={t(`library.removeFrom.${surface}`, { name: t(entry.titleKey) })}
+                  aria-label={t(`library.removeFrom.${surface}`, { name: title(entry) })}
                   onClick={() => save(items.filter((item) => item.id !== entry.id))}
                 >
                   <Minus size={14} className="me-1" />
@@ -145,7 +164,7 @@ function SurfaceItems({ surface }: { surface: Surface }) {
                   variant={reason ? 'outline' : 'default'}
                   className="shrink-0"
                   disabled={!ready || reason !== null}
-                  aria-label={t(`library.addTo.${surface}`, { name: t(entry.titleKey) })}
+                  aria-label={t(`library.addTo.${surface}`, { name: title(entry) })}
                   onClick={() => save([...items, { id: entry.id }])}
                 >
                   <Plus size={14} className="me-1" />

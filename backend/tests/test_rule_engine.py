@@ -357,6 +357,44 @@ def test_payee_id_condition_remains_compatible():
     assert evaluate_conditions("and", conditions, tx) is True
 
 
+def test_provider_category_condition_matches_raw_data():
+    tx = make_tx(raw_data={"category": "Eating out"})
+    conditions = [
+        {"field": "provider_category", "op": "equals", "value": "Eating out"}
+    ]
+
+    assert evaluate_conditions("and", conditions, tx) is True
+
+
+def test_provider_category_condition_is_case_and_accent_insensitive():
+    tx = make_tx(raw_data={"category": "Alimentação"})
+    conditions = [
+        {"field": "provider_category", "op": "contains", "value": "alimentacao"}
+    ]
+
+    assert evaluate_conditions("and", conditions, tx) is True
+
+
+def test_provider_category_condition_without_category_does_not_match():
+    tx = make_tx(raw_data={"id": "tx-1"})
+    conditions = [
+        {"field": "provider_category", "op": "equals", "value": "Eating out"}
+    ]
+
+    assert evaluate_conditions("and", conditions, tx) is False
+
+
+def test_provider_category_negated_conditions_do_not_match_without_category():
+    tx = make_tx(source="manual", raw_data=None)
+    conditions = [
+        {"field": "provider_category", "op": "not_equals", "value": "Eating out"},
+        {"field": "provider_category", "op": "not_contains", "value": "eating"},
+    ]
+
+    for condition in conditions:
+        assert evaluate_conditions("and", [condition], tx) is False
+
+
 # --- Edge-case: evaluate_conditions ---
 
 

@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/dialog'
 import { AlertTriangle, Archive, Plus, Save, Trash2, Users } from 'lucide-react'
 import { WORKSPACE_KIND_LABEL_KEY } from '@/lib/workspace-kinds'
+import { AccountantExportSection } from '@/components/accountant-export'
 import { SUPPORTED_LANGS } from '@/lib/i18n'
 import { countryFlag } from '@/lib/country-flag'
 import { countryName } from '@/lib/country-name'
@@ -592,6 +593,11 @@ export default function WorkspaceSettingsPage() {
           </ul>
         )}
       </section>
+
+      {/* Accountant export: the business workspace's books, for the period
+          the user picks. Any member may export; the server refuses other
+          workspace kinds. */}
+      {current.kind === 'business' && <AccountantExportSection />}
 
       {pluginsEnabled && <PluginsSection />}
 

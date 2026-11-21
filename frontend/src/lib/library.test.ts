@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   DASHBOARD_WIDGETS,
   defaultLayout,
+  pluginReportEntries,
   REPORTS,
   resizeItem,
   resolveLayout,
@@ -10,6 +11,7 @@ import {
   SPANS,
   widgetSpan,
 } from './library'
+import type { InstalledPlugin } from '@/types'
 
 const entry = (id: string) => DASHBOARD_WIDGETS.find((widget) => widget.id === id)!
 
@@ -100,6 +102,41 @@ describe('library', () => {
 
     it('only resizes a widget that has its row to itself', () => {
       expect(resizeItem(row, DASHBOARD_WIDGETS, 'goals', 6)).toEqual([...row.slice(0, 2), { id: 'goals', span: 6 }])
+    })
+  })
+
+  describe('plugin reports', () => {
+    const plugin = {
+      plugin_id: 'maria/casa',
+      name: { en: 'Home' },
+      reports: [
+        { key: 'pets', name: { en: 'Pet spending' }, measure: 'expenses', group_by: 'month', chart: 'bar' },
+        { key: 'split', name: { en: 'By category' }, measure: 'expenses', group_by: 'category', chart: 'pie' },
+      ],
+    } as unknown as InstalledPlugin
+
+    it('lists each report of each installed plugin under an id of its own', () => {
+      const entries = pluginReportEntries([
+        plugin,
+        { ...plugin, plugin_id: 'joao/x', reports: undefined } as unknown as InstalledPlugin,
+      ])
+      expect(entries.map((entry) => entry.id)).toEqual(['plugin:maria/casa:pets', 'plugin:maria/casa:split'])
+      expect(entries[0].plugin).toEqual({
+        id: 'maria/casa',
+        name: { en: 'Home' },
+        title: { en: 'Pet spending' },
+        description: undefined,
+      })
+    })
+
+    it("keeps a plugin's tab while the plugins are still being read, and drops one that's gone once they're known", () => {
+      const saved = [{ id: 'net_worth' }, { id: 'plugin:maria/casa:pets' }, { id: 'plugin:gone/away:x' }]
+      expect(resolveLayout('reports', saved, null).map((item) => item.id)).toEqual(saved.map((item) => item.id))
+      expect(resolveLayout('reports', saved, pluginReportEntries([plugin])).map((item) => item.id)).toEqual([
+        'net_worth',
+        'plugin:maria/casa:pets',
+      ])
+      expect(resolveLayout('reports', saved).map((item) => item.id)).toEqual(['net_worth'])
     })
   })
 })

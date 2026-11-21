@@ -52,6 +52,13 @@ data:
             try_files $uri =404;
         }
 
+        # The service worker must always be revalidated, or clients keep running a
+        # stale one after a deploy.
+        location = /sw.js {
+            add_header Cache-Control "no-store, no-cache, must-revalidate";
+            try_files $uri =404;
+        }
+
         # SPA fallback — serve index.html for all non-file routes
         location / {
             try_files $uri $uri/ /index.html;

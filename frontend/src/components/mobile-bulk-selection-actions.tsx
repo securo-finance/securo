@@ -1,5 +1,5 @@
 import type { Category, CategoryGroup } from '@/types'
-import { ArrowLeftRight, Check, MoreHorizontal, SlidersHorizontal, Trash2, Users, X } from 'lucide-react'
+import { ArrowLeftRight, Check, Flag, MoreHorizontal, SlidersHorizontal, Trash2, Users, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { CategorySelect } from '@/components/category-select'
 import { Button } from '@/components/ui/button'
@@ -19,6 +19,10 @@ export type MobileBulkSelectionActionsProps = {
   transferTitle: string
   onCategoryChange: (value: string) => void
   onOpenGroup: () => void
+  // True when every selected row is flagged, so the action unflags them.
+  allFlagged: boolean
+  flagPending: boolean
+  onToggleFlag: () => void
   onOpenTransfer: () => void
   onCreateRule?: () => void
   onBulkDelete: () => void
@@ -115,6 +119,10 @@ function BulkActionItems(props: MobileBulkSelectionActionsProps) {
       <DropdownMenuItem disabled={props.groupPending} onSelect={props.onOpenGroup}>
         <Users size={15} />
         {t('transactions.addToGroup')}
+      </DropdownMenuItem>
+      <DropdownMenuItem disabled={props.flagPending} onSelect={props.onToggleFlag}>
+        <Flag size={15} />
+        {props.allFlagged ? t('transactions.unflagAction') : t('transactions.flagAction')}
       </DropdownMenuItem>
       <DropdownMenuItem disabled={props.transferDisabled} title={props.transferTitle} onSelect={props.onOpenTransfer}>
         <ArrowLeftRight size={15} />

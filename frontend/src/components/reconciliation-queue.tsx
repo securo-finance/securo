@@ -247,6 +247,8 @@ export function ReconciliationQueue({ canWrite }: { canWrite: boolean }) {
                         className="h-8 gap-1"
                         onClick={() => accept.mutate(suggestion.id)}
                         disabled={accept.isPending || decline.isPending}
+                        aria-label={t('reconciliation.queue.accept')}
+                        title={t('reconciliation.queue.accept')}
                       >
                         <Check size={13} />
                         <span className="hidden sm:inline">{t('reconciliation.queue.accept')}</span>

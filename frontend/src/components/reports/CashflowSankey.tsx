@@ -1,7 +1,14 @@
 import { ltrAmount } from '@/lib/format'
+import {
+  LABEL_LINE_HEIGHT,
+  columnLabelSpan,
+  placeColumnLabels,
+  wrapLabelLines,
+  type ColumnLabelPlacement,
+} from '@/lib/sankey-labels'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { sankey as d3Sankey, sankeyLinkHorizontal, sankeyJustify } from 'd3-sankey'
+import { sankey as d3Sankey, sankeyLinkHorizontal, sankeyJustify, type SankeyGraph } from 'd3-sankey'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import type { ReportCompositionItem } from '@/types'
 
@@ -25,10 +32,10 @@ const MAX_NODES_PER_SIDE = 9
 
 const NODE_WIDTH = 16
 const NODE_PADDING = 16
-// Vertical space a two-line label (name + amount) needs; labels are pushed
-// apart to at least this gap so thin adjacent nodes stay readable.
-const LABEL_MIN_GAP = 26
 const TOP_GUTTER = 30 // header room above the nodes for the centre label
+
+/** Shared empty map, so a chart with no width keeps a stable reference. */
+const NO_LABELS = new Map<number, ColumnLabelPlacement>()
 
 interface SankeyNodeDatum {
   id: string
@@ -225,45 +232,74 @@ export function CashflowSankey({ composition, currency, locale }: CashflowSankey
     const outflowCount = rawNodes.filter((n) => n.side === 'expense' || n.side === 'investment').length
     return Math.max(incomeCount, outflowCount, 1)
   }, [rawNodes])
-  const height = Math.min(780, Math.max(380, maxSide * 60))
 
-  const layout = useMemo(() => {
+  // Always-on labels: wrap each name into the gap it has before the centre bar
+  // and stack the blocks so a long name neither runs under the bar nor into
+  // the label below it. On a phone the gap is about 100px, narrower than
+  // "Investment withdrawals", which used to come out cut (#287). The labels
+  // hang off their nodes, so the chart is laid out, measured and laid out again
+  // when the columns need more height than the node spacing asked for.
+  const chart = useMemo(() => {
     if (!hasData || width === 0) return null
-    const generator = d3Sankey<SankeyNodeDatum, SankeyLinkDatum>()
-      .nodeWidth(NODE_WIDTH)
-      .nodePadding(NODE_PADDING)
-      .nodeAlign(sankeyJustify)
-      .extent([
-        [8, TOP_GUTTER],
-        [width - 8, height - 14],
-      ])
-    // d3-sankey mutates its input — clone so re-renders stay pure.
-    return generator({
-      nodes: rawNodes.map((n) => ({ ...n })),
-      links: rawLinks.map((l) => ({ ...l })),
-    })
-  }, [rawNodes, rawLinks, width, height, hasData])
-
-  // Always-on labels: place each node's label and push overlapping neighbours
-  // apart per column so even a 1px-tall node keeps a readable name + amount.
-  const labelY = useMemo(() => {
-    const pos = new Map<number, number>()
-    if (!layout) return pos
-    for (const left of [true, false]) {
-      const column = layout.nodes
-        .filter((n) => n.id !== 'center')
-        .filter((n) => (n.x0 ?? 0) < width / 2 === left)
-        .sort((a, b) => (a.y0! + a.y1!) / 2 - (b.y0! + b.y1!) / 2)
-      let prev = -Infinity
-      for (const n of column) {
-        let y = (n.y0! + n.y1!) / 2
-        if (y < prev + LABEL_MIN_GAP) y = prev + LABEL_MIN_GAP
-        pos.set((n as SankeyNodeDatum & { index: number }).index, y)
-        prev = y
-      }
+    const build = (chartHeight: number) => {
+      const generator = d3Sankey<SankeyNodeDatum, SankeyLinkDatum>()
+        .nodeWidth(NODE_WIDTH)
+        .nodePadding(NODE_PADDING)
+        .nodeAlign(sankeyJustify)
+        .extent([
+          [8, TOP_GUTTER],
+          [width - 8, chartHeight - 14],
+        ])
+      // d3-sankey mutates its input — clone so re-renders stay pure.
+      return generator({
+        nodes: rawNodes.map((n) => ({ ...n })),
+        links: rawLinks.map((l) => ({ ...l })),
+      })
     }
-    return pos
-  }, [layout, width])
+    const columnsFor = (current: SankeyGraph<SankeyNodeDatum, SankeyLinkDatum>) => {
+      const centre = current.nodes.find((n) => n.id === 'center')
+      const sideNodes = current.nodes.filter((n) => n.id !== 'center')
+      return [true, false].map((onLeft) => {
+        const column = sideNodes
+          .filter((n) => (n.x0 ?? 0) < width / 2 === onLeft)
+          .sort((a, b) => (a.y0! + a.y1!) / 2 - (b.y0! + b.y1!) / 2)
+        // The label starts 8px off the node and the centre bar gets 8px of its
+        // own, so the usable width is the distance between them minus 16.
+        const gutter = onLeft
+          ? (centre?.x0 ?? width / 2) - Math.max(...column.map((n) => n.x1 ?? 0)) - 16
+          : Math.min(...column.map((n) => n.x0 ?? width)) - (centre?.x1 ?? width / 2) - 16
+        return {
+          indexes: column.map((n) => (n as SankeyNodeDatum & { index: number }).index),
+          items: column.map((n) => ({
+            center: (n.y0! + n.y1!) / 2,
+            lines: wrapLabelLines(n.name, gutter),
+          })),
+        }
+      })
+    }
+
+    let height = Math.min(780, Math.max(380, maxSide * 60))
+    let layout = build(height)
+    let columns = columnsFor(layout)
+    // Room for the tallest label column, the top gutter and the bottom margin.
+    const needed = Math.max(...columns.map((column) => columnLabelSpan(column.items))) + TOP_GUTTER + 20
+    if (needed > height) {
+      height = needed
+      layout = build(height)
+      columns = columnsFor(layout)
+    }
+
+    const labels = new Map<number, ColumnLabelPlacement>()
+    for (const column of columns) {
+      const placements = placeColumnLabels(column.items, LABEL_LINE_HEIGHT / 2 + 2, height - 4)
+      column.indexes.forEach((index, i) => labels.set(index, placements[i]))
+    }
+    return { layout, height, labels }
+  }, [rawNodes, rawLinks, width, maxSide, hasData])
+
+  const layout = chart?.layout ?? null
+  const height = chart?.height ?? 0
+  const labels = chart?.labels ?? NO_LABELS
 
   // Resolve the current hover into the exact set of links/nodes to keep lit.
   const { activeLinks, activeNodes } = useMemo(() => {
@@ -458,7 +494,9 @@ export function CashflowSankey({ composition, currency, locale }: CashflowSankey
 
               const onLeft = x0 < width / 2
               const labelX = onLeft ? x1 + 8 : x0 - 8
-              const ly = labelY.get(i) ?? (y0 + y1) / 2
+              const label = labels.get(i)
+              const labelLines = label?.lines ?? [node.name]
+              const labelY = label?.y ?? (y0 + y1) / 2
               return (
                 <g
                   key={i}
@@ -472,16 +510,20 @@ export function CashflowSankey({ composition, currency, locale }: CashflowSankey
                   </rect>
                   <text
                     x={labelX}
-                    y={ly}
+                    y={labelY}
                     textAnchor={onLeft ? 'start' : 'end'}
                     dominantBaseline="middle"
                     className="fill-foreground"
                     style={{ fontSize: 11, fontWeight: 500 }}
                   >
-                    {node.name}
+                    {labelLines.map((line, li) => (
+                      <tspan key={li} x={labelX} dy={li === 0 ? 0 : LABEL_LINE_HEIGHT}>
+                        {line}
+                      </tspan>
+                    ))}
                     <tspan
                       x={labelX}
-                      dy={13}
+                      dy={LABEL_LINE_HEIGHT}
                       className="fill-muted-foreground"
                       style={{ fontSize: 10, fontFamily: 'var(--font-mono, monospace)' }}
                     >
@@ -495,30 +537,36 @@ export function CashflowSankey({ composition, currency, locale }: CashflowSankey
         </svg>
       )}
 
-      {/* Accessible table fallback — also a non-visual summary of the flows. */}
-      <table className="sr-only">
-        <caption>{t('reports.flowChartAria')}</caption>
-        <thead>
-          <tr>
-            <th>{t('reports.category')}</th>
-            <th>{t('reports.amount')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rawNodes
-            .filter((n) => n.side !== 'center')
-            .map((n, i) => {
-              const idx = rawNodes.indexOf(n)
-              const value = layout?.nodes[idx]?.value ?? 0
-              return (
-                <tr key={i}>
-                  <td>{n.name}</td>
-                  <td>{fmtAmount(value)}</td>
-                </tr>
-              )
-            })}
-        </tbody>
-      </table>
+      {/* Accessible table fallback — also a non-visual summary of the flows.
+          `sr-only` goes on a wrapper, never on the table: `overflow` does not
+          apply to table boxes, so a clipped-looking table kept its cells at
+          their natural width and made the whole page 504px wide on a 390px
+          screen. */}
+      <div className="sr-only">
+        <table>
+          <caption>{t('reports.flowChartAria')}</caption>
+          <thead>
+            <tr>
+              <th>{t('reports.category')}</th>
+              <th>{t('reports.amount')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rawNodes
+              .filter((n) => n.side !== 'center')
+              .map((n, i) => {
+                const idx = rawNodes.indexOf(n)
+                const value = layout?.nodes[idx]?.value ?? 0
+                return (
+                  <tr key={i}>
+                    <td>{n.name}</td>
+                    <td>{fmtAmount(value)}</td>
+                  </tr>
+                )
+              })}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

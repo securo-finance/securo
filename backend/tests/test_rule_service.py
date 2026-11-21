@@ -31,6 +31,7 @@ from app.services.rule_service import (
     get_rule,
     get_rules,
     import_rules,
+    preview_rule,
     preview_rules_for_transaction,
     update_rule,
 )
@@ -1584,3 +1585,128 @@ async def test_status_rule_applies_to_pending_transaction_only(
     await apply_rules_to_transaction(session, test_user.id, posted)
 
     assert (pending.category_id, posted.category_id) == (test_categories[1].id, None)
+
+
+@pytest.mark.asyncio
+async def test_provider_category_rule_applies_to_raw_data_category(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
+    await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Provider category",
+            conditions=[
+                RuleCondition(
+                    field="provider_category", op="equals", value="Eating out"
+                )
+            ],
+            actions=[RuleAction(op="set_category", value=str(test_categories[1].id))],
+        ),
+    )
+
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="ProviderCategoryAcc",
+        type="checking",
+        balance=Decimal("1000"),
+        currency="BRL",
+    )
+    session.add(account)
+    await session.commit()
+
+    transaction = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        account_id=account.id,
+        description="RESTAURANT",
+        amount=Decimal("45.00"),
+        date=date(2025, 3, 1),
+        type="debit",
+        source="sync",
+        raw_data={"category": "Eating out"},
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(transaction)
+    await session.commit()
+
+    await apply_rules_to_transaction(session, test_user.id, transaction)
+
+    assert transaction.category_id == test_categories[1].id
+
+
+@pytest.mark.asyncio
+async def test_preview_rule_matches_provider_category(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="ProviderCategoryPreviewAcc",
+        type="checking",
+        balance=Decimal("1000"),
+        currency="BRL",
+    )
+    session.add(account)
+    await session.commit()
+
+    transaction = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        description="RESTAURANT",
+        amount=Decimal("45.00"),
+        date=date(2025, 3, 1),
+        type="debit",
+        source="sync",
+        raw_data={"category": "Provider Preview Probe"},
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(transaction)
+    await session.commit()
+    transaction_id = transaction.id
+    workspace_id = test_workspace.id
+    # The preview request runs in its own session; expire so load_only must
+    # fetch raw_data for real instead of reusing this identity-mapped row.
+    session.expire_all()
+
+    preview = await preview_rule(
+        session,
+        workspace_id,
+        "and",
+        [
+            {
+                "field": "provider_category",
+                "op": "equals",
+                "value": "Provider Preview Probe",
+            }
+        ],
+        [],
+    )
+
+    assert preview.matched == 1
+    assert preview.sample[0].id == transaction_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("op", ["gt", "gte", "lt", "lte"])
+async def test_create_rule_rejects_numeric_op_on_provider_category(
+    session: AsyncSession, test_user, test_workspace, op
+):
+    with pytest.raises(
+        ValueError,
+        match=f"unsupported op '{op}' for field 'provider_category'",
+    ):
+        await create_rule(
+            session,
+            test_workspace.id,
+            test_user.id,
+            RuleCreate(
+                name=f"Provider category {op}",
+                conditions=[RuleCondition(field="provider_category", op=op, value=0)],
+                actions=[RuleAction(op="ignore", value=True)],
+            ),
+        )

@@ -4,7 +4,7 @@ import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRegisterPageChatContext } from '@/lib/page-chat-context'
 import { accounts as accountsApi, assets, assetGroups, currencies as currenciesApi } from '@/lib/api'
-import { localDateString, todayInTimezone } from '@/lib/date-utils'
+import { dateTickFormatter, localDateString, todayInTimezone } from '@/lib/date-utils'
 import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -162,6 +162,9 @@ const GROWTH_FREQUENCIES = ['daily', 'weekly', 'monthly', 'yearly'] as const
 // Ativo · Quant. · Preço Médio · Preço Atual · Rentab. · Saldo · % · actions.
 const HOLDINGS_GRID = 'minmax(0,2.4fr) 0.7fr 1.1fr 1fr 0.9fr 1.3fr 0.6fr 4.5rem'
 
+/** Whether archived holdings are shown, kept across visits (issue #1046). */
+const SHOW_ARCHIVED_KEY = 'securo:assets:showArchived'
+
 // Surface the backend's actual error message (FastAPI puts it in
 // response.data.detail) instead of a generic toast. Makes failures
 // diagnosable — e.g. the oversell guard message, or a "Not Found" when a
@@ -172,6 +175,30 @@ function assetErrorMessage(e: unknown, fallback: string): string {
   const detail = resp?.data?.detail
   if (typeof detail === 'string' && detail.trim()) return detail
   return resp?.status ? `${fallback} (${resp.status})` : fallback
+}
+
+/** What a rate-limited portfolio refresh already wrote before it stopped. */
+interface RateLimitedRefresh {
+  refreshed: number
+  skipped: number
+  rate_limited: number
+}
+
+/**
+ * The refresh counters carried by a 429, or null when the request failed for
+ * another reason. The service commits the prices it got before the provider
+ * refused, so these counts are what the page must show and refetch.
+ */
+function rateLimitedRefresh(e: unknown): RateLimitedRefresh | null {
+  const resp = (e as { response?: { data?: { detail?: unknown }; status?: number } })?.response
+  if (resp?.status !== 429) return null
+  const detail = resp.data?.detail
+  const summary = (detail && typeof detail === 'object' ? detail : {}) as Partial<RateLimitedRefresh>
+  return {
+    refreshed: Number(summary.refreshed ?? 0),
+    skipped: Number(summary.skipped ?? 0),
+    rate_limited: Number(summary.rate_limited ?? 1),
+  }
 }
 
 // Badge label and color per ledger kind. A split takes the indigo the value
@@ -196,7 +223,7 @@ export default function AssetsPage() {
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
-  const { canWrite } = useWorkspace()
+  const { canWrite, current: workspace } = useWorkspace()
   // The day the server keeps the books in, so the staleness badge agrees with
   // the dates it writes, not the browser's clock. Until that timezone is known
   // there is no day to compare against, so the badge waits for it instead of
@@ -265,10 +292,25 @@ export default function AssetsPage() {
   const [formUnitPrice, setFormUnitPrice] = useState('')
   const [quoteLoading, setQuoteLoading] = useState(false)
 
-  const { data: rawAssetsList, isLoading } = useQuery({
+  // Archived holdings are fetched only when the toggle asks for them (issue
+  // #1046): an archived asset is off the page by default but never lost.
+  const [showArchived, setShowArchived] = useState(() => localStorage.getItem(SHOW_ARCHIVED_KEY) === '1')
+  const toggleArchived = (checked: boolean) => {
+    setShowArchived(checked)
+    localStorage.setItem(SHOW_ARCHIVED_KEY, checked ? '1' : '0')
+  }
+  // The default list stays loaded underneath the archived one, so a failed
+  // archived request leaves the page as it was instead of emptying it.
+  const { data: defaultAssets, isLoading } = useQuery({
     queryKey: ['assets'],
     queryFn: () => assets.list(false),
   })
+  const withArchived = useQuery({
+    queryKey: ['assets', 'archived'],
+    queryFn: () => assets.list(true),
+    enabled: showArchived,
+  })
+  const rawAssetsList = showArchived && withArchived.data ? withArchived.data : defaultAssets
 
   // Active Collection filter (issue #105): when a collection is active, scope
   // the Assets page to the assets in its wallets (asset_groups). A collection
@@ -319,27 +361,39 @@ export default function AssetsPage() {
   // Publish a snapshot of what's on the Assets page so the global chat
   // (⌘J) can answer "what does this chart mean / what are these
   // wallets?" without needing the user to spell it out.
-  const totalValue = (assetsList ?? []).reduce(
+  // Archived holdings are on the page only to be found again; they stay out of
+  // every total, like the wallets and the chart (issue #1046).
+  const countedAssets = (assetsList ?? []).filter((a) => !a.is_archived)
+  // Only what the toggle asked for: a response that lands after it is turned
+  // back off cannot flash archived rows into the page or this summary.
+  const archivedAssets = showArchived ? (assetsList ?? []).filter((a) => a.is_archived) : []
+  // A failed archived request keeps the default list on screen; say so instead
+  // of letting the page look like an empty portfolio.
+  const archivedFailed = showArchived && withArchived.isError
+  const totalValue = countedAssets.reduce(
     (acc: number, a: { current_value?: number | null }) => acc + Number(a.current_value || 0),
     0,
   )
   const byType: Record<string, number> = {}
-  for (const a of (assetsList ?? []) as Array<{ type?: string; current_value?: number | null }>) {
+  for (const a of countedAssets as Array<{ type?: string; current_value?: number | null }>) {
     if (!a.type) continue
     byType[a.type] = (byType[a.type] || 0) + Number(a.current_value || 0)
   }
   const portfolioTotal = (portfolioData as { total?: number } | undefined)?.total
-  const assetsCtxKey = `${assetsList?.length ?? 0}:${totalValue.toFixed(2)}:${portfolioTotal ?? ''}`
+  const assetsCtxKey = `${countedAssets.length}:${totalValue.toFixed(2)}:${portfolioTotal ?? ''}:${archivedAssets.length}`
   useRegisterPageChatContext(
     {
       path: '/assets',
       label: 'Assets',
       summary:
-        `Portfolio overview page. ${assetsList?.length ?? 0} assets totaling ` +
+        `Portfolio overview page. ${countedAssets.length} assets totaling ` +
         `~${totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} ` +
-        `(by current_value). The portfolio chart shows value over time grouped by wallet or asset.`,
+        `(by current_value). The portfolio chart shows value over time grouped by wallet or asset.` +
+        (archivedAssets.length > 0
+          ? ` ${archivedAssets.length} archived holdings are listed apart and left out of every total.`
+          : ''),
       totals_by_type: byType,
-      asset_count: assetsList?.length ?? 0,
+      asset_count: countedAssets.length,
       total_value: Number(totalValue.toFixed(2)),
       hint: 'For exact per-asset numbers, use the get_net_worth or list_assets tools.',
     },
@@ -409,6 +463,49 @@ export default function AssetsPage() {
       toast.success(t('assets.priceRefreshed'))
     },
     onError: (e) => toast.error(assetErrorMessage(e, t('common.error'))),
+  })
+
+  // Portfolio-wide refresh (issue #778): one provider call for every
+  // market-priced holding instead of opening each asset and refreshing it.
+  const refreshAllPricesMutation = useMutation({
+    // The workspace comes from the click, not from the context when the
+    // request finally runs: a mutation paused while offline resumes later,
+    // and the interceptor would then stamp whichever workspace is selected
+    // by then (the app does not pin the mutation to online).
+    mutationFn: (workspaceId: string | null) => assets.refreshPrices(workspaceId),
+    onSuccess: (summary, requestedWorkspaceId) => {
+      // The answer belongs to the workspace that asked. If the user moved to
+      // another one while the provider was working, the counts are not this
+      // page's to show, and its data is not what the refetch would touch.
+      if (requestedWorkspaceId !== (workspace?.id ?? null)) return
+      refetchAssetViews()
+      if (summary.refreshed === 0 && summary.skipped === 0) {
+        toast.info(t('assets.refreshAllPricesNone'))
+        return
+      }
+      // Each count gets its own plural form, then the two halves are joined.
+      toast.success(
+        t('assets.refreshAllPricesDone', {
+          updated: t('assets.refreshAllPricesUpdated', { count: summary.refreshed }),
+          skipped: t('assets.refreshAllPricesNoQuote', { count: summary.skipped }),
+        }),
+      )
+    },
+    onError: (e, requestedWorkspaceId) => {
+      const limited = rateLimitedRefresh(e)
+      if (requestedWorkspaceId !== (workspace?.id ?? null)) return
+      // A 429 here can come after some prices were written and committed, so
+      // the list and the charts are refetched on this path too.
+      if (limited) refetchAssetViews()
+      toast.error(
+        limited
+          ? t('assets.refreshAllPricesRateLimited', {
+              updated: t('assets.refreshAllPricesUpdated', { count: limited.refreshed }),
+              skipped: t('assets.refreshAllPricesLeftOut', { count: limited.skipped }),
+            })
+          : assetErrorMessage(e, t('common.error')),
+      )
+    },
   })
 
   const { data: rawWalletsList } = useQuery({
@@ -522,7 +619,7 @@ export default function AssetsPage() {
   ])
 
   const activeAssets = useMemo(() => assetsList?.filter((a) => !a.sell_date && !a.is_archived) ?? [], [assetsList])
-  const soldAssets = assetsList?.filter((a) => a.sell_date) ?? []
+  const soldAssets = assetsList?.filter((a) => a.sell_date && !a.is_archived) ?? []
   // Denominator for the "% of portfolio" column: current holdings only, in the
   // user's primary currency, so the active rows add up to 100%. Assets with
   // no resolvable FX rate are left out of the denominator (their rows show
@@ -545,28 +642,47 @@ export default function AssetsPage() {
   // selected and the query is non-trivial — keeps the autocomplete snappy
   // without flooding the yfinance-backed endpoint.
   useEffect(() => {
-    if (formMethod !== 'market_price') return
+    // Every path that leaves without issuing a request has to clear the
+    // spinner: a search already on the wire had its `ignored` set by the
+    // cleanup, so its `finally` never resets it. Clearing the input in the
+    // middle of a search used to leave the loading label up forever.
+    if (formMethod !== 'market_price') {
+      setTickerSearchLoading(false)
+      return
+    }
     const q = formTickerQuery.trim()
     // Don't search if the field matches the already-selected quote — the
     // user just picked it and we'd spam the endpoint for no reason.
-    if (selectedQuote && q === selectedQuote.symbol) return
-    if (q.length < 1) {
-      setTickerMatches([])
+    if (selectedQuote && q === selectedQuote.symbol) {
+      setTickerSearchLoading(false)
       return
     }
+    if (q.length < 1) {
+      setTickerMatches([])
+      setTickerSearchLoading(false)
+      return
+    }
+    // A request already on the wire when the query or the currency changes
+    // must not answer for the new one: clearTimeout only stops the timer.
+    let ignored = false
     setTickerSearchLoading(true)
     const handle = window.setTimeout(async () => {
       try {
-        const results = await assets.marketSearch(q, 10)
-        setTickerMatches(results)
+        // The display currency lets the backend list the coin's pair in the
+        // user's own currency first (issue #621).
+        const results = await assets.marketSearch(q, 10, userCurrency)
+        if (!ignored) setTickerMatches(results)
       } catch {
-        setTickerMatches([])
+        if (!ignored) setTickerMatches([])
       } finally {
-        setTickerSearchLoading(false)
+        if (!ignored) setTickerSearchLoading(false)
       }
     }, 300)
-    return () => window.clearTimeout(handle)
-  }, [formMethod, formTickerQuery, selectedQuote])
+    return () => {
+      ignored = true
+      window.clearTimeout(handle)
+    }
+  }, [formMethod, formTickerQuery, selectedQuote, userCurrency])
 
   async function pickTickerMatch(match: MarketSymbolMatch) {
     setTickerMatches([])
@@ -788,7 +904,10 @@ export default function AssetsPage() {
       asset.current_value != null &&
       asset.currency !== userCurrency &&
       asset.current_value_primary == null
-    const pctOfPortfolio = asset.sell_date ? null : getPortfolioShare(asset, portfolioTotalPrimary, userCurrency)
+    // Archived holdings sit outside the portfolio total, so a share of it
+    // would be meaningless (issue #1046).
+    const pctOfPortfolio =
+      asset.sell_date || asset.is_archived ? null : getPortfolioShare(asset, portfolioTotalPrimary, userCurrency)
     const needsBuys = isMarketPriced && !hasCost && !asset.sell_date
     const needsExchangeRate = exchangeRatesNeedSetup && needsConversion(asset, userCurrency)
     // The API only fills the date while the provider's own figure is on
@@ -1240,7 +1359,17 @@ export default function AssetsPage() {
         title={t('assets.title')}
         action={
           canWrite ? (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                onClick={() => refreshAllPricesMutation.mutate(workspace?.id ?? null)}
+                variant="outline"
+                className="gap-1.5"
+                disabled={refreshAllPricesMutation.isPending}
+                title={t('assets.refreshAllPrices')}
+              >
+                <RefreshCw size={16} className={refreshAllPricesMutation.isPending ? 'animate-spin' : ''} />
+                {t('assets.refreshAllPrices')}
+              </Button>
               <Button onClick={() => navigate('/import?tab=investments')} variant="outline" className="gap-1.5">
                 <Upload size={16} />
                 {t('assetImport.action')}
@@ -1259,19 +1388,30 @@ export default function AssetsPage() {
       />
 
       {/* Holdings (consolidated by ticker) vs. the buy/sell ledger (#235) */}
-      <div className="inline-flex items-center rounded-lg border border-border p-0.5 bg-muted/40">
-        <button
-          onClick={() => setActiveTab('holdings')}
-          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${activeTab === 'holdings' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-        >
-          {t('assets.tabHoldings')}
-        </button>
-        <button
-          onClick={() => setActiveTab('transactions')}
-          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${activeTab === 'transactions' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-        >
-          {t('assets.tabTransactions')}
-        </button>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex items-center rounded-lg border border-border p-0.5 bg-muted/40">
+          <button
+            onClick={() => setActiveTab('holdings')}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${activeTab === 'holdings' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            {t('assets.tabHoldings')}
+          </button>
+          <button
+            onClick={() => setActiveTab('transactions')}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${activeTab === 'transactions' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            {t('assets.tabTransactions')}
+          </button>
+        </div>
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={(e) => toggleArchived(e.target.checked)}
+            className="h-3.5 w-3.5 rounded border-border accent-primary"
+          />
+          {t('assets.showArchived')}
+        </label>
       </div>
 
       {activeTab === 'transactions' ? (
@@ -1353,12 +1493,53 @@ export default function AssetsPage() {
                 </div>
               )}
 
-              {activeAssets.length === 0 && soldAssets.length === 0 && (
-                <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden text-center py-16 text-muted-foreground">
-                  <Package size={32} className="mx-auto mb-2 opacity-50" />
-                  <p>{t('assets.noAssets')}</p>
+              {archivedFailed && (
+                <div
+                  role="status"
+                  className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
+                >
+                  <AlertTriangle size={14} className="shrink-0" aria-hidden="true" />
+                  <span className="flex-1">{t('assets.archivedLoadFailed')}</span>
+                  <button
+                    onClick={() => void withArchived.refetch()}
+                    className="rounded-md border border-current px-2.5 py-1 font-medium"
+                  >
+                    {t('common.retry')}
+                  </button>
                 </div>
               )}
+
+              {/* Archived holdings: kept apart from wallets, totals and the
+              portfolio share, and dimmed so they read as inactive. */}
+              {archivedAssets.length > 0 && (
+                <div className="space-y-2 opacity-60">
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">
+                    {t('assets.archivedAssets')}
+                  </h3>
+                  <p className="px-1 text-xs text-muted-foreground">{t('assets.archivedNotCounted')}</p>
+                  {renderHoldingsTable(archivedAssets)}
+                </div>
+              )}
+
+              {activeAssets.length === 0 &&
+                soldAssets.length === 0 &&
+                archivedAssets.length === 0 &&
+                !archivedFailed && (
+                  <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden text-center py-16 text-muted-foreground">
+                    <Package size={32} className="mx-auto mb-2 opacity-50" />
+                    <p>{t('assets.noAssets')}</p>
+                    {/* A portfolio that is entirely archived reads as empty here
+                  (issue #1046), so the way to it starts from this box. */}
+                    {!showArchived && (
+                      <button
+                        onClick={() => toggleArchived(true)}
+                        className="mt-3 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+                      >
+                        {t('assets.showArchived')}
+                      </button>
+                    )}
+                  </div>
+                )}
             </div>
           )}
         </>
@@ -2205,9 +2386,10 @@ function PortfolioChart({
               tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
               axisLine={false}
               tickLine={false}
-              tickFormatter={(v: string) =>
-                new Date(v + 'T00:00:00').toLocaleDateString(dateLoc, { month: 'short', year: '2-digit' })
-              }
+              tickFormatter={dateTickFormatter(
+                displayTrend.map((row) => String(row.date)),
+                dateLoc,
+              )}
             />
             <YAxis
               tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
@@ -2510,9 +2692,10 @@ function AssetDetail({
                   tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
                   axisLine={false}
                   tickLine={false}
-                  tickFormatter={(v: string) =>
-                    new Date(v + 'T00:00:00').toLocaleDateString(dateLoc, { month: 'short', year: '2-digit' })
-                  }
+                  tickFormatter={dateTickFormatter(
+                    chartData.map((p) => String(p.date)),
+                    dateLoc,
+                  )}
                 />
                 <YAxis
                   tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}

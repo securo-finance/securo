@@ -657,6 +657,47 @@ async def test_closed_account_balance_stays_out_of_current_totals(
 
 
 @pytest.mark.asyncio
+async def test_past_month_balance_counts_account_closed_later_like_the_report(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A past month's total matches the net worth report's point for it.
+
+    An account closed after that month was still open at its end, so both
+    count it; the current month leaves it out (#1579 fixed only the report).
+    """
+    from datetime import datetime, timezone
+
+    from app.services.report_service import get_net_worth_report
+
+    this_month = app_today().replace(day=1)
+    last_month = (this_month - timedelta(days=1)).replace(day=1)
+    two_months_ago = (last_month - timedelta(days=1)).replace(day=1)
+
+    open_account = await _make_account(session, test_user.id, "Open")
+    closed_later = await _make_account(session, test_user.id, "Closed later")
+    await _add_txn(session, test_user.id, open_account.id, 500, "credit", two_months_ago)
+    await _add_txn(session, test_user.id, closed_later.id, 120, "credit", two_months_ago)
+    await _add_txn(session, test_user.id, closed_later.id, 1666.67, "credit", last_month)
+    closed_later.is_closed = True
+    closed_later.closed_at = datetime.now(timezone.utc)
+    await session.commit()
+
+    report = await get_net_worth_report(
+        session, test_workspace.id, test_user.id, interval="monthly", currency="BRL",
+        start_date=two_months_ago, end_date=this_month - timedelta(days=1),
+    )
+    assert [p.value for p in report.trend] == [620.0, 2286.67]
+
+    for month, point in zip((two_months_ago, last_month), report.trend):
+        summary = await get_summary(session, test_workspace.id, test_user.id, month=month)
+        assert summary.total_balance_primary == pytest.approx(point.value)
+        assert summary.cash_balance_primary == pytest.approx(point.value)
+
+    current = await get_summary(session, test_workspace.id, test_user.id, month=this_month)
+    assert current.total_balance_primary == pytest.approx(500.0)
+
+
+@pytest.mark.asyncio
 async def test_spending_and_trend_keep_closed_account_history(
     session: AsyncSession, test_user, test_workspace
 ):
@@ -1278,7 +1319,7 @@ async def test_recurring_projection_dates_card_occurrence_on_bill_due_date(
 
     projections = await _get_recurring_projections(
         session, test_workspace.id, *_month_range(due_month),
-        use_effective_date=True,
+        accounting_mode="accrual",
     )
 
     assert [(p["account_id"], p["amount"], p["date"]) for p in projections] == [
@@ -1305,7 +1346,7 @@ async def test_recurring_projection_suppresses_materialized_card_occurrence_due_
 
     projections = await _get_recurring_projections(
         session, test_workspace.id, *_month_range(due_month),
-        use_effective_date=True,
+        accounting_mode="accrual",
     )
 
     assert projections == []
@@ -1333,7 +1374,7 @@ async def test_recurring_projection_effective_date_leaves_non_card_on_occurrence
 
     projections = await _get_recurring_projections(
         session, test_workspace.id, *_month_range(month),
-        use_effective_date=True,
+        accounting_mode="accrual",
     )
 
     assert [(p["amount"], p["date"]) for p in projections] == [

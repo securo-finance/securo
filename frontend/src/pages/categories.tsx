@@ -383,10 +383,23 @@ export default function CategoriesPage() {
           action={
             canWrite ? (
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="gap-1.5 h-8" onClick={() => openGroupDialog(null)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 h-8"
+                  onClick={() => openGroupDialog(null)}
+                  aria-label={t('groups.add')}
+                  title={t('groups.add')}
+                >
                   <Plus size={13} /> <span className="hidden sm:inline">{t('groups.add')}</span>
                 </Button>
-                <Button size="sm" className="gap-1.5 h-8" onClick={() => openCatDialog(null)}>
+                <Button
+                  size="sm"
+                  className="gap-1.5 h-8"
+                  onClick={() => openCatDialog(null)}
+                  aria-label={t('categories.addCategory')}
+                  title={t('categories.addCategory')}
+                >
                   <Plus size={13} /> <span className="hidden sm:inline">{t('categories.addCategory')}</span>
                 </Button>
               </div>

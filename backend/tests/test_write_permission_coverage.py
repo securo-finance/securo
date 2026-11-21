@@ -82,6 +82,7 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     ("POST", "/api/rules/preview"): "evaluates an unsaved rule against transactions; writes nothing",
     ("POST", "/api/spending-plan/simulate"): "projects hypothetical purchases on the balance; writes nothing",
     ("POST", "/api/spending-plan/preview"): "projects a plan being edited; writes nothing",
+    ("POST", "/api/backups/preview-upload"): "parses an uploaded archive and returns a preview; writes nothing",
     # A read that has to be a POST: the backup password belongs in a body,
     # not in a query string. Same read permission as GET /api/export/backup.
     ("POST", "/api/export/backup"): "exports the workspace it can already read; writes nothing",
