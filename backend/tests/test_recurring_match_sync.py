@@ -615,6 +615,62 @@ async def test_sync_promotes_pending_placeholder_to_posted(
     assert refreshed.next_occurrence == date(2025, 2, 10)  # NOT advanced again
 
 
+@pytest.mark.asyncio
+async def test_sync_bank_descriptor_merges_into_short_named_placeholder(
+    session, test_user, test_workspace, conn_account
+):
+    """The shape that produced duplicates in production: the bill is named
+    *Netflix*, the generated row carries that name, and the bank prints
+    `NETFLIX.COM 866-579-7172 CA`. The charge must upgrade the pending
+    placeholder, not land beside it."""
+    conn, account = conn_account
+    conn_id, account_id = conn.id, account.id
+    bill = await _make_bill(session, test_workspace, test_user, account,
+                            description="Netflix", start_date=date(2025, 1, 10))
+    bill_id = bill.id
+    assert await generate_pending(session, test_user.id, up_to=date(2025, 1, 10)) == 1
+    placeholder_id = (await session.execute(
+        select(Transaction.id).where(Transaction.source == "recurring")
+    )).scalar_one()
+
+    provider = _provider([_tx(external_id="s1", description="NETFLIX.COM 866-579-7172 CA",
+                              amount=Decimal("39.90"), date=date(2025, 1, 10))])
+    await _run_sync(session, conn_id, test_workspace, test_user, provider)
+
+    txs = await _all_txs(session, account_id)
+    assert len(txs) == 1, [t.description for t in txs]
+    merged = txs[0]
+    assert merged.id == placeholder_id
+    assert merged.external_id == "s1"
+    assert merged.status == "posted"
+    assert merged.recurring_transaction_id == bill_id
+    refreshed = await session.get(RecurringTransaction, bill_id)
+    assert refreshed.next_occurrence == date(2025, 2, 10)
+
+
+@pytest.mark.asyncio
+async def test_sync_bank_descriptor_links_bill_before_placeholder_exists(
+    session, test_user, test_workspace, conn_account
+):
+    """Charge-first with the same descriptor shape: the bill is found and
+    advanced, so the hourly generation afterwards has nothing to write."""
+    conn, account = conn_account
+    conn_id, account_id = conn.id, account.id
+    bill = await _make_bill(session, test_workspace, test_user, account,
+                            description="Spotify", start_date=date(2025, 1, 10))
+    bill_id = bill.id
+    provider = _provider([_tx(external_id="s1", description="PAYPAL *SPOTIFY*P47A2033189708 NY",
+                              amount=Decimal("39.90"), date=date(2025, 1, 10))])
+    await _run_sync(session, conn_id, test_workspace, test_user, provider)
+
+    refreshed = await session.get(RecurringTransaction, bill_id)
+    assert refreshed.next_occurrence == date(2025, 2, 10)
+    await generate_pending(session, test_user.id, up_to=date(2025, 1, 20))
+    txs = await _all_txs(session, account_id)
+    assert len(txs) == 1
+    assert txs[0].recurring_transaction_id == bill_id
+
+
 # ---------------------------------------------------------------------------
 # Non-matching charge is left independent
 # ---------------------------------------------------------------------------
