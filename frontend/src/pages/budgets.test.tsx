@@ -5,7 +5,7 @@ import { monthLabel, monthRange } from '@/lib/month-utils'
 import { formatCurrency } from '@/lib/format'
 
 import BudgetsPage from '@/pages/budgets'
-import { renderWithProviders, t } from '@/test/utils'
+import { createTestQueryClient, renderWithProviders, t } from '@/test/utils'
 import type { Budget, BudgetVsActual, Category } from '@/types'
 
 const api = vi.hoisted(() => ({
@@ -684,9 +684,18 @@ describe('budget income strip', () => {
     expect(await screen.findByRole('button', { name: t('budgets.incomeSet') })).toBeInTheDocument()
   })
   it('resets the income draft when the month changes', async () => {
-    const { user } = renderWithProviders(<BudgetsPage />)
+    const queryClient = createTestQueryClient()
+    // The test client collects inactive queries at once; keep September alive so
+    // the strip stays mounted across the switch (uncached, it unmounts with the
+    // budgets query and this test would pass without the key).
+    queryClient.setDefaultOptions({
+      queries: { ...queryClient.getDefaultOptions().queries, gcTime: Infinity },
+    })
+    queryClient.setQueryData(['budgets', '2026-09'], [])
+    const { user } = renderWithProviders(<BudgetsPage />, { queryClient })
     const input = await screen.findByRole('textbox', { name: t('budgets.incomeLabel') })
     await user.type(input, '5000')
+    expect(input).toHaveValue('5000')
 
     await user.click(screen.getByRole('button', { name: t('budgets.previousMonth') }))
 
