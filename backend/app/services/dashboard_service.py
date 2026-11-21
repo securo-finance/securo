@@ -38,7 +38,10 @@ from app.services._query_filters import (
 from app.services import invoice_forecast_service
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.credit_card_service import compute_effective_date
-from app.services.recurring_transaction_service import get_occurrences_in_range
+from app.services.recurring_transaction_service import (
+    get_occurrences_in_range,
+    occurrence_rules,
+)
 from app.services.asset_service import get_asset_values_at
 from app.services.fx_rate_service import _resolve_rate, convert
 from app.models.user import User
@@ -137,7 +140,7 @@ def _dated_occurrences(
         range_start=range_start - _MAX_BILL_LAG if card_cycle else range_start,
         range_end=range_end,
         intended_day=rec.day_of_month or rec.start_date.day,
-        weekend_adjustment=rec.weekend_adjustment,
+        **occurrence_rules(rec),
     )
     if card_cycle is None:
         return [(occ_date, occ_date) for occ_date in occurrences]

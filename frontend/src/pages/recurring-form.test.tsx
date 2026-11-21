@@ -44,6 +44,18 @@ function recurring(amount: number): RecurringTransaction {
     next_occurrence: '2026-12-08',
     amount_primary: null,
     fx_rate_used: null,
+
+    business_day: null,
+
+    count_saturdays: false,
+
+    holiday_calendar: null,
+
+    grace_days: 0,
+
+    match_keywords: null,
+
+    amount_tolerance_percent: 0,
   }
 }
 

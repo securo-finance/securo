@@ -23,7 +23,7 @@ from app.schemas.forecast import (
 from app.core.config import get_settings
 from app.services import account_service, recurring_detector_service
 from app.services.fx_rate_service import convert_or_none
-from app.services.recurring_transaction_service import get_occurrences_in_range
+from app.services.recurring_transaction_service import get_occurrences_in_range, occurrence_rules
 
 
 def _date_matches_cadence(target_date: date, anchor_date: date, cadence: CadenceEnum) -> bool:
@@ -254,7 +254,7 @@ async def generate_cashflow_forecast(
             range_start=today,
             range_end=end_date + timedelta(days=1),
             intended_day=r.day_of_month or r.start_date.day,
-            weekend_adjustment=r.weekend_adjustment,
+            **occurrence_rules(r),
         )
         for occ_date in occurrences:
             manual_events.setdefault(occ_date, []).append(

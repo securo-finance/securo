@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -1620,6 +1620,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/cf/a5/b9d5125ca54e338cae8342f94d937ea8e10b4f8c450f239248c102a7f4ce/hiredis-3.5.0-cp315-cp315t-win32.whl", hash = "sha256:c0b902612627b307dbab51ea556f82b61763fe42d43026e81060ca7ac8642df3", size = 40086, upload-time = "2026-10-15T18:00:21.484Z" },
     { url = "https://files.pythonhosted.org/packages/a4/d3/29a674417766263387038d670137a34f213fdd1030acbb44036c5ce1e882/hiredis-3.5.0-cp315-cp315t-win_amd64.whl", hash = "sha256:1dd0db7d759ea43f0c37c6d841b8e9ea652bdec5e4f542872f773eef3cfcbfe4", size = 41769, upload-time = "2026-10-15T18:00:22.658Z" },
     { url = "https://files.pythonhosted.org/packages/c9/35/ed21d49c8db2460b94bd63e45505c75667231d0dc653d80eb6cf4255cb41/hiredis-3.5.0-cp315-cp315t-win_arm64.whl", hash = "sha256:c360575e546aa093b3bff6634e8c916cd5b52ca766f51b49474acda219dd3c88", size = 39201, upload-time = "2026-10-15T18:00:23.789Z" },
+]
+
+[[package]]
+name = "holidays"
+version = "0.107"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-dateutil" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/27/f2/7aa646c4ecb198a3af80a9b3dd727cf9f2659e52cee598dcd5b8ed6d9087/holidays-0.107.tar.gz", hash = "sha256:2f02cdfbe41a5f14e053590f2385a932fe42f0c692aed75cb55601ad37cebb4d", size = 1077660, upload-time = "2026-10-19T23:35:18.493Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ac/6d/ec046c6d998d32b08cd344b8c80fad7d77d3297586e2a3f8a1b3d4476b85/holidays-0.107-py3-none-any.whl", hash = "sha256:5e4582d543b145d8ebb80ce8943e60ea5c8b6a30b74201ad0f95af0cbe67cb14", size = 1694848, upload-time = "2026-10-19T23:35:16.486Z" },
 ]
 
 [[package]]
@@ -3675,6 +3687,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "fastapi-users", extra = ["sqlalchemy"] },
     { name = "fastembed" },
+    { name = "holidays" },
     { name = "httpx" },
     { name = "ofxparse" },
     { name = "passlib", extra = ["bcrypt"] },
@@ -3720,6 +3733,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.109.0" },
     { name = "fastapi-users", extras = ["sqlalchemy"], specifier = ">=13.0.0" },
     { name = "fastembed", specifier = ">=0.4.0" },
+    { name = "holidays", specifier = ">=0.80" },
     { name = "httpx", specifier = ">=0.26.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.26.0" },
     { name = "ofxparse", specifier = ">=0.21" },
