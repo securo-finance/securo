@@ -342,6 +342,7 @@ def build_market_value_series(
     value_rows: list[ValueRecord],
     txs: list[TxRecord],
     splits: Sequence[SplitRecord] = (),
+    has_ledger: bool = False,
 ) -> list[tuple[date, float]]:
     """Rebuild a market-priced holding's value series from the ledger.
 
@@ -369,9 +370,12 @@ def build_market_value_series(
 
     A holding with no ledger at all (e.g. a pre-ledger "no cost" position that
     still has a stored quantity) keeps its baked amounts — replaying an empty
-    ledger would wrongly zero it out.
+    ledger would wrongly zero it out. `has_ledger` says the holding has trades
+    outside `txs` (the caller cut the ledger at a date): it is then valued by
+    the replay like any other range, so a date reads the same wherever the
+    range ends.
     """
-    if not txs:
+    if not txs and not has_ledger:
         return [(d, float(amount)) for d, amount, _ in value_rows]
 
     # Net quantity change per trade date, plus a representative per-share price
@@ -459,15 +463,20 @@ async def _load_asset_native_values(
     market_ids = [a.id for a in assets if a.valuation_method == "market_price"]
     txs_by_aid: dict[str, list[TxRecord]] = {}
     splits_by_aid: dict[str, list[SplitRecord]] = {}
+    # Holdings with any trade, before the cutoff: whether a holding has a
+    # ledger must not depend on where the range ends.
+    ledger_ids: set[str] = set()
     if market_ids:
         tq = select(
             AssetTransaction.asset_id, AssetTransaction.date,
             AssetTransaction.kind, AssetTransaction.quantity, AssetTransaction.price,
             AssetTransaction.old_units, AssetTransaction.new_units,
         ).where(AssetTransaction.asset_id.in_(market_ids))
-        if up_to_date is not None:
-            tq = tq.where(AssetTransaction.date <= up_to_date)
         for aid, d, kind, qty, price, old_units, new_units in (await session.execute(tq)).all():
+            if kind != "split":
+                ledger_ids.add(str(aid))
+            if up_to_date is not None and d > up_to_date:
+                continue
             if kind == "split":
                 # A split has no quantity or price of its own; replaying it as a
                 # "sell of 0" would leave the units unchanged.
@@ -482,7 +491,8 @@ async def _load_asset_native_values(
         aid = str(asset.id)
         if asset.valuation_method == "market_price":
             values_map[aid] = build_market_value_series(
-                raw[aid], txs_by_aid.get(aid, []), splits_by_aid.get(aid, [])
+                raw[aid], txs_by_aid.get(aid, []), splits_by_aid.get(aid, []),
+                has_ledger=aid in ledger_ids,
             )
         else:
             values_map[aid] = [(d, float(amt)) for d, amt, _ in raw[aid]]
