@@ -683,6 +683,16 @@ describe('budget income strip', () => {
 
     expect(await screen.findByRole('button', { name: t('budgets.incomeSet') })).toBeInTheDocument()
   })
+  it('resets the income draft when the month changes', async () => {
+    const { user } = renderWithProviders(<BudgetsPage />)
+    const input = await screen.findByRole('textbox', { name: t('budgets.incomeLabel') })
+    await user.type(input, '5000')
+
+    await user.click(screen.getByRole('button', { name: t('budgets.previousMonth') }))
+
+    expect(await screen.findByRole('textbox', { name: t('budgets.incomeLabel') })).toHaveValue('')
+    expect(api.budgets.expectedIncome.get).toHaveBeenCalledWith('2026-09-01')
+  })
 })
 
 describe('budget income chip in the save bar', () => {

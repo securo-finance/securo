@@ -355,6 +355,7 @@ export default function BudgetsPage() {
             the planned total would read as zero next to a real income. */}
         {budgetsList !== undefined && !budgetsError && (
           <BudgetIncomeStrip
+            key={monthParam}
             month={monthParam}
             savedBudgets={budgetsList}
             canWrite={canWrite}
