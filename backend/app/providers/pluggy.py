@@ -6,8 +6,8 @@ import logging
 import re
 import time
 from datetime import date
-from decimal import Decimal, InvalidOperation
-from typing import Optional
+from decimal import ROUND_DOWN, Decimal, InvalidOperation
+from typing import Literal, Optional
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -20,6 +20,7 @@ from app.providers.base import (
     ConnectionData,
     ConnectTokenData,
     HoldingData,
+    HoldingTradeData,
     RefreshOutcome,
     ReservedBalanceData,
     TransactionData,
@@ -281,9 +282,11 @@ _HOLDING_PROMOTED_KEYS = {
 # would produce badly-wrong evolution charts, so we skip it for those.
 _ISSUE_DATE_IS_PURCHASE_DATE = {"FIXED_INCOME", "COE"}
 
-# Pluggy `type` values whose `code` is a B3 trading symbol (stocks, units,
-# FIIs, BDRs and ETFs). Fixed income, funds and pensions reuse `code` for
-# other identifiers (contract numbers, CNPJs), so they are left alone.
+# Pluggy `type` values of exchange-traded positions (stocks, units, FIIs,
+# BDRs and ETFs): their `code` is a B3 trading symbol, their `quantity` is a
+# share count and their trades replay onto it. Fixed income, funds and
+# pensions reuse `code` for other identifiers (contract numbers, CNPJs), so
+# they are left alone.
 _EXCHANGE_TRADED_TYPES = {"EQUITY", "ETF"}
 
 # A B3 symbol: a four-character root (letters, or alphanumeric for some ETFs
@@ -330,6 +333,136 @@ def _b3_market_ticker(inv: dict) -> Optional[str]:
     if match is None:
         return None
     return f"{match.group(1)}.SA"
+
+
+# Pluggy investment transaction types that move the position. INTEREST
+# (dividends, JCP), TAX, TRANSFER and AMORTIZATION rows carry no quantity
+# change the ledger can replay, so they stay out of it.
+_TRADE_KINDS: dict[str, Literal["buy", "sell"]] = {"BUY": "buy", "SELL": "sell"}
+
+
+def _finite_decimal_or_none(value) -> Optional[Decimal]:
+    """A trade figure as a Decimal, or None when it is missing or unusable.
+
+    NaN and infinities parse (JSON accepts them too) but break comparisons
+    and arithmetic: `Decimal("NaN") <= 0` raises. They read as missing, as
+    do booleans.
+    """
+    if isinstance(value, bool):
+        return None
+    parsed = _decimal_or_none(value)
+    return parsed if parsed is not None and parsed.is_finite() else None
+
+
+def _sum_expenses(expenses) -> Decimal:
+    """Total fee of a trade from Pluggy's `expenses` breakdown.
+
+    Every numeric entry (brokerage, settlement, clearing, exchange, custody,
+    taxes) is part of what executing the trade cost; null entries and an
+    absent block count as zero.
+    """
+    if not isinstance(expenses, dict):
+        return Decimal("0")
+    total = Decimal("0")
+    for value in expenses.values():
+        amount = _finite_decimal_or_none(value)
+        if amount is not None and amount > 0:
+            total += amount
+    return total
+
+
+def _build_trade_data(tx: dict) -> Optional[HoldingTradeData]:
+    """Map one row of /investments/{id}/transactions to a ledger trade.
+
+    Returns None for rows that are not a buy or a sell, or that lack what a
+    trade needs (id, date, a positive quantity, a price). `movementType` is
+    not used: Pluggy reports it inverted on some rows.
+    """
+    tx_type = tx.get("type")
+    kind = _TRADE_KINDS.get(tx_type.upper()) if isinstance(tx_type, str) else None
+    tx_id = tx.get("id")
+    if kind is None or not tx_id:
+        return None
+    quantity = _finite_decimal_or_none(tx.get("quantity"))
+    if quantity is None or quantity <= 0:
+        return None
+    price = _finite_decimal_or_none(tx.get("value"))
+    if price is None:
+        amount = _finite_decimal_or_none(tx.get("amount"))
+        price = abs(amount) / quantity if amount is not None else None
+    if price is None or price < 0:
+        return None
+    trade_date = _date_or_none(tx.get("tradeDate") or tx.get("date"))
+    if trade_date is None:
+        return None
+    return HoldingTradeData(
+        external_id=str(tx_id),
+        kind=kind,
+        date=trade_date,
+        quantity=quantity,
+        price=price,
+        fee=_sum_expenses(tx.get("expenses")),
+    )
+
+
+def _note_key(trade: HoldingTradeData, expenses) -> Optional[tuple]:
+    """Which brokerage note a row's `expenses` block belongs to.
+
+    Pluggy repeats the note's fee total on every execution row of that note,
+    across tickers, so rows of one trade date that carry the very same block
+    are one note. None when the row has no fee to share.
+    """
+    if not isinstance(expenses, dict) or _sum_expenses(expenses) == 0:
+        return None
+    block = tuple(sorted((str(k), str(v)) for k, v in expenses.items()))
+    return (trade.date, block)
+
+
+def _split_note_fees(rows: list[tuple[HoldingTradeData, object]]) -> None:
+    """Spread each brokerage note's fee over its rows by traded amount.
+
+    `rows` pairs each trade with the `expenses` block it came with, for every
+    exchange-traded position of the item, since one note covers all tickers
+    traded that day. Summing the block per row would charge the note once per
+    execution. Shares are whole cents (the ledger stores two places): each
+    row first gets its exact share rounded down, then the cents left over go
+    one each to the rows that lost the most to that rounding, so a note's
+    shares add up to exactly its total and none is negative. A total finer
+    than a cent leaves its sub-cent residue on the largest row. A note whose
+    rows all have a zero price is split by quantity instead, so it is still
+    charged once. A row alone in its note keeps its fee.
+    """
+    notes: dict[tuple, list[HoldingTradeData]] = {}
+    for trade, expenses in rows:
+        key = _note_key(trade, expenses)
+        if key is not None:
+            notes.setdefault(key, []).append(trade)
+
+    cent = Decimal("0.01")
+    for trades in notes.values():
+        if len(trades) < 2:
+            continue
+        total_fee = trades[0].fee
+        weights = [t.quantity * t.price for t in trades]
+        total_weight = sum(weights, Decimal("0"))
+        if total_weight <= 0:
+            # Every row traded at zero price: amounts cannot weigh the note,
+            # but quantities (always positive) can.
+            weights = [t.quantity for t in trades]
+            total_weight = sum(weights, Decimal("0"))
+        exact = [total_fee * weight / total_weight for weight in weights]
+        shares = [value.quantize(cent, rounding=ROUND_DOWN) for value in exact]
+        leftover_cents = int(
+            ((total_fee - sum(shares, Decimal("0"))) / cent).to_integral_value(rounding=ROUND_DOWN)
+        )
+        # Largest rounding loss first; the sort is stable, so ties keep row order.
+        order = sorted(range(len(trades)), key=lambda i: exact[i] - shares[i], reverse=True)
+        for i in order[:leftover_cents]:
+            shares[i] += cent
+        largest = max(range(len(trades)), key=lambda i: weights[i])
+        shares[largest] += total_fee - sum(shares, Decimal("0"))
+        for trade, share in zip(trades, shares):
+            trade.fee = share
 
 
 def _build_holding_data(inv: dict) -> HoldingData:
@@ -1041,6 +1174,12 @@ class PluggyProvider(BankProvider):
         item_id = credentials["item_id"]
         headers = await self._headers()
         holdings: list[HoldingData] = []
+        # Every exchange-traded holding of the item with its trades and their
+        # `expenses` blocks: one brokerage note's fee spans all tickers traded
+        # that day (_split_note_fees), so the trades are only handed out once
+        # every position of the item has answered.
+        traded: list[tuple[HoldingData, list[tuple[HoldingTradeData, object]]]] = []
+        trades_unknown = False
         page = 1
 
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -1055,14 +1194,90 @@ class PluggyProvider(BankProvider):
 
                 results = data.get("results", [])
                 for inv in results:
-                    holdings.append(_build_holding_data(inv))
+                    holding = _build_holding_data(inv)
+                    if (
+                        not trades_unknown
+                        and (inv.get("type") or "").upper() in _EXCHANGE_TRADED_TYPES
+                    ):
+                        rows = await self._fetch_investment_trades(
+                            client, headers, str(inv["id"])
+                        )
+                        if rows is None:
+                            trades_unknown = True
+                        else:
+                            traded.append((holding, rows))
+                    holdings.append(holding)
 
                 total_pages = data.get("totalPages", 1)
                 if page >= total_pages or not results:
                     break
                 page += 1
 
+        # A position whose trades could not be read hides its share of every
+        # note it was on, and the others would take the whole fee. Report
+        # every exchange-traded position's trades as unknown instead, so the
+        # sync keeps the ledgers it has until a run reads them all.
+        if trades_unknown:
+            return holdings
+        _split_note_fees([row for _, rows in traded for row in rows])
+        for holding, rows in traded:
+            holding.trades = [trade for trade, _ in rows]
         return holdings
+
+    async def _fetch_investment_trades(
+        self, client: httpx.AsyncClient, headers: dict, investment_id: str
+    ) -> Optional[list[tuple[HoldingTradeData, object]]]:
+        """Buys and sells Pluggy reports for one exchange-traded position.
+
+        They feed the asset ledger, which derives the average price, cost
+        basis and realized gain (the /investments payload carries no cost
+        for equities). Only exchange-traded positions are asked: their
+        quantity and unit price mean shares and price per share, so the
+        trades replay onto the reported position. Returns None when the
+        endpoint fails, so the sync keeps the ledger it already has instead
+        of reading the failure as "no trades". A response that is not a page
+        of rows counts as a failure too.
+
+        Each trade comes paired with its raw `expenses` block: the fee there
+        is per brokerage note, and get_holdings splits it across the note.
+        """
+        rows: list[tuple[HoldingTradeData, object]] = []
+        page = 1
+        try:
+            while True:
+                resp = await client.get(
+                    f"{PLUGGY_API_BASE}/investments/{investment_id}/transactions",
+                    headers=headers,
+                    params={"pageSize": 500, "page": page},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                results = data.get("results") if isinstance(data, dict) else None
+                if not isinstance(results, list):
+                    raise ValueError("response has no list of results")
+                for tx in results:
+                    if not isinstance(tx, dict):
+                        continue
+                    trade = _build_trade_data(tx)
+                    if trade is not None:
+                        rows.append((trade, tx.get("expenses")))
+                if not results:
+                    break
+                total_pages = data.get("totalPages", 1)
+                # Unreadable paging could hide later pages: a dropped
+                # buy/sell pair leaves the quantity unchanged, so the
+                # partial history would still reconcile.
+                if isinstance(total_pages, bool) or not isinstance(total_pages, int) or total_pages < 1:
+                    raise ValueError(f"invalid totalPages {total_pages!r}")
+                if page >= total_pages:
+                    break
+                page += 1
+        except (httpx.HTTPError, ValueError) as exc:
+            logger.warning(
+                "Pluggy investment transactions unavailable for %s: %s", investment_id, exc
+            )
+            return None
+        return rows
 
     async def get_bills(self, credentials: dict, account_external_id: str) -> list[BillData]:
         """Fetch credit-card bills from Pluggy /bills.

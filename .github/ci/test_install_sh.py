@@ -153,6 +153,9 @@ class InstallerTest(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertIn("Not a git checkout", result.stdout)
+        # The files cannot update, so the images are how this install moves
+        # forward: both runs pull.
+        self.assertEqual(2, self.docker_calls().count(" pull"))
         self.assertEqual(2, self.docker_calls().count("up -d"))
 
     def test_second_run_updates_a_git_checkout(self):
@@ -175,6 +178,7 @@ class InstallerTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertTrue((install / "NEWS.md").is_file())
         self.assertIn("Repository updated", result.stdout)
+        self.assertEqual(2, self.docker_calls().count(" pull"))
 
     def test_an_install_inside_another_checkout_is_not_pulled(self):
         enclosing = self.home
@@ -200,6 +204,11 @@ class InstallerTest(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertIn("Could not update the repository", result.stdout)
+        # The folder stays on the version it has, so the start reuses the
+        # images already on the machine: only the first install pulled.
+        self.assertEqual(1, self.docker_calls().count(" pull"))
+        self.assertIn("Keeping the images already on this machine", result.stdout)
+        self.assertNotIn("Pulling latest images", result.stdout)
         self.assertEqual(2, self.docker_calls().count("up -d"))
 
     def test_running_inside_the_install_still_works(self):

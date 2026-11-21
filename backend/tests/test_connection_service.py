@@ -2681,6 +2681,35 @@ async def test_sync_connection_enable_banking_booking_skips_a_cancelled_hold(
     ]
 
 
+@pytest.mark.asyncio
+async def test_sync_connection_keeps_the_booked_id_with_a_pending_twin_listed(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A bank that lists the same blank charge as pending and as booked in one
+    fetch can't tell the two apart. The booked row must hold the id it gets
+    when only the booked spelling is listed, or the next sync stores the
+    purchase a second time (#1232)."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    raw = {
+        "transaction_amount": {"amount": "12.40", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": "2026-08-31",
+    }
+    pending = _eb_txn(raw, "pending")
+    booked = _eb_txn(raw, "posted")
+    assert pending.external_id == booked.external_id
+
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [pending, booked])
+    # The pending twin left the feed: the booking now comes alone.
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [_eb_txn(raw, "posted")])
+
+    rows = await _account_rows(session, account_id)
+    assert [(row.external_id, row.status) for row in rows] == [
+        (booked.external_id, "posted"),
+    ]
+
+
 def _cancelled_entry(amount: str = "3.20") -> dict:
     """A pending card entry the bank lists as cancelled: no money moved."""
     return {

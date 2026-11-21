@@ -15,7 +15,7 @@ from app.models.account import Account
 from app.models.fx_rate import FxRate
 from app.models.transaction import Transaction
 from app.models.user import User
-from app.providers.openexchangerates import OpenExchangeRatesProvider
+from app.providers.openexchangerates import FxProviderNotConfigured, OpenExchangeRatesProvider
 from app.services.provider_settings import resolve_settings
 
 logger = logging.getLogger(__name__)
@@ -97,7 +97,8 @@ async def _resolve_rate(
     """Resolve the true FX rate, or None when no rate can be found.
 
     Uses cross-rate through USD: rate = usd_to_target / usd_to_source.
-    Priority: exact date → on-demand fetch → closest available.
+    Priority: exact date → on-demand fetch (when the provider is configured)
+    → closest available.
     Returns None (not a fake 1:1) when no rate is available, so callers that
     persist a conversion can honestly leave it NULL instead of storing a wrong
     amount (issue #353). Pass ``allow_fetch=False`` to skip the on-demand
@@ -130,6 +131,11 @@ async def _resolve_rate(
                     usd_to_source = await _get_exact_date_rate(session, from_currency, target)
                 if usd_to_target is None:
                     usd_to_target = await _get_exact_date_rate(session, to_currency, target)
+        except FxProviderNotConfigured:
+            # An instance with no app id is configured that way on purpose
+            # (ADR 0004). Stay on the stored rates without a warning or a
+            # traceback for every conversion (issue #267).
+            logger.debug("FX provider not configured; using stored rates for %s", target)
         except Exception:
             logger.warning("On-demand FX rate sync failed for %s", target, exc_info=True)
 
