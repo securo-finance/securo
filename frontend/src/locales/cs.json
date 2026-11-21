@@ -3784,7 +3784,8 @@
       "undoFirstGroupSplit": "Před rozdělením mezi osoby zrušte rozdělení.",
       "undoFirstMortgage": "Před přidáním rozpisu hypotéky zrušte rozdělení.",
       "categoryInUse": "Tato kategorie obsahuje části rozdělených transakcí. Nejprve upravte tato rozdělení.",
-      "destinationInvalid": "Části rozdělených transakcí nemohou přejít do ignorované ani skryté kategorie."
+      "destinationInvalid": "Části rozdělených transakcí nemohou přejít do ignorované ani skryté kategorie.",
+      "mergeNeedsRate": "Tyto rozpočty jsou v různých měnách a pro jejich měsíc není kurz, kterým je spojit."
     }
   },
   "plugins": {

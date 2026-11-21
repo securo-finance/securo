@@ -3607,7 +3607,8 @@
       "undoFirstGroupSplit": "Annulez la répartition avant de partager entre personnes.",
       "undoFirstMortgage": "Annulez la répartition avant d'ajouter la ventilation du prêt.",
       "categoryInUse": "Cette catégorie contient des parts de transactions réparties. Modifiez d'abord ces répartitions.",
-      "destinationInvalid": "Les parts de transactions réparties ne peuvent pas aller dans une catégorie ignorée ou masquée."
+      "destinationInvalid": "Les parts de transactions réparties ne peuvent pas aller dans une catégorie ignorée ou masquée.",
+      "mergeNeedsRate": "Ces budgets sont dans des devises différentes et aucun taux de change de leur mois ne permet de les combiner."
     }
   },
   "plugins": {
