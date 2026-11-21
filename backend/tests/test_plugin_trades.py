@@ -251,3 +251,37 @@ async def test_a_position_bought_again_after_a_sale_is_open(session: AsyncSessio
     # Its value is today's again, not the one it had before the sale.
     (today_value,) = [v for v in await _rows(session, AssetValue, asset_id=asset.id) if v.date == app_today()]
     assert Decimal(str(today_value.amount)) == Decimal("560.00")
+
+
+async def _chart(session, asset) -> dict[date, float]:
+    from app.services.asset_service import _load_asset_native_values
+
+    return dict((await _load_asset_native_values(session, [asset]))[str(asset.id)])
+
+
+@pytest.mark.asyncio
+async def test_holding_with_provider_trades_is_drawn_from_its_ledger(session: AsyncSession, bank_connection, test_user):
+    trades = [_trade("b1", "buy", 2, "2", "50"), _trade("b2", "buy", 5, "1", "60")]
+    await _pipeline(session, bank_connection, holding("3", trades, unit_price="70", current_value="210"), test_user)
+    asset = await _asset(session, bank_connection)
+    chart = await _chart(session, asset)
+    assert chart[date(2026, 11, 2)] == 100.0
+    assert chart[date(2026, 11, 5)] == 180.0
+    assert chart[app_today()] == 210.0
+
+
+@pytest.mark.asyncio
+async def test_holding_without_provider_ledger_keeps_stored_values(session: AsyncSession, bank_connection, test_user):
+    await _pipeline(session, bank_connection, holding("3", None, unit_price="70", current_value="210"), test_user)
+    asset = await _asset(session, bank_connection)
+    assert await _chart(session, asset) == {app_today(): 210.0}
+
+
+@pytest.mark.asyncio
+async def test_hand_trades_alone_do_not_switch_a_synced_holding(session: AsyncSession, bank_connection, test_user):
+    await _pipeline(session, bank_connection, holding("3", None, unit_price="70", current_value="210"), test_user)
+    asset = await _asset(session, bank_connection)
+    session.add(AssetTransaction(asset_id=asset.id, workspace_id=asset.workspace_id, kind="buy", quantity=Decimal("3"),
+                                 price=Decimal("10"), fee=Decimal("0"), date=date(2026, 11, 1), source="manual"))
+    await session.commit()
+    assert await _chart(session, asset) == {app_today(): 210.0}
