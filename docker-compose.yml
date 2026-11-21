@@ -137,7 +137,8 @@ x-backend-base: &backend-base
   # `plugins` is internal: it lets the backend reach the plugin runner and
   # nothing else. It costs nothing while the `plugins` profile is off.
   networks: [default, plugins]
-  restart: unless-stopped
+  # A failing `--check-heads` would otherwise restart every second forever.
+  restart: on-failure:3
 
 services:
   redis:
@@ -210,7 +211,7 @@ services:
       - ./frontend:/app
       - ./:/workspace:ro
       - /app/node_modules
-    restart: unless-stopped
+    restart: on-failure:3
 
   celery-worker:
     <<: *backend-base
