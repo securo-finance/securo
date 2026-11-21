@@ -316,6 +316,7 @@ async def test_the_bank_sync_schedule_leaves_plugin_connections_to_their_plugin(
 import json  # noqa: E402
 
 from app.models.plugin_connection import PluginConnection  # noqa: E402
+from app.models.workspace_plugin import WorkspacePlugin  # noqa: E402
 from app.plugins import connections, vault  # noqa: E402
 from tests.test_code_plugins import V1, _apply, _connect, _tarball  # noqa: E402
 from unittest.mock import patch  # noqa: E402
@@ -412,6 +413,37 @@ async def test_the_sync_hands_on_whether_the_feed_is_complete(
     with patch("app.services.connection_service.sync_connection", new=capture):
         await connections.sync(session, connection)
     assert seen == [vouched]
+
+
+@pytest.mark.asyncio
+async def test_an_update_during_the_call_does_not_vouch_for_the_old_reply(
+    session: AsyncSession, ids, provider_catalog, plugin_runner
+):
+    connection = await _provider_connection(session, ids)
+    original_call = connections._call
+    seen = []
+
+    async def call_then_update(session, connection, method, params, record=None):
+        result = await original_call(session, connection, method, params, record)
+        installed = await session.scalar(
+            select(WorkspacePlugin).where(
+                WorkspacePlugin.workspace_id == connection.workspace_id,
+                WorkspacePlugin.plugin_id == connection.plugin_id,
+            )
+        )
+        installed.manifest = _provider_manifest(complete_feed=True)
+        await session.commit()
+        return result
+
+    async def capture(*args, provider=None, **kwargs):
+        seen.append(provider.complete_feed)
+
+    with (
+        patch.object(connections, "_call", new=call_then_update),
+        patch("app.services.connection_service.sync_connection", new=capture),
+    ):
+        await connections.sync(session, connection)
+    assert seen == [False]
 
 
 @pytest.mark.asyncio
