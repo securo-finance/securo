@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
-from sqlalchemy import select, func, and_, case
+from sqlalchemy import select, func, and_, case, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -990,6 +990,18 @@ async def set_expected_income(
         return ExpectedIncomeRead(month=month_start, amount=None, currency=None, amount_primary=None)
 
     amount_value = amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    # Always write both columns: SQLAlchemy only emits the attributes whose value
+    # changed, so two concurrent saves could each write one column and leave a
+    # row neither caller sent (100 USD + 100 EUR ending as 200 EUR).
+    write_values = (
+        update(ExpectedIncome)
+        .where(
+            ExpectedIncome.workspace_id == workspace_id,
+            ExpectedIncome.month == month_start,
+        )
+        .values(amount=amount_value, currency=currency)
+        .execution_options(synchronize_session=False)
+    )
     if row is None:
         row = ExpectedIncome(
             workspace_id=workspace_id,
@@ -1012,20 +1024,20 @@ async def set_expected_income(
             )
             if row is None:
                 raise
-            row.amount = amount_value
-            row.currency = currency
+            await session.execute(write_values)
             await session.commit()
+            session.expire(row)
     else:
-        row.amount = amount_value
-        row.currency = currency
+        await session.execute(write_values)
         await session.commit()
+        session.expire(row)
 
     amount_primary, _ = await convert_or_none(
-        session, row.amount, row.currency, currency, target_date=month_start
+        session, amount_value, currency, currency, target_date=month_start
     )
     return ExpectedIncomeRead(
-        month=row.month,
-        amount=row.amount,
-        currency=row.currency,
+        month=month_start,
+        amount=amount_value,
+        currency=currency,
         amount_primary=amount_primary,
     )

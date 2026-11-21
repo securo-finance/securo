@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import false, select
+from sqlalchemy import event, false, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.expected_income import ExpectedIncome
@@ -197,3 +197,31 @@ async def test_a_racing_insert_updates_the_row_it_collides_with(
     rows = await _stored_rows(session, workspace_id)
     assert len(rows) == 1
     assert rows[0].amount == Decimal("4000.00")
+
+
+async def test_the_update_writes_amount_and_currency_together(
+    session: AsyncSession, test_workspace
+):
+    await set_expected_income(session, test_workspace.id, _MONTH, Decimal("3450.00"), "USD")
+
+    statements: list[str] = []
+
+    def capture(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith("UPDATE"):
+            statements.append(statement)
+
+    engine = session.bind.sync_engine
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        # Same currency, new amount: attribute tracking would have written the
+        # amount alone and let a concurrent save of the currency through.
+        await set_expected_income(session, test_workspace.id, _MONTH, Decimal("4000.00"), "USD")
+        # Same amount, new currency: the mirror case.
+        await set_expected_income(session, test_workspace.id, _MONTH, Decimal("4000.00"), "EUR")
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+
+    assert len(statements) == 2
+    for statement in statements:
+        assert "amount" in statement
+        assert "currency" in statement
