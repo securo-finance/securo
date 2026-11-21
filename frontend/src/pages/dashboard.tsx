@@ -1660,7 +1660,7 @@ export default function DashboardPage() {
                         {/* Content */}
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
-                            <p className="text-sm font-semibold text-foreground truncate leading-tight">{row.description}</p>
+                            <p className="min-w-0 text-sm font-semibold text-foreground truncate leading-tight">{row.description}</p>
                             {row.splitSource && <CategorySplitBadge tx={row.splitSource} compact className="shrink-0 text-[9px] px-1" />}
                             {row.groupId && (
                               <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1 py-0.5 rounded-full shrink-0">
@@ -1770,14 +1770,15 @@ export default function DashboardPage() {
                           <TableCell className="py-2.5 ps-5 text-sm text-muted-foreground tabular-nums whitespace-nowrap hidden sm:table-cell">
                             {formatDate(row.date, dateLocale)}
                           </TableCell>
-                          <TableCell className="py-2.5 ps-5 sm:ps-0">
+                          {/* w-full max-w-0: the cell takes the free width and lets the description truncate in it */}
+                          <TableCell className="py-2.5 ps-5 sm:ps-0 w-full max-w-0">
                             <div className="flex items-center gap-3">
                               {row.splitSource
                                 ? <TransactionCategoryIcon tx={row.splitSource} size="lg" />
                                 : <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="lg" />}
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2">
-                                  <p className="text-sm font-semibold text-foreground truncate">{row.description}</p>
+                                  <p className="min-w-0 text-sm font-semibold text-foreground truncate">{row.description}</p>
                                   {row.splitSource && <CategorySplitBadge tx={row.splitSource} className="shrink-0" />}
                                   {row.groupId && (
                                     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300 shrink-0 uppercase tracking-wide">
