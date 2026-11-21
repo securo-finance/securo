@@ -37,7 +37,7 @@ async def session(postgres_sessions):
 
 @pytest.fixture
 def clean_db(postgres_sessions):
-    """The reused user fixture starts in a fresh per-test PostgreSQL schema."""
+    """The reused user fixture starts in a fresh per-test PostgreSQL database."""
 
 
 def _row(
@@ -84,11 +84,8 @@ async def test_backfill_copies_the_figure_the_balance_reads_today(session, test_
     ])
     await session.flush()
 
-    schema = session.bind.get_execution_options()["schema_translate_map"][None]
-    conn = await session.connection()
-    # The migration's raw SQL bypasses schema_translate_map.
-    await conn.execute(text(f'SET LOCAL search_path TO "{schema}"'))
-    await conn.execute(text(migration.BACKFILL_SQL))
+    # Each test owns its database, so the migration's raw SQL hits the right tables.
+    await session.execute(text(migration.BACKFILL_SQL))
 
     stored = {
         row.id: (row.amount_account, row.amount_account_source)
