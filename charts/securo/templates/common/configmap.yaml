@@ -16,5 +16,5 @@ data:
   {{- end }}
   {{- if $.Values.pluginRunner.enabled }}
   PLUGINS_RUNNER_URL: {{ printf "http://%s-plugins-runner:%v" (include "securo.fullname" $) $.Values.pluginRunner.service.port | quote }}
-  PLUGINS_API_URL: {{ printf "http://%s-backend:8000/api" (include "securo.fullname" $) | quote }}
+  PLUGINS_API_URL: {{ printf "http://%s-backend:%v/api" (include "securo.fullname" $) $.Values.backend.service.port | quote }}
   {{- end }}
