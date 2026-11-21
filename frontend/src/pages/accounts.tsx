@@ -216,8 +216,7 @@ export default function AccountsPage() {
   const syncMutation = useMutation({
     mutationFn: (id: string) => connections.sync(id),
     onSuccess: (result) => {
-      invalidateFinancialQueries(queryClient)
-      queryClient.invalidateQueries({ queryKey: ['connections'] })
+      invalidateSyncedRecords(queryClient)
       // The provider can throttle the sync (429) and still return success
       // without pulling anything: say so instead of a false "Sync completed".
       if (result.sync_outcome === 'rate_limited') {
@@ -256,11 +255,7 @@ export default function AccountsPage() {
     mutationFn: ({ id, keepAccounts }: { id: string; keepAccounts: boolean }) =>
       connections.delete(id, { keepAccounts }),
     onSuccess: (_data, { keepAccounts }) => {
-      invalidateFinancialQueries(queryClient)
-      queryClient.invalidateQueries({ queryKey: ['connections'] })
-      queryClient.invalidateQueries({ queryKey: ['assets'] })
-      queryClient.invalidateQueries({ queryKey: ['asset-groups'] })
-      queryClient.invalidateQueries({ queryKey: ['portfolio-trend'] })
+      invalidateSyncedRecords(queryClient)
       setDisconnectingConnection(null)
       toast.success(t(keepAccounts ? 'accounts.disconnectedKept' : 'accounts.disconnected'))
     },

@@ -209,6 +209,10 @@ class HoldingData:
     name: str
     currency: str
     current_value: Decimal
+    # Pre-tax/pre-fee market value when the provider exposes it separately
+    # from the withdrawable balance. Performance comparisons use this value;
+    # portfolio totals continue to use ``current_value``.
+    gross_value: Optional[Decimal] = None
     quantity: Optional[Decimal] = None
     unit_price: Optional[Decimal] = None
     purchase_price: Optional[Decimal] = None
@@ -245,8 +249,12 @@ class HoldingData:
 class HoldingTradeData:
     """One buy or sell the provider reports for a holding.
 
-    `quantity` is always positive; `kind` gives the direction. `price` is per
-    unit in the asset's currency, and `fee` what executing the trade cost.
+    Performance treats these as the exact money moved in or out of the
+    position, so a valuation increase is never mistaken for a purchase.
+    `quantity` is always positive; `kind` carries the direction. `price` is
+    per unit in the asset's currency. `fee` is the cost of executing the
+    trade (brokerage, exchange fees), excluding income tax withheld on a
+    sale.
     """
 
     external_id: str
@@ -516,6 +524,18 @@ class BankProvider(ABC):
         default empty list.
         """
         return []
+
+    async def get_holding_trades(
+        self, credentials: dict, holdings: list[HoldingData]
+    ) -> dict[str, list[HoldingTradeData]]:
+        """Fetch the buy/sell history behind each of `holdings`.
+
+        Returns each holding's trades keyed by its external id, with an empty
+        list when the provider has none. A holding whose trades could not be
+        fetched is left out, so the sync tries it again next time. Default is
+        no trade data.
+        """
+        return {}
 
     async def get_bills(self, credentials: dict, account_external_id: str) -> list[BillData]:
         """Fetch credit-card bills (faturas) for an account.

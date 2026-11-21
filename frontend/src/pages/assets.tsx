@@ -42,6 +42,7 @@ import {
   PieChart,
   AlertTriangle,
   Upload,
+  Activity,
 } from 'lucide-react'
 import {
   AreaChart,
@@ -54,6 +55,7 @@ import {
 } from 'recharts'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/page-header'
+import { PortfolioPerformance } from '@/components/portfolio-performance'
 import { ExchangeRateSetupAction, ExchangeRateSetupIcon } from '@/components/exchange-rate-setup-notice'
 import { needsConversion, useExchangeRatesNeedSetup } from '@/hooks/use-exchange-rates-need-setup'
 import { PropertyEquitySummary } from '@/components/property-equity-summary'
@@ -189,6 +191,25 @@ const SHOW_ARCHIVED_KEY = 'securo:assets:showArchived'
 // diagnosable — e.g. the oversell guard message, or a "Not Found" when a
 // transaction endpoint is missing because the backend is older than the
 // frontend (issue #315) — rather than a cryptic "Error".
+// A trade a connected bank reported. Its sync rewrites it from the bank's
+// data, so editing or deleting it here would be silently undone.
+function isSyncedTransaction(tx: AssetTransaction): boolean {
+  return tx.source !== 'manual' && tx.source !== 'import'
+}
+
+function SyncedTransactionBadge() {
+  const { t } = useTranslation()
+  return (
+    <Badge
+      variant="outline"
+      className="text-[10px] px-1.5 py-0 shrink-0 text-muted-foreground"
+      title={t('assets.txSyncedHint')}
+    >
+      {t('assets.sourceSync')}
+    </Badge>
+  )
+}
+
 function assetErrorMessage(e: unknown, fallback: string): string {
   const resp = (e as { response?: { data?: { detail?: unknown }; status?: number } })?.response
   const detail = resp?.data?.detail
@@ -235,6 +256,22 @@ function splitRatio(tx: AssetTransaction, locale: string): string {
   return formatSplitRatio(tx.old_units ?? 0, tx.new_units ?? 0, locale)
 }
 
+type AssetsTab = 'holdings' | 'transactions' | 'performance'
+const ASSETS_TABS: AssetsTab[] = ['holdings', 'transactions', 'performance']
+const ASSETS_TAB_STORAGE_KEY = 'securo.assetsTab'
+
+function readInitialAssetsTab(): AssetsTab {
+  const fromUrl = new URLSearchParams(window.location.search).get('tab')
+  if (ASSETS_TABS.includes(fromUrl as AssetsTab)) return fromUrl as AssetsTab
+  try {
+    const stored = localStorage.getItem(ASSETS_TAB_STORAGE_KEY)
+    if (ASSETS_TABS.includes(stored as AssetsTab)) return stored as AssetsTab
+  } catch {
+    // Storage unavailable: fall back to holdings.
+  }
+  return 'holdings'
+}
+
 export default function AssetsPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -242,7 +279,7 @@ export default function AssetsPage() {
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
-  const { canWrite, current: workspace } = useWorkspace()
+  const { canWrite, canManage, current: workspace } = useWorkspace()
   // The day the server keeps the books in, so the staleness badge agrees with
   // the dates it writes, not the browser's clock. Until that timezone is known
   // there is no day to compare against, so the badge waits for it instead of
@@ -258,7 +295,20 @@ export default function AssetsPage() {
     staleTime: Infinity,
   })
 
-  const [activeTab, setActiveTab] = useState<'holdings' | 'transactions'>('holdings')
+  // Reopen on the tab used last; `?tab=performance` links straight to one.
+  const [activeTab, setActiveTabState] = useState<AssetsTab>(readInitialAssetsTab)
+  // When Performance was last opened: an inventory read before that is not
+  // trusted to prune a selection (see performanceInventory).
+  const [performanceOpenedAt, setPerformanceOpenedAt] = useState(() => Date.now())
+  const setActiveTab = (tab: AssetsTab) => {
+    if (tab === 'performance' && activeTab !== 'performance') setPerformanceOpenedAt(Date.now())
+    setActiveTabState(tab)
+    try {
+      localStorage.setItem(ASSETS_TAB_STORAGE_KEY, tab)
+    } catch {
+      // Storage unavailable: the tab just isn't remembered.
+    }
+  }
   // Holding id for the lightweight "add transaction to this holding" dialog,
   // opened from the holdings table ("+ add buys") and the inline ledger.
   const [addTxAssetId, setAddTxAssetId] = useState<string | null>(null)
@@ -428,6 +478,7 @@ export default function AssetsPage() {
     queryClient.refetchQueries({ queryKey: ['portfolio-trend'] })
     queryClient.refetchQueries({ queryKey: ['asset-trend'] })
     queryClient.refetchQueries({ queryKey: ['dashboard'] })
+    queryClient.invalidateQueries({ queryKey: ['asset-performance'] })
   }
 
   const createMutation = useMutation({
@@ -571,6 +622,7 @@ export default function AssetsPage() {
       // Deleting a wallet un-groups its assets (backend sets group_id=null).
       queryClient.refetchQueries({ queryKey: ['asset-groups'] })
       queryClient.refetchQueries({ queryKey: ['assets'] })
+      queryClient.invalidateQueries({ queryKey: ['asset-performance'] })
       setDeletingWalletId(null)
       toast.success(t('assets.walletDeleted'))
     },
@@ -583,6 +635,7 @@ export default function AssetsPage() {
     onSuccess: () => {
       queryClient.refetchQueries({ queryKey: ['assets'] })
       queryClient.refetchQueries({ queryKey: ['asset-groups'] })
+      queryClient.invalidateQueries({ queryKey: ['asset-performance'] })
       setMovingAsset(null)
       toast.success(t('assets.moved'))
     },
@@ -629,6 +682,8 @@ export default function AssetsPage() {
 
   const activeAssets = useMemo(() => assetsList?.filter(a => !a.sell_date && !a.is_archived) ?? [], [assetsList])
   const soldAssets = assetsList?.filter(a => a.sell_date && !a.is_archived) ?? []
+  // Performance can measure a holding after it is sold, over the time it was held.
+  const performanceHoldings = useMemo(() => assetsList?.filter(a => !a.is_archived) ?? [], [assetsList])
   // Denominator for the "% of portfolio" column: current holdings only, in the
   // user's primary currency, so the active rows add up to 100%. Assets with
   // no resolvable FX rate are left out of the denominator (their rows show
@@ -1138,6 +1193,44 @@ export default function AssetsPage() {
     return (walletsList ?? []).slice().sort((a, b) => a.position - b.position || a.name.localeCompare(b.name))
   }, [walletsList])
 
+  // Performance tells a deleted wallet or holding (dropped from a saved or
+  // remembered selection) from one the collection hides or that is archived
+  // (kept), so it needs the whole workspace, archived holdings included.
+  // Both reads name the workspace, in the key and on the request: another tab
+  // switching workspace changes the shared default, and an inventory from the
+  // wrong workspace would prune this one's remembered selection. Each opening
+  // of Performance is its own read (the opening time is in the key): a copy
+  // cached earlier, or a request still running from the last visit, can miss
+  // a wallet or holding created meanwhile and would drop it from the selection.
+  const inventoryWorkspaceId = workspace?.id ?? null
+  const inventoryAssetsQuery = useQuery({
+    queryKey: ['assets', 'including-archived', inventoryWorkspaceId, performanceOpenedAt],
+    queryFn: () => assets.list(true, inventoryWorkspaceId),
+    enabled: activeTab === 'performance' && !!inventoryWorkspaceId,
+  })
+  const inventoryWalletsQuery = useQuery({
+    queryKey: ['asset-groups', 'inventory', inventoryWorkspaceId, performanceOpenedAt],
+    queryFn: () => assetGroups.list(inventoryWorkspaceId),
+    enabled: activeTab === 'performance' && !!inventoryWorkspaceId,
+  })
+  const inventoryAssets = inventoryAssetsQuery.data
+  const inventoryWallets = inventoryWalletsQuery.data
+  const performanceInventory = useMemo(
+    () =>
+      inventoryAssets && inventoryWallets
+        ? {
+            walletIds: inventoryWallets.map((wallet) => wallet.id),
+            assetIds: inventoryAssets.map((asset) => asset.id),
+          }
+        : null,
+    [inventoryAssets, inventoryWallets],
+  )
+  const inventoryError = inventoryAssetsQuery.isError || inventoryWalletsQuery.isError
+  const retryInventory = () => {
+    if (inventoryAssetsQuery.isError) void inventoryAssetsQuery.refetch()
+    if (inventoryWalletsQuery.isError) void inventoryWalletsQuery.refetch()
+  }
+
   const ungroupedAssets = assetsByGroup.get(null) ?? []
 
   function toggleWalletCollapse(id: string) {
@@ -1319,29 +1412,42 @@ export default function AssetsPage() {
 
       {/* Holdings (consolidated by ticker) vs. the buy/sell ledger (#235) */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex items-center rounded-lg border border-border p-0.5 bg-muted/40">
+        <div className="inline-flex max-w-full flex-wrap items-center gap-1 rounded-lg border border-border p-0.5 bg-muted/40">
           <button
             onClick={() => setActiveTab('holdings')}
+            aria-pressed={activeTab === 'holdings'}
             className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${activeTab === 'holdings' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
           >
             {t('assets.tabHoldings')}
           </button>
           <button
             onClick={() => setActiveTab('transactions')}
+            aria-pressed={activeTab === 'transactions'}
             className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${activeTab === 'transactions' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
           >
             {t('assets.tabTransactions')}
           </button>
+          <button
+            onClick={() => setActiveTab('performance')}
+            aria-pressed={activeTab === 'performance'}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors inline-flex items-center gap-1.5 ${activeTab === 'performance' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            <Activity size={14} />
+            {t('assets.tabPerformance')}
+          </button>
         </div>
-        <label className="flex items-center gap-2 text-xs text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={showArchived}
-            onChange={(e) => toggleArchived(e.target.checked)}
-            className="h-3.5 w-3.5 rounded border-border accent-primary"
-          />
-          {t('assets.showArchived')}
-        </label>
+        {/* Archived holdings never enter performance, so the toggle is moot there. */}
+        {activeTab !== 'performance' && (
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => toggleArchived(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-border accent-primary"
+            />
+            {t('assets.showArchived')}
+          </label>
+        )}
       </div>
 
       {activeTab === 'transactions' ? (
@@ -1353,6 +1459,21 @@ export default function AssetsPage() {
           mask={mask}
           canWrite={canWrite}
           onChanged={refetchAssetViews}
+        />
+      ) : activeTab === 'performance' && workspace ? (
+        <PortfolioPerformance
+          key={workspace.id}
+          workspaceId={workspace.id}
+          assetGroupIds={activeWalletIds}
+          holdings={performanceHoldings}
+          wallets={sortedWallets}
+          inventory={performanceInventory}
+          inventoryError={inventoryError}
+          onRetryInventory={retryInventory}
+          locale={locale}
+          dateLocale={dateLocale}
+          mask={mask}
+          canManage={canManage}
         />
       ) : (
       <>
@@ -2398,6 +2519,7 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
       queryClient.refetchQueries({ queryKey: ['asset-trend', assetId] })
       queryClient.refetchQueries({ queryKey: ['portfolio-trend'] })
       queryClient.refetchQueries({ queryKey: ['dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['asset-performance'] })
       setValueAmount('')
       toast.success(t('assets.valueAdded'))
     },
@@ -2412,6 +2534,7 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
       queryClient.refetchQueries({ queryKey: ['asset-trend', assetId] })
       queryClient.refetchQueries({ queryKey: ['portfolio-trend'] })
       queryClient.refetchQueries({ queryKey: ['dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['asset-performance'] })
       toast.success(t('assets.valueDeleted'))
     },
     onError: (e) => toast.error(assetErrorMessage(e, t('common.error'))),
@@ -2866,7 +2989,8 @@ function AssetTransactionsTab({
                     )}
                   </div>
                 )}
-                {canWrite && (
+                {isSyncedTransaction(tx) && <SyncedTransactionBadge />}
+                {canWrite && !isSyncedTransaction(tx) && (
                   <div className="flex items-center gap-1 shrink-0">
                     <button
                       onClick={() => openEdit(tx)}
@@ -3130,7 +3254,8 @@ export function HoldingLedger({
                   {mask(formatCurrency(tx.quantity * tx.price, asset.currency, locale))}
                 </span>
               )}
-              {canWrite && (
+              {isSyncedTransaction(tx) && <SyncedTransactionBadge />}
+              {canWrite && !isSyncedTransaction(tx) && (
                 <button
                   onClick={() => deleteMutation.mutate(tx.id)}
                   disabled={deleteMutation.isPending}

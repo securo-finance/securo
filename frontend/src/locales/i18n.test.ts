@@ -279,6 +279,42 @@ describe('i18n locale files', () => {
     }
   })
 
+  it('contains portfolio performance labels in every locale', () => {
+    const required = [
+      'assets.tabPerformance',
+      'assets.performanceTitle',
+      'assets.performanceDescription',
+      'assets.performanceScope',
+      'assets.performanceAllAssets',
+      'assets.performanceCustomAssets',
+      'assets.performanceSelectAssets',
+      'assets.performanceBenchmarks',
+      'assets.performanceAddBenchmark',
+      'assets.performanceBenchmarkLimit',
+      'assets.performanceNoSelection',
+      'assets.performanceExcessVs',
+      'assets.benchmarkSearchPlaceholder',
+      'assets.benchmarkSearchHint',
+      'assets.benchmarkNoResults',
+      'assets.changeBenchmark',
+      'assets.portfolioReturn',
+      'assets.benchmarkReturn',
+      'assets.excessReturn',
+      'assets.performanceNoData',
+      'assets.performanceNoPortfolio',
+      'assets.performanceLoadError',
+      'assets.performanceCashFlowHint',
+    ]
+
+    for (const locale of LOCALES) {
+      const keys = new Set(flattenKeys(JSON.parse(readRaw(locale))))
+      expect(
+        required.filter((key) => !keys.has(key)),
+        `Portfolio performance labels missing in ${locale}:`,
+      ).toEqual([])
+    }
+  })
+
   // The price-history surface keys are required by both row consumers, so
   // assert them explicitly in addition to the en-driven parity checks above.
   it('contains price-history labels in every locale', () => {

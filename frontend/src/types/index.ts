@@ -89,6 +89,15 @@ export interface UserPreferences {
   currency_display?: string
   display_name?: string
   onboarding_completed?: boolean
+  /** Saved portfolio-performance selections, keyed by workspace id. */
+  performance_views?: Record<string, SavedPerformanceView[]>
+}
+
+export interface SavedPerformanceView {
+  id: string
+  name: string
+  wallet_ids: string[]
+  asset_ids: string[]
 }
 
 export interface Category {
@@ -1513,6 +1522,65 @@ export interface MarketSymbolQuote {
   currency: string
   price: number
   quote_type: string | null
+}
+
+export interface BenchmarkMatch {
+  symbol: string
+  name: string
+  exchange: string | null
+  provider: 'yahoo' | 'b3'
+}
+
+export type PortfolioPerformancePeriod = '3m' | '6m' | 'ytd' | '1y' | '3y' | '5y'
+
+export interface PortfolioPerformancePoint {
+  date: string
+  portfolio: number
+  benchmark: number | null
+  // A benchmark is absent on dates before its own start_date.
+  benchmarks: Record<string, number>
+}
+
+export interface BenchmarkPerformance {
+  key: string
+  symbol: string
+  provider: 'yahoo' | 'b3'
+  benchmark_return: number | null
+  excess_return: number | null
+  source_error?: 'unavailable' | 'rate_limited' | 'no_data' | 'no_fx_rate' | null
+  // First date this benchmark is compared from. Later than the response's
+  // start_date when the benchmark's history begins after the portfolio's.
+  start_date: string | null
+}
+
+export interface HoldingTradeImport {
+  available: boolean
+  enabled: boolean
+  // Connected holdings whose provider trades couldn't be imported.
+  issues: HoldingTradeImportIssue[]
+}
+
+export interface HoldingTradeImportIssue {
+  connection_id: string
+  asset_id: string
+  name: string
+  ticker: string | null
+  // incomplete: the history doesn't add up to the share count reported now.
+  // no_history: the provider returned no trades at all.
+  status: 'incomplete' | 'no_history'
+}
+
+export interface PortfolioPerformance {
+  benchmark_symbol: string | null
+  benchmark_provider: string | null
+  period: PortfolioPerformancePeriod
+  start_date: string
+  end_date: string
+  portfolio_return: number | null
+  benchmark_return: number | null
+  excess_return: number | null
+  benchmarks: BenchmarkPerformance[]
+  points: PortfolioPerformancePoint[]
 }
 
 export interface AssetPriceRefreshResult {

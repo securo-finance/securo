@@ -10,9 +10,11 @@ from datetime import date
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
-from app.providers.pluggy import PluggyProvider
+from app.providers.base import HoldingData
+from app.providers.pluggy import PluggyProvider, _build_holding_data
 
 
 def _mock_httpx_client(results: list[dict]) -> MagicMock:
@@ -36,6 +38,26 @@ async def _fetch(txns: list[dict]):
         PluggyProvider, "_ensure_api_key", new=AsyncMock(return_value="fake-key")
     ), patch("app.providers.pluggy.httpx.AsyncClient", return_value=fake_client):
         return await provider.get_transactions({"item_id": "i"}, "acc-ext-1")
+
+
+def test_holding_keeps_gross_and_withdrawable_values_separate():
+    holding = _build_holding_data(
+        {
+            "id": "investment-1",
+            "name": "CDI deposit",
+            "type": "FIXED_INCOME",
+            "currencyCode": "BRL",
+            "balance": 5160.10,
+            "amount": 5206.57,
+            "amountOriginal": 5000,
+            "issueDate": "2026-05-25",
+            "status": "ACTIVE",
+            "taxes": 46.47,
+        }
+    )
+    assert holding.current_value == Decimal("5160.1")
+    assert holding.gross_value == Decimal("5206.57")
+    assert holding.purchase_price == Decimal("5000")
 
 
 @pytest.mark.asyncio
@@ -1169,6 +1191,74 @@ def test_holding_active_status_is_never_withdrawn():
     assert holding.is_withdrawn is False
 
 
+@pytest.mark.asyncio
+async def test_holding_trades_leave_out_only_the_investment_whose_request_failed():
+    page = MagicMock()
+    page.raise_for_status = MagicMock()
+    page.json = MagicMock(
+        return_value={
+            "results": [
+                {"id": "t1", "type": "BUY", "tradeDate": "2026-08-01", "quantity": 10, "amount": 100}
+            ],
+            "totalPages": 1,
+        }
+    )
+    failure = MagicMock()
+    failure.raise_for_status = MagicMock(
+        side_effect=httpx.HTTPStatusError(
+            "Server error", request=MagicMock(), response=MagicMock(status_code=500)
+        )
+    )
+    client = MagicMock()
+    client.get = AsyncMock(side_effect=lambda url, **_: failure if "/inv-bad/" in url else page)
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=None)
+    holdings = [
+        HoldingData(
+            external_id=external_id, name=external_id, currency="BRL", current_value=Decimal("100")
+        )
+        for external_id in ("inv-ok", "inv-bad")
+    ]
+
+    with patch.object(
+        PluggyProvider, "_ensure_api_key", new=AsyncMock(return_value="fake-key")
+    ), patch("app.providers.pluggy.httpx.AsyncClient", return_value=client):
+        trades = await PluggyProvider().get_holding_trades({"item_id": "i"}, holdings)
+
+    assert list(trades) == ["inv-ok"]
+    assert [trade.external_id for trade in trades["inv-ok"]] == ["t1"]
+
+
+@pytest.mark.asyncio
+async def test_holding_trades_skip_a_row_without_an_id():
+    """One malformed row must not cost the investment its other trades."""
+    page = MagicMock()
+    page.raise_for_status = MagicMock()
+    page.json = MagicMock(
+        return_value={
+            "results": [
+                {"type": "BUY", "tradeDate": "2026-08-01", "quantity": 5, "amount": 50},
+                {"id": "t1", "type": "BUY", "tradeDate": "2026-08-01", "quantity": 10, "amount": 100},
+            ],
+            "totalPages": 1,
+        }
+    )
+    client = MagicMock()
+    client.get = AsyncMock(return_value=page)
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=None)
+    holding = HoldingData(
+        external_id="inv", name="inv", currency="BRL", current_value=Decimal("100")
+    )
+
+    with patch.object(
+        PluggyProvider, "_ensure_api_key", new=AsyncMock(return_value="fake-key")
+    ), patch("app.providers.pluggy.httpx.AsyncClient", return_value=client):
+        trades = await PluggyProvider().get_holding_trades({"item_id": "i"}, [holding])
+
+    assert [trade.external_id for trade in trades["inv"]] == ["t1"]
+
+
 def test_holding_carries_the_provider_value_date():
     """The investment's `date` is the day its balance refers to. It is the
     only sign that a position stopped updating, so it must survive mapping."""
@@ -1179,3 +1269,51 @@ def test_holding_carries_the_provider_value_date():
 
     assert _build_holding_data(frozen).value_date == date(2026, 3, 17)
     assert _build_holding_data(_investment(balance=1000)).value_date is None
+
+
+@pytest.mark.parametrize(
+    ("amount", "gross"),
+    [
+        (999999999.99, Decimal("999999999.99")),
+        ("999999999.9999995", None),  # rounds to 1e9 in Numeric(15, 6)
+        (1000000000, None),
+        (-1500000000.5, None),
+    ],
+)
+def test_holding_leaves_out_a_gross_value_the_column_cannot_hold(amount, gross):
+    """`gross_amount` is Numeric(15, 6); a larger gross would fail the sync's flush."""
+    holding = _build_holding_data(
+        {"id": "inv", "name": "Fund", "balance": 10, "amount": amount, "status": "ACTIVE"}
+    )
+    assert holding.gross_value == gross
+    assert holding.current_value == Decimal("10")
+
+
+async def _holding_trades_for(payload) -> dict:
+    page = MagicMock()
+    page.raise_for_status = MagicMock()
+    page.json = MagicMock(return_value=payload)
+    client = MagicMock()
+    client.get = AsyncMock(return_value=page)
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=None)
+    holding = HoldingData(
+        external_id="inv", name="inv", currency="BRL", current_value=Decimal("100")
+    )
+    with patch.object(
+        PluggyProvider, "_ensure_api_key", new=AsyncMock(return_value="fake-key")
+    ), patch("app.providers.pluggy.httpx.AsyncClient", return_value=client):
+        return await PluggyProvider().get_holding_trades({"item_id": "i"}, [holding])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("payload", [{"totalPages": 1}, {"results": None}, {"results": {}}])
+async def test_holding_trades_without_a_result_list_leave_the_investment_out(payload):
+    """A malformed page is not an empty history: that would be recorded as
+    `no_history` and not asked for again until the position moves."""
+    assert await _holding_trades_for(payload) == {}
+
+
+@pytest.mark.asyncio
+async def test_holding_trades_with_an_empty_result_list_are_an_empty_history():
+    assert await _holding_trades_for({"results": [], "totalPages": 1}) == {"inv": []}

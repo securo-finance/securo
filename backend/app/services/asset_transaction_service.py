@@ -194,6 +194,20 @@ async def _load_txs(
     return list(result.scalars().all())
 
 
+# Sources whose rows the user owns. Any other source is a connected
+# provider: its sync rewrites those rows from what the provider reports, so
+# an edit there would be silently undone.
+_USER_SOURCES = frozenset({"manual", "import"})
+
+
+def _raise_if_synced(tx: AssetTransaction) -> None:
+    if tx.source not in _USER_SOURCES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This trade comes from a connected bank and its sync keeps it up to date.",
+        )
+
+
 async def _reload_transaction(
     session: AsyncSession, tx_id: uuid.UUID, workspace_id: uuid.UUID
 ) -> Optional[AssetTransaction]:
@@ -591,6 +605,7 @@ async def update_transaction(
     tx = result.scalar_one_or_none()
     if tx is None:
         return None
+    _raise_if_synced(tx)
     # Resolve and lock the holding before anything is read off the row or
     # mutated: a buy this request only adds a note to may have been edited down
     # to fewer units while it waited, and the checks below have to see the units
@@ -672,6 +687,7 @@ async def delete_transaction(
     tx = result.scalar_one_or_none()
     if tx is None:
         return None
+    _raise_if_synced(tx)
     # Asset lock first, as in update_transaction and delete_asset: the delete
     # of the entry flushes after it, never before.
     asset = await _lock_asset(session, tx.asset_id, workspace_id)

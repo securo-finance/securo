@@ -28,6 +28,7 @@ Securo's promise is that a person's financial data stays on their own infrastruc
   Paths are under `backend/app/` except `plugin_runner/`, under `backend/`.
 - Extended by [0019](0019-s3-storage.md), which adds S3-compatible object storage for files, called only with `STORAGE_PROVIDER=s3`.
 - Extended by [0021](0021-plugin-icons.md), which adds plugin icons, fetched from the plugin catalog's host when a browser asks Securo for one.
+- Extended by [0025](0025-performance-benchmark-sources.md), which adds the Performance tab's market indices: Yahoo Finance for index search and history, and the Central Bank of Brazil and Ipeadata for the Índice DI, behind `PERFORMANCE_BENCHMARKS_ENABLED`.
 - Extended by [0026](0026-plugin-icons-outside-the-catalog.md), which also fetches the plugin index when Connect Bank or Accounts shows an installed plugin's avatar.
 - The browser makes three requests of its own: the GitHub releases API to show the update banner (every 6 hours, can be turned off per browser), Google Fonts from `frontend/index.html`, and institution favicons from Google (the backend only builds the URL).
 

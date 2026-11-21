@@ -39,7 +39,7 @@ export default function CollectionsPage() {
   })
   const { data: wallets } = useQuery({
     queryKey: ['asset-groups'],
-    queryFn: assetGroupsApi.list,
+    queryFn: () => assetGroupsApi.list(),
   })
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['collections'] })
