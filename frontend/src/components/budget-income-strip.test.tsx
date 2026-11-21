@@ -45,18 +45,31 @@ beforeEach(() => {
 })
 
 describe('BudgetIncomeStrip', () => {
-  it('offers the inline setter while there is no value', async () => {
+  it('shows the saved row after a successful save and the setter after clearing', async () => {
+    let stored: ExpectedIncome | null = null
+    api.budgets.expectedIncome.get.mockImplementation(async () => stored)
+    api.budgets.expectedIncome.put.mockImplementation(async ({ amount }: { amount: string | null }) => {
+      stored = amount === null ? null : { ...income, amount: Number(amount), amount_primary: Number(amount) }
+      return stored
+    })
     const { user } = await strip([rent])
+
     const setButton = await screen.findByRole('button', { name: t('budgets.incomeSet') })
     expect(setButton).toBeDisabled()
-
     await user.type(screen.getByRole('textbox', { name: t('budgets.incomeLabel') }), '5000')
     await user.click(setButton)
 
-    await waitFor(() => {
-      expect(api.budgets.expectedIncome.put).toHaveBeenCalledWith({ month: '2026-10-01', amount: '5000' })
-    })
-    expect(api.budgets.expectedIncome.get).toHaveBeenCalledWith('2026-10-01')
+    // The invalidation refetches the write: the row replaces the setter.
+    expect(
+      await screen.findByText(t('budgets.incomeLeftShare', { percent: 82, amount: '$4100.00' })),
+    ).toBeInTheDocument()
+    expect(api.budgets.expectedIncome.put).toHaveBeenCalledWith({ month: '2026-10-01', amount: '5000' })
+
+    await user.click(screen.getByRole('button', { name: t('budgets.incomeClear') }))
+
+    // Clearing refetches the empty row and the setter comes back.
+    expect(await screen.findByRole('button', { name: t('budgets.incomeSet') })).toBeInTheDocument()
+    expect(api.budgets.expectedIncome.put).toHaveBeenLastCalledWith({ month: '2026-10-01', amount: null })
   })
 
   it('shows the share of the income left and the amount', async () => {
@@ -108,18 +121,6 @@ describe('BudgetIncomeStrip', () => {
 
     const short = await screen.findByText(t('budgets.incomeShort', { amount: '$900.00' }))
     expect(short).toHaveClass('text-rose-700')
-  })
-
-  it('clears through a null amount', async () => {
-    api.budgets.expectedIncome.get.mockResolvedValue(income)
-    const { user } = await strip([rent])
-    await screen.findByText(t('budgets.incomeLabel'))
-
-    await user.click(screen.getByRole('button', { name: t('budgets.incomeClear') }))
-
-    await waitFor(() => {
-      expect(api.budgets.expectedIncome.put).toHaveBeenCalledWith({ month: '2026-10-01', amount: null })
-    })
   })
 
   it('masks income, planned and difference in privacy mode', async () => {
