@@ -1,13 +1,15 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { getConnectionName } from '@/lib/connection-utils'
+import { SYNC_FAILURE_MESSAGE_KEY, syncFailureAction, syncFailureCodeFromResponse } from '@/lib/sync-failure'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDateLocale } from '@/hooks/use-display-locale'
+import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
-import { accounts, assets, connections, currencies } from '@/lib/api'
-import { localDateString } from '@/lib/date-utils'
-import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
+import { accounts, assets, connections, currencies, plugins as pluginsApi } from '@/lib/api'
+import { localDateString, todayInTimezone } from '@/lib/date-utils'
+import { invalidateFinancialQueries, invalidateSyncedRecords } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,7 +24,7 @@ import {
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { Account, BankConnection, LoanAmortization, LoanRatePeriod } from '@/types'
+import type { Account, BankConnection, InstalledPlugin, LoanAmortization, LoanRatePeriod, PluginConnection } from '@/types'
 import { RefreshCw, TriangleAlert, Unlink, Settings } from 'lucide-react'
 import { ConnectionLogo } from '@/components/account-icon'
 import { AccountPageActions } from '@/components/account-page-actions'
@@ -32,6 +34,12 @@ import { PageHeader } from '@/components/page-header'
 import { PageRefreshButton } from '@/components/page-refresh-button'
 import { BankConnectDialog } from '@/components/bank-connect-dialog'
 import { ConnectorSelectDialog, type Provider } from '@/components/connector-select-dialog'
+import { pluginConnectors } from '@/lib/plugin-connectors'
+import { PluginAvatar } from '@/components/plugin-avatar'
+import { usePluginIcons } from '@/hooks/use-plugin-icons'
+import { PluginConnectionDialog } from '@/components/plugin-connections'
+import { useFeatureFlags } from '@/hooks/use-feature-flags'
+import { localized } from '@/lib/localized-text'
 import { OAuthConnectDialog } from '@/components/oauth-connect-dialog'
 import { TokenConnectDialog } from '@/components/token-connect-dialog'
 import { ConnectionSettingsDialog } from '@/components/connection-settings-dialog'
@@ -53,7 +61,7 @@ const ACCOUNT_TYPE_OPTIONS = [
 ] as const
 
 export default function AccountsPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const dateLocale = useDateLocale()
   const { activeAccountIds } = useCollectionFilter()
@@ -70,10 +78,17 @@ export default function AccountsPage() {
   const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null)
   const [settingsConnection, setSettingsConnection] = useState<BankConnection | null>(null)
   const [disconnectingConnection, setDisconnectingConnection] = useState<BankConnection | null>(null)
+  const [deleteOnDisconnect, setDeleteOnDisconnect] = useState(false)
   const [closingAccountId, setClosingAccountId] = useState<string | null>(null)
   const [reconnectConnId, setReconnectConnId] = useState<string | null>(null)
   const [reconnectItemId, setReconnectItemId] = useState<string | null>(null)
   const [tokenReconnectConnection, setTokenReconnectConnection] = useState<BankConnection | null>(null)
+  const [pluginForm, setPluginForm] = useState<{
+    plugin: InstalledPlugin
+    integration?: string
+    connection?: PluginConnection
+  } | null>(null)
+  const { pluginsEnabled } = useFeatureFlags()
 
   const { data: accountsList, isLoading: accountsLoading, isError: accountsError, isFetching: accountsFetching } = useQuery({
     queryKey: ['accounts'],
@@ -91,6 +106,35 @@ export default function AccountsPage() {
     staleTime: 1000 * 60 * 10,
   })
 
+  const { data: installedPlugins } = useQuery({
+    queryKey: ['plugins', 'installed'],
+    queryFn: pluginsApi.installed,
+    enabled: pluginsEnabled,
+  })
+  const pluginsById = useMemo(
+    () => new Map((installedPlugins ?? []).map((plugin) => [plugin.plugin_id, plugin])),
+    [installedPlugins],
+  )
+  const pluginIcons = usePluginIcons(pluginsEnabled && (connectionsList ?? []).some((c) => c.plugin_id && !c.logo_url))
+  const hasPluginConnections = (connectionsList ?? []).some((c) => c.plugin_connection_id)
+  const { data: pluginConnectionsList, dataUpdatedAt: pluginConnectionsFetchedAt } = useQuery({
+    queryKey: ['plugin-connections'],
+    queryFn: pluginsApi.connections,
+    enabled: pluginsEnabled && hasPluginConnections,
+    refetchInterval: (query) => (query.state.data?.some((c) => c.status === 'pending') ? 3000 : false),
+  })
+  const syncingKey = (pluginConnectionsList ?? [])
+    .filter((c) => c.status === 'pending')
+    .map((c) => c.id)
+    .sort()
+    .join(',')
+  const wasSyncing = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const syncing = new Set(syncingKey ? syncingKey.split(',') : [])
+    if ([...wasSyncing.current].some((id) => !syncing.has(id))) invalidateSyncedRecords(queryClient)
+    wasSyncing.current = syncing
+  }, [pluginConnectionsFetchedAt, syncingKey, queryClient])
+
   const providersByName = useMemo(() => {
     const map = new Map<string, Provider>()
     for (const p of providersList ?? []) map.set(p.name, p as Provider)
@@ -98,6 +142,27 @@ export default function AccountsPage() {
   }, [providersList])
 
   const handleReconnectClick = async (conn: BankConnection) => {
+    if (conn.plugin_connection_id) {
+      let installedNow: InstalledPlugin[]
+      let connectionsNow: PluginConnection[]
+      try {
+        ;[installedNow, connectionsNow] = await Promise.all([
+          queryClient.fetchQuery({ queryKey: ['plugins', 'installed'], queryFn: pluginsApi.installed }),
+          queryClient.fetchQuery({ queryKey: ['plugin-connections'], queryFn: pluginsApi.connections }),
+        ])
+      } catch {
+        toast.error(t('common.error'))
+        return
+      }
+      const plugin = installedNow.find((p) => p.plugin_id === conn.plugin_id)
+      const pluginConnection = connectionsNow.find((c) => c.id === conn.plugin_connection_id)
+      if (!plugin || !pluginConnection) {
+        toast.error(t('accounts.pluginUnavailable'))
+        return
+      }
+      setPluginForm({ plugin, connection: pluginConnection })
+      return
+    }
     const providerInfo = providersByName.get(conn.provider)
     if (providerInfo?.flow_type === 'oauth') {
       try {
@@ -133,6 +198,8 @@ export default function AccountsPage() {
       // without pulling anything: say so instead of a false "Sync completed".
       if (result.sync_outcome === 'rate_limited') {
         toast.warning(t('accounts.syncRateLimited'))
+      } else if (result.sync_outcome === 'partial') {
+        toast.warning(t('accounts.syncPartial'))
       } else {
         toast.success(t('accounts.syncDone'))
       }
@@ -143,26 +210,42 @@ export default function AccountsPage() {
     },
     onError: (err) => {
       queryClient.invalidateQueries({ queryKey: ['connections'] })
-      const detail = axios.isAxiosError(err)
-        ? err.response?.data?.detail
-        : null
+      const response = axios.isAxiosError(err) ? err.response : undefined
+      const detail = response?.data?.detail
+      const code = syncFailureCodeFromResponse(response?.status, detail)
+      if (code) {
+        toast.error(t(SYNC_FAILURE_MESSAGE_KEY[code]))
+        return
+      }
+      if (response?.status === 409) {
+        toast.error(t('accounts.connectionDisconnected'))
+        return
+      }
       const message = typeof detail === 'string' ? detail : detail?.message
       toast.error(message || t('accounts.syncError'))
     },
   })
 
   const disconnectMutation = useMutation({
-    mutationFn: (id: string) => connections.delete(id),
-    onSuccess: () => {
+    mutationFn: ({ id, keepAccounts }: { id: string; keepAccounts: boolean }) =>
+      connections.delete(id, { keepAccounts }),
+    onSuccess: (_data, { keepAccounts }) => {
       invalidateFinancialQueries(queryClient)
       queryClient.invalidateQueries({ queryKey: ['connections'] })
       queryClient.invalidateQueries({ queryKey: ['assets'] })
       queryClient.invalidateQueries({ queryKey: ['asset-groups'] })
       queryClient.invalidateQueries({ queryKey: ['portfolio-trend'] })
       setDisconnectingConnection(null)
-      toast.success(t('accounts.disconnected'))
+      toast.success(t(keepAccounts ? 'accounts.disconnectedKept' : 'accounts.disconnected'))
     },
   })
+
+  const openDisconnectDialog = (conn: BankConnection) => {
+    setDeleteOnDisconnect(false)
+    setDisconnectingConnection(conn)
+  }
+  const alreadyDisconnected = disconnectingConnection?.status === 'disconnected'
+  const deletingOnDisconnect = alreadyDisconnected || deleteOnDisconnect
 
   const createMutation = useMutation({
     mutationFn: (data: { name: string; type: string; balance?: number; currency?: string, order: number }) =>
@@ -289,9 +372,18 @@ export default function AccountsPage() {
                         <div className="flex items-center gap-3">
                           {/* One bank's favicon would misrepresent a multi-
                               institution link — fall back to the generic icon. */}
-                          <ConnectionLogo
-                            logoUrl={(conn.institutions?.length ?? 0) > 1 ? null : conn.logo_url}
-                          />
+                          {conn.plugin_id && !conn.logo_url ? (
+                            <PluginAvatar
+                              seed={conn.plugin_id}
+                              label={localized(pluginsById.get(conn.plugin_id)?.name ?? { en: conn.institution_name }, i18n.language)}
+                              src={pluginIcons.get(conn.plugin_id)}
+                              className="h-8 w-8 rounded-lg text-[11px]"
+                            />
+                          ) : (
+                            <ConnectionLogo
+                              logoUrl={(conn.institutions?.length ?? 0) > 1 ? null : conn.logo_url}
+                            />
+                          )}
                           <div>
                             <div className="flex items-center gap-2">
                               <p className="text-sm font-semibold text-foreground">{getConnectionName(conn, t)}</p>
@@ -311,6 +403,35 @@ export default function AccountsPage() {
                                 {t('accounts.lastSync')}: {new Date(conn.last_sync_at).toLocaleString(dateLocale)}
                               </p>
                             )}
+                            {conn.last_sync_failure && conn.status !== 'disconnected' && (() => {
+                              const failure = conn.last_sync_failure
+                              const action = syncFailureAction(failure.code)
+                              return (
+                                <p
+                                  className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5"
+                                  data-testid="sync-failure"
+                                >
+                                  {t('accounts.syncFailure.failedAt', {
+                                    when: new Date(failure.at).toLocaleString(dateLocale),
+                                  })}
+                                  {' '}
+                                  {t(SYNC_FAILURE_MESSAGE_KEY[failure.code])}
+                                  {canWrite && action !== 'wait' && (
+                                    <>
+                                      {' '}
+                                      <button
+                                        type="button"
+                                        className="font-medium underline underline-offset-2 hover:text-amber-800 dark:hover:text-amber-200 disabled:opacity-50"
+                                        disabled={syncPending}
+                                        onClick={() => action === 'reconnect' ? handleReconnectClick(conn) : syncMutation.mutate(conn.id)}
+                                      >
+                                        {action === 'reconnect' ? t('accounts.reconnect') : t('accounts.syncFailure.syncNow')}
+                                      </button>
+                                    </>
+                                  )}
+                                </p>
+                              )
+                            })()}
                           </div>
                         </div>
                         {canWrite && (
@@ -348,7 +469,9 @@ export default function AccountsPage() {
                             title={needsReconnect
                               ? conn.status === 'expired'
                                 ? t('accounts.connectionExpired')
-                                : t('accounts.connectionError')
+                                : conn.status === 'disconnected'
+                                  ? t('accounts.connectionDisconnected')
+                                  : t('accounts.connectionError')
                               : t('accounts.sync')}
                             aria-label={needsReconnect ? t('accounts.reconnect') : t('accounts.sync')}
                           >
@@ -356,7 +479,7 @@ export default function AccountsPage() {
                             {needsReconnect && (
                               <TriangleAlert
                                 size={10}
-                                className="absolute -right-0.5 -top-0.5 rounded-full bg-card text-amber-500"
+                                className="absolute -end-0.5 -top-0.5 rounded-full bg-card text-amber-500"
                               />
                             )}
                           </Button>
@@ -364,9 +487,9 @@ export default function AccountsPage() {
                             variant="ghost"
                             size="sm"
                             className="h-8 w-8 p-0 text-muted-foreground hover:text-rose-500"
-                            onClick={() => setDisconnectingConnection(conn)}
+                            onClick={() => openDisconnectDialog(conn)}
                             disabled={disconnectMutation.isPending}
-                            title={t('accounts.disconnect')}
+                            title={conn.status === 'disconnected' ? t('accounts.removeConnection') : t('accounts.disconnect')}
                           >
                             <Unlink size={14} />
                           </Button>
@@ -429,19 +552,37 @@ export default function AccountsPage() {
           <DialogHeader>
             <DialogTitle>{t('accounts.confirmDisconnectTitle')}</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            {t('accounts.confirmDisconnectDesc', { institution: disconnectingConnection ? getConnectionName(disconnectingConnection, t) : '' })}
+          <p className="text-sm text-muted-foreground" data-testid="disconnect-description">
+            {t(
+              deletingOnDisconnect ? 'accounts.confirmDisconnectDesc' : 'accounts.confirmDisconnectKeepDesc',
+              { institution: disconnectingConnection ? getConnectionName(disconnectingConnection, t) : '' },
+            )}
           </p>
+          {!alreadyDisconnected && (
+            <label className="text-sm inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={deleteOnDisconnect}
+                onChange={(e) => setDeleteOnDisconnect(e.target.checked)}
+              />
+              {t('accounts.disconnectAlsoDelete')}
+            </label>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDisconnectingConnection(null)}>
               {t('common.cancel')}
             </Button>
             <Button
               variant="destructive"
-              onClick={() => disconnectingConnection && disconnectMutation.mutate(disconnectingConnection.id)}
+              onClick={() => disconnectingConnection && disconnectMutation.mutate({
+                id: disconnectingConnection.id,
+                keepAccounts: !deletingOnDisconnect,
+              })}
               disabled={disconnectMutation.isPending}
             >
-              {disconnectMutation.isPending ? t('common.loading') : t('accounts.disconnect')}
+              {disconnectMutation.isPending
+                ? t('common.loading')
+                : alreadyDisconnected ? t('accounts.removeConnection') : t('accounts.disconnect')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -481,7 +622,23 @@ export default function AccountsPage() {
         open={connectorSelectOpen}
         onClose={() => setConnectorSelectOpen(false)}
         onSelect={(provider) => setSelectedProvider(provider)}
+        plugins={pluginConnectors(installedPlugins)}
+        onSelectPlugin={({ plugin, integration }) => setPluginForm({ plugin, integration: integration.key })}
       />
+
+      {pluginForm && (
+        <PluginConnectionDialog
+          plugin={pluginForm.plugin}
+          integration={pluginForm.integration}
+          connection={pluginForm.connection}
+          onClose={() => setPluginForm(null)}
+          onDone={(saved) => {
+            wasSyncing.current.add(saved.id)
+            queryClient.invalidateQueries({ queryKey: ['connections'] })
+            queryClient.invalidateQueries({ queryKey: ['plugin-connections'] })
+          }}
+        />
+      )}
 
       {/* Bank Connect Dialog — widget-based (Pluggy) */}
       <BankConnectDialog
@@ -628,6 +785,7 @@ export function AccountDialog({
 }) {
   const { t } = useTranslation()
   const { user } = useAuth()
+  const timeZone = useEffectiveTimezone()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const { data: supportedCurrencies } = useQuery({
     queryKey: ['currencies'],
@@ -649,6 +807,7 @@ export function AccountDialog({
   // or one without an opening balance.
   const initialBalanceDate = () => account?.balance_date ?? localDateString()
   const [balanceDate, setBalanceDate] = useState(initialBalanceDate)
+  const [balanceDatePicked, setBalanceDatePicked] = useState(false)
   const [creditLimit, setCreditLimit] = useState(account?.credit_limit?.toString() ?? '')
   const [statementCloseDay, setStatementCloseDay] = useState(account?.statement_close_day?.toString() ?? '')
   const [paymentDueDay, setPaymentDueDay] = useState(account?.payment_due_day?.toString() ?? '')
@@ -675,6 +834,7 @@ export function AccountDialog({
     setBalance(account?.balance?.toString() ?? '0')
     setCurrency(account?.currency ?? userCurrency)
     setBalanceDate(date)
+    setBalanceDatePicked(false)
     setCreditLimit(account?.credit_limit?.toString() ?? '')
     setStatementCloseDay(account?.statement_close_day?.toString() ?? '')
     setPaymentDueDay(account?.payment_due_day?.toString() ?? '')
@@ -683,6 +843,9 @@ export function AccountDialog({
     setLoanTerms(loanTermsFrom(account, account?.currency ?? userCurrency))
     setTermsOpen(account?.loan_original_amount != null)
   }
+  const autoBalanceDate = !!account && !balanceDatePicked && !!timeZone
+    && balance !== '' && parseFloat(balance) !== Number(account.balance)
+  const effectiveBalanceDate = autoBalanceDate ? todayInTimezone(timeZone) : balanceDate
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -703,12 +866,12 @@ export function AccountDialog({
             }
             const isConnected = !!account?.connection_id
             // Editing: only move the opening balance when the date was changed.
-            const dateChanged = !account || balanceDate !== formSource?.balanceDate
+            const dateChanged = !account || effectiveBalanceDate !== formSource?.balanceDate
             onSave({
               ...(!isConnected && {
                 name,
                 balance: parseFloat(balance),
-                ...(dateChanged && { balance_date: balanceDate }),
+                ...(dateChanged && { balance_date: effectiveBalanceDate }),
                 currency,
               }),
               type,
@@ -799,6 +962,11 @@ export function AccountDialog({
                   </Label>
                   <Input
                     type="number"
+                    aria-label={type === 'credit_card'
+                      ? t('accounts.balanceCreditCard')
+                      : type === 'loan'
+                        ? t('accounts.balanceLoan')
+                        : t('accounts.balance')}
                     step="0.01"
                     min={type === 'credit_card' || type === 'loan' ? '0' : undefined}
                     value={balance}
@@ -808,8 +976,11 @@ export function AccountDialog({
                 <div className="space-y-2">
                   <Label>{t('accounts.balanceDate')}</Label>
                   <DatePickerInput
-                    value={balanceDate}
-                    onChange={setBalanceDate}
+                    value={effectiveBalanceDate}
+                    onChange={(date) => {
+                      setBalanceDate(date)
+                      setBalanceDatePicked(true)
+                    }}
                     className="w-full justify-start"
                   />
                 </div>
@@ -825,6 +996,7 @@ export function AccountDialog({
             <Label>{t('accounts.order')}</Label>
             <Input
               type="number"
+              aria-label={t('accounts.order')}
               step="1"
               min={0}
               value={order}

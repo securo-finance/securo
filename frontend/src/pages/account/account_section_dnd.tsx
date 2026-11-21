@@ -55,7 +55,7 @@ function SortableAccount({
       >
         <AccountIcon account={account} />
         <span className="truncate text-sm font-medium text-foreground">
-          {getAccountLabel(account)}
+          {index + 1}. {getAccountLabel(account)}
         </span>
       </Link>
     </div>

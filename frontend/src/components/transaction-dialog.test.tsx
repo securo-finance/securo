@@ -133,15 +133,12 @@ function renderNewTransaction(defaultAccountId?: string) {
   return screen.getByRole('option', { name: 'Zeta Bank' }).closest('select') as HTMLSelectElement
 }
 
-it('starts a new transaction with no account selected, so one must be chosen', () => {
+it('starts a new transaction with the first account returned by the API', () => {
   const accountSelect = renderNewTransaction()
 
-  expect(accountSelect).toHaveValue('')
-  const placeholder = accountSelect.selectedOptions[0]
-  expect(placeholder).toHaveTextContent(t('transactions.createCounterpartSelectAccount'))
-  expect(placeholder).toBeDisabled()
-  expect(placeholder).toHaveAttribute('hidden')
-  expect(accountSelect.validity.valueMissing).toBe(true)
+  expect(accountSelect).toHaveValue('acc-z')
+  expect(accountSelect.selectedOptions[0]).toHaveTextContent('Zeta Bank')
+  expect(screen.queryByText(t('transactions.createCounterpartSelectAccount'))).not.toBeInTheDocument()
 })
 
 it('keeps preselecting the account the form was opened from', () => {

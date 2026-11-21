@@ -1,8 +1,8 @@
-"""account_order
+"""account ordering
 
-Revision ID: 103
-Revises: 102
-Create Date: 2026-11-05 15:42:14.402924
+Revision ID: 125
+Revises: 124
+Create Date: 2026-11-21 07:18:25.307398
 
 """
 from typing import Sequence, Union
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = '103'
-down_revision: Union[str, Sequence[str], None] = '102'
+revision: str = '125'
+down_revision: Union[str, Sequence[str], None] = '124'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
