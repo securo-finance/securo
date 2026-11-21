@@ -2297,6 +2297,8 @@
     "linkTickerNoResults": "Aucun ticker trouvé",
     "linkTickerLinked": "{{ticker}} associé",
     "linkTickerAction": "Associer",
+    "linkTickerUnlink": "Utiliser la valeur de la banque",
+    "linkTickerUnlinked": "Retour à la valeur indiquée par la banque",
     "maturesOn": "Échéance le {{date}}",
     "wallet": "Portefeuille",
     "newWallet": "Nouveau portefeuille",

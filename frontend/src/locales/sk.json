@@ -2417,6 +2417,8 @@
     "linkTickerNoResults": "Nenašiel sa žiadny ticker",
     "linkTickerLinked": "{{ticker}} prepojený",
     "linkTickerAction": "Prepojiť",
+    "linkTickerUnlink": "Použiť hodnotu banky",
+    "linkTickerUnlinked": "Vrátené na hodnotu od banky",
     "maturesOn": "Splatnosť {{date}}",
     "wallet": "Peňaženka",
     "newWallet": "Nová peňaženka",

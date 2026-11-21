@@ -16,7 +16,11 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.app_clock import app_today
 from app.core.config import get_settings
-from app.models.asset import PROVIDER_VALUE_DATE_METADATA_KEY, Asset
+from app.models.asset import (
+    PROVIDER_VALUE_DATE_METADATA_KEY,
+    PROVIDER_VALUE_METADATA_KEY,
+    Asset,
+)
 from app.models.asset_group import AssetGroup
 from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
@@ -1054,7 +1058,11 @@ async def _sync_holdings(
         if asset.sell_date is None:
             await ticker_linker.link(session, asset, holding)
             await _upsert_asset_value_for_today(
-                session, asset, _holding_value_for_today(asset, holding), today
+                session,
+                asset,
+                _holding_value_for_today(asset, holding),
+                today,
+                price=_holding_price_for_today(asset),
             )
 
     for ext_id, asset in archive_candidates.items():
@@ -1261,7 +1269,11 @@ async def _sync_holding_trades(
             # Reopened by this sync: the value step above skipped it while it
             # still read as sold, so record today's value now.
             await _upsert_asset_value_for_today(
-                session, asset, _holding_value_for_today(asset, holding), app_today()
+                session,
+                asset,
+                _holding_value_for_today(asset, holding),
+                app_today(),
+                price=_holding_price_for_today(asset),
             )
 
 
@@ -1274,7 +1286,7 @@ def _provider_metadata(holding: HoldingData) -> Optional[dict]:
     return {
         key: value
         for key, value in (holding.metadata or {}).items()
-        if key != PROVIDER_VALUE_DATE_METADATA_KEY
+        if key not in (PROVIDER_VALUE_DATE_METADATA_KEY, PROVIDER_VALUE_METADATA_KEY)
     } or None
 
 
@@ -1288,6 +1300,10 @@ def _holding_metadata(holding: HoldingData) -> Optional[dict]:
     metadata = _provider_metadata(holding) or {}
     if holding.value_date is not None:
         metadata[PROVIDER_VALUE_DATE_METADATA_KEY] = holding.value_date.isoformat()
+    if holding.current_value is not None:
+        # Kept so unlinking a ticker can put the provider's figure back at once
+        # (asset_service.unlink_market_ticker) instead of waiting for a sync.
+        metadata[PROVIDER_VALUE_METADATA_KEY] = str(holding.current_value)
     return metadata or None
 
 
@@ -1334,6 +1350,19 @@ def _holding_value_for_today(asset: Asset, holding: HoldingData):
     if asset.valuation_method == "market_price" and asset.last_price is not None and asset.units:
         return Decimal(str(asset.last_price)) * Decimal(str(asset.units))
     return holding.current_value
+
+
+def _holding_price_for_today(asset: Asset) -> Optional[Decimal]:
+    """Per-share price behind today's point, when it is units × quote.
+
+    Stored on the AssetValue like a manual market-priced holding's, so the
+    history rebuild recomputes the point from the ledger quantity when a
+    later trade correction moves units across dates, instead of keeping a
+    baked amount. None for a provider-valued point.
+    """
+    if asset.valuation_method == "market_price" and asset.last_price is not None and asset.units:
+        return Decimal(str(asset.last_price))
+    return None
 
 
 async def _upsert_asset_from_holding(
@@ -1414,7 +1443,10 @@ async def _upsert_asset_from_holding(
         asset.purchase_date = holding.purchase_date
     if holding.isin:
         asset.isin = holding.isin
-    if holding.ticker and not holding.ticker_quotable:
+    # A raw label never replaces the symbol a market-priced holding is quoted
+    # under: that ticker was confirmed by a quote or linked by the user, and
+    # its price and logo belong to it.
+    if holding.ticker and not holding.ticker_quotable and asset.valuation_method != "market_price":
         asset.ticker = holding.ticker
     if holding.maturity_date:
         asset.maturity_date = holding.maturity_date
@@ -1456,11 +1488,15 @@ async def _upsert_asset_value_for_today(
     asset: Asset,
     amount,
     today: date,
+    *,
+    price: Optional[Decimal] = None,
 ) -> None:
     """One sync-sourced AssetValue per asset per day.
 
     Re-syncing the same day updates the amount in place; a later day
     creates a new row so we build a daily valuation history over time.
+    `price` is the per-share quote when the amount is units × quote, and
+    None for a provider-valued amount (which also clears a stale one).
     """
     existing = await session.execute(
         select(AssetValue).where(
@@ -1472,11 +1508,13 @@ async def _upsert_asset_value_for_today(
     row = existing.scalar_one_or_none()
     if row is not None:
         row.amount = amount
+        row.price = price
     else:
         session.add(
             AssetValue(
                 asset_id=asset.id,
                 amount=amount,
+                price=price,
                 date=today,
                 source="sync",
             )

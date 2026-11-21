@@ -15,6 +15,7 @@ from app.models.asset import (
     ASSET_PRICE_DECIMALS,
     LOAN_COLLATERAL_TYPES,
     PROVIDER_VALUE_DATE_METADATA_KEY,
+    PROVIDER_VALUE_METADATA_KEY,
     Asset,
 )
 from app.models.asset_transaction import AssetTransaction
@@ -1422,6 +1423,53 @@ async def link_market_ticker(
     # A re-link to another symbol must not keep the previous company's logo.
     asset.logo_url = quote.logo_url
     await _apply_price_to_asset(session, asset, Decimal(str(quote.price)))
+    await session.flush()
+
+
+async def unlink_market_ticker(session: AsyncSession, asset: Asset) -> None:
+    """Return a synced holding to the value its provider reports.
+
+    Undoes link_market_ticker (by hand or by the sync): the holding stops
+    being priced as units × quote and drops out of the daily price refresh.
+    The ticker itself stays on the asset as a label, which is also what keeps
+    the sync from linking it again (_QuotableTickerLinker skips any asset
+    with a ticker); linking a ticker by hand prices it from the market again.
+
+    Today's point is put back to the provider's last reported value right
+    away, without its per-share price, so the chart and the header show the
+    provider's figure before the next sync. A no-op for a holding that is not
+    market-priced.
+    """
+    if asset.valuation_method != "market_price":
+        return
+    asset.valuation_method = "manual"
+    asset.last_price = None
+    asset.last_price_at = None
+
+    raw = (asset.external_metadata or {}).get(PROVIDER_VALUE_METADATA_KEY)
+    try:
+        provider_value = Decimal(str(raw)) if raw is not None else None
+    except (ArithmeticError, ValueError):
+        provider_value = None
+    if provider_value is not None:
+        today = app_today()
+        existing = await session.execute(
+            select(AssetValue)
+            .where(AssetValue.asset_id == asset.id, AssetValue.date == today)
+            .order_by(desc(AssetValue.id))
+            .limit(1)
+        )
+        today_value = existing.scalar_one_or_none()
+        if today_value is not None:
+            today_value.amount = provider_value
+            today_value.price = None
+            today_value.source = "sync"
+        else:
+            session.add(
+                AssetValue(
+                    asset_id=asset.id, amount=provider_value, price=None, date=today, source="sync"
+                )
+            )
     await session.flush()
 
 

@@ -2293,6 +2293,8 @@
     "linkTickerNoResults": "ティッカーが見つかりません",
     "linkTickerLinked": "{{ticker}} を紐付けました",
     "linkTickerAction": "紐付け",
+    "linkTickerUnlink": "銀行の評価額を使う",
+    "linkTickerUnlinked": "銀行が報告する評価額に戻しました",
     "maturesOn": "満期: {{date}}",
     "wallet": "ウォレット",
     "newWallet": "新規ウォレット",

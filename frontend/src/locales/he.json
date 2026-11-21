@@ -2309,6 +2309,8 @@
     "linkTickerNoResults": "לא נמצא טיקר",
     "linkTickerLinked": "{{ticker}} קושר",
     "linkTickerAction": "קישור",
+    "linkTickerUnlink": "שימוש בערך של הבנק",
+    "linkTickerUnlinked": "חזרה לערך שהבנק מדווח",
     "maturesOn": "פדיון ב-{{date}}",
     "wallet": "ארנק",
     "newWallet": "ארנק חדש",

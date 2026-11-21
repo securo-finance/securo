@@ -2318,6 +2318,8 @@
     "linkTickerNoResults": "Тикер не найден",
     "linkTickerLinked": "{{ticker}} привязан",
     "linkTickerAction": "Привязать",
+    "linkTickerUnlink": "Использовать оценку банка",
+    "linkTickerUnlinked": "Возвращена оценка банка",
     "maturesOn": "Погашается {{date}}",
     "wallet": "Кошелёк",
     "newWallet": "Новый кошелёк",

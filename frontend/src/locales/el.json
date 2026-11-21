@@ -2293,6 +2293,8 @@
     "linkTickerNoResults": "Δεν βρέθηκε ticker",
     "linkTickerLinked": "Το {{ticker}} συνδέθηκε",
     "linkTickerAction": "Σύνδεση",
+    "linkTickerUnlink": "Χρήση της αξίας της τράπεζας",
+    "linkTickerUnlinked": "Επιστροφή στην αξία της τράπεζας",
     "maturesOn": "Λήγει στις {{date}}",
     "wallet": "Πορτοφόλι",
     "newWallet": "Νέο πορτοφόλι",

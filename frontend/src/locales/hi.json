@@ -2293,6 +2293,8 @@
     "linkTickerNoResults": "कोई टिकर नहीं मिला",
     "linkTickerLinked": "{{ticker}} जोड़ा गया",
     "linkTickerAction": "जोड़ें",
+    "linkTickerUnlink": "बैंक का मूल्य इस्तेमाल करें",
+    "linkTickerUnlinked": "बैंक द्वारा बताए गए मूल्य पर वापस",
     "maturesOn": "{{date}} को परिपक्व",
     "wallet": "वॉलेट",
     "newWallet": "नया वॉलेट",

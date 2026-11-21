@@ -2390,6 +2390,8 @@
     "linkTickerNoResults": "Nie znaleziono tickera",
     "linkTickerLinked": "Powiązano {{ticker}}",
     "linkTickerAction": "Powiąż",
+    "linkTickerUnlink": "Użyj wartości z banku",
+    "linkTickerUnlinked": "Przywrócono wartość podawaną przez bank",
     "maturesOn": "Termin wykupu {{date}}",
     "wallet": "Portfel",
     "newWallet": "Nowy portfel",

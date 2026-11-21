@@ -7,11 +7,13 @@ import type { Asset } from '@/types'
 
 const marketSearch = vi.fn()
 const linkTicker = vi.fn()
+const unlinkTicker = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   assets: {
     marketSearch: (q: string, limit: number) => marketSearch(q, limit),
     linkTicker: (id: string, ticker: string) => linkTicker(id, ticker),
+    unlinkTicker: (id: string) => unlinkTicker(id),
   },
 }))
 
@@ -44,6 +46,7 @@ describe('LinkTickerDialog', () => {
   beforeEach(() => {
     marketSearch.mockReset().mockResolvedValue([])
     linkTicker.mockReset()
+    unlinkTicker.mockReset()
     toastSuccess.mockReset()
     toastError.mockReset()
   })
@@ -85,6 +88,24 @@ describe('LinkTickerDialog', () => {
 
     await waitFor(() => expect(toastError).toHaveBeenCalled())
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('offers the way back to the bank value only for a holding priced from a ticker', () => {
+    renderDialog()
+
+    expect(screen.queryByRole('button', { name: t('assets.linkTickerUnlink') })).not.toBeInTheDocument()
+  })
+
+  it('returns a linked holding to the bank value and closes', async () => {
+    unlinkTicker.mockResolvedValue(syncedHolding({ ticker: 'PSSA3.SA', valuation_method: 'manual' }))
+    const onClose = renderDialog(syncedHolding({ ticker: 'PSSA3.SA', valuation_method: 'market_price' }))
+
+    fireEvent.click(screen.getByRole('button', { name: t('assets.linkTickerUnlink') }))
+
+    await waitFor(() => expect(unlinkTicker).toHaveBeenCalledWith('asset-1'))
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(toastSuccess).toHaveBeenCalledWith(t('assets.linkTickerUnlinked'))
+    expect(linkTicker).not.toHaveBeenCalled()
   })
 
   it('cannot submit a blank ticker', () => {

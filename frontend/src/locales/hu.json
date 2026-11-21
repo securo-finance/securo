@@ -2295,6 +2295,8 @@
     "linkTickerNoResults": "Nem található ticker",
     "linkTickerLinked": "{{ticker}} összekapcsolva",
     "linkTickerAction": "Összekapcsolás",
+    "linkTickerUnlink": "A bank által jelentett érték használata",
+    "linkTickerUnlinked": "Visszaállítva a bank által jelentett értékre",
     "maturesOn": "Lejárat: {{date}}",
     "wallet": "Tárca",
     "newWallet": "Új tárca",

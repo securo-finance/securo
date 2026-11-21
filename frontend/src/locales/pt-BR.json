@@ -2297,6 +2297,8 @@
     "linkTickerNoResults": "Nenhum ticker encontrado",
     "linkTickerLinked": "{{ticker}} vinculado",
     "linkTickerAction": "Vincular",
+    "linkTickerUnlink": "Usar o valor do banco",
+    "linkTickerUnlinked": "Voltou para o valor informado pelo banco",
     "maturesOn": "Vence em {{date}}",
     "wallet": "Carteira",
     "newWallet": "Nova Carteira",

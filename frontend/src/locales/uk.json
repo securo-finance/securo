@@ -2318,6 +2318,8 @@
     "linkTickerNoResults": "Тікер не знайдено",
     "linkTickerLinked": "{{ticker}} прив’язано",
     "linkTickerAction": "Прив’язати",
+    "linkTickerUnlink": "Використати оцінку банку",
+    "linkTickerUnlinked": "Повернуто оцінку банку",
     "maturesOn": "Погашається {{date}}",
     "wallet": "Гаманець",
     "newWallet": "Новий гаманець",

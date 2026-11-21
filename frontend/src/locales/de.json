@@ -2294,6 +2294,8 @@
     "linkTickerNoResults": "Kein Ticker gefunden",
     "linkTickerLinked": "{{ticker}} verknüpft",
     "linkTickerAction": "Verknüpfen",
+    "linkTickerUnlink": "Wert der Bank verwenden",
+    "linkTickerUnlinked": "Zurück zum Wert der Bank",
     "maturesOn": "Fällig am {{date}}",
     "wallet": "Portfolio",
     "newWallet": "Neues Portfolio",

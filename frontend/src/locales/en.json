@@ -2293,6 +2293,8 @@
     "linkTickerNoResults": "No ticker found",
     "linkTickerLinked": "{{ticker}} linked",
     "linkTickerAction": "Link",
+    "linkTickerUnlink": "Use the bank's value",
+    "linkTickerUnlinked": "Back to the value the bank reports",
     "maturesOn": "Matures {{date}}",
     "wallet": "Wallet",
     "newWallet": "New Wallet",

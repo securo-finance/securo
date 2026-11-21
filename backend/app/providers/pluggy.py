@@ -304,7 +304,10 @@ def _asset_type(inv: dict) -> Optional[str]:
     if pluggy_type == "ETF":
         return "etf"
     if pluggy_type == "EQUITY":
-        return "fund" if (inv.get("subtype") or "").upper() == "REAL_ESTATE_FUND" else "stock"
+        # An unexpected (non-string) subtype reads as unknown: a plain stock.
+        subtype = inv.get("subtype")
+        is_fii = isinstance(subtype, str) and subtype.upper() == "REAL_ESTATE_FUND"
+        return "fund" if is_fii else "stock"
     return None
 
 

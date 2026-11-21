@@ -2295,6 +2295,8 @@
     "linkTickerNoResults": "Geen ticker gevonden",
     "linkTickerLinked": "{{ticker}} gekoppeld",
     "linkTickerAction": "Koppelen",
+    "linkTickerUnlink": "Waarde van de bank gebruiken",
+    "linkTickerUnlinked": "Terug naar de waarde van de bank",
     "maturesOn": "Rijpt {{date}}",
     "wallet": "Portemonnee",
     "newWallet": "Nieuwe portemonnee",

@@ -130,6 +130,7 @@ async def _today_value(session: AsyncSession, asset: Asset) -> Decimal:
 
 
 async def _sync(session: AsyncSession, user: User, conn: BankConnection) -> None:
+    assert conn.credentials is not None
     await _sync_holdings(session, user.id, conn, conn.credentials)
     await session.commit()
 
@@ -535,8 +536,171 @@ async def test_linked_holding_gets_average_price_from_the_reported_trades(
         ({"type": "FIXED_INCOME", "subtype": "CDB"}, None),
         ({"type": "MUTUAL_FUND"}, None),
         ({"type": "SECURITY", "subtype": "PGBL"}, None),
+        # An unexpected subtype reads as unknown instead of failing the sync.
+        ({"type": "EQUITY", "subtype": 123}, "stock"),
+        ({"type": "EQUITY", "subtype": None}, "stock"),
     ],
 )
 def test_exchange_traded_positions_get_their_asset_type(inv: dict, expected: Optional[str]):
     holding = _build_holding_data({"id": "x", "balance": 1, **inv})
     assert holding.asset_type == expected
+
+
+# ---------------------------------------------------------------------------
+# Snapshot price, raw labels and the way back to the provider's valuation
+# ---------------------------------------------------------------------------
+
+
+async def _today_row(session: AsyncSession, asset: Asset) -> AssetValue:
+    rows = await session.execute(
+        select(AssetValue).where(AssetValue.asset_id == asset.id, AssetValue.date == date.today())
+    )
+    return rows.scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_market_priced_snapshot_stores_the_quote_it_was_valued_at(
+    session: AsyncSession, test_user: User, conn: BankConnection, market: _FakeMarket
+):
+    market.quotes["PSSA3.SA"] = _quote("PSSA3.SA", 44.00)
+    _MockProvider._holdings = [_b3_holding()]
+    await _sync(session, test_user, conn)
+    _MockProvider._holdings = [_b3_holding(quantity=Decimal("9"), current_value=Decimal("390"))]
+    await _sync(session, test_user, conn)
+
+    row = await _today_row(session, await _only_asset(session, test_user))
+    # With the per-share price the history rebuild recomputes the point from
+    # the ledger quantity instead of keeping a baked amount.
+    assert Decimal(str(row.amount)) == Decimal("396.00")
+    assert row.price == Decimal("44.000000")
+
+
+@pytest.mark.asyncio
+async def test_provider_valued_snapshot_has_no_price(
+    session: AsyncSession, test_user: User, conn: BankConnection, market: _FakeMarket
+):
+    _MockProvider._holdings = [_b3_holding()]
+    await _sync(session, test_user, conn)
+
+    row = await _today_row(session, await _only_asset(session, test_user))
+    assert Decimal(str(row.amount)) == Decimal("300.00")
+    assert row.price is None
+
+
+@pytest.mark.asyncio
+async def test_raw_label_never_replaces_a_ticker_the_user_linked(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user: User,
+    conn: BankConnection, market: _FakeMarket,
+):
+    # A provider reporting raw broker symbols (not quotable): its label is
+    # VTI, the user prices the holding with VOO.
+    _MockProvider._holdings = [_b3_holding(ticker="VTI", quotable=False)]
+    await _sync(session, test_user, conn)
+    asset = await _only_asset(session, test_user)
+    market.quotes["VOO"] = _quote("VOO", 500.00)
+    response = await client.post(
+        f"/api/assets/{asset.id}/link-ticker", json={"ticker": "VOO"}, headers=auth_headers
+    )
+    assert response.status_code == 200, response.text
+
+    await _sync(session, test_user, conn)
+
+    await session.refresh(asset)
+    assert asset.ticker == "VOO"
+    assert asset.logo_url == "https://logos.example/VOO.png"
+    assert asset.valuation_method == "market_price"
+
+
+@pytest.mark.asyncio
+async def test_unlink_returns_an_auto_linked_holding_to_the_provider_value(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user: User,
+    conn: BankConnection, market: _FakeMarket,
+):
+    market.quotes["PSSA3.SA"] = _quote("PSSA3.SA", 44.00)
+    _MockProvider._holdings = [_b3_holding()]
+    await _sync(session, test_user, conn)
+    asset = await _only_asset(session, test_user)
+    assert asset.valuation_method == "market_price"
+
+    response = await client.delete(f"/api/assets/{asset.id}/link-ticker", headers=auth_headers)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["valuation_method"] == "manual"
+    assert body["last_price"] is None
+    # The provider's figure is back at once, not units × quote (308).
+    assert body["current_value"] == pytest.approx(300.0)
+    await session.refresh(asset)
+    row = await _today_row(session, asset)
+    assert Decimal(str(row.amount)) == Decimal("300.00")
+    assert row.price is None
+
+
+@pytest.mark.asyncio
+async def test_an_unlinked_holding_is_not_linked_again_by_the_sync(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user: User,
+    conn: BankConnection, market: _FakeMarket,
+):
+    market.quotes["PSSA3.SA"] = _quote("PSSA3.SA", 44.00)
+    _MockProvider._holdings = [_b3_holding()]
+    await _sync(session, test_user, conn)
+    asset = await _only_asset(session, test_user)
+    response = await client.delete(f"/api/assets/{asset.id}/link-ticker", headers=auth_headers)
+    assert response.status_code == 200
+    # The endpoint wrote through its own session; reload this one's copy.
+    await session.refresh(asset)
+
+    _MockProvider._holdings = [_b3_holding(current_value=Decimal("310.00"))]
+    await _sync(session, test_user, conn)
+
+    await session.refresh(asset)
+    assert asset.valuation_method == "manual"
+    assert asset.last_price is None
+    assert await _today_value(session, asset) == Decimal("310.00")
+    # Only the first sync asked for a quote.
+    assert market.calls == ["PSSA3.SA"]
+
+
+@pytest.mark.asyncio
+async def test_an_unlinked_holding_can_be_linked_again_by_hand(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user: User,
+    conn: BankConnection, market: _FakeMarket,
+):
+    market.quotes["PSSA3.SA"] = _quote("PSSA3.SA", 44.00)
+    _MockProvider._holdings = [_b3_holding()]
+    await _sync(session, test_user, conn)
+    asset = await _only_asset(session, test_user)
+    await client.delete(f"/api/assets/{asset.id}/link-ticker", headers=auth_headers)
+
+    response = await client.post(
+        f"/api/assets/{asset.id}/link-ticker", json={"ticker": "PSSA3.SA"}, headers=auth_headers
+    )
+
+    assert response.status_code == 200
+    assert response.json()["valuation_method"] == "market_price"
+    assert response.json()["current_value"] == pytest.approx(308.0)
+
+
+@pytest.mark.asyncio
+async def test_unlink_endpoint_rejects_manual_assets(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user: User,
+    test_workspace,
+):
+    asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="PETR4",
+        type="stock",
+        currency="BRL",
+        ticker="PETR4.SA",
+        valuation_method="market_price",
+    )
+    session.add(asset)
+    await session.commit()
+
+    response = await client.delete(f"/api/assets/{asset.id}/link-ticker", headers=auth_headers)
+
+    assert response.status_code == 422
+    await session.refresh(asset)
+    assert asset.valuation_method == "market_price"

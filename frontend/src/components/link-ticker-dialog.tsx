@@ -18,7 +18,8 @@ const SEARCH_DEBOUNCE_MS = 300
  * the sync could not identify the symbol on its own (or picked one the user
  * wants to change). The connection keeps owning the quantity; the ticker
  * brings the market price, the logo and the daily refresh, and later syncs
- * keep it.
+ * keep it. A holding already priced from a ticker can go back to the value
+ * the bank reports.
  */
 export function LinkTickerDialog({ asset, onClose }: { asset: Asset | null; onClose: () => void }) {
   const { t } = useTranslation()
@@ -53,17 +54,36 @@ export function LinkTickerDialog({ asset, onClose }: { asset: Asset | null; onCl
     return () => window.clearTimeout(handle)
   }, [asset, query])
 
+  // The valuation changes, so the chart and total (portfolio-trend) refresh
+  // with the list, as refetchAssetViews does on the assets page.
+  const refetchAssetViews = () => {
+    queryClient.refetchQueries({ queryKey: ['assets'] })
+    queryClient.refetchQueries({ queryKey: ['portfolio-trend'] })
+  }
+
   const mutation = useMutation({
     mutationFn: (ticker: string) => assets.linkTicker(asset!.id, ticker),
     onSuccess: (linked) => {
-      queryClient.refetchQueries({ queryKey: ['assets'] })
+      refetchAssetViews()
       toast.success(t('assets.linkTickerLinked', { ticker: linked.ticker }))
       onClose()
     },
     onError: (error) => toast.error(extractApiError(error, t('common.error'))),
   })
 
+  const unlink = useMutation({
+    mutationFn: () => assets.unlinkTicker(asset!.id),
+    onSuccess: () => {
+      refetchAssetViews()
+      toast.success(t('assets.linkTickerUnlinked'))
+      onClose()
+    },
+    onError: (error) => toast.error(extractApiError(error, t('common.error'))),
+  })
+
   const ticker = query.trim()
+  const isMarketPriced = asset?.valuation_method === 'market_price'
+  const busy = mutation.isPending || unlink.isPending
 
   return (
     <Dialog open={!!asset} onOpenChange={(value) => !value && onClose()}>
@@ -116,10 +136,15 @@ export function LinkTickerDialog({ asset, onClose }: { asset: Asset | null; onCl
             )}
           </ul>
           <DialogFooter>
+            {isMarketPriced && (
+              <Button type="button" variant="ghost" className="sm:mr-auto" disabled={busy} onClick={() => unlink.mutate()}>
+                {unlink.isPending ? t('common.loading') : t('assets.linkTickerUnlink')}
+              </Button>
+            )}
             <Button type="button" variant="outline" onClick={onClose}>
               {t('common.cancel')}
             </Button>
-            <Button type="submit" disabled={!ticker || mutation.isPending}>
+            <Button type="submit" disabled={!ticker || busy}>
               {mutation.isPending ? t('common.loading') : t('assets.linkTickerAction')}
             </Button>
           </DialogFooter>
