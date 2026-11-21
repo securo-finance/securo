@@ -8,7 +8,11 @@ x-podman:
   in_pod: false
 
 x-backend-env: &backend-env
-  DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/securo
+  # Unset keeps the historical `postgres` password, so existing installs keep
+  # working. The database only reads it when the volume is first created: on
+  # an existing install, run ALTER USER postgres PASSWORD '...' in `db` first.
+  # It is part of a URL, so use URL-safe characters (openssl rand -hex 24).
+  DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/securo
   # Optional. Left empty, Securo generates a unique key on first start and
   # keeps it in the database. Set one (openssl rand -hex 32) to manage it yourself.
   SECRET_KEY: ${SECRET_KEY:-}
@@ -159,7 +163,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: securo
     volumes:
       - pgdata:/var/lib/postgresql/data
