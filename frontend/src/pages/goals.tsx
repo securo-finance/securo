@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
@@ -51,10 +51,12 @@ function LinkedResourceSelect<T extends { id: string }>({
   renderOption: (item: T) => React.ReactNode
   hint?: string
 }) {
+  const id = useId()
+
   return (
     <div className="space-y-2">
-      <Label>{label}</Label>
-      <select name={name} defaultValue={defaultValue ?? ''} className={SELECT_CLASS} required>
+      <Label htmlFor={`${id}-${name}`}>{label}</Label>
+      <select id={`${id}-${name}`} name={name} defaultValue={defaultValue ?? ''} className={SELECT_CLASS} required>
         <option value="">{placeholder}</option>
         {items?.map((item) => (
           <option key={item.id} value={item.id}>
@@ -153,6 +155,7 @@ function daysUntil(dateStr: string): number {
 
 export default function GoalsPage() {
   const { t } = useTranslation()
+  const id = useId()
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
   const { canWrite } = useWorkspace()
@@ -479,8 +482,8 @@ export default function GoalsPage() {
             className="space-y-4"
           >
             <div className="space-y-2">
-              <Label>{t('goals.name')}</Label>
-              <Input name="name" defaultValue={editing?.name ?? ''} required />
+              <Label htmlFor={`${id}-name`}>{t('goals.name')}</Label>
+              <Input id={`${id}-name`} name="name" defaultValue={editing?.name ?? ''} required />
             </div>
 
             <GoalTargetFields salary={salary} />
@@ -488,8 +491,9 @@ export default function GoalsPage() {
             {salary.mode === 'fixed' && (
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>{t('goals.targetAmount')}</Label>
+                  <Label htmlFor={`${id}-target-amount`}>{t('goals.targetAmount')}</Label>
                   <Input
+                    id={`${id}-target-amount`}
                     name="target_amount"
                     type="number"
                     step="0.01"
@@ -498,8 +502,13 @@ export default function GoalsPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>{t('goals.currency')}</Label>
-                  <select name="currency" defaultValue={editing?.currency ?? userCurrency} className={SELECT_CLASS}>
+                  <Label htmlFor={`${id}-currency`}>{t('goals.currency')}</Label>
+                  <select
+                    id={`${id}-currency`}
+                    name="currency"
+                    defaultValue={editing?.currency ?? userCurrency}
+                    className={SELECT_CLASS}
+                  >
                     {supportedCurrencies?.map((c: { code: string; name: string; flag: string }) => (
                       <option key={c.code} value={c.code}>
                         {c.flag} {c.name} ({c.code})
@@ -511,13 +520,22 @@ export default function GoalsPage() {
             )}
 
             <div className="space-y-2">
-              <Label>{t('goals.targetDate')}</Label>
-              <DatePickerInput value={targetDate} onChange={setTargetDate} className="w-full justify-start" />
+              <Label htmlFor={`${id}-target-date`} id={`${id}-target-date-label`}>
+                {t('goals.targetDate')}
+              </Label>
+              <DatePickerInput
+                id={`${id}-target-date`}
+                labelledBy={`${id}-target-date-label`}
+                value={targetDate}
+                onChange={setTargetDate}
+                className="w-full justify-start"
+              />
             </div>
 
             <div className="space-y-2">
-              <Label>{t('goals.trackingType')}</Label>
+              <Label htmlFor={`${id}-tracking-type`}>{t('goals.trackingType')}</Label>
               <select
+                id={`${id}-tracking-type`}
                 name="tracking_type"
                 value={trackingType}
                 onChange={(e) => setTrackingType(e.target.value)}
@@ -533,8 +551,9 @@ export default function GoalsPage() {
 
             {trackingType === 'manual' && (
               <div className="space-y-2">
-                <Label>{t('goals.currentAmount')}</Label>
+                <Label htmlFor={`${id}-current-amount`}>{t('goals.currentAmount')}</Label>
                 <Input
+                  id={`${id}-current-amount`}
                   name="current_amount"
                   type="number"
                   step="0.01"
@@ -579,15 +598,24 @@ export default function GoalsPage() {
 
             {/* Icon & Color */}
             <div className="space-y-2">
-              <Label>{t('goals.icon')}</Label>
+              <Label htmlFor={`${id}-icon`} id={`${id}-icon-label`}>
+                {t('goals.icon')}
+              </Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <button
+                    id={`${id}-icon`}
                     type="button"
+                    // The label names a <button>, which the label association does
+                    // not name: it is joined with the visible text here, so focus
+                    // announces "Icon Choose icon & color".
+                    aria-labelledby={`${id}-icon-label ${id}-icon-value`}
                     className="w-full flex items-center gap-3 border border-border rounded-lg px-3 py-2 text-sm bg-card hover:bg-muted/50 transition-colors text-start"
                   >
                     <CategoryIcon icon={selectedIcon} color={selectedColor} size="lg" />
-                    <span className="flex-1 text-muted-foreground">{t('goals.chooseIconColor')}</span>
+                    <span id={`${id}-icon-value`} className="flex-1 text-muted-foreground">
+                      {t('goals.chooseIconColor')}
+                    </span>
                     <ChevronDown size={14} className="text-muted-foreground" />
                   </button>
                 </PopoverTrigger>

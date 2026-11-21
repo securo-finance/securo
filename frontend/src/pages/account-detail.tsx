@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { getAccountName } from '@/lib/account-utils'
 import { useParams, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -25,7 +25,7 @@ import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { isTransferTransaction } from '@/lib/transaction-transfer'
 import { closeDateForBill, isOpenCycleWindow } from '@/lib/credit-card-cycle'
 import { toast } from 'sonner'
-import type { CreditCardBill, ProjectedTransaction, Transaction } from '@/types'
+import type { AccountCard, CreditCardBill, ProjectedTransaction, Transaction } from '@/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import {
@@ -35,6 +35,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  CreditCard,
   EyeClosed,
   HelpCircle,
   Paperclip,
@@ -337,6 +338,11 @@ export default function AccountDetailPage() {
     queryFn: () => accounts.bills(id!, 24),
     enabled: !!id && account?.type === 'credit_card',
   })
+  const linkedCardsQuery = useQuery({
+    queryKey: ['accounts', id, 'linked-cards'],
+    queryFn: () => accounts.linkedCards(id!),
+    enabled: !!id && account?.type === 'credit_card',
+  })
   // Bills sorted oldest → newest, for indexing helpers below.
   const billsAsc = useMemo(() => {
     if (!bills) return []
@@ -535,9 +541,10 @@ export default function AccountDetailPage() {
     })),
   })
 
-  // A credit-card cycle is bounded by its bill, so the card keeps the
-  // client-side cycle math below, which needs every row of the cycle rather
-  // than the first page (#1202).
+  // A credit-card cycle is bounded by its bill, so the card needs every row
+  // of the cycle rather than the first page (#1202). Each row carries the
+  // balance right after it, seeded with the debt carried into the window
+  // (#920), so the newest row lands on the account's balance.
   const { data: cycleTxData, isLoading: cycleTxLoading } = useQuery({
     queryKey: [
       'transactions',
@@ -547,6 +554,7 @@ export default function AccountDetailPage() {
         from: filterFrom,
         to: filterTo,
         include_opening_balance: true,
+        include_running_balance: true,
         unbilled_only: isInProgressCycle,
         statement_view: isCreditCard,
       },
@@ -570,6 +578,7 @@ export default function AccountDetailPage() {
         to: filterTo || undefined,
         limit: CYCLE_PAGE_SIZE,
         include_opening_balance: true,
+        include_running_balance: true,
       }
       const first = await transactions.list({ ...params, page: 1 })
       const items = [...first.items]
@@ -699,13 +708,23 @@ export default function AccountDetailPage() {
 
   const [ccSettingsOpen, setCcSettingsOpen] = useState(false)
   const ccSettingsMutation = useMutation({
-    mutationFn: (data: {
-      credit_limit?: number | null
-      statement_close_day?: number | null
-      payment_due_day?: number | null
-    }) => accounts.update(id!, data),
+    mutationFn: async ({
+      settings,
+      cards,
+    }: {
+      settings: { credit_limit?: number | null; statement_close_day?: number | null; payment_due_day?: number | null }
+      cards: { id: string; label: string }[]
+    }) => {
+      await accounts.update(id!, settings)
+      if (cards.length === 0) return
+      // Settings are already saved even if the label call below fails.
+      await queryClient.invalidateQueries({ queryKey: ['accounts'] })
+      await accounts.updateLinkedCards(id!, cards)
+    },
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
+      queryClient.invalidateQueries({ queryKey: ['accounts', id, 'linked-cards'] })
+      queryClient.invalidateQueries({ queryKey: ['accounts', 'linked-cards'] })
       setCcSettingsOpen(false)
       toast.success(t('accounts.updated'))
     },
@@ -794,6 +813,7 @@ export default function AccountDetailPage() {
       installment_total_amount: null,
       installment_purchase_date: null,
       bill_id: null,
+      card_masked_number: null,
       effective_bill_date: null,
       reporting_date_override: null,
       recurring_transaction_id: p.recurring_id,
@@ -889,21 +909,19 @@ export default function AccountDetailPage() {
     activeBill,
   ])
 
+  // The card's statement rows carry the balance right after each of them from
+  // the server, seeded with the debt carried into the window, so the newest
+  // row reconciles with the account balance instead of restarting at zero
+  // (#920). No projections: a card's statement is what the bank posted.
   const ccRunningTotal = useMemo((): TxWithBalance[] => {
     if (!isCreditCard || !cycleTxData?.items) return []
-    const ascending = [...cycleTxData.items].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-    const withBalance: TxWithBalance[] = []
-    let running = 0
-    for (const tx of ascending) {
-      if (!tx.is_ignored && tx.source !== 'opening_balance' && !tx.transfer_pair_id) {
-        const amt = transactionAmountForBalance(tx, usePrimary, displayCurrency)
-        if (tx.type === 'debit' && amt != null) running += amt
-        else if (tx.type === 'credit' && amt != null) running -= amt
-      }
-      withBalance.push({ ...tx, runningBalance: running })
-    }
-    return withBalance.reverse()
-  }, [cycleTxData, isCreditCard, usePrimary, displayCurrency])
+    return mergeRunningBalances(cycleTxData.items, [], {
+      openingBalance,
+      hasMore: false,
+      usePrimary,
+      displayCurrency,
+    })
+  }, [cycleTxData, isCreditCard, usePrimary, displayCurrency, openingBalance])
 
   // Merged list: real transactions, pending rows, and virtual recurring
   // projections. The newest row is the forecast at the end of the range,
@@ -1163,6 +1181,8 @@ export default function AccountDetailPage() {
               variant="ghost"
               size="sm"
               className="text-muted-foreground hover:text-foreground min-h-[44px] min-w-[44px] px-3 shrink-0"
+              aria-label={t('transactions.clearFilters')}
+              title={t('transactions.clearFilters')}
               onClick={() => {
                 setFilterTouched(false)
                 if (account?.type === 'credit_card') {
@@ -1949,8 +1969,10 @@ export default function AccountDetailPage() {
                             </span>
                           )}
                         </td>
+                        {/* A card's column holds the balance, not cycle spend,
+                            so debt is negative here like everywhere else (#920). */}
                         <td
-                          className={`px-4 py-3 text-end tabular-nums text-sm hidden sm:table-cell whitespace-nowrap ${(account.type === 'credit_card' ? tx.runningBalance > 0 : tx.runningBalance < 0) ? 'text-rose-500' : 'text-muted-foreground'}`}
+                          className={`px-4 py-3 text-end tabular-nums text-sm hidden sm:table-cell whitespace-nowrap ${tx.runningBalance < 0 ? 'text-rose-500' : 'text-muted-foreground'}`}
                         >
                           {mask(formatCurrency(tx.runningBalance, displayCurrency, locale))}
                         </td>
@@ -2032,7 +2054,11 @@ export default function AccountDetailPage() {
           open={ccSettingsOpen}
           onClose={() => setCcSettingsOpen(false)}
           account={account}
-          onSave={(data) => ccSettingsMutation.mutate(data)}
+          linkedCards={linkedCardsQuery.data ?? []}
+          linkedCardsLoading={linkedCardsQuery.isLoading}
+          linkedCardsError={linkedCardsQuery.isError}
+          onRetryLinkedCards={() => void linkedCardsQuery.refetch()}
+          onSave={(settings, cards) => ccSettingsMutation.mutate({ settings, cards })}
           loading={ccSettingsMutation.isPending}
         />
       )}
@@ -2044,23 +2070,34 @@ function CreditCardSettingsDialog({
   open,
   onClose,
   account,
+  linkedCards,
+  linkedCardsLoading,
+  linkedCardsError,
+  onRetryLinkedCards,
   onSave,
   loading,
 }: {
   open: boolean
   onClose: () => void
   account: { credit_limit: number | null; statement_close_day: number | null; payment_due_day: number | null }
-  onSave: (data: {
-    credit_limit: number | null
-    statement_close_day: number | null
-    payment_due_day: number | null
-  }) => void
+  linkedCards: AccountCard[]
+  linkedCardsLoading: boolean
+  linkedCardsError: boolean
+  onRetryLinkedCards: () => void
+  onSave: (
+    settings: { credit_limit: number | null; statement_close_day: number | null; payment_due_day: number | null },
+    cards: { id: string; label: string }[],
+  ) => void
   loading: boolean
 }) {
   const { t } = useTranslation()
   const [creditLimit, setCreditLimit] = useState('')
   const [closeDay, setCloseDay] = useState('')
   const [dueDay, setDueDay] = useState('')
+  const [cardLabels, setCardLabels] = useState<Record<string, string>>({})
+  // Only labels the user touched are sent, so saving the limit never
+  // overwrites a label someone else changed after this dialog opened.
+  const [editedCardIds, setEditedCardIds] = useState<Set<string>>(() => new Set())
 
   const formKey = JSON.stringify([open, account.credit_limit, account.statement_close_day, account.payment_due_day])
   const [previousFormKey, setPreviousFormKey] = useState<string | null>(null)
@@ -2072,6 +2109,31 @@ function CreditCardSettingsDialog({
       setDueDay(account.payment_due_day != null ? String(account.payment_due_day) : '')
     }
   }
+
+  // Seed label drafts only when the dialog opens. A refresh after a partial
+  // save must not reset what the user typed before retrying.
+  const wasOpenRef = useRef(false)
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      setCardLabels(Object.fromEntries(linkedCards.map((card) => [card.id, card.label ?? ''])))
+      setEditedCardIds(new Set())
+    }
+    wasOpenRef.current = open
+  }, [open, linkedCards])
+
+  // Cards can arrive after the dialog opens. Add their labels without
+  // resetting what the user already typed in the settings fields.
+  useEffect(() => {
+    setCardLabels((current) => {
+      let next: Record<string, string> | null = null
+      for (const card of linkedCards) {
+        if (card.id in current) continue
+        next ??= { ...current }
+        next[card.id] = card.label ?? ''
+      }
+      return next ?? current
+    })
+  }, [linkedCards])
 
   const parseDay = (v: string): number | null => {
     const n = parseInt(v, 10)
@@ -2087,11 +2149,16 @@ function CreditCardSettingsDialog({
         <form
           onSubmit={(e) => {
             e.preventDefault()
-            onSave({
-              credit_limit: creditLimit !== '' ? parseFloat(creditLimit) : null,
-              statement_close_day: parseDay(closeDay),
-              payment_due_day: parseDay(dueDay),
-            })
+            onSave(
+              {
+                credit_limit: creditLimit !== '' ? parseFloat(creditLimit) : null,
+                statement_close_day: parseDay(closeDay),
+                payment_due_day: parseDay(dueDay),
+              },
+              linkedCards
+                .filter((card) => editedCardIds.has(card.id))
+                .map((card) => ({ id: card.id, label: cardLabels[card.id] ?? '' })),
+            )
           }}
           className="space-y-4"
         >
@@ -2132,6 +2199,72 @@ function CreditCardSettingsDialog({
                 placeholder={t('accounts.dayOfMonthHint')}
               />
             </div>
+          </div>
+          <div className="border-t border-border pt-4 space-y-3">
+            <div>
+              <Label>{t('accounts.linkedCards')}</Label>
+              <p className="text-xs text-muted-foreground mt-1">{t('accounts.linkedCardsHint')}</p>
+            </div>
+            {linkedCardsLoading ? (
+              <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+            ) : linkedCardsError ? (
+              <div className="flex items-center gap-3">
+                <p className="text-sm text-destructive">{t('common.error')}</p>
+                <Button type="button" variant="outline" size="sm" onClick={onRetryLinkedCards}>
+                  {t('common.retry')}
+                </Button>
+              </div>
+            ) : linkedCards.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{t('accounts.noLinkedCards')}</p>
+            ) : (
+              <div className="overflow-hidden rounded-lg border border-border">
+                <div className="hidden grid-cols-[minmax(0,1fr)_minmax(180px,1.2fr)] gap-4 bg-muted/40 px-3 py-2 sm:grid">
+                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {t('transactions.card')}
+                  </span>
+                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {t('accounts.cardLabel')}
+                  </span>
+                </div>
+                <div className="max-h-72 divide-y divide-border overflow-y-auto">
+                  {linkedCards.map((card) => {
+                    const inputId = `linked-card-label-${card.id}`
+                    return (
+                      <div
+                        key={card.id}
+                        className="grid gap-2 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(180px,1.2fr)] sm:items-center sm:gap-4"
+                      >
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                            <CreditCard className="size-4" aria-hidden="true" />
+                          </div>
+                          <span className="truncate text-sm font-medium tabular-nums">
+                            {t('accounts.cardEnding', { number: card.masked_number })}
+                          </span>
+                        </div>
+                        <div>
+                          <Label className="sr-only" htmlFor={inputId}>
+                            {t('accounts.cardLabel')}: {t('accounts.cardEnding', { number: card.masked_number })}
+                          </Label>
+                          <Input
+                            id={inputId}
+                            value={cardLabels[card.id] ?? ''}
+                            onChange={(event) => {
+                              const value = event.target.value
+                              setCardLabels((current) => ({ ...current, [card.id]: value }))
+                              setEditedCardIds((current) => new Set(current).add(card.id))
+                            }}
+                            placeholder={t('accounts.cardLabelPlaceholder')}
+                            maxLength={80}
+                            disabled={loading}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>

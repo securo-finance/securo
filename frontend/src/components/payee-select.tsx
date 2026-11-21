@@ -1,4 +1,4 @@
-import { useContext, useMemo, useState } from 'react'
+import { useContext, useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -23,6 +23,13 @@ interface PayeeSelectProps {
    * matches it. Only shown to members who can write to the workspace.
    */
   creatable?: boolean
+  /** The id of the trigger button, so a `<Label htmlFor>` names this field. */
+  id?: string
+  /**
+   * The id of the label naming this field. The trigger is named after it and
+   * the payee it shows, so a screen reader announces both on focus.
+   */
+  labelledBy?: string
 }
 
 /** Searchable payee picker. An empty value means "no payee". */
@@ -33,7 +40,10 @@ export function PayeeSelect({
   disabled = false,
   className,
   creatable = false,
+  id,
+  labelledBy,
 }: PayeeSelectProps) {
+  const valueId = useId()
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
@@ -78,14 +88,16 @@ export function PayeeSelect({
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <button
+          id={id}
           type="button"
           disabled={disabled}
+          aria-labelledby={labelledBy ? `${labelledBy} ${valueId}` : undefined}
           className={cn(
             'flex w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-3 py-2 text-sm text-start shadow-xs transition-[color,box-shadow] outline-hidden focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 dark:hover:bg-input/50 h-9 cursor-pointer',
             className,
           )}
         >
-          <span className="min-w-0 truncate">
+          <span id={valueId} className="min-w-0 truncate">
             {selected ? selected.name : <span className="text-muted-foreground">{t('payees.noPayee')}</span>}
           </span>
           <ChevronDownIcon className="size-4 shrink-0 opacity-50" />

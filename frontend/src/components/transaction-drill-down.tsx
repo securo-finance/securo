@@ -1,9 +1,9 @@
-import { useEffect, useRef, useMemo } from 'react'
+import { useEffect, useRef, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery } from '@tanstack/react-query'
 import { transactions as transactionsApi, dashboard, admin } from '@/lib/api'
-import { AlertTriangle, Clock, Info, Paperclip, X } from 'lucide-react'
+import { AlertTriangle, ChevronRight, Clock, Info, Paperclip, X } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
 import { TransactionCategoryIcon } from '@/components/category-lines-display'
 import { isSplitByCategory } from '@/lib/category-lines'
@@ -13,7 +13,8 @@ import { hasOpenDialog, isInsideOverlayLayer } from '@/lib/overlay-layers'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAuth } from '@/contexts/auth-context'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
-import type { Transaction } from '@/types'
+import { CategorySelect } from '@/components/category-select'
+import type { Category, CategoryGroup, Transaction } from '@/types'
 import { formatCurrency } from '@/lib/format'
 
 export type DrillDownFilter = {
@@ -64,18 +65,50 @@ type DisplayItem = {
   partOf: number | null
 }
 
+/** Categorize uncategorized rows in place; the host saves and refreshes. */
+export type DrillDownQuickCategorize = {
+  categories: Category[]
+  groups: CategoryGroup[]
+  onCategorize: (tx: Transaction, categoryId: string) => Promise<unknown>
+}
+
+function canQuickCategorize(tx: Transaction | null): tx is Transaction {
+  return !!tx && !tx.category_id && !tx.is_shared && !isSplitByCategory(tx)
+}
+
 export function TransactionDrillDown({
   filter,
   onClose,
   onTransactionClick,
   useViewerShare = false,
+  quickCategorize,
 }: {
   filter: DrillDownFilter | null
   onClose: () => void
-  onTransactionClick?: (tx: Transaction) => void
+  /** `queue` lists the panel's transactions in order, for stepping to the next one. */
+  onTransactionClick?: (tx: Transaction, queue: Transaction[]) => void
   useViewerShare?: boolean
+  quickCategorize?: DrillDownQuickCategorize
 }) {
   const { t } = useTranslation()
+  // Rows being saved, so a second pick can't race the first.
+  const [savingIds, setSavingIds] = useState<ReadonlySet<string>>(() => new Set())
+
+  const handleQuickCategorize = async (tx: Transaction, categoryId: string) => {
+    if (!quickCategorize || !categoryId || savingIds.has(tx.id)) return
+    setSavingIds((prev) => new Set(prev).add(tx.id))
+    try {
+      await quickCategorize.onCategorize(tx, categoryId)
+    } catch {
+      // The host reports the error; the row stays as it was.
+    } finally {
+      setSavingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(tx.id)
+        return next
+      })
+    }
+  }
   const { user } = useAuth()
   const { mask } = usePrivacyMode()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
@@ -297,6 +330,11 @@ export function TransactionDrillDown({
     return items
   }, [data, projectedTxs, filter, noAccounts, useViewerShare, user?.id])
 
+  const queue = useMemo(
+    () => displayItems.flatMap((item) => (!item.isProjected && item.transaction ? [item.transaction] : [])),
+    [displayItems],
+  )
+
   const isOpen = !!filter
   useEffect(() => {
     if (!isOpen) return
@@ -421,77 +459,121 @@ export function TransactionDrillDown({
             <p className="text-muted-foreground text-sm text-center py-12">{t('dashboard.drillDownEmpty')}</p>
           ) : (
             <div className="divide-y divide-border">
-              {displayItems.map((item) => (
-                <div
-                  key={item.key}
-                  className={`flex items-center gap-3 px-5 py-3 hover:bg-muted transition-colors ${!item.isProjected && onTransactionClick ? 'cursor-pointer' : ''}`}
-                  onClick={() => {
-                    if (!item.isProjected && item.transaction) {
-                      onTransactionClick?.(item.transaction)
-                    }
-                  }}
-                >
-                  {item.transaction && isSplitByCategory(item.transaction) && item.partOf == null ? (
-                    <TransactionCategoryIcon tx={item.transaction} size="lg" />
-                  ) : (
-                    <CategoryIcon icon={item.categoryIcon} color={item.categoryColor} size="lg" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-foreground truncate">{item.description}</p>
-                      {item.isProjected && <ProjectedTransactionBadge />}
-                      {item.isPending && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="shrink-0 inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10">
-                              <Clock
-                                size={12}
-                                className="text-amber-500"
-                                role="img"
-                                aria-label={t('transactions.pending')}
-                              />
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent>{t('transactions.pending')}</TooltipContent>
-                        </Tooltip>
-                      )}
-                      {item.attachmentCount > 0 && <Paperclip size={12} className="text-muted-foreground shrink-0" />}
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(item.date + 'T00:00:00').toLocaleDateString(dateLocale)}
-                      {item.categoryName && ` · ${item.categoryName}`}
-                      {item.partOf != null &&
-                        ` · ${t('categoryLines.partOf', {
-                          value: mask(formatCurrency(item.partOf, item.currency ?? userCurrency, locale)),
-                        })}`}
-                    </p>
-                  </div>
-                  <div className="text-end shrink-0">
-                    <span
-                      className={`text-sm font-semibold tabular-nums ${
-                        item.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'
-                      }`}
-                    >
-                      <span dir="ltr">
-                        {item.type === 'credit' ? '+' : '-'}
-                        {mask(formatCurrency(Math.abs(item.amount), item.currency ?? userCurrency, locale))}
-                      </span>
-                    </span>
-                    {item.currency !== userCurrency && item.amountPrimary != null && (
-                      <div className="flex items-center justify-end gap-1">
-                        {item.transaction?.fx_fallback && (
-                          <span title={t('transactions.fxFallbackTooltip')}>
-                            <AlertTriangle size={11} className="text-amber-500 shrink-0" />
-                          </span>
+              {displayItems.map((item) => {
+                const quickTx = quickCategorize && canQuickCategorize(item.transaction) ? item.transaction : null
+                // Opening a row mid-save would show it without the category being saved.
+                const saving = !!item.transaction && savingIds.has(item.transaction.id)
+                return (
+                  <div
+                    key={item.key}
+                    aria-busy={saving || undefined}
+                    className={`flex items-center gap-3 px-5 py-3 hover:bg-muted transition-colors ${!item.isProjected && onTransactionClick ? 'cursor-pointer' : ''} ${saving ? 'opacity-60' : ''}`}
+                    onClick={() => {
+                      if (!item.isProjected && item.transaction && !saving) {
+                        onTransactionClick?.(item.transaction, queue)
+                      }
+                    }}
+                  >
+                    {item.transaction && isSplitByCategory(item.transaction) && item.partOf == null ? (
+                      <TransactionCategoryIcon tx={item.transaction} size="lg" />
+                    ) : (
+                      <CategoryIcon icon={item.categoryIcon} color={item.categoryColor} size="lg" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium text-foreground truncate">{item.description}</p>
+                        {item.isProjected && <ProjectedTransactionBadge />}
+                        {item.isPending && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="shrink-0 inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10">
+                                <Clock
+                                  size={12}
+                                  className="text-amber-500"
+                                  role="img"
+                                  aria-label={t('transactions.pending')}
+                                />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>{t('transactions.pending')}</TooltipContent>
+                          </Tooltip>
                         )}
-                        <span className="text-[10px] text-muted-foreground tabular-nums">
-                          {mask(formatCurrency(Math.abs(item.amountPrimary), userCurrency, locale))}
-                        </span>
+                        {item.attachmentCount > 0 && <Paperclip size={12} className="text-muted-foreground shrink-0" />}
                       </div>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(item.date + 'T00:00:00').toLocaleDateString(dateLocale)}
+                        {item.categoryName && ` · ${item.categoryName}`}
+                        {item.partOf != null &&
+                          ` · ${t('categoryLines.partOf', {
+                            value: mask(formatCurrency(item.partOf, item.currency ?? userCurrency, locale)),
+                          })}`}
+                      </p>
+                      {quickTx && quickCategorize && (
+                        // Picking here must not also open the row's dialog.
+                        <div
+                          className="mt-1.5 max-w-[240px]"
+                          onClick={(e) => e.stopPropagation()}
+                          // Escape still reaches the panel; an open picker handles it first.
+                          onKeyDown={(e) => {
+                            if (e.key !== 'Escape') e.stopPropagation()
+                          }}
+                        >
+                          <CategorySelect
+                            value=""
+                            onChange={(categoryId) => handleQuickCategorize(quickTx, categoryId)}
+                            categories={quickCategorize.categories}
+                            groups={quickCategorize.groups}
+                            placeholder={t('dashboard.drillDownQuickCategorize')}
+                            disabled={saving}
+                            creatable
+                            className="h-7 px-2 text-xs"
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-end shrink-0">
+                      <span
+                        className={`text-sm font-semibold tabular-nums ${
+                          item.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'
+                        }`}
+                      >
+                        <span dir="ltr">
+                          {item.type === 'credit' ? '+' : '-'}
+                          {mask(formatCurrency(Math.abs(item.amount), item.currency ?? userCurrency, locale))}
+                        </span>
+                      </span>
+                      {item.currency !== userCurrency && item.amountPrimary != null && (
+                        <div className="flex items-center justify-end gap-1">
+                          {item.transaction?.fx_fallback && (
+                            <span title={t('transactions.fxFallbackTooltip')}>
+                              <AlertTriangle size={11} className="text-amber-500 shrink-0" />
+                            </span>
+                          )}
+                          <span className="text-[10px] text-muted-foreground tabular-nums">
+                            {mask(formatCurrency(Math.abs(item.amountPrimary), userCurrency, locale))}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    {onTransactionClick && item.transaction && !item.isProjected && (
+                      // Makes the row's dialog discoverable next to the picker.
+                      <button
+                        type="button"
+                        aria-label={t('dashboard.drillDownOpenTransaction')}
+                        title={t('dashboard.drillDownOpenTransaction')}
+                        disabled={saving}
+                        className="-me-2 w-7 h-7 shrink-0 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-background transition-colors disabled:pointer-events-none"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onTransactionClick(item.transaction!, queue)
+                        }}
+                      >
+                        <ChevronRight size={16} className="rtl-mirror" aria-hidden="true" />
+                      </button>
                     )}
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>

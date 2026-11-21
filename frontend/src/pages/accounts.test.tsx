@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 
 import AccountsPage, { AccountDialog } from '@/pages/accounts'
 import { renderWithProviders, t } from '@/test/utils'
@@ -13,6 +13,7 @@ const api = vi.hoisted(() => ({
   pluginsInstalled: vi.fn(),
   pluginConnections: vi.fn(),
   pluginUpdateValues: vi.fn(),
+  pluginCatalog: vi.fn(),
 }))
 
 const toast = vi.hoisted(() => ({
@@ -40,6 +41,7 @@ vi.mock('@/lib/api', () => ({
     installed: api.pluginsInstalled,
     connections: api.pluginConnections,
     updateValues: api.pluginUpdateValues,
+    catalog: api.pluginCatalog,
   },
 }))
 
@@ -49,6 +51,10 @@ vi.mock('@/contexts/auth-context', () => ({
 
 vi.mock('@/contexts/workspace-context', () => ({
   useWorkspace: () => ({ canWrite: true }),
+}))
+
+vi.mock('@/hooks/use-timezone', () => ({
+  useEffectiveTimezone: () => 'UTC',
 }))
 
 vi.mock('@/contexts/collection-filter-context', () => ({
@@ -423,6 +429,7 @@ describe('AccountsPage connections a plugin syncs', () => {
     api.accountsList.mockResolvedValue([])
     api.pluginsInstalled.mockResolvedValue([plugin])
     api.pluginConnections.mockResolvedValue([pluginConnection])
+    api.pluginCatalog.mockResolvedValue([])
     api.connectionsList.mockResolvedValue([
       makeConnection({
         id: 'bank-1',
@@ -445,6 +452,31 @@ describe('AccountsPage connections a plugin syncs', () => {
     expect(await screen.findByText(t('plugins.connections.editTitle', { name: 'Main' }))).toBeInTheDocument()
     expect(screen.getByText(t('plugins.connections.keepBlank'))).toBeInTheDocument()
     expect(screen.getByRole('button', { name: t('common.save') })).toBeEnabled()
+  })
+
+  it("shows the plugin's catalog icon on a connection without a logo", async () => {
+    const icon = `/api/plugins/icons/${'b'.repeat(64)}.png`
+    api.pluginCatalog.mockResolvedValue([{ id: 'acme/ledger', icon_url: icon }])
+    const { container } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+    await waitFor(() => expect(container.querySelector(`img[src="${icon}"]`)).not.toBeNull())
+  })
+
+  it('does not ask the catalog for icons when every plugin connection has a logo', async () => {
+    api.connectionsList.mockResolvedValue([
+      makeConnection({
+        id: 'bank-1',
+        provider: 'plugin:acme/ledger',
+        status: 'active',
+        display_name: 'Main',
+        plugin_connection_id: 'pc-1',
+        plugin_id: 'acme/ledger',
+        integration: 'keys',
+        logo_url: '/logo.png',
+      }),
+    ])
+    renderWithProviders(<AccountsPage />, { route: '/accounts' })
+    expect(await screen.findByText('Main')).toBeInTheDocument()
+    expect(api.pluginCatalog).not.toHaveBeenCalled()
   })
 
   it('shows what a reconnect brought in, even when its sync settles before any poll', async () => {

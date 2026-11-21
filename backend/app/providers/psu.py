@@ -108,7 +108,12 @@ def psu_context_from_request(request: Request) -> PsuContext:
     to its bank. Psu-Geo-Location is never sent; Securo does not know it.
     """
     headers: dict[str, str] = {}
-    ip = _public_ip(resolve_client_ip(request, get_settings().trusted_proxy_hops))
+    settings = get_settings()
+    ip = _public_ip(
+        resolve_client_ip(
+            request, settings.trusted_proxy_hops, settings.trusted_proxy_networks
+        )
+    )
     if ip:
         headers["Psu-Ip-Address"] = ip
     for psu_name, request_name in _FORWARDED_HEADERS.items():

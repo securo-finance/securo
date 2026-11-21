@@ -13,7 +13,10 @@ const state = vi.hoisted(() => ({
   saves: [] as { surface: string; ids: string[]; items: { id: string; span?: number }[] }[],
   user: null as unknown as User,
   pluginsEnabled: true,
-  installed: [] as unknown[],
+  installed: [] as unknown[] | null,
+  pluginReadFailed: false,
+  flagsFailed: false,
+  flagsUnknown: false,
   mode: 'light' as 'light' | 'dark',
   listeners: new Set<() => void>(),
 }))
@@ -37,7 +40,15 @@ const api = vi.hoisted(() => ({
   },
   auth: { updateMe: vi.fn(), me: vi.fn() },
   admin: { defaultColors: async () => ({ light: null, dark: null }) },
-  plugins: { installed: async () => state.installed },
+  plugins: {
+    installed: async () => {
+      if (state.installed === null) {
+        state.pluginReadFailed = true
+        throw new Error('down')
+      }
+      return state.installed
+    },
+  },
 }))
 
 vi.mock('@/lib/api', () => api)
@@ -60,7 +71,12 @@ vi.mock('@/contexts/auth-context', async () => {
 })
 
 vi.mock('@/hooks/use-feature-flags', () => ({
-  useFeatureFlags: () => ({ pluginsEnabled: state.pluginsEnabled, agentsEnabled: false }),
+  useFeatureFlags: () => ({
+    pluginsEnabled: state.pluginsEnabled,
+    agentsEnabled: false,
+    isError: state.flagsFailed,
+    isKnown: !state.flagsUnknown,
+  }),
 }))
 
 vi.mock('next-themes', () => ({
@@ -74,6 +90,8 @@ beforeEach(() => {
   state.held = null
   state.workspaces = []
   state.pluginsEnabled = true
+  state.flagsFailed = false
+  state.flagsUnknown = false
   state.user = {
     id: 'u1',
     email: 'me@example.com',
@@ -194,6 +212,77 @@ describe('LibraryDialog', () => {
     })
     await waitFor(() => expect(remove).toBeDisabled())
     expect(remove).toHaveAttribute('title', t('library.lastReport'))
+  })
+
+  it("lists an installed plugin's reports and adds one as a tab", async () => {
+    state.installed = [
+      {
+        plugin_id: 'maria/casa',
+        name: { en: 'Home' },
+        themes: [],
+        reports: [
+          {
+            key: 'pets',
+            name: { en: 'Pet spending' },
+            description: { en: 'What the pets cost.' },
+            measure: 'expenses',
+            group_by: 'month',
+            chart: 'bar',
+          },
+        ],
+      },
+    ]
+    state.saved = { reports: [{ id: 'net_worth' }] }
+    const { user } = open('reports')
+    await user.click(await screen.findByRole('button', { name: t('library.addTo.reports', { name: 'Pet spending' }) }))
+    await waitFor(() => expect(state.saves.at(-1)?.ids).toEqual(['net_worth', 'plugin:maria/casa:pets']))
+    const row = screen.getByText('Pet spending').closest('li')!
+    expect(within(row).getByText('What the pets cost.')).toBeInTheDocument()
+    expect(within(row).getByText(t('library.fromPlugin', { name: 'Home' }))).toBeInTheDocument()
+    state.installed = []
+  })
+
+  it("keeps a plugin's saved report when the plugins can't be read", async () => {
+    state.installed = null
+    state.saved = { reports: [{ id: 'net_worth' }, { id: 'income_expenses' }, { id: 'plugin:maria/casa:pets' }] }
+    const { user } = open('reports')
+    const remove = await screen.findByRole('button', {
+      name: t('library.removeFrom.reports', { name: t('reports.incomeExpenses') }),
+    })
+    // Only once the read has failed: before that, nothing is known either way.
+    await waitFor(() => expect(state.pluginReadFailed).toBe(true))
+    await new Promise((settle) => setTimeout(settle, 20))
+    await user.click(remove)
+    await waitFor(() => expect(state.saves.at(-1)?.ids).toEqual(['net_worth', 'plugin:maria/casa:pets']))
+    state.installed = []
+  })
+
+  it("keeps a plugin's saved report when the feature flags can't be read", async () => {
+    // A failed read of the flags looks like plugins off; it isn't known to be.
+    state.pluginsEnabled = false
+    state.flagsFailed = true
+    state.saved = { reports: [{ id: 'net_worth' }, { id: 'income_expenses' }, { id: 'plugin:maria/casa:pets' }] }
+    const { user } = open('reports')
+    await user.click(
+      await screen.findByRole('button', {
+        name: t('library.removeFrom.reports', { name: t('reports.incomeExpenses') }),
+      }),
+    )
+    await waitFor(() => expect(state.saves.at(-1)?.ids).toEqual(['net_worth', 'plugin:maria/casa:pets']))
+  })
+
+  it("keeps a plugin's saved report while the feature flags are still unread", async () => {
+    // Paused offline: not loading, no error, and no flags either.
+    state.pluginsEnabled = false
+    state.flagsUnknown = true
+    state.saved = { reports: [{ id: 'net_worth' }, { id: 'income_expenses' }, { id: 'plugin:maria/casa:pets' }] }
+    const { user } = open('reports')
+    await user.click(
+      await screen.findByRole('button', {
+        name: t('library.removeFrom.reports', { name: t('reports.incomeExpenses') }),
+      }),
+    )
+    await waitFor(() => expect(state.saves.at(-1)?.ids).toEqual(['net_worth', 'plugin:maria/casa:pets']))
   })
 
   it('applies a theme and saves it for the person', async () => {

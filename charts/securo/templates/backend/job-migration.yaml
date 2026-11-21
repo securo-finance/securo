@@ -45,7 +45,22 @@ spec:
                 {{- else }}
                 name: {{ include "securo.fullname" . }}-secrets
                 {{- end }}
+            {{- with .Values.migration.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.migration.extraEnv }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.migration.extraVolumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- if .Values.backend.resources }}
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
           {{- end }}
+      {{- with .Values.migration.extraVolumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

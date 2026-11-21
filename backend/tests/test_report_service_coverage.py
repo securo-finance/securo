@@ -5,18 +5,18 @@ These exercise the large uncovered blocks: get_income_expenses_report
 branches, and the net-worth credit-card / asset composition branches.
 
 `get_income_expenses_report` builds its period buckets with PostgreSQL's
-``to_char`` (and ``extract`` for weekly). Tests run on SQLite, so we register
-a ``to_char`` user-defined function on the shared test engine for the
-daily / monthly / yearly intervals (weekly relies on ``extract('isoyear')``
-which SQLite cannot compile and is therefore not exercised here — its label
-helper is covered by the existing pure-function tests).
+``to_char`` (and ``extract`` for weekly). Tests run on SQLite, so
+``tests/conftest.py`` registers a ``to_char`` user-defined function on the
+shared test engine for the daily / monthly / yearly intervals (weekly relies
+on ``extract('isoyear')`` which SQLite cannot compile and is therefore not
+exercised here; its label helper is covered by the existing pure-function
+tests).
 """
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -33,52 +33,6 @@ from app.services.report_service import (
     get_income_expenses_report,
     get_net_worth_report,
 )
-
-from tests.conftest import engine as _test_engine
-
-
-# ---------------------------------------------------------------------------
-# Register a `to_char` UDF on the SQLite test engine so the income/expenses
-# report (which uses Postgres `to_char`) can run. Idempotent across tests.
-# ---------------------------------------------------------------------------
-
-
-def _py_to_char(value, fmt):
-    """Minimal emulation of PostgreSQL to_char(date, fmt) for the formats
-    the report uses: 'YYYY-MM-DD', 'YYYY-MM', 'YYYY'."""
-    if value is None:
-        return None
-    s = str(value)[:10]  # 'YYYY-MM-DD'
-    y, m, d = s.split("-")
-    if fmt == "YYYY-MM-DD":
-        return f"{y}-{m}-{d}"
-    if fmt == "YYYY-MM":
-        return f"{y}-{m}"
-    if fmt == "YYYY":
-        return y
-    return s
-
-
-@event.listens_for(_test_engine.sync_engine, "connect")
-def _register_to_char(dbapi_connection, _connection_record):
-    dbapi_connection.create_function("to_char", 2, _py_to_char)
-
-
-@pytest.fixture(autouse=True)
-async def _ensure_to_char(session: AsyncSession):
-    """Make sure the UDF is registered on the live connection.
-
-    The `connect` listener covers fresh connections; for the StaticPool's
-    already-open connection we register directly via the raw DBAPI handle.
-    """
-    raw = await session.connection()
-
-    def _do(sync_conn):
-        dbapi = sync_conn.connection.dbapi_connection
-        dbapi.create_function("to_char", 2, _py_to_char)
-
-    await raw.run_sync(_do)
-    yield
 
 
 # ---------------------------------------------------------------------------

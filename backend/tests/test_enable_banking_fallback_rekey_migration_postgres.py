@@ -447,11 +447,21 @@ def _variant(**changes) -> dict:
     ],
 )
 async def test_row_values_are_derived_like_the_provider(raw):
-    """The migration's amount/type/date check agrees with the provider's parse."""
+    """The migration's amount/type/date check agrees with the provider's parse.
+
+    The date is the one the provider wrote before #790 (booking, else value,
+    else transaction date). The rows this migration re-keys were stored by
+    that code, and its recipe is frozen in the file.
+    """
     parsed = EnableBankingProvider()._build_transaction(ACCOUNT_UID, raw, "posted", "auto")
     assert parsed is not None
+    stored_date = (
+        migration._iso_date(raw.get("booking_date"))
+        or migration._iso_date(raw.get("value_date"))
+        or migration._iso_date(raw.get("transaction_date"))
+    )
     row = type(
-        "Row", (), {"amount": parsed.amount, "type": parsed.type, "date": parsed.date},
+        "Row", (), {"amount": parsed.amount, "type": parsed.type, "date": stored_date},
     )
     assert migration._new_id(
         ACCOUNT_UID, raw, migration._legacy_fingerprint(ACCOUNT_UID, raw), row,

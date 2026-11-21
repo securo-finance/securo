@@ -1,8 +1,12 @@
 import uuid
+from datetime import date
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
+from app.core.config import get_settings
 from app.core.database import get_async_session
 from app.core.workspace_context import (
     WorkspaceContext,
@@ -16,6 +20,7 @@ from app.schemas.recurring_price_change import (
 from app.schemas.recurring_transaction import (
     RecurringPayment,
     RecurringPaymentRead,
+    RecurringMonthSummary,
     RecurringTransactionCreate,
     RecurringTransactionRead,
     RecurringTransactionUpdate,
@@ -45,6 +50,30 @@ async def recent_price_changes(
     """Latest qualifying price change per series in the workspace, newest first."""
     return await recurring_price_change_service.get_recent_price_changes(
         session, ctx.workspace.id, limit
+    )
+
+
+@router.get("/summary", response_model=RecurringMonthSummary)
+async def recurring_month_summary(
+    month: Optional[date] = Query(None, description="Any day of the month; defaults to this month"),
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Income, expenses and net the active definitions expect in one month."""
+    month = month or app_today()
+    # The summary reads up to a few years around the month (two matching
+    # reaches of at most a year on each side, and the schedule scan), so the
+    # first and last years of the calendar have nothing to read into.
+    if not date.min.year + 10 <= month.year <= date.max.year - 10:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Month is out of the supported range",
+        )
+    return await recurring_transaction_service.get_month_summary(
+        session,
+        ctx.workspace.id,
+        month,
+        ctx.user.primary_currency or get_settings().default_currency,
     )
 
 

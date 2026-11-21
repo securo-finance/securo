@@ -42,7 +42,7 @@ class DuplicateRuleError(Exception):
 
 _ALLOWED_CONDITION_FIELDS = {
     "description", "payee", "notes", "amount", "type", "account_id", "payee_id", "date",
-    "status",
+    "status", "provider_category",
 }
 # Status is a closed set, so only equality makes sense and the value must be one
 # of the statuses a transaction can carry.
@@ -54,6 +54,12 @@ _ALLOWED_CONDITION_OPS = {
 }
 _ALLOWED_ACTION_OPS = {
     "set_category", "set_payee", "set_description", "append_notes", "ignore",
+}
+# The provider category is free text, so a numeric comparison would read the
+# label as 0 and match every row, including those without provider data.
+_PROVIDER_CATEGORY_CONDITION_OPS = {
+    "contains", "not_contains", "equals", "not_equals", "starts_with",
+    "ends_with", "regex",
 }
 
 
@@ -105,6 +111,12 @@ async def validate_rule_definition(
                     f"Invalid condition: unsupported status value {value!r}; "
                     "use 'pending' or 'posted'"
                 )
+        if field == "provider_category" and op not in _PROVIDER_CATEGORY_CONDITION_OPS:
+            raise ValueError(
+                f"Invalid condition: unsupported op {op!r} for field 'provider_category'; "
+                "provider_category accepts only contains, not_contains, equals, "
+                "not_equals, starts_with, ends_with and regex"
+            )
         if op == "regex":
             compile_rule_regex(str(_rule_item_value(condition, "value") or ""))
 
@@ -613,7 +625,8 @@ async def existing_rule_names(
 # Exactly the columns `_rule_preview` copies. Anything reading a column that is
 # not here off a transaction loaded with `load_only(*_PREVIEW_COLUMNS)` would
 # trigger a lazy refresh — which raises under async — so the two lists move
-# together.
+# together. `raw_data` joins this list only for conditions that read the
+# provider category, since the payload dwarfs the rest of the row.
 _PREVIEW_COLUMNS = (
     Transaction.user_id,
     Transaction.workspace_id,
@@ -637,7 +650,7 @@ _PREVIEW_COLUMNS = (
 )
 
 
-def _rule_preview(transaction: Transaction) -> Transaction:
+def _rule_preview(transaction: Transaction, *, include_raw_data: bool = True) -> Transaction:
     """Build a detached transaction-shaped object for side-effect-free rule evaluation."""
     return Transaction(
         user_id=transaction.user_id,
@@ -658,6 +671,7 @@ def _rule_preview(transaction: Transaction) -> Transaction:
         notes=transaction.notes,
         is_ignored=transaction.is_ignored,
         transfer_pair_id=transaction.transfer_pair_id,
+        raw_data=transaction.raw_data if include_raw_data else None,
     )
 
 
@@ -680,6 +694,9 @@ async def preview_rules_for_transaction(
     user_id: uuid.UUID,
     transaction: Transaction,
     skip_category_rules: bool = False,
+    *,
+    skip_description: bool = False,
+    skip_payee: bool = False,
 ) -> Transaction:
     """Apply active rules to a detached preview and return it without persistence."""
     preview = _rule_preview(transaction)
@@ -688,8 +705,104 @@ async def preview_rules_for_transaction(
         user_id,
         preview,
         skip_category_rules=skip_category_rules,
+        skip_description=skip_description,
+        skip_payee=skip_payee,
     )
     return preview
+
+
+def description_is_manual(transaction: Transaction) -> bool:
+    """Whether the row's description must survive a rule pass.
+
+    Read it before a sync merges the provider's text into the row: a user who
+    renamed a placeholder to exactly what the bank later sends would otherwise
+    look like provider text. A row with no provenance is kept as it is, the
+    same way the sync merge treats it.
+    """
+    return not transaction.description_is_rule_managed and (
+        transaction.original_description is None
+        or transaction.description != transaction.original_description
+    )
+
+
+async def read_description_is_manual(
+    session: AsyncSession, transaction: Transaction,
+) -> bool:
+    """Lock a settling row, re-read its description and say if it is the user's.
+
+    Call it before the sync merges the provider's text: a rename the user
+    saved after the sync loaded the row would otherwise look like provider
+    text, so the merge would write over it and a rule could rename it.
+    """
+    # Write the sync's own changes first, since a refresh would drop them.
+    await session.flush()
+    await session.refresh(
+        transaction,
+        ["description", "original_description", "description_is_rule_managed"],
+        with_for_update=True,
+    )
+    return description_is_manual(transaction)
+
+
+async def apply_rules_to_settled_transaction(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    transaction: Transaction,
+    *,
+    manual_description: bool,
+    synced_payee_id: uuid.UUID | None = None,
+) -> None:
+    """Run the rules again on a row whose pending entry just posted.
+
+    A pending entry often carries placeholder text and no counterparty, so
+    the rules that ran on it matched nothing; the posted entry brings the real
+    description and payee. What the row already holds wins: the rules fill an
+    empty category or payee, append their notes and may ignore the row, and
+    they replace the description only when the user did not write it
+    (`manual_description`, from `description_is_manual` before the merge).
+    The rules run with those fields pinned, so a later rule never acts on a
+    value the row will not keep. A row the user ignored is left alone.
+    `synced_payee_id` is a payee the sync itself linked to a row that had
+    none: the rules may replace it, and it stays when none does.
+    """
+    if transaction.is_ignored:
+        return
+    # Write the sync's own changes first, since a refresh would drop them,
+    # then read what the rules check under a row lock: a category, split,
+    # payee or note the user saved since the sync loaded the row is kept.
+    await session.flush()
+    await session.refresh(
+        transaction,
+        [
+            "notes",
+            "category_id",
+            "has_category_lines",
+            "payee_id",
+            "is_ignored",
+        ],
+        with_for_update=True,
+    )
+    if transaction.is_ignored:
+        return
+    preview = await preview_rules_for_transaction(
+        session,
+        user_id,
+        transaction,
+        skip_category_rules=transaction.has_category_lines,
+        skip_description=manual_description,
+        skip_payee=(
+            transaction.payee_id is not None
+            and transaction.payee_id != synced_payee_id
+        ),
+    )
+    transaction.category_id = preview.category_id
+    transaction.payee_id = preview.payee_id
+    transaction.description = preview.description
+    transaction.original_description = preview.original_description
+    transaction.description_is_rule_managed = preview.description_is_rule_managed
+    # The preview started from the row's notes, so its notes keep the user's.
+    transaction.notes = preview.notes
+    transaction.is_ignored = preview.is_ignored
 
 
 def rule_payee_ids(rules: Iterable[Rule]) -> set[uuid.UUID]:
@@ -748,6 +861,9 @@ async def get_transfer_unsafe_category_ids(
 async def apply_rules_to_transaction(
     session: AsyncSession, user_id: uuid.UUID, transaction: Transaction,
     skip_category_rules: bool = False,
+    *,
+    skip_description: bool = False,
+    skip_payee: bool = False,
 ) -> None:
     """Apply all active rules to a transaction, modifying it in-place. Commits nothing.
 
@@ -793,6 +909,8 @@ async def apply_rules_to_transaction(
                 actions,
                 transaction,
                 category_set,
+                skip_description=skip_description,
+                skip_payee=skip_payee,
                 assignable_category_ids=assignable_categories,
                 existing_payee_ids=existing_payees,
                 ignored_category_ids=transfer_unsafe_categories,
@@ -848,13 +966,22 @@ async def preview_rule(
     will_apply = is_active and apply_to_existing
     await validate_rule_definition(session, workspace_id, conditions, actions or [])
 
+    needs_raw_data = any(
+        _rule_item_value(leaf, "field") == "provider_category"
+        for leaf in _flatten_conditions(conditions or [])
+    )
     # Every transaction is evaluated in Python, so only the columns the engine
-    # reads and `_rule_preview` copies are worth fetching — notably not
-    # `raw_data`, whose provider payloads dwarf the rest of the row and which
-    # no condition or action can see.
+    # reads and `_rule_preview` copies are worth fetching. Provider payloads in
+    # `raw_data` dwarf the rest of the row, so it comes along only when a
+    # condition can see it.
+    preview_columns = (
+        (*_PREVIEW_COLUMNS, Transaction.raw_data)
+        if needs_raw_data
+        else _PREVIEW_COLUMNS
+    )
     result = await session.execute(
         select(Transaction)
-        .options(load_only(*_PREVIEW_COLUMNS))
+        .options(load_only(*preview_columns))
         .where(
             Transaction.workspace_id == workspace_id,
             Transaction.source != "opening_balance",
@@ -891,7 +1018,7 @@ async def preview_rule(
         # A rule that renamed this row before should still recognise it, so a
         # miss is retried against the original text — same as apply_single_rule.
         if not matches and tx.original_description is not None:
-            original_target = _rule_preview(tx)
+            original_target = _rule_preview(tx, include_raw_data=needs_raw_data)
             original_target.description = tx.original_description
             matches = evaluate_conditions(conditions_op, conditions or [], original_target)
         if not matches:
@@ -899,7 +1026,7 @@ async def preview_rule(
         matched += 1
         # An untouched copy when nothing is applied, so `new_category_*` below
         # simply mirrors what the transaction already has.
-        draft = _rule_preview(tx)
+        draft = _rule_preview(tx, include_raw_data=needs_raw_data)
         will_change = False
         if will_apply:
             before = _rule_effect_state(draft)

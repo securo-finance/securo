@@ -1190,6 +1190,8 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
                 className="gap-1.5 h-8"
                 onClick={() => exporting.mutate(group.node)}
                 disabled={exporting.isPending}
+                aria-label={t('rules.export')}
+                title={t('rules.export')}
               >
                 <Download size={12} />
                 <span className="hidden sm:inline">{t('rules.export')}</span>
@@ -1204,6 +1206,8 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
                     fileInput.current?.click()
                   }}
                   disabled={importing.isPending}
+                  aria-label={t('rules.import')}
+                  title={t('rules.import')}
                 >
                   <Upload size={12} />
                   <span className="hidden sm:inline">{t('rules.import')}</span>
@@ -1212,7 +1216,13 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
               {canWrite && (
                 // Last and solid, the same place, shape and word as on
                 // the categorization card above.
-                <Button size="sm" className="gap-1.5 h-8" onClick={() => setEditing({ node: group.node, rule: null })}>
+                <Button
+                  size="sm"
+                  className="gap-1.5 h-8"
+                  onClick={() => setEditing({ node: group.node, rule: null })}
+                  aria-label={t('rules.add')}
+                  title={t('rules.add')}
+                >
                   <Plus size={13} />
                   <span className="hidden sm:inline">{t('rules.add')}</span>
                 </Button>

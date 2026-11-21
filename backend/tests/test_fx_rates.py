@@ -1,5 +1,6 @@
 """Tests for FX rate service, API endpoints, and multi-currency integration."""
 
+import logging
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
@@ -17,6 +18,34 @@ from app.models.user import User
 
 
 # ─── helpers ────────────────────────────────────────────────────────────────
+
+
+def _with_real_provider_unconfigured():
+    """Run with the real provider and no app id, the way the public demo runs.
+
+    The suite's autouse fixture swaps the provider for a mock that returns no
+    rates, which would hide the unconfigured path (#267): the mock never
+    raises, so the conversion looks quiet for the wrong reason.
+    """
+    from contextlib import ExitStack
+
+    from app.core.config import Settings
+    from app.providers.openexchangerates import OpenExchangeRatesProvider
+
+    stack = ExitStack()
+    stack.enter_context(
+        patch(
+            "app.services.fx_rate_service.OpenExchangeRatesProvider",
+            OpenExchangeRatesProvider,
+        )
+    )
+    stack.enter_context(
+        patch(
+            "app.services.fx_rate_service.resolve_settings",
+            new=AsyncMock(return_value=Settings(openexchangerates_app_id="")),
+        )
+    )
+    return stack
 
 
 async def _insert_rate(
@@ -229,6 +258,53 @@ class TestResolveRate:
 
         rate = await get_rate(session, "JPY", "CHF", allow_fetch=False)
         assert rate == Decimal("1")
+
+    @pytest.mark.asyncio
+    async def test_unconfigured_provider_does_not_log_a_traceback(
+        self, session: AsyncSession, clean_db, caplog
+    ):
+        """An instance with no app id (the public demo) keeps using the closest
+        stored rate without a warning or a traceback per conversion (#267)."""
+        from app.services.fx_rate_service import _resolve_rate
+
+        stored_date = date.today() - timedelta(days=3)
+        await _insert_rate(session, "BRL", Decimal("5.0000000000"), stored_date)
+        await _insert_rate(session, "EUR", Decimal("0.9200000000"), stored_date)
+
+        with _with_real_provider_unconfigured():
+            with caplog.at_level(logging.DEBUG, logger="app.services.fx_rate_service"):
+                rate = await _resolve_rate(session, "EUR", "BRL")
+
+        assert rate == Decimal("5.0000000000") / Decimal("0.9200000000")
+        assert not [
+            record
+            for record in caplog.records
+            if record.levelno >= logging.WARNING and record.exc_info is not None
+        ]
+
+    @pytest.mark.asyncio
+    async def test_real_fetch_failure_still_logs_a_warning(
+        self, session: AsyncSession, clean_db, caplog
+    ):
+        """A genuine provider failure keeps the warning with its traceback."""
+        from app.services.fx_rate_service import _resolve_rate
+
+        with patch(
+            "app.services.fx_rate_service.sync_rates",
+            side_effect=ValueError("Exchange-rate provider request failed"),
+        ):
+            with caplog.at_level(logging.WARNING, logger="app.services.fx_rate_service"):
+                rate = await _resolve_rate(session, "EUR", "BRL")
+
+        assert rate is None
+        warnings = [
+            record
+            for record in caplog.records
+            if record.levelno == logging.WARNING
+            and "On-demand FX rate sync failed" in record.getMessage()
+        ]
+        assert warnings
+        assert warnings[0].exc_info is not None
 
 
 class TestConvert:
@@ -656,13 +732,18 @@ class TestOpenExchangeRatesProvider:
 
     @pytest.mark.asyncio
     async def test_fetch_latest_no_api_key_raises(self):
-        from app.providers.openexchangerates import OpenExchangeRatesProvider
+        from app.providers.openexchangerates import (
+            FxProviderNotConfigured,
+            OpenExchangeRatesProvider,
+        )
 
         provider = OpenExchangeRatesProvider()
         with patch("app.providers.openexchangerates.get_settings") as mock_settings:
             mock_settings.return_value.openexchangerates_app_id = ""
-            with pytest.raises(ValueError, match="not configured"):
+            with pytest.raises(FxProviderNotConfigured, match="not configured"):
                 await provider.fetch_latest()
+        # The dedicated type still reads as the ValueError callers catch.
+        assert issubclass(FxProviderNotConfigured, ValueError)
 
     @pytest.mark.asyncio
     async def test_fetch_historical(self):
@@ -733,6 +814,30 @@ class TestSyncRates:
         mock_session.commit.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_sync_rates_reads_a_spaced_supported_list(self):
+        """`SUPPORTED_CURRENCIES=USD, EUR, RSD` keeps every code (#1474).
+
+        The list was split on commas only, so " RSD" never matched the
+        provider's "RSD" and its rate was never stored.
+        """
+        from app.services.fx_rate_service import sync_rates
+
+        mock_provider = MagicMock()
+        mock_provider.name = "test_provider"
+        mock_provider.fetch_latest = AsyncMock(return_value={
+            "EUR": Decimal("0.86"),
+            "RSD": Decimal("100.7"),
+        })
+        mock_session = AsyncMock()
+        settings = MagicMock(supported_currencies="USD, EUR, rsd ")
+
+        with patch("app.services.fx_rate_service.OpenExchangeRatesProvider", return_value=mock_provider), \
+                patch("app.services.fx_rate_service.get_settings", return_value=settings):
+            count = await sync_rates(mock_session, date.today())
+
+        assert count == 2
+
+    @pytest.mark.asyncio
     async def test_sync_rates_calls_provider_historical(self):
         from app.services.fx_rate_service import sync_rates
 
@@ -789,6 +894,16 @@ class TestSyncRates:
 
         mock_provider.fetch_latest.assert_awaited_once()
         mock_provider.fetch_historical.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_fetch_rates_raises_when_unconfigured(self):
+        """fetch_rates keeps raising for the import preview, which reports it."""
+        from app.providers.openexchangerates import FxProviderNotConfigured
+        from app.services.fx_rate_service import fetch_rates
+
+        with _with_real_provider_unconfigured():
+            with pytest.raises(FxProviderNotConfigured):
+                await fetch_rates(AsyncMock(), date.today())
 
 
 # ═══════════════════════════════════════════════════════════════════════════

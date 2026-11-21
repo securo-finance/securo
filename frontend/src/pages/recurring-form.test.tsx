@@ -10,6 +10,7 @@ import type { RecurringTransaction } from '@/types'
 vi.mock('@/hooks/use-display-locale', () => ({
   useDateLocale: () => 'en-GB',
   useDisplayLocale: () => 'fr-FR',
+  useDisplayLocaleSettled: () => true,
 }))
 
 vi.mock('@/contexts/auth-context', () => ({

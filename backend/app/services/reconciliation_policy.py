@@ -443,6 +443,83 @@ MATCH_TRANSFER: dict[str, Any] = {
     "on_ambiguity": "suggest",
 }
 
+#: The same card purchase reported by two accounts of one bank connection.
+#:
+#: A card with immediate debit charges the account it is attached to the
+#: moment it is used, and some banks list the card as an account of its
+#: own. Every purchase then arrives twice: once on the card and once on
+#: the account the money really left. Both legs are debits, so this is
+#: not a transfer, and the transfer node rightly never looks at a card
+#: debit.
+#:
+#: The defaults are narrow on purpose. Only synced rows of **one
+#: connection** are compared, and only accounts whose transaction feed
+#: came back whole in that sync. The card must owe nothing (a card
+#: settled on the spot never carries a balance; a card with a bill
+#: does), the other side must be a current or savings account, and the
+#: two debits must have the exact amount and currency within two days,
+#: print the same purchase (their descriptions share most words, one of
+#: them naming the merchant, or the bank gave both the same id), and each
+#: name the other as its single answer. A card that received any credit
+#: around those rows (up to `payment_after_days` after them) has a bill or
+#: a refund, so none of its purchases there is set aside; and a card is
+#: treated as debited on the spot only once it has shown `min_pairs` such
+#: pairs.
+#: Each pair made is written to the reconciliation history, and that
+#: record is the pair from then on: its account copy is taken for good,
+#: and its card copy is never decided again, so one a person brought
+#: back stays back. Rows a sync could not decide (an account skipped, a
+#: copy not in yet) are retried for `retry_days`. The card's copy is the
+#: one set aside, since the account's copy is the money that moved. It is
+#: marked ignored rather than deleted, so a person can bring it back.
+#:
+#: Not on the rules page yet, like the placeholder node: it is written as
+#: a document so surfacing it is a change to the page, not to the code.
+MATCH_CARD_MIRROR: dict[str, Any] = {
+    "version": POLICY_VERSION,
+    "node": "reconciliation.match_card_mirror",
+    "scope": {
+        "movement": "any",
+        # Only rows a sync wrote are read at all (the service loads
+        # nothing else), so there is nothing left here to ignore.
+        "ignore_transaction_sources": [],
+    },
+    "strategies": [
+        {
+            "id": "card_charge_mirrored_on_account",
+            "enabled": True,
+            "outcome": "link",
+            "trigger": "money_arrives",
+            "when": {
+                "direction": "debit",
+                "different_account": True,
+                "account_types": ["credit_card"],
+                "amount": {"match": "exact"},
+                "date": {"before_days": 2, "after_days": 2},
+                "tie_break": "closest_date",
+                "unique_candidate": True,
+            },
+        },
+    ],
+    "card": {
+        # The accounts a card debited on the spot draws from. A loan
+        # repayment of the same amount is not a copy of a purchase.
+        "paid_from": ["checking", "savings"],
+        "min_pairs": 2,
+        # A card that received any credit (a bill payment, a refund) from
+        # this many days before the rows compared to this many after is a
+        # card with a bill, never a copy: the worst a refund costs is a
+        # duplicate left visible.
+        "payment_after_days": 10,
+        "retry_days": 30,
+        # Both copies print the same purchase. Same amount and date alone
+        # also fit the payment of a bill whose total equals one purchase,
+        # or any debit of the account that happens to share the amount.
+        "description": {"min_overlap": 0.6},
+    },
+    "on_ambiguity": "suggest",
+}
+
 #: A weekly bill sits closer to its neighbours, so its window narrows or
 #: a charge could match the wrong occurrence. Carried as an override on
 #: the strategy rather than as a second document.
@@ -455,6 +532,7 @@ _DEFAULTS: dict[str, dict[str, Any]] = {
     MATCH_RECURRING["node"]: MATCH_RECURRING,
     MATCH_PLACEHOLDER["node"]: MATCH_PLACEHOLDER,
     MATCH_TRANSFER["node"]: MATCH_TRANSFER,
+    MATCH_CARD_MIRROR["node"]: MATCH_CARD_MIRROR,
 }
 
 

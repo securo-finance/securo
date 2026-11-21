@@ -452,7 +452,7 @@ async def signed_balance_delta_primary(
     effective = (
         tx.amount
         if same_currency(tx.currency, account_currency)
-        else Decimal(str(tx.amount_primary or 0))
+        else Decimal(str(tx.amount_account or 0))
     )
     amount = abs(Decimal(str(effective)))
     if account_currency != primary_currency:
@@ -553,7 +553,9 @@ async def project_recurring_items(
                 for line in rec.category_lines
                 if not (line.category and line.category.is_ignored)
             ]
-            is_transfer = all(part_is_transfer for part_is_transfer, _ in parts)
+            # Same rule as a posted split: nothing left to count is not a
+            # transfer (issue #993).
+            is_transfer = bool(parts) and all(part_is_transfer for part_is_transfer, _ in parts)
         else:
             parts = [(is_transfer, 1.0)]
         if not is_ignored:

@@ -12,6 +12,7 @@ authorization URL can be generated, so `get_oauth_url` takes
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import math
 import time
@@ -78,11 +79,30 @@ DEFAULT_PSU_TYPE = "personal"
 DEFAULT_HISTORY_DAYS = 90
 # Shorter window retried when a bank rejects the default one as out of bounds.
 FALLBACK_HISTORY_DAYS = 30
+# Floor of the history a fresh, user-present fetch asks for (issue #792).
+# Enable Banking then serves the longest period the bank allows, never
+# starting before this date: two years covers what most ASPSPs keep, while an
+# older floor would only earn the bank's WRONG_TRANSACTIONS_PERIOD.
+INITIAL_HISTORY_DAYS = 730
+# `strategy` value that makes Enable Banking find the longest period the
+# ASPSP serves instead of a window the application picked.
+LONGEST_HISTORY_STRATEGY = "longest"
 TRANSACTION_PAGE_LIMIT = 50  # safety cap
+# A fresh fetch may page through years of entries, so it gets a wider cap than
+# an incremental one: at 50 pages a busy account's history would end before
+# the feed does, and what a cut read leaves out never comes back (later syncs
+# only move forward). Still a ceiling, so one sync cannot run forever.
+INITIAL_TRANSACTION_PAGE_LIMIT = 200
 # Session states after which no data can be read until the user re-authorizes.
 TERMINAL_SESSION_STATUSES = frozenset(
     {"EXPIRED", "REVOKED", "CLOSED", "CANCELLED", "INVALID"}
 )
+# Statuses of a flat transaction list. A cancelled or rejected entry never
+# moved money, and a held or scheduled one has not settled yet.
+SKIPPED_TRANSACTION_STATUSES = frozenset({"CNCL", "RJCT"})
+PENDING_TRANSACTION_STATUSES = frozenset({"PDNG", "PENDING", "HOLD", "SCHD"})
+# What `_iter_transactions` yields for a skipped entry: it is never imported.
+CANCELLED_STATUS = "cancelled"
 
 
 def _map_cash_account_type(eb_type: Optional[str]) -> str:
@@ -122,26 +142,108 @@ def _account_identifier(raw: dict) -> Optional[str]:
     return None
 
 
+# Balance types EB reports for a card, split by what they mean. EB gives a
+# card's figures from the account holder's side: the available one is the
+# credit still free to spend, and a booked one is signed the same way (negative
+# while the card owes). Some banks report the credit limit as the booked figure
+# instead of the debt (mBank PL, issue #624), so a booked figure alone cannot
+# say what is owed and only `credit_limit - available` is exact.
+CARD_AVAILABLE_BALANCE_TYPES = ("ITAV", "CLAV")
+CARD_BOOKED_BALANCE_TYPES = ("CLBD", "ITBD", "XPCD", "OPBD", "PRCD")
+
+
+def _balance_of_type(
+    balances: list[dict], types: tuple[str, ...]
+) -> Optional[dict]:
+    """The first balance whose type is in ``types``, in the order given."""
+    by_type = {b.get("balance_type") or b.get("type"): b for b in balances if isinstance(b, dict)}
+    for key in types:
+        if key in by_type:
+            return by_type[key]
+    return None
+
+
 def _pick_balance(balances: list[dict]) -> Optional[dict]:
     """Pick the most useful balance from EB's list (prefer closing booked)."""
     if not balances:
         return None
-    priority = ["CLBD", "ITAV", "CLAV", "XPCD", "OPBD", "OPAV"]
-    by_type = {b.get("balance_type") or b.get("type"): b for b in balances if isinstance(b, dict)}
-    for key in priority:
-        if key in by_type:
-            return by_type[key]
+    picked = _balance_of_type(balances, ("CLBD", "ITAV", "CLAV", "XPCD", "OPBD", "OPAV"))
+    if picked is not None:
+        return picked
     return balances[0] if isinstance(balances[0], dict) else None
 
 
-def _balance_decimal(balance: Optional[dict]) -> Decimal:
+def _credit_limit_decimal(raw: dict) -> Optional[Decimal]:
+    """The card's credit limit from a details payload (`credit_limit` is an
+    amount object there; a cached summary keeps the bare number)."""
+    value = raw.get("credit_limit")
+    if isinstance(value, dict):
+        value = value.get("amount")
+    try:
+        limit = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return limit if limit > 0 else None
+
+
+def _card_balance(
+    balances: list[dict], credit_limit: Optional[Decimal]
+) -> tuple[Decimal, Optional[Decimal], Optional[dict]]:
+    """A card's debt (positive, as Securo stores it), its free credit, and the
+    figure the reading came from (issue #624).
+
+    The debt is `limit - available` when both are known, which is what the
+    bank's own app shows whatever the bank calls its booked figure. Without a
+    limit that subtraction cannot be made here: the free credit goes back to
+    the sync, which holds the limit stored on the account row, and a booked
+    figure EB signs as money owed still states the debt. A card with only a
+    booked balance is read by its sign, like any other EB account.
+
+    A balance entry without a usable amount counts as absent, never as zero:
+    a missing figure must not read as the whole limit spent, and it does not
+    hide a later entry of another type that does carry one.
+    """
+    available, free_credit = _card_figure(balances, CARD_AVAILABLE_BALANCE_TYPES)
+    booked, booked_amount = _card_figure(balances, CARD_BOOKED_BALANCE_TYPES)
+    if free_credit is not None:
+        if credit_limit is not None:
+            return credit_limit - free_credit, free_credit, available
+        if booked_amount is not None and booked_amount < 0:
+            return -booked_amount, free_credit, booked
+        return Decimal("0"), free_credit, available
+    if booked_amount is not None:
+        return -booked_amount, None, booked
+    return Decimal("0"), None, None
+
+
+def _card_figure(
+    balances: list[dict], types: tuple[str, ...]
+) -> tuple[Optional[dict], Optional[Decimal]]:
+    """The first balance of ``types``, in the order given, that carries a
+    usable amount, and that amount."""
+    by_type = {b.get("balance_type") or b.get("type"): b for b in balances if isinstance(b, dict)}
+    for key in types:
+        entry = by_type.get(key)
+        amount = _balance_amount(entry)
+        if amount is not None:
+            return entry, amount
+    return None, None
+
+
+def _balance_amount(balance: Optional[dict]) -> Optional[Decimal]:
+    """The figure inside a balance entry, or None when it carries none."""
     if not balance:
-        return Decimal("0")
+        return None
     amount = balance.get("balance_amount") or balance.get("amount") or {}
     try:
-        return Decimal(str(amount.get("amount", "0")))
-    except (InvalidOperation, AttributeError):
-        return Decimal("0")
+        return Decimal(str(amount.get("amount")))
+    except (InvalidOperation, AttributeError, TypeError, ValueError):
+        return None
+
+
+def _balance_decimal(balance: Optional[dict]) -> Decimal:
+    amount = _balance_amount(balance)
+    return amount if amount is not None else Decimal("0")
 
 
 def _balance_currency(balance: Optional[dict], fallback: str) -> str:
@@ -212,6 +314,23 @@ def _txn_fingerprint(account_uid: str, raw: dict) -> str:
     return digest[:32]
 
 
+def is_account_txn_id(account_uid: str, external_id: Optional[str], raw: Any) -> bool:
+    """Whether `external_id` is the id this account uid gives the entry in `raw`.
+
+    An entry without a reference is keyed by a fingerprint that includes the
+    account uid, and EB issues a new uid on every reauthorisation. A row
+    stored under the old uid then has an id the new feed never sends, so its
+    absence from that feed says nothing. An id from an entry reference does
+    not depend on the uid.
+    """
+    if not isinstance(raw, dict):
+        return False
+    entry_ref = (raw.get("entry_reference") or "").strip()
+    if entry_ref and entry_ref != "0":
+        return True
+    return external_id == _txn_fingerprint(account_uid, raw)
+
+
 def _canonical_amount(amount_obj: Any) -> str:
     """Canonical string for an EB amount.
 
@@ -258,6 +377,39 @@ def _entry_reference_external_id(entry_ref: str, amount_obj: dict, raw: dict) ->
     return digest[:32]
 
 
+def _repeat_external_id(external_id: str, occurrence: int) -> str:
+    """Id of the `occurrence`-th repeat (1, 2, ...) of an identical entry.
+
+    Two same-amount purchases on one day that the bank lists with nothing
+    else (a pending card purchase carries only amount, direction and date)
+    hash to the same id. Each repeat within the fetch gets its own id; the
+    first keeps the plain one, so rows already stored keep theirs. The
+    booked spelling and the pending one count apart, since they may be the
+    same operation.
+    """
+    digest = hashlib.sha256(f"{external_id}#{occurrence}".encode("utf-8")).hexdigest()
+    return digest[:32]
+
+
+def _page_signature(entries: list[tuple[dict, str]]) -> Optional[str]:
+    """Identity of one page's content, or None when the page is empty.
+
+    A cursor that serves a page already read is detected by its content
+    rather than by the cursor it hands back: the repeat may come with a new
+    cursor. The status the page was served under counts as content, so an
+    operation the feed first lists as pending and then as booked is a new
+    page even when its payload came back unchanged. Empty pages are left
+    out, so a feed that ends with a couple of them keeps paging to its real
+    end.
+    """
+    if not entries:
+        return None
+    payload = json.dumps(
+        [[raw, status] for raw, status in entries], sort_keys=True, default=str
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def _settlement_key(raw: dict) -> Optional[tuple[str, str, str, str]]:
     """Identity of one operation across its pending and booked spellings.
 
@@ -286,16 +438,15 @@ def _extract_payee(raw: dict, indicator: str, source: str) -> Optional[str]:
 
     DBIT (money out): creditor (the recipient).
     CRDT (money in): debtor (the sender).
+
+    Only the counterparty's side is read. The other side is the account
+    holder, so falling back to it named the user as the payee of every row
+    whose bank leaves the counterparty out (#1042); no payee is left then.
     """
-    if source == "none":
+    if source in ("none", "description"):
         return None
-    creditor = _counterparty_name(raw, "creditor")
-    debtor = _counterparty_name(raw, "debtor")
-    if source == "description":
-        return None  # let description carry the info
-    if indicator == "DBIT":
-        return creditor or debtor
-    return debtor or creditor
+    side = "creditor" if indicator == "DBIT" else "debtor"
+    return _counterparty_name(raw, side) or None
 
 
 def _history_start(today: date, days: int) -> date:
@@ -419,6 +570,13 @@ def _is_wrong_period_error(resp: httpx.Response) -> bool:
     return isinstance(body, dict) and body.get("error") == "WRONG_TRANSACTIONS_PERIOD"
 
 
+def _refusal_reason(exc: Exception) -> str:
+    """How a failed data request was refused, short enough for a log line."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"HTTP {exc.response.status_code}"
+    return getattr(exc, "code", "") or type(exc).__name__
+
+
 def enable_banking_redirect_uri() -> str:
     """The callback URL the Enable Banking application must have registered."""
     return (
@@ -449,10 +607,15 @@ class EnableBankingProvider(BankProvider):
         # still needed (issue #1405).
         self.presence_required_account_ids: set[str] = set()
         # External ids of accounts whose transaction pages stopped before the
-        # last one (a repeated cursor or the page cap). What was read is still
+        # last one (a repeated cursor or the page cap), or listed an entry we
+        # could not read. What was read is still
         # imported, but it is not the whole feed, so the sync layer must not
         # take an entry missing from it as one the bank stopped listing.
         self.truncated_account_ids: set[str] = set()
+        # Ids of the entries each account lists as cancelled or rejected. They
+        # are not imported, but the bank still lists them: a hold stored under
+        # one of them has not left the feed, so no booking may claim it.
+        self.cancelled_transaction_ids: dict[str, set[str]] = {}
 
     def _use_credentials(self, credentials: dict) -> None:
         aspsp = credentials.get("aspsp") if isinstance(credentials, dict) else None
@@ -871,12 +1034,20 @@ class EnableBankingProvider(BankProvider):
         `require_balance`, when the failure is raised to the caller instead."""
         uid = raw.get("uid") or raw.get("account_uid") or ""
         currency = raw.get("currency") or "EUR"
+        account_type = _map_cash_account_type(raw.get("cash_account_type"))
+        is_card = account_type == "credit_card"
+        credit_limit = _credit_limit_decimal(raw) if is_card else None
         # EB doesn't include balances in the session payload; fetch separately.
         balance = Decimal("0")
+        available_credit: Optional[Decimal] = None
         try:
             bal_resp = await self._request("GET", f"/accounts/{uid}/balances")
-            picked = _pick_balance(bal_resp.get("balances") or [])
-            balance = _balance_decimal(picked)
+            balances = bal_resp.get("balances") or []
+            if is_card:
+                balance, available_credit, picked = _card_balance(balances, credit_limit)
+            else:
+                picked = _pick_balance(balances)
+                balance = _balance_decimal(picked)
             currency = _balance_currency(picked, currency)
         except (httpx.HTTPError, SessionExpiredError) as exc:
             if require_balance:
@@ -899,9 +1070,11 @@ class EnableBankingProvider(BankProvider):
         return AccountData(
             external_id=uid,
             name=name,
-            type=_map_cash_account_type(raw.get("cash_account_type")),
+            type=account_type,
             balance=balance,
             currency=currency,
+            credit_limit=credit_limit,
+            available_credit=available_credit,
             masked_number=mask_last4(_account_identifier(raw)),
             # From the session payload: `uid` is scoped to one session, this
             # hash is what lets a later session find the same account again.
@@ -911,7 +1084,13 @@ class EnableBankingProvider(BankProvider):
     async def _build_cached_account(
         self, uid: str, cached: dict, stable_external_id: Optional[str]
     ) -> AccountData:
-        """An account named from cached details; only its balance is fetched."""
+        """An account named from cached details; only its balance is fetched.
+
+        No credit limit is claimed here on purpose: the sync reads a card's
+        debt against the limit stored on the account row, and a figure cached
+        from an earlier /details call must not overwrite a limit the row
+        already holds (issue #624).
+        """
         account = await self._build_account(
             {
                 "uid": uid,
@@ -1114,6 +1293,11 @@ class EnableBankingProvider(BankProvider):
             return await self._fetch_transactions_since(
                 account_external_id, since, today, payee_source
             )
+        longest = await self._fetch_longest_history(
+            account_external_id, today, payee_source
+        )
+        if longest is not None:
+            return longest
         try:
             return await self._fetch_transactions(
                 account_external_id,
@@ -1137,6 +1321,57 @@ class EnableBankingProvider(BankProvider):
                 today,
                 payee_source,
             )
+
+    async def _fetch_longest_history(
+        self,
+        account_external_id: str,
+        today: date,
+        payee_source: str,
+    ) -> Optional[list[TransactionData]]:
+        """The history the bank serves, bounded by INITIAL_HISTORY_DAYS.
+
+        Enable Banking's `longest` strategy asks the ASPSP for the longest
+        period it can serve and takes `date_from` as the lower bound, so the
+        fetch reaches back as far as the bank allows without the application
+        picking that date (issue #792). Full history is only there shortly
+        after the authorization, and a background call would be cut at the
+        PSD2 window or refused for lack of the user, so it is asked only when
+        the user's own request drives the fetch.
+
+        It is an attempt, not a requirement: a bank that refuses it is left to
+        the ordinary window, which the caller requests next. None says so; an
+        empty list means the bank served nothing. A failure of the bank itself
+        is not a refusal and is raised, so the sync retries instead of taking
+        a shorter history for a complete one.
+        """
+        if not self._present_psu_headers():
+            return None
+        try:
+            return await self._fetch_transactions(
+                account_external_id,
+                _history_start(today, INITIAL_HISTORY_DAYS),
+                # No end date: the strategy picks it, as its documentation says.
+                None,
+                payee_source,
+                strategy=LONGEST_HISTORY_STRATEGY,
+                page_limit=INITIAL_TRANSACTION_PAGE_LIMIT,
+            )
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            if status == 408 or status >= 500:
+                # A timeout or a server error is the bank failing, not
+                # refusing the strategy. Answering with the ordinary window
+                # would report a shorter history as a complete one, and the
+                # sync would move past the rest.
+                raise
+            logger.warning(
+                "Enable Banking refused the longest history of account %s "
+                "with the user present (%s); falling back to %d days",
+                account_external_id,
+                _refusal_reason(exc),
+                DEFAULT_HISTORY_DAYS,
+            )
+            return None
 
     async def _fetch_transactions_since(
         self,
@@ -1205,19 +1440,40 @@ class EnableBankingProvider(BankProvider):
         self,
         account_external_id: str,
         start: date,
-        end: date,
+        end: Optional[date],
         payee_source: str,
+        *,
+        strategy: Optional[str] = None,
+        page_limit: Optional[int] = None,
     ) -> list[TransactionData]:
+        """Every page of one transactions request, from ``start`` to ``end``.
+
+        ``end`` is None with a strategy that picks the end itself (the longest
+        history), so `date_to` is left out of the request.
+        """
+        # Read at call time so a configured cap applies to this fetch.
+        cap = page_limit if page_limit is not None else TRANSACTION_PAGE_LIMIT
         date_from = start.isoformat()
-        date_to = end.isoformat()
+        date_to = end.isoformat() if end is not None else None
         collected: list[tuple[TransactionData, Optional[tuple[str, str, str, str]]]] = []
         booked_keys: dict[tuple[str, str, str, str], int] = {}
         pending_keys: dict[tuple[str, str, str, str], int] = {}
         continuation_key: Optional[str] = None
         seen_continuation_keys: set[str] = set()
-        seen_transaction_ids: set[str] = set()
-        for _ in range(TRANSACTION_PAGE_LIMIT):
-            params: dict[str, Any] = {"date_from": date_from, "date_to": date_to}
+        # How many entries with a given base id the fetch has returned so far,
+        # counted apart for the booked ones and the rest. An identical pair can
+        # straddle two pages, so the count runs over the whole fetch; a page the
+        # cursor serves twice is dropped whole by its signature, before its
+        # entries could be counted again.
+        occurrences: dict[tuple[str, str], int] = {}
+        page_signatures: set[str] = set()
+        self.cancelled_transaction_ids.pop(account_external_id, None)
+        for _ in range(cap):
+            params: dict[str, Any] = {"date_from": date_from}
+            if date_to is not None:
+                params["date_to"] = date_to
+            if strategy:
+                params["strategy"] = strategy
             if continuation_key:
                 params["continuation_key"] = continuation_key
             page = await self._request(
@@ -1225,21 +1481,59 @@ class EnableBankingProvider(BankProvider):
                 f"/accounts/{account_external_id}/transactions",
                 params=params,
             )
-            for raw_txn, status in self._iter_transactions(page):
+            entries = list(self._iter_transactions(page))
+            signature = _page_signature(entries)
+            if signature is not None and signature in page_signatures:
+                # A broken cursor can serve a page already read, sometimes
+                # with a new cursor. Its entries are all here already, so
+                # reading them again would duplicate the rows.
+                logger.warning(
+                    "Enable Banking pagination loop detected for account %s "
+                    "(a page was repeated); stopping pagination",
+                    account_external_id,
+                )
+                self.truncated_account_ids.add(account_external_id)
+                break
+            if signature is not None:
+                page_signatures.add(signature)
+            for raw_txn, status in entries:
                 parsed = self._build_transaction(
                     account_external_id, raw_txn, status, payee_source
                 )
-                # A broken pagination cursor can make Enable Banking return a
-                # page we have already consumed. Keep the result idempotent
-                # even before the repeated cursor is detected below.
-                if not parsed or parsed.external_id in seen_transaction_ids:
+                if not parsed:
+                    # An entry we can't read (no date, no amount) is still in
+                    # the feed: without its id the sync would take its row
+                    # for one the bank stopped listing.
+                    self.truncated_account_ids.add(account_external_id)
+                    continue
+                # Identical entries are distinct transactions, listed with
+                # nothing to tell them apart. A pending entry and the booked
+                # entry it settles keep the same fingerprint, and both can be
+                # listed in one fetch: the booked ones count apart, so the
+                # booked spelling keeps the id it will have once the pending
+                # twin is gone. A cancelled entry counts with the pending ones,
+                # which is where it came from, so the survivor of a pair keeps
+                # the id it had while both were listed.
+                space = "posted" if status == "posted" else "pending"
+                slot = (space, parsed.external_id)
+                occurrence = occurrences.get(slot, 0)
+                occurrences[slot] = occurrence + 1
+                if occurrence:
+                    parsed.external_id = _repeat_external_id(
+                        parsed.external_id, occurrence
+                    )
+                # A cancelled entry took its slot above, so an identical live
+                # one next to it keeps the id it had while both were listed.
+                if status == CANCELLED_STATUS:
+                    self.cancelled_transaction_ids.setdefault(
+                        account_external_id, set()
+                    ).add(parsed.external_id)
                     continue
                 key = _settlement_key(raw_txn)
                 if key is not None:
                     counts = pending_keys if parsed.status == "pending" else booked_keys
                     counts[key] = counts.get(key, 0) + 1
                 collected.append((parsed, key))
-                seen_transaction_ids.add(parsed.external_id)
 
             next_continuation_key = page.get("continuation_key") or None
             if not next_continuation_key:
@@ -1258,7 +1552,7 @@ class EnableBankingProvider(BankProvider):
             logger.warning(
                 "Enable Banking returned more than %d transaction pages for "
                 "account %s; stopping pagination",
-                TRANSACTION_PAGE_LIMIT,
+                cap,
                 account_external_id,
             )
             self.truncated_account_ids.add(account_external_id)
@@ -1292,7 +1586,12 @@ class EnableBankingProvider(BankProvider):
         elif isinstance(body, list):
             for raw in body:
                 raw_status = (raw.get("status") or "").upper()
-                yield raw, "pending" if raw_status in {"PDNG", "PENDING"} else "posted"
+                if raw_status in SKIPPED_TRANSACTION_STATUSES:
+                    yield raw, CANCELLED_STATUS
+                elif raw_status in PENDING_TRANSACTION_STATUSES:
+                    yield raw, "pending"
+                else:
+                    yield raw, "posted"
 
     def _build_transaction(
         self,
@@ -1309,12 +1608,23 @@ class EnableBankingProvider(BankProvider):
         except InvalidOperation:
             return None
         indicator = (raw.get("credit_debit_indicator") or "").upper()
+        if indicator not in ("DBIT", "CRDT"):
+            # Some banks (SEB's reserved card purchases) send no indicator
+            # and sign the amount instead: a negative amount left the account.
+            indicator = "DBIT" if amount < 0 else "CRDT"
         txn_type = "debit" if indicator == "DBIT" else "credit"
         amount = amount.copy_abs()
         currency = amount_obj.get("currency") or "EUR"
+        # The date the operation happened wins over the dates the bank adds
+        # while processing it: a card purchase made on the 1st and booked on
+        # the 3rd belongs to the 1st. Booking then value date are the fallback
+        # for the institutions that fill only those. The identity below still
+        # hashes all three, so this choice does not move any row's id.
         booking = _parse_iso_date(raw.get("booking_date"))
         value = _parse_iso_date(raw.get("value_date"))
-        txn_date = booking or value or _parse_iso_date(raw.get("transaction_date"))
+        txn_date = (
+            _parse_iso_date(raw.get("transaction_date")) or booking or value
+        )
         if not txn_date:
             return None
         additional_value = raw.get("additional_information")

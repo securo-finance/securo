@@ -331,6 +331,7 @@ async def get_budget_vs_actual(
         session, user_id, month_start, month_end,
         use_effective_date=accounting_mode == "accrual",
         primary_currency=primary_currency,
+        exclude_workspace_id=workspace_id,
     )
     for cat_uuid, total in shared_by_cat.items():
         if cat_uuid is None:
@@ -342,8 +343,7 @@ async def get_budget_vs_actual(
 
     # Add projected recurring transactions for this month (converted to primary currency)
     projections = await _get_recurring_projections(
-        session, workspace_id, month_start, month_end,
-        use_effective_date=accounting_mode == "accrual",
+        session, workspace_id, month_start, month_end, accounting_mode=accounting_mode,
     )
     for proj in projections:
         if proj["type"] != "debit" or not proj["category_id"]:
@@ -438,6 +438,7 @@ async def get_budget_vs_actual(
         session, user_id, prev_month_start, prev_month_end,
         use_effective_date=accounting_mode == "accrual",
         primary_currency=primary_currency,
+        exclude_workspace_id=workspace_id,
     )
     for cat_uuid, total in prev_shared_by_cat.items():
         if cat_uuid is None:
@@ -449,8 +450,7 @@ async def get_budget_vs_actual(
 
     # Add projected recurring transactions for previous month (converted to primary currency)
     prev_projections = await _get_recurring_projections(
-        session, workspace_id, prev_month_start, prev_month_end,
-        use_effective_date=accounting_mode == "accrual",
+        session, workspace_id, prev_month_start, prev_month_end, accounting_mode=accounting_mode,
     )
     for proj in prev_projections:
         if proj["type"] != "debit" or not proj["category_id"]:
@@ -659,6 +659,7 @@ async def get_budget_suggestions(
         window_end,
         use_effective_date=accounting_mode == "accrual",
         primary_currency=primary_currency,
+        exclude_workspace_id=workspace_id,
     )
     for cat_uuid, total in shared_by_cat.items():
         if cat_uuid is None:
