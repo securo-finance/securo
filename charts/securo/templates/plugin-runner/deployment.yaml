@@ -8,6 +8,8 @@ metadata:
     app.kubernetes.io/component: plugins-runner
 spec:
   replicas: {{ .Values.pluginRunner.replicaCount }}
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "securo.selectorLabels" . | nindent 6 }}
