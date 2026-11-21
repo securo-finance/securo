@@ -3,9 +3,17 @@ from datetime import date as _Date
 from decimal import Decimal
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from app.core.currency import normalize_currency_code
+from app.core.money import bounded_fx_rate, bounded_money
 from app.schemas.category import CategoryRead
 from app.schemas.transaction_category_line import (
     TransactionCategoryLineRead,
@@ -149,6 +157,21 @@ class TransactionUpdate(BaseModel):
     @classmethod
     def normalize_currency(cls, value: Optional[str]) -> Optional[str]:
         return normalize_currency_code(value)
+
+    @field_validator("amount", "amount_primary", "fx_rate_used")
+    @classmethod
+    def check_amount_bounds(
+        cls, value: Optional[Decimal], info: ValidationInfo
+    ) -> Optional[Decimal]:
+        # The money columns round to cents and hold 13 digits, so `0.001` was
+        # accepted and stored as 0.00 and `1e15` failed at commit with a raw
+        # database error. Bound here, before the row is touched (issue #270).
+        if value is None:
+            return None
+        field = info.field_name or "amount"
+        if field == "fx_rate_used":
+            return bounded_fx_rate(value, field)
+        return bounded_money(value, field)
 
 
 class InstallmentSeriesCreate(BaseModel):

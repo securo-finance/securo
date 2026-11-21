@@ -20,8 +20,8 @@ read it alongside this guide rather than relying on the snippets here.
 
 General plugin docs (publishing to the catalog, the manifest's common fields,
 OAuth sign-in, local testing) are on the docs site:
-[Writing a plugin](https://docs.usesecuro.com/features/plugins/authoring) and
-[Writing a plugin with code](https://docs.usesecuro.com/features/plugins/code).
+[Writing a plugin](https://docs.usesecuro.com/docs/features/plugins/authoring) and
+[Writing a plugin with code](https://docs.usesecuro.com/docs/features/plugins/code).
 
 ## 1. Installing and registering a plugin
 

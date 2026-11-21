@@ -185,6 +185,10 @@ def contents(manifest: Manifest) -> dict[str, list[dict[str, Any]]]:
         ],
         "integrations": [i.model_dump() for i in manifest.contributes.integrations],
         "themes": [t.model_dump() for t in manifest.contributes.themes],
+        "reports": [
+            r.model_dump(include={"key", "name", "description", "code", "inputs", "measure", "group_by", "chart"})
+            for r in manifest.contributes.reports
+        ],
         "network": [h.model_dump() for h in manifest.network],
         "api_scopes": [a.model_dump() for a in manifest.api_scopes],
     }

@@ -105,6 +105,7 @@ import type {
   BalanceHistory,
   PaginatedTransactions,
   ReportResponse,
+  PluginReportResponse,
   CategoryStatementResponse,
   Group,
   GroupKind,
@@ -1812,6 +1813,21 @@ export const reports = {
   // Oldest and newest transaction dates in the workspace (opening
   // balances excluded). The reports page builds its year picker from
   // these bounds (issue #765).
+  /** A report an installed plugin declares, added up by Securo; `pluginId` is "owner/name". */
+  plugin: async (
+    pluginId: string,
+    key: string,
+    startDate: string,
+    endDate: string,
+    accountIds?: string[],
+  ): Promise<PluginReportResponse> => {
+    const extra = acctIdsParam(accountIds)
+    const { data } = await api.get(`/reports/plugins/${pluginId}/${encodeURIComponent(key)}`, {
+      params: { start_date: startDate, end_date: endDate, ...(extra.params ?? {}) },
+      ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}),
+    })
+    return data
+  },
   dataRange: async (): Promise<{ min_date: string | null; max_date: string | null }> => {
     const { data } = await api.get('/reports/data-range')
     return data

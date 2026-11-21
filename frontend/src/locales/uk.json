@@ -889,6 +889,8 @@
     "uncategorizedCta": "{{count}} транзакцій потрібно категоризувати",
     "uncategorizedTotal": "На суму {{amount}}",
     "categorizeNow": "Категоризувати зараз",
+    "drillDownQuickCategorize": "Вибрати категорію",
+    "drillDownOpenTransaction": "Відкрити операцію",
     "allCategorized": "Усе гаразд!",
     "allCategorizedDesc": "Усі транзакції категоризовано",
     "assetsValue": "Інвестовані активи",
@@ -948,6 +950,7 @@
     "addedToExistingRule": "Правило оновлено. Майбутні збіги використовуватимуть цю категорію.",
     "duplicateRuleCondition": "Це правило вже містить такий збіг.",
     "saveAndNew": "Зберегти й додати",
+    "saveAndNext": "Зберегти й далі",
     "saveAndDuplicate": "Зберегти й дублювати",
     "moreSaveOptions": "Інші варіанти збереження",
     "created": "Транзакцію створено",
@@ -1569,6 +1572,8 @@
     "copyPreviewCount": "Категорій для копіювання: {{count}}",
     "copyPreviewTotal": "Разом до копіювання: {{amount}}",
     "copyPreviewEmpty": "У вибраному місяці немає бюджетів для копіювання.",
+    "copyPreviewAllExist": "Усі категорії вихідного місяця вже мають бюджет у {{month}}. Виберіть заміну, щоб скопіювати суми або застосувати коригування.",
+    "copyPreviewNoChange": "Усі бюджети вихідного місяця вже мають ці суми в {{month}}.",
     "copyPreviewError": "Не вдалося завантажити вихідний місяць.",
     "copyAmountTooLarge": "Скоригована сума перевищує ліміт бюджету. Зменште відсоткове коригування.",
     "copyConfirm": "Копіювати бюджети",
@@ -1699,10 +1704,13 @@
   "rules": {
     "searchPlaceholder": "Пошук правил...",
     "filterAllCategories": "Усі категорії",
+    "filterByCategory": "Фільтр за категорією",
     "filterAllStatuses": "Усі статуси",
+    "filterByStatus": "Фільтр за статусом",
     "filterActiveOnly": "Лише активні",
     "filterInactiveOnly": "Лише неактивні",
     "filterAllActions": "Усі дії",
+    "filterByAction": "Фільтр за дією",
     "noFilterResults": "Жодне правило не відповідає цим фільтрам",
     "preview": "Попередній перегляд",
     "previewMatched": "збігів: {{matched}}",
@@ -2138,9 +2146,10 @@
     "summaryHoldings": "створено позицій: {{created}}, знайдено: {{matched}}",
     "summarySkipped": "вже імпортовано: {{count}}",
     "rowsSkipped": "Рядків буде пропущено: {{count}}",
+    "reasonColumn": "Причина",
     "rowError": "Рядок {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "і ще {{count}}",
-    "moreRows": "і ще {{count}} заявок",
+    "showAllRows": "Показати всі рядки ({{count}})",
     "field": {
       "ticker": "Тикер",
       "date": "Дата",
@@ -2260,9 +2269,21 @@
     "lastUpdated": "Оновлено {{when}}",
     "refreshPrice": "Оновити ціну",
     "refreshAllPrices": "Оновити ціни",
-    "refreshAllPricesDone": "Оновлено {{refreshed}} цін, {{skipped}} без нової котировки",
+    "refreshAllPricesDone": "{{updated}}, {{skipped}}",
+    "refreshAllPricesUpdated_one": "Оновлено {{count}} ціну",
+    "refreshAllPricesUpdated_few": "Оновлено {{count}} ціни",
+    "refreshAllPricesUpdated_many": "Оновлено {{count}} цін",
+    "refreshAllPricesUpdated_other": "Оновлено {{count}} ціни",
+    "refreshAllPricesNoQuote_one": "{{count}} без нової котировки",
+    "refreshAllPricesNoQuote_few": "{{count}} без нової котировки",
+    "refreshAllPricesNoQuote_many": "{{count}} без нової котировки",
+    "refreshAllPricesNoQuote_other": "{{count}} без нової котировки",
+    "refreshAllPricesLeftOut_one": "{{count}} пропущена",
+    "refreshAllPricesLeftOut_few": "{{count}} пропущені",
+    "refreshAllPricesLeftOut_many": "{{count}} пропущено",
+    "refreshAllPricesLeftOut_other": "{{count}} пропущено",
     "refreshAllPricesNone": "Немає активів із ринковою ціною для оновлення",
-    "refreshAllPricesRateLimited": "Постачальник ринкових даних зараз обмежує запити. До зупинки оновилося {{refreshed}} цін, а {{skipped}} пропущено. Спробуйте ще раз за хвилину.",
+    "refreshAllPricesRateLimited": "Постачальник ринкових даних зараз обмежує запити. До зупинки: {{updated}}, {{skipped}}. Спробуйте ще раз за хвилину.",
     "priceRefreshed": "Ціну оновлено",
     "purchaseDate": "Дата купівлі",
     "purchasePrice": "Ціна купівлі",
@@ -2443,7 +2464,41 @@
     "statementViewTransactions": "Переглянути транзакції",
     "statementUncategorizedIncome": "Доходи без категорії",
     "statementUncategorizedExpense": "Витрати без категорії",
-    "statementToggleGroup": "Показати категорії групи {{name}}"
+    "statementToggleGroup": "Показати категорії групи {{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "Усього витрачено",
+        "income": "Усього отримано",
+        "net": "Підсумок"
+      },
+      "none": {
+        "category": "Без категорії",
+        "category_group": "Без групи",
+        "payee": "Без отримувача",
+        "account": "Без рахунку",
+        "month": "Без дати"
+      },
+      "groupBy": {
+        "category": "Категорія",
+        "category_group": "Група",
+        "payee": "Отримувач",
+        "account": "Рахунок",
+        "month": "Місяць"
+      },
+      "measure": {
+        "expenses": "Витрати",
+        "income": "Доходи",
+        "net": "Підсумок"
+      },
+      "share": "Частка",
+      "computed": "Обчислено плагіном",
+      "periodTrimmed": "Звіти плагінів охоплюють щонайбільше два роки. Показано з {{from}} по {{to}}.",
+      "periodTooLong": "Звіт плагіна охоплює щонайбільше два роки. Виберіть коротший період.",
+      "totalRow": "Разом",
+      "page": "Сторінка {{page}} з {{pages}}",
+      "previousPage": "Попередня сторінка",
+      "nextPage": "Наступна сторінка"
+    }
   },
   "payees": {
     "noPayeeFound": "Отримувача не знайдено.",
@@ -4019,5 +4074,9 @@
       "title": "Регулярний дохід",
       "hint": "Скільки приносять регулярні рахунки щомісяця і що нещодавно втрачено."
     }
+  },
+  "offline": {
+    "title": "Сервер недоступний",
+    "description": "Ви не в мережі або Securo перезапускається. Ваші дані в безпеці, нічого не змінено. Ми автоматично перепідключимося, щойно сервер відповість."
   }
 }

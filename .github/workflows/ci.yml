@@ -301,6 +301,21 @@ jobs:
       - name: Check the paths AGENTS.md and the ADRs cite
         run: python3 .github/ci/check_doc_paths.py
 
+  installer:
+    name: Installer Script
+    runs-on: ubuntu-latest
+
+    steps:
+      # The installer is the first thing someone self-hosting runs, and the
+      # paths it takes on a second run only show up against a real folder. The
+      # test drives it with stub docker, curl and git, so it needs no daemon.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Test the installer
+        run: python3 .github/ci/test_install_sh.py
+
   frontend-checks:
     name: Frontend Checks
     runs-on: ubuntu-latest
