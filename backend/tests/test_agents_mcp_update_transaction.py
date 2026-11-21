@@ -389,6 +389,9 @@ async def test_a_new_amount_previews_the_restamped_conversion(
     assert result["derived"]["amount_primary"] == pytest.approx(350.0)
     assert result["derived"]["fx_rate_used"] == pytest.approx(5.0)
     assert "manual" in result["derived"]["note"]
+    # clear_fx removes the override and saves the market rate, so it must not
+    # be offered as a way to keep a manual conversion.
+    assert "clear_fx" not in result["derived"]["note"]
     fresh = await _fresh(session, tx.id)
     assert fresh.amount == Decimal("60.00")
     assert fresh.amount_primary == Decimal("330.00")
@@ -447,6 +450,112 @@ async def test_a_same_currency_amount_change_shows_no_conversion(
     )
 
     assert "derived" not in result
+
+
+async def test_a_currency_change_into_the_primary_currency_previews_the_1to1_stamp(
+    session: AsyncSession, ext_ctx: CallContext, usd_row_with_manual_rate: Transaction
+):
+    """A USD row changed to the primary currency is stamped 60 at 1, not kept at 330."""
+    tx = usd_row_with_manual_rate
+
+    result = await _call(
+        session=session, ctx=ext_ctx, transaction_id=str(tx.id), currency="BRL"
+    )
+
+    assert result["derived"]["amount_primary"] == pytest.approx(60.0)
+    assert result["derived"]["fx_rate_used"] == pytest.approx(1.0)
+    assert "primary currency" in result["derived"]["note"]
+
+
+async def _seed_usd_row(
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+    test_account: Account,
+    *,
+    rate_on: date | None,
+) -> Transaction:
+    """A USD row dated 2024-05-10, with a stored rate only on ``rate_on``."""
+    if rate_on is not None:
+        session.add(
+            FxRate(
+                base_currency="USD",
+                quote_currency="BRL",
+                date=rate_on,
+                rate=Decimal("5.0"),
+                source="test",
+            )
+        )
+    tx = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=test_account.id,
+        description="Book from abroad",
+        amount=Decimal("60.00"),
+        currency="USD",
+        date=date(2024, 5, 10),
+        effective_date=date(2024, 5, 10),
+        type="debit",
+        source="manual",
+        status="posted",
+        amount_primary=Decimal("330.00"),
+        fx_rate_used=Decimal("5.5"),
+    )
+    session.add(tx)
+    await session.commit()
+    await session.refresh(tx)
+    return tx
+
+
+@pytest_asyncio.fixture
+async def usd_row_without_an_exact_rate(
+    session: AsyncSession, test_user, test_workspace, test_account: Account
+) -> Transaction:
+    """A USD row with no rate for its own date, so the save will resolve one."""
+    return await _seed_usd_row(
+        session, test_user, test_workspace, test_account, rate_on=None
+    )
+
+
+@pytest_asyncio.fixture
+async def usd_row_with_a_closest_rate(
+    session: AsyncSession, test_user, test_workspace, test_account: Account
+) -> Transaction:
+    """A USD row whose only stored rate is from the day before."""
+    return await _seed_usd_row(
+        session, test_user, test_workspace, test_account, rate_on=date(2024, 5, 9)
+    )
+
+
+async def test_a_closest_date_rate_is_previewed_as_an_estimate(
+    session: AsyncSession, ext_ctx: CallContext, usd_row_with_a_closest_rate: Transaction
+):
+    """A prior-day rate is shown, but the save may fetch the exact-date one."""
+    tx = usd_row_with_a_closest_rate
+
+    result = await _call(
+        session=session, ctx=ext_ctx, transaction_id=str(tx.id), amount=70
+    )
+
+    assert result["derived"]["amount_primary"] == pytest.approx(350.0)
+    assert result["derived"]["fx_rate_used"] == pytest.approx(5.0)
+    assert "estimated" in result["derived"]["note"]
+
+
+async def test_no_stored_rate_previews_the_automatic_resolution(
+    session: AsyncSession, ext_ctx: CallContext, usd_row_without_an_exact_rate: Transaction
+):
+    """With no stored rate the preview says the save resolves it, not that the row keeps it."""
+    tx = usd_row_without_an_exact_rate
+
+    result = await _call(
+        session=session, ctx=ext_ctx, transaction_id=str(tx.id), amount=70
+    )
+
+    assert result["derived"]["amount_primary"] == "auto"
+    assert result["derived"]["fx_rate_used"] == "auto"
+    assert "automatically" in result["derived"]["note"]
 
 
 # --- The apply gate ---------------------------------------------------------
