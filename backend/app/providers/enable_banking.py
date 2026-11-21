@@ -162,11 +162,17 @@ def _balance_of_type(
     return None
 
 
-def _pick_balance(balances: list[dict]) -> Optional[dict]:
-    """Pick the most useful balance from EB's list (prefer closing booked)."""
+def _pick_balance(balances: list[Any]) -> Optional[dict]:
+    """Pick a balance from EB's list in the configured priority order.
+
+    Booked balances come first by default: available/expected ones can include
+    pending entries or the account's credit line, so they are not
+    interchangeable with the booked balance.
+    """
     if not balances:
         return None
-    picked = _balance_of_type(balances, ("CLBD", "ITAV", "CLAV", "XPCD", "OPBD", "OPAV"))
+    priority = tuple(get_settings().enable_banking_balance_priority.split(","))
+    picked = _balance_of_type(balances, priority)
     if picked is not None:
         return picked
     return balances[0] if isinstance(balances[0], dict) else None
