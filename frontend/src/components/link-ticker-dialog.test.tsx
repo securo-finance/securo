@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -96,13 +97,41 @@ describe('LinkTickerDialog', () => {
     expect(screen.queryByRole('button', { name: t('assets.linkTickerUnlink') })).not.toBeInTheDocument()
   })
 
-  it('returns a linked holding to the bank value and closes', async () => {
-    unlinkTicker.mockResolvedValue(syncedHolding({ ticker: 'PSSA3.SA', valuation_method: 'manual' }))
-    const onClose = renderDialog(syncedHolding({ ticker: 'PSSA3.SA', valuation_method: 'market_price' }))
+  it('returns a linked holding to the bank value, refreshes the views showing it and closes', async () => {
+    // What the holding row and the portfolio chart read: units × quote (308)
+    // while linked, the bank's figure (300) once the server has unlinked it.
+    let serverValue = 308
+    const listAssets = vi.fn(async () => [{ id: 'asset-1', current_value: serverValue }])
+    const portfolioTrend = vi.fn(async () => ({ total: serverValue }))
+    function AssetViews() {
+      const list = useQuery({ queryKey: ['assets'], queryFn: listAssets })
+      const trend = useQuery({ queryKey: ['portfolio-trend'], queryFn: portfolioTrend })
+      return (
+        <>
+          <p>holding {list.data?.[0].current_value ?? '…'}</p>
+          <p>portfolio {trend.data?.total ?? '…'}</p>
+        </>
+      )
+    }
+    unlinkTicker.mockImplementation(async () => {
+      serverValue = 300
+      return syncedHolding({ ticker: 'PSSA3.SA', valuation_method: 'manual' })
+    })
+    const onClose = vi.fn()
+    renderWithProviders(
+      <>
+        <AssetViews />
+        <LinkTickerDialog asset={syncedHolding({ ticker: 'PSSA3.SA', valuation_method: 'market_price' })} onClose={onClose} />
+      </>,
+    )
+    expect(await screen.findByText('holding 308')).toBeInTheDocument()
+    expect(await screen.findByText('portfolio 308')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: t('assets.linkTickerUnlink') }))
 
     await waitFor(() => expect(unlinkTicker).toHaveBeenCalledWith('asset-1'))
+    expect(await screen.findByText('holding 300')).toBeInTheDocument()
+    expect(await screen.findByText('portfolio 300')).toBeInTheDocument()
     await waitFor(() => expect(onClose).toHaveBeenCalled())
     expect(toastSuccess).toHaveBeenCalledWith(t('assets.linkTickerUnlinked'))
     expect(linkTicker).not.toHaveBeenCalled()
