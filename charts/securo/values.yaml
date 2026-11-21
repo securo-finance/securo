@@ -113,6 +113,52 @@ config:
   agentsEmbeddingProvider: "native"
   agentsEmbeddingModel: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
+# Isolated plugin execution services. Keep runner replicaCount at 1 because
+# installed plugins and their registry are stored on one shared volume.
+pluginRunner:
+  enabled: false
+  replicaCount: 1
+  image:
+    # Empty values use backend.image.repository/tag.
+    repository: ""
+    tag: ""
+    pullPolicy: IfNotPresent
+  service:
+    port: 8090
+  # Secret must contain PLUGINS_RUNNER_TOKEN and PLUGINS_EGRESS_SECRET.
+  # Leave empty to have Helm generate a separate Secret.
+  existingSecret: ""
+  persistence:
+    enabled: true
+    existingClaim: ""
+    size: 5Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+  settings:
+    callTimeout: 60
+    installTimeout: 600
+    memoryMb: 512
+    maxCalls: 4
+    archiveLimitMb: 20
+  networkPolicy:
+    enabled: true
+
+pluginEgress:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
 # Backend configuration
 backend:
   replicaCount: 1

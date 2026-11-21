@@ -1,0 +1,16 @@
+{{- if .Values.pluginRunner.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "securo.fullname" . }}-plugins-egress
+  labels:
+    {{- include "securo.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "securo.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: plugins-egress
+  ports:
+    - name: proxy
+      port: 3128
+      targetPort: proxy
+{{- end }}

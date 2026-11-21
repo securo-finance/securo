@@ -60,9 +60,18 @@ spec:
             {{- with .Values.backend.extraEnvFrom }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          {{- with .Values.backend.extraEnv }}
+          {{- if or .Values.pluginRunner.enabled .Values.backend.extraEnv }}
           env:
+            {{- if .Values.pluginRunner.enabled }}
+            - name: PLUGINS_RUNNER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "securo.pluginRunnerSecretName" . }}
+                  key: PLUGINS_RUNNER_TOKEN
+            {{- end }}
+          {{- with .Values.backend.extraEnv }}
             {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- end }}
           volumeMounts:
             {{- if .Values.persistence.attachments.enabled }}

@@ -1,0 +1,16 @@
+{{- if .Values.pluginRunner.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "securo.fullname" . }}-plugins-runner
+  labels:
+    {{- include "securo.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "securo.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: plugins-runner
+  ports:
+    - name: http
+      port: {{ .Values.pluginRunner.service.port }}
+      targetPort: http
+{{- end }}

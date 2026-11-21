@@ -1,0 +1,21 @@
+{{- if and .Values.pluginRunner.enabled .Values.pluginRunner.persistence.enabled (not .Values.pluginRunner.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "securo.fullname" . }}-plugins
+  labels:
+    {{- include "securo.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.pluginRunner.persistence.accessMode | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.pluginRunner.persistence.size | quote }}
+  {{- if .Values.pluginRunner.persistence.storageClass }}
+  {{- if eq "-" .Values.pluginRunner.persistence.storageClass }}
+  storageClassName: ""
+  {{- else }}
+  storageClassName: {{ .Values.pluginRunner.persistence.storageClass | quote }}
+  {{- end }}
+  {{- end }}
+{{- end }}

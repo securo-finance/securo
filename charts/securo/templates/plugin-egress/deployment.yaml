@@ -1,0 +1,47 @@
+{{- if .Values.pluginRunner.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "securo.fullname" . }}-plugins-egress
+  labels:
+    {{- include "securo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: plugins-egress
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "securo.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: plugins-egress
+  template:
+    metadata:
+      labels:
+        {{- include "securo.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: plugins-egress
+    spec:
+      containers:
+        - name: plugins-egress
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          command: [python, -m, plugin_runner.egress]
+          ports:
+            - name: proxy
+              containerPort: 3128
+          env:
+            - name: PLUGINS_EGRESS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "securo.pluginRunnerSecretName" . }}
+                  key: PLUGINS_EGRESS_SECRET
+            - name: PLUGINS_EGRESS_PORT
+              value: "3128"
+          securityContext:
+            runAsUser: 65534
+            runAsGroup: 65534
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            {{- toYaml .Values.pluginEgress.resources | nindent 12 }}
+{{- end }}

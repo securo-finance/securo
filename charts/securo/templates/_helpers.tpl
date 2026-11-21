@@ -89,3 +89,11 @@ when `persistence.attachments.existingClaim` is set, the chart's own otherwise.
 {{- printf "%s-attachments" (include "securo.fullname" .) -}}
 {{- end -}}
 {{- end -}}
+
+{{- define "securo.pluginRunnerSecretName" -}}
+{{- default (printf "%s-plugin-runner" (include "securo.fullname" .)) .Values.pluginRunner.existingSecret -}}
+{{- end -}}
+
+{{- define "securo.pluginRunnerClaimName" -}}
+{{- default (printf "%s-plugins" (include "securo.fullname" .)) .Values.pluginRunner.persistence.existingClaim -}}
+{{- end -}}

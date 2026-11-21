@@ -1,0 +1,89 @@
+{{- if .Values.pluginRunner.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "securo.fullname" . }}-plugins-runner
+  labels:
+    {{- include "securo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: plugins-runner
+spec:
+  replicas: {{ .Values.pluginRunner.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "securo.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: plugins-runner
+  template:
+    metadata:
+      labels:
+        {{- include "securo.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: plugins-runner
+    spec:
+      containers:
+        - name: plugins-runner
+          image: "{{ default .Values.backend.image.repository .Values.pluginRunner.image.repository }}:{{ default .Values.backend.image.tag .Values.pluginRunner.image.tag }}"
+          imagePullPolicy: {{ .Values.pluginRunner.image.pullPolicy }}
+          command: [uvicorn, --factory, plugin_runner.main:create_app, --host, 0.0.0.0, --port, "8090"]
+          ports:
+            - name: http
+              containerPort: 8090
+          env:
+            - name: PLUGINS_RUNNER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "securo.pluginRunnerSecretName" . }}
+                  key: PLUGINS_RUNNER_TOKEN
+            - name: PLUGINS_EGRESS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "securo.pluginRunnerSecretName" . }}
+                  key: PLUGINS_EGRESS_SECRET
+            - name: PLUGINS_EGRESS_PROXY
+              value: "{{ include "securo.fullname" . }}-plugins-egress:3128"
+            - name: PLUGINS_DATA_DIR
+              value: /var/lib/securo-plugins
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+            - name: PLUGINS_CALL_TIMEOUT
+              value: {{ .Values.pluginRunner.settings.callTimeout | quote }}
+            - name: PLUGINS_INSTALL_TIMEOUT
+              value: {{ .Values.pluginRunner.settings.installTimeout | quote }}
+            - name: PLUGINS_MEMORY_MB
+              value: {{ .Values.pluginRunner.settings.memoryMb | quote }}
+            - name: PLUGINS_MAX_CALLS
+              value: {{ .Values.pluginRunner.settings.maxCalls | quote }}
+            - name: PLUGINS_ARCHIVE_LIMIT_MB
+              value: {{ .Values.pluginRunner.settings.archiveLimitMb | quote }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8090
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8090
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+              add: [SETUID, SETGID, CHOWN, DAC_OVERRIDE, FOWNER, KILL]
+          volumeMounts:
+            - name: plugins
+              mountPath: /var/lib/securo-plugins
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            {{- toYaml .Values.pluginRunner.resources | nindent 12 }}
+      volumes:
+        - name: plugins
+          {{- if .Values.pluginRunner.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "securo.pluginRunnerClaimName" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: tmp
+          emptyDir: {}
+{{- end }}
