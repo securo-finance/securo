@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Budget } from '@/types'
-import { normalizeBudgetComparisonRows, parseBudgetDraft, planBudgetChange, savedPlannedTotal } from '@/lib/budget-settings-utils'
+import { normalizeBudgetComparisonRows, parseBudgetDraft, planBudgetChange, savedPlannedTotal, incomeShare } from '@/lib/budget-settings-utils'
 
 function budget(overrides: Partial<Budget>): Budget {
   return { id: 'b1', user_id: 'u', category_id: 'food', amount: 100, month: '2026-08-01', is_recurring: true, ...overrides }
@@ -142,5 +142,24 @@ describe('planBudgetChange', () => {
     expect(plan(0, false, budget({}))).toEqual([
       { type: 'update', id: 'b1', data: { amount: 0, effective_month: month } },
     ])
+  })
+})
+
+describe('incomeShare', () => {
+  it('classifies by cents so tenths that float cannot turn into a shortfall', () => {
+    expect(incomeShare(0.3, 0.1 + 0.2)).toEqual({ cents: 0, percent: 0 })
+  })
+
+  it('floors the share with integer arithmetic', () => {
+    expect(incomeShare(100, 71)).toEqual({ cents: 2900, percent: 29 })
+  })
+
+  it('reports a shortfall as negative cents and the share of the income it represents', () => {
+    expect(incomeShare(500, 1020)).toEqual({ cents: -52000, percent: 104 })
+  })
+
+  it('has no share without income to divide by', () => {
+    expect(incomeShare(null, 900)).toBeNull()
+    expect(incomeShare(0, 900)).toEqual({ cents: -90000, percent: null })
   })
 })

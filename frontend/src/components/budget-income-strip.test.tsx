@@ -68,6 +68,26 @@ describe('BudgetIncomeStrip', () => {
     expect(share).toHaveClass('text-emerald-700')
   })
 
+  it('treats a zero difference in tenths as neutral, not short', async () => {
+    api.budgets.expectedIncome.get.mockResolvedValue({ ...income, amount: 0.3, amount_primary: 0.3 })
+    await strip([
+      { ...rent, id: 'b-a', amount: 0.1 },
+      { ...rent, id: 'b-b', amount: 0.2 },
+    ])
+
+    const zero = await screen.findByText(t('budgets.incomeLeftShare', { percent: 0, amount: '$0.00' }))
+    expect(zero).toHaveClass('text-muted-foreground')
+  })
+
+  it('floors the share with integer arithmetic', async () => {
+    api.budgets.expectedIncome.get.mockResolvedValue({ ...income, amount: 100, amount_primary: 100 })
+    await strip([{ ...rent, id: 'b-rent-71', amount: 71 }])
+
+    expect(
+      await screen.findByText(t('budgets.incomeLeftShare', { percent: 29, amount: '$29.00' })),
+    ).toBeInTheDocument()
+  })
+
   it('shows the share the income is short by, and never divides by a zero planned total', async () => {
     api.budgets.expectedIncome.get.mockResolvedValue({ ...income, amount: 500, amount_primary: 500 })
     const withLimits = await strip([rent, hidden])

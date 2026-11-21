@@ -30,7 +30,7 @@ import { useSidebarState } from '@/contexts/sidebar-state-context'
 import { cn } from '@/lib/utils'
 import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
-import { parseBudgetDraft, planBudgetChange, savedPlannedTotal, type BudgetOperation } from '@/lib/budget-settings-utils'
+import { incomeShare, parseBudgetDraft, planBudgetChange, savedPlannedTotal, type BudgetOperation } from '@/lib/budget-settings-utils'
 import { todayInTimezone } from '@/lib/date-utils'
 import { formatAmountInput, formatCurrency } from '@/lib/format'
 import type { BudgetSuggestion, Category } from '@/types'
@@ -215,26 +215,23 @@ export default function BudgetsPage() {
   // figure does not move while the user is still typing.
   const savedPlanned = savedPlannedTotal(budgetsList ?? [])
   const chipIncome = incomeData == null ? null : Number(incomeData.amount_primary ?? incomeData.amount)
-  const chipDifference = chipIncome === null ? null : chipIncome - savedPlanned
-  // The chip says what share of the income is left (green) or short (red),
-  // floored and always relative to the income, like the strip's sentence.
-  const chipShare = chipIncome !== null && chipIncome > 0 && chipDifference !== null
-    ? Math.floor((Math.abs(chipDifference) / chipIncome) * 100)
-    : null
-  const chipShareClass = chipDifference === null || chipDifference === 0
+  // The chip says what share of the income is left (green) or short (red), in
+  // minor units, like the strip's sentence.
+  const chipShare = incomeShare(chipIncome, savedPlanned)
+  const chipShareClass = chipShare === null || chipShare.cents === 0
     ? 'text-muted-foreground'
-    : chipDifference > 0
+    : chipShare.cents > 0
       ? 'text-emerald-700 dark:text-emerald-300'
       : 'text-rose-700 dark:text-rose-300'
-  const chipLine = chipDifference === null
+  const chipLine = chipShare === null
     ? null
-    : chipDifference < 0
-      ? chipShare !== null
-        ? t('budgets.incomeShortShare', { percent: chipShare, amount: fmt(-chipDifference) })
-        : t('budgets.incomeShort', { amount: fmt(-chipDifference) })
-      : chipShare !== null
-        ? t('budgets.incomeLeftShare', { percent: chipShare, amount: fmt(chipDifference) })
-        : t('budgets.incomeLeft', { amount: fmt(chipDifference) })
+    : chipShare.cents < 0
+      ? chipShare.percent !== null
+        ? t('budgets.incomeShortShare', { percent: chipShare.percent, amount: fmt(Math.abs(chipShare.cents) / 100) })
+        : t('budgets.incomeShort', { amount: fmt(Math.abs(chipShare.cents) / 100) })
+      : chipShare.percent !== null
+        ? t('budgets.incomeLeftShare', { percent: chipShare.percent, amount: fmt(chipShare.cents / 100) })
+        : t('budgets.incomeLeft', { amount: fmt(chipShare.cents / 100) })
   const rowFor = (suggestion: BudgetSuggestion) =>
     suggestEdits[suggestion.category_id] ?? { checked: !suggestion.existing_budget, amount: String(suggestion.suggested_amount) }
   const suggestionByCategory = new Map((suggestionData?.suggestions ?? []).map((suggestion) => [suggestion.category_id, suggestion]))

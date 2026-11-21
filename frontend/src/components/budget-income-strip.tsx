@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 
 import { budgets as budgetsApi } from '@/lib/api'
 import { extractApiError } from '@/lib/api-errors'
-import { parseBudgetDraft, savedPlannedTotal } from '@/lib/budget-settings-utils'
+import { incomeShare, parseBudgetDraft, savedPlannedTotal } from '@/lib/budget-settings-utils'
 import { formatCurrency } from '@/lib/format'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { Button } from '@/components/ui/button'
@@ -68,16 +68,12 @@ export function BudgetIncomeStrip({ month, savedBudgets, canWrite, currency, loc
   // A missing rate leaves amount_primary null: fall back to the raw amount (D5).
   const incomeValue = income === null ? null : Number(income.amount_primary ?? income.amount)
   const planned = savedPlannedTotal(savedBudgets)
-  const difference = incomeValue === null ? null : incomeValue - planned
-  // Share of the income left, or the share it falls short by. Floored so the
-  // figure never promises more than the raw ratio; with no income there is no
-  // base to divide by, and the row falls back to the amount alone.
-  const share = incomeValue !== null && incomeValue > 0 && difference !== null
-    ? Math.floor((Math.abs(difference) / incomeValue) * 100)
-    : null
-  const shareClass = difference === null || difference === 0
+  // Signed difference and its share of the income, in minor units, so tenths
+  // and floored percentages stay exact; no income means no share to divide by.
+  const share = incomeShare(incomeValue, planned)
+  const shareClass = share === null || share.cents === 0
     ? 'text-muted-foreground'
-    : difference > 0
+    : share.cents > 0
       ? 'text-emerald-700 dark:text-emerald-300'
       : 'text-rose-700 dark:text-rose-300'
   const parsed = parseBudgetDraft(draft, locale)
@@ -134,15 +130,15 @@ export function BudgetIncomeStrip({ month, savedBudgets, canWrite, currency, loc
         <span className="text-sm font-medium text-foreground">{t('budgets.incomeLabel')}</span>
         <span className="text-sm font-semibold tabular-nums text-foreground">{fmt(incomeValue ?? 0)}</span>
         <span className="text-xs text-muted-foreground tabular-nums">{t('budgets.incomePlanned', { amount: fmt(planned) })}</span>
-        {difference !== null && (
+        {share !== null && (
           <span className={`text-xs tabular-nums ${shareClass}`}>
-            {difference < 0
-              ? share !== null
-                ? t('budgets.incomeShortShare', { percent: share, amount: fmt(-difference) })
-                : t('budgets.incomeShort', { amount: fmt(-difference) })
-              : share !== null
-                ? t('budgets.incomeLeftShare', { percent: share, amount: fmt(difference) })
-                : t('budgets.incomeLeft', { amount: fmt(difference) })}
+            {share.cents < 0
+              ? share.percent !== null
+                ? t('budgets.incomeShortShare', { percent: share.percent, amount: fmt(Math.abs(share.cents) / 100) })
+                : t('budgets.incomeShort', { amount: fmt(Math.abs(share.cents) / 100) })
+              : share.percent !== null
+                ? t('budgets.incomeLeftShare', { percent: share.percent, amount: fmt(share.cents / 100) })
+                : t('budgets.incomeLeft', { amount: fmt(share.cents / 100) })}
           </span>
         )}
       </div>

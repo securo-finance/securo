@@ -143,3 +143,26 @@ export function planBudgetChange({
 export function savedPlannedTotal(savedBudgets: Budget[]): number {
   return savedBudgets.reduce((total, budget) => total + Number(budget.amount), 0)
 }
+
+export interface IncomeShare {
+  /** Signed difference in minor units: positive left, negative short. */
+  cents: number
+  /** Share of the income the difference represents, floored; null without income. */
+  percent: number | null
+}
+
+/**
+ * The income left or short of the planned total, in minor units so neither the
+ * sign nor the floored percentage suffers binary rounding: `0.10 + 0.20` is not
+ * `0.30` in floating point, and `29 / 100 * 100` floors to 28.
+ */
+export function incomeShare(income: number | null, planned: number): IncomeShare | null {
+  if (income === null) return null
+  const incomeCents = Math.round(income * 100)
+  const plannedCents = Math.round(planned * 100)
+  const cents = incomeCents - plannedCents
+  return {
+    cents,
+    percent: incomeCents > 0 ? Math.floor((Math.abs(cents) * 100) / incomeCents) : null,
+  }
+}
