@@ -331,32 +331,84 @@ def _accounts_with_balances_query(
     )
 
 
-async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_closed: bool = False) -> list[dict]:
+async def get_accounts(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    include_closed: bool = False,
+) -> list[dict]:
     query = _accounts_with_balances_query(workspace_id, *_balance_subqueries(app_today()))
     if not include_closed:
         query = query.where(Account.is_closed == False)
-    query = query.order_by(Account.order, func.coalesce(Account.display_name, Account.name))
     result = await session.execute(query)
-    return [
-            serialize_account(
-                acc,
-                current_balance,
-                previous_balance,
-                connection,
-                future_charges=future_charges,
-                open_bill_total=open_bill_total,
-                balance_date=balance_date,
-            )
-            for (
-                acc,
-                connection,
-                current_balance,
-                previous_balance,
-                future_charges,
-                open_bill_total,
-                balance_date,
-            ) in result.all()
-        ]
+    accounts = [
+        serialize_account(
+            acc,
+            current_balance,
+            previous_balance,
+            connection,
+            future_charges=future_charges,
+            open_bill_total=open_bill_total,
+            balance_date=balance_date,
+        )
+        for (
+            acc,
+            connection,
+            current_balance,
+            previous_balance,
+            future_charges,
+            open_bill_total,
+            balance_date,
+        ) in result.all()
+    ]
+    return sort_accounts(accounts)
+
+
+def sort_accounts(accounts: list[dict]) -> list[dict]:
+    """Apply the canonical account-list ordering in place."""
+    accounts.sort(
+        key=lambda account: (
+            account["order"],
+            -abs(
+                account["balance_primary"]
+                if account.get("balance_primary") is not None
+                else account["current_balance"]
+            ),
+            (account.get("display_name") or account["name"]).casefold(),
+        ),
+    )
+    return accounts
+
+
+async def convert_and_sort_accounts(
+    session: AsyncSession,
+    accounts: list[dict],
+    primary_currency: str,
+) -> list[dict]:
+    """Add primary-currency values, then order accounts by comparable balances."""
+    for account in accounts:
+        await convert_account_to_primary(session, account, primary_currency)
+    return sort_accounts(accounts)
+
+
+async def convert_account_to_primary(
+    session: AsyncSession,
+    account: dict,
+    primary_currency: str,
+) -> None:
+    """Fill primary-currency values on a serialized account."""
+    if account["currency"] == primary_currency:
+        return
+    # Use the real rate only: a 1:1 fallback would present a foreign
+    # balance as already converted (issue #1165).
+    rate = await _resolve_rate(session, account["currency"], primary_currency)
+    if rate is None:
+        account["fx_fallback"] = True
+        return
+    converted = Decimal(str(account["current_balance"])) * rate
+    account["balance_primary"] = float(converted.quantize(Decimal("0.01")))
+    if account["open_bill_total"] is not None:
+        bill = Decimal(str(account["open_bill_total"])) * rate
+        account["open_bill_total_primary"] = float(bill.quantize(Decimal("0.01")))
 
 
 async def get_account_with_balances(

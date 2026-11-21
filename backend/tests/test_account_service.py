@@ -45,6 +45,43 @@ from app.services.account_service import (
 FROZEN_TODAY = date(2026, 9, 20)
 
 
+def test_sort_accounts_uses_primary_balance_then_display_name():
+    accounts = [
+        {
+            "id": "foreign",
+            "name": "Zulu",
+            "display_name": None,
+            "order": 0,
+            "current_balance": 1000,
+            "balance_primary": 50,
+        },
+        {
+            "id": "local-zulu",
+            "name": "Zulu",
+            "display_name": None,
+            "order": 0,
+            "current_balance": 100,
+            "balance_primary": None,
+        },
+        {
+            "id": "local-alpha",
+            "name": "Original",
+            "display_name": "Alpha",
+            "order": 0,
+            "current_balance": -100,
+            "balance_primary": None,
+        },
+    ]
+
+    account_service.sort_accounts(accounts)
+
+    assert [account["id"] for account in accounts] == [
+        "local-alpha",
+        "local-zulu",
+        "foreign",
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
