@@ -196,13 +196,18 @@ services:
       start_period: 30s
       retries: 12
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    # Loopback only by default: the frontend's nginx proxies /api over the
+    # Compose network, so nothing outside the host needs this port. Set
+    # BACKEND_BIND_ADDRESS=0.0.0.0 to reach it from other machines.
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      - "${BACKEND_BIND_ADDRESS:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
 
   frontend:
     image: ghcr.io/securo-finance/securo-frontend:latest
+    # Open to the network by default. Set FRONTEND_BIND_ADDRESS=127.0.0.1 when
+    # a reverse proxy on the same host is the only way in.
     ports:
-      - "${FRONTEND_PORT:-3000}:8080"
+      - "${FRONTEND_BIND_ADDRESS:-0.0.0.0}:${FRONTEND_PORT:-3000}:8080"
     environment:
       BACKEND_URL: http://backend:8000
       FRONTEND_URL: http://localhost:3000
