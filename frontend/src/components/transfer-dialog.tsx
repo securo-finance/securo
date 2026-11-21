@@ -50,9 +50,9 @@ export function TransferDialog({
   const [notes, setNotes] = useState('')
   const [destinationAmount, setDestinationAmount] = useState('')
 
-  const [formSource, setFormSource] = useState<{ open: boolean; defaultFromAccountId?: string; firstAccountId: string } | null>(null)
-  if (!formSource || formSource.open !== open || formSource.defaultFromAccountId !== defaultFromAccountId || formSource.firstAccountId !== firstAccountId) {
-    setFormSource({ open, defaultFromAccountId, firstAccountId })
+  const [formOpen, setFormOpen] = useState(open)
+  if (formOpen !== open) {
+    setFormOpen(open)
     if (open) {
       setFromAccountId(defaultFromAccountId || firstAccountId)
       setToAccountId('')
