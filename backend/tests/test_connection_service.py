@@ -3797,6 +3797,60 @@ async def test_sync_connection_enable_banking_reworded_remittance_through_sync(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("concept", ["ahorro", "pago alquiler", "regalo cumple ana"])
+async def test_sync_connection_enable_banking_reworded_remittance_short_concept(
+    session: AsyncSession, test_user, test_workspace, concept,
+):
+    """#1744: the reworded text is the bank's label and a short concept, so
+    the shared ending covers every word of it but the label. The held row
+    takes the new id instead of a second row landing next to it."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    _, held_id = await _hold_reworded_entry(
+        session, test_user.id, test_workspace.id, account,
+        _eb_reworded_payload(
+            None, f"TRANSFERENCIA A FAVOR DE Cuenta Ahorro CONCEPTO: {concept}",
+        ),
+    )
+
+    refetched = _eb_txn(_eb_reworded_payload("2026-11-11.0", f"TRASPASO: {concept}"))
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [refetched])
+
+    rows = await _account_rows(session, account_id)
+    assert [(row.id, row.external_id) for row in rows] == [(held_id, refetched.external_id)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "reworded",
+    [
+        # Another concept: the endings share nothing.
+        "TRASPASO: viaje",
+        # The shared ending leaves two words of the shorter text, more than a label.
+        "PAGO RECIBO: ahorro",
+    ],
+)
+async def test_sync_connection_enable_banking_reworded_short_text_needs_the_concept(
+    session: AsyncSession, test_user, test_workspace, reworded,
+):
+    """A short text still has to end in the held text's concept with no more
+    than one word in front of it, so another transfer of the same amount on
+    the same day lands as its own row."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    held_txn, held_id = await _hold_reworded_entry(
+        session, test_user.id, test_workspace.id, account,
+        _eb_reworded_payload(None, "TRANSFERENCIA A FAVOR DE Cuenta Ahorro CONCEPTO: ahorro"),
+    )
+
+    refetched = _eb_txn(_eb_reworded_payload("2026-11-11.0", reworded))
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [refetched])
+
+    rows = await _account_rows(session, account_id)
+    assert {row.external_id for row in rows} == {held_txn.external_id, refetched.external_id}
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("held_remittance", "booked_remittance", "held_value_date"),
     [

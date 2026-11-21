@@ -2681,9 +2681,12 @@ def _eb_reworded_entry(held: dict, booked: dict) -> bool:
     agree on everything but the reference and the remittance text, and the
     two texts have to end in the same words, covering at least 80% of the
     shorter one: a bank that rewords an entry swaps the label in front and
-    keeps the concept the payer typed at the end. Shared words elsewhere are
-    not enough, since "CARD PAYMENT AT SHOP ALPHA" and "CARD PAYMENT AT SHOP
-    BETA" are two purchases when no creditor field tells them apart.
+    keeps the concept the payer typed at the end. A short concept falls under
+    80% once the label is counted ("TRASPASO: ahorro" shares one word of two),
+    so the shorter text also matches when its shared ending covers every word
+    but one, the label in front. Shared words elsewhere are not enough, since
+    "CARD PAYMENT AT SHOP ALPHA" and "CARD PAYMENT AT SHOP BETA" are two
+    purchases when no creditor field tells them apart.
     """
     def rest(raw: dict) -> dict:
         return {
@@ -2704,7 +2707,8 @@ def _eb_reworded_entry(held: dict, booked: dict) -> bool:
         if held_word != booked_word:
             break
         shared_tail += 1
-    return shared_tail / min(len(held_words), len(booked_words)) >= 0.8
+    shorter = min(len(held_words), len(booked_words))
+    return shared_tail > 0 and (shared_tail / shorter >= 0.8 or shared_tail >= shorter - 1)
 
 
 def _eb_exact_twin_in_batch(
