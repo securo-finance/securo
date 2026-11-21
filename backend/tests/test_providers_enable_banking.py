@@ -820,7 +820,7 @@ async def test_get_transactions_default_window_is_90_days_inclusive(eb_keys):
         await provider.get_transactions(_CREDENTIALS, "acc-1")
 
     assert len(requests) == 1
-    assert requests[0].url.params["date_to"] == date.today().isoformat()
+    assert requests[0].url.params["date_to"] == _utc_today().isoformat()
     assert requests[0].url.params.get("strategy") is None
     assert _span_days(requests[0]) == DEFAULT_HISTORY_DAYS == 90
 
