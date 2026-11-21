@@ -203,7 +203,9 @@ function SortableWidget({
       style={style}
       aria-label={title}
       className={cn(
-        'relative grid',
+        // min-w-0: a grid item is as wide as its content by default, so one
+        // long nowrap line would widen the whole column and every widget in it.
+        'relative grid min-w-0',
         SPAN_CLASS[shownSpan],
         entry.tall && 'min-h-[380px]',
         // While editing, each widget sits in a frame with its own header, so
@@ -273,7 +275,7 @@ function SortableWidget({
           </div>
         </div>
       )}
-      <div inert={editing} className={cn('grid', editing && 'select-none')}>
+      <div inert={editing} className={cn('grid min-w-0', editing && 'select-none')}>
         {children || (
           <div className="flex items-center justify-center rounded-xl border border-dashed bg-card px-6 py-10 text-sm text-muted-foreground">
             {t('library.nothingToShow')}
