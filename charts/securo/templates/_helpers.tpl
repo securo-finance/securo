@@ -61,6 +61,49 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
+Secret that holds the plugin runner token and the egress secret. Either the one
+the chart creates or the user's existingSecret.
+*/}}
+{{- define "securo.pluginsSecretName" -}}
+{{- if .Values.plugins.runner.existingSecret }}
+{{- .Values.plugins.runner.existingSecret }}
+{{- else }}
+{{- printf "%s-plugins" (include "securo.fullname" .) }}
+{{- end }}
+{{- end }}
+
+{{/*
+Image for the plugin runner and the egress proxy: the backend image unless the
+user pointed them somewhere else.
+*/}}
+{{- define "securo.pluginsImage" -}}
+{{- $repository := .Values.plugins.runner.image.repository | default .Values.backend.image.repository }}
+{{- $tag := .Values.plugins.runner.image.tag | default .Values.backend.image.tag }}
+{{- printf "%s:%s" $repository $tag }}
+{{- end }}
+
+{{/*
+Stable checksum for the plugin tokens. Renders the same value for every caller
+in one render (the Secret template itself uses random values on install), and
+changes only when the live Secret data changes.
+*/}}
+{{- define "securo.pluginsSecretChecksum" -}}
+{{- $secret := lookup "v1" "Secret" .Release.Namespace (include "securo.pluginsSecretName" .) }}
+{{- $explicit := dict "token" .Values.plugins.runner.token "egress" .Values.plugins.runner.egressSecret }}
+{{- toJson (dict "data" (default dict ($secret.data)) "explicit" (pick $explicit "token" "egress")) | sha256sum }}
+{{- end }}
+
+{{/*
+`plugins` is a new top-level value. Under `helm upgrade --reuse-values` Helm
+keeps the old value map, so the key can be absent; every condition guards it.
+*/}}
+{{- define "securo.pluginsRunnerEnabled" -}}
+{{- $plugins := .Values.plugins | default dict }}
+{{- $runner := get $plugins "runner" | default dict }}
+{{- if get $runner "enabled" }}true{{ end }}
+{{- end }}
+
+{{/*
 Compute the frontend URL based on global.domain and global.tls
 */}}
 {{- define "securo.frontendUrl" -}}

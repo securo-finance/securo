@@ -17,6 +17,9 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/common/configmap.yaml") . | sha256sum }}
+        {{- if and (include "securo.pluginsRunnerEnabled" .) (not .Values.plugins.runner.existingSecret) }}
+        checksum/plugins-secret: {{ include "securo.pluginsSecretChecksum" . }}
+        {{- end }}
       labels:
         {{- include "securo.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: backend
@@ -60,9 +63,24 @@ spec:
             {{- with .Values.backend.extraEnvFrom }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          {{- with .Values.backend.extraEnv }}
+          {{- if or (include "securo.pluginsRunnerEnabled" .) .Values.backend.extraEnv }}
           env:
+            {{- if include "securo.pluginsRunnerEnabled" . }}
+            - name: PLUGINS_ENABLED
+              value: "true"
+            - name: PLUGINS_API_URL
+              value: {{ printf "http://%s-backend:%v/api" (include "securo.fullname" .) .Values.backend.service.port | quote }}
+            - name: PLUGINS_RUNNER_URL
+              value: {{ printf "http://%s-plugins-runner:%v" (include "securo.fullname" .) .Values.plugins.runner.service.port | quote }}
+            - name: PLUGINS_RUNNER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "securo.pluginsSecretName" . }}
+                  key: PLUGINS_RUNNER_TOKEN
+            {{- end }}
+            {{- with .Values.backend.extraEnv }}
             {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- end }}
           volumeMounts:
             {{- if .Values.persistence.attachments.enabled }}

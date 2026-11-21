@@ -1,0 +1,67 @@
+{{- if and (include "securo.pluginsRunnerEnabled" .) .Values.plugins.egress.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "securo.fullname" . }}-plugins-egress
+  labels:
+    {{- include "securo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: plugins-egress
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "securo.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: plugins-egress
+  template:
+    metadata:
+      {{- if not .Values.plugins.runner.existingSecret }}
+      annotations:
+        checksum/plugins-secret: {{ include "securo.pluginsSecretChecksum" . }}
+      {{- end }}
+      labels:
+        {{- include "securo.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: plugins-egress
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: plugins-egress
+          image: "{{ include "securo.pluginsImage" . }}"
+          imagePullPolicy: {{ .Values.plugins.runner.image.pullPolicy }}
+          command:
+            - python
+            - -m
+            - plugin_runner.egress
+          ports:
+            - name: proxy
+              containerPort: {{ .Values.plugins.egress.port }}
+              protocol: TCP
+          env:
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+            - name: PLUGINS_EGRESS_PORT
+              value: {{ .Values.plugins.egress.port | quote }}
+            - name: PLUGINS_EGRESS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "securo.pluginsSecretName" . }}
+                  key: PLUGINS_EGRESS_SECRET
+            {{- with .Values.plugins.egress.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          securityContext:
+            runAsUser: 65534
+            runAsGroup: 65534
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          {{- if .Values.plugins.egress.resources }}
+          resources:
+            {{- toYaml .Values.plugins.egress.resources | nindent 12 }}
+          {{- end }}
+{{- end }}
