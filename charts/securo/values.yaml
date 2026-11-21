@@ -149,6 +149,12 @@ pluginRunner:
     archiveLimitMb: 20
   networkPolicy:
     enabled: true
+    # Restrict DNS egress to the cluster DNS pods. Override these labels when
+    # the cluster uses a different DNS deployment.
+    dnsNamespaceSelector:
+      kubernetes.io/metadata.name: kube-system
+    dnsPodSelector:
+      k8s-app: kube-dns
 
 pluginEgress:
   resources:

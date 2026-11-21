@@ -50,7 +50,14 @@ spec:
       ports:
         - port: 8000
           protocol: TCP
-    - ports:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.pluginRunner.networkPolicy.dnsNamespaceSelector | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.pluginRunner.networkPolicy.dnsPodSelector | nindent 14 }}
+      ports:
         - port: 53
           protocol: UDP
         - port: 53
@@ -78,7 +85,14 @@ spec:
         - port: 3128
           protocol: TCP
   egress:
-    - ports:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.pluginRunner.networkPolicy.dnsNamespaceSelector | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.pluginRunner.networkPolicy.dnsPodSelector | nindent 14 }}
+      ports:
         - port: 53
           protocol: UDP
         - port: 53
