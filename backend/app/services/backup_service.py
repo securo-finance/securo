@@ -50,6 +50,7 @@ from app.models.invoice import (
 from app.models.invoice_attachment import InvoiceAttachment
 from app.models.invoice_schedule import InvoiceSchedule, InvoiceScheduleTerm
 from app.models.mortgage_payment_allocation import MortgagePaymentAllocation
+from app.models.reimbursement_allocation import ReimbursementAllocation
 from app.models.payee import Payee, PayeeMapping, PayeeTaxId
 from app.models.product import Product, ProductPrice
 from app.models.reconciliation import (
@@ -168,6 +169,7 @@ RESTORE_ORDER: list[str] = [
     "transactions",
     "transaction_category_lines",
     "mortgage_payment_allocations",
+    "reimbursement_allocations",
     "transaction_splits",
     "group_settlements",
     "transaction_attachments",
@@ -221,6 +223,9 @@ MODEL_SPECS: dict[str, EntitySpec] = {
     ),
     "mortgage_payment_allocations": EntitySpec(
         "mortgage_payment_allocations", MortgagePaymentAllocation
+    ),
+    "reimbursement_allocations": EntitySpec(
+        "reimbursement_allocations", ReimbursementAllocation
     ),
     "transaction_splits": EntitySpec("transaction_splits", TransactionSplit),
     "group_settlements": EntitySpec("group_settlements", GroupSettlement),
@@ -323,6 +328,7 @@ DATA_NAMES = [
     "transactions",
     "transaction_category_lines",
     "mortgage_payment_allocations",
+    "reimbursement_allocations",
     "transaction_splits",
     "group_settlements",
     "transaction_attachments",
@@ -1640,6 +1646,7 @@ async def _clear_workspace_entities(
         "transaction_attachments",
         "group_settlements",
         "transaction_splits",
+        "reimbursement_allocations",
         "mortgage_payment_allocations",
         "transaction_category_lines",
         "transactions",
