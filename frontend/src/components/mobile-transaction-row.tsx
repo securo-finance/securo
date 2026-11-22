@@ -12,6 +12,8 @@ import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { isTransferTransaction } from '@/lib/transaction-transfer'
 import { transactionDescription } from '@/lib/transaction-description'
 import { ReportingDateBadge } from '@/components/reporting-date-badge'
+import { ReimbursementAmountNote, ReimbursementBadge } from '@/components/reimbursement-display'
+import { isFullyAllocatedReimbursement } from '@/lib/reimbursements'
 
 /** Keep long merchant references on one line when there are no word breaks. */
 function hasWordBreaks(text: string): boolean {
@@ -88,6 +90,7 @@ export function MobileTransactionRow({
   const showGroupBadge = !!tx.group_id
   const showUnreadDot = showUnread && tx.is_read === false && !tx.is_shared
   const showSplitBadge = isSplitByCategory(tx)
+  const showReimbursementBadge = isFullyAllocatedReimbursement(tx)
   const showTransferIcon = isTransferTransaction(tx)
   const showExcludedIcon = tx.exclude_from_pnl && !tx.is_ignored
   const showUnpaidIcon = tx.is_paid === false
@@ -99,6 +102,7 @@ export function MobileTransactionRow({
     showGroupBadge ||
     showUnreadDot ||
     showSplitBadge ||
+    showReimbursementBadge ||
     showTransferIcon ||
     virtual ||
     tx.is_ignored ||
@@ -172,6 +176,7 @@ export function MobileTransactionRow({
               />
             )}
             {showSplitBadge && <CategorySplitBadge tx={tx} compact className="shrink-0 text-[9px] px-1" />}
+            {showReimbursementBadge && <ReimbursementBadge compact className="shrink-0 text-[9px] px-1" />}
             {showTransferIcon && (
               <ArrowLeftRight
                 className="h-3 w-3 text-blue-600 shrink-0"
@@ -265,6 +270,7 @@ export function MobileTransactionRow({
             )}`),
           )}
         </span>
+        <ReimbursementAmountNote tx={tx} locale={locale} mask={mask} />
         {tx.amount_primary != null && tx.currency !== userCurrency && (
           <div className="flex items-center justify-end gap-0.5 mt-0.5">
             {tx.fx_fallback && (
