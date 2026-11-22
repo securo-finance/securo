@@ -327,3 +327,22 @@ async def test_a_ledger_the_import_accepted_is_replayed_within_its_largest_lot(
     assert len(await _ledger(session, asset)) == 2  # the import accepted it
     chart = await _chart(session, asset)
     assert chart[date(2026, 11, 2)] == 1000.0
+
+
+@pytest.mark.asyncio
+async def test_a_sync_point_keeps_the_amount_the_provider_reported(session: AsyncSession, bank_connection, test_user):
+    # A provider may report a holding's value apart from its quote (Pluggy:
+    # the net balance, against the unit price): 100 units at 9.50 reported as
+    # 1000.00. The sync day shows what was reported, so the chart's last point
+    # equals the holding's current value; the trade day in between is replayed.
+    trades = [_trade("b1", "buy", 2, "100", "9")]
+    await _pipeline(session, bank_connection, holding("100", trades, unit_price="9.50", current_value="1000.00"), test_user)
+    asset = await _asset(session, bank_connection)
+    chart = await _chart(session, asset)
+    assert chart[date(2026, 11, 2)] == 900.0
+    assert chart[app_today()] == 1000.0
+
+    from app.services.asset_service import get_asset_value_trend
+
+    trend = {p["date"]: p["amount"] for p in await get_asset_value_trend(session, asset.id, asset.workspace_id)}
+    assert trend[app_today().isoformat()] == 1000.0

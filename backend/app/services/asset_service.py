@@ -343,6 +343,7 @@ def build_market_value_series(
     txs: list[TxRecord],
     splits: Sequence[SplitRecord] = (),
     has_ledger: bool = False,
+    keep_stored_amounts: bool = False,
 ) -> list[tuple[date, float]]:
     """Rebuild a market-priced holding's value series from the ledger.
 
@@ -374,6 +375,12 @@ def build_market_value_series(
     outside `txs` (the caller cut the ledger at a date): it is then valued by
     the replay like any other range, so a date reads the same wherever the
     range ends.
+
+    `keep_stored_amounts` is for a holding a provider syncs: a stored point
+    keeps the amount the provider reported on its date (which may differ from
+    its unit price × units, e.g. a net balance against a quote), so the chart
+    agrees with the holding's current value; only the trade dates in between
+    are replayed. Its price still carries forward to those dates.
     """
     if not txs and not has_ledger:
         return [(d, float(amount)) for d, amount, _ in value_rows]
@@ -420,8 +427,9 @@ def build_market_value_series(
             # Once market prices begin they take over and carry forward.
             last_price = tx_price[d]
 
-        if d in value_by_date and price is None:
-            out.append((d, float(amount)))  # stored point with no per-share price
+        if d in value_by_date and (price is None or keep_stored_amounts):
+            # A stored point with no per-share price, or the provider's own figure.
+            out.append((d, float(amount)))
         elif last_price is not None:
             out.append((d, float(last_price * held)))
         else:
@@ -542,6 +550,7 @@ async def _load_asset_native_values(
             values_map[aid] = build_market_value_series(
                 raw[aid], txs_by_aid.get(aid, []), splits_by_aid.get(aid, []),
                 has_ledger=aid in ledger_ids,
+                keep_stored_amounts=_replays_provider_ledger(asset),
             )
         else:
             values_map[aid] = [(d, float(amt)) for d, amt, _ in raw[aid]]
@@ -1141,6 +1150,7 @@ async def get_asset_value_trend(
                 if k != "split"
             ],
             [(d, old, new) for d, k, _, _, old, new, _ in txs if k == "split"],
+            keep_stored_amounts=_replays_provider_ledger(asset),
         )
         return [{"date": d.isoformat(), "amount": v} for d, v in series]
 
