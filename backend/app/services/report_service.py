@@ -37,6 +37,7 @@ from app.services._query_filters import (
 )
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.category_defaults import DEFAULT_CATEGORIES, name_variants
+from app.services.reimbursement_netting import reimbursement_offset_parts
 from app.services.account_service import get_account_name
 from app.services.asset_service import (
     _fill_forward_at,
@@ -800,6 +801,24 @@ async def get_income_expenses_report(
         elif tx_type == "debit":
             off_expenses += float(share)
         period_offsets[period] = (off_income, off_expenses)
+    # Reimbursement allocations come off the same way, each side in its own
+    # row's period (see `reimbursement_netting`). A negative part adds to its
+    # total: the excess of an anchor paid back more than in full.
+    reimbursement_offsets = [] if filtered else await reimbursement_offset_parts(
+        session, user_id, start, axis_end,
+        use_effective_date=accounting_mode == "accrual",
+        primary_currency=primary_currency,
+        workspace_id=workspace_id,
+        end_inclusive=True,
+        label_expr=label_expr,
+    )
+    for part in reimbursement_offsets:
+        off_income, off_expenses = period_offsets.get(part.label, (0.0, 0.0))
+        if part.type == "credit":
+            off_income += float(part.amount)
+        else:
+            off_expenses += float(part.amount)
+        period_offsets[part.label] = (off_income, off_expenses)
     for period, (off_income, off_expenses) in period_offsets.items():
         existing_income, existing_expenses = data_map.get(period, (0.0, 0.0))
         data_map[period] = (
@@ -1164,6 +1183,29 @@ async def get_income_expenses_report(
             continue
         by_period = cat_offsets.setdefault(map_key, {})
         by_period[period_label] = by_period.get(period_label, 0.0) + offset
+    # Reimbursement parts come off both groups. The excess of an anchor paid
+    # back more than in full adds to the other group, where its category may
+    # have had nothing yet.
+    added = {p.category_id for p in reimbursement_offsets if p.amount < 0} - {None}
+    added_categories: dict = {}
+    if added:
+        rows = await session.execute(select(Category).where(Category.id.in_(added)))
+        added_categories = {category.id: category for category in rows.scalars()}
+    for part in reimbursement_offsets:
+        cat_key = str(part.category_id) if part.category_id else "uncategorized"
+        map_key = (cat_key, "income" if part.type == "credit" else "expenses")
+        if map_key not in cat_trend_map:
+            if part.amount >= 0:
+                continue
+            category = added_categories.get(part.category_id)
+            cat_trend_map[map_key] = {
+                "label": category.name if category else "Uncategorized",
+                "color": category.color if category else "#6B7280",
+                "total": 0.0,
+                "periods": {},
+            }
+        by_period = cat_offsets.setdefault(map_key, {})
+        by_period[part.label] = by_period.get(part.label, 0.0) + float(part.amount)
     # The total is the sum of the floored periods, the same boundary the
     # summary uses, so the series and its total always agree.
     for map_key, by_period in cat_offsets.items():

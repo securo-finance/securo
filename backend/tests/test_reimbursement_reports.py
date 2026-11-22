@@ -146,3 +146,49 @@ async def test_a_pending_payback_nets_the_projection(session, test_user, test_wo
     # payback adds nothing to projected income.
     assert summary.monthly_expenses == pytest.approx(64.0)
     assert summary.projected_income == pytest.approx(summary.monthly_income)
+
+
+def _trend_totals(report) -> dict[tuple[str, str], float]:
+    return {(item.key, item.group): item.total for item in report.category_trend}
+
+
+@pytest.mark.asyncio
+async def test_income_expenses_report_counts_only_the_net(
+    session, test_user, test_workspace, scene
+):
+    from app.services.report_service import get_income_expenses_report
+
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id, months=1
+    )
+
+    current = next(p for p in report.trend if p.date == MONTH.strftime("%Y-%m"))
+    assert current.breakdowns["income"] == pytest.approx(0.0)
+    assert current.breakdowns["expenses"] == pytest.approx(34.0)
+    assert _trend_totals(report) == {(str(scene["food"].id), "expenses"): pytest.approx(34.0)}
+
+
+@pytest.mark.asyncio
+async def test_report_counts_an_over_reimbursed_anchor_as_income_in_its_category(
+    session, test_user, test_workspace, scene
+):
+    from app.services.report_service import get_income_expenses_report
+
+    gifts_tx = await scene["tx"]("100", "debit", scene["food"].id)
+    payback = await scene["tx"]("150", "credit", scene["paybacks"].id)
+    await reimbursement_service.replace_allocations(
+        session, gifts_tx, [ReimbursementAllocationInput(counterpart_id=payback.id, amount=Decimal("150"))]
+    )
+    await session.commit()
+
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id, months=1
+    )
+
+    current = next(p for p in report.trend if p.date == MONTH.strftime("%Y-%m"))
+    assert current.breakdowns["income"] == pytest.approx(50.0)
+    assert current.breakdowns["expenses"] == pytest.approx(34.0)
+    assert _trend_totals(report) == {
+        (str(scene["food"].id), "expenses"): pytest.approx(34.0),
+        (str(scene["food"].id), "income"): pytest.approx(50.0),
+    }
