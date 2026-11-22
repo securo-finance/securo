@@ -18,10 +18,11 @@ these invariants:
 """
 
 import uuid
+from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Iterable, Optional
+from typing import Iterable, Literal, Optional
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.category import Category
@@ -38,6 +39,8 @@ from app.schemas.reimbursement import (
 
 _CENT = Decimal("0.01")
 _ZERO = Decimal("0")
+# How far either side of a row the picker suggests rows without a search.
+SUGGESTION_DAYS = 30
 
 # Rows that are bookkeeping rather than spending or earning.
 _UNLINKABLE_SOURCES = frozenset({"opening_balance", "settlement", MORTGAGE_PRINCIPAL_SOURCE})
@@ -321,3 +324,88 @@ def _read(
         created_at=allocation.created_at,
         transaction=other,
     )
+
+
+async def find_candidates(
+    session: AsyncSession,
+    tx: Transaction,
+    *,
+    looking_for: Literal["counterparts", "anchors"],
+    search: Optional[str] = None,
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
+    limit: int = 20,
+) -> list[ReimbursementLinkedTransaction]:
+    """Rows that could be linked to `tx`, nearest in date first.
+
+    `counterparts` are rows that could pay `tx` back, `anchors` rows `tx`
+    could pay back. Either way they go in the other direction, sit in the
+    same workspace, pass `link_block_reason` and are not already on the side
+    that would make a chain. A counterpart with nothing left to allocate is
+    left out, unless it is already linked to `tx`. Without a search or a
+    date range the window is `SUGGESTION_DAYS` around `tx`.
+    """
+    from app.models.payee import Payee
+
+    if search is None and from_date is None and to_date is None:
+        from_date = tx.date - timedelta(days=SUGGESTION_DAYS)
+        to_date = tx.date + timedelta(days=SUGGESTION_DAYS)
+
+    is_anchor = exists().where(ReimbursementAllocation.anchor_id == Transaction.id)
+    is_counterpart = exists().where(ReimbursementAllocation.counterpart_id == Transaction.id)
+    blocked_category = exists().where(
+        Category.id == Transaction.category_id,
+        or_(Category.is_ignored.is_(True), Category.treat_as_transfer.is_(True)),
+    )
+    stmt = (
+        select(Transaction)
+        .outerjoin(Payee, Transaction.payee_id == Payee.id)
+        .where(
+            Transaction.workspace_id == tx.workspace_id,
+            Transaction.id != tx.id,
+            Transaction.type != tx.type,
+            Transaction.transfer_pair_id.is_(None),
+            Transaction.is_ignored.is_(False),
+            Transaction.exclude_from_pnl.is_(False),
+            Transaction.source.not_in(_UNLINKABLE_SOURCES),
+            Transaction.amount != 0,
+            ~blocked_category,
+            ~exists().where(TransactionSplit.transaction_id == Transaction.id),
+            ~(is_counterpart if looking_for == "anchors" else is_anchor),
+        )
+    )
+    if from_date is not None:
+        stmt = stmt.where(Transaction.date >= from_date)
+    if to_date is not None:
+        stmt = stmt.where(Transaction.date <= to_date)
+    if search:
+        term = f"%{search}%"
+        stmt = stmt.where(
+            or_(
+                Transaction.description.ilike(term),
+                Transaction.payee.ilike(term),
+                Transaction.notes.ilike(term),
+                Payee.name.ilike(term),
+            )
+        )
+    # Over-fetch, newest first: the nearest dates are picked below, and
+    # counterparts fully allocated elsewhere drop out.
+    stmt = stmt.order_by(Transaction.date.desc(), Transaction.id).limit(limit * 3)
+    rows = sorted(
+        (await session.execute(stmt)).scalars().all(),
+        key=lambda row: (abs((row.date - tx.date).days), str(row.id)),
+    )
+    if looking_for == "anchors":
+        return [_linked(row, _magnitude(row)) for row in rows[:limit]]
+
+    linked_to_tx = select(ReimbursementAllocation.counterpart_id).where(
+        ReimbursementAllocation.anchor_id == tx.id
+    )
+    already = set((await session.execute(linked_to_tx)).scalars().all())
+    totals = await allocated_from(session, [row.id for row in rows])
+    out = []
+    for row in rows:
+        left = _magnitude(row) - totals.get(row.id, _ZERO)
+        if left > 0 or row.id in already:
+            out.append(_linked(row, left))
+    return out[:limit]

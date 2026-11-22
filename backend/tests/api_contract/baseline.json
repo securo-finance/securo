@@ -208,6 +208,8 @@
   "GET /api/transactions/{transaction_id}": 401,
   "GET /api/transactions/{transaction_id}/attachments": 401,
   "GET /api/transactions/{transaction_id}/attachments/{attachment_id}": 401,
+  "GET /api/transactions/{transaction_id}/reimbursement-candidates": 401,
+  "GET /api/transactions/{transaction_id}/reimbursements": 401,
   "GET /api/transactions/{transaction_id}/transfer-candidates": 401,
   "GET /api/transactions/{transaction_id}/transfer-pair": 401,
   "GET /api/ui/layouts": 401,
@@ -392,6 +394,7 @@
   "PUT /api/mortgage-payments/{payment_id}": 401,
   "PUT /api/plugins/connections/{connection_id}/values": 404,
   "PUT /api/reconciliation/rules/{node}/order": 401,
+  "PUT /api/transactions/{transaction_id}/reimbursements": 401,
   "PUT /api/ui/layouts/{surface}": 401
  },
  "empty": {
@@ -472,6 +475,7 @@
   "POST /api/workspaces/{workspace_id}/members": 422,
   "PUT /api/mortgage-payments/{payment_id}": 422,
   "PUT /api/reconciliation/rules/{node}/order": 422,
+  "PUT /api/transactions/{transaction_id}/reimbursements": 422,
   "PUT /api/ui/layouts/{surface}": 422
  },
  "ok": {
@@ -681,6 +685,8 @@
   "GET /api/transactions/{transaction_id}": 200,
   "GET /api/transactions/{transaction_id}/attachments": 200,
   "GET /api/transactions/{transaction_id}/attachments/{attachment_id}": 200,
+  "GET /api/transactions/{transaction_id}/reimbursement-candidates": 200,
+  "GET /api/transactions/{transaction_id}/reimbursements": 200,
   "GET /api/transactions/{transaction_id}/transfer-candidates": 200,
   "GET /api/transactions/{transaction_id}/transfer-pair": 200,
   "GET /api/ui/layouts": 200,
@@ -865,6 +871,7 @@
   "PUT /api/mortgage-payments/{payment_id}": 404,
   "PUT /api/plugins/connections/{connection_id}/values": 404,
   "PUT /api/reconciliation/rules/{node}/order": 400,
+  "PUT /api/transactions/{transaction_id}/reimbursements": 200,
   "PUT /api/ui/layouts/{surface}": 200
  },
  "unknown_id": {
@@ -964,6 +971,8 @@
   "GET /api/transactions/{transaction_id}": 404,
   "GET /api/transactions/{transaction_id}/attachments": 404,
   "GET /api/transactions/{transaction_id}/attachments/{attachment_id}": 404,
+  "GET /api/transactions/{transaction_id}/reimbursement-candidates": 404,
+  "GET /api/transactions/{transaction_id}/reimbursements": 404,
   "GET /api/transactions/{transaction_id}/transfer-candidates": 404,
   "GET /api/transactions/{transaction_id}/transfer-pair": 404,
   "GET /api/users/{id}": 403,
@@ -1055,7 +1064,8 @@
   "POST /api/workspaces/{workspace_id}/members": 404,
   "PUT /api/agents/{agent_id}/tools": 404,
   "PUT /api/mortgage-payments/{payment_id}": 422,
-  "PUT /api/plugins/connections/{connection_id}/values": 404
+  "PUT /api/plugins/connections/{connection_id}/values": 404,
+  "PUT /api/transactions/{transaction_id}/reimbursements": 404
  },
  "viewer": {
   "DELETE /api/access-tokens/{token_id}": 404,
@@ -1274,6 +1284,7 @@
   "PUT /api/mortgage-payments/{payment_id}": 403,
   "PUT /api/plugins/connections/{connection_id}/values": 404,
   "PUT /api/reconciliation/rules/{node}/order": 403,
+  "PUT /api/transactions/{transaction_id}/reimbursements": 403,
   "PUT /api/ui/layouts/{surface}": 200
  }
 }
