@@ -29,6 +29,8 @@ import type {
   LoanSchedule,
   DescriptionSuggestion,
   Transaction,
+  TransactionReimbursements,
+  ReimbursementLinkedTransaction,
   Payee,
   PayeeSummary,
   DeductionKind,
@@ -847,6 +849,25 @@ export const transactions = {
   },
   unlinkTransfer: async (pairId: string): Promise<void> => {
     await api.delete(`/connections/transfers/${pairId}`)
+  },
+  reimbursements: async (transactionId: string): Promise<TransactionReimbursements> => {
+    const { data } = await api.get(`/transactions/${transactionId}/reimbursements`)
+    return data
+  },
+  /** Replace every counterpart of the anchor `transactionId`. */
+  replaceReimbursements: async (
+    transactionId: string,
+    allocations: { counterpart_id: string; amount: string }[],
+  ): Promise<TransactionReimbursements> => {
+    const { data } = await api.put(`/transactions/${transactionId}/reimbursements`, { allocations })
+    return data
+  },
+  reimbursementCandidates: async (
+    transactionId: string,
+    params: { looking_for: 'counterparts' | 'anchors'; q?: string; from?: string; to?: string; limit?: number },
+  ): Promise<ReimbursementLinkedTransaction[]> => {
+    const { data } = await api.get(`/transactions/${transactionId}/reimbursement-candidates`, { params })
+    return data
   },
   previewImport: async (file: File, options?: {
     date_format?: string
