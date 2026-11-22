@@ -409,3 +409,50 @@ async def find_candidates(
         if left > 0 or row.id in already:
             out.append(_linked(row, left))
     return out[:limit]
+
+
+async def annotate(session: AsyncSession, transactions: Iterable[Transaction]) -> None:
+    """Fill each row's `reimbursement_*` fields for a list, in two queries."""
+    rows = {tx.id: tx for tx in transactions}
+    if not rows:
+        return
+    result = await session.execute(
+        select(ReimbursementAllocation).where(
+            or_(
+                ReimbursementAllocation.anchor_id.in_(list(rows)),
+                ReimbursementAllocation.counterpart_id.in_(list(rows)),
+            )
+        )
+    )
+    allocations = list(result.scalars().all())
+    if not allocations:
+        return
+    payers = {a.counterpart_id for a in allocations if a.anchor_id in rows} - set(rows)
+    every = dict(rows)
+    if payers:
+        loaded = await session.execute(select(Transaction).where(Transaction.id.in_(payers)))
+        every.update({tx.id: tx for tx in loaded.scalars().all()})
+
+    paid_back: dict[uuid.UUID, Optional[Decimal]] = {}
+    allocated: dict[uuid.UUID, Decimal] = {}
+    for allocation in allocations:
+        amount = Decimal(str(allocation.amount))
+        if allocation.counterpart_id in rows:
+            allocated[allocation.counterpart_id] = (
+                allocated.get(allocation.counterpart_id, _ZERO) + amount
+            )
+        if allocation.anchor_id in rows:
+            so_far = paid_back.get(allocation.anchor_id, _ZERO)
+            converted = _convert(amount, every[allocation.counterpart_id], rows[allocation.anchor_id])
+            paid_back[allocation.anchor_id] = (
+                None if so_far is None or converted is None else so_far + converted
+            )
+
+    for tx_id, total in paid_back.items():
+        tx = rows[tx_id]
+        tx.reimbursement_role = "anchor"
+        tx.reimbursement_net = None if total is None else _quantize(_magnitude(tx) - total)
+    for tx_id, total in allocated.items():
+        tx = rows[tx_id]
+        tx.reimbursement_role = "counterpart"
+        tx.reimbursement_unallocated = _magnitude(tx) - total

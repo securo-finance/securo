@@ -267,6 +267,10 @@ class Transaction(Base):
     matched_amount = cast(Optional[Decimal], None)
     matched_amount_primary = cast(Optional[Decimal], None)
     reporting_date = cast(Optional[_date], None)
+    # Filled by `reimbursement_service.annotate` (see TransactionRead).
+    reimbursement_role = cast(Optional[str], None)
+    reimbursement_net = cast(Optional[Decimal], None)
+    reimbursement_unallocated = cast(Optional[Decimal], None)
 
 
 def provider_category_text(value: object) -> Optional[str]:

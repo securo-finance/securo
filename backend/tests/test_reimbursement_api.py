@@ -176,3 +176,28 @@ def test_access_tokens_reach_the_routes_through_the_transactions_scope():
     assert required_scope("GET", f"{path}/reimbursements") == "transactions:read"
     assert required_scope("GET", f"{path}/reimbursement-candidates") == "transactions:read"
     assert required_scope("PUT", f"{path}/reimbursements") == "transactions:write"
+
+
+@pytest.mark.asyncio
+async def test_the_list_and_the_row_carry_the_link(client, auth_headers):
+    account = await _account(client, auth_headers)
+    dinner = await _create(client, auth_headers, account["id"], 100)
+    payback = await _create(client, auth_headers, account["id"], 50, "credit", description="Payback")
+    resp = await client.put(
+        f"/api/transactions/{dinner['id']}/reimbursements",
+        headers=auth_headers,
+        json=_body((payback, 30)),
+    )
+    assert resp.status_code == 200, resp.text
+
+    resp = await client.get(
+        "/api/transactions", headers=auth_headers, params={"account_id": account["id"]}
+    )
+    rows = {row["id"]: row for row in resp.json()["items"]}
+    assert rows[dinner["id"]]["reimbursement_role"] == "anchor"
+    assert rows[dinner["id"]]["reimbursement_net"] == pytest.approx(70.0)
+    assert rows[payback["id"]]["reimbursement_role"] == "counterpart"
+    assert rows[payback["id"]]["reimbursement_unallocated"] == pytest.approx(20.0)
+
+    resp = await client.get(f"/api/transactions/{dinner['id']}", headers=auth_headers)
+    assert resp.json()["reimbursement_net"] == pytest.approx(70.0)

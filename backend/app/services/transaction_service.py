@@ -982,6 +982,7 @@ async def get_transactions(
             .group_by(TransactionAttachment.transaction_id)
         )
         counts = {row[0]: row[1] for row in count_rows.all()}
+        await reimbursement_service.annotate(session, transactions)
         for tx in transactions:
             tx.attachment_count = counts.get(tx.id, 0)
             tx.payee_name = tx.payee_entity.name if tx.payee_entity else None
@@ -1371,6 +1372,7 @@ async def get_transaction(
         )
         transaction.attachment_count = count_result.scalar_one()
         transaction.payee_name = transaction.payee_entity.name if transaction.payee_entity else None
+        await reimbursement_service.annotate(session, [transaction])
     return transaction
 
 
