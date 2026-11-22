@@ -3808,10 +3808,51 @@ async def _drop_finance_charges_with_twins(
             synthetic_by_bill.setdefault(row.bill_id, []).append(row)
     for bill_id, rows in synthetic_by_bill.items():
         regular = await _regular_finance_charge_rows(session, account.id, bill_id)
-        claimed = _claim_finance_charge_twins(regular, [row.amount for row in rows])
-        for row, has_twin in zip(rows, claimed):
-            if has_twin:
+        # Claim for every charge on the bill, as the sync did, so a row an
+        # exact twin took there is not combined again here for another charge.
+        # A synthetic row no longer among the bill's charges is matched last.
+        bill = await session.get(CreditCardBill, bill_id)
+        raw_charges = ((bill.raw_data if bill else None) or {}).get("financeCharges")
+        charges: list[tuple[Optional[Transaction], Decimal]] = []
+        if bill is not None and isinstance(raw_charges, list):
+            by_external_id = {row.external_id: row for row in rows}
+            for raw, amount in _parse_finance_charges(raw_charges):
+                external_id = f"bill_charge:{bill.external_id}:{raw['id']}"
+                charges.append((by_external_id.pop(external_id, None), abs(amount)))
+            rows = list(by_external_id.values())
+        charges.extend((row, row.amount) for row in rows)
+        claimed = _claim_finance_charge_twins(
+            regular, [amount for _, amount in charges],
+        )
+        for (row, _), has_twin in zip(charges, claimed):
+            if row is not None and has_twin:
                 await session.delete(row)
+
+
+def _parse_finance_charges(raw_charges: list) -> list[tuple[dict, Decimal]]:
+    """The bill's finance charges to materialize, with their amounts.
+
+    Malformed entries, zero amounts, entries without an id and the
+    double-count patterns above are left out.
+    """
+    charges: list[tuple[dict, Decimal]] = []
+    for raw in raw_charges:
+        if not isinstance(raw, dict):
+            continue
+        info = (raw.get("additionalInfo") or "").strip().lower()
+        if info in _FINANCE_CHARGE_SKIP_INFO:
+            continue
+        amount_raw = raw.get("amount")
+        try:
+            amount = Decimal(str(amount_raw))
+        except (ValueError, TypeError, InvalidOperation):
+            continue
+        if amount == 0:
+            continue
+        if not raw.get("id"):
+            continue
+        charges.append((raw, amount))
+    return charges
 
 
 async def _sync_bill_finance_charges(
@@ -3842,23 +3883,7 @@ async def _sync_bill_finance_charges(
     # materialized, and a synthetic row made for it before is dropped below.
     regular = await _regular_finance_charge_rows(session, account.id, bill.id)
 
-    charges: list[tuple[dict, Decimal]] = []
-    for raw in raw_charges:
-        if not isinstance(raw, dict):
-            continue
-        info = (raw.get("additionalInfo") or "").strip().lower()
-        if info in _FINANCE_CHARGE_SKIP_INFO:
-            continue
-        amount_raw = raw.get("amount")
-        try:
-            amount = Decimal(str(amount_raw))
-        except (ValueError, TypeError, InvalidOperation):
-            continue
-        if amount == 0:
-            continue
-        if not raw.get("id"):
-            continue
-        charges.append((raw, amount))
+    charges = _parse_finance_charges(raw_charges)
     claimed = _claim_finance_charge_twins(
         regular, [abs(amount) for _, amount in charges],
     )

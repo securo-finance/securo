@@ -8170,7 +8170,7 @@ async def test_sync_skips_finance_charges_split_across_transactions(
             await sync_connection(session, conn.id, test_workspace.id, test_user.id)
 
     rows = await _cc_rows(session, test_user.id)
-    assert sorted(row.external_id for row in rows) == sorted(
+    assert sorted((row.external_id or "") for row in rows) == sorted(
         f"tx-{key}" for key in ["pen", "con1", "con2", "int1", "int2", "iof"]
     )
     assert sum(row.amount for row in rows) == Decimal("2.89")
@@ -8210,8 +8210,51 @@ async def test_sync_keeps_finance_charge_whose_parts_do_not_add_up(
         await sync_connection(session, conn.id, test_workspace.id, test_user.id)
 
     rows = await _cc_rows(session, test_user.id)
-    assert sorted(row.external_id for row in rows) == [
+    assert sorted((row.external_id or "") for row in rows) == [
         "bill_charge:bill-short:fc-con", "tx-con1", "tx-con2",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sync_cleanup_does_not_reuse_a_row_an_exact_twin_took(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The transaction an exact twin carries is not combined again in the
+    after-sync cleanup to cover another charge whose parts don't add up."""
+    conn = await _make_connection(session, test_user.id, "Reuse Bank")
+    bill = BillData(
+        external_id="bill-reuse",
+        due_date=date(2026, 4, 15),
+        total_amount=Decimal("100"),
+        currency="BRL",
+        raw_data={
+            "id": "bill-reuse",
+            "financeCharges": [
+                {"id": "fc-iof", "type": "IOF", "amount": 0.30},
+                {"id": "fc-int", "type": "LATE_PAYMENT_INTEREST", "amount": 0.50},
+            ],
+        },
+    )
+    txns = [
+        TransactionData(
+            external_id=f"tx-{key}", description=description, amount=Decimal(amount),
+            date=date(2026, 4, 8), type="debit", currency="BRL",
+            bill_external_id="bill-reuse",
+        )
+        for key, description, amount in [
+            ("iof", "IOF diario", "0.30"),
+            ("int", "Juros de mora", "0.20"),
+        ]
+    ]
+    mock_provider = _cc_provider_mock(bills=[bill], transactions=txns)
+    p1, p2, p3 = _patch_sync_helpers()
+    for _ in range(2):
+        with patch("app.services.connection_service.get_provider", return_value=mock_provider),              p1, p2, p3:
+            await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    rows = await _cc_rows(session, test_user.id)
+    assert sorted((row.external_id or "") for row in rows) == [
+        "bill_charge:bill-reuse:fc-int", "tx-int", "tx-iof",
     ]
 
 
