@@ -620,7 +620,9 @@ async def owner_split_offset_pnl(
     from the owner's full-amount aggregations so only their own share
     remains. We sum every split share that belongs to a non-owner
     member; subtracting that from the parent's full amount leaves the
-    owner's share.
+    owner's share. Reimbursement allocations come off the same way (see
+    `reimbursement_netting`); an offset is negative where one adds to a
+    total.
 
     Without ``primary_currency`` the shares are summed as stored, in each
     row's own currency; with it they are brought into that currency by
@@ -639,6 +641,18 @@ async def owner_split_offset_pnl(
             income_total += share
         elif row.type == "debit":
             expense_total += share
+    from app.services.reimbursement_netting import reimbursement_offset_parts
+
+    for part in await reimbursement_offset_parts(
+        session, user_id, month_start, month_end,
+        use_effective_date=use_effective_date,
+        primary_currency=primary_currency,
+        workspace_id=workspace_id,
+    ):
+        if part.type == "credit":
+            income_total += part.amount
+        else:
+            expense_total += part.amount
     return float(income_total), float(expense_total)
 
 
@@ -650,10 +664,17 @@ async def owner_split_offset_by_category(
     use_effective_date: bool = False,
     primary_currency: Optional[str] = None,
     workspace_id: Optional[uuid.UUID] = None,
+    net_of_credits: bool = False,
 ) -> dict:
     """Per-category, sum of non-owner shares on owner-side debit splits —
     subtract from full owner debits to get the owner's category share.
-    Currency handling as in :func:`owner_split_offset_pnl`."""
+    Currency handling as in :func:`owner_split_offset_pnl`.
+
+    Reimbursement parts in the debit direction come off too. Pass
+    `net_of_credits` where the totals are debits *less* credits (budgets):
+    the credit parts then come off as well, by adding back to spending the
+    credit an allocation took out (a refund linked to its purchase must not
+    lower the category twice)."""
     rows = await _owner_split_rows(
         session,
         user_id,
@@ -670,6 +691,21 @@ async def owner_split_offset_by_category(
         if share is None:
             continue
         totals[row.category_id] = totals.get(row.category_id, Decimal("0")) + share
+    from app.services.reimbursement_netting import reimbursement_offset_parts
+
+    for part in await reimbursement_offset_parts(
+        session, user_id, month_start, month_end,
+        use_effective_date=use_effective_date,
+        primary_currency=primary_currency,
+        workspace_id=workspace_id,
+    ):
+        if part.type == "debit":
+            amount = part.amount
+        elif net_of_credits:
+            amount = -part.amount
+        else:
+            continue
+        totals[part.category_id] = totals.get(part.category_id, Decimal("0")) + amount
     return {cat_id: float(total) for cat_id, total in totals.items()}
 
 
@@ -687,15 +723,20 @@ async def forecast_owner_share_fractions(
     currency, so multiplying it into `amount_primary` keeps the conversion
     already stored on the row and needs no FX lookup.
 
-    Rows without non-owner shares are left out; callers treat a missing id
-    as 1.
+    Reimbursement allocations give their sides a fraction the same way (see
+    `reimbursement_share_fractions`). Rows without non-owner shares or
+    allocations are left out; callers treat a missing id as 1.
     """
     from app.models.group import Group, GroupMember
     from app.models.transaction_split import TransactionSplit
+    from app.services.reimbursement_netting import reimbursement_share_fractions
 
     own_rows = {tx.id: tx for tx in transactions if tx.user_id == user_id}
     if not own_rows:
         return {}
+    # A row with a group split never nets an allocation, so the two sets of
+    # fractions never meet on the same row.
+    reimbursed = await reimbursement_share_fractions(session, own_rows.values())
 
     viewer_member_ids = (
         select(GroupMember.id)
@@ -725,7 +766,7 @@ async def forecast_owner_share_fractions(
         # give a member a negative share, and the owner's share then exceeds
         # the row.
         fractions[tx_id] = 1 - Decimal(str(others or 0)) / full
-    return fractions
+    return {**reimbursed, **fractions}
 
 
 async def viewer_shares_in_primary(

@@ -400,6 +400,7 @@ async def get_budget_vs_actual(
         use_effective_date=accounting_mode == "accrual",
         primary_currency=primary_currency,
         workspace_id=workspace_id,
+        net_of_credits=True,
     )
     for cat_uuid, total in own_offset.items():
         if cat_uuid is None:
@@ -514,6 +515,7 @@ async def get_budget_vs_actual(
         use_effective_date=accounting_mode == "accrual",
         primary_currency=primary_currency,
         workspace_id=workspace_id,
+        net_of_credits=True,
     )
     for cat_uuid, total in prev_own_offset.items():
         if cat_uuid is None:
@@ -741,6 +743,7 @@ async def get_budget_suggestions(
         use_effective_date=accounting_mode == "accrual",
         primary_currency=primary_currency,
         workspace_id=workspace_id,
+        net_of_credits=True,
     )
     for cat_uuid, total in own_offset.items():
         if cat_uuid is None:
