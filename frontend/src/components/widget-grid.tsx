@@ -205,7 +205,9 @@ function SortableWidget({
       className={cn(
         // min-w-0: a grid item is as wide as its content by default, so one
         // long nowrap line would widen the whole column and every widget in it.
-        'relative grid min-w-0',
+        // grid-cols-1 (minmax(0, 1fr)) does the same for the section's own
+        // track: an implicit `auto` column grows to its content's min-content.
+        'relative grid min-w-0 grid-cols-1',
         SPAN_CLASS[shownSpan],
         entry.tall && 'min-h-[380px]',
         // While editing, each widget sits in a frame with its own header, so
@@ -275,7 +277,11 @@ function SortableWidget({
           </div>
         </div>
       )}
-      <div inert={editing} className={cn('grid min-w-0', editing && 'select-none')}>
+      {/* grid-cols-1, not an implicit `auto` track: that track is never
+          narrower than the widget's min-content, so a nowrap line (the
+          uncategorized banner, a transaction description) pushed the card past
+          the screen on a phone instead of truncating. */}
+      <div inert={editing} className={cn('grid min-w-0 grid-cols-1', editing && 'select-none')}>
         {children || (
           <div className="flex items-center justify-center rounded-xl border border-dashed bg-card px-6 py-10 text-sm text-muted-foreground">
             {t('library.nothingToShow')}
