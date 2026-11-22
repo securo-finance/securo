@@ -1579,7 +1579,7 @@ def normalize_amount(amount_str: str | None, decimal_separator: str | None = Non
             amount_str = amount_str.replace('.', '').replace(',', '.')
         else:
             amount_str = amount_str.replace(',', '')
-    elif amount_str.count(',') > 1:
+    elif amount_str.count(',') > 1 and _COMMA_THOUSANDS.match(amount_str):
         # Two or more comma groups and no dot can only be grouping.
         amount_str = amount_str.replace(',', '')
     elif ',' in amount_str:

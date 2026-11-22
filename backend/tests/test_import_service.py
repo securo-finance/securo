@@ -3148,6 +3148,7 @@ def test_normalize_amount_currency_and_separators():
     # Two or more comma groups and no dot can only be a grouped number.
     assert normalize_amount("1,125,000") == "1125000"
     assert normalize_amount("-1,125,000") == "-1125000"
+    assert normalize_amount("1,2345,678") == "1.2345.678"
 
 
 def test_grouped_amount_beside_zero_comma_cell():
