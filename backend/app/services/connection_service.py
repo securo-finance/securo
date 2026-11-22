@@ -3729,19 +3729,58 @@ async def _regular_finance_charge_rows(
     ]
 
 
-def _claim_finance_charge_twin(
-    regular: list[Transaction], amount: Decimal,
-) -> bool:
-    """Take the first regular finance charge of `amount` off `regular`.
+#: Most regular rows one finance charge may be split across, and most rows
+#: searched for such a split, to keep the subset search small.
+_FINANCE_CHARGE_MAX_PARTS = 4
+_FINANCE_CHARGE_MAX_CANDIDATES = 16
+
+
+def _claim_finance_charge_twins(
+    regular: list[Transaction], amounts: list[Decimal],
+) -> list[bool]:
+    """Take the regular finance charges that carry each of `amounts` off
+    `regular`, and say which amounts were carried.
 
     Each regular row stands for one charge, so two charges of the same
-    amount need two rows.
+    amount need two rows. Exact twins are claimed first, for every amount,
+    so a split match can't take a row another charge equals. Then a charge
+    left over is matched to the fewest remaining rows that add up to it,
+    as cards may list one charge as several smaller rows (#1719).
     """
-    for index, row in enumerate(regular):
-        if row.amount == amount:
-            del regular[index]
-            return True
-    return False
+    claimed = [False] * len(amounts)
+    for position, amount in enumerate(amounts):
+        for index, row in enumerate(regular):
+            if row.amount == amount:
+                del regular[index]
+                claimed[position] = True
+                break
+    for position, amount in enumerate(amounts):
+        if claimed[position]:
+            continue
+        parts = _finance_charge_parts(regular, amount)
+        if parts:
+            for index in sorted(parts, reverse=True):
+                del regular[index]
+            claimed[position] = True
+    return claimed
+
+
+def _finance_charge_parts(
+    regular: list[Transaction], amount: Decimal,
+) -> Optional[tuple[int, ...]]:
+    """Indexes of the fewest rows in `regular` whose amounts add up to
+    `amount`, or None."""
+    from itertools import combinations  # local — not used elsewhere in this file
+    candidates = [
+        index
+        for index, row in enumerate(regular[:_FINANCE_CHARGE_MAX_CANDIDATES])
+        if row.amount < amount
+    ]
+    for size in range(2, _FINANCE_CHARGE_MAX_PARTS + 1):
+        for combo in combinations(candidates, size):
+            if sum(regular[index].amount for index in combo) == amount:
+                return combo
+    return None
 
 
 async def _drop_finance_charges_with_twins(
@@ -3763,17 +3802,16 @@ async def _drop_finance_charges_with_twins(
             Transaction.external_id.like("bill_charge:%"),
         ).order_by(Transaction.external_id)
     )).scalars().all()
-    regular_by_bill: dict[uuid.UUID, list[Transaction]] = {}
+    synthetic_by_bill: dict[uuid.UUID, list[Transaction]] = {}
     for row in synthetic:
-        bill_id = row.bill_id
-        if bill_id is None:
-            continue
-        if bill_id not in regular_by_bill:
-            regular_by_bill[bill_id] = await _regular_finance_charge_rows(
-                session, account.id, bill_id,
-            )
-        if _claim_finance_charge_twin(regular_by_bill[bill_id], row.amount):
-            await session.delete(row)
+        if row.bill_id is not None:
+            synthetic_by_bill.setdefault(row.bill_id, []).append(row)
+    for bill_id, rows in synthetic_by_bill.items():
+        regular = await _regular_finance_charge_rows(session, account.id, bill_id)
+        claimed = _claim_finance_charge_twins(regular, [row.amount for row in rows])
+        for row, has_twin in zip(rows, claimed):
+            if has_twin:
+                await session.delete(row)
 
 
 async def _sync_bill_finance_charges(
@@ -3804,7 +3842,7 @@ async def _sync_bill_finance_charges(
     # materialized, and a synthetic row made for it before is dropped below.
     regular = await _regular_finance_charge_rows(session, account.id, bill.id)
 
-    desired_external_ids: set[str] = set()
+    charges: list[tuple[dict, Decimal]] = []
     for raw in raw_charges:
         if not isinstance(raw, dict):
             continue
@@ -3818,11 +3856,18 @@ async def _sync_bill_finance_charges(
             continue
         if amount == 0:
             continue
-        charge_id = raw.get("id")
-        if not charge_id:
+        if not raw.get("id"):
             continue
-        if _claim_finance_charge_twin(regular, abs(amount)):
+        charges.append((raw, amount))
+    claimed = _claim_finance_charge_twins(
+        regular, [abs(amount) for _, amount in charges],
+    )
+
+    desired_external_ids: set[str] = set()
+    for (raw, amount), has_twin in zip(charges, claimed):
+        if has_twin:
             continue
+        charge_id = raw["id"]
         external_id = f"bill_charge:{bill.external_id}:{charge_id}"
         desired_external_ids.add(external_id)
 
