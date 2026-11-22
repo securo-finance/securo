@@ -36,6 +36,7 @@ from app.services._query_filters import (
 )
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.viewer_currency import viewer_currency
+from app.services.reimbursement_netting import reimbursement_offset_parts
 
 UNCATEGORIZED_KEY = "uncategorized"
 
@@ -136,6 +137,36 @@ async def _settled_credit_offset_by_category(
         .group_by(line_category_id())
     )
     return {cat_id: float(total or 0) for cat_id, total in result.all()}
+
+
+async def _reimbursement_offset_by_category(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    start: date,
+    end: date,
+    *,
+    accounting_mode: str,
+    primary_currency: str,
+) -> dict[Optional[uuid.UUID], tuple[float, float]]:
+    """Per category, the (credits, debits) reimbursement allocations take
+    off, each side in its own row's month (see `reimbursement_netting`). A
+    negative figure adds: the excess of an anchor paid back more than in
+    full."""
+    totals: dict[Optional[uuid.UUID], tuple[float, float]] = {}
+    for part in await reimbursement_offset_parts(
+        session, user_id, start, end,
+        use_effective_date=accounting_mode == "accrual",
+        primary_currency=primary_currency,
+        workspace_id=workspace_id,
+    ):
+        credits, debits = totals.get(part.category_id, (0.0, 0.0))
+        if part.type == "credit":
+            credits += float(part.amount)
+        else:
+            debits += float(part.amount)
+        totals[part.category_id] = (credits, debits)
+    return totals
 
 
 async def _member_split_offset_by_category(
@@ -279,6 +310,13 @@ async def get_category_statement(
             for cat_id, offset in member_offset.items():
                 credits, debits = totals.get(cat_id, (0.0, 0.0))
                 totals[cat_id] = (credits, max(0.0, debits - offset))
+            reimbursed = await _reimbursement_offset_by_category(
+                session, user_id, workspace_id, m_start, m_end,
+                accounting_mode=accounting_mode, primary_currency=primary_currency,
+            )
+            for cat_id, (off_credits, off_debits) in reimbursed.items():
+                credits, debits = totals.get(cat_id, (0.0, 0.0))
+                totals[cat_id] = (max(0.0, credits - off_credits), max(0.0, debits - off_debits))
             shared = await viewer_shared_spending_by_category(
                 session, user_id, m_start, m_end,
                 use_effective_date=use_effective_date,
@@ -334,6 +372,13 @@ async def get_category_statement(
         for cat_id, offset in settled.items():
             if cat_id is not None:
                 lifetime_net[cat_id] = lifetime_net.get(cat_id, 0.0) - float(offset)
+        reimbursed = await _reimbursement_offset_by_category(
+            session, user_id, workspace_id, date.min, lifetime_end,
+            accounting_mode=accounting_mode, primary_currency=primary_currency,
+        )
+        for cat_id, (off_credits, off_debits) in reimbursed.items():
+            if cat_id is not None:
+                lifetime_net[cat_id] = lifetime_net.get(cat_id, 0.0) - off_credits + off_debits
         shared = await viewer_shared_spending_by_category(
             session, user_id, date.min, lifetime_end,
             use_effective_date=use_effective_date,

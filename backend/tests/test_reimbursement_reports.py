@@ -192,3 +192,25 @@ async def test_report_counts_an_over_reimbursed_anchor_as_income_in_its_category
         (str(scene["food"].id), "expenses"): pytest.approx(34.0),
         (str(scene["food"].id), "income"): pytest.approx(50.0),
     }
+
+
+@pytest.mark.asyncio
+async def test_category_statement_counts_only_the_net(session, test_user, test_workspace, scene):
+    from app.services.category_statement_service import get_category_statement
+
+    statement = await get_category_statement(
+        session, test_workspace.id, test_user.id, MONTH, months=1, primary_currency="BRL"
+    )
+
+    def flatten(rows):
+        for row in rows:
+            yield row
+            yield from flatten(row.children)
+
+    values = {
+        (section, row.label): row.values[0]
+        for section, part in (("income", statement.income), ("expenses", statement.expenses))
+        for row in flatten(part.rows)
+        if row.kind == "category" and row.values[0]
+    }
+    assert values == {("expenses", "Food"): pytest.approx(-34.0)}
