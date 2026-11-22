@@ -344,5 +344,7 @@ async def test_a_sync_point_keeps_the_amount_the_provider_reported(session: Asyn
 
     from app.services.asset_service import get_asset_value_trend
 
-    trend = {p["date"]: p["amount"] for p in await get_asset_value_trend(session, asset.id, asset.workspace_id)}
+    points = await get_asset_value_trend(session, asset.id, asset.workspace_id)
+    assert points is not None
+    trend = {p["date"]: p["amount"] for p in points}
     assert trend[app_today().isoformat()] == 1000.0
