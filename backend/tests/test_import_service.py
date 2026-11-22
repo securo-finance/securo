@@ -3145,6 +3145,18 @@ def test_normalize_amount_currency_and_separators():
     # Without a column hint the per-cell behaviour is unchanged.
     assert normalize_amount("0,125") == "0.125"
     assert normalize_amount("12,50") == "12.50"
+    # Two or more comma groups and no dot can only be a grouped number.
+    assert normalize_amount("1,125,000") == "1125000"
+    assert normalize_amount("-1,125,000") == "-1125000"
+    assert normalize_amount("1,2345,678") == "1.2345.678"
+
+
+def test_grouped_amount_beside_zero_comma_cell():
+    """A "0," cell leaves the column without a hint; "1,125,000" still reads as grouped."""
+    from app.services.import_service import infer_decimal_separator, normalize_amount
+    column = ["0,125", "1,125,000"]
+    separator = infer_decimal_separator(column)
+    assert [normalize_amount(cell, separator) for cell in column] == ["0.125", "1125000"]
 
 
 def test_infer_decimal_separator():
@@ -3153,6 +3165,8 @@ def test_infer_decimal_separator():
     assert infer_decimal_separator(["1.234,56", "12,50"]) == ","
     assert infer_decimal_separator(["25,000", "3,000"]) == "."
     assert infer_decimal_separator(["0,125"]) is None
+    # A "0," cell is not a grouped number, so "1,125" beside it is not one either.
+    assert infer_decimal_separator(["0,125", "1,125"]) is None
     assert infer_decimal_separator(["10", ""]) is None
 
 
