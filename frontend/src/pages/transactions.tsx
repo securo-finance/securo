@@ -47,7 +47,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, CheckCheck, CircleDashed, Clock, HelpCircle, Info, Paperclip, Repeat, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, Flag, SlidersHorizontal, Receipt } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, CheckCheck, CircleDashed, Clock, HelpCircle, Info, Paperclip, Repeat, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, Flag, SlidersHorizontal, Receipt, Undo2 } from 'lucide-react'
 import type { Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, TransactionEditPayload, ReconciliationSuggestion } from '@/types'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { TransactionFlagMarker } from '@/components/transaction-flag-marker'
@@ -73,6 +73,9 @@ import { MakeRecurringDialog } from '@/components/make-recurring-dialog'
 import { useSidebarState } from '@/contexts/sidebar-state-context'
 import { cn } from '@/lib/utils'
 import { LinkTransferDialog } from '@/components/link-transfer-dialog'
+import { ReimbursementDialog, type ReimbursementDialogMode } from '@/components/reimbursement-dialog'
+import { ReimbursementAmountNote, ReimbursementBadge } from '@/components/reimbursement-display'
+import { isFullyAllocatedReimbursement } from '@/lib/reimbursements'
 import { BulkAddToGroupDialog, type BulkAddToGroupSubmission } from '@/components/bulk-add-to-group-dialog'
 import { TransactionsFilterBar } from '@/components/transactions-filter-bar'
 import { TransactionCalendarView } from '@/components/transaction-calendar-view'
@@ -273,6 +276,9 @@ export default function TransactionsPage() {
   const [receiptDialogOpen, setReceiptDialogOpen] = useState(false)
   const { enabled: documentAiEnabled } = useDocumentAiStatus()
   const [linkTransferDialogOpen, setLinkTransferDialogOpen] = useState(false)
+  const [reimbursementTarget, setReimbursementTarget] = useState<
+    { tx: Transaction; mode: ReimbursementDialogMode } | null
+  >(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null)
   const grid = useTransactionsGridState()
@@ -1320,6 +1326,7 @@ export default function TransactionsPage() {
             })}
           </p>
         )}
+        <ReimbursementAmountNote tx={tx} locale={locale} mask={mask} />
         {tx.amount_primary != null && tx.currency !== userCurrency && (
           <div className="flex items-center justify-end gap-1">
             {tx.fx_fallback && (
@@ -1575,7 +1582,7 @@ export default function TransactionsPage() {
       case 'category':
         return (
           <TableCell key={col.id} style={widthStyle} className={baseClass}>
-            <TransactionCategoryLabel tx={tx} />
+            {isFullyAllocatedReimbursement(tx) ? <ReimbursementBadge /> : <TransactionCategoryLabel tx={tx} />}
           </TableCell>
         )
       case 'account': {
@@ -1671,6 +1678,12 @@ export default function TransactionsPage() {
     ? filteredItems.find(tx => selectedIds.has(tx.id))
     : undefined
   const duplicableTx = selectedSingleTx && !selectedSingleTx.is_shared && !selectedSingleTx.transfer_pair_id
+    ? selectedSingleTx
+    : null
+  // A reimbursement link needs one own row that reports count; the server
+  // refuses the rest with a reason.
+  const reimbursableTx = selectedSingleTx && !selectedSingleTx.is_shared && !selectedSingleTx.transfer_pair_id
+    && !selectedSingleTx.is_ignored && !selectedSingleTx.exclude_from_pnl
     ? selectedSingleTx
     : null
   // The flag action unflags when every selected row is already flagged,
@@ -2083,6 +2096,19 @@ export default function TransactionsPage() {
                         <TagIcon className="me-2 h-4 w-4" />
                         {t('transactions.bulkAddTags')}
                       </ContextMenuItem>
+
+                      {reimbursableTx && reimbursableTx.reimbursement_role !== 'counterpart' && (
+                        <ContextMenuItem onSelect={() => setReimbursementTarget({ tx: reimbursableTx, mode: 'counterparts' })}>
+                          <Undo2 className="me-2 h-4 w-4" />
+                          {t('reimbursements.addReimbursements')}
+                        </ContextMenuItem>
+                      )}
+                      {reimbursableTx && reimbursableTx.reimbursement_role !== 'anchor' && (
+                        <ContextMenuItem onSelect={() => setReimbursementTarget({ tx: reimbursableTx, mode: 'anchors' })}>
+                          <Undo2 className="me-2 h-4 w-4 rotate-180" />
+                          {t('reimbursements.linkAsReimbursement')}
+                        </ContextMenuItem>
+                      )}
 
                       {selectedSingleTx && (
                         <ContextMenuItem onSelect={() => handleCreateRuleFromTransaction(selectedSingleTx)}>
@@ -2532,6 +2558,14 @@ export default function TransactionsPage() {
           createCounterpartMutation.mutate({ anchorId, toAccountId })
         }}
         loading={linkTransferMutation.isPending || createCounterpartMutation.isPending}
+      />
+
+      <ReimbursementDialog
+        open={reimbursementTarget != null}
+        onClose={() => setReimbursementTarget(null)}
+        transaction={reimbursementTarget?.tx ?? null}
+        mode={reimbursementTarget?.mode ?? 'counterparts'}
+        accounts={accountsList ?? []}
       />
 
       {/* Transfer Dialog */}
