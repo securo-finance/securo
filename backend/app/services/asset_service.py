@@ -435,12 +435,13 @@ def _replays_provider_ledger(asset: Asset) -> bool:
     return asset.valuation_method != "market_price" and asset.connection_id is not None and bool(asset.source)
 
 
-def _ledger_valued(asset: Asset, provider_units: Optional[Decimal]) -> bool:
+def _ledger_valued(asset: Asset, provider_units: Optional[tuple[Decimal, Decimal]]) -> bool:
     """Whether the asset's chart is its ledger replayed (units held each day x price).
 
     Market-priced holdings always are. A holding a bank connection syncs is
-    while its provider's trades (`provider_units`: their buys minus sells,
-    None without any) add up to the units the provider reports: they carry
+    while its provider's trades (`provider_units`: their buys minus sells and
+    their largest lot, None without any) add up to the units the provider
+    reports, within the tolerance the import checked them with: they carry
     each buy and sale on its own date, which the stored values (one per sync)
     cannot. A set that stopped adding up (the sync kept an older ledger) falls
     back to the stored values, and trades entered by hand never count.
@@ -450,16 +451,23 @@ def _ledger_valued(asset: Asset, provider_units: Optional[Decimal]) -> bool:
     if not _replays_provider_ledger(asset) or provider_units is None or asset.units is None:
         return False
     units = Decimal(str(asset.units))
-    tolerance = max(Decimal("0.0001"), abs(units) * Decimal("0.000001"))
-    return abs(provider_units - units) <= tolerance
+    net, largest_lot = provider_units
+    # The import's tolerance (connection_service._reconciled_trades): one
+    # millionth of the largest lot, at least 0.0001.
+    largest = max(abs(units), largest_lot)
+    tolerance = max(Decimal("0.0001"), largest * Decimal("0.000001"))
+    return abs(net - units) <= tolerance
 
 
-def _provider_units(asset: Asset, rows) -> Optional[Decimal]:
-    """Buys minus sells of the asset's own provider among `rows` of (kind, quantity, source)."""
-    mine = [(kind, qty) for kind, qty, source in rows if source == asset.source and kind in ("buy", "sell")]
+def _provider_units(asset: Asset, rows) -> Optional[tuple[Decimal, Decimal]]:
+    """Buys minus sells of the asset's own provider among `rows` of (kind, quantity, source), and its largest lot."""
+    mine = [
+        (kind, Decimal(str(qty))) for kind, qty, source in rows if source == asset.source and kind in ("buy", "sell")
+    ]
     if not mine:
         return None
-    return sum((Decimal(str(q)) if k == "buy" else -Decimal(str(q)) for k, q in mine), Decimal(0))
+    net = sum((q if k == "buy" else -q for k, q in mine), Decimal(0))
+    return net, max(q for _, q in mine)
 
 
 async def _load_asset_native_values(

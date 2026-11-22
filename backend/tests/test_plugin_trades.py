@@ -312,3 +312,18 @@ async def test_hand_trades_are_not_replayed_with_provider_trades(session: AsyncS
     chart = await _chart(session, asset)
     assert date(2026, 11, 1) not in chart
     assert (chart[date(2026, 11, 2)], chart[date(2026, 11, 5)], chart[app_today()]) == (100.0, 180.0, 210.0)
+
+
+@pytest.mark.asyncio
+async def test_a_ledger_the_import_accepted_is_replayed_within_its_largest_lot(
+    session: AsyncSession, bank_connection, test_user
+):
+    # Buys of 1000 and a sale of 999.999 leave 0.001 against 0.0015 reported:
+    # within the import's tolerance (one millionth of the largest lot), so the
+    # chart replays the ledger too instead of falling back to stored values.
+    trades = [_trade("b1", "buy", 2, "1000", "1"), _trade("s1", "sell", 5, "999.999", "1")]
+    await _pipeline(session, bank_connection, holding("0.0015", trades, unit_price="1", current_value="0.0015"), test_user)
+    asset = await _asset(session, bank_connection)
+    assert len(await _ledger(session, asset)) == 2  # the import accepted it
+    chart = await _chart(session, asset)
+    assert chart[date(2026, 11, 2)] == 1000.0
