@@ -349,3 +349,30 @@ async def test_net_amount_is_signed_once_paid_back_in_full(session, make_tx):
     read = await reimbursement_service.get_reimbursements(session, gift)
 
     assert read.net_amount == Decimal("-50.00")
+
+
+@pytest.mark.asyncio
+async def test_check_edit_refuses_a_group_split_on_a_linked_row(session, make_tx):
+    dinner, payback = await make_tx(100), await make_tx(60, "credit")
+    await reimbursement_service.replace_allocations(session, dinner, [_alloc(payback, 40)])
+
+    with pytest.raises(ValueError, match="splitting among people"):
+        await reimbursement_service.check_edit(session, dinner, adds_splits=True)
+
+
+@pytest.mark.asyncio
+async def test_update_transaction_refuses_shrinking_a_counterpart(
+    session, make_tx, test_user, test_workspace
+):
+    from app.schemas.transaction import TransactionUpdate
+    from app.services.transaction_service import update_transaction
+
+    dinner, payback = await make_tx(100), await make_tx(60, "credit")
+    await reimbursement_service.replace_allocations(session, dinner, [_alloc(payback, 40)])
+    await session.commit()
+
+    with pytest.raises(ValueError, match="less than what is allocated"):
+        await update_transaction(
+            session, payback.id, test_workspace.id, test_user.id,
+            TransactionUpdate(amount=Decimal("30")),
+        )

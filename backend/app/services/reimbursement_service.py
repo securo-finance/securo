@@ -200,14 +200,18 @@ async def check_edit(
     *,
     new_amount: Optional[Decimal] = None,
     new_type: Optional[str] = None,
+    adds_splits: bool = False,
 ) -> None:
     """Refuse a manual edit that would break the row's links.
 
     A sync is not refused (the bank's amount wins); reports scale an
     over-allocated counterpart down to fit instead.
     """
-    if new_type is not None and new_type != tx.type and await is_linked(session, tx.id):
-        raise ValueError("Unlink the reimbursements before changing the direction")
+    flips = new_type is not None and new_type != tx.type
+    if (flips or adds_splits) and await is_linked(session, tx.id):
+        if flips:
+            raise ValueError("Unlink the reimbursements before changing the direction")
+        raise ValueError("Unlink the reimbursements before splitting among people")
     if new_amount is None:
         return
     total = (await allocated_from(session, [tx.id])).get(tx.id, _ZERO)

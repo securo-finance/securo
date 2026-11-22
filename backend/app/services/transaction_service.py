@@ -57,7 +57,12 @@ from app.schemas.transaction import (
     TransferCreate,
 )
 from app.schemas.transaction_split import TransactionSplitInput, TransactionSplitsInput
-from app.services import category_line_service, reconciliation_service, split_service
+from app.services import (
+    category_line_service,
+    reconciliation_service,
+    reimbursement_service,
+    split_service,
+)
 from app.services.account_service import get_account, get_running_balances
 from app.services.primary_restamp_service import typed_primary_amount
 from app.services.credit_card_service import apply_effective_date, cc_cycle_bill_due_dates
@@ -2471,6 +2476,13 @@ async def update_transaction(
     update_data.pop("payback", None)
     _normalize_flag_update(transaction, update_data)
     _check_category_lines_update(transaction, update_data, lines_payload)
+    await reimbursement_service.check_edit(
+        session,
+        transaction,
+        new_amount=update_data.get("amount"),
+        new_type=update_data.get("type"),
+        adds_splits=bool(splits_payload and splits_payload.splits),
+    )
 
     # Verify the new account belongs to the workspace before touching the
     # row. When changing the account on one side of a transfer pair,
