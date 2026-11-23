@@ -3916,7 +3916,22 @@
       "editTitle": "חיבור מחדש של {{name}}",
       "editHint": "עדכנו את מה שהשתנה, למשל סיסמה או טוקן חדשים. לאחר מכן החיבור יסתנכרן שוב.",
       "keepBlank": "השאירו שדה ריק כדי לשמור על הערך הנוכחי שלו.",
-      "updated": "{{name}} עודכן"
+      "updated": "{{name}} עודכן",
+      "routines": "משימות",
+      "routineEvery": "כל {{interval}}",
+      "routineLastRun": "רצה {{when}}",
+      "routineNeverRan": "עוד לא רצה",
+      "runRoutine": "הפעלה עכשיו",
+      "runRoutineAria": "הפעלת {{name}} עכשיו",
+      "routineRan": "{{name}} רצה",
+      "routineFailed": "היא לא רצה.",
+      "fileAccepts": "{{types}}, עד {{size}} KB",
+      "fileAny": "כל קובץ, עד {{size}} KB",
+      "currentFile": "נוכחי: {{name}}",
+      "fileSaved": "יש קובץ שמור",
+      "fileWrongType": "{{name}} אינו קובץ {{types}}.",
+      "fileTooBig": "{{name}} גדול מ-{{size}} KB.",
+      "fileReadFailed": "לא ניתן לקרוא את {{name}}."
     },
     "oauth": {
       "title": "משלים את ההתחברות",

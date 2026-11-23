@@ -10,6 +10,19 @@ class PluginFieldRead(BaseModel):
     label: dict[str, str]
     secret: bool
     required: bool
+    type: Literal["text", "file"] = "text"
+    accept: list[str] = Field(default=[], description="For a file: the extensions it takes; empty for any.")
+    max_kb: int = Field(default=512, description="For a file: the largest it takes, in KB.")
+
+
+class PluginRoutineRead(BaseModel):
+    """A routine an integration runs on its own schedule (ADR 0035)."""
+
+    key: str
+    name: dict[str, str]
+    description: dict[str, str] | None = None
+    every_minutes: int
+    timeout_seconds: int | None = None
 
 
 class PluginIntegrationRead(BaseModel):
@@ -19,6 +32,7 @@ class PluginIntegrationRead(BaseModel):
     auth: Literal["credentials", "oauth", "none"]
     fields: list[PluginFieldRead] = []
     sync_minutes: int | None = None
+    routines: list[PluginRoutineRead] = []
     provides: list[str] | None = Field(
         default=None, description="Records it syncs as a connected bank: accounts, transactions, bills, holdings, trades."
     )
@@ -248,6 +262,19 @@ class PluginConnectionRead(BaseModel):
     last_sync_at: datetime | None
     last_error: str | None
     created_at: datetime
+    routines: list["PluginConnectionRoutineRead"] = []
+
+
+class PluginConnectionRoutineRead(BaseModel):
+    """How one routine of a connection last ran. Its state stays with the plugin."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    key: str = Field(validation_alias="routine")
+    every_minutes: int
+    last_run_at: datetime | None
+    last_error: str | None
+    failures: int
 
 
 class PluginConnectionCreate(BaseModel):
@@ -284,3 +311,4 @@ class PluginApplyRequest(BaseModel):
 
 
 PluginPlanRead.model_rebuild()
+PluginConnectionRead.model_rebuild()

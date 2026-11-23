@@ -3894,7 +3894,22 @@
       "editTitle": "Reconnecter {{name}}",
       "editHint": "Mettez à jour ce qui a changé, comme un nouveau mot de passe ou jeton. La connexion se synchronise ensuite à nouveau.",
       "keepBlank": "Laissez un champ vide pour garder sa valeur actuelle.",
-      "updated": "{{name}} mise à jour"
+      "updated": "{{name}} mise à jour",
+      "routines": "Routines",
+      "routineEvery": "toutes les {{interval}}",
+      "routineLastRun": "exécutée {{when}}",
+      "routineNeverRan": "pas encore exécutée",
+      "runRoutine": "Exécuter",
+      "runRoutineAria": "Exécuter {{name}} maintenant",
+      "routineRan": "{{name}} a été exécutée",
+      "routineFailed": "Elle n'a pas été exécutée.",
+      "fileAccepts": "{{types}}, jusqu'à {{size}} Ko",
+      "fileAny": "N'importe quel fichier, jusqu'à {{size}} Ko",
+      "currentFile": "actuel : {{name}}",
+      "fileSaved": "un fichier est enregistré",
+      "fileWrongType": "{{name}} n'est pas un fichier {{types}}.",
+      "fileTooBig": "{{name}} dépasse {{size}} Ko.",
+      "fileReadFailed": "Impossible de lire {{name}}."
     },
     "oauth": {
       "title": "Finalisation de la connexion",

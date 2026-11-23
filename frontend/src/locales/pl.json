@@ -4038,7 +4038,22 @@
       "editTitle": "Połącz ponownie {{name}}",
       "editHint": "Zaktualizuj to, co się zmieniło, np. nowe hasło lub token. Potem połączenie zsynchronizuje się ponownie.",
       "keepBlank": "Zostaw pole puste, aby zachować obecną wartość.",
-      "updated": "Zaktualizowano {{name}}"
+      "updated": "Zaktualizowano {{name}}",
+      "routines": "Zadania",
+      "routineEvery": "co {{interval}}",
+      "routineLastRun": "uruchomione {{when}}",
+      "routineNeverRan": "jeszcze nie uruchomione",
+      "runRoutine": "Uruchom teraz",
+      "runRoutineAria": "Uruchom {{name}} teraz",
+      "routineRan": "{{name}} zostało uruchomione",
+      "routineFailed": "Nie zostało uruchomione.",
+      "fileAccepts": "{{types}}, do {{size}} KB",
+      "fileAny": "Dowolny plik, do {{size}} KB",
+      "currentFile": "obecny: {{name}}",
+      "fileSaved": "plik jest zapisany",
+      "fileWrongType": "{{name}} nie jest plikiem {{types}}.",
+      "fileTooBig": "{{name}} ma więcej niż {{size}} KB.",
+      "fileReadFailed": "Nie udało się odczytać {{name}}."
     },
     "oauth": {
       "title": "Kończenie logowania",

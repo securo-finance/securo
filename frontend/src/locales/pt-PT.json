@@ -3894,7 +3894,22 @@
       "editTitle": "Voltar a ligar {{name}}",
       "editHint": "Atualize o que mudou, como uma nova palavra-passe ou token. A ligação sincroniza de novo a seguir.",
       "keepBlank": "Deixe um campo em branco para manter o valor atual.",
-      "updated": "{{name}} atualizada"
+      "updated": "{{name}} atualizada",
+      "routines": "Rotinas",
+      "routineEvery": "a cada {{interval}}",
+      "routineLastRun": "correu {{when}}",
+      "routineNeverRan": "ainda não correu",
+      "runRoutine": "Executar agora",
+      "runRoutineAria": "Executar {{name}} agora",
+      "routineRan": "{{name}} foi executada",
+      "routineFailed": "Não foi executada.",
+      "fileAccepts": "{{types}}, até {{size}} KB",
+      "fileAny": "Qualquer ficheiro, até {{size}} KB",
+      "currentFile": "atual: {{name}}",
+      "fileSaved": "há um ficheiro guardado",
+      "fileWrongType": "{{name}} não é um ficheiro {{types}}.",
+      "fileTooBig": "{{name}} tem mais de {{size}} KB.",
+      "fileReadFailed": "Não foi possível ler {{name}}."
     },
     "oauth": {
       "title": "A concluir o início de sessão",

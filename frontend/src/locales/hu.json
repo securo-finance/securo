@@ -3880,7 +3880,22 @@
       "editTitle": "{{name}} újracsatlakoztatása",
       "editHint": "Frissítsd, ami megváltozott, például egy új jelszót vagy tokent. Utána a kapcsolat újra szinkronizál.",
       "keepBlank": "Hagyd üresen a mezőt, hogy megmaradjon a jelenlegi értéke.",
-      "updated": "{{name}} frissítve"
+      "updated": "{{name}} frissítve",
+      "routines": "Rutinok",
+      "routineEvery": "{{interval}}enként",
+      "routineLastRun": "lefutott {{when}}",
+      "routineNeverRan": "még nem futott",
+      "runRoutine": "Futtatás most",
+      "runRoutineAria": "{{name}} futtatása most",
+      "routineRan": "{{name}} lefutott",
+      "routineFailed": "Nem futott le.",
+      "fileAccepts": "{{types}}, legfeljebb {{size}} KB",
+      "fileAny": "Bármilyen fájl, legfeljebb {{size}} KB",
+      "currentFile": "jelenlegi: {{name}}",
+      "fileSaved": "egy fájl el van mentve",
+      "fileWrongType": "{{name}} nem {{types}} fájl.",
+      "fileTooBig": "{{name}} nagyobb, mint {{size}} KB.",
+      "fileReadFailed": "{{name}} nem olvasható."
     },
     "oauth": {
       "title": "Bejelentkezés befejezése",

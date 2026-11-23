@@ -3945,7 +3945,22 @@
       "editTitle": "Перепідключити {{name}}",
       "editHint": "Оновіть те, що змінилося, наприклад новий пароль або токен. Після цього підключення знову синхронізується.",
       "keepBlank": "Залиште поле порожнім, щоб зберегти поточне значення.",
-      "updated": "{{name}} оновлено"
+      "updated": "{{name}} оновлено",
+      "routines": "Завдання",
+      "routineEvery": "кожні {{interval}}",
+      "routineLastRun": "запускалося {{when}}",
+      "routineNeverRan": "ще не запускалося",
+      "runRoutine": "Запустити",
+      "runRoutineAria": "Запустити {{name}} зараз",
+      "routineRan": "{{name}} виконано",
+      "routineFailed": "Не виконано.",
+      "fileAccepts": "{{types}}, до {{size}} КБ",
+      "fileAny": "Будь-який файл, до {{size}} КБ",
+      "currentFile": "поточний: {{name}}",
+      "fileSaved": "файл збережено",
+      "fileWrongType": "{{name}} не є файлом {{types}}.",
+      "fileTooBig": "{{name}} більший за {{size}} КБ.",
+      "fileReadFailed": "Не вдалося прочитати {{name}}."
     },
     "oauth": {
       "title": "Завершення входу",

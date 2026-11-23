@@ -3880,7 +3880,22 @@
       "editTitle": "{{name}} फिर से कनेक्ट करें",
       "editHint": "जो बदला है उसे अपडेट करें, जैसे नया पासवर्ड या टोकन। इसके बाद कनेक्शन फिर से सिंक होगा।",
       "keepBlank": "मौजूदा मान रखने के लिए फ़ील्ड खाली छोड़ें।",
-      "updated": "{{name}} अपडेट हुआ"
+      "updated": "{{name}} अपडेट हुआ",
+      "routines": "रूटीन",
+      "routineEvery": "हर {{interval}}",
+      "routineLastRun": "{{when}} चला",
+      "routineNeverRan": "अभी तक नहीं चला",
+      "runRoutine": "अभी चलाएँ",
+      "runRoutineAria": "{{name}} अभी चलाएँ",
+      "routineRan": "{{name}} चल गया",
+      "routineFailed": "नहीं चला।",
+      "fileAccepts": "{{types}}, {{size}} KB तक",
+      "fileAny": "कोई भी फ़ाइल, {{size}} KB तक",
+      "currentFile": "मौजूदा: {{name}}",
+      "fileSaved": "एक फ़ाइल सहेजी गई है",
+      "fileWrongType": "{{name}} {{types}} फ़ाइल नहीं है।",
+      "fileTooBig": "{{name}} {{size}} KB से बड़ी है।",
+      "fileReadFailed": "{{name}} पढ़ी नहीं जा सकी।"
     },
     "oauth": {
       "title": "साइन इन पूरा हो रहा है",
