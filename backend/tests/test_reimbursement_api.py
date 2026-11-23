@@ -242,3 +242,39 @@ async def test_balance_history_takes_a_netting_switch(client, auth_headers):
 
     assert (netted["netted"], real["netted"], scoped["netted"]) == (True, False, False)
     assert (day(netted, 3), day(real, 3), day(scoped, 3)) == (-300, -400, -400)
+
+
+@pytest.mark.asyncio
+async def test_the_list_and_export_filter_by_link(client, auth_headers):
+    account = await _account(client, auth_headers)
+    dinner = await _create(client, auth_headers, account["id"], 100, description="Dinner")
+    alice = await _create(client, auth_headers, account["id"], 40, "credit", description="Alice")
+    await _create(client, auth_headers, account["id"], 25, "credit", description="Stray credit")
+    await _create(client, auth_headers, account["id"], 15, description="Coffee")
+    resp = await client.put(
+        f"/api/transactions/{dinner['id']}/reimbursements", headers=auth_headers, json=_body((alice, 40))
+    )
+    assert resp.status_code == 200, resp.text
+
+    async def names(**params):
+        resp = await client.get("/api/transactions", headers=auth_headers, params=params)
+        assert resp.status_code == 200, resp.text
+        return {row["description"] for row in resp.json()["items"]}
+
+    assert await names(reimbursement="linked") == {"Dinner", "Alice"}
+    assert await names(reimbursement="anchor") == {"Dinner"}
+    assert await names(reimbursement="counterpart") == {"Alice"}
+    assert await names(reimbursement="unlinked") == {"Stray credit", "Coffee"}
+    # Narrows like any other filter: the unlinked incoming payments.
+    assert await names(reimbursement="unlinked", type="credit") == {"Stray credit"}
+
+    resp = await client.get(
+        "/api/transactions/export", headers=auth_headers, params={"reimbursement": "counterpart"}
+    )
+    assert resp.status_code == 200
+    assert "Alice" in resp.text and "Dinner" not in resp.text
+
+    resp = await client.get(
+        "/api/transactions", headers=auth_headers, params={"reimbursement": "nonsense"}
+    )
+    assert resp.status_code == 422

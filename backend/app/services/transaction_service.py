@@ -36,6 +36,7 @@ from app.core.shared_scope import (
     viewer_member_predicate,
 )
 from app.models.transaction import USER_EDITED_KEY, Transaction
+from app.models.reimbursement_allocation import ReimbursementAllocation
 from app.models.transaction_attachment import TransactionAttachment
 from app.models.account import Account
 from app.models.account_card import AccountCard
@@ -312,6 +313,9 @@ async def _restore_typed_primary(
 
 
 FlagDue = Literal["overdue", "soon"]
+# `linked`: either side of a reimbursement link; `anchor`: has reimbursements
+# linked to it; `counterpart`: is itself a reimbursement of another row.
+ReimbursementFilter = Literal["linked", "anchor", "counterpart", "unlinked"]
 # "Soon" is today and the week after it.
 FLAG_DUE_SOON_DAYS = 7
 
@@ -358,6 +362,7 @@ async def get_transactions(
     flag_due: Optional[FlagDue] = None,
     unpaid_only: bool = False,
     unread_only: bool = False,
+    reimbursement: Optional[ReimbursementFilter] = None,
     include_running_balance: bool = False,
     primary_currency: Optional[str] = None,
     workspace_only: bool = False,
@@ -553,6 +558,8 @@ async def get_transactions(
             Transaction.is_read.is_(False),
             Transaction.workspace_id == workspace_id,
         )
+    if reimbursement is not None:
+        base_query = base_query.where(_reimbursement_link_filter(workspace_id, reimbursement))
     if txn_type == "transfer":
         # Not a value of the `type` column: a transfer is still stored as a
         # credit or a debit, so this narrows to the transfer family instead.
@@ -1053,7 +1060,8 @@ async def get_transactions(
                     txn_type, tags, status, currency, account_types, transaction_ids,
                     min_amount is not None, max_amount is not None,
                     exclude_transfers, user_pnl_only, exclude_ignored, flagged_only, flag_due is not None,
-                    unpaid_only, unread_only, group_id,
+                    unpaid_only, unread_only, reimbursement is not None,
+                    group_id,
                     # `bill_id` and `unbilled_only` pick a card's statement
                     # window, not a smaller ledger: the walk still covers
                     # every row that moves the balance (#920).
@@ -1097,6 +1105,26 @@ async def _running_balance_account(
     if narrowed or not default_order or len(set(account_ids)) != 1:
         return None
     return await get_account(session, account_ids[0], workspace_id)
+
+
+def _reimbursement_link_filter(workspace_id: uuid.UUID, mode: ReimbursementFilter):
+    """Rows by their place in a reimbursement link, whatever the link's effect on reports."""
+    is_anchor = Transaction.id.in_(
+        select(ReimbursementAllocation.anchor_id).where(
+            ReimbursementAllocation.workspace_id == workspace_id
+        )
+    )
+    is_counterpart = Transaction.id.in_(
+        select(ReimbursementAllocation.counterpart_id).where(
+            ReimbursementAllocation.workspace_id == workspace_id
+        )
+    )
+    return {
+        "anchor": is_anchor,
+        "counterpart": is_counterpart,
+        "linked": or_(is_anchor, is_counterpart),
+        "unlinked": ~or_(is_anchor, is_counterpart),
+    }[mode]
 
 
 def _flagged_in_workspace(workspace_id: uuid.UUID, flag_due: Optional[FlagDue] = None):
