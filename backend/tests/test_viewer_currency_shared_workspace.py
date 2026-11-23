@@ -210,6 +210,61 @@ async def test_member_in_another_currency_sees_the_list_converted(client, couple
     assert drill["summary"]["expense"] == pytest.approx(300.0)
 
 
+@pytest.mark.asyncio
+async def test_amount_bounds_and_sort_read_the_rows_as_the_member_sees_them(
+    client, couple
+):
+    """Bruno sees 200 € and 100 €; the stamps are Ana's R$ 1.000 and R$ 400.
+    The bounds and the amount sort compared his euros with her reais, so
+    `max_amount=250` found nothing."""
+    month, bruno = couple["month"], couple["bruno"]
+
+    def _shown(body: dict) -> list[float]:
+        return [abs(item["amount_primary"]) for item in body["items"]]
+
+    below = await _list(client, bruno, month, max_amount=250)
+    assert sorted(_shown(below)) == pytest.approx([100.0, 200.0])
+    assert below["total"] == 2
+
+    above = await _list(client, bruno, month, min_amount=150)
+    assert _shown(above) == pytest.approx([200.0])
+
+    ordered = await _list(client, bruno, month, sort_by="amount", sort_dir="asc")
+    assert _shown(ordered) == pytest.approx([100.0, 200.0])
+
+    # Ana's own bounds still read her stamps.
+    assert _shown(await _list(client, couple["ana"], month, min_amount=500)) == (
+        pytest.approx([1000.0])
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_legacy_one_to_one_stamp_stays_flagged_after_conversion(
+    client, session: AsyncSession, couple, test_user: User
+):
+    """A US$ 50 row Ana stamped R$ 50 at the legacy 1:1 fallback rate. Bruno
+    sees it converted to euros, which rewrites its rate, but the stamp is
+    still not backed by a real rate and the row keeps its warning."""
+    month, day5, _day15 = _last_month()
+    account = (
+        await session.execute(select(Account).where(Account.name == "Conta conjunta"))
+    ).scalar_one()
+    session.add(
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=account.workspace_id,
+            account_id=account.id, description="R269 legacy", amount=Decimal("50.00"),
+            currency="USD", amount_primary=Decimal("50.00"), fx_rate_used=Decimal("1"),
+            date=day5, type="debit", source="manual",
+        )
+    )
+    await session.commit()
+
+    body = await _list(client, couple["bruno"], month, q="R269 legacy")
+    [row] = body["items"]
+    assert row["amount_primary"] == pytest.approx(10.0)
+    assert row["fx_fallback"] is True
+
+
 async def _member(
     session: AsyncSession, group_id: uuid.UUID, workspace_id: uuid.UUID, **fields
 ) -> GroupMember:
@@ -302,15 +357,27 @@ async def couple_with_groups(session: AsyncSession, test_user: User, test_worksp
         test_user.id,
     )
     await session.commit()
-    return {**couple, "travel_id": str(travel.id)}
+    return {
+        **couple,
+        "travel_id": str(travel.id),
+        "personal": personal,
+        "account": account,
+        "trip_members": trip_members,
+    }
 
 
-async def _report(client: AsyncClient, headers: dict, month: date) -> dict:
+async def _report(
+    client: AsyncClient, headers: dict, month: date, interval: str = "monthly"
+) -> dict:
     params = _month_params(month)
     resp = await client.get(
         "/api/reports/income-expenses",
         headers=headers,
-        params={"start_date": params["from_date"], "end_date": params["to_date"]},
+        params={
+            "start_date": params["from_date"],
+            "end_date": params["to_date"],
+            "interval": interval,
+        },
     )
     assert resp.status_code == 200, resp.text
     return resp.json()
@@ -451,6 +518,80 @@ async def test_a_negative_share_alone_in_its_category_draws_no_slice(
     keys = {item["key"] for item in report["composition"]}
     assert str(taxi_category.id) not in keys
     assert (await _list(client, bruno, month))["summary"]["expense"] == pytest.approx(396.0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("amount_primary", "bruno_share"),
+    [
+        # Stamped R$ 40, read at the row's date (BRL→EUR 0,25): -20 → -5 €.
+        ("40.00", -5.0),
+        # No stamp: the share is read from BRL at the same row's date, so
+        # stamping the row does not move it: -20 → -5 € as well.
+        (None, -5.0),
+    ],
+)
+async def test_a_negative_exact_share_agrees_across_donut_footer_and_report(
+    client, session: AsyncSession, test_user: User, couple_with_groups,
+    amount_primary, bruno_share,
+):
+    """#377: Ana's refunded taxi, R$ 40 split exactly as Ana +60 and Bruno
+    -20, in the trip's category ten days after the trip. With a daily
+    interval the share is its own (day, category) bucket: the donut used to
+    take its abs and add it to the Viagens slice, and the footer, on a row
+    without a stamp, took the -20 BRL as -20 €. Both now agree with the
+    report's summary and the card."""
+    data = couple_with_groups
+    month, _day5, day15 = _last_month()
+    bruno = data["bruno"]
+    personal = data["personal"]
+    ana_member, bruno_member, _carla = data["trip_members"]
+    taxi = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=personal.id,
+        account_id=data["account"].id, category_id=uuid.UUID(data["travel_id"]),
+        description="R269 taxi reembolsado", amount=Decimal("40.00"),
+        currency="BRL",
+        amount_primary=Decimal(amount_primary) if amount_primary else None,
+        date=day15, type="debit", source="manual",
+    )
+    session.add(taxi)
+    await session.flush()
+    await split_service.replace_splits(
+        session,
+        taxi,
+        TransactionSplitsInput(
+            share_type="exact",
+            splits=[
+                TransactionSplitInput(
+                    group_member_id=ana_member.id, share_amount=Decimal("60.00")
+                ),
+                TransactionSplitInput(
+                    group_member_id=bruno_member.id, share_amount=Decimal("-20.00")
+                ),
+            ],
+        ),
+        test_user.id,
+    )
+    await session.commit()
+
+    expected = 400.0 + bruno_share
+    report = await _report(client, bruno, month, interval="daily")
+    breakdowns = {b["key"]: b["value"] for b in report["summary"]["breakdowns"]}
+    assert breakdowns["expenses"] == pytest.approx(expected, abs=0.01)
+
+    slices = {
+        item["key"]: item["value"]
+        for item in report["composition"]
+        if item["group"] == "expenses"
+    }
+    assert slices[data["travel_id"]] == pytest.approx(100.0 + bruno_share, abs=0.01)
+    assert sum(slices.values()) == pytest.approx(breakdowns["expenses"], abs=0.01)
+
+    footer = (await _list(client, bruno, month))["summary"]["expense"]
+    assert footer == pytest.approx(breakdowns["expenses"], abs=0.01)
+
+    summary = await _dashboard(client, bruno, month)
+    assert summary["monthly_expenses_primary"] == pytest.approx(footer, abs=0.01)
 
 
 @pytest.mark.asyncio

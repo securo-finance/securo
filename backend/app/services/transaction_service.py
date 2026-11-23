@@ -365,11 +365,30 @@ async def get_transactions(
         # answer "do I have any EUR transactions?" without text-searching
         # the description column.
         base_query = base_query.where(Transaction.currency == currency.upper())
+    # The viewer's display currency: a row another member of a shared
+    # workspace created is stamped in that member's currency, and the list
+    # shows it converted (#269). Amount bounds, the amount sort and the
+    # footer all read rows through it, so they agree with what is shown.
+    viewer = None
+    if (
+        include_summary
+        or min_amount is not None
+        or max_amount is not None
+        or sort_by == "amount"
+    ):
+        if primary_currency is None:
+            from app.models.user import User
+
+            viewer_user = await session.get(User, user_id)
+            primary_currency = viewer_user.primary_currency if viewer_user else None
+        viewer = await viewer_currency(session, primary_currency)
     if min_amount is not None or max_amount is not None:
         # Amount filters operate on the primary-currency value when
         # available so cross-currency totals make sense; fall back to the
-        # native amount on rows that haven't been stamped yet.
-        amount_expr = func.coalesce(Transaction.amount_primary, Transaction.amount)
+        # native amount on rows that haven't been stamped yet. The stamp is
+        # read in the viewer's currency, as the list shows it.
+        assert viewer is not None
+        amount_expr = func.coalesce(viewer.amount(), Transaction.amount)
         if min_amount is not None:
             base_query = base_query.where(amount_expr >= min_amount)
         if max_amount is not None:
@@ -576,12 +595,7 @@ async def get_transactions(
     # rows). Computed before pagination so it covers the whole result set.
     summary: Optional[dict] = None
     if include_summary:
-        if primary_currency is None:
-            from app.models.user import User
-
-            viewer_user = await session.get(User, user_id)
-            primary_currency = viewer_user.primary_currency if viewer_user else None
-        viewer = await viewer_currency(session, primary_currency)
+        assert viewer is not None
         # Income / expense / net use the shared `counts_as_pnl` definition
         # (issue #242) so the footer matches the dashboard & reports: paired
         # transfers, `treat_as_transfer` categories (transfers, investments,
@@ -724,7 +738,10 @@ async def get_transactions(
         # would otherwise float old purchases to the top because their
         # bill due date is in the future.
         "transaction_date": Transaction.date,
-        "amount": func.coalesce(Transaction.amount_primary, Transaction.amount),
+        "amount": func.coalesce(
+            viewer.amount() if viewer is not None else Transaction.amount_primary,
+            Transaction.amount,
+        ),
         "description": Transaction.description,
         "payee": Payee.name,
         # Split rows have no category of their own; keep them together,

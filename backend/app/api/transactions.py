@@ -148,6 +148,10 @@ async def _in_viewer_currency(
     for item in items:
         if viewer.stamp_currency(item.user_id) == viewer.currency:
             continue
+        # Judged on the stored stamp, in its owner's currency: converting a
+        # legacy 1:1 stamp scales it and rewrites `fx_rate_used`, which would
+        # hide the warning.
+        _tag_fx_fallback(item, viewer.stamp_currency(item.user_id))
         ratio = await viewer.ratio(session, item.user_id, item.date)
         converted = await viewer.convert(session, item.user_id, item.amount_primary, item.date)
         item.amount_primary = float(converted) if converted is not None else None

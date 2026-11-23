@@ -827,6 +827,8 @@ async def get_income_expenses_report(
     from app.services.fx_rate_service import convert as fx_convert
     for (period,), (share_income, share_expenses) in shared_by_period.items():
         existing_income, existing_expenses = data_map.get(period, (0.0, 0.0))
+        # Signed: a negative exact share alone in its period lowers the
+        # expenses instead of adding to them (#377).
         data_map[period] = (
             existing_income + float(share_income),
             existing_expenses + float(share_expenses),
@@ -1199,10 +1201,10 @@ async def get_income_expenses_report(
         for (period_label, cat_id), totals in shared_by_category.items()
         for txn_type, value in zip(("credit", "debit"), totals)
     ]
-    # Signed: an exact split may give the viewer a negative share, which
-    # lowers its slice as it lowers the summary instead of adding to it
-    # (#377). A slice left at zero or below is dropped with the others below.
     for period_label, cat_id, txn_type, value in shared_slices:
+        # Signed, like the summary: an exact split may give the viewer a
+        # negative share, which takes from its slice instead of adding to it
+        # (#377). A slice left at zero or below is dropped further down.
         amount = float(value)
         if amount == 0:
             continue
