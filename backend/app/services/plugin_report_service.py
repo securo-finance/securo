@@ -14,7 +14,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -72,9 +72,13 @@ class ReportResult:
 
 
 async def installed_report(
-    session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str, key: str
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    plugin_id: str,
+    key: str,
+    kind: Literal["reports", "widgets"] = "reports",
 ) -> tuple[WorkspacePlugin, Manifest, Report]:
-    """The report as the workspace installed it (never from the catalog)."""
+    """The report, or dashboard widget (ADR 0034), as the workspace installed it: never from the catalog."""
     record = await session.scalar(
         select(WorkspacePlugin).where(
             WorkspacePlugin.workspace_id == workspace_id, WorkspacePlugin.plugin_id == plugin_id
@@ -83,7 +87,7 @@ async def installed_report(
     if record is None or not record.manifest:
         raise PluginReportNotFound
     manifest = parse_manifest(record.manifest)
-    report = next((r for r in manifest.contributes.reports if r.key == key), None)
+    report = next((r for r in getattr(manifest.contributes, kind) if r.key == key), None)
     if report is None:
         raise PluginReportNotFound
     return record, manifest, report
@@ -533,7 +537,8 @@ async def run_code_report(
 
     The plugin gets only the inputs its manifest names, read for this
     workspace with the period and accounts the viewer picked, and returns a
-    view of blocks; what it returns is checked before anyone sees it.
+    view of blocks; what it returns is checked before anyone sees it. A
+    dashboard widget (ADR 0034) runs the same way through its `widget` method.
     """
     from app.plugins import runner
     from app.plugins.report_view import InvalidView, parse_view
@@ -556,7 +561,7 @@ async def run_code_report(
     if "categories" in report.inputs:
         data["categories"] = await _categories_input(session, workspace_id)
     params = {
-        "report": report.key,
+        report.METHOD: report.key,
         "start_date": start.isoformat(),
         "end_date": end.isoformat(),
         "today": app_today().isoformat(),
@@ -565,11 +570,11 @@ async def run_code_report(
         "account_ids": [str(a) for a in account_ids] if account_ids is not None else None,
         "data": data,
     }
-    securo = {"workspace_id": str(workspace_id), "report": report.key}
+    securo = {"workspace_id": str(workspace_id), report.METHOD: report.key}
 
     async def call() -> Any:
         async with runner.RunnerClient() as client:
-            return await client.call(record.plugin_id, "report", params, securo=securo, commit=record.commit)
+            return await client.call(record.plugin_id, report.METHOD, params, securo=securo, commit=record.commit)
 
     try:
         try:
@@ -584,7 +589,7 @@ async def run_code_report(
     except runner.PluginCallFailed as exc:
         raise CodeReportFailed(f"{exc.kind}: {exc.message}"[:500]) from None
     except runner.RunnerRefused as exc:
-        raise CodeReportUnavailable(f"the plugin runner refused the report ({exc.status})") from None
+        raise CodeReportUnavailable(f"the plugin runner refused the {report.NOUN} ({exc.status})") from None
     except runner.RunnerUnavailable as exc:
         raise CodeReportUnavailable(str(exc)) from None
     try:

@@ -1,6 +1,6 @@
 import uuid
 from datetime import date
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -223,19 +223,36 @@ async def get_plugin_report(
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """A report an installed plugin declares, added up by Securo (ADR 0028).
+    """A report an installed plugin declares (ADR 0028).
 
     Read as any report is: by whoever can see the workspace, over the period
-    and accounts they picked. Nothing of the plugin runs.
+    and accounts they picked. A query report is added up by Securo; a code
+    report is the view the plugin's code returned, checked.
     """
+    return await plugin_view_response(
+        session, ctx, "reports", f"{owner}/{name}", key, start_date, end_date, account_ids
+    )
+
+
+async def plugin_view_response(
+    session: AsyncSession,
+    ctx: WorkspaceContext,
+    kind: Literal["reports", "widgets"],
+    plugin_id: str,
+    key: str,
+    start_date: date,
+    end_date: date,
+    account_ids: Optional[list[uuid.UUID]],
+) -> PluginReportResponse:
+    """A plugin's report or dashboard widget (ADR 0034) for the period asked, as the API answers it."""
     if not feature_flag("PLUGINS_ENABLED"):
         raise HTTPException(status_code=404, detail="Plugins are not enabled")
     try:
         record, manifest, report = await plugin_report_service.installed_report(
-            session, ctx.workspace.id, f"{owner}/{name}", key
+            session, ctx.workspace.id, plugin_id, key, kind
         )
     except plugin_report_service.PluginReportNotFound:
-        raise HTTPException(status_code=404, detail="Report not found") from None
+        raise HTTPException(status_code=404, detail="Report not found" if kind == "reports" else "Widget not found") from None
     if report.code:
         try:
             view = await plugin_report_service.run_code_report(

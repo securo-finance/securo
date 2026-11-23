@@ -4051,6 +4051,12 @@
     "recurringRevenue": {
       "title": "Terugkerende omzet",
       "hint": "Wat terugkerende facturen per maand opleveren, en wat onlangs verloren ging."
+    },
+    "plugin": {
+      "period": {
+        "year_to_date": "Dit jaar tot nu",
+        "last_12_months": "Laatste 12 maanden"
+      }
     }
   },
   "offline": {

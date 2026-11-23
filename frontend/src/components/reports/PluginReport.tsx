@@ -1,17 +1,13 @@
-import { useQuery } from '@tanstack/react-query'
-import { isAxiosError } from 'axios'
 import { useTranslation } from 'react-i18next'
 import { AlertCircle } from 'lucide-react'
 
 import { ReportView } from '@/components/reports/ReportView'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useDateLocale } from '@/hooks/use-display-locale'
-import { reports } from '@/lib/api'
+import { usePluginView } from '@/hooks/use-plugin-view'
 import { extractApiError } from '@/lib/api-errors'
 import type { PluginReportEntry } from '@/lib/library'
 import { localized } from '@/lib/localized-text'
-import { queryReportView } from '@/lib/plugin-report-view'
-import type { PluginReportResponse } from '@/types'
 
 /**
  * A report a plugin adds (ADR 0028): a query Securo adds up, or the plugin's
@@ -36,20 +32,10 @@ export function PluginReport({
   const dateLocale = useDateLocale()
   const { report } = entry
 
-  const { data, isLoading, isError, error, refetch } = useQuery<PluginReportResponse>({
-    queryKey: ['reports', 'plugin', entry.id, startDate ?? null, endDate ?? null, accountIds ?? null],
-    queryFn: () => reports.plugin(entry.plugin.id, report.key, startDate!, endDate!, accountIds),
-    enabled: !!startDate && !!endDate,
-    // A code report runs the plugin each time: no retries on a failure it reported.
-    ...(report.code ? { retry: false } : {}),
-  })
-
-  const view = data ? (data.code ? data.view : queryReportView(report, data, t)) : null
-  const empty = !view || view.blocks.length === 0 || (!data?.code && data?.rows.every((row) => row.value === 0))
+  const { data, isLoading, isError, error, refetch, view, empty, periodRefused } = usePluginView(
+    entry, 'reports', startDate, endDate, accountIds,
+  )
   const trimmed = !!requestedFrom && !!startDate && requestedFrom !== startDate
-  // A 422 here is the period: the API sends its limit in English, and retrying
-  // the same window would only fail again.
-  const periodRefused = isError && isAxiosError(error) && error.response?.status === 422
   const day = (iso: string) =>
     new Date(`${iso}T00:00:00`).toLocaleDateString(dateLocale, { day: 'numeric', month: 'short', year: 'numeric' })
 

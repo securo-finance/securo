@@ -4064,6 +4064,12 @@
     "recurringRevenue": {
       "title": "Receita recorrente",
       "hint": "Quanto as cobranças recorrentes trazem por mês, e o que foi perdido recentemente."
+    },
+    "plugin": {
+      "period": {
+        "year_to_date": "No ano",
+        "last_12_months": "Últimos 12 meses"
+      }
     }
   },
   "offline": {

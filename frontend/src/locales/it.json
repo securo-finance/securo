@@ -4063,6 +4063,12 @@
     "recurringRevenue": {
       "title": "Entrate ricorrenti",
       "hint": "Quanto portano le fatture ricorrenti ogni mese, e cosa si è perso di recente."
+    },
+    "plugin": {
+      "period": {
+        "year_to_date": "Da inizio anno",
+        "last_12_months": "Ultimi 12 mesi"
+      }
     }
   },
   "offline": {

@@ -4063,6 +4063,12 @@
     "recurringRevenue": {
       "title": "Receita recorrente",
       "hint": "Quanto as faturas recorrentes trazem por mês, e o que se perdeu recentemente."
+    },
+    "plugin": {
+      "period": {
+        "year_to_date": "Ano até à data",
+        "last_12_months": "Últimos 12 meses"
+      }
     }
   },
   "offline": {

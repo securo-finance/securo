@@ -51,6 +51,8 @@ def _lang(ctx: WorkspaceContext) -> str:
 
 #: Where a plugin's icon is served, by its file name in the catalog.
 _ICONS = "/api/plugins/icons/"
+#: What the library needs of a plugin's dashboard widget (ADR 0034).
+WIDGET_FIELDS = {"key", "name", "description", "code", "inputs", "measure", "group_by", "chart", "width", "period"}
 
 
 def _catalog_read(item: service.CatalogItem) -> PluginCatalogRead:
@@ -138,6 +140,12 @@ def _installed_read(record) -> InstalledPluginRead:
         reports=[
             r.model_dump(include={"key", "name", "description", "code", "inputs", "measure", "group_by", "chart"})
             for r in manifest.contributes.reports
+        ]
+        if manifest
+        else [],
+        widgets=[
+            r.model_dump(include=WIDGET_FIELDS)
+            for r in manifest.contributes.widgets
         ]
         if manifest
         else [],

@@ -4049,6 +4049,12 @@
     "recurringRevenue": {
       "title": "Recurring revenue",
       "hint": "What recurring invoices bring in each month, and what was lost lately."
+    },
+    "plugin": {
+      "period": {
+        "year_to_date": "Year to date",
+        "last_12_months": "Last 12 months"
+      }
     }
   },
   "offline": {

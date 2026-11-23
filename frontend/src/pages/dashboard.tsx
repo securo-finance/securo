@@ -71,6 +71,7 @@ import {
   AssistantWidget,
   CreditCardsWidget,
   InvoicesDueWidget,
+  PluginWidget,
   FlaggedWidget,
   InvoiceTotalsWidget,
   MonthResultWidget,
@@ -80,8 +81,9 @@ import {
   UpcomingWidget,
   type DashboardScope,
 } from '@/components/dashboard-widgets'
-import { DASHBOARD_WIDGETS } from '@/lib/library'
+import { DASHBOARD_WIDGETS, type WidgetEntry } from '@/lib/library'
 import { useLayout } from '@/hooks/use-layout'
+import { usePluginWidgets } from '@/hooks/use-plugin-reports'
 import { useEntryAvailability } from '@/hooks/use-entry-availability'
 import { useLibrary } from '@/contexts/library-context'
 
@@ -143,13 +145,18 @@ export default function DashboardPage() {
   const displayName = user?.preferences?.display_name || ''
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
-  const dashboardLayout = useLayout('dashboard')
+  // The installed plugins' widgets join Securo's own (ADR 0034).
+  const { entries: pluginWidgets } = usePluginWidgets()
+  const dashboardLayout = useLayout('dashboard', pluginWidgets)
   const { openLibrary } = useLibrary()
   const [editing, setEditing] = useState(false)
   // A widget this workspace can't run (invoices in a Personal one, the agent
   // with agents off) isn't drawn, but stays in the saved arrangement.
   const unavailable = useEntryAvailability()
-  const availableWidgets = DASHBOARD_WIDGETS.filter((entry) => unavailable(entry) === null)
+  const availableWidgets: WidgetEntry[] = [
+    ...DASHBOARD_WIDGETS.filter((entry) => unavailable(entry) === null),
+    ...(pluginWidgets ?? []),
+  ]
   const availableIds = new Set(availableWidgets.map((entry) => entry.id))
   const gridItems = dashboardLayout.items.filter((item) => availableIds.has(item.id))
   const keptItems = dashboardLayout.items.filter((item) => !availableIds.has(item.id))
@@ -896,6 +903,9 @@ export default function DashboardPage() {
     payables: <InvoiceTotalsWidget direction="payable" scope={widgetScope} />,
     'receivables-aging': <AgingWidget scope={widgetScope} />,
     'invoices-due': <InvoicesDueWidget />,
+    ...Object.fromEntries(
+      (pluginWidgets ?? []).map((entry) => [entry.id, <PluginWidget key={entry.id} entry={entry} scope={widgetScope} />]),
+    ),
     'recurring-revenue': <RecurringRevenueWidget scope={widgetScope} />,
     'overview': (
       // A container, so the indicators below lay out by the widget's width, not the screen's.

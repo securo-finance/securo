@@ -61,6 +61,7 @@ from app.services.account_service import get_account, get_running_balances
 from app.services.primary_restamp_service import typed_primary_amount
 from app.services.credit_card_service import apply_effective_date, cc_cycle_bill_due_dates
 from app.services.rule_service import apply_rules_to_transaction
+from app.services.transfer_detection_service import detect_transfer_pairs
 from app.services.fx_rate_service import (
     ACCOUNT_AMOUNT_FROM_USER,
     convert as fx_convert,
@@ -1411,6 +1412,12 @@ async def create_transaction(
     # to remove, and leaving this path out would remove it only for people
     # whose bank happens to be connected.
     await reconciliation_service.match_incoming(session, workspace_id, [transaction])
+
+    # And a transfer recorded by hand finds its other leg exactly as a
+    # synced one does (#1798). The new row is the only candidate, so two
+    # rows that were already there are never paired on the strength of a
+    # third one arriving.
+    await detect_transfer_pairs(session, workspace_id, candidate_ids=[transaction.id])
 
     await session.commit()
     await session.refresh(transaction, ["category", "splits", "category_lines"])
