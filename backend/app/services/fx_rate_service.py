@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.core.app_clock import app_today
 from app.core.config import get_settings
 from app.core.currency import same_currency
-from app.core.money import bounded_conversion
+from app.core.money import MoneyOutOfRange, bounded_conversion
 from app.models.account import Account
 from app.models.fx_rate import FxRate
 from app.models.transaction import Transaction
@@ -333,18 +333,27 @@ async def stamp_primary_amount(
     currency, date or account changed; a stamp that only heals the reporting
     value keeps the account amount (see `stamp_account_amount`).
     """
+    before = (getattr(obj, primary_field, None), getattr(obj, rate_field, None))
     await _stamp_primary_fields(
         session, user_id, obj, amount_field, primary_field, rate_field,
         date_field, currency_field, allow_fetch=allow_fetch,
     )
     if isinstance(obj, Transaction) and primary_field == "amount_primary":
-        await stamp_account_amount(
-            session,
-            obj,
-            bank_amount=account_amount,
-            allow_fetch=allow_fetch,
-            recompute=restamp_account,
-        )
+        try:
+            await stamp_account_amount(
+                session,
+                obj,
+                bank_amount=account_amount,
+                allow_fetch=allow_fetch,
+                recompute=restamp_account,
+            )
+        except MoneyOutOfRange:
+            # The account leg converts past the column (issue #422): put the
+            # primary stamp back, so the row is left as it was instead of
+            # half stamped and out of the healers' reach.
+            setattr(obj, primary_field, before[0])
+            setattr(obj, rate_field, before[1])
+            raise
 
 
 # Where a stored `amount_account` came from. NULL is a derived value: a copy of

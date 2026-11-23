@@ -19,6 +19,9 @@ from app.models.account import Account
 from app.models.fx_rate import FxRate
 from app.models.transaction import Transaction
 from app.models.user import User
+from app.core.money import MoneyOutOfRange
+from app.services.fx_rate_service import stamp_primary_amount
+from app.services.import_service import _cents
 from app.services.primary_restamp_service import RestampStats, _converted
 
 TOO_BIG = "2000000000000"  # 2e12 USD is 1e13 BRL at 5
@@ -286,3 +289,37 @@ async def test_an_edit_of_one_leg_refuses_a_converted_pair_past_the_column(
     assert resp.json()["detail"] == AMOUNT_LIMIT
     amounts = sorted(row.amount for row in await _rows(session, "pair"))
     assert amounts == [Decimal("100.00"), Decimal("3000.00")]
+
+
+@pytest.mark.asyncio
+async def test_a_stamp_whose_account_leg_overflows_leaves_the_row_as_it_was(
+    session: AsyncSession, jpy_account: Account
+):
+    """1e11 USD fits as 5e11 BRL but not as 1.5e13 JPY on its yen account. The
+    primary stamp is put back, so the healer finds the row again next run
+    instead of a half-stamped row it no longer selects."""
+    tx = Transaction(
+        user_id=jpy_account.user_id,
+        workspace_id=jpy_account.workspace_id,
+        account_id=jpy_account.id,
+        description="half stamped",
+        amount=Decimal("100000000000"),
+        currency="USD",
+        date=app_today(),
+        type="debit",
+        source="manual",
+    )
+    session.add(tx)
+    await session.flush()
+
+    with pytest.raises(MoneyOutOfRange, match="amount_account"):
+        await stamp_primary_amount(session, tx.user_id, tx, allow_fetch=False)
+
+    assert tx.amount_primary is None
+    assert tx.fx_rate_used is None
+    assert tx.amount_account is None
+
+
+def test_an_imported_conversion_is_rounded_before_it_is_bounded():
+    assert _cents(Decimal("9999999999999.9918")) == Decimal("9999999999999.99")
+    assert _cents(Decimal("1.005")) == Decimal("1.01")
