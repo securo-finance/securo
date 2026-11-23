@@ -248,6 +248,97 @@ mcpServer:
   extraVolumes: []
   extraVolumeMounts: []
 
+# Plugins with code. Off by default: a plugin with code runs in its own
+# container next to the backend, never inside the API process. The runner
+# reaches the internet through the egress proxy, which refuses private
+# addresses and anything the plugin did not declare; DNS queries to the
+# cluster resolver are the one exception (see the chart README).
+#
+# The chart creates a Secret with the runner token and the egress secret when
+# `runner.enabled` is true. Both are random, kept across upgrades, and never
+# leave the namespace. Set `runner.existingSecret` to manage them yourself;
+# that Secret needs the keys PLUGINS_RUNNER_TOKEN and PLUGINS_EGRESS_SECRET.
+plugins:
+  runner:
+    enabled: false
+    # Must stay 1: the runner keeps its registry and uid allocation in
+    # process-local locks, so two pods sharing the volume can hand one uid to
+    # two plugins or write a stale registry. It runs as a StatefulSet, which
+    # never creates the replacement before the old pod is gone, and the
+    # template refuses more than one replica.
+    replicaCount: 1
+    # Defaults to the backend image: the runner ships in it as
+    # `plugin_runner.main:create_app`.
+    image:
+      repository: ""
+      tag: ""
+      pullPolicy: IfNotPresent
+    service:
+      port: 8090
+    existingSecret: ""
+    # Optional fixed pair, used instead of the generated one. Setting a new
+    # value is the supported way to rotate: the checksum rolls the pods.
+    token: ""
+    egressSecret: ""
+    # Where the runner keeps installed plugin code. Each plugin gets its own
+    # directory and its own unprivileged user on the runner.
+    persistence:
+      enabled: true
+      size: 1Gi
+      storageClass: ""
+      accessMode: ReadWriteOnce
+    # Outside the single-mount volume, the runner only writes to /tmp.
+    resources:
+      limits:
+        cpu: "2"
+        memory: 2Gi
+      requests:
+        cpu: 100m
+        memory: 256Mi
+    # Limits for plugin processes started together. Each call also has its own
+    # limits from the values below.
+    callTimeoutSeconds: 60
+    installTimeoutSeconds: 600
+    memoryMbPerCall: 512
+    maxConcurrentCalls: 4
+    archiveLimitMb: 20
+    packageIndex: "https://pypi.org/simple"
+    packageHosts: "pypi.org,files.pythonhosted.org"
+    extraEnv: []
+  egress:
+    # Created with the runner and the only way out for plugin code. Turn it off
+    # only when you point `runner.extraEnv` at an egress proxy of your own;
+    # without one, plugins cannot reach the internet or install packages.
+    enabled: true
+    port: 3128
+    resources:
+      limits:
+        cpu: 200m
+        memory: 128Mi
+      requests:
+        cpu: 20m
+        memory: 32Mi
+    extraEnv: []
+  networkPolicy:
+    # Restricts the runner to the backend, the Celery worker and the egress
+    # proxy. On by default, like the internal network in Compose: without it
+    # plugin code can open sockets straight to Redis, Postgres or the cloud
+    # metadata endpoint, and the proxy only guards traffic that goes through
+    # it. Turn it off only when the CNI does not enforce NetworkPolicy; the
+    # runner is not isolated then. The runner itself runs as root with the
+    # default capability set, so its namespace cannot be under the
+    # `restricted` Pod Security Standard.
+    enabled: true
+    # Extra egress rules for the runner, appended to its policy. Needed when
+    # plugin code has to reach something else, for example an external proxy
+    # set through `runner.extraEnv` while `egress.enabled` is false, or a
+    # NodeLocal DNSCache resolver that the kube-dns rule below does not match.
+    extraEgress: []
+    # Resolver addresses the pod selector cannot match, such as a NodeLocal
+    # DNSCache answering from 169.254.20.10 behind Cilium Local Redirect.
+    # Rendered as ipBlock peers on port 53 UDP and TCP in both policies.
+    dnsCIDRs: []
+
 # Persistence for application data
 # IMPORTANT: Since Backend, Celery Worker, and MCP Server all share the same attachment files,
 # they mount these PVCs concurrently. If your pods are scheduled across multiple nodes,
