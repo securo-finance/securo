@@ -32,7 +32,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { AlertTriangle, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Flag, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check, Pencil } from 'lucide-react'
+import { AlertTriangle, ArrowRight, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Flag, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check, Pencil } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -60,7 +60,7 @@ import {
 } from '@/lib/category-lines'
 import { toast } from 'sonner'
 
-export type SaveAction = 'save' | 'saveAndNew' | 'saveAndDuplicate'
+export type SaveAction = 'save' | 'saveAndNew' | 'saveAndDuplicate' | 'saveAndNext'
 
 export type TransactionSavePayload = TransactionEditPayload & {
   apply_to?: TransactionApplyScope
@@ -150,6 +150,7 @@ export function TransactionDialog({
   duplicateDraft = null,
   formResetKey = 0,
   defaultAccountId,
+  hasNext = false,
 }: {
   open: boolean
   onClose: () => void
@@ -170,6 +171,8 @@ export function TransactionDialog({
   formResetKey?: number
   /** Account preselected when creating a new transaction. */
   defaultAccountId?: string
+  /** Offer "Save & next" (the `saveAndNext` action) when the host has another row queued. */
+  hasNext?: boolean
 }) {
   const { t } = useTranslation()
   const [preview, setPreview] = useState<AttachmentPreview | null>(null)
@@ -181,6 +184,12 @@ export function TransactionDialog({
   }, [])
 
   if (!open && preview) setPreview(null)
+  // "Save & next" swaps the transaction under an open dialog; drop the last one's preview.
+  const [previewTxId, setPreviewTxId] = useState(transaction?.id)
+  if (transaction?.id !== previewTxId) {
+    setPreviewTxId(transaction?.id)
+    if (preview) setPreview(null)
+  }
   useEffect(() => () => {
     if (preview?.url) URL.revokeObjectURL(preview.url)
   }, [preview])
@@ -277,6 +286,7 @@ export function TransactionDialog({
               onPreviewChange={handlePreviewChange}
               activePreviewId={preview?.attachmentId ?? null}
               hasPreview={hasPreview}
+              hasNext={hasNext}
             />
           </div>
 
@@ -439,6 +449,7 @@ function TransactionForm({
   onPreviewChange,
   activePreviewId,
   hasPreview,
+  hasNext,
 }: {
   transaction: Transaction | null
   duplicateDraft: TransactionEditPayload | null
@@ -459,6 +470,7 @@ function TransactionForm({
   onPreviewChange: (preview: AttachmentPreview | null) => void
   activePreviewId: string | null
   hasPreview: boolean
+  hasNext: boolean
 }) {
   const { t } = useTranslation()
   const id = useId()
@@ -965,7 +977,7 @@ function TransactionForm({
         const action = pendingActionRef.current
         pendingActionRef.current = 'save'
         // Enter in a text field submits even while Save is disabled.
-        if (!splitsValid || !linesValid) return
+        if (loading || !splitsValid || !linesValid) return
         // Amounts are typed under the display locale's separators (comma
         // decimals on dot_comma), so they must be read back the same way —
         // parseFloat would stop at the first comma and silently save the
@@ -1282,6 +1294,13 @@ function TransactionForm({
             the bank actually sent. */}
         {isSynced && transaction?.payee && transaction.payee !== transaction.description && (
           <p className="text-xs text-muted-foreground">{transaction.payee}</p>
+        )}
+        {/* The bank's own category label, untranslated. Rules match this exact
+            text, so the row shows it where the user edits the transaction. */}
+        {transaction?.provider_category && (
+          <p className="text-xs text-muted-foreground">
+            {t('transactions.providerCategory')}: {transaction.provider_category}
+          </p>
         )}
       </div>
       <div className="grid grid-cols-2 gap-3 sm:gap-4">
@@ -1983,6 +2002,21 @@ function TransactionForm({
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
+          ) : !isCreating && hasNext ? (
+            <>
+              <Button type="submit" variant="outline" disabled={loading || !splitsValid || !linesValid} className="whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9">
+                {loading ? t('common.loading') : t('common.save')}
+              </Button>
+              <Button
+                type="button"
+                onClick={() => triggerSubmit('saveAndNext')}
+                disabled={loading || !splitsValid || !linesValid}
+                className="gap-1.5 whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
+              >
+                {t('transactions.saveAndNext')}
+                <ArrowRight size={14} className="rtl-mirror" aria-hidden="true" />
+              </Button>
+            </>
           ) : (
             <Button type="submit" disabled={loading || !splitsValid || !linesValid} className="whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9">
               {loading ? t('common.loading') : t('common.save')}

@@ -5,10 +5,12 @@ import { SYNC_FAILURE_MESSAGE_KEY, syncFailureAction, syncFailureCodeFromRespons
 import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
+import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { accounts, assets, connections, currencies, plugins as pluginsApi } from '@/lib/api'
-import { localDateString } from '@/lib/date-utils'
+import { localDateString, todayInTimezone } from '@/lib/date-utils'
+import { extractApiError } from '@/lib/api-errors'
 import { invalidateFinancialQueries, invalidateSyncedRecords } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -282,7 +284,9 @@ export default function AccountsPage() {
       setDialogOpen(false)
       toast.success(t('accounts.created'))
     },
-    onError: () => toast.error(t('common.error')),
+    // The backend's own sentence ("unsupported currency code: 'X'") says what
+    // to fix; the generic text left the person guessing (issue #296).
+    onError: (error) => toast.error(extractApiError(error, t('common.error'))),
   })
 
   const updateMutation = useMutation({
@@ -949,6 +953,7 @@ export function AccountDialog({
 }) {
   const { t } = useTranslation()
   const { user } = useAuth()
+  const timeZone = useEffectiveTimezone()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const { data: supportedCurrencies } = useQuery({
     queryKey: ['currencies'],
@@ -969,6 +974,7 @@ export function AccountDialog({
   // or one without an opening balance.
   const initialBalanceDate = () => account?.balance_date ?? localDateString()
   const [balanceDate, setBalanceDate] = useState(initialBalanceDate)
+  const [balanceDatePicked, setBalanceDatePicked] = useState(false)
   const [creditLimit, setCreditLimit] = useState(account?.credit_limit?.toString() ?? '')
   const [statementCloseDay, setStatementCloseDay] = useState(account?.statement_close_day?.toString() ?? '')
   const [paymentDueDay, setPaymentDueDay] = useState(account?.payment_due_day?.toString() ?? '')
@@ -996,6 +1002,7 @@ export function AccountDialog({
     setBalance(account?.balance?.toString() ?? '0')
     setCurrency(account?.currency ?? userCurrency)
     setBalanceDate(date)
+    setBalanceDatePicked(false)
     setCreditLimit(account?.credit_limit?.toString() ?? '')
     setStatementCloseDay(account?.statement_close_day?.toString() ?? '')
     setPaymentDueDay(account?.payment_due_day?.toString() ?? '')
@@ -1003,6 +1010,23 @@ export function AccountDialog({
     setLoanTerms(loanTermsFrom(account, account?.currency ?? userCurrency))
     setTermsOpen(account?.loan_original_amount != null)
   }
+  // A changed balance defaults to today in the workspace, once its timezone is known.
+  const autoBalanceDate = !!account && !balanceDatePicked && !!timeZone
+    && balance !== '' && parseFloat(balance) !== Number(account.balance)
+  const effectiveBalanceDate = autoBalanceDate ? todayInTimezone(timeZone) : balanceDate
+
+  // A new account starts on a free preference or the instance default, and the
+  // select only lists the supported codes: without this the list showed one
+  // currency while the form sent another, refused with no way to see why
+  // (issue #296). An account being edited keeps its own currency even when it
+  // is no longer supported.
+  const supportedCodes = supportedCurrencies?.map((c) => c.code)
+  const effectiveCurrency =
+    !account && supportedCodes?.length && !supportedCodes.includes(currency)
+      ? supportedCodes.includes(userCurrency)
+        ? userCurrency
+        : supportedCodes[0]
+      : currency
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -1023,13 +1047,13 @@ export function AccountDialog({
             }
             const isConnected = !!account?.connection_id
             // Editing: only move the opening balance when the date was changed.
-            const dateChanged = !account || balanceDate !== formSource?.balanceDate
+            const dateChanged = !account || effectiveBalanceDate !== formSource?.balanceDate
             onSave({
               ...(!isConnected && {
                 name,
                 balance: parseFloat(balance),
-                ...(dateChanged && { balance_date: balanceDate }),
-                currency,
+                ...(dateChanged && { balance_date: effectiveBalanceDate }),
+                currency: effectiveCurrency,
               }),
               type,
               ...(type === 'loan' && {
@@ -1098,7 +1122,7 @@ export function AccountDialog({
                   <Label>{t('accounts.currency')}</Label>
                   <select
                     className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                    value={currency}
+                    value={effectiveCurrency}
                     onChange={(e) => setCurrency(e.target.value)}
                   >
                     {(supportedCurrencies ?? [{ code: userCurrency, symbol: userCurrency, name: userCurrency, flag: '' }]).map((c) => (
@@ -1127,8 +1151,11 @@ export function AccountDialog({
                 <div className="space-y-2">
                   <Label>{t('accounts.balanceDate')}</Label>
                   <DatePickerInput
-                    value={balanceDate}
-                    onChange={setBalanceDate}
+                    value={effectiveBalanceDate}
+                    onChange={(date) => {
+                      setBalanceDate(date)
+                      setBalanceDatePicked(true)
+                    }}
                     className="w-full justify-start"
                   />
                 </div>

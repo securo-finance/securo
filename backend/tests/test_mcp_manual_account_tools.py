@@ -801,10 +801,20 @@ async def test_update_rejects_foreign_workspace_and_invalid_values(
         currency="AUD",
         opening_balance=1,
     )
+    unsupported_currency = await _call("propose_create_manual_account")(
+        session=session,
+        ctx=ext_ctx,
+        name="Bad",
+        type="checking",
+        currency="xyz",
+        opening_balance=1,
+        apply=True,
+    )
 
     assert missing == {"error": "account not found"}
     assert "type must be" in invalid_type["error"]
     assert "currency must be a three-letter code" in invalid_currency["error"]
+    assert "unsupported currency code" in unsupported_currency["error"]
     assert "name is required" in empty_name["error"]
 
 

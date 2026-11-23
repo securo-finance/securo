@@ -517,6 +517,7 @@ export default function RulesPage() {
           </div>
           <select
             className={FILTER_CONTROL_CLASS}
+            aria-label={t('rules.filterByCategory')}
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
           >
@@ -529,6 +530,7 @@ export default function RulesPage() {
           </select>
           <select
             className={FILTER_CONTROL_CLASS}
+            aria-label={t('rules.filterByStatus')}
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value as '' | 'active' | 'inactive')}
           >
@@ -538,6 +540,7 @@ export default function RulesPage() {
           </select>
           <select
             className={FILTER_CONTROL_CLASS}
+            aria-label={t('rules.filterByAction')}
             value={filterAction}
             onChange={(e) => setFilterAction(e.target.value)}
           >

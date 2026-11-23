@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Budget } from '@/types'
-import { normalizeBudgetComparisonRows, parseBudgetDraft, planBudgetChange } from '@/lib/budget-settings-utils'
+import { budgetDisplayAmount, normalizeBudgetComparisonRows, parseBudgetDraft, planBudgetChange } from '@/lib/budget-settings-utils'
 
 function budget(overrides: Partial<Budget>): Budget {
   return { id: 'b1', user_id: 'u', category_id: 'food', amount: 100, month: '2026-08-01', is_recurring: true, ...overrides }
@@ -36,6 +36,15 @@ describe('planBudgetChange', () => {
   it('does nothing when amount and repetition are unchanged', () => {
     expect(plan(100, true, budget({}))).toEqual([])
     expect(plan(0, true, undefined)).toEqual([])
+  })
+
+  it('compares with the limit in the display currency, not the typed one', () => {
+    const inBrl = budget({ amount: 1800, currency: 'BRL', amount_primary: '360.00' })
+    expect(budgetDisplayAmount(inBrl)).toBe(360)
+    expect(plan(360, true, inBrl)).toEqual([])
+    expect(plan(1800, true, inBrl)).toEqual([
+      { type: 'update', id: 'b1', data: { amount: 1800, effective_month: month } },
+    ])
   })
 
   it('starts a new recurring amount from this month on', () => {

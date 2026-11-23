@@ -17,6 +17,17 @@
       "minimumReleaseAge": "7 days"
     },
     {
+      "description": "Same cooldown for the backend. Matching the PyPI datasource covers the pep621 manager (pyproject.toml and uv.lock) and the uv pin kept by the custom manager below.",
+      "matchDatasources": ["pypi"],
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "eslint-plugin-react-hooks 7.1 makes the React Compiler checks stricter: the code trips 24 findings (1 error, a ref written during render in frontend/src/pages/dashboard.tsx:180, plus 23 warnings), and `npm run lint -- --max-warnings=0` makes the warnings fatal as well. Held below 7.1.0 with an exact pin in frontend/package.json, until those findings are fixed in a change of their own.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["eslint-plugin-react-hooks"],
+      "allowedVersions": "<7.1.0"
+    },
+    {
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "GitHub Actions (non-major)"
@@ -42,14 +53,16 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "uv pinned in the Dockerfile, CI and scripts/lock.sh (marked with a `# renovate:` comment)",
+      "description": "uv pinned in the Dockerfile, CI, the release workflow and scripts/lock.sh (marked with a `# renovate:` comment)",
       "fileMatch": [
         "^backend/Dockerfile$",
         "^backend/scripts/lock\\.sh$",
-        "^\\.github/workflows/ci\\.yml$"
+        "^\\.github/workflows/ci\\.yml$",
+        "^\\.github/workflows/prepare-release\\.yml$"
       ],
       "matchStrings": [
-        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n[^\\n]*?(?:==|@)(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n[^\\n]*?(?:==|@)(?<currentValue>\\d+\\.\\d+\\.\\d+)",
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n[^\\n]*?version:\\s*\"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
       ]
     }
   ]

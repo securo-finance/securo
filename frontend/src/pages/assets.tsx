@@ -4,7 +4,7 @@ import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRegisterPageChatContext } from '@/lib/page-chat-context'
 import { accounts as accountsApi, assets, assetGroups, currencies as currenciesApi } from '@/lib/api'
-import { localDateString, todayInTimezone } from '@/lib/date-utils'
+import { dateTickFormatter, localDateString, todayInTimezone } from '@/lib/date-utils'
 import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -502,10 +502,11 @@ export default function AssetsPage() {
         toast.info(t('assets.refreshAllPricesNone'))
         return
       }
+      // Each count gets its own plural form, then the two halves are joined.
       toast.success(
         t('assets.refreshAllPricesDone', {
-          refreshed: summary.refreshed,
-          skipped: summary.skipped,
+          updated: t('assets.refreshAllPricesUpdated', { count: summary.refreshed }),
+          skipped: t('assets.refreshAllPricesNoQuote', { count: summary.skipped }),
         }),
       )
     },
@@ -518,8 +519,8 @@ export default function AssetsPage() {
       toast.error(
         limited
           ? t('assets.refreshAllPricesRateLimited', {
-              refreshed: limited.refreshed,
-              skipped: limited.skipped,
+              updated: t('assets.refreshAllPricesUpdated', { count: limited.refreshed }),
+              skipped: t('assets.refreshAllPricesLeftOut', { count: limited.skipped }),
             })
           : assetErrorMessage(e, t('common.error')),
       )
@@ -2211,7 +2212,7 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
               tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
               axisLine={false}
               tickLine={false}
-              tickFormatter={(v: string) => new Date(v + 'T00:00:00').toLocaleDateString(dateLoc, { month: 'short', year: '2-digit' })}
+              tickFormatter={dateTickFormatter(displayTrend.map(row => String(row.date)), dateLoc)}
             />
             <YAxis
               tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
@@ -2448,7 +2449,7 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
                   tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
                   axisLine={false}
                   tickLine={false}
-                  tickFormatter={(v: string) => new Date(v + 'T00:00:00').toLocaleDateString(dateLoc, { month: 'short', year: '2-digit' })}
+                  tickFormatter={dateTickFormatter(chartData.map(p => String(p.date)), dateLoc)}
                 />
                 <YAxis
                   tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}

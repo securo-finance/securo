@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -34,6 +34,13 @@ class ImportLog(Base):
     transaction_count: Mapped[int] = mapped_column(Integer)
     total_credit: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2), default=Decimal("0"))
     total_debit: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2), default=Decimal("0"))
+    #: The OFX rows of this import were dated on the UTC day ofxparse gave,
+    #: before #1671 kept the day the bank printed. Only those rows may sit one
+    #: day off their FITID's real date, so only they get the one-day window
+    #: when a later statement is deduplicated.
+    ofx_utc_dates: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     account: Mapped[Optional["Account"]] = relationship()

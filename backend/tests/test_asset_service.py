@@ -489,6 +489,42 @@ async def test_value_series_apply_a_recorded_split(
 
 
 @pytest.mark.asyncio
+async def test_as_of_value_does_not_depend_on_where_the_ledger_is_cut(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """A stored value that predates the first trade (#1643): a snapshot taken
+    before the trade must not fall back to the stored amount just because the
+    cut ledger is empty there; the portfolio trend replays the ledger and says 0."""
+    asset = Asset(
+        id=uuid.uuid4(), user_id=test_user.id, name="Apple", type="stock", currency="BRL",
+        valuation_method="market_price", ticker="AAPL", units=Decimal("10"), position=0,
+    )
+    session.add(asset)
+    await session.flush()
+    session.add_all([
+        AssetValue(asset_id=asset.id, amount=Decimal("1000"), price=Decimal("100"),
+                   date=date(2026, 1, 31), source="sync"),
+        AssetTransaction(
+            asset_id=asset.id, workspace_id=test_workspace.id, kind="buy",
+            quantity=Decimal("10"), price=Decimal("100"), fee=Decimal("0"), date=date(2026, 2, 15),
+        ),
+    ])
+    await session.commit()
+
+    portfolio = await get_portfolio_trend(session, test_workspace.id, test_user.id)
+    on_jan_31 = next(row for row in portfolio["trend"] if row["date"] == "2026-01-31")
+
+    totals, _ = await asset_service.get_asset_values_at(
+        session, test_workspace.id, as_of_date=date(2026, 1, 31), by_workspace=True,
+    )
+    assert totals.get("BRL", 0.0) == on_jan_31.get(str(asset.id), 0.0) == 0.0
+    totals, _ = await asset_service.get_asset_values_at(
+        session, test_workspace.id, as_of_date=date(2026, 2, 28), by_workspace=True,
+    )
+    assert totals["BRL"] == 1000.0
+
+
+@pytest.mark.asyncio
 async def test_get_total_asset_value(session: AsyncSession, test_user: User, test_workspace, test_asset_with_values: Asset):
     totals, _ = await asset_service.get_asset_values_at(session, test_workspace.id, by_workspace=True)
     assert "BRL" in totals
