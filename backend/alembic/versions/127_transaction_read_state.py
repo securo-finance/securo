@@ -7,16 +7,16 @@ true, so every row that already existed counts as seen (nobody wants a whole
 history lighting up as new after an upgrade) and every row created in the app
 starts read.
 
-Revision ID: 125
-Revises: 124
+Revision ID: 127
+Revises: 126
 """
 
 import sqlalchemy as sa
 
 from alembic import op
 
-revision = "125"
-down_revision = "124"
+revision = "127"
+down_revision = "126"
 branch_labels = None
 depends_on = None
 
