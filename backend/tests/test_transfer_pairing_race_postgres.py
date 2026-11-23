@@ -132,14 +132,17 @@ async def test_two_creations_racing_for_one_counterpart_never_leave_an_orphan(
             session, test_user.id, checking, amount, "debit", day
         )
 
-        # Both requests leave their row inserted and uncommitted, then meet
-        # here before reading the pool: neither has linked anything yet, so
-        # both see the debit free even if one of them commits first.
+        # Both requests leave their row inserted and uncommitted, read the
+        # pool, and only then meet here: each SELECT has taken its snapshot
+        # before either request can link or commit, so both decide on the
+        # same free debit without leaning on how the event loop schedules
+        # them. The conditional UPDATE is where the two then contend.
         barrier = asyncio.Barrier(2)
 
         async def gated_pool(*args, **kwargs):
+            pool = await real_pool(*args, **kwargs)
             await barrier.wait()
-            return await real_pool(*args, **kwargs)
+            return pool
 
         monkeypatch.setattr(transfer_detection_service, "_pool", gated_pool)
 
