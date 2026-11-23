@@ -895,7 +895,9 @@
     "fxRateUsed": "FX rate: {{rate}}",
     "refreshRates": "Refresh FX rates",
     "ratesRefreshed": "FX rates updated",
-    "ratesError": "Failed to update FX rates"
+    "ratesError": "Failed to update FX rates",
+    "balanceNetting": "Netting",
+    "balanceNettingHint": "On: reimbursements and refunds count for your share only. Off: the real balance of your accounts."
   },
   "transactions": {
     "title": "Transactions",

@@ -1522,6 +1522,12 @@ export interface AccountRunningBalancePoint {
 
 export interface BalanceHistory {
   current: DailyBalance[]
+  /**
+   * True when the curve counts rows linked by reimbursements for the user's
+   * share only (netting). False for the real balance, including a chart
+   * scoped to some accounts, which cannot net.
+   */
+  netted?: boolean
   opening_balance: number
   baseline: DailyBaseline[]
   comparison: DailyBalance[] | null

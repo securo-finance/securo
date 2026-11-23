@@ -925,7 +925,9 @@
     "fxRateUsed": "Kurz: {{rate}}",
     "refreshRates": "Obnovit kurzy",
     "ratesRefreshed": "Kurzy aktualizovány",
-    "ratesError": "Kurzy se nepodařilo aktualizovat"
+    "ratesError": "Kurzy se nepodařilo aktualizovat",
+    "balanceNetting": "Čistě",
+    "balanceNettingHint": "Zapnuto: náhrady a vratky se počítají jen ve vašem podílu. Vypnuto: skutečný zůstatek účtů."
   },
   "transactions": {
     "title": "Transakce",

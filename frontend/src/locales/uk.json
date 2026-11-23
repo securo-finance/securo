@@ -905,7 +905,9 @@
     "ratesRefreshed": "Курси валют оновлено",
     "ratesError": "Не вдалося оновити курси валют",
     "cashBalance": "Готівка",
-    "investmentAccounts": "Інвестиційні рахунки"
+    "investmentAccounts": "Інвестиційні рахунки",
+    "balanceNetting": "Нетто",
+    "balanceNettingHint": "Увімк.: відшкодування та повернення враховуються лише у вашій частці. Вимк.: реальний баланс рахунків."
   },
   "transactions": {
     "title": "Транзакції",

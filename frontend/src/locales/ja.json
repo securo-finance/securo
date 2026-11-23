@@ -895,7 +895,9 @@
     "ratesRefreshed": "為替レートを更新しました",
     "ratesError": "為替レートの更新に失敗しました",
     "cashBalance": "現金",
-    "investmentAccounts": "投資口座"
+    "investmentAccounts": "投資口座",
+    "balanceNetting": "差引",
+    "balanceNettingHint": "オン: 精算と返金は自分の負担分だけ計上します。オフ: 口座の実際の残高です。"
   },
   "transactions": {
     "title": "取引",

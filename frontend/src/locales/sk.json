@@ -909,7 +909,9 @@
     "ratesRefreshed": "Kurzy aktualizované",
     "ratesError": "Kurzy sa nepodarilo aktualizovať",
     "cashBalance": "Hotovosť",
-    "investmentAccounts": "Investičné účty"
+    "investmentAccounts": "Investičné účty",
+    "balanceNetting": "Čisto",
+    "balanceNettingHint": "Zapnuté: náhrady a vratky sa počítajú len vo vašom podiele. Vypnuté: skutočný zostatok účtov."
   },
   "transactions": {
     "title": "Transakcie",

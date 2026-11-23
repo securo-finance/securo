@@ -905,7 +905,9 @@
     "ratesRefreshed": "Курсы валют обновлены",
     "ratesError": "Не удалось обновить курсы валют",
     "cashBalance": "Наличные",
-    "investmentAccounts": "Инвестиционные счета"
+    "investmentAccounts": "Инвестиционные счета",
+    "balanceNetting": "Нетто",
+    "balanceNettingHint": "Вкл.: возмещения и возвраты учитываются только в вашей доле. Выкл.: реальный баланс счетов."
   },
   "transactions": {
     "title": "Транзакции",

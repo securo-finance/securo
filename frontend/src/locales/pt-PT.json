@@ -897,7 +897,9 @@
     "ratesRefreshed": "Taxas de câmbio atualizadas",
     "ratesError": "Erro ao atualizar taxas de câmbio",
     "cashBalance": "Caixa",
-    "investmentAccounts": "Contas de investimento"
+    "investmentAccounts": "Contas de investimento",
+    "balanceNetting": "Valor líquido",
+    "balanceNettingHint": "Ligado: reembolsos e devoluções contam só a sua parte. Desligado: o saldo real das suas contas."
   },
   "transactions": {
     "title": "Transações",

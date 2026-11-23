@@ -908,7 +908,9 @@
     "fxRateUsed": "שער חליפין: {{rate}}",
     "refreshRates": "רענון שערי חליפין",
     "ratesRefreshed": "שערי החליפין עודכנו",
-    "ratesError": "עדכון שערי החליפין נכשל"
+    "ratesError": "עדכון שערי החליפין נכשל",
+    "balanceNetting": "נטו",
+    "balanceNettingHint": "פעיל: החזרים וזיכויים נספרים רק בחלק שלך. כבוי: היתרה בפועל בחשבונות."
   },
   "transactions": {
     "title": "תנועות",

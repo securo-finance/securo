@@ -895,7 +895,9 @@
     "fxRateUsed": "Árfolyam: {{rate}}",
     "refreshRates": "Árfolyamok frissítése",
     "ratesRefreshed": "Árfolyamok frissítve",
-    "ratesError": "Nem sikerült frissíteni az árfolyamokat"
+    "ratesError": "Nem sikerült frissíteni az árfolyamokat",
+    "balanceNetting": "Nettó",
+    "balanceNettingHint": "Be: a visszatérítések és visszáruk csak a te részed erejéig számítanak. Ki: a számláid tényleges egyenlege."
   },
   "transactions": {
     "title": "Tranzakciók",

@@ -1608,6 +1608,8 @@ export const dashboard = {
     month?: string,
     accountIds?: string[],
     comparisonMonths?: string[],
+    /** Count rows linked by reimbursements for the user's share only. On unless false. */
+    netting?: boolean,
   ): Promise<BalanceHistory> => {
     const extra = acctIdsParam(accountIds)
     const { data } = await api.get('/dashboard/balance-history', {
@@ -1615,6 +1617,7 @@ export const dashboard = {
         month,
         ...(extra.params ?? {}),
         ...(comparisonMonths?.length ? { comparison_months: comparisonMonths } : {}),
+        ...(netting === false ? { netting: false } : {}),
       },
       paramsSerializer: { indexes: null },
     })

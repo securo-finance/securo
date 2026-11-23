@@ -484,6 +484,41 @@ describe('Dashboard available balance without an FX rate', () => {
   })
 })
 
+describe('Dashboard balance netting switch', () => {
+  function renderDashboard() {
+    return renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+      { route: '/?month=2026-04' },
+    )
+  }
+
+  const lastHistoryCall = () => api.dashboard.balanceHistory.mock.calls.at(-1)
+
+  it('starts netted and asks for the real balance when switched off', async () => {
+    const { user } = renderDashboard()
+
+    const toggle = await screen.findByRole('switch', { name: t('dashboard.balanceNetting') })
+    expect(toggle).toHaveAttribute('aria-checked', 'true')
+    await waitFor(() => expect(lastHistoryCall()?.[3]).toBe(true))
+
+    await user.click(toggle)
+
+    expect(toggle).toHaveAttribute('aria-checked', 'false')
+    await waitFor(() => expect(lastHistoryCall()?.[3]).toBe(false))
+  })
+
+  it('offers no switch for a collection, which scopes the chart to some accounts', async () => {
+    collectionFilter.activeAccountIds = ['checking']
+    renderDashboard()
+
+    await waitFor(() => expect(api.dashboard.balanceHistory).toHaveBeenCalled())
+
+    expect(screen.queryByRole('switch', { name: t('dashboard.balanceNetting') })).not.toBeInTheDocument()
+  })
+})
+
 describe('Dashboard balance comparisons', () => {
   const month = (value: string) => monthLabel(value, 'en')
   const money = (value: number) => formatCurrency(value, 'USD', 'en-US')
@@ -565,7 +600,7 @@ describe('Dashboard balance comparisons', () => {
     // The legend shows the month itself, not the median wording.
     expect(screen.getAllByText(month('2026-02')).some((el) => !el.closest('button'))).toBe(true)
     expect(screen.queryByText(t('dashboard.balanceMedianLegend'))).not.toBeInTheDocument()
-    expect(api.dashboard.balanceHistory).toHaveBeenCalledWith('2026-04-01', undefined, ['2026-02-01'])
+    expect(api.dashboard.balanceHistory).toHaveBeenCalledWith('2026-04-01', undefined, ['2026-02-01'], true)
   })
 
   it('does not carry a comparison month past its last known day', async () => {
@@ -823,7 +858,7 @@ describe('Dashboard balance comparisons', () => {
       expect(api.dashboard.balanceHistory).toHaveBeenCalledWith(
         '2026-04-01',
         undefined,
-        ['2025-06-01', '2026-03-01'],
+        ['2025-06-01', '2026-03-01'], true,
       )
     })
   })
@@ -864,7 +899,7 @@ describe('Dashboard balance comparisons', () => {
     await user.click(screen.getByRole('button', { name: 'Compare April with March' }))
 
     expect(await screen.findByRole('heading', { name: 'April 2026' })).toBeInTheDocument()
-    await waitFor(() => expect(api.dashboard.balanceHistory).toHaveBeenCalledWith('2026-04-01', undefined, ['2026-03-01']))
+    await waitFor(() => expect(api.dashboard.balanceHistory).toHaveBeenCalledWith('2026-04-01', undefined, ['2026-03-01'], true))
     expect(screen.getByTestId('location-search')).toHaveTextContent('comparison_month=2026-03')
   })
 
@@ -898,7 +933,7 @@ describe('Dashboard balance comparisons', () => {
       expect(api.dashboard.balanceHistory).toHaveBeenLastCalledWith(
         '2026-04-01',
         undefined,
-        ['2026-02-01', '2026-03-01'],
+        ['2026-02-01', '2026-03-01'], true,
       )
     })
     expect(await selectorButton()).toHaveTextContent(`${t('dashboard.compareMonths')} (2)`)
@@ -915,7 +950,7 @@ describe('Dashboard balance comparisons', () => {
       expect(api.dashboard.balanceHistory).toHaveBeenLastCalledWith(
         '2026-04-01',
         undefined,
-        ['2026-02-01'],
+        ['2026-02-01'], true,
       )
     })
     expect(await selectorButton('2026-02')).toHaveTextContent(month('2026-02'))
@@ -985,7 +1020,7 @@ describe('Dashboard refresh button', () => {
     )
 
     await waitFor(() => expect(api.dashboard.balanceHistory).toHaveBeenLastCalledWith(
-      '2026-04-01', undefined, ['2026-02-01'],
+      '2026-04-01', undefined, ['2026-02-01'], true,
     ))
     const historyCalls = api.dashboard.balanceHistory.mock.calls.length
     const monthOptionsCalls = api.dashboard.balanceHistoryMonths.mock.calls.length
@@ -997,7 +1032,7 @@ describe('Dashboard refresh button', () => {
       expect(api.dashboard.balanceHistoryMonths.mock.calls.length).toBeGreaterThan(monthOptionsCalls)
     })
     expect(api.dashboard.balanceHistory).toHaveBeenLastCalledWith(
-      '2026-04-01', undefined, ['2026-02-01'],
+      '2026-04-01', undefined, ['2026-02-01'], true,
     )
     expect(screen.getByTestId('location-search')).toHaveTextContent('comparison_month=2026-02')
   })

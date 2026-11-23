@@ -898,7 +898,9 @@
     "ratesRefreshed": "Tassi di cambio aggiornati",
     "ratesError": "Impossibile aggiornare i tassi di cambio",
     "cashBalance": "Liquidità",
-    "investmentAccounts": "Conti di investimento"
+    "investmentAccounts": "Conti di investimento",
+    "balanceNetting": "Netto",
+    "balanceNettingHint": "Attivo: rimborsi e resi contano solo per la tua parte. Disattivo: il saldo reale dei tuoi conti."
   },
   "transactions": {
     "title": "Transazioni",

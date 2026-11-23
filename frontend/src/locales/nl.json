@@ -895,7 +895,9 @@
     "ratesRefreshed": "FX-tarieven bijgewerkt",
     "ratesError": "Kan de valutakoersen niet updaten",
     "cashBalance": "Contant",
-    "investmentAccounts": "Beleggingsrekeningen"
+    "investmentAccounts": "Beleggingsrekeningen",
+    "balanceNetting": "Netto",
+    "balanceNettingHint": "Aan: terugbetalingen en retouren tellen alleen voor jouw deel. Uit: het werkelijke saldo van je rekeningen."
   },
   "transactions": {
     "title": "Transacties",
