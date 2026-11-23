@@ -25,6 +25,7 @@ from app.core.app_clock import app_today
 from app.core.currency import same_currency
 from app.core.money import (
     MoneyOutOfRange,
+    bounded_conversion,
     bounded_fx_rate,
     bounded_money,
     check_zero_rate,
@@ -1508,9 +1509,12 @@ async def create_transfer(
         if data.destination_amount is not None:
             credit_amount = _to_cents(data.destination_amount)
         else:
-            credit_amount, _ = await fx_convert(
+            converted, _ = await fx_convert(
                 session, debit_amount, from_account.currency, to_account.currency, data.date
             )
+            # The stored rate can carry an amount that fits past the column on
+            # the other leg: 2e12 USD is 1e13 BRL (issue #422).
+            credit_amount = bounded_conversion(converted, "amount")
     else:
         credit_amount = debit_amount
 
@@ -1776,9 +1780,10 @@ async def create_transfer_counterpart(
 
     # Convert the amount when the destination account uses another currency.
     if anchor.currency != to_account.currency:
-        counterpart_amount, _ = await fx_convert(
+        converted, _ = await fx_convert(
             session, Decimal(str(anchor.amount)), anchor.currency, to_account.currency, anchor.date
         )
+        counterpart_amount = bounded_conversion(converted, "amount")
     else:
         counterpart_amount = anchor.amount
 
@@ -2099,6 +2104,7 @@ async def _apply_update_to_row(
                         session, Decimal(str(tx.amount)),
                         tx.currency, paired_tx.currency, tx.date,
                     )
+                    converted = bounded_conversion(converted, "amount")
                     paired_amount_changed = converted != paired_tx.amount
                     paired_tx.amount = converted
                 elif key == "amount":

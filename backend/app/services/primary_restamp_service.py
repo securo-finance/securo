@@ -44,6 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
 from app.core.currency import same_currency
+from app.core.money import MoneyOutOfRange, bounded_conversion
 from app.models.account import Account
 from app.models.asset import Asset
 from app.models.recurring_transaction import RecurringTransaction
@@ -113,7 +114,15 @@ async def _converted(
     if rate is None:
         stats.unconverted += 1
         return None, None
-    return (amount * rate).quantize(CENT), rate.quantize(RATE_SCALE)
+    try:
+        primary = bounded_conversion((amount * rate).quantize(CENT))
+    except MoneyOutOfRange:
+        # Past what the column holds in the new currency (issue #422): left
+        # "not converted", like a row with no rate, instead of failing the
+        # whole restamp at commit.
+        stats.unconverted += 1
+        return None, None
+    return primary, rate.quantize(RATE_SCALE)
 
 
 def _charged_in_primary(

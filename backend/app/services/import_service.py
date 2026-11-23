@@ -8,7 +8,7 @@ import warnings
 import xml.etree.ElementTree as ET
 from xml.parsers import expat
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from bs4 import XMLParsedAsHTMLWarning
 from ofxparse import OfxParser
@@ -16,6 +16,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.money import bounded_conversion
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.category import Category
@@ -1129,6 +1130,12 @@ async def enrich_with_category_suggestions(
     return transactions
 
 
+def _cents(value: Decimal) -> Decimal:
+    """A conversion as `Numeric(15, 2)` stores it, rounded before it is bounded:
+    9999999999999.9918 fits as 9999999999999.99 (issue #422)."""
+    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
 async def import_transactions(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -1408,7 +1415,9 @@ async def import_transactions(
                 charge_changed = amount_changed or currency_changed
                 if txn_data.fx_rate:
                     placeholder.fx_rate_used = txn_data.fx_rate
-                    placeholder.amount_primary = txn_data.amount * txn_data.fx_rate
+                    placeholder.amount_primary = bounded_conversion(
+                        _cents(txn_data.amount * txn_data.fx_rate)
+                    )
                     await stamp_account_amount(
                         session, placeholder, recompute=charge_changed
                     )
@@ -1460,7 +1469,9 @@ async def import_transactions(
         )
         if txn_data.fx_rate:
             incoming.fx_rate_used = txn_data.fx_rate
-            incoming.amount_primary = txn_data.amount * txn_data.fx_rate
+            incoming.amount_primary = bounded_conversion(
+                _cents(txn_data.amount * txn_data.fx_rate)
+            )
 
         session.add(incoming)
         await session.flush()
