@@ -5,6 +5,7 @@ cascade on raw deletes, the table's constraints, migration 125 and the
 report's period labels are checked here.
 """
 
+import asyncio
 import importlib.util
 import uuid
 from datetime import date
@@ -193,3 +194,29 @@ async def test_the_candidate_search_runs_on_postgres(session, test_user, test_wo
     assert others == []
     # The dinner it already pays back is listed too; the dialog filters linked rows.
     assert {row.id for row in anchors} == {dinner.id, other.id}
+
+
+async def test_a_second_save_of_one_anchor_waits_for_the_first(
+    session, postgres_sessions, test_user, test_workspace
+):
+    from app.services import transaction_service
+
+    _, dinner, _ = await _linked_pair(session, test_user, test_workspace, date(2026, 10, 10))
+    await session.commit()
+
+    async with postgres_sessions() as first, postgres_sessions() as second:
+        # The route loads its anchor this way before it replaces the links.
+        held = await transaction_service.get_transaction(
+            first, dinner.id, test_workspace.id, for_update=True
+        )
+        assert held is not None
+
+        waiting = asyncio.create_task(
+            transaction_service.get_transaction(second, dinner.id, test_workspace.id, for_update=True)
+        )
+        done, _pending = await asyncio.wait({waiting}, timeout=1.0)
+        assert not done, "a second save took the anchor while the first held it"
+
+        await first.commit()
+        assert await asyncio.wait_for(waiting, timeout=10) is not None
+        await second.rollback()
