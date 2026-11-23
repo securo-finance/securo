@@ -10,6 +10,7 @@ import {
   CreditCard,
   EyeClosed,
   Flag,
+  Inbox,
   ListChecks,
   Store,
   Tag,
@@ -41,6 +42,7 @@ export type MobileFilterView =
   | 'status'
   | 'ignored'
   | 'flagged'
+  | 'unread'
   | 'date'
   | 'amount'
 
@@ -72,6 +74,9 @@ interface MobileTransactionsFilterMenuProps {
   hideIgnored: boolean
   flagFilter: FlagFilter
   flagOptions: { value: FlagFilter; label: string }[]
+  onlyUnread: boolean
+  /** Offer the review-queue option at all; the calendar view passes false. */
+  showUnread?: boolean
   from: string
   to: string
   minAmount: string
@@ -93,6 +98,7 @@ interface MobileTransactionsFilterMenuProps {
   onStatusChange: (value: string) => void
   onHideIgnoredChange: (value: boolean) => void
   onFlagFilterChange: (value: FlagFilter) => void
+  onOnlyUnreadChange: (value: boolean) => void
   onDateRangeChange: (from: string, to: string) => void
   onAmountRangeChange: (min: string, max: string) => void
   onApplyAmountRange: () => void
@@ -513,8 +519,9 @@ function buildRootOptions(
   labels: Record<Exclude<MobileFilterView, 'root'>, string>,
   summaries: MobileTransactionsFilterMenuProps['summaries'],
   hasLinkedCards: boolean,
+  showUnread: boolean,
 ): RootOption[] {
-  return [
+  const options: RootOption[] = [
     { view: 'account', icon: Wallet, label: labels.account, summary: summaries.account },
     ...(hasLinkedCards ? [{ view: 'card' as const, icon: CreditCard, label: labels.card, summary: summaries.card }] : []),
     { view: 'category', icon: Tag, label: labels.category, summary: summaries.category },
@@ -527,6 +534,15 @@ function buildRootOptions(
     { view: 'date', icon: CalendarIcon, label: labels.date, summary: summaries.date },
     { view: 'amount', icon: Coins, label: labels.amount, summary: summaries.amount },
   ]
+  if (!showUnread) return options
+  // The review queue sits next to the ignored switch, its sibling reading mode.
+  options.splice(7, 0, {
+    view: 'unread',
+    icon: Inbox,
+    label: labels.unread,
+    summary: summaries.unread,
+  })
+  return options
 }
 
 function buildLabels(
@@ -542,6 +558,7 @@ function buildLabels(
     status: t('transactions.status'),
     ignored: t('transactions.ignoredRows'),
     flagged: t('transactions.flagged'),
+    unread: t('transactions.unreadRows'),
     date: t('transactions.filtersBar.date'),
     amount: t('transactions.filtersBar.amount'),
   }
@@ -589,13 +606,20 @@ function MobileFilterDetail({
   if (menu.view === 'flagged') {
     return <MobileSelectionView options={menu.flagOptions} selectedValue={menu.flagFilter} onChange={(value) => menu.onFlagFilterChange(value as FlagFilter)} />
   }
+  if (menu.view === 'unread') {
+    const options = [
+      { value: 'all', label: t('transactions.all') },
+      { value: 'unread', label: t('transactions.onlyUnread') },
+    ]
+    return <MobileSelectionView options={options} selectedValue={menu.onlyUnread ? 'unread' : 'all'} onChange={(value) => menu.onOnlyUnreadChange(value === 'unread')} />
+  }
   if (menu.view === 'date') {
     return <MobileDateView from={menu.from} to={menu.to} presets={menu.datePresets} onChange={menu.onDateRangeChange} onOpenCustomRange={menu.onOpenCustomRange} />
   }
   if (menu.view === 'amount') {
     return <MobileAmountView minAmount={menu.minAmount} maxAmount={menu.maxAmount} setMinAmount={menu.setMinAmount} setMaxAmount={menu.setMaxAmount} onReset={() => resetAmount(menu)} onApply={menu.onApplyAmountRange} />
   }
-  return <MobileFilterRoot options={buildRootOptions(labels, menu.summaries, menu.linkedCards.length > 0)} hasAnyFilter={menu.hasAnyFilter} onSelect={(view) => openDetail(menu, view)} onClear={() => clearAll(menu)} />
+  return <MobileFilterRoot options={buildRootOptions(labels, menu.summaries, menu.linkedCards.length > 0, menu.showUnread !== false)} hasAnyFilter={menu.hasAnyFilter} onSelect={(view) => openDetail(menu, view)} onClear={() => clearAll(menu)} />
 }
 
 function openDetail(
