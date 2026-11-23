@@ -147,12 +147,12 @@ async def _provider_logout_url() -> str:
     answers "": the local sign-out already happened and must never wait on the
     provider.
 
-    A failure is logged once, where it is cached: `/config` is public and a
-    down provider would otherwise write one line per page load. Until the
-    cache window ends, sign-out is local-only and this warning is the only
-    sign of it. This is the only route that talks to the provider; `/config`
-    must stay local, because the sign-in page blocks on it to decide what to
-    show.
+    A failure is logged once, where it is cached: `/logout-url` takes no
+    authentication, so a down provider would otherwise write one line per
+    call. Until the cache window ends, sign-out is local-only and this
+    warning is the only sign of it. This is the only route that talks to the
+    provider; `/config` must stay local, because the sign-in page blocks on
+    it to decide what to show.
     """
     global _logout_url_cache
     settings = get_settings()
