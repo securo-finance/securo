@@ -1197,8 +1197,12 @@ class EnableBankingProvider(BankProvider):
                     continue
                 details = await self._request("GET", f"/accounts/{uid}/details")
                 cached_details[uid] = _details_summary(details)
+                # A balance that cannot be read is skipped like the cached
+                # path above, never synced as a 0.00 over the real one.
                 result.append(
-                    await self._build_account(details, stable_external_ids.get(uid))
+                    await self._build_account(
+                        details, stable_external_ids.get(uid), require_balance=True
+                    )
                 )
             except ProviderRateLimited as exc:
                 # PSD2 throttling is per-account: skipping this one and keeping
