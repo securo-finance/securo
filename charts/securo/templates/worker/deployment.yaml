@@ -22,6 +22,8 @@ spec:
         {{- include "securo.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: celery-worker
     spec:
+      initContainers:
+        {{- include "securo.waitForSchema" (dict "root" . "component" .Values.celeryWorker) | nindent 8 }}
       containers:
         - name: celery-worker
           image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
