@@ -811,6 +811,9 @@ async def get_income_expenses_report(
         workspace_id=workspace_id,
         end_inclusive=True,
         label_expr=label_expr,
+        # The actuals above count posted rows up to the window's end, so the
+        # offsets reach as far.
+        cutoff=axis_end,
     )
     for part in reimbursement_offsets:
         off_income, off_expenses = period_offsets.get(part.label, (0.0, 0.0))

@@ -736,7 +736,7 @@ async def forecast_owner_share_fractions(
     # A row with a group split never nets an allocation, so the two sets of
     # fractions never meet on the same row. Links belong to the workspace, so
     # every row in the list nets, not just the user's own.
-    reimbursed = await reimbursement_share_fractions(session, rows, clamp=True)
+    reimbursed = await reimbursement_share_fractions(session, rows, clamp=True, in_primary=True)
     if not own_rows:
         return reimbursed
 

@@ -1756,13 +1756,25 @@ def _balance_row_filters(
         else [Transaction.date >= start, Transaction.date < end]
     )
     return [
-        Transaction.workspace_id == workspace_id,
-        Account.is_closed == False,
+        *_balance_eligibility_filters(workspace_id, account_ids),
         *date_filters,
         Transaction.date <= app_today(),
-        Transaction.is_ignored == False,
         *([] if include_pending else [Transaction.status == "posted"]),
         *([Transaction.source != "opening_balance"] if exclude_opening_balance else []),
+    ]
+
+
+def _balance_eligibility_filters(
+    workspace_id: uuid.UUID,
+    account_ids: Optional[list[uuid.UUID]] = None,
+) -> list:
+    """Which rows can be in the balance curve at all, whatever their date or
+    status: an open account the chart covers, and neither the row nor its
+    category ignored. Same joins as `_balance_row_filters`."""
+    return [
+        Transaction.workspace_id == workspace_id,
+        Account.is_closed == False,
+        Transaction.is_ignored == False,
         or_(
             Transaction.category_id.is_(None),
             Category.is_ignored == False,
@@ -1873,14 +1885,20 @@ async def _netting_effects_by_date(
         return {}
     pairs = await live_allocations_for(session, in_curve, workspace_id)
 
-    # A counterpart outside the curve's window still says what its part is worth.
-    counterpart_ids = {allocation.counterpart_id for allocation, _ in pairs}
-    counterparts = await session.execute(
+    # Both ends of a link must be able to be in the curve, whatever their date:
+    # netting one end whose partner the curve leaves out (a closed account, an
+    # ignored row) would move money in and never take it out. A counterpart
+    # outside the window still says what its part is worth.
+    link_ids = {allocation.counterpart_id for allocation, _ in pairs} | {
+        allocation.anchor_id for allocation, _ in pairs
+    }
+    eligible_rows = await session.execute(
         select(Transaction, Account.currency)
         .join(Account, Transaction.account_id == Account.id)
-        .where(Transaction.id.in_(counterpart_ids))
+        .outerjoin(Category, Transaction.category_id == Category.id)
+        .where(Transaction.id.in_(link_ids), *_balance_eligibility_filters(workspace_id, account_ids))
     )
-    account_currency_of = {tx.id: (tx, currency) for tx, currency in counterparts.all()}
+    account_currency_of = {tx.id: (tx, currency) for tx, currency in eligible_rows.all()}
 
     primary_currency = primary_currency_hint or get_settings().default_currency
     effects: dict[date, float] = {}
@@ -1889,7 +1907,10 @@ async def _netting_effects_by_date(
         effects[day] = effects.get(day, 0.0) + float(amount)
 
     for allocation, amount in pairs:
-        if allocation.counterpart_id not in account_currency_of:
+        if (
+            allocation.counterpart_id not in account_currency_of
+            or allocation.anchor_id not in account_currency_of
+        ):
             continue
         counterpart, account_currency = account_currency_of[allocation.counterpart_id]
         full = abs(Decimal(str(counterpart.amount or 0)))

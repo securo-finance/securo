@@ -225,3 +225,34 @@ async def test_a_linked_pair_in_a_foreign_currency_keeps_its_fx_residual(
     # The residual shows up where the money went: R$600 out, R$500 back.
     assert (net[3], net[5]) == (-100, -100)
     assert real[max(real)] == net[max(net)]
+
+
+@pytest.mark.asyncio
+async def test_a_link_to_a_closed_account_is_not_netted_on_one_side_only(
+    session, make_tx, test_user, test_workspace, manual_account
+):
+    from app.models.account import Account
+
+    # The payback sits in a closed account, which the curve leaves out. Netting
+    # the expense alone would add its share to the curve and never take the
+    # payback off, ending the month above the real balance.
+    closed = Account(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="Old", type="checking",
+        balance=0, currency=manual_account.currency, is_closed=True,
+    )
+    session.add(closed)
+    await session.flush()
+    dinner = await make_tx(400, "debit", LAST_MONTH.replace(day=3))
+    payback = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id, account_id=closed.id,
+        description="Payback", amount=Decimal("100"), currency=closed.currency,
+        date=LAST_MONTH.replace(day=4), type="credit", source="manual",
+    )
+    session.add(payback)
+    await session.flush()
+    await _link(session, dinner, (payback, 100))
+
+    _, real = await _curve(session, test_user, test_workspace, LAST_MONTH, netting=False)
+    _, net = await _curve(session, test_user, test_workspace, LAST_MONTH)
+
+    assert net == real

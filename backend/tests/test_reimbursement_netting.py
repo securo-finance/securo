@@ -321,3 +321,46 @@ async def test_parts_stay_in_their_workspace(session, test_user, make_tx, catego
     await _link(session, dinner, (await make_tx(60, "credit"), 60))
 
     assert await _parts(session, test_user, workspace_id=other.id) == {}
+
+
+@pytest.mark.asyncio
+async def test_a_partly_ignored_row_gives_up_only_its_counted_share(
+    session, test_user, test_workspace, make_tx, category
+):
+    # A 100 payback with 50 in a category that is ignored since: only 50 of it
+    # counts as income, so only 50 can come off, on both sides.
+    food, shop, hidden = await category("Food"), await category("Shop"), await category("Hidden")
+    dinner = await make_tx(100, category_id=food.id)
+    payback = await make_tx(100, "credit", has_category_lines=True)
+    for position, (cat, amount) in enumerate(((shop, 50), (hidden, 50))):
+        session.add(TransactionCategoryLine(
+            workspace_id=test_workspace.id, transaction_id=payback.id,
+            category_id=cat.id, amount=Decimal(amount), position=position,
+        ))
+    await session.flush()
+    await session.refresh(payback, ["category_lines"])
+    await _link(session, dinner, (payback, 100))
+    hidden.is_ignored = True
+    await session.flush()
+
+    assert await _parts(session, test_user) == {
+        (shop.id, "credit"): Decimal("50.00"),
+        (food.id, "debit"): Decimal("50.00"),
+    }
+
+
+@pytest.mark.asyncio
+async def test_a_pending_anchor_keeps_the_fx_residual_the_posted_path_keeps(session, make_tx):
+    # The same currency on both rows, booked at different primary values: the
+    # posted path leaves 10 of the 120 expense, so the P&L forecast must too.
+    expense = await make_tx(100, status="pending", amount_primary=Decimal("120"))
+    payback = await make_tx(100, "credit", status="pending", amount_primary=Decimal("110"))
+    await _link(session, expense, (payback, 100))
+
+    in_primary = await reimbursement_share_fractions(session, [expense, payback], in_primary=True)
+    native = await reimbursement_share_fractions(session, [expense, payback])
+
+    assert in_primary[expense.id] == pytest.approx(Decimal("10") / Decimal("120"))
+    assert in_primary[payback.id] == Decimal("0")
+    # The balance curve works in the account's currency and keeps the native share.
+    assert native[expense.id] == Decimal("0")

@@ -311,3 +311,31 @@ async def test_a_pending_anchor_paid_back_in_excess_never_projects_a_negative_ex
 
     assert fractions[anchor.id] == Decimal("0")
     assert fractions[payback.id] == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_the_report_nets_rows_dated_after_today_that_its_window_counts(
+    session, test_user, test_workspace, test_account
+):
+    from app.services.report_service import get_income_expenses_report
+
+    # A posted expense dated tomorrow and its posted payback dated today, in a
+    # window that runs past today: the report counts both rows, so it has to
+    # take the link off both.
+    expense = await _row(
+        session, test_user, test_account, test_workspace, "100", "debit", date=TODAY + timedelta(days=1)
+    )
+    payback = await _row(session, test_user, test_account, test_workspace, "50", "credit", date=TODAY)
+    await reimbursement_service.replace_allocations(
+        session, expense, [ReimbursementAllocationInput(counterpart_id=payback.id, amount=Decimal("50"))]
+    )
+    await session.commit()
+
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id, interval="daily",
+        start_date=TODAY, end_date=TODAY + timedelta(days=2),
+    )
+
+    income = sum(point.breakdowns["income"] for point in report.trend)
+    expenses = sum(point.breakdowns["expenses"] for point in report.trend)
+    assert (income, expenses) == (pytest.approx(0.0), pytest.approx(50.0))
