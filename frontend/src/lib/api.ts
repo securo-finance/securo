@@ -1843,7 +1843,7 @@ export const reports = {
   // these bounds (issue #765).
   /**
    * A report an installed plugin declares, or (on the dashboard) one of its
-   * widgets (ADR 0032); `pluginId` is "owner/name".
+   * widgets (ADR 0034); `pluginId` is "owner/name".
    */
   plugin: async (
     pluginId: string,

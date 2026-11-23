@@ -116,7 +116,7 @@ async def get_plugin_widget(
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """A dashboard widget an installed plugin declares (ADR 0032).
+    """A dashboard widget an installed plugin declares (ADR 0034).
 
     The same contract as a plugin's report, read over the month the
     dashboard shows and the accounts in view.

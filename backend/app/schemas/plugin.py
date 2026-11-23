@@ -57,7 +57,7 @@ class PluginReportDefinitionRead(BaseModel):
 
 
 class PluginWidgetDefinitionRead(PluginReportDefinitionRead):
-    """A dashboard widget a plugin adds to the library (ADR 0032): a report sized for a card."""
+    """A dashboard widget a plugin adds to the library (ADR 0034): a report sized for a card."""
 
     width: Literal["third", "half", "two_thirds", "full"] = "half"
     period: Literal["month", "year_to_date", "last_12_months"] = "month"

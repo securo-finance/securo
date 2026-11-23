@@ -1,4 +1,4 @@
-"""Dashboard widgets from plugins: a report sized for a card, over the month on screen (ADR 0032)."""
+"""Dashboard widgets from plugins: a report sized for a card, over the month on screen (ADR 0034)."""
 from __future__ import annotations
 
 import copy

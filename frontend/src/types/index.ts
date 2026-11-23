@@ -784,7 +784,7 @@ export interface InstalledPlugin {
   themes?: PluginTheme[]
   /** Reports it adds to the reports library. */
   reports?: PluginReportDefinition[]
-  /** Dashboard widgets it adds to the library (ADR 0032). */
+  /** Dashboard widgets it adds to the library (ADR 0034). */
   widgets?: PluginWidgetDefinition[]
 }
 
@@ -884,7 +884,7 @@ export interface PluginReportDefinition {
   chart: 'bar' | 'line' | 'area' | 'pie' | 'table'
 }
 
-/** A dashboard widget a plugin adds (ADR 0032): a report sized for a card, with the width it starts at. */
+/** A dashboard widget a plugin adds (ADR 0034): a report sized for a card, with the width it starts at. */
 export interface PluginWidgetDefinition extends PluginReportDefinition {
   width: 'third' | 'half' | 'two_thirds' | 'full'
   /** What it reads, counted back from the month on the dashboard. */

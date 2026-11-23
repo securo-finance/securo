@@ -792,7 +792,7 @@ export function RecurringRevenueWidget({ scope }: { scope: DashboardScope }) {
 }
 
 /**
- * A widget a plugin adds to the dashboard (ADR 0032): a query Securo adds up
+ * A widget a plugin adds to the dashboard (ADR 0034): a query Securo adds up
  * or the plugin's own code, drawn as a report's view inside the card, for the
  * month and the accounts the dashboard shows.
  */

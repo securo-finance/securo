@@ -46,7 +46,7 @@ export function usePluginReports(): { entries: PluginReportEntry[] | null; settl
   return usePluginEntries(pluginReportEntries)
 }
 
-/** The dashboard widgets the workspace's installed plugins add to the library (ADR 0032). */
+/** The dashboard widgets the workspace's installed plugins add to the library (ADR 0034). */
 export function usePluginWidgets(): { entries: PluginWidgetEntry[] | null; settled: boolean } {
   return usePluginEntries(pluginWidgetEntries)
 }

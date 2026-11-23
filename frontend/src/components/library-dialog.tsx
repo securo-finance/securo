@@ -90,7 +90,7 @@ export function LibraryDialog({
 /** Each item of a surface, added or not, with the switch that adds or removes it. */
 function SurfaceItems({ surface }: { surface: Surface }) {
   const { t, i18n } = useTranslation()
-  // The installed plugins' reports and widgets join Securo's own (ADR 0028, 0032).
+  // The installed plugins' reports and widgets join Securo's own (ADR 0028, 0034).
   const { entries: pluginReports } = usePluginReports()
   const { entries: pluginWidgets } = usePluginWidgets()
   const pluginEntries = surface === 'reports' ? pluginReports : pluginWidgets

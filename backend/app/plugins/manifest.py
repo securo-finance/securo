@@ -448,7 +448,7 @@ WidgetPeriod = Literal["month", "year_to_date", "last_12_months"]
 
 
 class Widget(Report):
-    """A widget for the dashboard: a report sized for a card (ADR 0032).
+    """A widget for the dashboard: a report sized for a card (ADR 0034).
 
     The same query or code as a report, read over `period` (counted back from
     the month the dashboard shows) and the accounts in view. With `code`, the

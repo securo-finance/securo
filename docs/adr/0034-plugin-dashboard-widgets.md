@@ -1,4 +1,4 @@
-# 0032. Plugins add dashboard widgets: a report sized for a card, over the month on screen
+# 0034. Plugins add dashboard widgets: a report sized for a card, over the month on screen
 
 - Status: Accepted
 - Date: 2026-11-23

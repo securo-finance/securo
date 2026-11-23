@@ -244,7 +244,7 @@ async def plugin_view_response(
     end_date: date,
     account_ids: Optional[list[uuid.UUID]],
 ) -> PluginReportResponse:
-    """A plugin's report or dashboard widget (ADR 0032) for the period asked, as the API answers it."""
+    """A plugin's report or dashboard widget (ADR 0034) for the period asked, as the API answers it."""
     if not feature_flag("PLUGINS_ENABLED"):
         raise HTTPException(status_code=404, detail="Plugins are not enabled")
     try:

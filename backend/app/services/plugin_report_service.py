@@ -78,7 +78,7 @@ async def installed_report(
     key: str,
     kind: Literal["reports", "widgets"] = "reports",
 ) -> tuple[WorkspacePlugin, Manifest, Report]:
-    """The report, or dashboard widget (ADR 0032), as the workspace installed it: never from the catalog."""
+    """The report, or dashboard widget (ADR 0034), as the workspace installed it: never from the catalog."""
     record = await session.scalar(
         select(WorkspacePlugin).where(
             WorkspacePlugin.workspace_id == workspace_id, WorkspacePlugin.plugin_id == plugin_id
@@ -538,7 +538,7 @@ async def run_code_report(
     The plugin gets only the inputs its manifest names, read for this
     workspace with the period and accounts the viewer picked, and returns a
     view of blocks; what it returns is checked before anyone sees it. A
-    dashboard widget (ADR 0032) runs the same way through its `widget` method.
+    dashboard widget (ADR 0034) runs the same way through its `widget` method.
     """
     from app.plugins import runner
     from app.plugins.report_view import InvalidView, parse_view

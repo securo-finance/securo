@@ -8,7 +8,7 @@ import { queryReportView } from '@/lib/plugin-report-view'
 import type { PluginReportDefinition, PluginReportResponse } from '@/types'
 
 /**
- * A plugin's report (ADR 0028) or dashboard widget (ADR 0032) for a period
+ * A plugin's report (ADR 0028) or dashboard widget (ADR 0034) for a period
  * and accounts, as the view Securo draws: a query's rows turned into blocks,
  * or the view the plugin's code returned, already checked by the API.
  * `card` drops a query's table when there's a chart, to fit a widget.

@@ -145,7 +145,7 @@ export default function DashboardPage() {
   const displayName = user?.preferences?.display_name || ''
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
-  // The installed plugins' widgets join Securo's own (ADR 0032).
+  // The installed plugins' widgets join Securo's own (ADR 0034).
   const { entries: pluginWidgets } = usePluginWidgets()
   const dashboardLayout = useLayout('dashboard', pluginWidgets)
   const { openLibrary } = useLibrary()

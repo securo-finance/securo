@@ -90,7 +90,7 @@ export interface LayoutItem {
   span?: Span
 }
 
-/** A dashboard widget a plugin adds to the library (ADR 0032). */
+/** A dashboard widget a plugin adds to the library (ADR 0034). */
 export interface PluginWidgetEntry extends WidgetEntry {
   plugin: NonNullable<LibraryEntry['plugin']>
   report: PluginWidgetDefinition
