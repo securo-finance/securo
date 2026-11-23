@@ -32,13 +32,14 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { AlertTriangle, ArrowRight, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Flag, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check, CircleCheck, Pencil } from 'lucide-react'
+import { AlertTriangle, ArrowRight, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Flag, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check, CircleCheck, Pencil, Trash2 } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CategorySelect } from '@/components/category-select'
 import { PayeeSelect } from '@/components/payee-select'
 import { PayeeFormDialog } from '@/components/payee-form-dialog'
@@ -258,7 +259,7 @@ export function TransactionDialog({
           : 'flex flex-col min-h-0 flex-1'}>
           {/* Left column: form */}
           <div className={isEditing
-            ? 'flex flex-col min-w-0 min-h-0 flex-1 overflow-hidden sm:pe-6'
+            ? cn('flex flex-col min-w-0 min-h-0 flex-1', hasPreview && 'overflow-hidden sm:pe-6')
             : 'flex flex-col min-h-0 flex-1'}>
             <DialogHeader className="mb-4">
               <DialogTitle>
@@ -426,6 +427,52 @@ export function TransactionDialog({
       </DialogContent>
     </Dialog>
     </>
+  )
+}
+
+/** Icon-only footer toggle: the label names it for screen readers and shows on hover. */
+function FooterIconAction({
+  label,
+  hint,
+  active,
+  onClick,
+  disabled,
+  className,
+  children,
+}: {
+  label: string
+  hint?: string
+  active: boolean
+  onClick: () => void
+  disabled?: boolean
+  className?: string
+  children: React.ReactNode
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={label}
+          aria-pressed={active || undefined}
+          onClick={onClick}
+          disabled={disabled}
+          className={cn(
+            'size-9 text-muted-foreground hover:text-foreground [&_svg]:size-[18px]',
+            active && 'bg-muted text-foreground',
+            className,
+          )}
+        >
+          {children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>
+        <span className="font-medium">{label}</span>
+        {hint && <span className="block opacity-80">{hint}</span>}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -1131,7 +1178,10 @@ function TransactionForm({
         hasPreview && 'mt-4'
       )}
     >
-      <div className="space-y-4 overflow-y-auto flex-1 min-h-0 pb-2 sm:pe-3">
+      {/* The scrollbar sits in the dialog's own padding: a thin (11px) bar plus
+          13px fill the 24px gutter, so the fields line up with the close button
+          and the footer instead of stopping short of them. */}
+      <div className="space-y-4 overflow-y-auto flex-1 min-h-0 pb-2 -me-6 pe-[13px] [scrollbar-width:thin]">
       {error && (
         <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
           {error}
@@ -1922,78 +1972,68 @@ function TransactionForm({
       </div>
 
       <DialogFooter className={cn(
-        'shrink-0 border-t pt-4 mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between',
-        !(onDelete || seed?.id) ? 'sm:justify-end' : ''
+        'shrink-0 border-t pt-4 mt-2 flex flex-row flex-wrap items-center justify-between gap-3',
+        !(onDelete || seed?.id) ? 'justify-end' : ''
       )}>
-        <div className="flex min-w-0 flex-wrap gap-2 items-center">
-          {onDelete && (
-            <Button type="button" variant="destructive" onClick={onDelete} disabled={loading} className="whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9">
-              {t('common.delete')}
-            </Button>
-          )}
+        <TooltipProvider>
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
           {seed?.id && (
-            <Button
-              type="button"
-              variant={isIgnored ? 'secondary' : 'outline'}
-              onClick={handleToggleIgnore}
-              disabled={loading || togglingIgnore}
-              title={t('transactions.ignoreTransferHint')}
-              className="gap-1.5 whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
-            >
-              {isIgnored ? <Eye size={14} /> : <EyeClosed size={14} />}
-              {isIgnored ? t('transactions.unignoreAction') : t('transactions.ignoreAction')}
-            </Button>
-          )}
-          {seed?.id && (
-            <Button
-              type="button"
-              variant={isFlagged ? 'secondary' : 'outline'}
-              onClick={handleToggleFlag}
-              disabled={loading || togglingFlag}
-              className="gap-1.5 whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
-            >
-              <Flag size={14} className={isFlagged ? 'fill-current text-amber-600 dark:text-amber-400' : undefined} />
-              {isFlagged ? t('transactions.unflagAction') : t('transactions.flagAction')}
-            </Button>
-          )}
-          {seed?.id && (
-            <Button
-              type="button"
-              variant={isPaid ? 'secondary' : 'outline'}
-              onClick={handleTogglePaid}
-              disabled={loading || togglingPaid}
-              title={isPaid ? t('transactions.markUnpaidHint') : t('transactions.markPaidHint')}
-              className="gap-1.5 whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
-            >
-              <CircleCheck size={14} className={isPaid ? 'text-emerald-500' : undefined} />
-              {isPaid ? t('transactions.markUnpaid') : t('transactions.markPaid')}
-            </Button>
+            <>
+              <FooterIconAction
+                label={isIgnored ? t('transactions.unignoreAction') : t('transactions.ignoreAction')}
+                hint={t('transactions.ignoreTransferHint')}
+                active={isIgnored}
+                onClick={handleToggleIgnore}
+                disabled={loading || togglingIgnore}
+              >
+                {isIgnored ? <Eye /> : <EyeClosed />}
+              </FooterIconAction>
+              <FooterIconAction
+                label={isFlagged ? t('transactions.unflagAction') : t('transactions.flagAction')}
+                active={isFlagged}
+                onClick={handleToggleFlag}
+                disabled={loading || togglingFlag}
+              >
+                <Flag className={isFlagged ? 'fill-current text-amber-600 dark:text-amber-400' : undefined} />
+              </FooterIconAction>
+              <FooterIconAction
+                label={isPaid ? t('transactions.markUnpaid') : t('transactions.markPaid')}
+                hint={isPaid ? t('transactions.markUnpaidHint') : t('transactions.markPaidHint')}
+                active={isPaid}
+                onClick={handleTogglePaid}
+                disabled={loading || togglingPaid}
+              >
+                <CircleCheck className={isPaid ? 'text-emerald-600 dark:text-emerald-400' : undefined} />
+              </FooterIconAction>
+            </>
           )}
           {transaction && onCreateRule && (
-            <div className="inline-flex">
-              <Button
-                type="button"
-                variant="outline"
+            <div className="inline-flex items-center">
+              <FooterIconAction
+                label={t('transactions.createRule')}
+                active={false}
                 onClick={() => onCreateRule(transaction)}
-                className="gap-1.5 rounded-e-none whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
-                title={t('transactions.createRule')}
+                className="rounded-e-none"
               >
-                <SlidersHorizontal size={14} />
-                {t('transactions.createRule')}
-              </Button>
+                <SlidersHorizontal />
+              </FooterIconAction>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                     aria-label={t('transactions.ruleActions')}
-                    className="rounded-s-none border-s-0 px-1.5 sm:px-2 has-[>svg]:px-1.5 sm:has-[>svg]:px-2 h-8 sm:h-9"
+                    className="h-9 w-5 rounded-s-none px-0 text-muted-foreground hover:text-foreground"
                     disabled={updateRuleMutation.isPending}
                   >
                     <ChevronDown size={14} />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuContent align="start" side="top" className="w-60">
+                  <DropdownMenuItem onSelect={() => onCreateRule(transaction)}>
+                    <SlidersHorizontal size={16} />
+                    {t('transactions.createRule')}
+                  </DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => setAddToRuleOpen(true)}>
                     <ListPlus size={16} />
                     {t('transactions.addToExistingRule')}
@@ -2002,8 +2042,23 @@ function TransactionForm({
               </DropdownMenu>
             </div>
           )}
+          {onDelete && (
+            <>
+              <div aria-hidden="true" className="mx-1 h-5 w-px bg-border" />
+              <FooterIconAction
+                label={t('common.delete')}
+                active={false}
+                onClick={onDelete}
+                disabled={loading}
+                className="hover:bg-destructive/10 hover:text-destructive"
+              >
+                <Trash2 />
+              </FooterIconAction>
+            </>
+          )}
         </div>
-        <div className="flex flex-wrap gap-2 justify-end sm:ms-auto">
+        </TooltipProvider>
+        <div className="flex flex-wrap gap-2 justify-end ms-auto">
           <Button type="button" variant="outline" onClick={onCancel} className="whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9">
             {t('common.cancel')}
           </Button>
