@@ -171,3 +171,25 @@ async def test_counterparts_are_locked_in_id_order_before_the_cap_is_checked(
     # The table is schema-qualified in these per-test schemas.
     locking = [s for s in statements if s.startswith("SELECT") and s.endswith("FOR UPDATE")]
     assert any(" FROM " in s and "ORDER BY" in s and s.endswith("transactions.id FOR UPDATE") for s in locking), statements
+
+
+async def test_the_candidate_search_runs_on_postgres(session, test_user, test_workspace):
+    food, dinner, payback = await _linked_pair(session, test_user, test_workspace, date(2026, 10, 10))
+    other = Transaction(
+        user_id=test_user.id, workspace_id=test_workspace.id, account_id=dinner.account_id,
+        description="Other", amount=Decimal("40"), currency="USD", date=date(2026, 10, 10),
+        effective_date=date(2026, 10, 10), type="debit", source="manual", status="posted",
+    )
+    session.add(other)
+    await session.flush()
+
+    # The payback is already linked to the dinner, so it stays on its list; it
+    # is used up for any other expense, so it drops off theirs.
+    mine = await reimbursement_service.find_candidates(session, dinner, looking_for="counterparts")
+    others = await reimbursement_service.find_candidates(session, other, looking_for="counterparts")
+    anchors = await reimbursement_service.find_candidates(session, payback, looking_for="anchors")
+
+    assert [row.id for row in mine] == [payback.id]
+    assert others == []
+    # The dinner it already pays back is listed too; the dialog filters linked rows.
+    assert {row.id for row in anchors} == {dinner.id, other.id}

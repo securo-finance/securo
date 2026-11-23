@@ -293,3 +293,69 @@ async def test_an_amount_too_large_for_the_column_is_a_422_not_a_500(client, aut
             json=_body((payback, amount)),
         )
         assert resp.status_code == 422, (amount, resp.text)
+
+
+@pytest.mark.asyncio
+async def test_saving_locks_the_anchor_but_reading_does_not(client, auth_headers, monkeypatch):
+    from app.services import transaction_service
+
+    account = await _account(client, auth_headers)
+    dinner = await _create(client, auth_headers, account["id"], 100)
+    payback = await _create(client, auth_headers, account["id"], 20, "credit")
+    real = transaction_service.get_transaction
+    locked: list[bool] = []
+
+    async def spy(session, transaction_id, workspace_id, for_update=False):
+        locked.append(for_update)
+        return await real(session, transaction_id, workspace_id, for_update=for_update)
+
+    monkeypatch.setattr(transaction_service, "get_transaction", spy)
+
+    await client.get(f"/api/transactions/{dinner['id']}/reimbursements", headers=auth_headers)
+    assert locked == [False]
+    locked.clear()
+    # Two saves for the same unlinked anchor must queue, or both commit and
+    # the anchor ends with both payers.
+    await client.put(
+        f"/api/transactions/{dinner['id']}/reimbursements", headers=auth_headers, json=_body((payback, 20))
+    )
+    assert locked[0] is True
+
+
+@pytest.mark.asyncio
+async def test_candidates_rank_by_distance_before_the_limit(client, auth_headers):
+    account = await _account(client, auth_headers)
+    dinner = await _create(client, auth_headers, account["id"], 100, date="2026-10-10")
+    for day in ("2026-10-20", "2026-10-21", "2026-10-22"):
+        await _create(client, auth_headers, account["id"], 10, "credit", date=day, description=f"later {day}")
+    same_day = await _create(client, auth_headers, account["id"], 10, "credit", date="2026-10-10", description="same day")
+
+    resp = await client.get(
+        f"/api/transactions/{dinner['id']}/reimbursement-candidates",
+        headers=auth_headers,
+        params={"limit": 1},
+    )
+
+    assert [row["id"] for row in resp.json()] == [same_day["id"]]
+
+
+@pytest.mark.asyncio
+async def test_a_used_up_counterpart_does_not_take_a_candidate_slot(client, auth_headers):
+    account = await _account(client, auth_headers)
+    dinner = await _create(client, auth_headers, account["id"], 100, date="2026-10-10")
+    other = await _create(client, auth_headers, account["id"], 40, date="2026-10-10", description="other")
+    used_up = await _create(client, auth_headers, account["id"], 40, "credit", date="2026-10-10", description="used up")
+    open_one = await _create(client, auth_headers, account["id"], 40, "credit", date="2026-10-14", description="open")
+    resp = await client.put(
+        f"/api/transactions/{other['id']}/reimbursements", headers=auth_headers, json=_body((used_up, 40))
+    )
+    assert resp.status_code == 200, resp.text
+
+    resp = await client.get(
+        f"/api/transactions/{dinner['id']}/reimbursement-candidates",
+        headers=auth_headers,
+        params={"limit": 1},
+    )
+
+    # The nearest row has nothing left to give; the limit applies after that.
+    assert [row["id"] for row in resp.json()] == [open_one["id"]]

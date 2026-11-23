@@ -83,6 +83,8 @@ async def test_replacing_drops_the_old_allocations(session, make_tx):
 async def test_an_empty_list_unlinks_the_anchor(session, make_tx):
     dinner, alice = await make_tx(100), await make_tx(33, "credit")
     await reimbursement_service.replace_allocations(session, dinner, [_alloc(alice, 33)])
+    # The unlink only means something if there was a link to remove.
+    assert await _allocations(session, dinner.id) == [(alice.id, Decimal("33.00"))]
 
     await reimbursement_service.replace_allocations(session, dinner, [])
 

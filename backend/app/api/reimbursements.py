@@ -23,8 +23,12 @@ from app.services import reimbursement_service, transaction_service
 router = APIRouter(prefix="/api/transactions", tags=["reimbursements"])
 
 
-async def _transaction(session: AsyncSession, transaction_id: uuid.UUID, ctx: WorkspaceContext):
-    tx = await transaction_service.get_transaction(session, transaction_id, ctx.workspace.id)
+async def _transaction(
+    session: AsyncSession, transaction_id: uuid.UUID, ctx: WorkspaceContext, *, for_update: bool = False
+):
+    tx = await transaction_service.get_transaction(
+        session, transaction_id, ctx.workspace.id, for_update=for_update
+    )
     if not tx:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
     return tx
@@ -48,7 +52,10 @@ async def replace_reimbursements(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Replace every counterpart of the anchor `transaction_id`."""
-    tx = await _transaction(session, transaction_id, ctx)
+    # Held until the commit below: two saves of one anchor then queue, and the
+    # second validates against what the first committed instead of both
+    # clearing and inserting on the same empty set.
+    tx = await _transaction(session, transaction_id, ctx, for_update=True)
     try:
         await reimbursement_service.replace_allocations(session, tx, data.allocations)
     except ValueError as e:

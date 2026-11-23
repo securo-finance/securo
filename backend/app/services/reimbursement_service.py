@@ -24,6 +24,7 @@ from typing import Iterable, Literal, Optional
 
 from sqlalchemy import delete, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.models.category import Category
 from app.models.mortgage_payment_allocation import MORTGAGE_PRINCIPAL_SOURCE
@@ -397,27 +398,36 @@ async def find_candidates(
                 Payee.name.ilike(term),
             )
         )
-    # Over-fetch, newest first: the nearest dates are picked below, and
-    # counterparts fully allocated elsewhere drop out.
-    stmt = stmt.order_by(Transaction.date.desc(), Transaction.id).limit(limit * 3)
-    rows = sorted(
-        (await session.execute(stmt)).scalars().all(),
-        key=lambda row: (abs((row.date - tx.date).days), str(row.id)),
-    )
-    if looking_for == "anchors":
-        return [_linked(row, _magnitude(row)) for row in rows[:limit]]
+    if looking_for == "counterparts":
+        # A counterpart with nothing left drops out in SQL, before the limit,
+        # unless this anchor already has it. Otherwise the nearest rows could
+        # all be used up and crowd out ones that can still be linked.
+        paid = aliased(Transaction)
+        used_up = (
+            select(ReimbursementAllocation.counterpart_id)
+            .join(paid, paid.id == ReimbursementAllocation.counterpart_id)
+            .group_by(ReimbursementAllocation.counterpart_id, paid.amount)
+            .having(func.sum(ReimbursementAllocation.amount) >= func.abs(paid.amount))
+        )
+        linked_here = select(ReimbursementAllocation.counterpart_id).where(
+            ReimbursementAllocation.anchor_id == tx.id
+        )
+        stmt = stmt.where(or_(Transaction.id.not_in(used_up), Transaction.id.in_(linked_here)))
 
-    linked_to_tx = select(ReimbursementAllocation.counterpart_id).where(
-        ReimbursementAllocation.anchor_id == tx.id
-    )
-    already = set((await session.execute(linked_to_tx)).scalars().all())
+    # Nearest first without a date-difference expression, which SQLite and
+    # PostgreSQL spell differently: the `limit` nearest on each side of the
+    # row hold the `limit` nearest overall.
+    later = stmt.where(Transaction.date >= tx.date).order_by(Transaction.date, Transaction.id).limit(limit)
+    earlier = stmt.where(Transaction.date < tx.date).order_by(Transaction.date.desc(), Transaction.id).limit(limit)
+    rows = sorted(
+        [*(await session.execute(later)).scalars(), *(await session.execute(earlier)).scalars()],
+        key=lambda row: (abs((row.date - tx.date).days), str(row.id)),
+    )[:limit]
     totals = await allocated_from(session, [row.id for row in rows])
-    out = []
-    for row in rows:
-        left = _magnitude(row) - totals.get(row.id, _ZERO)
-        if left > 0 or row.id in already:
-            out.append(_linked(row, left))
-    return out[:limit]
+    return [
+        _linked(row, _magnitude(row) - totals.get(row.id, _ZERO) if looking_for == "counterparts" else _magnitude(row))
+        for row in rows
+    ]
 
 
 async def annotate(session: AsyncSession, transactions: Iterable[Transaction]) -> None:
