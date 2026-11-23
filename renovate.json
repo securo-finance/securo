@@ -22,6 +22,12 @@
       "minimumReleaseAge": "7 days"
     },
     {
+      "description": "eslint-plugin-react-hooks 7.1 turns react-hooks/set-state-in-effect into an error and adds preserve-manual-memoization findings (1 error and 23 warnings today, mostly in frontend/src/pages/transactions.tsx), and `npm run lint -- --max-warnings=0` makes warnings fatal. Held below 7.1.0, with an exact pin in frontend/package.json, until those findings are fixed in a change of their own.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["eslint-plugin-react-hooks"],
+      "allowedVersions": "<7.1.0"
+    },
+    {
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "GitHub Actions (non-major)"
