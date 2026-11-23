@@ -737,6 +737,85 @@ async def test_member_renaming_after_a_rate_sync_keeps_the_owners_stamp(
     assert tx.amount_primary_typed == Decimal("1560.00")
 
 
+async def _sync_day5_brl_to(session: AsyncSession, value: str) -> None:
+    _, day5, _ = _last_month()
+    rate = (
+        await session.execute(
+            select(FxRate).where(FxRate.quote_currency == "BRL", FxRate.date == day5)
+        )
+    ).scalar_one()
+    rate.rate = Decimal(value)
+    await session.commit()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("editor", ["ana", "bruno"])
+async def test_renaming_after_a_rate_sync_keeps_a_derived_stamp(
+    client, session, couple, editor
+):
+    """Ana's US$ 300 was stamped R$ 1.500 at USD→BRL 5, with nothing typed.
+    The day-5 rate is synced to 4; a rename resends the same amount, currency
+    and date, which restamped the row at the new rate (R$ 1.200)."""
+    row = await _usd_row(client, couple, "300.00", None)
+    await _sync_day5_brl_to(session, "4")
+
+    save = _dialog_save(row, description="R269 R440 derived after sync")
+    save.pop("amount_primary")
+    save.pop("fx_rate_used")
+    resp = await client.patch(
+        f"/api/transactions/{row['id']}", headers=couple[editor], json=save
+    )
+    assert resp.status_code == 200, resp.text
+    tx = await _stored(session, row["id"])
+    assert tx.description == "R269 R440 derived after sync"
+    assert tx.amount_primary == Decimal("1500.00")
+    assert Decimal(str(tx.fx_rate_used)) == Decimal("5")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("typed", "stamp"), [("1560.00", "1560.00"), (None, "1500.00")])
+async def test_a_client_echoing_the_conversion_it_was_shown_survives_a_rate_sync(
+    client, session, couple, typed, stamp
+):
+    """A client that sends back the euros it read, with `amount_primary_shown`
+    saying it read them, keeps Ana's stamp after the day-5 rate moved: at
+    BRL→EUR 0,25 the same euros no longer match today's conversion, and
+    were written over her reais (312 € / 0,25 = R$ 1.248)."""
+    row = await _usd_row(client, couple, "300.00", typed)
+    await _sync_day5_brl_to(session, "4")
+
+    resp = await client.patch(
+        f"/api/transactions/{row['id']}", headers=couple["bruno"],
+        json=_dialog_save(
+            row, description="R269 R440 echo after sync",
+            amount_primary_shown=row["amount_primary"],
+        ),
+    )
+    assert resp.status_code == 200, resp.text
+    tx = await _stored(session, row["id"])
+    assert tx.description == "R269 R440 echo after sync"
+    assert tx.amount_primary == Decimal(stamp)
+
+
+@pytest.mark.asyncio
+async def test_a_changed_conversion_is_still_converted_with_amount_primary_shown(
+    client, session, couple
+):
+    """Saying what was shown does not swallow a real edit: 330 € typed over
+    the 312 € shown is stored in Ana's reais at the day's rate."""
+    row = await _usd_row(client, couple, "300.00", "1560.00")
+    shown = row["amount_primary"]
+    typed = -330.0 if shown < 0 else 330.0
+    resp = await client.patch(
+        f"/api/transactions/{row['id']}", headers=couple["bruno"],
+        json=_dialog_save(row, amount_primary=typed, amount_primary_shown=shown),
+    )
+    assert resp.status_code == 200, resp.text
+    tx = await _stored(session, row["id"])
+    assert tx.amount_primary is not None
+    assert abs(tx.amount_primary) == Decimal("1650.00")
+
+
 @pytest.mark.asyncio
 async def test_calendar_shows_the_owners_conversion_of_a_row_in_the_members_currency(
     client, session, couple

@@ -154,7 +154,11 @@ def _apply_fx_override(transaction, amount, amount_primary=None, fx_rate_used=No
 
 
 async def _fx_override_in_owner_currency(
-    session: AsyncSession, editor_id: uuid.UUID, tx: Transaction, update_data: dict
+    session: AsyncSession,
+    editor_id: uuid.UUID,
+    tx: Transaction,
+    update_data: dict,
+    amount_primary_shown: Optional[Decimal] = None,
 ) -> dict:
     """Bring a conversion another member sent back to the row owner's currency.
 
@@ -168,9 +172,10 @@ async def _fx_override_in_owner_currency(
     is converted into the owner's currency at the date the row is saved
     with, and refused when there is no stored rate to do that with.
 
-    The echo is recomputed at the rate stored now, so a rate synced while
-    the dialog was open no longer matches it; the web dialog leaves an
-    untouched conversion out of the save for that reason.
+    What the editor was shown is the `amount_primary_shown` the client sends
+    with the save; a rate synced while the row was open moves the conversion
+    the server would show now, so that one only stands in when the client
+    did not say. The web dialog also leaves an untouched conversion out.
     """
     if (
         tx.user_id is None
@@ -197,16 +202,19 @@ async def _fx_override_in_owner_currency(
         # The stored stamp itself counts as an echo too: a client that read
         # the row unconverted sends it back as it was (#440).
         stored = Decimal(str(tx.amount_primary))
+        seen = [shown, stored]
+        if amount_primary_shown is not None:
+            seen.append(Decimal(str(amount_primary_shown)).quantize(Decimal("0.01")))
         if amount_primary is not None:
             sent = Decimal(str(amount_primary)).quantize(Decimal("0.01"))
-            echoed = sent in (shown, stored)
+            echoed = sent in seen
         else:
             sent_rate = Decimal(str(fx_rate))
             echoed = (
                 bool(amount)
                 and any(
                     abs(sent_rate - abs(value / amount)) <= Decimal("1E-8")
-                    for value in (shown, stored)
+                    for value in seen
                 )
             ) or (
                 tx.fx_rate_used is not None
@@ -2085,6 +2093,7 @@ async def _apply_update_to_row(
     update_data: dict,
     apply_to_transfer_pair: bool,
     splits_payload: Optional[TransactionSplitsInput],
+    amount_primary_shown: Optional[Decimal] = None,
 ) -> None:
     """Apply a parsed TransactionUpdate payload to a single row.
 
@@ -2103,7 +2112,9 @@ async def _apply_update_to_row(
 
     # The stamp is in the row owner's display currency (ADR 0032), whoever
     # edits it; a conversion another member sent is brought back to it.
-    update_data = await _fx_override_in_owner_currency(session, user_id, tx, update_data)
+    update_data = await _fx_override_in_owner_currency(
+        session, user_id, tx, update_data, amount_primary_shown
+    )
     stamp_user_id = tx.user_id or user_id
     has_fx_override = "amount_primary" in update_data or "fx_rate_used" in update_data
     override_amount_primary = update_data.get("amount_primary")
@@ -2144,8 +2155,14 @@ async def _apply_update_to_row(
         # stamp below finds the new account's value.
         tx.amount_account = None
 
+    # Resending the same amount, currency and date changes nothing the stamp
+    # is made of: restamping then would move it to whatever rate is stored for
+    # the day now, so a rename after a rate sync rewrote the owner's figure
+    # (#440). A row that never got a stamp still gets one.
     restamp_fields = {"amount", "currency", "date"}
-    needs_restamp = bool(restamp_fields & update_data.keys())
+    needs_restamp = account_inputs_changed or (
+        bool(restamp_fields & update_data.keys()) and tx.amount_primary is None
+    )
 
     if has_fx_override:
         if override_amount_primary is None and override_fx_rate is None:
@@ -2363,6 +2380,8 @@ async def update_transaction(
     update_data = data.model_dump(exclude_unset=True)
     apply_to_transfer_pair = update_data.pop("apply_to_transfer_pair", False)
     apply_to = update_data.pop("apply_to", "this")
+    # What the client was shown belongs to this row only, never to siblings.
+    amount_primary_shown = update_data.pop("amount_primary_shown", None)
 
     # Splits are processed separately after column updates land so the
     # service can validate against the new amount.
@@ -2556,6 +2575,7 @@ async def update_transaction(
             row_update,
             apply_to_transfer_pair,
             row_splits,
+            amount_primary_shown=amount_primary_shown if row.id == transaction.id else None,
         )
 
     # Splitting happens after the column updates, against the final amount,
