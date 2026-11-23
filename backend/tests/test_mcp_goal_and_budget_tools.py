@@ -385,9 +385,15 @@ async def test_budget_update_same_or_invalid_amount(
     zero = await _call("propose_update_budget")(
         session=session, ctx=ctx, budget_id=str(budget.id), amount=0
     )
+    too_large = await _call("propose_update_budget")(
+        session=session, ctx=ctx, budget_id=str(budget.id), amount=1e13
+    )
 
     assert "nothing to change" in same["error"]
     assert zero == {"error": "amount must be greater than zero"}
+    # The bound the PATCH enforces, so the preview never proposes an amount the
+    # save rejects (issue #406).
+    assert too_large == {"error": "The budget limit is too large"}
 
 
 async def test_budget_update_compares_in_the_proposers_currency(
