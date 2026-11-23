@@ -145,3 +145,30 @@ def test_restore_expires_an_orphan_suggestion_whatever_the_key_order():
         statuses.append(data["status"])
 
     assert statuses == ["expired", "expired"]
+
+
+@pytest.mark.parametrize("status", ["accepted", "declined"])
+def test_restore_keeps_a_resolved_suggestion_status(status: str):
+    # Only an open suggestion is expired. One a person already answered keeps
+    # its status and receives the same opaque reference as the history rows.
+    user_id = uuid.uuid4()
+    suggestion = _suggestion(uuid.uuid4(), user_id, None, uuid.uuid4())
+    suggestion.status = status
+    row = backup_service._serialize_model(suggestion)
+    rest = [key for key in row if key not in {"status", "expectation_id"}]
+
+    data = backup_service._prepare_model_data(
+        ReconciliationSuggestion,
+        {key: row[key] for key in ["status", *rest, "expectation_id"]},
+        id_maps=RestoreIdMaps(
+            by_table={}, flat_entities={}, groupings={}, opaque_references={}
+        ),
+        target_workspace_id=uuid.uuid4(),
+        target_user_id=user_id,
+        remap=True,
+        owned_reference_ids={},
+        workspace_user_ids={str(user_id)},
+    )
+
+    assert data["status"] == status
+    assert str(data["expectation_id"]) != str(suggestion.expectation_id)
