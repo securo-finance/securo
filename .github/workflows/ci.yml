@@ -60,7 +60,8 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.17"
+          # renovate: datasource=pypi depName=uv
+          version: "0.13.0"
           enable-cache: true
           cache-dependency-glob: |
             backend/uv.lock
@@ -122,7 +123,8 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.17"
+          # renovate: datasource=pypi depName=uv
+          version: "0.13.0"
           enable-cache: true
           cache-dependency-glob: |
             backend/uv.lock
@@ -208,7 +210,8 @@ jobs:
         if: needs.backend-changes.outputs.run_backend != 'false'
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.17"
+          # renovate: datasource=pypi depName=uv
+          version: "0.13.0"
           enable-cache: true
           cache-dependency-glob: |
             backend/uv.lock
