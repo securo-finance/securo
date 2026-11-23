@@ -355,17 +355,20 @@ export const auth = {
     }, readOnly)
     return data
   },
-  oidcConfig: async (): Promise<{
-    enabled: boolean
-    provider_name: string
-    local_auth_enabled: boolean
-    /** Where to send the browser so the provider session ends too (#1623). */
-    logout_url: string
-  }> => {
+  oidcConfig: async (): Promise<{ enabled: boolean; provider_name: string; local_auth_enabled: boolean }> => {
     // The login card blocks on this call while it decides which sign-in
     // methods to offer, so a hung request must fail fast and let the caller
     // fall back instead of leaving the page stuck on its loading state.
     const { data } = await api.get('/auth/oidc/config', { timeout: 5000 })
+    return data
+  },
+  oidcLogoutUrl: async (): Promise<{
+    /** Where to send the browser so the provider session ends too (#1623). */
+    logout_url: string
+  }> => {
+    // Only the sign-out asks this: it may reach the provider, so it is kept
+    // off /config, which the sign-in page waits on.
+    const { data } = await api.get('/auth/oidc/logout-url', { timeout: 10000 })
     return data
   },
 }
