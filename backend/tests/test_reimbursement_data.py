@@ -54,9 +54,16 @@ async def test_a_backup_restores_the_links_between_the_copied_rows(
 
     anchor, counterpart = aliased(Transaction), aliased(Transaction)
     result = await session.execute(
-        select(anchor.description, counterpart.description, ReimbursementAllocation.amount)
+        select(
+            anchor.description, counterpart.description, ReimbursementAllocation.amount,
+            anchor.workspace_id, counterpart.workspace_id, anchor.id, counterpart.id,
+        )
         .join(anchor, ReimbursementAllocation.anchor_id == anchor.id)
         .join(counterpart, ReimbursementAllocation.counterpart_id == counterpart.id)
         .where(ReimbursementAllocation.workspace_id == workspace_id)
     )
-    assert result.all() == [("Dinner", "Payback", Decimal("40.00"))]
+    (row,) = result.all()
+    assert row[:3] == ("Dinner", "Payback", Decimal("40.00"))
+    # Both ends are the restored copies, not the rows of the source workspace.
+    assert row[3] == row[4] == workspace_id
+    assert {row[5], row[6]}.isdisjoint({rows["Dinner"].id, rows["Payback"].id})
