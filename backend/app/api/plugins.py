@@ -238,7 +238,7 @@ async def update_connection_values(
         connections.update_values(session, connection, name=body.name, values=body.values)
     )
     if connection.status == "pending":
-        await _start(session, connection)
+        await _start(session, connection, new_values=True)
     return await _read(session, connection)
 
 
@@ -320,22 +320,30 @@ def _queue_sync(connection_id: uuid.UUID) -> None:
         pass
 
 
-def _queue_routines(connection_id: uuid.UUID) -> None:
+def _queue_routines(connection_id: uuid.UUID, *, force: bool = False) -> None:
     from app.tasks.plugin_tasks import run_plugin_routines
 
     try:
-        run_plugin_routines.delay(str(connection_id))
+        run_plugin_routines.delay(str(connection_id), force)
     except Exception:  # noqa: BLE001 - the schedule picks them up anyway
         pass
 
 
-async def _start(session: AsyncSession, connection) -> None:
-    """A connection's first run: its sync, when the integration syncs, and its routines."""
+async def _start(session: AsyncSession, connection, *, new_values: bool = False) -> None:
+    """A connection's first run: its sync, when the integration syncs, and its routines.
+
+    With `new_values` the person just saved the form again. A connection that
+    only runs routines has no sync to prove the new values, so it runs them all
+    once, right away, instead of waiting for each routine's next window (up to
+    a week). A connection that syncs is proved by that sync, and its routines
+    keep their own schedules.
+    """
     integration = await connections.integration_of(session, connection)
-    if integration is None or integration.syncs:
+    syncs = integration is None or integration.syncs
+    if syncs:
         _queue_sync(connection.id)
     if integration is not None and integration.routines:
-        _queue_routines(connection.id)
+        _queue_routines(connection.id, force=new_values and not syncs)
 
 
 def _image(data: bytes, content_type: str) -> Response:

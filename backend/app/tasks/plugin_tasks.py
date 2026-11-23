@@ -111,7 +111,7 @@ def sync_plugin_connections() -> dict:
     return {"synced": synced}
 
 
-async def _run_routines_of(connection_id: str) -> None:
+async def _run_routines_of(connection_id: str, *, force: bool = False) -> None:
     engine, session_maker = _session_maker()
     try:
         async with session_maker() as session:
@@ -119,19 +119,25 @@ async def _run_routines_of(connection_id: str) -> None:
             if connection is None:
                 return
             for routine in await connections.list_routines(session, [connection.id]):
-                if connections.routine_due(routine, connection):
-                    await connections.run_routine(session, connection, routine, scheduled=True)
+                # Forced: the values just changed and this run is what proves
+                # them, so a routine not yet due runs anyway.
+                if not force and not connections.routine_due(routine, connection):
+                    continue
+                outcome = await connections.run_routine(session, connection, routine, scheduled=not force)
+                if outcome == "needs_auth":
+                    break  # the whole connection needs signing in again
     finally:
         await engine.dispose()
         await close_redis()
 
 
 @celery_app.task(name="app.tasks.plugin_tasks.run_plugin_routines")
-def run_plugin_routines(connection_id: str) -> dict:
-    """A connection's due routines, right after it was set up (ADR 0035); the schedule does the rest."""
+def run_plugin_routines(connection_id: str, force: bool = False) -> dict:
+    """A connection's routines right after it was set up, or every one of them after
+    new values (ADR 0035); the schedule does the rest."""
     if not _enabled():
         return {"status": "disabled"}
-    asyncio.run(_run_routines_of(connection_id))
+    asyncio.run(_run_routines_of(connection_id, force=force))
     return {"status": "ok"}
 
 

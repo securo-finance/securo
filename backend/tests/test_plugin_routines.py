@@ -32,6 +32,8 @@ class Plugin:
         return {"state": {"synced": True}}
 
     def routine(self, params, context):
+        if context.secrets["password"] != "hunter22":
+            raise type("AuthError", (Exception,), {})("the key was refused")
         if params["routine"] == "broken":
             raise RuntimeError("the remote end said no to " + context.secrets["password"])
         if params["routine"] == "expired":
@@ -410,7 +412,7 @@ async def test_connecting_runs_its_routines_and_never_calls_sync(
     # The real dispatch, down to the task it queues; only the queue itself is replaced.
     queued: list[str] = []
     monkeypatch.setattr(plugin_tasks.sync_plugin_connection, "delay", lambda cid: queued.append(f"sync:{cid}"))
-    monkeypatch.setattr(plugin_tasks.run_plugin_routines, "delay", lambda cid: queued.append(f"routines:{cid}"))
+    monkeypatch.setattr(plugin_tasks.run_plugin_routines, "delay", lambda cid, force=False: queued.append(f"routines:{cid}"))
     await _install(session, ids)
     created = await client.post(
         "/api/plugins/connections",
@@ -433,6 +435,100 @@ async def test_the_first_round_runs_every_routine_of_a_new_connection(session, i
     rows = await connections.list_routines(session, [connection.id])
     assert all(r.last_run_at is not None for r in rows)
     assert connection.status == "active"
+
+
+@pytest.mark.asyncio
+async def test_renaming_a_connection_keeps_it_as_it_was(session, ids, installed):
+    await _install(session, ids)
+    connection = await _connect(session, ids)
+    assert await connections.run_routine(session, connection, await _routine(session, connection, "send")) == "ran"
+    await session.refresh(connection)
+    assert connection.status == "active"
+
+    renamed = await connections.update_values(session, connection, name="Payroll", values={})
+    assert renamed.name == "Payroll"
+    assert renamed.status == "active"
+
+
+@pytest.mark.asyncio
+async def test_saving_new_keys_runs_the_routines_at_once(
+    client: AsyncClient, auth_headers: dict, session, ids, installed, monkeypatch
+):
+    # The dispatch is real down to the task it queues; only the queue is replaced.
+    queued: list[tuple[str, bool]] = []
+    monkeypatch.setattr(plugin_tasks.run_plugin_routines, "delay", lambda cid, force=False: queued.append((cid, force)))
+    monkeypatch.setattr(plugin_tasks.sync_plugin_connection, "delay", lambda cid: queued.append(("sync", cid)))
+    await _install(session, ids)
+    connection = await _connect(session, ids)
+    connection.status = "active"
+    await session.commit()
+
+    renamed = await client.put(
+        f"/api/plugins/connections/{connection.id}/values", json={"name": "Payroll", "values": {}}, headers=auth_headers
+    )
+    assert renamed.status_code == 200 and renamed.json()["status"] == "active"
+    # A rename alone asks for nothing to run.
+    assert queued == []
+
+    updated = await client.put(
+        f"/api/plugins/connections/{connection.id}/values", json={"values": {"password": "hunter23"}}, headers=auth_headers
+    )
+    assert updated.status_code == 200 and updated.json()["status"] == "pending"
+    # New keys: the routines run now, not at each own next window.
+    assert queued == [(str(connection.id), True)]
+
+
+@pytest.mark.asyncio
+async def test_new_keys_run_every_routine_even_when_none_is_due(session, ids, installed, monkeypatch):
+    await _install(session, ids)
+    connection = await _connect(session, ids)
+    for key in ("send", "collect"):
+        await connections.run_routine(session, connection, await _routine(session, connection, key))
+    rows = await connections.list_routines(session, [connection.id])
+    before = {r.routine: r.last_run_at for r in rows}
+    assert all(not connections.routine_due(r, connection) for r in rows if r.routine in ("send", "collect"))
+
+    monkeypatch.setattr(plugin_tasks, "_session_maker", lambda: (_Engine(), lambda: _Same(session)))
+    monkeypatch.setattr(plugin_tasks, "close_redis", _noop)
+    await plugin_tasks._run_routines_of(str(connection.id), force=True)
+
+    rows = await connections.list_routines(session, [connection.id])
+    for row in rows:
+        if row.routine in ("send", "collect"):
+            # It ran again even though its own window hadn't come.
+            assert row.state["runs"] == 2 and row.last_run_at != before[row.routine]
+
+
+@pytest.mark.asyncio
+async def test_a_refused_key_is_fixed_by_new_keys_that_run_the_routines(
+    client: AsyncClient, auth_headers: dict, session, ids, installed, monkeypatch
+):
+    # The queue is a no-op here: this test runs what it would have run.
+    monkeypatch.setattr(plugin_tasks.run_plugin_routines, "delay", lambda cid, force=False: None)
+    await _install(session, ids)
+    connection = await _connect(session, ids, bundle=BUNDLE, password="refused")
+    connection_id = connection.id
+    assert await connections.run_routine(session, connection, await _routine(session, connection, "send")) == "ran"
+    await session.refresh(connection)
+    assert connection.status == "needs_auth"
+    # Nothing runs while the key is refused.
+    refused = await client.post(f"/api/plugins/connections/{connection_id}/routines/send/run", headers=auth_headers)
+    assert refused.status_code == 409
+
+    fixed = await client.put(
+        f"/api/plugins/connections/{connection_id}/values", json={"values": {"password": "hunter22"}}, headers=auth_headers
+    )
+    assert fixed.status_code == 200 and fixed.json()["status"] == "pending"
+
+    # What the API queued runs every routine at once and the connection is working.
+    session.expire_all()
+    monkeypatch.setattr(plugin_tasks, "_session_maker", lambda: (_Engine(), lambda: _Same(session)))
+    monkeypatch.setattr(plugin_tasks, "close_redis", _noop)
+    await plugin_tasks._run_routines_of(str(connection_id), force=True)
+    await session.refresh(connection)
+    assert connection.status == "active"
+    send = await _routine(session, connection, "send")
+    assert send.last_error is None and send.state["runs"] == 1
 
 
 class _Engine:

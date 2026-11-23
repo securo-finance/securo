@@ -393,6 +393,27 @@ describe('PluginConnections: files and routines', () => {
     await waitFor(() => expect(screen.getAllByText(new RegExp(t('plugins.connections.routineNeverRan'))).length).toBe(1))
   })
 
+  it('offers to update the keys of a connection whose key was refused', async () => {
+    const refused: PluginConnection = {
+      ...WITH_ROUTINES,
+      status: 'needs_auth',
+      last_error: 'AuthError: the key was refused',
+    }
+    api.plugins.connections.mockResolvedValue([refused])
+    const { user } = renderWithProviders(
+      <WorkspaceContext.Provider value={workspace(true)}>
+        <PluginConnections plugin={FILES} />
+      </WorkspaceContext.Provider>,
+    )
+    // Nothing runs until the keys are fixed, but the form that set it up is there.
+    expect(await screen.findByText(t('plugins.connections.status.keysRefused'))).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: t('plugins.connections.runRoutineAria', { name: 'Send' }) })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: t('plugins.connections.updateKeys') }))
+    expect(screen.getByText(t('plugins.connections.editTitle', { name: 'Main' }))).toBeInTheDocument()
+    // A field already set can stay blank; it keeps its value.
+    expect(screen.getByLabelText('Key bundle')).toHaveAttribute('type', 'file')
+  })
+
   it("doesn't offer to run a routine to viewers", async () => {
     api.plugins.connections.mockResolvedValue([WITH_ROUTINES])
     renderWithProviders(
