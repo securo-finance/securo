@@ -76,6 +76,15 @@ def _live_allocations(workspace_id: Optional[uuid.UUID]):
     return filters
 
 
+def on_a_live_link(workspace_id: Optional[uuid.UUID] = None):
+    """SQL filter: the row is on either side of an allocation that counts."""
+    live = _live_allocations(workspace_id)
+    return or_(
+        Transaction.id.in_(select(ReimbursementAllocation.anchor_id).where(*live).correlate(None)),
+        Transaction.id.in_(select(ReimbursementAllocation.counterpart_id).where(*live).correlate(None)),
+    )
+
+
 def _magnitude(tx: Transaction) -> Decimal:
     return abs(Decimal(str(tx.amount or 0)))
 

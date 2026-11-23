@@ -59,12 +59,17 @@ async def get_balance_history(
     month: Optional[date] = Query(None),
     account_ids: Optional[list[uuid.UUID]] = Query(None),
     comparison_months: Optional[list[date]] = Query(None),
+    netting: bool = Query(
+        True,
+        description="Count rows linked by reimbursements for the user's share only, not the money that passed through. Ignored when `account_ids` is given: the response's `netted` says what was applied.",
+    ),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ) -> BalanceHistory:
     try:
         return await dashboard_service.get_balance_history(
-            session, ctx.workspace.id, ctx.user_id, month, account_ids, comparison_months
+            session, ctx.workspace.id, ctx.user_id, month, account_ids, comparison_months,
+            netting=netting,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

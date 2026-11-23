@@ -201,3 +201,44 @@ async def test_the_list_and_the_row_carry_the_link(client, auth_headers):
 
     resp = await client.get(f"/api/transactions/{dinner['id']}", headers=auth_headers)
     assert resp.json()["reimbursement_net"] == pytest.approx(70.0)
+
+
+@pytest.mark.asyncio
+async def test_balance_history_takes_a_netting_switch(client, auth_headers):
+    from datetime import timedelta
+
+    from app.core.app_clock import app_today
+
+    last_month = (app_today().replace(day=1) - timedelta(days=1)).replace(day=1)
+    account = await _account(client, auth_headers)
+    dinner = await _create(
+        client, auth_headers, account["id"], 400, date=last_month.replace(day=3).isoformat()
+    )
+    payback = await _create(
+        client, auth_headers, account["id"], 100, "credit", date=last_month.replace(day=4).isoformat()
+    )
+    resp = await client.put(
+        f"/api/transactions/{dinner['id']}/reimbursements", headers=auth_headers, json=_body((payback, 100))
+    )
+    assert resp.status_code == 200, resp.text
+
+    def day(body, number):
+        return next(p["balance"] for p in body["current"] if p["day"] == number)
+
+    params = {"month": last_month.isoformat(), "comparison_months": (last_month - timedelta(days=1)).replace(day=1).isoformat()}
+    netted = (await client.get("/api/dashboard/balance-history", headers=auth_headers, params=params)).json()
+    real = (
+        await client.get(
+            "/api/dashboard/balance-history", headers=auth_headers, params={**params, "netting": "false"}
+        )
+    ).json()
+    scoped = (
+        await client.get(
+            "/api/dashboard/balance-history",
+            headers=auth_headers,
+            params={**params, "account_ids": account["id"]},
+        )
+    ).json()
+
+    assert (netted["netted"], real["netted"], scoped["netted"]) == (True, False, False)
+    assert (day(netted, 3), day(real, 3), day(scoped, 3)) == (-300, -400, -400)

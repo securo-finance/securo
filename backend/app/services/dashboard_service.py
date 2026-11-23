@@ -1726,6 +1726,51 @@ async def _balance_at(
     return total
 
 
+def _balance_row_filters(
+    workspace_id: uuid.UUID,
+    start: date,
+    end: date,
+    *,
+    account_ids: Optional[list[uuid.UUID]] = None,
+    include_pending: bool = False,
+    exclude_opening_balance: bool = False,
+    month_starts: Optional[list[date]] = None,
+) -> list:
+    """The rows that move the balance curve, over [start, end) or whole months.
+
+    One definition for the real deltas and for what netting takes off them, so
+    the two always look at the same rows. The query must join `Account` and
+    outer-join `Category`.
+    """
+    date_filters = (
+        [
+            or_(*[
+                and_(
+                    Transaction.date >= month_start.replace(day=1),
+                    Transaction.date < _month_range(month_start)[1],
+                )
+                for month_start in month_starts
+            ])
+        ]
+        if month_starts is not None
+        else [Transaction.date >= start, Transaction.date < end]
+    )
+    return [
+        Transaction.workspace_id == workspace_id,
+        Account.is_closed == False,
+        *date_filters,
+        Transaction.date <= app_today(),
+        Transaction.is_ignored == False,
+        *([] if include_pending else [Transaction.status == "posted"]),
+        *([Transaction.source != "opening_balance"] if exclude_opening_balance else []),
+        or_(
+            Transaction.category_id.is_(None),
+            Category.is_ignored == False,
+        ),
+        *([Transaction.account_id.in_(account_ids)] if account_ids is not None else []),
+    ]
+
+
 async def _daily_balance_deltas_by_date(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -1746,22 +1791,14 @@ async def _daily_balance_deltas_by_date(
     ``_balance_at`` and avoids per-transaction FX conversion loops.
     """
     signed = signed_amount_expr(Account.currency)
-    status_filter = [] if include_pending else [Transaction.status == "posted"]
     if month_starts is not None and not month_starts:
         return {}
-
-    date_filters = (
-        [
-            or_(*[
-                and_(
-                    Transaction.date >= month_start.replace(day=1),
-                    Transaction.date < _month_range(month_start)[1],
-                )
-                for month_start in month_starts
-            ])
-        ]
-        if month_starts is not None
-        else [Transaction.date >= start, Transaction.date < end]
+    filters = _balance_row_filters(
+        workspace_id, start, end,
+        account_ids=account_ids,
+        include_pending=include_pending,
+        exclude_opening_balance=exclude_opening_balance,
+        month_starts=month_starts,
     )
     result = await session.execute(
         select(
@@ -1771,20 +1808,7 @@ async def _daily_balance_deltas_by_date(
         )
         .join(Account, Transaction.account_id == Account.id)
         .outerjoin(Category, Transaction.category_id == Category.id)
-        .where(
-            Transaction.workspace_id == workspace_id,
-            Account.is_closed == False,
-            *date_filters,
-            Transaction.date <= app_today(),
-            Transaction.is_ignored == False,
-            *status_filter,
-            *([Transaction.source != "opening_balance"] if exclude_opening_balance else []),
-            or_(
-                Transaction.category_id.is_(None),
-                Category.is_ignored == False,
-            ),
-            *( [Transaction.account_id.in_(account_ids)] if account_ids is not None else [] ),
-        )
+        .where(*filters)
         .group_by(Transaction.date, Account.currency)
     )
 
@@ -1797,6 +1821,73 @@ async def _daily_balance_deltas_by_date(
             amount = converted
         deltas[tx_date] = deltas.get(tx_date, 0.0) + float(amount)
     return deltas
+
+
+async def _netting_effects_by_date(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    start: date,
+    end: date,
+    *,
+    primary_currency_hint: Optional[str] = None,
+    account_ids: Optional[list[uuid.UUID]] = None,
+    include_pending: bool = False,
+    exclude_opening_balance: bool = False,
+    month_starts: Optional[list[date]] = None,
+) -> dict[date, float]:
+    """What netting adds to each day's balance delta, keyed by date.
+
+    The balance curve counts every row whole; "netted" counts a row linked to
+    others only for the share that is still its own (ADR 0031), so a dinner
+    paid for four moves the line by the user's share, once, and the paybacks
+    move it not at all. The change to a day is `delta * (share - 1)` for each
+    linked row dated that day, grouped and converted like the real deltas.
+
+    Reimbursement links are the one kind of netting today. Others join in here.
+    """
+    from app.services.reimbursement_netting import on_a_live_link, reimbursement_share_fractions
+
+    if month_starts is not None and not month_starts:
+        return {}
+    filters = _balance_row_filters(
+        workspace_id, start, end,
+        account_ids=account_ids,
+        include_pending=include_pending,
+        exclude_opening_balance=exclude_opening_balance,
+        month_starts=month_starts,
+    )
+    result = await session.execute(
+        select(Transaction, Account.currency)
+        .join(Account, Transaction.account_id == Account.id)
+        .outerjoin(Category, Transaction.category_id == Category.id)
+        .where(*filters, on_a_live_link(workspace_id))
+    )
+    rows = result.all()
+    if not rows:
+        return {}
+    fractions = await reimbursement_share_fractions(session, [tx for tx, _ in rows])
+
+    by_currency: dict[tuple[date, str], Decimal] = {}
+    for tx, account_currency in rows:
+        share = fractions.get(tx.id)
+        if share is None:
+            continue
+        amount = (
+            Decimal(str(tx.amount))
+            if (tx.currency or "").upper() == (account_currency or "").upper()
+            else Decimal(str(tx.amount_account or 0))
+        )
+        signed = abs(amount) if tx.type == "credit" else -abs(amount)
+        key = (tx.date, account_currency)
+        by_currency[key] = by_currency.get(key, Decimal("0")) + signed * (share - 1)
+
+    primary_currency = primary_currency_hint or get_settings().default_currency
+    effects: dict[date, float] = {}
+    for (tx_date, currency), amount in by_currency.items():
+        if currency != primary_currency:
+            amount, _ = await convert(session, amount, currency, primary_currency)
+        effects[tx_date] = effects.get(tx_date, 0.0) + float(amount)
+    return effects
 
 
 async def _daily_deltas(
@@ -1955,7 +2046,16 @@ async def get_balance_history(
     month: Optional[date] = None,
     account_ids: Optional[list[uuid.UUID]] = None,
     comparison_months: Optional[list[date]] = None,
+    netting: bool = True,
 ) -> BalanceHistory:
+    """The month's running balance, with the previous months to compare it to.
+
+    `netting` counts rows linked by reimbursements only for the share that is
+    the user's own (ADR 0031) instead of the money that passed through the
+    accounts. It applies only to the whole workspace: a subset of accounts
+    cannot say which side of a link it holds, so a filtered chart stays real.
+    `BalanceHistory.netted` says whether it was applied.
+    """
     if not month:
         month = app_today().replace(day=1)
 
@@ -1988,11 +2088,30 @@ async def get_balance_history(
         else:
             balance_account_ids = [i for i in account_ids if i not in loan_ids]
 
-    # Starting balances
+    netted = netting and account_ids is None
+
+    async def netting_effects(start: date, end: date, **kwargs) -> dict[date, float]:
+        if not netted:
+            return {}
+        return await _netting_effects_by_date(
+            session, workspace_id, start, end,
+            primary_currency_hint=primary_currency, account_ids=balance_account_ids,
+            exclude_opening_balance=True, **kwargs,
+        )
+
+    def with_effects(deltas: dict[int, float], effects: dict[date, float]) -> dict[int, float]:
+        merged = dict(deltas)
+        for effect_date, effect in effects.items():
+            merged[effect_date.day] = merged.get(effect_date.day, 0.0) + effect
+        return merged
+
+    # Starting balances. Netting moves money between days, so what it moved
+    # before the month starts is part of where the month begins.
     current_start = await _balance_at(
         session, workspace_id, month_start - timedelta(days=1),
         primary_currency_hint=primary_currency, account_ids=balance_account_ids,
     )
+    current_start += sum((await netting_effects(date.min, month_start)).values())
 
     # Daily deltas from real transactions
     current_deltas = await _daily_deltas(
@@ -2000,6 +2119,7 @@ async def get_balance_history(
         primary_currency_hint=primary_currency, account_ids=balance_account_ids,
         exclude_opening_balance=True,
     )
+    current_deltas = with_effects(current_deltas, await netting_effects(month_start, month_end))
 
     comparison = None
     comparison_month = None
@@ -2015,6 +2135,9 @@ async def get_balance_history(
             primary_currency_hint=primary_currency,
             account_ids=balance_account_ids,
         )
+        comparison_opening_balance += sum(
+            (await netting_effects(date.min, comparison_start)).values()
+        )
         comparison_deltas = await _daily_deltas(
             session,
             workspace_id,
@@ -2025,6 +2148,9 @@ async def get_balance_history(
             exclude_opening_balance=True,
         )
         if comparison_deltas:
+            comparison_deltas = with_effects(
+                comparison_deltas, await netting_effects(comparison_start, comparison_end)
+            )
             comparison = []
             comparison_balance = comparison_opening_balance
             comparison_days = (comparison_end - comparison_start).days
@@ -2046,9 +2172,22 @@ async def get_balance_history(
             exclude_opening_balance=True,
             month_starts=selected_comparison_months,
         )
+        for effect_date, effect in (await netting_effects(
+            selected_comparison_months[0],
+            _month_range(selected_comparison_months[-1])[1],
+            month_starts=selected_comparison_months,
+        )).items():
+            baseline_deltas[effect_date] = baseline_deltas.get(effect_date, 0.0) + effect
         baseline = _baseline_from_deltas(
             baseline_deltas, selected_comparison_months, days_in_month, today
         )
+
+    async def forecast_netting_shares(transactions: list[Transaction]) -> dict[uuid.UUID, float]:
+        """The share of each pending or future row that still counts, as a float."""
+        from app.services.reimbursement_netting import reimbursement_share_fractions
+
+        shares = await reimbursement_share_fractions(session, transactions)
+        return {tx_id: float(share) for tx_id, share in shares.items()}
 
     # Recurring projections for future days of current month (converted to primary currency)
     proj_deltas: dict[int, float] = {}
@@ -2062,12 +2201,13 @@ async def get_balance_history(
             carried_forecasts = await _get_forecast_transactions(
                 session, workspace_id, date.min, month_start, balance_account_ids
             )
+            carried_shares = await forecast_netting_shares(carried_forecasts) if netted else {}
             for tx in carried_forecasts:
                 if tx.is_ignored or (tx.category and tx.category.is_ignored):
                     continue
                 if tx.account and tx.account.connection_id and tx.status == "pending" and tx.date <= today:
                     continue
-                current_start += await _signed_forecast_amount_primary(
+                current_start += carried_shares.get(tx.id, 1.0) * await _signed_forecast_amount_primary(
                     session, tx, primary_currency
                 )
 
@@ -2079,10 +2219,11 @@ async def get_balance_history(
             month_end,
             balance_account_ids,
         )
+        forecast_shares = await forecast_netting_shares(forecast_transactions) if netted else {}
         for tx in forecast_transactions:
             if tx.is_ignored or (tx.category and tx.category.is_ignored):
                 continue
-            amount = _signed_transaction_amount(tx)
+            amount = _signed_transaction_amount(tx) * forecast_shares.get(tx.id, 1.0)
             if tx.account and tx.account.connection_id and tx.date <= today:
                 continue
             converted, _ = await convert(
@@ -2119,6 +2260,7 @@ async def get_balance_history(
 
     return BalanceHistory(
         current=current_daily,
+        netted=netted,
         opening_balance=round(current_start, 2),
         baseline=baseline,
         comparison=comparison,
