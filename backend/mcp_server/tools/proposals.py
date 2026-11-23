@@ -663,19 +663,25 @@ async def propose_update_budget(
     if amount <= 0:
         return {"error": "amount must be greater than zero"}
     new_amount = Decimal(str(amount))
-    if new_amount == budget.amount:
+    # The new amount is in the proposer's currency, as the save stamps it;
+    # the stored limit is compared in that currency too, at its month's rate.
+    currency = await budget_service._primary_currency(session, ctx.user_id)
+    current = await budget_service.amount_in_currency(
+        session, budget.amount, budget.currency, currency, budget.month
+    )
+    if new_amount == current.quantize(Decimal("0.01")):
         return {"error": "the budget already has that amount; nothing to change"}
 
     preview = {
         "kind": "update_budget",
         "target": _budget_target(budget, category_name),
-        "changes": {"amount": float(new_amount)},
+        "changes": {"amount": float(new_amount), "currency": currency},
         "apply_endpoint": f"PATCH /api/budgets/{budget.id}",
     }
 
     if _can_apply(ctx, apply):
         updated = await budget_service.update_budget(
-            session, budget.id, ws_id, BudgetUpdate(amount=new_amount)
+            session, budget.id, ws_id, BudgetUpdate(amount=new_amount), ctx.user_id
         )
         if updated is None:
             return {**preview, "error": "budget not found"}

@@ -213,6 +213,18 @@ describe('Budget spending in the inline editor', () => {
     expect(budgetRow().getByRole('progressbar').firstElementChild).toHaveClass(color)
   })
 
+  it('edits a limit typed in another currency in the display currency', async () => {
+    api.budgets.list.mockResolvedValue([{ ...rent, amount: 4500, currency: 'BRL', amount_primary: '900.00' }])
+    mockSpending()
+    renderWithProviders(<BudgetsPage />)
+    await screen.findByText('$450.00')
+
+    expect(budgetInput()).toHaveValue('900')
+    expect(budgetRow().getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50')
+    expect(screen.getByRole('button', { name: t('common.save') })).toBeDisabled()
+    expectNoBudgetWrites()
+  })
+
   it('previews a valid draft without persisting anything before Save', async () => {
     mockSpending()
     const { user } = renderWithProviders(<BudgetsPage />)
@@ -525,8 +537,9 @@ describe('Copying the previous month', () => {
 
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: t('budgets.copyTitle') })).toBeInTheDocument()
-    // Pinned to the active workspace, so a switch in another tab cannot move it.
-    expect(api.budgets.list).toHaveBeenCalledWith('2026-09-01', 'ws-1')
+    // Pinned to the active workspace, so a switch in another tab cannot move
+    // it, and read at the target month's rate for the preview total.
+    expect(api.budgets.list).toHaveBeenCalledWith('2026-09-01', 'ws-1', '2026-10-01')
   })
 
   it('offers the copy action in the empty month state', async () => {
