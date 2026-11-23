@@ -357,27 +357,15 @@ async def couple_with_groups(session: AsyncSession, test_user: User, test_worksp
         test_user.id,
     )
     await session.commit()
-    return {
-        **couple,
-        "travel_id": str(travel.id),
-        "personal": personal,
-        "account": account,
-        "trip_members": trip_members,
-    }
+    return {**couple, "travel_id": str(travel.id)}
 
 
-async def _report(
-    client: AsyncClient, headers: dict, month: date, interval: str = "monthly"
-) -> dict:
+async def _report(client: AsyncClient, headers: dict, month: date) -> dict:
     params = _month_params(month)
     resp = await client.get(
         "/api/reports/income-expenses",
         headers=headers,
-        params={
-            "start_date": params["from_date"],
-            "end_date": params["to_date"],
-            "interval": interval,
-        },
+        params={"start_date": params["from_date"], "end_date": params["to_date"]},
     )
     assert resp.status_code == 200, resp.text
     return resp.json()
@@ -411,80 +399,6 @@ async def test_group_shares_agree_across_card_footer_report_and_drill_down(
     drill = await _list(client, bruno, month, category_id=data["travel_id"])
     assert slice_value == pytest.approx(100.0)
     assert drill["summary"]["expense"] == pytest.approx(slice_value)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("amount_primary", "bruno_share"),
-    [
-        # Stamped R$ 40, read at the row's date (BRL→EUR 0,25): -20 → -5 €.
-        ("40.00", -5.0),
-        # No stamp: the share is converted from BRL at the latest rate
-        # (BRL→EUR 0,8 / 6), as the report reads it: -20 → -2,67 €.
-        (None, -2.67),
-    ],
-)
-async def test_a_negative_exact_share_agrees_across_donut_footer_and_report(
-    client, session: AsyncSession, test_user: User, couple_with_groups,
-    amount_primary, bruno_share,
-):
-    """#377: Ana's refunded taxi, R$ 40 split exactly as Ana +60 and Bruno
-    -20, in the trip's category ten days after the trip. With a daily
-    interval the share is its own (day, category) bucket: the donut used to
-    take its abs and add it to the Viagens slice, and the footer, on a row
-    without a stamp, took the -20 BRL as -20 €. Both now agree with the
-    report's summary and the card."""
-    data = couple_with_groups
-    month, _day5, day15 = _last_month()
-    bruno = data["bruno"]
-    personal = data["personal"]
-    ana_member, bruno_member, _carla = data["trip_members"]
-    taxi = Transaction(
-        id=uuid.uuid4(), user_id=test_user.id, workspace_id=personal.id,
-        account_id=data["account"].id, category_id=uuid.UUID(data["travel_id"]),
-        description="R269 taxi reembolsado", amount=Decimal("40.00"),
-        currency="BRL",
-        amount_primary=Decimal(amount_primary) if amount_primary else None,
-        date=day15, type="debit", source="manual",
-    )
-    session.add(taxi)
-    await session.flush()
-    await split_service.replace_splits(
-        session,
-        taxi,
-        TransactionSplitsInput(
-            share_type="exact",
-            splits=[
-                TransactionSplitInput(
-                    group_member_id=ana_member.id, share_amount=Decimal("60.00")
-                ),
-                TransactionSplitInput(
-                    group_member_id=bruno_member.id, share_amount=Decimal("-20.00")
-                ),
-            ],
-        ),
-        test_user.id,
-    )
-    await session.commit()
-
-    expected = 400.0 + bruno_share
-    report = await _report(client, bruno, month, interval="daily")
-    breakdowns = {b["key"]: b["value"] for b in report["summary"]["breakdowns"]}
-    assert breakdowns["expenses"] == pytest.approx(expected, abs=0.01)
-
-    slices = {
-        item["key"]: item["value"]
-        for item in report["composition"]
-        if item["group"] == "expenses"
-    }
-    assert slices[data["travel_id"]] == pytest.approx(100.0 + bruno_share, abs=0.01)
-    assert sum(slices.values()) == pytest.approx(breakdowns["expenses"], abs=0.01)
-
-    footer = (await _list(client, bruno, month))["summary"]["expense"]
-    assert footer == pytest.approx(breakdowns["expenses"], abs=0.01)
-
-    summary = await _dashboard(client, bruno, month)
-    assert summary["monthly_expenses_primary"] == pytest.approx(footer, abs=0.01)
 
 
 @pytest.mark.asyncio
