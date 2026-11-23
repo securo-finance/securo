@@ -6,6 +6,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  CircleDashed,
   Coins,
   CreditCard,
   EyeClosed,
@@ -42,6 +43,7 @@ export type MobileFilterView =
   | 'status'
   | 'ignored'
   | 'flagged'
+  | 'unpaid'
   | 'unread'
   | 'date'
   | 'amount'
@@ -72,6 +74,7 @@ interface MobileTransactionsFilterMenuProps {
   type: string
   status: string
   hideIgnored: boolean
+  filterUnpaid: boolean
   flagFilter: FlagFilter
   flagOptions: { value: FlagFilter; label: string }[]
   onlyUnread: boolean
@@ -97,6 +100,7 @@ interface MobileTransactionsFilterMenuProps {
   onTypeChange: (value: string) => void
   onStatusChange: (value: string) => void
   onHideIgnoredChange: (value: boolean) => void
+  onUnpaidChange: (value: boolean) => void
   onFlagFilterChange: (value: FlagFilter) => void
   onOnlyUnreadChange: (value: boolean) => void
   onDateRangeChange: (from: string, to: string) => void
@@ -531,6 +535,7 @@ function buildRootOptions(
     { view: 'status', icon: ListChecks, label: labels.status, summary: summaries.status },
     { view: 'ignored', icon: EyeClosed, label: labels.ignored, summary: summaries.ignored },
     { view: 'flagged', icon: Flag, label: labels.flagged, summary: summaries.flagged },
+    { view: 'unpaid', icon: CircleDashed, label: labels.unpaid, summary: summaries.unpaid },
     { view: 'date', icon: CalendarIcon, label: labels.date, summary: summaries.date },
     { view: 'amount', icon: Coins, label: labels.amount, summary: summaries.amount },
   ]
@@ -558,6 +563,7 @@ function buildLabels(
     status: t('transactions.status'),
     ignored: t('transactions.ignoredRows'),
     flagged: t('transactions.flagged'),
+    unpaid: t('transactions.onlyUnpaid'),
     unread: t('transactions.unreadRows'),
     date: t('transactions.filtersBar.date'),
     amount: t('transactions.filtersBar.amount'),
@@ -605,6 +611,13 @@ function MobileFilterDetail({
   }
   if (menu.view === 'flagged') {
     return <MobileSelectionView options={menu.flagOptions} selectedValue={menu.flagFilter} onChange={(value) => menu.onFlagFilterChange(value as FlagFilter)} />
+  }
+  if (menu.view === 'unpaid') {
+    const options = [
+      { value: 'all', label: t('transactions.all') },
+      { value: 'unpaid', label: t('transactions.onlyUnpaid') },
+    ]
+    return <MobileSelectionView options={options} selectedValue={menu.filterUnpaid ? 'unpaid' : 'all'} onChange={(value) => menu.onUnpaidChange(value === 'unpaid')} />
   }
   if (menu.view === 'unread') {
     const options = [

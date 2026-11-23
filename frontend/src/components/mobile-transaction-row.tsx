@@ -3,7 +3,7 @@ import { AccountIcon } from '@/components/account-icon'
 import { CategorySplitBadge, TransactionCategoryIcon } from '@/components/category-lines-display'
 import { isSplitByCategory } from '@/lib/category-lines'
 import type { Transaction, Account } from '@/types'
-import { AlertTriangle, ArrowLeftRight, CalendarClock, ChartNoAxesColumn, Clock, EyeClosed, Paperclip, Repeat } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, CalendarClock, ChartNoAxesColumn, CircleDashed, Clock, EyeClosed, Paperclip, Repeat } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { TransactionFlagMarker } from '@/components/transaction-flag-marker'
 import { useTranslation } from 'react-i18next'
@@ -161,6 +161,17 @@ export function MobileTransactionRow({
             />
           )}
           <TransactionFlagMarker tx={tx} locale={dateLocale ?? locale} className="[&>svg]:h-3 [&>svg]:w-3" />
+          {/* Unpaid (issue #15). The mark itself is flipped in the dialog the
+              row opens; here it only says the money has not moved. */}
+          {tx.is_paid === false && (
+            <CircleDashed
+              className="h-3 w-3 shrink-0 text-amber-500"
+              role="img"
+              aria-label={t('transactions.unpaid')}
+            >
+              <title>{t('transactions.unpaid')}</title>
+            </CircleDashed>
+          )}
           {tx.recurring_transaction_id != null && !virtual && (
             <span className="text-[9px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1 py-0.5 rounded-full shrink-0">
               R

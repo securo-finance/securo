@@ -406,6 +406,10 @@ export interface Transaction {
   // A marker to come back to the row later, with an optional reminder date
   // (YYYY-MM-DD) and note; only the flagged views read them.
   is_flagged?: boolean
+  // Whether the money has already moved (issue #15). A statement row opens as
+  // paid and a manual one as unpaid; only the user's mark changes it. No
+  // total, balance or report reads it.
+  is_paid?: boolean
   flag_due_date?: string | null
   flag_note?: string | null
   // Balance right after this row, filled by the server only when the list

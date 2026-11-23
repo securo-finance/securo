@@ -48,6 +48,11 @@ const KNOWN_MESSAGES: Record<string, string> = {
     'categoryLines.errors.destinationInvalid',
   'These budgets are in different currencies and there is no exchange rate for their month to combine them.':
     'categoryLines.errors.mergeNeedsRate',
+  // Budget amount bounds, raised by the schema as a 422 for every create,
+  // update and batch call.
+  'The budget limit must be at least 0.01': 'budgets.amountTooSmall',
+  'The budget limit is too large': 'budgets.amountTooLarge',
+  'The budget limit cannot be negative': 'budgets.amountNegative',
   // The bounds of app/core/money.py, on a typed or a derived value.
   'amount must be greater than zero': 'transactions.amountErrors.notPositive',
   'amount must be at least 0.01': 'transactions.amountErrors.tooSmall',

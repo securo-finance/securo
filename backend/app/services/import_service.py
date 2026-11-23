@@ -1368,6 +1368,8 @@ async def import_transactions(
             placeholder.external_id = txn_data.external_id
             placeholder.import_id = import_log.id
             placeholder.status = "posted"
+            # The bill's charge is on the statement file (#15).
+            placeholder.is_paid = True
             # The placeholder was generated for the person; the imported charge
             # that replaced it was not reviewed yet (issue #636). Duplicates
             # above are skipped before this point, so they keep their state.

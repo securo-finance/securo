@@ -242,6 +242,7 @@ async def get_transactions(
     exclude_ignored: bool = False,
     flagged_only: bool = False,
     flag_due: Optional[FlagDue] = None,
+    unpaid_only: bool = False,
     unread_only: bool = False,
     include_running_balance: bool = False,
     primary_currency: Optional[str] = None,
@@ -414,6 +415,8 @@ async def get_transactions(
         base_query = base_query.where(is_not_ignored())
     if flagged_only or flag_due is not None:
         base_query = base_query.where(_flagged_in_workspace(workspace_id, flag_due))
+    if unpaid_only:
+        base_query = base_query.where(Transaction.is_paid.is_(False))
     if unread_only:
         # The review queue of issue #636: only rows nobody has looked at yet.
         # Scoped to this workspace on purpose. The default list also surfaces
@@ -882,7 +885,7 @@ async def get_transactions(
                     txn_type, tags, status, currency, account_types, transaction_ids,
                     min_amount is not None, max_amount is not None,
                     exclude_transfers, user_pnl_only, exclude_ignored, flagged_only, flag_due is not None,
-                    unread_only, group_id,
+                    unpaid_only, unread_only, group_id,
                     # `bill_id` and `unbilled_only` pick a card's statement
                     # window, not a smaller ledger: the walk still covers
                     # every row that moves the balance (#920).
@@ -1259,6 +1262,10 @@ async def create_transaction(
         installment_total_amount=data.installment_total_amount,
         installment_purchase_date=data.installment_purchase_date,
     )
+    # A manual entry starts unpaid (the model's default); only an explicit
+    # value from the caller overrides that.
+    if data.is_paid is not None:
+        transaction.is_paid = data.is_paid
     if data.effective_bill_date is not None:
         await _resync_bill_link_from_override(session, transaction, account)
     apply_effective_date(transaction, account)
@@ -1377,6 +1384,9 @@ async def create_installment_series(
             installment_purchase_date=purchase_date,
             installment_series_id=series_id,
         )
+        # Same rule as create_transaction: unpaid unless the caller says so.
+        if base.is_paid is not None:
+            tx.is_paid = base.is_paid
         if base.effective_bill_date is not None:
             await _resync_bill_link_from_override(session, tx, account)
         apply_effective_date(tx, account)
