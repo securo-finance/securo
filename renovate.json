@@ -22,6 +22,12 @@
       "minimumReleaseAge": "7 days"
     },
     {
+      "description": "eslint-plugin-react-hooks 7.1 makes the React Compiler checks stricter: the code trips 24 findings (1 error, a ref written during render in frontend/src/pages/dashboard.tsx:180, plus 23 warnings), and `npm run lint -- --max-warnings=0` makes the warnings fatal as well. Held below 7.1.0 with an exact pin in frontend/package.json, until those findings are fixed in a change of their own.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["eslint-plugin-react-hooks"],
+      "allowedVersions": "<7.1.0"
+    },
+    {
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "GitHub Actions (non-major)"
