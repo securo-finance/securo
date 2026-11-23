@@ -1614,6 +1614,8 @@
     "saved": "Budgets saved",
     "budgetFor": "Budget for {{category}}",
     "invalidAmount": "Zadejte platnou částku nula nebo vyšší.",
+    "amountTooSmall": "Limit rozpočtu musí být alespoň 0,01.",
+    "amountTooLarge": "Limit rozpočtu je příliš velký.",
     "repeatEveryMonthFor": "Repeat the {{category}} budget every month",
     "previousMonth": "Previous month",
     "nextMonth": "Next month",

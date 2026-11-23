@@ -1,20 +1,44 @@
 import uuid
 from datetime import date as _Date
 from decimal import Decimal
-from typing import Optional
+from typing import Annotated, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+from pydantic_core import PydanticCustomError
+
+# A budget limit is money stored in Numeric(15, 2). A limit that is not
+# positive cannot be spent against, and one that does not fit the column fails
+# in the driver, where the answer would carry its internals.
+MIN_BUDGET_AMOUNT = Decimal("0.01")
+MAX_BUDGET_AMOUNT = Decimal("1e13")
+
+
+def _validate_budget_amount(value: Decimal) -> Decimal:
+    if value < MIN_BUDGET_AMOUNT:
+        raise PydanticCustomError(
+            "budget_amount_not_positive",
+            "The budget limit must be at least 0.01",
+        )
+    if value >= MAX_BUDGET_AMOUNT:
+        raise PydanticCustomError(
+            "budget_amount_too_large",
+            "The budget limit is too large",
+        )
+    return value
+
+
+BudgetAmount = Annotated[Decimal, AfterValidator(_validate_budget_amount)]
 
 
 class BudgetCreate(BaseModel):
     category_id: uuid.UUID
-    amount: Decimal
+    amount: BudgetAmount
     month: _Date  # First day of month
     is_recurring: bool = False
 
 
 class BudgetUpdate(BaseModel):
-    amount: Optional[Decimal] = None
+    amount: Optional[BudgetAmount] = None
     effective_month: Optional[_Date] = None
 
 
@@ -71,7 +95,7 @@ class BudgetSuggestionResponse(BaseModel):
 
 class BudgetBatchItem(BaseModel):
     category_id: uuid.UUID
-    amount: Decimal = Field(gt=0)
+    amount: BudgetAmount
 
 
 class BudgetBatchCreate(BaseModel):

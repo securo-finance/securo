@@ -14,6 +14,7 @@ from app.models.category_group import CategoryGroup
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.schemas.budget import (
+    MAX_BUDGET_AMOUNT,
     BudgetBatchCreate,
     BudgetCreate,
     BudgetRead,
@@ -224,6 +225,23 @@ async def create_budget(
     user_id: uuid.UUID,
     data: BudgetCreate,
 ) -> Budget:
+    """Create a budget for a category of the workspace.
+
+    The category is checked here, as the batch does, so an id from another
+    workspace or an unknown one fails with a readable error instead of the
+    driver's.
+    """
+    known = (
+        await session.execute(
+            select(Category.id).where(
+                Category.id == data.category_id,
+                Category.workspace_id == workspace_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if known is None:
+        raise ValueError("Category not found")
+
     budget = Budget(
         user_id=user_id,
         workspace_id=workspace_id,
@@ -234,7 +252,11 @@ async def create_budget(
         is_recurring=data.is_recurring,
     )
     session.add(budget)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise ValueError("A budget for this category already exists for this month")
     await session.refresh(budget)
     return budget
 
@@ -833,10 +855,6 @@ async def create_budgets_batch(
     return budgets
 
 
-# Budget.amount is Numeric(15, 2).
-_MAX_BUDGET_AMOUNT = Decimal("1e13")
-
-
 async def copy_monthly_budgets(
     db: AsyncSession,
     workspace_id: uuid.UUID,
@@ -887,7 +905,7 @@ async def copy_monthly_budgets(
     # A copy keeps the source limit's currency, so it is the same limit.
     for cat_id, (amount, _is_recurring, currency) in source_map.items():
         new_amount = (amount * multiplier).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        if new_amount >= _MAX_BUDGET_AMOUNT:
+        if new_amount >= MAX_BUDGET_AMOUNT:
             raise ValueError("Adjusted budget amount is too large")
         if cat_id in target_map and (
             not overwrite_existing

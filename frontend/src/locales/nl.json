@@ -1530,6 +1530,8 @@
     "saved": "Budgetten opgeslagen",
     "budgetFor": "Budget voor {{category}}",
     "invalidAmount": "Vul een geldig bedrag van nul of meer in.",
+    "amountTooSmall": "De budgetlimiet moet minstens 0,01 zijn.",
+    "amountTooLarge": "De budgetlimiet is te groot.",
     "repeatEveryMonthFor": "Budget voor {{category}} elke maand herhalen",
     "previousMonth": "Vorige maand",
     "nextMonth": "Volgende maand",

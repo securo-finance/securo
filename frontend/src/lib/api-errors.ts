@@ -30,6 +30,10 @@ export function extractApiError(
       }
       if (Array.isArray(detail)) {
         const message = detail.map((d: { msg?: string; loc?: string[] }) => {
+          // A message with a translation already names the value it is about,
+          // so the toast shows it alone instead of an `amount:` prefix.
+          const translated = d.msg ? translateApiMessage(d.msg) : ''
+          if (translated && translated !== d.msg) return translated
           const field = d.loc?.slice(-1)[0] ?? ''
           return `${field}: ${d.msg ?? 'invalid'}`
         }).join(', ')

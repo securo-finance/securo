@@ -143,6 +143,41 @@ describe('localized API errors', () => {
     }))).toBe(expected)
   })
 
+  // The budget amount bounds come back as a pydantic 422 with the message in
+  // `msg`; the toast must show the sentence alone, translated, not the
+  // `amount: ...` prefix built for the validation entries nobody translates.
+  it.each([
+    ['en', 'The budget limit must be at least 0.01.'],
+    ['pt-BR', 'O limite do orçamento deve ser de pelo menos 0,01.'],
+  ])('shows the budget minimum from a 422 detail in %s', async (language, expected) => {
+    await i18n.changeLanguage(language)
+
+    expect(extractApiError(apiError([
+      {
+        type: 'budget_amount_not_positive',
+        loc: ['body', 'amount'],
+        msg: 'The budget limit must be at least 0.01',
+        ctx: {},
+      },
+    ]))).toBe(expected)
+  })
+
+  it.each([
+    ['en', 'The budget limit is too large.'],
+    ['pt-BR', 'O limite do orçamento é grande demais.'],
+  ])('shows the budget maximum from a 422 detail in %s', async (language, expected) => {
+    await i18n.changeLanguage(language)
+
+    expect(extractApiError(apiError([
+      {
+        type: 'budget_amount_too_large',
+        loc: ['body', 'amount'],
+        msg: 'The budget limit is too large',
+        ctx: {},
+      },
+    ]))).toBe(expected)
+  })
+
   it('falls back to the message of a code it does not know', async () => {
     await i18n.changeLanguage('pt-BR')
 

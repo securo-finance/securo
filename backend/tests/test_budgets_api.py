@@ -311,3 +311,172 @@ async def test_delete_recurring_previous_takes_effect(client, auth_headers, test
     cat_budgets2 = [b for b in list_resp2.json() if b["category_id"] == str(cat.id)]
     assert len(cat_budgets2) == 1
     assert float(cat_budgets2[0]["amount"]) == 100.0
+
+
+# A limit that is not positive, or that does not fit Numeric(15, 2), used to
+# reach the database: the first ones were stored as they came, the large ones
+# came back as a 400 carrying the driver's exception text.
+OUT_OF_RANGE_AMOUNTS = ["-5", "-0.01", 0, "1e20", 99999999999999]
+
+
+def _assert_readable_error(response, status_code: int) -> None:
+    assert response.status_code == status_code
+    body = response.text.lower()
+    assert "asyncpg" not in body
+    assert "sqlalchemy" not in body
+    assert "numericvalueoutofrange" not in body
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("amount", OUT_OF_RANGE_AMOUNTS)
+async def test_create_budget_rejects_an_out_of_range_limit(
+    client, auth_headers, test_categories, amount
+):
+    response = await client.post(
+        "/api/budgets",
+        json={
+            "category_id": str(test_categories[0].id),
+            "amount": amount,
+            "month": _current_month_str(),
+        },
+        headers=auth_headers,
+    )
+    _assert_readable_error(response, 422)
+    assert response.json()["detail"][0]["loc"] == ["body", "amount"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("amount", OUT_OF_RANGE_AMOUNTS)
+async def test_update_budget_rejects_an_out_of_range_limit(
+    client, auth_headers, test_categories, amount
+):
+    created = await client.post(
+        "/api/budgets",
+        json={
+            "category_id": str(test_categories[0].id),
+            "amount": 500,
+            "month": _current_month_str(),
+        },
+        headers=auth_headers,
+    )
+    assert created.status_code == 201
+    budget_id = created.json()["id"]
+
+    response = await client.patch(
+        f"/api/budgets/{budget_id}", json={"amount": amount}, headers=auth_headers
+    )
+    _assert_readable_error(response, 422)
+
+    listed = await client.get(
+        "/api/budgets", params={"month": _current_month_str()}, headers=auth_headers
+    )
+    stored = [b for b in listed.json() if b["id"] == budget_id]
+    assert float(stored[0]["amount"]) == 500.0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("amount", OUT_OF_RANGE_AMOUNTS)
+async def test_batch_rejects_an_out_of_range_limit(
+    client, auth_headers, test_categories, amount
+):
+    response = await client.post(
+        "/api/budgets/batch",
+        json={
+            "month": _current_month_str(),
+            "items": [{"category_id": str(test_categories[0].id), "amount": amount}],
+        },
+        headers=auth_headers,
+    )
+    _assert_readable_error(response, 422)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("amount", ["0.01", "9999999.99", 12.34])
+async def test_budget_accepts_the_smallest_and_a_large_valid_limit(
+    client, auth_headers, test_categories, amount
+):
+    response = await client.post(
+        "/api/budgets",
+        json={
+            "category_id": str(test_categories[0].id),
+            "amount": amount,
+            "month": _current_month_str(),
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    assert float(response.json()["amount"]) == float(amount)
+
+
+@pytest.mark.asyncio
+async def test_budget_amount_error_names_the_bound(
+    client, auth_headers, test_categories
+):
+    """The message travels in the 422 so the screen can translate it."""
+
+    async def post(amount):
+        return await client.post(
+            "/api/budgets",
+            json={
+                "category_id": str(test_categories[0].id),
+                "amount": amount,
+                "month": _current_month_str(),
+            },
+            headers=auth_headers,
+        )
+
+    too_small = await post(0)
+    assert {
+        "type": too_small.json()["detail"][0]["type"],
+        "msg": too_small.json()["detail"][0]["msg"],
+    } == {
+        "type": "budget_amount_not_positive",
+        "msg": "The budget limit must be at least 0.01",
+    }
+
+    too_large = await post("1e20")
+    assert {
+        "type": too_large.json()["detail"][0]["type"],
+        "msg": too_large.json()["detail"][0]["msg"],
+    } == {
+        "type": "budget_amount_too_large",
+        "msg": "The budget limit is too large",
+    }
+
+
+@pytest.mark.asyncio
+async def test_create_budget_rejects_a_category_of_another_workspace(
+    client, auth_headers,
+):
+    """The category is checked like the batch does, so no driver error leaks."""
+    response = await client.post(
+        "/api/budgets",
+        json={
+            "category_id": "00000000-0000-4000-8000-000000000000",
+            "amount": 100,
+            "month": _current_month_str(),
+        },
+        headers=auth_headers,
+    )
+    _assert_readable_error(response, 400)
+    assert response.json()["detail"] == "Category not found"
+
+
+@pytest.mark.asyncio
+async def test_create_budget_twice_answers_a_readable_error(
+    client, auth_headers, test_categories
+):
+    payload = {
+        "category_id": str(test_categories[0].id),
+        "amount": 100,
+        "month": _current_month_str(),
+    }
+    assert (
+        await client.post("/api/budgets", json=payload, headers=auth_headers)
+    ).status_code == 201
+
+    response = await client.post("/api/budgets", json=payload, headers=auth_headers)
+    _assert_readable_error(response, 400)
+    assert response.json()["detail"] == (
+        "A budget for this category already exists for this month"
+    )

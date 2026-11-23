@@ -1533,6 +1533,8 @@
     "saved": "Budgets enregistrés",
     "budgetFor": "Budget pour {{category}}",
     "invalidAmount": "Saisissez un montant valide égal ou supérieur à zéro.",
+    "amountTooSmall": "La limite du budget doit être d'au moins 0,01.",
+    "amountTooLarge": "La limite du budget est trop élevée.",
     "repeatEveryMonthFor": "Répéter le budget {{category}} chaque mois",
     "previousMonth": "Mois précédent",
     "nextMonth": "Mois suivant",

@@ -1528,6 +1528,8 @@
     "saved": "予算を保存しました",
     "budgetFor": "{{category}}の予算",
     "invalidAmount": "0以上の有効な金額を入力してください。",
+    "amountTooSmall": "予算の上限は0.01以上にしてください。",
+    "amountTooLarge": "予算の上限が大きすぎます。",
     "repeatEveryMonthFor": "{{category}}の予算を毎月繰り返す",
     "previousMonth": "前月",
     "nextMonth": "翌月",

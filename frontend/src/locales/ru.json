@@ -1547,6 +1547,8 @@
     "saved": "Бюджеты сохранены",
     "budgetFor": "Бюджет для {{category}}",
     "invalidAmount": "Введите допустимую сумму не меньше нуля.",
+    "amountTooSmall": "Лимит бюджета должен быть не меньше 0,01.",
+    "amountTooLarge": "Лимит бюджета слишком велик.",
     "repeatEveryMonthFor": "Повторять бюджет «{{category}}» каждый месяц",
     "previousMonth": "Прошлый месяц",
     "nextMonth": "Следующий месяц",

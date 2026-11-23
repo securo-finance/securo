@@ -1541,6 +1541,8 @@
     "saved": "התקציבים נשמרו",
     "budgetFor": "תקציב עבור {{category}}",
     "invalidAmount": "הזינו סכום תקין של אפס ומעלה.",
+    "amountTooSmall": "מגבלת התקציב חייבת להיות לפחות 0.01.",
+    "amountTooLarge": "מגבלת התקציב גדולה מדי.",
     "repeatEveryMonthFor": "חזרה על תקציב {{category}} כל חודש",
     "previousMonth": "החודש הקודם",
     "nextMonth": "החודש הבא",

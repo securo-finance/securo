@@ -1533,6 +1533,8 @@
     "saved": "Orçamentos guardados",
     "budgetFor": "Orçamento para {{category}}",
     "invalidAmount": "Introduza um montante válido igual ou superior a zero.",
+    "amountTooSmall": "O limite do orçamento deve ser de pelo menos 0,01.",
+    "amountTooLarge": "O limite do orçamento é demasiado grande.",
     "repeatEveryMonthFor": "Repetir o orçamento de {{category}} todos os meses",
     "previousMonth": "Mês anterior",
     "nextMonth": "Mês seguinte",
