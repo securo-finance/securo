@@ -1,0 +1,118 @@
+{{- if and (include "securo.pluginsRunnerEnabled" .) .Values.plugins.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "securo.fullname" . }}-plugins-runner
+  labels:
+    {{- include "securo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: plugins-runner
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "securo.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: plugins-runner
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "securo.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: backend
+        - podSelector:
+            matchLabels:
+              {{- include "securo.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: celery-worker
+      ports:
+        - port: {{ .Values.plugins.runner.service.port }}
+          protocol: TCP
+  egress:
+    # Plugin calls that carry an api_url talk to the Securo API directly.
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "securo.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: backend
+      ports:
+        # Named port: the container always listens on 8000, whatever the
+        # Service port is set to.
+        - port: http
+          protocol: TCP
+    {{- if .Values.plugins.egress.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "securo.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: plugins-egress
+      ports:
+        - port: {{ .Values.plugins.egress.port }}
+          protocol: TCP
+    {{- end }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- range .Values.plugins.networkPolicy.dnsCIDRs }}
+    - to:
+        - ipBlock:
+            cidr: {{ . | quote }}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- end }}
+    {{- with .Values.plugins.networkPolicy.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- if .Values.plugins.egress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "securo.fullname" . }}-plugins-egress
+  labels:
+    {{- include "securo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: plugins-egress
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "securo.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: plugins-egress
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "securo.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: plugins-runner
+      ports:
+        - port: {{ .Values.plugins.egress.port }}
+          protocol: TCP
+  egress:
+    {{- range .Values.plugins.networkPolicy.dnsCIDRs }}
+    - to:
+        - ipBlock:
+            cidr: {{ . | quote }}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- end }}
+    # Anything, because the proxy itself is what refuses private addresses and
+    # hosts the plugin did not declare.
+    - {}
+{{- end }}
+{{- end }}
