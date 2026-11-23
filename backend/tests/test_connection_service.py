@@ -8194,6 +8194,188 @@ async def test_sync_keeps_finance_charges_the_card_does_not_list(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("first_sync_has_txns", [True, False], ids=["together", "txns-later"])
+async def test_sync_skips_finance_charges_split_across_transactions(
+    session: AsyncSession, test_user, test_workspace, first_sync_has_txns,
+):
+    """A finance charge the card lists as several transactions that add up
+    to it is not materialized again, and an exact twin is not taken apart
+    to cover another charge (#1719)."""
+    conn = await _make_connection(session, test_user.id, "Split Bank")
+    bill = BillData(
+        external_id="bill-split",
+        due_date=date(2026, 4, 15),
+        total_amount=Decimal("174.11"),
+        currency="BRL",
+        raw_data={
+            "id": "bill-split",
+            "financeCharges": [
+                {"id": "fc-pen", "type": "LATE_PAYMENT_FEE", "amount": 2.39},
+                {"id": "fc-con", "type": "OTHER", "amount": 0.45,
+                 "additionalInfo": "Encargos contratuais"},
+                {"id": "fc-int", "type": "LATE_PAYMENT_INTEREST", "amount": 0.04},
+                {"id": "fc-iof", "type": "IOF", "amount": 0.01},
+            ],
+        },
+    )
+    txns = [
+        TransactionData(
+            external_id=f"tx-{key}", description=description, amount=Decimal(amount),
+            date=date(2026, 4, 8), type="debit", currency="BRL",
+            bill_external_id="bill-split",
+        )
+        for key, description, amount in [
+            ("pen", "Multa por atraso", "2.39"),
+            ("con1", "Encargos contratuais", "0.11"),
+            ("con2", "Encargos contratuais", "0.34"),
+            ("int1", "Juros de mora", "0.03"),
+            ("int2", "Juros de mora", "0.01"),
+            ("iof", "IOF diario", "0.01"),
+        ]
+    ]
+    mock_provider = _cc_provider_mock(
+        bills=[bill], transactions=txns if first_sync_has_txns else [],
+    )
+    p1, p2, p3 = _patch_sync_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider),          p1, p2, p3:
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+    mock_provider.get_transactions = AsyncMock(return_value=txns)
+    for _ in range(2):
+        with patch("app.services.connection_service.get_provider", return_value=mock_provider),              p1, p2, p3:
+            await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    rows = await _cc_rows(session, test_user.id)
+    assert sorted((row.external_id or "") for row in rows) == sorted(
+        f"tx-{key}" for key in ["pen", "con1", "con2", "int1", "int2", "iof"]
+    )
+    assert sum(row.amount for row in rows) == Decimal("2.89")
+
+
+@pytest.mark.asyncio
+async def test_sync_keeps_finance_charge_whose_parts_do_not_add_up(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Charge transactions that don't add up to a charge leave its
+    synthetic row in place."""
+    conn = await _make_connection(session, test_user.id, "Short Bank")
+    bill = BillData(
+        external_id="bill-short",
+        due_date=date(2026, 4, 15),
+        total_amount=Decimal("100"),
+        currency="BRL",
+        raw_data={
+            "id": "bill-short",
+            "financeCharges": [
+                {"id": "fc-con", "type": "OTHER", "amount": 0.45,
+                 "additionalInfo": "Encargos contratuais"},
+            ],
+        },
+    )
+    txns = [
+        TransactionData(
+            external_id=f"tx-{key}", description="Encargos contratuais",
+            amount=Decimal(amount), date=date(2026, 4, 8), type="debit",
+            currency="BRL", bill_external_id="bill-short",
+        )
+        for key, amount in [("con1", "0.11"), ("con2", "0.30")]
+    ]
+    mock_provider = _cc_provider_mock(bills=[bill], transactions=txns)
+    p1, p2, p3 = _patch_sync_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider),          p1, p2, p3:
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    rows = await _cc_rows(session, test_user.id)
+    assert sorted((row.external_id or "") for row in rows) == [
+        "bill_charge:bill-short:fc-con", "tx-con1", "tx-con2",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sync_cleanup_does_not_reuse_a_row_an_exact_twin_took(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The transaction an exact twin carries is not combined again in the
+    after-sync cleanup to cover another charge whose parts don't add up."""
+    conn = await _make_connection(session, test_user.id, "Reuse Bank")
+    bill = BillData(
+        external_id="bill-reuse",
+        due_date=date(2026, 4, 15),
+        total_amount=Decimal("100"),
+        currency="BRL",
+        raw_data={
+            "id": "bill-reuse",
+            "financeCharges": [
+                {"id": "fc-iof", "type": "IOF", "amount": 0.30},
+                {"id": "fc-int", "type": "LATE_PAYMENT_INTEREST", "amount": 0.50},
+            ],
+        },
+    )
+    txns = [
+        TransactionData(
+            external_id=f"tx-{key}", description=description, amount=Decimal(amount),
+            date=date(2026, 4, 8), type="debit", currency="BRL",
+            bill_external_id="bill-reuse",
+        )
+        for key, description, amount in [
+            ("iof", "IOF diario", "0.30"),
+            ("int", "Juros de mora", "0.20"),
+        ]
+    ]
+    mock_provider = _cc_provider_mock(bills=[bill], transactions=txns)
+    p1, p2, p3 = _patch_sync_helpers()
+    for _ in range(2):
+        with patch("app.services.connection_service.get_provider", return_value=mock_provider),              p1, p2, p3:
+            await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    rows = await _cc_rows(session, test_user.id)
+    assert sorted((row.external_id or "") for row in rows) == [
+        "bill_charge:bill-reuse:fc-int", "tx-int", "tx-iof",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sync_finds_finance_charge_parts_past_larger_rows(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Rows larger than a charge don't use up the candidate cap, so split
+    rows that come after many of them are still matched."""
+    conn = await _make_connection(session, test_user.id, "Many IOF Bank")
+    bill = BillData(
+        external_id="bill-many",
+        due_date=date(2026, 4, 15),
+        total_amount=Decimal("100"),
+        currency="BRL",
+        raw_data={
+            "id": "bill-many",
+            "financeCharges": [
+                {"id": "fc-con", "type": "OTHER", "amount": 0.45,
+                 "additionalInfo": "Encargos contratuais"},
+            ],
+        },
+    )
+    rows_in = [(f"iof{i:02d}", "IOF compra exterior", "1.00") for i in range(16)]
+    rows_in += [("con1", "Encargos contratuais", "0.11"),
+                ("con2", "Encargos contratuais", "0.34")]
+    txns = [
+        TransactionData(
+            external_id=f"tx-{key}", description=description, amount=Decimal(amount),
+            date=date(2026, 4, 8), type="debit", currency="BRL",
+            bill_external_id="bill-many",
+        )
+        for key, description, amount in rows_in
+    ]
+    mock_provider = _cc_provider_mock(bills=[bill], transactions=txns)
+    p1, p2, p3 = _patch_sync_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider),          p1, p2, p3:
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    rows = await _cc_rows(session, test_user.id)
+    assert sorted((row.external_id or "") for row in rows) == sorted(
+        f"tx-{key}" for key, _, _ in rows_in
+    )
+
+
+@pytest.mark.asyncio
 async def test_sync_does_not_overwrite_manual_effective_bill_date(
     session: AsyncSession, test_user, test_workspace,
 ):
