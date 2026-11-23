@@ -205,9 +205,13 @@ celeryBeat:
   extraVolumes: []
   extraVolumeMounts: []
 
-# Database migration Job, a Helm post-install/post-upgrade hook that runs the
-# backend image. It reaches the database before the pods do, so it needs the
-# same extras when the connection uses a client certificate or a private CA.
+# Database migration Job, a plain Job (not a Helm hook) that runs the backend
+# image on every install and upgrade. The new pods don't wait for this Job to
+# run: their wait-for-schema init container waits until the database is at this
+# image's migration head, which is what the Job brings it to. A database
+# already at head lets the pods start while the Job is still pending, and the
+# Job then finds nothing to do. It reaches the database on its own, so it needs
+# the same extras when the connection uses a client certificate or a private CA.
 migration:
   extraEnv: []
   extraEnvFrom: []

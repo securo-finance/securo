@@ -47,6 +47,37 @@ If you are developing locally and want to install from the source repository:
 helm install securo ./charts/securo
 ```
 
+## Upgrades and database migrations
+
+Every install and upgrade creates a migration Job that runs `alembic upgrade
+head` with the release's new image and configuration. The backend, Celery
+worker, Celery beat and MCP server pods start with a `wait-for-schema` init
+container that runs `alembic current --check-heads` every 5 seconds and lets the
+pod start only once the database is at the migration head of its image.
+
+- On a first install, the Job retries until the database accepts connections,
+  so the bundled PostgreSQL can come up next to it. The other pods stay in
+  `Init` until the database reaches that head, which on a new database is when
+  the Job finishes.
+- On an upgrade, the new pods stay in `Init` until the database is at the head
+  of the new image, and the Deployments keep the old pods serving until the new
+  ones are ready. A migration that rewrites a large table keeps them in `Init`
+  for as long as it takes. `helm upgrade --wait` waits for that too, so give it
+  a `--timeout` above how long you expect the migration to run.
+- If the database is already at the head of the new image, the pods can start
+  before the Job finishes; the Job then finds nothing to do.
+- The Job's name ends in a hash of its pod template and the release revision,
+  so each upgrade gets a fresh Job and Helm deletes the previous one. Follow it
+  with `kubectl logs job/<name>`.
+- If the Job fails before the database reaches that head, the new pods stay in
+  `Init` and the old ones keep serving. Fix the cause and run `helm upgrade`
+  again.
+- Going back to an older image on this chart does not downgrade the database:
+  the older pods stay in `Init`, because the database is ahead of their image.
+  Going back to a chart from before this change has no schema gate at all, so
+  its backend pods start `uvicorn` directly against the newer database.
+  Restore a backup taken before the upgrade, or stay on the newer version.
+
 ## Configuration
 
 All application-level features (such as AI Services, OIDC authentication, and Open Banking integrations) can be configured directly through Helm.
@@ -130,8 +161,9 @@ empty by default. The entries keep the Kubernetes shapes (`EnvVar`,
 `EnvFromSource`, `Volume`, `VolumeMount`) and are rendered untouched, so
 `valueFrom` and every volume type work. `extraEnv` is read after the ConfigMap
 and the Secret and therefore wins over both, as `env` does over `envFrom` in
-Kubernetes. `migration` configures the post-install/post-upgrade Job, which
-reaches the database before the pods do.
+Kubernetes. `migration` configures the migration Job. The `wait-for-schema` init
+container of each pod takes that pod's own extras, so it reaches the database
+the same way the pod does.
 
 This is what an external PostgreSQL with TLS client-certificate authentication
 needs, for example:
