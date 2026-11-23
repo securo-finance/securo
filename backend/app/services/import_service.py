@@ -1210,6 +1210,20 @@ async def import_transactions(
     matched_existing_ids: set[uuid.UUID] = set()
     effective_format = (detected_format or source or "").lower()
     should_detect_duplicates = detect_duplicates if effective_format == "csv" else True
+    # Imports parsed before OFX offsets were dropped: only their rows may sit
+    # one day off the bank's date (see the FITID lookup below).
+    utc_dated_import_ids: list[uuid.UUID] = []
+    if should_detect_duplicates:
+        utc_dated_import_ids = list(
+            (
+                await session.execute(
+                    select(ImportLog.id).where(
+                        ImportLog.account_id == account_id,
+                        ImportLog.ofx_utc_dates.is_(True),
+                    )
+                )
+            ).scalars()
+        )
 
     for txn_data in included:
         # Resolve currency: CSV value > account currency
@@ -1220,26 +1234,29 @@ async def import_transactions(
             # Brazilian cards reuse one purchase FITID across monthly installments,
             # and amount and type retained because some banks reuse one FITID for
             # several distinct entries posted on the same day. The date may differ
-            # by one day: rows imported before OFX offsets were dropped can sit on
-            # the neighbouring day. That window only reaches rows of earlier
-            # imports: a row this run already added is a distinct entry when it
-            # sits on another day (a recurring fee under one FITID).
+            # by one day only for rows of imports parsed before OFX offsets were
+            # dropped, which can sit on the neighbouring day. Any other row a day
+            # apart is a distinct entry (a recurring fee under one FITID), whether
+            # this run or an overlapping earlier statement added it.
             # Formats without unique IDs fall back to transaction fields; compare
             # both descriptions because rules may have changed the displayed one.
             if txn_data.external_id:
+                same_day = Transaction.date == txn_data.date
                 existing_statement = select(Transaction).where(
                     Transaction.account_id == account_id,
                     Transaction.external_id == txn_data.external_id,
                     or_(
-                        Transaction.date == txn_data.date,
+                        same_day,
                         and_(
                             Transaction.date.between(
                                 txn_data.date - timedelta(days=1),
                                 txn_data.date + timedelta(days=1),
                             ),
-                            Transaction.import_id.is_distinct_from(import_log.id),
+                            Transaction.import_id.in_(utc_dated_import_ids),
                         ),
-                    ),
+                    )
+                    if utc_dated_import_ids
+                    else same_day,
                     Transaction.amount == txn_data.amount,
                     Transaction.type == txn_data.type,
                 )
