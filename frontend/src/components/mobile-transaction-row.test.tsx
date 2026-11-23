@@ -172,6 +172,19 @@ describe('MobileTransactionRow description line (#433)', () => {
     expect(screen.getByText('Supermercado Pão de Açúcar')).toBeInTheDocument()
     expect(screen.queryByTestId('transaction-badges')).not.toBeInTheDocument()
   })
+
+  it('shows the badge line for a row whose only badge is a full reimbursement', () => {
+    renderRow(
+      makeTx({
+        description: 'Transfer from Ana',
+        reimbursement_role: 'counterpart',
+        reimbursement_unallocated: 0,
+      }),
+    )
+    expect(screen.getByTestId('transaction-badges')).toContainElement(
+      screen.getByText('reimbursements.badge'),
+    )
+  })
 })
 
 describe('MobileTransactionRow reporting date indicator', () => {
