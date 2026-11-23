@@ -1038,7 +1038,7 @@
       "tooLarge": "Az összeg nagyobb annál, amit a Securo tárolni tud.",
       "convertedNegative": "Az átváltott összeg nem lehet negatív.",
       "convertedTooLarge": "Az átváltott összeg nagyobb annál, amit a Securo tárolni tud.",
-      "rateNotPositive": "Az árfolyamnak nullánál nagyobbnak kell lennie, kivéve, ha az átváltott összeg is nulla.",
+      "rateNotPositive": "Az árfolyam nem lehet negatív. A nulla árfolyam csak akkor fogadható el, ha az átváltott összeg nullára kerekítődik.",
       "rateTooLarge": "Az árfolyam nagyobb annál, amit a Securo tárolni tud.",
       "required": "Adjon meg egy összeget."
     },

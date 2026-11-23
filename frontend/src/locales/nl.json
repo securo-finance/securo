@@ -1038,7 +1038,7 @@
       "tooLarge": "Het bedrag is groter dan Securo kan opslaan.",
       "convertedNegative": "Het omgerekende bedrag kan niet negatief zijn.",
       "convertedTooLarge": "Het omgerekende bedrag is groter dan Securo kan opslaan.",
-      "rateNotPositive": "De wisselkoers moet groter zijn dan nul, tenzij het omgerekende bedrag ook nul is.",
+      "rateNotPositive": "De wisselkoers mag niet negatief zijn. Een koers van nul wordt alleen geaccepteerd als het omgerekende bedrag op nul afrondt.",
       "rateTooLarge": "De wisselkoers is groter dan Securo kan opslaan.",
       "required": "Voer een bedrag in."
     },

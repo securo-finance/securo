@@ -1055,7 +1055,7 @@
       "tooLarge": "Kwota jest większa, niż Securo może zapisać.",
       "convertedNegative": "Przeliczona kwota nie może być ujemna.",
       "convertedTooLarge": "Przeliczona kwota jest większa, niż Securo może zapisać.",
-      "rateNotPositive": "Kurs wymiany musi być większy od zera, chyba że przeliczona kwota również wynosi zero.",
+      "rateNotPositive": "Kurs wymiany nie może być ujemny. Kurs zerowy jest akceptowany tylko wtedy, gdy przeliczona kwota zaokrągla się do zera.",
       "rateTooLarge": "Kurs wymiany jest większy, niż Securo może zapisać.",
       "required": "Wpisz kwotę."
     },

@@ -1038,7 +1038,7 @@
       "tooLarge": "金額がSecuroで保存できる上限を超えています。",
       "convertedNegative": "換算後の金額をマイナスにすることはできません。",
       "convertedTooLarge": "換算後の金額がSecuroで保存できる上限を超えています。",
-      "rateNotPositive": "換算後の金額が0の場合を除き、為替レートは0より大きい必要があります。",
+      "rateNotPositive": "為替レートは負の値にできません。レートが0の場合は、換算後の金額が0に丸められる場合にのみ受け付けられます。",
       "rateTooLarge": "為替レートがSecuroで保存できる上限を超えています。",
       "required": "金額を入力してください。"
     },

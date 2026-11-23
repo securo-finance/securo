@@ -1040,7 +1040,7 @@
       "tooLarge": "El importe es mayor de lo que Securo puede guardar.",
       "convertedNegative": "El importe convertido no puede ser negativo.",
       "convertedTooLarge": "El importe convertido es mayor de lo que Securo puede guardar.",
-      "rateNotPositive": "El tipo de cambio debe ser mayor que cero, salvo que el importe convertido también sea cero.",
+      "rateNotPositive": "El tipo de cambio no puede ser negativo. Una tasa cero solo se acepta cuando el importe convertido redondea a cero.",
       "rateTooLarge": "El tipo de cambio es mayor de lo que Securo puede guardar.",
       "required": "Introduce un importe."
     },

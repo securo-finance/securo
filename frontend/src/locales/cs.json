@@ -1074,7 +1074,7 @@
       "tooLarge": "Částka je větší, než Securo dokáže uložit.",
       "convertedNegative": "Přepočtená částka nemůže být záporná.",
       "convertedTooLarge": "Přepočtená částka je větší, než Securo dokáže uložit.",
-      "rateNotPositive": "Směnný kurz musí být větší než nula, pokud přepočtená částka také není nula.",
+      "rateNotPositive": "Směnný kurz nesmí být záporný. Nulový kurz je přijat pouze tehdy, když se přepočtená částka zaokrouhlí na nulu.",
       "rateTooLarge": "Směnný kurz je větší, než Securo dokáže uložit.",
       "required": "Zadejte částku."
     },

@@ -160,12 +160,13 @@ describe('localized API errors', () => {
     expect(extractApiError(apiError('amount_primary must be greater than zero'))).toBe(expected)
   })
 
-  // A rate of zero is refused unless the converted amount is zero too, and a
-  // negative rate reaches the same message, so the text says "greater than
-  // zero" instead of only ruling out a negative value.
+  // The backend answers the same message for a negative rate (never accepted)
+  // and for a zero rate next to a real conversion (only a converted amount that
+  // rounds to zero allows it), so the text has to refuse the negative outright
+  // and give the zero rule as the exception instead of the other way round.
   it.each([
-    ['en', 'The exchange rate must be greater than zero, unless the converted amount is also zero.'],
-    ['pt-BR', 'A taxa de câmbio deve ser maior que zero, a menos que o valor convertido também seja zero.'],
+    ['en', 'The exchange rate cannot be negative. A zero rate is only accepted when the converted amount rounds to zero.'],
+    ['pt-BR', 'A taxa de câmbio não pode ser negativa. Uma taxa zero só é aceita quando o valor convertido arredonda para zero.'],
   ])('shows a refused exchange rate in %s', async (language, expected) => {
     await i18n.changeLanguage(language)
 

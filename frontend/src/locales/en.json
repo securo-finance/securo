@@ -1038,7 +1038,7 @@
       "tooLarge": "The amount is larger than Securo can store.",
       "convertedNegative": "The converted amount cannot be negative.",
       "convertedTooLarge": "The converted amount is larger than Securo can store.",
-      "rateNotPositive": "The exchange rate must be greater than zero, unless the converted amount is also zero.",
+      "rateNotPositive": "The exchange rate cannot be negative. A zero rate is only accepted when the converted amount rounds to zero.",
       "rateTooLarge": "The exchange rate is larger than Securo can store.",
       "required": "Enter an amount."
     },

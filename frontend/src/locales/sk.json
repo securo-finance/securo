@@ -1058,7 +1058,7 @@
       "tooLarge": "Suma je väčšia, ako dokáže Securo uložiť.",
       "convertedNegative": "Prepočítaná suma nemôže byť záporná.",
       "convertedTooLarge": "Prepočítaná suma je väčšia, ako dokáže Securo uložiť.",
-      "rateNotPositive": "Výmenný kurz musí byť väčší ako nula, pokiaľ prepočítaná suma tiež nie je nula.",
+      "rateNotPositive": "Výmenný kurz nesmie byť záporný. Nulový kurz je akceptovaný len vtedy, keď sa prepočítaná suma zaokrúhli na nulu.",
       "rateTooLarge": "Výmenný kurz je väčší, ako dokáže Securo uložiť.",
       "required": "Zadajte sumu."
     },
