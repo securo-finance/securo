@@ -289,15 +289,25 @@ async def test_a_routine_reads_the_connection_again_under_the_lock(session, ids,
     await _install(session, ids)
     connection = await _connect(session, ids)
     send = await _routine(session, connection, "send")
-    # Another run ran it meanwhile: a scheduled run finds it no longer due; running it now still does.
-    await connections.run_routine(session, connection, send)
+    # Another run ran it meanwhile, behind these copies' backs: they still say it never ran.
+    stale = {"synchronize_session": False}
+    await session.execute(
+        update(PluginConnectionRoutine).where(PluginConnectionRoutine.id == send.id)
+        .values(last_run_at=connections._now(), state={"runs": 1}).execution_options(**stale)
+    )
+    assert send.last_run_at is None
+    # A scheduled run reads it again under the lock and finds it no longer due; running it now still runs.
     assert await connections.run_routine(session, connection, send, scheduled=True) == "not_due"
-    assert send.state["runs"] == 1
+    assert send.state == {"runs": 1}
     assert await connections.run_routine(session, connection, send) == "ran"
     assert send.state["runs"] == 2
-    # Another run found the sign-in gone meanwhile: nothing more is sent to the plugin.
-    await session.execute(update(PluginConnection).where(PluginConnection.id == connection.id).values(status="needs_auth"))
-    await session.commit()
+
+    # Another run found the sign-in gone meanwhile, and this copy doesn't know.
+    await session.execute(
+        update(PluginConnection).where(PluginConnection.id == connection.id)
+        .values(status="needs_auth").execution_options(**stale)
+    )
+    assert connection.status != "needs_auth"
     assert await connections.run_routine(session, connection, send) == "needs_auth"
     assert send.state["runs"] == 2
 
