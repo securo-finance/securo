@@ -947,7 +947,6 @@
     "duplicate": "Duplikuj",
     "createRule": "Utwórz regułę",
     "ruleActions": "Akcje reguły",
-    "moreActions": "Więcej akcji",
     "addToExistingRule": "Dodaj do istniejącej reguły",
     "addToExistingRuleTitle": "Dodaj transakcję do reguły",
     "addToExistingRuleDescription": "Wybierz aktywną regułę kategorii i dodaj opis tej transakcji jako kolejne przyszłe dopasowanie.",

@@ -941,7 +941,6 @@
     "duplicate": "Дублювати",
     "createRule": "Створити правило",
     "ruleActions": "Дії правила",
-    "moreActions": "Інші дії",
     "addToExistingRule": "Додати до наявного правила",
     "addToExistingRuleTitle": "Додати транзакцію до правила",
     "addToExistingRuleDescription": "Виберіть активне правило категорії та додайте опис цієї транзакції як майбутній збіг.",

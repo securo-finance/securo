@@ -32,12 +32,11 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { AlertTriangle, ArrowRight, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Flag, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check, CircleCheck, Pencil, MoreHorizontal, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowRight, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Flag, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check, CircleCheck, Pencil, Trash2 } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -438,6 +437,7 @@ function FooterIconAction({
   active,
   onClick,
   disabled,
+  className,
   children,
 }: {
   label: string
@@ -445,6 +445,7 @@ function FooterIconAction({
   active: boolean
   onClick: () => void
   disabled?: boolean
+  className?: string
   children: React.ReactNode
 }) {
   return (
@@ -461,6 +462,7 @@ function FooterIconAction({
           className={cn(
             'size-9 text-muted-foreground hover:text-foreground [&_svg]:size-[18px]',
             active && 'bg-muted text-foreground',
+            className,
           )}
         >
           {children}
@@ -2002,47 +2004,54 @@ function TransactionForm({
               </FooterIconAction>
             </>
           )}
-          {((transaction && onCreateRule) || onDelete) && (
-            <DropdownMenu>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label={t('transactions.moreActions')}
-                      className="size-9 text-muted-foreground hover:text-foreground"
-                      disabled={updateRuleMutation.isPending}
-                    >
-                      <MoreHorizontal size={18} />
-                    </Button>
-                  </DropdownMenuTrigger>
-                </TooltipTrigger>
-                <TooltipContent>{t('transactions.moreActions')}</TooltipContent>
-              </Tooltip>
-              <DropdownMenuContent align="start" side="top" className="w-60">
-                {transaction && onCreateRule && (
-                  <>
-                    <DropdownMenuItem onSelect={() => onCreateRule(transaction)}>
-                      <SlidersHorizontal size={16} />
-                      {t('transactions.createRule')}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => setAddToRuleOpen(true)}>
-                      <ListPlus size={16} />
-                      {t('transactions.addToExistingRule')}
-                    </DropdownMenuItem>
-                  </>
-                )}
-                {transaction && onCreateRule && onDelete && <DropdownMenuSeparator />}
-                {onDelete && (
-                  <DropdownMenuItem variant="destructive" onSelect={onDelete} disabled={loading}>
-                    <Trash2 size={16} />
-                    {t('common.delete')}
+          {transaction && onCreateRule && (
+            <div className="inline-flex items-center">
+              <FooterIconAction
+                label={t('transactions.createRule')}
+                active={false}
+                onClick={() => onCreateRule(transaction)}
+                className="rounded-e-none"
+              >
+                <SlidersHorizontal />
+              </FooterIconAction>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    aria-label={t('transactions.ruleActions')}
+                    className="h-9 w-5 rounded-s-none px-0 text-muted-foreground hover:text-foreground"
+                    disabled={updateRuleMutation.isPending}
+                  >
+                    <ChevronDown size={14} />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" side="top" className="w-60">
+                  <DropdownMenuItem onSelect={() => onCreateRule(transaction)}>
+                    <SlidersHorizontal size={16} />
+                    {t('transactions.createRule')}
                   </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  <DropdownMenuItem onSelect={() => setAddToRuleOpen(true)}>
+                    <ListPlus size={16} />
+                    {t('transactions.addToExistingRule')}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )}
+          {onDelete && (
+            <>
+              <div aria-hidden="true" className="mx-1 h-5 w-px bg-border" />
+              <FooterIconAction
+                label={t('common.delete')}
+                active={false}
+                onClick={onDelete}
+                disabled={loading}
+                className="hover:bg-destructive/10 hover:text-destructive"
+              >
+                <Trash2 />
+              </FooterIconAction>
+            </>
           )}
         </div>
         </TooltipProvider>

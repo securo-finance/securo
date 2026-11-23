@@ -933,7 +933,6 @@
     "duplicate": "Duplicate",
     "createRule": "Create Rule",
     "ruleActions": "Rule actions",
-    "moreActions": "More actions",
     "addToExistingRule": "Add to existing rule",
     "addToExistingRuleTitle": "Add transaction to rule",
     "addToExistingRuleDescription": "Choose an active category rule and add this transaction description as another future match.",

@@ -935,7 +935,6 @@
     "duplicate": "Duplica",
     "createRule": "Crea regola",
     "ruleActions": "Azioni regola",
-    "moreActions": "Altre azioni",
     "addToExistingRule": "Aggiungi a regola esistente",
     "addToExistingRuleTitle": "Aggiungi transazione a una regola",
     "addToExistingRuleDescription": "Scegli una regola di categoria attiva e aggiungi la descrizione di questa transazione come futura corrispondenza.",
