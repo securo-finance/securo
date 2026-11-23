@@ -236,6 +236,13 @@ mcpServer:
     requests:
       cpu: 50m
       memory: 128Mi
+  # Same four keys as `backend`, for the MCP server pod. It opens its own
+  # database sessions, so with an external PostgreSQL that needs a client
+  # certificate it needs the same PGSSL* variables and the mounted cert.
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumes: []
+  extraVolumeMounts: []
 
 # Persistence for application data
 # IMPORTANT: Since Backend, Celery Worker, and MCP Server all share the same attachment files,

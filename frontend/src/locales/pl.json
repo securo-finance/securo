@@ -3749,7 +3749,8 @@
       "undoFirstGroupSplit": "Cofnij podział, zanim podzielisz między osoby.",
       "undoFirstMortgage": "Cofnij podział, zanim dodasz rozbicie kredytu.",
       "categoryInUse": "Ta kategoria zawiera części podzielonych transakcji. Najpierw zmień te podziały.",
-      "destinationInvalid": "Części podzielonych transakcji nie mogą trafić do ignorowanej ani ukrytej kategorii."
+      "destinationInvalid": "Części podzielonych transakcji nie mogą trafić do ignorowanej ani ukrytej kategorii.",
+      "mergeNeedsRate": "Te budżety są w różnych walutach i brak kursu wymiany z ich miesiąca, aby je połączyć."
     }
   },
   "plugins": {

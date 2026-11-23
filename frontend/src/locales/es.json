@@ -3621,7 +3621,8 @@
       "undoFirstGroupSplit": "Deshaz la división antes de dividir entre personas.",
       "undoFirstMortgage": "Deshaz la división antes de añadir el desglose de la hipoteca.",
       "categoryInUse": "Esta categoría tiene partes de transacciones divididas. Cambia esas divisiones primero.",
-      "destinationInvalid": "Las partes de transacciones divididas no pueden pasar a una categoría ignorada u oculta."
+      "destinationInvalid": "Las partes de transacciones divididas no pueden pasar a una categoría ignorada u oculta.",
+      "mergeNeedsRate": "Estos presupuestos están en monedas distintas y no hay tipo de cambio de su mes para combinarlos."
     }
   },
   "plugins": {

@@ -3609,7 +3609,8 @@
       "undoFirstGroupSplit": "Maak de verdeling ongedaan voordat je tussen personen verdeelt.",
       "undoFirstMortgage": "Maak de verdeling ongedaan voordat je de hypotheek uitsplitst.",
       "categoryInUse": "Deze categorie bevat delen van verdeelde transacties. Pas die verdelingen eerst aan.",
-      "destinationInvalid": "Delen van verdeelde transacties kunnen niet naar een genegeerde of verborgen categorie."
+      "destinationInvalid": "Delen van verdeelde transacties kunnen niet naar een genegeerde of verborgen categorie.",
+      "mergeNeedsRate": "Deze budgetten staan in verschillende valuta en er is geen wisselkoers voor hun maand om ze samen te voegen."
     }
   },
   "plugins": {

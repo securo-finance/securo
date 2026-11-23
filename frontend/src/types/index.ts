@@ -1349,7 +1349,11 @@ export interface Budget {
   id: string
   user_id: string
   category_id: string
+  /** In `currency`, the currency it was typed in. */
   amount: number
+  currency?: string | null
+  /** The same limit in the viewer's display currency. */
+  amount_primary?: number | string | null
   month: string
   is_recurring: boolean
 }
