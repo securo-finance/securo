@@ -8259,6 +8259,48 @@ async def test_sync_cleanup_does_not_reuse_a_row_an_exact_twin_took(
 
 
 @pytest.mark.asyncio
+async def test_sync_finds_finance_charge_parts_past_larger_rows(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Rows larger than a charge don't use up the candidate cap, so split
+    rows that come after many of them are still matched."""
+    conn = await _make_connection(session, test_user.id, "Many IOF Bank")
+    bill = BillData(
+        external_id="bill-many",
+        due_date=date(2026, 4, 15),
+        total_amount=Decimal("100"),
+        currency="BRL",
+        raw_data={
+            "id": "bill-many",
+            "financeCharges": [
+                {"id": "fc-con", "type": "OTHER", "amount": 0.45,
+                 "additionalInfo": "Encargos contratuais"},
+            ],
+        },
+    )
+    rows_in = [(f"iof{i:02d}", "IOF compra exterior", "1.00") for i in range(16)]
+    rows_in += [("con1", "Encargos contratuais", "0.11"),
+                ("con2", "Encargos contratuais", "0.34")]
+    txns = [
+        TransactionData(
+            external_id=f"tx-{key}", description=description, amount=Decimal(amount),
+            date=date(2026, 4, 8), type="debit", currency="BRL",
+            bill_external_id="bill-many",
+        )
+        for key, description, amount in rows_in
+    ]
+    mock_provider = _cc_provider_mock(bills=[bill], transactions=txns)
+    p1, p2, p3 = _patch_sync_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider),          p1, p2, p3:
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    rows = await _cc_rows(session, test_user.id)
+    assert sorted((row.external_id or "") for row in rows) == sorted(
+        f"tx-{key}" for key, _, _ in rows_in
+    )
+
+
+@pytest.mark.asyncio
 async def test_sync_does_not_overwrite_manual_effective_bill_date(
     session: AsyncSession, test_user, test_workspace,
 ):

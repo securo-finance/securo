@@ -3772,10 +3772,8 @@ def _finance_charge_parts(
     `amount`, or None."""
     from itertools import combinations  # local — not used elsewhere in this file
     candidates = [
-        index
-        for index, row in enumerate(regular[:_FINANCE_CHARGE_MAX_CANDIDATES])
-        if row.amount < amount
-    ]
+        index for index, row in enumerate(regular) if row.amount < amount
+    ][:_FINANCE_CHARGE_MAX_CANDIDATES]
     for size in range(2, _FINANCE_CHARGE_MAX_PARTS + 1):
         for combo in combinations(candidates, size):
             if sum(regular[index].amount for index in combo) == amount:
