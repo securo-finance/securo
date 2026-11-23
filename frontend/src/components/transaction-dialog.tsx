@@ -32,7 +32,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { AlertTriangle, ArrowRight, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Flag, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check, Pencil } from 'lucide-react'
+import { AlertTriangle, ArrowRight, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Flag, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check, CircleCheck, Pencil } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -695,6 +695,8 @@ function TransactionForm({
   const [togglingIgnore, setTogglingIgnore] = useState(false)
   const [isFlagged, setIsFlagged] = useState(seed?.is_flagged ?? false)
   const [togglingFlag, setTogglingFlag] = useState(false)
+  const [isPaid, setIsPaid] = useState(seed?.is_paid ?? false)
+  const [togglingPaid, setTogglingPaid] = useState(false)
   const [flagDueDate, setFlagDueDate] = useState(seed?.flag_due_date ?? '')
   const [flagNote, setFlagNote] = useState(seed?.flag_note ?? '')
   const [savedFlagNote, setSavedFlagNote] = useState(seed?.flag_note ?? '')
@@ -836,6 +838,26 @@ function TransactionForm({
       toast.error(t('common.error'))
     } finally {
       setTogglingFlag(false)
+    }
+  }
+
+  // Paid or not is the user's mark and never waits for the form to be saved,
+  // so it goes out on its own like the flag (issue #15).
+  const handleTogglePaid = async () => {
+    if (!seed?.id || togglingPaid) return
+    setTogglingPaid(true)
+    try {
+      const updated = await transactionsApi.update(seed.id, { is_paid: !isPaid })
+      setIsPaid(updated.is_paid ?? false)
+      toast.success(updated.is_paid
+        ? t('transactions.paidSuccess')
+        : t('transactions.unpaidSuccess'))
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['drill-down'] })
+    } catch {
+      toast.error(t('common.error'))
+    } finally {
+      setTogglingPaid(false)
     }
   }
 
@@ -1932,6 +1954,19 @@ function TransactionForm({
             >
               <Flag size={14} className={isFlagged ? 'fill-current text-amber-600 dark:text-amber-400' : undefined} />
               {isFlagged ? t('transactions.unflagAction') : t('transactions.flagAction')}
+            </Button>
+          )}
+          {seed?.id && (
+            <Button
+              type="button"
+              variant={isPaid ? 'secondary' : 'outline'}
+              onClick={handleTogglePaid}
+              disabled={loading || togglingPaid}
+              title={isPaid ? t('transactions.markUnpaidHint') : t('transactions.markPaidHint')}
+              className="gap-1.5 whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
+            >
+              <CircleCheck size={14} className={isPaid ? 'text-emerald-500' : undefined} />
+              {isPaid ? t('transactions.markUnpaid') : t('transactions.markPaid')}
             </Button>
           )}
           {transaction && onCreateRule && (

@@ -27,6 +27,24 @@ if TYPE_CHECKING:
 #: to the one the sync gave.
 USER_EDITED_KEY = "securo_user_edited"
 
+#: Sources whose rows are money that already moved: a bank statement, a
+#: statement file the user imported, a group settle-up (which records money
+#: already handed over) and an account's opening balance (the money the account
+#: already had). Everything else — a row the user types, a transfer they record,
+#: the placeholder a recurring bill generates for a date still ahead — starts
+#: unpaid. The user's own mark always wins over this: a sync updating a row it
+#: already tracks leaves `is_paid` alone. A manual row or recurring placeholder
+#: the statement takes over is the exception: the bank (or the file) just
+#: confirmed the money moved, so it turns paid there, once, and the user's later
+#: mark wins again from then on.
+SETTLED_TRANSACTION_SOURCES = frozenset({"sync", "import", "settlement", "opening_balance"})
+
+
+def default_is_paid(context) -> bool:
+    """The opening value of `is_paid` for a row being inserted (issue #15)."""
+    source = context.get_current_parameters().get("source")
+    return source in SETTLED_TRANSACTION_SOURCES
+
 
 class Transaction(Base):
     __tablename__ = "transactions"
@@ -153,6 +171,13 @@ class Transaction(Base):
     # total, balance or report does. Both are cleared with the flag.
     is_flagged: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
+    )
+    # Whether the money has already moved (issue #15). A statement row starts
+    # paid and a row the user types starts unpaid; either can be flipped in
+    # the UI, and the sync never writes over the user's mark. No total,
+    # balance or report reads it.
+    is_paid: Mapped[bool] = mapped_column(
+        Boolean, default=default_is_paid, server_default="false"
     )
     flag_due_date: Mapped[Optional[_date]] = mapped_column(Date, nullable=True)
     flag_note: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)

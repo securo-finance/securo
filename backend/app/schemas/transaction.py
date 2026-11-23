@@ -79,6 +79,10 @@ class TransactionCreate(TransactionBase):
     # (not yet settled) to record an entry that isn't settled yet. Only
     # posted/pending are valid.
     status: Optional[Literal["posted", "pending"]] = None
+    # Whether the money has already moved (issue #15). Omitted, a manual entry
+    # starts unpaid; the caller may set it, and the dialog does when the user
+    # is recording something that already happened.
+    is_paid: Optional[bool] = None
     # Manual installment metadata. When present, this transaction is one
     # installment of a manually-created series (created via the regular
     # endpoint, e.g. a single installment, or via the series endpoint
@@ -173,6 +177,12 @@ class TransactionUpdate(BaseModel):
     # user mark a manually-entered transaction as settled once it clears,
     # or flip a synced row back to pending before the next sync.
     status: Optional[Literal["posted", "pending"]] = None
+    # Paid or not (issue #15). Not Optional, for the same reason as
+    # `is_flagged`: the column is NOT NULL, so an explicit null is a 422 here
+    # instead of a 500 at commit. Updates use exclude_unset, so leaving it out
+    # changes nothing: the sync never sends it, and the user's mark survives a
+    # re-sync.
+    is_paid: bool = False
     apply_to_transfer_pair: bool = False
     # CC bucketing override (issue #92). Empty string / explicit null clears
     # it back to auto. Only meaningful for credit-card accounts.
@@ -337,6 +347,7 @@ class TransactionRead(TransactionBase):
     is_ignored: bool = False
     exclude_from_pnl: bool = False
     is_flagged: bool = False
+    is_paid: bool = False
     flag_due_date: Optional[_Date] = None
     flag_note: Optional[str] = None
     #: False until the person has seen this row: set for transactions that

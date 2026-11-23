@@ -664,6 +664,7 @@ export const transactions = {
     exclude_ignored?: boolean
     flagged?: boolean
     flag_due?: FlagDue
+    unpaid_only?: boolean
     unread_only?: boolean
     tags?: string[]
     min_amount?: number
@@ -897,6 +898,7 @@ export const transactions = {
     exclude_ignored?: boolean
     flagged?: boolean
     flag_due?: FlagDue
+    unpaid_only?: boolean
     unread_only?: boolean
     transaction_ids?: string[]
   }): Promise<void> => {
