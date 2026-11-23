@@ -115,7 +115,7 @@ function answerThreads(query, threads) {
 // CodeRabbit review of that same head.
 async function evaluate({
   threads, comments, reviews, checks, order, body = 'Reviewed, green on this head.',
-  commentsError = null, files,
+  commentsError = null, files, author, headRepo, commits, commitCount,
 }) {
   const log = [];
   const merged = [];
@@ -126,13 +126,16 @@ async function evaluate({
   let commentReads = 0;
   // A file carries its new name, and `previous_filename` when it was renamed.
   const changedFiles = files || [{ filename: 'docs/notes.md' }];
+  const prCommits = commits || [];
   const state = {
     pr: {
+      number: 42,
       state: 'open',
       draft: false,
       base: { ref: 'main' },
-      head: { sha: HEAD },
-      user: { login: 'securo-dev' },
+      head: { sha: HEAD, repo: { full_name: headRepo || 'securo-finance/securo' } },
+      user: author || { login: 'securo-dev', type: 'User' },
+      commits: commitCount ?? prCommits.length,
       title: 'docs: keep the notes current',
       body,
       labels: [{ name: 'risk: low' }],
@@ -160,6 +163,7 @@ async function evaluate({
         list: async () => [],
         listFiles: async () => state.files,
         listReviews: async () => state.reviews,
+        listCommits: async () => prCommits,
         merge: async (params) => { merged.push(params); return { data: {} }; },
       },
       issues: {
@@ -617,6 +621,146 @@ scenario('a frontend page outside every group still merges', async () => {
     files: [{ filename: 'frontend/src/pages/transactions.tsx' }],
   });
   assert.ok(merged, `expected a merge, got: ${log}`);
+});
+
+// CodeRabbit skips pull requests opened by a bot ("Review skipped: author
+// ignored by configuration"), so gate 3c refused every Renovate bump for a
+// review that never comes (#1763). A bump only the bot wrote waives that one
+// gate; anything a person added keeps it.
+const RENOVATE = { login: 'renovate[bot]', type: 'Bot' };
+const botCommit = (sha = HEAD, overrides = {}) => ({
+  sha,
+  author: { login: 'renovate[bot]' },
+  committer: { login: 'web-flow' },
+  commit: { verification: { verified: true } },
+  ...overrides,
+});
+const SKIPPED = coderabbitCheck('neutral', 'Review skipped',
+  'Review skipped: author ignored by configuration');
+const BUMP_FILES = [
+  { filename: 'frontend/package.json' },
+  { filename: 'frontend/package-lock.json' },
+];
+const renovateBump = (overrides = {}) => evaluate({
+  threads: [],
+  reviews: [],
+  checks: [...GREEN, SKIPPED],
+  author: RENOVATE,
+  files: BUMP_FILES,
+  commits: [botCommit()],
+  ...overrides,
+});
+
+scenario('a Renovate bump only the bot wrote merges without a CodeRabbit review',
+  async () => {
+    const { merged, log } = await renovateBump();
+    assert.ok(merged, `expected a merge, got: ${log}`);
+    assert.match(log, /CodeRabbit skips its author, so its review is not required/, log);
+  });
+
+scenario('a Python lock bump only the bot wrote merges too', async () => {
+  const { merged, log } = await renovateBump({
+    files: [{ filename: 'backend/pyproject.toml' }, { filename: 'backend/uv.lock' }],
+  });
+  assert.ok(merged, `expected a merge, got: ${log}`);
+});
+
+// #1763: a person stacked a fix on the Renovate branch. That code was never
+// read by CodeRabbit, so the gate stands.
+scenario('a person\'s commit on a Renovate branch keeps the CodeRabbit gate', async () => {
+  const { merged, log } = await renovateBump({
+    files: [...BUMP_FILES, { filename: 'frontend/src/pages/dashboard.tsx' }],
+    commits: [botCommit(), botCommit(OLD_HEAD, { author: { login: 'tassionoronha' } })],
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.match(log, /CodeRabbit has no review of this commit/, log);
+});
+
+scenario('a Renovate pull request touching a source file keeps the gate', async () => {
+  const { merged, log } = await renovateBump({
+    files: [...BUMP_FILES, { filename: 'frontend/src/pages/dashboard.tsx' }],
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.match(log, /not waived for this bot pull request: it changes frontend\/src/, log);
+});
+
+scenario('renovate.json in a bot pull request keeps the gate', async () => {
+  const { merged, log } = await renovateBump({
+    files: [...BUMP_FILES, { filename: 'renovate.json' }],
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.match(log, /it changes renovate\.json/, log);
+});
+
+// A local commit can carry any author name; only a commit GitHub signed for
+// the bot is the bot's.
+scenario('an unsigned commit claiming to be the bot keeps the gate', async () => {
+  const { merged, log } = await renovateBump({
+    commits: [botCommit(HEAD, {
+      committer: { login: 'tassionoronha' },
+      commit: { verification: { verified: false } },
+    })],
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.match(log, /is not a signed commit of renovate\[bot\]/, log);
+});
+
+scenario('a bot pull request from a fork keeps the gate', async () => {
+  const { merged, log } = await renovateBump({ headRepo: 'someone/securo' });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.match(log, /its branch is not in this repository/, log);
+});
+
+// The login alone is not enough: a user account cannot be a bot.
+scenario('a user named like the bot keeps the gate', async () => {
+  const { merged, log } = await renovateBump({
+    author: { login: 'renovate[bot]', type: 'User' },
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.match(log, /CodeRabbit has no review of this commit/, log);
+});
+
+// The waiver is about CodeRabbit only: every other gate still holds.
+scenario('a waived bump still needs a verdict naming the head', async () => {
+  const { merged, log } = await renovateBump({ comments: [] });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.match(log, /carries no approval/, log);
+});
+
+scenario('a waived bump still needs the required checks green', async () => {
+  const red = GREEN.map((c) => (c.name === 'Backend Tests'
+    ? { ...c, conclusion: 'failure' } : c));
+  const { merged, log } = await renovateBump({ checks: [...red, SKIPPED] });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.match(log, /Backend Tests check ended as failure/, log);
+});
+
+scenario('a waived bump still refuses on a blocked path', async () => {
+  const { merged, log } = await renovateBump({
+    files: [{ filename: 'backend/Dockerfile' }],
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.match(log, /\(deployment\)/, log);
+});
+
+scenario('a waived bump still refuses on an open Major thread', async () => {
+  const { merged, log } = await renovateBump({ threads: [{ comments: [major()] }] });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.match(log, /unresolved CodeRabbit major thread/, log);
+});
+
+// Commits past what the list returned could be anyone's, so the waiver fails
+// closed, the same way the file gate does.
+scenario('a bot pull request whose commits were not all read keeps the gate', async () => {
+  const { merged, log } = await renovateBump({ commitCount: 300 });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.match(log, /only 1 of its 300 commits could be read/, log);
+});
+
+scenario('a bot pull request with no commit read keeps the gate', async () => {
+  const { merged, log } = await renovateBump({ commits: [] });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.match(log, /no commit to read/, log);
 });
 
 let failed = 0;

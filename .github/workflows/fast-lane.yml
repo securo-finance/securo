@@ -20,7 +20,8 @@ name: fast lane
 #   7. CodeRabbit reviewed that same head: no open thread is evidence of a
 #      review only once a review happened, and a rate-limited or paused bot
 #      leaves a completed check run saying so; a review names the commit, and
-#      so does a check run that reports its review as completed
+#      so does a check run that reports its review as completed. A dependency
+#      bump only Renovate wrote is the one exception, see DEPENDENCY_BOTS
 #
 # A refusal is also said on the pull request itself, in one comment this
 # workflow rewrites in place and deletes once the pull request merges or the
@@ -222,6 +223,73 @@ jobs:
             // into a documentation path does not hide it.
             const isDocumentation = (p) =>
               /\.(md|mdx)$/i.test(p) || /(^|\/)docs\//i.test(p);
+
+            // CodeRabbit is configured to skip pull requests opened by a bot,
+            // so gate 3c refused every Renovate pull request with "Review
+            // skipped: author ignored by configuration": a check that by design
+            // never comes. For a bump that is only a version change the review
+            // has little to read anyway (it skips lock files), and what guards
+            // a dependency is elsewhere: Renovate's minimumReleaseAge, uv's
+            // exclude-newer, CI on the exact head and a person's verdict.
+            //
+            // So the review is waived only when nothing but the bot is in the
+            // pull request. A person's commit stacked on a Renovate branch is
+            // code CodeRabbit never read (#1763 carried a dashboard fix), and
+            // it keeps the gate. Every condition has to hold:
+            //   - the pull request was opened by one of these bot accounts;
+            //   - its branch lives in this repository, where only people with
+            //     write access can push;
+            //   - every changed file is one of DEPENDENCY_FILES;
+            //   - every commit is authored by the bot and was committed and
+            //     signed by GitHub for it (a platform commit), so a local
+            //     commit claiming the bot's name does not count.
+            // Every other gate still runs: risk label, blocked paths, no
+            // changes requested, open Major threads, the verdict naming the
+            // head and the three required checks.
+            const DEPENDENCY_BOTS = ['renovate[bot]'];
+            const DEPENDENCY_FILES = new Set([
+              'frontend/package.json',
+              'frontend/package-lock.json',
+              'backend/pyproject.toml',
+              'backend/uv.lock',
+            ]);
+
+            // Returns null when the pull request is not a bot's, else the reason
+            // the waiver does not apply ('' when it does).
+            async function dependencyBumpGap(pr, files) {
+              if (!pr.user || pr.user.type !== 'Bot'
+                  || !DEPENDENCY_BOTS.includes(pr.user.login)) return null;
+              const own = `${OWNER}/${REPO}`;
+              if (!pr.head.repo || pr.head.repo.full_name !== own) {
+                return 'its branch is not in this repository';
+              }
+              for (const f of files) {
+                for (const p of [f.filename, f.previous_filename].filter(Boolean)) {
+                  if (!DEPENDENCY_FILES.has(p)) return `it changes ${p}`;
+                }
+              }
+              let commits;
+              try {
+                commits = await github.paginate(github.rest.pulls.listCommits,
+                  { owner: OWNER, repo: REPO, pull_number: pr.number, per_page: 100 });
+              } catch (e) {
+                return `its commits could not be read: ${e.message}`;
+              }
+              if (!commits.length) return 'it has no commit to read';
+              if (commits.length !== pr.commits) {
+                return `only ${commits.length} of its ${pr.commits} commits could be read`;
+              }
+              for (const c of commits) {
+                const author = (c.author || {}).login;
+                const committer = (c.committer || {}).login;
+                const verified = ((c.commit || {}).verification || {}).verified === true;
+                if (author !== pr.user.login || committer !== 'web-flow' || !verified) {
+                  return `commit ${String(c.sha).slice(0, 8)} is not a signed commit ` +
+                    `of ${pr.user.login}`;
+                }
+              }
+              return '';
+            }
 
             // A refusal used to exist only in this run's log, and a log expires:
             // the pull request a person had already approved looked exactly as
@@ -450,6 +518,15 @@ jobs:
                 }
               }
 
+              // A Renovate pull request with nothing in it but the bot's own
+              // version bump skips gate 3c only (see DEPENDENCY_BOTS above).
+              const gap = await dependencyBumpGap(pr, files);
+              const dependencyBump = gap === '';
+              if (gap) {
+                core.info(`#${number}: CodeRabbit is not waived for this bot ` +
+                  `pull request: ${gap}`);
+              }
+
               // ---- 3. a standing request for changes blocks the merge -------
               const reviews = await github.paginate(github.rest.pulls.listReviews,
                 { owner: OWNER, repo: REPO, pull_number: number, per_page: 100 });
@@ -487,7 +564,7 @@ jobs:
                 && r.user.login === 'coderabbitai[bot]'
                 && r.commit_id === head);
               let coderabbitRun = null;
-              if (!reviewedByReview) {
+              if (!reviewedByReview && !dependencyBump) {
                 try {
                   const { data } = await github.rest.checks.listForRef(
                     { owner: OWNER, repo: REPO, ref: head, per_page: 100 });
@@ -579,7 +656,10 @@ jobs:
               // rate-limited or paused review is `neutral` or `skipped`, and
               // `success` says nothing unless the output says the review was
               // completed, so a check run is no evidence on its own.
-              if (!reviewedByReview) {
+              if (dependencyBump && !reviewedByReview) {
+                core.info(`#${number}: a dependency bump only ${pr.user.login} ` +
+                  `wrote; CodeRabbit skips its author, so its review is not required`);
+              } else if (!reviewedByReview) {
                 const output = (coderabbitRun && coderabbitRun.output) || {};
                 // Why it did not review is in the same run: a skipped review
                 // ends `neutral` or `skipped` and only the title says what
