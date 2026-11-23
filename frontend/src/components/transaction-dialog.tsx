@@ -32,13 +32,15 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { AlertTriangle, ArrowRight, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Flag, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check, CircleCheck, Pencil } from 'lucide-react'
+import { AlertTriangle, ArrowRight, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Flag, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check, CircleCheck, Pencil, MoreHorizontal, Trash2 } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CategorySelect } from '@/components/category-select'
 import { PayeeSelect } from '@/components/payee-select'
 import { PayeeFormDialog } from '@/components/payee-form-dialog'
@@ -426,6 +428,49 @@ export function TransactionDialog({
       </DialogContent>
     </Dialog>
     </>
+  )
+}
+
+/** Icon-only footer toggle: the label names it for screen readers and shows on hover. */
+function FooterIconAction({
+  label,
+  hint,
+  active,
+  onClick,
+  disabled,
+  children,
+}: {
+  label: string
+  hint?: string
+  active: boolean
+  onClick: () => void
+  disabled?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={label}
+          aria-pressed={active || undefined}
+          onClick={onClick}
+          disabled={disabled}
+          className={cn(
+            'size-9 text-muted-foreground hover:text-foreground [&_svg]:size-[18px]',
+            active && 'bg-muted text-foreground',
+          )}
+        >
+          {children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>
+        <span className="font-medium">{label}</span>
+        {hint && <span className="block opacity-80">{hint}</span>}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -1922,88 +1967,86 @@ function TransactionForm({
       </div>
 
       <DialogFooter className={cn(
-        'shrink-0 border-t pt-4 mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between',
-        !(onDelete || seed?.id) ? 'sm:justify-end' : ''
+        'shrink-0 border-t pt-4 mt-2 flex flex-row flex-wrap items-center justify-between gap-3',
+        !(onDelete || seed?.id) ? 'justify-end' : ''
       )}>
-        <div className="flex min-w-0 flex-wrap gap-2 items-center">
-          {onDelete && (
-            <Button type="button" variant="destructive" onClick={onDelete} disabled={loading} className="whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9">
-              {t('common.delete')}
-            </Button>
-          )}
+        <TooltipProvider>
+        <div className="flex min-w-0 items-center gap-1">
           {seed?.id && (
-            <Button
-              type="button"
-              variant={isIgnored ? 'secondary' : 'outline'}
-              onClick={handleToggleIgnore}
-              disabled={loading || togglingIgnore}
-              title={t('transactions.ignoreTransferHint')}
-              className="gap-1.5 whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
-            >
-              {isIgnored ? <Eye size={14} /> : <EyeClosed size={14} />}
-              {isIgnored ? t('transactions.unignoreAction') : t('transactions.ignoreAction')}
-            </Button>
-          )}
-          {seed?.id && (
-            <Button
-              type="button"
-              variant={isFlagged ? 'secondary' : 'outline'}
-              onClick={handleToggleFlag}
-              disabled={loading || togglingFlag}
-              className="gap-1.5 whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
-            >
-              <Flag size={14} className={isFlagged ? 'fill-current text-amber-600 dark:text-amber-400' : undefined} />
-              {isFlagged ? t('transactions.unflagAction') : t('transactions.flagAction')}
-            </Button>
-          )}
-          {seed?.id && (
-            <Button
-              type="button"
-              variant={isPaid ? 'secondary' : 'outline'}
-              onClick={handleTogglePaid}
-              disabled={loading || togglingPaid}
-              title={isPaid ? t('transactions.markUnpaidHint') : t('transactions.markPaidHint')}
-              className="gap-1.5 whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
-            >
-              <CircleCheck size={14} className={isPaid ? 'text-emerald-500' : undefined} />
-              {isPaid ? t('transactions.markUnpaid') : t('transactions.markPaid')}
-            </Button>
-          )}
-          {transaction && onCreateRule && (
-            <div className="inline-flex">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onCreateRule(transaction)}
-                className="gap-1.5 rounded-e-none whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
-                title={t('transactions.createRule')}
+            <>
+              <FooterIconAction
+                label={isIgnored ? t('transactions.unignoreAction') : t('transactions.ignoreAction')}
+                hint={t('transactions.ignoreTransferHint')}
+                active={isIgnored}
+                onClick={handleToggleIgnore}
+                disabled={loading || togglingIgnore}
               >
-                <SlidersHorizontal size={14} />
-                {t('transactions.createRule')}
-              </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    aria-label={t('transactions.ruleActions')}
-                    className="rounded-s-none border-s-0 px-1.5 sm:px-2 has-[>svg]:px-1.5 sm:has-[>svg]:px-2 h-8 sm:h-9"
-                    disabled={updateRuleMutation.isPending}
-                  >
-                    <ChevronDown size={14} />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-56">
-                  <DropdownMenuItem onSelect={() => setAddToRuleOpen(true)}>
-                    <ListPlus size={16} />
-                    {t('transactions.addToExistingRule')}
+                {isIgnored ? <Eye /> : <EyeClosed />}
+              </FooterIconAction>
+              <FooterIconAction
+                label={isFlagged ? t('transactions.unflagAction') : t('transactions.flagAction')}
+                active={isFlagged}
+                onClick={handleToggleFlag}
+                disabled={loading || togglingFlag}
+              >
+                <Flag className={isFlagged ? 'fill-current text-amber-600 dark:text-amber-400' : undefined} />
+              </FooterIconAction>
+              <FooterIconAction
+                label={isPaid ? t('transactions.markUnpaid') : t('transactions.markPaid')}
+                hint={isPaid ? t('transactions.markUnpaidHint') : t('transactions.markPaidHint')}
+                active={isPaid}
+                onClick={handleTogglePaid}
+                disabled={loading || togglingPaid}
+              >
+                <CircleCheck className={isPaid ? 'text-emerald-600 dark:text-emerald-400' : undefined} />
+              </FooterIconAction>
+            </>
+          )}
+          {((transaction && onCreateRule) || onDelete) && (
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={t('transactions.moreActions')}
+                      className="size-9 text-muted-foreground hover:text-foreground"
+                      disabled={updateRuleMutation.isPending}
+                    >
+                      <MoreHorizontal size={18} />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent>{t('transactions.moreActions')}</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="start" side="top" className="w-60">
+                {transaction && onCreateRule && (
+                  <>
+                    <DropdownMenuItem onSelect={() => onCreateRule(transaction)}>
+                      <SlidersHorizontal size={16} />
+                      {t('transactions.createRule')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setAddToRuleOpen(true)}>
+                      <ListPlus size={16} />
+                      {t('transactions.addToExistingRule')}
+                    </DropdownMenuItem>
+                  </>
+                )}
+                {transaction && onCreateRule && onDelete && <DropdownMenuSeparator />}
+                {onDelete && (
+                  <DropdownMenuItem variant="destructive" onSelect={onDelete} disabled={loading}>
+                    <Trash2 size={16} />
+                    {t('common.delete')}
                   </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
-        <div className="flex flex-wrap gap-2 justify-end sm:ms-auto">
+        </TooltipProvider>
+        <div className="flex flex-wrap gap-2 justify-end ms-auto">
           <Button type="button" variant="outline" onClick={onCancel} className="whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9">
             {t('common.cancel')}
           </Button>

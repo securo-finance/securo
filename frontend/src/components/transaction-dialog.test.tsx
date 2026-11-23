@@ -1015,7 +1015,7 @@ it('names the existing-rule picker after the field and the chosen rule', async (
     />,
   )
 
-  await user.click(await screen.findByRole('button', { name: t('transactions.ruleActions') }))
+  await user.click(await screen.findByRole('button', { name: t('transactions.moreActions') }))
   await user.click(await screen.findByRole('menuitem', { name: t('transactions.addToExistingRule') }))
 
   // A <label for> naming a <button> does not name it, so the button carries the

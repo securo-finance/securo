@@ -935,6 +935,7 @@
     "duplicate": "Duplicar",
     "createRule": "Criar Regra",
     "ruleActions": "Ações da regra",
+    "moreActions": "Mais ações",
     "addToExistingRule": "Adicionar a regra existente",
     "addToExistingRuleTitle": "Adicionar transação a uma regra",
     "addToExistingRuleDescription": "Escolha uma regra de categoria ativa e adicione a descrição desta transação como outra correspondência futura.",
