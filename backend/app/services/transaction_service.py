@@ -287,12 +287,18 @@ def _drop_typed_primary(transaction: Transaction) -> None:
 
 async def _restore_typed_primary(
     session: AsyncSession, transaction: Transaction, user_id: uuid.UUID
-) -> None:
-    """Put back the typed conversion after a stamp derived it from a rate."""
+) -> bool:
+    """Put back the typed conversion after a stamp derived it from a rate.
+
+    Returns whether a typed figure was put back, so the caller knows the
+    primary amount no longer comes from the rate.
+    """
     user = await session.get(User, user_id)
     typed = typed_primary_amount(transaction, user.primary_currency) if user else None
-    if typed is not None:
-        transaction.amount_primary, transaction.fx_rate_used = typed
+    if typed is None:
+        return False
+    transaction.amount_primary, transaction.fx_rate_used = typed
+    return True
 
 
 FlagDue = Literal["overdue", "soon"]
@@ -2140,9 +2146,15 @@ async def _apply_update_to_row(
     previous_account_id = tx.account_id
     # Compared before the update: a save that resends the same amount must
     # not work out the account amount again.
-    account_inputs_changed = any(
+    money_inputs_changed = any(
         key in update_data and update_data[key] != getattr(tx, key)
-        for key in ("amount", "currency", "date")
+        for key in ("amount", "currency")
+    )
+    # A move of the date restamps the account amount too, but it does not
+    # invalidate a typed conversion: that figure is about the amount, and the
+    # dialog sends it back unchanged when only the date moved (#444).
+    account_inputs_changed = money_inputs_changed or (
+        "date" in update_data and update_data["date"] != tx.date
     )
     fx_keys = {"amount_primary", "fx_rate_used"}
     for key, value in update_data.items():
@@ -2192,13 +2204,17 @@ async def _apply_update_to_row(
     elif needs_restamp or heals_fx_on_post or account_moved:
         # Posting only heals the reporting stamp; the account amount follows
         # a change of amount, currency, date or account.
-        if account_inputs_changed or account_moved:
+        if money_inputs_changed or account_moved:
             _drop_typed_primary(tx)
         await stamp_primary_amount(
             session, stamp_user_id, tx, restamp_account=account_inputs_changed or account_moved
         )
         # A save that resends the same amount keeps what the user typed.
-        await _restore_typed_primary(session, tx, stamp_user_id)
+        if await _restore_typed_primary(session, tx, stamp_user_id):
+            # The stamp above wrote the derived figure into the account leg
+            # when the account is in the owner's currency; the restored one
+            # is the row's value there.
+            await stamp_account_amount(session, tx, typed_primary=True, recompute=False)
 
     # Refresh effective_date when the purchase date, account, or the manual
     # bill-cycle override changed. Also re-link bill_id when the override

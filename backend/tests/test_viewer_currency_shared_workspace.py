@@ -706,6 +706,56 @@ async def test_member_moving_the_row_converts_his_figure_at_the_new_date(
     assert tx.date == day15
     assert tx.amount_primary == Decimal("1320.00")
     assert abs(resp.json()["amount_primary"]) == pytest.approx(330.0)
+    # The retyped figure is the one kept: Ana's old R$ 1.560 does not come
+    # back through the typed copy (#444).
+    assert (tx.amount_primary_typed, tx.amount_primary_typed_currency) == (
+        Decimal("1320.00"), "BRL",
+    )
+
+
+@pytest.mark.asyncio
+async def test_member_moving_only_the_date_keeps_the_owners_typed_stamp(
+    client, session, couple
+):
+    """#444: Bruno moves Ana's 300 USD from day 5 to day 15 and touches
+    nothing else, so the dialog sends back the 312 € it was shown; the server
+    drops that echo. Ana's typed R$ 1.560 at 5,2 must survive the move
+    instead of taking the day-15 market conversion (R$ 1.200)."""
+    _, _, day15 = _last_month()
+    row = await _usd_row(client, couple, "300.00", "1560.00")
+    resp = await client.patch(
+        f"/api/transactions/{row['id']}", headers=couple["bruno"],
+        json=_dialog_save(row, date=day15.isoformat()),
+    )
+    assert resp.status_code == 200, resp.text
+    tx = await _stored(session, row["id"])
+    assert tx.date == day15
+    assert tx.amount_primary == Decimal("1560.00")
+    assert (tx.amount_primary_typed, tx.amount_primary_typed_currency) == (
+        Decimal("1560.00"), "BRL",
+    )
+    assert Decimal(str(tx.fx_rate_used)) == Decimal("5.2")
+
+
+@pytest.mark.asyncio
+async def test_member_moving_only_the_date_restamps_a_derived_stamp(
+    client, session, couple
+):
+    """The guard on the fix above: with nothing typed, a date move still
+    follows the date, R$ 1.500 at day 5 (5,00) becoming R$ 1.200 at day 15
+    (4,00)."""
+    _, _, day15 = _last_month()
+    row = await _usd_row(client, couple, "300.00", None)
+    resp = await client.patch(
+        f"/api/transactions/{row['id']}", headers=couple["bruno"],
+        json=_dialog_save(row, date=day15.isoformat()),
+    )
+    assert resp.status_code == 200, resp.text
+    tx = await _stored(session, row["id"])
+    assert tx.date == day15
+    assert tx.amount_primary == Decimal("1200.00")
+    assert tx.amount_primary_typed is None
+    assert Decimal(str(tx.fx_rate_used)) == Decimal("4")
 
 
 @pytest.mark.asyncio
