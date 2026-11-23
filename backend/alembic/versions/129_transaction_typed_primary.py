@@ -1,7 +1,7 @@
 """keep the converted amount a user typed for a foreign transaction
 
-Revision ID: 128
-Revises: 127
+Revision ID: 129
+Revises: 128
 
 `amount_primary` is a cache in the owner's display currency, rewritten when
 that currency changes. A converted amount the user typed (a USD row entered
@@ -16,8 +16,8 @@ were derived from a rate.
 import sqlalchemy as sa
 from alembic import op
 
-revision = "128"
-down_revision = "127"
+revision = "129"
+down_revision = "128"
 branch_labels = None
 depends_on = None
 
