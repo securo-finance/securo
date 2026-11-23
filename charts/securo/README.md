@@ -8,7 +8,7 @@
 - **Asynchronous Task Scheduler**: Runs Celery workers and a Celery beat singleton for automated background processing (such as bank syncs, recurring transactions, and exchange rate updates).
 - **Databases**: Easily configure connections to your external PostgreSQL and Redis instances.
 - **Gateway API & Ingress**: Native support for standard Kubernetes Ingress or the modern Kubernetes Gateway API (`HTTPRoute`).
-- **Plugins with code (optional)**: Runs plugin code in a separate container that reaches the internet only through an egress proxy which refuses private addresses and hosts the plugin did not declare.
+- **Plugins with code (optional)**: Runs plugin code in a separate container whose traffic out goes through an egress proxy that refuses private addresses and hosts the plugin did not declare (DNS is the one exception, see below).
 
 ## Prerequisites
 
@@ -230,13 +230,13 @@ plugins:
 
 The chart creates a Secret with a random runner token and egress secret, kept across upgrades. To bring your own, set `plugins.runner.existingSecret` to a Secret with `PLUGINS_RUNNER_TOKEN` and `PLUGINS_EGRESS_SECRET`, each at least 32 characters, or set `plugins.runner.token` and `plugins.runner.egressSecret` as values.
 
-To rotate, set new `plugins.runner.token` and `plugins.runner.egressSecret` values (or update your own Secret): the checksum is computed from the credentials in use, so the runners, the backend, the worker and beat roll together. Deleting the Secret in place is not a rotation path when the chart generates the pair outside the cluster, since the render cannot tell that the old credentials are gone.
+To rotate, set new `plugins.runner.token` and `plugins.runner.egressSecret` values: the checksum is computed from the credentials in use, so the runners, the backend, the worker and beat roll together. Deleting the Secret in place is not a rotation path when the chart generates the pair outside the cluster, since the render cannot tell that the old credentials are gone.
 
-Under GitOps tools (Argo CD, Flux) and plain `helm template`, `lookup` returns nothing, so every sync would generate a new pair and restart those pods for nothing. Manage the Secret yourself there and set `plugins.runner.existingSecret` to it.
+Under GitOps tools (Argo CD, Flux) and plain `helm template`, `lookup` returns nothing, so every sync generates a new pair while the checksum stays the same: the Secret changes under pods that keep the old credentials, and calls to the runner fail until they restart. Manage the Secret yourself there and set `plugins.runner.existingSecret` to it, or set fixed `plugins.runner.token` and `plugins.runner.egressSecret` values.
 
 Turning the runner on for a release installed before this value existed needs `helm upgrade --reset-then-reuse-values` (Helm 3.14+), which restores the chart defaults for the new key and keeps the previous release values. On older Helm, pass a values file that repeats every override the release already has. `--reuse-values --set plugins.runner.enabled=true` leaves the rest of `plugins.runner` unset and the render stops, and plain `--reset-values` drops overrides such as `global.existingSecret`.
 
-When the Secret is yours (`existingSecret`, or tokens managed outside the chart), rotating it does not change any checksum. Restart the consumers afterwards: roll the runner StatefulSet and the backend, worker and beat Deployments so they pick up the new token.
+When the Secret is yours (`existingSecret`, or tokens managed outside the chart), rotating it does not change any checksum, since the chart omits that annotation then. Restart the consumers afterwards: roll the runner StatefulSet and the egress, backend, worker and beat Deployments so they pick up the new pair. Leaving the egress proxy out keeps it on the old secret, and it rejects every pass the runner signs.
 
 The runner starts plugin processes as their own unprivileged users, with a read-only root filesystem, `/tmp` on tmpfs and a PID and memory limit. Plugin code reaches the internet only through `plugins-egress`, which checks each plugin's signed pass against the hosts it declared and refuses private addresses. DNS is the exception: the runner resolves the backend and the proxy through the cluster resolver, and plugin code can send its own queries there, so that resolver is a low-bandwidth channel of its own unless it filters undeclared names.
 

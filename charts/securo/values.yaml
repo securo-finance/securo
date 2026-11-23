@@ -250,8 +250,9 @@ mcpServer:
 
 # Plugins with code. Off by default: a plugin with code runs in its own
 # container next to the backend, never inside the API process. The runner
-# reaches the internet only through the egress proxy, which refuses private
-# addresses and anything the plugin did not declare.
+# reaches the internet through the egress proxy, which refuses private
+# addresses and anything the plugin did not declare; DNS queries to the
+# cluster resolver are the one exception (see the chart README).
 #
 # The chart creates a Secret with the runner token and the egress secret when
 # `runner.enabled` is true. Both are random, kept across upgrades, and never
