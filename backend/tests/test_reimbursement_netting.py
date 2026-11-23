@@ -364,3 +364,34 @@ async def test_a_pending_anchor_keeps_the_fx_residual_the_posted_path_keeps(sess
     assert in_primary[payback.id] == Decimal("0")
     # The balance curve works in the account's currency and keeps the native share.
     assert native[expense.id] == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_the_pending_forecast_takes_off_only_what_counts(
+    session, test_workspace, make_tx, category
+):
+    # A pending 100 expense paid back by a pending 100 credit that is half in
+    # an ignored category: the posted path takes 50 off, so the forecast must
+    # leave the expense 50 and the credit's counted income nothing.
+    shop, hidden = await category("Shop"), await category("Hidden")
+    expense = await make_tx(100, status="pending")
+    payback = await make_tx(100, "credit", status="pending", has_category_lines=True)
+    for position, (cat, amount) in enumerate(((shop, 50), (hidden, 50))):
+        session.add(TransactionCategoryLine(
+            workspace_id=test_workspace.id, transaction_id=payback.id,
+            category_id=cat.id, amount=Decimal(amount), position=position,
+        ))
+    await session.flush()
+    await _link(session, expense, (payback, 100))
+    hidden.is_ignored = True
+    await session.flush()
+    # The forecast reads rows with their categories loaded.
+    await session.refresh(expense, ["category", "category_lines"])
+    await session.refresh(payback, ["category", "category_lines"])
+
+    fractions = await reimbursement_share_fractions(
+        session, [expense, payback], clamp=True, in_primary=True
+    )
+
+    assert fractions[expense.id] == Decimal("0.5")
+    assert fractions[payback.id] == Decimal("0")

@@ -331,7 +331,12 @@ async def reimbursement_share_fractions(
     different rates. `in_primary` measures an anchor's share the same way
     (its primary amount less what the counterparts' parts are worth in
     primary), and keeps the native share for a row or link with no primary
-    amount. A balance curve works in the account's currency and leaves it off.
+    amount. The same mode measures against what counts toward P&L, as the
+    posted path does: a consumer multiplies the share into the row's counted
+    amount, so each allocation takes off its value times the smaller of the two
+    rows' counted shares, and each row's denominator is its counted amount
+    (rows need their category loaded for that). A balance curve works in the
+    account's currency on whole rows and leaves the mode off.
     """
     from app.services.reimbursement_service import _convert
 
@@ -356,14 +361,29 @@ async def reimbursement_share_fractions(
     ) - set(rows)
     every = dict(rows)
     if others:
-        loaded = await session.execute(select(Transaction).where(Transaction.id.in_(others)))
+        loaded = await session.execute(
+            select(Transaction)
+            .options(selectinload(Transaction.category))
+            .where(Transaction.id.in_(others))
+        )
         every.update({tx.id: tx for tx in loaded.scalars().all()})
+    if in_primary:
+        from app.services._query_filters import user_pnl_parts
+
+        counted = {
+            tx_id: sum((ratio for _, _, ratio in user_pnl_parts(tx)), _ZERO)
+            for tx_id, tx in every.items()
+        }
+    else:
+        counted = {tx_id: Decimal("1") for tx_id in every}
 
     taken: dict[uuid.UUID, Decimal] = {}
     in_primary_value: dict[uuid.UUID, Decimal] = {}
     primary_usable: dict[uuid.UUID, bool] = {}
     for allocation in allocations:
-        amount = effective[allocation.id]
+        # Only what counts on both rows moves, as on the posted path.
+        eligible = min(counted[allocation.anchor_id], counted[allocation.counterpart_id])
+        amount = effective[allocation.id] * eligible
         if allocation.counterpart_id in rows:
             taken[allocation.counterpart_id] = taken.get(allocation.counterpart_id, _ZERO) + amount
         if allocation.anchor_id in rows:
@@ -389,6 +409,7 @@ async def reimbursement_share_fractions(
         anchor_primary = rows[tx_id].amount_primary
         if in_primary and primary_usable.get(tx_id) and anchor_primary is not None and anchor_primary:
             amount, full = in_primary_value[tx_id], abs(Decimal(str(anchor_primary)))
+        full *= counted[tx_id]
         if full:
             share = 1 - amount / full
             fractions[tx_id] = max(share, _ZERO) if clamp else share
