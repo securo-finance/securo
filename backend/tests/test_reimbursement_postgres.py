@@ -220,3 +220,49 @@ async def test_a_second_save_of_one_anchor_waits_for_the_first(
         await first.commit()
         assert await asyncio.wait_for(waiting, timeout=10) is not None
         await second.rollback()
+
+
+async def test_two_saves_of_one_anchor_end_with_only_the_second_saves_links(
+    session, postgres_sessions, test_user, test_workspace
+):
+    from app.services import transaction_service
+
+    _, dinner, alice = await _linked_pair(session, test_user, test_workspace, date(2026, 10, 10))
+    bob = Transaction(
+        user_id=test_user.id, workspace_id=test_workspace.id, account_id=dinner.account_id,
+        description="Bob", amount=Decimal("40"), currency="USD", date=date(2026, 10, 11),
+        effective_date=date(2026, 10, 11), type="credit", source="manual", status="posted",
+    )
+    session.add(bob)
+    await session.flush()
+    await reimbursement_service.replace_allocations(session, dinner, [])  # start unlinked
+    await session.commit()
+
+    async def save(db, counterpart, amount):
+        # What the route does: lock the anchor, replace its links, then commit.
+        anchor = await transaction_service.get_transaction(
+            db, dinner.id, test_workspace.id, for_update=True
+        )
+        await reimbursement_service.replace_allocations(
+            db, anchor,
+            [ReimbursementAllocationInput(counterpart_id=counterpart.id, amount=Decimal(amount))],
+        )
+
+    async with postgres_sessions() as first, postgres_sessions() as second:
+        await save(first, alice, "60")  # not committed yet: holds the anchor
+        later = asyncio.create_task(save(second, bob, "40"))
+        done, _pending = await asyncio.wait({later}, timeout=1.0)
+        assert not done, "the second save ran while the first still held the anchor"
+
+        await first.commit()
+        await asyncio.wait_for(later, timeout=10)
+        await second.commit()
+
+    async with postgres_sessions() as check:
+        rows = (await check.execute(
+            select(ReimbursementAllocation.counterpart_id, ReimbursementAllocation.amount)
+            .where(ReimbursementAllocation.anchor_id == dinner.id)
+        )).all()
+    # Without the lock both saves clear and insert on the same empty set and
+    # the anchor ends linked to both payers.
+    assert rows == [(bob.id, Decimal("40.00"))]
