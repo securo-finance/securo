@@ -1,6 +1,7 @@
 # Securo is a personal finance app: account, transaction and settings screens
-# hold private data and must never be crawled. Every app route also sends
-# "X-Robots-Tag: noindex" (see frontend/default.conf.template).
+# hold private data. They are kept out of search engines by the
+# "X-Robots-Tag: noindex" header every app route sends (see
+# frontend/default.conf.template), not by Disallow: a crawler that may not
+# fetch a page never sees its noindex, and an already indexed URL would stay.
 User-agent: *
 Disallow: /api/
-Disallow: /accounts

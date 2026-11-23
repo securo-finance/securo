@@ -40,9 +40,13 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # Never cache index.html so new deployments are always picked up immediately
+    # Never cache index.html so new deployments are always picked up immediately.
+    # The SPA fallback below reaches this block through an internal redirect,
+    # and add_header here replaces the fallback's, so every app route served as
+    # index.html (/transactions, /accounts/...) gets its noindex from here.
     location = /index.html {
         add_header Cache-Control "no-store, no-cache, must-revalidate";
+        add_header X-Robots-Tag "noindex, nofollow" always;
         try_files $uri =404;
     }
 
@@ -55,8 +59,11 @@ server {
 
     # The entry page stays indexable; every other app route (accounts,
     # transactions, settings...) is private data and gets noindex, so a URL
-    # that leaks into a search engine is dropped from its index.
+    # that leaks into a search engine is dropped from its index. try_files
+    # serves the file here without a redirect, so this block needs the same
+    # no-cache header as /index.html.
     location = / {
+        add_header Cache-Control "no-store, no-cache, must-revalidate";
         try_files /index.html =404;
     }
 
