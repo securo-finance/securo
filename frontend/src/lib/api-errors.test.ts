@@ -178,6 +178,22 @@ describe('localized API errors', () => {
     ]))).toBe(expected)
   })
 
+  it.each([
+    ['en', 'The budget limit cannot be negative.'],
+    ['pt-BR', 'O limite do orçamento não pode ser negativo.'],
+  ])('shows the budget negative-limit error in %s', async (language, expected) => {
+    await i18n.changeLanguage(language)
+
+    expect(extractApiError(apiError([
+      {
+        type: 'budget_amount_negative',
+        loc: ['body', 'amount'],
+        msg: 'The budget limit cannot be negative',
+        ctx: {},
+      },
+    ]))).toBe(expected)
+  })
+
   // A refused amount comes as a 422 list from pydantic ("Value error, ...")
   // or, when the service works it out, as a plain detail (issue #330).
   it.each([

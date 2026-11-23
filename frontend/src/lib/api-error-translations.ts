@@ -52,6 +52,7 @@ const KNOWN_MESSAGES: Record<string, string> = {
   // update and batch call.
   'The budget limit must be at least 0.01': 'budgets.amountTooSmall',
   'The budget limit is too large': 'budgets.amountTooLarge',
+  'The budget limit cannot be negative': 'budgets.amountNegative',
   // The bounds of app/core/money.py, on a typed or a derived value.
   'amount must be greater than zero': 'transactions.amountErrors.notPositive',
   'amount must be at least 0.01': 'transactions.amountErrors.tooSmall',

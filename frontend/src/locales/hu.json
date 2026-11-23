@@ -1550,6 +1550,7 @@
     "invalidAmount": "Adjon meg egy érvényes, legalább nulla összeget.",
     "amountTooSmall": "A költségvetési limitnek legalább 0,01-nek kell lennie.",
     "amountTooLarge": "A költségvetési limit túl nagy.",
+    "amountNegative": "A költségvetési limit nem lehet negatív.",
     "repeatEveryMonthFor": "Repeat the {{category}} budget every month",
     "previousMonth": "Previous month",
     "nextMonth": "Next month",

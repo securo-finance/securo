@@ -1622,6 +1622,7 @@
     "invalidAmount": "Zadajte platnú sumu nula alebo viac.",
     "amountTooSmall": "Limit rozpočtu musí byť aspoň 0,01.",
     "amountTooLarge": "Limit rozpočtu je príliš veľký.",
+    "amountNegative": "Limit rozpočtu nesmie byť záporný.",
     "repeatEveryMonthFor": "Opakovať rozpočet {{category}} každý mesiac",
     "previousMonth": "Predchádzajúci mesiac",
     "nextMonth": "Nasledujúci mesiac",

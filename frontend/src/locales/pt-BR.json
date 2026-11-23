@@ -1556,6 +1556,7 @@
     "invalidAmount": "Insira um valor válido igual ou superior a zero.",
     "amountTooSmall": "O limite do orçamento deve ser de pelo menos 0,01.",
     "amountTooLarge": "O limite do orçamento é grande demais.",
+    "amountNegative": "O limite do orçamento não pode ser negativo.",
     "repeatEveryMonthFor": "Repetir o orçamento de {{category}} todo mês",
     "previousMonth": "Mês anterior",
     "nextMonth": "Próximo mês",

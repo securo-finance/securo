@@ -1564,6 +1564,7 @@
     "invalidAmount": "הזינו סכום תקין של אפס ומעלה.",
     "amountTooSmall": "מגבלת התקציב חייבת להיות לפחות 0.01.",
     "amountTooLarge": "מגבלת התקציב גדולה מדי.",
+    "amountNegative": "מגבלת התקציב לא יכולה להיות שלילית.",
     "repeatEveryMonthFor": "חזרה על תקציב {{category}} כל חודש",
     "previousMonth": "החודש הקודם",
     "nextMonth": "החודש הבא",

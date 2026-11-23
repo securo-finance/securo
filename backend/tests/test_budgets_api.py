@@ -1,7 +1,14 @@
 """Tests for recurring budgets API."""
+import uuid
 from datetime import date, timedelta
+from decimal import Decimal
 
 import pytest
+from pydantic_core import PydanticCustomError
+
+from app.models.category import Category
+from app.models.workspace import Workspace, WorkspaceMember
+from app.schemas.budget import validate_budget_amount
 
 
 def _current_month_str() -> str:
@@ -315,8 +322,12 @@ async def test_delete_recurring_previous_takes_effect(client, auth_headers, test
 
 # A limit that is not positive, or that does not fit Numeric(15, 2), used to
 # reach the database: the first ones were stored as they came, the large ones
-# came back as a 400 carrying the driver's exception text.
-OUT_OF_RANGE_AMOUNTS = ["-5", "-0.01", 0, "1e20", 99999999999999]
+# came back as a 400 carrying the driver's exception text. The last entry is
+# the one that only overflows once the column rounds it.
+OUT_OF_RANGE_AMOUNTS = ["-5", "-0.01", 0, "1e20", 99999999999999, "9999999999999.999"]
+# An edit accepts 0: the budgets screen clears a limit by PATCHing it, and the
+# zero row is the tombstone that stops a recurring series.
+OUT_OF_RANGE_UPDATE_AMOUNTS = ["-5", "-0.01", "1e20", 99999999999999, "9999999999999.999"]
 
 
 def _assert_readable_error(response, status_code: int) -> None:
@@ -346,7 +357,7 @@ async def test_create_budget_rejects_an_out_of_range_limit(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("amount", OUT_OF_RANGE_AMOUNTS)
+@pytest.mark.parametrize("amount", OUT_OF_RANGE_UPDATE_AMOUNTS)
 async def test_update_budget_rejects_an_out_of_range_limit(
     client, auth_headers, test_categories, amount
 ):
@@ -372,6 +383,90 @@ async def test_update_budget_rejects_an_out_of_range_limit(
     )
     stored = [b for b in listed.json() if b["id"] == budget_id]
     assert float(stored[0]["amount"]) == 500.0
+
+
+@pytest.mark.asyncio
+async def test_update_budget_accepts_zero_to_clear_it(client, auth_headers, test_categories):
+    """Clearing a limit sends amount 0, and the update has to take it.
+
+    The budgets screen does not delete the row: it writes a zero limit, which
+    masks the budget from that month on (planBudgetChange). A 0.01 floor here
+    turned that PATCH into a 422 and left the budget uncleareable (issue #406).
+    """
+    created = await client.post(
+        "/api/budgets",
+        json={
+            "category_id": str(test_categories[0].id),
+            "amount": 500,
+            "month": _current_month_str(),
+        },
+        headers=auth_headers,
+    )
+    assert created.status_code == 201
+    budget_id = created.json()["id"]
+
+    response = await client.patch(
+        f"/api/budgets/{budget_id}", json={"amount": 0}, headers=auth_headers
+    )
+    assert response.status_code == 200
+    assert float(response.json()["amount"]) == 0.0
+
+    listed = await client.get(
+        "/api/budgets", params={"month": _current_month_str()}, headers=auth_headers
+    )
+    stored = [b for b in listed.json() if b["id"] == budget_id]
+    assert float(stored[0]["amount"]) == 0.0
+
+
+@pytest.mark.asyncio
+async def test_clearing_a_recurring_budget_writes_the_tombstone_for_later_months(
+    client, auth_headers, test_categories
+):
+    """The recurring series is stopped by a zero row from the chosen month on."""
+    cat = test_categories[0]
+    created = await client.post(
+        "/api/budgets",
+        json={
+            "category_id": str(cat.id),
+            "amount": 300,
+            "month": _current_month_str(),
+            "is_recurring": True,
+        },
+        headers=auth_headers,
+    )
+    assert created.status_code == 201
+
+    response = await client.patch(
+        f"/api/budgets/{created.json()['id']}",
+        json={"amount": 0, "effective_month": _next_month_str()},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+
+    listed = await client.get(
+        "/api/budgets", params={"month": _next_month_str()}, headers=auth_headers
+    )
+    cat_budgets = [b for b in listed.json() if b["category_id"] == str(cat.id)]
+    assert len(cat_budgets) == 1
+    assert float(cat_budgets[0]["amount"]) == 0.0
+    assert cat_budgets[0]["is_recurring"] is True
+
+
+def test_budget_limit_bounds_are_the_column_scale():
+    """9,999,999,999,999.99 is the last limit Numeric(15, 2) holds."""
+    ceiling = Decimal("9999999999999.99")
+    assert validate_budget_amount(ceiling) == ceiling
+
+    for too_large in ("9999999999999.991", "9999999999999.999", "10000000000000", "1E+20"):
+        with pytest.raises(PydanticCustomError):
+            validate_budget_amount(Decimal(too_large))
+
+    # An edit may write the clearing zero; a create may not start at nothing.
+    assert validate_budget_amount(Decimal("0"), allow_zero=True) == 0
+    with pytest.raises(PydanticCustomError):
+        validate_budget_amount(Decimal("0"))
+    with pytest.raises(PydanticCustomError):
+        validate_budget_amount(Decimal("-0.01"), allow_zero=True)
 
 
 @pytest.mark.asyncio
@@ -446,13 +541,34 @@ async def test_budget_amount_error_names_the_bound(
 
 @pytest.mark.asyncio
 async def test_create_budget_rejects_a_category_of_another_workspace(
-    client, auth_headers,
+    client, auth_headers, session, test_user,
 ):
-    """The category is checked like the batch does, so no driver error leaks."""
+    """A real category of another workspace is refused like an unknown one.
+
+    The category exists and is the user's own, so only the workspace scope can
+    refuse it; an invented id would prove nothing about the check.
+    """
+    other = Workspace(
+        id=uuid.uuid4(),
+        name="Other household",
+        kind="personal",
+        created_by_user_id=test_user.id,
+    )
+    session.add(other)
+    await session.flush()
+    session.add(
+        WorkspaceMember(
+            id=uuid.uuid4(), workspace_id=other.id, user_id=test_user.id, role="owner"
+        )
+    )
+    foreign = Category(user_id=test_user.id, workspace_id=other.id, name="Foreign groceries")
+    session.add(foreign)
+    await session.commit()
+
     response = await client.post(
         "/api/budgets",
         json={
-            "category_id": "00000000-0000-4000-8000-000000000000",
+            "category_id": str(foreign.id),
             "amount": 100,
             "month": _current_month_str(),
         },

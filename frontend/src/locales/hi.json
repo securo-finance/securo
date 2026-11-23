@@ -1550,6 +1550,7 @@
     "invalidAmount": "शून्य या उससे अधिक की मान्य राशि दर्ज करें।",
     "amountTooSmall": "बजट सीमा कम से कम 0.01 होनी चाहिए।",
     "amountTooLarge": "बजट सीमा बहुत बड़ी है।",
+    "amountNegative": "बजट की सीमा ऋणात्मक नहीं हो सकती।",
     "repeatEveryMonthFor": "{{category}} बजट हर महीने दोहराएँ",
     "previousMonth": "पिछला महीना",
     "nextMonth": "अगला महीना",

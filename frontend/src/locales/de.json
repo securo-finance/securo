@@ -1551,6 +1551,7 @@
     "invalidAmount": "Gib einen gültigen Betrag von null oder mehr ein.",
     "amountTooSmall": "Das Budget-Limit muss mindestens 0,01 betragen.",
     "amountTooLarge": "Das Budget-Limit ist zu groß.",
+    "amountNegative": "Das Budget-Limit darf nicht negativ sein.",
     "repeatEveryMonthFor": "Budget für {{category}} jeden Monat wiederholen",
     "previousMonth": "Vormonat",
     "nextMonth": "Nächster Monat",
