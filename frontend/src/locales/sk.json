@@ -1157,7 +1157,7 @@
     "attachmentDeleted": "Príloha vymazaná",
     "attachmentDeleteConfirm": "Vymazať túto prílohu?",
     "attachmentTooLarge": "Súbor je príliš veľký. Maximálna veľkosť je 10 MB.",
-    "attachmentTypeNotAllowed": "Nepodporovaný typ súboru. Povolené: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "Nepodporovaný typ súboru. Povolené: {{types}}",
     "attachmentMaxReached": "Dosiahnutý maximálny počet príloh",
     "attachmentRenamed": "Príloha premenovaná",
     "attachmentRename": "Premenovať",
@@ -1301,7 +1301,8 @@
     "invoiceBadgeTooltip": "Táto transakcia vyrovnáva faktúru. Otvorte ju.",
     "suggestionBadge": "Otázka",
     "suggestionBadgeTooltip": "Platba môže uhradiť túto faktúru. Otvorte front a odpovedzte.",
-    "clearGroupFilter": "Zrušiť filter skupiny"
+    "clearGroupFilter": "Zrušiť filter skupiny",
+    "attachmentNoPreview": "Tento súbor nemá náhľad. Stiahnite si ho a otvorte."
   },
   "accounts": {
     "title": "Účty",

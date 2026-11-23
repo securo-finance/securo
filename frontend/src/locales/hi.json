@@ -1111,7 +1111,7 @@
     "attachmentDeleted": "अटैचमेंट हटाया गया",
     "attachmentDeleteConfirm": "यह अटैचमेंट हटाएँ?",
     "attachmentTooLarge": "फ़ाइल बहुत बड़ी है। अधिकतम आकार 10 MB है।",
-    "attachmentTypeNotAllowed": "फ़ाइल प्रकार समर्थित नहीं। अनुमत: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "फ़ाइल प्रकार समर्थित नहीं। अनुमत: {{types}}",
     "attachmentMaxReached": "अटैचमेंट की अधिकतम संख्या पूरी हो गई",
     "attachmentRenamed": "अटैचमेंट का नाम बदला गया",
     "attachmentRename": "नाम बदलें",
@@ -1245,7 +1245,8 @@
     "invoiceBadgeTooltip": "यह लेन-देन एक इनवॉइस चुकाता है। इसे खोलें।",
     "suggestionBadge": "सवाल",
     "suggestionBadgeTooltip": "एक भुगतान इसे चुका सकता है। जवाब देने के लिए कतार खोलें।",
-    "clearGroupFilter": "समूह फ़िल्टर हटाएँ"
+    "clearGroupFilter": "समूह फ़िल्टर हटाएँ",
+    "attachmentNoPreview": "इस फ़ाइल का पूर्वावलोकन नहीं है। खोलने के लिए इसे डाउनलोड करें।"
   },
   "accounts": {
     "title": "खाते",

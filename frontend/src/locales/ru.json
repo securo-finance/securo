@@ -1127,7 +1127,7 @@
     "attachmentDeleted": "Вложение удалено",
     "attachmentDeleteConfirm": "Удалить это вложение?",
     "attachmentTooLarge": "Файл слишком большой. Максимальный размер — 10 МБ.",
-    "attachmentTypeNotAllowed": "Тип файла не поддерживается. Допустимые: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "Тип файла не поддерживается. Допустимые: {{types}}",
     "attachmentMaxReached": "Достигнуто максимальное количество вложений",
     "attachmentRenamed": "Вложение переименовано",
     "attachmentRename": "Переименовать",
@@ -1263,7 +1263,8 @@
     "invoiceBadgeTooltip": "Эта операция закрывает счёт. Открыть.",
     "suggestionBadge": "Вопрос",
     "suggestionBadgeTooltip": "Платёж может закрыть этот счёт. Откройте очередь, чтобы ответить.",
-    "clearGroupFilter": "Сбросить фильтр группы"
+    "clearGroupFilter": "Сбросить фильтр группы",
+    "attachmentNoPreview": "Для этого файла нет предпросмотра. Скачайте его, чтобы открыть."
   },
   "accounts": {
     "title": "Счета",

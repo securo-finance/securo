@@ -1127,7 +1127,7 @@
     "attachmentDeleted": "Вкладення видалено",
     "attachmentDeleteConfirm": "Видалити це вкладення?",
     "attachmentTooLarge": "Файл занадто великий. Максимальний розмір — 10 МБ.",
-    "attachmentTypeNotAllowed": "Тип файлу не підтримується. Дозволені: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "Тип файлу не підтримується. Дозволені: {{types}}",
     "attachmentMaxReached": "Досягнуто максимальної кількості вкладень",
     "attachmentRenamed": "Вкладення перейменовано",
     "attachmentRename": "Перейменувати",
@@ -1263,7 +1263,8 @@
     "invoiceBadgeTooltip": "Ця операція закриває рахунок. Відкрити.",
     "suggestionBadge": "Питання",
     "suggestionBadgeTooltip": "Платіж може закрити цей рахунок. Відкрийте чергу, щоб відповісти.",
-    "clearGroupFilter": "Скинути фільтр групи"
+    "clearGroupFilter": "Скинути фільтр групи",
+    "attachmentNoPreview": "Для цього файлу немає попереднього перегляду. Завантажте його, щоб відкрити."
   },
   "accounts": {
     "title": "Рахунки",

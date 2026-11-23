@@ -1124,7 +1124,7 @@
     "attachmentDeleted": "הקובץ נמחק",
     "attachmentDeleteConfirm": "למחוק את הקובץ המצורף?",
     "attachmentTooLarge": "הקובץ גדול מדי. הגודל המרבי הוא 10MB.",
-    "attachmentTypeNotAllowed": "סוג הקובץ אינו נתמך. מותרים: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "סוג הקובץ אינו נתמך. מותרים: {{types}}",
     "attachmentMaxReached": "הגעתם למספר הקבצים המרבי",
     "attachmentRenamed": "שם הקובץ שונה",
     "attachmentRename": "שינוי שם",
@@ -1259,7 +1259,8 @@
     "invoiceBadgeTooltip": "תנועה זו סוגרת חשבונית. פתחו אותה.",
     "suggestionBadge": "שאלה",
     "suggestionBadgeTooltip": "ייתכן שתשלום סוגר את זה. פתחו את התור כדי לענות.",
-    "clearGroupFilter": "ניקוי סינון הקבוצה"
+    "clearGroupFilter": "ניקוי סינון הקבוצה",
+    "attachmentNoPreview": "אין תצוגה מקדימה לקובץ הזה. הורידו אותו כדי לפתוח."
   },
   "accounts": {
     "title": "חשבונות",

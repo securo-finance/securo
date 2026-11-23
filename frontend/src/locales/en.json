@@ -1111,7 +1111,7 @@
     "attachmentDeleted": "Attachment deleted",
     "attachmentDeleteConfirm": "Delete this attachment?",
     "attachmentTooLarge": "File is too large. Maximum size is 10 MB.",
-    "attachmentTypeNotAllowed": "File type not supported. Allowed: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "File type not supported. Allowed: {{types}}",
     "attachmentMaxReached": "Maximum number of attachments reached",
     "attachmentRenamed": "Attachment renamed",
     "attachmentRename": "Rename",
@@ -1245,7 +1245,8 @@
     "invoiceBadgeTooltip": "This transaction settles an invoice. Open it.",
     "suggestionBadge": "Question",
     "suggestionBadgeTooltip": "A payment may settle this. Open the queue to answer.",
-    "clearGroupFilter": "Clear group filter"
+    "clearGroupFilter": "Clear group filter",
+    "attachmentNoPreview": "There's no preview for this file. Download it to open it."
   },
   "accounts": {
     "title": "Accounts",

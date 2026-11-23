@@ -1110,7 +1110,7 @@
     "attachmentDeleted": "Allegato eliminato",
     "attachmentDeleteConfirm": "Eliminare questo allegato?",
     "attachmentTooLarge": "Il file è troppo grande. La dimensione massima è 10 MB.",
-    "attachmentTypeNotAllowed": "Tipo di file non supportato. Consentiti: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "Tipo di file non supportato. Consentiti: {{types}}",
     "attachmentMaxReached": "Numero massimo di allegati raggiunto",
     "attachmentRenamed": "Allegato rinominato",
     "attachmentRename": "Rinomina",
@@ -1248,7 +1248,8 @@
     "invoiceBadgeTooltip": "Questa transazione salda una fattura. Aprila.",
     "suggestionBadge": "Domanda",
     "suggestionBadgeTooltip": "Un pagamento potrebbe saldare questa fattura. Apri la coda per rispondere.",
-    "clearGroupFilter": "Rimuovi filtro gruppo"
+    "clearGroupFilter": "Rimuovi filtro gruppo",
+    "attachmentNoPreview": "Nessuna anteprima per questo file. Scaricalo per aprirlo."
   },
   "accounts": {
     "title": "Conti",

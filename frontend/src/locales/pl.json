@@ -1145,7 +1145,7 @@
     "attachmentDeleted": "Usunięto załącznik",
     "attachmentDeleteConfirm": "Usunąć ten załącznik?",
     "attachmentTooLarge": "Plik jest za duży. Maksymalny rozmiar to 10 MB.",
-    "attachmentTypeNotAllowed": "Typ pliku nieobsługiwany. Dozwolone: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "Typ pliku nieobsługiwany. Dozwolone: {{types}}",
     "attachmentMaxReached": "Osiągnięto maksymalną liczbę załączników",
     "attachmentRenamed": "Zmieniono nazwę załącznika",
     "attachmentRename": "Zmień nazwę",
@@ -1290,7 +1290,8 @@
     "invoiceBadgeTooltip": "Ta transakcja rozlicza fakturę. Otwórz ją.",
     "suggestionBadge": "Pytanie",
     "suggestionBadgeTooltip": "Płatność może opłacić tę fakturę. Otwórz kolejkę, aby odpowiedzieć.",
-    "clearGroupFilter": "Wyczyść filtr grupy"
+    "clearGroupFilter": "Wyczyść filtr grupy",
+    "attachmentNoPreview": "Brak podglądu tego pliku. Pobierz go, aby go otworzyć."
   },
   "accounts": {
     "title": "Konta",

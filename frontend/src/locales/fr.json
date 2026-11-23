@@ -1113,7 +1113,7 @@
     "attachmentDeleted": "Pièce jointe supprimée",
     "attachmentDeleteConfirm": "Supprimer cette pièce jointe ?",
     "attachmentTooLarge": "Le fichier est trop volumineux. La taille maximale est de 10 Mo.",
-    "attachmentTypeNotAllowed": "Type de fichier non pris en charge. Autorisés : jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "Type de fichier non pris en charge. Autorisés : {{types}}",
     "attachmentMaxReached": "Nombre maximal de pièces jointes atteint",
     "attachmentRenamed": "Pièce jointe renommée",
     "attachmentRename": "Renommer",
@@ -1248,7 +1248,8 @@
     "invoiceBadgeTooltip": "Cette transaction solde une facture. Ouvrir.",
     "suggestionBadge": "Question",
     "suggestionBadgeTooltip": "Un paiement peut solder cette facture. Ouvrez la file pour répondre.",
-    "clearGroupFilter": "Effacer le filtre de groupe"
+    "clearGroupFilter": "Effacer le filtre de groupe",
+    "attachmentNoPreview": "Pas d'aperçu pour ce fichier. Téléchargez-le pour l'ouvrir."
   },
   "accounts": {
     "title": "Comptes",

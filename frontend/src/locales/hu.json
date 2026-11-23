@@ -1111,7 +1111,7 @@
     "attachmentDeleted": "Csatolmány törölve",
     "attachmentDeleteConfirm": "Törlöd ezt a csatolmányt?",
     "attachmentTooLarge": "A fájl túl nagy. A maximális méret 10 MB.",
-    "attachmentTypeNotAllowed": "Nem támogatott fájltípus. Engedélyezett: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "Nem támogatott fájltípus. Engedélyezett: {{types}}",
     "attachmentMaxReached": "Elérted a csatolmányok maximális számát",
     "attachmentRenamed": "Csatolmány átnevezve",
     "attachmentRename": "Átnevezés",
@@ -1245,7 +1245,8 @@
     "invoiceBadgeTooltip": "Ez a tranzakció egy számlát egyenlít ki. Megnyitás.",
     "suggestionBadge": "Kérdés",
     "suggestionBadgeTooltip": "Lehet, hogy egy befizetés kiegyenlíti ezt. Nyisd meg a sort a válaszhoz.",
-    "clearGroupFilter": "Csoportszűrő törlése"
+    "clearGroupFilter": "Csoportszűrő törlése",
+    "attachmentNoPreview": "Ehhez a fájlhoz nincs előnézet. Töltsd le a megnyitáshoz."
   },
   "accounts": {
     "title": "Számlák",
