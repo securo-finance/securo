@@ -1086,6 +1086,11 @@ async def get_income_expenses_report(
             Transaction.workspace_id == workspace_id,
             report_date >= start,
             report_date <= axis_end,
+            # Same two types the summary sums: "credit" is income and "debit"
+            # is expenses, and any other stored value belongs to neither. The
+            # sparkline and the donut read this query, so a row the summary
+            # leaves out must not reach them or both read higher (#345).
+            Transaction.type.in_(("credit", "debit")),
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
             counts_as_user_pnl(line_category_id()),
@@ -1177,6 +1182,9 @@ async def get_income_expenses_report(
                 in_bound_workspace(Transaction.workspace_id),
                 report_date >= start,
                 report_date <= axis_end,
+                # The same two types the summary's shared-splits query sums,
+                # so a row with an unknown stored type adds to neither (#345).
+                Transaction.type.in_(("credit", "debit")),
                 Transaction.source != "opening_balance",
                 Transaction.status == "posted",
                 counts_as_user_pnl(Transaction.category_id),
