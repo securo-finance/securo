@@ -38,6 +38,11 @@ async def session(postgres_sessions):
         await session.rollback()
 
 
+@pytest.fixture
+def clean_db(postgres_sessions):
+    """The reused user fixture starts in a fresh per-test PostgreSQL schema."""
+
+
 def _row(account: Account, user_id, day: date, *, source: str = "manual") -> Transaction:
     return Transaction(
         id=uuid.uuid4(), user_id=user_id, account_id=account.id,
