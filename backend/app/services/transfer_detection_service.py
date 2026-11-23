@@ -123,11 +123,15 @@ def _candidate_batches(
 ) -> list[list[uuid.UUID]]:
     """Split new rows into date batches that no rule can reach across.
 
-    A row is only a neighbour of another within `window` days, and only a
-    row already in the books can be the neighbour of two new rows at once.
-    So two groups of new rows whose dates are more than `2 * window` apart
-    can never influence each other's decision, and handling them in one
-    call or one batch at a time gives the same pairs.
+    A row is only a neighbour of another within `window` days. Batches run
+    one after the other, so a pair an earlier batch links leaves the pool
+    before the next one looks, and that can settle a tie the next batch
+    would otherwise have seen: a new row's best match (one window away)
+    may have been weighing a competitor (two windows away) that the
+    earlier batch just paired with one of its own rows (three windows
+    away). Past `3 * window` no such chain fits, so groups of new rows
+    further apart than that give the same pairs in one call or one batch
+    at a time.
 
     Splitting matters for a file import: the pool it loads runs from the
     earliest candidate date to the latest, so a file carrying one very old
@@ -135,7 +139,7 @@ def _candidate_batches(
     them. In a batch, the pool is only as wide as the rows that can
     matter.
     """
-    reach = 2 * window
+    reach = 3 * window
     ids_by_date: dict[date, list[uuid.UUID]] = defaultdict(list)
     for row_id, day in candidate_rows:
         ids_by_date[day].append(row_id)

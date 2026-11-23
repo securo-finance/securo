@@ -274,6 +274,104 @@ async def test_edit_reruns_detection_only_for_fields_the_detector_reads(
 
 
 @pytest.mark.asyncio
+async def test_undoing_a_split_pairs_with_the_leg_already_in_the_books(
+    client,
+    auth_headers,
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+    test_categories,
+):
+    """A split row is out of the pool; undoing the split brings it back."""
+    checking = await _account(session, test_user.id, test_workspace.id, "Unsplit A")
+    savings = await _account(session, test_user.id, test_workspace.id, "Unsplit B")
+    day = app_today()
+    food, transport, _ = test_categories
+
+    debit = await _post(client, auth_headers, checking, "100.00", "debit", day)
+    await _patch(
+        client,
+        auth_headers,
+        debit["id"],
+        {
+            "category_lines": {
+                "share_type": "exact",
+                "lines": [
+                    {"category_id": str(food.id), "amount": "40.00"},
+                    {"category_id": str(transport.id), "amount": "60.00"},
+                ],
+            }
+        },
+    )
+    old_credit = await _insert(session, test_user.id, savings, "100.00", "credit", day)
+    assert await _pair_id(session, debit["id"]) is None
+
+    await _patch(
+        client,
+        auth_headers,
+        debit["id"],
+        {"category_lines": {"share_type": "exact", "lines": []}},
+    )
+
+    debit_pair = await _pair_id(session, debit["id"])
+    assert debit_pair is not None
+    assert debit_pair == await _pair_id(session, str(old_credit.id))
+
+
+@pytest.mark.asyncio
+async def test_series_edit_makes_every_changed_installment_a_candidate(
+    session: AsyncSession, test_user, test_workspace, monkeypatch
+):
+    """`apply_to="all"` reconsiders every parcel it changed, not only the anchor."""
+    from app.schemas.transaction import InstallmentSeriesCreate, TransactionUpdate
+    from app.services import transaction_service
+
+    account = await _account(session, test_user.id, test_workspace.id, "Series")
+    series = await transaction_service.create_installment_series(
+        session,
+        test_workspace.id,
+        test_user.id,
+        InstallmentSeriesCreate(
+            base={
+                "description": "Parcel",
+                "amount": Decimal("100.00"),
+                "date": app_today(),
+                "type": "debit",
+                "account_id": account.id,
+            },
+            installments=3,
+        ),
+    )
+
+    calls: list = []
+
+    async def _spy(*args, **kwargs):
+        calls.append(kwargs.get("candidate_ids"))
+        return 0
+
+    monkeypatch.setattr(transaction_service, "detect_transfer_pairs", _spy)
+
+    await transaction_service.update_transaction(
+        session,
+        series[0].id,
+        test_workspace.id,
+        test_user.id,
+        TransactionUpdate(notes="only a note", apply_to="all"),
+    )
+    assert calls == []
+
+    await transaction_service.update_transaction(
+        session,
+        series[0].id,
+        test_workspace.id,
+        test_user.id,
+        TransactionUpdate(amount=Decimal("150.00"), apply_to="all"),
+    )
+    assert len(calls) == 1
+    assert set(calls[0]) == {tx.id for tx in series}
+
+
+@pytest.mark.asyncio
 async def test_import_second_file_pairs_with_the_first(
     client, auth_headers, session: AsyncSession, test_user, test_workspace
 ):
@@ -430,3 +528,48 @@ async def test_import_asks_when_two_legs_claim_the_same_one(
         ).scalars()
     )
     assert suggestions, "the ambiguous import should land in the review queue"
+
+
+@pytest.mark.asyncio
+async def test_batches_never_pair_what_one_run_would_leave_open(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A pair made in an earlier batch must not settle a later batch's tie.
+
+    The new rows sit 5 days apart, past `2 * window` with the 2-day rule.
+    In one run Brokerage has two equally close credits (Savings and
+    Wallet), so it cannot choose and Wallet is left for review. A batch
+    for Checking that pairs it with Savings first would take Savings out
+    of the pool, and a later batch would then see Brokerage with a single
+    candidate and link it to Wallet.
+    """
+    from app.services.transfer_detection_service import detect_transfer_pairs
+
+    checking = await _account(session, test_user.id, test_workspace.id, "Checking")
+    savings = await _account(session, test_user.id, test_workspace.id, "Savings")
+    brokerage = await _account(session, test_user.id, test_workspace.id, "Brokerage")
+    wallet = await _account(session, test_user.id, test_workspace.id, "Wallet")
+    day = app_today() - timedelta(days=30)
+
+    out = await _insert(session, test_user.id, checking, "100.00", "debit", day)
+    saved = await _insert(
+        session, test_user.id, savings, "100.00", "credit", day + timedelta(days=1)
+    )
+    broker = await _insert(
+        session, test_user.id, brokerage, "100.00", "debit", day + timedelta(days=3)
+    )
+    arrived = await _insert(
+        session, test_user.id, wallet, "100.00", "credit", day + timedelta(days=5)
+    )
+
+    created = await detect_transfer_pairs(
+        session, test_workspace.id, candidate_ids=[out.id, arrived.id]
+    )
+    await session.commit()
+
+    assert created == 1
+    pair = await _pair_id(session, str(out.id))
+    assert pair is not None
+    assert pair == await _pair_id(session, str(saved.id))
+    assert await _pair_id(session, str(broker.id)) is None
+    assert await _pair_id(session, str(arrived.id)) is None
