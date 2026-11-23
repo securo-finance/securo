@@ -309,6 +309,10 @@ class TransactionRead(TransactionBase):
     is_paid: bool = False
     flag_due_date: Optional[_Date] = None
     flag_note: Optional[str] = None
+    #: False until the person has seen this row: set for transactions that
+    #: sync or an import creates (issue #636), cleared when they open it or
+    #: mark everything as read.
+    is_read: bool = True
     # Account balance right after this row, set only when the list asked for
     # it on one non-credit-card account's unfiltered ledger (#1202). The
     # primary-currency value is null when the account is already in it, or

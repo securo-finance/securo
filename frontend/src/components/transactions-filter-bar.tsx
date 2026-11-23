@@ -13,6 +13,7 @@ import {
   CreditCard,
   EyeClosed,
   Flag,
+  Inbox,
   ListChecks,
   ListFilter,
   Search,
@@ -84,6 +85,10 @@ interface TransactionsFilterBarProps {
   onHideIgnoredChange: (value: boolean) => void
   filterFlag: FlagFilter
   onFlagFilterChange: (value: FlagFilter) => void
+  onlyUnread: boolean
+  onOnlyUnreadChange: (value: boolean) => void
+  /** Offer the review-queue control at all; the calendar view passes false. */
+  showUnreadFilter?: boolean
   filterFrom: string
   filterTo: string
   onDateRangeChange: (from: string, to: string) => void
@@ -134,6 +139,9 @@ export function TransactionsFilterBar({
   onHideIgnoredChange,
   filterFlag,
   onFlagFilterChange,
+  onlyUnread,
+  onOnlyUnreadChange,
+  showUnreadFilter = true,
   filterFrom,
   filterTo,
   onDateRangeChange,
@@ -260,6 +268,7 @@ export function TransactionsFilterBar({
     filterUnpaid ||
     hideIgnored ||
     !!filterFlag ||
+    (showUnreadFilter && onlyUnread) ||
     !!filterFrom ||
     !!filterTo ||
     !!filterMinAmount ||
@@ -510,6 +519,7 @@ export function TransactionsFilterBar({
                   ignored: hideIgnored ? t('transactions.ignoredHide') : undefined,
                   flagged: flagLabel || undefined,
                   unpaid: filterUnpaid ? t('transactions.onlyUnpaid') : undefined,
+                  unread: onlyUnread ? t('transactions.onlyUnreadShort') : undefined,
                   date: dateLabel,
                   amount: amountLabel,
                 }}
@@ -531,6 +541,9 @@ export function TransactionsFilterBar({
                 flagFilter={filterFlag}
                 flagOptions={flagOptions}
                 onFlagFilterChange={onFlagFilterChange}
+                onlyUnread={onlyUnread}
+                onOnlyUnreadChange={onOnlyUnreadChange}
+                showUnread={showUnreadFilter}
                 onDateRangeChange={onDateRangeChange}
                 onAmountRangeChange={onAmountRangeChange}
                 onApplyAmountRange={applyAmountRange}
@@ -1021,6 +1034,23 @@ export function TransactionsFilterBar({
                   </DropdownMenuPortal>
                 </DropdownMenuSub>
 
+                {/* Review queue of issue #636: same shape as the ignored
+                    switch, a reading mode rather than a filter value. The
+                    calendar view does not apply it, so it does not offer it. */}
+                {showUnreadFilter && (
+                  <DropdownMenuItem
+                    onSelect={(e) => {
+                      e.preventDefault()
+                      onOnlyUnreadChange(!onlyUnread)
+                    }}
+                    className="gap-2 text-[13px]"
+                  >
+                    <Inbox size={14} className="text-muted-foreground" />
+                    <span className="flex-1">{t('transactions.onlyUnread')}</span>
+                    {onlyUnread && <Check size={13} className="text-primary" />}
+                  </DropdownMenuItem>
+                )}
+
                 {/* Date range submenu with presets */}
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger className="gap-2 text-[13px]">
@@ -1326,6 +1356,14 @@ export function TransactionsFilterBar({
                 label={t('transactions.flagged')}
                 value={flagLabel}
                 onRemove={() => onFlagFilterChange('')}
+              />
+            )}
+            {showUnreadFilter && onlyUnread && (
+              <FilterChip
+                icon={<Inbox size={12} />}
+                label={t('transactions.unreadRows')}
+                value={t('transactions.onlyUnreadShort')}
+                onRemove={() => onOnlyUnreadChange(false)}
               />
             )}
             {dateLabel && (

@@ -397,6 +397,10 @@ export interface Transaction {
   parent_owner_name?: string | null
   // Flag to exclude this transaction from reports and dashboard aggregations
   is_ignored: boolean
+  // False until the person has seen this row (issue #636): a transaction a
+  // sync or an import created starts here, and opening it or marking all as
+  // read clears it. Absent on endpoints that do not carry the flag.
+  is_read?: boolean
   // Keeps the transaction in the ledger/balance while excluding it from P&L.
   exclude_from_pnl?: boolean
   // A marker to come back to the row later, with an optional reminder date
