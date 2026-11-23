@@ -664,6 +664,8 @@ export const transactions = {
     exclude_ignored?: boolean
     flagged?: boolean
     flag_due?: FlagDue
+    unpaid_only?: boolean
+    unread_only?: boolean
     tags?: string[]
     min_amount?: number
     max_amount?: number
@@ -719,6 +721,18 @@ export const transactions = {
   },
   toggleIgnore: async (id: string): Promise<Transaction> => {
     const { data } = await api.patch(`/transactions/${id}/ignore`)
+    return data
+  },
+  // Issue #636: clear the "new" marker of one row, or of every unread row in
+  // the workspace. `workspaceId` pins the write to the workspace the list was
+  // rendered with, whatever the interceptor would send if another tab switched
+  // in the meantime.
+  markRead: async (id: string, workspaceId?: string | null): Promise<Transaction> => {
+    const { data } = await api.patch(`/transactions/${id}/read`, undefined, workspaceHeader(workspaceId))
+    return data
+  },
+  markAllRead: async (workspaceId?: string | null): Promise<{ updated: number }> => {
+    const { data } = await api.post('/transactions/read-all', undefined, workspaceHeader(workspaceId))
     return data
   },
   unlinkRecurring: async (id: string): Promise<Transaction> => {
@@ -884,6 +898,8 @@ export const transactions = {
     exclude_ignored?: boolean
     flagged?: boolean
     flag_due?: FlagDue
+    unpaid_only?: boolean
+    unread_only?: boolean
     transaction_ids?: string[]
   }): Promise<void> => {
     const { data } = await api.get('/transactions/export', {

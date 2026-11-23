@@ -1,66 +1,76 @@
+{{- define "securo.migrationPodTemplate" -}}
+metadata:
+  labels:
+    {{- include "securo.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: migration
+spec:
+  restartPolicy: OnFailure
+  containers:
+    - name: migration
+      image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+      imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+      command:
+        - sh
+        - -c
+        - |
+          echo "Starting database migration..."
+          for i in $(seq 1 30); do
+            if alembic upgrade head; then
+              echo "Migration successful."
+              exit 0
+            fi
+            echo "Migration failed (database might not be ready). Retrying in 5 seconds..."
+            sleep 5
+          done
+          echo "Migration failed after multiple retries."
+          exit 1
+      envFrom:
+        - configMapRef:
+            name: {{ include "securo.fullname" . }}-config
+        - secretRef:
+            {{- if .Values.global.existingSecret }}
+            name: {{ .Values.global.existingSecret }}
+            {{- else }}
+            name: {{ include "securo.fullname" . }}-secrets
+            {{- end }}
+        {{- with .Values.migration.extraEnvFrom }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.migration.extraEnv }}
+      env:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.migration.extraVolumeMounts }}
+      volumeMounts:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.backend.resources }}
+      resources:
+        {{- toYaml .Values.backend.resources | nindent 8 }}
+      {{- end }}
+  {{- with .Values.migration.extraVolumes }}
+  volumes:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end -}}
+{{- $podTemplate := include "securo.migrationPodTemplate" . -}}
+{{- /*
+A plain resource, not a hook: it is applied with the new ConfigMap and Secret,
+next to the bundled PostgreSQL on a first install. The new backend, worker, beat
+and MCP pods wait in their wait-for-schema init container until the database is
+at the migration head of their image, which this Job brings it to; when it is
+already there, they start while the Job is still pending (the old pods keep
+serving during an upgrade). A Job's pod template can't change, so the name
+follows the template and the release revision: every upgrade gets a fresh Job
+and Helm deletes the previous one.
+*/}}
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "securo.fullname" . }}-migration
+  name: {{ include "securo.fullname" . | trunc 42 | trimSuffix "-" }}-migration-{{ printf "%s\n%d" $podTemplate .Release.Revision | sha256sum | trunc 10 }}
   labels:
     {{- include "securo.labels" . | nindent 4 }}
     app.kubernetes.io/component: migration
-  annotations:
-    "helm.sh/hook": post-install,post-upgrade
-    "helm.sh/hook-weight": "5"
-    "helm.sh/hook-delete-policy": hook-succeeded
 spec:
   template:
-    metadata:
-      labels:
-        {{- include "securo.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: migration
-    spec:
-      restartPolicy: OnFailure
-      containers:
-        - name: migration
-          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
-          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
-          command:
-            - sh
-            - -c
-            - |
-              echo "Starting database migration..."
-              for i in $(seq 1 30); do
-                if alembic upgrade head; then
-                  echo "Migration successful."
-                  exit 0
-                fi
-                echo "Migration failed (database might not be ready). Retrying in 5 seconds..."
-                sleep 5
-              done
-              echo "Migration failed after multiple retries."
-              exit 1
-          envFrom:
-            - configMapRef:
-                name: {{ include "securo.fullname" . }}-config
-            - secretRef:
-                {{- if .Values.global.existingSecret }}
-                name: {{ .Values.global.existingSecret }}
-                {{- else }}
-                name: {{ include "securo.fullname" . }}-secrets
-                {{- end }}
-            {{- with .Values.migration.extraEnvFrom }}
-            {{- toYaml . | nindent 12 }}
-            {{- end }}
-          {{- with .Values.migration.extraEnv }}
-          env:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-          {{- with .Values.migration.extraVolumeMounts }}
-          volumeMounts:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-          {{- if .Values.backend.resources }}
-          resources:
-            {{- toYaml .Values.backend.resources | nindent 12 }}
-          {{- end }}
-      {{- with .Values.migration.extraVolumes }}
-      volumes:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+    {{- $podTemplate | nindent 4 }}

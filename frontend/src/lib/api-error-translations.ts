@@ -48,6 +48,33 @@ const KNOWN_MESSAGES: Record<string, string> = {
     'categoryLines.errors.destinationInvalid',
   'These budgets are in different currencies and there is no exchange rate for their month to combine them.':
     'categoryLines.errors.mergeNeedsRate',
+  // Budget amount bounds, raised by the schema as a 422 for every create,
+  // update and batch call.
+  'The budget limit must be at least 0.01': 'budgets.amountTooSmall',
+  'The budget limit is too large': 'budgets.amountTooLarge',
+  'The budget limit cannot be negative': 'budgets.amountNegative',
+  // The bounds of app/core/money.py, on a typed or a derived value.
+  'amount must be greater than zero': 'transactions.amountErrors.notPositive',
+  'amount must be at least 0.01': 'transactions.amountErrors.tooSmall',
+  'amount must be at most 9999999999999.99': 'transactions.amountErrors.tooLarge',
+  'amount cannot be null': 'transactions.amountErrors.required',
+  'amount_primary must be greater than zero': 'transactions.amountErrors.convertedNegative',
+  'amount_primary must be at most 9999999999999.99': 'transactions.amountErrors.convertedTooLarge',
+  'fx_rate_used must be greater than zero': 'transactions.amountErrors.rateNotPositive',
+  'fx_rate_used must be at most 9999999999.9999999999': 'transactions.amountErrors.rateTooLarge',
+}
+
+/** Pydantic prefixes a validator's own message with this. */
+const PYDANTIC_VALUE_ERROR = 'Value error, '
+
+/**
+ * One entry of a 422 validation list, translated when its message is a known
+ * one, else null so the caller keeps the raw `field: message` form.
+ */
+export function translateValidationMessage(msg: string): string | null {
+  const text = msg.startsWith(PYDANTIC_VALUE_ERROR) ? msg.slice(PYDANTIC_VALUE_ERROR.length) : msg
+  const key = KNOWN_MESSAGES[text]
+  return key && i18n.isInitialized && i18n.exists(key) ? i18n.t(key) : null
 }
 
 /**

@@ -99,6 +99,43 @@ async def test_copy_rejects_adjusted_amount_beyond_column_range(
 
 
 @pytest.mark.asyncio
+async def test_copy_keeps_a_source_limit_at_the_column_ceiling(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
+    cat = test_categories[0].id
+    session.add(_budget(test_user.id, test_workspace.id, cat, "9999999999999.99", date(2026, 8, 1)))
+    await session.commit()
+
+    copied = await copy_monthly_budgets(
+        session, test_workspace.id, test_user.id,
+        source_month=date(2026, 8, 1), target_month=date(2026, 9, 1),
+    )
+
+    # The schema accepts the last value Numeric(15, 2) holds, so a copy at 0%
+    # keeps it instead of refusing the same amount the user could type.
+    assert [b.amount for b in copied] == [Decimal("9999999999999.99")]
+    assert await _effective_amount(
+        session, test_workspace.id, cat, date(2026, 9, 1)
+    ) == Decimal("9999999999999.99")
+
+
+@pytest.mark.asyncio
+async def test_copy_still_refuses_a_positive_adjustment_past_the_ceiling(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
+    cat = test_categories[0].id
+    session.add(_budget(test_user.id, test_workspace.id, cat, "9999999999999.99", date(2026, 8, 1)))
+    await session.commit()
+
+    with pytest.raises(ValueError, match="Adjusted budget amount is too large"):
+        await copy_monthly_budgets(
+            session, test_workspace.id, test_user.id,
+            source_month=date(2026, 8, 1), target_month=date(2026, 9, 1),
+            adjustment_percentage=Decimal("10"),
+        )
+
+
+@pytest.mark.asyncio
 async def test_copy_rounds_half_cent_up(
     session: AsyncSession, test_user, test_workspace, test_categories
 ):

@@ -20,6 +20,8 @@ spec:
         {{- include "securo.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: mcp-server
     spec:
+      initContainers:
+        {{- include "securo.waitForSchema" (dict "root" . "component" .Values.mcpServer) | nindent 8 }}
       containers:
         - name: mcp-server
           image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"

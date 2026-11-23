@@ -566,6 +566,32 @@ async def test_propose_create_budget(
     assert result["proposed"]["month"] == "2026-05-01"  # snapped to month start
 
 
+async def test_propose_create_budget_refuses_a_limit_out_of_the_column(
+    session: AsyncSession, ctx: CallContext, test_categories
+):
+    """The preview answers what the save would, instead of proposing an amount
+    the POST then rejects (issue #406)."""
+    handler = REGISTRY["propose_create_budget"].handler
+
+    too_large = await handler(
+        session=session, ctx=ctx,
+        category_id=str(test_categories[0].id),
+        month="2026-05-15",
+        amount=1e13,
+        currency="BRL",
+    )
+    too_small = await handler(
+        session=session, ctx=ctx,
+        category_id=str(test_categories[0].id),
+        month="2026-05-15",
+        amount=0.005,
+        currency="BRL",
+    )
+
+    assert too_large == {"error": "The budget limit is too large"}
+    assert too_small == {"error": "The budget limit must be at least 0.01"}
+
+
 async def test_propose_create_transaction_full(
     session: AsyncSession, ctx: CallContext, test_account, test_categories
 ):

@@ -8,7 +8,7 @@ import warnings
 import xml.etree.ElementTree as ET
 from xml.parsers import expat
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from bs4 import XMLParsedAsHTMLWarning
 from ofxparse import OfxParser
@@ -16,6 +16,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.money import bounded_conversion
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.category import Category
@@ -1129,6 +1130,12 @@ async def enrich_with_category_suggestions(
     return transactions
 
 
+def _cents(value: Decimal) -> Decimal:
+    """A conversion as `Numeric(15, 2)` stores it, rounded before it is bounded:
+    9999999999999.9918 fits as 9999999999999.99 (issue #422)."""
+    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
 async def import_transactions(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -1330,6 +1337,9 @@ async def import_transactions(
             type=txn_data.type,
             status="posted",
             source=source,
+            # Imported rows are new to the person until they review them
+            # (issue #636).
+            is_read=False,
             import_id=import_log.id,
             external_id=txn_data.external_id,
             currency=txn_currency,
@@ -1365,6 +1375,12 @@ async def import_transactions(
             placeholder.external_id = txn_data.external_id
             placeholder.import_id = import_log.id
             placeholder.status = "posted"
+            # The bill's charge is on the statement file (#15).
+            placeholder.is_paid = True
+            # The placeholder was generated for the person; the imported charge
+            # that replaced it was not reviewed yet (issue #636). Duplicates
+            # above are skipped before this point, so they keep their state.
+            placeholder.is_read = False
             # The rules already ran, against the incoming charge, to build
             # `preview`. Fold that result in rather than re-running them
             # against the placeholder: its description is the recurring
@@ -1399,7 +1415,9 @@ async def import_transactions(
                 charge_changed = amount_changed or currency_changed
                 if txn_data.fx_rate:
                     placeholder.fx_rate_used = txn_data.fx_rate
-                    placeholder.amount_primary = txn_data.amount * txn_data.fx_rate
+                    placeholder.amount_primary = bounded_conversion(
+                        _cents(txn_data.amount * txn_data.fx_rate)
+                    )
                     await stamp_account_amount(
                         session, placeholder, recompute=charge_changed
                     )
@@ -1451,7 +1469,9 @@ async def import_transactions(
         )
         if txn_data.fx_rate:
             incoming.fx_rate_used = txn_data.fx_rate
-            incoming.amount_primary = txn_data.amount * txn_data.fx_rate
+            incoming.amount_primary = bounded_conversion(
+                _cents(txn_data.amount * txn_data.fx_rate)
+            )
 
         session.add(incoming)
         await session.flush()

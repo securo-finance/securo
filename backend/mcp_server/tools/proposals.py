@@ -21,6 +21,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Literal, cast
 
 from pydantic import ValidationError
+from pydantic_core import PydanticCustomError
 from sqlalchemy import String, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,7 +46,11 @@ from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.fiscal.registry import TaxIdKind, normalise_and_validate
-from app.schemas.budget import BudgetCreate, BudgetUpdate
+from app.schemas.budget import (
+    BudgetCreate,
+    BudgetUpdate,
+    validate_budget_amount,
+)
 from app.schemas.category import CategoryCreate
 from app.schemas.category_group import CategoryGroupCreate
 from app.schemas.goal import GoalCreate, GoalUpdate
@@ -541,6 +546,16 @@ async def propose_create_category_group(
     return preview
 
 
+def _budget_amount_refusal(amount: Decimal, *, allow_zero: bool = False) -> str | None:
+    """The message the budget schema would answer, so a preview never proposes
+    an amount the save rejects (issue #406)."""
+    try:
+        validate_budget_amount(amount, allow_zero=allow_zero)
+    except PydanticCustomError as exc:
+        return str(exc)
+    return None
+
+
 @tool(
     name="propose_create_budget",
     description=_PROPOSAL_PREFACE
@@ -583,6 +598,10 @@ async def propose_create_budget(
     ws_id = await resolve_workspace_id(session, ctx)
     cat_id = parse_uuid(category_id)
     target_month = (parse_date(month) or app_today()).replace(day=1)
+    new_amount = Decimal(str(amount))
+    refusal = _budget_amount_refusal(new_amount)
+    if refusal:
+        return {"error": refusal}
 
     cat = (
         await session.execute(
@@ -598,7 +617,7 @@ async def propose_create_budget(
             "category_id": str(cat.id),
             "category_name": cat.name,
             "month": target_month.isoformat(),
-            "amount": float(amount),
+            "amount": float(new_amount),
             "currency": currency,
             "is_recurring": is_recurring,
         },
@@ -612,7 +631,7 @@ async def propose_create_budget(
             ctx.user_id,
             BudgetCreate(
                 category_id=cat.id,
-                amount=Decimal(str(amount)),
+                amount=new_amount,
                 month=target_month,
                 is_recurring=is_recurring,
             ),
@@ -663,6 +682,9 @@ async def propose_update_budget(
     if amount <= 0:
         return {"error": "amount must be greater than zero"}
     new_amount = Decimal(str(amount))
+    refusal = _budget_amount_refusal(new_amount)
+    if refusal:
+        return {"error": refusal}
     # The new amount is in the proposer's currency, as the save stamps it;
     # the stored limit is compared in that currency too, at its month's rate.
     currency = await budget_service._primary_currency(session, ctx.user_id)
@@ -2310,21 +2332,24 @@ async def _transaction_snapshot(
             },
             "amount_primary": {
                 "type": "number",
-                "exclusiveMinimum": 0,
+                "minimum": 0,
                 "maximum": float(MAX_MONEY_AMOUNT),
                 "description": (
                     "Value in the primary currency. Setting it alone derives "
-                    "fx_rate_used = amount_primary / amount."
+                    "fx_rate_used = amount_primary / amount. 0 is valid when "
+                    "the conversion rounds to 0.00 (0.01 BRL at 0.2 is 0.00 USD)."
                 ),
             },
             "fx_rate_used": {
                 "type": "number",
-                "exclusiveMinimum": 0,
+                "minimum": 0,
                 "maximum": float(MAX_FX_RATE),
                 "description": (
                     "Rate from the transaction currency to the primary "
                     "currency. Setting it alone derives "
-                    "amount_primary = amount * fx_rate_used."
+                    "amount_primary = amount * fx_rate_used. 0 is valid only "
+                    "next to the amount_primary it was rounded from (a "
+                    "conversion of 0.00, or one under 5e-11 of amount)."
                 ),
             },
             "is_ignored": {"type": "boolean"},
@@ -2504,13 +2529,15 @@ async def propose_update_transaction(
     if amount_primary is not None:
         try:
             changes["amount_primary"] = bounded_money(
-                Decimal(str(amount_primary)), "amount_primary"
+                Decimal(str(amount_primary)), "amount_primary", allow_zero=True
             )
         except ValueError as exc:
             return {"error": str(exc)}
     if fx_rate_used is not None:
         try:
-            changes["fx_rate_used"] = bounded_fx_rate(Decimal(str(fx_rate_used)))
+            changes["fx_rate_used"] = bounded_fx_rate(
+                Decimal(str(fx_rate_used)), "fx_rate_used", allow_zero=True
+            )
         except ValueError as exc:
             return {"error": str(exc)}
     if is_ignored is not None:

@@ -421,3 +421,23 @@ jobs:
           grep -q 'mountPath: /etc/pg-tls' mcp-server.yaml
           grep -q 'secretName: pg-client-tls' mcp-server.yaml
           kubeconform -summary -strict mcp-server.yaml
+
+      # Helm runs post-install/post-upgrade hooks only after the new pods are
+      # ready, so a hooked migration Job let new code serve the old schema.
+      # Check the Job is a plain resource and every pod that runs the backend
+      # image waits for the schema before it starts.
+      - name: Check the pods wait for the migration
+        if: steps.helm-changes.outputs.run_helm != 'false'
+        run: |
+          helm template securo-test charts/securo \
+            --show-only templates/backend/job-migration.yaml > migration-job.yaml
+          if grep -q 'helm.sh/hook' migration-job.yaml; then
+            echo "The migration Job must not be a Helm hook"; exit 1
+          fi
+          for t in backend worker beat mcp-server; do
+            helm template securo-test charts/securo \
+              --show-only "templates/$t/deployment.yaml" \
+              --set mcpServer.enabled=true \
+              --set config.agentsEnabled=true > "$t.yaml"
+            grep -q 'name: wait-for-schema' "$t.yaml" || { echo "$t does not wait for the schema"; exit 1; }
+          done

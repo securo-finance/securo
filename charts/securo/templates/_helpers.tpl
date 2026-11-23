@@ -89,3 +89,51 @@ when `persistence.attachments.existingClaim` is set, the chart's own otherwise.
 {{- printf "%s-attachments" (include "securo.fullname" .) -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Init container that holds a pod until the database is at the head revision of
+the image it runs, the same check Compose makes before each service starts.
+The migration Job brings the database there; until it does, new pods stay in
+Init and, on an upgrade, the old ones keep serving. Takes a dict: `root` (the
+chart's `.`) and `component` (the component's values, for its pull policy,
+resources and extras).
+*/}}
+{{- define "securo.waitForSchema" -}}
+{{- $root := .root -}}
+{{- $component := .component -}}
+- name: wait-for-schema
+  image: "{{ $root.Values.backend.image.repository }}:{{ $root.Values.backend.image.tag }}"
+  imagePullPolicy: {{ $component.image.pullPolicy }}
+  command:
+    - sh
+    - -c
+    - |
+      until alembic current --check-heads; do
+        echo "The database is not at this image's migration head yet; waiting for the migration Job..."
+        sleep 5
+      done
+  envFrom:
+    - configMapRef:
+        name: {{ include "securo.fullname" $root }}-config
+    - secretRef:
+        {{- if $root.Values.global.existingSecret }}
+        name: {{ $root.Values.global.existingSecret }}
+        {{- else }}
+        name: {{ include "securo.fullname" $root }}-secrets
+        {{- end }}
+    {{- with $component.extraEnvFrom }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with $component.extraEnv }}
+  env:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $component.extraVolumeMounts }}
+  volumeMounts:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $component.resources }}
+  resources:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end -}}

@@ -22,6 +22,14 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.app_clock import app_today
+from app.core.currency import same_currency
+from app.core.money import (
+    MoneyOutOfRange,
+    bounded_conversion,
+    bounded_fx_rate,
+    bounded_money,
+    check_zero_rate,
+)
 from app.core.shared_scope import (
     in_bound_workspace,
     invited_group_member_ids,
@@ -39,6 +47,7 @@ from app.models.mortgage_payment_allocation import (
     MortgagePaymentAllocation,
 )
 from app.models.payee import Payee
+from app.models.user import User
 from app.schemas.transaction import (
     DescriptionSuggestion,
     InstallmentSeriesCreate,
@@ -49,6 +58,7 @@ from app.schemas.transaction import (
 from app.schemas.transaction_split import TransactionSplitInput, TransactionSplitsInput
 from app.services import category_line_service, reconciliation_service, split_service
 from app.services.account_service import get_account, get_running_balances
+from app.services.primary_restamp_service import typed_primary_amount
 from app.services.credit_card_service import apply_effective_date, cc_cycle_bill_due_dates
 from app.services.rule_service import apply_rules_to_transaction
 from app.services.fx_rate_service import (
@@ -120,19 +130,73 @@ def _apply_fx_override(transaction, amount, amount_primary=None, fx_rate_used=No
 
     amount = Decimal(str(amount))
     if amount_primary is not None and fx_rate_used is not None:
+        # An edit may leave `amount` out; only here is the row's amount known.
+        try:
+            check_zero_rate(amount, Decimal(str(amount_primary)), Decimal(str(fx_rate_used)))
+        except ValueError as exc:
+            raise MoneyOutOfRange(str(exc)) from exc
         transaction.amount_primary = Decimal(str(amount_primary))
         transaction.fx_rate_used = Decimal(str(fx_rate_used))
     elif amount_primary is not None:
         transaction.amount_primary = Decimal(str(amount_primary))
         if amount:
-            transaction.fx_rate_used = (Decimal(str(amount_primary)) / amount)
+            transaction.fx_rate_used = _bounded_derived(
+                bounded_fx_rate, Decimal(str(amount_primary)) / amount, "fx_rate_used"
+            )
         else:
             transaction.fx_rate_used = Decimal("1")
     elif fx_rate_used is not None:
         transaction.fx_rate_used = Decimal(str(fx_rate_used))
-        transaction.amount_primary = (amount * Decimal(str(fx_rate_used))).quantize(
-            Decimal("0.01"), rounding=ROUND_HALF_UP
-        )
+        transaction.amount_primary = _bounded_derived(
+            bounded_money, amount * Decimal(str(fx_rate_used)), "amount_primary"
+        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _bounded_derived(bound, value, field):
+    """A derived conversion bounded like a typed one (issue #321): an edit
+    keeps the stored amount, so only here can its product be checked."""
+    try:
+        return bound(value, field, allow_zero=True)
+    except ValueError as exc:
+        raise MoneyOutOfRange(str(exc)) from exc
+
+
+async def _keep_typed_primary(
+    session: AsyncSession, transaction: Transaction, user_id: uuid.UUID
+) -> None:
+    """Remember the converted amount the user just typed (ADR 0031).
+
+    `amount_primary` is rewritten when the display currency changes; this
+    copy is what brings the typed figure back when it changes back.
+    """
+    user = await session.get(User, user_id)
+    if (
+        user is None
+        or transaction.amount_primary is None
+        or same_currency(transaction.currency, user.primary_currency)
+    ):
+        _drop_typed_primary(transaction)
+        return
+    transaction.amount_primary_typed = Decimal(str(transaction.amount_primary)).quantize(
+        Decimal("0.01")
+    )
+    transaction.amount_primary_typed_currency = user.primary_currency
+
+
+def _drop_typed_primary(transaction: Transaction) -> None:
+    """Forget a typed conversion once the primary amount is derived again."""
+    transaction.amount_primary_typed = None
+    transaction.amount_primary_typed_currency = None
+
+
+async def _restore_typed_primary(
+    session: AsyncSession, transaction: Transaction, user_id: uuid.UUID
+) -> None:
+    """Put back the typed conversion after a stamp derived it from a rate."""
+    user = await session.get(User, user_id)
+    typed = typed_primary_amount(transaction, user.primary_currency) if user else None
+    if typed is not None:
+        transaction.amount_primary, transaction.fx_rate_used = typed
 
 
 FlagDue = Literal["overdue", "soon"]
@@ -180,6 +244,8 @@ async def get_transactions(
     exclude_ignored: bool = False,
     flagged_only: bool = False,
     flag_due: Optional[FlagDue] = None,
+    unpaid_only: bool = False,
+    unread_only: bool = False,
     include_running_balance: bool = False,
     primary_currency: Optional[str] = None,
 ) -> tuple[list[Transaction], int, Optional[dict]]:
@@ -351,6 +417,18 @@ async def get_transactions(
         base_query = base_query.where(is_not_ignored())
     if flagged_only or flag_due is not None:
         base_query = base_query.where(_flagged_in_workspace(workspace_id, flag_due))
+    if unpaid_only:
+        base_query = base_query.where(Transaction.is_paid.is_(False))
+    if unread_only:
+        # The review queue of issue #636: only rows nobody has looked at yet.
+        # Scoped to this workspace on purpose. The default list also surfaces
+        # shared rows owned by another workspace, and the read endpoints only
+        # clear rows of this one, so counting a shared row here would leave a
+        # queue that never empties.
+        base_query = base_query.where(
+            Transaction.is_read.is_(False),
+            Transaction.workspace_id == workspace_id,
+        )
     if txn_type == "transfer":
         # Not a value of the `type` column: a transfer is still stored as a
         # credit or a debit, so this narrows to the transfer family instead.
@@ -832,7 +910,7 @@ async def get_transactions(
                     txn_type, tags, status, currency, account_types, transaction_ids,
                     min_amount is not None, max_amount is not None,
                     exclude_transfers, user_pnl_only, exclude_ignored, flagged_only, flag_due is not None,
-                    group_id,
+                    unpaid_only, unread_only, group_id,
                     # `bill_id` and `unbilled_only` pick a card's statement
                     # window, not a smaller ledger: the walk still covers
                     # every row that moves the balance (#920).
@@ -1209,6 +1287,10 @@ async def create_transaction(
         installment_total_amount=data.installment_total_amount,
         installment_purchase_date=data.installment_purchase_date,
     )
+    # A manual entry starts unpaid (the model's default); only an explicit
+    # value from the caller overrides that.
+    if data.is_paid is not None:
+        transaction.is_paid = data.is_paid
     if data.effective_bill_date is not None:
         await _resync_bill_link_from_override(session, transaction, account)
     apply_effective_date(transaction, account)
@@ -1228,6 +1310,7 @@ async def create_transaction(
     # Stamp primary currency amount (manual override or auto)
     if data.amount_primary is not None or data.fx_rate_used is not None:
         _apply_fx_override(transaction, data.amount, data.amount_primary, data.fx_rate_used)
+        await _keep_typed_primary(session, transaction, user_id)
         await stamp_account_amount(session, transaction, typed_primary=True)
     else:
         await stamp_primary_amount(session, user_id, transaction)
@@ -1326,6 +1409,9 @@ async def create_installment_series(
             installment_purchase_date=purchase_date,
             installment_series_id=series_id,
         )
+        # Same rule as create_transaction: unpaid unless the caller says so.
+        if base.is_paid is not None:
+            tx.is_paid = base.is_paid
         if base.effective_bill_date is not None:
             await _resync_bill_link_from_override(session, tx, account)
         apply_effective_date(tx, account)
@@ -1343,9 +1429,11 @@ async def create_installment_series(
             await apply_rules_to_transaction(session, user_id, tx)
         if base.fx_rate_used is not None:
             _apply_fx_override(tx, tx.amount, None, base.fx_rate_used)
+            await _keep_typed_primary(session, tx, user_id)
             await stamp_account_amount(session, tx, typed_primary=True)
         elif base.amount_primary is not None:
             _apply_fx_override(tx, tx.amount, base.amount_primary, None)
+            await _keep_typed_primary(session, tx, user_id)
             await stamp_account_amount(session, tx, typed_primary=True)
         else:
             await stamp_primary_amount(session, user_id, tx)
@@ -1445,9 +1533,12 @@ async def create_transfer(
         if data.destination_amount is not None:
             credit_amount = _to_cents(data.destination_amount)
         else:
-            credit_amount, _ = await fx_convert(
+            converted, _ = await fx_convert(
                 session, debit_amount, from_account.currency, to_account.currency, data.date
             )
+            # The stored rate can carry an amount that fits past the column on
+            # the other leg: 2e12 USD is 1e13 BRL (issue #422).
+            credit_amount = bounded_conversion(converted, "amount")
     else:
         credit_amount = debit_amount
 
@@ -1713,9 +1804,10 @@ async def create_transfer_counterpart(
 
     # Convert the amount when the destination account uses another currency.
     if anchor.currency != to_account.currency:
-        counterpart_amount, _ = await fx_convert(
+        converted, _ = await fx_convert(
             session, Decimal(str(anchor.amount)), anchor.currency, to_account.currency, anchor.date
         )
+        counterpart_amount = bounded_conversion(converted, "amount")
     else:
         counterpart_amount = anchor.amount
 
@@ -1968,6 +2060,7 @@ async def _apply_update_to_row(
             if typed_account_amount:
                 tx.amount_account = None
                 tx.amount_account_source = None
+            _drop_typed_primary(tx)
             await stamp_primary_amount(
                 session, user_id, tx,
                 restamp_account=account_inputs_changed or account_moved or typed_account_amount,
@@ -1979,13 +2072,18 @@ async def _apply_update_to_row(
                 override_amount_primary,
                 override_fx_rate,
             )
+            await _keep_typed_primary(session, tx, user_id)
             await stamp_account_amount(session, tx, typed_primary=True)
     elif needs_restamp or heals_fx_on_post or account_moved:
         # Posting only heals the reporting stamp; the account amount follows
         # a change of amount, currency, date or account.
+        if account_inputs_changed or account_moved:
+            _drop_typed_primary(tx)
         await stamp_primary_amount(
             session, user_id, tx, restamp_account=account_inputs_changed or account_moved
         )
+        # A save that resends the same amount keeps what the user typed.
+        await _restore_typed_primary(session, tx, user_id)
 
     # Refresh effective_date when the purchase date, account, or the manual
     # bill-cycle override changed. Also re-link bill_id when the override
@@ -2030,6 +2128,7 @@ async def _apply_update_to_row(
                         session, Decimal(str(tx.amount)),
                         tx.currency, paired_tx.currency, tx.date,
                     )
+                    converted = bounded_conversion(converted, "amount")
                     paired_amount_changed = converted != paired_tx.amount
                     paired_tx.amount = converted
                 elif key == "amount":
@@ -2046,6 +2145,7 @@ async def _apply_update_to_row(
                         paired_date_changed = update_data[key] != paired_tx.date
                     setattr(paired_tx, key, update_data[key])
             if paired_amount_changed or paired_date_changed:
+                _drop_typed_primary(paired_tx)
                 await stamp_primary_amount(session, user_id, paired_tx, restamp_account=True)
             if paired_date_changed:
                 paired_account = await session.get(Account, paired_tx.account_id)
@@ -2743,15 +2843,13 @@ async def post_transaction_today(
         raise ValueError("Cannot change amount or date on a synchronized transaction")
 
     today = app_today()
+    previous_date = transaction.date
     transaction.status = "posted"
     transaction.date = today
 
     account = await session.get(Account, transaction.account_id)
     apply_effective_date(transaction, account)
-    # Posting moves the date to today: the account amount follows it.
-    await stamp_primary_amount(
-        session, transaction.user_id, transaction, restamp_account=True
-    )
+    await _restamp_posted_leg(session, transaction, previous_date)
 
     if transaction.transfer_pair_id:
         paired_result = await session.execute(
@@ -2765,16 +2863,35 @@ async def post_transaction_today(
         if paired:
             paired.status = "posted"
             if paired.source != "sync":
+                paired_previous_date = paired.date
                 paired.date = today
                 paired_account = await session.get(Account, paired.account_id)
                 apply_effective_date(paired, paired_account)
-                await stamp_primary_amount(
-                    session, paired.user_id, paired, restamp_account=True
-                )
+                await _restamp_posted_leg(session, paired, paired_previous_date)
 
     await session.commit()
     await session.refresh(transaction)
     return transaction
+
+
+async def _restamp_posted_leg(
+    session: AsyncSession, transaction: Transaction, previous_date: date
+) -> None:
+    """Stamp a leg that was just posted today.
+
+    When posting moved the date, the account amount follows it and a
+    conversion typed for the old date no longer holds (ADR 0031). A leg
+    already dated today changed nothing a conversion depends on, so what the
+    user typed stays.
+    """
+    date_changed = transaction.date != previous_date
+    if date_changed:
+        _drop_typed_primary(transaction)
+    await stamp_primary_amount(
+        session, transaction.user_id, transaction, restamp_account=date_changed
+    )
+    if not date_changed:
+        await _restore_typed_primary(session, transaction, transaction.user_id)
 
 
 async def toggle_ignore_transaction(
@@ -2797,6 +2914,57 @@ async def toggle_ignore_transaction(
     await session.commit()
     await session.refresh(transaction)
     return transaction
+
+
+async def mark_transaction_read(
+    session: AsyncSession,
+    transaction_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+) -> Optional[Transaction]:
+    """Clear the "new" marker of one transaction (issue #636).
+
+    Idempotent on purpose: the list calls this when a row is opened, and
+    running it twice must not be an error. It touches no ledger field, so
+    every guard the edit path has (mortgage breakdowns, provider rows) is
+    not needed here.
+    """
+    # The row lock makes a concurrent delete land on the not-found path
+    # instead of failing the UPDATE with StaleDataError. There is no refresh
+    # after the commit: the session does not expire on commit, so the object
+    # already carries is_read=True, and a refresh could race a delete into
+    # ObjectDeletedError.
+    transaction = await get_transaction(
+        session, transaction_id, workspace_id, for_update=True
+    )
+    if not transaction:
+        return None
+    if not transaction.is_read:
+        transaction.is_read = True
+        await session.commit()
+    return transaction
+
+
+async def mark_all_transactions_read(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+) -> int:
+    """Mark every unread transaction in the workspace as read; returns how
+    many rows changed.
+
+    One UPDATE instead of a row loop: the button is meant for a first sync
+    that can land thousands of rows, and the workspace is the boundary, so
+    a shared row owned by another workspace keeps its own state.
+    """
+    result = await session.execute(
+        update(Transaction)
+        .where(
+            Transaction.workspace_id == workspace_id,
+            Transaction.is_read.is_(False),
+        )
+        .values(is_read=True)
+    )
+    await session.commit()
+    return cast(CursorResult, result).rowcount or 0
 
 
 async def unlink_recurring_transaction(

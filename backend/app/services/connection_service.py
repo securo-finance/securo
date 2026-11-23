@@ -2152,6 +2152,9 @@ async def _run_first_import(
                 date=txn_data.date,
                 type=txn_data.type,
                 source="sync",
+                # A charge the bank brings in is new to the person until they
+                # look at it (issue #636).
+                is_read=False,
                 status=txn_data.status,
                 payee=txn_data.payee,
                 payee_id=payee_id,
@@ -2556,14 +2559,19 @@ async def _refresh_provider_values(
     incoming = (txn_data.amount, txn_data.type)
     if stored == (previous.amount, previous.type) and incoming != stored:
         old_amount = transaction.amount
-        transaction.amount = txn_data.amount
         transaction.type = txn_data.type
-        converted = _bank_converted_amount(txn_data, account_currency, user_currency)
-        await _stamp_synced_primary_amount(
-            session, transaction.user_id, transaction, converted,
-            txn_data.amount_in_account_currency, restamp_account=True,
-        )
-        await category_line_service.rescale_lines(session, transaction, old_amount)
+        if incoming[0] != stored[0]:
+            transaction.amount = txn_data.amount
+            # A conversion typed for the old amount no longer holds (ADR 0031).
+            # A type-only correction keeps the amount, so the conversion stays.
+            transaction.amount_primary_typed = None
+            transaction.amount_primary_typed_currency = None
+            converted = _bank_converted_amount(txn_data, account_currency, user_currency)
+            await _stamp_synced_primary_amount(
+                session, transaction.user_id, transaction, converted,
+                txn_data.amount_in_account_currency, restamp_account=True,
+            )
+            await category_line_service.rescale_lines(session, transaction, old_amount)
 
     if transaction.payee == previous.payee and txn_data.payee != previous.payee:
         transaction.payee = txn_data.payee
@@ -3937,6 +3945,9 @@ async def _sync_bill_finance_charges(
                 effective_date=bill.due_date,
                 type="debit",
                 source="sync",
+                # A charge the bank brings in is new to the person until they
+                # look at it (issue #636).
+                is_read=False,
                 status="posted",
                 raw_data=raw,
                 bill_id=bill.id,
@@ -4662,6 +4673,8 @@ async def sync_connection(
                         continue
                     _merge_sync_metadata(fuzzy_match, txn_data)
                     fuzzy_match.source = "sync"
+                    # The bank just confirmed the row the user typed (#15).
+                    fuzzy_match.is_paid = True
                     _mark_adopted_manual(fuzzy_match)
                     merged_count += 1
                     continue
@@ -4794,6 +4807,9 @@ async def sync_connection(
                     date=txn_data.date,
                     type=txn_data.type,
                     source="sync",
+                    # A charge the bank brings in is new to the person until
+                    # they look at it (issue #636).
+                    is_read=False,
                     status=txn_data.status,
                     payee=txn_data.payee,
                     payee_id=sync_payee_id,
@@ -4837,10 +4853,18 @@ async def sync_connection(
                         continue
                     placeholder.external_id = txn_data.external_id
                     placeholder.source = "sync"
+                    # The bill's charge reached the statement (#15).
+                    placeholder.is_paid = True
                     placeholder.status = txn_data.status
                     placeholder.raw_data = txn_data.raw_data
                     if txn_data.card_masked_number is not None:
                         placeholder.card_masked_number = txn_data.card_masked_number
+                    # The person knows the generated placeholder, not the bank
+                    # charge that replaced it, so the row rejoins the review
+                    # queue (issue #636). This runs once, on the transition:
+                    # later syncs find the row by external_id above and leave
+                    # its read state alone.
+                    placeholder.is_read = False
                     # Same shape as the import path: fold in the `preview` the
                     # rules already produced from the incoming charge instead of
                     # re-running them against the placeholder, whose description
