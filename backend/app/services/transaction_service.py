@@ -2277,6 +2277,13 @@ async def _apply_update_to_row(
 # saved principal/interest breakdown out of step with the ledger.
 _LEDGER_FIELDS = ("account_id", "amount", "currency", "date", "type", "status", "is_ignored")
 
+# What the transfer detector reads off a row. An edit that changes none of
+# these cannot change what the rules would decide about it, so it does not
+# make the row worth reconsidering as a new candidate (#1802).
+_TRANSFER_SIGNAL_FIELDS = frozenset(
+    {"account_id", "amount", "currency", "date", "type", "description", "payee_id"}
+)
+
 
 async def _has_mortgage_breakdown(
     session: AsyncSession, workspace_id: uuid.UUID, payment_id: uuid.UUID
@@ -2532,7 +2539,25 @@ async def update_transaction(
             row_splits = None
         prepared_rows.append((row, row_update, row_splits))
 
-    account_cache = {new_account.id: new_account} if new_account is not None else {}
+    # Which rows this edit makes worth reconsidering as transfer legs. The
+    # comparison has to happen here, before the rows below are mutated: an
+    # edit that only changes a category, a note or a flag leaves a row
+    # exactly as findable (or not) as it already was. Undoing a split
+    # across categories counts, because the detector skips a split row.
+    # Every installment the edit reaches is judged on the same terms as
+    # the one opened.
+    unsplitting_rows = lines_payload is not None and not lines_payload.lines
+    transfer_candidate_ids = [
+        row.id
+        for row, row_update, _ in prepared_rows
+        if (unsplitting_rows and row.has_category_lines)
+        or any(
+            field in row_update and row_update[field] != getattr(row, field)
+            for field in _TRANSFER_SIGNAL_FIELDS
+        )
+    ]
+
+    account_cache ={new_account.id: new_account} if new_account is not None else {}
     for row, row_update, _ in prepared_rows:
         reporting_override = row_update.get(
             "reporting_date_override", row.reporting_date_override
@@ -2597,6 +2622,17 @@ async def update_transaction(
     if amount_changed and _is_installment(transaction):
         await session.flush()
         await _resync_installment_series_total(session, workspace_id, transaction)
+
+    # A corrected row finds its other leg exactly as a typed one does
+    # (#1802): someone who mistyped the amount, the account or the date
+    # fixes it here, and nothing paired it before. Only the rows this edit
+    # changed are candidates, so the rule holds: two rows the edit left
+    # alone are never linked on the strength of another one being edited.
+    if transfer_candidate_ids:
+        await session.flush()
+        await detect_transfer_pairs(
+            session, workspace_id, candidate_ids=transfer_candidate_ids
+        )
 
     await session.commit()
     await session.refresh(transaction, ["category", "payee_entity", "splits", "category_lines"])
