@@ -1254,7 +1254,12 @@
     "suggestionBadge": "Domanda",
     "suggestionBadgeTooltip": "Un pagamento potrebbe saldare questa fattura. Apri la coda per rispondere.",
     "clearGroupFilter": "Rimuovi filtro gruppo",
-    "attachmentNoPreview": "Nessuna anteprima per questo file. Scaricalo per aprirlo."
+    "attachmentNoPreview": "Nessuna anteprima per questo file. Scaricalo per aprirlo.",
+    "reimbursementFilter": "Rimborsi",
+    "reimbursementLinked": "Collegate a rimborsi",
+    "reimbursementAnchor": "Ha rimborsi",
+    "reimbursementCounterpart": "È un rimborso",
+    "reimbursementUnlinked": "Non collegate"
   },
   "accounts": {
     "title": "Conti",

@@ -19,6 +19,7 @@ import {
   Search,
   Store,
   Tag,
+  Undo2,
   Users,
   Wallet,
   X,
@@ -46,6 +47,7 @@ import { Calendar } from '@/components/ui/calendar'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { FlagFilter } from '@/lib/transaction-flag'
+import type { ReimbursementFilter } from '@/types'
 import { localDateString } from '@/lib/date-utils'
 import { formatDateRange } from '@/lib/date-range-format'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
@@ -89,6 +91,8 @@ interface TransactionsFilterBarProps {
   onOnlyUnreadChange: (value: boolean) => void
   /** Offer the review-queue control at all; the calendar view passes false. */
   showUnreadFilter?: boolean
+  filterReimbursement: ReimbursementFilter | ''
+  onReimbursementChange: (value: ReimbursementFilter | '') => void
   filterFrom: string
   filterTo: string
   onDateRangeChange: (from: string, to: string) => void
@@ -142,6 +146,8 @@ export function TransactionsFilterBar({
   onlyUnread,
   onOnlyUnreadChange,
   showUnreadFilter = true,
+  filterReimbursement,
+  onReimbursementChange,
   filterFrom,
   filterTo,
   onDateRangeChange,
@@ -269,6 +275,7 @@ export function TransactionsFilterBar({
     hideIgnored ||
     !!filterFlag ||
     (showUnreadFilter && onlyUnread) ||
+    !!filterReimbursement ||
     !!filterFrom ||
     !!filterTo ||
     !!filterMinAmount ||
@@ -292,6 +299,17 @@ export function TransactionsFilterBar({
   ]
   const flagLabel = filterFlag
     ? flagOptions.find((opt) => opt.value === filterFlag)?.label ?? ''
+    : ''
+
+  const reimbursementOptions: { value: ReimbursementFilter | ''; label: string }[] = [
+    { value: '', label: t('transactions.all') },
+    { value: 'linked', label: t('transactions.reimbursementLinked') },
+    { value: 'anchor', label: t('transactions.reimbursementAnchor') },
+    { value: 'counterpart', label: t('transactions.reimbursementCounterpart') },
+    { value: 'unlinked', label: t('transactions.reimbursementUnlinked') },
+  ]
+  const reimbursementLabel = filterReimbursement
+    ? reimbursementOptions.find((opt) => opt.value === filterReimbursement)?.label ?? ''
     : ''
 
   const statusLabel =
@@ -520,6 +538,7 @@ export function TransactionsFilterBar({
                   flagged: flagLabel || undefined,
                   unpaid: filterUnpaid ? t('transactions.onlyUnpaid') : undefined,
                   unread: onlyUnread ? t('transactions.onlyUnreadShort') : undefined,
+                  reimbursement: reimbursementLabel || undefined,
                   date: dateLabel,
                   amount: amountLabel,
                 }}
@@ -544,6 +563,9 @@ export function TransactionsFilterBar({
                 onlyUnread={onlyUnread}
                 onOnlyUnreadChange={onOnlyUnreadChange}
                 showUnread={showUnreadFilter}
+                reimbursement={filterReimbursement}
+                reimbursementOptions={reimbursementOptions}
+                onReimbursementChange={onReimbursementChange as (value: string) => void}
                 onDateRangeChange={onDateRangeChange}
                 onAmountRangeChange={onAmountRangeChange}
                 onApplyAmountRange={applyAmountRange}
@@ -996,6 +1018,44 @@ export function TransactionsFilterBar({
                   {hideIgnored && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
 
+                {/* Reimbursement links: either side, the original payment, or the payback */}
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="gap-2 text-[13px]">
+                    <Undo2 size={14} className="text-muted-foreground" />
+                    <span className="flex-1">{t('transactions.reimbursementFilter')}</span>
+                    {reimbursementLabel && (
+                      <span className="max-w-[90px] truncate text-[11px] text-muted-foreground">
+                        {reimbursementLabel}
+                      </span>
+                    )}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuPortal>
+                    <DropdownMenuSubContent
+                      sideOffset={8}
+                      className="w-[220px] p-1"
+                    >
+                      {reimbursementOptions.map((opt) => (
+                        <DropdownMenuItem
+                          key={opt.value || 'all'}
+                          onSelect={() => onReimbursementChange(opt.value)}
+                          className={cn(
+                            'gap-2 rounded-sm px-2 py-1.5 text-[13px]',
+                            filterReimbursement === opt.value && 'bg-primary/5',
+                          )}
+                        >
+                          <span className="size-2.5 shrink-0" />
+                          <span className="min-w-0 flex-1 truncate text-start">
+                            {opt.label}
+                          </span>
+                          {filterReimbursement === opt.value && (
+                            <Check size={13} className="text-primary" />
+                          )}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuPortal>
+                </DropdownMenuSub>
+
                 {/* Flagged rows, optionally by reminder date */}
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger className="gap-2 text-[13px]">
@@ -1366,6 +1426,14 @@ export function TransactionsFilterBar({
                 label={t('transactions.unreadRows')}
                 value={t('transactions.onlyUnreadShort')}
                 onRemove={() => onOnlyUnreadChange(false)}
+              />
+            )}
+            {reimbursementLabel && (
+              <FilterChip
+                icon={<Undo2 size={12} />}
+                label={t('transactions.reimbursementFilter')}
+                value={reimbursementLabel}
+                onRemove={() => onReimbursementChange('')}
               />
             )}
             {dateLabel && (

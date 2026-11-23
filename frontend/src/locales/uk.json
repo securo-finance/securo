@@ -1270,7 +1270,12 @@
     "suggestionBadge": "Питання",
     "suggestionBadgeTooltip": "Платіж може закрити цей рахунок. Відкрийте чергу, щоб відповісти.",
     "clearGroupFilter": "Скинути фільтр групи",
-    "attachmentNoPreview": "Для цього файлу немає попереднього перегляду. Завантажте його, щоб відкрити."
+    "attachmentNoPreview": "Для цього файлу немає попереднього перегляду. Завантажте його, щоб відкрити.",
+    "reimbursementFilter": "Відшкодування",
+    "reimbursementLinked": "Пов'язані з відшкодуваннями",
+    "reimbursementAnchor": "Має відшкодування",
+    "reimbursementCounterpart": "Є відшкодуванням",
+    "reimbursementUnlinked": "Не пов'язані"
   },
   "accounts": {
     "title": "Рахунки",

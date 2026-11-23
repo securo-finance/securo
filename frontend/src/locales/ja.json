@@ -1250,7 +1250,12 @@
     "suggestionBadge": "要確認",
     "suggestionBadgeTooltip": "これが何かを消し込む可能性があります。キューを開いて回答してください。",
     "clearGroupFilter": "グループフィルターを解除",
-    "attachmentNoPreview": "このファイルはプレビューできません。ダウンロードして開いてください。"
+    "attachmentNoPreview": "このファイルはプレビューできません。ダウンロードして開いてください。",
+    "reimbursementFilter": "精算",
+    "reimbursementLinked": "精算に紐付け済み",
+    "reimbursementAnchor": "精算あり",
+    "reimbursementCounterpart": "精算にあたる",
+    "reimbursementUnlinked": "未紐付け"
   },
   "accounts": {
     "title": "口座",

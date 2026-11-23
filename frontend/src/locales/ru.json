@@ -1270,7 +1270,12 @@
     "suggestionBadge": "Вопрос",
     "suggestionBadgeTooltip": "Платёж может закрыть этот счёт. Откройте очередь, чтобы ответить.",
     "clearGroupFilter": "Сбросить фильтр группы",
-    "attachmentNoPreview": "Для этого файла нет предпросмотра. Скачайте его, чтобы открыть."
+    "attachmentNoPreview": "Для этого файла нет предпросмотра. Скачайте его, чтобы открыть.",
+    "reimbursementFilter": "Возмещения",
+    "reimbursementLinked": "Связанные с возмещениями",
+    "reimbursementAnchor": "Есть возмещения",
+    "reimbursementCounterpart": "Является возмещением",
+    "reimbursementUnlinked": "Не связаны"
   },
   "accounts": {
     "title": "Счета",

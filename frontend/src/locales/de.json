@@ -1250,7 +1250,12 @@
     "suggestionBadge": "Frage",
     "suggestionBadgeTooltip": "Eine Zahlung könnte diese Rechnung begleichen. Öffnen Sie die Warteschlange.",
     "clearGroupFilter": "Gruppenfilter entfernen",
-    "attachmentNoPreview": "Für diese Datei gibt es keine Vorschau. Lade sie herunter, um sie zu öffnen."
+    "attachmentNoPreview": "Für diese Datei gibt es keine Vorschau. Lade sie herunter, um sie zu öffnen.",
+    "reimbursementFilter": "Erstattungen",
+    "reimbursementLinked": "Mit Erstattungen verknüpft",
+    "reimbursementAnchor": "Hat Erstattungen",
+    "reimbursementCounterpart": "Ist eine Erstattung",
+    "reimbursementUnlinked": "Nicht verknüpft"
   },
   "accounts": {
     "title": "Konten",

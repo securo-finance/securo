@@ -1304,7 +1304,12 @@
     "suggestionBadge": "Otázka",
     "suggestionBadgeTooltip": "Platba môže uhradiť túto faktúru. Otvorte front a odpovedzte.",
     "clearGroupFilter": "Zrušiť filter skupiny",
-    "attachmentNoPreview": "Tento súbor nemá náhľad. Stiahnite si ho a otvorte."
+    "attachmentNoPreview": "Tento súbor nemá náhľad. Stiahnite si ho a otvorte.",
+    "reimbursementFilter": "Náhrady",
+    "reimbursementLinked": "Prepojené s náhradami",
+    "reimbursementAnchor": "Má náhrady",
+    "reimbursementCounterpart": "Je náhradou",
+    "reimbursementUnlinked": "Neprepojené"
   },
   "accounts": {
     "title": "Účty",

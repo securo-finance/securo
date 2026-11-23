@@ -1250,7 +1250,12 @@
     "suggestionBadge": "Vraag",
     "suggestionBadgeTooltip": "Een betaling kan deze factuur voldoen. Open de wachtrij om te antwoorden.",
     "clearGroupFilter": "Groepsfilter wissen",
-    "attachmentNoPreview": "Er is geen voorbeeld van dit bestand. Download het om het te openen."
+    "attachmentNoPreview": "Er is geen voorbeeld van dit bestand. Download het om het te openen.",
+    "reimbursementFilter": "Terugbetalingen",
+    "reimbursementLinked": "Gekoppeld aan terugbetalingen",
+    "reimbursementAnchor": "Heeft terugbetalingen",
+    "reimbursementCounterpart": "Is een terugbetaling",
+    "reimbursementUnlinked": "Niet gekoppeld"
   },
   "accounts": {
     "title": "Rekeningen",

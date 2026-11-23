@@ -2686,6 +2686,13 @@ export interface LoanSchedule {
   installments: LoanInstallment[]
 }
 
+/**
+ * Transactions by their place in a reimbursement link: either side (`linked`),
+ * the original row that has reimbursements (`anchor`), a row that reimburses
+ * another (`counterpart`), or neither (`unlinked`).
+ */
+export type ReimbursementFilter = 'linked' | 'anchor' | 'counterpart' | 'unlinked'
+
 /** The row on the other side of a reimbursement allocation. */
 export interface ReimbursementLinkedTransaction {
   id: string

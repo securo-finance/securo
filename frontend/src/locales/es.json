@@ -1254,7 +1254,12 @@
     "suggestionBadge": "Pregunta",
     "suggestionBadgeTooltip": "Un pago puede saldar esta factura. Abre la cola para responder.",
     "clearGroupFilter": "Quitar filtro de grupo",
-    "attachmentNoPreview": "No hay vista previa de este archivo. Descárgalo para abrirlo."
+    "attachmentNoPreview": "No hay vista previa de este archivo. Descárgalo para abrirlo.",
+    "reimbursementFilter": "Reembolsos",
+    "reimbursementLinked": "Vinculadas a reembolsos",
+    "reimbursementAnchor": "Tiene reembolsos",
+    "reimbursementCounterpart": "Es un reembolso",
+    "reimbursementUnlinked": "Sin vincular"
   },
   "accounts": {
     "title": "Cuentas",

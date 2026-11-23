@@ -1250,7 +1250,12 @@
     "suggestionBadge": "Kérdés",
     "suggestionBadgeTooltip": "Lehet, hogy egy befizetés kiegyenlíti ezt. Nyisd meg a sort a válaszhoz.",
     "clearGroupFilter": "Csoportszűrő törlése",
-    "attachmentNoPreview": "Ehhez a fájlhoz nincs előnézet. Töltsd le a megnyitáshoz."
+    "attachmentNoPreview": "Ehhez a fájlhoz nincs előnézet. Töltsd le a megnyitáshoz.",
+    "reimbursementFilter": "Visszatérítések",
+    "reimbursementLinked": "Visszatérítésekhez kapcsolva",
+    "reimbursementAnchor": "Vannak visszatérítései",
+    "reimbursementCounterpart": "Visszatérítés",
+    "reimbursementUnlinked": "Nincs kapcsolva"
   },
   "accounts": {
     "title": "Számlák",

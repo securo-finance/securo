@@ -1250,7 +1250,12 @@
     "suggestionBadge": "सवाल",
     "suggestionBadgeTooltip": "एक भुगतान इसे चुका सकता है। जवाब देने के लिए कतार खोलें।",
     "clearGroupFilter": "समूह फ़िल्टर हटाएँ",
-    "attachmentNoPreview": "इस फ़ाइल का पूर्वावलोकन नहीं है। खोलने के लिए इसे डाउनलोड करें।"
+    "attachmentNoPreview": "इस फ़ाइल का पूर्वावलोकन नहीं है। खोलने के लिए इसे डाउनलोड करें।",
+    "reimbursementFilter": "प्रतिपूर्ति",
+    "reimbursementLinked": "प्रतिपूर्ति से जुड़े",
+    "reimbursementAnchor": "प्रतिपूर्ति वाले",
+    "reimbursementCounterpart": "स्वयं प्रतिपूर्ति",
+    "reimbursementUnlinked": "जुड़े नहीं"
   },
   "accounts": {
     "title": "खाते",

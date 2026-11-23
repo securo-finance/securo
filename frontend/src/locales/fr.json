@@ -1254,7 +1254,12 @@
     "suggestionBadge": "Question",
     "suggestionBadgeTooltip": "Un paiement peut solder cette facture. Ouvrez la file pour répondre.",
     "clearGroupFilter": "Effacer le filtre de groupe",
-    "attachmentNoPreview": "Pas d'aperçu pour ce fichier. Téléchargez-le pour l'ouvrir."
+    "attachmentNoPreview": "Pas d'aperçu pour ce fichier. Téléchargez-le pour l'ouvrir.",
+    "reimbursementFilter": "Remboursements",
+    "reimbursementLinked": "Liées à des remboursements",
+    "reimbursementAnchor": "A des remboursements",
+    "reimbursementCounterpart": "Est un remboursement",
+    "reimbursementUnlinked": "Non liées"
   },
   "accounts": {
     "title": "Comptes",

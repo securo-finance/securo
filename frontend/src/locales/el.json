@@ -1534,7 +1534,12 @@
     "suggestionBadge": "Ερώτηση",
     "suggestionBadgeTooltip": "Μια πληρωμή μπορεί να εξοφλεί ένα τιμολόγιο. Ανοίξτε την ουρά για να απαντήσετε.",
     "clearGroupFilter": "Κατάργηση φίλτρου ομάδας",
-    "attachmentNoPreview": "Δεν υπάρχει προεπισκόπηση για αυτό το αρχείο. Κατεβάστε το για να το ανοίξετε."
+    "attachmentNoPreview": "Δεν υπάρχει προεπισκόπηση για αυτό το αρχείο. Κατεβάστε το για να το ανοίξετε.",
+    "reimbursementFilter": "Αποζημιώσεις",
+    "reimbursementLinked": "Συνδεδεμένες με αποζημιώσεις",
+    "reimbursementAnchor": "Έχει αποζημιώσεις",
+    "reimbursementCounterpart": "Είναι αποζημίωση",
+    "reimbursementUnlinked": "Χωρίς σύνδεση"
   },
   "budgets": {
     "spending": "Δαπάνες",

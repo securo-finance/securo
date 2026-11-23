@@ -1,5 +1,5 @@
 import { formatCurrency } from '@/lib/format'
-import type { Transaction } from '@/types'
+import type { ReimbursementFilter, Transaction } from '@/types'
 
 export type ReimbursementSource = Pick<
   Transaction,
@@ -25,4 +25,11 @@ export function formatSignedNet(net: number, type: string, currency: string, loc
   const amount = formatCurrency(Math.abs(net), currency, locale)
   if (Math.abs(net) < 0.005) return amount
   return `${(type === 'credit') === net > 0 ? '+' : '−'}${amount}`
+}
+
+const REIMBURSEMENT_FILTERS: ReimbursementFilter[] = ['linked', 'anchor', 'counterpart', 'unlinked']
+
+/** The reimbursement filter as kept in the URL: `?reimbursement=linked|anchor|counterpart|unlinked`. */
+export function parseReimbursementFilter(value: string | null): ReimbursementFilter | '' {
+  return REIMBURSEMENT_FILTERS.find((filter) => filter === value) ?? ''
 }

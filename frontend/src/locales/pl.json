@@ -1293,7 +1293,12 @@
     "suggestionBadge": "Pytanie",
     "suggestionBadgeTooltip": "Płatność może opłacić tę fakturę. Otwórz kolejkę, aby odpowiedzieć.",
     "clearGroupFilter": "Wyczyść filtr grupy",
-    "attachmentNoPreview": "Brak podglądu tego pliku. Pobierz go, aby go otworzyć."
+    "attachmentNoPreview": "Brak podglądu tego pliku. Pobierz go, aby go otworzyć.",
+    "reimbursementFilter": "Zwroty",
+    "reimbursementLinked": "Powiązane ze zwrotami",
+    "reimbursementAnchor": "Ma zwroty",
+    "reimbursementCounterpart": "Jest zwrotem",
+    "reimbursementUnlinked": "Niepowiązane"
   },
   "accounts": {
     "title": "Konta",

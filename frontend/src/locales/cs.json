@@ -1320,7 +1320,12 @@
     "suggestionBadge": "Otázka",
     "suggestionBadgeTooltip": "Platba může uhradit tuto fakturu. Otevřete frontu a odpovězte.",
     "clearGroupFilter": "Zrušit filtr skupiny",
-    "attachmentNoPreview": "Tento soubor nemá náhled. Stáhněte si ho a otevřete."
+    "attachmentNoPreview": "Tento soubor nemá náhled. Stáhněte si ho a otevřete.",
+    "reimbursementFilter": "Náhrady",
+    "reimbursementLinked": "Propojené s náhradami",
+    "reimbursementAnchor": "Má náhrady",
+    "reimbursementCounterpart": "Je náhradou",
+    "reimbursementUnlinked": "Nepropojené"
   },
   "accounts": {
     "title": "Účty",

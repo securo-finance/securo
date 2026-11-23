@@ -1250,7 +1250,12 @@
     "suggestionBadge": "Question",
     "suggestionBadgeTooltip": "A payment may settle this. Open the queue to answer.",
     "clearGroupFilter": "Clear group filter",
-    "attachmentNoPreview": "There's no preview for this file. Download it to open it."
+    "attachmentNoPreview": "There's no preview for this file. Download it to open it.",
+    "reimbursementFilter": "Reimbursements",
+    "reimbursementLinked": "Linked to reimbursements",
+    "reimbursementAnchor": "Has reimbursements",
+    "reimbursementCounterpart": "Is a reimbursement",
+    "reimbursementUnlinked": "Not linked"
   },
   "accounts": {
     "title": "Accounts",

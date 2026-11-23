@@ -15,6 +15,7 @@ import {
   ListChecks,
   Store,
   Tag,
+  Undo2,
   Users,
   Wallet,
   X,
@@ -45,6 +46,7 @@ export type MobileFilterView =
   | 'flagged'
   | 'unpaid'
   | 'unread'
+  | 'reimbursement'
   | 'date'
   | 'amount'
 
@@ -80,6 +82,8 @@ interface MobileTransactionsFilterMenuProps {
   onlyUnread: boolean
   /** Offer the review-queue option at all; the calendar view passes false. */
   showUnread?: boolean
+  reimbursement: string
+  reimbursementOptions: { value: string; label: string }[]
   from: string
   to: string
   minAmount: string
@@ -103,6 +107,7 @@ interface MobileTransactionsFilterMenuProps {
   onUnpaidChange: (value: boolean) => void
   onFlagFilterChange: (value: FlagFilter) => void
   onOnlyUnreadChange: (value: boolean) => void
+  onReimbursementChange: (value: string) => void
   onDateRangeChange: (from: string, to: string) => void
   onAmountRangeChange: (min: string, max: string) => void
   onApplyAmountRange: () => void
@@ -536,6 +541,7 @@ function buildRootOptions(
     { view: 'ignored', icon: EyeClosed, label: labels.ignored, summary: summaries.ignored },
     { view: 'flagged', icon: Flag, label: labels.flagged, summary: summaries.flagged },
     { view: 'unpaid', icon: CircleDashed, label: labels.unpaid, summary: summaries.unpaid },
+    { view: 'reimbursement', icon: Undo2, label: labels.reimbursement, summary: summaries.reimbursement },
     { view: 'date', icon: CalendarIcon, label: labels.date, summary: summaries.date },
     { view: 'amount', icon: Coins, label: labels.amount, summary: summaries.amount },
   ]
@@ -565,6 +571,7 @@ function buildLabels(
     flagged: t('transactions.flagged'),
     unpaid: t('transactions.onlyUnpaid'),
     unread: t('transactions.unreadRows'),
+    reimbursement: t('transactions.reimbursementFilter'),
     date: t('transactions.filtersBar.date'),
     amount: t('transactions.filtersBar.amount'),
   }
@@ -625,6 +632,9 @@ function MobileFilterDetail({
       { value: 'unread', label: t('transactions.onlyUnread') },
     ]
     return <MobileSelectionView options={options} selectedValue={menu.onlyUnread ? 'unread' : 'all'} onChange={(value) => menu.onOnlyUnreadChange(value === 'unread')} />
+  }
+  if (menu.view === 'reimbursement') {
+    return <MobileSelectionView options={menu.reimbursementOptions} selectedValue={menu.reimbursement} onChange={menu.onReimbursementChange} />
   }
   if (menu.view === 'date') {
     return <MobileDateView from={menu.from} to={menu.to} presets={menu.datePresets} onChange={menu.onDateRangeChange} onOpenCustomRange={menu.onOpenCustomRange} />

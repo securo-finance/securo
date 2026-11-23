@@ -30,6 +30,7 @@ import type {
   DescriptionSuggestion,
   Transaction,
   TransactionReimbursements,
+  ReimbursementFilter,
   ReimbursementLinkedTransaction,
   Payee,
   PayeeSummary,
@@ -676,6 +677,7 @@ export const transactions = {
     flag_due?: FlagDue
     unpaid_only?: boolean
     unread_only?: boolean
+    reimbursement?: ReimbursementFilter
     tags?: string[]
     min_amount?: number
     max_amount?: number
@@ -933,6 +935,7 @@ export const transactions = {
     flag_due?: FlagDue
     unpaid_only?: boolean
     unread_only?: boolean
+    reimbursement?: ReimbursementFilter
     transaction_ids?: string[]
   }): Promise<void> => {
     const { data } = await api.get('/transactions/export', {

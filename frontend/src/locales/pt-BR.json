@@ -1254,7 +1254,12 @@
     "suggestionBadge": "Pergunta",
     "suggestionBadgeTooltip": "Um pagamento pode quitar esta cobrança. Abra a fila para responder.",
     "clearGroupFilter": "Limpar filtro de grupo",
-    "attachmentNoPreview": "Não há prévia para este arquivo. Baixe-o para abrir."
+    "attachmentNoPreview": "Não há prévia para este arquivo. Baixe-o para abrir.",
+    "reimbursementFilter": "Reembolsos",
+    "reimbursementLinked": "Vinculadas a reembolsos",
+    "reimbursementAnchor": "Tem reembolsos",
+    "reimbursementCounterpart": "É um reembolso",
+    "reimbursementUnlinked": "Sem vínculo"
   },
   "accounts": {
     "title": "Contas",
