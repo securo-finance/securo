@@ -1840,12 +1840,18 @@ async def _netting_effects_by_date(
     The balance curve counts every row whole; "netted" counts a row linked to
     others only for the share that is still its own (ADR 0031), so a dinner
     paid for four moves the line by the user's share, once, and the paybacks
-    move it not at all. The change to a day is `delta * (share - 1)` for each
-    linked row dated that day, grouped and converted like the real deltas.
+    move it not at all.
+
+    Each allocation moves one amount: what its counterpart's allocated part
+    is worth in the counterpart's account, in the primary currency. It comes
+    off the counterpart's day and goes onto the anchor's, so the two cancel
+    exactly and a settled link leaves the curve where the real balance ends,
+    even when the two rows were booked at different rates (the difference is
+    real money and stays in the curve, on the anchor's day).
 
     Reimbursement links are the one kind of netting today. Others join in here.
     """
-    from app.services.reimbursement_netting import on_a_live_link, reimbursement_share_fractions
+    from app.services.reimbursement_netting import live_allocations_for, on_a_live_link
 
     if month_starts is not None and not month_starts:
         return {}
@@ -1862,31 +1868,46 @@ async def _netting_effects_by_date(
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(*filters, on_a_live_link(workspace_id))
     )
-    rows = result.all()
-    if not rows:
+    in_curve = {tx.id: tx for tx, _ in result.all()}
+    if not in_curve:
         return {}
-    fractions = await reimbursement_share_fractions(session, [tx for tx, _ in rows])
+    pairs = await live_allocations_for(session, in_curve, workspace_id)
 
-    by_currency: dict[tuple[date, str], Decimal] = {}
-    for tx, account_currency in rows:
-        share = fractions.get(tx.id)
-        if share is None:
-            continue
-        amount = (
-            Decimal(str(tx.amount))
-            if (tx.currency or "").upper() == (account_currency or "").upper()
-            else Decimal(str(tx.amount_account or 0))
-        )
-        signed = abs(amount) if tx.type == "credit" else -abs(amount)
-        key = (tx.date, account_currency)
-        by_currency[key] = by_currency.get(key, Decimal("0")) + signed * (share - 1)
+    # A counterpart outside the curve's window still says what its part is worth.
+    counterpart_ids = {allocation.counterpart_id for allocation, _ in pairs}
+    counterparts = await session.execute(
+        select(Transaction, Account.currency)
+        .join(Account, Transaction.account_id == Account.id)
+        .where(Transaction.id.in_(counterpart_ids))
+    )
+    account_currency_of = {tx.id: (tx, currency) for tx, currency in counterparts.all()}
 
     primary_currency = primary_currency_hint or get_settings().default_currency
     effects: dict[date, float] = {}
-    for (tx_date, currency), amount in by_currency.items():
-        if currency != primary_currency:
-            amount, _ = await convert(session, amount, currency, primary_currency)
-        effects[tx_date] = effects.get(tx_date, 0.0) + float(amount)
+
+    def add(day: date, amount: Decimal) -> None:
+        effects[day] = effects.get(day, 0.0) + float(amount)
+
+    for allocation, amount in pairs:
+        if allocation.counterpart_id not in account_currency_of:
+            continue
+        counterpart, account_currency = account_currency_of[allocation.counterpart_id]
+        full = abs(Decimal(str(counterpart.amount or 0)))
+        if not full:
+            continue
+        in_account = (
+            Decimal(str(counterpart.amount))
+            if (counterpart.currency or "").upper() == (account_currency or "").upper()
+            else Decimal(str(counterpart.amount_account or 0))
+        )
+        signed = abs(in_account) if counterpart.type == "credit" else -abs(in_account)
+        moved = signed * amount / full
+        if account_currency != primary_currency:
+            moved, _ = await convert(session, moved, account_currency, primary_currency)
+        if allocation.counterpart_id in in_curve:
+            add(counterpart.date, -moved)
+        if allocation.anchor_id in in_curve:
+            add(in_curve[allocation.anchor_id].date, moved)
     return effects
 
 

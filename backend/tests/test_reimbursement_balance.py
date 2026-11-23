@@ -197,3 +197,31 @@ async def test_a_pending_payback_the_provider_snapshot_holds_is_not_netted_twice
     net_history, _ = await _curve(session, test_user, test_workspace, next_month)
 
     assert net_history.opening_balance == real_history.opening_balance
+
+
+@pytest.mark.asyncio
+async def test_a_linked_pair_in_a_foreign_currency_keeps_its_fx_residual(
+    session, manual_account, test_user, test_workspace
+):
+    # USD 100 spent and USD 100 paid back on a BRL account, at different rates:
+    # the bank took R$600 and returned R$500. The real balance ends at -100,
+    # and netting only moves money between days, so the netted curve must too.
+    rows = {}
+    for key, type_, day, in_account in (("expense", "debit", 3, "600"), ("payback", "credit", 5, "500")):
+        rows[key] = Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=manual_account.id, description=key, amount=Decimal("100"), currency="USD",
+            amount_account=Decimal(in_account), date=LAST_MONTH.replace(day=day), type=type_,
+            source="manual",
+        )
+        session.add(rows[key])
+    await session.flush()
+    await _link(session, rows["expense"], (rows["payback"], 100))
+
+    _, real = await _curve(session, test_user, test_workspace, LAST_MONTH, netting=False)
+    _, net = await _curve(session, test_user, test_workspace, LAST_MONTH)
+
+    assert (real[3], real[5]) == (-600, -100)
+    # The residual shows up where the money went: R$600 out, R$500 back.
+    assert (net[3], net[5]) == (-100, -100)
+    assert real[max(real)] == net[max(net)]

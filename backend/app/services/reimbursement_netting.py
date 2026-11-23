@@ -146,6 +146,31 @@ async def _in_primary(
     return await _others_share_in_primary(session, row, primary_currency, rates)
 
 
+async def live_allocations_for(
+    session: AsyncSession,
+    transaction_ids: Iterable[uuid.UUID],
+    workspace_id: uuid.UUID,
+) -> list[tuple[ReimbursementAllocation, Decimal]]:
+    """The allocations that count and touch any of these rows, each with its
+    amount in the counterpart's currency (scaled down when a sync shrank the
+    counterpart below its allocations, see `_effective_amounts`)."""
+    ids = list(transaction_ids)
+    if not ids:
+        return []
+    result = await session.execute(
+        select(ReimbursementAllocation).where(
+            *_live_allocations(workspace_id),
+            or_(
+                ReimbursementAllocation.anchor_id.in_(ids),
+                ReimbursementAllocation.counterpart_id.in_(ids),
+            ),
+        )
+    )
+    allocations = list(result.scalars().all())
+    effective = await _effective_amounts(session, allocations)
+    return [(allocation, effective[allocation.id]) for allocation in allocations]
+
+
 async def reimbursement_offset_parts(
     session: AsyncSession,
     user_id: uuid.UUID,
