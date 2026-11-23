@@ -172,9 +172,20 @@ class Transaction(Base):
 
     @property
     def provider_category(self) -> Optional[str]:
+        """The label the provider sent, only when it is a non-empty string.
+
+        `raw_data` holds the payload exactly as the bank or plugin sent it, so
+        the key can carry anything: a numeric MCC code, a list, an object. The
+        response schema types this as text and the rule engine only matches
+        text, so any other type is "no label" here instead of a validation
+        error that takes the whole month's list down (issue #353).
+        """
         if not isinstance(self.raw_data, dict):
             return None
-        return self.raw_data.get("category")
+        value = self.raw_data.get("category")
+        if isinstance(value, str) and value.strip():
+            return value
+        return None
 
     account: Mapped["Account"] = relationship(back_populates="transactions")
     category: Mapped[Optional["Category"]] = relationship()

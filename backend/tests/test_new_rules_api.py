@@ -1610,6 +1610,13 @@ async def test_provider_categories_lists_distinct_workspace_values(
         _row(test_workspace.id, account.id, "MANUAL", None, 4),
         _row(test_workspace.id, account.id, "NO CATEGORY KEY", {"other": "x"}, 5),
         _row(test_workspace.id, account.id, "EMPTY CATEGORY", {"category": ""}, 6),
+        _row(test_workspace.id, account.id, "BLANK CATEGORY", {"category": "   "}, 8),
+        # The provider sent something that is not a label (a numeric code, a
+        # list, an object): the rule engine only matches text, so the editor
+        # must not offer these values either (#353).
+        _row(test_workspace.id, account.id, "NUMERIC CODE", {"category": 42}, 9),
+        _row(test_workspace.id, account.id, "A LIST", {"category": ["Groceries"]}, 10),
+        _row(test_workspace.id, account.id, "AN OBJECT", {"category": {"id": 7}}, 11),
         # Another workspace's label must not show up here.
         _row(other_workspace.id, other_account.id, "FLIGHT", {"category": "Travel"}, 7),
     ]
@@ -1648,3 +1655,66 @@ async def test_transaction_detail_exposes_provider_category(
 
     assert synced_body["provider_category"] == "Groceries"
     assert manual_body["provider_category"] is None
+
+
+@pytest.mark.asyncio
+async def test_transactions_survive_a_non_textual_provider_category(
+    client: AsyncClient, auth_headers, session: AsyncSession,
+    test_user, test_account, test_transactions,
+):
+    """A provider payload whose category is not text reads as no label, never 500.
+
+    `TransactionRead.provider_category` is a string, and `raw_data` holds the
+    payload as the bank or plugin sent it. A numeric MCC code, a list, an
+    object, an empty or blank string is not a label: it has to read as null
+    instead of failing validation of the whole response, which took the
+    month's list and the dashboard down with it (#353).
+    """
+    payloads = [
+        {"category": 42},
+        {"category": ["Groceries"]},
+        {"category": {"id": 7}},
+        {"category": ""},
+        {"category": "   "},
+    ]
+    for transaction, raw_data in zip(test_transactions, payloads):
+        transaction.raw_data = raw_data
+
+    # A real label still comes through, so the fix does not swallow text.
+    labelled = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        account_id=test_account.id,
+        description="R353 MARKET",
+        amount=Decimal("10.00"),
+        date=test_transactions[0].date,
+        type="debit",
+        source="sync",
+        currency=test_account.currency,
+        raw_data={"category": "Groceries"},
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(labelled)
+    await session.commit()
+
+    detail = await client.get(
+        f"/api/transactions/{test_transactions[0].id}", headers=auth_headers
+    )
+    assert detail.status_code == 200
+    assert detail.json()["provider_category"] is None
+
+    today = date.today()
+    listing = await client.get(
+        "/api/transactions",
+        params={
+            "from": today.replace(day=1).isoformat(),
+            "to": today.isoformat(),
+            "limit": 100,
+        },
+        headers=auth_headers,
+    )
+    assert listing.status_code == 200
+    by_id = {item["id"]: item for item in listing.json()["items"]}
+    for transaction in test_transactions:
+        assert by_id[str(transaction.id)]["provider_category"] is None
+    assert by_id[str(labelled.id)]["provider_category"] == "Groceries"

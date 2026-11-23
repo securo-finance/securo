@@ -424,8 +424,12 @@ async def list_provider_categories(
     editor offers these values instead of letting people guess a translation
     (#280). Values arrive in different cases across providers, so they are
     ordered case-insensitively.
+
+    The JSON value is read as JSON, not as text: `as_string()` turns a numeric
+    code into `"42"`, a list into its serialized form. The rule engine only
+    matches text, so what it ignores is not offered here (#353).
     """
-    value = Transaction.raw_data["category"].as_string()
+    value = Transaction.raw_data["category"]
     result = await session.execute(
         select(value)
         .where(
