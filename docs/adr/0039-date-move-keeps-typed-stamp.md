@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-11-23
 - Origin: #444 (a member moving only the date lost the owner's typed figure)
-- Amends: [0032](0032-viewer-display-currency.md)
+- Amends: [0031](0031-typed-primary-amount.md), [0032](0032-viewer-display-currency.md)
 
 ## Context
 
@@ -17,6 +17,7 @@ ADR 0032 did not say which edits invalidate the typed figure. The code decided t
 - A date move still restamps the account leg, because the value in the account's currency follows the date, and `_restore_typed_primary` then puts the owner's figure back.
 - A row with nothing typed keeps following the date: a derived stamp is still recalculated on a date move.
 - The restamp decision reads `money_inputs_changed` for the typed copy and keeps the date out of it.
+- The counterpart of a transfer and a pending row posted to today still follow ADR 0031: a date change there drops the typed figure. This ADR covers the row the person edits; aligning those two paths with it is a separate decision, tracked in #1816.
 
 ## Consequences
 
@@ -25,4 +26,4 @@ ADR 0032 did not say which edits invalidate the typed figure. The code decided t
 
 ## Enforced by
 
-`backend/tests/test_viewer_currency_shared_workspace.py`: `test_member_moving_only_the_date_keeps_the_owners_typed_stamp`, `test_member_moving_only_the_date_restamps_a_derived_stamp` and `test_member_moving_only_the_date_keeps_the_account_leg`.
+`backend/tests/test_viewer_currency_shared_workspace.py`: `test_member_moving_only_the_date_keeps_the_owners_typed_stamp`, `test_member_moving_only_the_date_restamps_a_derived_stamp` and `test_member_moving_only_the_date_keeps_the_typed_account_leg`.
