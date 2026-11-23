@@ -27,7 +27,6 @@ from app.services._query_filters import (
     line_amount_primary,
     line_category_id,
     line_primary_or_amount,
-    owner_split_offset_by_category,
     reporting_date_col,
     user_pnl_parts,
     user_pnl_ratio,
@@ -35,6 +34,7 @@ from app.services._query_filters import (
     reporting_date_value,
 )
 from app.services.admin_service import get_credit_card_accounting_mode
+from app.services.category_defaults import DEFAULT_CATEGORIES, name_variants
 from app.services.account_service import get_account_name
 from app.services.asset_service import (
     _fill_forward_at,
@@ -503,7 +503,8 @@ def _without_mirrored_legs(rows):
     category and the amount, sit on different accounts and are booked within
     `MIRRORED_LEG_DAYS`. Pairs are a maximum matching, so the result does not
     depend on row order. Rows are (category id, name, color, type, amount,
-    account id, booking date); the rest come back without account and date.
+    account id, booking date, ...); the rest come back without account and
+    date, with any column after them kept.
 
     Legs of one group on the same account and day are interchangeable, so
     they are matched as one class with a count: a thousand identical legs
@@ -543,7 +544,31 @@ def _without_mirrored_legs(rows):
             del credits[credit_keys[i]][:count]
             dropped.update(debits[debit_keys[j]][:count])
             del debits[debit_keys[j]][:count]
-    return [row[:5] for index, row in enumerate(rows) if index not in dropped]
+    return [row[:5] + tuple(row[7:]) for index, row in enumerate(rows) if index not in dropped]
+
+
+# Accounts that owe money: a credit on one pays the debt down, so it is never
+# money taken out of an investment (#251).
+_DEBT_ACCOUNT_TYPES = frozenset({"credit_card", "loan"})
+# The default "Transfers" category in every language: money moved between the
+# user's own accounts, not set aside or taken out of an investment (#251).
+_TRANSFER_CATEGORY_NAMES = frozenset(name_variants(DEFAULT_CATEGORIES["transfers"]))
+
+
+def _investment_move_group(txn_type: str, account_type: str | None, category_name: str | None):
+    """The Money Map group of a one-sided movement, or None when it is not one.
+
+    A debit is a contribution and a credit a withdrawal (#1418), except a
+    one-sided leg in the default Transfers category, which only moves money
+    between accounts, and a credit on a card or loan, which pays a bill.
+    """
+    if category_name in _TRANSFER_CATEGORY_NAMES:
+        return None
+    if txn_type != "credit":
+        return "investments"
+    if account_type in _DEBT_ACCOUNT_TYPES:
+        return None
+    return "withdrawals"
 
 
 def _max_leg_pairs(
@@ -1021,75 +1046,12 @@ async def get_income_expenses_report(
         interval=interval,
     )
 
-    # Build per-category composition for the full date range
-    cat_result = await session.execute(
-        with_category_lines(
-            select(
-                Category.id,
-                Category.name,
-                Category.color,
-                Transaction.type,
-                func.sum(amount_expr),
-            ).select_from(Transaction)
-        )
-        .outerjoin(Category, line_category_id() == Category.id)
-        .where(
-            Transaction.workspace_id == workspace_id,
-            report_date >= start,
-            report_date <= axis_end,
-            Transaction.source != "opening_balance",
-            Transaction.status == "posted",
-            counts_as_user_pnl(line_category_id()),
-            *acct_filter,
-        )
-        .group_by(Category.id, Category.name, Category.color, Transaction.type)
-    )
-
-    # Collect composition into a mutable map so projections can be added
+    # Collect composition into a mutable map so projections can be added.
+    # The P&L entries are filled once the category trend has taken the owner
+    # shares off period by period, so a slice carries the same zero floor as
+    # the summary and the sparkline total (#264).
     # Key: (cat_key, group) -> {label, color, value}
     comp_map: dict[tuple[str, str], dict] = {}
-    for row in cat_result.all():
-        cat_id, cat_name, cat_color, txn_type, total_amount = row
-        amount = abs(float(total_amount or 0))
-        if amount <= 0:
-            continue
-        cat_key = str(cat_id) if cat_id else "uncategorized"
-        group = "income" if txn_type == "credit" else "expenses"
-        comp_map[(cat_key, group)] = {
-            "label": cat_name if cat_name else "Uncategorized",
-            "color": cat_color if cat_color else "#6B7280",
-            "value": amount,
-        }
-
-    # Subtract non-owner shares of own splits from composition (debit only —
-    # owner_split_offset_by_category is debit-only). Keeps the report's
-    # composition consistent with summary totals under share-only model.
-    full_range_offset = {} if filtered else await owner_split_offset_by_category(
-        session, user_id, start, axis_end + timedelta(days=1),
-        use_effective_date=accounting_mode == "accrual",
-        primary_currency=primary_currency,
-        workspace_id=workspace_id,
-    )
-    for cat_uuid, offset_total in full_range_offset.items():
-        cat_key = str(cat_uuid) if cat_uuid else "uncategorized"
-        comp_key = (cat_key, "expenses")
-        if comp_key in comp_map:
-            comp_map[comp_key]["value"] -= offset_total
-            if comp_map[comp_key]["value"] <= 0:
-                comp_map.pop(comp_key)
-    # Credits the same way, from the period offsets above: the others' shares
-    # of a split credit and the settled part of a linked one aren't income.
-    income_offsets: dict[str, float] = {}
-    for _period, cat_uuid, tx_type, offset in owner_offsets:
-        if tx_type == "credit":
-            cat_key = str(cat_uuid) if cat_uuid else "uncategorized"
-            income_offsets[cat_key] = income_offsets.get(cat_key, 0.0) + offset
-    for cat_key, offset_total in income_offsets.items():
-        comp_key = (cat_key, "income")
-        if comp_key in comp_map:
-            comp_map[comp_key]["value"] -= offset_total
-            if comp_map[comp_key]["value"] <= 0:
-                comp_map.pop(comp_key)
 
     # Investment-style outflows: transactions in `treat_as_transfer` categories
     # are excluded from P&L by counts_as_user_pnl (an investment application's
@@ -1100,7 +1062,8 @@ async def get_income_expenses_report(
     # the transfer_pair_id filter, so only one-sided movements appear here:
     # debits are contributions, credits are withdrawals, which the Sankey draws
     # as a source of money beside income (#1418). Rows, not sums: the two legs
-    # of one movement that were never paired are dropped first.
+    # of one movement that were never paired are dropped first. What is left
+    # of a bill payment or a plain transfer stays out (#251).
     inv_result = await session.execute(
         with_category_lines(
             select(
@@ -1113,9 +1076,11 @@ async def get_income_expenses_report(
                 # Legs pair by when they were booked; the reporting date only
                 # picks the period.
                 Transaction.date,
+                Account.type,
             ).select_from(Transaction)
         )
         .join(Category, line_category_id() == Category.id)
+        .outerjoin(Account, Transaction.account_id == Account.id)
         .where(
             Transaction.workspace_id == workspace_id,
             report_date >= start,
@@ -1131,10 +1096,12 @@ async def get_income_expenses_report(
         )
     )
     moves: dict[tuple[uuid.UUID, str], list] = {}
-    for cat_id, cat_name, cat_color, txn_type, total_amount in _without_mirrored_legs(
-        list(inv_result.all())
+    for cat_id, cat_name, cat_color, txn_type, total_amount, account_type in (
+        _without_mirrored_legs(list(inv_result.all()))
     ):
-        group = "withdrawals" if txn_type == "credit" else "investments"
+        group = _investment_move_group(txn_type, account_type, cat_name)
+        if group is None:
+            continue
         entry = moves.setdefault((cat_id, group), [cat_name, cat_color, 0.0])
         entry[2] += abs(float(total_amount or 0))
     for (cat_id, group), (cat_name, cat_color, amount) in moves.items():
@@ -1163,6 +1130,11 @@ async def get_income_expenses_report(
             Transaction.workspace_id == workspace_id,
             report_date >= start,
             report_date <= axis_end,
+            # Same two types the summary sums: "credit" is income and "debit"
+            # is expenses, and any other stored value belongs to neither. The
+            # sparkline and the donut read this query, so a row the summary
+            # leaves out must not reach them or both read higher (#345).
+            Transaction.type.in_(("credit", "debit")),
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
             counts_as_user_pnl(line_category_id()),
@@ -1208,12 +1180,26 @@ async def get_income_expenses_report(
             continue
         by_period = cat_offsets.setdefault(map_key, {})
         by_period[period_label] = by_period.get(period_label, 0.0) + offset
+    # The total is the sum of the floored periods, the same boundary the
+    # summary uses, so the series and its total always agree.
     for map_key, by_period in cat_offsets.items():
         entry = cat_trend_map[map_key]
-        entry["total"] = max(0.0, entry["total"] - sum(by_period.values()))
         for period_label, offset in by_period.items():
             cur_period = entry["periods"].get(period_label, 0.0)
             entry["periods"][period_label] = max(0.0, cur_period - offset)
+        entry["total"] = sum(entry["periods"].values())
+
+    # A composition slice reads the same totals the sparkline shows, so the
+    # donut, the trend and the summary cannot disagree when a month hits the
+    # floor, and the category does not disappear from the chart.
+    for (cat_key, group), entry in cat_trend_map.items():
+        if entry["total"] <= 0:
+            continue
+        comp_map[(cat_key, group)] = {
+            "label": entry["label"],
+            "color": entry["color"],
+            "value": entry["total"],
+        }
 
     # Layer in the viewer's share of splits they did not pay for, the same
     # cross-workspace rows the summary above adds (#242). The author guard
@@ -1240,6 +1226,9 @@ async def get_income_expenses_report(
                 in_bound_workspace(Transaction.workspace_id),
                 report_date >= start,
                 report_date <= axis_end,
+                # The same two types the summary's shared-splits query sums,
+                # so a row with an unknown stored type adds to neither (#345).
+                Transaction.type.in_(("credit", "debit")),
                 Transaction.source != "opening_balance",
                 Transaction.status == "posted",
                 counts_as_user_pnl(Transaction.category_id),

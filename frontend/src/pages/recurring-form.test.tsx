@@ -79,7 +79,8 @@ describe('RecurringForm amount field', () => {
   it('seeds an existing amount in the workspace format', () => {
     renderForm(recurring(1234.5))
 
-    expect(amountField()).toHaveValue('1234,5')
+    // Money keeps both decimals, so the field reads "1234,50", never "1234,5".
+    expect(amountField()).toHaveValue('1234,50')
   })
 
   it('reads a comma decimal when creating', async () => {

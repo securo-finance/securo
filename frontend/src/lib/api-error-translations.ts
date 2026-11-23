@@ -38,6 +38,10 @@ const KNOWN_MESSAGES: Record<string, string> = {
   'Undo the split across categories before linking it as a transfer': 'categoryLines.errors.undoFirstTransfer',
   'Undo the split across categories before splitting among people': 'categoryLines.errors.undoFirstGroupSplit',
   'Undo the split across categories before adding a mortgage breakdown': 'categoryLines.errors.undoFirstMortgage',
+  'A recurring transaction with the same description, frequency and start date already exists':
+    'recurring.duplicate',
+  'This transaction already belongs to a recurring transaction':
+    'recurring.alreadyLinked',
   'This category is used in transactions split across categories. Change those splits first.':
     'categoryLines.errors.categoryInUse',
   'Transactions split across categories cannot move into an ignored or hidden category.':

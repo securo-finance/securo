@@ -185,6 +185,27 @@ jobs:
               [/^backend\/alembic\//,                                 'schema migration'],
               [/^backend\/app\/providers\//,                          'bank provider'],
               [/^backend\/app\/services\/.*(sync|plugin)/i,           'sync or plugin'],
+              // The rule above reads the file name, and the engines do not
+              // carry the word: a sync runs in `connection_service.py`, FX
+              // conversion in `fx_rate_service.py`, and the reconciliation,
+              // card-mirror and loan files move money without saying so
+              // either. A sync also pairs transfers (`transfer_detection`),
+              // matches incoming lines (`transaction_match`), places a
+              // purchase in a bill (`credit_card`) and reads the provider
+              // settings. #1625 changed the sync engine in three of these
+              // and the lane still called it free to merge; a person was
+              // what held it. Named one by one, so an unrelated service
+              // stays free — `transaction_service`, `account_service`,
+              // `import_service` and `backup_service` are left out on
+              // purpose: blocking them would take most pull requests out of
+              // the lane for no gain.
+              //
+              // The tail accepts a `.py` file or a directory of that name, so
+              // an engine moved into a package is still the same engine;
+              // digits are allowed after `reconciliation_` so a versioned file
+              // cannot slip through the one wildcard here.
+              [/^backend\/app\/services\/(connection_service|card_mirror_service|reconciliation_[a-z0-9_]*|fx_rate_service|_query_filters|loan_schedule|transfer_detection_service|transaction_match_service|credit_card_service|provider_settings)(\.py$|\/)/,
+                                                                      'money or bank sync'],
               [/^(charts|k8s|helm)\//i,                               'deployment'],
               [/(^|\/)(Dockerfile|docker-compose[^/]*\.(yml|yaml)|install\.sh)$/, 'deployment'],
               [/(^|\/)\.env/,                                         'environment file'],

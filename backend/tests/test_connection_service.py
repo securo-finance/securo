@@ -677,6 +677,183 @@ async def test_token_reconnect_updates_existing_connection_without_deleting_acco
     mock_provider.handle_oauth_callback.assert_awaited_once_with("fresh-setup-token")
 
 
+# ---------------------------------------------------------------------------
+# handle_oauth_callback: a second consent re-uses the connection (#1224)
+# ---------------------------------------------------------------------------
+
+
+def _linked_account(
+    session: AsyncSession, user_id, workspace_id, connection: BankConnection,
+    external_id: str, stable_external_id: str | None, name: str = "Giro",
+) -> Account:
+    account = Account(
+        id=uuid.uuid4(), user_id=user_id, workspace_id=workspace_id,
+        connection_id=connection.id, external_id=external_id,
+        stable_external_id=stable_external_id, name=name, type="checking",
+        balance=Decimal("0"), currency="EUR",
+    )
+    session.add(account)
+    return account
+
+
+async def _connect_again(
+    session: AsyncSession, workspace_id, user_id, connection_data: ConnectionData,
+) -> BankConnection:
+    """Run the callback of a fresh Enable Banking consent."""
+    mock_provider = AsyncMock()
+    mock_provider.handle_oauth_callback = AsyncMock(return_value=connection_data)
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        return await handle_oauth_callback(
+            session, workspace_id, user_id, "auth-code", "enable_banking"
+        )
+
+
+@pytest.mark.asyncio
+async def test_handle_oauth_callback_reuses_the_connection_holding_the_same_account(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """#1224: connecting again re-authorises the connection already holding the bank.
+
+    The user closed one account at the bank, opened another and connected DKB
+    again from the Accounts page. Enable Banking scopes an account's `uid` to
+    one session, so the unchanged checking account that anchors the consent
+    comes back under a new uid; the identification hash names the same real
+    account. Nothing matched on the old connect path, so it created a second
+    connection and a second row for the anchor and its siblings.
+    """
+    conn = await _make_connection(session, test_user.id, "DKB")
+    conn.provider = "enable_banking"
+    conn.workspace_id = test_workspace.id
+    conn.external_id = "old-session"
+    conn.credentials = {"session_id_enc": "old"}
+    conn.last_sync_at = datetime.now(timezone.utc)
+    checking = _linked_account(
+        session, test_user.id, test_workspace.id, conn, "uid-old", "hash-checking",
+    )
+    retired = _linked_account(
+        session, test_user.id, test_workspace.id, conn, "uid-retired", "hash-retired",
+        name="Money market",
+    )
+    await session.commit()
+
+    reconnected = await _connect_again(
+        session, test_workspace.id, test_user.id,
+        ConnectionData(
+            external_id="new-session",
+            institution_name="DKB",
+            credentials={"session_id_enc": "new"},
+            accounts=[
+                AccountData(
+                    external_id="uid-new", name="Giro", type="checking",
+                    balance=Decimal("12"), currency="EUR",
+                    stable_external_id="hash-checking",
+                ),
+                AccountData(
+                    external_id="uid-market", name="Money market", type="savings",
+                    balance=Decimal("0"), currency="EUR",
+                    stable_external_id="hash-market-new",
+                ),
+            ],
+        ),
+    )
+
+    assert reconnected.id == conn.id
+    assert reconnected.external_id == "new-session"
+    assert reconnected.credentials == {"session_id_enc": "new"}
+    assert reconnected.status == "active"
+    # The next sync reconciles the accounts against the new session's ids.
+    assert reconnected.last_sync_at is None
+    connections = (await session.execute(select(BankConnection))).scalars().all()
+    assert [c.id for c in connections] == [conn.id]
+    rows = (await session.execute(select(Account).order_by(Account.name))).scalars().all()
+    assert [a.id for a in rows] == [checking.id, retired.id]
+
+
+@pytest.mark.asyncio
+async def test_handle_oauth_callback_opens_a_connection_for_other_accounts(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A login naming accounts no connection holds is a new connection."""
+    conn = await _make_connection(session, test_user.id, "DKB")
+    conn.provider = "enable_banking"
+    conn.workspace_id = test_workspace.id
+    _linked_account(
+        session, test_user.id, test_workspace.id, conn, "uid-old", "hash-other",
+    )
+    await session.commit()
+
+    created = await _connect_again(
+        session, test_workspace.id, test_user.id,
+        ConnectionData(
+            external_id="other-session",
+            institution_name="DKB",
+            credentials={"session_id_enc": "other"},
+            accounts=[
+                AccountData(
+                    external_id="uid-own", name="Giro", type="checking",
+                    balance=Decimal("0"), currency="EUR",
+                    stable_external_id="hash-own",
+                ),
+            ],
+        ),
+    )
+
+    assert created.id != conn.id
+    connections = (await session.execute(select(BankConnection))).scalars().all()
+    assert len(connections) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "situation", ["two connections hold the account", "the holder is disconnected"],
+)
+async def test_handle_oauth_callback_does_not_guess_between_connections(
+    session: AsyncSession, test_user, test_workspace, situation,
+):
+    """A shared hash (a joint account) or a dead connection picks nothing."""
+    first = await _make_connection(session, test_user.id, "DKB")
+    first.provider = "enable_banking"
+    first.workspace_id = test_workspace.id
+    _linked_account(
+        session, test_user.id, test_workspace.id, first, "uid-joint", "hash-joint",
+    )
+    if situation == "two connections hold the account":
+        second = await _make_connection(session, test_user.id, "DKB")
+        second.provider = "enable_banking"
+        second.workspace_id = test_workspace.id
+        _linked_account(
+            session, test_user.id, test_workspace.id, second, "uid-joint-2", "hash-joint",
+        )
+    else:
+        first.status = "disconnected"
+    await session.commit()
+
+    created = await _connect_again(
+        session, test_workspace.id, test_user.id,
+        ConnectionData(
+            external_id="third-session",
+            institution_name="DKB",
+            credentials={"session_id_enc": "third"},
+            accounts=[
+                AccountData(
+                    external_id="uid-joint-3", name="Giro", type="checking",
+                    balance=Decimal("0"), currency="EUR",
+                    stable_external_id="hash-joint",
+                ),
+            ],
+        ),
+    )
+
+    assert created.id != first.id
+    connections = (await session.execute(select(BankConnection))).scalars().all()
+    expected_connections = 3 if situation == "two connections hold the account" else 2
+    assert len(connections) == expected_connections
+
+
 @pytest.mark.asyncio
 async def test_token_reconnect_rejects_provider_mismatch(
     session: AsyncSession, test_user, test_workspace
@@ -2065,7 +2242,7 @@ def _eb_txn(raw: dict, status: str = "posted") -> TransactionData:
 async def _sync_eb(
     session, conn, workspace_id, user_id, txns: list[TransactionData], *,
     incomplete=False, truncated=False, cancelled: set[str] | None = None,
-    rules=False,
+    rules=False, complete_feed=False,
 ):
     """One Enable Banking sync of `txns`. The user's rules run only with
     `rules=True`."""
@@ -2076,6 +2253,8 @@ async def _sync_eb(
     mock_provider.incomplete_account_ids = {"eb-account"} if incomplete else set()
     mock_provider.truncated_account_ids = {"eb-account"} if truncated else set()
     mock_provider.cancelled_transaction_ids = {"eb-account": cancelled or set()}
+    if complete_feed:
+        mock_provider.complete_feed = True
     mock_provider.refresh_credentials = AsyncMock(return_value={"token": "refreshed"})
     mock_provider.get_accounts = AsyncMock(return_value=[
         AccountData(
@@ -2155,6 +2334,111 @@ async def test_sync_connection_enable_banking_rekeys_changed_payload(
     rows = await _account_rows(session, account_id)
     assert [row.id for row in rows] == [held_id]
     assert rows[0].external_id == refetched.external_id
+
+
+# The references Bankinter sends for one of its own entries on three fetches
+# in a row: the long prefix holds and its tail is re-minted every time (#612).
+_BANKINTER_REFS = (
+    "000000000000948TAB040031669678",
+    "000000000000948TAB040031673544",
+    "000000000000948TAB040031675001",
+)
+
+
+def _bankinter_row(user_id, workspace_id, account, txn: TransactionData):
+    return _eb_row(
+        user_id, workspace_id, account, txn.external_id, txn.raw_data,
+        str(txn.amount), description=txn.description,
+        original_description=txn.description, date=txn.date,
+        currency=txn.currency,
+    )
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_rekeys_a_reissued_reference(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """#612: Bankinter gives every entry of the last weeks a new
+    entry_reference on each fetch, and the EB id hashes the reference, so a
+    second sync used to insert the same rows again and a third tripled them.
+    The held row takes the new id instead of gaining a twin."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    first = _eb_txn(_eb_payload(
+        _BANKINTER_REFS[0], "80.00", remittance="COMPRA 4455 PINGO DOCE",
+    ))
+    held = _bankinter_row(test_user.id, test_workspace.id, account, first)
+    session.add(held)
+    await session.commit()
+    held_id = held.id
+
+    for reference in _BANKINTER_REFS[1:]:
+        refetched = _eb_txn(_eb_payload(
+            reference, "80.00", remittance="COMPRA 4455 PINGO DOCE",
+        ))
+        assert refetched.external_id != held.external_id
+        await _sync_eb(session, conn, test_workspace.id, test_user.id, [refetched])
+
+        rows = await _account_rows(session, account_id)
+        assert [row.id for row in rows] == [held_id]
+        assert rows[0].external_id == refetched.external_id
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_reissued_reference_leaves_another_purchase_alone(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Same day and amount, another merchant: a purchase the feed carries for
+    the first time is its own row, even though its reference is re-issued
+    like every other one."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    first = _eb_txn(_eb_payload(
+        _BANKINTER_REFS[0], "80.00", remittance="COMPRA 4455 PINGO DOCE",
+    ))
+    session.add(_bankinter_row(test_user.id, test_workspace.id, account, first))
+    await session.commit()
+
+    other = _eb_txn(_eb_payload(
+        _BANKINTER_REFS[1], "80.00", remittance="COMPRA 9001 FARMACIA SOL",
+    ))
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [other])
+
+    rows = await _account_rows(session, account_id)
+    assert {row.external_id for row in rows} == {first.external_id, other.external_id}
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_reissued_reference_pairs_identical_purchases(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Two equal purchases on one day stay two rows: each re-issued reference
+    takes one of the held rows and none is inserted again."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    for reference in (
+        _BANKINTER_REFS[0], "000000000000948TAB040031669999",
+    ):
+        txn = _eb_txn(_eb_payload(
+            reference, "80.00", remittance="COMPRA 4455 PINGO DOCE",
+        ))
+        session.add(_bankinter_row(test_user.id, test_workspace.id, account, txn))
+    await session.commit()
+
+    incoming = [
+        _eb_txn(_eb_payload(
+            _BANKINTER_REFS[1], "80.00", remittance="COMPRA 4455 PINGO DOCE",
+        )),
+        _eb_txn(_eb_payload(
+            "000000000000948TAB040031677777", "80.00",
+            remittance="COMPRA 4455 PINGO DOCE",
+        )),
+    ]
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, incoming)
+
+    rows = await _account_rows(session, account_id)
+    assert len(rows) == 2
+    assert {row.external_id for row in rows} == {txn.external_id for txn in incoming}
 
 
 @pytest.mark.asyncio
@@ -2681,6 +2965,35 @@ async def test_sync_connection_enable_banking_booking_skips_a_cancelled_hold(
     ]
 
 
+@pytest.mark.asyncio
+async def test_sync_connection_keeps_the_booked_id_with_a_pending_twin_listed(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A bank that lists the same blank charge as pending and as booked in one
+    fetch can't tell the two apart. The booked row must hold the id it gets
+    when only the booked spelling is listed, or the next sync stores the
+    purchase a second time (#1232)."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    raw = {
+        "transaction_amount": {"amount": "12.40", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": "2026-08-31",
+    }
+    pending = _eb_txn(raw, "pending")
+    booked = _eb_txn(raw, "posted")
+    assert pending.external_id == booked.external_id
+
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [pending, booked])
+    # The pending twin left the feed: the booking now comes alone.
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [_eb_txn(raw, "posted")])
+
+    rows = await _account_rows(session, account_id)
+    assert [(row.external_id, row.status) for row in rows] == [
+        (booked.external_id, "posted"),
+    ]
+
+
 def _cancelled_entry(amount: str = "3.20") -> dict:
     """A pending card entry the bank lists as cancelled: no money moved."""
     return {
@@ -3148,6 +3461,79 @@ async def test_sync_connection_other_provider_keeps_hold_gone_from_feed(
     await _sync_eb(session, conn, test_workspace.id, test_user.id, [])
 
     assert [row.id for row in await _account_rows(session, account_id)] == [held_id]
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("_hold_clock")
+async def test_sync_connection_complete_feed_provider_expires_hold_gone_from_feed(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A provider plugin that vouches for a complete feed (`complete_feed`)
+    gets the same evidence as Enable Banking: a pending row it no longer
+    returns, past the settle window, was cancelled and goes. Its ids carry
+    no Enable Banking account uid, so that check doesn't apply."""
+    conn, account = await _hold_account(session, test_user.id, test_workspace.id)
+    conn.provider = "test"
+    account_id = account.id
+    [(gone_id, _raw), (live_id, live_raw)] = await _hold_blank_holds(
+        session, test_user.id, test_workspace.id, account,
+        [_blank_hold(10, "1.00"), _blank_hold(10, "2.00")], account_uid="another-uid",
+    )
+    live_row = await session.get(Transaction, live_id)
+    assert live_row is not None and live_row.external_id is not None
+    still_listed = TransactionData(
+        external_id=live_row.external_id, description="E-COMM", amount=Decimal("2.00"),
+        date=live_row.date, type="debit", status="pending",
+    )
+
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [still_listed], complete_feed=True)
+
+    assert [row.id for row in await _account_rows(session, account_id)] == [live_id]
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("_hold_clock")
+@pytest.mark.parametrize("case", ["incomplete", "truncated", "not-vouched"])
+async def test_sync_connection_complete_feed_provider_keeps_hold_without_evidence(
+    session: AsyncSession, test_user, test_workspace, case,
+):
+    """Without the vouch, or with a fetch cut short, a plugin's pending row
+    that left the feed stays, as for every provider but Enable Banking."""
+    conn, account = await _hold_account(session, test_user.id, test_workspace.id)
+    conn.provider = "test"
+    account_id = account.id
+    [(held_id, _raw)] = await _hold_blank_holds(
+        session, test_user.id, test_workspace.id, account, [_blank_hold(10)],
+    )
+
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, [],
+        complete_feed=case != "not-vouched",
+        incomplete=case == "incomplete", truncated=case == "truncated",
+    )
+
+    assert [row.id for row in await _account_rows(session, account_id)] == [held_id]
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("_hold_clock")
+async def test_sync_connection_complete_feed_provider_claims_no_eb_hold(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The vouch expires holds; it doesn't turn on Path 6, which compares
+    Enable Banking's own merchant fields."""
+    import app.services.connection_service as connection_module
+
+    conn, account = await _hold_account(session, test_user.id, test_workspace.id)
+    conn.provider = "test"
+    await session.commit()
+    with patch.object(connection_module, "_find_settled_eb_hold", new_callable=AsyncMock) as claim:
+        booked = TransactionData(
+            external_id="booked-1", description="E-COMM", amount=Decimal("5.00"),
+            date=_HOLD_TODAY, type="debit", status="posted",
+        )
+        await _sync_eb(session, conn, test_workspace.id, test_user.id, [booked], complete_feed=True)
+    claim.assert_not_called()
 
 
 @pytest.mark.asyncio

@@ -83,6 +83,20 @@ async def list_rules(
     return await rule_service.get_rules(session, ctx.workspace.id)
 
 
+@router.get("/provider-categories", response_model=list[str])
+async def list_provider_categories(
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Provider categories this workspace has already received.
+
+    Feeds the rule editor's suggestions for the `provider_category` condition:
+    the value to type is the provider's own label, which is not translated
+    with the app (#280).
+    """
+    return await rule_service.list_provider_categories(session, ctx.workspace.id)
+
+
 @router.post("", response_model=RuleCreateResponse, status_code=status.HTTP_201_CREATED)
 async def create_rule(
     data: RuleCreate,

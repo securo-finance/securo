@@ -15,6 +15,18 @@ vi.mock('@/hooks/use-display-locale', () => ({
   useDisplayLocale: () => 'en-US',
 }))
 
+// Stands in for the attachment list: one button opens a preview, as a real file would.
+vi.mock('@/components/transaction-attachments', () => ({
+  TransactionAttachments: ({ onPreviewChange }: { onPreviewChange: (p: unknown) => void }) => (
+    <button
+      type="button"
+      onClick={() => onPreviewChange({ attachmentId: 'att-1', url: 'blob:receipt', contentType: 'image/png', filename: 'receipt-a.png' })}
+    >
+      Preview receipt
+    </button>
+  ),
+}))
+
 vi.mock('@/components/ui/date-picker-input', () => ({
   DatePickerInput: ({
     value,
@@ -813,6 +825,87 @@ describe('TransactionDialog reporting date override', () => {
   })
 })
 
+describe('TransactionDialog save and next', () => {
+  function renderEdit(hasNext: boolean, loading = false) {
+    vi.spyOn(currencies, 'list').mockResolvedValue([])
+    vi.spyOn(payees, 'list').mockResolvedValue([])
+    vi.spyOn(groups, 'list').mockResolvedValue([])
+    const onSave = vi.fn()
+    const utils = renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={syncedTransaction()}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={onSave}
+        loading={loading}
+        error={null}
+        isSynced
+        hasNext={hasNext}
+      />,
+    )
+    return { ...utils, onSave }
+  }
+
+  it('saves with the saveAndNext action when the host has a next row', async () => {
+    const { onSave, user } = renderEdit(true)
+
+    await user.click(screen.getByRole('button', { name: t('transactions.saveAndNext') }))
+
+    expect(onSave).toHaveBeenCalledOnce()
+    expect(onSave.mock.calls[0][4]).toBe('saveAndNext')
+  })
+
+  it('keeps a plain save next to it', async () => {
+    const { onSave, user } = renderEdit(true)
+
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave.mock.calls[0][4]).toBe('save')
+  })
+
+  it('drops the previous transaction preview when the next one loads', async () => {
+    const { user, rerender } = renderEdit(true)
+
+    await user.click(screen.getByRole('button', { name: 'Preview receipt' }))
+    expect(screen.getAllByText('receipt-a.png').length).toBeGreaterThan(0)
+
+    rerender(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={syncedTransaction({ id: 'tx-next' })}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={vi.fn()}
+        loading={false}
+        error={null}
+        isSynced
+        hasNext={false}
+      />,
+    )
+
+    expect(screen.queryByText('receipt-a.png')).not.toBeInTheDocument()
+  })
+
+  it('ignores Enter while the host is still busy', async () => {
+    const { onSave, user } = renderEdit(true, true)
+
+    await user.type(screen.getByLabelText(t('transactions.description')), '{Enter}')
+
+    expect(onSave).not.toHaveBeenCalled()
+  })
+
+  it('offers no save and next without a next row', () => {
+    renderEdit(false)
+
+    expect(screen.queryByRole('button', { name: t('transactions.saveAndNext') })).not.toBeInTheDocument()
+  })
+})
+
 /** Shows the flag state a mounted list query holds, as a page would. */
 function FlagConsumer({ queryKey, read }: { queryKey: string[]; read: () => Promise<Transaction> }) {
   const { data } = useQuery({ queryKey, queryFn: read })
@@ -929,6 +1022,33 @@ describe('TransactionDialog flag (#56)', () => {
 
     await waitFor(() => expect(screen.queryByTestId('flag-reminder')).not.toBeInTheDocument())
   })
+})
+
+it('shows the bank’s own category when the provider sent one', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture(null, {
+        source: 'sync',
+        provider_category: 'Groceries',
+      })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+      isSynced
+    />,
+  )
+
+  expect(
+    await screen.findByText(`${t('transactions.providerCategory')}: Groceries`),
+  ).toBeInTheDocument()
 })
 
 it('names the existing-rule picker after the field and the chosen rule', async () => {
