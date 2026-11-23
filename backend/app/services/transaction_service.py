@@ -2143,6 +2143,13 @@ async def _apply_update_to_row(
 # saved principal/interest breakdown out of step with the ledger.
 _LEDGER_FIELDS = ("account_id", "amount", "currency", "date", "type", "status", "is_ignored")
 
+# What the transfer detector reads off a row. An edit that changes none of
+# these cannot change what the rules would decide about it, so it does not
+# make the row worth reconsidering as a new candidate (#1802).
+_TRANSFER_SIGNAL_FIELDS = frozenset(
+    {"account_id", "amount", "currency", "date", "type", "description", "payee_id"}
+)
+
 
 async def _has_mortgage_breakdown(
     session: AsyncSession, workspace_id: uuid.UUID, payment_id: uuid.UUID
@@ -2255,6 +2262,15 @@ async def update_transaction(
     update_data.pop("category_lines", None)
     _normalize_flag_update(transaction, update_data)
     _check_category_lines_update(transaction, update_data, lines_payload)
+
+    # Whether this edit touches anything the transfer detector reads. The
+    # comparison has to happen here, before the rows below are mutated: an
+    # edit that only changes a category, a note or a flag leaves the row
+    # exactly as findable (or not) as it already was.
+    transfer_signals_changed = any(
+        field in update_data and update_data[field] != getattr(transaction, field)
+        for field in _TRANSFER_SIGNAL_FIELDS
+    )
 
     # Verify the new account belongs to the workspace before touching the
     # row. When changing the account on one side of a transfer pair,
@@ -2460,6 +2476,17 @@ async def update_transaction(
     if amount_changed and _is_installment(transaction):
         await session.flush()
         await _resync_installment_series_total(session, workspace_id, transaction)
+
+    # A corrected row finds its other leg exactly as a typed one does
+    # (#1802): someone who mistyped the amount, the account or the date
+    # fixes it here, and nothing paired it before. The edited row is the
+    # only candidate, so the rule holds: two rows that were already in the
+    # books are never linked on the strength of a third one being edited.
+    if transfer_signals_changed:
+        await session.flush()
+        await detect_transfer_pairs(
+            session, workspace_id, candidate_ids=[transaction.id]
+        )
 
     await session.commit()
     await session.refresh(transaction, ["category", "payee_entity", "splits", "category_lines"])

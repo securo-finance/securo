@@ -118,6 +118,41 @@ def _widest_amount_ratio(policy: dict[str, Any]) -> Optional[Decimal]:
     return worst
 
 
+def _candidate_batches(
+    candidate_rows: list[tuple[uuid.UUID, date]], window: int
+) -> list[list[uuid.UUID]]:
+    """Split new rows into date batches that no rule can reach across.
+
+    A row is only a neighbour of another within `window` days, and only a
+    row already in the books can be the neighbour of two new rows at once.
+    So two groups of new rows whose dates are more than `2 * window` apart
+    can never influence each other's decision, and handling them in one
+    call or one batch at a time gives the same pairs.
+
+    Splitting matters for a file import: the pool it loads runs from the
+    earliest candidate date to the latest, so a file carrying one very old
+    row and one from today would otherwise read the whole history between
+    them. In a batch, the pool is only as wide as the rows that can
+    matter.
+    """
+    reach = 2 * window
+    ids_by_date: dict[date, list[uuid.UUID]] = defaultdict(list)
+    for row_id, day in candidate_rows:
+        ids_by_date[day].append(row_id)
+    batches: list[list[uuid.UUID]] = []
+    current: list[uuid.UUID] = []
+    previous: Optional[date] = None
+    for day in sorted(ids_by_date):
+        if previous is not None and (day - previous).days > reach:
+            batches.append(current)
+            current = []
+        current.extend(ids_by_date[day])
+        previous = day
+    if current:
+        batches.append(current)
+    return batches
+
+
 def _as_movement(tx: Transaction, account: Optional[Account]) -> Movement:
     return Movement(
         amount=abs(Decimal(tx.amount)),
@@ -276,6 +311,34 @@ async def detect_transfer_pairs(
     window = _widest_window(policy)
     ratio = _widest_amount_ratio(policy)
 
+    near_dates: Optional[list[date]] = None
+    if candidate_ids is not None:
+        result = await session.execute(
+            select(Transaction.id, Transaction.date).where(
+                Transaction.workspace_id == workspace_id,
+                Transaction.id.in_(candidate_ids),
+            )
+        )
+        candidate_rows = [(row.id, row.date) for row in result.all()]
+        if not candidate_rows:
+            # A pair needs one new leg, and these rows are not here.
+            return 0
+        batches = _candidate_batches(candidate_rows, window)
+        if len(batches) > 1:
+            # A file import can carry rows years apart in a single call
+            # (#1802). No rule reaches across that gap, so those rows can
+            # never contest each other, and one pool running from the
+            # earliest date to the latest would load every unpaired row in
+            # between for nothing. Each batch gets its own narrowed pool,
+            # and the outcome is identical.
+            created = 0
+            for batch in batches:
+                created += await detect_transfer_pairs(
+                    session, workspace_id, candidate_ids=batch
+                )
+            return created
+        near_dates = [day for _row_id, day in candidate_rows]
+
     scope = policy.get("scope", {})
     # Loaded before the pool, because what counts as a leg at all depends
     # on the kind of account it sits on.
@@ -287,19 +350,6 @@ async def detect_transfer_pairs(
             )
         ).scalars()
     }
-
-    near_dates: Optional[list[date]] = None
-    if candidate_ids is not None:
-        result = await session.execute(
-            select(Transaction.date).where(
-                Transaction.workspace_id == workspace_id,
-                Transaction.id.in_(candidate_ids),
-            )
-        )
-        near_dates = list(result.scalars().all())
-        if not near_dates:
-            # A pair needs one new leg, and these rows are not here.
-            return 0
 
     ignored = set(scope.get("ignore_transaction_sources", []))
     pool = await _pool(
