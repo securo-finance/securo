@@ -23,6 +23,10 @@ class BudgetRead(BaseModel):
     user_id: uuid.UUID
     category_id: uuid.UUID
     amount: Decimal
+    # The currency `amount` was typed in; `amount_primary` is the same limit
+    # in the viewer's display currency.
+    currency: Optional[str] = None
+    amount_primary: Optional[Decimal] = None
     month: _Date
     is_recurring: bool
 
