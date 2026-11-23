@@ -49,10 +49,11 @@ import uuid
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
-from sqlalchemy import exists, select
+from sqlalchemy import CursorResult, exists, select, update
 from sqlalchemy.orm import noload
+from sqlalchemy.orm.attributes import set_committed_value
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -236,6 +237,56 @@ async def _pool(
     ]
 
 
+class _PairTaken(Exception):
+    """Raised inside the savepoint when a leg is no longer free."""
+
+
+async def _link_pair(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    first: Transaction,
+    second: Transaction,
+) -> Optional[uuid.UUID]:
+    """Write the shared pair id only when both legs are still free.
+
+    Two requests can reach the same decision at once: each loaded the pool
+    while the other leg still said free, so both believe they found the
+    counterpart. Writing the value already on the ORM objects would let the
+    later commit overwrite the pair the earlier one made and leave the
+    losing new row pointing at a pair id no other row carries, which takes
+    it out of income with no counterpart to show for it (issue #448).
+
+    One conditional statement makes the link all-or-nothing. A row a
+    concurrent writer claimed stops matching `IS NULL`, and the savepoint
+    undoes the half that did match, so the caller can fall back to asking.
+    """
+    pair_id = uuid.uuid4()
+    try:
+        async with session.begin_nested():
+            result = await session.execute(
+                update(Transaction)
+                .where(
+                    Transaction.workspace_id == workspace_id,
+                    Transaction.id.in_((first.id, second.id)),
+                    Transaction.transfer_pair_id.is_(None),
+                )
+                .values(transfer_pair_id=pair_id)
+                # The guard is the database's: whether each row still
+                # matched is in `rowcount`, not in the attributes this
+                # request loaded earlier.
+                .execution_options(synchronize_session=False)
+            )
+            if cast(CursorResult, result).rowcount != 2:
+                raise _PairTaken
+    except _PairTaken:
+        return None
+    # The write did not go through the unit of work, so tell the objects
+    # what the database now holds. The create response reads it back.
+    set_committed_value(first, "transfer_pair_id", pair_id)
+    set_committed_value(second, "transfer_pair_id", pair_id)
+    return pair_id
+
+
 async def detect_transfer_pairs(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -389,9 +440,10 @@ async def detect_transfer_pairs(
             # queue is where that gets settled.
             continue
 
-        pair_id = uuid.uuid4()
-        tx.transfer_pair_id = pair_id
-        other_tx.transfer_pair_id = pair_id
+        if await _link_pair(session, workspace_id, tx, other_tx) is None:
+            # Another request claimed a leg between our decision and this
+            # write. Pass two turns the claim into a question instead.
+            continue
         paired.update({tx_id, other_id})
         pairs_created += 1
 
