@@ -47,7 +47,7 @@ reason we will not say so on our own.
 """
 import uuid
 from collections import defaultdict
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Optional
 
@@ -192,8 +192,20 @@ async def _pool(
     ignored_sources: set[str],
     excluded: list[dict[str, Any]],
     accounts: dict[uuid.UUID, Account],
+    *,
+    near_dates: Optional[list[date]] = None,
+    window_days: int = 0,
 ) -> list[Transaction]:
-    """Every row still looking for its other half."""
+    """Every row still looking for its other half.
+
+    `near_dates` narrows the history to the rows that can still take part
+    when only some rows are new: the new rows, their neighbours, and the
+    rows those neighbours can see. Each neighbour has a rule window of its
+    own to look in, so a row two windows away from a new row can still
+    contest the answer; anything further is out of reach of every rule
+    that could run, and loading it would make every hand-added row pay
+    for the whole workspace.
+    """
     query = select(Transaction).where(
         Transaction.workspace_id == workspace_id,
         Transaction.transfer_pair_id.is_(None),
@@ -212,6 +224,10 @@ async def _pool(
     query = query.options(noload(Transaction.category_lines))
     if ignored_sources:
         query = query.where(Transaction.source.not_in(ignored_sources))
+    if near_dates:
+        earliest = min(near_dates) - timedelta(days=2 * window_days)
+        latest = max(near_dates) + timedelta(days=2 * window_days)
+        query = query.where(Transaction.date >= earliest, Transaction.date <= latest)
     result = await session.execute(query)
     return [
         tx
@@ -248,6 +264,18 @@ async def detect_transfer_pairs(
         # hand.
         return 0
 
+    # **An empty list is not the same as no list.** `None` means "look at
+    # everything"; `[]` means "a sync just ran and brought nothing new",
+    # which is the one case where there is certainly nothing to do.
+    # Collapsing the two sent a quiet sync off to reconsider the whole
+    # workspace and pair two rows that had both been sitting there for
+    # months, which is exactly what restricting to new rows prevents.
+    if candidate_ids is not None and not candidate_ids:
+        return 0
+
+    window = _widest_window(policy)
+    ratio = _widest_amount_ratio(policy)
+
     scope = policy.get("scope", {})
     # Loaded before the pool, because what counts as a leg at all depends
     # on the kind of account it sits on.
@@ -260,15 +288,31 @@ async def detect_transfer_pairs(
         ).scalars()
     }
 
+    near_dates: Optional[list[date]] = None
+    if candidate_ids is not None:
+        result = await session.execute(
+            select(Transaction.date).where(
+                Transaction.workspace_id == workspace_id,
+                Transaction.id.in_(candidate_ids),
+            )
+        )
+        near_dates = list(result.scalars().all())
+        if not near_dates:
+            # A pair needs one new leg, and these rows are not here.
+            return 0
+
     ignored = set(scope.get("ignore_transaction_sources", []))
     pool = await _pool(
-        session, workspace_id, ignored, scope.get("exclude_legs", []), accounts
+        session,
+        workspace_id,
+        ignored,
+        scope.get("exclude_legs", []),
+        accounts,
+        near_dates=near_dates,
+        window_days=window,
     )
     if len(pool) < 2:
         return 0
-
-    window = _widest_window(policy)
-    ratio = _widest_amount_ratio(policy)
     by_date: dict[Any, list[Transaction]] = defaultdict(list)
     for tx in pool:
         by_date[tx.date].append(tx)
@@ -290,12 +334,6 @@ async def detect_transfer_pairs(
                 found.append(other)
         return found
 
-    # **An empty list is not the same as no list.** `None` means "look at
-    # everything"; `[]` means "a sync just ran and brought nothing new",
-    # which is the one case where there is certainly nothing to do.
-    # Collapsing the two sent a quiet sync off to reconsider the whole
-    # workspace and pair two rows that had both been sitting there for
-    # months, which is exactly what restricting to new rows prevents.
     new_ids = None if candidate_ids is None else set(candidate_ids)
 
     # Which rows to ask about. Everything when this is a full run;
