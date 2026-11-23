@@ -169,11 +169,11 @@ describe('paid transactions', () => {
     // mobile control is the first of each pair.
     await user.click(screen.getAllByRole('menuitem', { name: 'Only unpaid' })[0])
 
+    // What the user sees: the list comes back with only the row still unpaid.
     await waitFor(() => {
-      expect(
-        api.transactions.list.mock.calls.some(([params]) => params.unpaid_only === true),
-      ).toBe(true)
+      expect(screen.queryByText('Supermarket')).not.toBeInTheDocument()
     })
+    expect(screen.getByText('Landlord')).toBeInTheDocument()
   })
 
   it('asks the server for only the unpaid rows when the URL says so', async () => {

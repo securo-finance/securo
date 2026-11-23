@@ -438,3 +438,39 @@ async def test_a_recurring_placeholder_an_import_fulfils_turns_paid(
 
     assert [row.id for row in rows] == [placeholder_id]
     assert rows[0].is_paid is True
+
+
+async def _installment_series(client, auth_headers, test_account: Account, **base_overrides):
+    base = {
+        "account_id": str(test_account.id),
+        "description": "Sofa",
+        "amount": "100.00",
+        "date": app_today().isoformat(),
+        "type": "debit",
+    }
+    base.update(base_overrides)
+    response = await client.post(
+        "/api/transactions/installments",
+        json={"base": base, "installments": 2},
+        headers=auth_headers,
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+@pytest.mark.asyncio
+async def test_an_installment_series_keeps_the_paid_mark_it_was_given(
+    client, auth_headers, test_account: Account
+):
+    parcels = await _installment_series(client, auth_headers, test_account, is_paid=True)
+
+    assert [p["is_paid"] for p in parcels] == [True, True]
+
+
+@pytest.mark.asyncio
+async def test_an_installment_series_starts_unpaid_when_the_field_is_left_out(
+    client, auth_headers, test_account: Account
+):
+    parcels = await _installment_series(client, auth_headers, test_account)
+
+    assert [p["is_paid"] for p in parcels] == [False, False]

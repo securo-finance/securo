@@ -1310,6 +1310,9 @@ async def create_installment_series(
             installment_purchase_date=purchase_date,
             installment_series_id=series_id,
         )
+        # Same rule as create_transaction: unpaid unless the caller says so.
+        if base.is_paid is not None:
+            tx.is_paid = base.is_paid
         if base.effective_bill_date is not None:
             await _resync_bill_link_from_override(session, tx, account)
         apply_effective_date(tx, account)
