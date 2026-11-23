@@ -905,7 +905,7 @@ async def copy_monthly_budgets(
     # A copy keeps the source limit's currency, so it is the same limit.
     for cat_id, (amount, _is_recurring, currency) in source_map.items():
         new_amount = (amount * multiplier).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        if new_amount >= MAX_BUDGET_AMOUNT:
+        if new_amount > MAX_BUDGET_AMOUNT:
             raise ValueError("Adjusted budget amount is too large")
         if cat_id in target_map and (
             not overwrite_existing
