@@ -55,6 +55,14 @@ x-backend-env: &backend-env
   # with `--profile plugins`. Blank PLUGINS_RUNNER_URL: no plugin with code.
   PLUGINS_RUNNER_URL: ${PLUGINS_RUNNER_URL:-}
   PLUGINS_RUNNER_TOKEN: ${PLUGINS_RUNNER_TOKEN:-}
+  # Document reading (ADR 0037), opt-in: statement PDFs and receipt photos read
+  # by an LLM into transactions you review first. No model is called while off.
+  DOCUMENT_AI_ENABLED: ${DOCUMENT_AI_ENABLED:-false}
+  DOCUMENT_AI_PROVIDER: ${DOCUMENT_AI_PROVIDER:-}
+  DOCUMENT_AI_BASE_URL: ${DOCUMENT_AI_BASE_URL:-}
+  DOCUMENT_AI_MODEL: ${DOCUMENT_AI_MODEL:-}
+  DOCUMENT_AI_API_KEY: ${DOCUMENT_AI_API_KEY:-}
+  DOCUMENT_AI_VISION: ${DOCUMENT_AI_VISION:-auto}
   # The backend is reached through the bundled nginx frontend below, so rate
   # limiting needs to trust exactly one reverse-proxy hop to key by real
   # client IP instead of nginx's own container address. With

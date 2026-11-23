@@ -259,6 +259,25 @@ class Settings(BaseSettings):
     # plugins that declared `api_scopes` get a token to use it.
     plugins_api_url: str = "http://backend:8000/api"
 
+    # Document reading: a statement PDF, a receipt photo or a scanned page is
+    # read by an LLM into transactions the person reviews before anything is
+    # saved. Gated by DOCUMENT_AI_ENABLED, off by default; while off no route
+    # answers and no model is called. These are the instance's defaults; a
+    # workspace owner may set its own model in the workspace settings.
+    # Provider: ollama, openai, anthropic or openai_compatible. A local model
+    # through Ollama keeps every document on the machine.
+    document_ai_provider: str = ""
+    document_ai_base_url: str = ""
+    document_ai_model: str = ""
+    document_ai_api_key: SecretStr = SecretStr("")
+    # Whether the model reads images: auto (ask Ollama, or recognise the
+    # model's name), true or false. Text PDFs work with any model; photos
+    # and scanned PDFs need one that reads images.
+    document_ai_vision: str = "auto"
+    # Pages of one document sent to the model, and the size of an upload.
+    document_ai_max_pages: int = 20
+    document_ai_max_file_size_mb: int = 10
+
     @property
     def oidc_login_available(self) -> bool:
         return bool(self.oidc_enabled and self.oidc_client_id and self.oidc_discovery_url)

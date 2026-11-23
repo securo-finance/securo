@@ -42,6 +42,17 @@ async def preview_import(
     content = await file.read()
     filename = file.filename or ""
 
+    # A PDF or a photo is not a format this parser reads. Without this, the
+    # fallback below took a PDF for an empty QIF and answered 0 rows, no error.
+    if import_service.is_document_file(filename, content):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "PDF and image files are not statement formats. Export the statement as OFX, CSV, QIF "
+                "or CAMT, or turn on document reading (DOCUMENT_AI_ENABLED) to read it with a model."
+            ),
+        )
+
     logger.info(
         "Import preview requested: filename=%s, size=%d bytes, content_type=%s",
         filename, len(content), file.content_type,
@@ -162,6 +173,18 @@ async def import_transactions(
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
 
+    if data.document_extraction_id is not None:
+        from app.services import document_ai_settings_service, document_extraction_service
+
+        if not document_ai_settings_service.document_ai_enabled():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document reading is not enabled")
+        try:
+            await document_extraction_service.require_statement_ready(
+                session, ctx.workspace.id, data.document_extraction_id,
+            )
+        except document_extraction_service.ExtractionError as exc:
+            raise HTTPException(status_code=exc.status, detail={"code": exc.code, "message": exc.message})
+
     try:
         imported, skipped, excluded, import_log_id = await import_service.import_transactions(
             session, ctx.workspace.id, ctx.user_id, data.account_id, data.transactions, "import",
@@ -172,6 +195,17 @@ async def import_transactions(
         # A row whose conversion does not fit the column (issue #422): the
         # import commits once at the end, so nothing of it was saved.
         raise HTTPException(status_code=422, detail=str(e))
+
+    if data.document_extraction_id is not None:
+        await document_extraction_service.mark_statement_confirmed(
+            session,
+            workspace_id=ctx.workspace.id,
+            user_id=ctx.user_id,
+            extraction_id=data.document_extraction_id,
+            account_id=data.account_id,
+            import_log_id=import_log_id,
+            rows=data.transactions,
+        )
 
     return {
         "imported": imported,

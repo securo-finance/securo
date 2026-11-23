@@ -236,6 +236,22 @@ def _is_balance_summary_row(description: str | None) -> bool:
     return any(normalized.startswith(prefix) for prefix in _OFX_BALANCE_ROW_DESCRIPTIONS)
 
 
+_DOCUMENT_EXTENSIONS = (".pdf", ".png", ".jpg", ".jpeg", ".webp", ".heic", ".gif")
+
+
+def is_document_file(filename: str, content: bytes) -> bool:
+    """A PDF or an image: something to read with a model, not to parse."""
+    if (filename or "").lower().endswith(_DOCUMENT_EXTENSIONS):
+        return True
+    head = content[:16]
+    return (
+        head.startswith(b"%PDF")
+        or head.startswith(b"\x89PNG")
+        or head.startswith(b"\xff\xd8\xff")
+        or (head[:4] == b"RIFF" and head[8:12] == b"WEBP")
+    )
+
+
 def parse_ofx(content: bytes) -> list[TransactionImport]:
     """Parse OFX file content and return transactions."""
     content = _preprocess_ofx(content)

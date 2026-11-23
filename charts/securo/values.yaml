@@ -47,6 +47,8 @@ secret:
   agentsOpenaiApiKey: ""
   agentsAnthropicApiKey: ""
   agentsOpenaiCompatApiKey: ""
+  # Key for the model that reads documents (DOCUMENT_AI_*), when it needs one.
+  documentAiApiKey: ""
 
 # Non-sensitive configuration
 config:
@@ -88,6 +90,16 @@ config:
   # catalog is fetched only when someone opens it.
   pluginsEnabled: "false"
   pluginsIndexUrl: "https://plugins.usesecuro.com/v1/index.json"
+
+  # Document reading: statement PDFs and receipt photos read by an LLM into
+  # transactions you review first. Opt-in; no model is called while off.
+  # Provider: ollama, openai, anthropic or openai_compatible. The key goes in
+  # secret.documentAiApiKey. Vision: auto, true or false.
+  documentAiEnabled: "false"
+  documentAiProvider: ""
+  documentAiBaseUrl: ""
+  documentAiModel: ""
+  documentAiVision: "auto"
 
   # Redis configuration
   # If redis.enabled is true, the internal redis will be deployed.

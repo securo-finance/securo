@@ -67,6 +67,8 @@ import { TransactionsPageActions } from '@/components/transactions-page-actions'
 import { MobileBulkSelectionActions } from '@/components/mobile-bulk-selection-actions'
 import { type ColumnDef, type ColumnId, useTransactionsGridState } from '@/components/transactions-grid-columns'
 import { TransferDialog } from '@/components/transfer-dialog'
+import { ReceiptScanDialog } from '@/components/receipt-scan-dialog'
+import { useFeatureFlags } from '@/hooks/use-feature-flags'
 import { MakeRecurringDialog } from '@/components/make-recurring-dialog'
 import { useSidebarState } from '@/contexts/sidebar-state-context'
 import { cn } from '@/lib/utils'
@@ -268,6 +270,8 @@ export default function TransactionsPage() {
   }
   const [exporting, setExporting] = useState(false)
   const [transferDialogOpen, setTransferDialogOpen] = useState(false)
+  const [receiptDialogOpen, setReceiptDialogOpen] = useState(false)
+  const { documentAiEnabled } = useFeatureFlags()
   const [linkTransferDialogOpen, setLinkTransferDialogOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null)
@@ -1714,6 +1718,7 @@ export default function TransactionsPage() {
             onAdd={canWrite ? () => { setEditingTx(null); setDialogOpen(true) } : undefined}
             onDuplicate={duplicableTx ? () => handleDuplicateTransaction(duplicableTx) : undefined}
             onTransfer={canWrite ? () => setTransferDialogOpen(true) : undefined}
+            onScanReceipt={canWrite && documentAiEnabled ? () => setReceiptDialogOpen(true) : undefined}
             onRefresh={noAccounts ? undefined : () => {
               void refreshTransactionsView({
                 viewMode,
@@ -2532,6 +2537,7 @@ export default function TransactionsPage() {
       />
 
       {/* Transfer Dialog */}
+      {documentAiEnabled && <ReceiptScanDialog open={receiptDialogOpen} onOpenChange={setReceiptDialogOpen} />}
       <TransferDialog
         open={transferDialogOpen}
         onClose={() => setTransferDialogOpen(false)}

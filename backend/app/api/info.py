@@ -17,5 +17,6 @@ async def get_app_info():
             "agents": feature_flag("AGENTS_ENABLED"),
             "tesouro_direto": feature_flag("TESOURO_DIRETO_ENABLED"),
             "plugins": feature_flag("PLUGINS_ENABLED"),
+            "document_ai": feature_flag("DOCUMENT_AI_ENABLED"),
         },
     }

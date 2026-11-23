@@ -128,6 +128,12 @@ import type {
   ReconciliationRulePatch,
   ReconciliationSuggestion,
   ReconciliationHistoryEvent,
+  DocumentAiSettings,
+  DocumentAiSettingsUpdate,
+  DocumentAiStatus,
+  DocumentExtraction,
+  DocumentKind,
+  DocumentReceiptTransaction,
 } from '@/types'
 
 const api = axios.create({
@@ -865,7 +871,7 @@ export const transactions = {
     transactions: ImportPreviewTransaction[],
     filename: string,
     detected_format: string,
-    options?: { detect_duplicates?: boolean },
+    options?: { detect_duplicates?: boolean; document_extraction_id?: string },
   ): Promise<{ imported: number; skipped: number; excluded: number; import_log_id: string }> => {
     const payload: {
       account_id: string
@@ -873,10 +879,14 @@ export const transactions = {
       filename: string
       detected_format: string
       detect_duplicates?: boolean
+      document_extraction_id?: string
     } = { account_id, transactions, filename, detected_format }
 
     if (typeof options?.detect_duplicates === 'boolean') {
       payload.detect_duplicates = options.detect_duplicates
+    }
+    if (options?.document_extraction_id) {
+      payload.document_extraction_id = options.document_extraction_id
     }
 
     const { data } = await api.post('/transactions/import', payload)
@@ -2226,12 +2236,58 @@ export const search = {
 
 // App-level feature flags (whether optional modules like agents are mounted)
 export interface AppInfo {
-  features: { agents: boolean; tesouro_direto?: boolean; plugins?: boolean }
+  features: { agents: boolean; tesouro_direto?: boolean; plugins?: boolean; document_ai?: boolean }
 }
 
 export const info = {
   get: async (): Promise<AppInfo> => {
     const { data } = await api.get('/info')
+    return data
+  },
+}
+
+// Document reading -- only reachable when info.features.document_ai === true.
+export const documentAi = {
+  status: async (): Promise<DocumentAiStatus> => {
+    const { data } = await api.get('/document-ai/status')
+    return data
+  },
+  getSettings: async (): Promise<DocumentAiSettings> => {
+    const { data } = await api.get('/document-ai/settings')
+    return data
+  },
+  updateSettings: async (payload: DocumentAiSettingsUpdate): Promise<DocumentAiSettings> => {
+    const { data } = await api.put('/document-ai/settings', payload)
+    return data
+  },
+  resetSettings: async (): Promise<void> => {
+    await api.delete('/document-ai/settings')
+  },
+  upload: async (file: File, kind: DocumentKind): Promise<DocumentExtraction> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('kind', kind)
+    // Stores the file and queues the read; nothing lands until confirmed.
+    const { data } = await api.post('/document-ai/extractions', formData, readOnly)
+    return data
+  },
+  get: async (id: string): Promise<DocumentExtraction> => {
+    const { data } = await api.get(`/document-ai/extractions/${id}`)
+    return data
+  },
+  retry: async (id: string): Promise<DocumentExtraction> => {
+    const { data } = await api.post(`/document-ai/extractions/${id}/retry`, undefined, readOnly)
+    return data
+  },
+  remove: async (id: string): Promise<void> => {
+    await api.delete(`/document-ai/extractions/${id}`, readOnly)
+  },
+  attach: async (id: string, transactionId: string): Promise<DocumentExtraction> => {
+    const { data } = await api.post(`/document-ai/extractions/${id}/attach`, { transaction_id: transactionId })
+    return data
+  },
+  createTransaction: async (id: string, payload: DocumentReceiptTransaction): Promise<DocumentExtraction> => {
+    const { data } = await api.post(`/document-ai/extractions/${id}/transaction`, payload)
     return data
   },
 }

@@ -347,6 +347,8 @@ EXCLUDED_WORKSPACE_TABLES: dict[str, str] = {
     "agents": "AI agent setup of the optional agents module, tied to its provider",
     "agent_conversations": "chat history with AI agents",
     "bank_connections": "provider secrets and bank sessions",
+    "document_extractions": "what a model read from an uploaded document; the transactions it became are backed up",
+    "workspace_document_ai_settings": "the model and key documents are read with, tied to this instance",
     "plugin_connections": "plugin secrets",
     "workspace_members": "membership is managed per instance",
     "workspace_plugins": "install state tied to the plugin runtime",

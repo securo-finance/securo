@@ -1159,6 +1159,125 @@ export interface ImportReviewTransaction extends ImportPreviewTransaction {
   selected_category_id?: string | null
 }
 
+export type DocumentKind = 'statement' | 'receipt'
+export type DocumentVision = 'yes' | 'no' | 'unknown'
+
+export interface DocumentAiStatus {
+  enabled: boolean
+  configured: boolean
+  provider: string | null
+  model: string | null
+  source: 'instance' | 'workspace' | null
+  vision: DocumentVision
+  vision_source: 'setting' | 'provider' | 'catalog' | 'none'
+  max_file_size_mb: number
+  max_pages: number
+}
+
+export interface DocumentAiSettings {
+  provider: string | null
+  base_url: string | null
+  model: string | null
+  has_api_key: boolean
+  vision: 'auto' | 'true' | 'false'
+  instance_provider: string | null
+  instance_model: string | null
+  instance_base_url: string | null
+}
+
+export interface DocumentAiSettingsUpdate {
+  provider: string | null
+  base_url: string | null
+  model: string | null
+  api_key?: string | null
+  clear_api_key?: boolean
+  vision: 'auto' | 'true' | 'false'
+}
+
+export interface DocumentBalanceCheck {
+  opening_balance: string
+  closing_balance: string
+  computed_closing_balance: string
+  difference: string
+  ok: boolean
+}
+
+export interface DocumentStatementInfo {
+  kind: 'bank' | 'credit_card' | 'other'
+  institution: string | null
+  account_name: string | null
+  account_last_digits: string | null
+  currency: string | null
+  period_start: string | null
+  period_end: string | null
+  opening_balance: string | null
+  closing_balance: string | null
+}
+
+export interface DocumentReceiptInfo {
+  merchant: string | null
+  merchant_tax_id: string | null
+  date: string | null
+  total: string | null
+  currency: string | null
+  kind: 'purchase' | 'refund'
+  payment_method: string | null
+  category_hint: string | null
+  items: { description: string; amount: string }[]
+}
+
+export interface DocumentReceiptMatch {
+  transaction_id: string
+  date: string
+  description: string
+  amount: string
+  currency: string
+  type: 'debit' | 'credit'
+  account_id: string
+  account_name: string
+  attachments: number
+}
+
+export interface DocumentExtraction {
+  id: string
+  kind: DocumentKind
+  status: 'pending' | 'processing' | 'done' | 'failed'
+  filename: string
+  content_type: string
+  size: number
+  provider: string | null
+  model: string | null
+  method: 'text' | 'vision' | null
+  pages: number | null
+  error_code: string | null
+  error: string | null
+  created_at: string
+  completed_at: string | null
+  confirmed_at: string | null
+  transaction_id: string | null
+  import_log_id: string | null
+  statement: DocumentStatementInfo | null
+  transactions: ImportPreviewTransaction[]
+  balance_check: DocumentBalanceCheck | null
+  suggested_account_id: string | null
+  dropped: number
+  truncated: boolean
+  receipt: DocumentReceiptInfo | null
+  matches: DocumentReceiptMatch[]
+  suggested_category_id: string | null
+}
+
+export interface DocumentReceiptTransaction {
+  account_id: string
+  description: string
+  amount: number
+  date: string
+  type: 'debit' | 'credit'
+  currency?: string | null
+  category_id?: string | null
+  notes?: string | null
+}
+
 export interface FailedRow {
   line_number: number
   description: string
