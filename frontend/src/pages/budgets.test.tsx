@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
+import { Toaster } from 'sonner'
 
 import { monthLabel, monthRange } from '@/lib/month-utils'
 
@@ -35,7 +36,26 @@ vi.mock('@/hooks/use-privacy-mode', () => ({
   usePrivacyMode: () => ({ mask: api.mask, privacyMode: api.privacyMode, MASK: '••••' }),
 }))
 const toasts = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
-vi.mock('sonner', () => ({ toast: toasts, Toaster: () => null }))
+// The spies forward to sonner's real toast, and a test renders its real
+// Toaster, so what the user would read is asserted on the screen and not only
+// on the mock.
+vi.mock('sonner', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('sonner')>()
+  return {
+    ...actual,
+    toast: {
+      ...actual.toast,
+      success: vi.fn((...args: Parameters<typeof actual.toast.success>) => {
+        toasts.success(...args)
+        return actual.toast.success(...args)
+      }),
+      error: vi.fn((...args: Parameters<typeof actual.toast.error>) => {
+        toasts.error(...args)
+        return actual.toast.error(...args)
+      }),
+    },
+  }
+})
 
 function category(id: string, name: string, is_hidden = false): Category {
   return { id, user_id: 'u', group_id: 'g', name, icon: 'circle-help', color: '#000', is_system: false, is_hidden, treat_as_transfer: false, is_ignored: false }
@@ -141,13 +161,14 @@ describe('Budget settings page', () => {
         },
       },
     })
-    const { user } = renderWithProviders(<BudgetsPage />)
+    const { user } = renderWithProviders(<><BudgetsPage /><Toaster /></>)
     const rentInput = await screen.findByRole('textbox', { name: t('budgets.budgetFor', { category: 'Rent' }) })
     await user.clear(rentInput)
     await user.type(rentInput, '99999999999999')
     await user.click(screen.getByRole('button', { name: t('common.save') }))
 
     await waitFor(() => expect(toasts.error).toHaveBeenCalledWith(t('budgets.amountTooLarge')))
+    expect(await screen.findByText(t('budgets.amountTooLarge'))).toBeInTheDocument()
   })
 })
 
