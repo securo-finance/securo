@@ -346,6 +346,113 @@ async def test_group_shares_agree_across_card_footer_report_and_drill_down(
     assert drill["summary"]["expense"] == pytest.approx(slice_value)
 
 
+async def _book_refunded_taxi(
+    session: AsyncSession, stamped: bool, own_category: bool
+) -> Category:
+    """Ana books a R$ 40 refunded taxi in her own workspace on day 5, split
+    exact in the trip group (Ana +60, Bruno −20), in the trip's category or
+    in one of its own. Returns the category it went to."""
+    _month, day5, _day15 = _last_month()
+    trip = (
+        await session.execute(select(Transaction).where(Transaction.description == "R269 trip"))
+    ).scalar_one()
+    category = await session.get(Category, trip.category_id)
+    assert category is not None
+    if own_category:
+        category = Category(
+            id=uuid.uuid4(), user_id=trip.user_id, workspace_id=trip.workspace_id,
+            name="Táxi R377", icon="car", color="#F59E0B",
+        )
+        session.add(category)
+    members = (
+        await session.execute(
+            select(GroupMember).where(GroupMember.group_id.in_(
+                select(GroupMember.group_id).where(GroupMember.name == "Carla")
+            ))
+        )
+    ).scalars().all()
+    by_name = {m.name: m for m in members}
+    taxi = Transaction(
+        id=uuid.uuid4(), user_id=trip.user_id, workspace_id=trip.workspace_id,
+        account_id=trip.account_id, category_id=category.id,
+        description="R269 refunded taxi", amount=Decimal("40.00"), currency="BRL",
+        amount_primary=Decimal("40.00") if stamped else None,
+        date=day5, type="debit", source="manual",
+    )
+    session.add(taxi)
+    await session.flush()
+    await split_service.replace_splits(
+        session,
+        taxi,
+        TransactionSplitsInput(
+            share_type="exact",
+            splits=[
+                TransactionSplitInput(
+                    group_member_id=by_name["Ana"].id, share_amount=Decimal("60.00")
+                ),
+                TransactionSplitInput(
+                    group_member_id=by_name["Bruno"].id, share_amount=Decimal("-20.00")
+                ),
+            ],
+        ),
+        trip.user_id,
+    )
+    await session.commit()
+    return category
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stamped", [True, False])
+async def test_a_negative_group_share_lowers_every_figure_in_the_viewers_currency(
+    client, session: AsyncSession, couple_with_groups, stamped
+):
+    """#377: Bruno's share of the refunded taxi is −R$ 20, −4 € at day 5's
+    rate (today's would give −2,67 €). The footer read an unstamped row's
+    −R$ 20 as −20 €. With or without `amount_primary`, every figure is
+    396 €, the expense slices add up to it, and the Viagens slice is 96 €,
+    the same as its drill-down."""
+    data = couple_with_groups
+    month, bruno = data["month"], data["bruno"]
+    await _book_refunded_taxi(session, stamped, own_category=False)
+
+    footer = (await _list(client, bruno, month))["summary"]["expense"]
+    assert footer == pytest.approx(396.0)
+
+    summary = await _dashboard(client, bruno, month)
+    assert summary["monthly_expenses_primary"] == pytest.approx(footer)
+
+    report = await _report(client, bruno, month)
+    breakdowns = {b["key"]: b["value"] for b in report["summary"]["breakdowns"]}
+    assert breakdowns["expenses"] == pytest.approx(footer)
+    slices = [item for item in report["composition"] if item["group"] == "expenses"]
+    assert sum(item["value"] for item in slices) == pytest.approx(footer)
+
+    slice_value = next(item["value"] for item in slices if item["key"] == data["travel_id"])
+    drill = await _list(client, bruno, month, category_id=data["travel_id"])
+    assert slice_value == pytest.approx(96.0)
+    assert drill["summary"]["expense"] == pytest.approx(slice_value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stamped", [True, False])
+async def test_a_negative_share_alone_in_its_category_draws_no_slice(
+    client, session: AsyncSession, couple_with_groups, stamped
+):
+    """#377, the case the re-test hit: the refunded taxi is the only row of
+    its category. The donut drew it as a +4 € slice; a slice cannot be
+    negative, so it is left out instead of adding to the expenses."""
+    data = couple_with_groups
+    month, bruno = data["month"], data["bruno"]
+    taxi_category = await _book_refunded_taxi(session, stamped, own_category=True)
+
+    report = await _report(client, bruno, month)
+    breakdowns = {b["key"]: b["value"] for b in report["summary"]["breakdowns"]}
+    assert breakdowns["expenses"] == pytest.approx(396.0)
+    keys = {item["key"] for item in report["composition"]}
+    assert str(taxi_category.id) not in keys
+    assert (await _list(client, bruno, month))["summary"]["expense"] == pytest.approx(396.0)
+
+
 @pytest.mark.asyncio
 async def test_the_owner_keeps_her_own_numbers(client, couple):
     summary = await _dashboard(client, couple["ana"], couple["month"])

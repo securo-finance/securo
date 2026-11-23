@@ -66,8 +66,9 @@ from app.services._query_filters import (
     is_not_ignored,
     is_transfer,
     is_transfer_row,
+    line_amount,
+    line_amount_primary,
     line_category_id,
-    line_primary_or_amount,
     reporting_date_col,
     reporting_date_value,
     with_category_lines,
@@ -650,6 +651,18 @@ async def get_transactions(
             else_=literal(1),
         )
         pnl_filter = counts_as_pnl(line_category_id())
+        # A row projected from another workspace without a stamp is read
+        # from its own currency, at its date, as the report and the card
+        # read the viewer's share of it (#377); taking its amount as it is
+        # showed −R$ 20 as −20 €. Rows of this workspace keep the fallback
+        # the dashboard and the report use for them.
+        part_value = func.coalesce(
+            line_amount_primary(viewer),
+            case(
+                (Transaction.workspace_id != workspace_id, viewer.native(line_amount())),
+                else_=line_amount(),
+            ),
+        )
         # The part takes the abs, the fraction keeps its sign: a sync that
         # shrinks the row below the other members' shares leaves the viewer
         # a negative remainder, and the dashboard counts it that way.
@@ -657,7 +670,7 @@ async def get_transactions(
             select(
                 Transaction.type,
                 pnl_filter.label("counts"),
-                (func.abs(line_primary_or_amount(viewer)) * viewer_share_fraction).label("amount"),
+                (func.abs(part_value) * viewer_share_fraction).label("amount"),
             ).select_from(Transaction)
         ).where(Transaction.id.in_(select(base_query.subquery().c.id)))
         if filter_category_ids:

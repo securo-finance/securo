@@ -20,7 +20,7 @@ People hold accounts in more than one currency, and totals have to add up to the
 
 - New money columns use `Numeric(15, 2)` and `Decimal`; new arithmetic never goes through `float`.
 - Sums across currencies use `amount_primary`, never `amount`.
-- `amount_primary` is in the primary currency of the row's owner (`user_id`), and members of a shared workspace can display different currencies. A read that sums or shows it to a viewer goes through `backend/app/services/viewer_currency.py`, which converts the rows of owners in another currency at the row's date and leaves the rest as stored; the stored stamp is never rewritten for a viewer.
+- `amount_primary` is in the primary currency of the row's owner (`user_id`), and members of a shared workspace can display different currencies. A read that sums or shows it to a viewer goes through `backend/app/services/viewer_currency.py`, which converts the rows of owners in another currency at the row's date and leaves the rest as stored; the stored stamp is never rewritten for a viewer. A group share of a row from another workspace that has no stamp is read from the row's own currency, at the row's date and with the same stored rates, so stamping it does not move the share.
 - Rates are refreshed on demand by default; scheduled sync is opt-in (ADR 0004).
 
 ## Enforced by

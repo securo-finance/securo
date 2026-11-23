@@ -36,9 +36,11 @@ def _code(currency: Optional[str]) -> str:
     return normalize_currency_code(currency) or get_settings().default_currency
 
 
-def _usd_rate_on(currency: str, on_date):
-    """SQL: the stored USD→currency rate closest to `on_date`, earlier first."""
-    if currency == "USD":
+def _usd_rate_on(currency, on_date):
+    """SQL: the stored USD→currency rate closest to `on_date`, earlier first.
+
+    `currency` is a code or a column holding one (the row's own currency)."""
+    if isinstance(currency, str) and currency == "USD":
         return literal(1)
     pair = (FxRate.base_currency == "USD", FxRate.quote_currency == currency)
     before = (
@@ -55,7 +57,10 @@ def _usd_rate_on(currency: str, on_date):
         .limit(1)
         .scalar_subquery()
     )
-    return func.coalesce(before, after)
+    rate = func.coalesce(before, after)
+    if isinstance(currency, str):
+        return rate
+    return case((currency == "USD", literal(1)), else_=rate)
 
 
 @dataclass
@@ -91,6 +96,22 @@ class ViewerCurrency:
                 (Transaction.user_id.in_(owners), func.round(column * ratio, 2))
             )
         return case(*whens, else_=column)
+
+    def native(self, column=None, on_date=None):
+        """SQL: `column` (a value in the row's own currency, `amount` by
+        default) in the viewer's currency, at the row's date. For rows
+        without a stamp: the same rates and rounding as `amount`, so a
+        share reads the same with or without `amount_primary`."""
+        column = Transaction.amount if column is None else column
+        on_date = Transaction.date if on_date is None else on_date
+        source = _usd_rate_on(Transaction.currency, on_date)
+        target = _usd_rate_on(self.currency, on_date)
+        # A pair with no stored rate reads 1:1, like `fx_rate_service.convert`.
+        ratio = func.coalesce(target / func.nullif(source, 0), 1)
+        return case(
+            (Transaction.currency == self.currency, column),
+            else_=func.round(column * ratio, 2),
+        )
 
     async def ratio(
         self, session: AsyncSession, owner_id: Optional[uuid.UUID], on_date: date

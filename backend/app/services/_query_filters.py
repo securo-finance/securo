@@ -734,72 +734,44 @@ async def viewer_shares_in_primary(
     A share is its row's stamp read in the viewer's currency (converted at
     the row's date, see `ViewerCurrency`) times ``share / amount``: the same
     value the transactions list gives the projected row, so a report slice
-    and its drill-down agree to the cent (#269). A row without a stamp has
-    its shares converted from the row's currency, as before.
+    and its drill-down agree to the cent (#269). A row without a stamp is
+    read the same way from its own amount and currency, at the same date and
+    rates, so stamping a row does not move the viewer's share (#377). The
+    share keeps its sign: an exact split may give the viewer a negative share,
+    which lowers the total instead of adding to it.
 
     ``where`` holds the caller's filters; the query joins `TransactionSplit`
     to `Transaction`.
     """
     from app.models.transaction_split import TransactionSplit
-    from app.services.fx_rate_service import convert as _convert
     from app.services.viewer_currency import viewer_currency
 
     if viewer is None:
         viewer = await viewer_currency(session, primary_currency)
     share_primary = (
         TransactionSplit.share_amount
-        * func.abs(viewer.amount())
+        * func.abs(func.coalesce(viewer.amount(), viewer.native()))
         * literal_column("1.0")
         / func.nullif(func.abs(Transaction.amount), 0)
     )
-
-    def _by_type(value):
-        return (
-            func.sum(case((Transaction.type == "credit", value), else_=0)),
-            func.sum(case((Transaction.type == "debit", value), else_=0)),
+    rows = await session.execute(
+        select(
+            *keys,
+            func.sum(case((Transaction.type == "credit", share_primary), else_=0)),
+            func.sum(case((Transaction.type == "debit", share_primary), else_=0)),
         )
-
-    out: dict[tuple, tuple[Decimal, Decimal]] = {}
-
-    def _add(key: tuple, income, expense) -> None:
-        prev_income, prev_expense = out.get(key, (Decimal("0"), Decimal("0")))
-        out[key] = (
-            prev_income + Decimal(str(income or 0)),
-            prev_expense + Decimal(str(expense or 0)),
-        )
-
-    stamped = await session.execute(
-        select(*keys, *_by_type(share_primary))
         .select_from(TransactionSplit)
         .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
-        .where(*where, Transaction.amount_primary.isnot(None))
+        .where(*where)
         .group_by(*keys)
     )
-    for row in stamped.all():
-        _add(tuple(row[: len(keys)]), row[-2], row[-1])
-
-    unstamped = await session.execute(
-        select(*keys, Transaction.currency, *_by_type(TransactionSplit.share_amount))
-        .select_from(TransactionSplit)
-        .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
-        .where(*where, Transaction.amount_primary.is_(None))
-        .group_by(*keys, Transaction.currency)
-    )
-    for row in unstamped.all():
-        currency, raw_income, raw_expense = row[-3], row[-2], row[-1]
-        income = expense = Decimal("0")
-        if raw_income:
-            income, _ = await _convert(
-                session, Decimal(str(raw_income)), currency, primary_currency
-            )
-        if raw_expense:
-            expense, _ = await _convert(
-                session, Decimal(str(raw_expense)), currency, primary_currency
-            )
-        # Signed, like the stamped rows: an exact split may give the viewer
-        # a negative share, which lowers the total instead of adding to it.
-        _add(tuple(row[: len(keys)]), income, expense)
-    return out
+    return {
+        tuple(row[: len(keys)]): (
+            Decimal(str(row[-2] or 0)),
+            Decimal(str(row[-1] or 0)),
+        )
+        for row in rows.all()
+    }
 
 
 def _viewer_shared_filters(
@@ -869,7 +841,8 @@ async def viewer_shared_pnl(
     if primary_currency is not None:
         totals = await viewer_shares_in_primary(session, (), where, primary_currency)
         income, expense = totals.get((), (Decimal("0"), Decimal("0")))
-        return float(income), float(abs(expense))
+        # Signed, like the nominal sum below (#377).
+        return float(income), float(expense)
 
     result = await session.execute(
         select(
