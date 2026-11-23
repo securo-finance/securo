@@ -49,3 +49,4 @@ Each file here records one decision about how Securo is built: what we chose, wh
 | [0034](0034-plugin-dashboard-widgets.md) | Plugins add dashboard widgets: a report sized for a card, over the month on screen |
 | [0035](0035-plugin-file-fields-and-routines.md) | Plugin integrations take files in their form and run routines on schedules of their own |
 | [0036](0036-xml-attachments.md) | XML files can be attached, and anything that isn't an image or a PDF is served as a download |
+| [0038](0038-plugin-connection-recovers-with-new-values.md) | A plugin connection is fixed in place with new values, and a routine-only one proves them at once |

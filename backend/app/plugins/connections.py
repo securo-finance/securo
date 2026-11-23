@@ -239,12 +239,14 @@ async def for_bank_connection(
 
 async def update_values(
     session: AsyncSession, connection: PluginConnection, *, name: str | None, values: dict[str, Any]
-) -> PluginConnection:
+) -> tuple[PluginConnection, bool]:
     """New form values for a connection (reconnecting after a password change, say).
 
     A field left blank keeps what it had, so a secret never has to be typed
     again to change something else. What the plugin stored itself (a refresh
-    token, say) is kept too. The connection then syncs afresh.
+    token, say) is kept too. Returns the connection and whether any value
+    changed: only then does it have to prove itself again; a rename alone
+    leaves it as it was.
 
     Not while it syncs: the sync would save back the secrets it started with.
     """
@@ -260,7 +262,7 @@ async def update_values(
 
 async def _update_values(
     session: AsyncSession, connection: PluginConnection, *, name: str | None, values: dict[str, Any]
-) -> PluginConnection:
+) -> tuple[PluginConnection, bool]:
     _, manifest = await _installed(session, connection.workspace_id, connection.plugin_id)
     integration = _integration(manifest, connection.integration)
     try:
@@ -296,7 +298,7 @@ async def _update_values(
             bank.display_name = connection.name
     await _mirror_status(session, connection)
     await session.commit()
-    return connection
+    return connection, changed
 
 
 def _split(integration: Integration, values: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
