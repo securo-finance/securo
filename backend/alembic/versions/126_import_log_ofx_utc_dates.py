@@ -1,7 +1,7 @@
 """mark the OFX imports whose rows were dated on the UTC day
 
-Revision ID: 125
-Revises: 124
+Revision ID: 126
+Revises: 125
 
 Before #1671, ofxparse converted a DTPOSTED with an offset ("[+1:CET]") to
 UTC, so those rows could sit one day off the day the bank printed. The FITID
@@ -18,8 +18,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "125"
-down_revision: Union[str, None] = "124"
+revision: str = "126"
+down_revision: Union[str, None] = "125"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
