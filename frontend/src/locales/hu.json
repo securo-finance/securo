@@ -3598,7 +3598,8 @@
       "undoFirstGroupSplit": "A személyek közötti megosztás előtt vond vissza a felosztást.",
       "undoFirstMortgage": "A jelzálog bontása előtt vond vissza a felosztást.",
       "categoryInUse": "Ez a kategória felosztott tranzakciók részeit tartalmazza. Előbb módosítsd ezeket a felosztásokat.",
-      "destinationInvalid": "Felosztott tranzakciók részei nem kerülhetnek figyelmen kívül hagyott vagy rejtett kategóriába."
+      "destinationInvalid": "Felosztott tranzakciók részei nem kerülhetnek figyelmen kívül hagyott vagy rejtett kategóriába.",
+      "mergeNeedsRate": "Ezek a költségkeretek különböző pénznemekben vannak, és a hónapjukra nincs árfolyam az összevonásukhoz."
     }
   },
   "plugins": {
