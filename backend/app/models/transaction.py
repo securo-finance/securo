@@ -27,6 +27,24 @@ if TYPE_CHECKING:
 #: to the one the sync gave.
 USER_EDITED_KEY = "securo_user_edited"
 
+#: Sources whose rows are money that already moved: a bank statement, a
+#: statement file the user imported, a group settle-up (which records money
+#: already handed over) and an account's opening balance (the money the account
+#: already had). Everything else — a row the user types, a transfer they record,
+#: the placeholder a recurring bill generates for a date still ahead — starts
+#: unpaid. The user's own mark always wins over this: a sync updating a row it
+#: already tracks leaves `is_paid` alone. A manual row or recurring placeholder
+#: the statement takes over is the exception: the bank (or the file) just
+#: confirmed the money moved, so it turns paid there, once, and the user's later
+#: mark wins again from then on.
+SETTLED_TRANSACTION_SOURCES = frozenset({"sync", "import", "settlement", "opening_balance"})
+
+
+def default_is_paid(context) -> bool:
+    """The opening value of `is_paid` for a row being inserted (issue #15)."""
+    source = context.get_current_parameters().get("source")
+    return source in SETTLED_TRANSACTION_SOURCES
+
 
 class Transaction(Base):
     __tablename__ = "transactions"
@@ -135,6 +153,12 @@ class Transaction(Base):
     # account balance. The row remains stored and can still be shown in ledger
     # views unless the caller explicitly hides ignored transactions.
     is_ignored: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Review state, not ledger state (issue #636). A transaction that arrives
+    # from outside (sync or import) starts unread, so the list can mark it as
+    # new until the person opens it or marks everything as read. Rows the
+    # person or the app creates are already known and start read; no total,
+    # balance or report reads this column.
+    is_read: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     # Keep the row in the ledger and current balance, but leave it out of P&L
     # reports. This differs from is_ignored, which also removes the row from
     # balance calculations. Balance adjustments use this distinction so the
@@ -147,6 +171,13 @@ class Transaction(Base):
     # total, balance or report does. Both are cleared with the flag.
     is_flagged: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
+    )
+    # Whether the money has already moved (issue #15). A statement row starts
+    # paid and a row the user types starts unpaid; either can be flipped in
+    # the UI, and the sync never writes over the user's mark. No total,
+    # balance or report reads it.
+    is_paid: Mapped[bool] = mapped_column(
+        Boolean, default=default_is_paid, server_default="false"
     )
     flag_due_date: Mapped[Optional[_date]] = mapped_column(Date, nullable=True)
     flag_note: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
@@ -172,9 +203,19 @@ class Transaction(Base):
 
     @property
     def provider_category(self) -> Optional[str]:
+        """The label the provider sent, as the text the rule engine compares.
+
+        `raw_data` is the payload as the bank or plugin sent it, so the key can
+        hold anything: a numeric MCC code, a list, an object. The response
+        schema requires a string, and a value it cannot carry used to take the
+        whole month's list down with a validation error (issue #353).
+        `provider_category_text` decides what counts as a label, and the rule
+        engine's suggestions use the same function so that what is offered is
+        exactly what a rule can match.
+        """
         if not isinstance(self.raw_data, dict):
             return None
-        return self.raw_data.get("category")
+        return provider_category_text(self.raw_data.get("category"))
 
     account: Mapped["Account"] = relationship(back_populates="transactions")
     category: Mapped[Optional["Category"]] = relationship()
@@ -212,6 +253,25 @@ class Transaction(Base):
     matched_amount = cast(Optional[Decimal], None)
     matched_amount_primary = cast(Optional[Decimal], None)
     reporting_date = cast(Optional[_date], None)
+
+
+def provider_category_text(value: object) -> Optional[str]:
+    """The provider's category as the text a rule compares against.
+
+    A value the rule engine is meant to match becomes a string: a real label
+    as sent, and a numeric code (an MCC such as 5411) as its text form, which
+    is what `_match_condition` has always compared. `bool` is left out on
+    purpose: it is a subclass of `int` in Python, and `True` is not a code.
+    A list, an object, `None` and blank text are no label at all, so neither
+    the engine nor the editor offers them.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str) and value.strip():
+        return value
+    return None
 
 
 # Safety net: `effective_date` is NOT NULL. For non-CC transactions it always

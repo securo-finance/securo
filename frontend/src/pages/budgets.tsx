@@ -30,7 +30,7 @@ import { useSidebarState } from '@/contexts/sidebar-state-context'
 import { cn } from '@/lib/utils'
 import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
-import { incomeShare, parseBudgetDraft, planBudgetChange, savedPlannedTotal, type BudgetOperation } from '@/lib/budget-settings-utils'
+import { budgetDisplayAmount, incomeShare, parseBudgetDraft, planBudgetChange, savedPlannedTotal, type BudgetOperation } from '@/lib/budget-settings-utils'
 import { todayInTimezone } from '@/lib/date-utils'
 import { formatAmountInput, formatCurrency } from '@/lib/format'
 import type { BudgetSuggestion, Category } from '@/types'
@@ -175,7 +175,10 @@ export default function BudgetsPage() {
     () => new Map((budgetsList ?? []).map((budget) => [budget.category_id, budget])),
     [budgetsList],
   )
-  const savedAmount = (categoryId: string) => Number(budgetByCategory.get(categoryId)?.amount ?? 0)
+  const savedAmount = (categoryId: string) => {
+    const budget = budgetByCategory.get(categoryId)
+    return budget ? budgetDisplayAmount(budget) : 0
+  }
   const draftFor = (categoryId: string) => drafts[categoryId] ?? (savedAmount(categoryId) > 0 ? formatAmountInput(savedAmount(categoryId), locale) : '')
   // New budgets repeat every month unless switched off, like the old add dialog's default.
   const recurringFor = (categoryId: string) => current.recurring[categoryId] ?? budgetByCategory.get(categoryId)?.is_recurring ?? true

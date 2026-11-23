@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, Download, FileText, Info, Settings2, Upload, X } from 'lucide-react'
 
 import { assets as assetsApi, assetGroups as assetGroupsApi } from '@/lib/api'
+import { formatCurrency, forwardArrow, ltrAmount } from '@/lib/format'
 import type { AssetImportPreview, AssetImportRowError, AssetOrderImport } from '@/types'
 import { ImportHistory } from '@/components/import-history'
 import { Button } from '@/components/ui/button'
@@ -30,6 +31,43 @@ const SELECT_CLASS =
   'border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]'
 
 /**
+ * Currencies a market feed quotes in minor units: 100 GBp is GBP 1.00. They
+ * are the same codes the import service reads as pence and cents.
+ */
+const MINOR_UNIT_CURRENCIES = new Set(['GBp', 'GBX', 'gbx', 'ZAc', 'ZAC'])
+
+/**
+ * The amount as the file stated it. Intl reads "GBp" as GBP and would show a
+ * pence price at 100 times its value, so a minor-unit row keeps the label the
+ * file used instead of a currency symbol.
+ */
+function statedAmount(amount: number, currency: string, locale: string) {
+  if (!MINOR_UNIT_CURRENCIES.has(currency)) return formatCurrency(amount, currency, locale)
+  const digits = new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return ltrAmount(`${digits.format(amount)} ${currency}`)
+}
+
+/**
+ * A price or fee cell: the amount in the currency the file paid it in, and,
+ * when the order was converted, what the row becomes in the holding's
+ * currency. A file that states no currency was already read in the holding's,
+ * so the amount alone is what it is.
+ */
+function moneyCell(order: AssetOrderImport, field: 'price' | 'fee', locale: string) {
+  const amount = order[field]
+  const stated = order.currency ? statedAmount(amount, order.currency, locale) : String(amount)
+  const converted = field === 'price' ? order.converted_price : order.converted_fee
+  if (converted == null || !order.converted_currency) return stated
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="text-muted-foreground">{stated}</span>
+      <span aria-hidden="true">{forwardArrow()}</span>
+      <span>{formatCurrency(converted, order.converted_currency, locale)}</span>
+    </span>
+  )
+}
+
+/**
  * The investments half of the import page.
  *
  * Deliberately built from the same pieces as the transaction importer: one
@@ -38,7 +76,8 @@ const SELECT_CLASS =
  * there. Two importers that look different teach the same person two habits.
  */
 export function AssetImportPanel() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const locale = i18n.resolvedLanguage ?? i18n.language
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { canWrite } = useWorkspace()
@@ -387,7 +426,7 @@ export function AssetImportPanel() {
                           <span className="mt-0.5 block text-xs font-normal text-muted-foreground tabular-nums sm:hidden">
                             {entry.order.kind === 'split'
                               ? `${entry.order.date} · ${t('assetImport.kind.split')} · ${t('assetImport.splitRatio', { old: entry.order.old_units, new: entry.order.new_units })}`
-                              : `${entry.order.date} · ${t(`assetImport.kind.${entry.order.kind}`)} · ${entry.order.quantity} × ${entry.order.price}${entry.order.fee ? ` · ${t('assetImport.field.fee')} ${entry.order.fee}` : ''}`}
+                              : `${entry.order.date} · ${t(`assetImport.kind.${entry.order.kind}`)} · ${entry.order.quantity} × ${entry.order.currency ? statedAmount(entry.order.price, entry.order.currency, locale) : entry.order.price}${entry.order.fee ? ` · ${t('assetImport.field.fee')} ${entry.order.currency ? statedAmount(entry.order.fee, entry.order.currency, locale) : entry.order.fee}` : ''}`}
                           </span>
                         </td>
                         <td className="hidden px-3 py-1.5 sm:table-cell">{entry.order.date}</td>
@@ -414,8 +453,8 @@ export function AssetImportPanel() {
                         ) : (
                           <>
                             <td className="hidden px-3 py-1.5 text-end tabular-nums sm:table-cell">{entry.order.quantity}</td>
-                            <td className="hidden px-3 py-1.5 text-end tabular-nums sm:table-cell">{entry.order.price}</td>
-                            <td className="hidden px-3 py-1.5 text-end tabular-nums sm:table-cell">{entry.order.fee}</td>
+                            <td className="hidden px-3 py-1.5 text-end tabular-nums sm:table-cell">{moneyCell(entry.order, 'price', locale)}</td>
+                            <td className="hidden px-3 py-1.5 text-end tabular-nums sm:table-cell">{moneyCell(entry.order, 'fee', locale)}</td>
                           </>
                         )}
                         {/* No reason cell: an imported row has nothing to explain. */}

@@ -7,12 +7,12 @@ import uuid
 import warnings
 import xml.etree.ElementTree as ET
 from xml.parsers import expat
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from bs4 import XMLParsedAsHTMLWarning
 from ofxparse import OfxParser
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -210,10 +210,20 @@ def _ensure_ofx_sgml_header(text: str, encoding: str) -> str:
     return header + text
 
 
+# ofxparse converts a date with a "[+1:CET]" suffix to UTC, so a midnight
+# booking in Europe or Asia lands on the previous day. The bank's day is the
+# one printed, so drop the offset from transaction dates.
+_OFX_TXN_DATE_OFFSET = re.compile(
+    r"(<(?:DTPOSTED|DTUSER)\s*>\s*(?:<!\[CDATA\[)?\s*[0-9.]+)\s*\[[^\]<]*\]",
+    re.IGNORECASE,
+)
+
+
 def _preprocess_ofx(content: bytes) -> bytes:
     """Apply text-level fixups ofxparse needs before it can parse the file."""
     text, encoding = _decode_ofx_bytes(content)
     text = _patch_empty_fitids(text)
+    text = _OFX_TXN_DATE_OFFSET.sub(r"\1", text)
     text = _ensure_ofx_sgml_header(text, encoding)
     return text.encode(encoding, errors="replace")
 
@@ -1200,6 +1210,20 @@ async def import_transactions(
     matched_existing_ids: set[uuid.UUID] = set()
     effective_format = (detected_format or source or "").lower()
     should_detect_duplicates = detect_duplicates if effective_format == "csv" else True
+    # Imports parsed before OFX offsets were dropped: only their rows may sit
+    # one day off the bank's date (see the FITID lookup below).
+    utc_dated_import_ids: list[uuid.UUID] = []
+    if should_detect_duplicates:
+        utc_dated_import_ids = list(
+            (
+                await session.execute(
+                    select(ImportLog.id).where(
+                        ImportLog.account_id == account_id,
+                        ImportLog.ofx_utc_dates.is_(True),
+                    )
+                )
+            ).scalars()
+        )
 
     for txn_data in included:
         # Resolve currency: CSV value > account currency
@@ -1209,14 +1233,30 @@ async def import_transactions(
             # Prefer an external ID (OFX FITID), with date retained because some
             # Brazilian cards reuse one purchase FITID across monthly installments,
             # and amount and type retained because some banks reuse one FITID for
-            # several distinct entries posted on the same day.
+            # several distinct entries posted on the same day. The date may differ
+            # by one day only for rows of imports parsed before OFX offsets were
+            # dropped, which can sit on the neighbouring day. Any other row a day
+            # apart is a distinct entry (a recurring fee under one FITID), whether
+            # this run or an overlapping earlier statement added it.
             # Formats without unique IDs fall back to transaction fields; compare
             # both descriptions because rules may have changed the displayed one.
             if txn_data.external_id:
+                same_day = Transaction.date == txn_data.date
                 existing_statement = select(Transaction).where(
                     Transaction.account_id == account_id,
                     Transaction.external_id == txn_data.external_id,
-                    Transaction.date == txn_data.date,
+                    or_(
+                        same_day,
+                        and_(
+                            Transaction.date.between(
+                                txn_data.date - timedelta(days=1),
+                                txn_data.date + timedelta(days=1),
+                            ),
+                            Transaction.import_id.in_(utc_dated_import_ids),
+                        ),
+                    )
+                    if utc_dated_import_ids
+                    else same_day,
                     Transaction.amount == txn_data.amount,
                     Transaction.type == txn_data.type,
                 )
@@ -1290,6 +1330,9 @@ async def import_transactions(
             type=txn_data.type,
             status="posted",
             source=source,
+            # Imported rows are new to the person until they review them
+            # (issue #636).
+            is_read=False,
             import_id=import_log.id,
             external_id=txn_data.external_id,
             currency=txn_currency,
@@ -1325,6 +1368,12 @@ async def import_transactions(
             placeholder.external_id = txn_data.external_id
             placeholder.import_id = import_log.id
             placeholder.status = "posted"
+            # The bill's charge is on the statement file (#15).
+            placeholder.is_paid = True
+            # The placeholder was generated for the person; the imported charge
+            # that replaced it was not reviewed yet (issue #636). Duplicates
+            # above are skipped before this point, so they keep their state.
+            placeholder.is_read = False
             # The rules already ran, against the incoming charge, to build
             # `preview`. Fold that result in rather than re-running them
             # against the placeholder: its description is the recurring
@@ -1519,6 +1568,9 @@ def infer_decimal_separator(values) -> str | None:
     """
     votes: set[str] = set()
     comma_thousands = False
+    # "0,125" is never a grouped number, so a column with one cannot be read
+    # as comma-thousands, even if its other cells look like it ("1,125").
+    zero_comma = False
     for raw in values:
         if not raw:
             continue
@@ -1531,11 +1583,13 @@ def infer_decimal_separator(values) -> str | None:
             votes.add(',')
         elif _DOT_DECIMAL_TAIL.search(s):
             votes.add('.')
-        elif _COMMA_THOUSANDS.match(s) and not s.startswith('0,'):
+        elif _ZERO_COMMA_DECIMAL.match(s):
+            zero_comma = True
+        elif _COMMA_THOUSANDS.match(s):
             comma_thousands = True
     if len(votes) == 1:
         return votes.pop()
-    if not votes and comma_thousands:
+    if not votes and comma_thousands and not zero_comma:
         return '.'
     return None
 
@@ -1574,6 +1628,9 @@ def normalize_amount(amount_str: str | None, decimal_separator: str | None = Non
             amount_str = amount_str.replace('.', '').replace(',', '.')
         else:
             amount_str = amount_str.replace(',', '')
+    elif amount_str.count(',') > 1 and _COMMA_THOUSANDS.match(amount_str):
+        # Two or more comma groups and no dot can only be grouping.
+        amount_str = amount_str.replace(',', '')
     elif ',' in amount_str:
         amount_str = amount_str.replace(',', '.')
 

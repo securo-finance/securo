@@ -329,6 +329,9 @@ export interface Transaction {
   external_id: string | null
   description: string
   original_description: string | null
+  /** The category the bank/provider sent for this row, in its own words
+   *  (not translated by the app). Read-only; null when it has none. */
+  provider_category?: string | null
   amount: number
   currency: string
   date: string
@@ -394,11 +397,19 @@ export interface Transaction {
   parent_owner_name?: string | null
   // Flag to exclude this transaction from reports and dashboard aggregations
   is_ignored: boolean
+  // False until the person has seen this row (issue #636): a transaction a
+  // sync or an import created starts here, and opening it or marking all as
+  // read clears it. Absent on endpoints that do not carry the flag.
+  is_read?: boolean
   // Keeps the transaction in the ledger/balance while excluding it from P&L.
   exclude_from_pnl?: boolean
   // A marker to come back to the row later, with an optional reminder date
   // (YYYY-MM-DD) and note; only the flagged views read them.
   is_flagged?: boolean
+  // Whether the money has already moved (issue #15). A statement row opens as
+  // paid and a manual one as unpaid; only the user's mark changes it. No
+  // total, balance or report reads it.
+  is_paid?: boolean
   flag_due_date?: string | null
   flag_note?: string | null
   // Balance right after this row, filled by the server only when the list
@@ -1342,7 +1353,11 @@ export interface Budget {
   id: string
   user_id: string
   category_id: string
+  /** In `currency`, the currency it was typed in. */
   amount: number
+  currency?: string | null
+  /** The same limit in the viewer's display currency. */
+  amount_primary?: number | string | null
   month: string
   is_recurring: boolean
 }
@@ -1451,6 +1466,11 @@ export interface AssetOrderImport {
   external_id: string | null
   old_units?: number | null
   new_units?: number | null
+  /** Preview only: what the price and the fee become in the holding's currency
+   *  when the file paid in another one. Never read back by the import. */
+  converted_price?: number | null
+  converted_fee?: number | null
+  converted_currency?: string | null
 }
 
 export interface AssetImportRowError {

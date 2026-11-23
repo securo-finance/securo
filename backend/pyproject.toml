@@ -17,7 +17,6 @@ dependencies = [
     "pydantic-settings>=2.5.0",
     "python-jose[cryptography]>=3.3.0",
     "cryptography==46.0.7",
-    "passlib[bcrypt]>=1.7.4",
     "fastapi-users[sqlalchemy]>=13.0.0",
     "httpx>=0.26.0",
     "python-multipart>=0.0.6",
@@ -73,6 +72,16 @@ dev = [
     # annotations the new release asks for.
     "ty==0.0.105",
 ]
+
+[tool.uv]
+# Seven-day cooldown on every resolution, so a compromised release has time to
+# be caught and pulled before it reaches the lock. Renovate's
+# minimumReleaseAge covers its own update PRs, but lock-file maintenance just
+# runs `uv lock` and would pick up anything newer; uv enforces it here.
+exclude-newer = "7 days"
+# ty is pinned to an exact 0.0.x on purpose (see the dev extra) and bumped by
+# hand together with the annotations it asks for, so it is exempt here.
+exclude-newer-package = { ty = false }
 
 [tool.setuptools.packages.find]
 include = ["app*"]

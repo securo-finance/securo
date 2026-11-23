@@ -914,6 +914,71 @@ describe('TransactionDialog flag (#56)', () => {
   })
 })
 
+describe('TransactionDialog paid mark (#15)', () => {
+  it('marks the row paid from the footer, without saving the form', async () => {
+    const tx = syncedTransaction({ is_paid: false })
+    let stored = tx
+    vi.spyOn(transactions, 'update').mockImplementation(async (_id, body) => {
+      stored = { ...stored, is_paid: body.is_paid ?? stored.is_paid }
+      return stored
+    })
+    vi.spyOn(currencies, 'list').mockResolvedValue([])
+    vi.spyOn(payees, 'list').mockResolvedValue([])
+    vi.spyOn(groups, 'list').mockResolvedValue([])
+    const onSave = vi.fn()
+    const { user } = renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={tx}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={onSave}
+        loading={false}
+        error={null}
+        isSynced
+      />,
+    )
+
+    await user.click(await screen.findByRole('button', { name: t('transactions.markPaid') }))
+
+    expect(transactions.update).toHaveBeenCalledWith(tx.id, { is_paid: true })
+    expect(
+      await screen.findByRole('button', { name: t('transactions.markUnpaid') }),
+    ).toBeInTheDocument()
+    // The mark is its own save: the dialog form never goes out with it.
+    expect(onSave).not.toHaveBeenCalled()
+  })
+})
+
+it('shows the bank’s own category when the provider sent one', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture(null, {
+        source: 'sync',
+        provider_category: 'Groceries',
+      })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+      isSynced
+    />,
+  )
+
+  expect(
+    await screen.findByText(`${t('transactions.providerCategory')}: Groceries`),
+  ).toBeInTheDocument()
+})
+
 it('names the existing-rule picker after the field and the chosen rule', async () => {
   vi.spyOn(currencies, 'list').mockResolvedValue([])
   vi.spyOn(payees, 'list').mockResolvedValue([])

@@ -1596,7 +1596,7 @@ async def test_update_transfer_propagates_metadata_without_changing_synced_value
         {"amount": Decimal("999.99")},
         {"date": date(2025, 3, 10)},
         {"amount": Decimal("999.99"), "date": date(2025, 3, 10)},
-        {"amount": None},
+        # A null amount is refused by the schema itself now (issue #321).
         {"date": None},
     ],
 )

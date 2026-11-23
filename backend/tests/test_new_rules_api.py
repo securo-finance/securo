@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.account import Account
 from app.models.transaction import Transaction
 from app.models.user import User
+from app.models.workspace import Workspace
 from app.schemas.rule import RuleAction, RuleCondition, RuleCreate
 from app.services.category_service import create_default_categories
 from app.services.rule_service import create_default_rules, create_rule
@@ -1548,3 +1549,174 @@ async def test_preview_rule_keeps_a_transfer_leg_in_balances_like_the_save_path(
     saved = (await client.get(f"/api/transactions/{txn_id}", headers=auth_headers)).json()
     assert saved["is_ignored"] is False
     assert saved["category_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_provider_categories_lists_distinct_workspace_values(
+    client: AsyncClient, auth_headers, session: AsyncSession,
+    test_user, test_workspace,
+):
+    """The rule editor is fed the exact labels the provider sent (#280).
+
+    Values come from `raw_data["category"]`, are de-duplicated, ordered
+    case-insensitively, and never leak from another workspace. A numeric code
+    comes in its text form, the same string a rule matches against.
+    """
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Provider categories",
+        type="checking",
+        balance=Decimal("1000"),
+        currency="BRL",
+    )
+    other_workspace = Workspace(
+        id=uuid.uuid4(), name="Other", created_by_user_id=test_user.id
+    )
+    other_account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=other_workspace.id,
+        name="Other account",
+        type="checking",
+        balance=Decimal("1000"),
+        currency="BRL",
+    )
+
+    def _row(workspace_id, account_id, description, raw_data, day):
+        return Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=workspace_id,
+            account_id=account_id,
+            description=description,
+            amount=Decimal("10.00"),
+            date=date(2025, 3, day),
+            type="debit",
+            source="sync",
+            raw_data=raw_data,
+            created_at=datetime.now(timezone.utc),
+        )
+
+    rows = [
+        _row(test_workspace.id, account.id, "MARKET", {"category": "Groceries"}, 1),
+        _row(test_workspace.id, account.id, "MARKET AGAIN", {"category": "Groceries"}, 2),
+        _row(
+            test_workspace.id, account.id, "RESTAURANT",
+            {"category": "Food and drinks"}, 3,
+        ),
+        # No provider payload, no category key, and an empty one: none is a
+        # suggestion.
+        _row(test_workspace.id, account.id, "MANUAL", None, 4),
+        _row(test_workspace.id, account.id, "NO CATEGORY KEY", {"other": "x"}, 5),
+        _row(test_workspace.id, account.id, "EMPTY CATEGORY", {"category": ""}, 6),
+        # Payloads whose category is not a label the engine matches: a list
+        # and an object are never offered (#353).
+        _row(test_workspace.id, account.id, "A LIST", {"category": ["Groceries"]}, 9),
+        _row(test_workspace.id, account.id, "AN OBJECT", {"category": {"id": 7}}, 10),
+        # A numeric code is offered in its text form, which is exactly what a
+        # saved rule already matched: 5411 beside 42 as the two codes.
+        _row(test_workspace.id, account.id, "NUMERIC CODE", {"category": 42}, 8),
+        _row(test_workspace.id, account.id, "ANOTHER CODE", {"category": 5411}, 11),
+        _row(test_workspace.id, account.id, "SAME CODE AGAIN", {"category": 42}, 12),
+        # Another workspace's label must not show up here.
+        _row(other_workspace.id, other_account.id, "FLIGHT", {"category": "Travel"}, 7),
+    ]
+    session.add_all([account, other_workspace, other_account, *rows])
+    await session.commit()
+
+    response = await client.get("/api/rules/provider-categories", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.json() == ["42", "5411", "Food and drinks", "Groceries"]
+
+
+@pytest.mark.asyncio
+async def test_transaction_detail_exposes_provider_category(
+    client: AsyncClient, auth_headers, session: AsyncSession,
+    test_user, test_workspace, test_transactions,
+):
+    """The row detail carries the provider's own label, and null when absent.
+
+    Without it the rule editor's `provider_category` condition can only be
+    filled by guessing the bank's wording (#280).
+    """
+    synced = test_transactions[0]
+    synced.raw_data = {"category": "Groceries"}
+    manual = test_transactions[1]
+    manual.raw_data = None
+    synced_id, manual_id = str(synced.id), str(manual.id)
+    await session.commit()
+
+    synced_body = (
+        await client.get(f"/api/transactions/{synced_id}", headers=auth_headers)
+    ).json()
+    manual_body = (
+        await client.get(f"/api/transactions/{manual_id}", headers=auth_headers)
+    ).json()
+
+    assert synced_body["provider_category"] == "Groceries"
+    assert manual_body["provider_category"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"category": ["Groceries"]},
+        {"category": {"id": 7}},
+        {"category": True},
+        {"category": ""},
+        {"category": "   "},
+        {"category": None},
+    ],
+    ids=["list", "object", "bool", "empty", "blank", "null"],
+)
+async def test_transaction_reads_survive_a_non_textual_provider_category(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_transactions, payload,
+):
+    """A payload whose category is not a label reads as no label, never as a 500.
+
+    `TransactionRead.provider_category` is a string, and the bank or plugin
+    payload is whatever it sent: a value it cannot carry used to fail
+    validation of the whole response, taking the month's list down (#353).
+    """
+    row = test_transactions[0]
+    row.raw_data = payload
+    await session.commit()
+
+    detail = await client.get(f"/api/transactions/{row.id}", headers=auth_headers)
+    listing = await client.get(
+        "/api/transactions",
+        params={"from": row.date.isoformat(), "to": row.date.isoformat()},
+        headers=auth_headers,
+    )
+
+    assert detail.status_code == 200
+    assert detail.json()["provider_category"] is None
+    assert listing.status_code == 200
+    items = listing.json()
+    items = items["items"] if isinstance(items, dict) else items
+    listed = next(item for item in items if item["id"] == str(row.id))
+    assert listed["provider_category"] is None
+
+
+@pytest.mark.asyncio
+async def test_transaction_reads_a_numeric_provider_category_as_text(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_transactions,
+):
+    """A numeric code reads as its text form, not as a 500 and not as no label.
+
+    Dropping it would silently stop a saved rule on an MCC like 5411 from
+    matching on the next sync: `_match_condition` has always compared the text
+    form of the value (#353).
+    """
+    row = test_transactions[0]
+    row.raw_data = {"category": 5411}
+    await session.commit()
+
+    detail = await client.get(f"/api/transactions/{row.id}", headers=auth_headers)
+
+    assert detail.status_code == 200
+    assert detail.json()["provider_category"] == "5411"
