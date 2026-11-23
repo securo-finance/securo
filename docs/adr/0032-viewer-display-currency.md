@@ -4,7 +4,7 @@
 - Date: 2026-11-23
 - Origin: #1771 (issue #269: a member in EUR saw R$ 1.600 as 1.600 €)
 - Extends: [0008](0008-money-and-currencies.md)
-- Extended by [0037](0037-date-move-keeps-typed-stamp.md): a move of the date alone keeps the amount the owner typed.
+- Extended by [0039](0039-date-move-keeps-typed-stamp.md): a move of the date alone keeps the amount the owner typed.
 
 ## Context
 

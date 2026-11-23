@@ -1,4 +1,4 @@
-# 0037. A move of the date alone keeps the amount the owner typed
+# 0039. A move of the date alone keeps the amount the owner typed
 
 - Status: Accepted
 - Date: 2026-11-23
