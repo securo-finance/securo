@@ -10,6 +10,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import select
 
 from app.core.app_clock import app_today
 from app.models.transaction import Transaction
@@ -167,3 +168,32 @@ async def test_a_pending_payback_nets_the_next_months_projected_opening(
     # Same money either way once the payback lands; netting must not count the
     # pending 100 a second time on top of the dinner's smaller share.
     assert real_history.opening_balance == net_history.opening_balance == -300
+
+
+@pytest.mark.asyncio
+async def test_a_pending_payback_the_provider_snapshot_holds_is_not_netted_twice(
+    session, test_user, test_workspace, test_account
+):
+    # A connected account: its balance is the provider's, which already holds
+    # the pending payback. The next month's opening must come out the same
+    # netted or not, since the link only moves where money is counted.
+    next_month = (THIS_MONTH + timedelta(days=32)).replace(day=1)
+    for amount, type_, on, extra in (
+        (400, "debit", THIS_MONTH, {}),
+        (100, "credit", TODAY, {"status": "pending"}),
+    ):
+        session.add(Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=test_account.id, description="Row", amount=Decimal(amount),
+            currency=test_account.currency, date=on, type=type_, source="manual", **extra,
+        ))
+    await session.flush()
+    rows = (await session.execute(
+        select(Transaction).where(Transaction.workspace_id == test_workspace.id).order_by(Transaction.amount.desc())
+    )).scalars().all()
+    await _link(session, rows[0], (rows[1], 100))
+
+    real_history, _ = await _curve(session, test_user, test_workspace, next_month, netting=False)
+    net_history, _ = await _curve(session, test_user, test_workspace, next_month)
+
+    assert net_history.opening_balance == real_history.opening_balance

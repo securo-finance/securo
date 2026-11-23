@@ -731,12 +731,14 @@ async def forecast_owner_share_fractions(
     from app.models.transaction_split import TransactionSplit
     from app.services.reimbursement_netting import reimbursement_share_fractions
 
-    own_rows = {tx.id: tx for tx in transactions if tx.user_id == user_id}
-    if not own_rows:
-        return {}
+    rows = list(transactions)
+    own_rows = {tx.id: tx for tx in rows if tx.user_id == user_id}
     # A row with a group split never nets an allocation, so the two sets of
-    # fractions never meet on the same row.
-    reimbursed = await reimbursement_share_fractions(session, own_rows.values())
+    # fractions never meet on the same row. Links belong to the workspace, so
+    # every row in the list nets, not just the user's own.
+    reimbursed = await reimbursement_share_fractions(session, rows, clamp=True)
+    if not own_rows:
+        return reimbursed
 
     viewer_member_ids = (
         select(GroupMember.id)

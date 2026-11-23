@@ -116,17 +116,35 @@ async def test_budget_counts_a_linked_refund_in_the_same_category_once(
 
 
 @pytest.mark.asyncio
-async def test_balances_keep_every_row_whole(session, test_user, test_workspace, test_account, scene):
+async def test_balances_keep_every_row_whole(session, test_user, test_workspace, test_account):
+    from app.models.account import Account
     from app.services.account_service import get_account_with_balances
 
-    # A manual account: its balance is the sum of its rows (-100 + 33 + 33),
-    # not the provider's.
+    # The dinner on one account and its paybacks on another: a netted balance
+    # would move money between them, the real one keeps -100 and +66. (Manual
+    # accounts: a balance is the sum of the rows, not a provider's snapshot.)
     test_account.connection_id = None
+    wallet = Account(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="Savings",
+        type="checking", balance=0, currency=test_account.currency,
+    )
+    session.add(wallet)
+    await session.flush()
+    dinner = await _row(session, test_user, test_account, test_workspace, "100", "debit")
+    alice = await _row(session, test_user, wallet, test_workspace, "33", "credit")
+    bob = await _row(session, test_user, wallet, test_workspace, "33", "credit")
+    await reimbursement_service.replace_allocations(
+        session, dinner,
+        [ReimbursementAllocationInput(counterpart_id=row.id, amount=Decimal("33")) for row in (alice, bob)],
+    )
     await session.commit()
-    account = await get_account_with_balances(session, test_account.id, test_workspace.id)
 
-    assert account is not None
-    assert Decimal(str(account["current_balance"])) == Decimal("-34")
+    spent = await get_account_with_balances(session, test_account.id, test_workspace.id)
+    received = await get_account_with_balances(session, wallet.id, test_workspace.id)
+
+    assert spent is not None and received is not None
+    assert Decimal(str(spent["current_balance"])) == Decimal("-100")
+    assert Decimal(str(received["current_balance"])) == Decimal("66")
 
 
 @pytest.mark.asyncio
@@ -214,3 +232,82 @@ async def test_category_statement_counts_only_the_net(session, test_user, test_w
         if row.kind == "category" and row.values[0]
     }
     assert values == {("expenses", "Food"): pytest.approx(-34.0)}
+
+
+async def _row(session, user, account, workspace, amount, type_, category_id=None, **extra):
+    row = Transaction(
+        id=uuid.uuid4(), user_id=user.id, workspace_id=workspace.id, account_id=account.id,
+        description="Row", amount=Decimal(amount), currency=account.currency,
+        date=extra.pop("date", MONTH), type=type_, source="manual", category_id=category_id,
+        **extra,
+    )
+    session.add(row)
+    await session.flush()
+    return row
+
+
+@pytest.mark.asyncio
+async def test_budget_nets_a_category_whose_raw_total_is_below_zero(
+    session, test_user, test_workspace, test_account
+):
+    # Category B holds an 80 expense and a 100 payback that pays an expense in
+    # A: its raw net is -20, but once the payback comes off it spent 80.
+    shopping = Category(user_id=test_user.id, workspace_id=test_workspace.id, name="Shopping", icon="x", color="#000000")
+    cafe = Category(user_id=test_user.id, workspace_id=test_workspace.id, name="Cafe", icon="x", color="#000000")
+    session.add_all([shopping, cafe])
+    await session.flush()
+    anchor = await _row(session, test_user, test_account, test_workspace, "100", "debit", shopping.id)
+    await _row(session, test_user, test_account, test_workspace, "80", "debit", cafe.id)
+    payback = await _row(session, test_user, test_account, test_workspace, "100", "credit", cafe.id)
+    await reimbursement_service.replace_allocations(
+        session, anchor, [ReimbursementAllocationInput(counterpart_id=payback.id, amount=Decimal("100"))]
+    )
+    await session.commit()
+
+    actual = {
+        row.category_id: row.actual_amount
+        for row in await budget_service.get_budget_vs_actual(session, test_workspace.id, test_user.id)
+    }
+
+    assert actual[cafe.id] == Decimal("80")
+    assert actual.get(shopping.id, Decimal("0")) == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_a_workspace_total_nets_another_members_rows_too(
+    session, test_user, test_superuser, test_workspace, test_account
+):
+    food = Category(user_id=test_user.id, workspace_id=test_workspace.id, name="Food", icon="x", color="#000000")
+    session.add(food)
+    await session.flush()
+    # Bob's dinner and the payback he got, in Alice's workspace.
+    dinner = await _row(session, test_superuser, test_account, test_workspace, "100", "debit", food.id)
+    payback = await _row(session, test_superuser, test_account, test_workspace, "60", "credit")
+    await reimbursement_service.replace_allocations(
+        session, dinner, [ReimbursementAllocationInput(counterpart_id=payback.id, amount=Decimal("60"))]
+    )
+    await session.commit()
+
+    summary = await dashboard_service.get_summary(session, test_workspace.id, test_user.id)
+
+    assert summary.monthly_expenses == pytest.approx(40.0)
+    assert summary.monthly_income == pytest.approx(0.0)
+
+
+@pytest.mark.asyncio
+async def test_a_pending_anchor_paid_back_in_excess_never_projects_a_negative_expense(
+    session, test_user, test_workspace, test_account
+):
+    from app.services._query_filters import forecast_owner_share_fractions
+
+    anchor = await _row(session, test_user, test_account, test_workspace, "100", "debit", status="pending")
+    payback = await _row(session, test_user, test_account, test_workspace, "150", "credit", status="pending")
+    await reimbursement_service.replace_allocations(
+        session, anchor, [ReimbursementAllocationInput(counterpart_id=payback.id, amount=Decimal("150"))]
+    )
+    await session.commit()
+
+    fractions = await forecast_owner_share_fractions(session, test_user.id, [anchor, payback])
+
+    assert fractions[anchor.id] == Decimal("0")
+    assert fractions[payback.id] == Decimal("0")

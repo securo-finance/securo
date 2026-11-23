@@ -2206,6 +2206,14 @@ async def get_balance_history(
                 if tx.is_ignored or (tx.category and tx.category.is_ignored):
                     continue
                 if tx.account and tx.account.connection_id and tx.status == "pending" and tx.date <= today:
+                    # The snapshot already holds the whole row. Netting still
+                    # takes the linked part of it out, or the anchor's share
+                    # (counted in the starting balance above) and the row
+                    # itself would both stay in.
+                    if tx.id in carried_shares:
+                        current_start += (carried_shares[tx.id] - 1.0) * await _signed_forecast_amount_primary(
+                            session, tx, primary_currency
+                        )
                     continue
                 current_start += carried_shares.get(tx.id, 1.0) * await _signed_forecast_amount_primary(
                     session, tx, primary_currency

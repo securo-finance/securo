@@ -388,11 +388,12 @@ async def get_budget_vs_actual(
         )
         .group_by(line_category_id())
     )
+    # Signed until the offsets are in: a category whose raw net is zero or
+    # negative (a payback booked in it) can still end up with spending once
+    # a reimbursement offset takes that credit out.
     spending_map: dict[str, Decimal] = {}
     for row in spending_result.all():
-        net = row[1] or Decimal("0")
-        if net > 0:
-            spending_map[str(row[0])] = net
+        spending_map[str(row[0])] = row[1] or Decimal("0")
 
     # Subtract non-owner shares of own splits — only the user's share counts.
     own_offset = await owner_split_offset_by_category(
@@ -406,10 +407,8 @@ async def get_budget_vs_actual(
         if cat_uuid is None:
             continue
         cat_id = str(cat_uuid)
-        if cat_id in spending_map:
-            spending_map[cat_id] -= Decimal(str(total))
-            if spending_map[cat_id] <= 0:
-                spending_map.pop(cat_id)
+        spending_map[cat_id] = spending_map.get(cat_id, Decimal("0")) - Decimal(str(total))
+    spending_map = {cat_id: net for cat_id, net in spending_map.items() if net > 0}
 
     # Layer in the user's share from group splits — concert tickets
     # paid by a friend are still the user's expense in the budget
@@ -506,9 +505,7 @@ async def get_budget_vs_actual(
     )
     prev_spending_map: dict[str, Decimal] = {}
     for row in prev_spending_result.all():
-        net = row[1] or Decimal("0")
-        if net > 0:
-            prev_spending_map[str(row[0])] = net
+        prev_spending_map[str(row[0])] = row[1] or Decimal("0")
 
     prev_own_offset = await owner_split_offset_by_category(
         session, user_id, prev_month_start, prev_month_end,
@@ -521,10 +518,8 @@ async def get_budget_vs_actual(
         if cat_uuid is None:
             continue
         cat_id = str(cat_uuid)
-        if cat_id in prev_spending_map:
-            prev_spending_map[cat_id] -= Decimal(str(total))
-            if prev_spending_map[cat_id] <= 0:
-                prev_spending_map.pop(cat_id)
+        prev_spending_map[cat_id] = prev_spending_map.get(cat_id, Decimal("0")) - Decimal(str(total))
+    prev_spending_map = {cat_id: net for cat_id, net in prev_spending_map.items() if net > 0}
 
     # Same shared-share layer for the previous month so the trend
     # comparison is apples-to-apples.
@@ -711,9 +706,7 @@ async def get_budget_suggestions(
     )
     total_by_cat: dict[str, Decimal] = {}
     for cat_uuid, net in spending_result.all():
-        net = net or Decimal("0")
-        if net != 0:
-            total_by_cat[str(cat_uuid)] = net
+        total_by_cat[str(cat_uuid)] = net or Decimal("0")
 
     # Net per category and day in SQL, rolled up to months in Python (SQLite
     # and Postgres do not share a portable month-truncation function). The
@@ -749,10 +742,11 @@ async def get_budget_suggestions(
         if cat_uuid is None:
             continue
         cat_id = str(cat_uuid)
-        if cat_id in total_by_cat:
-            total_by_cat[cat_id] -= Decimal(str(total))
-            if total_by_cat[cat_id] <= 0:
-                total_by_cat.pop(cat_id)
+        net = total_by_cat.get(cat_id, Decimal("0")) - Decimal(str(total))
+        if net <= 0:
+            total_by_cat.pop(cat_id, None)
+        else:
+            total_by_cat[cat_id] = net
 
     from app.services._query_filters import viewer_shared_spending_by_category
 
