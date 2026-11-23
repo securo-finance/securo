@@ -505,6 +505,34 @@ async def _usd_row(client: AsyncClient, couple: dict, amount: str, typed: str | 
     return row
 
 
+async def _brl_account_usd_row(
+    client: AsyncClient, couple: dict, amount: str, typed: str
+) -> dict:
+    """The same USD expense, but held in an account of Ana's own currency, so
+    the account leg has a figure of its own: the typed R$ 1.560 rather than a
+    conversion of the row's amount."""
+    _, day5, _ = _last_month()
+    ana = couple["ana"]
+    resp = await client.post(
+        "/api/accounts", headers=ana,
+        json={"name": "R440 Conta BRL", "type": "checking", "balance": 0, "currency": "BRL"},
+    )
+    assert resp.status_code in (200, 201), resp.text
+    resp = await client.post(
+        "/api/transactions",
+        headers=ana,
+        json={
+            "account_id": resp.json()["id"], "description": "R269 R440 typed",
+            "amount": amount, "currency": "USD", "date": day5.isoformat(),
+            "type": "debit", "amount_primary": typed,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    body = await _list(client, couple["bruno"], couple["month"], q="R440")
+    (row,) = body["items"]
+    return row
+
+
 def _dialog_save(row: dict, **changes) -> dict:
     """What the transaction dialog sends back: the fields it was shown."""
     return {
@@ -734,6 +762,33 @@ async def test_member_moving_only_the_date_keeps_the_owners_typed_stamp(
     assert (tx.amount_primary_typed, tx.amount_primary_typed_currency) == (
         Decimal("1560.00"), "BRL",
     )
+    assert Decimal(str(tx.fx_rate_used)) == Decimal("5.2")
+
+
+@pytest.mark.asyncio
+async def test_member_moving_only_the_date_keeps_the_typed_account_leg(
+    client, session, couple
+):
+    """#444, account leg: the account is held in BRL, so Ana's typed R$ 1.560
+    is what `amount_account` holds. Bruno moving only the date must keep it
+    there instead of leaving the day-15 conversion (R$ 1.200) written by the
+    restamp."""
+    _, _, day15 = _last_month()
+    row = await _brl_account_usd_row(client, couple, "300.00", "1560.00")
+    tx = await _stored(session, row["id"])
+    assert tx.amount_account == Decimal("1560.00")
+    assert tx.amount_account_source == "user"
+
+    resp = await client.patch(
+        f"/api/transactions/{row['id']}", headers=couple["bruno"],
+        json=_dialog_save(row, date=day15.isoformat()),
+    )
+    assert resp.status_code == 200, resp.text
+    tx = await _stored(session, row["id"])
+    assert tx.date == day15
+    assert tx.amount_primary == Decimal("1560.00")
+    assert tx.amount_account == Decimal("1560.00")
+    assert tx.amount_account_source == "user"
     assert Decimal(str(tx.fx_rate_used)) == Decimal("5.2")
 
 
