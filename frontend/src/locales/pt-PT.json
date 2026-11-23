@@ -898,8 +898,8 @@
     "ratesError": "Erro ao atualizar taxas de câmbio",
     "cashBalance": "Caixa",
     "investmentAccounts": "Contas de investimento",
-    "balanceNetting": "Valor líquido",
-    "balanceNettingHint": "Ligado: reembolsos e devoluções contam só a sua parte. Desligado: o saldo real das suas contas."
+    "balanceReimbursements": "Líquido de reembolsos",
+    "balanceReimbursementsHint": "Ligado: reembolsos e devoluções contam só a sua parte. Desligado: o saldo real das suas contas."
   },
   "transactions": {
     "title": "Transações",

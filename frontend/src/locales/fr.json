@@ -899,8 +899,8 @@
     "ratesError": "Échec de la mise à jour des taux de change",
     "cashBalance": "Liquidités",
     "investmentAccounts": "Comptes d'investissement",
-    "balanceNetting": "Net",
-    "balanceNettingHint": "Activé : les remboursements et retours ne comptent que pour votre part. Désactivé : le solde réel de vos comptes."
+    "balanceReimbursements": "Net des remboursements",
+    "balanceReimbursementsHint": "Activé : les remboursements et retours ne comptent que pour votre part. Désactivé : le solde réel de vos comptes."
   },
   "transactions": {
     "title": "Transactions",

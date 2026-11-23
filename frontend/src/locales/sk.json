@@ -910,8 +910,8 @@
     "ratesError": "Kurzy sa nepodarilo aktualizovať",
     "cashBalance": "Hotovosť",
     "investmentAccounts": "Investičné účty",
-    "balanceNetting": "Čisto",
-    "balanceNettingHint": "Zapnuté: náhrady a vratky sa počítajú len vo vašom podiele. Vypnuté: skutočný zostatok účtov."
+    "balanceReimbursements": "Po odpočítaní náhrad",
+    "balanceReimbursementsHint": "Zapnuté: náhrady a vratky sa počítajú len vo vašom podiele. Vypnuté: skutočný zostatok účtov."
   },
   "transactions": {
     "title": "Transakcie",

@@ -899,8 +899,8 @@
     "ratesError": "No se pudo actualizar los tipos FX",
     "cashBalance": "Efectivo",
     "investmentAccounts": "Cuentas de inversión",
-    "balanceNetting": "Neto",
-    "balanceNettingHint": "Activado: los reembolsos y devoluciones cuentan solo tu parte. Desactivado: el saldo real de tus cuentas."
+    "balanceReimbursements": "Neto de reembolsos",
+    "balanceReimbursementsHint": "Activado: los reembolsos y devoluciones cuentan solo tu parte. Desactivado: el saldo real de tus cuentas."
   },
   "transactions": {
     "title": "Transacciones",

@@ -898,8 +898,8 @@
     "refreshRates": "Atualizar taxas de câmbio",
     "ratesRefreshed": "Taxas de câmbio atualizadas",
     "ratesError": "Erro ao atualizar taxas de câmbio",
-    "balanceNetting": "Valor líquido",
-    "balanceNettingHint": "Ligado: reembolsos e estornos contam só a sua parte. Desligado: o saldo real das suas contas."
+    "balanceReimbursements": "Líquido de reembolsos",
+    "balanceReimbursementsHint": "Ligado: reembolsos e estornos contam só a sua parte. Desligado: o saldo real das suas contas."
   },
   "transactions": {
     "title": "Transações",

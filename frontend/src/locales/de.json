@@ -896,8 +896,8 @@
     "ratesError": "Fehler beim Aktualisieren der Wechselkurse",
     "cashBalance": "Liquide Mittel",
     "investmentAccounts": "Anlagekonten",
-    "balanceNetting": "Netto",
-    "balanceNettingHint": "An: Erstattungen und Rückerstattungen zählen nur mit deinem Anteil. Aus: der tatsächliche Kontostand."
+    "balanceReimbursements": "Erstattungen verrechnen",
+    "balanceReimbursementsHint": "An: Erstattungen und Rückerstattungen zählen nur mit deinem Anteil. Aus: der tatsächliche Kontostand."
   },
   "transactions": {
     "title": "Transaktionen",

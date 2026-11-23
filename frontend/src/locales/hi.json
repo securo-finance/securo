@@ -896,8 +896,8 @@
     "ratesError": "FX दरें अपडेट करने में विफल",
     "cashBalance": "नकद",
     "investmentAccounts": "निवेश खाते",
-    "balanceNetting": "शुद्ध",
-    "balanceNettingHint": "चालू: प्रतिपूर्ति और रिफ़ंड केवल आपके हिस्से के रूप में गिने जाते हैं। बंद: आपके खातों का वास्तविक शेष।"
+    "balanceReimbursements": "प्रतिपूर्ति घटाकर",
+    "balanceReimbursementsHint": "चालू: प्रतिपूर्ति और रिफ़ंड केवल आपके हिस्से के रूप में गिने जाते हैं। बंद: आपके खातों का वास्तविक शेष।"
   },
   "transactions": {
     "title": "लेन-देन",

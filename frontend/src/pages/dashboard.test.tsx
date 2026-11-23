@@ -499,7 +499,7 @@ describe('Dashboard balance netting switch', () => {
   it('starts netted and asks for the real balance when switched off', async () => {
     const { user } = renderDashboard()
 
-    const toggle = await screen.findByRole('switch', { name: t('dashboard.balanceNetting') })
+    const toggle = await screen.findByRole('switch', { name: t('dashboard.balanceReimbursements') })
     expect(toggle).toHaveAttribute('aria-checked', 'true')
     await waitFor(() => expect(lastHistoryCall()?.[3]).toBe(true))
 
@@ -515,7 +515,7 @@ describe('Dashboard balance netting switch', () => {
 
     await waitFor(() => expect(api.dashboard.balanceHistory).toHaveBeenCalled())
 
-    expect(screen.queryByRole('switch', { name: t('dashboard.balanceNetting') })).not.toBeInTheDocument()
+    expect(screen.queryByRole('switch', { name: t('dashboard.balanceReimbursements') })).not.toBeInTheDocument()
   })
 })
 

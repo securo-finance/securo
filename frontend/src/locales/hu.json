@@ -896,8 +896,8 @@
     "refreshRates": "Árfolyamok frissítése",
     "ratesRefreshed": "Árfolyamok frissítve",
     "ratesError": "Nem sikerült frissíteni az árfolyamokat",
-    "balanceNetting": "Nettó",
-    "balanceNettingHint": "Be: a visszatérítések és visszáruk csak a te részed erejéig számítanak. Ki: a számláid tényleges egyenlege."
+    "balanceReimbursements": "Visszatérítésekkel csökkentve",
+    "balanceReimbursementsHint": "Be: a visszatérítések és visszáruk csak a te részed erejéig számítanak. Ki: a számláid tényleges egyenlege."
   },
   "transactions": {
     "title": "Tranzakciók",

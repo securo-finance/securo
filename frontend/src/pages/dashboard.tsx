@@ -1329,14 +1329,14 @@ export default function DashboardPage() {
                     </PopoverContent>
                   </Popover>
                   {canNet && (
-                    <span className="inline-flex items-center gap-1.5" title={t('dashboard.balanceNettingHint')}>
-                      <span id="balance-netting-label" className="text-[11px] font-medium text-muted-foreground">
-                        {t('dashboard.balanceNetting')}
+                    <span className="inline-flex items-center gap-1.5" title={t('dashboard.balanceReimbursementsHint')}>
+                      <span id="balance-reimbursements-label" className="text-[11px] font-medium text-muted-foreground">
+                        {t('dashboard.balanceReimbursements')}
                       </span>
                       <Switch
                         checked={netting}
                         onCheckedChange={setNetting}
-                        aria-labelledby="balance-netting-label"
+                        aria-labelledby="balance-reimbursements-label"
                       />
                     </span>
                   )}

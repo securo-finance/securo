@@ -908,8 +908,8 @@
     "ratesError": "Nie udało się zaktualizować kursów FX",
     "cashBalance": "Gotówka",
     "investmentAccounts": "Konta inwestycyjne",
-    "balanceNetting": "Netto",
-    "balanceNettingHint": "Wł.: zwroty i refundacje liczą się tylko w twojej części. Wył.: rzeczywiste saldo kont."
+    "balanceReimbursements": "Netto po zwrotach",
+    "balanceReimbursementsHint": "Wł.: zwroty i refundacje liczą się tylko w twojej części. Wył.: rzeczywiste saldo kont."
   },
   "transactions": {
     "title": "Transakcje",
