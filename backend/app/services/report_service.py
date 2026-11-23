@@ -17,6 +17,7 @@ from app.models.asset import ASSET_PRICE_DECIMALS, Asset
 from app.models.transaction import Transaction
 from app.models.category import Category
 from app.models.user import User
+from app.services.viewer_currency import viewer_currency
 from app.services._query_filters import (
     _others_share_in_primary,
     _viewer_member_ids,
@@ -666,6 +667,7 @@ async def get_income_expenses_report(
     # Get user's primary currency + global reporting mode
     user = await session.get(User, user_id)
     primary_currency = user.primary_currency if user else get_settings().default_currency
+    viewer = await viewer_currency(session, primary_currency)
     accounting_mode = await get_credit_card_accounting_mode(session)
     report_date = reporting_date_col(accounting_mode)
 
@@ -674,7 +676,7 @@ async def get_income_expenses_report(
     # Use amount_primary when available, fall back to amount. Every query
     # summing it joins the category lines, so a split transaction counts part
     # by part (and its transfer-like parts drop out alone).
-    amount_expr = line_primary_or_amount()
+    amount_expr = line_primary_or_amount(viewer)
 
     result = await session.execute(
         with_category_lines(
@@ -875,8 +877,9 @@ async def get_income_expenses_report(
             pnl_ratio = user_pnl_ratio(tx)
             if not pnl_ratio:
                 continue
-            if tx.amount_primary is not None:
-                amount = abs(float(tx.amount_primary))
+            stamped = await viewer.convert(session, tx.user_id, tx.amount_primary, tx.date)
+            if stamped is not None:
+                amount = abs(float(stamped))
             else:
                 converted, _ = await fx_convert(
                     session, Decimal(str(abs(tx.amount))), tx.currency, primary_currency,
@@ -1312,8 +1315,9 @@ async def get_income_expenses_report(
             group = "income" if tx.type == "credit" else "expenses"
             tx_report_date = reporting_date_value(tx, accounting_mode)
             forecast_period_label = _format_date_label(tx_report_date, interval)
-            if tx.amount_primary is not None:
-                tx_amount = abs(float(tx.amount_primary))
+            stamped = await viewer.convert(session, tx.user_id, tx.amount_primary, tx.date)
+            if stamped is not None:
+                tx_amount = abs(float(stamped))
             else:
                 converted, _ = await fx_convert(
                     session, Decimal(str(abs(tx.amount))), tx.currency, primary_currency,

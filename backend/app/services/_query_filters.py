@@ -7,7 +7,7 @@ signal) only need to be made here.
 import uuid
 from datetime import date
 from decimal import Decimal
-from typing import Iterable, Optional
+from typing import TYPE_CHECKING, Iterable, Optional
 
 from sqlalchemy import and_, case, exists, func, literal_column, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +19,9 @@ from app.models.account import Account
 from app.models.category import Category
 from app.models.transaction import Transaction
 from app.models.transaction_category_line import TransactionCategoryLine
+
+if TYPE_CHECKING:
+    from app.services.viewer_currency import ViewerCurrency
 
 
 def is_confirmed():
@@ -201,24 +204,26 @@ def line_amount():
     )
 
 
-def line_amount_primary():
+def line_amount_primary(viewer: Optional["ViewerCurrency"] = None):
     """The joined part's `amount_primary` (NULL when the row has none).
 
     Multiplying before dividing keeps the result exact whenever the part's
     share is (150 * 100 / 150 is 100, where 150 * (100 / 150) carries a
     rounded ratio into every total). The `* 1.0` keeps SQLite from dividing
-    two integers.
+    two integers. With a `viewer`, the stamp is read in their currency, so
+    another member's row is converted instead of taken as theirs.
     """
+    primary = viewer.amount() if viewer is not None else Transaction.amount_primary
     return case(
-        (CATEGORY_LINE.id.is_(None), Transaction.amount_primary),
-        else_=(Transaction.amount_primary * CATEGORY_LINE.amount * literal_column("1.0"))
+        (CATEGORY_LINE.id.is_(None), primary),
+        else_=(primary * CATEGORY_LINE.amount * literal_column("1.0"))
         / func.nullif(func.abs(Transaction.amount), 0),
     )
 
 
-def line_primary_or_amount():
+def line_primary_or_amount(viewer: Optional["ViewerCurrency"] = None):
     """The joined part in primary currency, falling back to its own amount."""
-    return func.coalesce(line_amount_primary(), line_amount())
+    return func.coalesce(line_amount_primary(viewer), line_amount())
 
 
 def line_amount_account():

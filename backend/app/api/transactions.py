@@ -1,6 +1,7 @@
 import csv
 import io
 import uuid
+from decimal import Decimal
 from datetime import date
 from typing import List, Literal, Optional
 
@@ -28,6 +29,7 @@ from app.services.csv_safety import csv_safe as _csv_safe
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.transaction_calendar_service import get_transaction_calendar
 from app.services._query_filters import reporting_date_value
+from app.services.viewer_currency import viewer_currency
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
@@ -127,6 +129,38 @@ def _tag_fx_fallback(tx: TransactionRead, primary_currency: str) -> TransactionR
     ):
         tx.fx_fallback = True
     return tx
+
+
+async def _in_viewer_currency(
+    session: AsyncSession, primary_currency: str, items: list[TransactionRead]
+) -> list[TransactionRead]:
+    """Show each row's stamp in the viewer's currency (#269).
+
+    `amount_primary` is in the display currency of the row's owner; a row
+    another member of a shared workspace created can be stamped in theirs.
+    Those are converted at the row's date, with the rates and rounding the
+    list footer and the dashboard use, so the rows add up to the totals.
+    Only the response objects change; the stored stamp stays the owner's.
+    """
+    viewer = await viewer_currency(session, primary_currency)
+    if not viewer.foreign_owners:
+        return items
+    for item in items:
+        if viewer.stamp_currency(item.user_id) == viewer.currency:
+            continue
+        ratio = await viewer.ratio(session, item.user_id, item.date)
+        converted = await viewer.convert(session, item.user_id, item.amount_primary, item.date)
+        item.amount_primary = float(converted) if converted is not None else None
+        item.matched_amount_primary = await viewer.convert(
+            session, item.user_id, item.matched_amount_primary, item.date
+        )
+        if item.amount_primary is not None and item.amount:
+            item.fx_rate_used = float(
+                abs(Decimal(str(item.amount_primary)) / Decimal(str(item.amount)))
+            )
+        elif item.fx_rate_used is not None:
+            item.fx_rate_used = float(Decimal(str(item.fx_rate_used)) * ratio)
+    return items
 
 
 class TransactionsSummary(BaseModel):
@@ -232,7 +266,12 @@ async def list_transactions(
         primary_currency=ctx.user.primary_currency,
     )
     primary_currency = ctx.user.primary_currency
-    items = [_tag_fx_fallback(TransactionRead.model_validate(tx, from_attributes=True), primary_currency) for tx in transactions]
+    items = await _in_viewer_currency(
+        session,
+        primary_currency,
+        [TransactionRead.model_validate(tx, from_attributes=True) for tx in transactions],
+    )
+    items = [_tag_fx_fallback(item, primary_currency) for item in items]
     await _attach_invoice_links(session, ctx, items)
     await _attach_transfer_counterparts(session, ctx.workspace.id, items)
     summary_out = (

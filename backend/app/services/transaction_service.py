@@ -57,6 +57,7 @@ from app.services.fx_rate_service import (
     stamp_account_amount,
     stamp_primary_amount,
 )
+from app.services.viewer_currency import viewer_currency
 from app.services._query_filters import (
     CATEGORY_LINE,
     any_line_in,
@@ -574,6 +575,12 @@ async def get_transactions(
     # rows). Computed before pagination so it covers the whole result set.
     summary: Optional[dict] = None
     if include_summary:
+        if primary_currency is None:
+            from app.models.user import User
+
+            viewer_user = await session.get(User, user_id)
+            primary_currency = viewer_user.primary_currency if viewer_user else None
+        viewer = await viewer_currency(session, primary_currency)
         # Income / expense / net use the shared `counts_as_pnl` definition
         # (issue #242) so the footer matches the dashboard & reports: paired
         # transfers, `treat_as_transfer` categories (transfers, investments,
@@ -650,7 +657,7 @@ async def get_transactions(
             select(
                 Transaction.type,
                 pnl_filter.label("counts"),
-                (func.abs(line_primary_or_amount()) * viewer_share_fraction).label("amount"),
+                (func.abs(line_primary_or_amount(viewer)) * viewer_share_fraction).label("amount"),
             ).select_from(Transaction)
         ).where(Transaction.id.in_(select(base_query.subquery().c.id)))
         if filter_category_ids:
