@@ -881,6 +881,8 @@
     "uncategorizedCta": "{{count}} लेन-देन को वर्गीकृत करना है",
     "uncategorizedTotal": "कुल {{amount}}",
     "categorizeNow": "अभी वर्गीकृत करें",
+    "drillDownQuickCategorize": "श्रेणी चुनें",
+    "drillDownOpenTransaction": "लेन-देन खोलें",
     "allCategorized": "सब हो गया!",
     "allCategorizedDesc": "सभी लेन-देन वर्गीकृत हैं",
     "assetsValue": "निवेशित संपत्तियाँ",
@@ -914,6 +916,7 @@
     "monthNext": "अगला महीना",
     "description": "विवरण",
     "originalDescription": "मूल विवरण",
+    "providerCategory": "बैंक श्रेणी",
     "restoreOriginalDescription": "मूल पुनर्स्थापित करें",
     "amount": "राशि",
     "status": "स्थिति",
@@ -939,6 +942,7 @@
     "addedToExistingRule": "नियम अपडेट हुआ। भविष्य के मिलान इस श्रेणी का उपयोग करेंगे।",
     "duplicateRuleCondition": "उस नियम में यह मिलान पहले से शामिल है।",
     "saveAndNew": "सहेजें और नया",
+    "saveAndNext": "सहेजें और अगला",
     "saveAndDuplicate": "सहेजें और कॉपी बनाएँ",
     "moreSaveOptions": "और सहेजने के विकल्प",
     "created": "लेन-देन बना",
@@ -1003,6 +1007,15 @@
     "unflagAction": "चिह्न हटाएँ",
     "flagSuccess": "लेन-देन चिह्नित किया गया",
     "unflagSuccess": "चिह्न हटा दिया गया",
+    "paid": "भुगतान हो गया",
+    "unpaid": "भुगतान बाकी",
+    "onlyUnpaid": "केवल भुगतान बाकी",
+    "markPaid": "भुगतान हुआ के रूप में चिह्नित करें",
+    "markUnpaid": "भुगतान बाकी के रूप में चिह्नित करें",
+    "markPaidHint": "पैसा खाते से जा चुका है या उसमें आ चुका है",
+    "markUnpaidHint": "इस पंक्ति को अभी भुगतान या प्राप्ति बाकी के रूप में चिह्नित करें",
+    "paidSuccess": "भुगतान हुआ के रूप में चिह्नित",
+    "unpaidSuccess": "भुगतान बाकी के रूप में चिह्नित",
     "flagFilterAll": "सभी चिह्नित",
     "flagFilterOverdue": "समय निकल गया",
     "flagFilterSoon": "इस सप्ताह",
@@ -1023,11 +1036,33 @@
       "nextWeek": "एक सप्ताह में",
       "nextMonth": "एक महीने में"
     },
+    "newBadge": "नया",
+    "newBadgeTooltip": "सिंक या इम्पोर्ट से आया और अभी तक खोला नहीं गया",
+    "onlyUnread": "केवल नए लेन-देन",
+    "onlyUnreadShort": "केवल नए",
+    "unreadRows": "नए लेन-देन",
+    "unreadCount_one": "{{count}} लेन-देन समीक्षा के लिए",
+    "unreadCount_other": "{{count}} लेन-देन समीक्षा के लिए",
+    "unreadCount_zero": "समीक्षा के लिए कुछ नहीं",
+    "markAllRead": "इस वर्कस्पेस में सभी को पढ़ा हुआ चिह्नित करें ({{count}})",
+    "unreadOutsideFilters": "इन फ़िल्टरों के बाहर: {{count}}",
+    "markAllReadPending": "पढ़ा हुआ चिह्नित कर रहे हैं",
+    "markAllReadDone": "सभी लेन-देन पढ़े हुए चिह्नित कर दिए गए",
     "statusCleared": "क्लियर",
     "sortAsc": "बढ़ते क्रम में लगाएँ",
     "sortDesc": "घटते क्रम में लगाएँ",
     "syncedInfo": "बैंक-सिंक किया गया लेन-देन: राशि, तिथि और खाता संपादित नहीं किए जा सकते",
     "syncedAmountDateError": "सिंक किए गए लेन-देन की राशि या तिथि नहीं बदली जा सकती",
+    "amountErrors": {
+      "notPositive": "राशि शून्य से अधिक होनी चाहिए।",
+      "tooSmall": "राशि कम से कम 0.01 होनी चाहिए।",
+      "tooLarge": "राशि Securo द्वारा सहेजी जा सकने वाली सीमा से बड़ी है।",
+      "convertedNegative": "परिवर्तित राशि ऋणात्मक नहीं हो सकती।",
+      "convertedTooLarge": "परिवर्तित राशि Securo द्वारा सहेजी जा सकने वाली सीमा से बड़ी है।",
+      "rateNotPositive": "विनिमय दर ऋणात्मक नहीं हो सकती। शून्य दर केवल तब स्वीकार की जाती है जब परिवर्तित राशि शून्य तक पूर्णांकित हो।",
+      "rateTooLarge": "विनिमय दर Securo द्वारा सहेजी जा सकने वाली सीमा से बड़ी है।",
+      "required": "राशि दर्ज करें।"
+    },
     "uncategorized": "अवर्गीकृत",
     "selected": "चयनित",
     "summaryCount": "{{count}} लेन-देन",
@@ -1182,8 +1217,8 @@
     "calendarAccountCount": "{{count}} खाते",
     "calendarAllAccounts": "सभी खाते",
     "calendarEndBalance": "अंतिम शेष",
-    "calendarItemCount": "{{count}} आइटम",
-    "calendarItemCount_plural": "{{count}} आइटम",
+    "calendarItemCount_one": "{{count}} आइटम",
+    "calendarItemCount_other": "{{count}} आइटम",
     "calendarProjectedCount": "{{count}} अनुमानित",
     "calendarProjected": "अनुमानित",
     "projected": "अनुमानित",
@@ -1524,6 +1559,9 @@
     "saved": "बजट सहेजे गए",
     "budgetFor": "{{category}} के लिए बजट",
     "invalidAmount": "शून्य या उससे अधिक की मान्य राशि दर्ज करें।",
+    "amountTooSmall": "बजट सीमा कम से कम 0.01 होनी चाहिए।",
+    "amountTooLarge": "बजट सीमा बहुत बड़ी है।",
+    "amountNegative": "बजट की सीमा ऋणात्मक नहीं हो सकती।",
     "repeatEveryMonthFor": "{{category}} बजट हर महीने दोहराएँ",
     "previousMonth": "पिछला महीना",
     "nextMonth": "अगला महीना",
@@ -1551,6 +1589,8 @@
     "copyPreviewCount": "कॉपी करने के लिए कैटेगरी: {{count}}",
     "copyPreviewTotal": "कॉपी करने योग्य कुल: {{amount}}",
     "copyPreviewEmpty": "चुने गए महीने में कॉपी करने के लिए कोई बजट नहीं है।",
+    "copyPreviewAllExist": "स्रोत महीने की सभी श्रेणियों का {{month}} में पहले से बजट है। राशियाँ कॉपी करने या समायोजन लागू करने के लिए बदलें चुनें।",
+    "copyPreviewNoChange": "स्रोत महीने के सभी बजट {{month}} में पहले से इन राशियों पर हैं।",
     "copyPreviewError": "स्रोत महीना लोड नहीं हो सका।",
     "copyAmountTooLarge": "समायोजित राशि बजट सीमा से अधिक है। प्रतिशत समायोजन कम करें।",
     "copyConfirm": "बजट कॉपी करें",
@@ -1619,6 +1659,8 @@
   },
   "recurring": {
     "makeFromTransaction": "इस लेन-देन से नई आवर्ती",
+    "duplicate": "इसी विवरण, आवृत्ति और आरंभ तिथि वाली आवर्ती प्रविष्टि पहले से मौजूद है",
+    "alreadyLinked": "यह लेन-देन पहले से एक आवर्ती प्रविष्टि से जुड़ा है",
     "title": "आवर्ती लेन-देन",
     "add": "आवर्ती जोड़ें",
     "edit": "आवर्ती संपादित करें",
@@ -1681,10 +1723,13 @@
   "rules": {
     "searchPlaceholder": "नियम खोजें...",
     "filterAllCategories": "सभी श्रेणियाँ",
+    "filterByCategory": "श्रेणी के अनुसार फ़िल्टर करें",
     "filterAllStatuses": "सभी स्थितियाँ",
+    "filterByStatus": "स्थिति के अनुसार फ़िल्टर करें",
     "filterActiveOnly": "केवल सक्रिय",
     "filterInactiveOnly": "केवल निष्क्रिय",
     "filterAllActions": "सभी कार्रवाइयाँ",
+    "filterByAction": "क्रिया के अनुसार फ़िल्टर करें",
     "noFilterResults": "इन फ़िल्टरों से कोई नियम मेल नहीं खाता",
     "preview": "पूर्वावलोकन",
     "previewMatched": "{{matched}} मिलान",
@@ -1778,6 +1823,7 @@
     "fieldDate": "तिथि",
     "fieldStatus": "स्थिति",
     "fieldProviderCategory": "प्रदाता श्रेणी",
+    "providerCategoryHint": "बैंक का अपना लेबल, उसकी भाषा में (जैसे “Groceries”)। वह चुनें जो वर्कस्पेस को पहले ही मिल चुका है।",
     "opContains": "शामिल है",
     "opNotContains": "शामिल नहीं है",
     "opEquals": "बराबर है",
@@ -2111,9 +2157,10 @@
     "summaryHoldings": "{{created}} होल्डिंग्स बनीं, {{matched}} मिलान हुईं",
     "summarySkipped": "{{count}} पहले से इंपोर्ट",
     "rowsSkipped": "{{count}} पंक्तियाँ छोड़ी जाएँगी",
+    "reasonColumn": "कारण",
     "rowError": "पंक्ति {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "और {{count}} और",
-    "moreRows": "और {{count}} और ऑर्डर",
+    "showAllRows": "सभी {{count}} पंक्तियाँ दिखाएँ",
     "field": {
       "ticker": "टिकर",
       "date": "तिथि",
@@ -2233,9 +2280,15 @@
     "lastUpdated": "अपडेट हुआ {{when}}",
     "refreshPrice": "मूल्य रीफ़्रेश करें",
     "refreshAllPrices": "कीमतें रीफ़्रेश करें",
-    "refreshAllPricesDone": "{{refreshed}} कीमतें अपडेट हुईं, {{skipped}} बिना नई कीमत",
+    "refreshAllPricesDone": "{{updated}}, {{skipped}}",
+    "refreshAllPricesUpdated_one": "{{count}} कीमत अपडेट हुई",
+    "refreshAllPricesUpdated_other": "{{count}} कीमतें अपडेट हुईं",
+    "refreshAllPricesNoQuote_one": "{{count}} बिना नई कीमत",
+    "refreshAllPricesNoQuote_other": "{{count}} बिना नई कीमत",
+    "refreshAllPricesLeftOut_one": "{{count}} छोड़ी गई",
+    "refreshAllPricesLeftOut_other": "{{count}} छोड़ी गईं",
     "refreshAllPricesNone": "रीफ़्रेश करने के लिए कोई बाज़ार-मूल्य संपत्ति नहीं",
-    "refreshAllPricesRateLimited": "मार्केट डेटा प्रदाता अभी अनुरोध सीमित कर रहा है। रुकने से पहले {{refreshed}} कीमतें अपडेट हुईं और {{skipped}} छोड़ दी गईं। एक मिनट बाद फिर कोशिश करें।",
+    "refreshAllPricesRateLimited": "मार्केट डेटा प्रदाता अभी अनुरोध सीमित कर रहा है। रुकने से पहले: {{updated}}, {{skipped}}। एक मिनट बाद फिर कोशिश करें।",
     "priceRefreshed": "मूल्य रीफ़्रेश हुआ",
     "purchaseDate": "खरीद तिथि",
     "purchasePrice": "खरीद मूल्य",
@@ -2416,7 +2469,41 @@
     "statementViewTransactions": "लेन-देन देखें",
     "statementUncategorizedIncome": "बिना श्रेणी की आय",
     "statementUncategorizedExpense": "बिना श्रेणी के खर्च",
-    "statementToggleGroup": "{{name}} की श्रेणियाँ दिखाएँ"
+    "statementToggleGroup": "{{name}} की श्रेणियाँ दिखाएँ",
+    "pluginReport": {
+      "total": {
+        "expenses": "कुल खर्च",
+        "income": "कुल प्राप्त",
+        "net": "शुद्ध"
+      },
+      "none": {
+        "category": "बिना श्रेणी",
+        "category_group": "बिना समूह",
+        "payee": "बिना प्राप्तकर्ता",
+        "account": "बिना खाता",
+        "month": "बिना तारीख"
+      },
+      "groupBy": {
+        "category": "श्रेणी",
+        "category_group": "समूह",
+        "payee": "प्राप्तकर्ता",
+        "account": "खाता",
+        "month": "महीना"
+      },
+      "measure": {
+        "expenses": "खर्च",
+        "income": "आय",
+        "net": "शुद्ध"
+      },
+      "share": "हिस्सा",
+      "computed": "प्लगइन द्वारा गणना",
+      "periodTrimmed": "प्लगइन रिपोर्ट अधिकतम दो वर्ष कवर करती हैं। {{from}} से {{to}} दिखाया जा रहा है।",
+      "periodTooLong": "प्लगइन रिपोर्ट अधिकतम दो वर्ष कवर करती है। छोटी अवधि चुनें।",
+      "totalRow": "कुल",
+      "page": "पृष्ठ {{page}} / {{pages}}",
+      "previousPage": "पिछला पृष्ठ",
+      "nextPage": "अगला पृष्ठ"
+    }
   },
   "payees": {
     "noPayeeFound": "कोई प्राप्तकर्ता नहीं मिला।",
@@ -3545,7 +3632,8 @@
       "undoFirstGroupSplit": "लोगों के बीच बाँटने से पहले बँटवारा हटाएँ।",
       "undoFirstMortgage": "होम लोन का विवरण जोड़ने से पहले बँटवारा हटाएँ।",
       "categoryInUse": "इस श्रेणी में बँटे हुए लेन-देन के हिस्से हैं। पहले उन बँटवारों को बदलें।",
-      "destinationInvalid": "बँटे हुए लेन-देन के हिस्से अनदेखी या छिपी श्रेणी में नहीं जा सकते।"
+      "destinationInvalid": "बँटे हुए लेन-देन के हिस्से अनदेखी या छिपी श्रेणी में नहीं जा सकते।",
+      "mergeNeedsRate": "ये बजट अलग-अलग मुद्राओं में हैं और इन्हें मिलाने के लिए उनके महीने की कोई विनिमय दर नहीं है।"
     }
   },
   "plugins": {
@@ -3962,5 +4050,9 @@
       "title": "आवर्ती आय",
       "hint": "आवर्ती इनवॉइस हर महीने कितना लाते हैं, और हाल में क्या खोया।"
     }
+  },
+  "offline": {
+    "title": "सर्वर से संपर्क नहीं हो रहा",
+    "description": "आप ऑफ़लाइन हैं या Securo फिर से शुरू हो रहा है। आपका डेटा सुरक्षित है और कुछ नहीं बदला गया। सर्वर के जवाब देते ही हम अपने आप फिर से जुड़ जाएँगे।"
   }
 }

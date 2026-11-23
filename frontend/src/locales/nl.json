@@ -881,6 +881,8 @@
     "uncategorizedCta": "{{count}} transacties moeten worden gecategoriseerd",
     "uncategorizedTotal": "{{amount}} in totaal",
     "categorizeNow": "Categoriseer nu",
+    "drillDownQuickCategorize": "Kies een categorie",
+    "drillDownOpenTransaction": "Transactie openen",
     "allCategorized": "Alles in orde!",
     "allCategorizedDesc": "Alle transacties zijn gecategoriseerd",
     "assetsValue": "Geïnvesteerde activa",
@@ -914,6 +916,7 @@
     "monthNext": "Volgende maand",
     "description": "Beschrijving",
     "originalDescription": "Originele beschrijving",
+    "providerCategory": "Bankcategorie",
     "restoreOriginalDescription": "Origineel herstellen",
     "amount": "Bedrag",
     "status": "Status",
@@ -939,6 +942,7 @@
     "addedToExistingRule": "Regel bijgewerkt. Toekomstige wedstrijden zullen deze categorie gebruiken.",
     "duplicateRuleCondition": "Die regel omvat deze wedstrijd al.",
     "saveAndNew": "Opslaan & Nieuw",
+    "saveAndNext": "Opslaan en volgende",
     "saveAndDuplicate": "Opslaan en dupliceren",
     "moreSaveOptions": "Meer opslagopties",
     "created": "Transactie aangemaakt",
@@ -1003,6 +1007,15 @@
     "unflagAction": "Markering verwijderen",
     "flagSuccess": "Transactie gemarkeerd",
     "unflagSuccess": "Markering verwijderd",
+    "paid": "Betaald",
+    "unpaid": "Onbetaald",
+    "onlyUnpaid": "Alleen onbetaald",
+    "markPaid": "Als betaald markeren",
+    "markUnpaid": "Als onbetaald markeren",
+    "markPaidHint": "Het geld heeft de rekening al verlaten of is erop bijgeschreven",
+    "markUnpaidHint": "Deze rij markeren als nog te betalen of te ontvangen",
+    "paidSuccess": "Gemarkeerd als betaald",
+    "unpaidSuccess": "Gemarkeerd als onbetaald",
     "flagFilterAll": "Alle gemarkeerd",
     "flagFilterOverdue": "Verlopen",
     "flagFilterSoon": "Deze week",
@@ -1023,11 +1036,33 @@
       "nextWeek": "Over een week",
       "nextMonth": "Over een maand"
     },
+    "newBadge": "Nieuw",
+    "newBadgeTooltip": "Binnengekomen via synchronisatie of import en nog niet geopend",
+    "onlyUnread": "Alleen nieuwe transacties",
+    "onlyUnreadShort": "Alleen nieuw",
+    "unreadRows": "Nieuwe transacties",
+    "unreadCount_one": "{{count}} transactie om te controleren",
+    "unreadCount_other": "{{count}} transacties om te controleren",
+    "unreadCount_zero": "Niets om te controleren",
+    "markAllRead": "Alles als gelezen markeren in deze workspace ({{count}})",
+    "unreadOutsideFilters": "Buiten deze filters: {{count}}",
+    "markAllReadPending": "Wordt als gelezen gemarkeerd",
+    "markAllReadDone": "Alle transacties zijn als gelezen gemarkeerd",
     "statusCleared": "Gewist",
     "sortAsc": "Sorteer oplopend",
     "sortDesc": "Sorteer aflopend",
     "syncedInfo": "Bankgesynchroniseerde transactie: bedrag, datum en rekening kunnen niet worden bewerkt",
     "syncedAmountDateError": "Het bedrag of de datum van een gesynchroniseerde transactie kan niet worden gewijzigd",
+    "amountErrors": {
+      "notPositive": "Het bedrag moet groter dan nul zijn.",
+      "tooSmall": "Het bedrag moet minstens 0,01 zijn.",
+      "tooLarge": "Het bedrag is groter dan Securo kan opslaan.",
+      "convertedNegative": "Het omgerekende bedrag kan niet negatief zijn.",
+      "convertedTooLarge": "Het omgerekende bedrag is groter dan Securo kan opslaan.",
+      "rateNotPositive": "De wisselkoers mag niet negatief zijn. Een koers van nul wordt alleen geaccepteerd als het omgerekende bedrag op nul afrondt.",
+      "rateTooLarge": "De wisselkoers is groter dan Securo kan opslaan.",
+      "required": "Voer een bedrag in."
+    },
     "uncategorized": "Niet gecategoriseerd",
     "selected": "geselecteerd",
     "summaryCount": "{{count}} transacties",
@@ -1182,8 +1217,8 @@
     "calendarAccountCount": "{{count}} accounts",
     "calendarAllAccounts": "Alle rekeningen",
     "calendarEndBalance": "Eindsaldo",
-    "calendarItemCount": "{{count}} artikel",
-    "calendarItemCount_plural": "{{count}} artikelen",
+    "calendarItemCount_one": "{{count}} artikel",
+    "calendarItemCount_other": "{{count}} artikelen",
     "calendarProjectedCount": "{{count}} geprojecteerd",
     "calendarProjected": "Geprojecteerd",
     "projected": "Geprojecteerd",
@@ -1526,6 +1561,9 @@
     "saved": "Budgetten opgeslagen",
     "budgetFor": "Budget voor {{category}}",
     "invalidAmount": "Vul een geldig bedrag van nul of meer in.",
+    "amountTooSmall": "De budgetlimiet moet minstens 0,01 zijn.",
+    "amountTooLarge": "De budgetlimiet is te groot.",
+    "amountNegative": "De budgetlimiet kan niet negatief zijn.",
     "repeatEveryMonthFor": "Budget voor {{category}} elke maand herhalen",
     "previousMonth": "Vorige maand",
     "nextMonth": "Volgende maand",
@@ -1553,6 +1591,8 @@
     "copyPreviewCount": "Te kopiëren categorieën: {{count}}",
     "copyPreviewTotal": "Te kopiëren totaal: {{amount}}",
     "copyPreviewEmpty": "De gekozen maand heeft geen budgetten om te kopiëren.",
+    "copyPreviewAllExist": "Alle categorieën van de bronmaand hebben al een budget in {{month}}. Kies vervangen om de bedragen te kopiëren of de aanpassing toe te passen.",
+    "copyPreviewNoChange": "Alle budgetten van de bronmaand staan in {{month}} al op deze bedragen.",
     "copyPreviewError": "De bronmaand kon niet worden geladen.",
     "copyAmountTooLarge": "Het aangepaste bedrag overschrijdt de budgetlimiet. Verlaag de procentuele aanpassing.",
     "copyConfirm": "Budgetten kopiëren",
@@ -1621,6 +1661,8 @@
   },
   "recurring": {
     "makeFromTransaction": "Nieuwe terugkerende transactie van deze transactie",
+    "duplicate": "Er bestaat al een terugkerende transactie met dezelfde omschrijving, frequentie en startdatum",
+    "alreadyLinked": "Deze transactie hoort al bij een terugkerende transactie",
     "title": "Terugkerende transacties",
     "add": "Terugkerend toevoegen",
     "edit": "Bewerken Terugkerend",
@@ -1683,10 +1725,13 @@
   "rules": {
     "searchPlaceholder": "Regels zoeken...",
     "filterAllCategories": "Alle categorieën",
+    "filterByCategory": "Filteren op categorie",
     "filterAllStatuses": "Alle statussen",
+    "filterByStatus": "Filteren op status",
     "filterActiveOnly": "Alleen actief",
     "filterInactiveOnly": "Alleen inactief",
     "filterAllActions": "Alle acties",
+    "filterByAction": "Filteren op actie",
     "noFilterResults": "Geen regel voldoet aan deze filters",
     "preview": "Voorbeeld",
     "previewMatched": "{{matched}} overeenkomsten",
@@ -1783,6 +1828,7 @@
     "fieldDate": "Datum",
     "fieldStatus": "Status",
     "fieldProviderCategory": "Categorie van de provider",
+    "providerCategoryHint": "Het label van de bank zelf, in zijn taal (bijvoorbeeld “Groceries”). Kies er een die de werkruimte al heeft ontvangen.",
     "opContains": "bevat",
     "opNotContains": "bevat niet",
     "opEquals": "gelijk aan",
@@ -2113,9 +2159,10 @@
     "summaryHoldings": "{{created}} holdings gemaakt, {{matched}} gematcht",
     "summarySkipped": "{{count}} is al geïmporteerd",
     "rowsSkipped": "{{count}} rijen worden overgeslagen",
+    "reasonColumn": "Reden",
     "rowError": "Rij {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "en {{count}} meer",
-    "moreRows": "en {{count}} meer bestellingen",
+    "showAllRows": "Alle {{count}} rijen tonen",
     "field": {
       "ticker": "Tikker",
       "date": "Datum",
@@ -2235,9 +2282,15 @@
     "lastUpdated": "{{when}} bijgewerkt",
     "refreshPrice": "Prijs vernieuwen",
     "refreshAllPrices": "Prijzen vernieuwen",
-    "refreshAllPricesDone": "{{refreshed}} prijzen bijgewerkt, {{skipped}} zonder nieuwe koers",
+    "refreshAllPricesDone": "{{updated}}, {{skipped}}",
+    "refreshAllPricesUpdated_one": "{{count}} prijs bijgewerkt",
+    "refreshAllPricesUpdated_other": "{{count}} prijzen bijgewerkt",
+    "refreshAllPricesNoQuote_one": "{{count}} zonder nieuwe koers",
+    "refreshAllPricesNoQuote_other": "{{count}} zonder nieuwe koers",
+    "refreshAllPricesLeftOut_one": "{{count}} overgeslagen",
+    "refreshAllPricesLeftOut_other": "{{count}} overgeslagen",
     "refreshAllPricesNone": "Geen activa met marktprijs om bij te werken",
-    "refreshAllPricesRateLimited": "De marktdata-aanbieder beperkt het aantal aanvragen. {{refreshed}} prijzen zijn bijgewerkt en {{skipped}} overgeslagen voordat dit begon; probeer het over een minuut opnieuw.",
+    "refreshAllPricesRateLimited": "De marktdata-aanbieder beperkt het aantal aanvragen. Voordat dit begon: {{updated}}, {{skipped}}. Probeer het over een minuut opnieuw.",
     "priceRefreshed": "Prijs vernieuwd",
     "purchaseDate": "Aankoopdatum",
     "purchasePrice": "Aankoopprijs",
@@ -2418,7 +2471,41 @@
     "statementViewTransactions": "Transacties bekijken",
     "statementUncategorizedIncome": "Inkomsten zonder categorie",
     "statementUncategorizedExpense": "Uitgaven zonder categorie",
-    "statementToggleGroup": "Categorieën van {{name}} tonen"
+    "statementToggleGroup": "Categorieën van {{name}} tonen",
+    "pluginReport": {
+      "total": {
+        "expenses": "Totaal uitgegeven",
+        "income": "Totaal ontvangen",
+        "net": "Saldo"
+      },
+      "none": {
+        "category": "Zonder categorie",
+        "category_group": "Zonder groep",
+        "payee": "Zonder begunstigde",
+        "account": "Zonder rekening",
+        "month": "Zonder datum"
+      },
+      "groupBy": {
+        "category": "Categorie",
+        "category_group": "Groep",
+        "payee": "Begunstigde",
+        "account": "Rekening",
+        "month": "Maand"
+      },
+      "measure": {
+        "expenses": "Uitgaven",
+        "income": "Inkomsten",
+        "net": "Saldo"
+      },
+      "share": "Aandeel",
+      "computed": "Berekend door de plugin",
+      "periodTrimmed": "Plugin-rapporten beslaan maximaal twee jaar. Getoond: {{from}} tot {{to}}.",
+      "periodTooLong": "Een plugin-rapport beslaat maximaal twee jaar. Kies een kortere periode.",
+      "totalRow": "Totaal",
+      "page": "Pagina {{page}} van {{pages}}",
+      "previousPage": "Vorige pagina",
+      "nextPage": "Volgende pagina"
+    }
   },
   "payees": {
     "noPayeeFound": "Geen begunstigde gevonden.",
@@ -3547,7 +3634,8 @@
       "undoFirstGroupSplit": "Maak de verdeling ongedaan voordat je tussen personen verdeelt.",
       "undoFirstMortgage": "Maak de verdeling ongedaan voordat je de hypotheek uitsplitst.",
       "categoryInUse": "Deze categorie bevat delen van verdeelde transacties. Pas die verdelingen eerst aan.",
-      "destinationInvalid": "Delen van verdeelde transacties kunnen niet naar een genegeerde of verborgen categorie."
+      "destinationInvalid": "Delen van verdeelde transacties kunnen niet naar een genegeerde of verborgen categorie.",
+      "mergeNeedsRate": "Deze budgetten staan in verschillende valuta en er is geen wisselkoers voor hun maand om ze samen te voegen."
     }
   },
   "plugins": {
@@ -3964,5 +4052,9 @@
       "title": "Terugkerende omzet",
       "hint": "Wat terugkerende facturen per maand opleveren, en wat onlangs verloren ging."
     }
+  },
+  "offline": {
+    "title": "Server niet bereikbaar",
+    "description": "Je bent offline of Securo start opnieuw op. Je gegevens zijn veilig en er is niets gewijzigd. We maken automatisch opnieuw verbinding zodra de server antwoordt."
   }
 }

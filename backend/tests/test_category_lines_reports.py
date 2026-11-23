@@ -14,8 +14,10 @@ again:
 `test_category_lines_reports_postgres.py` runs the same tests on PostgreSQL.
 """
 
+import itertools
+import random
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -25,8 +27,11 @@ from httpx import AsyncClient
 import mcp_server.tools  # noqa: F401 -- registers the MCP handlers
 from app.core.app_clock import app_today
 from app.models.category import Category
+from app.models.transaction import Transaction
+from app.services.report_service import _without_mirrored_legs
 from mcp_server.auth import CallContext
 from mcp_server.registry import REGISTRY
+from tests.conftest import sqlite_to_char
 
 pytestmark = pytest.mark.asyncio
 
@@ -34,16 +39,15 @@ CURRENCY = "BRL"  # the test user's primary currency
 
 
 async def _install_sqlite_to_char(session) -> None:
-    """`to_char(date, 'YYYY-MM')` for the monthly trend; PostgreSQL has it."""
+    """`to_char(date, fmt)` for the monthly trend; PostgreSQL has it."""
     if session.bind.dialect.name != "sqlite":
         return
 
-    def to_char(value, fmt):
-        return None if value is None else str(value)[:7]
-
     connection = await session.connection()
     await connection.run_sync(
-        lambda conn: conn.connection.dbapi_connection.create_function("to_char", 2, to_char)
+        lambda conn: conn.connection.dbapi_connection.create_function(
+            "to_char", 2, sqlite_to_char
+        )
     )
 
 
@@ -428,6 +432,257 @@ async def test_an_investment_withdrawal_is_a_source_in_the_money_map(scene):
     assert after["report"] == before["report"]
     assert after["income"] == before["income"]
     assert after["expenses"] == before["expenses"]
+
+
+async def test_an_unpaired_card_bill_payment_is_neither_a_withdrawal_nor_a_contribution(scene):
+    """A bill paid from checking and imported from both statements is a debit
+    on the account and a credit on the card, never paired (#1551). Both legs
+    are the same money: they leave the Money Map, and a real withdrawal in
+    the same month still shows."""
+    bill = Category(
+        id=uuid.uuid4(), user_id=scene["user"].id, name="Pagamento de fatura",
+        icon="credit-card", color="#64748B", treat_as_transfer=True,
+    )
+    scene["session"].add(bill)
+    await scene["session"].commit()
+    resp = await scene["client"].post(
+        "/api/accounts", headers=scene["headers"],
+        json={"name": "Itaú Azul", "type": "credit_card", "balance": 0, "currency": CURRENCY},
+    )
+    assert resp.status_code in (200, 201), resp.text
+    card = resp.json()
+    before = await _snapshot(scene)
+
+    await scene["create"](300, "credit", scene["invest"])
+    await scene["create"](2500, "debit", bill, description="PAGTO FATURA ITAU AZUL")
+    await scene["create"](
+        2500, "credit", bill, account_id=card["id"], description="PAGAMENTO RECEBIDO",
+    )
+    after = await _snapshot(scene)
+
+    assert after["composition"][("withdrawals", "Investments")] == 300
+    assert ("withdrawals", "Pagamento de fatura") not in after["composition"]
+    assert ("investments", "Pagamento de fatura") not in after["composition"]
+    assert after["report"] == before["report"]
+
+
+async def test_legs_are_matched_by_booking_date_not_reporting_override(scene):
+    """A credit booked nine days after the debit is another movement, even
+    when its reporting date was moved onto the debit's day."""
+    bill = Category(
+        id=uuid.uuid4(), user_id=scene["user"].id, name="Pagamento de fatura",
+        icon="credit-card", color="#64748B", treat_as_transfer=True,
+    )
+    scene["session"].add(bill)
+    await scene["session"].commit()
+    resp = await scene["client"].post(
+        "/api/accounts", headers=scene["headers"],
+        json={"name": "Itaú Azul", "type": "credit_card", "balance": 0, "currency": CURRENCY},
+    )
+    assert resp.status_code in (200, 201), resp.text
+    day = scene["day"]
+
+    await scene["create"](2500, "credit", bill, account_id=resp.json()["id"])
+    debit = await scene["create"](
+        2500, "debit", bill, date=(day + timedelta(days=9)).isoformat(),
+    )
+    # The override is only offered on a synced row of a non-card account.
+    row = await scene["session"].get(Transaction, uuid.UUID(debit["id"]))
+    row.source = "sync"
+    row.reporting_date_override = day
+    await scene["session"].commit()
+    snap = await _snapshot(scene)
+
+    # Both legs are left over; the card's credit pays the bill, so only the
+    # debit is drawn (#251).
+    assert snap["composition"][("investments", "Pagamento de fatura")] == 2500
+    assert ("withdrawals", "Pagamento de fatura") not in snap["composition"]
+
+
+async def _transfers_category(scene) -> Category:
+    transfers = Category(
+        id=uuid.uuid4(), user_id=scene["user"].id, name="Transfers",
+        icon="arrow-left-right", color="#64748B", treat_as_transfer=True,
+    )
+    scene["session"].add(transfers)
+    await scene["session"].commit()
+    return transfers
+
+
+async def _account(scene, name, type_) -> dict:
+    resp = await scene["client"].post(
+        "/api/accounts", headers=scene["headers"],
+        json={"name": name, "type": type_, "balance": 0, "currency": CURRENCY},
+    )
+    assert resp.status_code in (200, 201), resp.text
+    return resp.json()
+
+
+async def test_an_unpaired_bill_or_transfer_credit_is_not_a_withdrawal(scene):
+    """QA's case on #251: a bill credit on the card alone and a Transfers
+    credit, with nothing on the other side. Neither is money taken out of an
+    investment; the real withdrawals still show, and no total moves."""
+    bill = Category(
+        id=uuid.uuid4(), user_id=scene["user"].id, name="Pagamento de fatura",
+        icon="credit-card", color="#64748B", treat_as_transfer=True,
+    )
+    scene["session"].add(bill)
+    await scene["session"].commit()
+    transfers = await _transfers_category(scene)
+    card = await _account(scene, "Itaú Azul", "credit_card")
+    day = scene["day"]
+    before = await _snapshot(scene)
+
+    await scene["create"](3000, "credit", scene["invest"])
+    await scene["create"](1000, "credit", scene["invest"])
+    await scene["create"](1234.56, "credit", bill, account_id=card["id"])
+    await scene["create"](
+        1234.56, "credit", transfers, date=(day + timedelta(days=1)).isoformat(),
+    )
+    await scene["create"](
+        1234.56, "credit", transfers, account_id=card["id"],
+        date=(day + timedelta(days=1)).isoformat(),
+    )
+    after = await _snapshot(scene)
+
+    withdrawals = {k: v for k, v in after["composition"].items() if k[0] == "withdrawals"}
+    assert withdrawals == {("withdrawals", "Investments"): 4000}
+    assert after["report"] == before["report"]
+    assert after["income"] == before["income"]
+    assert after["expenses"] == before["expenses"]
+
+
+async def test_an_unpaired_transfer_debit_is_not_a_contribution(scene):
+    """A Transfers debit whose other side is not tracked moves money between
+    the user's own accounts: it is not set aside in an investment either."""
+    transfers = await _transfers_category(scene)
+
+    await scene["create"](800, "debit", transfers)
+    await scene["create"](60, "debit", scene["invest"])
+    snap = await _snapshot(scene)
+
+    assert ("investments", "Transfers") not in snap["composition"]
+    assert snap["composition"][("investments", "Investments")] == 60
+
+
+async def test_a_credit_on_a_loan_is_not_a_withdrawal(scene):
+    loan = await _account(scene, "Financiamento", "loan")
+
+    await scene["create"](900, "credit", scene["invest"], account_id=loan["id"])
+    snap = await _snapshot(scene)
+
+    assert ("withdrawals", "Investments") not in snap["composition"]
+
+
+async def test_a_withdrawal_from_a_custom_investment_category_still_counts(scene):
+    """Any other transfer-like category, such as one per asset class, is
+    still a source of money when it is credited to a cash account."""
+    stocks = Category(
+        id=uuid.uuid4(), user_id=scene["user"].id, name="Ações",
+        icon="trending-up", color="#0EA5E9", treat_as_transfer=True,
+    )
+    scene["session"].add(stocks)
+    await scene["session"].commit()
+    savings = await _account(scene, "Poupança", "savings")
+
+    await scene["create"](450, "credit", stocks)
+    await scene["create"](50, "credit", stocks, account_id=savings["id"])
+    snap = await _snapshot(scene)
+
+    assert snap["composition"][("withdrawals", "Ações")] == 500
+
+
+@pytest.mark.parametrize("reverse_credits", [False, True])
+async def test_mirrored_legs_do_not_depend_on_row_order(reverse_credits):
+    """Debits on A on the 2nd and 4th, credits on B on the 1st and 3rd: all
+    four pair up whichever credit comes first, so none is left over."""
+    cat = uuid.uuid4()
+    a, b = uuid.uuid4(), uuid.uuid4()
+
+    def row(kind, account, day):
+        return (cat, "Bill", "#000", kind, Decimal("100.00"), account, date(2026, 11, day))
+
+    debits = [row("debit", a, 2), row("debit", a, 4)]
+    credits = [row("credit", b, 3), row("credit", b, 1)]
+    if reverse_credits:
+        credits.reverse()
+
+    assert _without_mirrored_legs(debits + credits) == []
+    assert _without_mirrored_legs(credits + debits) == []
+
+
+async def test_a_thousand_identical_legs_pair_without_recursion():
+    """1,300 debits and 1,300 credits of 77.77 on one day, in two accounts
+    (#319): they all pair up instead of hitting the recursion limit."""
+    cat, a, b = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    day = date(2020, 1, 15)
+    debits = [(cat, "Inv", "#000", "debit", Decimal("77.77"), a, day)] * 1300
+    credits = [(cat, "Inv", "#000", "credit", Decimal("77.77"), b, day)] * 1300
+    extra = (cat, "Inv", "#000", "credit", Decimal("77.77"), b, day)
+
+    assert _without_mirrored_legs(debits + credits) == []
+    assert _without_mirrored_legs(credits + [extra] + debits) == [extra[:5]]
+
+
+async def test_two_thousand_daily_pairs_all_cancel():
+    """One debit and one credit a day for 2,000 days: each pairs with its own
+    day, and nothing is left over."""
+    cat, a, b = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    start = date(2015, 1, 1)
+    rows = []
+    for n in range(2000):
+        day = start + timedelta(days=n)
+        rows.append((cat, "Inv", "#000", "debit", Decimal("10.00"), a, day))
+        rows.append((cat, "Inv", "#000", "credit", Decimal("10.00"), b, day))
+
+    assert _without_mirrored_legs(rows) == []
+
+
+@pytest.mark.parametrize("seed", range(40))
+async def test_mirrored_legs_match_a_brute_force_count(seed):
+    """Random small groups over three accounts and a week: as many legs are
+    dropped as the largest set of disjoint fitting pairs allows."""
+    rng = random.Random(seed)
+    cat = uuid.uuid4()
+    accounts = [uuid.uuid4() for _ in range(3)]
+    rows = [
+        (
+            cat, "Bill", "#000", rng.choice(["debit", "credit"]), Decimal("50.00"),
+            rng.choice(accounts), date(2026, 11, rng.randint(1, 7)),
+        )
+        for _ in range(rng.randint(1, 9))
+    ]
+    credits = [r for r in rows if r[3] == "credit"]
+    debits = [r for r in rows if r[3] == "debit"]
+
+    def fits(c, d):
+        return c[5] != d[5] and abs((c[6] - d[6]).days) <= 2
+
+    best = 0
+    for size in range(min(len(credits), len(debits)), 0, -1):
+        if any(
+            all(fits(credits[i], debits[j]) for i, j in zip(cs, ds))
+            for cs in itertools.combinations(range(len(credits)), size)
+            for ds in itertools.permutations(range(len(debits)), size)
+        ):
+            best = size
+            break
+
+    left = _without_mirrored_legs(rows)
+    assert len(left) == len(rows) - 2 * best
+    for kind in ("credit", "debit"):
+        assert sum(r[3] == kind for r in left) == sum(r[3] == kind for r in rows) - best
+
+
+async def test_a_movement_in_one_account_only_still_counts(scene):
+    """Same amount and category, but both in the same account: an
+    application and its redemption, not two legs of one movement."""
+    await scene["create"](500, "debit", scene["invest"])
+    await scene["create"](500, "credit", scene["invest"])
+    snap = await _snapshot(scene)
+
+    assert snap["composition"][("investments", "Investments")] == 500
+    assert snap["composition"][("withdrawals", "Investments")] == 500
 
 
 async def test_a_month_without_withdrawals_has_no_withdrawal_group(scene):

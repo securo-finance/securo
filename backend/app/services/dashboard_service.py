@@ -7,7 +7,7 @@ from sqlalchemy import and_, select, func, case, extract, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.app_clock import app_today
+from app.core.app_clock import app_timezone, app_today
 from app.core.config import get_settings
 from app.core.currency import same_currency
 from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
@@ -380,7 +380,9 @@ async def get_summary(
     # ``total_balance`` is deliberately current/posted-only. Forecast rows are
     # accumulated separately so a future installment or pending bank row never
     # silently changes the number labelled as the current balance.
-    total_balance = await _total_balance_by_currency(session, workspace_id, cutoff, account_ids)
+    total_balance = await _total_balance_by_currency(
+        session, workspace_id, cutoff, account_ids, open_on_cutoff=True,
+    )
     projected_balance = dict(total_balance)
 
     # For current/future months, project the balance by adding recurring
@@ -500,7 +502,9 @@ async def get_summary(
         # member but not the owner. Their concert ticket paid by a friend
         # is a real expense in their P/L picture.
         shared_income, shared_expenses = await viewer_shared_pnl(
-            session, user_id, month_start, month_end, use_effective_date=False
+            session, user_id, month_start, month_end,
+            use_effective_date=False,
+            exclude_workspace_id=workspace_id,
         )
         monthly_income += shared_income
         monthly_expenses += shared_expenses
@@ -596,9 +600,11 @@ async def get_summary(
     # "available". Net worth (total_balance) still includes both + assets.
     cash_balance = await _total_balance_by_currency(
         session, workspace_id, cutoff, account_ids, account_types=_CASH_ACCOUNT_TYPES,
+        open_on_cutoff=True,
     )
     investment_accounts = await _total_balance_by_currency(
         session, workspace_id, cutoff, account_ids, account_types=_INVESTMENT_ACCOUNT_TYPES,
+        open_on_cutoff=True,
     )
 
     # Add asset values to total balance
@@ -959,6 +965,7 @@ async def get_spending_by_category(
         session, user_id, month_start, month_end,
         use_effective_date=accounting_mode == "accrual",
         primary_currency=primary_currency,
+        exclude_workspace_id=workspace_id,
     )
     if shared_by_cat:
         cat_meta_cache: dict[str, dict] = {}
@@ -1213,6 +1220,7 @@ async def get_monthly_trend(
                 session, user_id, m_start, m_end,
                 use_effective_date=accounting_mode == "accrual",
                 primary_currency=primary_currency,
+                exclude_workspace_id=workspace_id,
             )
         adjusted.append(
             MonthlyTrend(
@@ -1390,7 +1398,7 @@ def _signed_transaction_amount(tx: Transaction) -> float:
     amount = (
         tx.amount
         if same_currency(tx.currency, account_currency)
-        else (tx.amount_primary or 0)
+        else (tx.amount_account or 0)
     )
     signed = amount if tx.type == "credit" else -amount
     return float(signed)
@@ -1457,6 +1465,22 @@ async def _get_open_accounts(
         stmt = stmt.where(Account.id.in_(account_ids))
     result = await session.execute(stmt)
     return [row[0] for row in result.all()]
+
+
+def _open_on(account: Account, cutoff: date) -> bool:
+    """Whether an account counts in a balance snapshot taken on ``cutoff``.
+
+    An account closed after the cutoff was still open on it. A closed card on
+    a shared credit line stays out: its frozen balance can't be reconciled
+    with the line's live one, and the open cards already carry that debt.
+    """
+    if not account.is_closed:
+        return True
+    return (
+        account.closed_at is not None
+        and account.closed_at.astimezone(app_timezone()).date() > cutoff
+        and not (account.type == "credit_card" and account.shared_balance_group)
+    )
 
 
 async def _account_balance_at(
@@ -1558,13 +1582,26 @@ async def _total_balance_by_currency(
     *,
     include_pending: bool = False,
     account_types: Optional[frozenset[str]] = None,
+    open_on_cutoff: bool = False,
 ) -> dict[str, float]:
     """Get total balance across open accounts at a date, grouped by currency.
 
     When ``account_types`` is set, only accounts whose ``type`` is in that set
     are included (used to split cash vs investment without changing net worth).
+
+    ``open_on_cutoff`` counts the accounts that were open on ``cutoff``,
+    including those closed since, the same set the net-worth report sums for
+    that date. Without it only accounts open today are counted.
     """
-    accounts = await _get_open_accounts(session, workspace_id, account_ids)
+    if open_on_cutoff:
+        accounts = [
+            a for a in await _get_open_accounts(
+                session, workspace_id, account_ids, closed_after=cutoff
+            )
+            if _open_on(a, cutoff)
+        ]
+    else:
+        accounts = await _get_open_accounts(session, workspace_id, account_ids)
     if account_types is not None:
         accounts = [a for a in accounts if a.type in account_types]
     if not accounts:

@@ -15,6 +15,7 @@ import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useSidebarState } from '@/contexts/sidebar-state-context'
 import { CollectionSelector } from '@/components/collection-selector'
+import { ConnectionLost } from '@/components/connection-lost'
 import { auth as authApi } from '@/lib/api'
 import { resolveSupportedLang } from '@/lib/i18n'
 import { OnboardingTour } from '@/components/onboarding-tour'
@@ -128,7 +129,13 @@ export function AppLayout() {
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false)
   useCommandPaletteHotkey(setPaletteOpen)
   const { agentsEnabled } = useFeatureFlags()
-  const { hasModule, isLoading: workspaceLoading, canWrite } = useWorkspace()
+  const {
+    hasModule,
+    isLoading: workspaceLoading,
+    loadFailed: workspaceLoadFailed,
+    refresh: refreshWorkspaces,
+    canWrite,
+  } = useWorkspace()
   // The chat is offered only to members who can write. Sending a message
   // reaches a tool set that persists — `propose_create_transaction` and its
   // siblings — so the backend refuses it for a read-only role. Showing the
@@ -210,6 +217,8 @@ export function AppLayout() {
   const { data: accountsList } = useQuery({
     queryKey: ['accounts'],
     queryFn: () => accountsApi.list(),
+    // Without a workspace the request has no scope and can only fail.
+    enabled: !workspaceLoadFailed,
   })
 
   // Flagged rows past their reminder date, counted next to Transactions.
@@ -233,6 +242,17 @@ export function AppLayout() {
   // total is an estimate; flag it like the dashboard does (#1165, #1474).
   const totalHasFxFallback = visibleAccounts.some((a) => a.fx_fallback)
   const versionA11yLabel = t('app.versionAriaLabel', { version: APP_VERSION })
+
+  // The workspace list could not be fetched: nothing here is "off", the data
+  // is simply unavailable. Rendering the shell would show an accountless
+  // sidebar and an empty page, so say what happened and keep the URL (#292).
+  if (workspaceLoadFailed) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-background">
+        <ConnectionLost onRetry={() => { void refreshWorkspaces() }} />
+      </div>
+    )
+  }
 
   return (
     <AssistantContext.Provider value={assistant}>

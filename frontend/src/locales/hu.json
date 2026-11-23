@@ -883,6 +883,8 @@
     "uncategorizedCta": "{{count}} tranzakció vár kategorizálásra",
     "uncategorizedTotal": "Összesen {{amount}}",
     "categorizeNow": "Kategorizálás most",
+    "drillDownQuickCategorize": "Kategória választása",
+    "drillDownOpenTransaction": "Tranzakció megnyitása",
     "allCategorized": "Minden rendben!",
     "allCategorizedDesc": "Minden tranzakció kategorizálva van",
     "assetsValue": "Befektetett eszközök",
@@ -915,6 +917,7 @@
     "monthNext": "Következő hónap",
     "description": "Leírás",
     "originalDescription": "Eredeti leírás",
+    "providerCategory": "Bank kategória",
     "restoreOriginalDescription": "Eredeti visszaállítása",
     "amount": "Összeg",
     "status": "Állapot",
@@ -939,6 +942,7 @@
     "addedToExistingRule": "Szabály frissítve. A jövőbeli egyezések ezt a kategóriát kapják.",
     "duplicateRuleCondition": "Ez a szabály már tartalmazza ezt az egyezést.",
     "saveAndNew": "Mentés és új",
+    "saveAndNext": "Mentés és következő",
     "saveAndDuplicate": "Mentés és másolás",
     "moreSaveOptions": "További mentési lehetőségek",
     "created": "Tranzakció létrehozva",
@@ -1003,6 +1007,15 @@
     "unflagAction": "Jelölés törlése",
     "flagSuccess": "Tranzakció megjelölve",
     "unflagSuccess": "Jelölés törölve",
+    "paid": "Fizetve",
+    "unpaid": "Nincs fizetve",
+    "onlyUnpaid": "Csak a nem fizetettek",
+    "markPaid": "Megjelölés fizetettként",
+    "markUnpaid": "Megjelölés nem fizetettként",
+    "markPaidHint": "A pénz már elhagyta a számlát vagy megérkezett rá",
+    "markUnpaidHint": "A sor megjelölése még kifizetendőként vagy beérkezőként",
+    "paidSuccess": "Fizetettként megjelölve",
+    "unpaidSuccess": "Nem fizetettként megjelölve",
     "flagFilterAll": "Összes megjelölt",
     "flagFilterOverdue": "Lejárt",
     "flagFilterSoon": "Ezen a héten esedékes",
@@ -1023,11 +1036,33 @@
       "nextWeek": "Egy hét múlva",
       "nextMonth": "Egy hónap múlva"
     },
+    "newBadge": "Új",
+    "newBadgeTooltip": "Szinkronizálásból vagy importból érkezett, és még nem lett megnyitva",
+    "onlyUnread": "Csak az új tranzakciók",
+    "onlyUnreadShort": "Csak új",
+    "unreadRows": "Új tranzakciók",
+    "unreadCount_one": "{{count}} tranzakció átnézésre",
+    "unreadCount_other": "{{count}} tranzakció átnézésre",
+    "unreadCount_zero": "Nincs mit átnézni",
+    "markAllRead": "Minden megjelölése olvasottként ebben a munkaterületen ({{count}})",
+    "unreadOutsideFilters": "Ezeken a szűrőkön kívül: {{count}}",
+    "markAllReadPending": "Megjelölés olvasottként",
+    "markAllReadDone": "Minden tranzakció olvasottként van megjelölve",
     "statusCleared": "Elszámolt",
     "sortAsc": "Növekvő rendezés",
     "sortDesc": "Csökkenő rendezés",
     "syncedInfo": "Bankkal szinkronizált tranzakció: az összeg, a dátum és a számla nem szerkeszthető",
     "syncedAmountDateError": "Szinkronizált tranzakció összege vagy dátuma nem módosítható",
+    "amountErrors": {
+      "notPositive": "Az összegnek nagyobbnak kell lennie nullánál.",
+      "tooSmall": "Az összegnek legalább 0,01-nek kell lennie.",
+      "tooLarge": "Az összeg nagyobb annál, amit a Securo tárolni tud.",
+      "convertedNegative": "Az átváltott összeg nem lehet negatív.",
+      "convertedTooLarge": "Az átváltott összeg nagyobb annál, amit a Securo tárolni tud.",
+      "rateNotPositive": "Az árfolyam nem lehet negatív. A nulla árfolyam csak akkor fogadható el, ha az átváltott összeg nullára kerekítődik.",
+      "rateTooLarge": "Az árfolyam nagyobb annál, amit a Securo tárolni tud.",
+      "required": "Adjon meg egy összeget."
+    },
     "uncategorized": "Kategorizálatlan",
     "selected": "kijelölve",
     "summaryCount": "{{count}} tranzakció",
@@ -1182,8 +1217,8 @@
     "calendarAccountCount": "{{count}} számla",
     "calendarAllAccounts": "Minden számla",
     "calendarEndBalance": "Záró egyenleg",
-    "calendarItemCount": "{{count}} tétel",
-    "calendarItemCount_plural": "{{count}} tétel",
+    "calendarItemCount_one": "{{count}} tétel",
+    "calendarItemCount_other": "{{count}} tétel",
     "calendarProjectedCount": "{{count}} előrejelzett",
     "calendarProjected": "Előrejelzett",
     "projected": "Előrejelzett",
@@ -1524,6 +1559,9 @@
     "saved": "Budgets saved",
     "budgetFor": "Budget for {{category}}",
     "invalidAmount": "Adjon meg egy érvényes, legalább nulla összeget.",
+    "amountTooSmall": "A költségvetési limitnek legalább 0,01-nek kell lennie.",
+    "amountTooLarge": "A költségvetési limit túl nagy.",
+    "amountNegative": "A költségvetési limit nem lehet negatív.",
     "repeatEveryMonthFor": "Repeat the {{category}} budget every month",
     "previousMonth": "Previous month",
     "nextMonth": "Next month",
@@ -1551,6 +1589,8 @@
     "copyPreviewCount": "Másolandó kategóriák: {{count}}",
     "copyPreviewTotal": "Másolandó összeg: {{amount}}",
     "copyPreviewEmpty": "A kiválasztott hónapban nincs másolható költségvetés.",
+    "copyPreviewAllExist": "A forrás hónap minden kategóriájának már van költségvetése ekkor: {{month}}. Az összegek másolásához vagy a módosítás alkalmazásához válaszd a cserét.",
+    "copyPreviewNoChange": "A forrás hónap minden költségvetése már ezeken az összegeken áll ekkor: {{month}}.",
     "copyPreviewError": "A forráshónapot nem sikerült betölteni.",
     "copyAmountTooLarge": "A módosított összeg meghaladja a költségvetési limitet. Csökkentse a százalékos módosítást.",
     "copyConfirm": "Költségvetések másolása",
@@ -1619,6 +1659,8 @@
   },
   "recurring": {
     "makeFromTransaction": "Új ismétlődő tranzakció ebből a tranzakcióból",
+    "duplicate": "Már létezik ismétlődő tranzakció ugyanezzel a leírással, gyakorisággal és kezdő dátummal",
+    "alreadyLinked": "Ez a tranzakció már egy ismétlődő tranzakcióhoz tartozik",
     "title": "Ismétlődő tranzakciók",
     "add": "Ismétlődő hozzáadása",
     "edit": "Ismétlődő szerkesztése",
@@ -1681,10 +1723,13 @@
   "rules": {
     "searchPlaceholder": "Szabályok keresése...",
     "filterAllCategories": "Minden kategória",
+    "filterByCategory": "Szűrés kategória szerint",
     "filterAllStatuses": "Minden állapot",
+    "filterByStatus": "Szűrés állapot szerint",
     "filterActiveOnly": "Csak aktívak",
     "filterInactiveOnly": "Csak inaktívak",
     "filterAllActions": "Minden művelet",
+    "filterByAction": "Szűrés művelet szerint",
     "noFilterResults": "Egy szabály sem felel meg ezeknek a szűrőknek",
     "preview": "Előnézet",
     "previewMatched": "{{matched}} egyezés",
@@ -1783,6 +1828,7 @@
     "fieldDate": "Dátum",
     "fieldStatus": "Állapot",
     "fieldProviderCategory": "Szolgáltató kategóriája",
+    "providerCategoryHint": "A bank saját címkéje, a bank nyelvén (például „Groceries”). Válasszon egyet, amelyet a munkaterület már megkapott.",
     "opContains": "tartalmazza",
     "opNotContains": "nem tartalmazza",
     "opEquals": "egyenlő",
@@ -2111,9 +2157,10 @@
     "summaryHoldings": "{{created}} pozíció létrehozva, {{matched}} párosítva",
     "summarySkipped": "{{count}} már importálva",
     "rowsSkipped": "{{count}} sor kimarad",
+    "reasonColumn": "Ok",
     "rowError": "{{row}}. sor ({{ticker}}): {{reason}}",
     "moreErrors": "és még {{count}}",
-    "moreRows": "és még {{count}} megbízás",
+    "showAllRows": "Összes {{count}} sor megjelenítése",
     "field": {
       "ticker": "Ticker",
       "date": "Dátum",
@@ -2235,9 +2282,15 @@
     "lastUpdated": "Frissítve: {{when}}",
     "refreshPrice": "Ár frissítése",
     "refreshAllPrices": "Árak frissítése",
-    "refreshAllPricesDone": "{{refreshed}} ár frissítve, {{skipped}} új jegyzés nélkül",
+    "refreshAllPricesDone": "{{updated}}, {{skipped}}",
+    "refreshAllPricesUpdated_one": "{{count}} ár frissítve",
+    "refreshAllPricesUpdated_other": "{{count}} ár frissítve",
+    "refreshAllPricesNoQuote_one": "{{count}} új jegyzés nélkül",
+    "refreshAllPricesNoQuote_other": "{{count}} új jegyzés nélkül",
+    "refreshAllPricesLeftOut_one": "{{count}} kimaradt",
+    "refreshAllPricesLeftOut_other": "{{count}} kimaradt",
     "refreshAllPricesNone": "Nincs piaci árazású eszköz a frissítéshez",
-    "refreshAllPricesRateLimited": "A piaci adatszolgáltató most korlátozza a kéréseket. {{refreshed}} ár frissült és {{skipped}} maradt ki a leállás előtt. Próbálja újra egy perc múlva.",
+    "refreshAllPricesRateLimited": "A piaci adatszolgáltató most korlátozza a kéréseket. A leállás előtt: {{updated}}, {{skipped}}. Próbálja újra egy perc múlva.",
     "priceRefreshed": "Ár frissítve",
     "purchaseDate": "Vásárlás dátuma",
     "purchasePrice": "Vételár",
@@ -2416,7 +2469,41 @@
     "statementViewTransactions": "Tranzakciók megtekintése",
     "statementUncategorizedIncome": "Kategorizálatlan bevétel",
     "statementUncategorizedExpense": "Kategorizálatlan kiadás",
-    "statementToggleGroup": "{{name}} kategóriáinak mutatása"
+    "statementToggleGroup": "{{name}} kategóriáinak mutatása",
+    "pluginReport": {
+      "total": {
+        "expenses": "Összes kiadás",
+        "income": "Összes bevétel",
+        "net": "Egyenleg"
+      },
+      "none": {
+        "category": "Kategória nélkül",
+        "category_group": "Csoport nélkül",
+        "payee": "Kedvezményezett nélkül",
+        "account": "Számla nélkül",
+        "month": "Dátum nélkül"
+      },
+      "groupBy": {
+        "category": "Kategória",
+        "category_group": "Csoport",
+        "payee": "Kedvezményezett",
+        "account": "Számla",
+        "month": "Hónap"
+      },
+      "measure": {
+        "expenses": "Kiadások",
+        "income": "Bevételek",
+        "net": "Egyenleg"
+      },
+      "share": "Arány",
+      "computed": "A bővítmény számolja",
+      "periodTrimmed": "A bővítményjelentések legfeljebb két évet fednek le. Megjelenítve: {{from}} és {{to}} között.",
+      "periodTooLong": "Egy bővítményjelentés legfeljebb két évet fed le. Válassz rövidebb időszakot.",
+      "totalRow": "Összesen",
+      "page": "{{page}}. oldal / {{pages}}",
+      "previousPage": "Előző oldal",
+      "nextPage": "Következő oldal"
+    }
   },
   "payees": {
     "noPayeeFound": "Nincs ilyen partner.",
@@ -3545,7 +3632,8 @@
       "undoFirstGroupSplit": "A személyek közötti megosztás előtt vond vissza a felosztást.",
       "undoFirstMortgage": "A jelzálog bontása előtt vond vissza a felosztást.",
       "categoryInUse": "Ez a kategória felosztott tranzakciók részeit tartalmazza. Előbb módosítsd ezeket a felosztásokat.",
-      "destinationInvalid": "Felosztott tranzakciók részei nem kerülhetnek figyelmen kívül hagyott vagy rejtett kategóriába."
+      "destinationInvalid": "Felosztott tranzakciók részei nem kerülhetnek figyelmen kívül hagyott vagy rejtett kategóriába.",
+      "mergeNeedsRate": "Ezek a költségkeretek különböző pénznemekben vannak, és a hónapjukra nincs árfolyam az összevonásukhoz."
     }
   },
   "plugins": {
@@ -3962,5 +4050,9 @@
       "title": "Ismétlődő bevétel",
       "hint": "Amit az ismétlődő számlák havonta hoznak, és ami nemrég elveszett."
     }
+  },
+  "offline": {
+    "title": "A szerver nem érhető el",
+    "description": "Offline vagy, vagy a Securo újraindul. Az adataid biztonságban vannak, és semmi sem változott. Amint a szerver válaszol, automatikusan újracsatlakozunk."
   }
 }

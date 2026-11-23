@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import mcp_server.tools  # noqa: F401
 from app.agents.mcp.auth import mint_token
 from app.models.budget import Budget
+from app.models.fx_rate import FxRate
 from app.models.goal import Goal
 from app.models.workspace import Workspace, WorkspaceMember
 from mcp_server.auth import CallContext
@@ -365,7 +366,7 @@ async def test_budget_update_preview_does_not_write(
         "currency": "BRL",
         "is_recurring": True,
     }
-    assert result["changes"] == {"amount": 1200.0}
+    assert result["changes"] == {"amount": 1200.0, "currency": "BRL"}
     assert result["apply_endpoint"] == f"PATCH /api/budgets/{budget.id}"
     assert "applied" not in result
     assert await _budget_amount(session, budget.id) == Decimal("800.00")
@@ -384,9 +385,46 @@ async def test_budget_update_same_or_invalid_amount(
     zero = await _call("propose_update_budget")(
         session=session, ctx=ctx, budget_id=str(budget.id), amount=0
     )
+    too_large = await _call("propose_update_budget")(
+        session=session, ctx=ctx, budget_id=str(budget.id), amount=1e13
+    )
 
     assert "nothing to change" in same["error"]
     assert zero == {"error": "amount must be greater than zero"}
+    # The bound the PATCH enforces, so the preview never proposes an amount the
+    # save rejects (issue #406).
+    assert too_large == {"error": "The budget limit is too large"}
+
+
+async def test_budget_update_compares_in_the_proposers_currency(
+    session: AsyncSession, ext_ctx: CallContext, test_user, test_workspace, test_categories
+):
+    """A BRL 1,800 limit read in USD at 5 is USD 360. Asking USD 1,800 is a
+    change; asking USD 360 is the limit it already has."""
+    session.add(FxRate(
+        base_currency="USD", quote_currency="BRL", date=date(2026, 10, 1),
+        rate=Decimal("5"), source="test",
+    ))
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "USD"}
+    await session.commit()
+    budget = await _mk_budget(
+        session, user=test_user, ws=test_workspace, category=test_categories[0],
+        amount="1800.00",
+    )
+
+    same = await _call("propose_update_budget")(
+        session=session, ctx=ext_ctx, budget_id=str(budget.id), amount=360
+    )
+    assert "nothing to change" in same["error"]
+
+    result = await _call("propose_update_budget")(
+        session=session, ctx=ext_ctx, budget_id=str(budget.id), amount=1800, apply=True
+    )
+    assert result.get("applied") is True, result
+    assert result["changes"] == {"amount": 1800.0, "currency": "USD"}
+    row = await _budget(session, budget.id)
+    assert row is not None
+    assert (row.amount, row.currency) == (Decimal("1800.00"), "USD")
 
 
 async def test_budget_update_internal_apply_does_not_write(

@@ -43,8 +43,9 @@ describe('Budget copy dialog', () => {
     )
 
     // Both the read and the copy are pinned to the workspace the preview is
-    // built from, so a switch in another tab cannot move the copy.
-    expect(api.budgets.list).toHaveBeenCalledWith('2026-09-01', 'ws-1')
+    // built from, so a switch in another tab cannot move the copy. The read
+    // asks for `amount_primary` at the target month's rate.
+    expect(api.budgets.list).toHaveBeenCalledWith('2026-09-01', 'ws-1', '2026-10-01')
     expect(await screen.findByText(t('budgets.copyPreviewCount', { count: 1 }))).toBeInTheDocument()
     expect(screen.getByText(t('budgets.copyPreviewTotal', { amount: '$300.00' }))).toBeInTheDocument()
 
@@ -125,6 +126,33 @@ describe('Budget copy dialog', () => {
     expect(screen.getByText(t('budgets.copyPreviewTotal', { amount: '$330.00' }))).toBeInTheDocument()
   })
 
+  it('replaces a category at the same number in another currency, like the service', async () => {
+    api.budgets.list.mockResolvedValue([{ ...rent, amount: 100, currency: 'BRL', amount_primary: 20 }])
+    const { user } = renderWithProviders(
+      <BudgetCopyDialog open onOpenChange={vi.fn()} targetMonth="2026-10" targetBudgets={[{ ...budget('b-rent-oct', 'rent', 100, '2026-10-01'), currency: 'USD' }]} targetRefreshing={false} />,
+    )
+
+    await waitFor(() => expect(api.budgets.list).toHaveBeenCalled())
+    await user.click(await screen.findByRole('radio', { name: t('budgets.copyOverwrite') }))
+
+    // 100 BRL over 100 USD is a different limit, so the copy replaces it.
+    expect(await screen.findByText(t('budgets.copyPreviewCount', { count: 1 }))).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('budgets.copyConfirm') })).toBeEnabled()
+  })
+
+  it('totals a copied limit at the target month rate, not the source month rate', async () => {
+    // 100 BRL is $20 at September's rate and $25 at October's. The copy keeps
+    // the raw 100 BRL, so October shows $25 and the preview must say $25.
+    api.budgets.list.mockResolvedValue([{ ...rent, amount: 100, currency: 'BRL', amount_primary: 25 }])
+    renderWithProviders(
+      <BudgetCopyDialog open onOpenChange={vi.fn()} targetMonth="2026-10" targetBudgets={[]} targetRefreshing={false} />,
+    )
+
+    await waitFor(() => expect(api.budgets.list).toHaveBeenCalledWith('2026-09-01', 'ws-1', '2026-10-01'))
+    expect(await screen.findByText(t('budgets.copyPreviewCount', { count: 1 }))).toBeInTheDocument()
+    expect(screen.getByText(t('budgets.copyPreviewTotal', { amount: '$25.00' }))).toBeInTheDocument()
+  })
+
   it('rounds each adjusted amount to cents before summing them', async () => {
     api.budgets.list.mockResolvedValue([
       budget('b-1', 'rent', 100.05),
@@ -156,7 +184,7 @@ describe('Budget copy dialog', () => {
 
     // In keep mode the target's Rent means nothing is copied; replacing it is
     // what makes the two amounts comparable.
-    await screen.findByText(t('budgets.copyPreviewEmpty'))
+    await screen.findByText(t('budgets.copyPreviewAllExist', { month: 'October 2026' }))
     await user.click(screen.getByRole('radio', { name: t('budgets.copyOverwrite') }))
     await screen.findByText(t('budgets.copyPreviewCount', { count: 1 }))
     await user.type(screen.getByLabelText(t('budgets.copyAdjustment')), '0.004999999')
@@ -189,7 +217,7 @@ describe('Budget copy dialog', () => {
     )
 
     // In keep mode the target's Rent means nothing is copied before adjusting.
-    await screen.findByText(t('budgets.copyPreviewEmpty'))
+    await screen.findByText(t('budgets.copyPreviewAllExist', { month: 'October 2026' }))
     await user.type(screen.getByLabelText(t('budgets.copyAdjustment')), '1000')
 
     // The target already has Rent, so in keep mode the copy would skip it —
@@ -212,6 +240,58 @@ describe('Budget copy dialog', () => {
     renderWithProviders(<BudgetCopyDialog open onOpenChange={vi.fn()} targetMonth="2026-10" targetBudgets={[]} targetRefreshing={false} />)
 
     expect(await screen.findByText(t('budgets.copyPreviewEmpty'))).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('budgets.copyConfirm') })).toBeDisabled()
+  })
+
+  it('points to Replace when the target already holds every category of the source', async () => {
+    // A recurring budget resolves in both months, so in keep mode the copy
+    // would write nothing. The source is not empty, and saying it is would
+    // send the person looking for the wrong problem.
+    const { user } = renderWithProviders(
+      <BudgetCopyDialog
+        open
+        onOpenChange={vi.fn()}
+        targetMonth="2026-10"
+        targetBudgets={[
+          budget('b-rent-oct', 'rent', 900, '2026-10-01'),
+          budget('b-food-oct', 'food', 300, '2026-10-01'),
+        ]}
+        targetRefreshing={false}
+      />,
+    )
+
+    expect(await screen.findByText(t('budgets.copyPreviewAllExist', { month: 'October 2026' }))).toBeInTheDocument()
+    expect(screen.queryByText(t('budgets.copyPreviewEmpty'))).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('budgets.copyConfirm') })).toBeDisabled()
+
+    // Following the message: replacing with the adjustment copies them all.
+    await user.click(screen.getByRole('radio', { name: t('budgets.copyOverwrite') }))
+    await user.type(screen.getByLabelText(t('budgets.copyAdjustment')), '5')
+    expect(screen.getByText(t('budgets.copyPreviewCount', { count: 2 }))).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('budgets.copyConfirm') })).toBeEnabled()
+  })
+
+  it('says nothing would change when every source budget is already at the amount', async () => {
+    const { user } = renderWithProviders(
+      <BudgetCopyDialog
+        open
+        onOpenChange={vi.fn()}
+        targetMonth="2026-10"
+        targetBudgets={[
+          budget('b-rent-oct', 'rent', 900, '2026-10-01'),
+          budget('b-food-oct', 'food', 300, '2026-10-01'),
+        ]}
+        targetRefreshing={false}
+      />,
+    )
+
+    await screen.findByText(t('budgets.copyPreviewAllExist', { month: 'October 2026' }))
+    await user.click(screen.getByRole('radio', { name: t('budgets.copyOverwrite') }))
+
+    // Replacing would write the same amounts, so nothing is copied and the
+    // message says so instead of calling the source month empty.
+    expect(await screen.findByText(t('budgets.copyPreviewNoChange', { month: 'October 2026' }))).toBeInTheDocument()
+    expect(screen.queryByText(t('budgets.copyPreviewEmpty'))).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: t('budgets.copyConfirm') })).toBeDisabled()
   })
 })

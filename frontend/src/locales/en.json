@@ -883,6 +883,8 @@
     "uncategorizedCta": "{{count}} transactions need categorizing",
     "uncategorizedTotal": "{{amount}} in total",
     "categorizeNow": "Categorize now",
+    "drillDownQuickCategorize": "Pick a category",
+    "drillDownOpenTransaction": "Open transaction",
     "allCategorized": "All caught up!",
     "allCategorizedDesc": "All transactions are categorized",
     "assetsValue": "Invested assets",
@@ -914,6 +916,7 @@
     "monthNext": "Next month",
     "description": "Description",
     "originalDescription": "Original description",
+    "providerCategory": "Bank category",
     "restoreOriginalDescription": "Restore original",
     "amount": "Amount",
     "status": "Status",
@@ -939,6 +942,7 @@
     "addedToExistingRule": "Rule updated. Future matches will use this category.",
     "duplicateRuleCondition": "That rule already includes this match.",
     "saveAndNew": "Save & New",
+    "saveAndNext": "Save & Next",
     "saveAndDuplicate": "Save & Duplicate",
     "moreSaveOptions": "More save options",
     "created": "Transaction created",
@@ -1003,6 +1007,15 @@
     "unflagAction": "Unflag",
     "flagSuccess": "Transaction flagged",
     "unflagSuccess": "Flag removed",
+    "paid": "Paid",
+    "unpaid": "Unpaid",
+    "onlyUnpaid": "Only unpaid",
+    "markPaid": "Mark as paid",
+    "markUnpaid": "Mark as unpaid",
+    "markPaidHint": "The money has already left or entered the account",
+    "markUnpaidHint": "Mark this row as still waiting to be paid or received",
+    "paidSuccess": "Marked as paid",
+    "unpaidSuccess": "Marked as unpaid",
     "flagFilterAll": "All flagged",
     "flagFilterOverdue": "Overdue",
     "flagFilterSoon": "Due this week",
@@ -1023,11 +1036,33 @@
       "nextWeek": "In a week",
       "nextMonth": "In a month"
     },
+    "newBadge": "New",
+    "newBadgeTooltip": "Arrived by sync or import and not opened yet",
+    "onlyUnread": "Only new transactions",
+    "onlyUnreadShort": "New only",
+    "unreadRows": "New transactions",
+    "unreadCount_one": "{{count}} transaction to review",
+    "unreadCount_other": "{{count}} transactions to review",
+    "unreadCount_zero": "Nothing left to review",
+    "markAllRead": "Mark all as read in this workspace ({{count}})",
+    "unreadOutsideFilters": "Outside these filters: {{count}}",
+    "markAllReadPending": "Marking as read",
+    "markAllReadDone": "Every transaction is marked as read",
     "statusCleared": "Cleared",
     "sortAsc": "Sort ascending",
     "sortDesc": "Sort descending",
     "syncedInfo": "Bank-synced transaction: amount, date and account can't be edited",
     "syncedAmountDateError": "The amount or date of a synchronized transaction cannot be changed",
+    "amountErrors": {
+      "notPositive": "The amount must be greater than zero.",
+      "tooSmall": "The amount must be at least 0.01.",
+      "tooLarge": "The amount is larger than Securo can store.",
+      "convertedNegative": "The converted amount cannot be negative.",
+      "convertedTooLarge": "The converted amount is larger than Securo can store.",
+      "rateNotPositive": "The exchange rate cannot be negative. A zero rate is only accepted when the converted amount rounds to zero.",
+      "rateTooLarge": "The exchange rate is larger than Securo can store.",
+      "required": "Enter an amount."
+    },
     "uncategorized": "Uncategorized",
     "selected": "selected",
     "summaryCount": "{{count}} transactions",
@@ -1182,8 +1217,8 @@
     "calendarAccountCount": "{{count}} accounts",
     "calendarAllAccounts": "All accounts",
     "calendarEndBalance": "End balance",
-    "calendarItemCount": "{{count}} item",
-    "calendarItemCount_plural": "{{count}} items",
+    "calendarItemCount_one": "{{count}} item",
+    "calendarItemCount_other": "{{count}} items",
     "calendarProjectedCount": "{{count}} projected",
     "calendarProjected": "Projected",
     "projected": "Projected",
@@ -1524,6 +1559,9 @@
     "saved": "Budgets saved",
     "budgetFor": "Budget for {{category}}",
     "invalidAmount": "Enter a valid amount of zero or more.",
+    "amountTooSmall": "The budget limit must be at least 0.01.",
+    "amountTooLarge": "The budget limit is too large.",
+    "amountNegative": "The budget limit cannot be negative.",
     "repeatEveryMonthFor": "Repeat the {{category}} budget every month",
     "previousMonth": "Previous month",
     "nextMonth": "Next month",
@@ -1551,6 +1589,8 @@
     "copyPreviewCount": "Categories to copy: {{count}}",
     "copyPreviewTotal": "Total to copy: {{amount}}",
     "copyPreviewEmpty": "The selected month has no budgets to copy.",
+    "copyPreviewAllExist": "All categories in the source month already have a budget in {{month}}. Choose Replace to copy the amounts or apply the adjustment.",
+    "copyPreviewNoChange": "Every budget in the source month is already at these amounts in {{month}}.",
     "copyPreviewError": "Could not load the source month.",
     "copyAmountTooLarge": "The adjusted amount is too large for the budget limit. Lower the percentage adjustment.",
     "copyConfirm": "Copy budgets",
@@ -1619,6 +1659,8 @@
   },
   "recurring": {
     "makeFromTransaction": "New recurring from this transaction",
+    "duplicate": "A recurring transaction with the same description, frequency and start date already exists",
+    "alreadyLinked": "This transaction already belongs to a recurring transaction",
     "title": "Recurring Transactions",
     "add": "Add Recurring",
     "edit": "Edit Recurring",
@@ -1681,10 +1723,13 @@
   "rules": {
     "searchPlaceholder": "Search rules...",
     "filterAllCategories": "All categories",
+    "filterByCategory": "Filter by category",
     "filterAllStatuses": "All statuses",
+    "filterByStatus": "Filter by status",
     "filterActiveOnly": "Active only",
     "filterInactiveOnly": "Inactive only",
     "filterAllActions": "All actions",
+    "filterByAction": "Filter by action",
     "noFilterResults": "No rule matches these filters",
     "preview": "Preview",
     "previewMatched": "{{matched}} matches",
@@ -1783,6 +1828,7 @@
     "fieldDate": "Date",
     "fieldStatus": "Status",
     "fieldProviderCategory": "Provider category",
+    "providerCategoryHint": "The bank's own label, in its language (for example “Groceries”). Pick one the workspace has already received.",
     "opContains": "contains",
     "opNotContains": "does not contain",
     "opEquals": "equals",
@@ -2111,9 +2157,10 @@
     "summaryHoldings": "{{created}} holdings created, {{matched}} matched",
     "summarySkipped": "{{count}} already imported",
     "rowsSkipped": "{{count}} rows will be skipped",
+    "reasonColumn": "Reason",
     "rowError": "Row {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "and {{count}} more",
-    "moreRows": "and {{count}} more orders",
+    "showAllRows": "Show all {{count}} rows",
     "field": {
       "ticker": "Ticker",
       "date": "Date",
@@ -2233,9 +2280,15 @@
     "lastUpdated": "Updated {{when}}",
     "refreshPrice": "Refresh price",
     "refreshAllPrices": "Refresh prices",
-    "refreshAllPricesDone": "{{refreshed}} prices updated, {{skipped}} without a new quote",
+    "refreshAllPricesDone": "{{updated}}, {{skipped}}",
+    "refreshAllPricesUpdated_one": "{{count}} price updated",
+    "refreshAllPricesUpdated_other": "{{count}} prices updated",
+    "refreshAllPricesNoQuote_one": "{{count}} without a new quote",
+    "refreshAllPricesNoQuote_other": "{{count}} without a new quote",
+    "refreshAllPricesLeftOut_one": "{{count}} skipped",
+    "refreshAllPricesLeftOut_other": "{{count}} skipped",
     "refreshAllPricesNone": "No market-priced assets to refresh",
-    "refreshAllPricesRateLimited": "Market data is rate-limiting right now. {{refreshed}} prices were updated and {{skipped}} skipped before it stopped, try again in a minute.",
+    "refreshAllPricesRateLimited": "Market data is rate-limiting right now. Before it stopped: {{updated}}, {{skipped}}. Try again in a minute.",
     "priceRefreshed": "Price refreshed",
     "purchaseDate": "Purchase Date",
     "purchasePrice": "Purchase Price",
@@ -2416,7 +2469,41 @@
     "statementViewTransactions": "View transactions",
     "statementUncategorizedIncome": "Uncategorized income",
     "statementUncategorizedExpense": "Uncategorized expenses",
-    "statementToggleGroup": "Show categories in {{name}}"
+    "statementToggleGroup": "Show categories in {{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "Total spent",
+        "income": "Total received",
+        "net": "Net"
+      },
+      "none": {
+        "category": "Uncategorized",
+        "category_group": "No group",
+        "payee": "No payee",
+        "account": "No account",
+        "month": "No date"
+      },
+      "groupBy": {
+        "category": "Category",
+        "category_group": "Group",
+        "payee": "Payee",
+        "account": "Account",
+        "month": "Month"
+      },
+      "measure": {
+        "expenses": "Spending",
+        "income": "Income",
+        "net": "Net"
+      },
+      "share": "Share",
+      "computed": "Computed by the plugin",
+      "periodTrimmed": "Plugin reports cover up to two years. Showing {{from}} to {{to}}.",
+      "periodTooLong": "A plugin report covers up to two years. Pick a shorter period.",
+      "totalRow": "Total",
+      "page": "Page {{page}} of {{pages}}",
+      "previousPage": "Previous page",
+      "nextPage": "Next page"
+    }
   },
   "payees": {
     "noPayeeFound": "No payee found.",
@@ -3545,7 +3632,8 @@
       "undoFirstGroupSplit": "Undo the split before splitting among people.",
       "undoFirstMortgage": "Undo the split before adding a mortgage breakdown.",
       "categoryInUse": "This category holds parts of split transactions. Change those splits first.",
-      "destinationInvalid": "Parts of split transactions cannot move into an ignored or hidden category."
+      "destinationInvalid": "Parts of split transactions cannot move into an ignored or hidden category.",
+      "mergeNeedsRate": "These budgets are in different currencies and there is no exchange rate for their month to combine them."
     }
   },
   "plugins": {
@@ -3962,5 +4050,9 @@
       "title": "Recurring revenue",
       "hint": "What recurring invoices bring in each month, and what was lost lately."
     }
+  },
+  "offline": {
+    "title": "Can't reach the server",
+    "description": "You're offline or Securo is restarting. Your data is safe and nothing was changed. We'll reconnect automatically as soon as the server answers."
   }
 }

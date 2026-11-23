@@ -55,6 +55,20 @@ def test_openai_serialization_basic_message():
     assert out == [{"role": "user", "content": "hi"}]
 
 
+def test_openai_serialization_folds_leading_system_messages():
+    out = openai_serialize([
+        ChatMessage(role="system", content="guardrail"),
+        ChatMessage(role="system", content="identity"),
+        ChatMessage(role="user", content="hi"),
+        ChatMessage(role="assistant", content="hello"),
+    ])
+    assert out == [
+        {"role": "system", "content": "guardrail\n\nidentity"},
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello"},
+    ]
+
+
 def test_openai_serialization_assistant_with_tool_calls():
     msg = ChatMessage(
         role="assistant",

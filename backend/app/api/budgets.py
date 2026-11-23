@@ -30,10 +30,20 @@ router = APIRouter(prefix="/api/budgets", tags=["budgets"])
 @router.get("", response_model=list[BudgetRead])
 async def list_budgets(
     month: Optional[date] = Query(None),
+    primary_month: Optional[date] = Query(None),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    return await budget_service.get_budgets(session, ctx.workspace.id, month)
+    """Budgets a month resolves to, with `amount_primary` in the viewer's currency.
+
+    `primary_month` converts `amount_primary` at that month's rate instead of
+    `month`'s, so a copy preview can show a source limit at the rate of the
+    month it is being copied into.
+    """
+    budgets = await budget_service.get_budgets(session, ctx.workspace.id, month)
+    return await budget_service.budget_reads(
+        session, budgets, ctx.user_id, primary_month or month
+    )
 
 
 @router.post("", response_model=BudgetRead, status_code=status.HTTP_201_CREATED)
@@ -43,9 +53,11 @@ async def create_budget(
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
-        return await budget_service.create_budget(session, ctx.workspace.id, ctx.user_id, data)
-    except Exception as e:
+        budget = await budget_service.create_budget(session, ctx.workspace.id, ctx.user_id, data)
+    except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    [read] = await budget_service.budget_reads(session, [budget], ctx.user_id)
+    return read
 
 
 @router.post(
@@ -57,11 +69,12 @@ async def create_budgets_batch(
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
-        return await budget_service.create_budgets_batch(
+        budgets = await budget_service.create_budgets_batch(
             session, ctx.workspace.id, ctx.user_id, data
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return await budget_service.budget_reads(session, budgets, ctx.user_id)
 
 
 @router.get("/suggestions", response_model=BudgetSuggestionResponse)
@@ -83,10 +96,13 @@ async def update_budget(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    budget = await budget_service.update_budget(session, budget_id, ctx.workspace.id, data)
+    budget = await budget_service.update_budget(
+        session, budget_id, ctx.workspace.id, data, ctx.user_id
+    )
     if not budget:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Budget not found")
-    return budget
+    [read] = await budget_service.budget_reads(session, [budget], ctx.user_id)
+    return read
 
 
 @router.delete("/{budget_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -117,7 +133,7 @@ async def copy_budgets_endpoint(
 ):
     """Copy all budget category allocations from a source month to a target month with optional percentage adjustments."""
     try:
-        return await budget_service.copy_monthly_budgets(
+        budgets = await budget_service.copy_monthly_budgets(
             db=db,
             workspace_id=ctx.workspace.id,
             user_id=ctx.user_id,
@@ -128,6 +144,7 @@ async def copy_budgets_endpoint(
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return await budget_service.budget_reads(db, budgets, ctx.user_id)
 
 
 @router.get("/rollover-summary", response_model=BudgetRolloverSummaryResponse)

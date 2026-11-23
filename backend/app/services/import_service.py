@@ -2,19 +2,21 @@ import csv
 import hashlib
 import io
 import re
+import unicodedata
 import uuid
 import warnings
 import xml.etree.ElementTree as ET
 from xml.parsers import expat
-from datetime import datetime
-from decimal import Decimal
+from datetime import datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 
 from bs4 import XMLParsedAsHTMLWarning
 from ofxparse import OfxParser
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.money import bounded_conversion
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.category import Category
@@ -32,7 +34,7 @@ from app.services.credit_card_service import apply_effective_date
 from app.services.category_service import get_assignable_category_ids
 from app.services.rule_engine import apply_rule_actions, evaluate_conditions, merge_notes
 from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
-from app.services.fx_rate_service import stamp_primary_amount
+from app.services.fx_rate_service import stamp_account_amount, stamp_primary_amount
 from app.services.payee_service import get_or_create_payee
 from app.services.transaction_match_service import find_unique_transaction_match
 
@@ -209,10 +211,20 @@ def _ensure_ofx_sgml_header(text: str, encoding: str) -> str:
     return header + text
 
 
+# ofxparse converts a date with a "[+1:CET]" suffix to UTC, so a midnight
+# booking in Europe or Asia lands on the previous day. The bank's day is the
+# one printed, so drop the offset from transaction dates.
+_OFX_TXN_DATE_OFFSET = re.compile(
+    r"(<(?:DTPOSTED|DTUSER)\s*>\s*(?:<!\[CDATA\[)?\s*[0-9.]+)\s*\[[^\]<]*\]",
+    re.IGNORECASE,
+)
+
+
 def _preprocess_ofx(content: bytes) -> bytes:
     """Apply text-level fixups ofxparse needs before it can parse the file."""
     text, encoding = _decode_ofx_bytes(content)
     text = _patch_empty_fitids(text)
+    text = _OFX_TXN_DATE_OFFSET.sub(r"\1", text)
     text = _ensure_ofx_sgml_header(text, encoding)
     return text.encode(encoding, errors="replace")
 
@@ -688,6 +700,12 @@ def detect_csv_columns(content: bytes) -> list[str]:
     return [f.strip() for f in (reader.fieldnames or []) if f and f.strip()]
 
 
+def _fold_header(name: str) -> str:
+    """A lower-cased CSV header with its diacritics stripped ("Descrição" -> "descricao")."""
+    decomposed = unicodedata.normalize("NFKD", name)
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).lower()
+
+
 def parse_csv(
     content: bytes,
     date_format: str | None = None,
@@ -739,10 +757,20 @@ def parse_csv(
         if field in CSV_MAPPABLE_FIELDS and value and value.strip()
     }
 
+    # Bank exports write the Portuguese headers with accents ("Descrição",
+    # "Histórico", "Lançamento"); the candidates are plain ASCII, so fall back
+    # to the header with its diacritics stripped, keeping the header as is.
+    # An exact name wins: a file holding both "Descrição" and "descricao" must
+    # keep reading the plain column, as it did before the folded match.
+    folded_fieldnames = {_fold_header(f): f for f in reversed(fieldnames)}
+
     def find_col(candidates):
         for c in candidates:
             if c in fieldnames:
                 return c
+        for c in candidates:
+            if c in folded_fieldnames:
+                return folded_fieldnames[c]
         return None
 
     def resolve_col(field, candidates):
@@ -1102,6 +1130,12 @@ async def enrich_with_category_suggestions(
     return transactions
 
 
+def _cents(value: Decimal) -> Decimal:
+    """A conversion as `Numeric(15, 2)` stores it, rounded before it is bounded:
+    9999999999999.9918 fits as 9999999999999.99 (issue #422)."""
+    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
 async def import_transactions(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -1183,6 +1217,20 @@ async def import_transactions(
     matched_existing_ids: set[uuid.UUID] = set()
     effective_format = (detected_format or source or "").lower()
     should_detect_duplicates = detect_duplicates if effective_format == "csv" else True
+    # Imports parsed before OFX offsets were dropped: only their rows may sit
+    # one day off the bank's date (see the FITID lookup below).
+    utc_dated_import_ids: list[uuid.UUID] = []
+    if should_detect_duplicates:
+        utc_dated_import_ids = list(
+            (
+                await session.execute(
+                    select(ImportLog.id).where(
+                        ImportLog.account_id == account_id,
+                        ImportLog.ofx_utc_dates.is_(True),
+                    )
+                )
+            ).scalars()
+        )
 
     for txn_data in included:
         # Resolve currency: CSV value > account currency
@@ -1192,14 +1240,30 @@ async def import_transactions(
             # Prefer an external ID (OFX FITID), with date retained because some
             # Brazilian cards reuse one purchase FITID across monthly installments,
             # and amount and type retained because some banks reuse one FITID for
-            # several distinct entries posted on the same day.
+            # several distinct entries posted on the same day. The date may differ
+            # by one day only for rows of imports parsed before OFX offsets were
+            # dropped, which can sit on the neighbouring day. Any other row a day
+            # apart is a distinct entry (a recurring fee under one FITID), whether
+            # this run or an overlapping earlier statement added it.
             # Formats without unique IDs fall back to transaction fields; compare
             # both descriptions because rules may have changed the displayed one.
             if txn_data.external_id:
+                same_day = Transaction.date == txn_data.date
                 existing_statement = select(Transaction).where(
                     Transaction.account_id == account_id,
                     Transaction.external_id == txn_data.external_id,
-                    Transaction.date == txn_data.date,
+                    or_(
+                        same_day,
+                        and_(
+                            Transaction.date.between(
+                                txn_data.date - timedelta(days=1),
+                                txn_data.date + timedelta(days=1),
+                            ),
+                            Transaction.import_id.in_(utc_dated_import_ids),
+                        ),
+                    )
+                    if utc_dated_import_ids
+                    else same_day,
                     Transaction.amount == txn_data.amount,
                     Transaction.type == txn_data.type,
                 )
@@ -1273,6 +1337,9 @@ async def import_transactions(
             type=txn_data.type,
             status="posted",
             source=source,
+            # Imported rows are new to the person until they review them
+            # (issue #636).
+            is_read=False,
             import_id=import_log.id,
             external_id=txn_data.external_id,
             currency=txn_currency,
@@ -1308,6 +1375,12 @@ async def import_transactions(
             placeholder.external_id = txn_data.external_id
             placeholder.import_id = import_log.id
             placeholder.status = "posted"
+            # The bill's charge is on the statement file (#15).
+            placeholder.is_paid = True
+            # The placeholder was generated for the person; the imported charge
+            # that replaced it was not reviewed yet (issue #636). Duplicates
+            # above are skipped before this point, so they keep their state.
+            placeholder.is_read = False
             # The rules already ran, against the incoming charge, to build
             # `preview`. Fold that result in rather than re-running them
             # against the placeholder: its description is the recurring
@@ -1320,7 +1393,8 @@ async def import_transactions(
             # the account's own (#1073): the row takes the charged currency.
             currency_changed = placeholder.currency != txn_currency
             placeholder.currency = txn_currency
-            if placeholder.amount != txn_data.amount or txn_data.fx_rate or currency_changed:
+            amount_changed = placeholder.amount != txn_data.amount
+            if amount_changed or txn_data.fx_rate or currency_changed:
                 # Matched under a tolerance, or the file says what the charge
                 # cost in the primary currency: the row now stands for what was
                 # actually charged, not for what the bill expected.
@@ -1334,11 +1408,23 @@ async def import_transactions(
                     # converted" until a rate lands.
                     placeholder.amount_primary = None
                     placeholder.fx_rate_used = None
+                    placeholder.amount_account = None
+                    placeholder.amount_account_source = None
+                # The file's rate is a reporting value: the account amount
+                # moves only with the charge itself.
+                charge_changed = amount_changed or currency_changed
                 if txn_data.fx_rate:
                     placeholder.fx_rate_used = txn_data.fx_rate
-                    placeholder.amount_primary = txn_data.amount * txn_data.fx_rate
+                    placeholder.amount_primary = bounded_conversion(
+                        _cents(txn_data.amount * txn_data.fx_rate)
+                    )
+                    await stamp_account_amount(
+                        session, placeholder, recompute=charge_changed
+                    )
                 else:
-                    await stamp_primary_amount(session, user_id, placeholder)
+                    await stamp_primary_amount(
+                        session, user_id, placeholder, restamp_account=charge_changed
+                    )
                 # A split placeholder keeps its split, resized.
                 await category_line_service.rescale_lines(session, placeholder, expected_amount)
             placeholder_split = (
@@ -1383,7 +1469,9 @@ async def import_transactions(
         )
         if txn_data.fx_rate:
             incoming.fx_rate_used = txn_data.fx_rate
-            incoming.amount_primary = txn_data.amount * txn_data.fx_rate
+            incoming.amount_primary = bounded_conversion(
+                _cents(txn_data.amount * txn_data.fx_rate)
+            )
 
         session.add(incoming)
         await session.flush()
@@ -1416,7 +1504,9 @@ async def import_transactions(
             if incoming.category_id is None and not incoming.has_category_lines:
                 incoming.category_id = csv_category_id
 
-        if not txn_data.fx_rate:
+        if txn_data.fx_rate:
+            await stamp_account_amount(session, incoming)
+        else:
             await stamp_primary_amount(session, user_id, incoming)
 
         imported += 1
@@ -1489,6 +1579,9 @@ def infer_decimal_separator(values) -> str | None:
     """
     votes: set[str] = set()
     comma_thousands = False
+    # "0,125" is never a grouped number, so a column with one cannot be read
+    # as comma-thousands, even if its other cells look like it ("1,125").
+    zero_comma = False
     for raw in values:
         if not raw:
             continue
@@ -1501,11 +1594,13 @@ def infer_decimal_separator(values) -> str | None:
             votes.add(',')
         elif _DOT_DECIMAL_TAIL.search(s):
             votes.add('.')
-        elif _COMMA_THOUSANDS.match(s) and not s.startswith('0,'):
+        elif _ZERO_COMMA_DECIMAL.match(s):
+            zero_comma = True
+        elif _COMMA_THOUSANDS.match(s):
             comma_thousands = True
     if len(votes) == 1:
         return votes.pop()
-    if not votes and comma_thousands:
+    if not votes and comma_thousands and not zero_comma:
         return '.'
     return None
 
@@ -1544,6 +1639,9 @@ def normalize_amount(amount_str: str | None, decimal_separator: str | None = Non
             amount_str = amount_str.replace('.', '').replace(',', '.')
         else:
             amount_str = amount_str.replace(',', '')
+    elif amount_str.count(',') > 1 and _COMMA_THOUSANDS.match(amount_str):
+        # Two or more comma groups and no dot can only be grouping.
+        amount_str = amount_str.replace(',', '')
     elif ',' in amount_str:
         amount_str = amount_str.replace(',', '.')
 

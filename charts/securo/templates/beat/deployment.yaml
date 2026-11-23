@@ -23,6 +23,8 @@ spec:
         {{- include "securo.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: celery-beat
     spec:
+      initContainers:
+        {{- include "securo.waitForSchema" (dict "root" . "component" .Values.celeryBeat) | nindent 8 }}
       containers:
         - name: celery-beat
           image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"

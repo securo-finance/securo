@@ -24,6 +24,8 @@ spec:
         {{- include "securo.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: backend
     spec:
+      initContainers:
+        {{- include "securo.waitForSchema" (dict "root" . "component" .Values.backend) | nindent 8 }}
       containers:
         - name: backend
           image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"

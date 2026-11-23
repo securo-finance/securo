@@ -12,6 +12,9 @@ Two files are produced:
 - ``profit-and-loss.csv``: income and expenses grouped by category, then the
   period result. It follows the shared definition of what counts as income or
   expense (``counts_as_user_pnl``), so transfers and ignored rows stay out.
+  Every amount is in the workspace's own currency, converted line by line from
+  the transaction's currency at that line's date, and the file says which
+  currency that is in its ``Currency`` column.
 
 Every text column a person can type (account, category, payee, document) goes
 through ``csv_safe``, so a description that begins like a formula opens as the
@@ -42,12 +45,12 @@ from app.services._query_filters import (
     counts_as_user_pnl,
     line_amount,
     line_category_id,
-    line_primary_or_amount,
     reporting_date_col,
     with_category_lines,
 )
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.csv_safety import csv_safe
+from app.services.fx_rate_service import convert_or_none
 
 TRANSACTIONS_FILE = "transactions.csv"
 PROFIT_AND_LOSS_FILE = "profit-and-loss.csv"
@@ -63,12 +66,15 @@ TRANSACTION_HEADER = (
     "Direction",
     "Status",
 )
-PROFIT_AND_LOSS_HEADER = ("Section", "Category", "Amount")
+PROFIT_AND_LOSS_HEADER = ("Section", "Category", "Amount", "Currency")
 
 _INCOME = "income"
 _EXPENSE = "expense"
 _RESULT = "result"
+_UNCONVERTED_INCOME = "unconverted_income"
+_UNCONVERTED_EXPENSE = "unconverted_expense"
 _UNCATEGORIZED = "Uncategorized"
+_DEFAULT_CURRENCY = "USD"
 
 
 def workspace_slug(name: str) -> str:
@@ -92,21 +98,30 @@ def zip_filename(workspace_name: str, start_date: date, end_date: date) -> str:
     )
 
 
+def _as_date(value: Any) -> date:
+    """A SQL date expression as a Python date. SQLite may return an ISO string."""
+    if isinstance(value, str):
+        return date.fromisoformat(value[:10])
+    return value
+
+
 def _format_date(value: Any) -> str:
     """DD/MM/YYYY. SQLite may hand back an ISO string for a SQL expression."""
-    if isinstance(value, str):
-        value = date.fromisoformat(value[:10])
-    return value.strftime("%d/%m/%Y")
+    return _as_date(value).strftime("%d/%m/%Y")
 
 
 def _as_decimal(value: Any) -> Decimal:
     return Decimal(str(value if value is not None else 0))
 
 
+def _money(value: Any) -> Decimal:
+    """A value at the two decimals the files are written with."""
+    return _as_decimal(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
 def _format_decimal(value: Any) -> str:
     """Two decimals and a decimal comma, e.g. ``1234.5`` -> ``1234,50``."""
-    amount = _as_decimal(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    return f"{amount:.2f}".replace(".", ",")
+    return f"{_money(value):.2f}".replace(".", ",")
 
 
 def _csv_bytes(header: Iterable[str], rows: Iterable[Iterable[str]]) -> bytes:
@@ -234,12 +249,26 @@ async def _profit_and_loss_rows(
     end_date: date,
     accounting_mode: str,
 ) -> list[list[str]]:
-    """Income and expenses per category in the workspace primary currency.
+    """Income and expenses per category in the workspace's own currency.
 
     ``counts_as_user_pnl`` is applied per joined part, so a split transaction
     contributes each line that counts and drops transfer-like or ignored parts
-    on their own. Amounts use ``amount_primary`` when the row has one and fall
-    back to the line amount otherwise.
+    on their own.
+
+    Every part is read in the transaction's own currency and converted to
+    ``workspace.default_currency`` at that part's reporting date. The stored
+    ``amount_primary`` is deliberately not used: it carries the *display*
+    currency of whoever saved the row (``User.primary_currency``), so the same
+    books would export different numbers for two people with different
+    preferences (#240).
+
+    The rate is the one the rest of the app resolves: the day's own stored
+    rate, else the closest stored one. A part whose currency has no stored
+    rate at all is kept out of the totals rather than summed at 1:1. It goes
+    to an ``unconverted_income`` / ``unconverted_expense`` section with its own
+    currency in the ``Currency`` column, so the file tells the accountant what
+    was left out and why (#574). The export never calls the provider for a
+    missing day, which keeps a ten-year period a bounded number of queries.
 
     This books the full amount of every transaction, which is what the ledger
     says. The in-app income/expenses report is different on purpose: it shows
@@ -253,6 +282,9 @@ async def _profit_and_loss_rows(
     # category flags through a subquery on the base table, and an alias keeps
     # that subquery from being correlated with this join.
     report_category = aliased(Category, name="report_category")
+    # The row's own currency, upper-cased so a row and its rate agree on the
+    # code however it was stored (#1474).
+    currency = func.upper(Transaction.currency)
 
     statement = (
         with_category_lines(
@@ -260,7 +292,9 @@ async def _profit_and_loss_rows(
                 Transaction.type.label("type"),
                 category_id.label("category_id"),
                 report_category.name.label("category_name"),
-                func.sum(line_primary_or_amount()).label("total"),
+                currency.label("currency"),
+                report_date.label("report_date"),
+                func.sum(line_amount()).label("total"),
             )
             .select_from(Transaction)
         )
@@ -281,27 +315,69 @@ async def _profit_and_loss_rows(
             Transaction.status == "posted",
             counts_as_user_pnl(category_id),
         )
-        .group_by(Transaction.type, category_id, report_category.name)
+        .group_by(
+            Transaction.type,
+            category_id,
+            report_category.name,
+            currency,
+            report_date,
+        )
     )
 
+    workspace_currency = (
+        ctx.workspace.default_currency or _DEFAULT_CURRENCY
+    ).strip().upper()
+    # One rate per currency and day: every category on the same day shares it,
+    # and the None (no stored rate) is cached too.
+    rates: dict[tuple[str, date], Decimal | None] = {}
     totals: dict[tuple[str, str], Decimal] = {}
+    unconverted: dict[tuple[str, str, str], Decimal] = {}
+
     for row in (await session.execute(statement)).all():
         section = _INCOME if row.type == "credit" else _EXPENSE
         label = row.category_name or _UNCATEGORIZED
-        total = _as_decimal(row.total).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        part_currency = (row.currency or workspace_currency).strip().upper()
+        part_date = _as_date(row.report_date)
+        total = _as_decimal(row.total)
         if section == _EXPENSE:
             total = abs(total)
-        key = (section, label)
-        totals[key] = totals.get(key, Decimal("0.00")) + total
 
+        if part_currency == workspace_currency:
+            rate = Decimal("1")
+        else:
+            rate_key = (part_currency, part_date)
+            if rate_key not in rates:
+                # The rate for one unit comes back unrounded, so the day's
+                # total is rounded once, when it is written.
+                _, rates[rate_key] = await convert_or_none(
+                    session,
+                    Decimal("1"),
+                    part_currency,
+                    workspace_currency,
+                    part_date,
+                    allow_fetch=False,
+                )
+            rate = rates[rate_key]
+
+        if rate is None:
+            unconverted_key = (section, label, part_currency)
+            unconverted[unconverted_key] = (
+                unconverted.get(unconverted_key, Decimal("0")) + total
+            )
+        else:
+            key = (section, label)
+            totals[key] = totals.get(key, Decimal("0")) + total * rate
+
+    # Each category is rounded once, to the cent the file prints, and that
+    # rounded value is what the result sums: otherwise two 0,015 lines show
+    # 0,02 each and the result says 0,03.
     ordered: list[tuple[str, str, Decimal]] = [
-        (section, label, total)
-        for (section, label), total in totals.items()
+        (section, label, _money(total)) for (section, label), total in totals.items()
     ]
     ordered.sort(key=lambda item: (0 if item[0] == _INCOME else 1, item[1].lower()))
 
     rows = [
-        [section, csv_safe(label), _format_decimal(total)]
+        [section, csv_safe(label), _format_decimal(total), workspace_currency]
         for section, label, total in ordered
     ]
     income_total = sum(
@@ -310,7 +386,36 @@ async def _profit_and_loss_rows(
     expense_total = sum(
         (total for section, _, total in ordered if section == _EXPENSE), Decimal("0.00")
     )
-    rows.append([_RESULT, "", _format_decimal(income_total - expense_total)])
+
+    # Parts kept out of the totals, with the currency they are actually in.
+    # The section name carries the direction; the amount stays a magnitude.
+    skipped: list[tuple[str, str, str, Decimal]] = [
+        (section, label, skipped_currency, _money(total))
+        for (section, label, skipped_currency), total in unconverted.items()
+    ]
+    skipped.sort(
+        key=lambda item: (0 if item[0] == _INCOME else 1, item[1].lower(), item[2])
+    )
+    rows.extend(
+        [
+            [
+                _UNCONVERTED_INCOME if section == _INCOME else _UNCONVERTED_EXPENSE,
+                csv_safe(label),
+                _format_decimal(total),
+                skipped_currency,
+            ]
+            for section, label, skipped_currency, total in skipped
+        ]
+    )
+
+    rows.append(
+        [
+            _RESULT,
+            "",
+            _format_decimal(income_total - expense_total),
+            workspace_currency,
+        ]
+    )
     return rows
 
 
