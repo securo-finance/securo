@@ -265,6 +265,27 @@ describe('review state of a transaction row', () => {
     expect(listCall.to).toBeUndefined()
   })
 
+  it('keeps the queue chip when it is the only filter left (issue #411)', async () => {
+    // The queue drops the date, so its chip is the only one on the row: the
+    // row must still show, and the chip's x must leave the queue.
+    vi.setSystemTime(new Date('2026-11-05T12:00:00'))
+    listFromRows(() => [row({ id: 'tx-oct', description: 'OCTOBER IMPORT', date: '2026-10-08' })])
+
+    renderWithProviders(<TransactionsPage />, {
+      route: '/transactions?unread_only=true',
+      path: '/transactions',
+    })
+
+    await screen.findByText('OCTOBER IMPORT')
+    fireEvent.click(await screen.findByRole('button', { name: /New transactions:\s*New only/ }))
+
+    await waitFor(() => {
+      const call = api.transactions.list.mock.calls.at(-1)![0]
+      expect(call.unread_only).toBeUndefined()
+      expect(call.from).toBe('2026-11-01')
+    })
+  })
+
   it('marks every row as read from the queue', async () => {
     let cleared = false
     listFromRows(() =>

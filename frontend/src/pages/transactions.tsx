@@ -150,20 +150,29 @@ export default function TransactionsPage() {
   const [initialRange] = useState(() => {
     const f = searchParams.get('from')
     const t = searchParams.get('to')
-    if (f || t) return { from: f ?? '', to: t ?? '' }
+    if (f || t) return { from: f ?? '', to: t ?? '', restore: null }
+    const usual = loadRange('transactions') ?? monthRange(currentMonth())
     // A flag is something to come back to, often from months ago: the
     // flagged views open on the whole history, not the current month.
-    if (parseFlagFilter(searchParams.get('flagged'))) return { from: '', to: '' }
     // The review queue holds whatever arrived unread, and an import early in
     // the month usually brings last month's rows: it opens on every date too.
-    if (searchParams.get('unread_only') === 'true') return { from: '', to: '' }
-    return loadRange('transactions') ?? monthRange(currentMonth())
+    if (
+      parseFlagFilter(searchParams.get('flagged')) ||
+      searchParams.get('unread_only') === 'true'
+    ) {
+      return { from: '', to: '', restore: usual }
+    }
+    return { ...usual, restore: null }
   })
   const [filterFrom, setFilterFrom] = useState<string>(initialRange.from)
   const [filterTo, setFilterTo] = useState<string>(initialRange.to)
   // The range in place before a whole-history view (flags, review queue)
   // cleared it, to put back when the last of them is turned off.
-  const rangeBeforeAllDatesRef = useRef<{ from: string; to: string } | null>(null)
+  // A link that opens straight on one of those views has no range of its own
+  // to put back: leaving it lands on the range the page opens with otherwise.
+  const rangeBeforeAllDatesRef = useRef<{ from: string; to: string } | null>(
+    initialRange.restore,
+  )
   // Month reflected by the stepper: the active range when it spans exactly one
   // full month, otherwise the current month (custom ranges still navigable).
   const steppedMonth = monthFromRange(filterFrom, filterTo) ?? currentMonth()
@@ -1825,6 +1834,9 @@ export default function TransactionsPage() {
           <Button
             size="sm"
             variant="outline"
+            // The label carries the count, so on a phone it takes the whole
+            // row and wraps instead of running past the banner's edge.
+            className="h-auto min-h-9 w-full whitespace-normal py-1.5 text-center sm:w-auto"
             onClick={() => markAllReadMutation.mutate(currentWorkspace?.id)}
             // The action clears the whole workspace, not the filtered list:
             // it says how many rows that is, and with none there is nothing
