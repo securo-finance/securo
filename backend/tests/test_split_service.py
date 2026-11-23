@@ -99,6 +99,28 @@ async def test_equal_split_three_ways_assigns_residual_to_last(
 
 
 @pytest.mark.asyncio
+async def test_equal_split_shares_differ_by_at_most_a_cent(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = await _make_account(session, test_user.id)
+    tx = await _make_tx(session, test_user.id, account.id, Decimal("10.06"))
+    _, members = await _make_group_with_members(
+        session, test_user.id, test_workspace.id, ["A", "B", "C", "D"]
+    )
+
+    payload = TransactionSplitsInput(
+        share_type="equal",
+        splits=[TransactionSplitInput(group_member_id=m.id) for m in members],
+    )
+    await split_service.replace_splits(session, tx, payload, test_user.id)
+
+    by_member = {s.group_member_id: s.share_amount for s in await _read_splits(session, tx.id)}
+    assert [by_member[m.id] for m in members] == [
+        Decimal("2.51"), Decimal("2.51"), Decimal("2.52"), Decimal("2.52")
+    ]
+
+
+@pytest.mark.asyncio
 async def test_percent_split_residual_on_last(
     session: AsyncSession, test_user, test_workspace
 ):
