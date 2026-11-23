@@ -2380,12 +2380,10 @@ export default function TransactionsPage() {
               aria-label={selectionAllFlagged ? t('transactions.unflagAction') : t('transactions.flagAction')}
               className="h-8 px-3 shrink-0 text-sm"
             >
-              {/* Icon only until 2xl: with Create Rule showing for a single
-                  row, a label here pushes Delete out of the bar. */}
-              <Flag size={15} className={cn('2xl:me-1.5', selectionAllFlagged && 'fill-current text-amber-600 dark:text-amber-400')} />
-              <span className="hidden 2xl:inline">
-                {selectionAllFlagged ? t('transactions.unflagAction') : t('transactions.flagAction')}
-              </span>
+              {/* Icon only at every width: with Create Rule showing for a
+                  single row, a label here pushes Delete out of the bar.
+                  The title and aria-label carry the name. */}
+              <Flag size={15} className={cn(selectionAllFlagged && 'fill-current text-amber-600 dark:text-amber-400')} />
             </Button>
 
             <div className="w-px bg-border/60 self-stretch" />
