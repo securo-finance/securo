@@ -243,6 +243,7 @@ async def test_two_saves_of_one_anchor_end_with_only_the_second_saves_links(
         anchor = await transaction_service.get_transaction(
             db, dinner.id, test_workspace.id, for_update=True
         )
+        assert anchor is not None
         await reimbursement_service.replace_allocations(
             db, anchor,
             [ReimbursementAllocationInput(counterpart_id=counterpart.id, amount=Decimal(amount))],
