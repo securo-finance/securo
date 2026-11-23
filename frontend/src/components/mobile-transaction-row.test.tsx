@@ -169,6 +169,7 @@ describe('MobileTransactionRow description line (#433)', () => {
 
   it('renders no badge line when the row has no badges', () => {
     renderRow(makeTx({ description: 'Supermercado Pão de Açúcar' }))
+    expect(screen.getByText('Supermercado Pão de Açúcar')).toBeInTheDocument()
     expect(screen.queryByTestId('transaction-badges')).not.toBeInTheDocument()
   })
 })
