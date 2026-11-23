@@ -234,10 +234,12 @@ async def update_connection_values(
 ):
     """New form values (to reconnect after changing a password, say); then it syncs afresh."""
     connection = await _connection_guarded(connections.get_connection(session, ctx.workspace.id, connection_id))
-    connection = await _connection_guarded(
+    connection, changed = await _connection_guarded(
         connections.update_values(session, connection, name=body.name, values=body.values)
     )
-    if connection.status == "pending":
+    # Only new values have anything to prove: a rename never queues a run, even
+    # on a connection still pending. An OAuth connection proves itself by signing in.
+    if changed and connection.status == "pending":
         await _start(session, connection, new_values=True)
     return await _read(session, connection)
 
