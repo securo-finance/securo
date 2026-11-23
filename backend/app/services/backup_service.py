@@ -1314,6 +1314,10 @@ def _prepare_model_data(
         # filled the way migration 124 fills it. Same-currency rows never read
         # the column, so they can carry the copy harmlessly.
         data["amount_account"], data["amount_account_source"] = _legacy_account_amount(data)
+    if model is ImportLog and "ofx_utc_dates" not in row:
+        # A backup from before migration 125 was written by the old OFX
+        # parser, so its OFX imports are marked the way the migration marks them.
+        data["ofx_utc_dates"] = str(data.get("format") or "").lower() == "ofx"
     if "workspace_id" in columns:
         data["workspace_id"] = target_workspace_id
     if "user_id" in columns:

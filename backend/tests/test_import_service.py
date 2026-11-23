@@ -2293,6 +2293,37 @@ class TestImportTransactionsWithCategory:
         assert housing_tx.category_id == housing_cat.id
 
 
+def _daily_fees(*days: int) -> list:
+    """One FEE row per day of January 2026, all under the same FITID."""
+    from app.schemas.transaction import TransactionImport
+
+    return [
+        TransactionImport(
+            description="FEE",
+            amount=Decimal("2.00"),
+            date=date(2026, 1, day),
+            type="debit",
+            external_id="FITID-FEE",
+        )
+        for day in days
+    ]
+
+
+async def _import_before_offset_fix(session, workspace, user, account, rows) -> None:
+    """Import rows as an OFX import from before #1671, whose dates were the
+    UTC day ofxparse gave (what migration 125 marks)."""
+    from sqlalchemy import update
+
+    from app.models.import_log import ImportLog
+
+    await import_transactions(session, workspace.id, user.id, account.id, rows, "ofx")
+    await session.execute(
+        update(ImportLog)
+        .where(ImportLog.account_id == account.id)
+        .values(ofx_utc_dates=True)
+    )
+
+
 class TestOfxInstallmentDedup:
     """Brazilian credit-card installments share one FITID across all monthly
     statements (issue #98). Deduplication must consider the date so that
@@ -2384,7 +2415,7 @@ class TestOfxInstallmentDedup:
             type="debit",
             external_id="FITID-TZ",
         )
-        await import_transactions(session, test_workspace.id, test_user.id, test_account.id, [txn], "ofx")
+        await _import_before_offset_fix(session, test_workspace, test_user, test_account, [txn])
         imported, skipped, _, _ = await import_transactions(
             session,
             test_workspace.id,
@@ -2439,6 +2470,65 @@ class TestOfxInstallmentDedup:
         )
         assert imported == 0
         assert skipped == 2
+
+    @pytest.mark.asyncio
+    async def test_overlapping_statement_keeps_next_day_fee_under_same_fitid(
+        self, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
+    ):
+        """#388: the next statement overlaps the previous one and repeats a
+        daily fee's FITID. The fee of the new day is a new charge, not the
+        previous day's row one day off."""
+        from sqlalchemy import select
+
+        from app.models.transaction import Transaction
+
+        first, _, _, _ = await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id,
+            _daily_fees(14, 15), "ofx",
+        )
+        assert first == 2
+
+        imported, skipped, _, _ = await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id,
+            _daily_fees(14, 15, 16), "ofx",
+        )
+        assert (imported, skipped) == (1, 2)
+
+        # A statement that starts the day after the last one ended.
+        imported, skipped, _, _ = await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id,
+            _daily_fees(17), "ofx",
+        )
+        assert (imported, skipped) == (1, 0)
+
+        stored = await session.execute(
+            select(Transaction.date)
+            .where(Transaction.account_id == test_account.id)
+            .order_by(Transaction.date)
+        )
+        assert [d.day for d in stored.scalars()] == [14, 15, 16, 17]
+
+    @pytest.mark.asyncio
+    async def test_legacy_row_one_day_off_still_dedups_next_to_new_imports(
+        self, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
+    ):
+        """The one-day window keeps reaching rows of an import parsed before
+        the offset fix, even once newer imports sit on the same account."""
+        legacy = _daily_fees(14)[0].model_copy(update={"external_id": "FITID-OLD"})
+        await _import_before_offset_fix(
+            session, test_workspace, test_user, test_account, [legacy]
+        )
+        await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id,
+            _daily_fees(10, 11), "ofx",
+        )
+
+        imported, skipped, _, _ = await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id,
+            [legacy.model_copy(update={"date": date(2026, 1, 15)})] + _daily_fees(12),
+            "ofx",
+        )
+        assert (imported, skipped) == (1, 1)
 
     @pytest.mark.asyncio
     async def test_same_external_id_same_date_different_amounts_all_imported(
@@ -3777,3 +3867,55 @@ class TestCsvFxRateValidation:
             ("Bad rate", "invalid_fx_rate"),
             ("Negative rate", "invalid_fx_rate"),
         ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("keep_marker", [True, False])
+async def test_restoring_an_old_backup_marks_its_ofx_imports_as_utc_dated(
+    client, session: AsyncSession, auth_headers, test_user: User, test_workspace,
+    test_account: Account, keep_marker: bool,
+):
+    """A backup written before migration 125 has no marker, so its OFX imports
+    come from the old parser and keep the one-day FITID window; a newer backup
+    keeps the marker it carries."""
+    import io
+    import json
+    import zipfile
+
+    from sqlalchemy import select
+
+    from app.models.import_log import ImportLog
+
+    await import_transactions(
+        session, test_workspace.id, test_user.id, test_account.id, _daily_fees(14), "ofx",
+        filename="fees.ofx", detected_format="ofx",
+    )
+    await session.commit()
+
+    archive = await client.get("/api/export/backup", headers=auth_headers)
+    assert archive.status_code == 200
+    edited = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(archive.content)) as source, zipfile.ZipFile(edited, "w") as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename.rsplit("/", 1)[-1] == "import_logs.json":
+                rows = json.loads(data)
+                assert rows and all(row["ofx_utc_dates"] is False for row in rows)
+                if not keep_marker:
+                    for row in rows:
+                        del row["ofx_utc_dates"]
+                data = json.dumps(rows).encode()
+            target.writestr(item, data)
+
+    restored = await client.post(
+        "/api/backups/restore-upload",
+        files={"file": ("backup.zip", edited.getvalue(), "application/zip")},
+        data={"content": "both", "mode": "new_workspace"},
+        headers=auth_headers,
+    )
+    assert restored.status_code == 200, restored.text
+    workspace_id = uuid.UUID(restored.json()["workspace_id"])
+    marker = await session.scalar(
+        select(ImportLog.ofx_utc_dates).where(ImportLog.workspace_id == workspace_id)
+    )
+    assert marker is (not keep_marker)
