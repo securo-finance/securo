@@ -796,7 +796,9 @@ async def viewer_shares_in_primary(
             expense, _ = await _convert(
                 session, Decimal(str(raw_expense)), currency, primary_currency
             )
-        _add(tuple(row[: len(keys)]), income, abs(expense))
+        # Signed, like the stamped rows: an exact split may give the viewer
+        # a negative share, which lowers the total instead of adding to it.
+        _add(tuple(row[: len(keys)]), income, expense)
     return out
 
 
@@ -939,15 +941,4 @@ async def viewer_shared_spending_by_category(
     out: dict = {}
     for cat_id, total in result.all():
         out[cat_id] = out.get(cat_id, 0.0) + float(total or 0)
-    return out
-
-    from decimal import Decimal as _Decimal
-
-    from app.services.fx_rate_service import convert as _convert
-
-    for cat_id, cur, total in result.all():
-        if not total:
-            continue
-        converted, _ = await _convert(session, _Decimal(str(total)), cur, primary_currency)
-        out[cat_id] = out.get(cat_id, 0.0) + float(converted)
     return out
