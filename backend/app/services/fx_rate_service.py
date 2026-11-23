@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.core.app_clock import app_today
 from app.core.config import get_settings
 from app.core.currency import same_currency
+from app.core.money import bounded_conversion
 from app.models.account import Account
 from app.models.fx_rate import FxRate
 from app.models.transaction import Transaction
@@ -414,9 +415,10 @@ async def stamp_account_amount(
         allow_fetch=allow_fetch,
     )
     if rate is not None:
-        transaction.amount_account = (
-            Decimal(str(transaction.amount)) * rate
-        ).quantize(Decimal("0.01"))
+        transaction.amount_account = bounded_conversion(
+            (Decimal(str(transaction.amount)) * rate).quantize(Decimal("0.01")),
+            "amount_account",
+        )
         transaction.amount_account_source = None
 
 
@@ -450,6 +452,9 @@ async def resolve_primary_stamp(
     row is in a foreign currency and no real rate can be resolved for its
     date. A preview uses it so it can show the conversion a save will make
     instead of guessing (issue #271).
+
+    Raises ``MoneyOutOfRange`` when the conversion does not fit the column
+    (issue #422).
     """
     amount_dec = Decimal(str(amount))
 
@@ -476,7 +481,7 @@ async def resolve_primary_stamp(
             exact = False
             break
     return PrimaryStamp(
-        (amount_dec * rate).quantize(Decimal("0.01")), rate, exact
+        bounded_conversion((amount_dec * rate).quantize(Decimal("0.01"))), rate, exact
     )
 
 

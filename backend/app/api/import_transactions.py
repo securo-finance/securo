@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
+from app.core.money import MoneyOutOfRange
 from app.core.workspace_context import (
     WorkspaceContext,
     current_workspace,
@@ -161,11 +162,16 @@ async def import_transactions(
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
 
-    imported, skipped, excluded, import_log_id = await import_service.import_transactions(
-        session, ctx.workspace.id, ctx.user_id, data.account_id, data.transactions, "import",
-        filename=data.filename, detected_format=data.detected_format,
-        detect_duplicates=data.detect_duplicates,
-    )
+    try:
+        imported, skipped, excluded, import_log_id = await import_service.import_transactions(
+            session, ctx.workspace.id, ctx.user_id, data.account_id, data.transactions, "import",
+            filename=data.filename, detected_format=data.detected_format,
+            detect_duplicates=data.detect_duplicates,
+        )
+    except MoneyOutOfRange as e:
+        # A row whose conversion does not fit the column (issue #422): the
+        # import commits once at the end, so nothing of it was saved.
+        raise HTTPException(status_code=422, detail=str(e))
 
     return {
         "imported": imported,

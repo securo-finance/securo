@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from app.core.app_clock import use_timezone
 from app.worker import celery_app
 from app.core.config import get_settings
+from app.core.money import bounded_conversion
 from app.models.transaction import Transaction
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.asset import Asset
@@ -86,7 +87,9 @@ async def _backfill_primary_amounts() -> dict:
                     )
                     if rate is None:
                         continue  # still no rate — leave as-is, heal next run
-                    tx.amount_primary = (Decimal(str(tx.amount)) * rate).quantize(Decimal("0.01"))
+                    tx.amount_primary = bounded_conversion(
+                        (Decimal(str(tx.amount)) * rate).quantize(Decimal("0.01"))
+                    )
                     tx.fx_rate_used = rate
                     # A repair of the reporting stamp: a bank charge or an
                     # amount the user typed stays.

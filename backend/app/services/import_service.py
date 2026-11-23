@@ -16,6 +16,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.money import bounded_conversion
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.category import Category
@@ -1406,7 +1407,9 @@ async def import_transactions(
                 charge_changed = amount_changed or currency_changed
                 if txn_data.fx_rate:
                     placeholder.fx_rate_used = txn_data.fx_rate
-                    placeholder.amount_primary = txn_data.amount * txn_data.fx_rate
+                    placeholder.amount_primary = bounded_conversion(
+                        txn_data.amount * txn_data.fx_rate
+                    )
                     await stamp_account_amount(
                         session, placeholder, recompute=charge_changed
                     )
@@ -1458,7 +1461,7 @@ async def import_transactions(
         )
         if txn_data.fx_rate:
             incoming.fx_rate_used = txn_data.fx_rate
-            incoming.amount_primary = txn_data.amount * txn_data.fx_rate
+            incoming.amount_primary = bounded_conversion(txn_data.amount * txn_data.fx_rate)
 
         session.add(incoming)
         await session.flush()
