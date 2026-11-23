@@ -73,6 +73,16 @@ dev = [
     "ty==0.0.105",
 ]
 
+[tool.uv]
+# Seven-day cooldown on every resolution, so a compromised release has time to
+# be caught and pulled before it reaches the lock. Renovate's
+# minimumReleaseAge covers its own update PRs, but lock-file maintenance just
+# runs `uv lock` and would pick up anything newer; uv enforces it here.
+exclude-newer = "7 days"
+# ty is pinned to an exact 0.0.x on purpose (see the dev extra) and bumped by
+# hand together with the annotations it asks for, so it is exempt here.
+exclude-newer-package = { ty = false }
+
 [tool.setuptools.packages.find]
 include = ["app*"]
 
