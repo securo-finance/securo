@@ -160,6 +160,24 @@ describe('localized API errors', () => {
     expect(extractApiError(apiError('amount_primary must be greater than zero'))).toBe(expected)
   })
 
+  // A rate of zero is refused unless the converted amount is zero too, and a
+  // negative rate reaches the same message, so the text says "greater than
+  // zero" instead of only ruling out a negative value.
+  it.each([
+    ['en', 'The exchange rate must be greater than zero, unless the converted amount is also zero.'],
+    ['pt-BR', 'A taxa de câmbio deve ser maior que zero, a menos que o valor convertido também seja zero.'],
+  ])('shows a refused exchange rate in %s', async (language, expected) => {
+    await i18n.changeLanguage(language)
+
+    expect(extractApiError(apiError([
+      {
+        loc: ['body', 'fx_rate_used'],
+        msg: 'Value error, fx_rate_used must be greater than zero',
+      },
+    ]))).toBe(expected)
+    expect(extractApiError(apiError('fx_rate_used must be greater than zero'))).toBe(expected)
+  })
+
   it('shows a refused amount in pt-BR and keeps an unknown entry as it was', async () => {
     await i18n.changeLanguage('pt-BR')
 

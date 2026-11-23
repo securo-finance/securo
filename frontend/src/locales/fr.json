@@ -1040,7 +1040,7 @@
       "tooLarge": "Le montant dépasse ce que Securo peut enregistrer.",
       "convertedNegative": "Le montant converti ne peut pas être négatif.",
       "convertedTooLarge": "Le montant converti dépasse ce que Securo peut enregistrer.",
-      "rateNegative": "Le taux de change ne peut pas être négatif.",
+      "rateNotPositive": "Le taux de change doit être supérieur à zéro, sauf si le montant converti est également nul.",
       "rateTooLarge": "Le taux de change dépasse ce que Securo peut enregistrer.",
       "required": "Saisissez un montant."
     },

@@ -1040,7 +1040,7 @@
       "tooLarge": "O valor é superior ao que o Securo consegue guardar.",
       "convertedNegative": "O valor convertido não pode ser negativo.",
       "convertedTooLarge": "O valor convertido é superior ao que o Securo consegue guardar.",
-      "rateNegative": "A taxa de câmbio não pode ser negativa.",
+      "rateNotPositive": "A taxa de câmbio deve ser superior a zero, exceto se o valor convertido também for zero.",
       "rateTooLarge": "A taxa de câmbio é superior ao que o Securo consegue guardar.",
       "required": "Introduza um valor."
     },

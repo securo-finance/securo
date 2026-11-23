@@ -55,7 +55,7 @@ const KNOWN_MESSAGES: Record<string, string> = {
   'amount cannot be null': 'transactions.amountErrors.required',
   'amount_primary must be greater than zero': 'transactions.amountErrors.convertedNegative',
   'amount_primary must be at most 9999999999999.99': 'transactions.amountErrors.convertedTooLarge',
-  'fx_rate_used must be greater than zero': 'transactions.amountErrors.rateNegative',
+  'fx_rate_used must be greater than zero': 'transactions.amountErrors.rateNotPositive',
   'fx_rate_used must be at most 9999999999.9999999999': 'transactions.amountErrors.rateTooLarge',
 }
 

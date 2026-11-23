@@ -1038,7 +1038,7 @@
       "tooLarge": "Der Betrag ist größer, als Securo speichern kann.",
       "convertedNegative": "Der umgerechnete Betrag darf nicht negativ sein.",
       "convertedTooLarge": "Der umgerechnete Betrag ist größer, als Securo speichern kann.",
-      "rateNegative": "Der Wechselkurs darf nicht negativ sein.",
+      "rateNotPositive": "Der Wechselkurs muss größer als null sein, es sei denn, der umgerechnete Betrag ist ebenfalls null.",
       "rateTooLarge": "Der Wechselkurs ist größer, als Securo speichern kann.",
       "required": "Gib einen Betrag ein."
     },

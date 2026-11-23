@@ -1040,7 +1040,7 @@
       "tooLarge": "L'importo è più grande di quanto Securo possa salvare.",
       "convertedNegative": "L'importo convertito non può essere negativo.",
       "convertedTooLarge": "L'importo convertito è più grande di quanto Securo possa salvare.",
-      "rateNegative": "Il tasso di cambio non può essere negativo.",
+      "rateNotPositive": "Il tasso di cambio deve essere maggiore di zero, a meno che anche l'importo convertito non sia zero.",
       "rateTooLarge": "Il tasso di cambio è più grande di quanto Securo possa salvare.",
       "required": "Inserisci un importo."
     },
