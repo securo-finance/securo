@@ -102,6 +102,7 @@ def _b3_holding(
     quotable: bool = True,
     quantity: Decimal = Decimal("7"),
     current_value: Decimal = Decimal("300.00"),
+    unit_price: Optional[Decimal] = None,
 ) -> HoldingData:
     return HoldingData(
         external_id=external_id,
@@ -109,6 +110,7 @@ def _b3_holding(
         currency="BRL",
         current_value=current_value,
         quantity=quantity,
+        unit_price=unit_price,
         ticker=ticker,
         ticker_quotable=quotable,
         metadata={"status": "ACTIVE", "code": "PSSA3", "type": "EQUITY"},
@@ -637,6 +639,33 @@ async def test_provider_valued_snapshot_has_no_price(
     row = await _today_row(session, await _only_asset(session, test_user))
     assert Decimal(str(row.amount)) == Decimal("300.00")
     assert row.price is None
+
+
+@pytest.mark.asyncio
+async def test_provider_valued_snapshot_keeps_the_reported_unit_price(
+    session: AsyncSession, test_user: User, conn: BankConnection, market: _FakeMarket
+):
+    # No quote, so the holding stays provider-valued: its point keeps the
+    # provider's amount and the unit price it reported, not a quote.
+    _MockProvider._holdings = [_b3_holding(unit_price=Decimal("42.50"))]
+    await _sync(session, test_user, conn)
+
+    row = await _today_row(session, await _only_asset(session, test_user))
+    assert Decimal(str(row.amount)) == Decimal("300.00")
+    assert row.price == Decimal("42.500000")
+
+
+@pytest.mark.asyncio
+async def test_market_priced_snapshot_stores_the_quote_over_the_reported_unit_price(
+    session: AsyncSession, test_user: User, conn: BankConnection, market: _FakeMarket
+):
+    market.quotes["PSSA3.SA"] = _quote("PSSA3.SA", 44.00)
+    _MockProvider._holdings = [_b3_holding(unit_price=Decimal("42.50"))]
+    await _sync(session, test_user, conn)
+
+    row = await _today_row(session, await _only_asset(session, test_user))
+    assert Decimal(str(row.amount)) == Decimal("308.00")
+    assert row.price == Decimal("44.000000")
 
 
 @pytest.mark.asyncio
