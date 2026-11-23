@@ -164,8 +164,12 @@ async def _fx_override_in_owner_currency(
 
     A conversion equal to what the editor was shown is dropped, so the
     owner's stamp (and the figure they typed) stays as it is. A changed one
-    is converted at the row's date into the owner's currency, and refused
-    when there is no stored rate to do that with.
+    is converted into the owner's currency at the date the row is saved
+    with, and refused when there is no stored rate to do that with.
+
+    The echo is recomputed at the rate stored now, so a rate synced while
+    the dialog was open no longer matches it; the web dialog leaves an
+    untouched conversion out of the save for that reason.
     """
     if (
         tx.user_id is None
@@ -212,13 +216,16 @@ async def _fx_override_in_owner_currency(
             update_data.pop("fx_rate_used", None)
             return update_data
 
-    if not await viewer.has_rate(session, tx.user_id, tx.date):
+    # The echo is judged at the date the editor was shown; a conversion
+    # they typed belongs to the date the row is saved with.
+    on_date = update_data.get("date") or tx.date
+    if not await viewer.has_rate(session, tx.user_id, on_date):
         raise ValueError(
             f"No exchange rate between {viewer.currency} and "
-            f"{viewer.stamp_currency(tx.user_id)} on {tx.date.isoformat()} "
+            f"{viewer.stamp_currency(tx.user_id)} on {on_date.isoformat()} "
             "to save the converted amount in the owner's currency"
         )
-    ratio = await viewer.ratio(session, tx.user_id, tx.date)
+    ratio = await viewer.ratio(session, tx.user_id, on_date)
     update_data.pop("fx_rate_used", None)
     if amount_primary is not None:
         update_data["amount_primary"] = _bounded_derived(

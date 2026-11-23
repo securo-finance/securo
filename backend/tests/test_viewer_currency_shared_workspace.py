@@ -229,13 +229,28 @@ async def test_amount_bounds_and_sort_read_the_rows_as_the_member_sees_them(
     above = await _list(client, bruno, month, min_amount=150)
     assert _shown(above) == pytest.approx([200.0])
 
-    ordered = await _list(client, bruno, month, sort_by="amount", sort_dir="asc")
-    assert _shown(ordered) == pytest.approx([100.0, 200.0])
-
     # Ana's own bounds still read her stamps.
     assert _shown(await _list(client, couple["ana"], month, min_amount=500)) == (
         pytest.approx([1000.0])
     )
+
+    # Bruno's own 150 € sit between Ana's rows for him, but its stamp of 150
+    # sorts before her R$ 400 when the stored stamps are compared.
+    _, day5, _ = _last_month()
+    account = (await client.get("/api/accounts", headers=bruno)).json()
+    (joint,) = [a for a in account if a["name"] == "Conta conjunta"]
+    resp = await client.post(
+        "/api/transactions", headers=bruno,
+        json={
+            "account_id": joint["id"], "category_id": couple["category_id"],
+            "description": "R269 his", "amount": "150.00", "currency": "EUR",
+            "date": day5.isoformat(), "type": "debit",
+        },
+    )
+    assert resp.status_code == 201, resp.text
+
+    ordered = await _list(client, bruno, month, sort_by="amount", sort_dir="asc")
+    assert _shown(ordered) == pytest.approx([100.0, 150.0, 200.0])
 
 
 @pytest.mark.asyncio
@@ -672,3 +687,99 @@ async def test_member_sending_back_the_owners_stored_stamp_keeps_it(
     assert tx.description == "R269 R440 calendar"
     assert tx.amount_primary == Decimal("1560.00")
     assert tx.amount_primary_typed == Decimal("1560.00")
+
+
+@pytest.mark.asyncio
+async def test_member_moving_the_row_converts_his_figure_at_the_new_date(
+    client, session, couple
+):
+    """Bruno moves the row from day 5 (BRL→EUR 0,20) to day 15 (0,25) and
+    types 330 €: R$ 1.320 for Ana, not R$ 1.650 at the old date's rate."""
+    _, _, day15 = _last_month()
+    row = await _usd_row(client, couple, "300.00", "1560.00")
+    resp = await client.patch(
+        f"/api/transactions/{row['id']}", headers=couple["bruno"],
+        json=_dialog_save(row, date=day15.isoformat(), amount_primary=330.0, fx_rate_used=1.1),
+    )
+    assert resp.status_code == 200, resp.text
+    tx = await _stored(session, row["id"])
+    assert tx.date == day15
+    assert tx.amount_primary == Decimal("1320.00")
+    assert abs(resp.json()["amount_primary"]) == pytest.approx(330.0)
+
+
+@pytest.mark.asyncio
+async def test_member_renaming_after_a_rate_sync_keeps_the_owners_stamp(
+    client, session, couple
+):
+    """The day-5 rate is synced again while Bruno's dialog is open. The
+    dialog leaves the conversion it did not touch out of the save, so Ana's
+    R$ 1.560 does not become 312 € read at the new rate."""
+    _, day5, _ = _last_month()
+    row = await _usd_row(client, couple, "300.00", "1560.00")
+    rate = (
+        await session.execute(
+            select(FxRate).where(FxRate.quote_currency == "BRL", FxRate.date == day5)
+        )
+    ).scalar_one()
+    rate.rate = Decimal("4")
+    await session.commit()
+
+    save = _dialog_save(row, description="R269 R440 after sync")
+    save.pop("amount_primary")
+    save.pop("fx_rate_used")
+    resp = await client.patch(
+        f"/api/transactions/{row['id']}", headers=couple["bruno"], json=save
+    )
+    assert resp.status_code == 200, resp.text
+    tx = await _stored(session, row["id"])
+    assert tx.amount_primary == Decimal("1560.00")
+    assert tx.amount_primary_typed == Decimal("1560.00")
+
+
+@pytest.mark.asyncio
+async def test_calendar_shows_the_owners_conversion_of_a_row_in_the_members_currency(
+    client, session, couple
+):
+    """Ana's 300 € with a typed R$ 1.560: Bruno's list shows 312 € (0,20), and
+    the calendar showed the row's own 300 € because it is already in euros."""
+    _, day5, _ = _last_month()
+    accounts = (await client.get("/api/accounts", headers=couple["ana"])).json()
+    (joint,) = [a for a in accounts if a["name"] == "Conta conjunta"]
+    resp = await client.post(
+        "/api/transactions", headers=couple["ana"],
+        json={
+            "account_id": joint["id"], "description": "R269 R440 euros",
+            "amount": "300.00", "currency": "EUR", "amount_primary": "1560.00",
+            "date": day5.isoformat(), "type": "debit",
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    row_id = resp.json()["id"]
+
+    (listed,) = (await _list(client, couple["bruno"], couple["month"], q="R440 euros"))["items"]
+    assert abs(listed["amount_primary"]) == pytest.approx(312.0)
+
+    resp = await client.get(
+        "/api/transactions/calendar", headers=couple["bruno"],
+        params={"month": couple["month"].isoformat()},
+    )
+    assert resp.status_code == 200, resp.text
+    (item,) = [
+        item for day in resp.json()["days"] for item in day["items"]
+        if item.get("id") == row_id
+    ]
+    assert item["amount_primary"] == pytest.approx(312.0)
+
+
+@pytest.mark.asyncio
+async def test_a_converted_row_landing_on_one_to_one_is_not_flagged(client, couple):
+    """US$ 100 stamped R$ 500 at a real rate reads 100 € for Bruno (USD→EUR
+    1): its rewritten rate is 1.0, which is not the legacy fallback."""
+    row = await _usd_row(client, couple, "100.00", None)
+    assert abs(row["amount_primary"]) == pytest.approx(100.0)
+    assert row["fx_rate_used"] == pytest.approx(1.0)
+    assert row["fx_fallback"] is False
+
+    resp = await client.get(f"/api/transactions/{row['id']}", headers=couple["bruno"])
+    assert resp.json()["fx_fallback"] is False

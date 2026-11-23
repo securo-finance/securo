@@ -174,12 +174,19 @@ async def _read_all_in_viewer_currency(
     """Rows as the list shows them: stamps in the viewer's currency, then
     tagged. Every response the transaction dialog can open must read like
     this; it sends `amount_primary` back as it got it (#440)."""
-    items = await _in_viewer_currency(
-        session,
-        primary_currency,
-        [TransactionRead.model_validate(tx, from_attributes=True) for tx in rows],
-    )
-    return [_tag_fx_fallback(item, primary_currency) for item in items]
+    items = [TransactionRead.model_validate(tx, from_attributes=True) for tx in rows]
+    viewer = await viewer_currency(session, primary_currency)
+    # The warning is judged on each row as it was stored, in its owner's
+    # currency: a converted row's rate is rewritten, and a 1.0 it lands on
+    # by chance is not the legacy fallback.
+    converted = {
+        item.id for item in items
+        if viewer.stamp_currency(item.user_id) != viewer.currency
+    }
+    for item in items:
+        if item.id not in converted:
+            _tag_fx_fallback(item, primary_currency)
+    return await _in_viewer_currency(session, primary_currency, items)
 
 
 async def _read_in_viewer_currency(

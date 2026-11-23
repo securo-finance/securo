@@ -566,6 +566,13 @@ function TransactionForm({
   const [hadInitialFx] = useState(
     !!transaction && (seed?.amount_primary != null || seed?.fx_rate_used != null)
   )
+  // The conversion as the dialog opened, to tell an edit from an echo.
+  // Another member's row comes converted to this viewer's currency (#269);
+  // sending it back untouched made the server read it as a new conversion,
+  // and a rate synced in between moved the owner's stamp (#440).
+  const [initialConversion] = useState(() => ({
+    convertedAmount, fxRate, amount, currency, date,
+  }))
   const [isRecurring, setIsRecurring] = useState(false)
   const [frequency, setFrequency] = useState<RecurringTransaction['frequency']>('monthly')
   const [endDate, setEndDate] = useState('')
@@ -1020,10 +1027,17 @@ function TransactionForm({
           toast.error(t('common.error'))
           return
         }
-        if (showConversion && parsedConverted != null) {
+        const conversionUntouched =
+          !!transaction &&
+          convertedAmount === initialConversion.convertedAmount &&
+          fxRate === initialConversion.fxRate &&
+          amount === initialConversion.amount &&
+          currency === initialConversion.currency &&
+          date === initialConversion.date
+        if (showConversion && !conversionUntouched && parsedConverted != null) {
           fxFields.amount_primary = parsedConverted
         }
-        if (showConversion && parsedFxRate != null) {
+        if (showConversion && !conversionUntouched && parsedFxRate != null) {
           fxFields.fx_rate_used = parsedFxRate
         }
         if (showConversion && hadInitialFx && !convertedAmount && !fxRate) {
