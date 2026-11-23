@@ -160,3 +160,129 @@ async def test_a_restamp_leaves_a_conversion_past_the_column_unconverted(
     assert too_big == (None, None)
     assert stats.unconverted == 1
     assert fits[0] == Decimal("5000.00")
+
+
+# Transfers between currencies convert the amount onto the other leg with the
+# stored rate. That leg's `amount` is bounded the same way.
+AMOUNT_LIMIT = "amount must be at most 9999999999999.99"
+
+
+async def _account(session: AsyncSession, like: Account, currency: str, name: str) -> Account:
+    account = Account(
+        user_id=like.user_id,
+        workspace_id=like.workspace_id,
+        name=name,
+        type="checking",
+        balance=Decimal("0"),
+        currency=currency,
+    )
+    session.add(account)
+    await session.commit()
+    await session.refresh(account)
+    return account
+
+
+@pytest.fixture
+async def jpy_account(session: AsyncSession, usd_account: Account) -> Account:
+    """BRL to JPY is 30 here, so 2e12 BRL lands as 6e13 JPY. The BRL leg is
+    in the primary currency and fits, so only the converted leg overflows."""
+    session.add(
+        FxRate(
+            base_currency="USD", quote_currency="JPY", date=app_today(),
+            rate=Decimal("150"), source="test",
+        )
+    )
+    await session.commit()
+    return await _account(session, usd_account, "JPY", "Yen account")
+
+
+async def _rows(session: AsyncSession, description: str) -> list[Transaction]:
+    result = await session.scalars(
+        select(Transaction)
+        .where(Transaction.description == description)
+        .execution_options(populate_existing=True)
+    )
+    return list(result.all())
+
+
+@pytest.mark.asyncio
+async def test_a_transfer_refuses_a_converted_leg_past_the_column(
+    client: AsyncClient, auth_headers, session: AsyncSession, usd_account: Account
+):
+    brl = await _account(session, usd_account, "BRL", "Real account")
+
+    resp = await client.post(
+        "/api/transactions/transfer",
+        headers=auth_headers,
+        json={
+            "from_account_id": str(usd_account.id),
+            "to_account_id": str(brl.id),
+            "amount": TOO_BIG,
+            "date": app_today().isoformat(),
+            "description": "big transfer",
+        },
+    )
+
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["detail"] == AMOUNT_LIMIT
+    assert await _rows(session, "big transfer") == []
+
+
+@pytest.mark.asyncio
+async def test_a_counterpart_refuses_a_converted_amount_past_the_column(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_account: Account,
+    jpy_account: Account,
+):
+    assert test_account.currency == "BRL"
+    anchor = await client.post(
+        "/api/transactions", headers=auth_headers, json=_new(test_account, TOO_BIG, "anchor")
+    )
+    assert anchor.status_code == 201, anchor.text
+
+    resp = await client.post(
+        f"/api/transactions/{anchor.json()['id']}/create-counterpart",
+        headers=auth_headers,
+        json={"to_account_id": str(jpy_account.id)},
+    )
+
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["detail"] == AMOUNT_LIMIT
+    rows = await _rows(session, "anchor")
+    assert len(rows) == 1 and rows[0].transfer_pair_id is None
+
+
+@pytest.mark.asyncio
+async def test_an_edit_of_one_leg_refuses_a_converted_pair_past_the_column(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_account: Account,
+    jpy_account: Account,
+):
+    created = await client.post(
+        "/api/transactions/transfer",
+        headers=auth_headers,
+        json={
+            "from_account_id": str(test_account.id),
+            "to_account_id": str(jpy_account.id),
+            "amount": "100",
+            "date": app_today().isoformat(),
+            "description": "pair",
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert Decimal(str(created.json()["credit"]["amount"])) == Decimal("3000.00")
+
+    resp = await client.patch(
+        f"/api/transactions/{created.json()['debit']['id']}",
+        headers=auth_headers,
+        json={"amount": TOO_BIG},
+    )
+
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["detail"] == AMOUNT_LIMIT
+    amounts = sorted(row.amount for row in await _rows(session, "pair"))
+    assert amounts == [Decimal("100.00"), Decimal("3000.00")]
