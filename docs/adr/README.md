@@ -44,3 +44,4 @@ Each file here records one decision about how Securo is built: what we chose, wh
 | [0028](0028-plugin-reports.md) | Plugins add reports: a query Securo runs, or their own code in the runner, drawn by Securo |
 | [0029](0029-plugin-report-total-chart-points.md) | A plugin report view is bounded in its total chart points |
 | [0030](0030-plugin-report-period-window.md) | A plugin report reads at most 731 days, and the tab trims its window to that |
+| [0031](0031-typed-primary-amount.md) | A converted amount the user typed is kept apart from the display-currency cache |
