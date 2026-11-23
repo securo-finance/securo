@@ -210,6 +210,61 @@ async def test_member_in_another_currency_sees_the_list_converted(client, couple
     assert drill["summary"]["expense"] == pytest.approx(300.0)
 
 
+@pytest.mark.asyncio
+async def test_amount_bounds_and_sort_read_the_rows_as_the_member_sees_them(
+    client, couple
+):
+    """Bruno sees 200 € and 100 €; the stamps are Ana's R$ 1.000 and R$ 400.
+    The bounds and the amount sort compared his euros with her reais, so
+    `max_amount=250` found nothing."""
+    month, bruno = couple["month"], couple["bruno"]
+
+    def _shown(body: dict) -> list[float]:
+        return [abs(item["amount_primary"]) for item in body["items"]]
+
+    below = await _list(client, bruno, month, max_amount=250)
+    assert sorted(_shown(below)) == pytest.approx([100.0, 200.0])
+    assert below["total"] == 2
+
+    above = await _list(client, bruno, month, min_amount=150)
+    assert _shown(above) == pytest.approx([200.0])
+
+    ordered = await _list(client, bruno, month, sort_by="amount", sort_dir="asc")
+    assert _shown(ordered) == pytest.approx([100.0, 200.0])
+
+    # Ana's own bounds still read her stamps.
+    assert _shown(await _list(client, couple["ana"], month, min_amount=500)) == (
+        pytest.approx([1000.0])
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_legacy_one_to_one_stamp_stays_flagged_after_conversion(
+    client, session: AsyncSession, couple, test_user: User
+):
+    """A US$ 50 row Ana stamped R$ 50 at the legacy 1:1 fallback rate. Bruno
+    sees it converted to euros, which rewrites its rate, but the stamp is
+    still not backed by a real rate and the row keeps its warning."""
+    month, day5, _day15 = _last_month()
+    account = (
+        await session.execute(select(Account).where(Account.name == "Conta conjunta"))
+    ).scalar_one()
+    session.add(
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=account.workspace_id,
+            account_id=account.id, description="R269 legacy", amount=Decimal("50.00"),
+            currency="USD", amount_primary=Decimal("50.00"), fx_rate_used=Decimal("1"),
+            date=day5, type="debit", source="manual",
+        )
+    )
+    await session.commit()
+
+    body = await _list(client, couple["bruno"], month, q="R269 legacy")
+    [row] = body["items"]
+    assert row["amount_primary"] == pytest.approx(10.0)
+    assert row["fx_fallback"] is True
+
+
 async def _member(
     session: AsyncSession, group_id: uuid.UUID, workspace_id: uuid.UUID, **fields
 ) -> GroupMember:
