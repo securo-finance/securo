@@ -443,39 +443,51 @@ def _replays_provider_ledger(asset: Asset) -> bool:
     return asset.valuation_method != "market_price" and asset.connection_id is not None and bool(asset.source)
 
 
-def _ledger_valued(asset: Asset, provider_units: Optional[tuple[Decimal, Decimal]]) -> bool:
+def _ledger_valued(asset: Asset, provider_units: Optional[tuple[Decimal, Decimal, Optional[Decimal]]]) -> bool:
     """Whether the asset's chart is its ledger replayed (units held each day x price).
 
     Market-priced holdings always are. A holding a bank connection syncs is
-    while its provider's trades (`provider_units`: their buys minus sells and
-    their largest lot, None without any) add up to the units the provider
-    reports, within the tolerance the import checked them with: they carry
-    each buy and sale on its own date, which the stored values (one per sync)
-    cannot. A set that stopped adding up (the sync kept an older ledger) falls
-    back to the stored values, and trades entered by hand never count.
+    while its provider's trades (`provider_units`: their buys minus sells,
+    their largest lot and the hand trades' buys minus sells, None without any
+    provider trade) add up to the units the provider reports, within the
+    tolerance the import checked them with: they carry each buy and sale on its
+    own date, which the stored values (one per sync) cannot. A set that stopped
+    adding up (the sync kept an older ledger) falls back to the stored values,
+    and trades entered by hand never count.
+
+    A trade recorded by hand recomputes `units` from the whole ledger, so until
+    the next sync puts back the provider's count they are the provider's plus
+    the hand trades'. Either matches. A hand split can't be netted out
+    (the hand net is None), so only the stored units count then.
     """
     if asset.valuation_method == "market_price":
         return True
     if not _replays_provider_ledger(asset) or provider_units is None or asset.units is None:
         return False
     units = Decimal(str(asset.units))
-    net, largest_lot = provider_units
+    net, largest_lot, by_hand = provider_units
+    targets = [units] if not by_hand else [units, units - by_hand]
     # The import's tolerance (connection_service._reconciled_trades): one
     # millionth of the largest lot, at least 0.0001.
     largest = max(abs(units), largest_lot)
     tolerance = max(Decimal("0.0001"), largest * Decimal("0.000001"))
-    return abs(net - units) <= tolerance
+    return any(abs(net - target) <= tolerance for target in targets)
 
 
-def _provider_units(asset: Asset, rows) -> Optional[tuple[Decimal, Decimal]]:
-    """Buys minus sells of the asset's own provider among `rows` of (kind, quantity, source), and its largest lot."""
+def _provider_units(asset: Asset, rows) -> Optional[tuple[Decimal, Decimal, Optional[Decimal]]]:
+    """Of `rows` of (kind, quantity, source): the asset's own provider's buys minus sells and its largest lot, and
+    the other rows' buys minus sells (None when one of them is a split, which a net can't express)."""
     mine = [
         (kind, Decimal(str(qty))) for kind, qty, source in rows if source == asset.source and kind in ("buy", "sell")
     ]
     if not mine:
         return None
     net = sum((q if k == "buy" else -q for k, q in mine), Decimal(0))
-    return net, max(q for _, q in mine)
+    others = [(kind, Decimal(str(qty or 0))) for kind, qty, source in rows if source != asset.source]
+    by_hand: Optional[Decimal] = sum((q if k == "buy" else -q for k, q in others if k in ("buy", "sell")), Decimal(0))
+    if any(k == "split" for k, _ in others):
+        by_hand = None
+    return net, max(q for _, q in mine), by_hand
 
 
 async def _load_asset_native_values(
@@ -526,10 +538,11 @@ async def _load_asset_native_values(
         for aid, d, kind, qty, price, old_units, new_units, source in (await session.execute(tq)).all():
             owner = by_id[str(aid)]
             if _replays_provider_ledger(owner):
-                # A synced holding replays only its provider's trades.
+                # Every row decides whether the provider's trades add up (hand trades
+                # are netted out there); a synced holding replays only its provider's.
+                provider_rows.setdefault(str(aid), []).append((kind, qty, source))
                 if source != owner.source:
                     continue
-                provider_rows.setdefault(str(aid), []).append((kind, qty, source))
             if kind != "split":
                 ledger_ids.add(str(aid))
             if up_to_date is not None and d > up_to_date:
@@ -1139,9 +1152,10 @@ async def get_asset_value_trend(
                 .where(AssetTransaction.asset_id == asset_id)
             )
         ).all()
+    provider_units = _provider_units(asset, [(k, q, src) for _, k, q, _, _, _, src in txs])
     if _replays_provider_ledger(asset):
         txs = [tx for tx in txs if tx[-1] == asset.source]
-    if _ledger_valued(asset, _provider_units(asset, [(k, q, src) for _, k, q, _, _, _, src in txs])):
+    if _ledger_valued(asset, provider_units):
         series = build_market_value_series(
             [(d, a, p) for d, a, p in rows],
             [

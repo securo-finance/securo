@@ -315,6 +315,35 @@ async def test_hand_trades_are_not_replayed_with_provider_trades(session: AsyncS
 
 
 @pytest.mark.asyncio
+async def test_a_hand_trade_recorded_through_the_ledger_keeps_the_provider_replay(
+    session: AsyncSession, bank_connection, test_user
+):
+    """Recording a trade by hand recomputes the holding's units from the whole ledger (3 + 3 here), so they no longer
+    equal the provider's own trades until the next sync. The provider's trades still add up once the hand trades are
+    taken out, so the chart keeps each of their dates."""
+    from app.services.asset_transaction_service import recompute_and_cache
+
+    trades = [_trade("b1", "buy", 2, "2", "50"), _trade("b2", "buy", 5, "1", "60")]
+    await _pipeline(session, bank_connection, holding("3", trades, unit_price="70", current_value="210"), test_user)
+    asset = await _asset(session, bank_connection)
+    session.add(AssetTransaction(asset_id=asset.id, workspace_id=asset.workspace_id, kind="buy", quantity=Decimal("3"),
+                                 price=Decimal("10"), fee=Decimal("0"), date=date(2026, 11, 1), source="manual"))
+    await session.flush()
+    await recompute_and_cache(session, asset)
+    await session.commit()
+    assert asset.units == Decimal("6")
+    chart = await _chart(session, asset)
+    assert (chart[date(2026, 11, 2)], chart[date(2026, 11, 5)]) == (100.0, 180.0)
+
+    from app.services.asset_service import get_asset_value_trend
+
+    points = await get_asset_value_trend(session, asset.id, asset.workspace_id)
+    assert points is not None
+    trend = {p["date"]: p["amount"] for p in points}
+    assert (trend["2026-11-02"], trend["2026-11-05"]) == (100.0, 180.0)
+
+
+@pytest.mark.asyncio
 async def test_a_ledger_the_import_accepted_is_replayed_within_its_largest_lot(
     session: AsyncSession, bank_connection, test_user
 ):
