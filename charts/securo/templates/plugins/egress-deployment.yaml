@@ -38,6 +38,11 @@ spec:
             - name: proxy
               containerPort: {{ .Values.plugins.egress.port }}
               protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: proxy
+            initialDelaySeconds: 3
+            periodSeconds: 10
           env:
             - name: PYTHONDONTWRITEBYTECODE
               value: "1"

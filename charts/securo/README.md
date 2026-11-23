@@ -189,6 +189,8 @@ The NetworkPolicy is on by default, like the internal network in Compose: it all
 
 Disabling `plugins.egress` points you at your own proxy through `runner.extraEnv`. Add its destination to `plugins.networkPolicy.extraEgress` too, otherwise the policy the chart applies blocks it. Clusters that resolve through a NodeLocal DNSCache behind Cilium Local Redirect also need that resolver's address there, since the built-in rule matches `kube-dns` only.
 
+For a cluster whose resolver lives on an address the pod selector cannot match, set `plugins.networkPolicy.dnsCIDRs` to those addresses (for example `169.254.20.10`). They are rendered as `ipBlock` peers on port 53 UDP and TCP in both the runner and the egress policies.
+
 ## Uninstalling the Chart
 
 To uninstall/delete the `securo` deployment:

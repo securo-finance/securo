@@ -61,6 +61,16 @@ spec:
           protocol: UDP
         - port: 53
           protocol: TCP
+    {{- range .Values.plugins.networkPolicy.dnsCIDRs }}
+    - to:
+        - ipBlock:
+            cidr: {{ . | quote }}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- end }}
     {{- with .Values.plugins.networkPolicy.extraEgress }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
@@ -91,6 +101,16 @@ spec:
         - port: {{ .Values.plugins.egress.port }}
           protocol: TCP
   egress:
+    {{- range .Values.plugins.networkPolicy.dnsCIDRs }}
+    - to:
+        - ipBlock:
+            cidr: {{ . | quote }}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- end }}
     # Anything, because the proxy itself is what refuses private addresses and
     # hosts the plugin did not declare.
     - {}
