@@ -1330,6 +1330,9 @@ async def import_transactions(
             type=txn_data.type,
             status="posted",
             source=source,
+            # Imported rows are new to the person until they review them
+            # (issue #636).
+            is_read=False,
             import_id=import_log.id,
             external_id=txn_data.external_id,
             currency=txn_currency,
@@ -1365,6 +1368,10 @@ async def import_transactions(
             placeholder.external_id = txn_data.external_id
             placeholder.import_id = import_log.id
             placeholder.status = "posted"
+            # The placeholder was generated for the person; the imported charge
+            # that replaced it was not reviewed yet (issue #636). Duplicates
+            # above are skipped before this point, so they keep their state.
+            placeholder.is_read = False
             # The rules already ran, against the incoming charge, to build
             # `preview`. Fold that result in rather than re-running them
             # against the placeholder: its description is the recurring

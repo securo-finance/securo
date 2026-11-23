@@ -135,6 +135,12 @@ class Transaction(Base):
     # account balance. The row remains stored and can still be shown in ledger
     # views unless the caller explicitly hides ignored transactions.
     is_ignored: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Review state, not ledger state (issue #636). A transaction that arrives
+    # from outside (sync or import) starts unread, so the list can mark it as
+    # new until the person opens it or marks everything as read. Rows the
+    # person or the app creates are already known and start read; no total,
+    # balance or report reads this column.
+    is_read: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     # Keep the row in the ledger and current balance, but leave it out of P&L
     # reports. This differs from is_ignored, which also removes the row from
     # balance calculations. Balance adjustments use this distinction so the

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
 from app.core.database import get_async_session
+from app.core.money import MoneyOutOfRange
 from app.core.workspace_context import (
     WorkspaceContext,
     current_workspace,
@@ -154,6 +155,12 @@ class PaginatedTransactions(BaseModel):
     summary: Optional[TransactionsSummary] = None
 
 
+class MarkAllReadResult(BaseModel):
+    """How many rows the "mark all as read" action cleared (issue #636)."""
+
+    updated: int
+
+
 def _merge_id_filters(
     single: Optional[uuid.UUID], many: Optional[List[uuid.UUID]]
 ) -> Optional[List[uuid.UUID]]:
@@ -194,6 +201,7 @@ async def list_transactions(
     exclude_ignored: bool = Query(False, description="Drop rows the user marked ignored, or whose category is ignored"),
     flagged: bool = Query(False, description="Return only rows the user flagged"),
     flag_due: Optional[FlagDue] = Query(None, description="Flagged rows past their reminder date (overdue) or due within a week (soon)"),
+    unread_only: bool = Query(False, description="Only rows nobody has reviewed yet (issue #636)"),
     tags: Optional[List[str]] = Query(None),
     min_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount >= this value (primary currency)."),
     max_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount <= this value (primary currency)."),
@@ -216,6 +224,7 @@ async def list_transactions(
         exclude_ignored=exclude_ignored,
         flagged_only=flagged,
         flag_due=flag_due,
+        unread_only=unread_only,
         status=status,
         accounting_mode=accounting_mode,
         tags=tags,
@@ -299,6 +308,7 @@ async def export_transactions(
     exclude_ignored: bool = Query(False, description="Drop rows the user marked ignored, or whose category is ignored"),
     flagged: bool = Query(False, description="Export only rows the user flagged"),
     flag_due: Optional[FlagDue] = Query(None, description="Flagged rows past their reminder date (overdue) or due within a week (soon)"),
+    unread_only: bool = Query(False, description="Export only rows nobody has reviewed yet (issue #636)"),
     tags: Optional[List[str]] = Query(None),
     transaction_ids: Optional[List[uuid.UUID]] = Query(None, description="If set, exports exactly these rows (scoped to the workspace); other filters are ignored."),
     ctx: WorkspaceContext = Depends(current_workspace),
@@ -326,6 +336,7 @@ async def export_transactions(
             exclude_ignored=exclude_ignored,
             flagged_only=flagged,
             flag_due=flag_due,
+            unread_only=unread_only,
             tags=tags,
         )
 
@@ -616,6 +627,8 @@ async def create_transaction(
         full_tx = await transaction_service.get_transaction(session, transaction.id, ctx.workspace.id)
         primary_currency = ctx.user.primary_currency
         return _tag_fx_fallback(TransactionRead.model_validate(full_tx, from_attributes=True), primary_currency)
+    except MoneyOutOfRange as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -631,6 +644,8 @@ async def update_transaction(
         transaction = await transaction_service.update_transaction(
             session, transaction_id, ctx.workspace.id, ctx.user_id, data
         )
+    except MoneyOutOfRange as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not transaction:
@@ -656,6 +671,34 @@ async def toggle_ignore_transaction(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
     primary_currency = ctx.user.primary_currency
     return _tag_fx_fallback(TransactionRead.model_validate(transaction, from_attributes=True), primary_currency)
+
+
+@router.patch("/{transaction_id}/read", response_model=TransactionRead)
+async def mark_transaction_read(
+    transaction_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Clear the "new" marker of one transaction (issue #636). Idempotent."""
+    transaction = await transaction_service.mark_transaction_read(
+        session, transaction_id, ctx.workspace.id
+    )
+    if not transaction:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
+    primary_currency = ctx.user.primary_currency
+    return _tag_fx_fallback(TransactionRead.model_validate(transaction, from_attributes=True), primary_currency)
+
+
+@router.post("/read-all", response_model=MarkAllReadResult)
+async def mark_all_transactions_read(
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Mark every unread transaction of the workspace as read (issue #636)."""
+    updated = await transaction_service.mark_all_transactions_read(
+        session, ctx.workspace.id
+    )
+    return MarkAllReadResult(updated=updated)
 
 
 @router.post("/{transaction_id}/post-today", response_model=TransactionRead)

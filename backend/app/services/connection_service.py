@@ -2152,6 +2152,9 @@ async def _run_first_import(
                 date=txn_data.date,
                 type=txn_data.type,
                 source="sync",
+                # A charge the bank brings in is new to the person until they
+                # look at it (issue #636).
+                is_read=False,
                 status=txn_data.status,
                 payee=txn_data.payee,
                 payee_id=payee_id,
@@ -3937,6 +3940,9 @@ async def _sync_bill_finance_charges(
                 effective_date=bill.due_date,
                 type="debit",
                 source="sync",
+                # A charge the bank brings in is new to the person until they
+                # look at it (issue #636).
+                is_read=False,
                 status="posted",
                 raw_data=raw,
                 bill_id=bill.id,
@@ -4794,6 +4800,9 @@ async def sync_connection(
                     date=txn_data.date,
                     type=txn_data.type,
                     source="sync",
+                    # A charge the bank brings in is new to the person until
+                    # they look at it (issue #636).
+                    is_read=False,
                     status=txn_data.status,
                     payee=txn_data.payee,
                     payee_id=sync_payee_id,
@@ -4841,6 +4850,12 @@ async def sync_connection(
                     placeholder.raw_data = txn_data.raw_data
                     if txn_data.card_masked_number is not None:
                         placeholder.card_masked_number = txn_data.card_masked_number
+                    # The person knows the generated placeholder, not the bank
+                    # charge that replaced it, so the row rejoins the review
+                    # queue (issue #636). This runs once, on the transition:
+                    # later syncs find the row by external_id above and leave
+                    # its read state alone.
+                    placeholder.is_read = False
                     # Same shape as the import path: fold in the `preview` the
                     # rules already produced from the incoming charge instead of
                     # re-running them against the placeholder, whose description
