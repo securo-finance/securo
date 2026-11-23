@@ -389,8 +389,12 @@ def test_provider_category_condition_matches_a_numeric_code_as_text():
 
 
 def test_provider_category_condition_does_not_match_a_non_label_value():
-    """A list, an object, a bool and blank text are no label for a rule."""
-    conditions = [{"field": "provider_category", "op": "equals", "value": "42"}]
+    """A list, an object, a bool and blank text are no label for a rule.
+
+    The negated operators are the reason the "never labelled" short-circuit
+    exists: without it, `not_equals` and `not_contains` would match every one
+    of these rows and recategorise the whole ledger.
+    """
     for raw_data in (
         {"category": [1, 2]},
         {"category": {"id": 42}},
@@ -398,7 +402,9 @@ def test_provider_category_condition_does_not_match_a_non_label_value():
         {"category": ""},
         {"category": "   "},
     ):
-        assert evaluate_conditions("and", conditions, make_tx(raw_data=raw_data)) is False
+        for op in ("equals", "not_equals", "contains", "not_contains"):
+            conditions = [{"field": "provider_category", "op": op, "value": "42"}]
+            assert evaluate_conditions("and", conditions, make_tx(raw_data=raw_data)) is False
 
 
 def test_provider_category_condition_without_category_does_not_match():
