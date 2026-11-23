@@ -1,4 +1,4 @@
-# 0031. Members of a shared workspace read stamps in their own display currency
+# 0032. Members of a shared workspace read stamps in their own display currency
 
 - Status: Accepted
 - Date: 2026-11-23
