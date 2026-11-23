@@ -118,7 +118,7 @@ class Settings(BaseSettings):
     storage_provider: Literal["local", "s3"] = "local"
     storage_local_path: str = "./data/attachments"
     storage_max_file_size_mb: int = 10
-    storage_allowed_extensions: str = "jpg,jpeg,png,webp,gif,heic,pdf"
+    storage_allowed_extensions: str = "jpg,jpeg,png,webp,gif,heic,pdf,xml"
     storage_max_attachments_per_transaction: int = 10
     # An invoice gathers more paper than a transaction does: the bill, the
     # fiscal document, a receipt, the contract behind it, and a correction

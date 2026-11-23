@@ -34,6 +34,25 @@ describe('TransactionAttachments on HTTP', () => {
     vi.resetAllMocks()
   })
 
+  it('takes an XML file when the server allows it, and offers it in the picker', async () => {
+    vi.mocked(settings.attachments).mockResolvedValue({
+      allowed_extensions: ['pdf', 'xml'],
+      max_file_size_mb: 10,
+      max_attachments_per_transaction: 10,
+    })
+    vi.mocked(transactions.attachments.upload).mockImplementation(async (transactionId, file) => ({
+      id: 'x1', transaction_id: transactionId, filename: file.name, content_type: 'application/octet-stream',
+      size: file.size, created_at: '2026-01-01T00:00:00Z',
+    }))
+    const { container, user } = renderWithProviders(<TransactionAttachments transactionId="transaction-1" />)
+    await screen.findByText(t('transactions.attachmentsUpload'))
+    const input = container.querySelector('input[type="file"]')!
+    await waitFor(() => expect(input.getAttribute('accept')).toBe('.pdf,.xml'))
+    const xml = new File(['<nfeProc/>'], 'NFe-3525.xml', { type: 'application/xml' })
+    await user.upload(input as HTMLInputElement, xml)
+    await waitFor(() => expect(transactions.attachments.upload).toHaveBeenCalledWith('transaction-1', xml))
+  })
+
   it('uploads multiple receipts and removes only the completed placeholder', async () => {
     const pending: Array<() => void> = []
     vi.mocked(transactions.attachments.upload).mockImplementation((transactionId, file) =>

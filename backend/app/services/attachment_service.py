@@ -47,6 +47,17 @@ def served_content_type(filename: str) -> str:
     return _SERVED_TYPES.get(ext, "application/octet-stream")
 
 
+def served_headers(filename: str) -> dict[str, str]:
+    """How a stored file is handed over: shown in place when it's an image or a PDF, downloaded otherwise.
+
+    Anything else (an XML file, say) is never rendered on the app's origin:
+    it goes out as bytes to save, and the browser is told not to guess
+    another type for it (ADR 0036).
+    """
+    disposition = "inline" if served_content_type(filename) != "application/octet-stream" else "attachment"
+    return {"Content-Disposition": f'{disposition}; filename="{filename}"', "X-Content-Type-Options": "nosniff"}
+
+
 def _validate_file(filename: str, size: int) -> None:
     settings = get_settings()
 

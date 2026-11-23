@@ -1245,7 +1245,8 @@
     "invoiceBadgeTooltip": "この取引は請求書を決済しています。開く。",
     "suggestionBadge": "要確認",
     "suggestionBadgeTooltip": "これが何かを消し込む可能性があります。キューを開いて回答してください。",
-    "clearGroupFilter": "グループフィルターを解除"
+    "clearGroupFilter": "グループフィルターを解除",
+    "attachmentNoPreview": "このファイルはプレビューできません。ダウンロードして開いてください。"
   },
   "accounts": {
     "title": "口座",

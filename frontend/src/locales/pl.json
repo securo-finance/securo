@@ -1290,7 +1290,8 @@
     "invoiceBadgeTooltip": "Ta transakcja rozlicza fakturę. Otwórz ją.",
     "suggestionBadge": "Pytanie",
     "suggestionBadgeTooltip": "Płatność może opłacić tę fakturę. Otwórz kolejkę, aby odpowiedzieć.",
-    "clearGroupFilter": "Wyczyść filtr grupy"
+    "clearGroupFilter": "Wyczyść filtr grupy",
+    "attachmentNoPreview": "Brak podglądu tego pliku. Pobierz go, aby go otworzyć."
   },
   "accounts": {
     "title": "Konta",

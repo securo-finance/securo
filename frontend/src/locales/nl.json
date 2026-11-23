@@ -1245,7 +1245,8 @@
     "invoiceBadgeTooltip": "Deze transactie rekent een factuur af. Openen.",
     "suggestionBadge": "Vraag",
     "suggestionBadgeTooltip": "Een betaling kan deze factuur voldoen. Open de wachtrij om te antwoorden.",
-    "clearGroupFilter": "Groepsfilter wissen"
+    "clearGroupFilter": "Groepsfilter wissen",
+    "attachmentNoPreview": "Er is geen voorbeeld van dit bestand. Download het om het te openen."
   },
   "accounts": {
     "title": "Rekeningen",

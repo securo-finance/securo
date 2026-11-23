@@ -1317,7 +1317,8 @@
     "invoiceBadgeTooltip": "Tato transakce vyrovnává fakturu. Otevřete ji.",
     "suggestionBadge": "Otázka",
     "suggestionBadgeTooltip": "Platba může uhradit tuto fakturu. Otevřete frontu a odpovězte.",
-    "clearGroupFilter": "Zrušit filtr skupiny"
+    "clearGroupFilter": "Zrušit filtr skupiny",
+    "attachmentNoPreview": "Tento soubor nemá náhled. Stáhněte si ho a otevřete."
   },
   "accounts": {
     "title": "Účty",

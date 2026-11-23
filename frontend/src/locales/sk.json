@@ -1301,7 +1301,8 @@
     "invoiceBadgeTooltip": "Táto transakcia vyrovnáva faktúru. Otvorte ju.",
     "suggestionBadge": "Otázka",
     "suggestionBadgeTooltip": "Platba môže uhradiť túto faktúru. Otvorte front a odpovedzte.",
-    "clearGroupFilter": "Zrušiť filter skupiny"
+    "clearGroupFilter": "Zrušiť filter skupiny",
+    "attachmentNoPreview": "Tento súbor nemá náhľad. Stiahnite si ho a otvorte."
   },
   "accounts": {
     "title": "Účty",

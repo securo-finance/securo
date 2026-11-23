@@ -1249,7 +1249,8 @@
     "invoiceBadgeTooltip": "Esta transação quita uma cobrança. Abrir.",
     "suggestionBadge": "Pergunta",
     "suggestionBadgeTooltip": "Um pagamento pode quitar esta cobrança. Abra a fila para responder.",
-    "clearGroupFilter": "Limpar filtro de grupo"
+    "clearGroupFilter": "Limpar filtro de grupo",
+    "attachmentNoPreview": "Não há prévia para este arquivo. Baixe-o para abrir."
   },
   "accounts": {
     "title": "Contas",

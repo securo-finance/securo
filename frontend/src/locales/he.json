@@ -1259,7 +1259,8 @@
     "invoiceBadgeTooltip": "תנועה זו סוגרת חשבונית. פתחו אותה.",
     "suggestionBadge": "שאלה",
     "suggestionBadgeTooltip": "ייתכן שתשלום סוגר את זה. פתחו את התור כדי לענות.",
-    "clearGroupFilter": "ניקוי סינון הקבוצה"
+    "clearGroupFilter": "ניקוי סינון הקבוצה",
+    "attachmentNoPreview": "אין תצוגה מקדימה לקובץ הזה. הורידו אותו כדי לפתוח."
   },
   "accounts": {
     "title": "חשבונות",

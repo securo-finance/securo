@@ -1245,7 +1245,8 @@
     "invoiceBadgeTooltip": "यह लेन-देन एक इनवॉइस चुकाता है। इसे खोलें।",
     "suggestionBadge": "सवाल",
     "suggestionBadgeTooltip": "एक भुगतान इसे चुका सकता है। जवाब देने के लिए कतार खोलें।",
-    "clearGroupFilter": "समूह फ़िल्टर हटाएँ"
+    "clearGroupFilter": "समूह फ़िल्टर हटाएँ",
+    "attachmentNoPreview": "इस फ़ाइल का पूर्वावलोकन नहीं है। खोलने के लिए इसे डाउनलोड करें।"
   },
   "accounts": {
     "title": "खाते",

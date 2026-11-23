@@ -315,7 +315,11 @@ export function TransactionDialog({
                         className="max-h-full max-w-full rounded object-contain"
                       />
                     </div>
-                  ) : null}
+                  ) : (
+                    <p className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
+                      {t('transactions.attachmentNoPreview')}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 px-4 py-3 border-t text-sm shrink-0">
                   <button
@@ -359,7 +363,11 @@ export function TransactionDialog({
                     className="max-h-full max-w-full rounded object-contain"
                   />
                 </div>
-              ) : null}
+              ) : (
+                <p className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
+                  {t('transactions.attachmentNoPreview')}
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-2 px-4 py-3 border-t text-sm shrink-0">
               <button
@@ -964,7 +972,7 @@ function TransactionForm({
     staleTime: 5 * 60 * 1000,
     enabled: isCreating,
   })
-  const allowedExtensions = useMemo(() => attachmentSettings?.allowed_extensions ?? ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'pdf'], [attachmentSettings?.allowed_extensions])
+  const allowedExtensions = useMemo(() => attachmentSettings?.allowed_extensions ?? ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'pdf', 'xml'], [attachmentSettings?.allowed_extensions])
   const maxFileSize = (attachmentSettings?.max_file_size_mb ?? 10) * 1024 * 1024
   const maxAttachments = attachmentSettings?.max_attachments_per_transaction ?? 10
 

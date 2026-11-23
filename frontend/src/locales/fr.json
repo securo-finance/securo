@@ -1248,7 +1248,8 @@
     "invoiceBadgeTooltip": "Cette transaction solde une facture. Ouvrir.",
     "suggestionBadge": "Question",
     "suggestionBadgeTooltip": "Un paiement peut solder cette facture. Ouvrez la file pour répondre.",
-    "clearGroupFilter": "Effacer le filtre de groupe"
+    "clearGroupFilter": "Effacer le filtre de groupe",
+    "attachmentNoPreview": "Pas d'aperçu pour ce fichier. Téléchargez-le pour l'ouvrir."
   },
   "accounts": {
     "title": "Comptes",
