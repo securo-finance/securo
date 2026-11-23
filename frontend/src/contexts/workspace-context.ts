@@ -6,6 +6,12 @@ interface WorkspaceContextType {
   current: Workspace | null
   workspaces: Workspace[]
   isLoading: boolean
+  /**
+   * True when the workspace list could not be fetched because the server was
+   * unreachable, not because the user has none. The modules are unknown, so
+   * nothing may be treated as "off" (issue #292).
+   */
+  loadFailed: boolean
   /** Switch the active workspace. Persists to localStorage and invalidates queries. */
   switchWorkspace: (id: string) => Promise<void>
   /** Re-fetch the list of workspaces the user can access. */

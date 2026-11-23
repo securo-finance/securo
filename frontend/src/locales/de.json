@@ -881,6 +881,8 @@
     "uncategorizedCta": "{{count}} Transaktionen müssen kategorisiert werden",
     "uncategorizedTotal": "{{amount}} insgesamt",
     "categorizeNow": "Jetzt kategorisieren",
+    "drillDownQuickCategorize": "Kategorie wählen",
+    "drillDownOpenTransaction": "Buchung öffnen",
     "allCategorized": "Alles erledigt!",
     "allCategorizedDesc": "Alle Transaktionen sind kategorisiert",
     "assetsValue": "Investiertes Vermögen",
@@ -914,6 +916,7 @@
     "monthNext": "Nächster Monat",
     "description": "Beschreibung",
     "originalDescription": "Ursprüngliche Beschreibung",
+    "providerCategory": "Bankkategorie",
     "restoreOriginalDescription": "Original wiederherstellen",
     "amount": "Betrag",
     "status": "Status",
@@ -939,6 +942,7 @@
     "addedToExistingRule": "Regel aktualisiert. Zukünftige Übereinstimmungen werden diese Kategorie verwenden.",
     "duplicateRuleCondition": "Diese Regel enthält bereits dieses Suchkriterium.",
     "saveAndNew": "Speichern & Neu",
+    "saveAndNext": "Speichern & weiter",
     "saveAndDuplicate": "Speichern & Duplizieren",
     "moreSaveOptions": "Weitere Speicheroptionen",
     "created": "Transaktion erstellt",
@@ -1182,8 +1186,8 @@
     "calendarAccountCount": "{{count}} Konten",
     "calendarAllAccounts": "Alle Konten",
     "calendarEndBalance": "Endsaldo",
-    "calendarItemCount": "{{count}} Eintrag",
-    "calendarItemCount_plural": "{{count}} Einträge",
+    "calendarItemCount_one": "{{count}} Eintrag",
+    "calendarItemCount_other": "{{count}} Einträge",
     "calendarProjectedCount": "{{count}} geplant",
     "calendarProjected": "Geplant",
     "projected": "Prognostiziert",
@@ -1622,6 +1626,8 @@
   },
   "recurring": {
     "makeFromTransaction": "Neue wiederkehrende Buchung aus dieser Buchung",
+    "duplicate": "Es gibt bereits eine wiederkehrende Buchung mit derselben Beschreibung, Häufigkeit und demselben Startdatum",
+    "alreadyLinked": "Diese Buchung gehört bereits zu einer wiederkehrenden Buchung",
     "title": "Wiederkehrende Transaktionen",
     "add": "Wiederkehrende hinzufügen",
     "edit": "Wiederkehrende bearbeiten",
@@ -1684,10 +1690,13 @@
   "rules": {
     "searchPlaceholder": "Regeln suchen...",
     "filterAllCategories": "Alle Kategorien",
+    "filterByCategory": "Nach Kategorie filtern",
     "filterAllStatuses": "Alle Status",
+    "filterByStatus": "Nach Status filtern",
     "filterActiveOnly": "Nur aktive",
     "filterInactiveOnly": "Nur inaktive",
     "filterAllActions": "Alle Aktionen",
+    "filterByAction": "Nach Aktion filtern",
     "noFilterResults": "Keine Regel entspricht diesen Filtern",
     "preview": "Vorschau",
     "previewMatched": "{{matched}} Treffer",
@@ -1786,6 +1795,7 @@
     "fieldDate": "Datum",
     "fieldStatus": "Status",
     "fieldProviderCategory": "Anbieterkategorie",
+    "providerCategoryHint": "Die Bezeichnung der Bank selbst, in ihrer Sprache (zum Beispiel „Groceries“). Wähle eine, die der Arbeitsbereich bereits erhalten hat.",
     "opContains": "enthält",
     "opNotContains": "enthält nicht",
     "opEquals": "ist gleich",
@@ -2114,9 +2124,10 @@
     "summaryHoldings": "{{created}} Positionen angelegt, {{matched}} zugeordnet",
     "summarySkipped": "{{count}} bereits importiert",
     "rowsSkipped": "{{count}} Zeilen werden übersprungen",
+    "reasonColumn": "Grund",
     "rowError": "Zeile {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "und {{count}} weitere",
-    "moreRows": "und {{count}} weitere Orders",
+    "showAllRows": "Alle {{count}} Zeilen anzeigen",
     "field": {
       "ticker": "Ticker",
       "date": "Datum",
@@ -2236,9 +2247,15 @@
     "lastUpdated": "Aktualisiert {{when}}",
     "refreshPrice": "Kurs aktualisieren",
     "refreshAllPrices": "Preise aktualisieren",
-    "refreshAllPricesDone": "{{refreshed}} Preise aktualisiert, {{skipped}} ohne neuen Kurs",
+    "refreshAllPricesDone": "{{updated}}, {{skipped}}",
+    "refreshAllPricesUpdated_one": "{{count}} Preis aktualisiert",
+    "refreshAllPricesUpdated_other": "{{count}} Preise aktualisiert",
+    "refreshAllPricesNoQuote_one": "{{count}} ohne neuen Kurs",
+    "refreshAllPricesNoQuote_other": "{{count}} ohne neuen Kurs",
+    "refreshAllPricesLeftOut_one": "{{count}} übersprungen",
+    "refreshAllPricesLeftOut_other": "{{count}} übersprungen",
     "refreshAllPricesNone": "Keine marktbewerteten Anlagen zum Aktualisieren",
-    "refreshAllPricesRateLimited": "Der Marktdatenanbieter drosselt gerade die Anfragen. {{refreshed}} Preise wurden aktualisiert und {{skipped}} übersprungen, bevor er stoppte. Bitte in einer Minute erneut versuchen.",
+    "refreshAllPricesRateLimited": "Der Marktdatenanbieter drosselt gerade die Anfragen. Bis zum Stopp: {{updated}}, {{skipped}}. Bitte in einer Minute erneut versuchen.",
     "priceRefreshed": "Kurs aktualisiert",
     "purchaseDate": "Kaufdatum",
     "purchasePrice": "Kaufpreis",
@@ -2419,7 +2436,41 @@
     "statementViewTransactions": "Transaktionen anzeigen",
     "statementUncategorizedIncome": "Nicht kategorisierte Einnahmen",
     "statementUncategorizedExpense": "Nicht kategorisierte Ausgaben",
-    "statementToggleGroup": "Kategorien von {{name}} anzeigen"
+    "statementToggleGroup": "Kategorien von {{name}} anzeigen",
+    "pluginReport": {
+      "total": {
+        "expenses": "Ausgaben gesamt",
+        "income": "Einnahmen gesamt",
+        "net": "Saldo"
+      },
+      "none": {
+        "category": "Ohne Kategorie",
+        "category_group": "Ohne Gruppe",
+        "payee": "Ohne Empfänger",
+        "account": "Ohne Konto",
+        "month": "Ohne Datum"
+      },
+      "groupBy": {
+        "category": "Kategorie",
+        "category_group": "Gruppe",
+        "payee": "Empfänger",
+        "account": "Konto",
+        "month": "Monat"
+      },
+      "measure": {
+        "expenses": "Ausgaben",
+        "income": "Einnahmen",
+        "net": "Saldo"
+      },
+      "share": "Anteil",
+      "computed": "Vom Plugin berechnet",
+      "periodTrimmed": "Plugin-Berichte umfassen höchstens zwei Jahre. Angezeigt wird {{from}} bis {{to}}.",
+      "periodTooLong": "Ein Plugin-Bericht umfasst höchstens zwei Jahre. Wähle einen kürzeren Zeitraum.",
+      "totalRow": "Summe",
+      "page": "Seite {{page}} von {{pages}}",
+      "previousPage": "Vorherige Seite",
+      "nextPage": "Nächste Seite"
+    }
   },
   "payees": {
     "noPayeeFound": "Kein Zahlungsempfänger gefunden.",
@@ -3965,5 +4016,9 @@
       "title": "Wiederkehrende Einnahmen",
       "hint": "Was wiederkehrende Rechnungen pro Monat einbringen, und was zuletzt verloren ging."
     }
+  },
+  "offline": {
+    "title": "Server nicht erreichbar",
+    "description": "Du bist offline oder Securo startet gerade neu. Deine Daten sind sicher und nichts wurde geändert. Wir verbinden uns automatisch wieder, sobald der Server antwortet."
   }
 }

@@ -7,10 +7,6 @@ import { payees as payeesApi } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { fiscal as fiscalApi, type PayeeWritePayload } from '@/lib/api'
-import { applyMask, formatTaxId } from '@/lib/tax-id'
-import { TaxIdKindPicker } from '@/components/tax-id-kind-picker'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -45,6 +41,7 @@ import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/page-header'
 import { calculateRangeSelection } from '@/lib/selection-utils'
 import { PayeeDetailDialog } from '@/components/payee-detail-dialog'
+import { PayeeFormDialog } from '@/components/payee-form-dialog'
 import {
   Select,
   SelectContent,
@@ -55,7 +52,6 @@ import {
 import { Search, Star, Merge, Trash2, ListFilter, X, Check, Pencil, Plus, ArrowDown, ArrowUp } from 'lucide-react'
 import { useWorkspace } from '@/contexts/workspace-context'
 import type { Payee } from '@/types'
-import { payeeErrorMessage } from '@/lib/payee-error-message'
 import {
   INITIAL_SORT_DIRECTIONS,
   loadPayeeSort,
@@ -186,37 +182,6 @@ export default function PayeesPage() {
   }, [sort])
 
   // Form state
-  const [formName, setFormName] = useState('')
-  // '' means the legal nature was not stated, which is the resting state for
-  // anything sync created and a legitimate answer, not a missing one.
-  type FormType = '' | 'person' | 'company'
-  const [formType, setFormType] = useState<FormType>('')
-  const [formNotes, setFormNotes] = useState('')
-  const [formEmail, setFormEmail] = useState('')
-  const [formPhone, setFormPhone] = useState('')
-  const [formAddress, setFormAddress] = useState('')
-  const [formWebsite, setFormWebsite] = useState('')
-  // Documents this payee has, as ordered rows. A list rather than a slot per
-  // possible kind: most cadastros need one document, and a column of empty
-  // boxes labelled with documents the user has never heard of reads as a
-  // form to fill rather than a fact to record.
-  const [taxIdRows, setTaxIdRows] = useState<{ kind: string; value: string }[]>([])
-
-  // Labels, masks and ordering come from the server: the jurisdiction that
-  // decides them lives on the workspace, and a second copy of the rule here
-  // would drift from it.
-  const { data: taxIdMeta } = useQuery({
-    queryKey: ['tax-id-kinds'],
-    queryFn: fiscalApi.taxIdKinds,
-    staleTime: 1000 * 60 * 60,
-  })
-  const allKinds = taxIdMeta?.kinds ?? []
-  const kindOption = (kind: string) => allKinds.find((k) => k.kind === kind)
-  // What this jurisdiction asks for, in pack order. Drives which document a
-  // new row starts on; the picker itself groups every country.
-  const localKinds = allKinds.filter((k) => k.offered)
-  const usedKinds = new Set(taxIdRows.map((r) => r.kind))
-
   const { data: payeesList, isLoading } = useQuery({
     queryKey: ['payees', searchQuery, filterType, filterFavorites],
     queryFn: () => payeesApi.list({
@@ -224,27 +189,6 @@ export default function PayeesPage() {
       type: filterType || undefined,
       is_favorite: filterFavorites || undefined,
     }),
-  })
-
-  const createMutation = useMutation({
-    mutationFn: (data: PayeeWritePayload & { name: string }) => payeesApi.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['payees'] })
-      setDialogOpen(false)
-      toast.success(t('payees.created'))
-    },
-    onError: (e: unknown) => toast.error(payeeErrorMessage(e, t) ?? t('common.error')),
-  })
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }: PayeeWritePayload & { id: string }) => payeesApi.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['payees'] })
-      setDialogOpen(false)
-      setEditingPayee(null)
-      toast.success(t('payees.updated'))
-    },
-    onError: (e: unknown) => toast.error(payeeErrorMessage(e, t) ?? t('common.error')),
   })
 
   const deleteMutation = useMutation({
@@ -334,74 +278,16 @@ export default function PayeesPage() {
   })
 
 
-  // A workspace that files somewhere gets its primary document ready to type
-  // into. A company whose clients are all local should never have to ask for
-  // the field it uses every single time.
-  //
-  // Only when a jurisdiction is set: with none, the only offered kind is the
-  // generic one, and a permanently empty "Other document" box is the confusing
-  // thing this replaced.
-  const seedTaxIdRows = (payee?: Payee | null): { kind: string; value: string }[] => {
-    const existing = (payee?.tax_ids ?? []).map((t) => ({
-      kind: t.kind,
-      value: formatTaxId(t.value, kindOption(t.kind)?.mask ?? null),
-    }))
-    if (existing.length > 0) return existing
-    const primary = taxIdMeta?.jurisdiction ? localKinds[0] : undefined
-    return primary ? [{ kind: primary.kind, value: '' }] : []
-  }
-
+  // The form itself lives in PayeeFormDialog, shared with the transaction
+  // dialog (issue #1069). Here it only carries which payee it edits.
   const openCreate = () => {
     setEditingPayee(null)
-    setFormName('')
-    setFormType('')
-    setFormNotes('')
-    setFormEmail('')
-    setFormPhone('')
-    setFormAddress('')
-    setFormWebsite('')
-    setTaxIdRows(seedTaxIdRows())
     setDialogOpen(true)
   }
 
   const openEdit = (payee: Payee) => {
     setEditingPayee(payee)
-    setFormName(payee.name)
-    setFormType(payee.type ?? '')
-    setFormNotes(payee.notes ?? '')
-    setFormEmail(payee.email ?? '')
-    setFormPhone(payee.phone ?? '')
-    setFormAddress(payee.address ?? '')
-    setFormWebsite(payee.website ?? '')
-    // Every stored document becomes a row, including kinds this jurisdiction
-    // does not ask for: a German VAT number on a Brazilian workspace is a
-    // normal state, and hiding it would be worse than showing it.
-    setTaxIdRows(seedTaxIdRows(payee))
     setDialogOpen(true)
-  }
-
-  const handleSave = () => {
-    const payload = {
-      name: formName,
-      // Empty means the legal nature was not stated, which is a value, not a
-      // blank to be coerced into one.
-      type: formType || null,
-      notes: formNotes || undefined,
-      email: formEmail.trim() || null,
-      phone: formPhone.trim() || null,
-      address: formAddress.trim() || null,
-      website: formWebsite.trim() || null,
-      // An emptied field means "drop this document", so blanks are sent and
-      // the server treats them as removals.
-      tax_ids: taxIdRows
-        .filter((row) => row.value.trim() !== '')
-        .map((row) => ({ kind: row.kind, value: row.value })),
-    }
-    if (editingPayee) {
-      updateMutation.mutate({ id: editingPayee.id, ...payload })
-    } else {
-      createMutation.mutate(payload)
-    }
   }
 
   const sortedPayees = useMemo(
@@ -889,181 +775,16 @@ export default function PayeesPage() {
         }}
       />
 
-      {/* Create/Edit Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        {/* The body scrolls, the footer does not: with contact details plus a
-            jurisdiction's worth of document fields this form is taller than a
-            laptop viewport, and a Save button below the fold is a Save button
-            nobody can reach. Mirrors transaction-dialog. */}
-        <DialogContent className="sm:max-w-md flex flex-col max-h-[calc(100dvh-2rem)]">
-          <DialogHeader>
-            <DialogTitle>{editingPayee ? t('payees.edit') : t('payees.add')}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 overflow-y-auto flex-1 -mx-1 px-1">
-            <div className="space-y-2">
-              <Label>{t('payees.name')}</Label>
-              <Input value={formName} onChange={(e) => setFormName(e.target.value)} required />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('payees.type')}</Label>
-              <select
-                className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
-                value={formType}
-                onChange={(e) => setFormType(e.target.value as FormType)}
-              >
-                {/* Unset first, and it is the default: the legal nature
-                    only matters once a document is attached, and the
-                    document settles it anyway. */}
-                <option value="">{t('payees.typeUnset', 'Not specified')}</option>
-                <option value="person">{t('payees.typePerson')}</option>
-                <option value="company">{t('payees.typeCompany')}</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label>{t('payees.notes')}</Label>
-              <textarea
-                className="w-full border border-input rounded-md px-3 py-2 text-sm bg-card resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-                rows={2}
-                value={formNotes}
-                onChange={(e) => setFormNotes(e.target.value)}
-              />
-            </div>
 
-            {/* Contact and billing. Every field optional: most rows here were
-                created by sync for a card merchant and will never need any. */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label>{t('payees.email', 'Email')}</Label>
-                <Input
-                  type="email"
-                  value={formEmail}
-                  onChange={(e) => setFormEmail(e.target.value)}
-                  placeholder="fin@cliente.com"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>{t('payees.phone', 'Phone')}</Label>
-                <Input value={formPhone} onChange={(e) => setFormPhone(e.target.value)} />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>{t('payees.address', 'Address')}</Label>
-              <Input value={formAddress} onChange={(e) => setFormAddress(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('payees.website', 'Website')}</Label>
-              <Input
-                value={formWebsite}
-                onChange={(e) => setFormWebsite(e.target.value)}
-                placeholder="acme.com"
-              />
-            </div>
-
-            {/* Fiscal documents. Which ones appear comes from the workspace's
-                jurisdiction; the rest stay reachable through "other", since a
-                counterparty abroad has documents this jurisdiction never
-                asks for. */}
-            {allKinds.length > 0 && (
-              <div className="space-y-2">
-                <Label>{t('payees.taxIds', 'Tax IDs')}</Label>
-                {taxIdRows.length === 0 && (
-                  <p className="text-[11px] text-muted-foreground leading-relaxed">
-                    {t('payees.taxIdsEmpty', 'None yet. Add one if you need it for tax purposes.')}
-                  </p>
-                )}
-                {taxIdRows.map((row, index) => {
-                  const option = kindOption(row.kind)
-                  return (
-                    <div key={index} className="flex items-center gap-2">
-                      <TaxIdKindPicker
-                        kinds={allKinds}
-                        jurisdictions={taxIdMeta?.jurisdictions ?? []}
-                        activeJurisdiction={taxIdMeta?.jurisdiction ?? null}
-                        value={row.kind}
-                        documentValue={row.value}
-                        used={usedKinds}
-                        onChange={(kind) =>
-                          setTaxIdRows((prev) =>
-                            prev.map((r, i) =>
-                              i === index
-                                ? // Re-mask under the new kind: what the user typed
-                                  // for a CNPJ is not formatted like a VAT id.
-                                  { kind, value: applyMask(r.value, kindOption(kind)?.mask ?? null) }
-                                : r,
-                            ),
-                          )
-                        }
-                      />
-                      <Input
-                        value={row.value}
-                        onChange={(e) =>
-                          setTaxIdRows((prev) =>
-                            prev.map((r, i) =>
-                              i === index
-                                ? { ...r, value: applyMask(e.target.value, option?.mask ?? null) }
-                                : r,
-                            ),
-                          )
-                        }
-                        placeholder={option?.mask ?? ''}
-                      />
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={t('common.remove')}
-                        onClick={() => setTaxIdRows((prev) => prev.filter((_, i) => i !== index))}
-                      >
-                        <X size={14} className="text-muted-foreground" />
-                      </Button>
-                    </div>
-                  )
-                })}
-                {usedKinds.size < allKinds.length && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    onClick={() => {
-                      // Default to the jurisdiction's primary document, which is
-                      // the one the overwhelming majority of rows will use.
-                      const next =
-                        localKinds.find((k) => !usedKinds.has(k.kind)) ??
-                        allKinds.find((k) => !usedKinds.has(k.kind))
-                      if (next) setTaxIdRows((prev) => [...prev, { kind: next.kind, value: '' }])
-                    }}
-                  >
-                    <Plus size={14} className="me-1" />
-                    {t('payees.addTaxId', 'Add')}
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>
-          <DialogFooter className={editingPayee ? 'flex justify-between sm:justify-between' : ''}>
-            {editingPayee && (
-              <Button
-                variant="destructive"
-                onClick={() => deleteMutation.mutate(editingPayee.id)}
-                disabled={deleteMutation.isPending}
-              >
-                <Trash2 size={14} className="me-1" />
-                {t('common.delete')}
-              </Button>
-            )}
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setDialogOpen(false)}>
-                {t('common.cancel')}
-              </Button>
-              <Button
-                onClick={handleSave}
-                disabled={!formName.trim() || createMutation.isPending || updateMutation.isPending}
-              >
-                {t('common.save')}
-              </Button>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Create/Edit Dialog. Shared with the transaction dialog, which opens
+          the same form to create or fix a payee while booking (#1069). */}
+      <PayeeFormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        payee={editingPayee}
+        onSaved={() => setEditingPayee(null)}
+        onDelete={(payee) => deleteMutation.mutate(payee.id)}
+      />
 
       {/* Merge Dialog */}
       <Dialog open={mergeDialogOpen} onOpenChange={setMergeDialogOpen}>

@@ -1076,6 +1076,30 @@ class TestParseOfx:
         assert transactions[0].amount == Decimal("985.50")
         assert transactions[0].type == "debit"
 
+    @pytest.mark.parametrize(
+        "dtposted",
+        [
+            "<DTPOSTED>20260115000000[+1:CET]",
+            "<DTPOSTED>20260115235900[-8:PST]",
+            "<DTPOSTED >20260115000000[+1:CET]",
+            "<DTPOSTED><![CDATA[20260115000000[+1:CET]]]></DTPOSTED>",
+        ],
+    )
+    def test_parse_ofx_keeps_the_bank_date_with_a_timezone_offset(self, dtposted):
+        """DTPOSTED with a [offset:TZ] suffix keeps the day the bank printed."""
+        ofx = self._make_ofx(
+            "<STMTTRN>\n"
+            "<TRNTYPE>DEBIT\n"
+            f"{dtposted}\n"
+            "<TRNAMT>-10.00\n"
+            "<FITID>TZ1\n"
+            "<MEMO>CARD PAYMENT\n"
+            "</STMTTRN>\n"
+        )
+        transactions = parse_ofx(ofx)
+
+        assert transactions[0].date == date(2026, 1, 15)
+
     def test_parse_ofx_keeps_duplicate_looking_transactions(self):
         """Transactions with same fields but different FITIDs are both kept."""
         ofx = self._make_ofx(
@@ -2345,6 +2369,76 @@ class TestOfxInstallmentDedup:
         assert imported == 0
         assert skipped == 2
 
+    @pytest.mark.asyncio
+    async def test_same_external_id_one_day_apart_dedups(
+        self, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
+    ):
+        """A row imported before OFX offsets were dropped can sit one day
+        earlier. Re-importing the statement must not duplicate it."""
+        from app.schemas.transaction import TransactionImport
+
+        txn = TransactionImport(
+            description="CARD PAYMENT",
+            amount=Decimal("10.00"),
+            date=date(2026, 1, 14),
+            type="debit",
+            external_id="FITID-TZ",
+        )
+        await import_transactions(session, test_workspace.id, test_user.id, test_account.id, [txn], "ofx")
+        imported, skipped, _, _ = await import_transactions(
+            session,
+            test_workspace.id,
+            test_user.id,
+            test_account.id,
+            [txn.model_copy(update={"date": date(2026, 1, 15)})],
+            "ofx",
+        )
+        assert imported == 0
+        assert skipped == 1
+
+    @pytest.mark.asyncio
+    async def test_same_external_id_one_day_apart_in_one_statement_both_imported(
+        self, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
+    ):
+        """A recurring fee the bank reports under one FITID on consecutive days
+        is two charges. The one-day window only reaches earlier imports, so both
+        rows land, and re-importing the same statement skips both."""
+        from sqlalchemy import select
+
+        from app.models.transaction import Transaction
+        from app.schemas.transaction import TransactionImport
+
+        fees = [
+            TransactionImport(
+                description="FEE",
+                amount=Decimal("2.00"),
+                date=day,
+                type="debit",
+                external_id="FITID-FEE",
+            )
+            for day in (date(2026, 1, 14), date(2026, 1, 15))
+        ]
+        imported, skipped, _, _ = await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id, fees, "ofx"
+        )
+        assert imported == 2
+        assert skipped == 0
+
+        stored = await session.execute(
+            select(Transaction.date)
+            .where(
+                Transaction.account_id == test_account.id,
+                Transaction.external_id == "FITID-FEE",
+            )
+            .order_by(Transaction.date)
+        )
+        assert stored.scalars().all() == [date(2026, 1, 14), date(2026, 1, 15)]
+
+        imported, skipped, _, _ = await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id, fees, "ofx"
+        )
+        assert imported == 0
+        assert skipped == 2
 
     @pytest.mark.asyncio
     async def test_same_external_id_same_date_different_amounts_all_imported(
@@ -3145,6 +3239,18 @@ def test_normalize_amount_currency_and_separators():
     # Without a column hint the per-cell behaviour is unchanged.
     assert normalize_amount("0,125") == "0.125"
     assert normalize_amount("12,50") == "12.50"
+    # Two or more comma groups and no dot can only be a grouped number.
+    assert normalize_amount("1,125,000") == "1125000"
+    assert normalize_amount("-1,125,000") == "-1125000"
+    assert normalize_amount("1,2345,678") == "1.2345.678"
+
+
+def test_grouped_amount_beside_zero_comma_cell():
+    """A "0," cell leaves the column without a hint; "1,125,000" still reads as grouped."""
+    from app.services.import_service import infer_decimal_separator, normalize_amount
+    column = ["0,125", "1,125,000"]
+    separator = infer_decimal_separator(column)
+    assert [normalize_amount(cell, separator) for cell in column] == ["0.125", "1125000"]
 
 
 def test_infer_decimal_separator():
@@ -3153,6 +3259,8 @@ def test_infer_decimal_separator():
     assert infer_decimal_separator(["1.234,56", "12,50"]) == ","
     assert infer_decimal_separator(["25,000", "3,000"]) == "."
     assert infer_decimal_separator(["0,125"]) is None
+    # A "0," cell is not a grouped number, so "1,125" beside it is not one either.
+    assert infer_decimal_separator(["0,125", "1,125"]) is None
     assert infer_decimal_separator(["10", ""]) is None
 
 

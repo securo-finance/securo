@@ -70,7 +70,9 @@ How the client IP comes out in each case:
   inside the Compose network, so trusting the Compose network (172.20.0.0 with a /16 mask)
   still lets that caller pick its key through the header; narrowing to it is
   not a fix. Either the backend is not reachable directly (drop the backend
-  port, or bind it to loopback with `BACKEND_PORT=127.0.0.1:8000`), or
+  port, or bind it to loopback: `docker-compose.prod.yml` does by default and
+  takes the address from `BACKEND_BIND_ADDRESS`, while `docker-compose.yml` takes
+  `BACKEND_PORT=127.0.0.1:8000`), or
   `TRUSTED_PROXY_NETWORKS` lists only the proxies' own addresses (a fixed
   `ipv4_address` for nginx, and for Traefik, on a fixed subnet), which leaves
   the gateway out.

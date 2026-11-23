@@ -240,8 +240,9 @@ export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudget
 
           <fieldset className="space-y-2">
             <legend className="mb-1 text-sm font-medium text-foreground">{t('budgets.copyExisting')}</legend>
-            <label className="flex cursor-pointer items-start gap-2">
+            <label htmlFor="budget-copy-strategy-missing" className="flex cursor-pointer items-start gap-2">
               <input
+                id="budget-copy-strategy-missing"
                 type="radio"
                 name="budget-copy-strategy"
                 className="mt-0.5"
@@ -250,8 +251,9 @@ export function BudgetCopyDialog({ open, onOpenChange, targetMonth, targetBudget
               />
               <span className="text-sm text-foreground">{t('budgets.copyMissing')}</span>
             </label>
-            <label className="flex cursor-pointer items-start gap-2">
+            <label htmlFor="budget-copy-strategy-overwrite" className="flex cursor-pointer items-start gap-2">
               <input
+                id="budget-copy-strategy-overwrite"
                 type="radio"
                 name="budget-copy-strategy"
                 className="mt-0.5"

@@ -251,3 +251,129 @@ async def test_a_position_bought_again_after_a_sale_is_open(session: AsyncSessio
     # Its value is today's again, not the one it had before the sale.
     (today_value,) = [v for v in await _rows(session, AssetValue, asset_id=asset.id) if v.date == app_today()]
     assert Decimal(str(today_value.amount)) == Decimal("560.00")
+
+
+async def _chart(session, asset) -> dict[date, float]:
+    from app.services.asset_service import _load_asset_native_values
+
+    return dict((await _load_asset_native_values(session, [asset]))[str(asset.id)])
+
+
+@pytest.mark.asyncio
+async def test_holding_with_provider_trades_is_drawn_from_its_ledger(session: AsyncSession, bank_connection, test_user):
+    trades = [_trade("b1", "buy", 2, "2", "50"), _trade("b2", "buy", 5, "1", "60")]
+    await _pipeline(session, bank_connection, holding("3", trades, unit_price="70", current_value="210"), test_user)
+    asset = await _asset(session, bank_connection)
+    chart = await _chart(session, asset)
+    assert chart[date(2026, 11, 2)] == 100.0
+    assert chart[date(2026, 11, 5)] == 180.0
+    assert chart[app_today()] == 210.0
+
+
+@pytest.mark.asyncio
+async def test_holding_without_provider_ledger_keeps_stored_values(session: AsyncSession, bank_connection, test_user):
+    await _pipeline(session, bank_connection, holding("3", None, unit_price="70", current_value="210"), test_user)
+    asset = await _asset(session, bank_connection)
+    assert await _chart(session, asset) == {app_today(): 210.0}
+
+
+@pytest.mark.asyncio
+async def test_hand_trades_alone_do_not_switch_a_synced_holding(session: AsyncSession, bank_connection, test_user):
+    await _pipeline(session, bank_connection, holding("3", None, unit_price="70", current_value="210"), test_user)
+    asset = await _asset(session, bank_connection)
+    session.add(AssetTransaction(asset_id=asset.id, workspace_id=asset.workspace_id, kind="buy", quantity=Decimal("3"),
+                                 price=Decimal("10"), fee=Decimal("0"), date=date(2026, 11, 1), source="manual"))
+    await session.commit()
+    assert await _chart(session, asset) == {app_today(): 210.0}
+
+
+@pytest.mark.asyncio
+async def test_a_ledger_that_no_longer_adds_up_falls_back_to_stored_values(
+    session: AsyncSession, bank_connection, test_user
+):
+    trades = [_trade("b1", "buy", 2, "2", "50"), _trade("b2", "buy", 5, "1", "60")]
+    await _pipeline(session, bank_connection, holding("3", trades, unit_price="70", current_value="210"), test_user)
+    # A later sync whose trades don't reach the reported units keeps the old ledger.
+    await _pipeline(session, bank_connection, holding("6", trades, unit_price="70", current_value="420"), test_user)
+    asset = await _asset(session, bank_connection)
+    chart = await _chart(session, asset)
+    assert date(2026, 11, 5) not in chart  # no replayed trade point
+    assert chart[app_today()] == 420.0
+
+
+@pytest.mark.asyncio
+async def test_hand_trades_are_not_replayed_with_provider_trades(session: AsyncSession, bank_connection, test_user):
+    trades = [_trade("b1", "buy", 2, "2", "50"), _trade("b2", "buy", 5, "1", "60")]
+    await _pipeline(session, bank_connection, holding("3", trades, unit_price="70", current_value="210"), test_user)
+    asset = await _asset(session, bank_connection)
+    session.add(AssetTransaction(asset_id=asset.id, workspace_id=asset.workspace_id, kind="buy", quantity=Decimal("3"),
+                                 price=Decimal("10"), fee=Decimal("0"), date=date(2026, 11, 1), source="manual"))
+    await session.commit()
+    chart = await _chart(session, asset)
+    assert date(2026, 11, 1) not in chart
+    assert (chart[date(2026, 11, 2)], chart[date(2026, 11, 5)], chart[app_today()]) == (100.0, 180.0, 210.0)
+
+
+@pytest.mark.asyncio
+async def test_a_hand_trade_recorded_through_the_ledger_keeps_the_provider_replay(
+    session: AsyncSession, bank_connection, test_user
+):
+    """Recording a trade by hand recomputes the holding's units from the whole ledger (3 + 3 here), so they no longer
+    equal the provider's own trades until the next sync. The provider's trades still add up once the hand trades are
+    taken out, so the chart keeps each of their dates."""
+    from app.services.asset_transaction_service import recompute_and_cache
+
+    trades = [_trade("b1", "buy", 2, "2", "50"), _trade("b2", "buy", 5, "1", "60")]
+    await _pipeline(session, bank_connection, holding("3", trades, unit_price="70", current_value="210"), test_user)
+    asset = await _asset(session, bank_connection)
+    session.add(AssetTransaction(asset_id=asset.id, workspace_id=asset.workspace_id, kind="buy", quantity=Decimal("3"),
+                                 price=Decimal("10"), fee=Decimal("0"), date=date(2026, 11, 1), source="manual"))
+    await session.flush()
+    await recompute_and_cache(session, asset)
+    await session.commit()
+    assert asset.units == Decimal("6")
+    chart = await _chart(session, asset)
+    assert (chart[date(2026, 11, 2)], chart[date(2026, 11, 5)]) == (100.0, 180.0)
+
+    from app.services.asset_service import get_asset_value_trend
+
+    points = await get_asset_value_trend(session, asset.id, asset.workspace_id)
+    assert points is not None
+    trend = {p["date"]: p["amount"] for p in points}
+    assert (trend["2026-11-02"], trend["2026-11-05"]) == (100.0, 180.0)
+
+
+@pytest.mark.asyncio
+async def test_a_ledger_the_import_accepted_is_replayed_within_its_largest_lot(
+    session: AsyncSession, bank_connection, test_user
+):
+    # Buys of 1000 and a sale of 999.999 leave 0.001 against 0.0015 reported:
+    # within the import's tolerance (one millionth of the largest lot), so the
+    # chart replays the ledger too instead of falling back to stored values.
+    trades = [_trade("b1", "buy", 2, "1000", "1"), _trade("s1", "sell", 5, "999.999", "1")]
+    await _pipeline(session, bank_connection, holding("0.0015", trades, unit_price="1", current_value="0.0015"), test_user)
+    asset = await _asset(session, bank_connection)
+    assert len(await _ledger(session, asset)) == 2  # the import accepted it
+    chart = await _chart(session, asset)
+    assert chart[date(2026, 11, 2)] == 1000.0
+
+
+@pytest.mark.asyncio
+async def test_a_sync_point_keeps_the_amount_the_provider_reported(session: AsyncSession, bank_connection, test_user):
+    # A provider may report a holding's value apart from its quote (Pluggy:
+    # the net balance, against the unit price): 100 units at 9.50 reported as
+    # 1000.00. The sync day shows what was reported, so the chart's last point
+    # equals the holding's current value; the trade day in between is replayed.
+    trades = [_trade("b1", "buy", 2, "100", "9")]
+    await _pipeline(session, bank_connection, holding("100", trades, unit_price="9.50", current_value="1000.00"), test_user)
+    asset = await _asset(session, bank_connection)
+    chart = await _chart(session, asset)
+    assert chart[date(2026, 11, 2)] == 900.0
+    assert chart[app_today()] == 1000.0
+
+    from app.services.asset_service import get_asset_value_trend
+
+    points = await get_asset_value_trend(session, asset.id, asset.workspace_id)
+    assert points is not None
+    trend = {p["date"]: p["amount"] for p in points}
+    assert trend[app_today().isoformat()] == 1000.0

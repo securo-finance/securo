@@ -25,7 +25,13 @@ from sqlalchemy import String, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
-from app.core.currency import normalize_currency_code
+from app.core.currency import normalize_currency_code, same_currency
+from app.core.money import (
+    MAX_FX_RATE,
+    MAX_MONEY_AMOUNT,
+    bounded_fx_rate,
+    bounded_money,
+)
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.budget import Budget
@@ -37,6 +43,7 @@ from app.models.invoice_schedule import InvoiceSchedule
 from app.models.payee import Payee
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
+from app.models.user import User
 from app.fiscal.registry import TaxIdKind, normalise_and_validate
 from app.schemas.budget import BudgetCreate, BudgetUpdate
 from app.schemas.category import CategoryCreate
@@ -57,6 +64,7 @@ from app.services import (
     category_group_service,
     category_line_service,
     category_service,
+    fx_rate_service,
     goal_service,
     payee_service,
     recurring_transaction_service,
@@ -780,6 +788,7 @@ def _budget_target(budget: Budget, category_name: str | None) -> dict[str, Any]:
             "amount": {
                 "type": "number",
                 "exclusiveMinimum": 0,
+                "maximum": float(MAX_MONEY_AMOUNT),
                 "description": "Absolute value, always positive — direction comes from `type`",
             },
             "type": {
@@ -2247,7 +2256,11 @@ async def _transaction_snapshot(
         "Build a preview for editing one transaction (description, amount, "
         "date, type, currency, account, category, payee, notes, ignored, "
         "excluded from P&L, status). Pass only the fields to change; every "
-        "other field stays as it is. Foreign-currency rows: set "
+        "other field stays as it is, except the FX conversion: changing "
+        "`amount`, `currency` or `date` restamps the row from the market "
+        "rate for its date, which replaces a manual rate, and the preview "
+        "shows the resulting `amount_primary` and `fx_rate_used`. "
+        "Foreign-currency rows: set "
         "`amount_primary` (the value in the primary currency) or "
         "`fx_rate_used`, and the other side is derived the same way the save "
         "derives it. `clear_fx=true` removes a manual FX override and lets "
@@ -2271,6 +2284,7 @@ async def _transaction_snapshot(
             "amount": {
                 "type": "number",
                 "exclusiveMinimum": 0,
+                "maximum": float(MAX_MONEY_AMOUNT),
                 "description": "Absolute value, always positive — direction comes from `type`",
             },
             "date": {"type": "string", "format": "date"},
@@ -2291,6 +2305,7 @@ async def _transaction_snapshot(
             "amount_primary": {
                 "type": "number",
                 "exclusiveMinimum": 0,
+                "maximum": float(MAX_MONEY_AMOUNT),
                 "description": (
                     "Value in the primary currency. Setting it alone derives "
                     "fx_rate_used = amount_primary / amount."
@@ -2299,6 +2314,7 @@ async def _transaction_snapshot(
             "fx_rate_used": {
                 "type": "number",
                 "exclusiveMinimum": 0,
+                "maximum": float(MAX_FX_RATE),
                 "description": (
                     "Rate from the transaction currency to the primary "
                     "currency. Setting it alone derives "
@@ -2391,10 +2407,13 @@ async def propose_update_transaction(
             }
         changes["description"] = cleaned
     if amount is not None:
-        parsed_amount = Decimal(str(amount))
-        if parsed_amount <= 0:
-            return {"error": "amount must be greater than zero"}
-        changes["amount"] = parsed_amount
+        # The same bound the PATCH applies: a value the column would round to
+        # zero or refuse used to slip through the preview and come back from
+        # the database as raw SQL text (issue #270).
+        try:
+            changes["amount"] = bounded_money(Decimal(str(amount)))
+        except ValueError as exc:
+            return {"error": str(exc)}
     if date is not None:
         try:
             parsed_date = parse_date(date)
@@ -2477,15 +2496,17 @@ async def propose_update_transaction(
             return {"error": f"notes must be {NOTES_MAX_LENGTH} characters or fewer"}
         changes["notes"] = new_notes
     if amount_primary is not None:
-        parsed_primary = Decimal(str(amount_primary))
-        if parsed_primary <= 0:
-            return {"error": "amount_primary must be greater than zero"}
-        changes["amount_primary"] = parsed_primary
+        try:
+            changes["amount_primary"] = bounded_money(
+                Decimal(str(amount_primary)), "amount_primary"
+            )
+        except ValueError as exc:
+            return {"error": str(exc)}
     if fx_rate_used is not None:
-        parsed_rate = Decimal(str(fx_rate_used))
-        if parsed_rate <= 0:
-            return {"error": "fx_rate_used must be greater than zero"}
-        changes["fx_rate_used"] = parsed_rate
+        try:
+            changes["fx_rate_used"] = bounded_fx_rate(Decimal(str(fx_rate_used)))
+        except ValueError as exc:
+            return {"error": str(exc)}
     if is_ignored is not None:
         changes["is_ignored"] = bool(is_ignored)
     if exclude_from_pnl is not None:
@@ -2532,6 +2553,77 @@ async def propose_update_transaction(
         preview["derived"] = {"amount_primary": num(primary)}
     elif clear_fx:
         preview["derived"] = {"amount_primary": "auto", "fx_rate_used": "auto"}
+    elif {"amount", "currency", "date"} & set(changes):
+        # Changing the amount, the currency or the date makes the save restamp
+        # the row from the market rate for its date, which replaces a rate the
+        # user typed. The preview has to show that conversion, and say when it
+        # is only an estimate, instead of claiming every other field stays as
+        # it is (issue #271).
+        user = await session.get(User, ctx.user_id)
+        target_currency = changes.get("currency", tx.currency)
+        amount = changes.get("amount", tx.amount)
+        if user is not None and amount is not None:
+            if same_currency(target_currency, user.primary_currency):
+                # A row moving into the primary currency is stamped 1:1. One
+                # already there has no conversion to show at all.
+                if not same_currency(tx.currency, user.primary_currency):
+                    preview["derived"] = {
+                        "amount_primary": num(amount),
+                        "fx_rate_used": num(Decimal("1")),
+                        "note": (
+                            "the row is now in the primary currency, so the "
+                            "stored conversion becomes the amount at 1:1"
+                        ),
+                    }
+            else:
+                stamp = await fx_rate_service.resolve_primary_stamp(
+                    session,
+                    user.primary_currency,
+                    amount,
+                    target_currency,
+                    changes.get("date", tx.date),
+                    # The preview never reaches the provider. It shows the
+                    # rate stored for the date, or the closest stored one as
+                    # an estimate, and says which.
+                    allow_fetch=False,
+                )
+                if stamp.amount_primary is None:
+                    # No stored rate at all: the save resolves one, and the
+                    # preview cannot know which, so it must not imply the row
+                    # keeps its current conversion.
+                    preview["derived"] = {
+                        "amount_primary": "auto",
+                        "fx_rate_used": "auto",
+                        "note": (
+                            "no market rate stored for this date: the save "
+                            "resolves the rate automatically, so the preview "
+                            "cannot show the exact conversion"
+                        ),
+                    }
+                else:
+                    notes: list[str] = []
+                    if not stamp.rate_is_exact_date:
+                        notes.append(
+                            "estimated from the closest stored market rate; "
+                            "the save uses the market rate for the row's date, "
+                            "which may differ"
+                        )
+                    if (
+                        tx.fx_rate_used is not None
+                        and tx.fx_rate_used != stamp.fx_rate_used
+                    ):
+                        notes.append(
+                            "the stored fx_rate_used is replaced by the market "
+                            "rate for the row's date; pass amount_primary or "
+                            "fx_rate_used to keep a manual conversion"
+                        )
+                    derived: dict[str, Any] = {
+                        "amount_primary": num(stamp.amount_primary),
+                        "fx_rate_used": num(stamp.fx_rate_used),
+                    }
+                    if notes:
+                        derived["note"] = " ".join(notes)
+                    preview["derived"] = derived
 
     if tx.transfer_pair_id:
         cascaded_fields = {"amount", "date", "description", "notes"} & set(changes)
