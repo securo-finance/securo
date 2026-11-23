@@ -4,6 +4,7 @@
 - Date: 2026-11-17
 - Origin: #1075 (S3-compatible attachment storage)
 - Supersedes: [0013](0013-file-storage.md)
+- Extended by [0036](0036-xml-attachments.md): XML files are accepted, and anything that isn't an image or a PDF is served as a download.
 
 ## Context
 
@@ -16,7 +17,7 @@ ADR 0013 put every file behind `StorageProvider` and left S3 declared but not im
   - `local`: `LocalStorageProvider` (`backend/app/providers/local_storage.py`), which resolves every key and refuses one outside its base directory. In Compose it writes to the `attachments` volume at `/app/data/attachments`.
   - `s3`: `S3StorageProvider` (`backend/app/providers/s3_storage.py`), on `aiobotocore`, configured by the `STORAGE_S3_*` settings in `backend/app/core/config.py`. The settings are checked at startup only when S3 is selected.
 - Keys are the same for both providers and start with the workspace: `{workspace_id}/{transaction_id}/...` for transactions, `{workspace_id}/invoices/{invoice_id}/...` for invoices. The S3 provider refuses an invalid key before any request. Moving from local to S3 is a copy of the attachments directory into the bucket, with no migration.
-- Limits stay as in 0013: 10 MB per file; images and PDF only; 10 files per transaction, 20 per invoice.
+- Limits stay as in 0013: 10 MB per file; images and PDF only; 10 files per transaction, 20 per invoice. The accepted types are extended by [0036](0036-xml-attachments.md), which adds XML and is the current list.
 - The S3 endpoint is an outbound call the person configures, and it extends the list in ADR 0016:
 
 | Call | Where | Happens only when |

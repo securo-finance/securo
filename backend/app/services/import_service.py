@@ -37,6 +37,7 @@ from app.services.rule_service import apply_rules_to_transaction, preview_rules_
 from app.services.fx_rate_service import stamp_account_amount, stamp_primary_amount
 from app.services.payee_service import get_or_create_payee
 from app.services.transaction_match_service import find_unique_transaction_match
+from app.services.transfer_detection_service import detect_transfer_pairs
 
 
 # Descriptions used by some Brazilian banks (e.g. Banco do Brasil) for
@@ -1536,6 +1537,16 @@ async def import_transactions(
     # row is written: settling an invoice creates an allocation pointing
     # at a transaction, which has to exist first.
     await reconciliation_service.match_incoming(session, workspace_id, landed)
+
+    # Two files that carry the two legs of one transfer land as a pair, just
+    # as rows from a connection do (#1802). Every row this import created is
+    # a candidate, so the rule still holds: a pair needs one leg that just
+    # arrived, and two rows already in the books are never linked on the
+    # strength of a third one being imported.
+    if landed:
+        await detect_transfer_pairs(
+            session, workspace_id, candidate_ids=[tx.id for tx in landed]
+        )
 
     await session.commit()
     return imported, skipped, excluded_count, import_log.id
