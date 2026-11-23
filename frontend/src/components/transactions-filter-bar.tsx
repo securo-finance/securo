@@ -1223,7 +1223,9 @@ export function TransactionsFilterBar({
           !!selectedPayee ||
           !!typeLabel ||
           !!statusLabel ||
+          hideIgnored ||
           !!flagLabel ||
+          (showUnreadFilter && onlyUnread) ||
           !!dateLabel ||
           !!amountLabel) && (
           <div className="flex flex-wrap items-center gap-1 border-t border-border/60 px-2 py-1.5">
