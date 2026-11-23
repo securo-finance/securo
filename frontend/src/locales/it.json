@@ -3612,7 +3612,8 @@
       "undoFirstGroupSplit": "Annulla la divisione prima di dividere tra persone.",
       "undoFirstMortgage": "Annulla la divisione prima di aggiungere la ripartizione del mutuo.",
       "categoryInUse": "Questa categoria contiene parti di transazioni divise. Modifica prima quelle divisioni.",
-      "destinationInvalid": "Le parti di transazioni divise non possono passare a una categoria ignorata o nascosta."
+      "destinationInvalid": "Le parti di transazioni divise non possono passare a una categoria ignorata o nascosta.",
+      "mergeNeedsRate": "Questi budget sono in valute diverse e non c'è un tasso di cambio del loro mese per unirli."
     }
   },
   "plugins": {

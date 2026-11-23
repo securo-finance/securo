@@ -3599,7 +3599,8 @@
       "undoFirstGroupSplit": "Hebe die Aufteilung auf, bevor du zwischen Personen aufteilst.",
       "undoFirstMortgage": "Hebe die Aufteilung auf, bevor du das Darlehen aufschlüsselst.",
       "categoryInUse": "Diese Kategorie enthält Anteile aufgeteilter Buchungen. Ändere zuerst diese Aufteilungen.",
-      "destinationInvalid": "Anteile aufgeteilter Buchungen können nicht in eine ignorierte oder ausgeblendete Kategorie wechseln."
+      "destinationInvalid": "Anteile aufgeteilter Buchungen können nicht in eine ignorierte oder ausgeblendete Kategorie wechseln.",
+      "mergeNeedsRate": "Diese Budgets sind in verschiedenen Währungen, und für ihren Monat gibt es keinen Wechselkurs, um sie zusammenzuführen."
     }
   },
   "plugins": {
