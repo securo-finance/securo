@@ -12,6 +12,7 @@ authorization URL can be generated, so `get_oauth_url` takes
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import math
 import time
@@ -381,11 +382,32 @@ def _repeat_external_id(external_id: str, occurrence: int) -> str:
 
     Two same-amount purchases on one day that the bank lists with nothing
     else (a pending card purchase carries only amount, direction and date)
-    hash to the same id. Each repeat within a page gets its own id; the
-    first keeps the plain one, so rows already stored keep theirs.
+    hash to the same id. Each repeat within the fetch gets its own id; the
+    first keeps the plain one, so rows already stored keep theirs. The
+    booked spelling and the pending one count apart, since they may be the
+    same operation.
     """
     digest = hashlib.sha256(f"{external_id}#{occurrence}".encode("utf-8")).hexdigest()
     return digest[:32]
+
+
+def _page_signature(entries: list[tuple[dict, str]]) -> Optional[str]:
+    """Identity of one page's content, or None when the page is empty.
+
+    A cursor that serves a page already read is detected by its content
+    rather than by the cursor it hands back: the repeat may come with a new
+    cursor. The status the page was served under counts as content, so an
+    operation the feed first lists as pending and then as booked is a new
+    page even when its payload came back unchanged. Empty pages are left
+    out, so a feed that ends with a couple of them keeps paging to its real
+    end.
+    """
+    if not entries:
+        return None
+    payload = json.dumps(
+        [[raw, status] for raw, status in entries], sort_keys=True, default=str
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _settlement_key(raw: dict) -> Optional[tuple[str, str, str, str]]:
@@ -1438,7 +1460,13 @@ class EnableBankingProvider(BankProvider):
         pending_keys: dict[tuple[str, str, str, str], int] = {}
         continuation_key: Optional[str] = None
         seen_continuation_keys: set[str] = set()
-        seen_transaction_ids: set[str] = set()
+        # How many entries with a given base id the fetch has returned so far,
+        # counted apart for the booked ones and the rest. An identical pair can
+        # straddle two pages, so the count runs over the whole fetch; a page the
+        # cursor serves twice is dropped whole by its signature, before its
+        # entries could be counted again.
+        occurrences: dict[tuple[str, str], int] = {}
+        page_signatures: set[str] = set()
         self.cancelled_transaction_ids.pop(account_external_id, None)
         for _ in range(cap):
             params: dict[str, Any] = {"date_from": date_from}
@@ -1453,8 +1481,22 @@ class EnableBankingProvider(BankProvider):
                 f"/accounts/{account_external_id}/transactions",
                 params=params,
             )
-            page_occurrences: dict[str, int] = {}
-            for raw_txn, status in self._iter_transactions(page):
+            entries = list(self._iter_transactions(page))
+            signature = _page_signature(entries)
+            if signature is not None and signature in page_signatures:
+                # A broken cursor can serve a page already read, sometimes
+                # with a new cursor. Its entries are all here already, so
+                # reading them again would duplicate the rows.
+                logger.warning(
+                    "Enable Banking pagination loop detected for account %s "
+                    "(a page was repeated); stopping pagination",
+                    account_external_id,
+                )
+                self.truncated_account_ids.add(account_external_id)
+                break
+            if signature is not None:
+                page_signatures.add(signature)
+            for raw_txn, status in entries:
                 parsed = self._build_transaction(
                     account_external_id, raw_txn, status, payee_source
                 )
@@ -1464,11 +1506,18 @@ class EnableBankingProvider(BankProvider):
                     # for one the bank stopped listing.
                     self.truncated_account_ids.add(account_external_id)
                     continue
-                # Identical entries within one page are distinct transactions.
-                # Counting per page, not per fetch, keeps the ids stable when
-                # a broken cursor repeats a page.
-                occurrence = page_occurrences.get(parsed.external_id, 0)
-                page_occurrences[parsed.external_id] = occurrence + 1
+                # Identical entries are distinct transactions, listed with
+                # nothing to tell them apart. A pending entry and the booked
+                # entry it settles keep the same fingerprint, and both can be
+                # listed in one fetch: the booked ones count apart, so the
+                # booked spelling keeps the id it will have once the pending
+                # twin is gone. A cancelled entry counts with the pending ones,
+                # which is where it came from, so the survivor of a pair keeps
+                # the id it had while both were listed.
+                space = "posted" if status == "posted" else "pending"
+                slot = (space, parsed.external_id)
+                occurrence = occurrences.get(slot, 0)
+                occurrences[slot] = occurrence + 1
                 if occurrence:
                     parsed.external_id = _repeat_external_id(
                         parsed.external_id, occurrence
@@ -1480,17 +1529,11 @@ class EnableBankingProvider(BankProvider):
                         account_external_id, set()
                     ).add(parsed.external_id)
                     continue
-                # A broken pagination cursor can make Enable Banking return a
-                # page we have already consumed. Keep the result idempotent
-                # even before the repeated cursor is detected below.
-                if parsed.external_id in seen_transaction_ids:
-                    continue
                 key = _settlement_key(raw_txn)
                 if key is not None:
                     counts = pending_keys if parsed.status == "pending" else booked_keys
                     counts[key] = counts.get(key, 0) + 1
                 collected.append((parsed, key))
-                seen_transaction_ids.add(parsed.external_id)
 
             next_continuation_key = page.get("continuation_key") or None
             if not next_continuation_key:

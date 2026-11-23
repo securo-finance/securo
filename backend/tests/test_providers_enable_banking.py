@@ -33,6 +33,7 @@ from app.providers.enable_banking import (
     _account_identifier,
     _entry_reference_external_id,
     _map_cash_account_type,
+    _repeat_external_id,
     _txn_fingerprint,
 )
 from app.providers.psu import PsuContext, psu_present
@@ -820,7 +821,7 @@ async def test_get_transactions_default_window_is_90_days_inclusive(eb_keys):
         await provider.get_transactions(_CREDENTIALS, "acc-1")
 
     assert len(requests) == 1
-    assert requests[0].url.params["date_to"] == date.today().isoformat()
+    assert requests[0].url.params["date_to"] == _utc_today().isoformat()
     assert requests[0].url.params.get("strategy") is None
     assert _span_days(requests[0]) == DEFAULT_HISTORY_DAYS == 90
 
@@ -2090,6 +2091,173 @@ async def test_get_transactions_keeps_identical_entries_of_one_day(eb_keys):
             {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
         )
     assert [t.external_id for t in again] == [t.external_id for t in txns]
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_keeps_identical_entries_split_across_pages(eb_keys):
+    """Two identical purchases can straddle a page boundary, so the count of
+    a repeated id runs over the whole fetch, not one page: both are imported,
+    with the same ids on the next fetch (#1232)."""
+    provider = EnableBankingProvider()
+    coffee = {
+        "transaction_amount": {"amount": "3.20", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": "2026-05-10",
+    }
+    rented_bike = {
+        "transaction_amount": {"amount": "1.10", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": "2026-05-09",
+    }
+    pages = [
+        {
+            "transactions": {"booked": [], "pending": [dict(rented_bike), dict(coffee)]},
+            "continuation_key": "page-2",
+        },
+        {
+            "transactions": {"booked": [], "pending": [dict(coffee)]},
+            "continuation_key": "",
+        },
+    ]
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=pages[len(requests) - 1])
+
+    with _patch_client(provider, handler):
+        txns = await provider.get_transactions(
+            {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
+        )
+
+    assert len(requests) == 2
+    assert [t.amount for t in txns] == [Decimal("1.10"), Decimal("3.20"), Decimal("3.20")]
+    coffee_ids = [t.external_id for t in txns if t.amount == Decimal("3.20")]
+    assert coffee_ids[0] == _txn_fingerprint("acc-1", coffee)
+    assert coffee_ids[1] == _repeat_external_id(coffee_ids[0], 1)
+    assert provider.truncated_account_ids == set()
+
+    requests.clear()
+    with _patch_client(provider, handler):
+        again = await provider.get_transactions(
+            {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
+        )
+    assert [t.external_id for t in again] == [t.external_id for t in txns]
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_drops_a_page_served_twice(eb_keys, caplog):
+    """A broken cursor can serve a page already read with a fresh cursor
+    instead of looping. Its entries must not land twice (#1232)."""
+    provider = EnableBankingProvider()
+    entry = _flat_entry("BOOK", "10.00")
+    pages = [
+        {
+            "transactions": [dict(entry, entry_reference="ref-1")],
+            "continuation_key": "page-2",
+        },
+        {
+            "transactions": [dict(entry, entry_reference="ref-1")],
+            "continuation_key": "page-3",
+        },
+        {
+            "transactions": [dict(entry, entry_reference="ref-2")],
+            "continuation_key": "",
+        },
+    ]
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=pages[len(requests) - 1])
+
+    with _patch_client(provider, handler), caplog.at_level("WARNING"):
+        txns = await provider.get_transactions(
+            {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
+        )
+
+    # The repeated page ends the read: the page after it may well repeat too.
+    assert len(requests) == 2
+    assert [t.status for t in txns] == ["posted"]
+    assert provider.truncated_account_ids == {"acc-1"}
+    assert "pagination loop detected" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_keeps_a_page_whose_status_changed(eb_keys):
+    """The same entry served first as pending and then as booked is new
+    content, not a page repeated: the booked spelling is what settles the
+    pending row (#1232)."""
+    provider = EnableBankingProvider()
+    charge = {
+        "entry_reference": "auth-7",
+        "transaction_amount": {"amount": "25.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": "2026-05-10",
+    }
+    pages = [
+        {
+            "transactions": {"booked": [], "pending": [dict(charge)]},
+            "continuation_key": "page-2",
+        },
+        {
+            "transactions": {"booked": [dict(charge)], "pending": []},
+            "continuation_key": "page-3",
+        },
+        {
+            "transactions": {"booked": [_flat_entry("BOOK", "4.00")], "pending": []},
+            "continuation_key": "",
+        },
+    ]
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=pages[len(requests) - 1])
+
+    with _patch_client(provider, handler):
+        txns = await provider.get_transactions(
+            {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
+        )
+
+    # The booked spelling settles the pending one listed on the page before,
+    # so only the booked row reaches the sync.
+    assert len(requests) == 3
+    assert [t.status for t in txns] == ["posted", "posted"]
+    assert [str(t.amount) for t in txns] == ["25.00", "4.00"]
+    assert provider.truncated_account_ids == set()
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_numbers_a_booked_entry_apart(eb_keys):
+    """A pending spelling and the booked one it settles keep one fingerprint,
+    and a bank can list both in the same response. The booked one is numbered
+    apart, so it holds the id it gets as soon as the pending twin is gone
+    (#1232)."""
+    provider = EnableBankingProvider()
+    coffee = {
+        "transaction_amount": {"amount": "3.20", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": "2026-05-10",
+    }
+    page = {
+        "transactions": {"booked": [dict(coffee)], "pending": [dict(coffee)]},
+        "continuation_key": "",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=page)
+
+    with _patch_client(provider, handler):
+        txns = await provider.get_transactions(
+            {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
+        )
+
+    base = _txn_fingerprint("acc-1", coffee)
+    assert [(t.status, t.external_id) for t in txns] == [
+        ("posted", base),
+        ("pending", base),
+    ]
 
 
 @pytest.mark.asyncio

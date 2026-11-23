@@ -12,6 +12,15 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://openexchangerates.org/api"
 
 
+class FxProviderNotConfigured(ValueError):
+    """The provider has no app id, so no request can be made.
+
+    Its own type lets a caller skip the request quietly: an instance without
+    the app id is a valid setup (ADR 0004), not a failed fetch. It stays a
+    ``ValueError`` because every existing caller already handles that.
+    """
+
+
 class _RedactAppId(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         if isinstance(record.args, tuple):
@@ -57,7 +66,7 @@ class OpenExchangeRatesProvider(FxRateProvider):
     async def _fetch(self, path: str) -> dict[str, Decimal]:
         app_id = self._app_id()
         if not app_id:
-            raise ValueError("openexchangerates_app_id not configured")
+            raise FxProviderNotConfigured("openexchangerates_app_id not configured")
         params = {"app_id": app_id, "symbols": self._symbols()}
         try:
             async with httpx.AsyncClient(timeout=30) as client:

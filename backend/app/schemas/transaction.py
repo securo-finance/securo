@@ -3,9 +3,17 @@ from datetime import date as _Date
 from decimal import Decimal
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from app.core.currency import normalize_currency_code
+from app.core.money import bounded_fx_rate, bounded_money
 from app.schemas.category import CategoryRead
 from app.schemas.transaction_category_line import (
     TransactionCategoryLineRead,
@@ -160,6 +168,21 @@ class TransactionUpdate(BaseModel):
     def normalize_currency(cls, value: Optional[str]) -> Optional[str]:
         return normalize_currency_code(value)
 
+    @field_validator("amount", "amount_primary", "fx_rate_used")
+    @classmethod
+    def check_amount_bounds(
+        cls, value: Optional[Decimal], info: ValidationInfo
+    ) -> Optional[Decimal]:
+        # The money columns round to cents and hold 13 digits, so `0.001` was
+        # accepted and stored as 0.00 and `1e15` failed at commit with a raw
+        # database error. Bound here, before the row is touched (issue #270).
+        if value is None:
+            return None
+        field = info.field_name or "amount"
+        if field == "fx_rate_used":
+            return bounded_fx_rate(value, field)
+        return bounded_money(value, field)
+
 
 class InstallmentSeriesCreate(BaseModel):
     """Payload for POST /api/transactions/installments — repeats a purchase
@@ -228,6 +251,11 @@ class TransactionRead(TransactionBase):
     status: str = "posted"
     payee: Optional[str] = None
     original_description: Optional[str] = None
+    # The category the bank/provider reported for this row, in its own words
+    # (often an English label such as "Groceries"). Read-only: rules match
+    # against it, and showing it is how the rule editor can be filled with the
+    # exact value instead of a guessed translation (#280).
+    provider_category: Optional[str] = None
     payee_id: Optional[uuid.UUID] = None
     payee_name: Optional[str] = None
     notes: Optional[str] = None

@@ -497,10 +497,14 @@ async def sync(session: AsyncSession, connection: PluginConnection) -> PluginCon
         }
         provides: list[str] | None = None
         try:
-            provides = await _provides(session, connection)
+            # One read of the installed version for the whole sync: an update
+            # committed while the plugin runs must not change how its reply is read.
+            record, manifest = await _installed(session, connection.workspace_id, connection.plugin_id)
+            commit = record.commit
+            provides = _provides(connection, manifest)
             if provides is not None:
                 params["since"] = await _since(session, connection)
-            result, secrets = await _call(session, connection, "sync", params)
+            result, secrets = await _call(session, connection, "sync", params, record)
         except runner.PluginCallFailed as exc:
             if provides is not None and exc.kind == "RateLimited":
                 _rate_limited(connection, f"{exc.kind}: {exc.message}")
@@ -513,7 +517,7 @@ async def sync(session: AsyncSession, connection: PluginConnection) -> PluginCon
                 _keep(connection, result, secrets)
                 _succeeded(connection)
             else:
-                await _write_payload(session, connection, provides, result, secrets)
+                await _write_payload(session, connection, provides, result, secrets, commit, manifest)
         await _mirror_status(session, connection)
         await session.commit()
         return connection
@@ -521,9 +525,8 @@ async def sync(session: AsyncSession, connection: PluginConnection) -> PluginCon
         await _release(lock)
 
 
-async def _provides(session: AsyncSession, connection: PluginConnection) -> list[str] | None:
+def _provides(connection: PluginConnection, manifest: Manifest) -> list[str] | None:
     """What the connection's integration provides, or None when it writes through the API."""
-    _, manifest = await _installed(session, connection.workspace_id, connection.plugin_id)
     integration = _integration(manifest, connection.integration)
     if not integration.provides:
         return None
@@ -542,7 +545,13 @@ async def _since(session: AsyncSession, connection: PluginConnection) -> str | N
 
 
 async def _write_payload(
-    session: AsyncSession, connection: PluginConnection, provides: list[str], result: Any, secrets: dict[str, Any]
+    session: AsyncSession,
+    connection: PluginConnection,
+    provides: list[str],
+    result: Any,
+    secrets: dict[str, Any],
+    commit: str,
+    manifest: Manifest,
 ) -> None:
     """Write what `sync` returned through the bank sync pipeline, then keep the plugin's cursor.
 
@@ -555,8 +564,7 @@ async def _write_payload(
     reply = result if isinstance(result, dict) else {}
     _keep(connection, {"secrets": reply.get("secrets")}, secrets)
     await session.commit()
-    record, manifest = await _installed(session, connection.workspace_id, connection.plugin_id)
-    logo_urls = await logos.urls(session, connection.plugin_id, record.commit)
+    logo_urls = await logos.urls(session, connection.plugin_id, commit)
     try:
         payload = parse_payload(reply.get("data"), provides, logo_urls, {h.host for h in manifest.network})
     except PayloadError as exc:
@@ -571,7 +579,10 @@ async def _write_payload(
         try:
             await connection_service.sync_connection(
                 session, bank_id, workspace_id, user_id,
-                provider=PluginPayloadProvider(bank.provider, payload, logo_urls, scope=bank.external_id),
+                provider=PluginPayloadProvider(
+                    bank.provider, payload, logo_urls, scope=bank.external_id,
+                    complete_feed=_integration(manifest, connection.integration).complete_feed,
+                ),
             )
         except Exception as exc:  # noqa: BLE001 - recorded on the connection, retried on the next sync
             logger.exception("Writing the records of plugin connection %s failed", connection_id)

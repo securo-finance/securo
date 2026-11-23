@@ -2,7 +2,7 @@ import logging
 import uuid
 from datetime import date
 from decimal import Decimal
-from typing import Optional
+from typing import NamedTuple, Optional
 
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +15,7 @@ from app.models.account import Account
 from app.models.fx_rate import FxRate
 from app.models.transaction import Transaction
 from app.models.user import User
-from app.providers.openexchangerates import OpenExchangeRatesProvider
+from app.providers.openexchangerates import FxProviderNotConfigured, OpenExchangeRatesProvider
 from app.services.provider_settings import resolve_settings
 
 logger = logging.getLogger(__name__)
@@ -97,7 +97,8 @@ async def _resolve_rate(
     """Resolve the true FX rate, or None when no rate can be found.
 
     Uses cross-rate through USD: rate = usd_to_target / usd_to_source.
-    Priority: exact date → on-demand fetch → closest available.
+    Priority: exact date → on-demand fetch (when the provider is configured)
+    → closest available.
     Returns None (not a fake 1:1) when no rate is available, so callers that
     persist a conversion can honestly leave it NULL instead of storing a wrong
     amount (issue #353). Pass ``allow_fetch=False`` to skip the on-demand
@@ -130,6 +131,11 @@ async def _resolve_rate(
                     usd_to_source = await _get_exact_date_rate(session, from_currency, target)
                 if usd_to_target is None:
                     usd_to_target = await _get_exact_date_rate(session, to_currency, target)
+        except FxProviderNotConfigured:
+            # An instance with no app id is configured that way on purpose
+            # (ADR 0004). Stay on the stored rates without a warning or a
+            # traceback for every conversion (issue #267).
+            logger.debug("FX provider not configured; using stored rates for %s", target)
         except Exception:
             logger.warning("On-demand FX rate sync failed for %s", target, exc_info=True)
 
@@ -414,6 +420,66 @@ async def stamp_account_amount(
         transaction.amount_account_source = None
 
 
+class PrimaryStamp(NamedTuple):
+    """A restamp's result, as a preview shows it.
+
+    ``rate_is_exact_date`` says whether the rate is the row date's own, from
+    stored data. When it is False the rate came from the closest stored date,
+    so a save that may fetch can still land on a different exact-date rate and
+    the preview must be read as an estimate.
+    """
+
+    amount_primary: Optional[Decimal]
+    fx_rate_used: Optional[Decimal]
+    rate_is_exact_date: bool
+
+
+async def resolve_primary_stamp(
+    session: AsyncSession,
+    primary_currency: str,
+    amount: Decimal,
+    currency: str,
+    on_date: Optional[date] = None,
+    *,
+    allow_fetch: bool = True,
+) -> PrimaryStamp:
+    """What a restamp writes for this amount, without writing it.
+
+    Returns the ``amount_primary`` and ``fx_rate_used`` exactly as
+    :func:`_stamp_primary_fields` would set them, or both ``None`` when the
+    row is in a foreign currency and no real rate can be resolved for its
+    date. A preview uses it so it can show the conversion a save will make
+    instead of guessing (issue #271).
+    """
+    amount_dec = Decimal(str(amount))
+
+    # Genuine same-currency 1:1, always safe to persist.
+    if _code(currency) == _code(primary_currency):
+        return PrimaryStamp(amount_dec.quantize(Decimal("0.01")), Decimal("1"), True)
+
+    rate = await _resolve_rate(
+        session, currency, primary_currency, on_date, allow_fetch=allow_fetch
+    )
+    if rate is None:
+        return PrimaryStamp(None, None, False)
+
+    # The same pair _resolve_rate works with: a rate is exact only when both
+    # legs are stored for the row's own date. Checked after the resolve so an
+    # allowed fetch counts, and after clamping future dates to today the way
+    # _resolve_rate does.
+    from_currency, to_currency = _code(currency), _code(primary_currency)
+    target = min(on_date or app_today(), app_today())
+    legs = [c for c in (from_currency, to_currency) if c != "USD"]
+    exact = True
+    for leg in legs:
+        if await _get_exact_date_rate(session, leg, target) is None:
+            exact = False
+            break
+    return PrimaryStamp(
+        (amount_dec * rate).quantize(Decimal("0.01")), rate, exact
+    )
+
+
 async def _stamp_primary_fields(
     session: AsyncSession,
     user_id: uuid.UUID,
@@ -443,34 +509,26 @@ async def _stamp_primary_fields(
     if not user:
         return
 
-    primary_currency = user.primary_currency
-    obj_currency = getattr(obj, currency_field, get_settings().default_currency)
     obj_amount = getattr(obj, amount_field, None)
-
     if obj_amount is None:
         return
 
-    amount_dec = Decimal(str(obj_amount))
-
-    # Genuine same-currency 1:1 — always safe to persist.
-    if obj_currency == primary_currency:
-        setattr(obj, primary_field, amount_dec.quantize(Decimal("0.01")))
-        if hasattr(obj, rate_field):
-            setattr(obj, rate_field, Decimal("1"))
-        return
-
-    obj_date = getattr(obj, date_field, None)
-    rate = await _resolve_rate(
-        session, obj_currency, primary_currency, obj_date, allow_fetch=allow_fetch
+    stamp = await resolve_primary_stamp(
+        session,
+        user.primary_currency,
+        obj_amount,
+        getattr(obj, currency_field, get_settings().default_currency),
+        getattr(obj, date_field, None),
+        allow_fetch=allow_fetch,
     )
 
-    if rate is None:
+    if stamp.amount_primary is None:
         # No real rate available yet. Leave the fields untouched: a brand-new
         # object stays NULL (honest "not converted"), an existing row keeps its
         # current value. Either way we never persist a fake 1:1, and never push a
         # visible transaction into limbo. It heals on a later pass once a rate lands.
         return
 
-    setattr(obj, primary_field, (amount_dec * rate).quantize(Decimal("0.01")))
+    setattr(obj, primary_field, stamp.amount_primary)
     if hasattr(obj, rate_field):
-        setattr(obj, rate_field, rate)
+        setattr(obj, rate_field, stamp.fx_rate_used)

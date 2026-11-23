@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.account import Account
 from app.models.transaction import Transaction
 from app.models.user import User
+from app.models.workspace import Workspace
 from app.schemas.rule import RuleAction, RuleCondition, RuleCreate
 from app.services.category_service import create_default_categories
 from app.services.rule_service import create_default_rules, create_rule
@@ -1548,3 +1549,102 @@ async def test_preview_rule_keeps_a_transfer_leg_in_balances_like_the_save_path(
     saved = (await client.get(f"/api/transactions/{txn_id}", headers=auth_headers)).json()
     assert saved["is_ignored"] is False
     assert saved["category_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_provider_categories_lists_distinct_workspace_values(
+    client: AsyncClient, auth_headers, session: AsyncSession,
+    test_user, test_workspace,
+):
+    """The rule editor is fed the exact labels the provider sent (#280).
+
+    Values come from `raw_data["category"]`, are de-duplicated, ordered
+    case-insensitively, and never leak from another workspace.
+    """
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Provider categories",
+        type="checking",
+        balance=Decimal("1000"),
+        currency="BRL",
+    )
+    other_workspace = Workspace(
+        id=uuid.uuid4(), name="Other", created_by_user_id=test_user.id
+    )
+    other_account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=other_workspace.id,
+        name="Other account",
+        type="checking",
+        balance=Decimal("1000"),
+        currency="BRL",
+    )
+
+    def _row(workspace_id, account_id, description, raw_data, day):
+        return Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=workspace_id,
+            account_id=account_id,
+            description=description,
+            amount=Decimal("10.00"),
+            date=date(2025, 3, day),
+            type="debit",
+            source="sync",
+            raw_data=raw_data,
+            created_at=datetime.now(timezone.utc),
+        )
+
+    rows = [
+        _row(test_workspace.id, account.id, "MARKET", {"category": "Groceries"}, 1),
+        _row(test_workspace.id, account.id, "MARKET AGAIN", {"category": "Groceries"}, 2),
+        _row(
+            test_workspace.id, account.id, "RESTAURANT",
+            {"category": "Food and drinks"}, 3,
+        ),
+        # No provider payload, no category key, and an empty one: none is a
+        # suggestion.
+        _row(test_workspace.id, account.id, "MANUAL", None, 4),
+        _row(test_workspace.id, account.id, "NO CATEGORY KEY", {"other": "x"}, 5),
+        _row(test_workspace.id, account.id, "EMPTY CATEGORY", {"category": ""}, 6),
+        # Another workspace's label must not show up here.
+        _row(other_workspace.id, other_account.id, "FLIGHT", {"category": "Travel"}, 7),
+    ]
+    session.add_all([account, other_workspace, other_account, *rows])
+    await session.commit()
+
+    response = await client.get("/api/rules/provider-categories", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.json() == ["Food and drinks", "Groceries"]
+
+
+@pytest.mark.asyncio
+async def test_transaction_detail_exposes_provider_category(
+    client: AsyncClient, auth_headers, session: AsyncSession,
+    test_user, test_workspace, test_transactions,
+):
+    """The row detail carries the provider's own label, and null when absent.
+
+    Without it the rule editor's `provider_category` condition can only be
+    filled by guessing the bank's wording (#280).
+    """
+    synced = test_transactions[0]
+    synced.raw_data = {"category": "Groceries"}
+    manual = test_transactions[1]
+    manual.raw_data = None
+    synced_id, manual_id = str(synced.id), str(manual.id)
+    await session.commit()
+
+    synced_body = (
+        await client.get(f"/api/transactions/{synced_id}", headers=auth_headers)
+    ).json()
+    manual_body = (
+        await client.get(f"/api/transactions/{manual_id}", headers=auth_headers)
+    ).json()
+
+    assert synced_body["provider_category"] == "Groceries"
+    assert manual_body["provider_category"] is None
