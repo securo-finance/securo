@@ -259,7 +259,7 @@ export function TransactionDialog({
           : 'flex flex-col min-h-0 flex-1'}>
           {/* Left column: form */}
           <div className={isEditing
-            ? 'flex flex-col min-w-0 min-h-0 flex-1 overflow-hidden sm:pe-6'
+            ? cn('flex flex-col min-w-0 min-h-0 flex-1', hasPreview && 'overflow-hidden sm:pe-6')
             : 'flex flex-col min-h-0 flex-1'}>
             <DialogHeader className="mb-4">
               <DialogTitle>
@@ -1178,7 +1178,10 @@ function TransactionForm({
         hasPreview && 'mt-4'
       )}
     >
-      <div className="space-y-4 overflow-y-auto flex-1 min-h-0 pb-2 sm:pe-3">
+      {/* The scrollbar sits in the dialog's own padding: a thin (11px) bar plus
+          13px fill the 24px gutter, so the fields line up with the close button
+          and the footer instead of stopping short of them. */}
+      <div className="space-y-4 overflow-y-auto flex-1 min-h-0 pb-2 -me-6 pe-[13px] [scrollbar-width:thin]">
       {error && (
         <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
           {error}
