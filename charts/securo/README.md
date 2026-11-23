@@ -68,8 +68,10 @@ pod start only once the database is at the migration head of its image.
   with `kubectl logs job/<name>`.
 - If the Job fails, the new pods never start and the old ones keep serving.
   Fix the cause and run `helm upgrade` again.
-- Going back to an older chart or image does not downgrade the database: the
-  older pods stay in `Init`, because the database is ahead of their image.
+- Going back to an older image on this chart does not downgrade the database:
+  the older pods stay in `Init`, because the database is ahead of their image.
+  Going back to a chart from before this change has no schema gate at all, so
+  its backend pods start `uvicorn` directly against the newer database.
   Restore a backup taken before the upgrade, or stay on the newer version.
 
 ## Configuration
