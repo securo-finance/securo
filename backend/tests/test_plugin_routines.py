@@ -1,8 +1,9 @@
-"""File fields and routines of a plugin's integration (ADR 0035)."""
+"""File fields and routines of a plugin's integration (ADR 0035, 0038)."""
 from __future__ import annotations
 
 import base64
 import copy
+import uuid
 from datetime import timedelta
 from typing import Any
 
@@ -445,9 +446,34 @@ async def test_renaming_a_connection_keeps_it_as_it_was(session, ids, installed)
     await session.refresh(connection)
     assert connection.status == "active"
 
-    renamed = await connections.update_values(session, connection, name="Payroll", values={})
+    renamed, changed = await connections.update_values(session, connection, name="Payroll", values={})
     assert renamed.name == "Payroll"
     assert renamed.status == "active"
+    assert changed is False
+    # The same key again isn't a change either.
+    _, changed = await connections.update_values(session, connection, name=None, values={"password": "hunter22"})
+    assert changed is False
+    _, changed = await connections.update_values(session, connection, name=None, values={"password": "hunter23"})
+    assert changed is True
+
+
+@pytest.mark.asyncio
+async def test_renaming_a_pending_connection_queues_nothing(
+    client: AsyncClient, auth_headers: dict, session, ids, installed, monkeypatch
+):
+    queued: list[tuple[str, bool]] = []
+    monkeypatch.setattr(plugin_tasks.run_plugin_routines, "delay", lambda cid, force=False: queued.append((cid, force)))
+    monkeypatch.setattr(plugin_tasks.sync_plugin_connection, "delay", lambda cid: queued.append(("sync", cid)))
+    await _install(session, ids)
+    connection = await _connect(session, ids)
+    assert connection.status == "pending"
+
+    renamed = await client.put(
+        f"/api/plugins/connections/{connection.id}/values", json={"name": "Payroll", "values": {}}, headers=auth_headers
+    )
+    assert renamed.status_code == 200 and renamed.json()["status"] == "pending"
+    # Still pending from connecting, whose first round was already queued: a rename adds no work.
+    assert queued == []
 
 
 @pytest.mark.asyncio
@@ -497,6 +523,62 @@ async def test_new_keys_run_every_routine_even_when_none_is_due(session, ids, in
         if row.routine in ("send", "collect"):
             # It ran again even though its own window hadn't come.
             assert row.state["runs"] == 2 and row.last_run_at != before[row.routine]
+
+
+@pytest.mark.asyncio
+async def test_a_forced_round_that_finds_the_connection_busy_tries_again(
+    session, ids, installed, sync_locks, monkeypatch
+):
+    await _install(session, ids)
+    connection = await _connect(session, ids)
+    for key in ("send", "collect"):
+        await connections.run_routine(session, connection, await _routine(session, connection, key))
+    monkeypatch.setattr(plugin_tasks, "_session_maker", lambda: (_Engine(), lambda: _Same(session)))
+    monkeypatch.setattr(plugin_tasks, "close_redis", _noop)
+    lock = f"plugin-sync:{connection.id}"
+
+    # Busy: nothing ran, and every routine that didn't is handed back to try again.
+    sync_locks.add(lock)
+    busy = await plugin_tasks._run_routines_of(str(connection.id), force=True)
+    rows = await connections.list_routines(session, [connection.id])
+    assert sorted(busy) == sorted(r.routine for r in rows)
+    assert all(r.state["runs"] == 1 for r in rows if r.routine in ("send", "collect"))
+    # An unforced round leaves a busy routine to the schedule, where it is still due.
+    assert await plugin_tasks._run_routines_of(str(connection.id)) == []
+
+    # Once the lock is free, the retry runs exactly those, even though none is due.
+    sync_locks.discard(lock)
+    assert await plugin_tasks._run_routines_of(str(connection.id), force=True, only=["send"]) == []
+    rows = {r.routine: r for r in await connections.list_routines(session, [connection.id])}
+    assert rows["send"].state["runs"] == 2
+    assert rows["collect"].state["runs"] == 1
+
+
+def test_the_task_requeues_busy_routines_and_then_gives_up(monkeypatch):
+    connection_id = str(uuid.uuid4())
+    monkeypatch.setattr(plugin_tasks, "_enabled", lambda: True)
+    queued: list[tuple] = []
+    monkeypatch.setattr(
+        plugin_tasks.run_plugin_routines, "apply_async", lambda args, countdown: queued.append((args, countdown))
+    )
+
+    async def still_busy(cid, *, force=False, only=None):
+        return ["send"]
+
+    monkeypatch.setattr(plugin_tasks, "_run_routines_of", still_busy)
+    assert plugin_tasks.run_plugin_routines.run(connection_id, True)["status"] == "retrying"
+    assert queued == [((connection_id, True, ["send"], 1), plugin_tasks.FORCED_RETRY_SECONDS)]
+    # After the last attempt it stops and the schedule takes over.
+    last = plugin_tasks.run_plugin_routines.run(connection_id, True, ["send"], plugin_tasks.FORCED_RETRIES)
+    assert last == {"status": "busy", "routines": ["send"]}
+    assert len(queued) == 1
+
+    async def needs_auth(cid, *, force=False, only=None):
+        return []
+
+    monkeypatch.setattr(plugin_tasks, "_run_routines_of", needs_auth)
+    assert plugin_tasks.run_plugin_routines.run(connection_id, True) == {"status": "ok"}
+    assert len(queued) == 1
 
 
 @pytest.mark.asyncio
