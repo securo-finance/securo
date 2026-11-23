@@ -189,12 +189,24 @@ async def _fx_override_in_owner_currency(
     amount_unchanged = amount == Decimal(str(tx.amount))
     shown = await viewer.convert(session, tx.user_id, tx.amount_primary, tx.date)
     if amount_unchanged and shown is not None:
-        echoed = (
-            Decimal(str(amount_primary)).quantize(Decimal("0.01")) == shown
-            if amount_primary is not None
-            else bool(amount)
-            and abs(Decimal(str(fx_rate)) - abs(shown / amount)) <= Decimal("1E-8")
-        )
+        # The stored stamp itself counts as an echo too: a client that read
+        # the row unconverted sends it back as it was (#440).
+        stored = Decimal(str(tx.amount_primary))
+        if amount_primary is not None:
+            sent = Decimal(str(amount_primary)).quantize(Decimal("0.01"))
+            echoed = sent in (shown, stored)
+        else:
+            sent_rate = Decimal(str(fx_rate))
+            echoed = (
+                bool(amount)
+                and any(
+                    abs(sent_rate - abs(value / amount)) <= Decimal("1E-8")
+                    for value in (shown, stored)
+                )
+            ) or (
+                tx.fx_rate_used is not None
+                and abs(sent_rate - Decimal(str(tx.fx_rate_used))) <= Decimal("1E-8")
+            )
         if echoed:
             update_data.pop("amount_primary", None)
             update_data.pop("fx_rate_used", None)

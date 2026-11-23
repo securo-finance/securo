@@ -29,6 +29,7 @@ from app.services.dashboard_service import (
 from app.services._query_filters import reporting_date_col, reporting_date_value
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.fx_rate_service import convert as fx_convert
+from app.services.viewer_currency import viewer_currency
 from app.services.recurring_transaction_service import (
     adjust_weekend_date,
     get_occurrences_in_range,
@@ -66,6 +67,9 @@ async def get_transaction_calendar(
 
     user = await session.get(User, user_id)
     primary_currency = user.primary_currency if user else get_settings().default_currency
+    # Another member's row is stamped in their display currency; the day
+    # panel shows it in the viewer's, like the list (#269, #440).
+    viewer = await viewer_currency(session, primary_currency)
     accounting_mode = (
         await get_credit_card_accounting_mode(session)
         if date_basis == "reporting"
@@ -138,7 +142,8 @@ async def get_transaction_calendar(
             continue
         day = days[activity_date]
         amount_primary = await _positive_primary_amount(
-            session, tx.amount, tx.currency, primary_currency, tx.amount_primary
+            session, tx.amount, tx.currency, primary_currency,
+            await viewer.convert(session, tx.user_id, tx.amount_primary, tx.date),
         )
 
         parts = _category_parts(tx)
@@ -187,7 +192,8 @@ async def get_transaction_calendar(
             continue
         day = days[activity_date]
         amount_primary = await _positive_primary_amount(
-            session, tx.amount, tx.currency, primary_currency, tx.amount_primary
+            session, tx.amount, tx.currency, primary_currency,
+            await viewer.convert(session, tx.user_id, tx.amount_primary, tx.date),
         )
         parts = _category_parts(tx)
         is_transfer = _is_transfer_item(tx, parts)

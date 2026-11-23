@@ -606,3 +606,69 @@ async def test_owner_editing_her_own_row_keeps_what_she_types(client, session, c
     tx = await _stored(session, row["id"])
     assert tx.amount_primary == Decimal("1600.00")
     assert tx.amount_primary_typed == Decimal("1600.00")
+
+
+@pytest.mark.asyncio
+async def test_every_view_the_dialog_opens_from_shows_the_members_currency(
+    client, couple
+):
+    """#440: the calendar and the dashboard open the dialog from the detail
+    GET, which returned Ana's reais to Bruno; the PATCH then read them as
+    euros. Detail, PATCH response and calendar now read like the list."""
+    row = await _usd_row(client, couple, "300.00", "1560.00")
+    bruno = couple["bruno"]
+
+    resp = await client.get(f"/api/transactions/{row['id']}", headers=bruno)
+    assert resp.status_code == 200, resp.text
+    detail = resp.json()
+    assert detail["amount_primary"] == pytest.approx(row["amount_primary"])
+    assert detail["fx_rate_used"] == pytest.approx(row["fx_rate_used"])
+    assert abs(detail["amount_primary"]) == pytest.approx(312.0)
+
+    resp = await client.patch(
+        f"/api/transactions/{row['id']}", headers=bruno,
+        json={"description": "R269 R440 detail"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert abs(resp.json()["amount_primary"]) == pytest.approx(312.0)
+
+    resp = await client.get(
+        "/api/transactions/calendar", headers=bruno,
+        params={"month": couple["month"].isoformat()},
+    )
+    assert resp.status_code == 200, resp.text
+    (item,) = [
+        item for day in resp.json()["days"] for item in day["items"]
+        if item.get("id") == row["id"]
+    ]
+    assert item["amount_primary"] == pytest.approx(312.0)
+
+    # Ana still reads her own reais everywhere.
+    resp = await client.get(f"/api/transactions/{row['id']}", headers=couple["ana"])
+    assert abs(resp.json()["amount_primary"]) == pytest.approx(1560.0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "sent",
+    [
+        {"amount_primary": 1560.0, "fx_rate_used": 5.2},
+        {"amount_primary": 1560.0},
+        {"fx_rate_used": 5.2},
+    ],
+)
+async def test_member_sending_back_the_owners_stored_stamp_keeps_it(
+    client, session, couple, sent
+):
+    """#440 guard: a client that read the row unconverted sends Ana's
+    R$ 1.560 / 5,2 back as Bruno's; it was saved as 8.666,67."""
+    row = await _usd_row(client, couple, "300.00", "1560.00")
+    resp = await client.patch(
+        f"/api/transactions/{row['id']}", headers=couple["bruno"],
+        json={"description": "R269 R440 calendar", "amount": "300.00", **sent},
+    )
+    assert resp.status_code == 200, resp.text
+    tx = await _stored(session, row["id"])
+    assert tx.description == "R269 R440 calendar"
+    assert tx.amount_primary == Decimal("1560.00")
+    assert tx.amount_primary_typed == Decimal("1560.00")
