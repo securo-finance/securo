@@ -401,3 +401,21 @@ async def test_editing_a_series_cannot_shrink_a_sibling_below_what_is_linked_fro
             session, first.id, test_workspace.id, test_user.id,
             TransactionUpdate(amount=Decimal("50"), apply_to="all"),
         )
+
+
+@pytest.mark.asyncio
+async def test_the_cap_uses_the_counterparts_current_amount_not_a_loaded_one(session, make_tx):
+    from sqlalchemy import update
+
+    dinner, payback = await make_tx(100), await make_tx(60, "credit")
+    await session.commit()
+    # The payback is already in the session (annotating the anchor loads it)
+    # when a sync lowers its amount underneath.
+    await session.refresh(payback)
+    await session.execute(
+        update(Transaction).where(Transaction.id == payback.id).values(amount=Decimal("30"))
+        .execution_options(synchronize_session=False)
+    )
+
+    with pytest.raises(ValueError, match="beyond its amount"):
+        await reimbursement_service.replace_allocations(session, dinner, [_alloc(payback, 40)])

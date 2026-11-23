@@ -154,6 +154,9 @@ async def replace_allocations(
         )
         .order_by(Transaction.id)
         .with_for_update()
+        # A counterpart this request already loaded keeps its old amount
+        # otherwise, and the cap below must see the locked row's current one.
+        .execution_options(populate_existing=True)
     )
     counterparts = {tx.id: tx for tx in result.scalars().all()}
     if len(counterparts) != len(counterpart_ids):
