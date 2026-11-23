@@ -796,6 +796,41 @@ describe('TransactionDialog save and next', () => {
   })
 })
 
+describe('TransactionDialog scroll region gutter (#458)', () => {
+  function renderWithScrollbar(scrollbarPx: number) {
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(600)
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(600 - scrollbarPx)
+    vi.spyOn(currencies, 'list').mockResolvedValue([])
+    vi.spyOn(payees, 'list').mockResolvedValue([])
+    vi.spyOn(groups, 'list').mockResolvedValue([])
+    renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={syncedTransaction()}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={vi.fn()}
+        loading={false}
+        error={null}
+        isSynced
+      />,
+    )
+    return screen.getByTestId('transaction-form-scroll')
+  }
+
+  it('gives the whole end padding back when the scrollbar overlays the content', () => {
+    const region = renderWithScrollbar(0)
+    expect(region.style.getPropertyValue('--scrollbar-w')).toBe('0px')
+  })
+
+  it('leaves room for a classic scrollbar inside the padding', () => {
+    const region = renderWithScrollbar(11)
+    expect(region.style.getPropertyValue('--scrollbar-w')).toBe('11px')
+  })
+})
+
 /** Shows the flag state a mounted list query holds, as a page would. */
 function FlagConsumer({ queryKey, read }: { queryKey: string[]; read: () => Promise<Transaction> }) {
   const { data } = useQuery({ queryKey, queryFn: read })
@@ -843,9 +878,11 @@ describe('TransactionDialog flag (#56)', () => {
     expect(transactions.update).toHaveBeenCalledWith(tx.id, { is_flagged: true })
     expect(await screen.findByText('transactions: flagged')).toBeInTheDocument()
     expect(await screen.findByText('drill-down: flagged')).toBeInTheDocument()
+    // The label already says what a press does now; aria-pressed on top would
+    // read as "Unflag, pressed" (#458).
     expect(
       await screen.findByRole('button', { name: t('transactions.unflagAction') }),
-    ).toBeInTheDocument()
+    ).not.toHaveAttribute('aria-pressed')
   })
 
   it('sets a reminder date and note on the flag, each saved on its own', async () => {
