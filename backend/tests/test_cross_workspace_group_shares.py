@@ -72,7 +72,7 @@ async def _make_category(session, user, workspace, name: str, color: str) -> Cat
 
 async def _record_split_expense(
     session, payer, workspace, members, amount: str, description: str,
-    category: Category | None = None,
+    category: Category | None = None, txn_type: str = "debit",
 ) -> Transaction:
     """`payer` pays `amount` from an account in `workspace`, split equally."""
     account = Account(
@@ -96,7 +96,7 @@ async def _record_split_expense(
         amount=Decimal(amount),
         currency="BRL",
         date=date.today(),
-        type="debit",
+        type=txn_type,
         source="manual",
     )
     session.add(tx)
@@ -395,6 +395,65 @@ async def test_report_category_totals_count_the_owners_shared_share(
         point for point in trend["Groceries"].series if point.date == current_point.date
     )
     assert current_series.value == pytest.approx(50.0)
+
+
+@pytest.mark.asyncio
+async def test_report_views_skip_a_shared_share_of_unknown_type(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Only debit and credit are spending and income, in every view.
+
+    The summary's shared-splits query sums just those two types, so the
+    owner's share of a row saved as "expense" never reached it. The
+    composition, the category trend and the trend point read every
+    non-credit share as expense, so the same share showed up there alone
+    and the views disagreed (#345)."""
+    _group, me, friend, guest, guest_ws = await _trip_group(
+        session, test_user, test_workspace, linked_self=False
+    )
+    groceries = await _make_category(
+        session, guest, guest_ws, "Groceries", "#22C55E"
+    )
+    odd = await _make_category(session, guest, guest_ws, "Odd", "#EF4444")
+    await _record_split_expense(
+        session, guest, guest_ws, [me, friend], "100.00", "Groceries",
+        category=groceries,
+    )
+    await _record_split_expense(
+        session, guest, guest_ws, [me, friend], "80.00", "Odd purchase",
+        category=odd, txn_type="expense",
+    )
+
+    report = await report_service.get_income_expenses_report(
+        session, test_workspace.id, test_user.id, months=1
+    )
+
+    expenses = next(b for b in report.summary.breakdowns if b.key == "expenses")
+    assert expenses.value == pytest.approx(50.0)
+
+    composition = {
+        item.label: item.value
+        for item in report.composition
+        if item.group == "expenses"
+    }
+    assert composition == {"Groceries": pytest.approx(50.0)}
+
+    trend = {
+        item.label: item
+        for item in report.category_trend
+        if item.group == "expenses"
+    }
+    assert set(trend) == {"Groceries"}
+    assert trend["Groceries"].total == pytest.approx(50.0)
+
+    current_point = report.trend[-1]
+    assert current_point.breakdowns["expenses"] == pytest.approx(50.0)
+    point_composition = {
+        item.label: item.value
+        for item in current_point.composition
+        if item.group == "expenses"
+    }
+    assert point_composition == {"Groceries": pytest.approx(50.0)}
 
 
 @pytest.mark.asyncio

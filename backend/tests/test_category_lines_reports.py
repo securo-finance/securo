@@ -493,8 +493,103 @@ async def test_legs_are_matched_by_booking_date_not_reporting_override(scene):
     await scene["session"].commit()
     snap = await _snapshot(scene)
 
+    # Both legs are left over; the card's credit pays the bill, so only the
+    # debit is drawn (#251).
     assert snap["composition"][("investments", "Pagamento de fatura")] == 2500
-    assert snap["composition"][("withdrawals", "Pagamento de fatura")] == 2500
+    assert ("withdrawals", "Pagamento de fatura") not in snap["composition"]
+
+
+async def _transfers_category(scene) -> Category:
+    transfers = Category(
+        id=uuid.uuid4(), user_id=scene["user"].id, name="Transfers",
+        icon="arrow-left-right", color="#64748B", treat_as_transfer=True,
+    )
+    scene["session"].add(transfers)
+    await scene["session"].commit()
+    return transfers
+
+
+async def _account(scene, name, type_) -> dict:
+    resp = await scene["client"].post(
+        "/api/accounts", headers=scene["headers"],
+        json={"name": name, "type": type_, "balance": 0, "currency": CURRENCY},
+    )
+    assert resp.status_code in (200, 201), resp.text
+    return resp.json()
+
+
+async def test_an_unpaired_bill_or_transfer_credit_is_not_a_withdrawal(scene):
+    """QA's case on #251: a bill credit on the card alone and a Transfers
+    credit, with nothing on the other side. Neither is money taken out of an
+    investment; the real withdrawals still show, and no total moves."""
+    bill = Category(
+        id=uuid.uuid4(), user_id=scene["user"].id, name="Pagamento de fatura",
+        icon="credit-card", color="#64748B", treat_as_transfer=True,
+    )
+    scene["session"].add(bill)
+    await scene["session"].commit()
+    transfers = await _transfers_category(scene)
+    card = await _account(scene, "Itaú Azul", "credit_card")
+    day = scene["day"]
+    before = await _snapshot(scene)
+
+    await scene["create"](3000, "credit", scene["invest"])
+    await scene["create"](1000, "credit", scene["invest"])
+    await scene["create"](1234.56, "credit", bill, account_id=card["id"])
+    await scene["create"](
+        1234.56, "credit", transfers, date=(day + timedelta(days=1)).isoformat(),
+    )
+    await scene["create"](
+        1234.56, "credit", transfers, account_id=card["id"],
+        date=(day + timedelta(days=1)).isoformat(),
+    )
+    after = await _snapshot(scene)
+
+    withdrawals = {k: v for k, v in after["composition"].items() if k[0] == "withdrawals"}
+    assert withdrawals == {("withdrawals", "Investments"): 4000}
+    assert after["report"] == before["report"]
+    assert after["income"] == before["income"]
+    assert after["expenses"] == before["expenses"]
+
+
+async def test_an_unpaired_transfer_debit_is_not_a_contribution(scene):
+    """A Transfers debit whose other side is not tracked moves money between
+    the user's own accounts: it is not set aside in an investment either."""
+    transfers = await _transfers_category(scene)
+
+    await scene["create"](800, "debit", transfers)
+    await scene["create"](60, "debit", scene["invest"])
+    snap = await _snapshot(scene)
+
+    assert ("investments", "Transfers") not in snap["composition"]
+    assert snap["composition"][("investments", "Investments")] == 60
+
+
+async def test_a_credit_on_a_loan_is_not_a_withdrawal(scene):
+    loan = await _account(scene, "Financiamento", "loan")
+
+    await scene["create"](900, "credit", scene["invest"], account_id=loan["id"])
+    snap = await _snapshot(scene)
+
+    assert ("withdrawals", "Investments") not in snap["composition"]
+
+
+async def test_a_withdrawal_from_a_custom_investment_category_still_counts(scene):
+    """Any other transfer-like category, such as one per asset class, is
+    still a source of money when it is credited to a cash account."""
+    stocks = Category(
+        id=uuid.uuid4(), user_id=scene["user"].id, name="Ações",
+        icon="trending-up", color="#0EA5E9", treat_as_transfer=True,
+    )
+    scene["session"].add(stocks)
+    await scene["session"].commit()
+    savings = await _account(scene, "Poupança", "savings")
+
+    await scene["create"](450, "credit", stocks)
+    await scene["create"](50, "credit", stocks, account_id=savings["id"])
+    snap = await _snapshot(scene)
+
+    assert snap["composition"][("withdrawals", "Ações")] == 500
 
 
 @pytest.mark.parametrize("reverse_credits", [False, True])

@@ -819,6 +819,9 @@ def _viewer_shared_filters(
         in_bound_workspace(Transaction.workspace_id),
         # Avoid double-counting if the viewer also owns the parent.
         Transaction.user_id != user_id,
+        # The same two types the summary sums, so a row with an unknown
+        # stored type adds to neither (#345).
+        Transaction.type.in_(("credit", "debit")),
         Transaction.source != "opening_balance",
         date_col >= month_start,
         date_col < month_end,
