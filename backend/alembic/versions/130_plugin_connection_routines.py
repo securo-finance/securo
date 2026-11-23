@@ -1,6 +1,6 @@
 """plugin connection routines: scheduled work apart from a connection's sync
 
-Revision ID: 131
+Revision ID: 130
 Revises: 129
 
 An integration can declare routines that each run on a schedule of their own
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "131"
+revision = "130"
 down_revision = "129"
 branch_labels = None
 depends_on = None
