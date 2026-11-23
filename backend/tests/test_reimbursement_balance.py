@@ -1,4 +1,4 @@
-"""Netting on the dashboard's balance curve (#1126, ADR 0031).
+"""Netting on the dashboard's balance curve (#1126, ADR 0033).
 
 The curve is a running real balance; "netted" counts a row linked by a
 reimbursement only for the share that is the user's own, which moves money

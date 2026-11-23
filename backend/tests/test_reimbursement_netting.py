@@ -1,4 +1,4 @@
-"""How reimbursement allocations net user-level P&L (#1126, ADR 0031).
+"""How reimbursement allocations net user-level P&L (#1126, ADR 0033).
 
 The parts returned by `reimbursement_offset_parts` come off the full-row
 totals: positive takes off its direction, negative adds to it.

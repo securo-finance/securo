@@ -1,4 +1,4 @@
-"""How reimbursement allocations change user-level P&L (ADR 0031).
+"""How reimbursement allocations change user-level P&L (ADR 0033).
 
 An allocation moves money out of two totals at once. The counterpart's
 allocated part leaves its own period, category and direction: the friend's

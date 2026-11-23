@@ -1850,7 +1850,7 @@ async def _netting_effects_by_date(
     """What netting adds to each day's balance delta, keyed by date.
 
     The balance curve counts every row whole; "netted" counts a row linked to
-    others only for the share that is still its own (ADR 0031), so a dinner
+    others only for the share that is still its own (ADR 0033), so a dinner
     paid for four moves the line by the user's share, once, and the paybacks
     move it not at all.
 
@@ -2093,7 +2093,7 @@ async def get_balance_history(
     """The month's running balance, with the previous months to compare it to.
 
     `netting` counts rows linked by reimbursements only for the share that is
-    the user's own (ADR 0031) instead of the money that passed through the
+    the user's own (ADR 0033) instead of the money that passed through the
     accounts. It applies only to the whole workspace: a subset of accounts
     cannot say which side of a link it holds, so a filtered chart stays real.
     `BalanceHistory.netted` says whether it was applied.

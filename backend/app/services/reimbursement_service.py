@@ -3,7 +3,7 @@
 The anchor is the original row, the counterpart a row in the other direction
 that pays part of it back (friends paying back a dinner, a refund for
 returned clothes). Both rows stay as the bank reports them; user-level P&L
-counts only the net (see `reimbursement_netting`, ADR 0031).
+counts only the net (see `reimbursement_netting`, ADR 0033).
 
 This module is the only writer of `reimbursement_allocations`, and it keeps
 these invariants:

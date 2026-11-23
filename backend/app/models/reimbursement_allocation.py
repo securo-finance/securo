@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 class ReimbursementAllocation(Base):
-    """A part of one transaction that offsets another (ADR 0031).
+    """A part of one transaction that offsets another (ADR 0033).
 
     The anchor is the original row (a dinner paid for three, a purchase later
     partly returned); the counterpart is a row in the other direction that
