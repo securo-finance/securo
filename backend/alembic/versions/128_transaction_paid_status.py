@@ -1,7 +1,7 @@
 """let the user mark a transaction as paid or not (issue #15)
 
-Revision ID: 125
-Revises: 124
+Revision ID: 128
+Revises: 127
 
 Going forward, a row that came from a bank statement is money that already
 moved, so it is born paid; a row the user types, a transfer they record or the
@@ -20,8 +20,8 @@ not feed a total, a balance or a report.
 import sqlalchemy as sa
 from alembic import op
 
-revision = "125"
-down_revision = "124"
+revision = "128"
+down_revision = "127"
 branch_labels = None
 depends_on = None
 

@@ -1,4 +1,4 @@
-"""Migration 125 on real PostgreSQL: which rows the backfill marks paid.
+"""Migration 128 on real PostgreSQL: which rows the backfill marks paid.
 
 A row dated today or earlier is taken as paid (the history was recorded as
 done); a row dated ahead keeps the column's default, unpaid, because it has
@@ -23,7 +23,7 @@ _MIGRATION_PATH = (
     Path(__file__).resolve().parent.parent
     / "alembic"
     / "versions"
-    / "125_transaction_paid_status.py"
+    / "128_transaction_paid_status.py"
 )
 _SPEC = importlib.util.spec_from_file_location("paid_status_migration", _MIGRATION_PATH)
 assert _SPEC is not None and _SPEC.loader is not None
