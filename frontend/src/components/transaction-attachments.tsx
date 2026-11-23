@@ -274,7 +274,7 @@ export function TransactionAttachments({
       }
       const ext = getFileExtension(file.name)
       if (!allowedExtensions.includes(ext)) {
-        toast.error(t('transactions.attachmentTypeNotAllowed'))
+        toast.error(t('transactions.attachmentTypeNotAllowed', { types: allowedExtensions.join(', ') }))
         continue
       }
       if (file.size > maxFileSize) {

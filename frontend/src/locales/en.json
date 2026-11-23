@@ -1111,7 +1111,7 @@
     "attachmentDeleted": "Attachment deleted",
     "attachmentDeleteConfirm": "Delete this attachment?",
     "attachmentTooLarge": "File is too large. Maximum size is 10 MB.",
-    "attachmentTypeNotAllowed": "File type not supported. Allowed: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "File type not supported. Allowed: {{types}}",
     "attachmentMaxReached": "Maximum number of attachments reached",
     "attachmentRenamed": "Attachment renamed",
     "attachmentRename": "Rename",

@@ -1111,7 +1111,7 @@
     "attachmentDeleted": "Anhang gelöscht",
     "attachmentDeleteConfirm": "Möchtest du diesen Anhang löschen?",
     "attachmentTooLarge": "Die Datei ist zu groß. Die maximale Größe beträgt 10 MB.",
-    "attachmentTypeNotAllowed": "Dateityp nicht unterstützt. Erlaubt sind: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "Dateityp nicht unterstützt. Erlaubt sind: {{types}}",
     "attachmentMaxReached": "Maximale Anzahl an Anhängen erreicht",
     "attachmentRenamed": "Anhang umbenannt",
     "attachmentRename": "Umbenennen",

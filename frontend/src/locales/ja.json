@@ -1111,7 +1111,7 @@
     "attachmentDeleted": "添付ファイルを削除しました",
     "attachmentDeleteConfirm": "この添付ファイルを削除しますか?",
     "attachmentTooLarge": "ファイルが大きすぎます。最大サイズは10MBです。",
-    "attachmentTypeNotAllowed": "対応していないファイル形式です。許可: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "対応していないファイル形式です。許可: {{types}}",
     "attachmentMaxReached": "添付ファイルの最大数に達しました",
     "attachmentRenamed": "添付ファイルの名前を変更しました",
     "attachmentRename": "名前を変更",

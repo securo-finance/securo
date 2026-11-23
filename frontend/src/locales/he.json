@@ -1124,7 +1124,7 @@
     "attachmentDeleted": "הקובץ נמחק",
     "attachmentDeleteConfirm": "למחוק את הקובץ המצורף?",
     "attachmentTooLarge": "הקובץ גדול מדי. הגודל המרבי הוא 10MB.",
-    "attachmentTypeNotAllowed": "סוג הקובץ אינו נתמך. מותרים: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "סוג הקובץ אינו נתמך. מותרים: {{types}}",
     "attachmentMaxReached": "הגעתם למספר הקבצים המרבי",
     "attachmentRenamed": "שם הקובץ שונה",
     "attachmentRename": "שינוי שם",

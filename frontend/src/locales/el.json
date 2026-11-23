@@ -1395,7 +1395,7 @@
     "attachmentDeleted": "Το συνημμένο διαγράφηκε",
     "attachmentDeleteConfirm": "Διαγραφή αυτού του συνημμένου;",
     "attachmentTooLarge": "Το αρχείο είναι πολύ μεγάλο. Το μέγιστο μέγεθος είναι 10 MB.",
-    "attachmentTypeNotAllowed": "Ο τύπος αρχείου δεν υποστηρίζεται. Επιτρέπονται: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "Ο τύπος αρχείου δεν υποστηρίζεται. Επιτρέπονται: {{types}}",
     "attachmentMaxReached": "Συμπληρώθηκε ο μέγιστος αριθμός συνημμένων",
     "attachmentRenamed": "Το συνημμένο μετονομάστηκε",
     "attachmentRename": "Μετονομασία",

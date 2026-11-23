@@ -1111,7 +1111,7 @@
     "attachmentDeleted": "Bijlage verwijderd",
     "attachmentDeleteConfirm": "Deze bijlage verwijderen?",
     "attachmentTooLarge": "Bestand is te groot. Maximale grootte is 10 MB.",
-    "attachmentTypeNotAllowed": "Bestandstype niet ondersteund. Toegestaan: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "Bestandstype niet ondersteund. Toegestaan: {{types}}",
     "attachmentMaxReached": "Maximaal aantal bijlagen bereikt",
     "attachmentRenamed": "Bijlage hernoemd",
     "attachmentRename": "Hernoemen",

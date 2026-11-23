@@ -1111,7 +1111,7 @@
     "attachmentDeleted": "Csatolmány törölve",
     "attachmentDeleteConfirm": "Törlöd ezt a csatolmányt?",
     "attachmentTooLarge": "A fájl túl nagy. A maximális méret 10 MB.",
-    "attachmentTypeNotAllowed": "Nem támogatott fájltípus. Engedélyezett: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "Nem támogatott fájltípus. Engedélyezett: {{types}}",
     "attachmentMaxReached": "Elérted a csatolmányok maximális számát",
     "attachmentRenamed": "Csatolmány átnevezve",
     "attachmentRename": "Átnevezés",

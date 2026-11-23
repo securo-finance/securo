@@ -1127,7 +1127,7 @@
     "attachmentDeleted": "Вложение удалено",
     "attachmentDeleteConfirm": "Удалить это вложение?",
     "attachmentTooLarge": "Файл слишком большой. Максимальный размер — 10 МБ.",
-    "attachmentTypeNotAllowed": "Тип файла не поддерживается. Допустимые: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "Тип файла не поддерживается. Допустимые: {{types}}",
     "attachmentMaxReached": "Достигнуто максимальное количество вложений",
     "attachmentRenamed": "Вложение переименовано",
     "attachmentRename": "Переименовать",

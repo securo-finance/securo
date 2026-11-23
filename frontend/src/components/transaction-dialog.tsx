@@ -988,7 +988,7 @@ function TransactionForm({
         }
         const ext = file.name.includes('.') ? file.name.split('.').pop()!.toLowerCase() : ''
         if (!allowedExtensions.includes(ext)) {
-          toast.error(t('transactions.attachmentTypeNotAllowed'))
+          toast.error(t('transactions.attachmentTypeNotAllowed', { types: allowedExtensions.join(', ') }))
           continue
         }
         if (file.size > maxFileSize) {

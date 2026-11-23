@@ -1157,7 +1157,7 @@
     "attachmentDeleted": "Príloha vymazaná",
     "attachmentDeleteConfirm": "Vymazať túto prílohu?",
     "attachmentTooLarge": "Súbor je príliš veľký. Maximálna veľkosť je 10 MB.",
-    "attachmentTypeNotAllowed": "Nepodporovaný typ súboru. Povolené: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "Nepodporovaný typ súboru. Povolené: {{types}}",
     "attachmentMaxReached": "Dosiahnutý maximálny počet príloh",
     "attachmentRenamed": "Príloha premenovaná",
     "attachmentRename": "Premenovať",

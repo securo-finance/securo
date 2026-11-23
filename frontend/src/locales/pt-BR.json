@@ -1110,7 +1110,7 @@
     "attachmentDeleted": "Anexo excluído",
     "attachmentDeleteConfirm": "Excluir este anexo?",
     "attachmentTooLarge": "Arquivo muito grande. Tamanho máximo: 10 MB.",
-    "attachmentTypeNotAllowed": "Tipo de arquivo não suportado. Permitidos: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "Tipo de arquivo não suportado. Permitidos: {{types}}",
     "attachmentMaxReached": "Número máximo de anexos atingido",
     "attachmentRenamed": "Anexo renomeado",
     "attachmentRename": "Renomear",
