@@ -10,6 +10,7 @@ import {
   RecurringRevenueWidget,
   CreditCardsWidget,
   MonthResultWidget,
+  PluginWidget,
   SpendingDistributionWidget,
   SpendingPaceWidget,
   UpcomingWidget,
@@ -18,7 +19,8 @@ import {
 import { AssistantContext } from '@/contexts/assistant-context'
 import { formatCurrency } from '@/lib/format'
 import { renderWithProviders, t } from '@/test/utils'
-import type { Account, DashboardSummary, Invoice, InvoiceSummary, Transaction } from '@/types'
+import { pluginWidgetEntries } from '@/lib/library'
+import type { Account, DashboardSummary, InstalledPlugin, Invoice, InvoiceSummary, Transaction } from '@/types'
 
 const api = vi.hoisted(() => ({
   dashboard: { summary: vi.fn(), spendingByCategory: vi.fn(), projectedTransactions: vi.fn() },
@@ -27,6 +29,7 @@ const api = vi.hoisted(() => ({
   invoices: { summary: vi.fn() },
   invoiceSchedules: { summary: vi.fn() },
   transactions: { list: vi.fn(), flaggedSummary: vi.fn() },
+  reports: { plugin: vi.fn() },
 }))
 vi.mock('@/lib/api', () => api)
 vi.mock('@/hooks/use-display-locale', () => ({ useDisplayLocale: () => 'en-US', useDateLocale: () => 'en-US' }))
@@ -365,5 +368,46 @@ describe('FlaggedWidget', () => {
     api.transactions.flaggedSummary.mockResolvedValue({ flagged: 0, overdue: 0, due_soon: 0 })
     renderWithProviders(<FlaggedWidget scope={PAST} onOpen={vi.fn()} />)
     expect(await screen.findByText(t('widgets.flagged.none'))).toBeInTheDocument()
+  })
+})
+
+describe('PluginWidget', () => {
+  const [pets, mix] = pluginWidgetEntries([{
+    plugin_id: 'maria/casa',
+    name: { en: 'Home' },
+    widgets: [
+      { key: 'pets', name: { en: 'Pets this year' }, measure: 'expenses', group_by: 'month', chart: 'bar', width: 'third', period: 'last_12_months' },
+      { key: 'mix', name: { en: 'Mix' }, code: true, inputs: ['transactions'], measure: 'expenses', chart: 'bar', width: 'half', period: 'month' },
+    ],
+  } as unknown as InstalledPlugin])
+
+  it('reads its period back from the month on screen and draws the total and the chart in its card', async () => {
+    api.reports.plugin.mockResolvedValue({
+      key: 'pets', code: false, measure: 'expenses', group_by: 'month', chart: 'bar', currency: 'USD', total: 140,
+      rows: [{ key: '2026-02', label: null, value: 40 }, { key: '2026-03', label: null, value: 100 }],
+    })
+    renderWithProviders(<PluginWidget entry={pets} scope={{ ...PAST, activeAccountIds: ['a1'] }} />)
+    expect(await screen.findByText(usd(140))).toBeInTheDocument()
+    expect(api.reports.plugin).toHaveBeenCalledWith('maria/casa', 'pets', '2025-04-01', '2026-03-31', ['a1'], 'dashboard')
+    expect(screen.getByText('Pets this year')).toBeInTheDocument()
+    expect(screen.getByText(t('widgets.plugin.period.last_12_months'))).toBeInTheDocument()
+    expect(screen.getByText(t('library.fromPlugin', { name: 'Home' }))).toBeInTheDocument()
+    // A widget keeps to the figure and the chart: the report page's table stays there.
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+
+  it("says why a code widget failed, with a retry, and doesn't retry on its own", async () => {
+    api.reports.plugin.mockRejectedValue({ isAxiosError: true, response: { status: 502, data: { detail: 'RuntimeError: the widget fell over' } } })
+    renderWithProviders(<PluginWidget entry={mix} scope={PAST} />)
+    expect(await screen.findByText('RuntimeError: the widget fell over')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('common.retry') })).toBeInTheDocument()
+    expect(api.reports.plugin).toHaveBeenCalledTimes(1)
+    expect(api.reports.plugin).toHaveBeenCalledWith('maria/casa', 'mix', '2026-03-01', '2026-03-31', undefined, 'dashboard')
+  })
+
+  it('reads nothing for a collection without accounts', async () => {
+    renderWithProviders(<PluginWidget entry={pets} scope={{ ...PAST, noAccounts: true }} />)
+    expect(await screen.findByText(t('dashboard.noData'))).toBeInTheDocument()
+    expect(api.reports.plugin).not.toHaveBeenCalled()
   })
 })

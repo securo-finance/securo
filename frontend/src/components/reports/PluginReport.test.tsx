@@ -56,7 +56,7 @@ describe('PluginReport', () => {
     expect(screen.getByText('$1,000.00')).toBeInTheDocument()
     expect(screen.getByText(t('reports.pluginReport.total.expenses'))).toBeInTheDocument()
     expect(screen.getByText(t('library.fromPlugin', { name: 'Home' }))).toBeInTheDocument()
-    expect(api.reports.plugin).toHaveBeenCalledWith('maria/casa', 'r', '2026-01-01', '2026-11-20', ['a1'])
+    expect(api.reports.plugin).toHaveBeenCalledWith('maria/casa', 'r', '2026-01-01', '2026-11-20', ['a1'], 'reports')
   })
 
   it('names months in the app language and leaves out the share', async () => {

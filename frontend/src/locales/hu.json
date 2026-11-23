@@ -4049,6 +4049,12 @@
     "recurringRevenue": {
       "title": "Ismétlődő bevétel",
       "hint": "Amit az ismétlődő számlák havonta hoznak, és ami nemrég elveszett."
+    },
+    "plugin": {
+      "period": {
+        "year_to_date": "Év elejétől",
+        "last_12_months": "Elmúlt 12 hónap"
+      }
     }
   },
   "offline": {

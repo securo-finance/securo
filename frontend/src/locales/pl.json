@@ -4207,6 +4207,12 @@
     "recurringRevenue": {
       "title": "Przychody cykliczne",
       "hint": "Ile co miesiąc przynoszą faktury cykliczne i co ostatnio utracono."
+    },
+    "plugin": {
+      "period": {
+        "year_to_date": "Od początku roku",
+        "last_12_months": "Ostatnie 12 miesięcy"
+      }
     }
   },
   "offline": {

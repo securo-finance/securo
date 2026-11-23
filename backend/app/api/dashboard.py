@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
 from app.core.workspace_context import WorkspaceContext, current_workspace
+from app.api.reports import plugin_view_response
+from app.schemas.report import PluginReportResponse
 from app.schemas.dashboard import DashboardSummary, SpendingByCategory, MonthlyTrend, ProjectedTransaction, BalanceHistory
 from app.services import dashboard_service
 
@@ -101,3 +103,24 @@ async def get_projected_transactions(
     except ValueError as exc:
         from fastapi import HTTPException
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/plugins/{owner}/{name}/{key}", response_model=PluginReportResponse)
+async def get_plugin_widget(
+    owner: str,
+    name: str,
+    key: str,
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    account_ids: Optional[list[uuid.UUID]] = Query(None),
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """A dashboard widget an installed plugin declares (ADR 0034).
+
+    The same contract as a plugin's report, read over the month the
+    dashboard shows and the accounts in view.
+    """
+    return await plugin_view_response(
+        session, ctx, "widgets", f"{owner}/{name}", key, start_date, end_date, account_ids
+    )

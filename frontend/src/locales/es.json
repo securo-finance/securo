@@ -4063,6 +4063,12 @@
     "recurringRevenue": {
       "title": "Ingresos recurrentes",
       "hint": "Lo que aportan las facturas recurrentes cada mes, y lo perdido recientemente."
+    },
+    "plugin": {
+      "period": {
+        "year_to_date": "En lo que va del año",
+        "last_12_months": "Últimos 12 meses"
+      }
     }
   },
   "offline": {

@@ -4049,6 +4049,12 @@
     "recurringRevenue": {
       "title": "定期収益",
       "hint": "定期請求書による毎月の収益と、最近失われた分。"
+    },
+    "plugin": {
+      "period": {
+        "year_to_date": "年初から",
+        "last_12_months": "過去12か月"
+      }
     }
   },
   "offline": {
