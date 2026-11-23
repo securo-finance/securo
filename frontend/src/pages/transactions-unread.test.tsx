@@ -122,9 +122,11 @@ function listOnce(items: Transaction[]) {
  */
 function listFromRows(items: () => Transaction[]) {
   api.transactions.list.mockImplementation(
-    async (params?: { unread_only?: boolean }) => {
-      const all = items()
-      const rows = params?.unread_only ? all.filter((tx) => tx.is_read === false) : all
+    async (params?: { unread_only?: boolean; from?: string; to?: string }) => {
+      const rows = items().filter((tx) =>
+        (!params?.unread_only || tx.is_read === false)
+        && (!params?.from || tx.date >= params.from)
+        && (!params?.to || tx.date <= params.to))
       return { items: rows, total: rows.length, page: 1, limit: 50 }
     },
   )
@@ -245,6 +247,24 @@ describe('review state of a transaction row', () => {
     expect(listCall.unread_only).toBe(true)
   })
 
+  it('opens the queue on every date, not on the current month (issue #411)', async () => {
+    // An import early in November brings October's rows: the queue must show
+    // them, and its count must be the one the API gives without dates.
+    vi.setSystemTime(new Date('2026-11-05T12:00:00'))
+    listFromRows(() => [row({ id: 'tx-oct', description: 'OCTOBER IMPORT', date: '2026-10-08' })])
+
+    renderWithProviders(<TransactionsPage />, {
+      route: '/transactions?unread_only=true',
+      path: '/transactions',
+    })
+
+    await screen.findByText('OCTOBER IMPORT')
+    await screen.findByText('1 transaction to review')
+    const listCall = api.transactions.list.mock.calls.at(-1)![0]
+    expect(listCall.from).toBeUndefined()
+    expect(listCall.to).toBeUndefined()
+  })
+
   it('marks every row as read from the queue', async () => {
     let cleared = false
     listFromRows(() =>
@@ -264,7 +284,7 @@ describe('review state of a transaction row', () => {
     // until the list has loaded: wait for the count before clicking (issue #636).
     await screen.findByText('1 transaction to review')
     const button = await screen.findByRole('button', {
-      name: 'Mark all as read in this workspace',
+      name: 'Mark all as read in this workspace (1)',
     })
     await waitFor(() => expect(button).not.toBeDisabled())
     fireEvent.click(button)
@@ -274,25 +294,76 @@ describe('review state of a transaction row', () => {
     )
     // The queue really empties, not just the request going out.
     await waitFor(() => expect(screen.queryByText('MARKET PURCHASE')).toBeNull())
-    await screen.findByText('0 transactions to review')
+    await screen.findByText('Nothing left to review')
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Mark all as read in this workspace (0)' }))
+        .toBeDisabled(),
+    )
   })
 
-  it('keeps mark all enabled when the filtered queue is empty', async () => {
-    // The action clears the whole workspace and ignores the list's filters, so
-    // a date range with nothing left to review must not switch it off.
-    listOnce([])
+  it('drops the month when the queue is turned on and puts it back after', async () => {
+    listFromRows(() => [row({ id: 'tx-sep', description: 'SEPTEMBER ROW', date: '2026-09-12' })])
+
+    renderWithProviders(<TransactionsPage />, { route: '/transactions', path: '/transactions' })
+
+    await waitFor(() =>
+      expect(api.transactions.list.mock.calls.at(-1)![0].from).toBe('2026-10-01'),
+    )
+    const trigger = screen.getByRole('button', { name: 'Filters' })
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerType: 'mouse' })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Only new transactions' }))
+
+    await screen.findByText('SEPTEMBER ROW')
+    const queueCall = api.transactions.list.mock.calls.at(-1)![0]
+    expect(queueCall.unread_only).toBe(true)
+    expect(queueCall.from).toBeUndefined()
+
+    // The item keeps the menu open, so the same click turns the queue off.
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Only new transactions' }))
+
+    await waitFor(() => {
+      const call = api.transactions.list.mock.calls.at(-1)![0]
+      expect(call.unread_only).toBeUndefined()
+      expect(call.from).toBe('2026-10-01')
+      expect(call.to).toBe('2026-10-31')
+    })
+  })
+
+  it('says how many rows outside the filters mark all would clear (issue #411)', async () => {
+    // The action clears the whole workspace and ignores the list's filters: a
+    // range with nothing left to review keeps it on, and both the banner and
+    // the button say how many rows it reaches.
+    listFromRows(() => [row({ id: 'tx-sep', description: 'SEPTEMBER ROW', date: '2026-09-12' })])
 
     renderWithProviders(<TransactionsPage />, {
       route: '/transactions?unread_only=true&from=2026-10-01&to=2026-10-31',
       path: '/transactions',
     })
 
-    await screen.findByText('0 transactions to review')
-    const button = screen.getByRole('button', { name: 'Mark all as read in this workspace' })
+    await screen.findByText('Nothing left to review')
+    await screen.findByText('Outside these filters: 1')
+    const button = await screen.findByRole('button', {
+      name: 'Mark all as read in this workspace (1)',
+    })
     await waitFor(() => expect(button).not.toBeDisabled())
     fireEvent.click(button)
 
     await waitFor(() => expect(api.transactions.markAllRead).toHaveBeenCalledWith('ws-1'))
+  })
+
+  it('turns mark all off when the workspace has nothing unread', async () => {
+    listFromRows(() => [])
+
+    renderWithProviders(<TransactionsPage />, {
+      route: '/transactions?unread_only=true',
+      path: '/transactions',
+    })
+
+    await screen.findByText('Nothing left to review')
+    const button = await screen.findByRole('button', {
+      name: 'Mark all as read in this workspace (0)',
+    })
+    expect(button).toBeDisabled()
   })
 
   it('drops a selected row that leaves the review queue', async () => {
