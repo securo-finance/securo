@@ -650,6 +650,16 @@ async def get_transactions(
             else_=literal(1),
         )
         pnl_filter = counts_as_pnl(line_category_id())
+        # A share projected from another workspace on a row without a stamp
+        # is in the row's own currency. It is converted below, the way
+        # `viewer_shares_in_primary` reads it for the report and the
+        # dashboard, so the footer gives the same total (#377).
+        unstamped_share = and_(
+            row_has_splits,
+            Transaction.amount_primary.is_(None),
+            Transaction.user_id != user_id,
+            Transaction.workspace_id != workspace_id,
+        )
         # The part takes the abs, the fraction keeps its sign: a sync that
         # shrinks the row below the other members' shares leaves the viewer
         # a negative remainder, and the dashboard counts it that way.
@@ -658,6 +668,9 @@ async def get_transactions(
                 Transaction.type,
                 pnl_filter.label("counts"),
                 (func.abs(line_primary_or_amount(viewer)) * viewer_share_fraction).label("amount"),
+                case((unstamped_share, Transaction.currency), else_=None).label(
+                    "convert_from"
+                ),
             ).select_from(Transaction)
         ).where(Transaction.id.in_(select(base_query.subquery().c.id)))
         if filter_category_ids:
@@ -671,8 +684,11 @@ async def get_transactions(
             select(
                 parts_subq.c.type,
                 parts_subq.c.counts,
+                parts_subq.c.convert_from,
                 func.coalesce(func.sum(parts_subq.c.amount), 0),
-            ).group_by(parts_subq.c.type, parts_subq.c.counts)
+            ).group_by(
+                parts_subq.c.type, parts_subq.c.counts, parts_subq.c.convert_from
+            )
         )
         income = Decimal("0")
         expense = Decimal("0")
@@ -681,8 +697,12 @@ async def get_transactions(
         # transfer-like movement (e.g. how much was moved/invested) without
         # distorting income/expense/net.
         excluded = Decimal("0")
-        for row_type, counts, row_total in summary_rows:
+        for row_type, counts, convert_from, row_total in summary_rows:
             row_total = Decimal(str(row_total or 0))
+            if row_total and convert_from and primary_currency:
+                row_total, _ = await fx_convert(
+                    session, row_total, convert_from, primary_currency
+                )
             if not counts:
                 excluded += row_total
             elif row_type == "credit":
