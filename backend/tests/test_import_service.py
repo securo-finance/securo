@@ -2352,6 +2352,50 @@ class TestOfxInstallmentDedup:
         assert skipped == 1
 
     @pytest.mark.asyncio
+    async def test_same_external_id_one_day_apart_in_one_statement_both_imported(
+        self, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
+    ):
+        """A recurring fee the bank reports under one FITID on consecutive days
+        is two charges. The one-day window only reaches earlier imports, so both
+        rows land, and re-importing the same statement skips both."""
+        from sqlalchemy import select
+
+        from app.models.transaction import Transaction
+        from app.schemas.transaction import TransactionImport
+
+        fees = [
+            TransactionImport(
+                description="FEE",
+                amount=Decimal("2.00"),
+                date=day,
+                type="debit",
+                external_id="FITID-FEE",
+            )
+            for day in (date(2026, 1, 14), date(2026, 1, 15))
+        ]
+        imported, skipped, _, _ = await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id, fees, "ofx"
+        )
+        assert imported == 2
+        assert skipped == 0
+
+        stored = await session.execute(
+            select(Transaction.date)
+            .where(
+                Transaction.account_id == test_account.id,
+                Transaction.external_id == "FITID-FEE",
+            )
+            .order_by(Transaction.date)
+        )
+        assert stored.scalars().all() == [date(2026, 1, 14), date(2026, 1, 15)]
+
+        imported, skipped, _, _ = await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id, fees, "ofx"
+        )
+        assert imported == 0
+        assert skipped == 2
+
+    @pytest.mark.asyncio
     async def test_same_external_id_same_date_different_amounts_all_imported(
         self, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
     ):

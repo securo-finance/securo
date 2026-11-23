@@ -11,7 +11,7 @@ from decimal import Decimal
 
 from bs4 import XMLParsedAsHTMLWarning
 from ofxparse import OfxParser
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -1204,15 +1204,24 @@ async def import_transactions(
             # and amount and type retained because some banks reuse one FITID for
             # several distinct entries posted on the same day. The date may differ
             # by one day: rows imported before OFX offsets were dropped can sit on
-            # the neighbouring day.
+            # the neighbouring day. That window only reaches rows of earlier
+            # imports: a row this run already added is a distinct entry when it
+            # sits on another day (a recurring fee under one FITID).
             # Formats without unique IDs fall back to transaction fields; compare
             # both descriptions because rules may have changed the displayed one.
             if txn_data.external_id:
                 existing_statement = select(Transaction).where(
                     Transaction.account_id == account_id,
                     Transaction.external_id == txn_data.external_id,
-                    Transaction.date.between(
-                        txn_data.date - timedelta(days=1), txn_data.date + timedelta(days=1)
+                    or_(
+                        Transaction.date == txn_data.date,
+                        and_(
+                            Transaction.date.between(
+                                txn_data.date - timedelta(days=1),
+                                txn_data.date + timedelta(days=1),
+                            ),
+                            Transaction.import_id.is_distinct_from(import_log.id),
+                        ),
                     ),
                     Transaction.amount == txn_data.amount,
                     Transaction.type == txn_data.type,
