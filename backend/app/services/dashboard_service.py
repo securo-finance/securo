@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 from app.core.app_clock import app_timezone, app_today
 from app.core.config import get_settings
 from app.core.currency import same_currency
-from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
+from app.core.shared_scope import in_bound_workspace
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.transaction import Transaction
@@ -683,61 +683,21 @@ async def get_summary(
         monthly_income_primary -= own_offset_inc_pri
         monthly_expenses_primary -= own_offset_exp_pri
 
-    # Add the viewer's shared shares to primary totals too. The shares
-    # are stored in the parent transaction's currency, so we convert
-    # each currency bucket separately rather than re-using shared_income
-    # / shared_expenses (which were summed without conversion).
+    # Add the viewer's shares of rows other people created in other
+    # workspaces, read in the viewer's currency at each row's date, like
+    # the rows the transactions list projects. Rows of this workspace are
+    # already in the sum above, whole, so they stay out here (#269).
     # Gated under a collection filter — those parent transactions live in
     # other users'/workspaces' accounts, outside the filtered account set.
     if not filtered:
-        from app.models.transaction_split import TransactionSplit
-
-        viewer_member_ids = invited_group_member_ids(user_id)
-        shared_currency_rows = await session.execute(
-            select(
-                Transaction.currency,
-                func.sum(
-                    case(
-                        (Transaction.type == "credit", TransactionSplit.share_amount),
-                        else_=0,
-                    )
-                ),
-                func.sum(
-                    case(
-                        (Transaction.type == "debit", TransactionSplit.share_amount),
-                        else_=0,
-                    )
-                ),
-            )
-            .select_from(TransactionSplit)
-            .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
-            .where(
-                TransactionSplit.group_member_id.in_(viewer_member_ids),
-                in_bound_workspace(Transaction.workspace_id),
-                Transaction.user_id != user_id,
-                Transaction.source != "opening_balance",
-                report_date >= month_start,
-                report_date < month_end,
-                report_date <= today,
-                Transaction.status == "posted",
-                counts_as_user_pnl(Transaction.category_id),
-            )
-            .group_by(Transaction.currency)
+        shared_inc_pri, shared_exp_pri = await viewer_shared_pnl(
+            session, user_id, month_start, month_end,
+            use_effective_date=accounting_mode == "accrual",
+            primary_currency=primary_currency,
+            exclude_workspace_id=workspace_id,
         )
-        for row in shared_currency_rows.all():
-            cur = row[0]
-            in_credit = float(row[1] or 0)
-            in_debit = float(row[2] or 0)
-            if in_credit:
-                credit_pri, _ = await convert(
-                    session, Decimal(str(in_credit)), cur, primary_currency
-                )
-                monthly_income_primary += float(credit_pri)
-            if in_debit:
-                debit_pri, _ = await convert(
-                    session, Decimal(str(in_debit)), cur, primary_currency
-                )
-                monthly_expenses_primary += abs(float(debit_pri))
+        monthly_income_primary += shared_inc_pri
+        monthly_expenses_primary += abs(shared_exp_pri)
 
     projected_income_primary = monthly_income_primary
     projected_expenses_primary = monthly_expenses_primary

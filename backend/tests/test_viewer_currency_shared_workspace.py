@@ -18,9 +18,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
+from app.models.account import Account
+from app.models.category import Category
 from app.models.fx_rate import FxRate
+from app.models.transaction import Transaction
 from app.models.user import User
 from app.models.workspace import WorkspaceMember
+from app.schemas.group import GroupCreate, GroupMemberCreate
+from app.schemas.transaction_split import TransactionSplitInput, TransactionSplitsInput
+from app.services import group_service, split_service, workspace_service
 
 
 def _last_month() -> tuple[date, date, date]:
@@ -201,6 +207,145 @@ async def test_member_in_another_currency_sees_the_list_converted(client, couple
         client, couple["bruno"], couple["month"], category_id=couple["category_id"]
     )
     assert drill["summary"]["expense"] == pytest.approx(300.0)
+
+
+@pytest.fixture
+async def couple_with_groups(session: AsyncSession, test_user: User, test_workspace, couple):
+    """On top of `couple`: Ana splits her R$ 1.000 in the shared workspace
+    with Bruno, and pays a US$ 300 trip in her own workspace split in three
+    (Ana, Bruno, Carla). Ana stamps the trip R$ 1.500 (USD→BRL 5 on day 5).
+
+    Today's rates differ from day 5's on purpose (USD→BRL 6, USD→EUR 0,80):
+    Bruno's US$ 100 share is 100 € at the row's date and 80 € at today's.
+    """
+    month, day5, _day15 = _last_month()
+    today = app_today()
+    session.add_all([_rate("BRL", "6", today), _rate("EUR", "0.8", today)])
+    bruno = (
+        await session.execute(
+            select(User).where(User.email.like("bruno-%@example.com"))
+        )
+    ).scalar_one()
+
+    casal = await group_service.create_group(
+        session, test_workspace.id, test_user.id, GroupCreate(name="Casal R269")
+    )
+    casal_members = [
+        await group_service.create_member(
+            session, casal.id, test_workspace.id,
+            GroupMemberCreate(name="Ana", is_self=True),
+        ),
+        await group_service.create_member(
+            session, casal.id, test_workspace.id,
+            GroupMemberCreate(name="Bruno", email=bruno.email),
+        ),
+    ]
+    rent = (
+        await session.execute(
+            select(Transaction).where(
+                Transaction.workspace_id == test_workspace.id,
+                Transaction.amount == Decimal("1000.00"),
+            )
+        )
+    ).scalar_one()
+    await split_service.replace_splits(
+        session,
+        rent,
+        TransactionSplitsInput(
+            share_type="equal",
+            splits=[TransactionSplitInput(group_member_id=m.id) for m in casal_members],
+        ),
+        test_user.id,
+    )
+
+    personal = await workspace_service.create_workspace(
+        session, name="Ana R269", creator=test_user, seed_defaults=False
+    )
+    travel = Category(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=personal.id,
+        name="Viagens R269", icon="plane", color="#0EA5E9",
+    )
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=personal.id,
+        name="Cartão", type="checking", balance=Decimal("0"), currency="USD",
+    )
+    session.add_all([travel, account])
+    await session.flush()
+    trip = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=personal.id,
+        account_id=account.id, category_id=travel.id, description="R269 trip",
+        amount=Decimal("300.00"), currency="USD", amount_primary=Decimal("1500.00"),
+        date=day5, type="debit", source="manual",
+    )
+    session.add(trip)
+    await session.flush()
+    viagem = await group_service.create_group(
+        session, personal.id, test_user.id, GroupCreate(name="Viagem R269")
+    )
+    trip_members = [
+        await group_service.create_member(
+            session, viagem.id, personal.id, GroupMemberCreate(name="Ana", is_self=True),
+        ),
+        await group_service.create_member(
+            session, viagem.id, personal.id,
+            GroupMemberCreate(name="Bruno", email=bruno.email),
+        ),
+        await group_service.create_member(
+            session, viagem.id, personal.id, GroupMemberCreate(name="Carla"),
+        ),
+    ]
+    await split_service.replace_splits(
+        session,
+        trip,
+        TransactionSplitsInput(
+            share_type="equal",
+            splits=[TransactionSplitInput(group_member_id=m.id) for m in trip_members],
+        ),
+        test_user.id,
+    )
+    await session.commit()
+    return {**couple, "travel_id": str(travel.id)}
+
+
+async def _report(client: AsyncClient, headers: dict, month: date) -> dict:
+    params = _month_params(month)
+    resp = await client.get(
+        "/api/reports/income-expenses",
+        headers=headers,
+        params={"start_date": params["from_date"], "end_date": params["to_date"]},
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+@pytest.mark.asyncio
+async def test_group_shares_agree_across_card_footer_report_and_drill_down(
+    client, couple_with_groups
+):
+    """Bruno's November in the shared workspace (#269 re-test): 300 € of
+    Ana's rows plus his 100 € share of the trip. The card used to add his
+    share of Ana's split row again on top of the whole row, and every
+    share at today's rate; the report's slice took the trip at today's
+    rate (80 €) while its drill-down read 100 €."""
+    data = couple_with_groups
+    month, bruno = data["month"], data["bruno"]
+
+    footer = (await _list(client, bruno, month))["summary"]["expense"]
+    assert footer == pytest.approx(400.0)
+
+    summary = await _dashboard(client, bruno, month)
+    assert summary["monthly_expenses_primary"] == pytest.approx(footer)
+
+    report = await _report(client, bruno, month)
+    breakdowns = {b["key"]: b["value"] for b in report["summary"]["breakdowns"]}
+    assert breakdowns["expenses"] == pytest.approx(footer)
+
+    slice_value = next(
+        item["value"] for item in report["composition"] if item["key"] == data["travel_id"]
+    )
+    drill = await _list(client, bruno, month, category_id=data["travel_id"])
+    assert slice_value == pytest.approx(100.0)
+    assert drill["summary"]["expense"] == pytest.approx(slice_value)
 
 
 @pytest.mark.asyncio

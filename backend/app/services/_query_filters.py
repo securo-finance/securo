@@ -721,6 +721,118 @@ async def forecast_owner_share_fractions(
     return fractions
 
 
+async def viewer_shares_in_primary(
+    session: AsyncSession,
+    keys: tuple,
+    where: tuple,
+    primary_currency: str,
+    viewer: Optional["ViewerCurrency"] = None,
+) -> dict[tuple, tuple[Decimal, Decimal]]:
+    """The viewer's split shares of rows they did not create, in their
+    currency: ``{key: (income, expense)}`` grouped by the ``keys`` columns.
+
+    A share is its row's stamp read in the viewer's currency (converted at
+    the row's date, see `ViewerCurrency`) times ``share / amount``: the same
+    value the transactions list gives the projected row, so a report slice
+    and its drill-down agree to the cent (#269). A row without a stamp has
+    its shares converted from the row's currency, as before.
+
+    ``where`` holds the caller's filters; the query joins `TransactionSplit`
+    to `Transaction`.
+    """
+    from app.models.transaction_split import TransactionSplit
+    from app.services.fx_rate_service import convert as _convert
+    from app.services.viewer_currency import viewer_currency
+
+    if viewer is None:
+        viewer = await viewer_currency(session, primary_currency)
+    share_primary = (
+        TransactionSplit.share_amount
+        * func.abs(viewer.amount())
+        * literal_column("1.0")
+        / func.nullif(func.abs(Transaction.amount), 0)
+    )
+
+    def _by_type(value):
+        return (
+            func.sum(case((Transaction.type == "credit", value), else_=0)),
+            func.sum(case((Transaction.type == "debit", value), else_=0)),
+        )
+
+    out: dict[tuple, tuple[Decimal, Decimal]] = {}
+
+    def _add(key: tuple, income, expense) -> None:
+        prev_income, prev_expense = out.get(key, (Decimal("0"), Decimal("0")))
+        out[key] = (
+            prev_income + Decimal(str(income or 0)),
+            prev_expense + Decimal(str(expense or 0)),
+        )
+
+    stamped = await session.execute(
+        select(*keys, *_by_type(share_primary))
+        .select_from(TransactionSplit)
+        .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
+        .where(*where, Transaction.amount_primary.isnot(None))
+        .group_by(*keys)
+    )
+    for row in stamped.all():
+        _add(tuple(row[: len(keys)]), row[-2], row[-1])
+
+    unstamped = await session.execute(
+        select(*keys, Transaction.currency, *_by_type(TransactionSplit.share_amount))
+        .select_from(TransactionSplit)
+        .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
+        .where(*where, Transaction.amount_primary.is_(None))
+        .group_by(*keys, Transaction.currency)
+    )
+    for row in unstamped.all():
+        currency, raw_income, raw_expense = row[-3], row[-2], row[-1]
+        income = expense = Decimal("0")
+        if raw_income:
+            income, _ = await _convert(
+                session, Decimal(str(raw_income)), currency, primary_currency
+            )
+        if raw_expense:
+            expense, _ = await _convert(
+                session, Decimal(str(raw_expense)), currency, primary_currency
+            )
+        _add(tuple(row[: len(keys)]), income, abs(expense))
+    return out
+
+
+def _viewer_shared_filters(
+    user_id: uuid.UUID,
+    month_start: date,
+    month_end: date,
+    use_effective_date: bool,
+    exclude_workspace_id: Optional[uuid.UUID],
+) -> tuple:
+    from app.models.transaction_split import TransactionSplit
+
+    # Cross-workspace group share projection: every membership of the
+    # viewer, their own self-member included (#1305). The rows they
+    # created are already counted by the workspace-scoped filter at the
+    # caller, so `user_id != user_id` keeps them out here.
+    date_col = reporting_date_col("accrual" if use_effective_date else "cash")
+    return (
+        TransactionSplit.group_member_id.in_(invited_group_member_ids(user_id)),
+        in_bound_workspace(Transaction.workspace_id),
+        # Avoid double-counting if the viewer also owns the parent.
+        Transaction.user_id != user_id,
+        Transaction.source != "opening_balance",
+        date_col >= month_start,
+        date_col < month_end,
+        date_col <= app_today(),
+        Transaction.status == "posted",
+        counts_as_pnl(Transaction.category_id),
+        *(
+            [Transaction.workspace_id != exclude_workspace_id]
+            if exclude_workspace_id is not None
+            else []
+        ),
+    )
+
+
 async def viewer_shared_pnl(
     session: AsyncSession,
     user_id: uuid.UUID,
@@ -739,23 +851,23 @@ async def viewer_shared_pnl(
     `exclude_workspace_id` leaves out transactions of that workspace, for
     callers whose base total already counts them there.
 
-    When `primary_currency` is given, mixed-currency shares are
-    converted to that currency via the FX service. Otherwise, sums
-    are taken in raw nominal terms (only safe when all shares are
+    With `primary_currency`, the shares are read in that currency through
+    :func:`viewer_shares_in_primary` (each at its row's date). Otherwise,
+    sums are taken in raw nominal terms (only safe when all shares are
     same-currency, e.g., during single-currency tests).
     """
     from app.models.transaction_split import TransactionSplit
 
-    # Cross-workspace group share projection: every membership of the
-    # viewer, their own self-member included (#1305). The rows they
-    # created are already counted by the workspace-scoped filter at the
-    # caller, so `user_id != user_id` keeps them out here.
-    member_ids = invited_group_member_ids(user_id)
-    date_col = reporting_date_col("accrual" if use_effective_date else "cash")
+    where = _viewer_shared_filters(
+        user_id, month_start, month_end, use_effective_date, exclude_workspace_id
+    )
+    if primary_currency is not None:
+        totals = await viewer_shares_in_primary(session, (), where, primary_currency)
+        income, expense = totals.get((), (Decimal("0"), Decimal("0")))
+        return float(income), float(abs(expense))
 
     result = await session.execute(
         select(
-            Transaction.currency,
             func.sum(
                 case(
                     (Transaction.type == "credit", TransactionSplit.share_amount),
@@ -769,54 +881,13 @@ async def viewer_shared_pnl(
                 )
             ),
         )
+        .select_from(TransactionSplit)
         .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
-        .where(
-            TransactionSplit.group_member_id.in_(member_ids),
-            in_bound_workspace(Transaction.workspace_id),
-            # Avoid double-counting if the viewer also owns the parent.
-            Transaction.user_id != user_id,
-            Transaction.source != "opening_balance",
-            date_col >= month_start,
-            date_col < month_end,
-            date_col <= app_today(),
-            Transaction.status == "posted",
-            counts_as_pnl(Transaction.category_id),
-            *(
-                [Transaction.workspace_id != exclude_workspace_id]
-                if exclude_workspace_id is not None
-                else []
-            ),
-        )
-        .group_by(Transaction.currency)
+        .where(*where)
     )
-
-    if primary_currency is None:
-        # Backward-compatible nominal sum (caller is responsible for
-        # currency homogeneity). Acceptable when only one currency is
-        # in play.
-        income_total = 0.0
-        expense_total = 0.0
-        for row in result.all():
-            income_total += float(row[1] or 0)
-            expense_total += float(row[2] or 0)
-        return income_total, expense_total
-
-    # FX-aware: convert each currency bucket to primary.
-    from decimal import Decimal as _Decimal
-
-    from app.services.fx_rate_service import convert as _convert
-
-    income_total = 0.0
-    expense_total = 0.0
-    for row in result.all():
-        cur, inc_raw, exp_raw = row[0], row[1] or 0, row[2] or 0
-        if inc_raw:
-            inc_pri, _ = await _convert(session, _Decimal(str(inc_raw)), cur, primary_currency)
-            income_total += float(inc_pri)
-        if exp_raw:
-            exp_pri, _ = await _convert(session, _Decimal(str(exp_raw)), cur, primary_currency)
-            expense_total += float(exp_pri)
-    return income_total, expense_total
+    # Nominal sum (caller is responsible for currency homogeneity).
+    income_total, expense_total = result.one()
+    return float(income_total or 0), float(expense_total or 0)
 
 
 async def viewer_shared_spending_by_category(
@@ -834,49 +905,38 @@ async def viewer_shared_spending_by_category(
     `exclude_workspace_id` leaves out transactions of that workspace, for
     callers that already count them there.
 
-    With `primary_currency`, totals are FX-converted; otherwise raw
-    nominal sums (single-currency only)."""
+    With `primary_currency`, totals are in that currency as in
+    :func:`viewer_shared_pnl`; otherwise raw nominal sums (single-currency
+    only)."""
     from app.models.transaction_split import TransactionSplit
 
-    # Cross-workspace group share projection: every membership of the
-    # viewer, their own self-member included (#1305). The rows they
-    # created are already counted by the workspace-scoped filter at the
-    # caller, so `user_id != user_id` keeps them out here.
-    member_ids = invited_group_member_ids(user_id)
-    date_col = reporting_date_col("accrual" if use_effective_date else "cash")
+    where = (
+        *_viewer_shared_filters(
+            user_id, month_start, month_end, use_effective_date, exclude_workspace_id
+        ),
+        Transaction.type == "debit",
+    )
+    if primary_currency is not None:
+        totals = await viewer_shares_in_primary(
+            session, (Transaction.category_id,), where, primary_currency
+        )
+        return {
+            key[0]: float(expense)
+            for key, (_income, expense) in totals.items()
+            if expense
+        }
 
     result = await session.execute(
-        select(
-            Transaction.category_id,
-            Transaction.currency,
-            func.sum(TransactionSplit.share_amount),
-        )
+        select(Transaction.category_id, func.sum(TransactionSplit.share_amount))
+        .select_from(TransactionSplit)
         .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
-        .where(
-            TransactionSplit.group_member_id.in_(member_ids),
-            in_bound_workspace(Transaction.workspace_id),
-            Transaction.user_id != user_id,
-            Transaction.type == "debit",
-            Transaction.source != "opening_balance",
-            date_col >= month_start,
-            date_col < month_end,
-            date_col <= app_today(),
-            Transaction.status == "posted",
-            counts_as_pnl(Transaction.category_id),
-            *(
-                [Transaction.workspace_id != exclude_workspace_id]
-                if exclude_workspace_id is not None
-                else []
-            ),
-        )
-        .group_by(Transaction.category_id, Transaction.currency)
+        .where(*where)
+        .group_by(Transaction.category_id)
     )
-
     out: dict = {}
-    if primary_currency is None:
-        for cat_id, _cur, total in result.all():
-            out[cat_id] = out.get(cat_id, 0.0) + float(total or 0)
-        return out
+    for cat_id, total in result.all():
+        out[cat_id] = out.get(cat_id, 0.0) + float(total or 0)
+    return out
 
     from decimal import Decimal as _Decimal
 
