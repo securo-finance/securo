@@ -465,3 +465,144 @@ async def test_bill_legs_a_day_apart_cancel_for_the_member_too(
             item for item in report.get("composition") or []
             if item.get("group") in ("investments", "withdrawals")
         ], who
+
+
+async def _usd_row(client: AsyncClient, couple: dict, amount: str, typed: str | None) -> dict:
+    """Ana's USD expense on day 5 (USD→BRL 5, USD→EUR 1), listed as Bruno
+    sees it: the stamp in euros, the rate against euros."""
+    _, day5, _ = _last_month()
+    ana = couple["ana"]
+    resp = await client.post(
+        "/api/accounts", headers=ana,
+        json={"name": "R440 Wise USD", "type": "checking", "balance": 0, "currency": "USD"},
+    )
+    assert resp.status_code in (200, 201), resp.text
+    payload = {
+        "account_id": resp.json()["id"], "description": "R269 R440 typed",
+        "amount": amount, "currency": "USD", "date": day5.isoformat(), "type": "debit",
+    }
+    if typed is not None:
+        payload["amount_primary"] = typed
+    resp = await client.post("/api/transactions", headers=ana, json=payload)
+    assert resp.status_code == 201, resp.text
+    body = await _list(client, couple["bruno"], couple["month"], q="R440")
+    (row,) = body["items"]
+    return row
+
+
+def _dialog_save(row: dict, **changes) -> dict:
+    """What the transaction dialog sends back: the fields it was shown."""
+    return {
+        "description": row["description"], "amount": row["amount"],
+        "currency": row["currency"], "date": row["date"], "type": row["type"],
+        "amount_primary": row["amount_primary"], "fx_rate_used": row["fx_rate_used"],
+        **changes,
+    }
+
+
+async def _stored(session: AsyncSession, row_id: str) -> Transaction:
+    session.expire_all()
+    tx = await session.get(Transaction, uuid.UUID(row_id))
+    assert tx is not None
+    return tx
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("typed", "stamp", "shown"),
+    [("1560.00", "1560.00", 312.0), (None, "1500.00", 300.0)],
+)
+async def test_member_editing_the_description_keeps_the_owners_stamp(
+    client, session, couple, typed, stamp, shown
+):
+    """#440: Bruno (EUR) renames Ana's row; the dialog sends back the euros
+    it showed, which were written over her reais (R$ 1.560 became 312)."""
+    row = await _usd_row(client, couple, "300.00", typed)
+    assert abs(row["amount_primary"]) == pytest.approx(shown)
+
+    resp = await client.patch(
+        f"/api/transactions/{row['id']}", headers=couple["bruno"],
+        json=_dialog_save(row, description="R269 R440 renamed"),
+    )
+    assert resp.status_code == 200, resp.text
+
+    tx = await _stored(session, row["id"])
+    assert tx.description == "R269 R440 renamed"
+    assert tx.amount_primary == Decimal(stamp)
+    assert Decimal(str(tx.fx_rate_used)) == Decimal(stamp) / 300
+    if typed is not None:
+        assert tx.amount_primary_typed == Decimal(typed)
+        assert tx.amount_primary_typed_currency == "BRL"
+
+
+@pytest.mark.asyncio
+async def test_member_typing_a_conversion_saves_it_in_the_owners_currency(
+    client, session, couple
+):
+    """330 € typed by Bruno is R$ 1.650 for Ana at the row's date (0,20)."""
+    row = await _usd_row(client, couple, "300.00", "1560.00")
+    resp = await client.patch(
+        f"/api/transactions/{row['id']}", headers=couple["bruno"],
+        json=_dialog_save(row, amount_primary=330.0, fx_rate_used=1.1),
+    )
+    assert resp.status_code == 200, resp.text
+
+    tx = await _stored(session, row["id"])
+    assert tx.amount_primary == Decimal("1650.00")
+    assert Decimal(str(tx.fx_rate_used)) == Decimal("5.5")
+    assert tx.amount_primary_typed == Decimal("1650.00")
+    assert tx.amount_primary_typed_currency == "BRL"
+
+    # Only the rate changed in the dialog.
+    resp = await client.patch(
+        f"/api/transactions/{row['id']}", headers=couple["bruno"],
+        json={"fx_rate_used": 1.2},
+    )
+    assert resp.status_code == 200, resp.text
+    tx = await _stored(session, row["id"])
+    assert tx.amount_primary == Decimal("1800.00")
+
+
+@pytest.mark.asyncio
+async def test_member_changing_the_amount_restamps_in_the_owners_currency(
+    client, session, couple
+):
+    """A new amount from Bruno is stamped at Ana's BRL rate, not in euros."""
+    row = await _usd_row(client, couple, "100.00", None)
+    resp = await client.patch(
+        f"/api/transactions/{row['id']}", headers=couple["bruno"],
+        json={"amount": "200.00"},
+    )
+    assert resp.status_code == 200, resp.text
+    tx = await _stored(session, row["id"])
+    assert tx.amount_primary == Decimal("1000.00")
+
+
+@pytest.mark.asyncio
+async def test_member_conversion_without_a_rate_is_refused(client, session, couple):
+    """No EUR/BRL rate at all: Bruno's euros can't become Ana's reais."""
+    row = await _usd_row(client, couple, "300.00", "1560.00")
+    await session.execute(FxRate.__table__.delete())
+    await session.commit()
+
+    resp = await client.patch(
+        f"/api/transactions/{row['id']}", headers=couple["bruno"],
+        json={"amount_primary": 400.0},
+    )
+    assert resp.status_code == 400, resp.text
+    assert "No exchange rate" in resp.json()["detail"]
+    tx = await _stored(session, row["id"])
+    assert tx.amount_primary == Decimal("1560.00")
+
+
+@pytest.mark.asyncio
+async def test_owner_editing_her_own_row_keeps_what_she_types(client, session, couple):
+    row = await _usd_row(client, couple, "300.00", "1560.00")
+    resp = await client.patch(
+        f"/api/transactions/{row['id']}", headers=couple["ana"],
+        json={"description": "R269 R440 hers", "amount_primary": 1600.0},
+    )
+    assert resp.status_code == 200, resp.text
+    tx = await _stored(session, row["id"])
+    assert tx.amount_primary == Decimal("1600.00")
+    assert tx.amount_primary_typed == Decimal("1600.00")

@@ -109,6 +109,18 @@ class ViewerCurrency:
                 self._ratios[key] = Decimal(str(target_rate)) / Decimal(str(source_rate))
         return self._ratios[key]
 
+    async def has_rate(
+        self, session: AsyncSession, owner_id: Optional[uuid.UUID], on_date: date
+    ) -> bool:
+        """Whether a stored rate links the owner's stamp currency to the
+        viewer's on a date; without one, `ratio` falls back to 1."""
+        source = self.stamp_currency(owner_id)
+        if source == self.currency:
+            return True
+        target_rate = await _usd_rate(session, self.currency, on_date)
+        source_rate = await _usd_rate(session, source, on_date)
+        return target_rate is not None and bool(source_rate)
+
     async def convert(
         self,
         session: AsyncSession,

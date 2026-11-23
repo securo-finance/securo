@@ -152,6 +152,74 @@ def _apply_fx_override(transaction, amount, amount_primary=None, fx_rate_used=No
         ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+async def _fx_override_in_owner_currency(
+    session: AsyncSession, editor_id: uuid.UUID, tx: Transaction, update_data: dict
+) -> dict:
+    """Bring a conversion another member sent back to the row owner's currency.
+
+    `amount_primary` is stamped in the owner's display currency, and the list
+    shows it converted to the viewer's (#269). The dialog sends back what it
+    was shown, so without this an edit of the description by a member who
+    displays euros wrote 280,80 € over the owner's R$ 1.560 (#440).
+
+    A conversion equal to what the editor was shown is dropped, so the
+    owner's stamp (and the figure they typed) stays as it is. A changed one
+    is converted at the row's date into the owner's currency, and refused
+    when there is no stored rate to do that with.
+    """
+    if (
+        tx.user_id is None
+        or tx.user_id == editor_id
+        or not ({"amount_primary", "fx_rate_used"} & update_data.keys())
+    ):
+        return update_data
+    editor = await session.get(User, editor_id)
+    viewer = await viewer_currency(session, editor.primary_currency if editor else None)
+    if viewer.stamp_currency(tx.user_id) == viewer.currency:
+        return update_data
+
+    amount_primary = update_data.get("amount_primary")
+    fx_rate = update_data.get("fx_rate_used")
+    if amount_primary is None and fx_rate is None:
+        # Clearing the conversion restamps it in the owner's currency.
+        return update_data
+
+    update_data = dict(update_data)
+    amount = Decimal(str(update_data.get("amount", tx.amount)))
+    amount_unchanged = amount == Decimal(str(tx.amount))
+    shown = await viewer.convert(session, tx.user_id, tx.amount_primary, tx.date)
+    if amount_unchanged and shown is not None:
+        echoed = (
+            Decimal(str(amount_primary)).quantize(Decimal("0.01")) == shown
+            if amount_primary is not None
+            else bool(amount)
+            and abs(Decimal(str(fx_rate)) - abs(shown / amount)) <= Decimal("1E-8")
+        )
+        if echoed:
+            update_data.pop("amount_primary", None)
+            update_data.pop("fx_rate_used", None)
+            return update_data
+
+    if not await viewer.has_rate(session, tx.user_id, tx.date):
+        raise ValueError(
+            f"No exchange rate between {viewer.currency} and "
+            f"{viewer.stamp_currency(tx.user_id)} on {tx.date.isoformat()} "
+            "to save the converted amount in the owner's currency"
+        )
+    ratio = await viewer.ratio(session, tx.user_id, tx.date)
+    update_data.pop("fx_rate_used", None)
+    if amount_primary is not None:
+        update_data["amount_primary"] = _bounded_derived(
+            bounded_money, Decimal(str(amount_primary)) / ratio, "amount_primary"
+        ).quantize(Decimal("0.01"))
+    else:
+        update_data.pop("amount_primary", None)
+        update_data["fx_rate_used"] = _bounded_derived(
+            bounded_fx_rate, Decimal(str(fx_rate)) / ratio, "fx_rate_used"
+        )
+    return update_data
+
+
 def _bounded_derived(bound, value, field):
     """A derived conversion bounded like a typed one (issue #321): an edit
     keeps the stored amount, so only here can its product be checked."""
@@ -2007,6 +2075,10 @@ async def _apply_update_to_row(
             if key not in {"amount", "currency", "date"} or value != getattr(tx, key)
         }
 
+    # The stamp is in the row owner's display currency (ADR 0032), whoever
+    # edits it; a conversion another member sent is brought back to it.
+    update_data = await _fx_override_in_owner_currency(session, user_id, tx, update_data)
+    stamp_user_id = tx.user_id or user_id
     has_fx_override = "amount_primary" in update_data or "fx_rate_used" in update_data
     override_amount_primary = update_data.get("amount_primary")
     override_fx_rate = update_data.get("fx_rate_used")
@@ -2062,7 +2134,7 @@ async def _apply_update_to_row(
                 tx.amount_account_source = None
             _drop_typed_primary(tx)
             await stamp_primary_amount(
-                session, user_id, tx,
+                session, stamp_user_id, tx,
                 restamp_account=account_inputs_changed or account_moved or typed_account_amount,
             )
         else:
@@ -2072,7 +2144,7 @@ async def _apply_update_to_row(
                 override_amount_primary,
                 override_fx_rate,
             )
-            await _keep_typed_primary(session, tx, user_id)
+            await _keep_typed_primary(session, tx, stamp_user_id)
             await stamp_account_amount(session, tx, typed_primary=True)
     elif needs_restamp or heals_fx_on_post or account_moved:
         # Posting only heals the reporting stamp; the account amount follows
@@ -2080,10 +2152,10 @@ async def _apply_update_to_row(
         if account_inputs_changed or account_moved:
             _drop_typed_primary(tx)
         await stamp_primary_amount(
-            session, user_id, tx, restamp_account=account_inputs_changed or account_moved
+            session, stamp_user_id, tx, restamp_account=account_inputs_changed or account_moved
         )
         # A save that resends the same amount keeps what the user typed.
-        await _restore_typed_primary(session, tx, user_id)
+        await _restore_typed_primary(session, tx, stamp_user_id)
 
     # Refresh effective_date when the purchase date, account, or the manual
     # bill-cycle override changed. Also re-link bill_id when the override
@@ -2146,7 +2218,9 @@ async def _apply_update_to_row(
                     setattr(paired_tx, key, update_data[key])
             if paired_amount_changed or paired_date_changed:
                 _drop_typed_primary(paired_tx)
-                await stamp_primary_amount(session, user_id, paired_tx, restamp_account=True)
+                await stamp_primary_amount(
+                    session, paired_tx.user_id or user_id, paired_tx, restamp_account=True
+                )
             if paired_date_changed:
                 paired_account = await session.get(Account, paired_tx.account_id)
                 apply_effective_date(paired_tx, paired_account)

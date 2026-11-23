@@ -19,6 +19,7 @@ Rewriting the stamps for each viewer is not an option: the stored stamp belongs 
 - A read that sums, filters, sorts or shows `amount_primary` to a viewer goes through `backend/app/services/viewer_currency.py`. `viewer_currency` lists the owners who stamp in another currency than the viewer; `ViewerCurrency.amount` converts their stamps in SQL at the row's date, with the stored rates and rounding to the cent, and leaves the rest as stored. A pair with no stored rate reads 1:1, like `fx_rate_service.convert`.
 - The dashboard, the transactions list (its rows, footer, amount bounds and amount sort), reports, budgets and the viewer's shares of group splits (`viewer_shares_in_primary` in `backend/app/services/_query_filters.py`) all read through it, so a figure and its drill-down agree.
 - A converted row is flagged as an FX fallback by its stored stamp, judged in its owner's currency, so a legacy 1:1 stamp keeps its warning after conversion.
+- Writes go the other way. An edit by a member in another currency stamps the row in its owner's currency, whoever edits it (#440). A conversion that member sends back unchanged is dropped, so the owner's stamp and the figure they typed stay as they were. A changed one is converted at the row's date into the owner's currency, and refused when no stored rate links the two.
 
 ## Consequences
 
@@ -28,4 +29,4 @@ Rewriting the stamps for each viewer is not an option: the stored stamp belongs 
 
 ## Enforced by
 
-`tests/test_viewer_currency_shared_workspace.py` (dashboard, list rows and footer, amount bounds and sort, report, budgets and group shares for a member in another currency, and the owner's own numbers) and `tests/test_cross_workspace_group_shares.py` (the signed shares of rows with and without a stamp).
+`tests/test_viewer_currency_shared_workspace.py` (dashboard, list rows and footer, amount bounds and sort, report, budgets and group shares for a member in another currency, edits by that member, and the owner's own numbers) and `tests/test_cross_workspace_group_shares.py` (the signed shares of rows with and without a stamp).
