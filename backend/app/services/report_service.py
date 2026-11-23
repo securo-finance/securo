@@ -34,6 +34,7 @@ from app.services._query_filters import (
     reporting_date_value,
 )
 from app.services.admin_service import get_credit_card_accounting_mode
+from app.services.category_defaults import DEFAULT_CATEGORIES, name_variants
 from app.services.account_service import get_account_name
 from app.services.asset_service import (
     _fill_forward_at,
@@ -501,8 +502,8 @@ def _without_mirrored_legs(rows):
     withdrawal (#1551). A credit and a debit cancel when they share the
     category and the amount, sit on different accounts and are booked within
     `MIRRORED_LEG_DAYS`. Pairs are a maximum matching, so the result does not
-    depend on row order. Rows are (category id, name, color, type, amount,
-    account id, booking date); the rest come back without account and date.
+    depend on row order. Rows start with (category id, name, color, type,
+    amount, account id, booking date); the rest come back whole.
 
     Legs of one group on the same account and day are interchangeable, so
     they are matched as one class with a count: a thousand identical legs
@@ -542,7 +543,20 @@ def _without_mirrored_legs(rows):
             del credits[credit_keys[i]][:count]
             dropped.update(debits[debit_keys[j]][:count])
             del debits[debit_keys[j]][:count]
-    return [row[:5] for index, row in enumerate(rows) if index not in dropped]
+    return [row for index, row in enumerate(rows) if index not in dropped]
+
+
+# The default "Transfers" category in every language it is seeded in.
+_TRANSFER_CATEGORY_NAMES = frozenset(name_variants(DEFAULT_CATEGORIES["transfers"]))
+
+
+def _is_withdrawal(category_name: str | None, account_type: str | None) -> bool:
+    """Whether a one-sided credit in a `treat_as_transfer` category was taken
+    out of an investment. A card holds no investments, so a credit on it is
+    a bill payment whose other leg is not tracked, and the default Transfers
+    category is money between the user's own accounts (#251). Either one
+    comes in from outside what Securo tracks without being a withdrawal."""
+    return account_type != "credit_card" and category_name not in _TRANSFER_CATEGORY_NAMES
 
 
 def _max_leg_pairs(
@@ -1023,7 +1037,8 @@ async def get_income_expenses_report(
     # the transfer_pair_id filter, so only one-sided movements appear here:
     # debits are contributions, credits are withdrawals, which the Sankey draws
     # as a source of money beside income (#1418). Rows, not sums: the two legs
-    # of one movement that were never paired are dropped first.
+    # of one movement that were never paired are dropped first, then credits
+    # that are not withdrawals (`_is_withdrawal`).
     inv_result = await session.execute(
         with_category_lines(
             select(
@@ -1036,9 +1051,11 @@ async def get_income_expenses_report(
                 # Legs pair by when they were booked; the reporting date only
                 # picks the period.
                 Transaction.date,
+                Account.type,
             ).select_from(Transaction)
         )
         .join(Category, line_category_id() == Category.id)
+        .join(Account, Transaction.account_id == Account.id)
         .where(
             Transaction.workspace_id == workspace_id,
             report_date >= start,
@@ -1054,9 +1071,11 @@ async def get_income_expenses_report(
         )
     )
     moves: dict[tuple[uuid.UUID, str], list] = {}
-    for cat_id, cat_name, cat_color, txn_type, total_amount in _without_mirrored_legs(
-        list(inv_result.all())
-    ):
+    for (
+        cat_id, cat_name, cat_color, txn_type, total_amount, _, _, account_type,
+    ) in _without_mirrored_legs(list(inv_result.all())):
+        if txn_type == "credit" and not _is_withdrawal(cat_name, account_type):
+            continue
         group = "withdrawals" if txn_type == "credit" else "investments"
         entry = moves.setdefault((cat_id, group), [cat_name, cat_color, 0.0])
         entry[2] += abs(float(total_amount or 0))

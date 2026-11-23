@@ -466,18 +466,76 @@ async def test_an_unpaired_card_bill_payment_is_neither_a_withdrawal_nor_a_contr
     assert after["report"] == before["report"]
 
 
+async def test_an_unpaired_credit_on_the_card_is_not_a_withdrawal(scene):
+    """Only the card is tracked, so its bill payment arrives without the
+    checking debit to cancel it. A card holds no investments: the credit is
+    a payment, not a withdrawal, and a real withdrawal still shows."""
+    bill = Category(
+        id=uuid.uuid4(), user_id=scene["user"].id, name="Pagamento de fatura",
+        icon="credit-card", color="#64748B", treat_as_transfer=True,
+    )
+    transfers = Category(
+        id=uuid.uuid4(), user_id=scene["user"].id, name="Transfers",
+        icon="arrow-left-right", color="#64748B", treat_as_transfer=True,
+    )
+    scene["session"].add_all([bill, transfers])
+    await scene["session"].commit()
+    resp = await scene["client"].post(
+        "/api/accounts", headers=scene["headers"],
+        json={"name": "Card", "type": "credit_card", "balance": 0, "currency": CURRENCY},
+    )
+    assert resp.status_code in (200, 201), resp.text
+    card = resp.json()
+    before = await _snapshot(scene)
+
+    await scene["create"](300, "credit", scene["invest"])
+    await scene["create"](1234.56, "credit", bill, account_id=card["id"])
+    await scene["create"](1234.56, "credit", transfers, account_id=card["id"])
+    after = await _snapshot(scene)
+
+    assert after["composition"][("withdrawals", "Investments")] == 300
+    assert ("withdrawals", "Pagamento de fatura") not in after["composition"]
+    assert ("withdrawals", "Transfers") not in after["composition"]
+    assert after["report"] == before["report"]
+    assert after["income"] == before["income"]
+    assert after["expenses"] == before["expenses"]
+
+
+async def test_an_unpaired_transfer_credit_is_not_a_withdrawal(scene):
+    """Money in from an account Securo does not track, filed under the
+    default Transfers category (in any language), is not taken out of an
+    investment. A custom transfer-like category on checking still is."""
+    transferencias = Category(
+        id=uuid.uuid4(), user_id=scene["user"].id, name="Transferências",
+        icon="arrow-left-right", color="#64748B", treat_as_transfer=True,
+    )
+    pension = Category(
+        id=uuid.uuid4(), user_id=scene["user"].id, name="Previdência",
+        icon="piggy-bank", color="#0EA5E9", treat_as_transfer=True,
+    )
+    scene["session"].add_all([transferencias, pension])
+    await scene["session"].commit()
+
+    await scene["create"](1234.56, "credit", transferencias)
+    await scene["create"](400, "credit", pension)
+    snap = await _snapshot(scene)
+
+    assert ("withdrawals", "Transferências") not in snap["composition"]
+    assert snap["composition"][("withdrawals", "Previdência")] == 400
+
+
 async def test_legs_are_matched_by_booking_date_not_reporting_override(scene):
     """A credit booked nine days after the debit is another movement, even
     when its reporting date was moved onto the debit's day."""
     bill = Category(
-        id=uuid.uuid4(), user_id=scene["user"].id, name="Pagamento de fatura",
-        icon="credit-card", color="#64748B", treat_as_transfer=True,
+        id=uuid.uuid4(), user_id=scene["user"].id, name="Brokerage",
+        icon="trending-up", color="#64748B", treat_as_transfer=True,
     )
     scene["session"].add(bill)
     await scene["session"].commit()
     resp = await scene["client"].post(
         "/api/accounts", headers=scene["headers"],
-        json={"name": "Itaú Azul", "type": "credit_card", "balance": 0, "currency": CURRENCY},
+        json={"name": "Savings", "type": "savings", "balance": 0, "currency": CURRENCY},
     )
     assert resp.status_code in (200, 201), resp.text
     day = scene["day"]
@@ -493,8 +551,8 @@ async def test_legs_are_matched_by_booking_date_not_reporting_override(scene):
     await scene["session"].commit()
     snap = await _snapshot(scene)
 
-    assert snap["composition"][("investments", "Pagamento de fatura")] == 2500
-    assert snap["composition"][("withdrawals", "Pagamento de fatura")] == 2500
+    assert snap["composition"][("investments", "Brokerage")] == 2500
+    assert snap["composition"][("withdrawals", "Brokerage")] == 2500
 
 
 @pytest.mark.parametrize("reverse_credits", [False, True])
@@ -526,7 +584,7 @@ async def test_a_thousand_identical_legs_pair_without_recursion():
     extra = (cat, "Inv", "#000", "credit", Decimal("77.77"), b, day)
 
     assert _without_mirrored_legs(debits + credits) == []
-    assert _without_mirrored_legs(credits + [extra] + debits) == [extra[:5]]
+    assert _without_mirrored_legs(credits + [extra] + debits) == [extra]
 
 
 async def test_two_thousand_daily_pairs_all_cancel():
