@@ -1036,12 +1036,15 @@ async def get_income_expenses_report(
                 Category.name,
                 Category.color,
                 Transaction.type,
-                amount_expr,
+                # Legs pair on the stored amount: converted at each leg's own
+                # date, two equal legs a day apart differ by the rate move.
+                line_primary_or_amount(),
                 Transaction.account_id,
                 # Legs pair by when they were booked; the reporting date only
                 # picks the period.
                 Transaction.date,
                 Account.type,
+                amount_expr,
             ).select_from(Transaction)
         )
         .join(Category, line_category_id() == Category.id)
@@ -1061,7 +1064,7 @@ async def get_income_expenses_report(
         )
     )
     moves: dict[tuple[uuid.UUID, str], list] = {}
-    for cat_id, cat_name, cat_color, txn_type, total_amount, account_type in (
+    for cat_id, cat_name, cat_color, txn_type, _stored, account_type, total_amount in (
         _without_mirrored_legs(list(inv_result.all()))
     ):
         group = _investment_move_group(txn_type, account_type, cat_name)

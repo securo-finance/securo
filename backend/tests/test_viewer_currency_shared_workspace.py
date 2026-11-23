@@ -419,3 +419,49 @@ async def test_the_owner_keeps_her_own_numbers(client, couple):
     assert await _budget_actual(
         client, couple["ana"], month, couple["category_id"]
     ) == pytest.approx(1400.0)
+
+
+@pytest.mark.asyncio
+async def test_bill_legs_a_day_apart_cancel_for_the_member_too(
+    client, session, test_user, test_workspace, couple
+):
+    """An unpaired R$ 100 bill: paid from checking on day 5, credited on the
+    card on day 6, with BRL→EUR moving from 0,20 to 0,25 in between. The legs
+    pair on the stored amount, so Bruno's Money Map has no 20 € contribution
+    that Ana's does not have either."""
+    month, ana = couple["month"], couple["ana"]
+    day5, day6 = month + timedelta(days=4), month + timedelta(days=5)
+    session.add_all([_rate("BRL", "4", day6), _rate("EUR", "1", day6)])
+    bill = Category(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="R269 bill payment", icon="credit-card", color="#64748B",
+        treat_as_transfer=True,
+    )
+    session.add(bill)
+    await session.commit()
+
+    accounts = []
+    for name, kind in (("R269 checking", "checking"), ("R269 card", "credit_card")):
+        resp = await client.post(
+            "/api/accounts", headers=ana,
+            json={"name": name, "type": kind, "balance": 0, "currency": "BRL"},
+        )
+        assert resp.status_code in (200, 201), resp.text
+        accounts.append(resp.json()["id"])
+    for account_id, kind, when in ((accounts[0], "debit", day5), (accounts[1], "credit", day6)):
+        resp = await client.post(
+            "/api/transactions", headers=ana,
+            json={
+                "account_id": account_id, "category_id": str(bill.id),
+                "description": "R269 bill", "amount": "100.00", "currency": "BRL",
+                "date": when.isoformat(), "type": kind,
+            },
+        )
+        assert resp.status_code == 201, resp.text
+
+    for who in ("ana", "bruno"):
+        report = await _report(client, couple[who], month)
+        assert not [
+            item for item in report.get("composition") or []
+            if item.get("group") in ("investments", "withdrawals")
+        ], who
