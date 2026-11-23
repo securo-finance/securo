@@ -1219,8 +1219,8 @@ def _rewrite_polymorphic_reference(
         return source_id
 
     # Reconciliation history deliberately survives deletion of its expectation.
-    # Pending suggestions still require a live target; completed suggestions and
-    # events receive a stable opaque replacement instead of retaining a UUID that
+    # A pending suggestion cannot be acted on without one, so it is expired. Every
+    # row receives a stable opaque replacement instead of retaining a UUID that
     # could resolve to another workspace's row.
     if model is ReconciliationSuggestion and row.get("status") == "pending":
         # A pending match whose target is not part of the export can no longer
@@ -1354,6 +1354,12 @@ def _prepare_model_data(
             rewritten = None
         data[key] = _deserialize_column(column, rewritten)
 
+    if model is ReconciliationSuggestion and row.get("status") is not None:
+        # _rewrite_polymorphic_reference expires a pending suggestion whose target
+        # is missing, and that runs when the loop above reaches expectation_id.
+        # The archive decides whether status was already read by then, so take it
+        # from the row once more, after every column has been visited.
+        data["status"] = _deserialize_column(columns["status"], row["status"])
     if model is Transaction and "amount_account" not in row:
         # A backup from before ADR 0027 has no account-currency amount; it is
         # filled the way migration 124 fills it. Same-currency rows never read
