@@ -182,6 +182,23 @@ async def test_unread_only_lists_just_the_unreviewed_rows(
     assert everything.json()["total"] == 2
 
 
+async def test_the_export_can_follow_the_review_queue(
+    client, auth_headers, test_workspace, test_user, session
+):
+    """Exporting while the review queue is on writes just those rows (#636)."""
+    account = await _account(client, auth_headers)
+    await _create(client, auth_headers, account["id"], "Already reviewed")
+    await _seed_unread(session, test_workspace, test_user, "Arrived overnight")
+
+    response = await client.get(
+        "/api/transactions/export", headers=auth_headers, params={"unread_only": "true"}
+    )
+    assert response.status_code == 200, response.text
+    body = response.text
+    assert "Arrived overnight" in body
+    assert "Already reviewed" not in body
+
+
 async def test_marking_one_transaction_read_is_idempotent(
     client, auth_headers, test_workspace, test_user, session
 ):

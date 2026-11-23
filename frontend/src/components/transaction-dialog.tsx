@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useId, useMemo, useRef, useContext } from 'react'
 import { getAccountLabel, getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
@@ -7,7 +7,8 @@ import { formatAmountInput, formatCurrency, parseAmountInput } from '@/lib/forma
 import { amountToCents, parseCents } from '@/lib/mortgage-split'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
-import { assets as assetsApi, currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi, mortgagePayments as mortgagePaymentsApi } from '@/lib/api'
+import { WorkspaceContext } from '@/contexts/workspace-context'
+import { accounts as accountsApi, assets as assetsApi, currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi, mortgagePayments as mortgagePaymentsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { extractApiError } from '@/lib/api-errors'
@@ -20,6 +21,7 @@ import { Input } from '@/components/ui/input'
 import { DescriptionInput } from '@/components/description-input'
 import { Label } from '@/components/ui/label'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
+import { flagDuePresets } from '@/lib/transaction-flag'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import {
@@ -30,7 +32,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { AlertTriangle, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check } from 'lucide-react'
+import { AlertTriangle, ArrowRight, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Flag, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check, Pencil } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,13 +41,14 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { CategorySelect } from '@/components/category-select'
 import { PayeeSelect } from '@/components/payee-select'
+import { PayeeFormDialog } from '@/components/payee-form-dialog'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { TransactionAttachments } from '@/components/transaction-attachments'
 import type { AttachmentPreview } from '@/components/transaction-attachments'
 import { TransactionSplitsSection } from '@/components/transaction-splits-section'
 import { buildInstallmentSeriesInput, hasNonStatusChange, isManualInstallmentSeriesRow } from '@/lib/installment-series'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
-import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, CategoryLineShareType, Rule, RuleCondition, RuleConditionNode } from '@/types'
+import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, CategoryLineShareType, Rule, RuleCondition, RuleConditionNode, Payee } from '@/types'
 import { TransactionCategoryLinesSection } from '@/components/transaction-category-lines-section'
 import {
   buildLinesPayload,
@@ -57,7 +60,7 @@ import {
 } from '@/lib/category-lines'
 import { toast } from 'sonner'
 
-export type SaveAction = 'save' | 'saveAndNew' | 'saveAndDuplicate'
+export type SaveAction = 'save' | 'saveAndNew' | 'saveAndDuplicate' | 'saveAndNext'
 
 export type TransactionSavePayload = TransactionEditPayload & {
   apply_to?: TransactionApplyScope
@@ -73,6 +76,31 @@ type PendingInstallmentEdit = {
 
 function isImageType(contentType: string): boolean {
   return contentType.startsWith('image/')
+}
+
+/** Whether two rows of the payee list are the same record, field by field.
+ *
+ * A payee carries no revision of its own, so a refetched row is told apart
+ * from the copy a save replaced by comparing what the record holds. Every
+ * field a member can change counts: a differing phone is a newer row, even
+ * when the name still reads the same. */
+function samePayee(a: Payee, b: Payee): boolean {
+  const fields = (p: Payee) => [
+    p.id,
+    p.name,
+    p.type,
+    p.notes,
+    p.email,
+    p.phone,
+    p.address,
+    p.website,
+    p.is_favorite,
+    p.transaction_count,
+    p.tax_ids.map((taxId) => `${taxId.kind}:${taxId.value}`).join('|'),
+  ]
+  const left = fields(a)
+  const right = fields(b)
+  return left.every((value, index) => value === right[index])
 }
 
 function canExtendRuleFromTransaction(rule: Rule): boolean {
@@ -122,6 +150,7 @@ export function TransactionDialog({
   duplicateDraft = null,
   formResetKey = 0,
   defaultAccountId,
+  hasNext = false,
 }: {
   open: boolean
   onClose: () => void
@@ -142,6 +171,8 @@ export function TransactionDialog({
   formResetKey?: number
   /** Account preselected when creating a new transaction. */
   defaultAccountId?: string
+  /** Offer "Save & next" (the `saveAndNext` action) when the host has another row queued. */
+  hasNext?: boolean
 }) {
   const { t } = useTranslation()
   const [preview, setPreview] = useState<AttachmentPreview | null>(null)
@@ -153,6 +184,12 @@ export function TransactionDialog({
   }, [])
 
   if (!open && preview) setPreview(null)
+  // "Save & next" swaps the transaction under an open dialog; drop the last one's preview.
+  const [previewTxId, setPreviewTxId] = useState(transaction?.id)
+  if (transaction?.id !== previewTxId) {
+    setPreviewTxId(transaction?.id)
+    if (preview) setPreview(null)
+  }
   useEffect(() => () => {
     if (preview?.url) URL.revokeObjectURL(preview.url)
   }, [preview])
@@ -249,6 +286,7 @@ export function TransactionDialog({
               onPreviewChange={handlePreviewChange}
               activePreviewId={preview?.attachmentId ?? null}
               hasPreview={hasPreview}
+              hasNext={hasNext}
             />
           </div>
 
@@ -411,6 +449,7 @@ function TransactionForm({
   onPreviewChange,
   activePreviewId,
   hasPreview,
+  hasNext,
 }: {
   transaction: Transaction | null
   duplicateDraft: TransactionEditPayload | null
@@ -431,8 +470,10 @@ function TransactionForm({
   onPreviewChange: (preview: AttachmentPreview | null) => void
   activePreviewId: string | null
   hasPreview: boolean
+  hasNext: boolean
 }) {
   const { t } = useTranslation()
+  const id = useId()
   const queryClient = useQueryClient()
   const { user } = useAuth()
   const { privacyMode, MASK } = usePrivacyMode()
@@ -450,6 +491,42 @@ function TransactionForm({
     queryFn: payeesApi.list,
   })
   const seed = transaction ?? duplicateDraft
+  const canWrite = useContext(WorkspaceContext)?.canWrite ?? false
+  // The payee form opened from here, and the record it just saved: the
+  // refetched list takes a moment to carry a payee created or edited here.
+  // The row the save replaced is kept too, to tell a refetched row apart from
+  // the stale copy the save already superseded.
+  const [payeeId, setPayeeId] = useState(seed?.payee_id ?? '')
+  const [payeeFormOpen, setPayeeFormOpen] = useState(false)
+  const [payeeFormTarget, setPayeeFormTarget] = useState<Payee | null>(null)
+  const [savedPayee, setSavedPayee] = useState<{ payee: Payee; replaced: Payee | null } | null>(null)
+  // The saved record stands in for the list only while the list's row is the
+  // copy the save replaced: an identical row is the stale one, so the
+  // refetch has not landed. Once the list carries anything else it is the
+  // server's answer — our own save, or another member's later change (a
+  // phone, say) — and substituting the saved copy forever would show their
+  // change as never made and write the old value back on the next edit. A
+  // payee the list does not carry yet stays appended, so a create whose
+  // refetch has not landed never flickers the selection to "no payee".
+  const selectablePayees = useMemo(() => {
+    const list = payeesList ?? []
+    if (!savedPayee) return list
+    const { payee, replaced } = savedPayee
+    const row = list.find((p) => p.id === payee.id)
+    if (!row) return [...list, payee]
+    return replaced && samePayee(row, replaced)
+      ? list.map((p) => (p.id === payee.id ? payee : p))
+      : list
+  }, [payeesList, savedPayee])
+  const selectedPayee = selectablePayees.find((p) => p.id === payeeId) ?? null
+  const { data: linkedCards = [] } = useQuery({
+    queryKey: ['accounts', transaction?.account_id, 'linked-cards'],
+    queryFn: () => accountsApi.linkedCards(transaction?.account_id ?? ''),
+    enabled: !!transaction?.account_id && !!transaction.card_masked_number,
+  })
+  const linkedCardLabel = linkedCards.find(
+    (card) => card.masked_number === transaction?.card_masked_number,
+  )?.label
   const [description, setDescription] = useState(seed?.description ?? '')
   // Amount fields hold display-locale strings (comma decimals on dot_comma),
   // so seeds from stored numbers go through formatAmountInput — a raw
@@ -472,7 +549,6 @@ function TransactionForm({
       ?? userCurrency
   )
   const [categoryId, setCategoryId] = useState(seed?.category_id ?? '')
-  const [payeeId, setPayeeId] = useState(seed?.payee_id ?? '')
   const [accountId, setAccountId] = useState(seed?.account_id ?? defaultAccountId ?? '')
   const [notes, setNotes] = useState(seed?.notes ?? '')
   // Manual CC bucketing override (issue #92). Empty = auto. Visible only
@@ -617,6 +693,15 @@ function TransactionForm({
     seed?.exclude_from_pnl ?? false,
   )
   const [togglingIgnore, setTogglingIgnore] = useState(false)
+  const [isFlagged, setIsFlagged] = useState(seed?.is_flagged ?? false)
+  const [togglingFlag, setTogglingFlag] = useState(false)
+  const [flagDueDate, setFlagDueDate] = useState(seed?.flag_due_date ?? '')
+  const [flagNote, setFlagNote] = useState(seed?.flag_note ?? '')
+  const [savedFlagNote, setSavedFlagNote] = useState(seed?.flag_note ?? '')
+  const flagReminderRef = useRef<HTMLDivElement>(null)
+  // Flag and reminder saves can overlap (a note saved on blur as Unflag is
+  // clicked); only the latest one's answer is applied.
+  const flagRequestRef = useRef(0)
   const [recurringLinked, setRecurringLinked] = useState(seed?.recurring_transaction_id != null)
   const [unlinkingRecurring, setUnlinkingRecurring] = useState(false)
   const [addToRuleOpen, setAddToRuleOpen] = useState(false)
@@ -722,6 +807,57 @@ function TransactionForm({
       toast.error(t('common.error'))
     } finally {
       setTogglingIgnore(false)
+    }
+  }
+
+  // Like ignore, a flag acts at once and touches no other field, so it never
+  // saves a half-edited form along with it.
+  const handleToggleFlag = async () => {
+    if (!seed?.id || togglingFlag) return
+    setTogglingFlag(true)
+    try {
+      const request = ++flagRequestRef.current
+      const updated = await transactionsApi.update(seed.id, { is_flagged: !isFlagged })
+      if (request !== flagRequestRef.current) return
+      applyFlagResponse(updated)
+      // Bring the reminder fields into view: the footer is far from them.
+      if (updated.is_flagged) {
+        requestAnimationFrame(() => flagReminderRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }))
+      }
+      toast.success(updated.is_flagged
+        ? t('transactions.flagSuccess')
+        : t('transactions.unflagSuccess'))
+      // Not every opener passes onIgnoreChanged (Dashboard, Account Detail),
+      // so refresh the lists the row comes from here; the flag moves no money.
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['drill-down'] })
+      onIgnoreChanged?.()
+    } catch {
+      toast.error(t('common.error'))
+    } finally {
+      setTogglingFlag(false)
+    }
+  }
+
+  function applyFlagResponse(updated: Transaction) {
+    setIsFlagged(updated.is_flagged ?? false)
+    setFlagDueDate(updated.flag_due_date ?? '')
+    setFlagNote(updated.flag_note ?? '')
+    setSavedFlagNote(updated.flag_note ?? '')
+  }
+
+  // The reminder saves on its own, like the flag, so it never carries a
+  // half-edited form along with it.
+  const saveFlagReminder = async (patch: { flag_due_date?: string | null; flag_note?: string | null }) => {
+    if (!seed?.id) return
+    try {
+      const request = ++flagRequestRef.current
+      const updated = await transactionsApi.update(seed.id, patch)
+      if (request === flagRequestRef.current) applyFlagResponse(updated)
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['drill-down'] })
+    } catch {
+      toast.error(t('common.error'))
     }
   }
 
@@ -841,7 +977,7 @@ function TransactionForm({
         const action = pendingActionRef.current
         pendingActionRef.current = 'save'
         // Enter in a text field submits even while Save is disabled.
-        if (!splitsValid || !linesValid) return
+        if (loading || !splitsValid || !linesValid) return
         // Amounts are typed under the display locale's separators (comma
         // decimals on dot_comma), so they must be read back the same way —
         // parseFloat would stop at the first comma and silently save the
@@ -1105,9 +1241,10 @@ function TransactionForm({
         </div>
       )}
       <div className="space-y-2">
-        <Label>{t('transactions.description')}</Label>
+        <Label htmlFor={`${id}-description`}>{t('transactions.description')}</Label>
         {isSynced ? (
           <textarea
+            id={`${id}-description`}
             ref={descriptionRef}
             className="w-full border border-input rounded-md px-3 py-2 text-sm bg-card dark:bg-input/30 shadow-xs resize-none overflow-hidden outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/30 focus-visible:ring-[2px]"
             value={description}
@@ -1124,6 +1261,7 @@ function TransactionForm({
           />
         ) : (
           <DescriptionInput
+            id={`${id}-description`}
             value={description}
             onChange={setDescription}
             // Prefill what was last filed under this description, without
@@ -1157,11 +1295,18 @@ function TransactionForm({
         {isSynced && transaction?.payee && transaction.payee !== transaction.description && (
           <p className="text-xs text-muted-foreground">{transaction.payee}</p>
         )}
+        {/* The bank's own category label, untranslated. Rules match this exact
+            text, so the row shows it where the user edits the transaction. */}
+        {transaction?.provider_category && (
+          <p className="text-xs text-muted-foreground">
+            {t('transactions.providerCategory')}: {transaction.provider_category}
+          </p>
+        )}
       </div>
       <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <div className="space-y-2">
           <div className="flex items-center justify-between min-h-5">
-            <Label>{t('transactions.amount')}</Label>
+            <Label htmlFor={`${id}-amount`}>{t('transactions.amount')}</Label>
             {canHideAmounts && (
               <button
                 type="button"
@@ -1176,6 +1321,7 @@ function TransactionForm({
           </div>
           {hideAmounts ? (
             <Input
+              id={`${id}-amount`}
               type="text"
               value={MASK}
               readOnly
@@ -1185,6 +1331,7 @@ function TransactionForm({
           ) : (
             <>
               <Input
+                id={`${id}-amount`}
                 type="text"
                 inputMode="decimal"
                 value={amount}
@@ -1204,8 +1351,9 @@ function TransactionForm({
           )}
         </div>
         <div className="space-y-2">
-          <Label>{t('transactions.currency')}</Label>
+          <Label htmlFor={`${id}-currency`}>{t('transactions.currency')}</Label>
           <select
+            id={`${id}-currency`}
             className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card h-9 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
             value={currency}
             onChange={(e) => handleCurrencyChange(e.target.value)}
@@ -1219,8 +1367,10 @@ function TransactionForm({
       </div>
       <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <div className="space-y-2">
-          <Label>{isSynced ? t('transactions.bankDate') : t('transactions.date')}</Label>
+          <Label htmlFor={`${id}-date`} id={`${id}-date-label`}>{isSynced ? t('transactions.bankDate') : t('transactions.date')}</Label>
           <DatePickerInput
+            id={`${id}-date`}
+            labelledBy={`${id}-date-label`}
             value={date}
             onChange={setDate}
             disabled={isSynced}
@@ -1243,9 +1393,11 @@ function TransactionForm({
       </div>
       {showReportingDateOverride && (
         <div className="space-y-2">
-          <Label>{t('transactions.reportingDate')}</Label>
+          <Label htmlFor={`${id}-reporting-date`} id={`${id}-reporting-date-label`}>{t('transactions.reportingDate')}</Label>
           <div className="flex items-center gap-1">
             <DatePickerInput
+              id={`${id}-reporting-date`}
+              labelledBy={`${id}-reporting-date-label`}
               value={reportingDateOverride}
               onChange={setReportingDateOverride}
               placeholder={t('transactions.reportingDatePlaceholder')}
@@ -1282,9 +1434,10 @@ function TransactionForm({
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
-              <Label className="text-xs">{t('transactions.convertedAmount', { currency: userCurrency })}</Label>
+              <Label htmlFor={`${id}-converted-amount`} className="text-xs">{t('transactions.convertedAmount', { currency: userCurrency })}</Label>
               {hideAmounts ? (
                 <Input
+                  id={`${id}-converted-amount`}
                   type="text"
                   value={MASK}
                   readOnly
@@ -1293,6 +1446,7 @@ function TransactionForm({
                 />
               ) : (
                 <Input
+                  id={`${id}-converted-amount`}
                   type="text"
                   inputMode="decimal"
                   value={convertedAmount}
@@ -1303,8 +1457,9 @@ function TransactionForm({
               )}
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">{t('transactions.exchangeRate')}</Label>
+              <Label htmlFor={`${id}-exchange-rate`} className="text-xs">{t('transactions.exchangeRate')}</Label>
               <Input
+                id={`${id}-exchange-rate`}
                 type="text"
                 inputMode="decimal"
                 value={fxRate}
@@ -1318,8 +1473,9 @@ function TransactionForm({
       )}
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label>{t('transactions.type')}</Label>
+          <Label htmlFor={`${id}-type`}>{t('transactions.type')}</Label>
           <select
+            id={`${id}-type`}
             className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
             value={type}
             onChange={(e) => setType(e.target.value as 'debit' | 'credit')}
@@ -1331,7 +1487,7 @@ function TransactionForm({
         </div>
         <div className="space-y-2">
           <div className="flex items-center justify-between min-h-5">
-            <Label>{t('transactions.category')}</Label>
+            <Label htmlFor={`${id}-category`} id={`${id}-category-label`}>{t('transactions.category')}</Label>
             {canSplitByCategory && !splitByCategory && (
               <button
                 type="button"
@@ -1348,6 +1504,8 @@ function TransactionForm({
             </div>
           ) : (
             <CategorySelect
+              id={`${id}-category`}
+              labelledBy={`${id}-category-label`}
               value={categoryId}
               onChange={setCategoryId}
               categories={displayCategories}
@@ -1360,6 +1518,19 @@ function TransactionForm({
           )}
         </div>
       </div>
+      {transaction?.card_masked_number && (
+        <div className="space-y-2">
+          {/* Not a <label>: the value below is text, there is no field to name. */}
+          <span className="text-sm font-medium">{t('transactions.card')}</span>
+          {/* Read-only text rather than a disabled input, so a long label
+              wraps and never pushes the ending out of view. */}
+          <div className="flex min-h-9 items-center gap-2 rounded-md border border-input bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground">
+            {linkedCardLabel && <span className="min-w-0 break-words">{linkedCardLabel}</span>}
+            {linkedCardLabel && <span aria-hidden="true">·</span>}
+            <span className="shrink-0 tabular-nums">•••• {transaction.card_masked_number}</span>
+          </div>
+        </div>
+      )}
       {splitByCategory && (
         <TransactionCategoryLinesSection
           amount={parseAmountInput(amount, displayLocale) ?? 0}
@@ -1378,11 +1549,52 @@ function TransactionForm({
       )}
       <div className={cn("grid gap-4", isSynced ? "grid-cols-1" : "grid-cols-2")}>
         <div className="space-y-2">
-          <Label>{t('payees.payee')}</Label>
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor={`${id}-payee`} id={`${id}-payee-label`}>{t('payees.payee')}</Label>
+            {/* Creating and editing the record without leaving the form
+                (#1069): the payees page owns the full form, so it is the
+                same one, opened on this transaction's payee. */}
+            {canWrite && (
+              <div className="flex items-center gap-0.5">
+                {selectedPayee && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    aria-label={t('payees.edit')}
+                    title={t('payees.edit')}
+                    onClick={() => {
+                      setPayeeFormTarget(selectedPayee)
+                      setPayeeFormOpen(true)
+                    }}
+                  >
+                    <Pencil size={13} />
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="size-7"
+                  aria-label={t('payees.add')}
+                  title={t('payees.add')}
+                  onClick={() => {
+                    setPayeeFormTarget(null)
+                    setPayeeFormOpen(true)
+                  }}
+                >
+                  <Plus size={13} />
+                </Button>
+              </div>
+            )}
+          </div>
           <PayeeSelect
+            id={`${id}-payee`}
+            labelledBy={`${id}-payee-label`}
             value={payeeId}
             onChange={setPayeeId}
-            payees={payeesList ?? []}
+            payees={selectablePayees}
             creatable
           />
           {isSynced && transaction?.payee && (
@@ -1391,8 +1603,9 @@ function TransactionForm({
         </div>
         {!isSynced && (
           <div className="space-y-2">
-            <Label>{t('transactions.account')}</Label>
+            <Label htmlFor={`${id}-account`}>{t('transactions.account')}</Label>
             <select
+              id={`${id}-account`}
               className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
               value={accountId}
               onChange={(e) => setAccountId(e.target.value)}
@@ -1407,9 +1620,83 @@ function TransactionForm({
         )}
       </div>
 
+      {seed?.id && isFlagged && (
+        <div
+          ref={flagReminderRef}
+          className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/[0.04] p-3"
+          data-testid="flag-reminder"
+        >
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <Flag size={14} className="fill-current text-amber-600 dark:text-amber-400" />
+            {t('transactions.flagReminder')}
+            <span className="text-xs font-normal text-muted-foreground">{t('transactions.flagReminderHint')}</span>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor={`${id}-flag-due-date`} id={`${id}-flag-due-date-label`} className="text-xs">{t('transactions.flagRemindOn')}</Label>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {flagDuePresets().map((preset) => (
+                <Button
+                  key={preset.key}
+                  type="button"
+                  size="sm"
+                  variant={flagDueDate === preset.date ? 'secondary' : 'outline'}
+                  className="h-8 text-xs"
+                  onClick={() => saveFlagReminder({ flag_due_date: preset.date })}
+                >
+                  {t(`transactions.flagPreset.${preset.key}`)}
+                </Button>
+              ))}
+              <div className="flex min-w-[150px] flex-1 items-center gap-1">
+                <DatePickerInput
+                  id={`${id}-flag-due-date`}
+                  labelledBy={`${id}-flag-due-date-label`}
+                  value={flagDueDate}
+                  onChange={(value) => saveFlagReminder({ flag_due_date: value || null })}
+                  placeholder={t('transactions.flagPickDate')}
+                  className="h-8 w-full justify-start text-xs"
+                />
+                {flagDueDate && (
+                  <button
+                    type="button"
+                    className="h-8 w-8 inline-flex shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => saveFlagReminder({ flag_due_date: null })}
+                    title={t('transactions.flagClearDate')}
+                    aria-label={t('transactions.flagClearDate')}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="flag-note" className="text-xs">{t('transactions.flagNote')}</Label>
+            <Input
+              id="flag-note"
+              value={flagNote}
+              maxLength={500}
+              onChange={(e) => setFlagNote(e.target.value)}
+              onBlur={() => {
+                if (flagNote.trim() !== savedFlagNote.trim()) saveFlagReminder({ flag_note: flagNote })
+              }}
+              onKeyDown={(e) => {
+                // Enter saves the note instead of submitting the whole form.
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  e.currentTarget.blur()
+                }
+              }}
+              placeholder={t('transactions.flagNotePlaceholder')}
+              className="h-8 text-sm"
+            />
+          </div>
+        </div>
+      )}
+
       <div className="space-y-2">
-        <Label>{t('transactions.notes')} <span className="text-muted-foreground font-normal text-xs">({t('transactions.notesHint')})</span></Label>
+        <Label htmlFor={`${id}-notes`}>{t('transactions.notes')} <span className="text-muted-foreground font-normal text-xs">({t('transactions.notesHint')})</span></Label>
         <textarea
+          id={`${id}-notes`}
           className="w-full border border-input rounded-md px-3 py-2 text-sm bg-card resize-none focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-0"
           rows={2}
           value={notes}
@@ -1419,8 +1706,9 @@ function TransactionForm({
       </div>
 
       {transaction && (
-        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3">
+        <label htmlFor={`${id}-exclude-from-reports`} className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3">
           <input
+            id={`${id}-exclude-from-reports`}
             type="checkbox"
             className="mt-0.5 h-4 w-4 rounded border-border accent-primary"
             checked={excludeFromReports}
@@ -1443,7 +1731,7 @@ function TransactionForm({
           whose due_date matches. */}
       {isCreditCardSelected && (
           <div className="space-y-2">
-            <Label>
+            <Label htmlFor={`${id}-effective-bill-date`} id={`${id}-effective-bill-date-label`}>
               {t('transactions.effectiveBillDate', 'Effective bill date')}{' '}
               <span className="text-muted-foreground font-normal text-xs">
                 ({t('transactions.effectiveBillDateHint', 'manual, overrides the automatic cycle')})
@@ -1451,6 +1739,8 @@ function TransactionForm({
             </Label>
             <div className="inline-flex items-center gap-1">
               <DatePickerInput
+                id={`${id}-effective-bill-date`}
+                labelledBy={`${id}-effective-bill-date-label`}
                 value={effectiveBillDate}
                 onChange={setEffectiveBillDate}
                 placeholder={t('transactions.effectiveBillDatePlaceholder', 'Bill due date (optional)')}
@@ -1514,8 +1804,9 @@ function TransactionForm({
       {isCreating && !isSynced && (
         <div className="space-y-3 border rounded-md p-3">
           <div className="flex items-center gap-6">
-            <label className="flex items-center gap-2 cursor-pointer">
+            <label htmlFor={`${id}-recurring`} className="flex items-center gap-2 cursor-pointer">
               <input
+                id={`${id}-recurring`}
                 type="checkbox"
                 checked={isRecurring}
                 onChange={(e) => {
@@ -1526,8 +1817,9 @@ function TransactionForm({
               />
               <span className="text-sm font-medium">{t('transactions.makeRecurring')}</span>
             </label>
-            <label className="flex items-center gap-2 cursor-pointer">
+            <label htmlFor={`${id}-installment`} className="flex items-center gap-2 cursor-pointer">
               <input
+                id={`${id}-installment`}
                 type="checkbox"
                 checked={isInstallment}
                 onChange={(e) => {
@@ -1542,8 +1834,9 @@ function TransactionForm({
           {isRecurring && (
             <div className="grid grid-cols-2 gap-4 pt-1">
               <div className="space-y-2">
-                <Label>{t('recurring.frequency')}</Label>
+                <Label htmlFor={`${id}-frequency`}>{t('recurring.frequency')}</Label>
                 <select
+                  id={`${id}-frequency`}
                   className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
                   value={frequency}
                   onChange={(e) => setFrequency(e.target.value as RecurringTransaction['frequency'])}
@@ -1557,8 +1850,10 @@ function TransactionForm({
                 </select>
               </div>
               <div className="space-y-2">
-                <Label>{t('recurring.endDate')}</Label>
+                <Label htmlFor={`${id}-end-date`} id={`${id}-end-date-label`}>{t('recurring.endDate')}</Label>
                 <DatePickerInput
+                  id={`${id}-end-date`}
+                  labelledBy={`${id}-end-date-label`}
                   value={endDate}
                   onChange={setEndDate}
                   placeholder={t('recurring.endDate')}
@@ -1570,8 +1865,9 @@ function TransactionForm({
           {isInstallment && (
             <div className="grid grid-cols-2 gap-4 pt-1">
               <div className="space-y-2">
-                <Label>{t('transactions.installmentFrequency')}</Label>
+                <Label htmlFor={`${id}-installment-frequency`}>{t('transactions.installmentFrequency')}</Label>
                 <select
+                  id={`${id}-installment-frequency`}
                   className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
                   value={installmentFrequency}
                   onChange={(e) => setInstallmentFrequency(e.target.value as RecurringTransaction['frequency'])}
@@ -1585,8 +1881,9 @@ function TransactionForm({
                 </select>
               </div>
               <div className="space-y-2">
-                <Label>{t('transactions.installmentCount')}</Label>
+                <Label htmlFor={`${id}-installment-count`}>{t('transactions.installmentCount')}</Label>
                 <input
+                  id={`${id}-installment-count`}
                   type="number"
                   min={2}
                   max={360}
@@ -1623,6 +1920,18 @@ function TransactionForm({
             >
               {isIgnored ? <Eye size={14} /> : <EyeClosed size={14} />}
               {isIgnored ? t('transactions.unignoreAction') : t('transactions.ignoreAction')}
+            </Button>
+          )}
+          {seed?.id && (
+            <Button
+              type="button"
+              variant={isFlagged ? 'secondary' : 'outline'}
+              onClick={handleToggleFlag}
+              disabled={loading || togglingFlag}
+              className="gap-1.5 whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
+            >
+              <Flag size={14} className={isFlagged ? 'fill-current text-amber-600 dark:text-amber-400' : undefined} />
+              {isFlagged ? t('transactions.unflagAction') : t('transactions.flagAction')}
             </Button>
           )}
           {transaction && onCreateRule && (
@@ -1693,6 +2002,21 @@ function TransactionForm({
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
+          ) : !isCreating && hasNext ? (
+            <>
+              <Button type="submit" variant="outline" disabled={loading || !splitsValid || !linesValid} className="whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9">
+                {loading ? t('common.loading') : t('common.save')}
+              </Button>
+              <Button
+                type="button"
+                onClick={() => triggerSubmit('saveAndNext')}
+                disabled={loading || !splitsValid || !linesValid}
+                className="gap-1.5 whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
+              >
+                {t('transactions.saveAndNext')}
+                <ArrowRight size={14} className="rtl-mirror" aria-hidden="true" />
+              </Button>
+            </>
           ) : (
             <Button type="submit" disabled={loading || !splitsValid || !linesValid} className="whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9">
               {loading ? t('common.loading') : t('common.save')}
@@ -1726,6 +2050,21 @@ function TransactionForm({
           initialData={extendRuleDialogProps.initialData}
         />
       )}
+      <PayeeFormDialog
+        open={payeeFormOpen}
+        onOpenChange={setPayeeFormOpen}
+        payee={payeeFormTarget}
+        onSaved={(saved) => {
+          // The row the list held when the save went through is what the save
+          // replaces. The form's own record can be an earlier save's copy,
+          // which the list never carried: using it as the baseline would make
+          // the row still waiting to refresh look like someone else's change,
+          // and the picker would go back to the record before the earlier save.
+          const replaced = payeesList?.find((p) => p.id === saved.id) ?? payeeFormTarget
+          setSavedPayee({ payee: saved, replaced })
+          setPayeeId(saved.id)
+        }}
+      />
     </form>
   )
 }
@@ -1738,6 +2077,7 @@ function MortgagePaymentEditor({
   accounts: { id: string; name: string; display_name?: string | null; type?: string; currency?: string; secured_asset_id?: string | null }[]
 }) {
   const { t } = useTranslation()
+  const id = useId()
   const queryClient = useQueryClient()
   const loans = useMemo(
     () => accounts.filter(account => account.type === 'loan' && account.secured_asset_id && account.currency === transaction.currency),
@@ -1820,11 +2160,11 @@ function MortgagePaymentEditor({
           <div key={loan.id} className="rounded-md bg-muted/40 p-3 space-y-2">
             <div className="text-sm font-medium">{loan.display_name || loan.name}{propertyName ? <span className="ms-1 text-xs font-normal text-muted-foreground">· {propertyName}</span> : null}</div>
             <div className="grid grid-cols-2 gap-3">
-              <label className="text-xs text-muted-foreground">{t('transactions.mortgagePrincipal')}
-              <Input type="number" min="0" step="0.01" value={value.principal} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }} onChange={e => setDraftAmounts(prev => ({ ...(prev ?? amounts), [loan.id]: { ...value, principal: e.target.value } }))} />
+              <label htmlFor={`${id}-${loan.id}-principal`} className="text-xs text-muted-foreground">{t('transactions.mortgagePrincipal')}
+              <Input id={`${id}-${loan.id}-principal`} type="number" min="0" step="0.01" value={value.principal} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }} onChange={e => setDraftAmounts(prev => ({ ...(prev ?? amounts), [loan.id]: { ...value, principal: e.target.value } }))} />
               </label>
-              <label className="text-xs text-muted-foreground">{t('transactions.mortgageInterest')}
-              <Input type="number" min="0" step="0.01" value={value.interest} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }} onChange={e => setDraftAmounts(prev => ({ ...(prev ?? amounts), [loan.id]: { ...value, interest: e.target.value } }))} />
+              <label htmlFor={`${id}-${loan.id}-interest`} className="text-xs text-muted-foreground">{t('transactions.mortgageInterest')}
+              <Input id={`${id}-${loan.id}-interest`} type="number" min="0" step="0.01" value={value.interest} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }} onChange={e => setDraftAmounts(prev => ({ ...(prev ?? amounts), [loan.id]: { ...value, interest: e.target.value } }))} />
               </label>
             </div>
             <p className="text-xs text-muted-foreground">{t('transactions.mortgageSplitPercentages', { principal: percentage(value.principal, paymentAmount), interest: percentage(value.interest, paymentAmount) })}</p>
@@ -1862,6 +2202,7 @@ function AddTransactionToRuleDialog({
   onSubmit: (rule: Rule) => void
 }) {
   const { t } = useTranslation()
+  const id = useId()
   const [ruleId, setRuleId] = useState('')
   const [openCombobox, setOpenCombobox] = useState(false)
 
@@ -1928,15 +2269,25 @@ function AddTransactionToRuleDialog({
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label>{t('transactions.existingRule')}</Label>
+            <Label
+              htmlFor={`${id}-existing-rule`}
+              id={`${id}-existing-rule-label`}
+            >
+              {t('transactions.existingRule')}
+            </Label>
             <Popover open={openCombobox} onOpenChange={setOpenCombobox}>
               <PopoverTrigger asChild>
                 <button
+                  id={`${id}-existing-rule`}
                   type="button"
+                  // The label names a <button>, which the label association does
+                  // not name: it is joined with the value here, like the other
+                  // pickers, so focus announces "Existing rule" and the rule.
+                  aria-labelledby={`${id}-existing-rule-label ${id}-existing-rule-value`}
                   disabled={loadingRules || rules.length === 0}
                   className="flex w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-3 py-2 text-sm text-start shadow-xs transition-[color,box-shadow] outline-hidden focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 dark:hover:bg-input/50 h-9 cursor-pointer"
                 >
-                  <span className="flex-1 truncate text-start">
+                  <span id={`${id}-existing-rule-value`} className="flex-1 truncate text-start">
                     {loadingRules ? (
                       t('common.loading')
                     ) : selectedRule ? (

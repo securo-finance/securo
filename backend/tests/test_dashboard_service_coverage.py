@@ -31,6 +31,8 @@ from app.services.dashboard_service import (
     get_summary,
 )
 
+from tests.conftest import sqlite_to_char
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -439,23 +441,16 @@ def test_signed_expr_helpers_smoke():
 
 
 async def _register_sqlite_to_char(session):
-    """Register a SQLite UDF emulating Postgres to_char(date, 'YYYY-MM').
+    """Register a SQLite UDF emulating Postgres to_char(date, fmt).
 
     get_monthly_trend uses func.to_char which only exists on Postgres in
     production. To exercise that code path under the SQLite test backend
-    we install a matching scalar function on the underlying connection.
+    we install the shared conftest emulation on the underlying connection.
     """
-    def _to_char(value, fmt):
-        if value is None:
-            return None
-        # value comes through as an ISO date/datetime string
-        s = str(value)
-        return s[:7]  # 'YYYY-MM'
-
     raw = await session.connection()
 
     def _install(dbapi_conn):
-        dbapi_conn.create_function("to_char", 2, _to_char)
+        dbapi_conn.create_function("to_char", 2, sqlite_to_char)
 
     await raw.run_sync(lambda conn: _install(conn.connection.dbapi_connection))
 

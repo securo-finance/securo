@@ -3,8 +3,9 @@ import { AccountIcon } from '@/components/account-icon'
 import { CategorySplitBadge, TransactionCategoryIcon } from '@/components/category-lines-display'
 import { isSplitByCategory } from '@/lib/category-lines'
 import type { Transaction, Account } from '@/types'
-import { AlertTriangle, ArrowLeftRight, CalendarClock, ChartNoAxesColumn, Clock, EyeClosed, Paperclip } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, CalendarClock, ChartNoAxesColumn, Clock, EyeClosed, Paperclip, Repeat } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
+import { TransactionFlagMarker } from '@/components/transaction-flag-marker'
 import { useTranslation } from 'react-i18next'
 import { formatCurrency, ltrAmount } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
@@ -32,6 +33,8 @@ interface MobileTransactionRowProps {
   userCurrency: string
   onSelect: (id: string, shiftKey: boolean) => void
   onClick: (tx: Transaction) => void
+  /** Turns the transaction into a bill; the phone list has no context menu. */
+  onMakeRecurring?: (tx: Transaction) => void
   /** Show the payee instead of the account name in an account-scoped view. */
   showPayee?: boolean
   /** Localize synthetic opening-balance descriptions only in account detail. */
@@ -57,6 +60,7 @@ export function MobileTransactionRow({
   userCurrency,
   onSelect,
   onClick,
+  onMakeRecurring,
   showPayee = false,
   localizeOpeningBalance = false,
   showUnread = false,
@@ -129,7 +133,7 @@ export function MobileTransactionRow({
               {tx.is_shared && tx.parent_owner_name ? tx.parent_owner_name : t('splitGroups.ownerRowBadge', { group: groupName ?? '' })}
             </span>
           )}
-          {showUnread && tx.is_read === false && (
+          {showUnread && tx.is_read === false && !tx.is_shared && (
             <span
               className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500"
               title={t('transactions.newBadge')}
@@ -156,6 +160,7 @@ export function MobileTransactionRow({
               aria-label={t('transactions.excludedFromReports')}
             />
           )}
+          <TransactionFlagMarker tx={tx} locale={dateLocale ?? locale} className="[&>svg]:h-3 [&>svg]:w-3" />
           {tx.recurring_transaction_id != null && !virtual && (
             <span className="text-[9px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1 py-0.5 rounded-full shrink-0">
               R
@@ -229,6 +234,22 @@ export function MobileTransactionRow({
           </div>
         )}
       </div>
+
+      {/* The phone list has no context menu, so the bill action sits on the
+          row itself. */}
+      {onMakeRecurring && (
+        <button
+          type="button"
+          aria-label={t('transactions.makeRecurring')}
+          onClick={(e) => {
+            e.stopPropagation()
+            onMakeRecurring(tx)
+          }}
+          className="shrink-0 rounded-md p-2 -me-1 text-muted-foreground hover:bg-muted hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+        >
+          <Repeat size={16} />
+        </button>
+      )}
     </div>
   )
 }

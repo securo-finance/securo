@@ -77,8 +77,9 @@ def counts_in_current_balance(as_of: date):
 def amount_in_account_currency(account_currency):
     """SQL expression: a row's amount in its account's currency.
 
-    A row in another currency only has a usable account-currency value once
-    ``amount_primary`` was stamped; an unconverted one contributes zero
+    A row in another currency counts with ``amount_account``, its value in the
+    account's currency (ADR 0027), never with ``amount_primary``, which follows
+    the owner's display currency. An unconverted one contributes zero
     instead of being read 1:1 (#353, #1263). Falling back to the native amount
     there is how a 700,000 CLP purchase became 700,000 BRL in the ledger.
 
@@ -95,7 +96,7 @@ def amount_in_account_currency(account_currency):
             func.upper(Transaction.currency) == func.upper(account_currency),
             Transaction.amount,
         ),
-        else_=func.coalesce(Transaction.amount_primary, 0),
+        else_=func.coalesce(Transaction.amount_account, 0),
     )
 
 
@@ -218,6 +219,23 @@ def line_amount_primary():
 def line_primary_or_amount():
     """The joined part in primary currency, falling back to its own amount."""
     return func.coalesce(line_amount_primary(), line_amount())
+
+
+def line_amount_account():
+    """The joined part's share of `amount_account` (NULL when the row has none).
+
+    Same arithmetic as `line_amount_primary`, for the account's currency.
+    """
+    return case(
+        (CATEGORY_LINE.id.is_(None), Transaction.amount_account),
+        else_=(Transaction.amount_account * CATEGORY_LINE.amount * literal_column("1.0"))
+        / func.nullif(func.abs(Transaction.amount), 0),
+    )
+
+
+def line_account_or_amount():
+    """The joined part in its account's currency, falling back to its own amount."""
+    return func.coalesce(line_amount_account(), line_amount())
 
 
 def any_line_in(category_ids):
@@ -705,12 +723,16 @@ async def viewer_shared_pnl(
     month_end: date,
     use_effective_date: bool = False,
     primary_currency: Optional[str] = None,
+    exclude_workspace_id: Optional[uuid.UUID] = None,
 ) -> tuple[float, float]:
     """Return (income, expense) totals contributed by transactions the
     viewer doesn't own but participates in via a group split.
 
     Concert tickets paid by a friend show up as the viewer's share in
     their own spending picture — without inflating account balances.
+
+    `exclude_workspace_id` leaves out transactions of that workspace, for
+    callers whose base total already counts them there.
 
     When `primary_currency` is given, mixed-currency shares are
     converted to that currency via the FX service. Otherwise, sums
@@ -719,10 +741,10 @@ async def viewer_shared_pnl(
     """
     from app.models.transaction_split import TransactionSplit
 
-    # Cross-workspace Splitwise projection: include only invitations
-    # (linked_user_id matches but is_self is False). Self-memberships
-    # represent the user in their own group and are already counted via
-    # the workspace-scoped Transaction filter at the caller.
+    # Cross-workspace group share projection: every membership of the
+    # viewer, their own self-member included (#1305). The rows they
+    # created are already counted by the workspace-scoped filter at the
+    # caller, so `user_id != user_id` keeps them out here.
     member_ids = invited_group_member_ids(user_id)
     date_col = reporting_date_col("accrual" if use_effective_date else "cash")
 
@@ -754,6 +776,11 @@ async def viewer_shared_pnl(
             date_col <= app_today(),
             Transaction.status == "posted",
             counts_as_pnl(Transaction.category_id),
+            *(
+                [Transaction.workspace_id != exclude_workspace_id]
+                if exclude_workspace_id is not None
+                else []
+            ),
         )
         .group_by(Transaction.currency)
     )
@@ -806,10 +833,10 @@ async def viewer_shared_spending_by_category(
     nominal sums (single-currency only)."""
     from app.models.transaction_split import TransactionSplit
 
-    # Cross-workspace Splitwise projection: include only invitations
-    # (linked_user_id matches but is_self is False). Self-memberships
-    # represent the user in their own group and are already counted via
-    # the workspace-scoped Transaction filter at the caller.
+    # Cross-workspace group share projection: every membership of the
+    # viewer, their own self-member included (#1305). The rows they
+    # created are already counted by the workspace-scoped filter at the
+    # caller, so `user_id != user_id` keeps them out here.
     member_ids = invited_group_member_ids(user_id)
     date_col = reporting_date_col("accrual" if use_effective_date else "cash")
 

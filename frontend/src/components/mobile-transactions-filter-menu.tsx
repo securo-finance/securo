@@ -7,7 +7,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Coins,
+  CreditCard,
   EyeClosed,
+  Flag,
   Inbox,
   ListChecks,
   Store,
@@ -26,17 +28,20 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { getAccountName } from '@/lib/account-utils'
 import { cn } from '@/lib/utils'
-import type { Account, Category, CategoryGroup, Group, Payee } from '@/types'
+import type { FlagFilter } from '@/lib/transaction-flag'
+import type { Account, AccountCard, Category, CategoryGroup, Group, Payee } from '@/types'
 
 export type MobileFilterView =
   | 'root'
   | 'account'
+  | 'card'
   | 'category'
   | 'payee'
   | 'group'
   | 'type'
   | 'status'
   | 'ignored'
+  | 'flagged'
   | 'unread'
   | 'date'
   | 'amount'
@@ -53,11 +58,13 @@ interface MobileTransactionsFilterMenuProps {
   setView: Dispatch<SetStateAction<MobileFilterView>>
   setMenuOpen: (open: boolean) => void
   accounts: Account[]
+  linkedCards: AccountCard[]
   categories: Category[]
   categoryGroups: CategoryGroup[]
   payees: Payee[]
   groups: Group[]
   accountIds: string[]
+  linkedCardIds: string[]
   categoryIds: string[]
   uncategorized: boolean
   payeeId: string
@@ -65,6 +72,8 @@ interface MobileTransactionsFilterMenuProps {
   type: string
   status: string
   hideIgnored: boolean
+  flagFilter: FlagFilter
+  flagOptions: { value: FlagFilter; label: string }[]
   onlyUnread: boolean
   /** Offer the review-queue option at all; the calendar view passes false. */
   showUnread?: boolean
@@ -80,6 +89,7 @@ interface MobileTransactionsFilterMenuProps {
   datePresets: MobileDatePreset[]
   hasAnyFilter: boolean
   onAccountIdsChange: (value: string[]) => void
+  onLinkedCardIdsChange: (value: string[]) => void
   onCategoryIdsChange: (value: string[]) => void
   onUncategorizedChange: (value: boolean) => void
   onPayeeChange: (value: string) => void
@@ -87,6 +97,7 @@ interface MobileTransactionsFilterMenuProps {
   onTypeChange: (value: string) => void
   onStatusChange: (value: string) => void
   onHideIgnoredChange: (value: boolean) => void
+  onFlagFilterChange: (value: FlagFilter) => void
   onOnlyUnreadChange: (value: boolean) => void
   onDateRangeChange: (from: string, to: string) => void
   onAmountRangeChange: (min: string, max: string) => void
@@ -276,6 +287,73 @@ function MobileAccountView({
   )
 }
 
+function linkedCardName(
+  card: AccountCard,
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  const ending = t('accounts.cardEnding', { number: card.masked_number })
+  return card.label ? `${card.label} · ${ending}` : ending
+}
+
+function MobileLinkedCardView({
+  cards,
+  accounts,
+  selectedIds,
+  onChange,
+}: {
+  cards: AccountCard[]
+  accounts: Account[]
+  selectedIds: string[]
+  onChange: (value: string[]) => void
+}) {
+  const { t } = useTranslation()
+  const accountById = new Map(accounts.map((account) => [account.id, account]))
+  const cardsByAccount = cards.reduce<Map<string, AccountCard[]>>((grouped, card) => {
+    grouped.set(card.account_id, [...(grouped.get(card.account_id) ?? []), card])
+    return grouped
+  }, new Map())
+  if (cards.length === 0) return <MobileEmptyOptions />
+  return (
+    <>
+      {[...cardsByAccount].map(([accountId, accountCards]) => (
+        <div key={accountId}>
+          <DropdownMenuLabel className="px-2 pb-1 pt-2 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
+            {getAccountName(accountById.get(accountId) ?? { name: '', display_name: null })}
+          </DropdownMenuLabel>
+          {accountCards.map((card) => (
+            <DropdownMenuCheckboxItem
+              key={card.id}
+              checked={selectedIds.includes(card.id)}
+              onSelect={(event) => {
+                event.preventDefault()
+                onChange(toggleSelection(selectedIds, card.id))
+              }}
+              className="gap-2 py-2 text-[13px]"
+            >
+              <CreditCard size={14} className="text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate text-left">
+                {linkedCardName(card, t)}
+              </span>
+            </DropdownMenuCheckboxItem>
+          ))}
+        </div>
+      ))}
+      {selectedIds.length > 0 && (
+        <DropdownMenuItem
+          onSelect={(event) => {
+            event.preventDefault()
+            onChange([])
+          }}
+          className="mt-1 gap-2 border-t border-border/60 text-xs text-muted-foreground"
+        >
+          <X size={12} />
+          {t('transactions.filtersBar.clearSelection')}
+        </DropdownMenuItem>
+      )}
+    </>
+  )
+}
+
 function MobileEmptyOptions() {
   const { t } = useTranslation()
   return (
@@ -440,16 +518,19 @@ function MobileAmountView({
 function buildRootOptions(
   labels: Record<Exclude<MobileFilterView, 'root'>, string>,
   summaries: MobileTransactionsFilterMenuProps['summaries'],
+  hasLinkedCards: boolean,
   showUnread: boolean,
 ): RootOption[] {
   const options: RootOption[] = [
     { view: 'account', icon: Wallet, label: labels.account, summary: summaries.account },
+    ...(hasLinkedCards ? [{ view: 'card' as const, icon: CreditCard, label: labels.card, summary: summaries.card }] : []),
     { view: 'category', icon: Tag, label: labels.category, summary: summaries.category },
     { view: 'payee', icon: Store, label: labels.payee, summary: summaries.payee },
     { view: 'group', icon: Users, label: labels.group, summary: summaries.group },
     { view: 'type', icon: ArrowUpDown, label: labels.type, summary: summaries.type },
     { view: 'status', icon: ListChecks, label: labels.status, summary: summaries.status },
     { view: 'ignored', icon: EyeClosed, label: labels.ignored, summary: summaries.ignored },
+    { view: 'flagged', icon: Flag, label: labels.flagged, summary: summaries.flagged },
     { view: 'date', icon: CalendarIcon, label: labels.date, summary: summaries.date },
     { view: 'amount', icon: Coins, label: labels.amount, summary: summaries.amount },
   ]
@@ -469,12 +550,14 @@ function buildLabels(
 ): Record<Exclude<MobileFilterView, 'root'>, string> {
   return {
     account: t('transactions.account'),
+    card: t('transactions.card'),
     category: t('transactions.category'),
     payee: t('payees.payee'),
     group: t('splitGroups.group'),
     type: t('transactions.type'),
     status: t('transactions.status'),
     ignored: t('transactions.ignoredRows'),
+    flagged: t('transactions.flagged'),
     unread: t('transactions.unreadRows'),
     date: t('transactions.filtersBar.date'),
     amount: t('transactions.filtersBar.amount'),
@@ -492,6 +575,9 @@ function MobileFilterDetail({
   const allOption = { value: '', label: t('transactions.all') }
   if (menu.view === 'account') {
     return <MobileAccountView accounts={menu.accounts} selectedIds={menu.accountIds} onChange={menu.onAccountIdsChange} />
+  }
+  if (menu.view === 'card') {
+    return <MobileLinkedCardView cards={menu.linkedCards} accounts={menu.accounts} selectedIds={menu.linkedCardIds} onChange={menu.onLinkedCardIdsChange} />
   }
   if (menu.view === 'category') {
     return <CategoryFilterContent categoryIds={menu.categoryIds} onCategoryIdsChange={menu.onCategoryIdsChange} filterUncategorized={menu.uncategorized} onUncategorizedChange={menu.onUncategorizedChange} categories={menu.categories} groups={menu.categoryGroups} onKeepOpen={() => undefined} />
@@ -517,6 +603,9 @@ function MobileFilterDetail({
     ]
     return <MobileSelectionView options={options} selectedValue={menu.hideIgnored ? 'hide' : 'show'} onChange={(value) => menu.onHideIgnoredChange(value === 'hide')} />
   }
+  if (menu.view === 'flagged') {
+    return <MobileSelectionView options={menu.flagOptions} selectedValue={menu.flagFilter} onChange={(value) => menu.onFlagFilterChange(value as FlagFilter)} />
+  }
   if (menu.view === 'unread') {
     const options = [
       { value: 'all', label: t('transactions.all') },
@@ -530,7 +619,7 @@ function MobileFilterDetail({
   if (menu.view === 'amount') {
     return <MobileAmountView minAmount={menu.minAmount} maxAmount={menu.maxAmount} setMinAmount={menu.setMinAmount} setMaxAmount={menu.setMaxAmount} onReset={() => resetAmount(menu)} onApply={menu.onApplyAmountRange} />
   }
-  return <MobileFilterRoot options={buildRootOptions(labels, menu.summaries, menu.showUnread !== false)} hasAnyFilter={menu.hasAnyFilter} onSelect={(view) => openDetail(menu, view)} onClear={() => clearAll(menu)} />
+  return <MobileFilterRoot options={buildRootOptions(labels, menu.summaries, menu.linkedCards.length > 0, menu.showUnread !== false)} hasAnyFilter={menu.hasAnyFilter} onSelect={(view) => openDetail(menu, view)} onClear={() => clearAll(menu)} />
 }
 
 function openDetail(

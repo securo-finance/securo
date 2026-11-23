@@ -1,10 +1,11 @@
-import { fireEvent, screen, within } from '@testing-library/react'
+import { useQuery } from '@tanstack/react-query'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { TransactionDialog } from '@/components/transaction-dialog'
-import { assets, currencies, groups, mortgagePayments, payees, transactions } from '@/lib/api'
+import { assets, categories, categoryGroups, currencies, groups, mortgagePayments, payees, rules, transactions } from '@/lib/api'
 import { renderWithProviders, t } from '@/test/utils'
-import type { Account, RecurringTransaction, Transaction } from '@/types'
+import type { Account, RecurringTransaction, Rule, Transaction } from '@/types'
 
 vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => ({ user: { preferences: { currency_display: 'USD' } } }),
@@ -12,6 +13,18 @@ vi.mock('@/contexts/auth-context', () => ({
 vi.mock('@/hooks/use-display-locale', () => ({
   useDateLocale: () => 'en-US',
   useDisplayLocale: () => 'en-US',
+}))
+
+// Stands in for the attachment list: one button opens a preview, as a real file would.
+vi.mock('@/components/transaction-attachments', () => ({
+  TransactionAttachments: ({ onPreviewChange }: { onPreviewChange: (p: unknown) => void }) => (
+    <button
+      type="button"
+      onClick={() => onPreviewChange({ attachmentId: 'att-1', url: 'blob:receipt', contentType: 'image/png', filename: 'receipt-a.png' })}
+    >
+      Preview receipt
+    </button>
+  ),
 }))
 
 vi.mock('@/components/ui/date-picker-input', () => ({
@@ -433,6 +446,40 @@ it('does not submit the transaction when Enter is pressed in a mortgage split fi
   expect(onSave).not.toHaveBeenCalled()
 })
 
+it('reopens a transaction split among people with its members still selected', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  const member = (id: string, name: string, is_self = false) => ({ id, name, is_self })
+  const other = { id: 'g-other', name: 'Other', members: [member('a1', 'Me', true), member('a2', 'Ana')] }
+  const trip = { id: 'g-trip', name: 'Trip', members: [member('b1', 'Me', true), member('b2', 'Bob'), member('b3', 'Carol')] }
+  vi.spyOn(groups, 'list').mockResolvedValue([other, trip] as never)
+  vi.spyOn(groups, 'get').mockImplementation(async (id: string) => (id === trip.id ? trip : other) as never)
+  const split = (id: string, memberId: string) => ({
+    id, transaction_id: 'tx-dinner', group_member_id: memberId, share_type: 'equal', share_amount: 10, share_pct: null,
+  })
+  renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture('unused', {
+        id: 'tx-dinner', amount: 30, transfer_pair_id: null,
+        splits: [split('s1', 'b1'), split('s2', 'b2'), split('s3', 'b3')] as never,
+      })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+    />,
+  )
+
+  expect(screen.getByRole('checkbox', { name: t('splitGroups.splitTransaction') })).toBeChecked()
+  expect(await screen.findByRole('checkbox', { name: 'Bob' })).toBeChecked()
+  expect(screen.getByRole('checkbox', { name: 'Carol' })).toBeChecked()
+  expect(screen.getByDisplayValue('Trip')).toBeInTheDocument()
+})
+
 function splitFixture(): Transaction {
   const food = { id: 'cat-food', name: 'Food', icon: 'utensils', color: '#f59e0b' }
   const home = { id: 'cat-home', name: 'Home', icon: 'house', color: '#3b82f6' }
@@ -666,4 +713,276 @@ describe('TransactionDialog reporting date override', () => {
       screen.queryByLabelText(t('transactions.reportingDatePlaceholder')),
     ).not.toBeInTheDocument()
   })
+})
+
+describe('TransactionDialog save and next', () => {
+  function renderEdit(hasNext: boolean, loading = false) {
+    vi.spyOn(currencies, 'list').mockResolvedValue([])
+    vi.spyOn(payees, 'list').mockResolvedValue([])
+    vi.spyOn(groups, 'list').mockResolvedValue([])
+    const onSave = vi.fn()
+    const utils = renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={syncedTransaction()}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={onSave}
+        loading={loading}
+        error={null}
+        isSynced
+        hasNext={hasNext}
+      />,
+    )
+    return { ...utils, onSave }
+  }
+
+  it('saves with the saveAndNext action when the host has a next row', async () => {
+    const { onSave, user } = renderEdit(true)
+
+    await user.click(screen.getByRole('button', { name: t('transactions.saveAndNext') }))
+
+    expect(onSave).toHaveBeenCalledOnce()
+    expect(onSave.mock.calls[0][4]).toBe('saveAndNext')
+  })
+
+  it('keeps a plain save next to it', async () => {
+    const { onSave, user } = renderEdit(true)
+
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave.mock.calls[0][4]).toBe('save')
+  })
+
+  it('drops the previous transaction preview when the next one loads', async () => {
+    const { user, rerender } = renderEdit(true)
+
+    await user.click(screen.getByRole('button', { name: 'Preview receipt' }))
+    expect(screen.getAllByText('receipt-a.png').length).toBeGreaterThan(0)
+
+    rerender(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={syncedTransaction({ id: 'tx-next' })}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={vi.fn()}
+        loading={false}
+        error={null}
+        isSynced
+        hasNext={false}
+      />,
+    )
+
+    expect(screen.queryByText('receipt-a.png')).not.toBeInTheDocument()
+  })
+
+  it('ignores Enter while the host is still busy', async () => {
+    const { onSave, user } = renderEdit(true, true)
+
+    await user.type(screen.getByLabelText(t('transactions.description')), '{Enter}')
+
+    expect(onSave).not.toHaveBeenCalled()
+  })
+
+  it('offers no save and next without a next row', () => {
+    renderEdit(false)
+
+    expect(screen.queryByRole('button', { name: t('transactions.saveAndNext') })).not.toBeInTheDocument()
+  })
+})
+
+/** Shows the flag state a mounted list query holds, as a page would. */
+function FlagConsumer({ queryKey, read }: { queryKey: string[]; read: () => Promise<Transaction> }) {
+  const { data } = useQuery({ queryKey, queryFn: read })
+  if (!data) return null
+  return <p>{`${queryKey[0]}: ${data.is_flagged ? 'flagged' : 'not flagged'}`}</p>
+}
+
+describe('TransactionDialog flag (#56)', () => {
+  it('refreshes the mounted transaction lists itself when no onIgnoreChanged is passed', async () => {
+    const tx = syncedTransaction({ is_flagged: false })
+    let stored = tx
+    const read = async () => stored
+    vi.spyOn(transactions, 'update').mockImplementation(async (_id, body) => {
+      stored = { ...stored, is_flagged: body.is_flagged ?? stored.is_flagged }
+      return stored
+    })
+    vi.spyOn(currencies, 'list').mockResolvedValue([])
+    vi.spyOn(payees, 'list').mockResolvedValue([])
+    vi.spyOn(groups, 'list').mockResolvedValue([])
+    const { user } = renderWithProviders(
+      <>
+        <FlagConsumer queryKey={['transactions', 'list']} read={read} />
+        <FlagConsumer queryKey={['drill-down', 'expenses']} read={read} />
+        <TransactionDialog
+          open
+          onClose={vi.fn()}
+          transaction={tx}
+          categories={[]}
+          categoryGroups={[]}
+          accounts={accountFixtures}
+          onSave={vi.fn()}
+          loading={false}
+          error={null}
+          isSynced
+        />
+      </>,
+    )
+    expect(await screen.findByText('transactions: not flagged')).toBeInTheDocument()
+    expect(await screen.findByText('drill-down: not flagged')).toBeInTheDocument()
+
+    const button = screen.getByRole('button', { name: t('transactions.flagAction') })
+    expect(button).not.toHaveAttribute('aria-pressed')
+    await user.click(button)
+
+    expect(transactions.update).toHaveBeenCalledWith(tx.id, { is_flagged: true })
+    expect(await screen.findByText('transactions: flagged')).toBeInTheDocument()
+    expect(await screen.findByText('drill-down: flagged')).toBeInTheDocument()
+    expect(
+      await screen.findByRole('button', { name: t('transactions.unflagAction') }),
+    ).toBeInTheDocument()
+  })
+
+  it('sets a reminder date and note on the flag, each saved on its own', async () => {
+    vi.setSystemTime(new Date('2026-10-20T12:00:00'))
+    const tx = syncedTransaction({ is_flagged: true })
+    let stored = tx
+    vi.spyOn(transactions, 'update').mockImplementation(async (_id, body) => {
+      stored = { ...stored, ...body } as Transaction
+      return stored
+    })
+    vi.spyOn(currencies, 'list').mockResolvedValue([])
+    vi.spyOn(payees, 'list').mockResolvedValue([])
+    vi.spyOn(groups, 'list').mockResolvedValue([])
+    const { user } = renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={tx}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={vi.fn()}
+        loading={false}
+        error={null}
+        isSynced
+      />,
+    )
+
+    expect(await screen.findByTestId('flag-reminder')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: t('transactions.flagPreset.nextWeek') }))
+    expect(transactions.update).toHaveBeenCalledWith(tx.id, { flag_due_date: '2026-10-27' })
+
+    const note = screen.getByLabelText(t('transactions.flagNote'))
+    await user.type(note, 'ask for the refund{Enter}')
+    expect(transactions.update).toHaveBeenLastCalledWith(tx.id, { flag_note: 'ask for the refund' })
+    vi.useRealTimers()
+  })
+
+  it('hides the reminder once the flag is removed', async () => {
+    const tx = syncedTransaction({ is_flagged: true, flag_due_date: '2026-10-27', flag_note: 'call the shop' })
+    vi.spyOn(transactions, 'update').mockResolvedValue({
+      ...tx, is_flagged: false, flag_due_date: null, flag_note: null,
+    })
+    vi.spyOn(currencies, 'list').mockResolvedValue([])
+    vi.spyOn(payees, 'list').mockResolvedValue([])
+    vi.spyOn(groups, 'list').mockResolvedValue([])
+    const { user } = renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={tx}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={vi.fn()}
+        loading={false}
+        error={null}
+        isSynced
+      />,
+    )
+
+    expect(await screen.findByDisplayValue('call the shop')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: t('transactions.unflagAction') }))
+
+    await waitFor(() => expect(screen.queryByTestId('flag-reminder')).not.toBeInTheDocument())
+  })
+})
+
+it('shows the bank’s own category when the provider sent one', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture(null, {
+        source: 'sync',
+        provider_category: 'Groceries',
+      })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+      isSynced
+    />,
+  )
+
+  expect(
+    await screen.findByText(`${t('transactions.providerCategory')}: Groceries`),
+  ).toBeInTheDocument()
+})
+
+it('names the existing-rule picker after the field and the chosen rule', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  const groceriesRule: Rule = {
+    id: 'rule-groceries',
+    user_id: 'synthetic-user',
+    name: 'Groceries rule',
+    conditions_op: 'and',
+    conditions: [{ field: 'description', op: 'contains', value: 'market' }],
+    actions: [{ op: 'set_category', value: 'cat-food' }],
+    priority: 0,
+    is_active: true,
+  }
+  vi.spyOn(rules, 'list').mockResolvedValue([groceriesRule])
+  vi.spyOn(categories, 'listIncludingHidden').mockResolvedValue([])
+  vi.spyOn(categoryGroups, 'listIncludingHidden').mockResolvedValue([])
+
+  const { user } = renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture(null, {
+        id: 'tx-rule-source',
+        description: 'Market run',
+      })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      onCreateRule={vi.fn()}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+    />,
+  )
+
+  await user.click(await screen.findByRole('button', { name: t('transactions.ruleActions') }))
+  await user.click(await screen.findByRole('menuitem', { name: t('transactions.addToExistingRule') }))
+
+  // A <label for> naming a <button> does not name it, so the button carries the
+  // label and the selected rule: losing either leaves the field unannounced.
+  expect(await screen.findByRole('button', {
+    name: `${t('transactions.existingRule')} ${groceriesRule.name}`,
+  })).toBeInTheDocument()
 })

@@ -22,11 +22,16 @@
 The following shared-file requirement applies to **local storage**. With
 `config.storageProvider: s3`, attachments and invoice logos use object storage;
 you can disable `persistence.attachments.enabled` after migrating existing files.
-AI knowledge documents and embedding caches still need their configured volumes.
+AI knowledge documents, embedding caches and managed backups still need their configured volumes.
 
-Since the Backend, Celery Worker, and MCP Server all share the same files (like uploaded attachments and AI knowledge bases), they all mount the same Persistent Volume Claims concurrently.
+Since the Backend, Celery Worker, Celery Beat, and MCP Server share persistent files (like uploaded attachments, managed backups, and AI knowledge bases), they mount the same Persistent Volume Claims concurrently.
 **If your cluster spans multiple nodes, you MUST use a StorageClass that supports `ReadWriteMany` (RWX) access mode (e.g., NFS, CephFS, or Longhorn RWX).**
 If your storage only supports `ReadWriteOnce` (RWO), you must restrict all Securo pods to run on a single node (using `nodeSelector` or `podAffinity`) but that is an antipattern in Kubernetes.
+
+Managed backup persistence is opt-in. Enable it with
+`--set persistence.backups.enabled=true`; without that value, managed ZIPs use
+pod-local storage and scheduled backups are disabled because the API and worker
+do not share a filesystem. Direct backup downloads remain available.
 
 ## Quickstart
 
@@ -91,9 +96,31 @@ identity. For AWS S3, omit the endpoint and use addressing style `auto`.
 is set (development only; traffic is unencrypted).
 
 Create a private bucket before deployment and migrate existing attachments
-before disabling their PVC. Consult the repository README's Attachment Storage
-section for permissions, migration, and integration testing. S3 mode does not
-move AI knowledge files to object storage.
+before disabling their PVC. The permissions and migration steps are in the
+[deployment guide](https://docs.usesecuro.com/docs/deployment/docker/#storing-attachments-in-s3).
+S3 mode does not move AI knowledge files to object storage.
+
+### Client IP behind the Ingress
+
+Login, second factor and registration are rate limited per client IP, read
+from `X-Forwarded-For` as far as `config.trustedProxyHops` proxies. The default,
+`"1"`, fits the Ingress and the HTTPRoute, which send `/api` straight to the
+backend. When a load balancer in front of the controller also appends to
+`X-Forwarded-For`, set `"2"`; set it too low and every visitor shares the
+address of the nearest proxy, and with it one rate-limit bucket.
+
+A hop is only crossed while the address in hand is in `TRUSTED_PROXY_NETWORKS`
+(loopback and the private ranges by default). If that load balancer reaches
+the controller from a public address, `"2"` alone still stops at the load
+balancer and every visitor keeps sharing its bucket: add its address range to
+`TRUSTED_PROXY_NETWORKS` through `backend.extraEnv` as well.
+
+Trusting a hop also means the backend reads `X-Forwarded-For` from any peer in
+those private ranges, which includes any pod in the cluster that reaches the
+backend Service directly. The chart renders no NetworkPolicy, so on a cluster
+that runs workloads you do not trust, restrict ingress to the backend pods to
+the Ingress controller or gateway (and the frontend pods); otherwise such a pod
+can pick a new rate-limit bucket on every request.
 
 ### Extra environment variables, volumes and volume mounts
 

@@ -34,6 +34,7 @@ const api = vi.hoisted(() => ({
   admin: { accountingMode: vi.fn() },
   groups: { get: vi.fn(), list: vi.fn() },
   rules: { create: vi.fn() },
+  fiscal: { taxIdKinds: vi.fn(), jurisdictions: vi.fn(), productFields: vi.fn() },
   reconciliation: { suggestions: vi.fn() },
   currencies: { list: vi.fn() },
   settings: { attachments: vi.fn() },
@@ -49,6 +50,7 @@ vi.mock('@/lib/api', () => ({
   admin: api.admin,
   groups: api.groups,
   rules: api.rules,
+  fiscal: api.fiscal,
   reconciliation: api.reconciliation,
   currencies: api.currencies,
   settings: api.settings,
@@ -141,6 +143,7 @@ beforeEach(() => {
   api.admin.accountingMode.mockResolvedValue(false)
   api.groups.list.mockResolvedValue([])
   api.reconciliation.suggestions.mockResolvedValue([])
+  api.fiscal.taxIdKinds.mockResolvedValue([])
   api.currencies.list.mockResolvedValue([])
   api.settings.attachments.mockResolvedValue(false)
   api.transactions.markRead.mockResolvedValue(row({ is_read: true }))
@@ -165,6 +168,19 @@ describe('review state of a transaction row', () => {
 
     expect(badgeOf(fresh)).toBeTruthy()
     expect(badgeOf(seen)).toBeUndefined()
+  })
+
+  it('does not badge a row shared from another workspace as new', async () => {
+    // Opening a shared row never clears its marker (it belongs to another
+    // workspace), so a badge here could never go away.
+    listOnce([
+      row({ id: 'tx-shared', description: 'PAID FOR THE GROUP', is_shared: true }),
+    ])
+
+    renderWithProviders(<TransactionsPage />, { route: '/transactions', path: '/transactions' })
+
+    await screen.findByText('PAID FOR THE GROUP')
+    expect(screen.queryByTitle(NEW_TOOLTIP)).toBeNull()
   })
 
   it('opening an unread row clears its marker', async () => {

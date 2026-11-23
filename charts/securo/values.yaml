@@ -76,6 +76,14 @@ config:
   fxSyncMode: "on_demand"
   tesouroDiretoEnabled: "true"
 
+  # Proxies in front of the backend whose X-Forwarded-For is trusted when
+  # resolving the client IP for rate limits and bank PSU headers (ADR 0024).
+  # The Ingress and the HTTPRoute send /api straight to the backend, so the
+  # controller or gateway is the one proxy. Add one for each layer in front of
+  # it that appends to X-Forwarded-For, such as a cloud load balancer. At 0
+  # every visitor shares the controller's login and register limits.
+  trustedProxyHops: "1"
+
   # Data plugins (categories and rules) from the plugin catalog. Opt-in; the
   # catalog is fetched only when someone opens it.
   pluginsEnabled: "false"
@@ -251,6 +259,12 @@ persistence:
     # be deleted by hand. A claim you created outside the release needs no
     # handoff.
     existingClaim: ""
+    size: 5Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+  backups:
+    # Opt in when managed/scheduled backups should survive pod replacement.
+    enabled: false
     size: 5Gi
     storageClass: ""
     accessMode: ReadWriteOnce
