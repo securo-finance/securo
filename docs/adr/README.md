@@ -45,6 +45,7 @@ Each file here records one decision about how Securo is built: what we chose, wh
 | [0029](0029-plugin-report-total-chart-points.md) | A plugin report view is bounded in its total chart points |
 | [0030](0030-plugin-report-period-window.md) | A plugin report reads at most 731 days, and the tab trims its window to that |
 | [0031](0031-typed-primary-amount.md) | A converted amount the user typed is kept apart from the display-currency cache |
+| [0032](0032-viewer-display-currency.md) | Members of a shared workspace read stamps in their own display currency |
 | [0034](0034-plugin-dashboard-widgets.md) | Plugins add dashboard widgets: a report sized for a card, over the month on screen |
 | [0035](0035-plugin-file-fields-and-routines.md) | Plugin integrations take files in their form and run routines on schedules of their own |
 | [0036](0036-xml-attachments.md) | XML files can be attached, and anything that isn't an image or a PDF is served as a download |

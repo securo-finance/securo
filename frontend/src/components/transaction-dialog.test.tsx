@@ -1024,3 +1024,59 @@ it('names the existing-rule picker after the field and the chosen rule', async (
     name: `${t('transactions.existingRule')} ${groceriesRule.name}`,
   })).toBeInTheDocument()
 })
+
+describe('TransactionDialog conversion of an existing row (#440)', () => {
+  // Another member's row comes converted to this viewer's currency; the
+  // dialog must not send that figure back unless the user changed it.
+  function renderForeignRow() {
+    vi.spyOn(currencies, 'list').mockResolvedValue([])
+    vi.spyOn(payees, 'list').mockResolvedValue([])
+    vi.spyOn(groups, 'list').mockResolvedValue([])
+    const onSave = vi.fn()
+    const rendered = renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={transferLegFixture(null, {
+          id: 'tx-440',
+          description: 'Groceries',
+          amount: 300,
+          currency: 'BRL',
+          source: 'manual',
+          amount_primary: 62.4,
+          fx_rate_used: 0.208,
+        })}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={onSave}
+        loading={false}
+        error={null}
+      />,
+    )
+    return { ...rendered, onSave }
+  }
+
+  it('leaves an untouched conversion out of the save', async () => {
+    const { user, onSave } = renderForeignRow()
+
+    await user.type(screen.getByLabelText(t('transactions.description')), ' renamed')
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    const payload = onSave.mock.calls[0][0]
+    expect(payload).toMatchObject({ description: 'Groceries renamed' })
+    expect(payload).not.toHaveProperty('amount_primary')
+    expect(payload).not.toHaveProperty('fx_rate_used')
+  })
+
+  it('sends a conversion the user typed', async () => {
+    const { user, onSave } = renderForeignRow()
+
+    const converted = screen.getByLabelText(t('transactions.convertedAmount', { currency: 'USD' }))
+    await user.clear(converted)
+    await user.type(converted, '66')
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave.mock.calls[0][0]).toMatchObject({ amount_primary: 66 })
+  })
+})

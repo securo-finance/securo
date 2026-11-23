@@ -42,7 +42,9 @@ def _bound_money_field(
     field = info.field_name or "amount"
     if field == "fx_rate_used":
         return bounded_fx_rate(value, field, allow_zero=True)
-    return bounded_money(value, field, allow_zero=field == "amount_primary")
+    return bounded_money(
+        value, field, allow_zero=field in ("amount_primary", "amount_primary_shown")
+    )
 
 
 class TransactionBase(BaseModel):
@@ -163,6 +165,11 @@ class TransactionUpdate(BaseModel):
     notes: Optional[str] = None
     amount_primary: Optional[Decimal] = None
     fx_rate_used: Optional[Decimal] = None
+    # The converted amount the client was shown when it loaded the row (the
+    # `amount_primary` it read). A conversion sent back equal to it is an
+    # echo and keeps the owner's stamp, even after a rate sync moved the
+    # conversion the server would show now (#440). Never stored.
+    amount_primary_shown: Optional[Decimal] = None
     is_ignored: Optional[bool] = None
     exclude_from_pnl: Optional[bool] = None
     # Not Optional: the column is NOT NULL, so an explicit null is a 422, not a
@@ -207,7 +214,7 @@ class TransactionUpdate(BaseModel):
     def normalize_currency(cls, value: Optional[str]) -> Optional[str]:
         return normalize_currency_code(value)
 
-    @field_validator("amount", "amount_primary", "fx_rate_used")
+    @field_validator("amount", "amount_primary", "fx_rate_used", "amount_primary_shown")
     @classmethod
     def check_amount_bounds(
         cls, value: Optional[Decimal], info: ValidationInfo
