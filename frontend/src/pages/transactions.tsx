@@ -1736,6 +1736,12 @@ export default function TransactionsPage() {
                     dateLocale={dateLocale}
                     userCurrency={userCurrency}
                     onSelect={toggleSelect}
+                    onMakeRecurring={
+                      canWrite && !tx.is_shared && !tx.virtual
+                        && !tx.transfer_pair_id && !tx.recurring_transaction_id
+                        ? setRecurringSource
+                        : undefined
+                    }
                     onClick={(t) => {
                       if (t.is_shared) {
                         if (t.group_id) navigate(`/groups/${t.group_id}`)

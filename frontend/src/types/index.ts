@@ -329,6 +329,9 @@ export interface Transaction {
   external_id: string | null
   description: string
   original_description: string | null
+  /** The category the bank/provider sent for this row, in its own words
+   *  (not translated by the app). Read-only; null when it has none. */
+  provider_category?: string | null
   amount: number
   currency: string
   date: string
@@ -1342,7 +1345,11 @@ export interface Budget {
   id: string
   user_id: string
   category_id: string
+  /** In `currency`, the currency it was typed in. */
   amount: number
+  currency?: string | null
+  /** The same limit in the viewer's display currency. */
+  amount_primary?: number | string | null
   month: string
   is_recurring: boolean
 }
@@ -1444,6 +1451,11 @@ export interface AssetOrderImport {
   external_id: string | null
   old_units?: number | null
   new_units?: number | null
+  /** Preview only: what the price and the fee become in the holding's currency
+   *  when the file paid in another one. Never read back by the import. */
+  converted_price?: number | null
+  converted_fee?: number | null
+  converted_currency?: string | null
 }
 
 export interface AssetImportRowError {

@@ -100,15 +100,38 @@ before disabling their PVC. The permissions and migration steps are in the
 [deployment guide](https://docs.usesecuro.com/docs/deployment/docker/#storing-attachments-in-s3).
 S3 mode does not move AI knowledge files to object storage.
 
+### Client IP behind the Ingress
+
+Login, second factor and registration are rate limited per client IP, read
+from `X-Forwarded-For` as far as `config.trustedProxyHops` proxies. The default,
+`"1"`, fits the Ingress and the HTTPRoute, which send `/api` straight to the
+backend. When a load balancer in front of the controller also appends to
+`X-Forwarded-For`, set `"2"`; set it too low and every visitor shares the
+address of the nearest proxy, and with it one rate-limit bucket.
+
+A hop is only crossed while the address in hand is in `TRUSTED_PROXY_NETWORKS`
+(loopback and the private ranges by default). If that load balancer reaches
+the controller from a public address, `"2"` alone still stops at the load
+balancer and every visitor keeps sharing its bucket: add its address range to
+`TRUSTED_PROXY_NETWORKS` through `backend.extraEnv` as well.
+
+Trusting a hop also means the backend reads `X-Forwarded-For` from any peer in
+those private ranges, which includes any pod in the cluster that reaches the
+backend Service directly. The chart renders no NetworkPolicy, so on a cluster
+that runs workloads you do not trust, restrict ingress to the backend pods to
+the Ingress controller or gateway (and the frontend pods); otherwise such a pod
+can pick a new rate-limit bucket on every request.
+
 ### Extra environment variables, volumes and volume mounts
 
-`backend`, `celeryWorker`, `celeryBeat` and `migration` each accept `extraEnv`,
-`extraEnvFrom`, `extraVolumes` and `extraVolumeMounts`, empty by default. The
-entries keep the Kubernetes shapes (`EnvVar`, `EnvFromSource`, `Volume`,
-`VolumeMount`) and are rendered untouched, so `valueFrom` and every volume type
-work. `extraEnv` is read after the ConfigMap and the Secret and therefore wins
-over both, as `env` does over `envFrom` in Kubernetes. `migration` configures
-the post-install/post-upgrade Job, which reaches the database before the pods do.
+`backend`, `celeryWorker`, `celeryBeat`, `migration` and `mcpServer` each
+accept `extraEnv`, `extraEnvFrom`, `extraVolumes` and `extraVolumeMounts`,
+empty by default. The entries keep the Kubernetes shapes (`EnvVar`,
+`EnvFromSource`, `Volume`, `VolumeMount`) and are rendered untouched, so
+`valueFrom` and every volume type work. `extraEnv` is read after the ConfigMap
+and the Secret and therefore wins over both, as `env` does over `envFrom` in
+Kubernetes. `migration` configures the post-install/post-upgrade Job, which
+reaches the database before the pods do.
 
 This is what an external PostgreSQL with TLS client-certificate authentication
 needs, for example:
@@ -134,8 +157,12 @@ backend:
       readOnly: true
 ```
 
-Repeat the block under `celeryWorker`, `celeryBeat` and `migration` if those
-pods connect to the same database.
+Repeat the block under `celeryWorker`, `celeryBeat`, `migration` and `mcpServer`
+if those pods connect to the same database. The MCP server belongs on that list
+even though it is off by default: when `mcpServer.enabled` and
+`config.agentsEnabled` are on, it opens its own database sessions for the agents'
+tools, so without the variables and the mounted certificate those tools fail to
+reach the database.
 
 To mount a PersistentVolumeClaim you already have instead of letting the chart
 create one, set `persistence.attachments.existingClaim`. Keep

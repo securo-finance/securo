@@ -282,6 +282,11 @@ class TransactionRead(TransactionBase):
     status: str = "posted"
     payee: Optional[str] = None
     original_description: Optional[str] = None
+    # The category the bank/provider reported for this row, in its own words
+    # (often an English label such as "Groceries"). Read-only: rules match
+    # against it, and showing it is how the rule editor can be filled with the
+    # exact value instead of a guessed translation (#280).
+    provider_category: Optional[str] = None
     payee_id: Optional[uuid.UUID] = None
     payee_name: Optional[str] = None
     notes: Optional[str] = None

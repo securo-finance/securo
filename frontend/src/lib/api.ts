@@ -355,17 +355,20 @@ export const auth = {
     }, readOnly)
     return data
   },
-  oidcConfig: async (): Promise<{
-    enabled: boolean
-    provider_name: string
-    local_auth_enabled: boolean
-    /** Where to send the browser so the provider session ends too (#1623). */
-    logout_url: string
-  }> => {
+  oidcConfig: async (): Promise<{ enabled: boolean; provider_name: string; local_auth_enabled: boolean }> => {
     // The login card blocks on this call while it decides which sign-in
     // methods to offer, so a hung request must fail fast and let the caller
     // fall back instead of leaving the page stuck on its loading state.
     const { data } = await api.get('/auth/oidc/config', { timeout: 5000 })
+    return data
+  },
+  oidcLogoutUrl: async (): Promise<{
+    /** Where to send the browser so the provider session ends too (#1623). */
+    logout_url: string
+  }> => {
+    // Only the sign-out asks this: it may reach the provider, so it is kept
+    // off /config, which the sign-in page waits on.
+    const { data } = await api.get('/auth/oidc/logout-url', { timeout: 10000 })
     return data
   },
 }
@@ -1197,6 +1200,12 @@ export const rules = {
     const { data } = await api.get('/rules')
     return data
   },
+  /** Provider categories the workspace already received, for the
+   * `provider_category` condition's suggestions. */
+  providerCategories: async (): Promise<string[]> => {
+    const { data } = await api.get('/rules/provider-categories')
+    return data
+  },
   create: async (rule: Omit<Rule, 'id' | 'user_id'>): Promise<Rule & { applied_count: number }> => {
     const { data } = await api.post('/rules', rule)
     return data
@@ -1385,10 +1394,15 @@ export const recurring = {
     const { data } = await api.get('/recurring-transactions')
     return data
   },
-  // `skip_first` is write-only: it moves the first occurrence one period ahead
-  // when the transaction that would cover it already exists.
+  // `skip_first` and `source_transaction_id` are write-only: the first moves
+  // the first occurrence one period ahead when the transaction that would
+  // cover it already exists, and the second links that transaction to the new
+  // bill so it is not offered again.
   create: async (
-    rt: Partial<RecurringTransaction> & { skip_first?: boolean },
+    rt: Partial<RecurringTransaction> & {
+      skip_first?: boolean
+      source_transaction_id?: string
+    },
   ): Promise<RecurringTransaction> => {
     const { data } = await api.post('/recurring-transactions', rt)
     return data
@@ -1428,9 +1442,13 @@ export const recurring = {
 // Budgets
 export const budgets = {
   // `workspaceId` pins the read to one workspace, for a screen that must not
-  // follow the active one when another tab switches it.
-  list: async (month?: string, workspaceId?: string | null): Promise<Budget[]> => {
-    const { data } = await api.get('/budgets', { params: { month }, ...workspaceHeader(workspaceId) })
+  // follow the active one when another tab switches it. `primaryMonth` gives
+  // `amount_primary` at that month's rate, for a copy preview into it.
+  list: async (month?: string, workspaceId?: string | null, primaryMonth?: string): Promise<Budget[]> => {
+    const { data } = await api.get('/budgets', {
+      params: { month, primary_month: primaryMonth },
+      ...workspaceHeader(workspaceId),
+    })
     return data
   },
   create: async (budget: { category_id: string; amount: number; month: string; is_recurring?: boolean }): Promise<Budget> => {

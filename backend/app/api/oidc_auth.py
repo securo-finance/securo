@@ -37,6 +37,9 @@ class OIDCConfigResponse(BaseModel):
     enabled: bool
     provider_name: str = "OIDC"
     local_auth_enabled: bool = True
+
+
+class OIDCLogoutUrlResponse(BaseModel):
     # Where the browser goes after the local sign-out so the provider's own
     # session ends too (#1623); empty when there is nowhere to send it.
     logout_url: str = ""
@@ -76,8 +79,8 @@ def _safe_logout_url(url: str, client_id: str) -> str:
     """`_with_client_id`, but an unparsable URL answers "" instead of raising.
 
     `urlsplit` raises `ValueError` on a broken URL (`https://[broken`). The
-    local sign-out already happened by then, so `/config` must keep answering
-    rather than fail the whole sign-in page over a logout hint.
+    local sign-out already happened by then, so the logout-url route must
+    keep answering rather than fail over a logout hint.
     """
     try:
         return _with_client_id(url, client_id)
@@ -86,20 +89,31 @@ def _safe_logout_url(url: str, client_id: str) -> str:
 
 
 _LOGOUT_URL_TTL = 300.0
-# The frontend asks for `/config` with a 5 s timeout; the discovery has to
-# answer well inside it, or the browser silently skips the redirect (#1623).
+# A discovery that failed is cached too, but briefly: caching the empty answer
+# for the full TTL turned one hiccup into five minutes without provider logout
+# (#1639). Long enough to spare a down provider a burst of sign-outs.
+_LOGOUT_URL_FAILURE_TTL = 30.0
+# The sign-out waits on this answer and the browser gives up at 10 s; the
+# discovery has to answer well inside it, or the redirect is silently skipped
+# (#1623). A hung lookup is cached too, so it does not delay every sign-out.
 _LOGOUT_DISCOVERY_TIMEOUT = 3.0
-# (monotonic time, discovery url + client id it was read for, resolved URL)
-_logout_url_cache: tuple[float, str, str] | None = None
+# (monotonic time, discovery url + client id it was read for, resolved URL,
+# whether the discovery answered at all)
+_logout_url_cache: tuple[float, str, str, bool] | None = None
 
 
 async def _provider_logout_url() -> str:
     """Where to send the browser so the provider's own session ends (#1623).
 
     An explicit `OIDC_LOGOUT_URL` wins; otherwise the discovery document's
-    `end_session_endpoint`. Cached for a few minutes because `/config` is
-    public and the document rarely changes. Every failure answers "": the
-    local sign-out already happened and must never wait on the provider.
+    `end_session_endpoint`. Cached because the route is public and the document
+    rarely changes: a few minutes for an answer, seconds for a failure, so one
+    hiccup does not disable provider sign-out for long (#1639). Every failure
+    answers "": the local sign-out already happened and must never wait on the
+    provider.
+
+    This is the only route that talks to the provider; `/config` must stay
+    local, because the sign-in page blocks on it to decide what to show.
     """
     global _logout_url_cache
     settings = get_settings()
@@ -110,12 +124,11 @@ async def _provider_logout_url() -> str:
 
     cache_key = f"{settings.oidc_discovery_url}|{settings.oidc_client_id}"
     now = time.monotonic()
-    if (
-        _logout_url_cache is not None
-        and _logout_url_cache[1] == cache_key
-        and now - _logout_url_cache[0] < _LOGOUT_URL_TTL
-    ):
-        return _logout_url_cache[2]
+    if _logout_url_cache is not None and _logout_url_cache[1] == cache_key:
+        cached_at, _cached_key, cached_url, discovery_answered = _logout_url_cache
+        ttl = _LOGOUT_URL_TTL if discovery_answered else _LOGOUT_URL_FAILURE_TTL
+        if now - cached_at < ttl:
+            return cached_url
     try:
         discovery = await asyncio.wait_for(
             _discover(), timeout=_LOGOUT_DISCOVERY_TIMEOUT
@@ -124,8 +137,11 @@ async def _provider_logout_url() -> str:
         endpoint = raw_endpoint if isinstance(raw_endpoint, str) else ""
     except (HTTPException, httpx.HTTPError, ValueError, asyncio.TimeoutError):
         endpoint = ""
+        discovery_answered = False
+    else:
+        discovery_answered = True
     url = _safe_logout_url(endpoint, settings.oidc_client_id) if endpoint else ""
-    _logout_url_cache = (now, cache_key, url)
+    _logout_url_cache = (now, cache_key, url, discovery_answered)
     return url
 
 
@@ -136,8 +152,13 @@ async def oidc_config():
         enabled=settings.oidc_login_available,
         provider_name=settings.oidc_provider_name or "OIDC",
         local_auth_enabled=settings.local_auth_enabled,
-        logout_url=await _provider_logout_url(),
     )
+
+
+@router.get("/logout-url", response_model=OIDCLogoutUrlResponse)
+async def oidc_logout_url():
+    """Only the sign-out asks this: it may reach the provider (#1623)."""
+    return OIDCLogoutUrlResponse(logout_url=await _provider_logout_url())
 
 
 @router.get("/login")
