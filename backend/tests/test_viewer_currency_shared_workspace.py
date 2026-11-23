@@ -21,6 +21,7 @@ from app.core.app_clock import app_today
 from app.models.account import Account
 from app.models.category import Category
 from app.models.fx_rate import FxRate
+from app.models.group import GroupMember
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.models.workspace import WorkspaceMember
@@ -209,6 +210,16 @@ async def test_member_in_another_currency_sees_the_list_converted(client, couple
     assert drill["summary"]["expense"] == pytest.approx(300.0)
 
 
+async def _member(
+    session: AsyncSession, group_id: uuid.UUID, workspace_id: uuid.UUID, **fields
+) -> GroupMember:
+    member = await group_service.create_member(
+        session, group_id, workspace_id, GroupMemberCreate(**fields)
+    )
+    assert member is not None
+    return member
+
+
 @pytest.fixture
 async def couple_with_groups(session: AsyncSession, test_user: User, test_workspace, couple):
     """On top of `couple`: Ana splits her R$ 1.000 in the shared workspace
@@ -231,14 +242,8 @@ async def couple_with_groups(session: AsyncSession, test_user: User, test_worksp
         session, test_workspace.id, test_user.id, GroupCreate(name="Casal R269")
     )
     casal_members = [
-        await group_service.create_member(
-            session, casal.id, test_workspace.id,
-            GroupMemberCreate(name="Ana", is_self=True),
-        ),
-        await group_service.create_member(
-            session, casal.id, test_workspace.id,
-            GroupMemberCreate(name="Bruno", email=bruno.email),
-        ),
+        await _member(session, casal.id, test_workspace.id, name="Ana", is_self=True),
+        await _member(session, casal.id, test_workspace.id, name="Bruno", email=bruno.email),
     ]
     rent = (
         await session.execute(
@@ -283,16 +288,9 @@ async def couple_with_groups(session: AsyncSession, test_user: User, test_worksp
         session, personal.id, test_user.id, GroupCreate(name="Viagem R269")
     )
     trip_members = [
-        await group_service.create_member(
-            session, viagem.id, personal.id, GroupMemberCreate(name="Ana", is_self=True),
-        ),
-        await group_service.create_member(
-            session, viagem.id, personal.id,
-            GroupMemberCreate(name="Bruno", email=bruno.email),
-        ),
-        await group_service.create_member(
-            session, viagem.id, personal.id, GroupMemberCreate(name="Carla"),
-        ),
+        await _member(session, viagem.id, personal.id, name="Ana", is_self=True),
+        await _member(session, viagem.id, personal.id, name="Bruno", email=bruno.email),
+        await _member(session, viagem.id, personal.id, name="Carla"),
     ]
     await split_service.replace_splits(
         session,
