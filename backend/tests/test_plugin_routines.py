@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from httpx import AsyncClient
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.models.plugin_connection import PluginConnection, PluginConnectionRoutine
 from app.plugins import connections, vault
@@ -227,7 +227,7 @@ async def test_a_routine_runs_the_plugins_routine_method_with_its_own_state(sess
     connection = await _connect(session, ids)
     send = await _routine(session, connection, "send")
 
-    assert await connections.run_routine(session, connection, send) is send
+    assert await connections.run_routine(session, connection, send) == "ran"
     assert send.failures == 0 and send.last_error is None and send.last_run_at is not None
     assert send.state == {
         "runs": 1, "routine": "send", "bundle": ["keys.p12", 14], "layout": "layout.csv", "last_run_at": None,
@@ -280,8 +280,26 @@ async def test_a_routine_waits_while_the_connection_is_busy(session, ids, instal
     connection = await _connect(session, ids)
     send = await _routine(session, connection, "send")
     sync_locks.add(f"plugin-sync:{connection.id}")
-    assert await connections.run_routine(session, connection, send) is None
+    assert await connections.run_routine(session, connection, send) == "busy"
     assert send.last_run_at is None
+
+
+@pytest.mark.asyncio
+async def test_a_routine_reads_the_connection_again_under_the_lock(session, ids, installed):
+    await _install(session, ids)
+    connection = await _connect(session, ids)
+    send = await _routine(session, connection, "send")
+    # Another run ran it meanwhile: a scheduled run finds it no longer due; running it now still does.
+    await connections.run_routine(session, connection, send)
+    assert await connections.run_routine(session, connection, send, scheduled=True) == "not_due"
+    assert send.state["runs"] == 1
+    assert await connections.run_routine(session, connection, send) == "ran"
+    assert send.state["runs"] == 2
+    # Another run found the sign-in gone meanwhile: nothing more is sent to the plugin.
+    await session.execute(update(PluginConnection).where(PluginConnection.id == connection.id).values(status="needs_auth"))
+    await session.commit()
+    assert await connections.run_routine(session, connection, send) == "needs_auth"
+    assert send.state["runs"] == 2
 
 
 @pytest.mark.asyncio
@@ -379,11 +397,10 @@ def test_an_integration_with_routines_and_no_schedule_doesnt_sync():
 async def test_connecting_runs_its_routines_and_never_calls_sync(
     client: AsyncClient, auth_headers: dict, session, ids, installed, monkeypatch
 ):
-    from app.api import plugins as plugins_api
-
+    # The real dispatch, down to the task it queues; only the queue itself is replaced.
     queued: list[str] = []
-    monkeypatch.setattr(plugins_api, "_queue_sync", lambda cid: queued.append(f"sync:{cid}"))
-    monkeypatch.setattr(plugins_api, "_queue_routines", lambda cid: queued.append(f"routines:{cid}"))
+    monkeypatch.setattr(plugin_tasks.sync_plugin_connection, "delay", lambda cid: queued.append(f"sync:{cid}"))
+    monkeypatch.setattr(plugin_tasks.run_plugin_routines, "delay", lambda cid: queued.append(f"routines:{cid}"))
     await _install(session, ids)
     created = await client.post(
         "/api/plugins/connections",

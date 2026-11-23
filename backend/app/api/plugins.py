@@ -292,9 +292,10 @@ async def run_connection_routine(
     """Run one routine now, and wait for it (its timeout bounds the wait). 409 while the connection is busy."""
     connection = await _connection_guarded(connections.get_connection(session, ctx.workspace.id, connection_id))
     row = await _connection_guarded(connections.get_routine(session, connection, routine))
-    if connection.status == "needs_auth":
+    outcome = await connections.run_routine(session, connection, row)
+    if outcome == "needs_auth":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The connection needs signing in again")
-    if await connections.run_routine(session, connection, row) is None:
+    if outcome == "busy":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The connection is busy; try again in a moment")
     return await _read(session, connection)
 

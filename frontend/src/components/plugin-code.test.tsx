@@ -335,6 +335,11 @@ describe('PluginConnections: files and routines', () => {
 
     fireEvent.change(input, { target: { files: [new File(['hello'], 'keys.p12')] } })
     await waitFor(() => expect(connect).toBeEnabled())
+    // A refused replacement drops the file picked before it.
+    fireEvent.change(input, { target: { files: [new File(['x'], 'other.txt')] } })
+    await waitFor(() => expect(connect).toBeDisabled())
+    fireEvent.change(input, { target: { files: [new File(['hello'], 'keys.p12')] } })
+    await waitFor(() => expect(connect).toBeEnabled())
     await user.click(connect)
     await waitFor(() =>
       expect(api.plugins.connect).toHaveBeenCalledWith({
@@ -357,10 +362,16 @@ describe('PluginConnections: files and routines', () => {
   })
 
   it('lists each routine with its schedule and error, and runs one now', async () => {
-    api.plugins.connections.mockResolvedValue([WITH_ROUTINES])
-    api.plugins.runRoutine.mockResolvedValue({
+    const ran: PluginConnection = {
       ...WITH_ROUTINES,
-      routines: [{ ...WITH_ROUTINES.routines![0], last_run_at: '2026-11-23T10:00:00Z' }, WITH_ROUTINES.routines![1]],
+      routines: [{ ...WITH_ROUTINES.routines![0], last_run_at: new Date().toISOString() }, WITH_ROUTINES.routines![1]],
+    }
+    // Like the server: once it ran, the list reads it as run.
+    let current = WITH_ROUTINES
+    api.plugins.connections.mockImplementation(async () => [current])
+    api.plugins.runRoutine.mockImplementation(async () => {
+      current = ran
+      return ran
     })
     const { user } = renderWithProviders(
       <WorkspaceContext.Provider value={workspace(true)}>
@@ -378,6 +389,8 @@ describe('PluginConnections: files and routines', () => {
     await waitFor(() => expect(api.plugins.runRoutine).toHaveBeenCalledWith(
       { connectionId: 'c1', routine: 'send' }, expect.anything(),
     ))
+    // Send now shows it ran; Collect still hasn't.
+    await waitFor(() => expect(screen.getAllByText(new RegExp(t('plugins.connections.routineNeverRan'))).length).toBe(1))
   })
 
   it("doesn't offer to run a routine to viewers", async () => {

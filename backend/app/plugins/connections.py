@@ -27,7 +27,7 @@ import logging
 import secrets as secrets_module
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 from sqlalchemy import select
@@ -778,14 +778,25 @@ async def _follow_routines(session: AsyncSession, connection: PluginConnection, 
             row.timeout_seconds = routine.timeout_seconds
 
 
+#: How a routine run ended: it ran (well or not), or it was skipped and why.
+RoutineOutcome = Literal["ran", "busy", "needs_auth", "not_due"]
+
+
 async def run_routine(
-    session: AsyncSession, connection: PluginConnection, routine: PluginConnectionRoutine
-) -> PluginConnectionRoutine | None:
+    session: AsyncSession,
+    connection: PluginConnection,
+    routine: PluginConnectionRoutine,
+    *,
+    scheduled: bool = False,
+) -> RoutineOutcome:
     """Run one routine of a connection once and record how it went (ADR 0035).
 
     It holds the connection's lock, as a sync does: one call per connection at
     a time, so secrets one call refreshes are never overwritten by another.
-    None when the connection is busy; the schedule tries again on its next round.
+    Under the lock it reads the connection and the routine again: one that
+    needs signing in by then isn't run, and a `scheduled` run that another run
+    already made isn't due anymore. "busy" when the lock is taken; the schedule
+    tries again on its next round.
 
     The plugin's `routine` method gets the routine's key and its own state, and
     returns `{"state": ..., "secrets": ...}` as `sync` does (both optional).
@@ -794,10 +805,14 @@ async def run_routine(
     """
     lock = f"plugin-sync:{connection.id}"
     if not await _acquire(lock):
-        return None
+        return "busy"
     try:
         await session.refresh(connection)
         await session.refresh(routine)
+        if connection.status == "needs_auth":
+            return "needs_auth"
+        if scheduled and not routine_due(routine, connection):
+            return "not_due"
         params: dict[str, Any] = {
             "routine": routine.routine,
             "state": dict(routine.state or {}),
@@ -834,7 +849,7 @@ async def run_routine(
             if connection.status == "pending" and integration.sync_minutes is None:
                 connection.status = "active"
         await session.commit()
-        return routine
+        return "ran"
     finally:
         await _release(lock)
 

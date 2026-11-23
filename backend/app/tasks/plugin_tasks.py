@@ -70,7 +70,7 @@ async def run_due_routines(session: AsyncSession) -> int:
             connection = await session.get(PluginConnection, connection_id, populate_existing=True)
             if routine is None or connection is None or not connections.routine_due(routine, connection):
                 continue
-            if await connections.run_routine(session, connection, routine) is not None:
+            if await connections.run_routine(session, connection, routine, scheduled=True) == "ran":
                 ran += 1
         except Exception:
             logger.exception("Plugin routine %s failed to run", routine_id)
@@ -120,7 +120,7 @@ async def _run_routines_of(connection_id: str) -> None:
                 return
             for routine in await connections.list_routines(session, [connection.id]):
                 if connections.routine_due(routine, connection):
-                    await connections.run_routine(session, connection, routine)
+                    await connections.run_routine(session, connection, routine, scheduled=True)
     finally:
         await engine.dispose()
         await close_redis()

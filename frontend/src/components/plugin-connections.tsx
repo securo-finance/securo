@@ -312,14 +312,13 @@ export function PluginConnectionDialog({
   const missing = integration?.fields.some((f) => f.required && !filled(f) && !isSet(f.key)) ?? true
 
   const pickFile = async (field: PluginField, file: File | undefined) => {
-    if (!file) {
-      setValues((current) => {
-        const next = { ...current }
-        delete next[field.key]
-        return next
-      })
-      return
-    }
+    // A new pick replaces the last one at once: a refused file never leaves the previous one to be sent.
+    setValues((current) => {
+      const next = { ...current }
+      delete next[field.key]
+      return next
+    })
+    if (!file) return
     const accept = field.accept ?? []
     const maxKb = field.max_kb ?? 512
     if (accept.length > 0 && !accept.some((ext) => file.name.toLowerCase().endsWith(ext))) {
