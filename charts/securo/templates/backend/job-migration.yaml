@@ -56,11 +56,13 @@ spec:
 {{- $podTemplate := include "securo.migrationPodTemplate" . -}}
 {{- /*
 A plain resource, not a hook: it is applied with the new ConfigMap and Secret,
-next to the bundled PostgreSQL on a first install, and while it runs the new
-backend, worker, beat and MCP pods wait in their wait-for-schema init container
-(the old pods keep serving during an upgrade). A Job's pod template can't
-change, so the name follows the template and the release revision: every
-upgrade gets a fresh Job and Helm deletes the previous one.
+next to the bundled PostgreSQL on a first install. The new backend, worker, beat
+and MCP pods wait in their wait-for-schema init container until the database is
+at the migration head of their image, which this Job brings it to; when it is
+already there, they start while the Job is still pending (the old pods keep
+serving during an upgrade). A Job's pod template can't change, so the name
+follows the template and the release revision: every upgrade gets a fresh Job
+and Helm deletes the previous one.
 */}}
 apiVersion: batch/v1
 kind: Job
