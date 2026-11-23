@@ -21,6 +21,8 @@ fails is fetched again.
 """
 from __future__ import annotations
 
+import base64
+import binascii
 import logging
 import secrets as secrets_module
 import uuid
@@ -35,11 +37,11 @@ from app.core.config import get_settings
 from app.core import redis as redis_store
 from app.models.access_token import AccessToken
 from app.models.bank_connection import LAST_SYNC_FAILURE_KEY, BankConnection
-from app.models.plugin_connection import PluginConnection
+from app.models.plugin_connection import PluginConnection, PluginConnectionRoutine
 from app.models.workspace_plugin import WorkspacePlugin
 from app.plugins import logos, runner, vault
 from app.plugins.contract import PayloadError, parse_payload
-from app.plugins.manifest import Integration, Manifest, localized, parse_manifest
+from app.plugins.manifest import FormField, Integration, Manifest, localized, parse_manifest
 from app.plugins.provider import PluginPayloadProvider, provider_name
 from app.services import access_token_service, oauth_state
 
@@ -165,6 +167,8 @@ async def create(
     if integration.is_provider:
         await _add_bank(session, connection, localized(manifest.name, lang), user_id)
     session.add(connection)
+    await session.flush()
+    await _follow_routines(session, connection, integration)
     await session.commit()
     await session.refresh(connection)
     link = None
@@ -309,10 +313,47 @@ def _split(integration: Integration, values: dict[str, Any]) -> tuple[dict[str, 
             if field.required:
                 raise PluginConnectionError(f"{key} is required")
             continue
-        if not isinstance(value, str) or len(value) > 20000:
+        if field.type == "file":
+            value = _file(field, value)
+        elif not isinstance(value, str) or len(value) > 20000:
             raise PluginConnectionError(f"{key} must be text")
         (secrets if field.secret else config)[key] = value
     return config, secrets
+
+
+def _file(field: FormField, value: Any) -> dict[str, str]:
+    """A file field's value, checked: `{"name", "content"}` with the content in base64."""
+    if not isinstance(value, dict) or not isinstance(value.get("name"), str) or not isinstance(value.get("content"), str):
+        raise PluginConnectionError(f"{field.key} must be a file")
+    # Only the file's own name: a browser may send a path.
+    name = value["name"].replace("\\", "/").rsplit("/", 1)[-1].strip()[:255]
+    if not name:
+        raise PluginConnectionError(f"{field.key} must be a file")
+    if field.accept and not any(name.lower().endswith(ext) for ext in field.accept):
+        raise PluginConnectionError(f"{field.key} must be a {', '.join(field.accept)} file")
+    # A size check before decoding, so a huge upload is refused without holding it twice.
+    if len(value["content"]) > (field.max_kb * 1024 * 4) // 3 + 4:
+        raise PluginConnectionError(f"{field.key} must be at most {field.max_kb} KB")
+    try:
+        data = base64.b64decode(value["content"], validate=True)
+    except (binascii.Error, ValueError):
+        raise PluginConnectionError(f"{field.key} can't be read as a file") from None
+    if not data:
+        raise PluginConnectionError(f"{field.key} is empty")
+    if len(data) > field.max_kb * 1024:
+        raise PluginConnectionError(f"{field.key} must be at most {field.max_kb} KB")
+    return {"name": name, "content": base64.b64encode(data).decode()}
+
+
+def file_summary(value: Any) -> Any:
+    """A stored value as the API shows it: a file's name and size, never its content."""
+    if isinstance(value, dict) and isinstance(value.get("content"), str):
+        try:
+            size = len(base64.b64decode(value["content"]))
+        except (binascii.Error, ValueError):
+            size = 0
+        return {"name": value.get("name"), "size": size}
+    return value
 
 
 def _securo(connection: PluginConnection, secrets: dict[str, Any]) -> dict[str, Any]:
@@ -328,7 +369,13 @@ def _securo(connection: PluginConnection, secrets: dict[str, Any]) -> dict[str, 
 
 
 async def _call(
-    session: AsyncSession, connection: PluginConnection, method: str, params: dict[str, Any], record: WorkspacePlugin | None = None
+    session: AsyncSession,
+    connection: PluginConnection,
+    method: str,
+    params: dict[str, Any],
+    record: WorkspacePlugin | None = None,
+    *,
+    timeout: int | None = None,
 ) -> tuple[Any, dict[str, Any]]:
     """Call the connection's plugin; returns the result and the opened secrets.
 
@@ -353,6 +400,7 @@ async def _call(
                 config=dict(connection.config or {}),
                 securo=_securo(connection, secrets),
                 commit=record.commit,
+                timeout=timeout,
             )
 
     try:
@@ -652,18 +700,162 @@ def due(connection: PluginConnection, now: datetime | None = None) -> bool:
     """Whether the schedule should sync it now (backing off after failures)."""
     if connection.sync_minutes is None or connection.status == "needs_auth":
         return False
-    last = _aware(connection.last_sync_at)
+    return _due(connection.last_sync_at, connection.sync_minutes, connection.failures, now)
+
+
+def _due(last_run: datetime | None, minutes: int, failures: int | None, now: datetime | None) -> bool:
+    last = _aware(last_run)
     if last is None:
         return True
-    wait = timedelta(minutes=connection.sync_minutes)
-    if connection.failures:
-        wait = min(wait * (2 ** min(connection.failures, 10)), max(_MAX_BACKOFF, wait))
+    wait = timedelta(minutes=minutes)
+    if failures:
+        wait = min(wait * (2 ** min(failures, 10)), max(_MAX_BACKOFF, wait))
     return (now or _now()) - last >= wait
+
+
+# Routines --------------------------------------------------------------------
+
+
+def routine_due(routine: PluginConnectionRoutine, connection: PluginConnection, now: datetime | None = None) -> bool:
+    """Whether the schedule should run this routine now (backing off after its own failures)."""
+    if connection.status == "needs_auth":
+        return False
+    return _due(routine.last_run_at, routine.every_minutes, routine.failures, now)
+
+
+async def integration_of(session: AsyncSession, connection: PluginConnection) -> Integration | None:
+    """The connection's integration as installed, or None when it can't be read."""
+    try:
+        _, manifest = await _installed(session, connection.workspace_id, connection.plugin_id)
+        return _integration(manifest, connection.integration)
+    except (PluginConnectionError, ConnectionNotFound):
+        return None
+
+
+async def list_routines(session: AsyncSession, connection_ids: list[uuid.UUID]) -> list[PluginConnectionRoutine]:
+    if not connection_ids:
+        return []
+    rows = await session.scalars(
+        select(PluginConnectionRoutine)
+        .where(PluginConnectionRoutine.connection_id.in_(connection_ids))
+        .order_by(PluginConnectionRoutine.created_at, PluginConnectionRoutine.routine)
+    )
+    return list(rows.all())
+
+
+async def get_routine(session: AsyncSession, connection: PluginConnection, key: str) -> PluginConnectionRoutine:
+    routine = await session.scalar(
+        select(PluginConnectionRoutine).where(
+            PluginConnectionRoutine.connection_id == connection.id, PluginConnectionRoutine.routine == key
+        )
+    )
+    if routine is None:
+        raise ConnectionNotFound
+    return routine
+
+
+async def _follow_routines(session: AsyncSession, connection: PluginConnection, integration: Integration) -> None:
+    """One row per routine the integration declares now: new ones added, gone ones removed (not committed).
+
+    A routine that stays keeps its state and history; its schedule follows the manifest.
+    """
+    existing = {r.routine: r for r in await list_routines(session, [connection.id])}
+    declared = {r.key: r for r in integration.routines}
+    for key, row in existing.items():
+        if key not in declared:
+            await session.delete(row)
+    for key, routine in declared.items():
+        row = existing.get(key)
+        if row is None:
+            session.add(
+                PluginConnectionRoutine(
+                    id=uuid.uuid4(), connection_id=connection.id, routine=key, every_minutes=routine.every_minutes,
+                    timeout_seconds=routine.timeout_seconds, state={}, failures=0,
+                )
+            )
+        else:
+            row.every_minutes = routine.every_minutes
+            row.timeout_seconds = routine.timeout_seconds
+
+
+async def run_routine(
+    session: AsyncSession, connection: PluginConnection, routine: PluginConnectionRoutine
+) -> PluginConnectionRoutine | None:
+    """Run one routine of a connection once and record how it went (ADR 0035).
+
+    It holds the connection's lock, as a sync does: one call per connection at
+    a time, so secrets one call refreshes are never overwritten by another.
+    None when the connection is busy; the schedule tries again on its next round.
+
+    The plugin's `routine` method gets the routine's key and its own state, and
+    returns `{"state": ..., "secrets": ...}` as `sync` does (both optional).
+    Signing in again (NeedsAuth) stops the whole connection; any other failure
+    is the routine's own and backs it off.
+    """
+    lock = f"plugin-sync:{connection.id}"
+    if not await _acquire(lock):
+        return None
+    try:
+        await session.refresh(connection)
+        await session.refresh(routine)
+        params: dict[str, Any] = {
+            "routine": routine.routine,
+            "state": dict(routine.state or {}),
+            "last_run_at": routine.last_run_at.isoformat() if routine.last_run_at else None,
+        }
+        try:
+            record, manifest = await _installed(session, connection.workspace_id, connection.plugin_id)
+            integration = _integration(manifest, connection.integration)
+            result, secrets = await _call(
+                session, connection, "routine", params, record, timeout=routine.timeout_seconds
+            )
+        except runner.PluginCallFailed as exc:
+            message = f"{exc.kind}: {exc.message}"
+            _routine_failed(routine, message)
+            if exc.kind in ("NeedsAuth", "AuthError"):
+                connection.status = "needs_auth"
+                connection.last_error = message.replace("\x00", "")[:500]
+                await _mirror_status(session, connection)
+        except (runner.RunnerUnavailable, runner.RunnerRefused, PluginConnectionError) as exc:
+            _routine_failed(routine, str(exc))
+        else:
+            if isinstance(result, dict):
+                new_secrets = result.get("secrets")
+                if isinstance(new_secrets, dict):
+                    own = {k: v for k, v in new_secrets.items() if not str(k).startswith("__securo_")}
+                    if own:
+                        connection.secrets = vault.seal({**secrets, **own})
+                if isinstance(result.get("state"), dict):
+                    routine.state = result["state"]
+            routine.last_run_at = _now()
+            routine.last_error = None
+            routine.failures = 0
+            # A connection with no sync of its own is working once a routine ran.
+            if connection.status == "pending" and integration.sync_minutes is None:
+                connection.status = "active"
+        await session.commit()
+        return routine
+    finally:
+        await _release(lock)
+
+
+async def _drop_routines(session: AsyncSession, connection: PluginConnection) -> None:
+    """Its routines go with it (the foreign key cascades too; this keeps the session in step)."""
+    for row in await list_routines(session, [connection.id]):
+        await session.delete(row)
+
+
+def _routine_failed(routine: PluginConnectionRoutine, message: str) -> None:
+    routine.last_error = message.replace("\x00", "")[:500]
+    routine.failures = (routine.failures or 0) + 1
+    # Counts as an attempt, so the schedule backs off instead of retrying at once.
+    routine.last_run_at = _now()
 
 
 async def delete(session: AsyncSession, connection: PluginConnection) -> None:
     await _drop_bank(session, connection, keep_records=False)
     await _revoke_token(session, connection)
+    await _drop_routines(session, connection)
     await session.delete(connection)
     await session.commit()
 
@@ -679,6 +871,7 @@ async def delete_all(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: 
     for connection in rows.all():
         await _drop_bank(session, connection, keep_records=True)
         await _revoke_token(session, connection)
+        await _drop_routines(session, connection)
         await session.delete(connection)
         count += 1
     return count
@@ -707,11 +900,13 @@ async def follow_manifest(session: AsyncSession, workspace_id: uuid.UUID, manife
             # as a bank: nothing can run it as it was set up anymore.
             await _drop_bank(session, connection, keep_records=True)
             await _revoke_token(session, connection)
+            await _drop_routines(session, connection)
             await session.delete(connection)
             continue
         if integration.is_provider and connection.bank_connection_id is None and connection.created_by is not None:
             await _add_bank(session, connection, localized(manifest.name, lang), connection.created_by)
         connection.sync_minutes = integration.sync_minutes
+        await _follow_routines(session, connection, integration)
         token = await session.get(AccessToken, connection.access_token_id) if connection.access_token_id else None
         if token is not None and token.revoked_at is None and scopes:
             token.scopes = list(scopes)

@@ -3880,7 +3880,22 @@
       "editTitle": "{{name}} を再接続",
       "editHint": "新しいパスワードやトークンなど、変わった内容を更新してください。その後、接続はもう一度同期されます。",
       "keepBlank": "現在の値のままにするには、空欄のままにしてください。",
-      "updated": "{{name}} を更新しました"
+      "updated": "{{name}} を更新しました",
+      "routines": "ルーチン",
+      "routineEvery": "{{interval}}ごと",
+      "routineLastRun": "{{when}}に実行",
+      "routineNeverRan": "まだ実行されていません",
+      "runRoutine": "今すぐ実行",
+      "runRoutineAria": "{{name}}を今すぐ実行",
+      "routineRan": "{{name}}を実行しました",
+      "routineFailed": "実行されませんでした。",
+      "fileAccepts": "{{types}}、{{size}} KBまで",
+      "fileAny": "任意のファイル、{{size}} KBまで",
+      "currentFile": "現在: {{name}}",
+      "fileSaved": "ファイルが保存されています",
+      "fileWrongType": "{{name}}は{{types}}ファイルではありません。",
+      "fileTooBig": "{{name}}は{{size}} KBを超えています。",
+      "fileReadFailed": "{{name}}を読み込めませんでした。"
     },
     "oauth": {
       "title": "サインインを完了しています",

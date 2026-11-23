@@ -71,6 +71,7 @@ import type {
   RulePackRemoval,
   InstalledPlugin,
   PluginConnection,
+  PluginFileValue,
   PluginAction,
   PluginCatalogEntry,
   PluginPlan,
@@ -2275,7 +2276,7 @@ export const plugins = {
     plugin_id: string
     integration: string
     name: string
-    values: Record<string, string>
+    values: Record<string, string | PluginFileValue>
   }): Promise<{ connection: PluginConnection; authorize_url: string | null }> => {
     const { data } = await api.post('/plugins/connections', body)
     return data
@@ -2283,7 +2284,7 @@ export const plugins = {
   /** New form values; fields left blank keep what they had. Then it syncs afresh. */
   updateValues: async (
     connectionId: string,
-    body: { name?: string; values: Record<string, string> },
+    body: { name?: string; values: Record<string, string | PluginFileValue> },
   ): Promise<PluginConnection> => {
     const { data } = await api.put(`/plugins/connections/${connectionId}/values`, body)
     return data
@@ -2294,6 +2295,11 @@ export const plugins = {
   },
   sync: async (connectionId: string): Promise<PluginConnection> => {
     const { data } = await api.post(`/plugins/connections/${connectionId}/sync`)
+    return data
+  },
+  /** Run one routine of a connection now, and wait for it (ADR 0035). */
+  runRoutine: async ({ connectionId, routine }: { connectionId: string; routine: string }): Promise<PluginConnection> => {
+    const { data } = await api.post(`/plugins/connections/${connectionId}/routines/${encodeURIComponent(routine)}/run`)
     return data
   },
   disconnect: async (connectionId: string): Promise<void> => {

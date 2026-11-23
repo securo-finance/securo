@@ -3881,7 +3881,22 @@
       "editTitle": "{{name}} neu verbinden",
       "editHint": "Aktualisiere, was sich geändert hat, etwa ein neues Passwort oder Token. Danach wird die Verbindung erneut synchronisiert.",
       "keepBlank": "Lass ein Feld leer, um den aktuellen Wert zu behalten.",
-      "updated": "{{name}} aktualisiert"
+      "updated": "{{name}} aktualisiert",
+      "routines": "Routinen",
+      "routineEvery": "alle {{interval}}",
+      "routineLastRun": "lief {{when}}",
+      "routineNeverRan": "noch nicht gelaufen",
+      "runRoutine": "Jetzt ausführen",
+      "runRoutineAria": "{{name}} jetzt ausführen",
+      "routineRan": "{{name}} wurde ausgeführt",
+      "routineFailed": "Sie wurde nicht ausgeführt.",
+      "fileAccepts": "{{types}}, bis {{size}} KB",
+      "fileAny": "Beliebige Datei, bis {{size}} KB",
+      "currentFile": "aktuell: {{name}}",
+      "fileSaved": "eine Datei ist gespeichert",
+      "fileWrongType": "{{name}} ist keine {{types}}-Datei.",
+      "fileTooBig": "{{name}} ist größer als {{size}} KB.",
+      "fileReadFailed": "{{name}} konnte nicht gelesen werden."
     },
     "oauth": {
       "title": "Anmeldung wird abgeschlossen",

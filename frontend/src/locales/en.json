@@ -3880,7 +3880,22 @@
       "editTitle": "Reconnect {{name}}",
       "editHint": "Update what changed, such as a new password or token. The connection syncs again afterwards.",
       "keepBlank": "Leave a field blank to keep its current value.",
-      "updated": "{{name}} updated"
+      "updated": "{{name}} updated",
+      "routines": "Routines",
+      "routineEvery": "every {{interval}}",
+      "routineLastRun": "ran {{when}}",
+      "routineNeverRan": "hasn't run yet",
+      "runRoutine": "Run now",
+      "runRoutineAria": "Run {{name}} now",
+      "routineRan": "{{name}} ran",
+      "routineFailed": "It didn't run.",
+      "fileAccepts": "{{types}}, up to {{size}} KB",
+      "fileAny": "Any file, up to {{size}} KB",
+      "currentFile": "current: {{name}}",
+      "fileSaved": "a file is saved",
+      "fileWrongType": "{{name}} isn't a {{types}} file.",
+      "fileTooBig": "{{name}} is larger than {{size}} KB.",
+      "fileReadFailed": "Couldn't read {{name}}."
     },
     "oauth": {
       "title": "Finishing the sign in",

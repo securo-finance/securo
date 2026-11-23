@@ -3882,7 +3882,22 @@
       "editTitle": "{{name}} opnieuw koppelen",
       "editHint": "Werk bij wat er veranderd is, zoals een nieuw wachtwoord of token. Daarna synchroniseert de koppeling opnieuw.",
       "keepBlank": "Laat een veld leeg om de huidige waarde te houden.",
-      "updated": "{{name}} bijgewerkt"
+      "updated": "{{name}} bijgewerkt",
+      "routines": "Routines",
+      "routineEvery": "elke {{interval}}",
+      "routineLastRun": "liep {{when}}",
+      "routineNeverRan": "nog niet gelopen",
+      "runRoutine": "Nu uitvoeren",
+      "runRoutineAria": "{{name}} nu uitvoeren",
+      "routineRan": "{{name}} is uitgevoerd",
+      "routineFailed": "Niet uitgevoerd.",
+      "fileAccepts": "{{types}}, tot {{size}} KB",
+      "fileAny": "Elk bestand, tot {{size}} KB",
+      "currentFile": "huidig: {{name}}",
+      "fileSaved": "er is een bestand opgeslagen",
+      "fileWrongType": "{{name}} is geen {{types}}-bestand.",
+      "fileTooBig": "{{name}} is groter dan {{size}} KB.",
+      "fileReadFailed": "{{name}} kon niet worden gelezen."
     },
     "oauth": {
       "title": "Inloggen afronden",

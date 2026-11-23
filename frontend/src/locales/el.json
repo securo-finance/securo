@@ -3880,7 +3880,22 @@
       "editTitle": "Επανασύνδεση {{name}}",
       "editHint": "Ενημερώστε ό,τι άλλαξε, όπως νέο κωδικό ή token. Μετά η σύνδεση συγχρονίζεται ξανά.",
       "keepBlank": "Αφήστε ένα πεδίο κενό για να κρατήσει την τρέχουσα τιμή του.",
-      "updated": "Το {{name}} ενημερώθηκε"
+      "updated": "Το {{name}} ενημερώθηκε",
+      "routines": "Ρουτίνες",
+      "routineEvery": "κάθε {{interval}}",
+      "routineLastRun": "εκτελέστηκε {{when}}",
+      "routineNeverRan": "δεν έχει εκτελεστεί ακόμη",
+      "runRoutine": "Εκτέλεση τώρα",
+      "runRoutineAria": "Εκτέλεση {{name}} τώρα",
+      "routineRan": "Το {{name}} εκτελέστηκε",
+      "routineFailed": "Δεν εκτελέστηκε.",
+      "fileAccepts": "{{types}}, έως {{size}} KB",
+      "fileAny": "Οποιοδήποτε αρχείο, έως {{size}} KB",
+      "currentFile": "τρέχον: {{name}}",
+      "fileSaved": "υπάρχει αποθηκευμένο αρχείο",
+      "fileWrongType": "Το {{name}} δεν είναι αρχείο {{types}}.",
+      "fileTooBig": "Το {{name}} ξεπερνά τα {{size}} KB.",
+      "fileReadFailed": "Δεν ήταν δυνατή η ανάγνωση του {{name}}."
     },
     "oauth": {
       "title": "Ολοκλήρωση σύνδεσης",

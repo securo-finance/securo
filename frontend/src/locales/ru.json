@@ -3945,7 +3945,22 @@
       "editTitle": "Переподключить {{name}}",
       "editHint": "Обновите то, что изменилось, например новый пароль или токен. После этого подключение снова синхронизируется.",
       "keepBlank": "Оставьте поле пустым, чтобы сохранить текущее значение.",
-      "updated": "{{name}} обновлено"
+      "updated": "{{name}} обновлено",
+      "routines": "Задачи",
+      "routineEvery": "каждые {{interval}}",
+      "routineLastRun": "запускалась {{when}}",
+      "routineNeverRan": "ещё не запускалась",
+      "runRoutine": "Запустить",
+      "runRoutineAria": "Запустить {{name}} сейчас",
+      "routineRan": "{{name}} выполнена",
+      "routineFailed": "Не выполнена.",
+      "fileAccepts": "{{types}}, до {{size}} КБ",
+      "fileAny": "Любой файл, до {{size}} КБ",
+      "currentFile": "текущий: {{name}}",
+      "fileSaved": "файл сохранён",
+      "fileWrongType": "{{name}} не является файлом {{types}}.",
+      "fileTooBig": "{{name}} больше {{size}} КБ.",
+      "fileReadFailed": "Не удалось прочитать {{name}}."
     },
     "oauth": {
       "title": "Завершение входа",

@@ -4088,7 +4088,22 @@
       "editTitle": "Znovu připojit {{name}}",
       "editHint": "Aktualizujte, co se změnilo, například nové heslo nebo token. Poté se připojení znovu synchronizuje.",
       "keepBlank": "Ponechte pole prázdné, aby se zachovala jeho současná hodnota.",
-      "updated": "{{name}} aktualizováno"
+      "updated": "{{name}} aktualizováno",
+      "routines": "Rutiny",
+      "routineEvery": "každých {{interval}}",
+      "routineLastRun": "spuštěno {{when}}",
+      "routineNeverRan": "zatím nespuštěno",
+      "runRoutine": "Spustit nyní",
+      "runRoutineAria": "Spustit {{name}} nyní",
+      "routineRan": "{{name}} proběhla",
+      "routineFailed": "Neproběhla.",
+      "fileAccepts": "{{types}}, do {{size}} KB",
+      "fileAny": "Jakýkoli soubor, do {{size}} KB",
+      "currentFile": "aktuální: {{name}}",
+      "fileSaved": "soubor je uložen",
+      "fileWrongType": "{{name}} není soubor {{types}}.",
+      "fileTooBig": "{{name}} je větší než {{size}} KB.",
+      "fileReadFailed": "{{name}} nelze přečíst."
     },
     "oauth": {
       "title": "Dokončování přihlášení",

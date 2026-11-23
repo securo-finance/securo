@@ -28,6 +28,7 @@ from app.schemas.plugin import (
     PluginConnectionCreated,
     PluginConnectionUpdate,
     PluginConnectionRead,
+    PluginConnectionRoutineRead,
     PluginOAuthCallback,
     PluginCatalogRead,
     PluginDetailRead,
@@ -155,12 +156,23 @@ def _installed_read(record) -> InstalledPluginRead:
 # Connections ---------------------------------------------------------------
 
 
-def _connection_read(connection) -> PluginConnectionRead:
+def _connection_read(connection, routines: list | None = None) -> PluginConnectionRead:
     try:
         secret_fields = sorted(k for k in connections.vault.unseal(connection.secrets) if not k.startswith("__securo_"))
     except connections.vault.SealBroken:
         secret_fields = []
-    return PluginConnectionRead.model_validate(connection).model_copy(update={"secret_fields": secret_fields})
+    return PluginConnectionRead.model_validate(connection).model_copy(
+        update={
+            "secret_fields": secret_fields,
+            # A file field shows its name and size; its content goes only to the plugin.
+            "config": {k: connections.file_summary(v) for k, v in (connection.config or {}).items()},
+            "routines": [PluginConnectionRoutineRead.model_validate(r) for r in routines or []],
+        }
+    )
+
+
+async def _read(session: AsyncSession, connection) -> PluginConnectionRead:
+    return _connection_read(connection, await connections.list_routines(session, [connection.id]))
 
 
 async def _connection_guarded(call):
@@ -181,7 +193,11 @@ async def list_connections(
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    return [_connection_read(c) for c in await connections.list_connections(session, ctx.workspace.id)]
+    rows = await connections.list_connections(session, ctx.workspace.id)
+    routines: dict[uuid.UUID, list] = {}
+    for routine in await connections.list_routines(session, [c.id for c in rows]):
+        routines.setdefault(routine.connection_id, []).append(routine)
+    return [_connection_read(c, routines.get(c.id)) for c in rows]
 
 
 @router.post("/connections", response_model=PluginConnectionCreated, status_code=status.HTTP_201_CREATED)
@@ -205,8 +221,8 @@ async def create_connection(
         )
     )
     if link is None:
-        _queue_sync(connection.id)
-    return PluginConnectionCreated(connection=_connection_read(connection), authorize_url=link)
+        await _start(session, connection)
+    return PluginConnectionCreated(connection=await _read(session, connection), authorize_url=link)
 
 
 @router.put("/connections/{connection_id}/values", response_model=PluginConnectionRead)
@@ -222,8 +238,8 @@ async def update_connection_values(
         connections.update_values(session, connection, name=body.name, values=body.values)
     )
     if connection.status == "pending":
-        _queue_sync(connection.id)
-    return _connection_read(connection)
+        await _start(session, connection)
+    return await _read(session, connection)
 
 
 @router.post("/connections/{connection_id}/authorize", response_model=PluginAuthorizeRead)
@@ -248,8 +264,8 @@ async def oauth_callback(
     connection = await _connection_guarded(
         connections.finish_oauth(session, workspace_id=ctx.workspace.id, user_id=ctx.user_id, code=body.code, state=body.state)
     )
-    _queue_sync(connection.id)
-    return _connection_read(connection)
+    await _start(session, connection)
+    return await _read(session, connection)
 
 
 @router.post("/connections/{connection_id}/sync", response_model=PluginConnectionRead)
@@ -258,9 +274,29 @@ async def sync_connection(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Sync now, and wait for it (the plugin's timeout bounds the wait)."""
+    """Sync now, and wait for it (the plugin's timeout bounds the wait). 409 for one that only runs routines."""
     connection = await _connection_guarded(connections.get_connection(session, ctx.workspace.id, connection_id))
-    return _connection_read(await connections.sync(session, connection))
+    integration = await connections.integration_of(session, connection)
+    if integration is not None and not integration.syncs:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This connection doesn't sync; it runs its routines")
+    return await _read(session, await connections.sync(session, connection))
+
+
+@router.post("/connections/{connection_id}/routines/{routine}/run", response_model=PluginConnectionRead)
+async def run_connection_routine(
+    connection_id: uuid.UUID,
+    routine: str,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Run one routine now, and wait for it (its timeout bounds the wait). 409 while the connection is busy."""
+    connection = await _connection_guarded(connections.get_connection(session, ctx.workspace.id, connection_id))
+    row = await _connection_guarded(connections.get_routine(session, connection, routine))
+    if connection.status == "needs_auth":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The connection needs signing in again")
+    if await connections.run_routine(session, connection, row) is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The connection is busy; try again in a moment")
+    return await _read(session, connection)
 
 
 @router.delete("/connections/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -281,6 +317,24 @@ def _queue_sync(connection_id: uuid.UUID) -> None:
         sync_plugin_connection.delay(str(connection_id))
     except Exception:  # noqa: BLE001 - the schedule picks it up anyway
         pass
+
+
+def _queue_routines(connection_id: uuid.UUID) -> None:
+    from app.tasks.plugin_tasks import run_plugin_routines
+
+    try:
+        run_plugin_routines.delay(str(connection_id))
+    except Exception:  # noqa: BLE001 - the schedule picks them up anyway
+        pass
+
+
+async def _start(session: AsyncSession, connection) -> None:
+    """A connection's first run: its sync, when the integration syncs, and its routines."""
+    integration = await connections.integration_of(session, connection)
+    if integration is None or integration.syncs:
+        _queue_sync(connection.id)
+    if integration is not None and integration.routines:
+        _queue_routines(connection.id)
 
 
 def _image(data: bytes, content_type: str) -> Response:

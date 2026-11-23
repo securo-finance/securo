@@ -729,6 +729,36 @@ export interface PluginField {
   /** Kept encrypted and never shown again. */
   secret: boolean
   required: boolean
+  /** `file`: the person picks a file (ADR 0035). */
+  type?: 'text' | 'file'
+  /** For a file: the extensions it takes (`.pdf`); empty for any. */
+  accept?: string[]
+  /** For a file: the largest it takes, in KB. */
+  max_kb?: number
+}
+
+/** A file picked for a file field, as sent to the API: its name and its content in base64. */
+export interface PluginFileValue {
+  name: string
+  content: string
+}
+
+/** Work an integration runs on its own schedule, apart from syncing (ADR 0035). */
+export interface PluginRoutine {
+  key: string
+  name: LocalizedText
+  description?: LocalizedText | null
+  every_minutes: number
+  timeout_seconds?: number | null
+}
+
+/** How one routine of a connection last ran. */
+export interface PluginConnectionRoutine {
+  key: string
+  every_minutes: number
+  last_run_at: string | null
+  last_error: string | null
+  failures: number
 }
 
 /** A connection to an outside service that a plugin with code offers. */
@@ -740,6 +770,8 @@ export interface PluginIntegration {
   fields: PluginField[]
   /** How often Securo asks the plugin to sync; null for never. */
   sync_minutes: number | null
+  /** Work it runs on schedules of its own. */
+  routines?: PluginRoutine[]
   /** Records it syncs as a connected bank; null for an integration that writes through the API. */
   provides?: PluginProvidedKind[] | null
 }
@@ -797,9 +829,11 @@ export interface PluginConnection {
   integration: string
   name: string
   status: PluginConnectionStatus
-  config: Record<string, string>
+  /** Settings as typed; a file shows only its name and size. */
+  config: Record<string, string | { name: string; size: number }>
   /** Secret fields that are set, by key. */
   secret_fields: string[]
+  routines?: PluginConnectionRoutine[]
   sync_minutes: number | null
   last_sync_at: string | null
   last_error: string | null

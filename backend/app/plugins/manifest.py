@@ -214,14 +214,60 @@ class Category(_Model):
     treat_as_transfer: bool = False
 
 
+#: A file extension a file field accepts, lowercase with its dot: `.pdf`.
+FILE_EXTENSION_PATTERN = r"^\.[a-z0-9]{1,10}$"
+#: The largest file a connection form takes, in KB.
+MAX_FILE_KB = 2048
+#: What a file field takes when the plugin doesn't say.
+DEFAULT_FILE_KB = 512
+
+
 class FormField(_Model):
-    """One field of an integration's connection form."""
+    """One field of an integration's connection form.
+
+    A `file` field takes a file the person picks (ADR 0035). The plugin gets it
+    as `{"name": ..., "content": <base64>}`, in `context.secrets` when the field
+    is secret and in `context.config` otherwise.
+    """
 
     key: str = Field(pattern=KEY_PATTERN)
     label: Text
     secret: bool = False
     """Kept in the encrypted store and never shown again."""
     required: bool = True
+    type: Literal["text", "file"] = "text"
+    accept: list[Annotated[str, Field(pattern=FILE_EXTENSION_PATTERN)]] = Field(default=[], max_length=10)
+    """For a file: the extensions it takes. None means any."""
+    max_kb: int = Field(default=DEFAULT_FILE_KB, ge=1, le=MAX_FILE_KB)
+    """For a file: the largest it takes, in KB."""
+
+    @model_validator(mode="after")
+    def _file_options_for_files(self) -> FormField:
+        # By value, not by what was written: a stored manifest reads back with every default filled in.
+        if self.type != "file" and (self.accept or self.max_kb != DEFAULT_FILE_KB):
+            raise ValueError(f"field {self.key}: accept and max_kb are for a file field")
+        return self
+
+
+#: The longest a routine may ask to run. The runner's own limit (PLUGINS_CALL_TIMEOUT) still applies.
+MAX_ROUTINE_SECONDS = 600
+
+
+class Routine(_Model):
+    """Work an integration runs on a schedule of its own, apart from `sync` (ADR 0035).
+
+    Every `every_minutes`, Securo calls the plugin's `routine(params, context)`
+    with `params["routine"]` naming this one, on each connection made with
+    the integration. Each routine keeps its own `state` and backs off on its
+    own failures; `timeout_seconds` asks for a longer (or shorter) run than
+    the runner's default.
+    """
+
+    key: str = Field(pattern=KEY_PATTERN)
+    name: Text
+    description: Text | None = None
+    every_minutes: int = Field(ge=15, le=7 * 24 * 60)
+    timeout_seconds: int | None = Field(default=None, ge=5, le=MAX_ROUTINE_SECONDS)
 
 
 class Integration(_Model):
@@ -230,7 +276,8 @@ class Integration(_Model):
     `credentials`: the person fills in `fields` (an API key, say).
     `oauth`: the person signs in at the service; the plugin builds the sign-in
     link and trades the code for a token. `none`: nothing to fill in.
-    With `sync_minutes`, Securo calls the plugin's `sync` on that schedule.
+    With `sync_minutes`, Securo calls the plugin's `sync` on that schedule;
+    each of `routines` runs on its own.
     With `provides`, `sync` returns those records as data and Securo writes
     them as it does for a connected bank (see `app.plugins.contract`).
     """
@@ -241,6 +288,7 @@ class Integration(_Model):
     auth: Literal["credentials", "oauth", "none"] = "credentials"
     fields: list[FormField] = Field(default=[], max_length=20)
     sync_minutes: int | None = Field(default=None, ge=15, le=7 * 24 * 60)
+    routines: list[Routine] = Field(default=[], max_length=10)
     provides: list[ProvidedKind] | None = None
     complete_feed: bool = False
     """The plugin returns every entry, pending ones included, from `since` on.
@@ -255,6 +303,9 @@ class Integration(_Model):
         keys = [f.key for f in self.fields]
         if len(keys) != len(set(keys)):
             raise ValueError(f"integration {self.key}: field keys must be unique")
+        routines = [r.key for r in self.routines]
+        if len(routines) != len(set(routines)):
+            raise ValueError(f"integration {self.key}: routine keys must be unique")
         return self
 
     @model_validator(mode="after")
@@ -277,6 +328,16 @@ class Integration(_Model):
     def is_provider(self) -> bool:
         """Its records go through the bank sync pipeline."""
         return bool(self.provides)
+
+    @property
+    def syncs(self) -> bool:
+        """Whether the plugin implements `sync` for it.
+
+        An integration with routines and no `sync_minutes` (nor records to
+        provide) only runs its routines: nothing calls `sync`, not even once
+        after connecting.
+        """
+        return self.sync_minutes is not None or self.is_provider or not self.routines
 
 
 class Runtime(_Model):

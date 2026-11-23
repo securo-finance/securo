@@ -3894,7 +3894,22 @@
       "editTitle": "Ricollega {{name}}",
       "editHint": "Aggiorna ciò che è cambiato, come una nuova password o un token. Poi la connessione si sincronizza di nuovo.",
       "keepBlank": "Lascia un campo vuoto per mantenere il valore attuale.",
-      "updated": "{{name}} aggiornata"
+      "updated": "{{name}} aggiornata",
+      "routines": "Routine",
+      "routineEvery": "ogni {{interval}}",
+      "routineLastRun": "eseguita {{when}}",
+      "routineNeverRan": "non ancora eseguita",
+      "runRoutine": "Esegui ora",
+      "runRoutineAria": "Esegui {{name}} ora",
+      "routineRan": "{{name}} è stata eseguita",
+      "routineFailed": "Non è stata eseguita.",
+      "fileAccepts": "{{types}}, fino a {{size}} KB",
+      "fileAny": "Qualsiasi file, fino a {{size}} KB",
+      "currentFile": "attuale: {{name}}",
+      "fileSaved": "c'è un file salvato",
+      "fileWrongType": "{{name}} non è un file {{types}}.",
+      "fileTooBig": "{{name}} supera {{size}} KB.",
+      "fileReadFailed": "Impossibile leggere {{name}}."
     },
     "oauth": {
       "title": "Completamento dell'accesso",
