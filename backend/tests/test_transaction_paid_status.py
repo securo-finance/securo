@@ -102,6 +102,40 @@ async def test_an_imported_row_starts_paid(
 
 
 @pytest.mark.asyncio
+async def test_a_group_settlement_row_starts_paid(
+    client, auth_headers, session: AsyncSession, test_user, test_account: Account
+):
+    """A settle-up records money already handed over, not a promise to pay."""
+    tx = await _stored(session, test_user.id, test_account, "settlement")
+    await session.commit()
+
+    read = await client.get(f"/api/transactions/{tx.id}", headers=auth_headers)
+
+    assert read.status_code == 200
+    assert read.json()["is_paid"] is True
+
+
+@pytest.mark.asyncio
+async def test_an_account_opening_balance_starts_paid(
+    client, auth_headers, session: AsyncSession, test_workspace
+):
+    """The opening balance is money the account already had."""
+    created = await client.post(
+        "/api/accounts",
+        json={"name": "Savings", "type": "savings", "balance": "2500.00"},
+        headers=auth_headers,
+    )
+    assert created.status_code == 201, created.text
+
+    rows = (await session.execute(
+        select(Transaction).where(Transaction.source == "opening_balance")
+    )).scalars().all()
+
+    assert [row.account_id for row in rows] == [uuid.UUID(created.json()["id"])]
+    assert rows[0].is_paid is True
+
+
+@pytest.mark.asyncio
 async def test_the_caller_may_create_a_row_already_paid(
     client, auth_headers, test_account: Account
 ):
