@@ -10,7 +10,7 @@ from sqlalchemy.orm import load_only
 from app.models.rule import Rule
 from app.models.category import Category
 from app.models.payee import Payee
-from app.models.transaction import Transaction
+from app.models.transaction import Transaction, provider_category_text
 
 from app.schemas.rule import (
     RuleCreate,
@@ -425,15 +425,17 @@ async def list_provider_categories(
     (#280). Values arrive in different cases across providers, so they are
     ordered case-insensitively.
 
-    The JSON value is read as JSON, not as text: `as_string()` turns a numeric
-    code into `"42"`, which the rule engine never matches (`provider_category`
-    is only text, #353). What the engine ignores is not offered here.
+    The JSON value is read as JSON, not as text, and turned into a suggestion
+    by `provider_category_text`, the same function behind
+    `Transaction.provider_category`: the editor offers exactly what a rule can
+    match, including a numeric code in its text form, and nothing the engine
+    treats as no label (#353).
 
     There is deliberately no `DISTINCT`: `raw_data` is a `JSON` column, so the
     bare value is typed `json`, and PostgreSQL has no equality operator for it
     — `SELECT DISTINCT raw_data -> 'category'` fails at planning on every
     PostgreSQL instance (#375). The set below de-duplicates instead, after the
-    non-text values are dropped.
+    values that are no label are dropped.
     """
     value = Transaction.raw_data["category"]
     result = await session.execute(
@@ -443,7 +445,11 @@ async def list_provider_categories(
         )
     )
     return sorted(
-        {v for v in result.scalars() if isinstance(v, str) and v.strip()},
+        {
+            text
+            for raw in result.scalars()
+            if (text := provider_category_text(raw)) is not None
+        },
         key=str.casefold,
     )
 

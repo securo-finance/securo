@@ -9,8 +9,9 @@ the type, not the data. The rule editor's suggestion list answered 500 on
 every PostgreSQL instance; SQLite runs the same statement happily, so the
 SQLite suite never caught it (#353).
 
-The labels are de-duplicated in Python instead, which also keeps a numeric
-code or a structured value from being offered.
+The labels are de-duplicated in Python instead, which also keeps a structured
+value from being offered. A numeric code is offered in its text form, the same
+string a saved rule matches against.
 """
 
 import uuid
@@ -43,7 +44,7 @@ async def test_provider_categories_do_not_ask_postgres_to_compare_json(
     session, test_user, test_workspace,
 ):
     """A numeric code beside repeated text labels neither breaks the query nor
-    leaks into the suggestions (#353)."""
+    leaks into the suggestions, and comes back as the text a rule matches."""
     account = Account(
         id=uuid.uuid4(),
         user_id=test_user.id,
@@ -75,8 +76,8 @@ async def test_provider_categories_do_not_ask_postgres_to_compare_json(
         # A repeated label: without DISTINCT the de-duplication happens in
         # Python, and the suggestion must still appear once.
         _row("MARKET AGAIN", {"category": "Groceries"}, 2),
-        # The provider sent a numeric code: the rule engine only matches text,
-        # so it is not a suggestion.
+        # The provider sent a numeric code: a saved rule compares its text
+        # form, so that is what the editor is offered.
         _row("NUMERIC CODE", {"category": 42}, 3),
         _row("NO CATEGORY KEY", {"other": "x"}, 4),
     ])
@@ -86,4 +87,4 @@ async def test_provider_categories_do_not_ask_postgres_to_compare_json(
         session, test_workspace.id
     )
 
-    assert categories == ["Groceries"]
+    assert categories == ["42", "Groceries"]

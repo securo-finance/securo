@@ -375,6 +375,32 @@ def test_provider_category_condition_is_case_and_accent_insensitive():
     assert evaluate_conditions("and", conditions, tx) is True
 
 
+def test_provider_category_condition_matches_a_numeric_code_as_text():
+    """A code the engine already matched as text keeps matching (#353).
+
+    `_match_condition` compares the text form of both sides, so a saved rule on
+    `"5411"` matched `{"category": 5411}` before this change and must go on
+    matching it now that the property turns the code into a string.
+    """
+    tx = make_tx(raw_data={"category": 5411})
+    for op in ("equals", "contains", "starts_with"):
+        conditions = [{"field": "provider_category", "op": op, "value": "5411"}]
+        assert evaluate_conditions("and", conditions, tx) is True
+
+
+def test_provider_category_condition_does_not_match_a_non_label_value():
+    """A list, an object, a bool and blank text are no label for a rule."""
+    conditions = [{"field": "provider_category", "op": "equals", "value": "42"}]
+    for raw_data in (
+        {"category": [1, 2]},
+        {"category": {"id": 42}},
+        {"category": True},
+        {"category": ""},
+        {"category": "   "},
+    ):
+        assert evaluate_conditions("and", conditions, make_tx(raw_data=raw_data)) is False
+
+
 def test_provider_category_condition_without_category_does_not_match():
     tx = make_tx(raw_data={"id": "tx-1"})
     conditions = [

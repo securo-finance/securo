@@ -172,20 +172,19 @@ class Transaction(Base):
 
     @property
     def provider_category(self) -> Optional[str]:
-        """The label the provider sent, only when it is a non-empty string.
+        """The label the provider sent, as the text the rule engine compares.
 
         `raw_data` is the payload as the bank or plugin sent it, so the key can
-        hold anything: a numeric MCC code, a list, an object. The rule engine
-        and the response schema both read this property as text, so a value of
-        another type is "no label" here rather than a validation error that
-        takes the whole month's list down (issue #353).
+        hold anything: a numeric MCC code, a list, an object. The response
+        schema requires a string, and a value it cannot carry used to take the
+        whole month's list down with a validation error (issue #353).
+        `provider_category_text` decides what counts as a label, and the rule
+        engine's suggestions use the same function so that what is offered is
+        exactly what a rule can match.
         """
         if not isinstance(self.raw_data, dict):
             return None
-        value = self.raw_data.get("category")
-        if isinstance(value, str) and value.strip():
-            return value
-        return None
+        return provider_category_text(self.raw_data.get("category"))
 
     account: Mapped["Account"] = relationship(back_populates="transactions")
     category: Mapped[Optional["Category"]] = relationship()
@@ -223,6 +222,25 @@ class Transaction(Base):
     matched_amount = cast(Optional[Decimal], None)
     matched_amount_primary = cast(Optional[Decimal], None)
     reporting_date = cast(Optional[_date], None)
+
+
+def provider_category_text(value: object) -> Optional[str]:
+    """The provider's category as the text a rule compares against.
+
+    A value the rule engine is meant to match becomes a string: a real label
+    as sent, and a numeric code (an MCC such as 5411) as its text form, which
+    is what `_match_condition` has always compared. `bool` is left out on
+    purpose: it is a subclass of `int` in Python, and `True` is not a code.
+    A list, an object, `None` and blank text are no label at all, so neither
+    the engine nor the editor offers them.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str) and value.strip():
+        return value
+    return None
 
 
 # Safety net: `effective_date` is NOT NULL. For non-CC transactions it always
