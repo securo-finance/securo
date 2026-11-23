@@ -2310,21 +2310,24 @@ async def _transaction_snapshot(
             },
             "amount_primary": {
                 "type": "number",
-                "exclusiveMinimum": 0,
+                "minimum": 0,
                 "maximum": float(MAX_MONEY_AMOUNT),
                 "description": (
                     "Value in the primary currency. Setting it alone derives "
-                    "fx_rate_used = amount_primary / amount."
+                    "fx_rate_used = amount_primary / amount. 0 is valid when "
+                    "the conversion rounds to 0.00 (0.01 BRL at 0.2 is 0.00 USD)."
                 ),
             },
             "fx_rate_used": {
                 "type": "number",
-                "exclusiveMinimum": 0,
+                "minimum": 0,
                 "maximum": float(MAX_FX_RATE),
                 "description": (
                     "Rate from the transaction currency to the primary "
                     "currency. Setting it alone derives "
-                    "amount_primary = amount * fx_rate_used."
+                    "amount_primary = amount * fx_rate_used. 0 is valid only "
+                    "next to the amount_primary it was rounded from (a "
+                    "conversion of 0.00, or one under 5e-11 of amount)."
                 ),
             },
             "is_ignored": {"type": "boolean"},
@@ -2504,13 +2507,15 @@ async def propose_update_transaction(
     if amount_primary is not None:
         try:
             changes["amount_primary"] = bounded_money(
-                Decimal(str(amount_primary)), "amount_primary"
+                Decimal(str(amount_primary)), "amount_primary", allow_zero=True
             )
         except ValueError as exc:
             return {"error": str(exc)}
     if fx_rate_used is not None:
         try:
-            changes["fx_rate_used"] = bounded_fx_rate(Decimal(str(fx_rate_used)))
+            changes["fx_rate_used"] = bounded_fx_rate(
+                Decimal(str(fx_rate_used)), "fx_rate_used", allow_zero=True
+            )
         except ValueError as exc:
             return {"error": str(exc)}
     if is_ignored is not None:

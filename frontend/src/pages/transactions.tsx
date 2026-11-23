@@ -143,9 +143,6 @@ export default function TransactionsPage() {
   })
   const [filterUncategorized, setFilterUncategorized] = useState<boolean>(false)
   const [filterFlag, setFilterFlag] = useState<FlagFilter>(() => parseFlagFilter(searchParams.get('flagged')))
-  // The range in use before the flag filter cleared it, put back when the
-  // filter is turned off again.
-  const rangeBeforeFlagRef = useRef<{ from: string; to: string } | null>(null)
   // Seed the date range from the URL, else the range last used on this page
   // (issue #1053), else the current month. Done in the initializer so it
   // survives effect re-runs (e.g. React StrictMode's double-invoke in
@@ -153,20 +150,29 @@ export default function TransactionsPage() {
   const [initialRange] = useState(() => {
     const f = searchParams.get('from')
     const t = searchParams.get('to')
-    if (f || t) return { from: f ?? '', to: t ?? '' }
+    if (f || t) return { from: f ?? '', to: t ?? '', restore: null }
+    const usual = loadRange('transactions') ?? monthRange(currentMonth())
     // A flag is something to come back to, often from months ago: the
     // flagged views open on the whole history, not the current month.
-    if (parseFlagFilter(searchParams.get('flagged'))) return { from: '', to: '' }
-    return loadRange('transactions') ?? monthRange(currentMonth())
+    // The review queue holds whatever arrived unread, and an import early in
+    // the month usually brings last month's rows: it opens on every date too.
+    if (
+      parseFlagFilter(searchParams.get('flagged')) ||
+      searchParams.get('unread_only') === 'true'
+    ) {
+      return { from: '', to: '', restore: usual }
+    }
+    return { ...usual, restore: null }
   })
   const [filterFrom, setFilterFrom] = useState<string>(initialRange.from)
   const [filterTo, setFilterTo] = useState<string>(initialRange.to)
-  useEffect(() => {
-    // The flagged views drop the range for their own sake; keep the one
-    // the user picked for the next visit.
-    if (filterFlag) return
-    saveRange('transactions', filterFrom, filterTo)
-  }, [filterFrom, filterTo, filterFlag])
+  // The range in place before a whole-history view (flags, review queue)
+  // cleared it, to put back when the last of them is turned off.
+  // A link that opens straight on one of those views has no range of its own
+  // to put back: leaving it lands on the range the page opens with otherwise.
+  const rangeBeforeAllDatesRef = useRef<{ from: string; to: string } | null>(
+    initialRange.restore,
+  )
   // Month reflected by the stepper: the active range when it spans exactly one
   // full month, otherwise the current month (custom ranges still navigable).
   const steppedMonth = monthFromRange(filterFrom, filterTo) ?? currentMonth()
@@ -217,6 +223,12 @@ export default function TransactionsPage() {
   const [onlyUnread, setOnlyUnread] = useState<boolean>(
     () => searchParams.get('unread_only') === 'true',
   )
+  useEffect(() => {
+    // The flagged views and the review queue drop the range for their own
+    // sake; keep the one the user picked for the next visit.
+    if (filterFlag || onlyUnread) return
+    saveRange('transactions', filterFrom, filterTo)
+  }, [filterFrom, filterTo, filterFlag, onlyUnread])
   const [filterMinAmount, setFilterMinAmount] = useState<string>(searchParams.get('min_amount') ?? '')
   const [filterMaxAmount, setFilterMaxAmount] = useState<string>(searchParams.get('max_amount') ?? '')
   const [tagFilters, setTagFilters] = useState<string[]>([])
@@ -481,6 +493,16 @@ export default function TransactionsPage() {
         // the date grouping always works correctly.
         ...(isMobile ? { sort_by: 'date', sort_dir: 'desc' as const } : grid.apiSort),
       }),
+  })
+
+  // "Mark all as read" clears every unread row of the workspace, whatever the
+  // filters show, so the review queue also counts those (issue #411). The key
+  // sits under ['transactions'], so every invalidation of the list refreshes it.
+  const { data: workspaceUnread } = useQuery({
+    queryKey: ['transactions', 'unread-total', currentWorkspace?.id],
+    enabled: onlyUnread && viewMode === 'list',
+    queryFn: () => transactions.list({ page: 1, limit: 1, unread_only: true }),
+    select: (result) => result.total,
   })
 
   // A fresh page can hold fewer pages than the one being shown: clearing the
@@ -1128,20 +1150,27 @@ export default function TransactionsPage() {
     }
   }
 
-  const handleFlagFilterChange = (next: FlagFilter) => {
-    if (next && !filterFlag) {
-      rangeBeforeFlagRef.current = { from: filterFrom, to: filterTo }
+  // Flags are something to come back to and the review queue holds whatever
+  // arrived unread, both often from earlier months: either one opens on the
+  // whole history, and the range comes back when neither is on.
+  const switchAllDatesView = (wasOn: boolean, isOn: boolean) => {
+    if (isOn && !wasOn) {
+      rangeBeforeAllDatesRef.current = { from: filterFrom, to: filterTo }
       setFilterFrom('')
       setFilterTo('')
-    } else if (!next && filterFlag) {
-      const previous = rangeBeforeFlagRef.current
+    } else if (!isOn && wasOn) {
+      const previous = rangeBeforeAllDatesRef.current
       // Only when the user has not picked another range in the meantime.
       if (previous && !filterFrom && !filterTo) {
         setFilterFrom(previous.from)
         setFilterTo(previous.to)
       }
-      rangeBeforeFlagRef.current = null
+      rangeBeforeAllDatesRef.current = null
     }
+  }
+
+  const handleFlagFilterChange = (next: FlagFilter) => {
+    switchAllDatesView(Boolean(filterFlag) || onlyUnread, Boolean(next) || onlyUnread)
     setFilterFlag(next)
     setPage(1)
   }
@@ -1157,6 +1186,7 @@ export default function TransactionsPage() {
   }
 
   const handleOnlyUnreadChange = (next: boolean) => {
+    switchAllDatesView(Boolean(filterFlag) || onlyUnread, Boolean(filterFlag) || next)
     setOnlyUnread(next)
     setPage(1)
   }
@@ -1842,20 +1872,28 @@ export default function TransactionsPage() {
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-200 bg-sky-50/60 px-3 py-2 dark:border-sky-500/30 dark:bg-sky-500/10">
           <p className="text-xs font-medium text-sky-800 dark:text-sky-200">
             {t('transactions.unreadCount', { count: data?.total ?? 0 })}
+            {data && workspaceUnread !== undefined && workspaceUnread > data.total && (
+              <span className="ms-2 font-normal">
+                {t('transactions.unreadOutsideFilters', { count: workspaceUnread - data.total })}
+              </span>
+            )}
           </p>
           <Button
             size="sm"
             variant="outline"
+            // The label carries the count, so on a phone it takes the whole
+            // row and wraps instead of running past the banner's edge.
+            className="h-auto min-h-9 w-full whitespace-normal py-1.5 text-center sm:w-auto"
             onClick={() => markAllReadMutation.mutate(currentWorkspace?.id)}
-            // The action clears the whole workspace, not the filtered list, so
-            // an empty filtered queue must not disable it; only wait for the
-            // list to load.
-            disabled={!canWrite || markAllReadMutation.isPending || !data}
+            // The action clears the whole workspace, not the filtered list:
+            // it says how many rows that is, and with none there is nothing
+            // to clear.
+            disabled={!canWrite || markAllReadMutation.isPending || !workspaceUnread}
           >
             <CheckCheck className="me-1.5 h-4 w-4" />
             {markAllReadMutation.isPending
               ? t('transactions.markAllReadPending')
-              : t('transactions.markAllRead')}
+              : t('transactions.markAllRead', { count: workspaceUnread ?? 0 })}
           </Button>
         </div>
       )}

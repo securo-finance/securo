@@ -302,7 +302,8 @@ class TestInstallmentSeriesCreate:
             )
 
     def test_rejects_negative_base_amount(self):
-        with pytest.raises(ValidationError, match="amount must be positive"):
+        # The base is a TransactionCreate, whose own bound answers first (#321).
+        with pytest.raises(ValidationError, match="amount must be greater than zero"):
             InstallmentSeriesCreate.model_validate({
                 "base": {**self.BASE, "amount": "-5.00"},
                 "installments": 2,
