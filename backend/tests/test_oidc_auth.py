@@ -441,6 +441,48 @@ async def test_logout_discovery_failure_logs_once_per_cache_window(
 
 
 @pytest.mark.asyncio
+async def test_logout_discovery_warning_hides_url_credentials(
+    oidc_settings, monkeypatch, caplog
+):
+    """A credential in the discovery URL's userinfo or query never reaches the
+    log, not even quoted back by the httpx error; discovery still reads the
+    configured URL as it is."""
+    secret_url = (
+        "https://user:hunter2@id.example.com/.well-known/openid-configuration"
+        "?token=s3cr3t-token"
+    )
+    oidc_settings.oidc_discovery_url = secret_url
+    seen: list[str] = []
+
+    async def failing_discover():
+        seen.append(oidc_auth.get_settings().oidc_discovery_url)
+        raise oidc_auth.httpx.ConnectError(f"cannot reach {secret_url}")
+
+    monkeypatch.setattr(oidc_auth, "_discover", failing_discover)
+    monkeypatch.setattr(oidc_auth, "_logout_url_cache", None)
+    caplog.set_level(logging.WARNING, logger="app.api.oidc_auth")
+
+    assert await oidc_auth._provider_logout_url() == ""
+
+    assert seen == [secret_url]
+    warnings = _oidc_warnings(caplog)
+    assert len(warnings) == 1
+    message = warnings[0].getMessage()
+    assert "https://id.example.com/.well-known/openid-configuration" in message
+    assert "hunter2" not in message
+    assert "user:" not in message
+    assert "s3cr3t-token" not in message
+
+
+def test_loggable_url_keeps_port_and_handles_broken_urls():
+    assert (
+        oidc_auth._loggable_url("http://u:p@idp.local:8443/realms/x?k=v#frag")
+        == "http://idp.local:8443/realms/x"
+    )
+    assert oidc_auth._loggable_url("https://[broken") == "<unparsable discovery URL>"
+
+
+@pytest.mark.asyncio
 async def test_logout_discovery_timeout_is_reported(oidc_settings, monkeypatch, caplog):
     async def slow_discover():
         await asyncio.sleep(30)

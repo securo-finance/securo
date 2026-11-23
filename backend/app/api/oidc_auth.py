@@ -101,9 +101,27 @@ _LOGOUT_DISCOVERY_TIMEOUT = 3.0
 _logout_url_cache: tuple[float, str, str, bool] | None = None
 
 
+def _loggable_url(url: str) -> str:
+    """`url` with only scheme, host, port and path, for a log line.
+
+    A discovery URL can carry a credential in its userinfo or a token in its
+    query; neither belongs in the log. Only the log sees this: discovery keeps
+    reading the configured URL as it is.
+    """
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname or ""
+        if ":" in host:
+            host = f"[{host}]"
+        netloc = f"{host}:{parts.port}" if parts.port else host
+    except ValueError:
+        return "<unparsable discovery URL>"
+    return urlunsplit((parts.scheme, netloc, parts.path, "", ""))
+
+
 def _logout_failure_reason(error: BaseException) -> str:
-    """Why discovery failed, in words an operator can act on. Never a secret:
-    the discovery URL is configuration, the client secret is not read here."""
+    """Why discovery failed, in words an operator can act on. The caller
+    masks the discovery URL in it; the client secret is not read here."""
     if isinstance(error, (asyncio.TimeoutError, TimeoutError)):
         return f"discovery timed out after {_LOGOUT_DISCOVERY_TIMEOUT:g}s"
     if isinstance(error, httpx.HTTPStatusError):
@@ -161,11 +179,16 @@ async def _provider_logout_url() -> str:
     if failure_reason is None and endpoint and not url:
         failure_reason = "the end_session_endpoint is not a usable URL"
     if failure_reason is not None:
+        raw_url = settings.oidc_discovery_url
+        log_url = _loggable_url(raw_url)
+        # An httpx error can quote the URL it was asked for; mask it there too.
+        if raw_url:
+            failure_reason = failure_reason.replace(raw_url, log_url)
         logger.warning(
             "OIDC logout discovery failed for %s: %s. SSO sign-out stays off "
             "until it answers; the empty answer is cached and retried when "
             "the window ends.",
-            settings.oidc_discovery_url,
+            log_url,
             failure_reason,
         )
     _logout_url_cache = (now, cache_key, url, discovery_answered)
