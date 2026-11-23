@@ -1042,6 +1042,16 @@
     "sortDesc": "降順で並べ替え",
     "syncedInfo": "銀行同期の取引：金額、日付、口座は編集できません",
     "syncedAmountDateError": "同期された取引の金額や日付は変更できません",
+    "amountErrors": {
+      "notPositive": "金額は0より大きくする必要があります。",
+      "tooSmall": "金額は0.01以上にする必要があります。",
+      "tooLarge": "金額がSecuroで保存できる上限を超えています。",
+      "convertedNegative": "換算後の金額をマイナスにすることはできません。",
+      "convertedTooLarge": "換算後の金額がSecuroで保存できる上限を超えています。",
+      "rateNotPositive": "為替レートは負の値にできません。レートが0の場合は、換算後の金額が0に丸められる場合にのみ受け付けられます。",
+      "rateTooLarge": "為替レートがSecuroで保存できる上限を超えています。",
+      "required": "金額を入力してください。"
+    },
     "uncategorized": "未分類",
     "selected": "件選択中",
     "summaryCount": "{{count}}件",

@@ -1061,6 +1061,16 @@
     "sortDesc": "Sortuj malejąco",
     "syncedInfo": "Transakcja zsynchronizowana z bankiem: kwoty, daty i konta nie można edytować",
     "syncedAmountDateError": "Nie można zmienić kwoty ani daty zsynchronizowanej transakcji",
+    "amountErrors": {
+      "notPositive": "Kwota musi być większa od zera.",
+      "tooSmall": "Kwota musi wynosić co najmniej 0,01.",
+      "tooLarge": "Kwota jest większa, niż Securo może zapisać.",
+      "convertedNegative": "Przeliczona kwota nie może być ujemna.",
+      "convertedTooLarge": "Przeliczona kwota jest większa, niż Securo może zapisać.",
+      "rateNotPositive": "Kurs wymiany nie może być ujemny. Kurs zerowy jest akceptowany tylko wtedy, gdy przeliczona kwota zaokrągla się do zera.",
+      "rateTooLarge": "Kurs wymiany jest większy, niż Securo może zapisać.",
+      "required": "Wpisz kwotę."
+    },
     "uncategorized": "Nieskategoryzowane",
     "selected": "zaznaczono",
     "summaryCount_one": "{{count}} transakcja",

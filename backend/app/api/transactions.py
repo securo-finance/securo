@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
 from app.core.database import get_async_session
+from app.core.money import MoneyOutOfRange
 from app.core.workspace_context import (
     WorkspaceContext,
     current_workspace,
@@ -626,6 +627,8 @@ async def create_transaction(
         full_tx = await transaction_service.get_transaction(session, transaction.id, ctx.workspace.id)
         primary_currency = ctx.user.primary_currency
         return _tag_fx_fallback(TransactionRead.model_validate(full_tx, from_attributes=True), primary_currency)
+    except MoneyOutOfRange as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -641,6 +644,8 @@ async def update_transaction(
         transaction = await transaction_service.update_transaction(
             session, transaction_id, ctx.workspace.id, ctx.user_id, data
         )
+    except MoneyOutOfRange as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not transaction:

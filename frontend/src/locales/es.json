@@ -1044,6 +1044,16 @@
     "sortDesc": "Orden descendente",
     "syncedInfo": "Transacción sincronizada con el banco: el importe, la fecha y la cuenta no se pueden editar",
     "syncedAmountDateError": "No se puede cambiar el importe ni la fecha de una transacción sincronizada",
+    "amountErrors": {
+      "notPositive": "El importe debe ser mayor que cero.",
+      "tooSmall": "El importe debe ser de al menos 0,01.",
+      "tooLarge": "El importe es mayor de lo que Securo puede guardar.",
+      "convertedNegative": "El importe convertido no puede ser negativo.",
+      "convertedTooLarge": "El importe convertido es mayor de lo que Securo puede guardar.",
+      "rateNotPositive": "El tipo de cambio no puede ser negativo. Una tasa cero solo se acepta cuando el importe convertido redondea a cero.",
+      "rateTooLarge": "El tipo de cambio es mayor de lo que Securo puede guardar.",
+      "required": "Introduce un importe."
+    },
     "uncategorized": "Sin categorizar",
     "selected": "seleccionado",
     "summaryCount": "{{count}} transacciones",

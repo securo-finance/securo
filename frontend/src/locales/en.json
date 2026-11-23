@@ -1042,6 +1042,16 @@
     "sortDesc": "Sort descending",
     "syncedInfo": "Bank-synced transaction: amount, date and account can't be edited",
     "syncedAmountDateError": "The amount or date of a synchronized transaction cannot be changed",
+    "amountErrors": {
+      "notPositive": "The amount must be greater than zero.",
+      "tooSmall": "The amount must be at least 0.01.",
+      "tooLarge": "The amount is larger than Securo can store.",
+      "convertedNegative": "The converted amount cannot be negative.",
+      "convertedTooLarge": "The converted amount is larger than Securo can store.",
+      "rateNotPositive": "The exchange rate cannot be negative. A zero rate is only accepted when the converted amount rounds to zero.",
+      "rateTooLarge": "The exchange rate is larger than Securo can store.",
+      "required": "Enter an amount."
+    },
     "uncategorized": "Uncategorized",
     "selected": "selected",
     "summaryCount": "{{count}} transactions",

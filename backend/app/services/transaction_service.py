@@ -22,6 +22,12 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.app_clock import app_today
+from app.core.money import (
+    MoneyOutOfRange,
+    bounded_fx_rate,
+    bounded_money,
+    check_zero_rate,
+)
 from app.core.shared_scope import (
     in_bound_workspace,
     invited_group_member_ids,
@@ -119,19 +125,35 @@ def _apply_fx_override(transaction, amount, amount_primary=None, fx_rate_used=No
 
     amount = Decimal(str(amount))
     if amount_primary is not None and fx_rate_used is not None:
+        # An edit may leave `amount` out; only here is the row's amount known.
+        try:
+            check_zero_rate(amount, Decimal(str(amount_primary)), Decimal(str(fx_rate_used)))
+        except ValueError as exc:
+            raise MoneyOutOfRange(str(exc)) from exc
         transaction.amount_primary = Decimal(str(amount_primary))
         transaction.fx_rate_used = Decimal(str(fx_rate_used))
     elif amount_primary is not None:
         transaction.amount_primary = Decimal(str(amount_primary))
         if amount:
-            transaction.fx_rate_used = (Decimal(str(amount_primary)) / amount)
+            transaction.fx_rate_used = _bounded_derived(
+                bounded_fx_rate, Decimal(str(amount_primary)) / amount, "fx_rate_used"
+            )
         else:
             transaction.fx_rate_used = Decimal("1")
     elif fx_rate_used is not None:
         transaction.fx_rate_used = Decimal(str(fx_rate_used))
-        transaction.amount_primary = (amount * Decimal(str(fx_rate_used))).quantize(
-            Decimal("0.01"), rounding=ROUND_HALF_UP
-        )
+        transaction.amount_primary = _bounded_derived(
+            bounded_money, amount * Decimal(str(fx_rate_used)), "amount_primary"
+        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _bounded_derived(bound, value, field):
+    """A derived conversion bounded like a typed one (issue #321): an edit
+    keeps the stored amount, so only here can its product be checked."""
+    try:
+        return bound(value, field, allow_zero=True)
+    except ValueError as exc:
+        raise MoneyOutOfRange(str(exc)) from exc
 
 
 FlagDue = Literal["overdue", "soon"]
