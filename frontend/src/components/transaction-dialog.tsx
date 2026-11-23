@@ -1976,7 +1976,7 @@ function TransactionForm({
         !(onDelete || seed?.id) ? 'justify-end' : ''
       )}>
         <TooltipProvider>
-        <div className="flex min-w-0 items-center gap-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
           {seed?.id && (
             <>
               <FooterIconAction
