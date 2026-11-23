@@ -31,7 +31,10 @@ USER_EDITED_KEY = "securo_user_edited"
 #: statement file the user imported. Everything else — a row the user types, a
 #: transfer they record, the placeholder a recurring bill generates for a date
 #: still ahead — starts unpaid. The user's own mark always wins over this: a
-#: sync updating a row leaves `is_paid` alone.
+#: sync updating a row it already tracks leaves `is_paid` alone. A manual row
+#: or recurring placeholder the statement takes over is the exception: the
+#: bank (or the file) just confirmed the money moved, so it turns paid there,
+#: once, and the user's later mark wins again from then on.
 SETTLED_TRANSACTION_SOURCES = frozenset({"sync", "import"})
 
 

@@ -4,12 +4,13 @@ A row that came from a statement — the bank sync, or a file the user imported 
 is money that already moved, so it starts paid. A row the user types, a
 transfer they record or the placeholder a recurring bill generates for a date
 ahead starts unpaid. The mark is the user's: a later sync refreshes the provider
-fields and leaves it exactly as the user left it. Nothing about totals, balances
-or reports changes.
+fields and leaves it exactly as the user left it. A manual row or recurring
+placeholder the statement takes over turns paid then, once. Nothing about
+totals, balances or reports changes.
 """
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
@@ -22,7 +23,11 @@ from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.transaction import Transaction
 from app.providers.base import AccountData, TransactionData
+from app.schemas.recurring_transaction import RecurringTransactionCreate
+from app.schemas.transaction import TransactionImport
 from app.services.connection_service import sync_connection
+from app.services.import_service import import_transactions
+from app.services.recurring_transaction_service import create_recurring_transaction
 
 ACCOUNT_EXT_ID = "checking-1"
 
@@ -226,7 +231,7 @@ async def _connection_and_account(session: AsyncSession, user_id):
     return conn, account
 
 
-def _provider(description: str):
+def _provider(description: str, amount: Decimal = Decimal("25.00")):
     provider = AsyncMock()
     provider.rereads_by_date = False
     provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
@@ -240,7 +245,7 @@ def _provider(description: str):
         TransactionData(
             external_id="tx-1",
             description=description,
-            amount=Decimal("25.00"),
+            amount=amount,
             date=app_today() - timedelta(days=1),
             type="debit",
             currency="BRL",
@@ -283,3 +288,153 @@ async def test_a_resync_keeps_the_mark_the_user_made(
 
     assert refreshed.description == "GROCERY STORE"
     assert refreshed.is_paid is False
+
+
+# --- a row the statement takes over turns paid ---------------------------
+
+
+def _unsynced_row(user_id, workspace_id, account_id, *, source: str, description: str,
+                  amount: Decimal, day, recurring_id=None) -> Transaction:
+    return Transaction(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        workspace_id=workspace_id,
+        account_id=account_id,
+        description=description,
+        amount=amount,
+        currency="BRL",
+        date=day,
+        type="debit",
+        source=source,
+        status="posted",
+        recurring_transaction_id=recurring_id,
+        created_at=datetime.now(timezone.utc),
+    )
+
+
+async def _bill(session, workspace_id, user_id, account_id, amount: Decimal, start):
+    return await create_recurring_transaction(
+        session,
+        workspace_id,
+        user_id,
+        RecurringTransactionCreate(
+            description="Netflix Subscription",
+            amount=amount,
+            currency="BRL",
+            type="debit",
+            frequency="monthly",
+            start_date=start,
+            account_id=account_id,
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_manual_row_the_sync_adopts_turns_paid(
+    session: AsyncSession, test_user, test_workspace
+):
+    conn, account = await _connection_and_account(session, test_user.id)
+    account.workspace_id = test_workspace.id
+    account_id = account.id
+    typed = _unsynced_row(
+        test_user.id, test_workspace.id, account.id, source="manual",
+        description="GROCERY", amount=Decimal("25.00"),
+        day=app_today() - timedelta(days=1),
+    )
+    session.add(typed)
+    await session.commit()
+    typed_id = typed.id
+    assert typed.is_paid is False
+
+    await _sync(session, conn, test_workspace.id, test_user.id, _provider("GROCERY"))
+    adopted = (await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == account_id,
+            Transaction.source != "opening_balance",
+        )
+    )).scalars().all()
+
+    assert [row.id for row in adopted] == [typed_id]
+    assert adopted[0].source == "sync"
+    assert adopted[0].is_paid is True
+
+    # From here on the mark is the user's again.
+    adopted[0].is_paid = False
+    await session.commit()
+    await _sync(session, conn, test_workspace.id, test_user.id, _provider("GROCERY"))
+    await session.refresh(adopted[0])
+    assert adopted[0].is_paid is False
+
+
+@pytest.mark.asyncio
+async def test_a_recurring_placeholder_the_sync_fulfils_turns_paid(
+    session: AsyncSession, test_user, test_workspace
+):
+    conn, account = await _connection_and_account(session, test_user.id)
+    account.workspace_id = test_workspace.id
+    account_id = account.id
+    charged_on = app_today() - timedelta(days=1)
+    bill = await _bill(
+        session, test_workspace.id, test_user.id, account.id, Decimal("39.90"), charged_on
+    )
+    placeholder = _unsynced_row(
+        test_user.id, test_workspace.id, account.id, source="recurring",
+        description="Netflix Subscription", amount=Decimal("39.90"),
+        day=charged_on, recurring_id=bill.id,
+    )
+    session.add(placeholder)
+    await session.commit()
+    placeholder_id = placeholder.id
+    assert placeholder.is_paid is False
+
+    await _sync(
+        session, conn, test_workspace.id, test_user.id,
+        _provider("NETFLIX SUBSCRIPTION", Decimal("39.90")),
+    )
+    rows = (await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == account_id,
+            Transaction.source != "opening_balance",
+        )
+    )).scalars().all()
+
+    assert [row.id for row in rows] == [placeholder_id]
+    assert rows[0].source == "sync"
+    assert rows[0].is_paid is True
+
+
+@pytest.mark.asyncio
+async def test_a_recurring_placeholder_an_import_fulfils_turns_paid(
+    session: AsyncSession, test_user, test_workspace, test_account: Account
+):
+    bill = await _bill(
+        session, test_workspace.id, test_user.id, test_account.id,
+        Decimal("39.90"), date(2026, 1, 10),
+    )
+    bill.next_occurrence = date(2026, 2, 10)
+    placeholder = _unsynced_row(
+        test_user.id, test_workspace.id, test_account.id, source="recurring",
+        description="Netflix Subscription", amount=Decimal("39.90"),
+        day=date(2026, 1, 10), recurring_id=bill.id,
+    )
+    session.add(placeholder)
+    await session.commit()
+    placeholder_id = placeholder.id
+
+    with patch("app.services.import_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.import_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id,
+            [TransactionImport(description="NETFLIX SUBSCRIPTION", amount=Decimal("39.90"),
+                               date=date(2026, 1, 11), type="debit", currency="BRL")],
+            "import",
+        )
+    rows = (await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == test_account.id,
+            Transaction.source != "opening_balance",
+        )
+    )).scalars().all()
+
+    assert [row.id for row in rows] == [placeholder_id]
+    assert rows[0].is_paid is True

@@ -4587,6 +4587,8 @@ async def sync_connection(
                         continue
                     _merge_sync_metadata(fuzzy_match, txn_data)
                     fuzzy_match.source = "sync"
+                    # The bank just confirmed the row the user typed (#15).
+                    fuzzy_match.is_paid = True
                     _mark_adopted_manual(fuzzy_match)
                     merged_count += 1
                     continue
@@ -4762,6 +4764,8 @@ async def sync_connection(
                         continue
                     placeholder.external_id = txn_data.external_id
                     placeholder.source = "sync"
+                    # The bill's charge reached the statement (#15).
+                    placeholder.is_paid = True
                     placeholder.status = txn_data.status
                     placeholder.raw_data = txn_data.raw_data
                     if txn_data.card_masked_number is not None:
