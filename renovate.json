@@ -17,6 +17,11 @@
       "minimumReleaseAge": "7 days"
     },
     {
+      "description": "Same cooldown for the backend. Matching the PyPI datasource covers the pep621 manager (pyproject.toml and uv.lock) and the uv pin kept by the custom manager below.",
+      "matchDatasources": ["pypi"],
+      "minimumReleaseAge": "7 days"
+    },
+    {
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "GitHub Actions (non-major)"
