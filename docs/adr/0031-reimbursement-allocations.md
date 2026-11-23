@@ -30,7 +30,7 @@ Paying for others and being paid back, or buying something and returning part of
 - The link model is not shared with #828 (cash rows against asset movements): that one nets net worth, this one P&L, and a shared table would tie their rules together.
 - A netted balance curve ends where the real balance does once every link has settled. While a payback is still on its way (a later month, or pending) the curve sits above the real balance by that amount, and the Total balance card, which is real, differs from it.
 - The P&L forecast measures a pending or future row against what counts toward P&L, with the primary amounts the posted path uses, so it takes off the same amount the posted report will. It puts a pending or future row's remaining share in the row's own direction, so a pending expense repaid in excess projects as nothing; the excess the posted path counts as income is not projected.
-- A category whose net spending is already zero or below is left out of budgets before the offsets apply, so a credit an allocation takes out of such a category does not bring its spending back.
+- A budget keeps a category's signed total until the offsets are in and only then drops the categories at or below zero, so a payback booked in a category (a raw net below zero) still gives back that category's real spending once the allocation takes the payback out.
 
 ## Enforced by
 
