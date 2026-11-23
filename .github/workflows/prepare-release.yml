@@ -86,10 +86,12 @@ jobs:
           set -euo pipefail
 
           # uv.lock carries the project's own version, so CI's `uv lock --check`
-          # fails if the pyproject bump lands alone. Same pinned uv as ci.yml and
-          # the backend image.
+          # fails if the pyproject bump lands alone. This is a lock writer, like
+          # backend/Dockerfile and scripts/lock.sh, so it pins the same uv and
+          # Renovate bumps the three together. ci.yml pins its own uv: the one
+          # that validates the lock, and it accepts what these write.
           # renovate: datasource=pypi depName=uv
-          pip install -q uv==0.12.5
+          pip install -q uv==0.13.0
           cd backend
           uv lock
           uv lock --check
