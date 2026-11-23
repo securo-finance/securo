@@ -281,17 +281,19 @@ async def _update_values(
     connection.secrets = vault.seal({**{k: v for k, v in secrets.items() if k not in fields}, **new_secrets})
     if name is not None and name.strip():
         connection.name = name.strip()[:100]
-    if integration.auth != "oauth":
-        connection.status = "pending"
-    connection.failures = 0
-    connection.last_error = None
+    if changed:
+        # New values have to prove themselves: it waits for the run that
+        # checks them. A rename alone changes nothing about its state.
+        if integration.auth != "oauth":
+            connection.status = "pending"
+        connection.failures = 0
+        connection.last_error = None
+        # Only new values end the reason the old ones left; a rename does not.
+        await _forget_bank_failure(session, connection)
     if connection.bank_connection_id is not None:
         bank = await session.get(BankConnection, connection.bank_connection_id)
         if bank is not None:
             bank.display_name = connection.name
-    if changed:
-        # Only new values end the reason the old ones left; a rename does not.
-        await _forget_bank_failure(session, connection)
     await _mirror_status(session, connection)
     await session.commit()
     return connection

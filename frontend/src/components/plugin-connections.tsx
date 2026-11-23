@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import axios from 'axios'
-import { Copy, FileUp, LogIn, Play, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { Copy, FileUp, KeyRound, LogIn, Play, Plus, RefreshCw, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { invalidateSyncedRecords } from '@/lib/invalidate-queries'
@@ -54,6 +54,7 @@ export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
   const { canWrite } = useWorkspace()
   const queryClient = useQueryClient()
   const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState<PluginConnection | null>(null)
   const [removing, setRemoving] = useState<PluginConnection | null>(null)
 
   const { data, isLoading, isError, refetch } = useQuery({
@@ -219,6 +220,15 @@ export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
                         {t('plugins.connections.syncNow')}
                       </Button>
                     ) : null}
+                    {!signIn && integration?.auth !== 'oauth' && (
+                      // The same form that connected it: new keys, or a new name.
+                      <Button size="sm" variant="outline" onClick={() => setEditing(connection)}>
+                        <KeyRound size={14} className="me-1" />
+                        {connection.status === 'needs_auth'
+                          ? t('plugins.connections.updateKeys')
+                          : t('plugins.connections.edit')}
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="ghost"
@@ -239,6 +249,14 @@ export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
 
       {adding && (
         <PluginConnectionDialog plugin={plugin} onClose={() => setAdding(false)} onDone={() => void refresh()} />
+      )}
+      {editing && (
+        <PluginConnectionDialog
+          plugin={plugin}
+          connection={editing}
+          onClose={() => setEditing(null)}
+          onDone={() => void refresh()}
+        />
       )}
       {removing && (
         <RemoveConnectionDialog
