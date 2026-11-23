@@ -591,9 +591,52 @@ async def save_backup_config(
     return cfg
 
 
+async def _reconciliation_rows_in_export(
+    session: AsyncSession, name: str, workspace_id: uuid.UUID
+) -> list[dict[str, Any]]:
+    """Reconciliation rows whose expectation is also part of the export.
+
+    A suggestion or event may outlive the transaction, invoice or recurring
+    bill it points at. Exporting the orphan makes the archive un-restorable:
+    restore cannot remap a reference to a row the archive does not contain.
+    """
+
+    model = MODEL_SPECS[name].model
+    assert model is not None
+    dynamic_model: Any = model
+    result = await session.execute(
+        select(dynamic_model).where(dynamic_model.workspace_id == workspace_id)
+    )
+    rows = [_serialize_model(row) for row in result.scalars().all()]
+    exported_ids: dict[str, set[str]] = {}
+    for table, target_model in (
+        ("transactions", Transaction),
+        ("invoices", Invoice),
+        ("recurring_transactions", RecurringTransaction),
+    ):
+        target_result = await session.execute(
+            select(target_model.id).where(target_model.workspace_id == workspace_id)
+        )
+        exported_ids[table] = {str(value) for value in target_result.scalars()}
+    def keep(row: dict[str, Any]) -> bool:
+        target_table = POLYMORPHIC_EXPECTATION_TABLES.get(str(row.get("expectation_kind")))
+        if target_table in exported_ids and str(row.get("expectation_id")) in exported_ids[
+            target_table
+        ]:
+            return True
+        # History deliberately survives a deleted target. Restore swaps the
+        # reference for a stable opaque id, so only an open suggestion needs a
+        # live target to be useful.
+        return name == "reconciliation_events" or row.get("status") != "pending"
+
+    return [row for row in rows if keep(row)]
+
+
 async def _fetch_entity_rows(
     session: AsyncSession, name: str, workspace_id: uuid.UUID
 ) -> list[dict[str, Any]]:
+    if name in {"reconciliation_suggestions", "reconciliation_events"}:
+        return await _reconciliation_rows_in_export(session, name, workspace_id)
     if name == "asset_values":
         result = await session.execute(
             select(AssetValue)
@@ -1180,9 +1223,11 @@ def _rewrite_polymorphic_reference(
     # events receive a stable opaque replacement instead of retaining a UUID that
     # could resolve to another workspace's row.
     if model is ReconciliationSuggestion and row.get("status") == "pending":
-        raise ValueError(
-            f"{model.__table__.name}.{column.key} references a record outside the target workspace"
-        )
+        # A pending match whose target is not part of the export can no longer
+        # be acted on. Expire it and keep a stable opaque reference instead of
+        # failing the whole restore: older backups carry these orphans because
+        # the target transaction, invoice or recurring bill was deleted.
+        row["status"] = "expired"
     opaque_key = (target_table, source_id)
     return id_maps.opaque_references.setdefault(opaque_key, str(uuid.uuid4()))
 
