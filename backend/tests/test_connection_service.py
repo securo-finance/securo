@@ -3493,6 +3493,34 @@ async def test_sync_connection_complete_feed_provider_expires_hold_gone_from_fee
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("_hold_clock")
+async def test_sync_connection_complete_feed_provider_expires_recent_hold_at_once(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Enable Banking keeps a hold that left its feed for the settle window,
+    so a booking can still claim it. A plugin's bookings never claim one, so
+    its hold goes on the first sync that no longer returns it, however recent:
+    otherwise the booked entry and its pending form both show for a week."""
+    conn, account = await _hold_account(session, test_user.id, test_workspace.id)
+    conn.provider = "test"
+    account_id = account.id
+    [(_booked_id, _raw), (live_id, _live_raw)] = await _hold_blank_holds(
+        session, test_user.id, test_workspace.id, account,
+        [_blank_hold(1, "1.00"), _blank_hold(0, "2.00")], account_uid="another-uid",
+    )
+    live_row = await session.get(Transaction, live_id)
+    assert live_row is not None and live_row.external_id is not None
+    still_listed = TransactionData(
+        external_id=live_row.external_id, description="E-COMM", amount=Decimal("2.00"),
+        date=live_row.date, type="debit", status="pending",
+    )
+
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [still_listed], complete_feed=True)
+
+    assert [row.id for row in await _account_rows(session, account_id)] == [live_id]
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("_hold_clock")
 @pytest.mark.parametrize("case", ["incomplete", "truncated", "not-vouched"])
 async def test_sync_connection_complete_feed_provider_keeps_hold_without_evidence(
     session: AsyncSession, test_user, test_workspace, case,
