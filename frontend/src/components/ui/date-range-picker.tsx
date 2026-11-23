@@ -163,7 +163,7 @@ export function DateRangePicker({
           <button
             type="button"
             className={cn(
-              'px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors',
+              'shrink-0 px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors',
               active
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
@@ -193,7 +193,14 @@ export function DateRangePicker({
       <PopoverContent
         align="end"
         sideOffset={8}
-        className="w-auto p-0"
+        // The two stacked calendars are about 700px tall. On a phone that is
+        // taller than the space below the trigger, and Radix only moves the
+        // popover around, it never shrinks it, so the footer (Reset, Cancel,
+        // Apply) ended up past the bottom of the screen. Capping it to the
+        // height the popper says is available, and scrolling inside, keeps
+        // every day and every button reachable (#287).
+        collisionPadding={8}
+        className="max-h-[var(--radix-popover-content-available-height)] w-auto overflow-y-auto overscroll-contain p-0"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <div className="border-b border-border/70 px-4 py-3">
@@ -238,47 +245,52 @@ export function DateRangePicker({
             />
           </div>
         </div>
-        {draftError && (
-          <div className="flex items-center gap-1.5 px-3 pb-2 text-[11px] text-rose-600 dark:text-rose-400">
-            <AlertCircle size={12} className="shrink-0" />
-            <span>{draftError}</span>
-          </div>
-        )}
-        <div className="flex items-center justify-between gap-2 border-t border-border/70 px-3 py-2">
-          <button
-            type="button"
-            onClick={() => {
-              setDraftFrom('')
-              setDraftTo('')
-            }}
-            className="text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            {t('transactions.filtersBar.reset')}
-          </button>
-          <div className="flex items-center gap-2">
-            <Button
+        {/* Pinned to the bottom of the scrolling popover, so the reason Apply
+            is disabled and the buttons themselves stay on screen while the
+            calendars scroll behind them. */}
+        <div className="sticky bottom-0 flex flex-col gap-1.5 border-t border-border/70 bg-popover px-3 py-2">
+          {draftError && (
+            <div className="flex items-center gap-1.5 text-[11px] text-rose-600 dark:text-rose-400">
+              <AlertCircle size={12} className="shrink-0" />
+              <span>{draftError}</span>
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-2">
+            <button
               type="button"
-              variant="outline"
-              size="sm"
               onClick={() => {
-                setDraftFrom(from)
-                setDraftTo(to)
-                setOpen(false)
+                setDraftFrom('')
+                setDraftTo('')
               }}
+              className="text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
-              {t('transactions.filtersBar.cancel')}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              disabled={!!draftError}
-              onClick={() => {
-                onChange(normalizedDraft.from, normalizedDraft.to)
-                setOpen(false)
-              }}
-            >
-              {t('transactions.filtersBar.apply')}
-            </Button>
+              {t('transactions.filtersBar.reset')}
+            </button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setDraftFrom(from)
+                  setDraftTo(to)
+                  setOpen(false)
+                }}
+              >
+                {t('transactions.filtersBar.cancel')}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={!!draftError}
+                onClick={() => {
+                  onChange(normalizedDraft.from, normalizedDraft.to)
+                  setOpen(false)
+                }}
+              >
+                {t('transactions.filtersBar.apply')}
+              </Button>
+            </div>
           </div>
         </div>
       </PopoverContent>

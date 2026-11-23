@@ -1921,6 +1921,51 @@ class TestParseCsvCategoryColumn:
         assert transactions[0].category_name == "Alimentação"
 
 
+class TestParseCsvAccentedHeaders:
+    """Brazilian bank exports write the Portuguese headers with accents."""
+
+    @pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig", "cp1252", "latin-1"])
+    @pytest.mark.parametrize("desc_header", ["Descrição", "Histórico", "Lançamento"])
+    def test_accented_description_header_is_detected(self, encoding, desc_header):
+        csv_content = f"Data;{desc_header};Valor\n03/11/2026;Padaria São João;-25,50\n"
+        transactions, failed = parse_csv(csv_content.encode(encoding))
+
+        assert failed == []
+        assert len(transactions) == 1
+        assert transactions[0].description == "Padaria São João"
+        assert transactions[0].amount == Decimal("25.50")
+        assert transactions[0].type == "debit"
+
+    def test_accented_notes_and_payee_headers_are_detected(self):
+        csv_content = (
+            "Data;Descrição;Valor;Observação;Beneficiário\n"
+            "03/11/2026;Aluguel;-1500,00;Novembro;Imobiliária Sol\n"
+        )
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
+
+        assert transactions[0].notes == "Novembro"
+        assert transactions[0].payee_raw == "Imobiliária Sol"
+
+    def test_a_plain_header_wins_over_an_accented_one_next_to_it(self):
+        """A file holding both "Descrição" and "descricao" keeps reading the
+        plain column, as it did before the folded match was added."""
+        csv_content = (
+            "Data;Descrição;descricao;Valor\n"
+            "03/11/2026;Acentuada;Plana;-10,00\n"
+        )
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
+
+        assert transactions[0].description == "Plana"
+
+    def test_explicit_mapping_to_an_accented_header_still_works(self):
+        csv_content = "Data;Histórico;Valor\n03/11/2026;Mercado;-10,00\n"
+        transactions, _ = parse_csv(
+            csv_content.encode("utf-8"), column_mapping={"description": "Histórico"}
+        )
+
+        assert transactions[0].description == "Mercado"
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # IMPORT TRANSACTIONS WITH CATEGORY RESOLUTION
 # ═══════════════════════════════════════════════════════════════════════════

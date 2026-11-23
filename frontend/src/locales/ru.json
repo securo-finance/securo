@@ -1568,6 +1568,8 @@
     "copyPreviewCount": "Категорий для копирования: {{count}}",
     "copyPreviewTotal": "Итого к копированию: {{amount}}",
     "copyPreviewEmpty": "В выбранном месяце нет бюджетов для копирования.",
+    "copyPreviewAllExist": "У всех категорий исходного месяца уже есть бюджет в {{month}}. Выберите замену, чтобы скопировать суммы или применить корректировку.",
+    "copyPreviewNoChange": "Все бюджеты исходного месяца уже имеют эти суммы в {{month}}.",
     "copyPreviewError": "Не удалось загрузить исходный месяц.",
     "copyAmountTooLarge": "Скорректированная сумма превышает лимит бюджета. Уменьшите процентную корректировку.",
     "copyConfirm": "Копировать бюджеты",
@@ -2136,9 +2138,10 @@
     "summaryHoldings": "создано позиций: {{created}}, найдено: {{matched}}",
     "summarySkipped": "уже импортировано: {{count}}",
     "rowsSkipped": "Строк будет пропущено: {{count}}",
+    "reasonColumn": "Причина",
     "rowError": "Строка {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "и ещё {{count}}",
-    "moreRows": "и ещё {{count}} заявок",
+    "showAllRows": "Показать все строки ({{count}})",
     "field": {
       "ticker": "Тикер",
       "date": "Дата",
@@ -2441,7 +2444,41 @@
     "statementViewTransactions": "Показать транзакции",
     "statementUncategorizedIncome": "Доходы без категории",
     "statementUncategorizedExpense": "Расходы без категории",
-    "statementToggleGroup": "Показать категории группы {{name}}"
+    "statementToggleGroup": "Показать категории группы {{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "Всего потрачено",
+        "income": "Всего получено",
+        "net": "Итог"
+      },
+      "none": {
+        "category": "Без категории",
+        "category_group": "Без группы",
+        "payee": "Без получателя",
+        "account": "Без счёта",
+        "month": "Без даты"
+      },
+      "groupBy": {
+        "category": "Категория",
+        "category_group": "Группа",
+        "payee": "Получатель",
+        "account": "Счёт",
+        "month": "Месяц"
+      },
+      "measure": {
+        "expenses": "Расходы",
+        "income": "Доходы",
+        "net": "Итог"
+      },
+      "share": "Доля",
+      "computed": "Рассчитано плагином",
+      "periodTrimmed": "Отчёты плагинов охватывают не более двух лет. Показан период с {{from}} по {{to}}.",
+      "periodTooLong": "Отчёт плагина охватывает не более двух лет. Выберите более короткий период.",
+      "totalRow": "Итого",
+      "page": "Страница {{page}} из {{pages}}",
+      "previousPage": "Предыдущая страница",
+      "nextPage": "Следующая страница"
+    }
   },
   "payees": {
     "noPayeeFound": "Получатель не найден.",
@@ -4018,5 +4055,9 @@
       "title": "Регулярная выручка",
       "hint": "Сколько приносят регулярные счета в месяц и что недавно потеряно."
     }
+  },
+  "offline": {
+    "title": "Сервер недоступен",
+    "description": "Вы не в сети или Securo перезапускается. Ваши данные в безопасности, ничего не изменено. Мы автоматически переподключимся, как только сервер ответит."
   }
 }

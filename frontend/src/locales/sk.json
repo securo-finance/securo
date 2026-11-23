@@ -1619,6 +1619,8 @@
     "copyPreviewCount": "Kategórie na skopírovanie: {{count}}",
     "copyPreviewTotal": "Celkom na kopírovanie: {{amount}}",
     "copyPreviewEmpty": "Vybraný mesiac nemá žiadne rozpočty na skopírovanie.",
+    "copyPreviewAllExist": "Všetky kategórie zdrojového mesiaca už majú v {{month}} rozpočet. Zvoľte nahradenie, ak chcete skopírovať sumy alebo použiť úpravu.",
+    "copyPreviewNoChange": "Všetky rozpočty zdrojového mesiaca už v {{month}} majú tieto sumy.",
     "copyPreviewError": "Zdrojový mesiac sa nepodarilo načítať.",
     "copyAmountTooLarge": "Upravená suma prekračuje limit rozpočtu. Znížte percentuálnu úpravu.",
     "copyConfirm": "Kopírovať rozpočty",
@@ -2235,9 +2237,10 @@
     "summaryHoldings": "Vytvorené pozície: {{created}}, spárované: {{matched}}",
     "summarySkipped": "Už importovaných: {{count}}",
     "rowsSkipped": "Riadkov na preskočenie: {{count}}",
+    "reasonColumn": "Dôvod",
     "rowError": "Riadok {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "a ešte {{count}}",
-    "moreRows": "a ďalších {{count}} pokynov",
+    "showAllRows": "Zobraziť všetkých {{count}} riadkov",
     "field": {
       "ticker": "Ticker",
       "date": "Dátum",
@@ -2540,7 +2543,41 @@
     "statementViewTransactions": "Zobraziť transakcie",
     "statementUncategorizedIncome": "Príjmy bez kategórie",
     "statementUncategorizedExpense": "Výdavky bez kategórie",
-    "statementToggleGroup": "Zobraziť kategórie v {{name}}"
+    "statementToggleGroup": "Zobraziť kategórie v {{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "Spolu minuté",
+        "income": "Spolu prijaté",
+        "net": "Saldo"
+      },
+      "none": {
+        "category": "Bez kategórie",
+        "category_group": "Bez skupiny",
+        "payee": "Bez príjemcu",
+        "account": "Bez účtu",
+        "month": "Bez dátumu"
+      },
+      "groupBy": {
+        "category": "Kategória",
+        "category_group": "Skupina",
+        "payee": "Príjemca",
+        "account": "Účet",
+        "month": "Mesiac"
+      },
+      "measure": {
+        "expenses": "Výdavky",
+        "income": "Príjmy",
+        "net": "Saldo"
+      },
+      "share": "Podiel",
+      "computed": "Vypočítané pluginom",
+      "periodTrimmed": "Reporty pluginov pokrývajú najviac dva roky. Zobrazuje sa {{from}} až {{to}}.",
+      "periodTooLong": "Report pluginu pokrýva najviac dva roky. Zvoľte kratšie obdobie.",
+      "totalRow": "Spolu",
+      "page": "Strana {{page}} z {{pages}}",
+      "previousPage": "Predchádzajúca strana",
+      "nextPage": "Ďalšia strana"
+    }
   },
   "payees": {
     "noPayeeFound": "Príjemca sa nenašiel.",
@@ -4145,5 +4182,9 @@
       "title": "Opakované príjmy",
       "hint": "Čo mesačne prinášajú opakované faktúry a čo sa nedávno stratilo."
     }
+  },
+  "offline": {
+    "title": "Server je nedostupný",
+    "description": "Ste offline alebo sa Securo reštartuje. Vaše údaje sú v bezpečí a nič sa nezmenilo. Hneď ako server odpovie, automaticky sa znova pripojíme."
   }
 }

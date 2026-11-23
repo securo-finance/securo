@@ -96,9 +96,9 @@ identity. For AWS S3, omit the endpoint and use addressing style `auto`.
 is set (development only; traffic is unencrypted).
 
 Create a private bucket before deployment and migrate existing attachments
-before disabling their PVC. Consult the repository README's Attachment Storage
-section for permissions, migration, and integration testing. S3 mode does not
-move AI knowledge files to object storage.
+before disabling their PVC. The permissions and migration steps are in the
+[deployment guide](https://docs.usesecuro.com/docs/deployment/docker/#storing-attachments-in-s3).
+S3 mode does not move AI knowledge files to object storage.
 
 ### Extra environment variables, volumes and volume mounts
 

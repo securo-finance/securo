@@ -971,15 +971,10 @@ async def test_monthly_trend_uses_owner_share_of_pending_row(
     await _split_half_with_friend(session, test_user, test_workspace, tx)
     await session.commit()
 
-    # get_monthly_trend groups with Postgres' to_char; SQLite needs a stand-in.
-    def _install_to_char(dbapi_conn):
-        dbapi_conn.create_function(
-            "to_char", 2, lambda value, _fmt: None if value is None else str(value)[:7]
-        )
-
-    raw = await session.connection()
-    await raw.run_sync(lambda conn: _install_to_char(conn.connection.dbapi_connection))
-
+    # get_monthly_trend groups with Postgres' to_char. The test engine already
+    # emulates it for the formats the app asks for (conftest's
+    # `sqlite_to_char`); a stand-in registered here would stay on the shared
+    # SQLite connection and hand every later test monthly buckets.
     trend = await dashboard_service.get_monthly_trend(
         session, test_workspace.id, test_user.id, months=1
     )

@@ -1551,6 +1551,8 @@
     "copyPreviewCount": "Másolandó kategóriák: {{count}}",
     "copyPreviewTotal": "Másolandó összeg: {{amount}}",
     "copyPreviewEmpty": "A kiválasztott hónapban nincs másolható költségvetés.",
+    "copyPreviewAllExist": "A forrás hónap minden kategóriájának már van költségvetése ekkor: {{month}}. Az összegek másolásához vagy a módosítás alkalmazásához válaszd a cserét.",
+    "copyPreviewNoChange": "A forrás hónap minden költségvetése már ezeken az összegeken áll ekkor: {{month}}.",
     "copyPreviewError": "A forráshónapot nem sikerült betölteni.",
     "copyAmountTooLarge": "A módosított összeg meghaladja a költségvetési limitet. Csökkentse a százalékos módosítást.",
     "copyConfirm": "Költségvetések másolása",
@@ -2111,9 +2113,10 @@
     "summaryHoldings": "{{created}} pozíció létrehozva, {{matched}} párosítva",
     "summarySkipped": "{{count}} már importálva",
     "rowsSkipped": "{{count}} sor kimarad",
+    "reasonColumn": "Ok",
     "rowError": "{{row}}. sor ({{ticker}}): {{reason}}",
     "moreErrors": "és még {{count}}",
-    "moreRows": "és még {{count}} megbízás",
+    "showAllRows": "Összes {{count}} sor megjelenítése",
     "field": {
       "ticker": "Ticker",
       "date": "Dátum",
@@ -2416,7 +2419,41 @@
     "statementViewTransactions": "Tranzakciók megtekintése",
     "statementUncategorizedIncome": "Kategorizálatlan bevétel",
     "statementUncategorizedExpense": "Kategorizálatlan kiadás",
-    "statementToggleGroup": "{{name}} kategóriáinak mutatása"
+    "statementToggleGroup": "{{name}} kategóriáinak mutatása",
+    "pluginReport": {
+      "total": {
+        "expenses": "Összes kiadás",
+        "income": "Összes bevétel",
+        "net": "Egyenleg"
+      },
+      "none": {
+        "category": "Kategória nélkül",
+        "category_group": "Csoport nélkül",
+        "payee": "Kedvezményezett nélkül",
+        "account": "Számla nélkül",
+        "month": "Dátum nélkül"
+      },
+      "groupBy": {
+        "category": "Kategória",
+        "category_group": "Csoport",
+        "payee": "Kedvezményezett",
+        "account": "Számla",
+        "month": "Hónap"
+      },
+      "measure": {
+        "expenses": "Kiadások",
+        "income": "Bevételek",
+        "net": "Egyenleg"
+      },
+      "share": "Arány",
+      "computed": "A bővítmény számolja",
+      "periodTrimmed": "A bővítményjelentések legfeljebb két évet fednek le. Megjelenítve: {{from}} és {{to}} között.",
+      "periodTooLong": "Egy bővítményjelentés legfeljebb két évet fed le. Válassz rövidebb időszakot.",
+      "totalRow": "Összesen",
+      "page": "{{page}}. oldal / {{pages}}",
+      "previousPage": "Előző oldal",
+      "nextPage": "Következő oldal"
+    }
   },
   "payees": {
     "noPayeeFound": "Nincs ilyen partner.",
@@ -3963,5 +4000,9 @@
       "title": "Ismétlődő bevétel",
       "hint": "Amit az ismétlődő számlák havonta hoznak, és ami nemrég elveszett."
     }
+  },
+  "offline": {
+    "title": "A szerver nem érhető el",
+    "description": "Offline vagy, vagy a Securo újraindul. Az adataid biztonságban vannak, és semmi sem változott. Amint a szerver válaszol, automatikusan újracsatlakozunk."
   }
 }

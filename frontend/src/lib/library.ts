@@ -1,7 +1,8 @@
 import type { LucideIcon } from 'lucide-react'
-import { CalendarClock, CalendarRange, ChartColumnBig, ChartPie, ChartSpline, CreditCard, FileClock, Flag, Gauge, HandCoins, Hourglass, LayoutList, Network, PiggyBank, Receipt, Repeat, Scale, Sparkles, Table2, Tags, Target, TrendingUp, Wallet } from 'lucide-react'
+import { CalendarClock, CalendarRange, ChartArea, ChartColumnBig, ChartPie, ChartSpline, Sigma, CreditCard, FileClock, Flag, Gauge, HandCoins, Hourglass, LayoutList, Network, PiggyBank, Receipt, Repeat, Scale, Sparkles, Table2, Tags, Target, TrendingUp, Wallet } from 'lucide-react'
 
 import type { ModuleId } from '@/lib/modules'
+import type { InstalledPlugin, LocalizedText, PluginReportDefinition } from '@/types'
 
 /**
  * The library: what someone can place on a surface (widgets on the
@@ -18,6 +19,45 @@ export interface LibraryEntry {
   titleKey: string
   descriptionKey: string
   icon: LucideIcon
+  /** A plugin's item: its own name and description, in the languages it gave, and whose it is. */
+  plugin?: { id: string; name: LocalizedText; title: LocalizedText; description?: LocalizedText | null }
+}
+
+/** A report a plugin adds to the library, as listed there. */
+export interface PluginReportEntry extends LibraryEntry {
+  plugin: NonNullable<LibraryEntry['plugin']>
+  report: PluginReportDefinition
+}
+
+const CHART_ICONS: Record<PluginReportDefinition['chart'], LucideIcon> = {
+  bar: ChartColumnBig,
+  line: ChartSpline,
+  area: ChartArea,
+  pie: ChartPie,
+  table: Table2,
+}
+
+/** A plugin item's library id: it can't collide with Securo's own, nor another plugin's. */
+export function pluginItemId(pluginId: string, key: string): string {
+  return `plugin:${pluginId}:${key}`
+}
+
+export function isPluginItemId(id: string): boolean {
+  return id.startsWith('plugin:')
+}
+
+/** The reports the workspace's installed plugins add to the library, plugin by plugin. */
+export function pluginReportEntries(plugins: InstalledPlugin[]): PluginReportEntry[] {
+  return plugins.flatMap((plugin) =>
+    (plugin.reports ?? []).map((report) => ({
+      id: pluginItemId(plugin.plugin_id, report.key),
+      titleKey: '',
+      descriptionKey: '',
+      icon: report.code ? Sigma : (CHART_ICONS[report.chart] ?? ChartColumnBig),
+      plugin: { id: plugin.plugin_id, name: plugin.name, title: report.name, description: report.description },
+      report,
+    })),
+  )
 }
 
 /** Widths a widget can take, in columns of a 12-column grid: a third, a half, two thirds, the whole row. */
@@ -89,12 +129,20 @@ export function defaultLayout(surface: Surface): LayoutItem[] {
 /**
  * A saved arrangement, minus items this version doesn't know (a removed
  * plugin, an old widget) and widths that aren't one of the four.
+ *
+ * `extra` are the plugins' items for the surface. Until they're known
+ * (`null`), a plugin's item is kept as saved, so a change made meanwhile
+ * can't drop it.
  */
-export function resolveLayout(surface: Surface, saved: LayoutItem[] | null | undefined): LayoutItem[] {
+export function resolveLayout(
+  surface: Surface,
+  saved: LayoutItem[] | null | undefined,
+  extra: LibraryEntry[] | null = [],
+): LayoutItem[] {
   if (saved == null) return defaultLayout(surface)
-  const known = new Set(SURFACE_ENTRIES[surface].map((entry) => entry.id))
+  const known = new Set([...SURFACE_ENTRIES[surface], ...(extra ?? [])].map((entry) => entry.id))
   return saved
-    .filter((item) => known.has(item.id))
+    .filter((item) => known.has(item.id) || (extra === null && isPluginItemId(item.id)))
     .map((item) => (item.span !== undefined && SPANS.includes(item.span) ? item : { id: item.id }))
 }
 

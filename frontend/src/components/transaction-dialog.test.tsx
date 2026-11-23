@@ -3,9 +3,9 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { TransactionDialog } from '@/components/transaction-dialog'
-import { assets, currencies, groups, mortgagePayments, payees, transactions } from '@/lib/api'
+import { assets, categories, categoryGroups, currencies, groups, mortgagePayments, payees, rules, transactions } from '@/lib/api'
 import { renderWithProviders, t } from '@/test/utils'
-import type { Account, RecurringTransaction, Transaction } from '@/types'
+import type { Account, RecurringTransaction, Rule, Transaction } from '@/types'
 
 vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => ({ user: { preferences: { currency_display: 'USD' } } }),
@@ -929,4 +929,50 @@ describe('TransactionDialog flag (#56)', () => {
 
     await waitFor(() => expect(screen.queryByTestId('flag-reminder')).not.toBeInTheDocument())
   })
+})
+
+it('names the existing-rule picker after the field and the chosen rule', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  const groceriesRule: Rule = {
+    id: 'rule-groceries',
+    user_id: 'synthetic-user',
+    name: 'Groceries rule',
+    conditions_op: 'and',
+    conditions: [{ field: 'description', op: 'contains', value: 'market' }],
+    actions: [{ op: 'set_category', value: 'cat-food' }],
+    priority: 0,
+    is_active: true,
+  }
+  vi.spyOn(rules, 'list').mockResolvedValue([groceriesRule])
+  vi.spyOn(categories, 'listIncludingHidden').mockResolvedValue([])
+  vi.spyOn(categoryGroups, 'listIncludingHidden').mockResolvedValue([])
+
+  const { user } = renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture(null, {
+        id: 'tx-rule-source',
+        description: 'Market run',
+      })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      onCreateRule={vi.fn()}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+    />,
+  )
+
+  await user.click(await screen.findByRole('button', { name: t('transactions.ruleActions') }))
+  await user.click(await screen.findByRole('menuitem', { name: t('transactions.addToExistingRule') }))
+
+  // A <label for> naming a <button> does not name it, so the button carries the
+  // label and the selected rule: losing either leaves the field unannounced.
+  expect(await screen.findByRole('button', {
+    name: `${t('transactions.existingRule')} ${groceriesRule.name}`,
+  })).toBeInTheDocument()
 })

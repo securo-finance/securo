@@ -402,6 +402,12 @@ class Store:
             "HOME": str(home),
             "TMPDIR": str(home),
             "LANG": "C.UTF-8",
+            # Numeric libraries (numpy's OpenBLAS, MKL, OpenMP) start a thread
+            # per core and reserve memory for each at import, which a call's
+            # memory and process limits refuse: one thread is enough here.
+            "OPENBLAS_NUM_THREADS": "1",
+            "OMP_NUM_THREADS": "1",
+            "MKL_NUM_THREADS": "1",
         }
         if hosts:
             token = egress_token.mint(self.settings.egress_secret, plugin_id, hosts, ttl + 30)
