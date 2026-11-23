@@ -41,6 +41,11 @@ async def session(postgres_sessions):
         await session.rollback()
 
 
+@pytest.fixture
+def clean_db(postgres_sessions):
+    """Each test starts in a fresh per-test PostgreSQL schema."""
+
+
 async def _account(
     session: AsyncSession, user_id: uuid.UUID, workspace_id: uuid.UUID, name: str
 ) -> Account:
