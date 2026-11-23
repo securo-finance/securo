@@ -1610,6 +1610,12 @@ async def test_provider_categories_lists_distinct_workspace_values(
         _row(test_workspace.id, account.id, "MANUAL", None, 4),
         _row(test_workspace.id, account.id, "NO CATEGORY KEY", {"other": "x"}, 5),
         _row(test_workspace.id, account.id, "EMPTY CATEGORY", {"category": ""}, 6),
+        # Payloads the provider sent with something that is not a label: the
+        # rule engine never matches them, so the editor must not offer them
+        # (#353).
+        _row(test_workspace.id, account.id, "NUMERIC CODE", {"category": 42}, 8),
+        _row(test_workspace.id, account.id, "A LIST", {"category": ["Groceries"]}, 9),
+        _row(test_workspace.id, account.id, "AN OBJECT", {"category": {"id": 7}}, 10),
         # Another workspace's label must not show up here.
         _row(other_workspace.id, other_account.id, "FLIGHT", {"category": "Travel"}, 7),
     ]
@@ -1648,3 +1654,33 @@ async def test_transaction_detail_exposes_provider_category(
 
     assert synced_body["provider_category"] == "Groceries"
     assert manual_body["provider_category"] is None
+
+
+@pytest.mark.asyncio
+async def test_transaction_reads_survive_a_non_textual_provider_category(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_transactions,
+):
+    """A payload whose category is not text reads as no label, never as a 500.
+
+    `TransactionRead.provider_category` is a string, and the bank or plugin
+    payload is whatever it sent: a numeric MCC code is enough to fail
+    validation of the whole response, taking the month's list down (#353).
+    """
+    row = test_transactions[0]
+    row.raw_data = {"category": 42}
+    await session.commit()
+
+    detail = await client.get(f"/api/transactions/{row.id}", headers=auth_headers)
+    listing = await client.get(
+        "/api/transactions",
+        params={"from": row.date.isoformat(), "to": row.date.isoformat()},
+        headers=auth_headers,
+    )
+
+    assert detail.status_code == 200
+    assert detail.json()["provider_category"] is None
+    assert listing.status_code == 200
+    items = listing.json()
+    items = items["items"] if isinstance(items, dict) else items
+    listed = next(item for item in items if item["id"] == str(row.id))
+    assert listed["provider_category"] is None
