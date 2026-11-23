@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from sqlalchemy import delete, exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
@@ -40,7 +40,7 @@ from app.models.transaction_category_line import TransactionCategoryLine
 from app.models.user import User
 from app.plugins.provider import is_plugin_provider
 from app.providers import get_provider
-from app.providers.enable_banking import is_account_txn_id
+from app.providers.enable_banking import SKIPPED_TRANSACTION_STATUSES, is_account_txn_id
 from app.providers.base import (
     AccountData,
     BankProvider,
@@ -1690,6 +1690,83 @@ async def update_connection_settings(
     return connection
 
 
+def _reactivate_connection(
+    connection: BankConnection, connection_data,
+) -> None:
+    """Point a connection at the credentials and provider ids of a new session.
+
+    Everything the provider owns follows the new authorization; what the user
+    owns — the name, the settings, the accounts and their history — stays.
+    `last_sync_at` restarts the window so the next sync reconciles the
+    accounts against a feed whose ids belong to another session.
+    """
+    connection.external_id = connection_data.external_id
+    connection.institution_name = (
+        connection_data.institution_name or connection.institution_name
+    )
+    connection.logo_url = _clean_logo_url(connection_data.logo_url) or connection.logo_url
+    connection.credentials = connection_data.credentials
+    connection.status = "active"
+    # Re-sync from current data on next sync cycle.
+    connection.last_sync_at = None
+    # New credentials end a backoff earned by failing ones, so the next
+    # cycle syncs it. A rate-limit backoff stays: the bank's quota is the
+    # same whatever the credentials.
+    reconnect_settings = connection.settings or {}
+    backoff = reconnect_settings.get(SYNC_BACKOFF_KEY)
+    if backoff is not None and not (
+        isinstance(backoff, dict) and backoff.get("rate_limited") is True
+    ):
+        connection.settings = {
+            key: value
+            for key, value in reconnect_settings.items()
+            if key != SYNC_BACKOFF_KEY
+        }
+    # The failure the old credentials left no longer says anything.
+    connection.settings = _with_sync_failure(connection.settings, None)
+
+
+async def _connection_holding_these_accounts(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    provider_name: str,
+    accounts: Sequence[AccountData],
+) -> Optional[BankConnection]:
+    """The connected bank these provider accounts already belong to (#1224).
+
+    Connecting a bank again from the Accounts page, instead of pressing
+    Reconnect, used to create a second connection and a second row for every
+    account the first one already held. Enable Banking scopes an account's
+    `uid` to one session, so a new consent renames every account and nothing
+    on the row matches by id. The identification hash survives the session and
+    names the same real account across sessions, so an incoming account whose
+    hash a live connection of this provider already holds says the user is
+    re-authorising that connection, not adding a second one.
+
+    Two connections holding the hash, or none, leaves the answer open and the
+    caller creates a connection as before: a hash two logins share is not
+    enough to pick one. A different login into the same bank names different
+    accounts and matches nothing here.
+    """
+    hashes = {a.stable_external_id for a in accounts if a.stable_external_id}
+    if not hashes:
+        return None
+    connection_ids = (await session.execute(
+        select(Account.connection_id)
+        .join(BankConnection, BankConnection.id == Account.connection_id)
+        .where(
+            BankConnection.workspace_id == workspace_id,
+            BankConnection.provider == provider_name,
+            BankConnection.status != DISCONNECTED_STATUS,
+            Account.stable_external_id.in_(hashes),
+        )
+        .distinct()
+    )).scalars().all()
+    if len(connection_ids) != 1:
+        return None
+    return await session.get(BankConnection, connection_ids[0])
+
+
 async def handle_oauth_callback(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -1731,31 +1808,13 @@ async def handle_oauth_callback(
     provider = get_provider(provider_name, settings=await resolve_settings(session))
     connection_data = await provider.handle_oauth_callback(code)
 
-    if existing_reconnect:
-        existing_reconnect.external_id = connection_data.external_id
-        existing_reconnect.institution_name = (
-            connection_data.institution_name or existing_reconnect.institution_name
+    if existing_reconnect is None:
+        existing_reconnect = await _connection_holding_these_accounts(
+            session, workspace_id, provider_name, connection_data.accounts
         )
-        existing_reconnect.logo_url = _clean_logo_url(connection_data.logo_url) or existing_reconnect.logo_url
-        existing_reconnect.credentials = connection_data.credentials
-        existing_reconnect.status = "active"
-        # Re-sync from current data on next sync cycle.
-        existing_reconnect.last_sync_at = None
-        # New credentials end a backoff earned by failing ones, so the next
-        # cycle syncs it. A rate-limit backoff stays: the bank's quota is the
-        # same whatever the credentials.
-        reconnect_settings = existing_reconnect.settings or {}
-        backoff = reconnect_settings.get(SYNC_BACKOFF_KEY)
-        if backoff is not None and not (
-            isinstance(backoff, dict) and backoff.get("rate_limited") is True
-        ):
-            existing_reconnect.settings = {
-                key: value
-                for key, value in reconnect_settings.items()
-                if key != SYNC_BACKOFF_KEY
-            }
-        # The failure the old credentials left no longer says anything.
-        existing_reconnect.settings = _with_sync_failure(existing_reconnect.settings, None)
+
+    if existing_reconnect:
+        _reactivate_connection(existing_reconnect, connection_data)
         await session.commit()
         await session.refresh(existing_reconnect)
         return existing_reconnect
@@ -2996,6 +3055,15 @@ async def _find_synced_duplicate(
     # hold's date, up to `_EB_HOLD_SETTLE_DAYS` before the booking. It is
     # compared by the date its stored booked payload carries as well, so a
     # later change to that payload still re-keys it.
+    #
+    # Some institutions re-issue the reference itself: Bankinter sends a new
+    # tail for every entry of the last weeks on each fetch (#612), so the id
+    # the held row was stored under never comes back. Such a row is the same
+    # transaction when both agree on the account, date, amount, direction,
+    # currency, status and merchant text, and the held id is absent from this
+    # fetch. Two identical purchases held at once are a multiset: the oldest
+    # row takes the first entry and is claimed by it, so the next entry takes
+    # the other one instead of a twin being inserted.
     entry_ref = raw.get("entry_reference")
     entry_ref = entry_ref.strip() if isinstance(entry_ref, str) else ""
     if entry_ref and entry_ref != "0":
@@ -3015,9 +3083,13 @@ async def _find_synced_duplicate(
         )
         if txn_data.status == "pending":
             statement = statement.where(Transaction.status == "pending")
+        # Oldest first: when two identical purchases are held, the first entry
+        # of a fetch takes the older row and leaves the other one for the next.
+        statement = statement.order_by(Transaction.created_at, Transaction.id)
         result = await session.execute(statement)
         rekey_matches = []
         late_ref_matches = []
+        rewritten_ref_matches = []
         for candidate in result.scalars():
             if candidate.external_id in incoming_external_ids:
                 continue
@@ -3061,10 +3133,28 @@ async def _find_synced_duplicate(
                 )
             ):
                 late_ref_matches.append(candidate)
+            elif (
+                isinstance(candidate_ref, str)
+                and candidate_ref
+                and candidate.source == "sync"
+                and candidate.currency == txn_data.currency
+                and candidate.status == txn_data.status
+                and (
+                    candidate.date == txn_data.date
+                    or stored_date == txn_data.date
+                )
+                and token_overlap(
+                    candidate.original_description or candidate.description,
+                    txn_data.description,
+                ) >= 0.9
+            ):
+                rewritten_ref_matches.append(candidate)
         if len(rekey_matches) == 1:
             return rekey_matches[0]
         if not rekey_matches and len(late_ref_matches) == 1:
             return late_ref_matches[0]
+        if not rekey_matches and not late_ref_matches and rewritten_ref_matches:
+            return rewritten_ref_matches[0]
 
     # Path 5: local import history from before the account was connected.
     # Posting lag and statement exports can shift the date or shorten the
@@ -3312,8 +3402,10 @@ async def _expire_cancelled_holds(
     account_uid: str,
     live_external_ids: set[str],
     since: date,
+    *,
+    uid_keyed: bool = True,
 ) -> None:
-    """Delete the pending Enable Banking rows the bank dropped without booking.
+    """Delete the pending rows a complete feed dropped without booking.
 
     A card authorization the merchant cancels or lets expire leaves the feed
     and never books, so its row would stay pending, and counted, for good.
@@ -3324,6 +3416,9 @@ async def _expire_cancelled_holds(
     the id of an entry without a reference). Rows the user hid, paired as a
     transfer, attached a file to, shared with a group or otherwise worked on
     are left alone.
+
+    A provider plugin with `complete_feed` keys rows by its own ids, so
+    ``uid_keyed`` is off for it: there is no account uid to check.
     """
     today = app_today()
     window_start = max(since, today - timedelta(days=_EB_SURE_FEED_DAYS))
@@ -3347,14 +3442,28 @@ async def _expire_cancelled_holds(
     gone = [
         tx for tx in result.scalars().all()
         if tx.external_id not in live_external_ids
-        and is_account_txn_id(account_uid, tx.external_id, tx.raw_data)
+        and (not uid_keyed or is_account_txn_id(account_uid, tx.external_id, tx.raw_data))
         and not _holds_user_work(tx)
     ]
     if not gone:
         return
-    gone_ids = [tx.id for tx in gone]
-    # A file, a group share or an invoice payment hangs off the row and
-    # would go with it: deleting an allocated hold would reopen the invoice.
+    kept = await _rows_with_links(session, [tx.id for tx in gone])
+    for tx in gone:
+        if tx.id not in kept:
+            await session.delete(tx)
+
+
+async def _rows_with_links(
+    session: AsyncSession, transaction_ids: list[uuid.UUID],
+) -> set[uuid.UUID]:
+    """The rows among ``transaction_ids`` something else hangs off.
+
+    A file, a group share or an invoice payment would go with the row:
+    deleting an allocated hold would reopen the invoice, and a deleted row
+    loses what the user attached to it.
+    """
+    if not transaction_ids:
+        return set()
     kept: set[uuid.UUID] = set()
     for column in (
         TransactionAttachment.transaction_id,
@@ -3363,10 +3472,63 @@ async def _expire_cancelled_holds(
     ):
         kept.update(
             tx_id for tx_id in (await session.execute(
-                select(column).where(column.in_(gone_ids))
+                select(column).where(column.in_(transaction_ids))
             )).scalars()
             if tx_id is not None
         )
+    return kept
+
+
+def _entry_never_settled(raw: Any) -> bool:
+    """Whether a stored payload says the bank cancelled or rejected the entry.
+
+    A posted entry never carries one of these statuses, so a row stored as
+    posted whose payload does was made by the parser that imported them
+    (#1232).
+    """
+    if not isinstance(raw, dict):
+        return False
+    status = raw.get("status")
+    return (
+        isinstance(status, str)
+        and status.strip().upper() in SKIPPED_TRANSACTION_STATUSES
+    )
+
+
+async def _remove_cancelled_posted_rows(
+    session: AsyncSession, account_id: uuid.UUID,
+) -> None:
+    """Delete the posted rows an earlier version made of a cancelled entry.
+
+    Before #1560 a flat Enable Banking entry with status CNCL or RJCT landed
+    as a posted row, and it stayed next to the booked entries, counted in the
+    balance and the reports, for good. Its stored payload still says the
+    bank cancelled it; no posted entry ever does. Rows the user worked on,
+    a flag (and the reminder note that goes with it) included, and rows a
+    transfer, a file, a group share or an invoice payment hangs off, are
+    kept.
+    """
+    result = await session.execute(
+        select(Transaction)
+        .where(
+            Transaction.account_id == account_id,
+            Transaction.source == "sync",
+            Transaction.status == "posted",
+            Transaction.raw_data.is_not(None),
+        )
+        .with_for_update()
+    )
+    gone = [
+        tx for tx in result.scalars().all()
+        if _entry_never_settled(tx.raw_data)
+        and not tx.is_ignored
+        and tx.transfer_pair_id is None
+        and not tx.is_flagged
+        and not _holds_user_work(tx)
+    ]
+    if not gone:
+        return
+    kept = await _rows_with_links(session, [tx.id for tx in gone])
     for tx in gone:
         if tx.id not in kept:
             await session.delete(tx)
@@ -4019,10 +4181,6 @@ async def sync_connection(
         # read. Providers that don't expose an on-demand refresh return
         # "skipped" via the default implementation and we proceed normally.
         if trigger_provider_refresh:
-            connection.settings = {
-                **conn_settings,
-                "last_provider_refresh_at": datetime.now(timezone.utc).isoformat(),
-            }
             outcome = await provider.trigger_refresh(credentials)
             if outcome == "needs_user_action":
                 # Surfacing reconnect immediately is better than silently
@@ -4033,6 +4191,16 @@ async def sync_connection(
                     "Provider needs the user to reconnect before fetching fresh data",
                     code="credentials_invalid",
                 )
+            if outcome == "refreshed":
+                # Only a refresh the provider actually ran may rest this
+                # connection: the beat reads this stamp to decide whether to
+                # ask again, so recording an attempt that was skipped or
+                # failed would keep it quiet for a whole
+                # PROVIDER_REFRESH_THRESHOLD (#1252).
+                connection.settings = {
+                    **conn_settings,
+                    "last_provider_refresh_at": datetime.now(timezone.utc).isoformat(),
+                }
             # "refreshed", "skipped", or "failed" all fall through to a read.
             # On "failed" we read whatever cached copy the provider has —
             # better than aborting the entire sync over a transient hiccup.
@@ -4345,6 +4513,12 @@ async def sync_connection(
                 isinstance(truncated, set) and acc_data.external_id in truncated
             )
             claims_holds = connection.provider == "enable_banking" and not partial_feed
+            # A pending row that left a complete feed was cancelled. Enable
+            # Banking's feed always is; a provider plugin says so with
+            # `complete_feed` in its manifest. Claiming holds (above) stays
+            # Enable Banking's: it compares that provider's merchant fields.
+            vouches_feed = getattr(provider, "complete_feed", False) is True
+            expires_holds = (connection.provider == "enable_banking" or vouches_feed) and not partial_feed
             hold_live_ids = live_txn_external_ids[account.id] if claims_holds else None
             for txn_data in transactions_data:
                 await _remember_linked_card(
@@ -4754,14 +4928,20 @@ async def sync_connection(
 
             # A hold that left a complete feed and that no booked entry claimed
             # above was cancelled. The first sync has no rows to expire.
-            if claims_holds and since is not None:
+            if expires_holds and since is not None:
                 await _expire_cancelled_holds(
                     session,
                     account.id,
                     acc_data.external_id,
                     live_txn_external_ids[account.id],
                     since,
+                    uid_keyed=connection.provider == "enable_banking",
                 )
+
+            # A row an earlier version stored as posted from a cancelled entry
+            # never moved money; its own payload still says so (#1232).
+            if connection.provider == "enable_banking":
+                await _remove_cancelled_posted_rows(session, account.id)
 
             # Reconcile the opening balance after any new transactions land so
             # SUM(all txs) keeps matching account.balance from the provider.

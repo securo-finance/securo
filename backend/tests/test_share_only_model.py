@@ -16,7 +16,7 @@ USD↔EUR rates explicitly so SQLite has something to convert with.
 """
 
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -867,15 +867,10 @@ async def test_monthly_trend_uses_owner_share_of_pending_row(
     await _split_half_with_friend(session, test_user, test_workspace, tx)
     await session.commit()
 
-    # get_monthly_trend groups with Postgres' to_char; SQLite needs a stand-in.
-    def _install_to_char(dbapi_conn):
-        dbapi_conn.create_function(
-            "to_char", 2, lambda value, _fmt: None if value is None else str(value)[:7]
-        )
-
-    raw = await session.connection()
-    await raw.run_sync(lambda conn: _install_to_char(conn.connection.dbapi_connection))
-
+    # get_monthly_trend groups with Postgres' to_char. The test engine already
+    # emulates it for the formats the app asks for (conftest's
+    # `sqlite_to_char`); a stand-in registered here would stay on the shared
+    # SQLite connection and hand every later test monthly buckets.
     trend = await dashboard_service.get_monthly_trend(
         session, test_workspace.id, test_user.id, months=1
     )
@@ -1277,3 +1272,130 @@ async def test_unstamped_foreign_splits_look_up_a_missing_rate_once(
         session, test_user.id, month_start, month_end, primary_currency="BRL"
     ) == (0.0, 0.0)
     assert calls == [("USD", "BRL", today)]
+
+
+@pytest.mark.asyncio
+async def test_income_expenses_report_takes_foreign_split_off_at_the_row_rate(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
+    """USD 300 stamped at BRL 1560 (5.20) with 200 owed by a friend, and
+    today's rate at 5.00. The dashboard and the income-expenses report both
+    keep the owner's BRL 520; the report used to take the friend's part off
+    at today's rate (1000) and keep 560."""
+    from app.services.report_service import get_income_expenses_report
+
+    await _force_user_currency(session, test_user, "BRL")
+    today = date.today()
+    food = test_categories[0]
+    _seed_brl_rate(session, today, "5.00")
+    await _foreign_split(
+        session, test_user, test_workspace, "300.00", "1560.00", "200.00",
+        when=today, category_id=food.id,
+    )
+
+    summary = await dashboard_service.get_summary(
+        session, test_workspace.id, test_user.id, today.replace(day=1)
+    )
+    assert summary.monthly_expenses_primary == pytest.approx(520.0, abs=0.001)
+
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id, currency="BRL",
+        start_date=today.replace(day=1), end_date=today,
+    )
+    totals = {b.key: b.value for b in report.summary.breakdowns}
+    assert totals["expenses"] == pytest.approx(520.0, abs=0.001)
+    point = next(p for p in report.trend if p.date == today.strftime("%Y-%m"))
+    assert point.breakdowns["expenses"] == pytest.approx(520.0, abs=0.001)
+    food_trend = next(
+        ct for ct in report.category_trend
+        if ct.key == str(food.id) and ct.group == "expenses"
+    )
+    assert food_trend.total == pytest.approx(520.0, abs=0.001)
+    food_slice = next(c for c in report.composition if c.key == str(food.id))
+    assert food_slice.value == pytest.approx(520.0, abs=0.001)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("friend_shares", [("300.00", "-200.00"), ("-200.00", "300.00")])
+async def test_income_expenses_report_offsets_do_not_depend_on_row_order(
+    session: AsyncSession, test_user, test_workspace, test_categories, friend_shares
+):
+    """Two USD 100 rows stamped at BRL 500, the friend owing 300 on one and
+    -200 on the other: the owner keeps USD 100 (BRL 500) in all. Taking each
+    row's share off with its own zero floor gave BRL 1000 in one order."""
+    from app.services.report_service import get_income_expenses_report
+
+    await _force_user_currency(session, test_user, "BRL")
+    today = date.today()
+    food = test_categories[0]
+    _seed_brl_rate(session, today, "5.00")
+    for friend_share in friend_shares:
+        await _foreign_split(
+            session, test_user, test_workspace, "100.00", "500.00", friend_share,
+            when=today, category_id=food.id,
+        )
+
+    summary = await dashboard_service.get_summary(
+        session, test_workspace.id, test_user.id, today.replace(day=1)
+    )
+    assert summary.monthly_expenses_primary == pytest.approx(500.0, abs=0.001)
+
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id, currency="BRL",
+        start_date=today.replace(day=1), end_date=today,
+    )
+    totals = {b.key: b.value for b in report.summary.breakdowns}
+    assert totals["expenses"] == pytest.approx(500.0, abs=0.001)
+    food_trend = next(
+        ct for ct in report.category_trend
+        if ct.key == str(food.id) and ct.group == "expenses"
+    )
+    assert food_trend.total == pytest.approx(500.0, abs=0.001)
+    point = next(p for p in food_trend.series if p.date == today.strftime("%Y-%m"))
+    assert point.value == pytest.approx(500.0, abs=0.001)
+
+
+@pytest.mark.asyncio
+async def test_income_expenses_report_category_total_matches_its_floored_periods(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
+    """A USD 100 row stamped at BRL 500 last month with the friend owing 300,
+    and another this month with -100: last month floors at 0 and this month
+    keeps 1000. The category total is their sum (1000), like the summary; it
+    used to floor the whole window once (1000 - 1500 + 500 = 0) and drop the
+    category with its positive month."""
+    from app.services.report_service import get_income_expenses_report
+
+    await _force_user_currency(session, test_user, "BRL")
+    today = date.today()
+    this_month = today.replace(day=1)
+    last_month = (this_month - timedelta(days=1)).replace(day=1)
+    food = test_categories[0]
+    for when, friend_share in ((last_month, "300.00"), (this_month, "-100.00")):
+        _seed_brl_rate(session, when, "5.00")
+        await _foreign_split(
+            session, test_user, test_workspace, "100.00", "500.00", friend_share,
+            when=when, category_id=food.id,
+        )
+
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id, currency="BRL",
+        start_date=last_month, end_date=today,
+    )
+    totals = {b.key: b.value for b in report.summary.breakdowns}
+    assert totals["expenses"] == pytest.approx(1000.0, abs=0.001)
+    food_trend = next(
+        ct for ct in report.category_trend
+        if ct.key == str(food.id) and ct.group == "expenses"
+    )
+    series = {p.date: p.value for p in food_trend.series}
+    assert series[last_month.strftime("%Y-%m")] == pytest.approx(0.0, abs=0.001)
+    assert series[this_month.strftime("%Y-%m")] == pytest.approx(1000.0, abs=0.001)
+    assert food_trend.total == pytest.approx(1000.0, abs=0.001)
+    # The composition slice reads the same total, so the donut keeps the
+    # category instead of dropping it at zero (#264).
+    food_slice = next(
+        c for c in report.composition
+        if c.key == str(food.id) and c.group == "expenses"
+    )
+    assert food_slice.value == pytest.approx(1000.0, abs=0.001)

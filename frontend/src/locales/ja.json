@@ -881,6 +881,8 @@
     "uncategorizedCta": "{{count}}件の取引にカテゴリが必要です",
     "uncategorizedTotal": "合計{{amount}}",
     "categorizeNow": "今すぐ分類",
+    "drillDownQuickCategorize": "カテゴリを選択",
+    "drillDownOpenTransaction": "取引を開く",
     "allCategorized": "すべて完了!",
     "allCategorizedDesc": "すべての取引が分類されています",
     "assetsValue": "投資資産額",
@@ -914,6 +916,7 @@
     "monthNext": "翌月",
     "description": "摘要",
     "originalDescription": "元の摘要",
+    "providerCategory": "銀行のカテゴリ",
     "restoreOriginalDescription": "元に戻す",
     "amount": "金額",
     "status": "ステータス",
@@ -939,6 +942,7 @@
     "addedToExistingRule": "ルールを更新しました。今後の一致にはこのカテゴリが使われます。",
     "duplicateRuleCondition": "そのルールにはすでにこの一致条件があります。",
     "saveAndNew": "保存して新規",
+    "saveAndNext": "保存して次へ",
     "saveAndDuplicate": "保存して複製",
     "moreSaveOptions": "その他の保存オプション",
     "created": "取引を作成しました",
@@ -1182,8 +1186,8 @@
     "calendarAccountCount": "{{count}}口座",
     "calendarAllAccounts": "すべての口座",
     "calendarEndBalance": "期末残高",
-    "calendarItemCount": "{{count}}件",
-    "calendarItemCount_plural": "{{count}}件",
+    "calendarItemCount_one": "{{count}}件",
+    "calendarItemCount_other": "{{count}}件",
     "calendarProjectedCount": "{{count}}件予定",
     "calendarProjected": "予定",
     "projected": "予定",
@@ -1551,6 +1555,8 @@
     "copyPreviewCount": "コピーするカテゴリ: {{count}}",
     "copyPreviewTotal": "コピーする合計: {{amount}}",
     "copyPreviewEmpty": "選択した月にはコピーできる予算がありません。",
+    "copyPreviewAllExist": "コピー元の月のすべてのカテゴリには、すでに{{month}}の予算があります。金額をコピーするか調整を適用するには「置き換え」を選んでください。",
+    "copyPreviewNoChange": "コピー元の月の予算はすでにすべて{{month}}でこの金額になっています。",
     "copyPreviewError": "コピー元の月を読み込めませんでした。",
     "copyAmountTooLarge": "調整後の金額が予算の上限を超えています。パーセント調整を下げてください。",
     "copyConfirm": "予算をコピー",
@@ -1619,6 +1625,8 @@
   },
   "recurring": {
     "makeFromTransaction": "この取引から定期取引を作成",
+    "duplicate": "同じ説明・頻度・開始日の定期取引はすでに存在します",
+    "alreadyLinked": "この取引はすでに定期取引に属しています",
     "title": "定期取引",
     "add": "定期取引を追加",
     "edit": "定期取引を編集",
@@ -1681,10 +1689,13 @@
   "rules": {
     "searchPlaceholder": "ルールを検索...",
     "filterAllCategories": "すべてのカテゴリ",
+    "filterByCategory": "カテゴリで絞り込む",
     "filterAllStatuses": "すべてのステータス",
+    "filterByStatus": "ステータスで絞り込む",
     "filterActiveOnly": "有効のみ",
     "filterInactiveOnly": "無効のみ",
     "filterAllActions": "すべての操作",
+    "filterByAction": "アクションで絞り込む",
     "noFilterResults": "このフィルタに一致するルールはありません",
     "preview": "プレビュー",
     "previewMatched": "{{matched}}件が一致",
@@ -1778,6 +1789,7 @@
     "fieldDate": "日付",
     "fieldStatus": "ステータス",
     "fieldProviderCategory": "プロバイダーのカテゴリ",
+    "providerCategoryHint": "銀行自身のラベル（銀行の言語、例：「Groceries」）。このワークスペースがすでに受け取ったものから選んでください。",
     "opContains": "次を含む",
     "opNotContains": "次を含まない",
     "opEquals": "次に等しい",
@@ -2111,9 +2123,10 @@
     "summaryHoldings": "{{created}}件の保有を作成、{{matched}}件を照合",
     "summarySkipped": "{{count}}件はインポート済み",
     "rowsSkipped": "{{count}}行がスキップされます",
+    "reasonColumn": "理由",
     "rowError": "{{row}}行目({{ticker}}): {{reason}}",
     "moreErrors": "他{{count}}件",
-    "moreRows": "他{{count}}件の注文",
+    "showAllRows": "{{count}} 行をすべて表示",
     "field": {
       "ticker": "ティッカー",
       "date": "日付",
@@ -2233,9 +2246,15 @@
     "lastUpdated": "更新: {{when}}",
     "refreshPrice": "価格を更新",
     "refreshAllPrices": "価格を更新",
-    "refreshAllPricesDone": "{{refreshed}}件の価格を更新、{{skipped}}件は新しい価格なし",
+    "refreshAllPricesDone": "{{updated}}、{{skipped}}",
+    "refreshAllPricesUpdated_one": "{{count}}件の価格を更新",
+    "refreshAllPricesUpdated_other": "{{count}}件の価格を更新",
+    "refreshAllPricesNoQuote_one": "{{count}}件は新しい価格なし",
+    "refreshAllPricesNoQuote_other": "{{count}}件は新しい価格なし",
+    "refreshAllPricesLeftOut_one": "{{count}}件をスキップ",
+    "refreshAllPricesLeftOut_other": "{{count}}件をスキップ",
     "refreshAllPricesNone": "更新する時価評価の資産がありません",
-    "refreshAllPricesRateLimited": "市場データプロバイダーが現在リクエストを制限しています。停止前に{{refreshed}}件の価格を更新し、{{skipped}}件をスキップしました。1分後にもう一度お試しください。",
+    "refreshAllPricesRateLimited": "市場データプロバイダーが現在リクエストを制限しています。停止前：{{updated}}、{{skipped}}。1分後にもう一度お試しください。",
     "priceRefreshed": "価格を更新しました",
     "purchaseDate": "取得日",
     "purchasePrice": "取得価格",
@@ -2416,7 +2435,41 @@
     "statementViewTransactions": "取引を表示",
     "statementUncategorizedIncome": "未分類の収入",
     "statementUncategorizedExpense": "未分類の支出",
-    "statementToggleGroup": "{{name}} のカテゴリを表示"
+    "statementToggleGroup": "{{name}} のカテゴリを表示",
+    "pluginReport": {
+      "total": {
+        "expenses": "支出合計",
+        "income": "収入合計",
+        "net": "収支"
+      },
+      "none": {
+        "category": "未分類",
+        "category_group": "グループなし",
+        "payee": "支払先なし",
+        "account": "口座なし",
+        "month": "日付なし"
+      },
+      "groupBy": {
+        "category": "カテゴリ",
+        "category_group": "グループ",
+        "payee": "支払先",
+        "account": "口座",
+        "month": "月"
+      },
+      "measure": {
+        "expenses": "支出",
+        "income": "収入",
+        "net": "収支"
+      },
+      "share": "割合",
+      "computed": "プラグインが計算",
+      "periodTrimmed": "プラグインのレポートは最大2年間を対象とします。{{from}} から {{to}} を表示しています。",
+      "periodTooLong": "プラグインのレポートは最大2年間です。もっと短い期間を選んでください。",
+      "totalRow": "合計",
+      "page": "{{page}} / {{pages}} ページ",
+      "previousPage": "前のページ",
+      "nextPage": "次のページ"
+    }
   },
   "payees": {
     "noPayeeFound": "取引相手が見つかりません。",
@@ -3962,5 +4015,9 @@
       "title": "定期収益",
       "hint": "定期請求書による毎月の収益と、最近失われた分。"
     }
+  },
+  "offline": {
+    "title": "サーバーに接続できません",
+    "description": "オフラインか、Securo が再起動中です。データは安全で、何も変更されていません。サーバーが応答し次第、自動的に再接続します。"
   }
 }

@@ -883,6 +883,8 @@
     "uncategorizedCta": "{{count}} transacciones necesitan categorización",
     "uncategorizedTotal": "{{amount}} en total",
     "categorizeNow": "Categorizar ahora",
+    "drillDownQuickCategorize": "Elegir categoría",
+    "drillDownOpenTransaction": "Abrir transacción",
     "allCategorized": "¡Todo al día!",
     "allCategorizedDesc": "Todas las transacciones están categorizadas",
     "assetsValue": "Activos invertidos",
@@ -916,6 +918,7 @@
     "monthNext": "Mes siguiente",
     "description": "Descripción",
     "originalDescription": "Descripción original",
+    "providerCategory": "Categoría del banco",
     "restoreOriginalDescription": "Restaurar original",
     "amount": "Importe",
     "status": "Estado",
@@ -941,6 +944,7 @@
     "addedToExistingRule": "Regla actualizada. Las próximas coincidencias usarán esta categoría.",
     "duplicateRuleCondition": "Esa regla ya incluye esta coincidencia.",
     "saveAndNew": "Guardar y nuevo",
+    "saveAndNext": "Guardar y siguiente",
     "saveAndDuplicate": "Guardar y duplicar",
     "moreSaveOptions": "Más opciones de guardado",
     "created": "Transacción creada",
@@ -1184,8 +1188,9 @@
     "calendarAccountCount": "{{count}} cuentas",
     "calendarAllAccounts": "Todas las cuentas",
     "calendarEndBalance": "Saldo final",
-    "calendarItemCount": "{{count}} elemento",
-    "calendarItemCount_plural": "{{count}} elementos",
+    "calendarItemCount_one": "{{count}} elemento",
+    "calendarItemCount_other": "{{count}} elementos",
+    "calendarItemCount_many": "{{count}} elementos",
     "calendarProjectedCount": "{{count}} previsto",
     "calendarProjected": "Previsto",
     "projected": "Prevista",
@@ -1555,6 +1560,8 @@
     "copyPreviewCount": "Categorías a copiar: {{count}}",
     "copyPreviewTotal": "Total a copiar: {{amount}}",
     "copyPreviewEmpty": "El mes seleccionado no tiene presupuestos para copiar.",
+    "copyPreviewAllExist": "Todas las categorías del mes de origen ya tienen presupuesto en {{month}}. Elige reemplazar para copiar los importes o aplicar el ajuste.",
+    "copyPreviewNoChange": "Todos los presupuestos del mes de origen ya tienen estos importes en {{month}}.",
     "copyPreviewError": "No se pudo cargar el mes de origen.",
     "copyAmountTooLarge": "El importe ajustado supera el límite de presupuesto. Reduce el ajuste porcentual.",
     "copyConfirm": "Copiar presupuestos",
@@ -1623,6 +1630,8 @@
   },
   "recurring": {
     "makeFromTransaction": "Nueva recurrente a partir de esta transacción",
+    "duplicate": "Ya existe una recurrente con la misma descripción, frecuencia y fecha de inicio",
+    "alreadyLinked": "Esta transacción ya pertenece a una recurrente",
     "title": "Transacciones recurrentes",
     "add": "Agregar recurrente",
     "edit": "Editar recurrente",
@@ -1685,10 +1694,13 @@
   "rules": {
     "searchPlaceholder": "Buscar reglas...",
     "filterAllCategories": "Todas las categorías",
+    "filterByCategory": "Filtrar por categoría",
     "filterAllStatuses": "Todos los estados",
+    "filterByStatus": "Filtrar por estado",
     "filterActiveOnly": "Solo activas",
     "filterInactiveOnly": "Solo inactivas",
     "filterAllActions": "Todas las acciones",
+    "filterByAction": "Filtrar por acción",
     "noFilterResults": "Ninguna regla coincide con estos filtros",
     "preview": "Vista previa",
     "previewMatched": "{{matched}} coincidencias",
@@ -1787,6 +1799,7 @@
     "fieldDate": "Fecha",
     "fieldStatus": "Estado",
     "fieldProviderCategory": "Categoría del proveedor",
+    "providerCategoryHint": "La etiqueta del propio banco, en su idioma (por ejemplo, «Groceries»). Elige una que el espacio de trabajo ya haya recibido.",
     "opContains": "contiene",
     "opNotContains": "no contiene",
     "opEquals": "es igual a",
@@ -2115,9 +2128,10 @@
     "summaryHoldings": "{{created}} activos creados, {{matched}} encontrados",
     "summarySkipped": "{{count}} ya importadas",
     "rowsSkipped": "{{count}} filas se omitirán",
+    "reasonColumn": "Motivo",
     "rowError": "Fila {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "y {{count}} más",
-    "moreRows": "y {{count}} órdenes más",
+    "showAllRows": "Mostrar las {{count}} filas",
     "field": {
       "ticker": "Ticker",
       "date": "Fecha",
@@ -2237,9 +2251,18 @@
     "lastUpdated": "Actualizado {{when}}",
     "refreshPrice": "Actualizar precio",
     "refreshAllPrices": "Actualizar precios",
-    "refreshAllPricesDone": "{{refreshed}} precios actualizados, {{skipped}} sin cotización nueva",
+    "refreshAllPricesDone": "{{updated}}, {{skipped}}",
+    "refreshAllPricesUpdated_one": "{{count}} precio actualizado",
+    "refreshAllPricesUpdated_many": "{{count}} precios actualizados",
+    "refreshAllPricesUpdated_other": "{{count}} precios actualizados",
+    "refreshAllPricesNoQuote_one": "{{count}} sin cotización nueva",
+    "refreshAllPricesNoQuote_many": "{{count}} sin cotización nueva",
+    "refreshAllPricesNoQuote_other": "{{count}} sin cotización nueva",
+    "refreshAllPricesLeftOut_one": "{{count}} omitido",
+    "refreshAllPricesLeftOut_many": "{{count}} omitidos",
+    "refreshAllPricesLeftOut_other": "{{count}} omitidos",
     "refreshAllPricesNone": "No hay activos con precio de mercado para actualizar",
-    "refreshAllPricesRateLimited": "El proveedor de datos de mercado está limitando las solicitudes ahora. Se actualizaron {{refreshed}} precios y {{skipped}} quedaron fuera antes de detenerse; inténtalo de nuevo en un minuto.",
+    "refreshAllPricesRateLimited": "El proveedor de datos de mercado está limitando las solicitudes ahora. Antes de detenerse: {{updated}}, {{skipped}}. Inténtalo de nuevo en un minuto.",
     "priceRefreshed": "Precio actualizado",
     "purchaseDate": "Fecha de compra",
     "purchasePrice": "Precio de compra",
@@ -2420,7 +2443,41 @@
     "statementViewTransactions": "Ver transacciones",
     "statementUncategorizedIncome": "Ingresos sin categoría",
     "statementUncategorizedExpense": "Gastos sin categoría",
-    "statementToggleGroup": "Mostrar categorías de {{name}}"
+    "statementToggleGroup": "Mostrar categorías de {{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "Total gastado",
+        "income": "Total recibido",
+        "net": "Neto"
+      },
+      "none": {
+        "category": "Sin categoría",
+        "category_group": "Sin grupo",
+        "payee": "Sin beneficiario",
+        "account": "Sin cuenta",
+        "month": "Sin fecha"
+      },
+      "groupBy": {
+        "category": "Categoría",
+        "category_group": "Grupo",
+        "payee": "Beneficiario",
+        "account": "Cuenta",
+        "month": "Mes"
+      },
+      "measure": {
+        "expenses": "Gastos",
+        "income": "Ingresos",
+        "net": "Neto"
+      },
+      "share": "Proporción",
+      "computed": "Calculado por el plugin",
+      "periodTrimmed": "Los informes de complementos cubren como máximo dos años. Mostrando {{from}} a {{to}}.",
+      "periodTooLong": "Un informe de complemento cubre como máximo dos años. Elige un período más corto.",
+      "totalRow": "Total",
+      "page": "Página {{page}} de {{pages}}",
+      "previousPage": "Página anterior",
+      "nextPage": "Página siguiente"
+    }
   },
   "payees": {
     "noPayeeFound": "No se encontró ningún beneficiario.",
@@ -3972,5 +4029,9 @@
       "title": "Ingresos recurrentes",
       "hint": "Lo que aportan las facturas recurrentes cada mes, y lo perdido recientemente."
     }
+  },
+  "offline": {
+    "title": "No se puede conectar con el servidor",
+    "description": "Estás sin conexión o Securo se está reiniciando. Tus datos están a salvo y nada ha cambiado. Volveremos a conectar automáticamente en cuanto el servidor responda."
   }
 }

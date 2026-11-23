@@ -329,6 +329,9 @@ export interface Transaction {
   external_id: string | null
   description: string
   original_description: string | null
+  /** The category the bank/provider sent for this row, in its own words
+   *  (not translated by the app). Read-only; null when it has none. */
+  provider_category?: string | null
   amount: number
   currency: string
   date: string
@@ -771,6 +774,8 @@ export interface InstalledPlugin {
   redirect_uri: string | null
   /** Themes it adds to the library. */
   themes?: PluginTheme[]
+  /** Reports it adds to the reports library. */
+  reports?: PluginReportDefinition[]
 }
 
 export type PluginConnectionStatus = 'pending' | 'active' | 'error' | 'needs_auth'
@@ -856,6 +861,103 @@ export interface PluginRef {
   default: boolean
 }
 
+/** A report a plugin adds to the library: what it adds up, how it splits it, how it's drawn. */
+export interface PluginReportDefinition {
+  key: string
+  name: LocalizedText
+  description?: LocalizedText | null
+  /** Computed by the plugin's code, which returns a view; otherwise a query Securo runs. */
+  code?: boolean
+  inputs?: ('transactions' | 'accounts' | 'categories')[]
+  measure: 'expenses' | 'income' | 'net'
+  group_by?: 'category' | 'category_group' | 'payee' | 'account' | 'month' | null
+  chart: 'bar' | 'line' | 'area' | 'pie' | 'table'
+}
+
+/** How a value in a view is shown. A percent is the number itself: 12.5 is 12.5%. */
+export type ReportViewFormat = 'currency' | 'number' | 'percent' | 'text' | 'date'
+
+/** A report's view: blocks Securo draws with its own components (ADR 0028). */
+export interface ReportView {
+  currency?: string
+  blocks: ReportViewBlock[]
+}
+
+/** How much of a row a block takes, on wide screens; a phone stacks them. */
+export type ReportViewWidth = 'quarter' | 'third' | 'half' | 'two_thirds' | 'full'
+
+export interface ReportViewSeries {
+  name: string
+  values: (number | null)[]
+  color?: string | null
+  /** Drawn as bars, a line or an area, for a chart that mixes them. */
+  kind?: 'bar' | 'line' | 'area' | null
+  axis?: 'left' | 'right'
+  stack?: string | null
+  /** From this x on, a projection: drawn dashed. */
+  projected_from?: string | number | null
+  negative_color?: string | null
+}
+
+export interface ReportViewReference {
+  label?: string | null
+  y?: number | null
+  x?: string | number | null
+  axis?: 'left' | 'right'
+  color?: string | null
+}
+
+interface ReportViewBlockBase {
+  title?: string | null
+  width?: ReportViewWidth | null
+}
+
+export type ReportViewBlock = ReportViewBlockBase &
+  (
+    | { type: 'kpi'; label: string; value: number | null; format?: ReportViewFormat; delta?: number | null; delta_format?: ReportViewFormat | null; delta_good?: 'up' | 'down'; hint?: string | null }
+    | {
+        type: 'chart'
+        chart: 'bar' | 'stacked_bar' | 'horizontal_bar' | 'line' | 'area' | 'stacked_area' | 'pie' | 'donut' | 'scatter' | 'combo'
+        x: (string | number)[]
+        series: ReportViewSeries[]
+        format?: ReportViewFormat
+        y2_format?: ReportViewFormat | null
+        x_format?: 'text' | 'date' | 'month' | 'number'
+        /** A color per point, for a pie, a donut or a one-series bar chart. */
+        colors?: (string | null)[] | null
+        references?: ReportViewReference[]
+      }
+    | { type: 'heatmap'; x: (string | number)[]; y: (string | number)[]; values: (number | null)[][]; format?: ReportViewFormat; x_format?: 'text' | 'date' | 'month' | 'number'; color?: string | null }
+    | { type: 'treemap'; items: { name: string; value?: number | null; color?: string | null; children?: { name: string; value: number; color?: string | null }[] }[]; format?: ReportViewFormat }
+    | { type: 'sankey'; nodes: string[]; links: { source: number; target: number; value: number }[]; format?: ReportViewFormat }
+    | { type: 'waterfall'; steps: { label: string; value: number; total?: boolean }[]; format?: ReportViewFormat }
+    | { type: 'progress'; items: { label: string; value: number; target: number; color?: string | null; hint?: string | null }[]; format?: ReportViewFormat; over_is?: 'bad' | 'good' }
+    | {
+        type: 'table'
+        columns: { key: string; label: string; format?: ReportViewFormat; total?: boolean; bar?: boolean; signed?: boolean }[]
+        rows: Record<string, string | number | null>[]
+        sort_by?: string | null
+        sort_ascending?: boolean
+        page_size?: number
+      }
+    | { type: 'text'; text: string }
+  )
+
+/** A plugin's report, added up by Securo for the period asked. */
+export interface PluginReportResponse {
+  key: string
+  code?: boolean
+  measure?: PluginReportDefinition['measure'] | null
+  group_by?: PluginReportDefinition['group_by']
+  chart?: PluginReportDefinition['chart'] | null
+  currency: string
+  /** A query report's groups. `label` is null for the rows the page names: `none` and `other`. */
+  rows: { key: string; label: string | null; value: number; color: string | null }[]
+  total: number
+  /** A code report's view, as the plugin drew it. */
+  view?: ReportView | null
+}
+
 export interface PluginContents {
   category_groups: { key: string; name: LocalizedText; icon: string; color: string }[]
   categories: {
@@ -878,6 +980,7 @@ export interface PluginContents {
   network?: PluginHost[]
   api_scopes?: PluginScope[]
   themes?: PluginTheme[]
+  reports?: PluginReportDefinition[]
 }
 
 /** One plugin opened from the catalog. */
@@ -1344,6 +1447,11 @@ export interface AssetOrderImport {
   external_id: string | null
   old_units?: number | null
   new_units?: number | null
+  /** Preview only: what the price and the fee become in the holding's currency
+   *  when the file paid in another one. Never read back by the import. */
+  converted_price?: number | null
+  converted_fee?: number | null
+  converted_currency?: string | null
 }
 
 export interface AssetImportRowError {

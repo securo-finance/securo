@@ -40,8 +40,11 @@ export function ExchangeRateSetupIcon({ from, to, isAdmin }: { from: string; to:
   }
 
   const label = t('assets.exchangeRateSetupAskAdmin', { from, to })
+  // `relative` anchors the absolutely positioned sr-only label to the icon.
+  // Without it the label's box is placed against the page instead of the
+  // table's scroll container, and on a phone it widens the whole page.
   return (
-    <span className="inline-flex size-5 items-center justify-center text-amber-700 dark:text-amber-400" title={label}>
+    <span className="relative inline-flex size-5 items-center justify-center text-amber-700 dark:text-amber-400" title={label}>
       <Info size={13} aria-hidden="true" />
       <span className="sr-only">{label}</span>
     </span>

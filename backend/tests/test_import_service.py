@@ -1921,6 +1921,51 @@ class TestParseCsvCategoryColumn:
         assert transactions[0].category_name == "Alimentação"
 
 
+class TestParseCsvAccentedHeaders:
+    """Brazilian bank exports write the Portuguese headers with accents."""
+
+    @pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig", "cp1252", "latin-1"])
+    @pytest.mark.parametrize("desc_header", ["Descrição", "Histórico", "Lançamento"])
+    def test_accented_description_header_is_detected(self, encoding, desc_header):
+        csv_content = f"Data;{desc_header};Valor\n03/11/2026;Padaria São João;-25,50\n"
+        transactions, failed = parse_csv(csv_content.encode(encoding))
+
+        assert failed == []
+        assert len(transactions) == 1
+        assert transactions[0].description == "Padaria São João"
+        assert transactions[0].amount == Decimal("25.50")
+        assert transactions[0].type == "debit"
+
+    def test_accented_notes_and_payee_headers_are_detected(self):
+        csv_content = (
+            "Data;Descrição;Valor;Observação;Beneficiário\n"
+            "03/11/2026;Aluguel;-1500,00;Novembro;Imobiliária Sol\n"
+        )
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
+
+        assert transactions[0].notes == "Novembro"
+        assert transactions[0].payee_raw == "Imobiliária Sol"
+
+    def test_a_plain_header_wins_over_an_accented_one_next_to_it(self):
+        """A file holding both "Descrição" and "descricao" keeps reading the
+        plain column, as it did before the folded match was added."""
+        csv_content = (
+            "Data;Descrição;descricao;Valor\n"
+            "03/11/2026;Acentuada;Plana;-10,00\n"
+        )
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
+
+        assert transactions[0].description == "Plana"
+
+    def test_explicit_mapping_to_an_accented_header_still_works(self):
+        csv_content = "Data;Histórico;Valor\n03/11/2026;Mercado;-10,00\n"
+        transactions, _ = parse_csv(
+            csv_content.encode("utf-8"), column_mapping={"description": "Histórico"}
+        )
+
+        assert transactions[0].description == "Mercado"
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # IMPORT TRANSACTIONS WITH CATEGORY RESOLUTION
 # ═══════════════════════════════════════════════════════════════════════════
@@ -3100,6 +3145,18 @@ def test_normalize_amount_currency_and_separators():
     # Without a column hint the per-cell behaviour is unchanged.
     assert normalize_amount("0,125") == "0.125"
     assert normalize_amount("12,50") == "12.50"
+    # Two or more comma groups and no dot can only be a grouped number.
+    assert normalize_amount("1,125,000") == "1125000"
+    assert normalize_amount("-1,125,000") == "-1125000"
+    assert normalize_amount("1,2345,678") == "1.2345.678"
+
+
+def test_grouped_amount_beside_zero_comma_cell():
+    """A "0," cell leaves the column without a hint; "1,125,000" still reads as grouped."""
+    from app.services.import_service import infer_decimal_separator, normalize_amount
+    column = ["0,125", "1,125,000"]
+    separator = infer_decimal_separator(column)
+    assert [normalize_amount(cell, separator) for cell in column] == ["0.125", "1125000"]
 
 
 def test_infer_decimal_separator():
@@ -3108,6 +3165,8 @@ def test_infer_decimal_separator():
     assert infer_decimal_separator(["1.234,56", "12,50"]) == ","
     assert infer_decimal_separator(["25,000", "3,000"]) == "."
     assert infer_decimal_separator(["0,125"]) is None
+    # A "0," cell is not a grouped number, so "1,125" beside it is not one either.
+    assert infer_decimal_separator(["0,125", "1,125"]) is None
     assert infer_decimal_separator(["10", ""]) is None
 
 

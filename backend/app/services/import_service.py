@@ -2,6 +2,7 @@ import csv
 import hashlib
 import io
 import re
+import unicodedata
 import uuid
 import warnings
 import xml.etree.ElementTree as ET
@@ -688,6 +689,12 @@ def detect_csv_columns(content: bytes) -> list[str]:
     return [f.strip() for f in (reader.fieldnames or []) if f and f.strip()]
 
 
+def _fold_header(name: str) -> str:
+    """A lower-cased CSV header with its diacritics stripped ("Descrição" -> "descricao")."""
+    decomposed = unicodedata.normalize("NFKD", name)
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).lower()
+
+
 def parse_csv(
     content: bytes,
     date_format: str | None = None,
@@ -739,10 +746,20 @@ def parse_csv(
         if field in CSV_MAPPABLE_FIELDS and value and value.strip()
     }
 
+    # Bank exports write the Portuguese headers with accents ("Descrição",
+    # "Histórico", "Lançamento"); the candidates are plain ASCII, so fall back
+    # to the header with its diacritics stripped, keeping the header as is.
+    # An exact name wins: a file holding both "Descrição" and "descricao" must
+    # keep reading the plain column, as it did before the folded match.
+    folded_fieldnames = {_fold_header(f): f for f in reversed(fieldnames)}
+
     def find_col(candidates):
         for c in candidates:
             if c in fieldnames:
                 return c
+        for c in candidates:
+            if c in folded_fieldnames:
+                return folded_fieldnames[c]
         return None
 
     def resolve_col(field, candidates):
@@ -1502,6 +1519,9 @@ def infer_decimal_separator(values) -> str | None:
     """
     votes: set[str] = set()
     comma_thousands = False
+    # "0,125" is never a grouped number, so a column with one cannot be read
+    # as comma-thousands, even if its other cells look like it ("1,125").
+    zero_comma = False
     for raw in values:
         if not raw:
             continue
@@ -1514,11 +1534,13 @@ def infer_decimal_separator(values) -> str | None:
             votes.add(',')
         elif _DOT_DECIMAL_TAIL.search(s):
             votes.add('.')
-        elif _COMMA_THOUSANDS.match(s) and not s.startswith('0,'):
+        elif _ZERO_COMMA_DECIMAL.match(s):
+            zero_comma = True
+        elif _COMMA_THOUSANDS.match(s):
             comma_thousands = True
     if len(votes) == 1:
         return votes.pop()
-    if not votes and comma_thousands:
+    if not votes and comma_thousands and not zero_comma:
         return '.'
     return None
 
@@ -1557,6 +1579,9 @@ def normalize_amount(amount_str: str | None, decimal_separator: str | None = Non
             amount_str = amount_str.replace('.', '').replace(',', '.')
         else:
             amount_str = amount_str.replace(',', '')
+    elif amount_str.count(',') > 1 and _COMMA_THOUSANDS.match(amount_str):
+        # Two or more comma groups and no dot can only be grouping.
+        amount_str = amount_str.replace(',', '')
     elif ',' in amount_str:
         amount_str = amount_str.replace(',', '.')
 
