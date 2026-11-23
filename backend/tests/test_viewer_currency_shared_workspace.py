@@ -14,7 +14,7 @@ from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
@@ -582,7 +582,7 @@ async def test_member_changing_the_amount_restamps_in_the_owners_currency(
 async def test_member_conversion_without_a_rate_is_refused(client, session, couple):
     """No EUR/BRL rate at all: Bruno's euros can't become Ana's reais."""
     row = await _usd_row(client, couple, "300.00", "1560.00")
-    await session.execute(FxRate.__table__.delete())
+    await session.execute(delete(FxRate))
     await session.commit()
 
     resp = await client.patch(
