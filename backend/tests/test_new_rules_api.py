@@ -1658,9 +1658,22 @@ async def test_transaction_detail_exposes_provider_category(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"category": 42},
+        {"category": ["Groceries"]},
+        {"category": {"id": 7}},
+        {"category": ""},
+        {"category": "   "},
+        {"category": None},
+        {"other": "x"},
+    ],
+    ids=["numeric", "list", "object", "empty", "blank", "null", "no-category-key"],
+)
 async def test_transactions_survive_a_non_textual_provider_category(
     client: AsyncClient, auth_headers, session: AsyncSession,
-    test_user, test_account, test_transactions,
+    test_user, test_account, test_transactions, payload,
 ):
     """A provider payload whose category is not text reads as no label, never 500.
 
@@ -1670,15 +1683,8 @@ async def test_transactions_survive_a_non_textual_provider_category(
     instead of failing validation of the whole response, which took the
     month's list and the dashboard down with it (#353).
     """
-    payloads = [
-        {"category": 42},
-        {"category": ["Groceries"]},
-        {"category": {"id": 7}},
-        {"category": ""},
-        {"category": "   "},
-    ]
-    for transaction, raw_data in zip(test_transactions, payloads):
-        transaction.raw_data = raw_data
+    row = test_transactions[0]
+    row.raw_data = payload
 
     # A real label still comes through, so the fix does not swallow text.
     labelled = Transaction(
@@ -1687,7 +1693,7 @@ async def test_transactions_survive_a_non_textual_provider_category(
         account_id=test_account.id,
         description="R353 MARKET",
         amount=Decimal("10.00"),
-        date=test_transactions[0].date,
+        date=row.date,
         type="debit",
         source="sync",
         currency=test_account.currency,
@@ -1698,23 +1704,21 @@ async def test_transactions_survive_a_non_textual_provider_category(
     await session.commit()
 
     detail = await client.get(
-        f"/api/transactions/{test_transactions[0].id}", headers=auth_headers
+        f"/api/transactions/{row.id}", headers=auth_headers
     )
     assert detail.status_code == 200
     assert detail.json()["provider_category"] is None
 
-    today = date.today()
     listing = await client.get(
         "/api/transactions",
         params={
-            "from": today.replace(day=1).isoformat(),
-            "to": today.isoformat(),
+            "from": row.date.isoformat(),
+            "to": row.date.isoformat(),
             "limit": 100,
         },
         headers=auth_headers,
     )
     assert listing.status_code == 200
     by_id = {item["id"]: item for item in listing.json()["items"]}
-    for transaction in test_transactions:
-        assert by_id[str(transaction.id)]["provider_category"] is None
+    assert by_id[str(row.id)]["provider_category"] is None
     assert by_id[str(labelled.id)]["provider_category"] == "Groceries"
