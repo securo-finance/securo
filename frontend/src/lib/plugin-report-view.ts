@@ -1,6 +1,7 @@
 import type { TFunction } from 'i18next'
 
-import type { PluginReportDefinition, PluginReportResponse, ReportView as View, ReportViewBlock } from '@/types'
+import { monthRange, shiftMonth } from '@/lib/month-utils'
+import type { PluginReportDefinition, PluginReportResponse, PluginWidgetDefinition, ReportView as View, ReportViewBlock } from '@/types'
 
 // What a query report's chart becomes in a view.
 const QUERY_CHARTS: Record<PluginReportDefinition['chart'], Extract<ReportViewBlock, { type: 'chart' }>['chart'] | null> = {
@@ -11,8 +12,17 @@ const QUERY_CHARTS: Record<PluginReportDefinition['chart'], Extract<ReportViewBl
   table: null,
 }
 
-/** A query report's rows as a view, named in the person's language. */
-export function queryReportView(report: PluginReportDefinition, data: PluginReportResponse, t: TFunction): View {
+/**
+ * A query report's rows as a view, named in the person's language. A `card`
+ * (a dashboard widget) shows the total and the chart, and the table only when
+ * there's no chart.
+ */
+export function queryReportView(
+  report: PluginReportDefinition,
+  data: PluginReportResponse,
+  t: TFunction,
+  { card = false }: { card?: boolean } = {},
+): View {
   const byMonth = data.group_by === 'month'
   const label = (row: PluginReportResponse['rows'][number]) => {
     if (row.key === 'other') return t('reports.other')
@@ -36,7 +46,7 @@ export function queryReportView(report: PluginReportDefinition, data: PluginRepo
       format: 'currency',
     })
   }
-  if (hasValues) {
+  if (hasValues && !(card && chart)) {
     const share = !byMonth && report.measure !== 'net' && data.total !== 0
     blocks.push({
       type: 'table',
@@ -53,4 +63,12 @@ export function queryReportView(report: PluginReportDefinition, data: PluginRepo
     })
   }
   return { currency: data.currency, blocks }
+}
+
+/** The dates a plugin's widget reads: its period, counted back from the month on screen. */
+export function pluginWidgetWindow(month: string, period: PluginWidgetDefinition['period']): { from: string; to: string } {
+  const { from, to } = monthRange(month)
+  if (period === 'year_to_date') return { from: `${month.slice(0, 4)}-01-01`, to }
+  if (period === 'last_12_months') return { from: monthRange(shiftMonth(month, -11)).from, to }
+  return { from, to }
 }

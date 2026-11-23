@@ -56,6 +56,13 @@ class PluginReportDefinitionRead(BaseModel):
     chart: Literal["bar", "line", "area", "pie", "table"]
 
 
+class PluginWidgetDefinitionRead(PluginReportDefinitionRead):
+    """A dashboard widget a plugin adds to the library (ADR 0032): a report sized for a card."""
+
+    width: Literal["third", "half", "two_thirds", "full"] = "half"
+    period: Literal["month", "year_to_date", "last_12_months"] = "month"
+
+
 class InstalledPluginRead(BaseModel):
     """A catalog plugin installed in this workspace, as recorded here: no catalog needed."""
 
@@ -72,6 +79,7 @@ class InstalledPluginRead(BaseModel):
     )
     themes: list[PluginThemeRead] = Field(default=[], description="Themes it adds to the library.")
     reports: list[PluginReportDefinitionRead] = Field(default=[], description="Reports it adds to the library.")
+    widgets: list[PluginWidgetDefinitionRead] = Field(default=[], description="Dashboard widgets it adds to the library.")
 
 
 class PluginCatalogRead(BaseModel):
@@ -151,6 +159,7 @@ class PluginContentsRead(BaseModel):
     api_scopes: list[PluginScopeRead] = []
     themes: list[PluginThemeRead] = []
     reports: list[PluginReportDefinitionRead] = []
+    widgets: list[PluginWidgetDefinitionRead] = []
 
 
 class PluginDetailRead(BaseModel):

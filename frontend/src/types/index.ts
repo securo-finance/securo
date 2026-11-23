@@ -784,6 +784,8 @@ export interface InstalledPlugin {
   themes?: PluginTheme[]
   /** Reports it adds to the reports library. */
   reports?: PluginReportDefinition[]
+  /** Dashboard widgets it adds to the library (ADR 0032). */
+  widgets?: PluginWidgetDefinition[]
 }
 
 export type PluginConnectionStatus = 'pending' | 'active' | 'error' | 'needs_auth'
@@ -880,6 +882,13 @@ export interface PluginReportDefinition {
   measure: 'expenses' | 'income' | 'net'
   group_by?: 'category' | 'category_group' | 'payee' | 'account' | 'month' | null
   chart: 'bar' | 'line' | 'area' | 'pie' | 'table'
+}
+
+/** A dashboard widget a plugin adds (ADR 0032): a report sized for a card, with the width it starts at. */
+export interface PluginWidgetDefinition extends PluginReportDefinition {
+  width: 'third' | 'half' | 'two_thirds' | 'full'
+  /** What it reads, counted back from the month on the dashboard. */
+  period: 'month' | 'year_to_date' | 'last_12_months'
 }
 
 /** How a value in a view is shown. A percent is the number itself: 12.5 is 12.5%. */
@@ -989,6 +998,7 @@ export interface PluginContents {
   api_scopes?: PluginScope[]
   themes?: PluginTheme[]
   reports?: PluginReportDefinition[]
+  widgets?: PluginWidgetDefinition[]
 }
 
 /** One plugin opened from the catalog. */

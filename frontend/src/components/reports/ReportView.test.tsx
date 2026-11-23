@@ -67,10 +67,21 @@ describe('ReportView layout and the richer blocks', () => {
         { type: 'text', text: 'full' },
       ] }} />,
     )
-    const cells = container.querySelectorAll(':scope > div > div')
-    expect(cells[0].className).toContain('lg:col-span-3')
-    expect(cells[1].className).toContain('lg:col-span-6')
+    // Widths follow the space the view has (a container query), so a narrow widget stacks them.
+    const cells = container.querySelectorAll('.\\@container > .grid > div')
+    expect(cells[0].className).toContain('@2xl:col-span-3')
+    expect(cells[1].className).toContain('@2xl:col-span-6')
     expect(cells[2].className).toBe('col-span-12')
+  })
+
+  it('drops each block\'s own frame inside a widget, where the widget is the card', () => {
+    const view = { blocks: [{ type: 'kpi' as const, label: 'A', value: 1 }, { type: 'text' as const, text: 'note', title: 'About' }] }
+    const framed = renderWithProviders(<ReportView currency="USD" view={view} />)
+    expect(framed.container.querySelectorAll('.border-border')).toHaveLength(2)
+    framed.unmount()
+    const flat = renderWithProviders(<ReportView currency="USD" view={view} flat />)
+    expect(flat.container.querySelectorAll('.border-border')).toHaveLength(0)
+    expect(screen.getByText('About')).toBeInTheDocument()
   })
 
   it('colors a change by whether a rise is good news', () => {

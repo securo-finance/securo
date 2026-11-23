@@ -2,7 +2,7 @@ import type { LucideIcon } from 'lucide-react'
 import { CalendarClock, CalendarRange, ChartArea, ChartColumnBig, ChartPie, ChartSpline, Sigma, CreditCard, FileClock, Flag, Gauge, HandCoins, Hourglass, LayoutList, Network, PiggyBank, Receipt, Repeat, Scale, Sparkles, Table2, Tags, Target, TrendingUp, Wallet } from 'lucide-react'
 
 import type { ModuleId } from '@/lib/modules'
-import type { InstalledPlugin, LocalizedText, PluginReportDefinition } from '@/types'
+import type { InstalledPlugin, LocalizedText, PluginReportDefinition, PluginWidgetDefinition } from '@/types'
 
 /**
  * The library: what someone can place on a surface (widgets on the
@@ -64,6 +64,9 @@ export function pluginReportEntries(plugins: InstalledPlugin[]): PluginReportEnt
 export const SPANS = [4, 6, 8, 12] as const
 export type Span = (typeof SPANS)[number]
 
+/** The columns a plugin's widget starts at, by the width it asked for. */
+const WIDTH_SPANS: Record<PluginWidgetDefinition['width'], Span> = { third: 4, half: 6, two_thirds: 8, full: 12 }
+
 export interface WidgetEntry extends LibraryEntry {
   /** Its width until someone resizes it. */
   span: Span
@@ -85,6 +88,35 @@ export interface WidgetEntry extends LibraryEntry {
 export interface LayoutItem {
   id: string
   span?: Span
+}
+
+/** A dashboard widget a plugin adds to the library (ADR 0032). */
+export interface PluginWidgetEntry extends WidgetEntry {
+  plugin: NonNullable<LibraryEntry['plugin']>
+  report: PluginWidgetDefinition
+}
+
+/** The dashboard widgets the workspace's installed plugins add to the library, plugin by plugin. */
+export function pluginWidgetEntries(plugins: InstalledPlugin[]): PluginWidgetEntry[] {
+  return plugins.flatMap((plugin) =>
+    (plugin.widgets ?? []).map((widget) => {
+      // A third still holds a figure and a small chart; a table needs half the row.
+      const minSpan: Span = widget.chart === 'table' && !widget.code ? 6 : 4
+      const asked = WIDTH_SPANS[widget.width] ?? 6
+      return {
+        id: pluginItemId(plugin.plugin_id, widget.key),
+        titleKey: '',
+        descriptionKey: '',
+        icon: widget.code ? Sigma : (CHART_ICONS[widget.chart] ?? ChartColumnBig),
+        plugin: { id: plugin.plugin_id, name: plugin.name, title: widget.name, description: widget.description },
+        report: widget,
+        span: asked < minSpan ? minSpan : asked,
+        minSpan,
+        tall: !!widget.code || widget.chart !== 'table',
+        optional: true,
+      }
+    }),
+  )
 }
 
 export const DASHBOARD_WIDGETS: WidgetEntry[] = [

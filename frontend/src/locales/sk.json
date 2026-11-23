@@ -4241,6 +4241,12 @@
     "recurringRevenue": {
       "title": "Opakované príjmy",
       "hint": "Čo mesačne prinášajú opakované faktúry a čo sa nedávno stratilo."
+    },
+    "plugin": {
+      "period": {
+        "year_to_date": "Od začiatku roka",
+        "last_12_months": "Posledných 12 mesiacov"
+      }
     }
   },
   "offline": {

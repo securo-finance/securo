@@ -9,7 +9,7 @@ import { useLayout } from '@/hooks/use-layout'
 import { useEntryAvailability } from '@/hooks/use-entry-availability'
 import { useAppTheme } from '@/hooks/use-app-theme'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
-import { usePluginReports } from '@/hooks/use-plugin-reports'
+import { usePluginReports, usePluginWidgets } from '@/hooks/use-plugin-reports'
 import { SURFACE_ENTRIES, type LibraryEntry, type LibraryKind, type Surface } from '@/lib/library'
 import { ThemePreview } from '@/components/theme-preview'
 import { localized } from '@/lib/localized-text'
@@ -90,9 +90,10 @@ export function LibraryDialog({
 /** Each item of a surface, added or not, with the switch that adds or removes it. */
 function SurfaceItems({ surface }: { surface: Surface }) {
   const { t, i18n } = useTranslation()
-  // The installed plugins' reports join Securo's own (ADR 0028).
+  // The installed plugins' reports and widgets join Securo's own (ADR 0028, 0032).
   const { entries: pluginReports } = usePluginReports()
-  const pluginEntries = surface === 'reports' ? pluginReports : []
+  const { entries: pluginWidgets } = usePluginWidgets()
+  const pluginEntries = surface === 'reports' ? pluginReports : pluginWidgets
   // Until the saved arrangement is in, a change would be made to the default and overwrite it.
   const { items, ids, save, reset, isCustom, ready } = useLayout(surface, pluginEntries)
   const unavailable = useEntryAvailability()

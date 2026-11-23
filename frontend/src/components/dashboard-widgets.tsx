@@ -19,6 +19,12 @@ import { CategoryIcon } from '@/components/category-icon'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { ReportView } from '@/components/reports/ReportView'
+import { usePluginView } from '@/hooks/use-plugin-view'
+import { extractApiError } from '@/lib/api-errors'
+import type { PluginWidgetEntry } from '@/lib/library'
+import { localized } from '@/lib/localized-text'
+import { pluginWidgetWindow } from '@/lib/plugin-report-view'
 import type { DashboardSummary, InvoiceDirection, Transaction } from '@/types'
 
 /**
@@ -62,11 +68,11 @@ function Empty({ children }: { children: ReactNode }) {
 }
 
 /** A load that failed: said so, with a retry, never shown as an empty result. */
-function Failed({ onRetry }: { onRetry: () => void }) {
+function Failed({ onRetry, message }: { onRetry: () => void; message?: string }) {
   const { t } = useTranslation()
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-2 py-6 text-center">
-      <p className="text-sm text-muted-foreground">{t('widgets.loadFailed')}</p>
+      <p className="text-sm text-muted-foreground">{message ?? t('widgets.loadFailed')}</p>
       <Button variant="outline" size="sm" onClick={onRetry}>
         <RefreshCw size={14} className="me-1" />
         {t('common.retry')}
@@ -781,6 +787,49 @@ export function RecurringRevenueWidget({ scope }: { scope: DashboardScope }) {
           </div>
         </div>
       )}
+    </WidgetCard>
+  )
+}
+
+/**
+ * A widget a plugin adds to the dashboard (ADR 0032): a query Securo adds up
+ * or the plugin's own code, drawn as a report's view inside the card, for the
+ * month and the accounts the dashboard shows.
+ */
+export function PluginWidget({ entry, scope }: { entry: PluginWidgetEntry; scope: DashboardScope }) {
+  const { t, i18n } = useTranslation()
+  const { report } = entry
+  const { from, to } = pluginWidgetWindow(scope.month, report.period)
+  const { data, isLoading, isError, error, refetch, view, empty, periodRefused } = usePluginView(
+    entry,
+    'dashboard',
+    scope.noAccounts ? undefined : from,
+    to,
+    scope.activeAccountIds ?? undefined,
+  )
+  const title = localized(entry.plugin.title, i18n.language)
+  const period = report.period !== 'month' ? (
+    <span className="shrink-0 text-xs text-muted-foreground">{t(`widgets.plugin.period.${report.period}`)}</span>
+  ) : undefined
+
+  return (
+    <WidgetCard title={title} action={period}>
+      {scope.noAccounts ? (
+        <Empty>{t('dashboard.noData')}</Empty>
+      ) : isLoading ? (
+        <Skeleton className="h-40 w-full" />
+      ) : periodRefused ? (
+        <Empty>{t('reports.pluginReport.periodTooLong')}</Empty>
+      ) : isError ? (
+        <Failed onRetry={() => void refetch()} message={extractApiError(error, t('widgets.loadFailed'))} />
+      ) : view && !empty ? (
+        <ReportView view={view} currency={data?.currency ?? scope.currency} flat />
+      ) : (
+        <Empty>{t('dashboard.noData')}</Empty>
+      )}
+      <p className="mt-3 truncate text-[11px] text-muted-foreground">
+        {t('library.fromPlugin', { name: localized(entry.plugin.name, i18n.language) })}
+      </p>
     </WidgetCard>
   )
 }
