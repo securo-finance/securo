@@ -618,14 +618,18 @@ async def _reconciliation_rows_in_export(
             select(target_model.id).where(target_model.workspace_id == workspace_id)
         )
         exported_ids[table] = {str(value) for value in target_result.scalars()}
-    return [
-        row
-        for row in rows
-        if str(row.get("expectation_id"))
-        in exported_ids.get(
-            POLYMORPHIC_EXPECTATION_TABLES.get(str(row.get("expectation_kind"))), set()
-        )
-    ]
+    def keep(row: dict[str, Any]) -> bool:
+        target_table = POLYMORPHIC_EXPECTATION_TABLES.get(str(row.get("expectation_kind")))
+        if target_table in exported_ids and str(row.get("expectation_id")) in exported_ids[
+            target_table
+        ]:
+            return True
+        # History deliberately survives a deleted target. Restore swaps the
+        # reference for a stable opaque id, so only an open suggestion needs a
+        # live target to be useful.
+        return name == "reconciliation_events" or row.get("status") != "pending"
+
+    return [row for row in rows if keep(row)]
 
 
 async def _fetch_entity_rows(
