@@ -1657,8 +1657,20 @@ async def test_transaction_detail_exposes_provider_category(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"category": 42},
+        {"category": ["Groceries"]},
+        {"category": {"id": 7}},
+        {"category": ""},
+        {"category": "   "},
+        {"category": None},
+    ],
+    ids=["numeric", "list", "object", "empty", "blank", "null"],
+)
 async def test_transaction_reads_survive_a_non_textual_provider_category(
-    client: AsyncClient, auth_headers, session: AsyncSession, test_transactions,
+    client: AsyncClient, auth_headers, session: AsyncSession, test_transactions, payload,
 ):
     """A payload whose category is not text reads as no label, never as a 500.
 
@@ -1667,7 +1679,7 @@ async def test_transaction_reads_survive_a_non_textual_provider_category(
     validation of the whole response, taking the month's list down (#353).
     """
     row = test_transactions[0]
-    row.raw_data = {"category": 42}
+    row.raw_data = payload
     await session.commit()
 
     detail = await client.get(f"/api/transactions/{row.id}", headers=auth_headers)
