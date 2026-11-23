@@ -13,8 +13,10 @@ class ReimbursementAllocationInput(BaseModel):
 
     counterpart_id: uuid.UUID
     # Cents, what the column stores: anything finer would validate against
-    # one remainder and be saved as another.
-    amount: Decimal = Field(gt=0, decimal_places=2)
+    # one remainder and be saved as another. `max_digits` matches
+    # Numeric(15, 2), so an absurd value is refused here instead of failing
+    # inside the service.
+    amount: Decimal = Field(gt=0, max_digits=15, decimal_places=2)
 
 
 class ReimbursementAllocationsInput(BaseModel):

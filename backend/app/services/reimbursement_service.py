@@ -143,11 +143,17 @@ async def replace_allocations(
     if anchor.id in counterpart_ids:
         raise ValueError("A transaction cannot reimburse itself")
 
+    # Locked in id order so two saves for different anchors take the same
+    # counterpart one after the other: the second then reads the committed
+    # total and fails the cap, instead of both passing it on a stale read.
     result = await session.execute(
-        select(Transaction).where(
+        select(Transaction)
+        .where(
             Transaction.id.in_(counterpart_ids),
             Transaction.workspace_id == anchor.workspace_id,
         )
+        .order_by(Transaction.id)
+        .with_for_update()
     )
     counterparts = {tx.id: tx for tx in result.scalars().all()}
     if len(counterparts) != len(counterpart_ids):

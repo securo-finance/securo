@@ -147,3 +147,27 @@ async def test_the_migration_rolls_back_and_forward(session):
     assert (await conn.execute(text(table_exists()))).scalar_one() is None
     await conn.run_sync(run, "upgrade")
     assert (await conn.execute(text(table_exists()))).scalar_one() is not None
+
+
+async def test_counterparts_are_locked_in_id_order_before_the_cap_is_checked(
+    session, test_user, test_workspace
+):
+    from sqlalchemy import event
+    from sqlalchemy.engine import Engine
+
+    statements: list[str] = []
+
+    def record(conn, cursor, statement, parameters, context, executemany):
+        statements.append(" ".join(statement.split()))
+
+    event.listen(Engine, "before_cursor_execute", record)
+    try:
+        await _linked_pair(session, test_user, test_workspace, date(2026, 10, 10))
+    finally:
+        event.remove(Engine, "before_cursor_execute", record)
+
+    # Two saves for different anchors must queue on the counterpart, or both
+    # can pass the cap on the same stale total and over-allocate it.
+    # The table is schema-qualified in these per-test schemas.
+    locking = [s for s in statements if s.startswith("SELECT") and s.endswith("FOR UPDATE")]
+    assert any(" FROM " in s and "ORDER BY" in s and s.endswith("transactions.id FOR UPDATE") for s in locking), statements

@@ -278,3 +278,18 @@ async def test_the_list_and_export_filter_by_link(client, auth_headers):
         "/api/transactions", headers=auth_headers, params={"reimbursement": "nonsense"}
     )
     assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_an_amount_too_large_for_the_column_is_a_422_not_a_500(client, auth_headers):
+    account = await _account(client, auth_headers)
+    dinner = await _create(client, auth_headers, account["id"], 100)
+    payback = await _create(client, auth_headers, account["id"], 20, "credit")
+
+    for amount in ("1e30", "9999999999999999.99"):
+        resp = await client.put(
+            f"/api/transactions/{dinner['id']}/reimbursements",
+            headers=auth_headers,
+            json=_body((payback, amount)),
+        )
+        assert resp.status_code == 422, (amount, resp.text)

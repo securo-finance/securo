@@ -2506,13 +2506,6 @@ async def update_transaction(
     update_data.pop("payback", None)
     _normalize_flag_update(transaction, update_data)
     _check_category_lines_update(transaction, update_data, lines_payload)
-    await reimbursement_service.check_edit(
-        session,
-        transaction,
-        new_amount=update_data.get("amount"),
-        new_type=update_data.get("type"),
-        adds_splits=bool(splits_payload and splits_payload.splits),
-    )
 
     # Verify the new account belongs to the workspace before touching the
     # row. When changing the account on one side of a transfer pair,
@@ -2597,6 +2590,15 @@ async def update_transaction(
             row_update["currency"] = check_transaction_currency(
                 row_update["currency"], row.currency
             )
+        # Every installment the edit reaches, not only the one opened: a
+        # sibling with reimbursements linked from it must not shrink below them.
+        await reimbursement_service.check_edit(
+            session,
+            row,
+            new_amount=row_update.get("amount"),
+            new_type=row_update.get("type"),
+            adds_splits=row.id == transaction.id and bool(splits_payload and splits_payload.splits),
+        )
         if row.source == "sync":
             for field in ("amount", "date"):
                 if (

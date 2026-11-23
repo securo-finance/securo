@@ -376,3 +376,28 @@ async def test_update_transaction_refuses_shrinking_a_counterpart(
             session, payback.id, test_workspace.id, test_user.id,
             TransactionUpdate(amount=Decimal("30")),
         )
+
+
+@pytest.mark.asyncio
+async def test_editing_a_series_cannot_shrink_a_sibling_below_what_is_linked_from_it(
+    session, make_tx, test_user, test_workspace
+):
+    from app.schemas.transaction import TransactionUpdate
+    from app.services.transaction_service import update_transaction
+
+    series = {
+        "installment_series_id": uuid.uuid4(), "total_installments": 2,
+        "installment_purchase_date": date(2026, 10, 1),
+    }
+    first = await make_tx(100, "credit", installment_number=1, **series)
+    second = await make_tx(100, "credit", installment_number=2, **series)
+    anchor = await make_tx(80, "debit")
+    await reimbursement_service.replace_allocations(session, anchor, [_alloc(second, 80)])
+    await session.commit()
+
+    # The opened installment has nothing linked; its sibling has 80.
+    with pytest.raises(ValueError, match="less than what is allocated"):
+        await update_transaction(
+            session, first.id, test_workspace.id, test_user.id,
+            TransactionUpdate(amount=Decimal("50"), apply_to="all"),
+        )
