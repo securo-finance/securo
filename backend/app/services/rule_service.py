@@ -428,15 +428,19 @@ async def list_provider_categories(
     The JSON value is read as JSON, not as text: `as_string()` turns a numeric
     code into `"42"`, which the rule engine never matches (`provider_category`
     is only text, #353). What the engine ignores is not offered here.
+
+    There is deliberately no `DISTINCT`: `raw_data` is a `JSON` column, so the
+    bare value is typed `json`, and PostgreSQL has no equality operator for it
+    — `SELECT DISTINCT raw_data -> 'category'` fails at planning on every
+    PostgreSQL instance (#375). The set below de-duplicates instead, after the
+    non-text values are dropped.
     """
     value = Transaction.raw_data["category"]
     result = await session.execute(
-        select(value)
-        .where(
+        select(value).where(
             Transaction.workspace_id == workspace_id,
             Transaction.raw_data.is_not(None),
         )
-        .distinct()
     )
     return sorted(
         {v for v in result.scalars() if isinstance(v, str) and v.strip()},
