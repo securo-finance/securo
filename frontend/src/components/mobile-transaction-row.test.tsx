@@ -145,6 +145,34 @@ describe('MobileTransactionRow flag marker (#56)', () => {
   })
 })
 
+describe('MobileTransactionRow description line (#433)', () => {
+  it('keeps the badges on their own line, under the description', () => {
+    renderRow(
+      makeTx({
+        description: 'Geladeira Brastemp',
+        installment_number: 5,
+        total_installments: 10,
+        is_paid: false,
+      }),
+    )
+
+    const description = screen.getByText('Geladeira Brastemp')
+    const badges = screen.getByTestId('transaction-badges')
+
+    expect(badges).toContainElement(screen.getByText('5/10'))
+    expect(badges).toContainElement(screen.getByLabelText('transactions.unpaid'))
+    // The description keeps the whole line, so a narrow phone column cannot
+    // squeeze it into a few characters and break words in the middle.
+    expect(description.nextElementSibling).toBe(badges)
+    expect(description.contains(badges)).toBe(false)
+  })
+
+  it('renders no badge line when the row has no badges', () => {
+    renderRow(makeTx({ description: 'Supermercado Pão de Açúcar' }))
+    expect(screen.queryByTestId('transaction-badges')).not.toBeInTheDocument()
+  })
+})
+
 describe('MobileTransactionRow reporting date indicator', () => {
   it('shows reporting and original bank dates for moved rows', () => {
     renderRow(makeTx({ reporting_date_override: '2026-09-30' }))
