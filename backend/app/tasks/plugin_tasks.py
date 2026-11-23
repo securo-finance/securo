@@ -111,28 +111,61 @@ def sync_plugin_connections() -> dict:
     return {"synced": synced}
 
 
-async def _run_routines_of(connection_id: str) -> None:
+async def _run_routines_of(
+    connection_id: str, *, force: bool = False, only: list[str] | None = None
+) -> list[str]:
+    """Run the connection's due routines, or with `force` every one (`only` narrows it).
+
+    Returns the forced routines that found the connection busy and didn't run:
+    they still have to prove the new values, so the caller tries them again.
+    An unforced routine that finds it busy is left to the schedule, which runs
+    it once the lock is free because it is still due.
+    """
     engine, session_maker = _session_maker()
+    busy: list[str] = []
     try:
         async with session_maker() as session:
             connection = await session.get(PluginConnection, uuid.UUID(connection_id))
             if connection is None:
-                return
+                return []
             for routine in await connections.list_routines(session, [connection.id]):
-                if connections.routine_due(routine, connection):
-                    await connections.run_routine(session, connection, routine, scheduled=True)
+                if only is not None and routine.routine not in only:
+                    continue
+                # Forced: the values just changed and this run is what proves
+                # them, so a routine not yet due runs anyway.
+                if not force and not connections.routine_due(routine, connection):
+                    continue
+                outcome = await connections.run_routine(session, connection, routine, scheduled=not force)
+                if outcome == "needs_auth":
+                    return []  # the whole connection needs signing in again: nothing left to retry
+                if outcome == "busy" and force:
+                    busy.append(routine.routine)
     finally:
         await engine.dispose()
         await close_redis()
+    return busy
+
+
+#: A forced round that finds the connection busy tries those routines again this
+#: often, this many times (about ten minutes), before leaving them to their schedule.
+FORCED_RETRY_SECONDS = 30
+FORCED_RETRIES = 20
 
 
 @celery_app.task(name="app.tasks.plugin_tasks.run_plugin_routines")
-def run_plugin_routines(connection_id: str) -> dict:
-    """A connection's due routines, right after it was set up (ADR 0035); the schedule does the rest."""
+def run_plugin_routines(connection_id: str, force: bool = False, only: list[str] | None = None, attempt: int = 0) -> dict:
+    """A connection's routines right after it was set up, or every one of them after
+    new values (ADR 0038); the schedule does the rest."""
     if not _enabled():
         return {"status": "disabled"}
-    asyncio.run(_run_routines_of(connection_id))
-    return {"status": "ok"}
+    busy = asyncio.run(_run_routines_of(connection_id, force=force, only=only))
+    if not busy:
+        return {"status": "ok"}
+    if attempt >= FORCED_RETRIES:
+        logger.warning("Plugin connection %s stayed busy; routines %s wait for their schedule", connection_id, busy)
+        return {"status": "busy", "routines": busy}
+    run_plugin_routines.apply_async((connection_id, True, busy, attempt + 1), countdown=FORCED_RETRY_SECONDS)
+    return {"status": "retrying", "routines": busy}
 
 
 @celery_app.task(name="app.tasks.plugin_tasks.sync_plugin_connection")

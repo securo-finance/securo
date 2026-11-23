@@ -239,12 +239,14 @@ async def for_bank_connection(
 
 async def update_values(
     session: AsyncSession, connection: PluginConnection, *, name: str | None, values: dict[str, Any]
-) -> PluginConnection:
+) -> tuple[PluginConnection, bool]:
     """New form values for a connection (reconnecting after a password change, say).
 
     A field left blank keeps what it had, so a secret never has to be typed
     again to change something else. What the plugin stored itself (a refresh
-    token, say) is kept too. The connection then syncs afresh.
+    token, say) is kept too. Returns the connection and whether any value
+    changed: only then does it have to prove itself again; a rename alone
+    leaves it as it was.
 
     Not while it syncs: the sync would save back the secrets it started with.
     """
@@ -260,7 +262,7 @@ async def update_values(
 
 async def _update_values(
     session: AsyncSession, connection: PluginConnection, *, name: str | None, values: dict[str, Any]
-) -> PluginConnection:
+) -> tuple[PluginConnection, bool]:
     _, manifest = await _installed(session, connection.workspace_id, connection.plugin_id)
     integration = _integration(manifest, connection.integration)
     try:
@@ -281,20 +283,22 @@ async def _update_values(
     connection.secrets = vault.seal({**{k: v for k, v in secrets.items() if k not in fields}, **new_secrets})
     if name is not None and name.strip():
         connection.name = name.strip()[:100]
-    if integration.auth != "oauth":
-        connection.status = "pending"
-    connection.failures = 0
-    connection.last_error = None
+    if changed:
+        # New values have to prove themselves: it waits for the run that
+        # checks them. A rename alone changes nothing about its state.
+        if integration.auth != "oauth":
+            connection.status = "pending"
+        connection.failures = 0
+        connection.last_error = None
+        # Only new values end the reason the old ones left; a rename does not.
+        await _forget_bank_failure(session, connection)
     if connection.bank_connection_id is not None:
         bank = await session.get(BankConnection, connection.bank_connection_id)
         if bank is not None:
             bank.display_name = connection.name
-    if changed:
-        # Only new values end the reason the old ones left; a rename does not.
-        await _forget_bank_failure(session, connection)
     await _mirror_status(session, connection)
     await session.commit()
-    return connection
+    return connection, changed
 
 
 def _split(integration: Integration, values: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:

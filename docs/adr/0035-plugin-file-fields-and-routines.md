@@ -5,6 +5,7 @@
 - Origin: plugin integrations that need more than one text form and one sync
 - Extends: [0015](0015-plugins.md)
 - Exception to: [0019](0019-s3-storage.md)
+- Extended by [0038](0038-plugin-connection-recovers-with-new-values.md): a connection is fixed in place with new values, and a routine-only one runs its routines at once to prove them.
 
 ## Context
 

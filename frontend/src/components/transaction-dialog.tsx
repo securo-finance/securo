@@ -438,7 +438,32 @@ export function TransactionDialog({
   )
 }
 
-/** Icon-only footer toggle: the label names it for screen readers and shows on hover. */
+/**
+ * Width a scroll region's vertical scrollbar takes from its content: 0 where
+ * scrollbars overlay the content (phones, macOS with a trackpad) or when
+ * nothing overflows. The observer fires when a classic bar appears or goes,
+ * since that changes the content box.
+ */
+function useScrollbarWidth() {
+  const ref = useRef<HTMLDivElement>(null)
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const measure = () => setWidth(Math.max(0, el.offsetWidth - el.clientWidth))
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+  return [ref, width] as const
+}
+
+/**
+ * Icon-only footer action. The label names the action for screen readers and
+ * shows on hover; it already changes with the state ("Mark as unpaid"), so the
+ * button carries no aria-pressed, which would read as "Mark as unpaid, pressed".
+ */
 function FooterIconAction({
   label,
   hint,
@@ -464,7 +489,6 @@ function FooterIconAction({
           variant="ghost"
           size="icon"
           aria-label={label}
-          aria-pressed={active || undefined}
           onClick={onClick}
           disabled={disabled}
           className={cn(
@@ -529,6 +553,7 @@ function TransactionForm({
 }) {
   const { t } = useTranslation()
   const id = useId()
+  const [scrollRef, scrollbarWidth] = useScrollbarWidth()
   const queryClient = useQueryClient()
   const { user } = useAuth()
   const { privacyMode, MASK } = usePrivacyMode()
@@ -1200,10 +1225,15 @@ function TransactionForm({
         hasPreview && 'mt-4'
       )}
     >
-      {/* The scrollbar sits in the dialog's own padding: a thin (11px) bar plus
-          13px fill the 24px gutter, so the fields line up with the close button
-          and the footer instead of stopping short of them. */}
-      <div className="space-y-4 overflow-y-auto flex-1 min-h-0 pb-2 -me-6 pe-[13px] [scrollbar-width:thin]">
+      {/* The scroll region reaches into the dialog's 24px end padding and gives
+          back whatever the scrollbar does not take, so the fields end on the
+          footer's line with a classic bar and with an overlay one (0px). */}
+      <div
+        ref={scrollRef}
+        data-testid="transaction-form-scroll"
+        style={{ '--scrollbar-w': `${scrollbarWidth}px` } as React.CSSProperties}
+        className="space-y-4 overflow-y-auto flex-1 min-h-0 pb-2 -me-6 pe-[max(0px,calc(1.5rem_-_var(--scrollbar-w)))] [scrollbar-width:thin]"
+      >
       {error && (
         <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
           {error}
