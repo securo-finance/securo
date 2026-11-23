@@ -314,6 +314,39 @@ async def test_hand_trades_are_not_replayed_with_provider_trades(session: AsyncS
     assert (chart[date(2026, 11, 2)], chart[date(2026, 11, 5)], chart[app_today()]) == (100.0, 180.0, 210.0)
 
 
+def test_a_hand_split_leaves_only_the_stored_units_to_match():
+    """A hand split can't be netted out, so the provider's trades stop standing on their own (#382).
+
+    Recording a trade by hand recomputes `units` from the whole ledger, so the stored units
+    and the provider's net plus the hand trades match, and the ledger is replayed. A hand split
+    moves the units in a way a net can't express, so from then on only the stored units count.
+    Here the numbers still line up with the hand trades taken out (10 from the provider plus 2
+    by hand against 12 stored): without the split the replay is accepted, with it the chart has
+    to fall back to the stored values.
+    """
+    import uuid
+
+    from app.services.asset_service import _ledger_valued, _provider_units
+
+    asset = Asset(
+        units=Decimal("12"),
+        source=SOURCE,
+        connection_id=uuid.uuid4(),
+        valuation_method="manual",
+    )
+    provider = ("buy", Decimal("10"), SOURCE)
+    hand_buy = ("buy", Decimal("2"), "manual")
+
+    # Without a split the hand trade is netted out, so the provider's trades add up.
+    assert _ledger_valued(asset, _provider_units(asset, [provider, hand_buy])) is True
+    assert _provider_units(asset, [provider, hand_buy]) == (Decimal("10"), Decimal("10"), Decimal("2"))
+
+    # With a hand split only the stored units count, and they no longer match the provider's net.
+    with_split = [provider, hand_buy, ("split", None, "manual")]
+    assert _ledger_valued(asset, _provider_units(asset, with_split)) is False
+    assert _provider_units(asset, with_split) == (Decimal("10"), Decimal("10"), None)
+
+
 @pytest.mark.asyncio
 async def test_a_hand_trade_recorded_through_the_ledger_keeps_the_provider_replay(
     session: AsyncSession, bank_connection, test_user

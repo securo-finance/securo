@@ -323,9 +323,9 @@ async def test_hidden_category_is_not_assigned_by_rules(
     payload = {
         "account_id": str(test_account.id),
         "description": "IFOOD PEDIDO",
-        "amount": -42.0,
+        "amount": 42.0,
         "date": "2026-08-24",
-        "type": "expense",
+        "type": "debit",
     }
 
     matched = await client.post("/api/transactions", headers=auth_headers, json=payload)

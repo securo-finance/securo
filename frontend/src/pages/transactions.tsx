@@ -47,7 +47,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Clock, HelpCircle, Info, Paperclip, Repeat, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, Flag, SlidersHorizontal, Receipt } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, CheckCheck, Clock, HelpCircle, Info, Paperclip, Repeat, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, Flag, SlidersHorizontal, Receipt } from 'lucide-react'
 import type { Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, TransactionEditPayload, ReconciliationSuggestion } from '@/types'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { TransactionFlagMarker } from '@/components/transaction-flag-marker'
@@ -117,7 +117,7 @@ export default function TransactionsPage() {
   const isMobile = useIsMobile()
   const { user } = useAuth()
   const { activeAccountIds } = useCollectionFilter()
-  const { canWrite, hasModule } = useWorkspace()
+  const { current: currentWorkspace, canWrite, hasModule } = useWorkspace()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
@@ -143,9 +143,6 @@ export default function TransactionsPage() {
   })
   const [filterUncategorized, setFilterUncategorized] = useState<boolean>(false)
   const [filterFlag, setFilterFlag] = useState<FlagFilter>(() => parseFlagFilter(searchParams.get('flagged')))
-  // The range in use before the flag filter cleared it, put back when the
-  // filter is turned off again.
-  const rangeBeforeFlagRef = useRef<{ from: string; to: string } | null>(null)
   // Seed the date range from the URL, else the range last used on this page
   // (issue #1053), else the current month. Done in the initializer so it
   // survives effect re-runs (e.g. React StrictMode's double-invoke in
@@ -153,20 +150,29 @@ export default function TransactionsPage() {
   const [initialRange] = useState(() => {
     const f = searchParams.get('from')
     const t = searchParams.get('to')
-    if (f || t) return { from: f ?? '', to: t ?? '' }
+    if (f || t) return { from: f ?? '', to: t ?? '', restore: null }
+    const usual = loadRange('transactions') ?? monthRange(currentMonth())
     // A flag is something to come back to, often from months ago: the
     // flagged views open on the whole history, not the current month.
-    if (parseFlagFilter(searchParams.get('flagged'))) return { from: '', to: '' }
-    return loadRange('transactions') ?? monthRange(currentMonth())
+    // The review queue holds whatever arrived unread, and an import early in
+    // the month usually brings last month's rows: it opens on every date too.
+    if (
+      parseFlagFilter(searchParams.get('flagged')) ||
+      searchParams.get('unread_only') === 'true'
+    ) {
+      return { from: '', to: '', restore: usual }
+    }
+    return { ...usual, restore: null }
   })
   const [filterFrom, setFilterFrom] = useState<string>(initialRange.from)
   const [filterTo, setFilterTo] = useState<string>(initialRange.to)
-  useEffect(() => {
-    // The flagged views drop the range for their own sake; keep the one
-    // the user picked for the next visit.
-    if (filterFlag) return
-    saveRange('transactions', filterFrom, filterTo)
-  }, [filterFrom, filterTo, filterFlag])
+  // The range in place before a whole-history view (flags, review queue)
+  // cleared it, to put back when the last of them is turned off.
+  // A link that opens straight on one of those views has no range of its own
+  // to put back: leaving it lands on the range the page opens with otherwise.
+  const rangeBeforeAllDatesRef = useRef<{ from: string; to: string } | null>(
+    initialRange.restore,
+  )
   // Month reflected by the stepper: the active range when it spans exactly one
   // full month, otherwise the current month (custom ranges still navigable).
   const steppedMonth = monthFromRange(filterFrom, filterTo) ?? currentMonth()
@@ -206,6 +212,18 @@ export default function TransactionsPage() {
       return false
     }
   })
+  // The review queue of issue #636: show only rows nobody has reviewed yet.
+  // It lives in the URL and not in localStorage because it is a work list
+  // someone turns on for a reconciliation pass and turns off after.
+  const [onlyUnread, setOnlyUnread] = useState<boolean>(
+    () => searchParams.get('unread_only') === 'true',
+  )
+  useEffect(() => {
+    // The flagged views and the review queue drop the range for their own
+    // sake; keep the one the user picked for the next visit.
+    if (filterFlag || onlyUnread) return
+    saveRange('transactions', filterFrom, filterTo)
+  }, [filterFrom, filterTo, filterFlag, onlyUnread])
   const [filterMinAmount, setFilterMinAmount] = useState<string>(searchParams.get('min_amount') ?? '')
   const [filterMaxAmount, setFilterMaxAmount] = useState<string>(searchParams.get('max_amount') ?? '')
   const [tagFilters, setTagFilters] = useState<string[]>([])
@@ -292,6 +310,7 @@ export default function TransactionsPage() {
     setFilterFlag(parseFlagFilter(searchParams.get('flagged')))
     const urlHideIgnored = searchParams.get('hide_ignored')
     if (urlHideIgnored !== null) setHideIgnored(urlHideIgnored === 'true')
+    setOnlyUnread(searchParams.get('unread_only') === 'true')
     const categories = searchParams.get('category_id');
     setFilterCategoryIds(categories ? categories.split(',') : []);
     setFilterUncategorized(searchParams.get('uncategorized') === '1');
@@ -339,6 +358,7 @@ export default function TransactionsPage() {
         ['min_amount', filterMinAmount],
         ['max_amount', filterMaxAmount],
         ['hide_ignored', hideIgnored ? 'true' : ''],
+        ['unread_only', onlyUnread ? 'true' : ''],
       ].filter(([, v]) => v.length),
     );
 
@@ -366,6 +386,7 @@ export default function TransactionsPage() {
     filterMinAmount,
     filterMaxAmount,
     hideIgnored,
+    onlyUnread,
   ]);
 
   useEffect(() => {
@@ -382,7 +403,7 @@ export default function TransactionsPage() {
     setSelectedIds(new Set())
     setLastSelectedId(null)
     setBulkCategory('')
-  }, [page, filterAccountIds, filterLinkedCardIds, filterCategoryIds, filterUncategorized, filterPayee, filterType, filterStatus, filterFlag, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery])
+  }, [page, filterAccountIds, filterLinkedCardIds, filterCategoryIds, filterUncategorized, filterPayee, filterType, filterStatus, filterFlag, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery, onlyUnread])
 
   useEffect(() => {
     if (viewMode === 'calendar') {
@@ -434,8 +455,8 @@ export default function TransactionsPage() {
   const noAccounts = filterAccountIds.length === 0
     && activeAccountIds !== null && activeAccountIds.length === 0
 
-  const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ['transactions', page, limit, effectiveAccountIds, filterLinkedCardIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterFlag, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
+  const { data, isLoading, isFetching, isSuccess, isFetchedAfterMount, fetchStatus, refetch } = useQuery({
+    queryKey: ['transactions', page, limit, effectiveAccountIds, filterLinkedCardIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterFlag, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, onlyUnread, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
     enabled: !noAccounts,
     queryFn: () =>
       transactions.list({
@@ -458,24 +479,55 @@ export default function TransactionsPage() {
         exclude_ignored: hideIgnored ? true : undefined,
         flagged: filterFlag === 'all' ? true : undefined,
         flag_due: filterFlag === 'overdue' || filterFlag === 'soon' ? filterFlag : undefined,
+        unread_only: onlyUnread ? true : undefined,
         // Mobile has no column headers to change sort; force date-desc so
         // the date grouping always works correctly.
         ...(isMobile ? { sort_by: 'date', sort_dir: 'desc' as const } : grid.apiSort),
       }),
   })
 
-  // A row can leave the page without a filter change (unflagged under
-  // "Flagged only", deleted elsewhere): drop it from the selection so the
-  // export and bulk actions only act on rows the user can still see.
+  // "Mark all as read" clears every unread row of the workspace, whatever the
+  // filters show, so the review queue also counts those (issue #411). The key
+  // sits under ['transactions'], so every invalidation of the list refreshes it.
+  const { data: workspaceUnread } = useQuery({
+    queryKey: ['transactions', 'unread-total', currentWorkspace?.id],
+    enabled: onlyUnread && viewMode === 'list',
+    queryFn: () => transactions.list({ page: 1, limit: 1, unread_only: true }),
+    select: (result) => result.total,
+  })
+
+  // A fresh page can hold fewer pages than the one being shown: clearing the
+  // last rows of the review queue is the usual way it happens. Clamp only
+  // against a successful answer that arrived for the page on screen. A cached
+  // total, even a fresh one, is asked again first; a refetch still running,
+  // paused offline or failed leaves the page alone, so Refresh can retry it
+  // (issue #636).
   useEffect(() => {
-    if (!data?.items) return
+    if (!data || !isSuccess || fetchStatus !== 'idle') return
+    const lastPage = Math.max(1, Math.ceil(data.total / limit))
+    if (page <= lastPage) return
+    if (!isFetchedAfterMount) {
+      void refetch()
+      return
+    }
+    setPage(lastPage)
+  }, [data, isSuccess, isFetchedAfterMount, fetchStatus, limit, page, refetch])
+
+  // A selected row can leave the visible page without the page or the filters
+  // changing: opening an unread row in the review queue clears its marker and
+  // the row drops out of the result. Reconcile the selection against the
+  // latest successful response, so a bulk action never touches a row the
+  // person can no longer see (issue #636).
+  useEffect(() => {
+    if (!data) return
     const visible = new Set(data.items.map((tx) => tx.id))
     setSelectedIds((prev) => {
       if (prev.size === 0) return prev
-      const kept = new Set([...prev].filter((id) => visible.has(id)))
-      return kept.size === prev.size ? prev : kept
+      const next = new Set([...prev].filter((id) => visible.has(id)))
+      return next.size === prev.size ? prev : next
     })
-  }, [data?.items])
+    setLastSelectedId((prev) => (prev && visible.has(prev) ? prev : null))
+  }, [data])
 
   const calendarMonth = steppedMonth
   const calendarAccountIds = filterAccountIds.length === 1 ? filterAccountIds : []
@@ -648,6 +700,40 @@ export default function TransactionsPage() {
       toast.error(extractApiError(error))
     },
   })
+
+  // Issue #636: opening a row is what clears its "new" marker. The badge is
+  // a review hint, so a failure here must not stop the dialog from opening:
+  // the row simply keeps the badge, and the toast says so.
+  const markReadMutation = useMutation({
+    mutationFn: ({ id, workspaceId }: { id: string; workspaceId?: string }) =>
+      transactions.markRead(id, workspaceId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['transactions'] }),
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
+  })
+
+  const markAllReadMutation = useMutation({
+    mutationFn: (workspaceId?: string) => transactions.markAllRead(workspaceId),
+    onSuccess: () => {
+      invalidateAfterTxMutation()
+      toast.success(t('transactions.markAllReadDone'))
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
+  })
+
+  const openTransaction = (tx: Transaction) => {
+    // A viewer can open the row but cannot clear its marker, and a shared row
+    // belongs to another workspace: skip a write that is bound to fail and
+    // keep the dialog opening as before (issue #636).
+    if (tx.is_read === false && canWrite && !tx.is_shared) {
+      markReadMutation.mutate({ id: tx.id, workspaceId: currentWorkspace?.id })
+    }
+    setEditingTx(tx)
+    setDialogOpen(true)
+  }
 
   const bulkCategorizeMutation = useMutation({
     mutationFn: ({ ids, categoryId }: { ids: string[]; categoryId: string | null }) =>
@@ -1033,28 +1119,34 @@ export default function TransactionsPage() {
   const handleOpenCalendarTransaction = async (id: string) => {
     try {
       const tx = await transactions.get(id)
-      setEditingTx(tx)
       setDuplicateDraft(null)
-      setDialogOpen(true)
+      openTransaction(tx)
     } catch {
       toast.error(t('common.error'))
     }
   }
 
-  const handleFlagFilterChange = (next: FlagFilter) => {
-    if (next && !filterFlag) {
-      rangeBeforeFlagRef.current = { from: filterFrom, to: filterTo }
+  // Flags are something to come back to and the review queue holds whatever
+  // arrived unread, both often from earlier months: either one opens on the
+  // whole history, and the range comes back when neither is on.
+  const switchAllDatesView = (wasOn: boolean, isOn: boolean) => {
+    if (isOn && !wasOn) {
+      rangeBeforeAllDatesRef.current = { from: filterFrom, to: filterTo }
       setFilterFrom('')
       setFilterTo('')
-    } else if (!next && filterFlag) {
-      const previous = rangeBeforeFlagRef.current
+    } else if (!isOn && wasOn) {
+      const previous = rangeBeforeAllDatesRef.current
       // Only when the user has not picked another range in the meantime.
       if (previous && !filterFrom && !filterTo) {
         setFilterFrom(previous.from)
         setFilterTo(previous.to)
       }
-      rangeBeforeFlagRef.current = null
+      rangeBeforeAllDatesRef.current = null
     }
+  }
+
+  const handleFlagFilterChange = (next: FlagFilter) => {
+    switchAllDatesView(Boolean(filterFlag) || onlyUnread, Boolean(next) || onlyUnread)
     setFilterFlag(next)
     setPage(1)
   }
@@ -1067,6 +1159,12 @@ export default function TransactionsPage() {
     } catch {
       // Private mode or a full quota: the filter still applies for this visit.
     }
+  }
+
+  const handleOnlyUnreadChange = (next: boolean) => {
+    switchAllDatesView(Boolean(filterFlag) || onlyUnread, Boolean(filterFlag) || next)
+    setOnlyUnread(next)
+    setPage(1)
   }
 
   const handleExport = async () => {
@@ -1092,6 +1190,7 @@ export default function TransactionsPage() {
           exclude_ignored: hideIgnored ? true : undefined,
           flagged: filterFlag === 'all' ? true : undefined,
           flag_due: filterFlag === 'overdue' || filterFlag === 'soon' ? filterFlag : undefined,
+          unread_only: onlyUnread ? true : undefined,
         })
       }
       toast.success(t('transactions.exportSuccess'))
@@ -1293,6 +1392,18 @@ export default function TransactionsPage() {
                 not the word that says what the badge is. Past the point
                 where even that no longer fits, the badge clips at the
                 cell edge rather than carrying on into the next column. */}
+            {/* Issue #636: a row nobody has opened yet. The dot keeps the
+                badge readable even where the cell is too narrow for the
+                word. */}
+            {tx.is_read === false && !tx.is_shared && (
+              <span
+                title={t('transactions.newBadgeTooltip')}
+                className="inline-flex shrink-0 items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-sky-700 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded-full dark:text-sky-300 dark:bg-sky-500/15 dark:border-sky-500/30"
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-sky-500" aria-hidden="true" />
+                {t('transactions.newBadge')}
+              </span>
+            )}
             {isTransferTransaction(tx) && (
               <span className="inline-flex max-w-full items-center gap-1 overflow-hidden text-[10px] font-semibold uppercase tracking-wide text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">
                 <ArrowLeftRight className="h-3 w-3 shrink-0" />
@@ -1612,6 +1723,11 @@ export default function TransactionsPage() {
         onHideIgnoredChange={handleHideIgnoredChange}
         filterFlag={filterFlag}
         onFlagFilterChange={handleFlagFilterChange}
+        onlyUnread={onlyUnread}
+        onOnlyUnreadChange={handleOnlyUnreadChange}
+        // The calendar does not apply the review queue, so it is not offered
+        // there; the state survives so the list gets it back.
+        showUnreadFilter={viewMode === 'list'}
         filterFrom={filterFrom}
         filterTo={filterTo}
         onDateRangeChange={(from, to) => { setFilterFrom(from); setFilterTo(to); setPage(1) }}
@@ -1633,6 +1749,7 @@ export default function TransactionsPage() {
           setFilterMinAmount('')
           setFilterMaxAmount('')
           handleHideIgnoredChange(false)
+          setOnlyUnread(false)
           setSearchInput('')
           setSearchQuery('')
           clearTagFilters()
@@ -1702,6 +1819,38 @@ export default function TransactionsPage() {
         />
       )}
 
+      {/* Issue #636: inside the review queue, say how many rows are left and
+          offer the one-click way out of it. */}
+      {viewMode === 'list' && onlyUnread && !noAccounts && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-200 bg-sky-50/60 px-3 py-2 dark:border-sky-500/30 dark:bg-sky-500/10">
+          <p className="text-xs font-medium text-sky-800 dark:text-sky-200">
+            {t('transactions.unreadCount', { count: data?.total ?? 0 })}
+            {data && workspaceUnread !== undefined && workspaceUnread > data.total && (
+              <span className="ms-2 font-normal">
+                {t('transactions.unreadOutsideFilters', { count: workspaceUnread - data.total })}
+              </span>
+            )}
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            // The label carries the count, so on a phone it takes the whole
+            // row and wraps instead of running past the banner's edge.
+            className="h-auto min-h-9 w-full whitespace-normal py-1.5 text-center sm:w-auto"
+            onClick={() => markAllReadMutation.mutate(currentWorkspace?.id)}
+            // The action clears the whole workspace, not the filtered list:
+            // it says how many rows that is, and with none there is nothing
+            // to clear.
+            disabled={!canWrite || markAllReadMutation.isPending || !workspaceUnread}
+          >
+            <CheckCheck className="me-1.5 h-4 w-4" />
+            {markAllReadMutation.isPending
+              ? t('transactions.markAllReadPending')
+              : t('transactions.markAllRead', { count: workspaceUnread ?? 0 })}
+          </Button>
+        </div>
+      )}
+
       {/* Table / Mobile Cards */}
       {viewMode === 'list' && (
       <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden mb-4">
@@ -1735,6 +1884,7 @@ export default function TransactionsPage() {
                     locale={locale}
                     dateLocale={dateLocale}
                     userCurrency={userCurrency}
+                    showUnread
                     onSelect={toggleSelect}
                     onMakeRecurring={
                       canWrite && !tx.is_shared && !tx.virtual
@@ -1747,8 +1897,7 @@ export default function TransactionsPage() {
                         if (t.group_id) navigate(`/groups/${t.group_id}`)
                         return
                       }
-                      setEditingTx(t)
-                      setDialogOpen(true)
+                      openTransaction(t)
                     }}
                   />
                 ))}
@@ -1802,8 +1951,7 @@ export default function TransactionsPage() {
                           return
                         }
                         if (!canWrite) return
-                        setEditingTx(tx)
-                        setDialogOpen(true)
+                        openTransaction(tx)
                       }}
                     >
                       <TableCell style={{ width: 40, minWidth: 40 }} className="py-2.5 ps-4 pe-0">
