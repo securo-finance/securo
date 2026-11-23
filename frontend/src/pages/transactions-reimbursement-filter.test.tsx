@@ -138,6 +138,21 @@ describe('reimbursement filter', () => {
     }
   })
 
+  it('still shows its chip when it is the only filter left', async () => {
+    // The chip row used to open only for the other filters, so with no date
+    // range the active reimbursement filter could be neither seen nor removed.
+    const { user } = renderWithProviders(<TransactionsPage />, {
+      route: '/transactions?reimbursement=counterpart', path: '/transactions',
+    })
+    await screen.findByText('Alice pays back')
+
+    await user.click(screen.getByRole('button', { name: new RegExp(`^${t('transactions.filtersBar.date')}:`) }))
+
+    expect(await screen.findByRole('button', {
+      name: new RegExp(`${t('transactions.reimbursementFilter')}:\\s*${t('transactions.reimbursementCounterpart')}`),
+    })).toBeInTheDocument()
+  })
+
   it('is picked from the filter menu, shows as a chip, and the chip clears it', async () => {
     const { user } = renderWithProviders(<TransactionsPage />, {
       route: '/transactions', path: '/transactions',

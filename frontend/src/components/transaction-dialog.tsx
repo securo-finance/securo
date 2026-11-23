@@ -2034,7 +2034,7 @@ function TransactionForm({
         && !transaction.is_ignored && !transaction.exclude_from_pnl
         && transaction.source !== 'settlement' && transaction.source !== 'opening_balance'
         && !splits?.splits.length && (
-        <TransactionReimbursementsSection transaction={transaction} accounts={accounts} />
+        <TransactionReimbursementsSection transaction={transaction} accounts={accounts} hideAmounts={hideAmounts} />
       )}
 
       {!isCreating && transaction ? (

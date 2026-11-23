@@ -12,6 +12,9 @@ import { formatReimbursementNet } from '@/lib/reimbursements'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
 import type { Transaction } from '@/types'
 
+/** What the transaction form shows in place of a hidden amount. */
+const HIDDEN_AMOUNT = '•••••'
+
 /**
  * A saved row's reimbursement links in the transaction dialog: what the row
  * nets to, or what is left of it, and the picker to change them.
@@ -19,9 +22,12 @@ import type { Transaction } from '@/types'
 export function TransactionReimbursementsSection({
   transaction,
   accounts,
+  hideAmounts = false,
 }: {
   transaction: Transaction
   accounts: ReimbursementAccount[]
+  /** The parent form hides its amounts (privacy mode) until the user reveals them. */
+  hideAmounts?: boolean
 }) {
   const { t } = useTranslation()
   const locale = useDisplayLocale()
@@ -29,12 +35,14 @@ export function TransactionReimbursementsSection({
 
   const role = transaction.reimbursement_role
   const net = formatReimbursementNet(transaction, locale)
+  // The net and what is left are amounts like the one the form hides.
+  const amount = (text: string) => (hideAmounts ? HIDDEN_AMOUNT : ltrAmount(text))
   const summary =
     role === 'anchor'
-      ? net != null ? t('reimbursements.sectionNet', { amount: ltrAmount(net) }) : t('reimbursements.sectionLinked')
+      ? net != null ? t('reimbursements.sectionNet', { amount: amount(net) }) : t('reimbursements.sectionLinked')
       : role === 'counterpart'
         ? t('reimbursements.sectionLeft', {
-            amount: ltrAmount(
+            amount: amount(
               formatCurrency(Math.abs(Number(transaction.reimbursement_unallocated ?? 0)), transaction.currency, locale),
             ),
           })

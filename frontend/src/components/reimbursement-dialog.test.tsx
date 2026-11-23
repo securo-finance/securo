@@ -95,6 +95,32 @@ describe('ReimbursementDialog', () => {
     expect(screen.getByRole('button', { name: t('common.save') })).toBeDisabled()
   })
 
+  it('does not let a draft form before the existing links are known', async () => {
+    // A draft built from no links would replace the real ones on Save.
+    vi.mocked(transactions.reimbursements).mockReturnValue(new Promise(() => {}))
+    vi.mocked(transactions.reimbursementCandidates).mockResolvedValue([linked('alice', 'Alice pays back', 33)])
+    renderWithProviders(
+      <ReimbursementDialog open onClose={vi.fn()} transaction={dinner} mode="counterparts" accounts={accounts} />,
+    )
+
+    const candidate = await screen.findByRole('button', { name: /Alice pays back/ })
+
+    expect(candidate).toBeDisabled()
+    expect(screen.getByRole('button', { name: t('common.save') })).toBeDisabled()
+  })
+
+  it('keeps linking and saving off when the links fail to load', async () => {
+    vi.mocked(transactions.reimbursements).mockRejectedValue(new Error('boom'))
+    vi.mocked(transactions.reimbursementCandidates).mockResolvedValue([linked('alice', 'Alice pays back', 33)])
+    renderWithProviders(
+      <ReimbursementDialog open onClose={vi.fn()} transaction={dinner} mode="counterparts" accounts={accounts} />,
+    )
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /Alice pays back/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: t('common.save') })).toBeDisabled()
+  })
+
   it('links a payback to an anchor from the payback side', async () => {
     const payback = { ...dinner, id: 'payback', description: 'Refund', amount: 40, type: 'credit' } as Transaction
     vi.mocked(transactions.reimbursements).mockImplementation(async (id) =>

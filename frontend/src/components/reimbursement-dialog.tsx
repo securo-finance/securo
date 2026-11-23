@@ -103,7 +103,7 @@ export function ReimbursementDialog({ open, onClose, transaction, mode, accounts
   }
 
   const txId = transaction?.id
-  const { data: links, isLoading: linksLoading } = useQuery({
+  const { data: links, isLoading: linksLoading, isError: linksFailed } = useQuery({
     queryKey: ['reimbursements', txId],
     queryFn: () => transactionsApi.reimbursements(txId!),
     enabled: open && !!txId,
@@ -158,6 +158,9 @@ export function ReimbursementDialog({ open, onClose, transaction, mode, accounts
 
   const focusAmount = Math.abs(Number(transaction.amount))
   const busy = saveCounterparts.isPending || saveOnAnchor.isPending
+  // Nothing can be linked or saved before the existing links are known: a draft
+  // built from none would replace them on Save.
+  const linksReady = links !== undefined
   const toDecimal = (value: number) => value.toFixed(2)
 
   const savedDraft: Draft[] = (links?.counterparts ?? []).map((c) => ({
@@ -232,6 +235,8 @@ export function ReimbursementDialog({ open, onClose, transaction, mode, accounts
             </p>
             {linksLoading ? (
               <Skeleton className="h-14 w-full" />
+            ) : linksFailed ? (
+              <p role="alert" className="text-xs text-destructive py-2">{t('common.error')}</p>
             ) : mode === 'counterparts' ? (
               rows.length === 0 ? (
                 <p className="text-xs text-muted-foreground italic py-2">{t('reimbursements.noLinks')}</p>
@@ -334,7 +339,7 @@ export function ReimbursementDialog({ open, onClose, transaction, mode, accounts
                 </Button>
                 <Button
                   type="button"
-                  disabled={pickedInvalid || busy}
+                  disabled={pickedInvalid || busy || !linksReady}
                   onClick={() =>
                     saveOnAnchor.mutate({ anchorId: picked.row.id, amount: toDecimal(pickedValue ?? 0) })
                   }
@@ -375,7 +380,7 @@ export function ReimbursementDialog({ open, onClose, transaction, mode, accounts
                     <li key={c.id}>
                       <button
                         type="button"
-                        disabled={busy}
+                        disabled={busy || !linksReady}
                         onClick={() => (mode === 'counterparts' ? addCounterpart(c) : pickAnchor(c))}
                         className="w-full text-start rounded-lg border border-border bg-card hover:bg-muted/50 hover:border-primary/40 transition-colors p-3 flex items-center gap-3 min-w-0"
                       >
@@ -412,7 +417,7 @@ export function ReimbursementDialog({ open, onClose, transaction, mode, accounts
           {mode === 'counterparts' && (
             <Button
               type="button"
-              disabled={invalid || busy || draft == null}
+              disabled={invalid || busy || draft == null || !linksReady}
               onClick={() =>
                 saveCounterparts.mutate(
                   rows.map((d, i) => ({ counterpart_id: d.row.id, amount: toDecimal(parsed[i] ?? 0) })),
