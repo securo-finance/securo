@@ -446,7 +446,7 @@ async def _signed_balance_delta_primary(
     effective = (
         tx.amount
         if same_currency(tx.currency, account_currency)
-        else Decimal(str(tx.amount_primary or 0))
+        else Decimal(str(tx.amount_account or 0))
     )
     amount = abs(Decimal(str(effective)))
     if account_currency != primary_currency:

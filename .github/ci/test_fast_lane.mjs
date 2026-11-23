@@ -60,6 +60,23 @@ const VERDICT = [
   '',
   `<!-- sha: ${HEAD} -->`,
 ].join('\n');
+// The same verdict, given for the head a later push replaced.
+const STALE_VERDICT = VERDICT.replace(HEAD, OLD_HEAD);
+// The lane's refusal note, as the workflow writes it: its own comment, opening
+// with the marker, rewritten in place across evaluations.
+const REFUSAL = '<!-- fast-lane: refused -->';
+const refusalNote = (id = 9001) => ({
+  id,
+  user: { login: 'github-actions[bot]' },
+  body: [
+    REFUSAL,
+    '',
+    'This pull request was not merged automatically: it has 1 unresolved ' +
+      'CodeRabbit major thread(s).',
+    '',
+    'That is only a note about the automatic merge.',
+  ].join('\n'),
+});
 
 const plain = (body = 'Looks fine to me.') => ({ author: { login: 'coderabbitai' }, body });
 const major = (body = '**Major** — the lock is taken after the read.') =>
@@ -98,10 +115,17 @@ function answerThreads(query, threads) {
 // CodeRabbit review of that same head.
 async function evaluate({
   threads, comments, reviews, checks, order, body = 'Reviewed, green on this head.',
+  commentsError = null, files,
 }) {
   const log = [];
   const merged = [];
   const posted = [];
+  const deleted = [];
+  // How many times the comment list was read: a transient failure is the first
+  // call and only it, so a second read (if anything makes one) succeeds.
+  let commentReads = 0;
+  // A file carries its new name, and `previous_filename` when it was renamed.
+  const changedFiles = files || [{ filename: 'docs/notes.md' }];
   const state = {
     pr: {
       state: 'open',
@@ -112,9 +136,9 @@ async function evaluate({
       title: 'docs: keep the notes current',
       body,
       labels: [{ name: 'risk: low' }],
-      changed_files: 1,
+      changed_files: changedFiles.length,
     },
-    files: [{ filename: 'docs/notes.md' }],
+    files: changedFiles,
     reviews: reviews || [coderabbitReview()],
     checks: checks || GREEN,
     comments: comments || [{
@@ -139,10 +163,17 @@ async function evaluate({
         merge: async (params) => { merged.push(params); return { data: {} }; },
       },
       issues: {
-        listComments: async () => state.comments,
+        listComments: async () => {
+          commentReads += 1;
+          if (commentsError && commentReads === 1) throw new Error(commentsError);
+          return state.comments;
+        },
         createComment: async (params) => { posted.push(params); return { data: {} }; },
         updateComment: async () => ({ data: {} }),
-        deleteComment: async () => ({ data: {} }),
+        deleteComment: async (params) => {
+          deleted.push(params.comment_id);
+          return { data: {} };
+        },
       },
       checks: {
         listForRef: async () => {
@@ -174,6 +205,7 @@ async function evaluate({
     mergeParams: merged[0] || null,
     log: log.join('\n'),
     posted,
+    deleted,
   };
 }
 
@@ -240,6 +272,46 @@ scenario('a head the CodeRabbit never reviewed refuses, and the pull request say
     assert.equal(posted.length, 1, `the refusal belongs in one comment: ${log}`);
     assert.match(posted[0].body, /CodeRabbit has no review of this commit/, posted[0].body);
   });
+
+// #1585: the note describes the head it was written for, and a verdict names
+// one commit. An approved pull request was refused, the author pushed a fix,
+// and no verdict names the new head any more — the note is then about a state
+// the current commit no longer has, so it goes instead of being kept.
+scenario('a new head with no verdict clears the note written for the old one',
+  async () => {
+    const { merged, log, posted, deleted } = await evaluate({
+      threads: [{ comments: [plain()] }],
+      comments: [{
+        user: { login: 'tassionoronha' },
+        body: STALE_VERDICT,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      }, refusalNote()],
+    });
+    assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+    assert.match(log, /carries no approval from an identity other than its author/, log);
+    assert.deepEqual(deleted, [9001],
+      `the note written for the previous head has to go: ${log}`);
+    assert.equal(posted.length, 0,
+      `an unapproved head gets no note of its own: ${log}`);
+  });
+
+// The other half: no note may be deleted on a read that failed. An API error
+// says nothing about the head, and a transient hiccup must not take away the
+// only place the refusal is written down. The failure is the first read only,
+// and the note is there for any second one, so a fix that retries the list
+// after the error deletes it and fails this scenario.
+scenario('a failed comment read keeps the refusal note', async () => {
+  const { merged, log, posted, deleted } = await evaluate({
+    threads: [{ comments: [plain()] }],
+    comments: [refusalNote()],
+    commentsError: 'HTTP 502',
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.match(log, /could not read the comments: HTTP 502/, log);
+  assert.deepEqual(deleted, [], `a failed read deletes nothing: ${log}`);
+  assert.equal(posted.length, 0, log);
+});
 
 // The case that actually happened: the bot was rate limited on this head. Its
 // check run is `completed` and `neutral`, so a gate reading the conclusion
@@ -381,6 +453,171 @@ scenario('a description with no closing keyword leaves the default message',
     assert.equal(mergeParams.commit_message, undefined,
       'no closing keyword means GitHub builds the message as before');
   });
+
+// The bug of #221: the lane knew sync and money only by the file name, and
+// the engines are not named that way. #1625 changed the sync engine in three
+// of these files and the lane still called it free to merge. Each one is a
+// separate case, so a path dropped from the rule shows up here by name.
+const ENGINE_FILES = [
+  'backend/app/services/connection_service.py',        // sync
+  'backend/app/services/card_mirror_service.py',       // card copy set aside during sync
+  'backend/app/services/fx_rate_service.py',           // exchange rates
+  'backend/app/services/reconciliation_service.py',    // pairs and history
+  'backend/app/services/reconciliation_engine.py',     // the pure matcher
+  'backend/app/services/reconciliation_policy.py',     // who may match what
+  'backend/app/services/_query_filters.py',            // what counts as income
+  'backend/app/services/loan_schedule.py',             // amortization
+  'backend/app/services/transfer_detection_service.py',// which lines become transfers
+  'backend/app/services/transaction_match_service.py', // new line or duplicate
+  'backend/app/services/credit_card_service.py',       // which bill a purchase falls in
+  'backend/app/services/provider_settings.py',         // bank provider configuration
+];
+
+for (const file of ENGINE_FILES) {
+  scenario(`a pull request that edits ${file.split('/').pop()} refuses`, async () => {
+    const { merged, log } = await evaluate({ threads: [], files: [{ filename: file }] });
+    assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+    assert.match(log,
+      new RegExp(`\`${file.replace(/[.]/g, '\\.')}\` is in a part of the repository that is ` +
+        'never merged automatically \\(money or bank sync\\)'), log);
+  });
+}
+
+// The list #1625 actually carried: the sync engine, the card mirror and the
+// reconciliation policy, beside a page and a test. No file name matched, so
+// the lane called it free to merge — a person was what held it.
+scenario('the file list of #1625 refuses as money or bank sync', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    files: [
+      { filename: 'AGENTS.md' },
+      { filename: 'backend/app/services/card_mirror_service.py' },
+      { filename: 'backend/app/services/connection_service.py' },
+      { filename: 'backend/app/services/reconciliation_policy.py' },
+      { filename: 'backend/tests/test_card_mirror.py' },
+    ],
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.ok(log.includes('card_mirror_service.py` is in a part of the repository that is ' +
+    'never merged automatically (money or bank sync)'), log);
+});
+
+// Renaming a blocked file into a free path must not hide it: the previous name
+// is read as well as the new one.
+scenario('one of those files renamed out of the directory still refuses', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    files: [{
+      filename: 'backend/app/helpers/sync_engine.py',
+      previous_filename: 'backend/app/services/connection_service.py',
+    }],
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.match(log, /\(money or bank sync\)/, log);
+});
+
+// Every other service keeps the verdict it had: the rule names files, so a
+// helper that is not one of them is still free to merge.
+scenario('a service the rule does not name still merges', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    files: [{ filename: 'backend/app/services/payee_service.py' }],
+  });
+  assert.ok(merged, `expected a merge, got: ${log}`);
+});
+
+// The four services kept out of the rule on purpose. Blocking them would take
+// most pull requests out of the lane, and none runs a sync or decides a
+// balance the way the named engines do.
+for (const file of [
+  'backend/app/services/transaction_service.py',
+  'backend/app/services/account_service.py',
+  'backend/app/services/import_service.py',
+  'backend/app/services/backup_service.py',
+]) {
+  scenario(`${file.split('/').pop()} stays free, as it was`, async () => {
+    const { merged, log } = await evaluate({ threads: [], files: [{ filename: file }] });
+    assert.ok(merged, `expected a merge, got: ${log}`);
+  });
+}
+
+// The tail accepts a directory of that name: an engine moved into a package is
+// the same engine, and its `__init__.py` would otherwise read as an ordinary
+// service.
+scenario('a package named for an engine refuses', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    files: [{ filename: 'backend/app/services/connection_service/__init__.py' }],
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.match(log, /\(money or bank sync\)/, log);
+});
+
+// The one wildcard in the group takes digits too, so a versioned
+// reconciliation engine is not a way around it.
+scenario('a versioned reconciliation engine refuses', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    files: [{ filename: 'backend/app/services/reconciliation_v2.py' }],
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.match(log, /\(money or bank sync\)/, log);
+});
+
+// Documentation never matches a blocked rule, whatever it sits beside: a page
+// under docs/ and a chart's README describe the engines, they do not run them.
+scenario('documentation about those engines still merges', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    files: [
+      { filename: 'docs/adr/0027-card-mirror.md' },
+      { filename: 'charts/securo/README.md' },
+      { filename: 'backend/app/services/README.md' },
+    ],
+  });
+  assert.ok(merged, `expected a merge, got: ${log}`);
+});
+
+// The rules that were already there keep the verdict they had: each group
+// still refuses its own paths, with its own reason, and code outside every
+// group is still free. This is what says the new rule adds a gate instead of
+// replacing one.
+const EXISTING_BLOCKED = [
+  ['backend/app/core/auth.py', 'auth or secrets'],
+  ['backend/app/api/custom_auth.py', 'auth API'],
+  ['.github/workflows/ci.yml', 'CI or repository configuration'],
+  ['backend/alembic/versions/027_money.py', 'schema migration'],
+  ['backend/app/providers/pluggy.py', 'bank provider'],
+  ['charts/securo/Chart.yaml', 'deployment'],
+];
+
+for (const [file, what] of EXISTING_BLOCKED) {
+  scenario(`${file} keeps refusing as ${what}`, async () => {
+    const { merged, log } = await evaluate({ threads: [], files: [{ filename: file }] });
+    assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+    assert.ok(log.includes(`(${what})`), `expected the reason "${what}": ${log}`);
+  });
+}
+
+// The rule the new one sits beside still catches what it always did, and says
+// it in its own words: a service named for a sync is refused as `sync or
+// plugin`, not as the new group.
+scenario('a service named for a sync still refuses as sync or plugin', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    files: [{ filename: 'backend/app/services/connection_sync.py' }],
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.ok(log.includes('(sync or plugin)'), `expected the old reason: ${log}`);
+});
+
+scenario('a frontend page outside every group still merges', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    files: [{ filename: 'frontend/src/pages/transactions.tsx' }],
+  });
+  assert.ok(merged, `expected a merge, got: ${log}`);
+});
 
 let failed = 0;
 for (const { name, fn } of scenarios) {

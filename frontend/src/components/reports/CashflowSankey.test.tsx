@@ -59,3 +59,19 @@ describe('CashflowSankey investment withdrawals (#1418)', () => {
     expect(screen.getByText('Investment withdrawals')).toBeInTheDocument()
   })
 })
+
+describe('CashflowSankey accessible table (#252)', () => {
+  it('clips the table with a wrapper, so it cannot widen the page on a phone', () => {
+    render([
+      item('income', 'salary', 'Salary', 1000),
+      item('expenses', 'rent', 'Rent', 900),
+    ])
+
+    const table = screen.getByRole('table')
+    // `overflow` does not clip a table box: with `sr-only` on the table itself
+    // the cells kept their natural width and the Reports page measured 504px
+    // on a 390px screen. The wrapper is what keeps it off the layout.
+    expect(table).not.toHaveClass('sr-only')
+    expect(table.parentElement).toHaveClass('sr-only')
+  })
+})

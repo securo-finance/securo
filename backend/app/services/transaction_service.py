@@ -1,16 +1,32 @@
 import re
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
-from typing import Optional, cast
+from typing import Literal, Optional, cast
 
-from sqlalchemy import CursorResult, and_, case, delete, func, literal, or_, select, tuple_, update
+from sqlalchemy import (
+    CursorResult,
+    and_,
+    case,
+    delete,
+    exists,
+    func,
+    literal,
+    or_,
+    select,
+    tuple_,
+    update,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.app_clock import app_today
-from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
+from app.core.shared_scope import (
+    in_bound_workspace,
+    invited_group_member_ids,
+    viewer_member_predicate,
+)
 from app.models.transaction import USER_EDITED_KEY, Transaction
 from app.models.transaction_attachment import TransactionAttachment
 from app.models.account import Account
@@ -35,7 +51,12 @@ from app.services import category_line_service, reconciliation_service, split_se
 from app.services.account_service import get_account, get_running_balances
 from app.services.credit_card_service import apply_effective_date, cc_cycle_bill_due_dates
 from app.services.rule_service import apply_rules_to_transaction
-from app.services.fx_rate_service import stamp_primary_amount, convert as fx_convert
+from app.services.fx_rate_service import (
+    ACCOUNT_AMOUNT_FROM_USER,
+    convert as fx_convert,
+    stamp_account_amount,
+    stamp_primary_amount,
+)
 from app.services._query_filters import (
     CATEGORY_LINE,
     any_line_in,
@@ -113,6 +134,11 @@ def _apply_fx_override(transaction, amount, amount_primary=None, fx_rate_used=No
         )
 
 
+FlagDue = Literal["overdue", "soon"]
+# "Soon" is today and the week after it.
+FLAG_DUE_SOON_DAYS = 7
+
+
 async def get_transactions(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -151,6 +177,8 @@ async def get_transactions(
     include_summary: bool = False,
     user_pnl_only: bool = False,
     exclude_ignored: bool = False,
+    flagged_only: bool = False,
+    flag_due: Optional[FlagDue] = None,
     include_running_balance: bool = False,
     primary_currency: Optional[str] = None,
 ) -> tuple[list[Transaction], int, Optional[dict]]:
@@ -236,18 +264,15 @@ async def get_transactions(
         # viewer's "Concert Tickets · share $90" from another workspace
         # alongside their own expenses; account-balance integrity is
         # preserved because the parent tx's account still belongs to the
-        # original owner. The shared-id subquery EXCLUDES rows already
-        # in this workspace — otherwise self-membership in an
-        # in-workspace group double-surfaces the owner's own
-        # transactions when they switch to another workspace.
-        from app.models.group import GroupMember
+        # original owner. Two predicates keep it from double-surfacing:
+        # rows of this workspace are already native here, and rows the
+        # viewer created are already native in their own workspace, so
+        # they never come back as "shared" after a workspace switch.
+        # Membership, not who created the parent, decides what the viewer
+        # sees: the group owner gets the invited member's expense and the
+        # invited member gets the owner's (#1305).
         from app.models.transaction_split import TransactionSplit
 
-        # Exclude is_self memberships — those represent the viewer's
-        # OWN self-member in groups they created, not invitations from
-        # someone else's workspace. Without this exclusion, the owner's
-        # own transactions get double-projected when they switch into
-        # a different workspace.
         viewer_member_ids = invited_group_member_ids(user_id)
         shared_tx_ids = (
             select(TransactionSplit.transaction_id)
@@ -255,6 +280,7 @@ async def get_transactions(
             .where(
                 TransactionSplit.group_member_id.in_(viewer_member_ids),
                 Transaction.workspace_id != workspace_id,
+                Transaction.user_id != user_id,
                 in_bound_workspace(Transaction.workspace_id),
             )
             .distinct()
@@ -322,6 +348,8 @@ async def get_transactions(
         # filtered set, so the totals a hidden list shows stay the totals of
         # what it is showing.
         base_query = base_query.where(is_not_ignored())
+    if flagged_only or flag_due is not None:
+        base_query = base_query.where(_flagged_in_workspace(workspace_id, flag_due))
     if txn_type == "transfer":
         # Not a value of the `type` column: a transfer is still stored as a
         # credit or a debit, so this narrows to the transfer family instead.
@@ -552,12 +580,77 @@ async def get_transactions(
         # custom) and ignored items are kept OUT of income/expense. It reads
         # category parts, so a split row counts part by part and, under a
         # category filter, only its parts in the filtered categories count.
+        # Viewer share (issue #243): the footer is the viewer's P/L, the
+        # same figure the dashboard and reports show — never the whole
+        # amount of an expense someone else paid. A row projected from
+        # another workspace counts the viewer's split share; a split row
+        # the viewer paid counts what the other members' shares leave of
+        # the amount it has now, because the bank sync rewrites `amount`
+        # without touching the splits. A row of this workspace that another
+        # member created (shared workspace) counts whole, as it does in the
+        # dashboard. Rows without splits count whole. `share_amount` is in
+        # the row's own currency, so the ratio rides the FX stamp already
+        # stored on the row.
+        from app.models.transaction_split import TransactionSplit
+
+        row_has_splits = exists().where(
+            TransactionSplit.transaction_id == Transaction.id
+        )
+        viewer_share = (
+            select(func.coalesce(func.sum(TransactionSplit.share_amount), 0))
+            .where(
+                TransactionSplit.transaction_id == Transaction.id,
+                TransactionSplit.group_member_id.in_(invited_group_member_ids(user_id)),
+            )
+            .scalar_subquery()
+        )
+        others_share = (
+            select(func.coalesce(func.sum(TransactionSplit.share_amount), 0))
+            .where(
+                TransactionSplit.transaction_id == Transaction.id,
+                TransactionSplit.group_member_id.notin_(
+                    invited_group_member_ids(user_id)
+                ),
+            )
+            .scalar_subquery()
+        )
+        viewer_share_fraction = case(
+            # Another member's row of this workspace is native here.
+            (
+                and_(
+                    Transaction.workspace_id == workspace_id,
+                    Transaction.user_id != user_id,
+                ),
+                literal(1),
+            ),
+            # The viewer's own split row: their share is what the others
+            # don't have, read against the amount the row has now. The bank
+            # sync rewrites `amount` and rescales the category lines but
+            # never the splits, so dividing the stored shares by the new
+            # total would go stale. Same rule as
+            # `forecast_owner_share_fractions`.
+            (
+                and_(row_has_splits, Transaction.user_id == user_id),
+                literal(1)
+                - others_share / func.nullif(func.abs(Transaction.amount), 0),
+            ),
+            # A row projected from another workspace arrives as the
+            # viewer's split share of a row someone else paid.
+            (
+                row_has_splits,
+                viewer_share / func.nullif(func.abs(Transaction.amount), 0),
+            ),
+            else_=literal(1),
+        )
         pnl_filter = counts_as_pnl(line_category_id())
+        # The part takes the abs, the fraction keeps its sign: a sync that
+        # shrinks the row below the other members' shares leaves the viewer
+        # a negative remainder, and the dashboard counts it that way.
         parts_query = with_category_lines(
             select(
                 Transaction.type,
                 pnl_filter.label("counts"),
-                func.abs(line_primary_or_amount()).label("amount"),
+                (func.abs(line_primary_or_amount()) * viewer_share_fraction).label("amount"),
             ).select_from(Transaction)
         ).where(Transaction.id.in_(select(base_query.subquery().c.id)))
         if filter_category_ids:
@@ -624,6 +717,7 @@ async def get_transactions(
         "type": Transaction.type,
         "status": Transaction.status,
         "created_at": Transaction.created_at,
+        "flag_due_date": Transaction.flag_due_date,
     }
     chosen_col = sort_columns.get(sort_by) if sort_by else None
     if chosen_col is None:
@@ -636,6 +730,9 @@ async def get_transactions(
         )
     else:
         direction = (chosen_col.asc() if sort_dir == "asc" else chosen_col.desc())
+        if sort_by == "flag_due_date":
+            # Flags without a reminder date come after the dated ones either way.
+            direction = direction.nulls_last()
         # Always tie-break on date desc + created_at desc so equal values
         # stay in a sensible order (e.g. multiple txs with the same amount).
         query = base_query.order_by(
@@ -676,7 +773,7 @@ async def get_transactions(
         # Run for both default and group-scoped queries: when filtering
         # by `group_id`, a linked member sees the owner's transactions
         # and the frontend needs `is_shared` to lock them from edits.
-        await _tag_shared_view(session, transactions, user_id)
+        await _tag_shared_view(session, transactions, user_id, workspace_id)
 
         if filter_category_ids:
             # The part of each split row inside the filter, so a drill-down
@@ -710,7 +807,7 @@ async def get_transactions(
                     category_id, category_ids, payee_id, search, uncategorized,
                     txn_type, tags, status, currency, account_types, transaction_ids,
                     min_amount is not None, max_amount is not None,
-                    exclude_transfers, user_pnl_only, exclude_ignored,
+                    exclude_transfers, user_pnl_only, exclude_ignored, flagged_only, flag_due is not None,
                     group_id,
                     # `bill_id` and `unbilled_only` pick a card's statement
                     # window, not a smaller ledger: the walk still covers
@@ -757,10 +854,65 @@ async def _running_balance_account(
     return await get_account(session, account_ids[0], workspace_id)
 
 
+def _flagged_in_workspace(workspace_id: uuid.UUID, flag_due: Optional[FlagDue] = None):
+    """Rows flagged in this workspace, optionally narrowed by reminder date.
+
+    Scoped to the workspace even where the list also shows rows shared from
+    another one: a flag belongs to the workspace that set it.
+    """
+    clauses = [Transaction.workspace_id == workspace_id, Transaction.is_flagged.is_(True)]
+    today = app_today()
+    if flag_due == "overdue":
+        clauses.append(Transaction.flag_due_date < today)
+    elif flag_due == "soon":
+        clauses.append(
+            Transaction.flag_due_date.between(today, today + timedelta(days=FLAG_DUE_SOON_DAYS))
+        )
+    return and_(*clauses)
+
+
+async def flagged_summary(session: AsyncSession, workspace_id: uuid.UUID) -> dict[str, int]:
+    """Counts behind the flagged views: all, past their date, due soon."""
+    today = app_today()
+    soon_end = today + timedelta(days=FLAG_DUE_SOON_DAYS)
+    row = (
+        await session.execute(
+            select(
+                func.count(),
+                func.count().filter(Transaction.flag_due_date < today),
+                func.count().filter(Transaction.flag_due_date.between(today, soon_end)),
+            ).where(_flagged_in_workspace(workspace_id))
+        )
+    ).one()
+    return {"flagged": row[0], "overdue": row[1], "due_soon": row[2]}
+
+
+def _normalize_flag_update(tx: Transaction, update_data: dict) -> None:
+    """Keep the flag and its reminder consistent within one edit.
+
+    A reminder lives only on a flagged row: unflagging clears it, and a date or
+    note sent for a row that is not flagged (and not being flagged in the same
+    edit) is dropped. Dropping rather than flagging matters: a note saved as
+    the user clicks Unflag can reach the server second, and must not bring the
+    flag back.
+    """
+    if "flag_note" in update_data:
+        note = (update_data["flag_note"] or "").strip()
+        update_data["flag_note"] = note or None
+    flagged_after = update_data.get("is_flagged", tx.is_flagged)
+    if not flagged_after:
+        update_data.pop("flag_due_date", None)
+        update_data.pop("flag_note", None)
+        if update_data.get("is_flagged") is False:
+            update_data["flag_due_date"] = None
+            update_data["flag_note"] = None
+
+
 async def _tag_shared_view(
     session: AsyncSession,
     transactions: list[Transaction],
     user_id: uuid.UUID,
+    workspace_id: uuid.UUID,
 ) -> None:
     """Annotate transactions with split metadata for the viewer:
 
@@ -776,15 +928,31 @@ async def _tag_shared_view(
     Mutates the in-memory objects so Pydantic's from_attributes picks
     them up directly.
     """
-    from app.models.group import GroupMember
+    from app.models.group import Group, GroupMember
 
+    # Every member row that represents the viewer: the memberships linked
+    # to them, and the self-member they created in a group they own (#1305).
     member_rows = await session.execute(
-        select(GroupMember.id, GroupMember.group_id).where(
-            GroupMember.linked_user_id == user_id,
-            GroupMember.is_self.is_(False),
+        select(
+            GroupMember.id,
+            GroupMember.group_id,
+            GroupMember.is_self,
+            Group.user_id.label("owner_id"),
         )
+        .outerjoin(Group, Group.id == GroupMember.group_id)
+        .where(viewer_member_predicate(user_id))
     )
-    member_to_group = {row.id: row.group_id for row in member_rows}
+    # Split the two ends apart. The owner's self-member, linked or not,
+    # only carries shares that live in another workspace (the invited
+    # member's expense); inside the group's own workspace its parent row
+    # is already native, so it is matched for cross-workspace rows only.
+    member_to_group: dict[uuid.UUID, uuid.UUID] = {}
+    self_member_to_group: dict[uuid.UUID, uuid.UUID] = {}
+    for row in member_rows:
+        if row.is_self and row.owner_id == user_id:
+            self_member_to_group[row.id] = row.group_id
+        else:
+            member_to_group[row.id] = row.group_id
 
     # Map every split-member that appears in this batch → group, so we
     # can also tag owner-side transactions with their group. (The
@@ -802,7 +970,7 @@ async def _tag_shared_view(
         )
         split_member_to_group = {row.id: row.group_id for row in rows}
 
-    if not member_to_group and not split_member_to_group:
+    if not member_to_group and not self_member_to_group and not split_member_to_group:
         for tx in transactions:
             tx.is_shared = False
             tx.viewer_share = None
@@ -814,7 +982,11 @@ async def _tag_shared_view(
     # owner / payer. We need this for ALL groups touching this batch,
     # not just the viewer-linked ones — owners need their own
     # self-member id to compute their share. Cached once per call.
-    all_group_ids = set(member_to_group.values()) | set(split_member_to_group.values())
+    all_group_ids = (
+        set(member_to_group.values())
+        | set(split_member_to_group.values())
+        | set(self_member_to_group.values())
+    )
     self_member_rows = await session.execute(
         select(GroupMember.id, GroupMember.group_id, GroupMember.name).where(
             GroupMember.group_id.in_(all_group_ids),
@@ -826,6 +998,18 @@ async def _tag_shared_view(
     for row in self_member_rows:
         self_member_id_by_group[row.group_id] = row.id
         owner_name_by_group[row.group_id] = row.name
+    # Who actually paid a shared row: the member linked to the account
+    # owner who created it. Falls back to the group's self-member for
+    # shadow payers and for an owner whose self-member is unlinked.
+    author_rows = await session.execute(
+        select(GroupMember.group_id, GroupMember.linked_user_id, GroupMember.name).where(
+            GroupMember.group_id.in_(all_group_ids),
+            GroupMember.linked_user_id.is_not(None),
+        )
+    )
+    author_name_by_group: dict[uuid.UUID, dict[uuid.UUID, str]] = {}
+    for row in author_rows:
+        author_name_by_group.setdefault(row.group_id, {})[row.linked_user_id] = row.name
 
     for tx in transactions:
         if tx.user_id == user_id:
@@ -864,11 +1048,22 @@ async def _tag_shared_view(
             )
             tx.viewer_share = owner_split.share_amount if owner_split else None
             continue
-        # The viewer doesn't own this; find their split share.
+        # The viewer doesn't own this; find their split share. Their own
+        # self-member only counts on a row from another workspace; in the
+        # group's own workspace the parent is already native, above.
         match = next(
             (s for s in (tx.splits or []) if s.group_member_id in member_to_group),
             None,
         )
+        matched_group = member_to_group.get(match.group_member_id) if match else None
+        if match is None and tx.workspace_id != workspace_id:
+            match = next(
+                (s for s in (tx.splits or []) if s.group_member_id in self_member_to_group),
+                None,
+            )
+            matched_group = (
+                self_member_to_group.get(match.group_member_id) if match else None
+            )
         if match is None:
             tx.is_shared = False
             tx.viewer_share = None
@@ -877,8 +1072,11 @@ async def _tag_shared_view(
         else:
             tx.is_shared = True
             tx.viewer_share = match.share_amount
-            tx.group_id = member_to_group[match.group_member_id]
-            tx.parent_owner_name = owner_name_by_group.get(tx.group_id)
+            tx.group_id = matched_group
+            tx.parent_owner_name = (
+                author_name_by_group.get(matched_group, {}).get(tx.user_id)
+                or owner_name_by_group.get(matched_group)
+            )
             # Hide attachment count on shared rows — Bob can see the
             # paperclip but the API would 403 the actual download
             # (attachment auth is owner-only). Avoid the dead-end UX
@@ -887,6 +1085,10 @@ async def _tag_shared_view(
             # The card ending belongs to the owner's workspace. Committed
             # value, so a later flush cannot write it back to the row.
             set_committed_value(tx, "card_masked_number", None)
+            # So does the owner's flag and its reminder note.
+            set_committed_value(tx, "is_flagged", False)
+            set_committed_value(tx, "flag_due_date", None)
+            set_committed_value(tx, "flag_note", None)
 
 
 async def get_transaction(
@@ -1002,6 +1204,7 @@ async def create_transaction(
     # Stamp primary currency amount (manual override or auto)
     if data.amount_primary is not None or data.fx_rate_used is not None:
         _apply_fx_override(transaction, data.amount, data.amount_primary, data.fx_rate_used)
+        await stamp_account_amount(session, transaction, typed_primary=True)
     else:
         await stamp_primary_amount(session, user_id, transaction)
 
@@ -1116,8 +1319,10 @@ async def create_installment_series(
             await apply_rules_to_transaction(session, user_id, tx)
         if base.fx_rate_used is not None:
             _apply_fx_override(tx, tx.amount, None, base.fx_rate_used)
+            await stamp_account_amount(session, tx, typed_primary=True)
         elif base.amount_primary is not None:
             _apply_fx_override(tx, tx.amount, base.amount_primary, None)
+            await stamp_account_amount(session, tx, typed_primary=True)
         else:
             await stamp_primary_amount(session, user_id, tx)
         if base.splits is not None:
@@ -1707,11 +1912,23 @@ async def _apply_update_to_row(
         _preserve_original_description(tx)
         tx.description_is_rule_managed = False
 
+    previous_account_id = tx.account_id
+    # Compared before the update: a save that resends the same amount must
+    # not work out the account amount again.
+    account_inputs_changed = any(
+        key in update_data and update_data[key] != getattr(tx, key)
+        for key in ("amount", "currency", "date")
+    )
     fx_keys = {"amount_primary", "fx_rate_used"}
     for key, value in update_data.items():
         if key in fx_keys:
             continue
         setattr(tx, key, value)
+    account_moved = tx.account_id != previous_account_id
+    if account_moved:
+        # The old account's figure means nothing in the new one; NULL until a
+        # stamp below finds the new account's value.
+        tx.amount_account = None
 
     restamp_fields = {"amount", "currency", "date"}
     needs_restamp = bool(restamp_fields & update_data.keys())
@@ -1720,7 +1937,17 @@ async def _apply_update_to_row(
         if override_amount_primary is None and override_fx_rate is None:
             tx.amount_primary = None
             tx.fx_rate_used = None
-            await stamp_primary_amount(session, user_id, tx)
+            # Clearing the typed conversion drops a typed account amount with
+            # it, even when no rate can replace it yet; a bank charge stays
+            # unless the charge itself changed.
+            typed_account_amount = tx.amount_account_source == ACCOUNT_AMOUNT_FROM_USER
+            if typed_account_amount:
+                tx.amount_account = None
+                tx.amount_account_source = None
+            await stamp_primary_amount(
+                session, user_id, tx,
+                restamp_account=account_inputs_changed or account_moved or typed_account_amount,
+            )
         else:
             _apply_fx_override(
                 tx,
@@ -1728,8 +1955,13 @@ async def _apply_update_to_row(
                 override_amount_primary,
                 override_fx_rate,
             )
-    elif needs_restamp or heals_fx_on_post:
-        await stamp_primary_amount(session, user_id, tx)
+            await stamp_account_amount(session, tx, typed_primary=True)
+    elif needs_restamp or heals_fx_on_post or account_moved:
+        # Posting only heals the reporting stamp; the account amount follows
+        # a change of amount, currency, date or account.
+        await stamp_primary_amount(
+            session, user_id, tx, restamp_account=account_inputs_changed or account_moved
+        )
 
     # Refresh effective_date when the purchase date, account, or the manual
     # bill-cycle override changed. Also re-link bill_id when the override
@@ -1790,7 +2022,7 @@ async def _apply_update_to_row(
                         paired_date_changed = update_data[key] != paired_tx.date
                     setattr(paired_tx, key, update_data[key])
             if paired_amount_changed or paired_date_changed:
-                await stamp_primary_amount(session, user_id, paired_tx)
+                await stamp_primary_amount(session, user_id, paired_tx, restamp_account=True)
             if paired_date_changed:
                 paired_account = await session.get(Account, paired_tx.account_id)
                 apply_effective_date(paired_tx, paired_account)
@@ -1914,6 +2146,7 @@ async def update_transaction(
     update_data.pop("splits", None)
     lines_payload = data.category_lines if "category_lines" in update_data else None
     update_data.pop("category_lines", None)
+    _normalize_flag_update(transaction, update_data)
     _check_category_lines_update(transaction, update_data, lines_payload)
 
     # Verify the new account belongs to the workspace before touching the
@@ -2303,6 +2536,38 @@ async def bulk_add_tags(
     return touched
 
 
+async def bulk_set_flag(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    transaction_ids: list[uuid.UUID],
+    is_flagged: bool,
+    flag_due_date: Optional[date] = None,
+) -> int:
+    """Flag or unflag rows of this workspace. Unflagging clears the reminder;
+    flagging keeps each row's note and sets the date only when one is given."""
+    if not transaction_ids:
+        return 0
+    values: dict[str, object] = {"is_flagged": is_flagged}
+    if not is_flagged:
+        values.update(flag_due_date=None, flag_note=None)
+    elif flag_due_date is not None:
+        values["flag_due_date"] = flag_due_date
+    result = cast(
+        CursorResult,
+        await session.execute(
+            update(Transaction)
+            .where(
+                Transaction.id.in_(transaction_ids),
+                Transaction.workspace_id == workspace_id,
+            )
+            .values(**values)
+            .execution_options(synchronize_session=False)
+        ),
+    )
+    await session.commit()
+    return result.rowcount or 0
+
+
 async def bulk_remove_tags(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -2459,7 +2724,10 @@ async def post_transaction_today(
 
     account = await session.get(Account, transaction.account_id)
     apply_effective_date(transaction, account)
-    await stamp_primary_amount(session, transaction.user_id, transaction)
+    # Posting moves the date to today: the account amount follows it.
+    await stamp_primary_amount(
+        session, transaction.user_id, transaction, restamp_account=True
+    )
 
     if transaction.transfer_pair_id:
         paired_result = await session.execute(
@@ -2476,7 +2744,9 @@ async def post_transaction_today(
                 paired.date = today
                 paired_account = await session.get(Account, paired.account_id)
                 apply_effective_date(paired, paired_account)
-                await stamp_primary_amount(session, paired.user_id, paired)
+                await stamp_primary_amount(
+                    session, paired.user_id, paired, restamp_account=True
+                )
 
     await session.commit()
     await session.refresh(transaction)

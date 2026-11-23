@@ -883,6 +883,8 @@
     "uncategorizedCta": "{{count}} transazioni da categorizzare",
     "uncategorizedTotal": "{{amount}} in totale",
     "categorizeNow": "Categorizza ora",
+    "drillDownQuickCategorize": "Scegli una categoria",
+    "drillDownOpenTransaction": "Apri transazione",
     "allCategorized": "Tutto in ordine!",
     "allCategorizedDesc": "Tutte le transazioni sono categorizzate",
     "assetsValue": "Beni investiti",
@@ -916,6 +918,7 @@
     "monthNext": "Mese successivo",
     "description": "Descrizione",
     "originalDescription": "Descrizione originale",
+    "providerCategory": "Categoria della banca",
     "restoreOriginalDescription": "Ripristina originale",
     "amount": "Importo",
     "status": "Stato",
@@ -941,6 +944,7 @@
     "addedToExistingRule": "Regola aggiornata. Le prossime corrispondenze useranno questa categoria.",
     "duplicateRuleCondition": "Questa regola include gia questa corrispondenza.",
     "saveAndNew": "Salva e nuova",
+    "saveAndNext": "Salva e successivo",
     "saveAndDuplicate": "Salva e duplica",
     "moreSaveOptions": "Altre opzioni di salvataggio",
     "created": "Transazione creata",
@@ -1000,6 +1004,31 @@
     "ignoredShow": "Mostra",
     "ignoredHide": "Nascondi",
     "ignoredHiddenValue": "Nascoste",
+    "flagged": "Contrassegnata",
+    "flagAction": "Contrassegna",
+    "unflagAction": "Rimuovi contrassegno",
+    "flagSuccess": "Transazione contrassegnata",
+    "unflagSuccess": "Contrassegno rimosso",
+    "flagFilterAll": "Tutte contrassegnate",
+    "flagFilterOverdue": "Scadute",
+    "flagFilterSoon": "In scadenza questa settimana",
+    "flagOverdue": "Scaduta",
+    "flagDueOn": "Entro il {{date}}",
+    "flagReminder": "Promemoria",
+    "flagReminderHint": "facoltativo",
+    "flagRemindOn": "Ricordamelo",
+    "flagPickDate": "Scegli una data",
+    "flagClearDate": "Cancella data",
+    "flagNote": "Nota",
+    "flagNotePlaceholder": "es. in attesa del rimborso",
+    "bulkFlagSuccess": "Transazioni contrassegnate: {{count}}",
+    "bulkUnflagSuccess": "Contrassegni rimossi: {{count}}",
+    "flagOverdueCount": "Contrassegni scaduti: {{count}}",
+    "flagPreset": {
+      "tomorrow": "Domani",
+      "nextWeek": "Tra una settimana",
+      "nextMonth": "Tra un mese"
+    },
     "statusCleared": "Contabilizzata",
     "sortAsc": "Ordine crescente",
     "sortDesc": "Ordine decrescente",
@@ -1159,8 +1188,9 @@
     "calendarAccountCount": "{{count}} conti",
     "calendarAllAccounts": "Tutti i conti",
     "calendarEndBalance": "Saldo finale",
-    "calendarItemCount": "{{count}} elemento",
-    "calendarItemCount_plural": "{{count}} elementi",
+    "calendarItemCount_one": "{{count}} elemento",
+    "calendarItemCount_other": "{{count}} elementi",
+    "calendarItemCount_many": "{{count}} elementi",
     "calendarProjectedCount": "{{count}} previsto",
     "calendarProjected": "Previsto",
     "projected": "Prevista",
@@ -1530,6 +1560,8 @@
     "copyPreviewCount": "Categorie da copiare: {{count}}",
     "copyPreviewTotal": "Totale da copiare: {{amount}}",
     "copyPreviewEmpty": "Il mese selezionato non ha budget da copiare.",
+    "copyPreviewAllExist": "Tutte le categorie del mese di origine hanno già un budget in {{month}}. Scegli sostituisci per copiare gli importi o applicare l'adeguamento.",
+    "copyPreviewNoChange": "Tutti i budget del mese di origine hanno già questi importi in {{month}}.",
     "copyPreviewError": "Impossibile caricare il mese di origine.",
     "copyAmountTooLarge": "L'importo adeguato supera il limite di budget. Riduci la percentuale di adeguamento.",
     "copyConfirm": "Copia budget",
@@ -1598,6 +1630,8 @@
   },
   "recurring": {
     "makeFromTransaction": "Nuova ricorrente da questa transazione",
+    "duplicate": "Esiste già una ricorrente con la stessa descrizione, frequenza e data di inizio",
+    "alreadyLinked": "Questa transazione appartiene già a una ricorrente",
     "title": "Transazioni ricorrenti",
     "add": "Aggiungi ricorrente",
     "edit": "Modifica ricorrente",
@@ -1660,10 +1694,13 @@
   "rules": {
     "searchPlaceholder": "Cerca regole...",
     "filterAllCategories": "Tutte le categorie",
+    "filterByCategory": "Filtra per categoria",
     "filterAllStatuses": "Tutti gli stati",
+    "filterByStatus": "Filtra per stato",
     "filterActiveOnly": "Solo attive",
     "filterInactiveOnly": "Solo inattive",
     "filterAllActions": "Tutte le azioni",
+    "filterByAction": "Filtra per azione",
     "noFilterResults": "Nessuna regola corrisponde a questi filtri",
     "preview": "Anteprima",
     "previewMatched": "{{matched}} corrispondenze",
@@ -1762,6 +1799,7 @@
     "fieldDate": "Data",
     "fieldStatus": "Stato",
     "fieldProviderCategory": "Categoria del provider",
+    "providerCategoryHint": "L'etichetta della banca stessa, nella sua lingua (ad esempio «Groceries»). Scegline una che l'area di lavoro ha già ricevuto.",
     "opContains": "contiene",
     "opNotContains": "non contiene",
     "opEquals": "uguale a",
@@ -2090,9 +2128,10 @@
     "summaryHoldings": "{{created}} titoli creati, {{matched}} trovati",
     "summarySkipped": "{{count}} già importati",
     "rowsSkipped": "{{count}} righe saranno saltate",
+    "reasonColumn": "Motivo",
     "rowError": "Riga {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "e altri {{count}}",
-    "moreRows": "e altri {{count}} ordini",
+    "showAllRows": "Mostra tutte le {{count}} righe",
     "field": {
       "ticker": "Ticker",
       "date": "Data",
@@ -2212,9 +2251,18 @@
     "lastUpdated": "Aggiornato {{when}}",
     "refreshPrice": "Aggiorna prezzo",
     "refreshAllPrices": "Aggiorna prezzi",
-    "refreshAllPricesDone": "{{refreshed}} prezzi aggiornati, {{skipped}} senza nuova quotazione",
+    "refreshAllPricesDone": "{{updated}}, {{skipped}}",
+    "refreshAllPricesUpdated_one": "{{count}} prezzo aggiornato",
+    "refreshAllPricesUpdated_many": "{{count}} prezzi aggiornati",
+    "refreshAllPricesUpdated_other": "{{count}} prezzi aggiornati",
+    "refreshAllPricesNoQuote_one": "{{count}} senza nuova quotazione",
+    "refreshAllPricesNoQuote_many": "{{count}} senza nuova quotazione",
+    "refreshAllPricesNoQuote_other": "{{count}} senza nuova quotazione",
+    "refreshAllPricesLeftOut_one": "{{count}} saltato",
+    "refreshAllPricesLeftOut_many": "{{count}} saltati",
+    "refreshAllPricesLeftOut_other": "{{count}} saltati",
     "refreshAllPricesNone": "Nessun cespite a prezzo di mercato da aggiornare",
-    "refreshAllPricesRateLimited": "Il fornitore dei dati di mercato sta limitando le richieste. {{refreshed}} prezzi sono stati aggiornati e {{skipped}} saltati prima dello stop; riprova tra un minuto.",
+    "refreshAllPricesRateLimited": "Il fornitore dei dati di mercato sta limitando le richieste. Prima dello stop: {{updated}}, {{skipped}}. Riprova tra un minuto.",
     "priceRefreshed": "Prezzo aggiornato",
     "purchaseDate": "Data di acquisto",
     "purchasePrice": "Prezzo di acquisto",
@@ -2395,7 +2443,41 @@
     "statementViewTransactions": "Visualizza transazioni",
     "statementUncategorizedIncome": "Entrate senza categoria",
     "statementUncategorizedExpense": "Uscite senza categoria",
-    "statementToggleGroup": "Mostra le categorie di {{name}}"
+    "statementToggleGroup": "Mostra le categorie di {{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "Totale speso",
+        "income": "Totale ricevuto",
+        "net": "Saldo"
+      },
+      "none": {
+        "category": "Senza categoria",
+        "category_group": "Senza gruppo",
+        "payee": "Senza beneficiario",
+        "account": "Senza conto",
+        "month": "Senza data"
+      },
+      "groupBy": {
+        "category": "Categoria",
+        "category_group": "Gruppo",
+        "payee": "Beneficiario",
+        "account": "Conto",
+        "month": "Mese"
+      },
+      "measure": {
+        "expenses": "Spese",
+        "income": "Entrate",
+        "net": "Saldo"
+      },
+      "share": "Quota",
+      "computed": "Calcolato dal plugin",
+      "periodTrimmed": "I report dei plugin coprono al massimo due anni. Visualizzazione da {{from}} a {{to}}.",
+      "periodTooLong": "Un report di un plugin copre al massimo due anni. Scegli un periodo più breve.",
+      "totalRow": "Totale",
+      "page": "Pagina {{page}} di {{pages}}",
+      "previousPage": "Pagina precedente",
+      "nextPage": "Pagina successiva"
+    }
   },
   "payees": {
     "noPayeeFound": "Nessun beneficiario trovato.",
@@ -3934,9 +4016,22 @@
       "none": "Nessuna fattura in scadenza.",
       "noClient": "Nessun cliente"
     },
+    "flagged": {
+      "title": "Transazioni contrassegnate",
+      "hint": "Ciò che hai contrassegnato da rivedere, prima i promemoria scaduti.",
+      "none": "Niente di contrassegnato.",
+      "overdue": "Scadute: {{count}}",
+      "dueSoon": "Questa settimana: {{count}}",
+      "noDate": "Senza data",
+      "more": "Altre contrassegnate: {{count}}"
+    },
     "recurringRevenue": {
       "title": "Entrate ricorrenti",
       "hint": "Quanto portano le fatture ricorrenti ogni mese, e cosa si è perso di recente."
     }
+  },
+  "offline": {
+    "title": "Server non raggiungibile",
+    "description": "Sei offline o Securo si sta riavviando. I tuoi dati sono al sicuro e nulla è stato modificato. Ci riconnetteremo automaticamente appena il server risponderà."
   }
 }

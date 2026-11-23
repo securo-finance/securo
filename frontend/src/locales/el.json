@@ -881,6 +881,8 @@
     "uncategorizedCta": "{{count}} συναλλαγές χρειάζονται κατηγοριοποίηση",
     "uncategorizedTotal": "{{amount}} συνολικά",
     "categorizeNow": "Κατηγοριοποίηση τώρα",
+    "drillDownQuickCategorize": "Επιλογή κατηγορίας",
+    "drillDownOpenTransaction": "Άνοιγμα συναλλαγής",
     "allCategorized": "Όλα ενημερωμένα!",
     "allCategorizedDesc": "Όλες οι συναλλαγές έχουν κατηγοριοποιηθεί",
     "assetsValue": "Επενδεδυμένα περιουσιακά στοιχεία",
@@ -1198,6 +1200,7 @@
     "monthNext": "Επόμενος μήνας",
     "description": "Περιγραφή",
     "originalDescription": "Αρχική περιγραφή",
+    "providerCategory": "Κατηγορία τράπεζας",
     "restoreOriginalDescription": "Επαναφορά αρχικής",
     "amount": "Ποσό",
     "status": "Κατάσταση",
@@ -1223,6 +1226,7 @@
     "addedToExistingRule": "Ο κανόνας ενημερώθηκε. Οι μελλοντικές αντιστοιχίσεις θα χρησιμοποιούν αυτήν την κατηγορία.",
     "duplicateRuleCondition": "Αυτός ο κανόνας περιλαμβάνει ήδη αυτήν την αντιστοίχιση.",
     "saveAndNew": "Αποθήκευση & Νέο",
+    "saveAndNext": "Αποθήκευση & επόμενο",
     "saveAndDuplicate": "Αποθήκευση & Αντίγραφο",
     "moreSaveOptions": "Περισσότερες επιλογές αποθήκευσης",
     "created": "Η συναλλαγή δημιουργήθηκε",
@@ -1282,6 +1286,31 @@
     "ignoredShow": "Εμφάνιση",
     "ignoredHide": "Απόκρυψη",
     "ignoredHiddenValue": "Κρυφό",
+    "flagged": "Με σήμανση",
+    "flagAction": "Σήμανση",
+    "unflagAction": "Αφαίρεση σήμανσης",
+    "flagSuccess": "Η συναλλαγή επισημάνθηκε",
+    "unflagSuccess": "Η σήμανση αφαιρέθηκε",
+    "flagFilterAll": "Όλες οι σημαδεμένες",
+    "flagFilterOverdue": "Ληξιπρόθεσμες",
+    "flagFilterSoon": "Λήγουν αυτή την εβδομάδα",
+    "flagOverdue": "Ληξιπρόθεσμη",
+    "flagDueOn": "Έως {{date}}",
+    "flagReminder": "Υπενθύμιση",
+    "flagReminderHint": "προαιρετικό",
+    "flagRemindOn": "Υπενθύμισέ μου",
+    "flagPickDate": "Επιλογή ημερομηνίας",
+    "flagClearDate": "Καθαρισμός ημερομηνίας",
+    "flagNote": "Σημείωση",
+    "flagNotePlaceholder": "π.χ. αναμονή επιστροφής χρημάτων",
+    "bulkFlagSuccess": "Σημαδεμένες συναλλαγές: {{count}}",
+    "bulkUnflagSuccess": "Σημάδια που αφαιρέθηκαν: {{count}}",
+    "flagOverdueCount": "Ληξιπρόθεσμα σημάδια: {{count}}",
+    "flagPreset": {
+      "tomorrow": "Αύριο",
+      "nextWeek": "Σε μία εβδομάδα",
+      "nextMonth": "Σε έναν μήνα"
+    },
     "statusCleared": "Εκκαθαρίστηκε",
     "sortAsc": "Αύξουσα ταξινόμηση",
     "sortDesc": "Φθίνουσα ταξινόμηση",
@@ -1441,8 +1470,8 @@
     "calendarAccountCount": "{{count}} λογαριασμοί",
     "calendarAllAccounts": "Όλοι οι λογαριασμοί",
     "calendarEndBalance": "Τελικό υπόλοιπο",
-    "calendarItemCount": "{{count}} στοιχείο",
-    "calendarItemCount_plural": "{{count}} στοιχεία",
+    "calendarItemCount_one": "{{count}} στοιχείο",
+    "calendarItemCount_other": "{{count}} στοιχεία",
     "calendarProjectedCount": "{{count}} προβλεπόμενο",
     "calendarProjected": "Προβλεπόμενο",
     "projected": "Προβλεπόμενο",
@@ -1526,6 +1555,8 @@
     "copyPreviewCount": "Κατηγορίες προς αντιγραφή: {{count}}",
     "copyPreviewTotal": "Σύνολο προς αντιγραφή: {{amount}}",
     "copyPreviewEmpty": "Ο επιλεγμένος μήνας δεν έχει προϋπολογισμούς προς αντιγραφή.",
+    "copyPreviewAllExist": "Όλες οι κατηγορίες του μήνα προέλευσης έχουν ήδη προϋπολογισμό στον {{month}}. Επιλέξτε αντικατάσταση για να αντιγράψετε τα ποσά ή να εφαρμόσετε την προσαρμογή.",
+    "copyPreviewNoChange": "Όλοι οι προϋπολογισμοί του μήνα προέλευσης έχουν ήδη αυτά τα ποσά στον {{month}}.",
     "copyPreviewError": "Δεν ήταν δυνατή η φόρτωση του μήνα προέλευσης.",
     "copyAmountTooLarge": "Το προσαρμοσμένο ποσό υπερβαίνει το όριο προϋπολογισμού. Μειώστε την ποσοστιαία προσαρμογή.",
     "copyConfirm": "Αντιγραφή προϋπολογισμών",
@@ -1594,6 +1625,8 @@
   },
   "recurring": {
     "makeFromTransaction": "Νέα επαναλαμβανόμενη συναλλαγή από αυτή τη συναλλαγή",
+    "duplicate": "Υπάρχει ήδη μια επαναλαμβανόμενη συναλλαγή με την ίδια περιγραφή, συχνότητα και ημερομηνία έναρξης",
+    "alreadyLinked": "Αυτή η συναλλαγή ανήκει ήδη σε μια επαναλαμβανόμενη συναλλαγή",
     "title": "Επαναλαμβανόμενες συναλλαγές",
     "add": "Προσθήκη επαναλαμβανόμενης",
     "edit": "Επεξεργασία επαναλαμβανόμενης",
@@ -1656,10 +1689,13 @@
   "rules": {
     "searchPlaceholder": "Αναζήτηση κανόνων...",
     "filterAllCategories": "Όλες οι κατηγορίες",
+    "filterByCategory": "Φιλτράρισμα κατά κατηγορία",
     "filterAllStatuses": "Όλες οι καταστάσεις",
+    "filterByStatus": "Φιλτράρισμα κατά κατάσταση",
     "filterActiveOnly": "Μόνο ενεργοί",
     "filterInactiveOnly": "Μόνο ανενεργοί",
     "filterAllActions": "Όλες οι ενέργειες",
+    "filterByAction": "Φιλτράρισμα κατά ενέργεια",
     "noFilterResults": "Κανένας κανόνας δεν ταιριάζει με αυτά τα φίλτρα",
     "preview": "Προεπισκόπηση",
     "previewMatched": "{{matched}} αντιστοιχίσεις",
@@ -1753,6 +1789,7 @@
     "fieldDate": "Ημερομηνία",
     "fieldStatus": "Κατάσταση",
     "fieldProviderCategory": "Κατηγορία παρόχου",
+    "providerCategoryHint": "Η ετικέτα της ίδιας της τράπεζας, στη γλώσσα της (για παράδειγμα, «Groceries»). Διαλέξτε μία που έχει ήδη λάβει ο χώρος εργασίας.",
     "opContains": "περιέχει",
     "opNotContains": "δεν περιέχει",
     "opEquals": "ισούται με",
@@ -2086,9 +2123,10 @@
     "summaryHoldings": "{{created}} θέσεις δημιουργήθηκαν, {{matched}} αντιστοιχίστηκαν",
     "summarySkipped": "{{count}} έχουν ήδη εισαχθεί",
     "rowsSkipped": "{{count}} γραμμές θα παραλειφθούν",
+    "reasonColumn": "Αιτία",
     "rowError": "Γραμμή {{row}} ({{ticker}}): {{reason}}",
     "moreErrors": "και {{count}} ακόμη",
-    "moreRows": "και {{count}} ακόμη εντολές",
+    "showAllRows": "Εμφάνιση όλων των γραμμών ({{count}})",
     "field": {
       "ticker": "Σύμβολο (Ticker)",
       "date": "Ημερομηνία",
@@ -2208,9 +2246,15 @@
     "lastUpdated": "Ενημερώθηκε {{when}}",
     "refreshPrice": "Ανανέωση τιμής",
     "refreshAllPrices": "Ανανέωση τιμών",
-    "refreshAllPricesDone": "Ενημερώθηκαν {{refreshed}} τιμές, {{skipped}} χωρίς νέα τιμή",
+    "refreshAllPricesDone": "{{updated}}, {{skipped}}",
+    "refreshAllPricesUpdated_one": "Ενημερώθηκε {{count}} τιμή",
+    "refreshAllPricesUpdated_other": "Ενημερώθηκαν {{count}} τιμές",
+    "refreshAllPricesNoQuote_one": "{{count}} χωρίς νέα τιμή",
+    "refreshAllPricesNoQuote_other": "{{count}} χωρίς νέα τιμή",
+    "refreshAllPricesLeftOut_one": "{{count}} παραλείφθηκε",
+    "refreshAllPricesLeftOut_other": "{{count}} παραλείφθηκαν",
     "refreshAllPricesNone": "Δεν υπάρχουν στοιχεία με τιμή αγοράς για ανανέωση",
-    "refreshAllPricesRateLimited": "Ο πάροχος δεδομένων αγοράς περιορίζει τώρα τα αιτήματα. Ενημερώθηκαν {{refreshed}} τιμές και {{skipped}} παραλείφθηκαν πριν σταματήσει. Δοκιμάστε ξανά σε ένα λεπτό.",
+    "refreshAllPricesRateLimited": "Ο πάροχος δεδομένων αγοράς περιορίζει τώρα τα αιτήματα. Πριν σταματήσει: {{updated}}, {{skipped}}. Δοκιμάστε ξανά σε ένα λεπτό.",
     "priceRefreshed": "Η τιμή ανανεώθηκε",
     "purchaseDate": "Ημερομηνία αγοράς",
     "purchasePrice": "Τιμή αγοράς",
@@ -2447,7 +2491,41 @@
     "statementViewTransactions": "Προβολή συναλλαγών",
     "statementUncategorizedIncome": "Έσοδα χωρίς κατηγορία",
     "statementUncategorizedExpense": "Έξοδα χωρίς κατηγορία",
-    "statementToggleGroup": "Εμφάνιση κατηγοριών του {{name}}"
+    "statementToggleGroup": "Εμφάνιση κατηγοριών του {{name}}",
+    "pluginReport": {
+      "total": {
+        "expenses": "Σύνολο εξόδων",
+        "income": "Σύνολο εσόδων",
+        "net": "Καθαρό"
+      },
+      "none": {
+        "category": "Χωρίς κατηγορία",
+        "category_group": "Χωρίς ομάδα",
+        "payee": "Χωρίς δικαιούχο",
+        "account": "Χωρίς λογαριασμό",
+        "month": "Χωρίς ημερομηνία"
+      },
+      "groupBy": {
+        "category": "Κατηγορία",
+        "category_group": "Ομάδα",
+        "payee": "Δικαιούχος",
+        "account": "Λογαριασμός",
+        "month": "Μήνας"
+      },
+      "measure": {
+        "expenses": "Έξοδα",
+        "income": "Έσοδα",
+        "net": "Καθαρό"
+      },
+      "share": "Μερίδιο",
+      "computed": "Υπολογίζεται από το πρόσθετο",
+      "periodTrimmed": "Οι αναφορές πρόσθετων καλύπτουν έως δύο χρόνια. Εμφανίζονται από {{from}} έως {{to}}.",
+      "periodTooLong": "Μια αναφορά πρόσθετου καλύπτει έως δύο χρόνια. Διάλεξε μικρότερη περίοδο.",
+      "totalRow": "Σύνολο",
+      "page": "Σελίδα {{page}} από {{pages}}",
+      "previousPage": "Προηγούμενη σελίδα",
+      "nextPage": "Επόμενη σελίδα"
+    }
   },
   "fiscal": {
     "kind": {
@@ -3924,9 +4002,22 @@
       "none": "Κανένα τιμολόγιο δεν λήγει.",
       "noClient": "Χωρίς πελάτη"
     },
+    "flagged": {
+      "title": "Σημαδεμένες συναλλαγές",
+      "hint": "Ό,τι σημάδεψες για να το ξαναδείς, πρώτα οι ληξιπρόθεσμες υπενθυμίσεις.",
+      "none": "Τίποτα σημαδεμένο.",
+      "overdue": "Ληξιπρόθεσμες: {{count}}",
+      "dueSoon": "Αυτή την εβδομάδα: {{count}}",
+      "noDate": "Χωρίς ημερομηνία",
+      "more": "Άλλες σημαδεμένες: {{count}}"
+    },
     "recurringRevenue": {
       "title": "Επαναλαμβανόμενα έσοδα",
       "hint": "Τι φέρνουν τα επαναλαμβανόμενα τιμολόγια κάθε μήνα, και τι χάθηκε πρόσφατα."
     }
+  },
+  "offline": {
+    "title": "Ο διακομιστής δεν είναι προσβάσιμος",
+    "description": "Είστε εκτός σύνδεσης ή το Securo επανεκκινείται. Τα δεδομένα σας είναι ασφαλή και τίποτα δεν άλλαξε. Θα επανασυνδεθούμε αυτόματα μόλις απαντήσει ο διακομιστής."
   }
 }

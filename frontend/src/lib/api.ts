@@ -105,6 +105,7 @@ import type {
   BalanceHistory,
   PaginatedTransactions,
   ReportResponse,
+  PluginReportResponse,
   CategoryStatementResponse,
   Group,
   GroupKind,
@@ -114,6 +115,8 @@ import type {
   GroupSummary,
   TransactionSplitsInput,
   TransactionEditPayload,
+  FlagDue,
+  FlaggedSummary,
   InstallmentSeriesInput,
   TransactionApplyScope,
   InvoiceAttachment,
@@ -659,6 +662,8 @@ export const transactions = {
     exclude_transfers?: boolean
     user_pnl_only?: boolean
     exclude_ignored?: boolean
+    flagged?: boolean
+    flag_due?: FlagDue
     tags?: string[]
     min_amount?: number
     max_amount?: number
@@ -748,6 +753,22 @@ export const transactions = {
       transaction_ids: transactionIds,
       tags,
     })
+    return data
+  },
+  bulkFlag: async (
+    transactionIds: string[],
+    isFlagged: boolean,
+    flagDueDate?: string,
+  ): Promise<{ updated: number }> => {
+    const { data } = await api.patch('/transactions/bulk-flag', {
+      transaction_ids: transactionIds,
+      is_flagged: isFlagged,
+      flag_due_date: flagDueDate,
+    })
+    return data
+  },
+  flaggedSummary: async (): Promise<FlaggedSummary> => {
+    const { data } = await api.get('/transactions/flagged-summary')
     return data
   },
   bulkRemoveTags: async (transactionIds: string[], tags: string[]): Promise<{ updated: number }> => {
@@ -861,6 +882,8 @@ export const transactions = {
     q?: string
     tags?: string[]
     exclude_ignored?: boolean
+    flagged?: boolean
+    flag_due?: FlagDue
     transaction_ids?: string[]
   }): Promise<void> => {
     const { data } = await api.get('/transactions/export', {
@@ -1177,6 +1200,12 @@ export const rules = {
     const { data } = await api.get('/rules')
     return data
   },
+  /** Provider categories the workspace already received, for the
+   * `provider_category` condition's suggestions. */
+  providerCategories: async (): Promise<string[]> => {
+    const { data } = await api.get('/rules/provider-categories')
+    return data
+  },
   create: async (rule: Omit<Rule, 'id' | 'user_id'>): Promise<Rule & { applied_count: number }> => {
     const { data } = await api.post('/rules', rule)
     return data
@@ -1365,10 +1394,15 @@ export const recurring = {
     const { data } = await api.get('/recurring-transactions')
     return data
   },
-  // `skip_first` is write-only: it moves the first occurrence one period ahead
-  // when the transaction that would cover it already exists.
+  // `skip_first` and `source_transaction_id` are write-only: the first moves
+  // the first occurrence one period ahead when the transaction that would
+  // cover it already exists, and the second links that transaction to the new
+  // bill so it is not offered again.
   create: async (
-    rt: Partial<RecurringTransaction> & { skip_first?: boolean },
+    rt: Partial<RecurringTransaction> & {
+      skip_first?: boolean
+      source_transaction_id?: string
+    },
   ): Promise<RecurringTransaction> => {
     const { data } = await api.post('/recurring-transactions', rt)
     return data
@@ -1787,6 +1821,21 @@ export const reports = {
   // Oldest and newest transaction dates in the workspace (opening
   // balances excluded). The reports page builds its year picker from
   // these bounds (issue #765).
+  /** A report an installed plugin declares, added up by Securo; `pluginId` is "owner/name". */
+  plugin: async (
+    pluginId: string,
+    key: string,
+    startDate: string,
+    endDate: string,
+    accountIds?: string[],
+  ): Promise<PluginReportResponse> => {
+    const extra = acctIdsParam(accountIds)
+    const { data } = await api.get(`/reports/plugins/${pluginId}/${encodeURIComponent(key)}`, {
+      params: { start_date: startDate, end_date: endDate, ...(extra.params ?? {}) },
+      ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}),
+    })
+    return data
+  },
   dataRange: async (): Promise<{ min_date: string | null; max_date: string | null }> => {
     const { data } = await api.get('/reports/data-range')
     return data

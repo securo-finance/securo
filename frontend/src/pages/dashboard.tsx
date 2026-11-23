@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react'
+import { useState, useEffect, useMemo, useRef, useContext, type ReactNode } from 'react'
 import { getAccountLabel, getAccountName, sortAccountsByAbsoluteBalance, sumAccountBalances } from '@/lib/account-utils'
 import { currentMonth, shiftMonth, monthLastDay, monthLabel, monthRange } from '@/lib/month-utils'
 import { useTranslation } from 'react-i18next'
@@ -49,7 +49,7 @@ import { CategorySplitBadge, TransactionCategoryIcon } from '@/components/catego
 import { isSplitByCategory, projectedSplitSource } from '@/lib/category-lines'
 import { AccountIcon } from '@/components/account-icon'
 import { TransactionDrillDown, type DrillDownFilter } from '@/components/transaction-drill-down'
-import { TransactionDialog, type TransactionSavePayload } from '@/components/transaction-dialog'
+import { TransactionDialog, type SaveAction, type TransactionSavePayload } from '@/components/transaction-dialog'
 import { extractApiError } from '@/lib/api-errors'
 import { TransactionCalendarView } from '@/components/transaction-calendar-view'
 import { TransactionsViewSwitcher, type TransactionsViewMode } from '@/components/transactions-view-switcher'
@@ -57,18 +57,21 @@ import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useAuth } from '@/contexts/auth-context'
+import { WorkspaceContext } from '@/contexts/workspace-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import type { Rule, Transaction } from '@/types'
 import { formatCompactCurrency, formatCurrency, ltrAmount } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { readCalendarDateBasis } from '@/lib/transaction-calendar'
+import { listDate } from '@/lib/list-date'
 import { WidgetGrid } from '@/components/widget-grid'
 import {
   AgingWidget,
   AssistantWidget,
   CreditCardsWidget,
   InvoicesDueWidget,
+  FlaggedWidget,
   InvoiceTotalsWidget,
   MonthResultWidget,
   RecurringRevenueWidget,
@@ -216,6 +219,12 @@ export default function DashboardPage() {
     setSearchParams(params, { replace: true })
   }, [selectedMonth, txViewMode, calendarSelectedDate, setSearchParams])
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
+  // Snapshot of the drill-down rows for "Save & next", so rows a save removes don't shift "next".
+  const [editQueue, setEditQueue] = useState<Transaction[]>([])
+  const nextInQueue = (id: string) => {
+    const index = editQueue.findIndex((tx) => tx.id === id)
+    return index >= 0 ? editQueue[index + 1] ?? null : null
+  }
   const [dialogOpen, setDialogOpen] = useState(false)
   const [createRuleOpen, setCreateRuleOpen] = useState(false)
   const [createRuleInitialData, setCreateRuleInitialData] = useState<RuleDialogInitialData | undefined>(undefined)
@@ -406,13 +415,95 @@ export default function DashboardPage() {
     enabled: shows('goals'),
   })
 
+  // Not useWorkspace(): the dashboard also renders outside a workspace provider.
+  const canWrite = useContext(WorkspaceContext)?.canWrite ?? false
+
+  // Unlike updateMutation, this leaves the panel and dialog open.
+  const quickCategorizeMutation = useMutation({
+    mutationFn: ({ id, categoryId }: { id: string; categoryId: string }) =>
+      transactions.update(id, { category_id: categoryId }),
+    onSuccess: () => invalidateFinancialQueries(queryClient),
+    onError: (err: unknown) => toast.error(extractApiError(err, t('common.error'))),
+  })
+
+  // The queue only fixes the order. A save can change other rows (a quick pick, or
+  // an installment saved for the whole series), so each row is re-read before it
+  // opens. Shared rows belong to another workspace and can't be re-read here.
+  const refreshTx = (tx: Transaction) => (tx.is_shared ? Promise.resolve(tx) : transactions.get(tx.id))
+
+  const findNextToEdit = async (id: string, request: number) => {
+    const start = editQueue.findIndex((tx) => tx.id === id)
+    if (start < 0) return null
+    for (const queued of editQueue.slice(start + 1)) {
+      let fresh: Transaction
+      try {
+        fresh = await refreshTx(queued)
+      } catch (err) {
+        // A row deleted since the panel loaded is skipped. Any other failure stops
+        // here; the row is still in the panel to open again.
+        if ((err as { response?: { status?: number } })?.response?.status === 404) continue
+        if (request === openRequest.current) toast.error(extractApiError(err, t('common.error')))
+        return null
+      }
+      // A row categorized or ignored since the panel loaded no longer belongs in
+      // "Categorize now" (the panel lists neither).
+      if (drillDown?.uncategorized && (fresh.category_id || fresh.is_ignored || isSplitByCategory(fresh))) continue
+      return fresh
+    }
+    return null
+  }
+
+  // Only the latest click opens: an older, slower read must not replace it. Closing
+  // the dialog also moves it on, so a late "Save & next" can't reopen anything.
+  const openRequest = useRef(0)
+  const openFromDrillDown = async (tx: Transaction, queue: Transaction[]) => {
+    const request = ++openRequest.current
+    try {
+      const fresh = await refreshTx(tx)
+      if (request !== openRequest.current) return
+      setEditQueue(queue)
+      setEditingTx(fresh)
+      setDialogOpen(true)
+    } catch (err) {
+      if (request === openRequest.current) toast.error(extractApiError(err, t('common.error')))
+    }
+  }
+
+  // Kept apart from the save, so a lookup the user walked away from can't keep
+  // a newly opened dialog busy.
+  const [loadingNext, setLoadingNext] = useState(false)
+
+  const closeEditDialog = () => {
+    openRequest.current++
+    setLoadingNext(false)
+    setDialogOpen(false)
+    setEditingTx(null)
+    setEditQueue([])
+  }
+
+  const openNextAfterSave = async (id: string, request: number) => {
+    setLoadingNext(true)
+    const next = await findNextToEdit(id, request)
+    if (request !== openRequest.current) return
+    setLoadingNext(false)
+    if (next) setEditingTx(next)
+    else closeEditDialog()
+  }
+
   const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }: TransactionSavePayload & { id: string }) =>
-      transactions.update(id, data),
-    onSuccess: () => {
+    mutationFn: ({ id, ...data }: TransactionSavePayload & { id: string; action?: SaveAction }) => {
+      // `action` only steers what happens after the save; it is not a field.
+      const payload = { ...data }
+      delete payload.action
+      return transactions.update(id, payload)
+    },
+    onMutate: () => openRequest.current,
+    onSuccess: (_saved, { id, action }, request) => {
       invalidateFinancialQueries(queryClient)
-      setDialogOpen(false)
-      setEditingTx(null)
+      // The dialog was closed (and maybe another row opened) during the save.
+      if (request !== openRequest.current) return
+      if (action === 'saveAndNext') void openNextAfterSave(id, request)
+      else closeEditDialog()
     },
   })
 
@@ -420,8 +511,7 @@ export default function DashboardPage() {
     mutationFn: (id: string) => transactions.delete(id),
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
-      setDialogOpen(false)
-      setEditingTx(null)
+      closeEditDialog()
     },
   })
 
@@ -429,8 +519,7 @@ export default function DashboardPage() {
     mutationFn: (pairId: string) => transactions.unlinkTransfer(pairId),
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
-      setDialogOpen(false)
-      setEditingTx(null)
+      closeEditDialog()
     },
   })
 
@@ -709,7 +798,8 @@ export default function DashboardPage() {
       rows.push({
         key: tx.id,
         description: tx.description,
-        date: tx.date,
+        // The month holds a card row on its bill's due date in accrual mode.
+        date: listDate(tx),
         type: tx.type,
         amount: displayAmount,
         amountPrimary: tx.amount_primary != null ? Number(tx.amount_primary) : null,
@@ -739,7 +829,7 @@ export default function DashboardPage() {
       rows.push({
         key: `proj-${pt.recurring_id}-${pt.date}`,
         description: pt.description,
-        date: pt.date,
+        date: pt.reporting_date ?? pt.date,
         type: pt.type,
         amount: pt.amount,
         amountPrimary: pt.amount_primary ?? null,
@@ -799,6 +889,7 @@ export default function DashboardPage() {
     'spending-distribution': <SpendingDistributionWidget scope={widgetScope} />,
     'month-result': <MonthResultWidget scope={widgetScope} />,
     upcoming: <UpcomingWidget scope={widgetScope} />,
+    flagged: <FlaggedWidget scope={widgetScope} onOpen={(tx) => { setEditingTx(tx); setDialogOpen(true) }} />,
     'credit-cards': <CreditCardsWidget scope={widgetScope} />,
     assistant: <AssistantWidget />,
     receivables: <InvoiceTotalsWidget direction="receivable" scope={widgetScope} />,
@@ -1569,7 +1660,7 @@ export default function DashboardPage() {
                         {/* Content */}
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
-                            <p className="text-sm font-semibold text-foreground truncate leading-tight">{row.description}</p>
+                            <p className="min-w-0 text-sm font-semibold text-foreground truncate leading-tight">{row.description}</p>
                             {row.splitSource && <CategorySplitBadge tx={row.splitSource} compact className="shrink-0 text-[9px] px-1" />}
                             {row.groupId && (
                               <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1 py-0.5 rounded-full shrink-0">
@@ -1679,14 +1770,15 @@ export default function DashboardPage() {
                           <TableCell className="py-2.5 ps-5 text-sm text-muted-foreground tabular-nums whitespace-nowrap hidden sm:table-cell">
                             {formatDate(row.date, dateLocale)}
                           </TableCell>
-                          <TableCell className="py-2.5 ps-5 sm:ps-0">
+                          {/* w-full max-w-0: the cell takes the free width and lets the description truncate in it */}
+                          <TableCell className="py-2.5 ps-5 sm:ps-0 w-full max-w-0">
                             <div className="flex items-center gap-3">
                               {row.splitSource
                                 ? <TransactionCategoryIcon tx={row.splitSource} size="lg" />
                                 : <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="lg" />}
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2">
-                                  <p className="text-sm font-semibold text-foreground truncate">{row.description}</p>
+                                  <p className="min-w-0 text-sm font-semibold text-foreground truncate">{row.description}</p>
                                   {row.splitSource && <CategorySplitBadge tx={row.splitSource} className="shrink-0" />}
                                   {row.groupId && (
                                     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300 shrink-0 uppercase tracking-wide">
@@ -1955,14 +2047,21 @@ export default function DashboardPage() {
             }
             : null
         }
-        onClose={() => setDrillDown(null)}
-        onTransactionClick={(tx) => { setEditingTx(tx); setDialogOpen(true) }}
+        onClose={() => { openRequest.current++; setDrillDown(null) }}
+        onTransactionClick={openFromDrillDown}
+        quickCategorize={canWrite ? {
+          categories: categoriesList ?? [],
+          groups: categoryGroupsList ?? [],
+          onCategorize: (tx, categoryId) =>
+            quickCategorizeMutation.mutateAsync({ id: tx.id, categoryId }),
+        } : undefined}
       />
 
       <TransactionDialog
         open={dialogOpen}
-        onClose={() => { setDialogOpen(false); setEditingTx(null) }}
+        onClose={closeEditDialog}
         transaction={editingTx}
+        hasNext={!!editingTx && !!nextInQueue(editingTx.id)}
         categories={categoriesList ?? []}
         categoryGroups={categoryGroupsList ?? []}
         accounts={(accountsList ?? []).map((a) => ({
@@ -1973,19 +2072,18 @@ export default function DashboardPage() {
           currency: a.currency,
           secured_asset_id: a.secured_asset_id,
         }))}
-        onSave={(data) => {
-          if (editingTx) updateMutation.mutate({ id: editingTx.id, ...data })
+        onSave={(data, _recurring, _installment, _files, action) => {
+          if (editingTx) updateMutation.mutate({ id: editingTx.id, ...data, action })
         }}
         onDelete={() => {
           if (editingTx) deleteMutation.mutate(editingTx.id)
         }}
         onUnlinkTransfer={(pairId) => unlinkTransferMutation.mutate(pairId)}
         onCreateRule={(tx) => {
-          setDialogOpen(false)
-          setEditingTx(null)
+          closeEditDialog()
           handleCreateRuleFromTransaction(tx)
         }}
-        loading={updateMutation.isPending || deleteMutation.isPending || unlinkTransferMutation.isPending}
+        loading={updateMutation.isPending || loadingNext || deleteMutation.isPending || unlinkTransferMutation.isPending}
         error={updateMutation.error ? extractApiError(updateMutation.error) : deleteMutation.error ? extractApiError(deleteMutation.error) : null}
         isSynced={editingTx?.source === 'sync'}
       />

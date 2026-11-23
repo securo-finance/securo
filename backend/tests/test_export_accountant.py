@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.app_clock import app_today
 from app.models.account import Account
 from app.models.category import Category
+from app.models.fx_rate import FxRate
 from app.models.transaction import Transaction
 from app.models.transaction_category_line import TransactionCategoryLine
 from app.models.user import User
@@ -31,6 +32,28 @@ async def _make_business(session: AsyncSession, workspace: Workspace, name: str)
     workspace.name = name
     await session.commit()
     return workspace
+
+
+async def _add_rate(
+    session: AsyncSession,
+    day: date,
+    currency: str,
+    rate: str,
+    *,
+    base: str = "USD",
+) -> None:
+    """Store one FX rate, as the daily sync would have."""
+    session.add(
+        FxRate(
+            id=uuid.uuid4(),
+            base_currency=base,
+            quote_currency=currency,
+            date=day,
+            rate=Decimal(rate),
+            source="test",
+        )
+    )
+    await session.commit()
 
 
 async def _add_transaction(
@@ -252,6 +275,9 @@ async def test_profit_and_loss_groups_by_category_and_excludes_transfers(
         description="MERCADO",
         lines=[(test_categories[0].id, "60.00"), (test_categories[1].id, "40.00")],
     )
+    # The stored amount_primary belongs to the saver's display currency and
+    # must not reach the P&L; the USD line converts at the rate of its own day.
+    await _add_rate(session, date(2024, 2, 3), "BRL", "5.0")
     await _add_transaction(
         session,
         test_user,
@@ -315,18 +341,180 @@ async def test_profit_and_loss_groups_by_category_and_excludes_transfers(
     assert ("TRANSFER OUT", "-500,00") in ledger
     assert ("TRANSFER IN", "500,00") in ledger
 
-    assert rows[0] == ["Section", "Category", "Amount"]
+    assert rows[0] == ["Section", "Category", "Amount", "Currency"]
     buckets = {(row[0], row[1]): row[2] for row in rows[1:] if row[0] != "result"}
 
     assert buckets[("income", "Receita")] == "1000,00"
     assert buckets[("expense", "Alimentação")] == "60,00"
-    # 40 from the split line plus 275 from the USD row's primary amount.
-    assert buckets[("expense", "Transporte")] == "315,00"
+    # 40 from the split line plus 50 USD at 5,0 on the row's date. The stored
+    # amount_primary of 275 is the display currency and is not used here.
+    assert buckets[("expense", "Transporte")] == "290,00"
     assert all(label != "Transferência" for _, label in buckets)
     assert len(buckets) == 3
+    assert all(row[3] == "BRL" for row in rows[1:])
 
     result = rows[-1]
-    assert result == ["result", "", "625,00"]
+    assert result == ["result", "", "650,00", "BRL"]
+
+
+@pytest.mark.asyncio
+async def test_profit_and_loss_is_in_the_workspace_currency_not_the_exporters_display(
+    client: AsyncClient,
+    session: AsyncSession,
+    auth_headers: dict,
+    test_user: User,
+    test_workspace: Workspace,
+    test_account: Account,
+    test_categories: list[Category],
+):
+    """The P&L follows the workspace currency, whatever the exporter displays.
+
+    A BRL business exported by someone whose display currency is USD used to
+    come out in USD: the P&L summed ``amount_primary``, which is stamped in
+    the display currency of whoever saved the row. Two people with different
+    preferences exported different numbers for the same books (#240).
+    """
+    test_user.preferences = {
+        **(test_user.preferences or {}),
+        "currency_display": "USD",
+    }
+    await _make_business(session, test_workspace, "R1614 Biz")
+    await _add_rate(session, date(2024, 11, 3), "BRL", "5.0")
+    await _add_transaction(
+        session,
+        test_user,
+        test_workspace,
+        test_account,
+        amount="500.00",
+        tx_date=date(2024, 11, 3),
+        tx_type="credit",
+        category_id=test_categories[2].id,
+        # The same 500 BRL row stamped for a USD display: 100,00 USD.
+        amount_primary="100.00",
+        description="R1614 Venda Nov",
+    )
+
+    response = await client.get(
+        EXPORT_URL,
+        params={"start_date": "2024-11-01", "end_date": "2024-11-19"},
+        headers=_headers(auth_headers, test_workspace),
+    )
+
+    with _open_zip(response) as archive:
+        _, rows = _read_csv(archive, "profit-and-loss.csv")
+
+    assert ["income", "Receita", "500,00", "BRL"] in rows
+    assert rows[-1] == ["result", "", "500,00", "BRL"]
+
+
+@pytest.mark.asyncio
+async def test_profit_and_loss_rows_add_up_to_the_result(
+    client: AsyncClient,
+    session: AsyncSession,
+    auth_headers: dict,
+    test_user: User,
+    test_workspace: Workspace,
+    test_account: Account,
+    test_categories: list[Category],
+):
+    """The printed categories sum to the printed result, cent by cent.
+
+    Two 0,01 USD expenses at 1,5 BRL convert to 0,015 each. Rounded once per
+    category they show 0,02, so the result must say 0,04 instead of the 0,03
+    the unrounded totals gave.
+    """
+    await _make_business(session, test_workspace, "Loja Centavos")
+    await _add_rate(session, date(2024, 9, 10), "BRL", "1.5")
+    await _add_transaction(
+        session,
+        test_user,
+        test_workspace,
+        test_account,
+        amount="0.01",
+        tx_date=date(2024, 9, 10),
+        category_id=test_categories[0].id,
+        currency="USD",
+        description="CENTAVO A",
+    )
+    await _add_transaction(
+        session,
+        test_user,
+        test_workspace,
+        test_account,
+        amount="0.01",
+        tx_date=date(2024, 9, 10),
+        category_id=test_categories[1].id,
+        currency="USD",
+        description="CENTAVO B",
+    )
+
+    response = await client.get(
+        EXPORT_URL,
+        params={"start_date": "2024-09-01", "end_date": "2024-09-30"},
+        headers=_headers(auth_headers, test_workspace),
+    )
+
+    with _open_zip(response) as archive:
+        _, rows = _read_csv(archive, "profit-and-loss.csv")
+
+    assert ["expense", "Alimentação", "0,02", "BRL"] in rows
+    assert ["expense", "Transporte", "0,02", "BRL"] in rows
+    assert rows[-1] == ["result", "", "-0,04", "BRL"]
+
+
+@pytest.mark.asyncio
+async def test_foreign_line_without_a_rate_is_reported_instead_of_summed(
+    client: AsyncClient,
+    session: AsyncSession,
+    auth_headers: dict,
+    test_user: User,
+    test_workspace: Workspace,
+    test_account: Account,
+    test_categories: list[Category],
+):
+    """A line with no stored rate keeps its own currency and stays out.
+
+    Reading it 1:1 would mix currencies in one total (250,25 BRL plus 100 USD
+    came out as 350,25). The file names the currency and leaves the line out
+    of the result instead (#240).
+    """
+    await _make_business(session, test_workspace, "Padaria São João")
+    await _add_transaction(
+        session,
+        test_user,
+        test_workspace,
+        test_account,
+        amount="500.00",
+        tx_date=date(2024, 10, 1),
+        tx_type="credit",
+        category_id=test_categories[2].id,
+        description="VENDA OUT",
+    )
+    await _add_transaction(
+        session,
+        test_user,
+        test_workspace,
+        test_account,
+        amount="100.00",
+        tx_date=date(2024, 10, 2),
+        category_id=test_categories[0].id,
+        currency="USD",
+        description="SEM COTACAO",
+    )
+
+    response = await client.get(
+        EXPORT_URL,
+        params={"start_date": "2024-10-01", "end_date": "2024-10-31"},
+        headers=_headers(auth_headers, test_workspace),
+    )
+
+    with _open_zip(response) as archive:
+        _, rows = _read_csv(archive, "profit-and-loss.csv")
+
+    assert ["income", "Receita", "500,00", "BRL"] in rows
+    # Reported in its own currency, flagged as unconverted, not in the total.
+    assert ["unconverted_expense", "Alimentação", "100,00", "USD"] in rows
+    assert rows[-1] == ["result", "", "500,00", "BRL"]
 
 
 @pytest.mark.asyncio
@@ -546,4 +734,4 @@ async def test_text_columns_open_as_text_never_as_a_formula(
     assert row[6] == "'-2+3"
 
     # The P&L reads the same category name, so it is neutralised there too.
-    assert ["expense", "'=SUM(A1:A9)", "100,00"] in profit_and_loss
+    assert ["expense", "'=SUM(A1:A9)", "100,00", "BRL"] in profit_and_loss
