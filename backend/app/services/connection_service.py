@@ -1049,7 +1049,7 @@ async def _sync_holdings(
         # reports the position. Historical values stay; current totals
         # already exclude it via the sell_date filter in rollups.
         if asset.sell_date is None:
-            await _upsert_asset_value_for_today(session, asset, holding.current_value, today)
+            await _upsert_asset_value_for_today(session, asset, holding.current_value, today, holding.unit_price)
 
     for ext_id, asset in archive_candidates.items():
         if ext_id not in seen and not asset.is_archived:
@@ -1238,7 +1238,7 @@ async def _sync_holding_trades(
         if was_sold and asset.sell_date is None and not holding.is_withdrawn:
             # Reopened by this sync: the value step above skipped it while it
             # still read as sold, so record today's value now.
-            await _upsert_asset_value_for_today(session, asset, holding.current_value, app_today())
+            await _upsert_asset_value_for_today(session, asset, holding.current_value, app_today(), holding.unit_price)
 
 
 def _provider_metadata(holding: HoldingData) -> Optional[dict]:
@@ -1384,8 +1384,9 @@ async def _upsert_asset_value_for_today(
     asset: Asset,
     amount,
     today: date,
+    price=None,
 ) -> None:
-    """One sync-sourced AssetValue per asset per day.
+    """One sync-sourced AssetValue per asset per day, with the provider's unit price when it sends one.
 
     Re-syncing the same day updates the amount in place; a later day
     creates a new row so we build a daily valuation history over time.
@@ -1400,11 +1401,13 @@ async def _upsert_asset_value_for_today(
     row = existing.scalar_one_or_none()
     if row is not None:
         row.amount = amount
+        row.price = price
     else:
         session.add(
             AssetValue(
                 asset_id=asset.id,
                 amount=amount,
+                price=price,
                 date=today,
                 source="sync",
             )
