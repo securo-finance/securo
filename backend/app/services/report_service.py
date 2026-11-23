@@ -34,6 +34,7 @@ from app.services._query_filters import (
     reporting_date_value,
 )
 from app.services.admin_service import get_credit_card_accounting_mode
+from app.services.category_defaults import DEFAULT_CATEGORIES, name_variants
 from app.services.account_service import get_account_name
 from app.services.asset_service import (
     _fill_forward_at,
@@ -502,7 +503,8 @@ def _without_mirrored_legs(rows):
     category and the amount, sit on different accounts and are booked within
     `MIRRORED_LEG_DAYS`. Pairs are a maximum matching, so the result does not
     depend on row order. Rows are (category id, name, color, type, amount,
-    account id, booking date); the rest come back without account and date.
+    account id, booking date, ...); the rest come back without account and
+    date, with any column after them kept.
 
     Legs of one group on the same account and day are interchangeable, so
     they are matched as one class with a count: a thousand identical legs
@@ -542,7 +544,31 @@ def _without_mirrored_legs(rows):
             del credits[credit_keys[i]][:count]
             dropped.update(debits[debit_keys[j]][:count])
             del debits[debit_keys[j]][:count]
-    return [row[:5] for index, row in enumerate(rows) if index not in dropped]
+    return [row[:5] + tuple(row[7:]) for index, row in enumerate(rows) if index not in dropped]
+
+
+# Accounts that owe money: a credit on one pays the debt down, so it is never
+# money taken out of an investment (#251).
+_DEBT_ACCOUNT_TYPES = frozenset({"credit_card", "loan"})
+# The default "Transfers" category in every language: money moved between the
+# user's own accounts, not set aside or taken out of an investment (#251).
+_TRANSFER_CATEGORY_NAMES = frozenset(name_variants(DEFAULT_CATEGORIES["transfers"]))
+
+
+def _investment_move_group(txn_type: str, account_type: str | None, category_name: str | None):
+    """The Money Map group of a one-sided movement, or None when it is not one.
+
+    A debit is a contribution and a credit a withdrawal (#1418), except a
+    one-sided leg in the default Transfers category, which only moves money
+    between accounts, and a credit on a card or loan, which pays a bill.
+    """
+    if category_name in _TRANSFER_CATEGORY_NAMES:
+        return None
+    if txn_type != "credit":
+        return "investments"
+    if account_type in _DEBT_ACCOUNT_TYPES:
+        return None
+    return "withdrawals"
 
 
 def _max_leg_pairs(
@@ -1023,7 +1049,8 @@ async def get_income_expenses_report(
     # the transfer_pair_id filter, so only one-sided movements appear here:
     # debits are contributions, credits are withdrawals, which the Sankey draws
     # as a source of money beside income (#1418). Rows, not sums: the two legs
-    # of one movement that were never paired are dropped first.
+    # of one movement that were never paired are dropped first. What is left
+    # of a bill payment or a plain transfer stays out (#251).
     inv_result = await session.execute(
         with_category_lines(
             select(
@@ -1036,9 +1063,11 @@ async def get_income_expenses_report(
                 # Legs pair by when they were booked; the reporting date only
                 # picks the period.
                 Transaction.date,
+                Account.type,
             ).select_from(Transaction)
         )
         .join(Category, line_category_id() == Category.id)
+        .outerjoin(Account, Transaction.account_id == Account.id)
         .where(
             Transaction.workspace_id == workspace_id,
             report_date >= start,
@@ -1054,10 +1083,12 @@ async def get_income_expenses_report(
         )
     )
     moves: dict[tuple[uuid.UUID, str], list] = {}
-    for cat_id, cat_name, cat_color, txn_type, total_amount in _without_mirrored_legs(
-        list(inv_result.all())
+    for cat_id, cat_name, cat_color, txn_type, total_amount, account_type in (
+        _without_mirrored_legs(list(inv_result.all()))
     ):
-        group = "withdrawals" if txn_type == "credit" else "investments"
+        group = _investment_move_group(txn_type, account_type, cat_name)
+        if group is None:
+            continue
         entry = moves.setdefault((cat_id, group), [cat_name, cat_color, 0.0])
         entry[2] += abs(float(total_amount or 0))
     for (cat_id, group), (cat_name, cat_color, amount) in moves.items():
