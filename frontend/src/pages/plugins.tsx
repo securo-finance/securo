@@ -232,7 +232,12 @@ export default function PluginsPage() {
             )}
           </div>
 
-          <div className="-mx-4 mb-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] lg:hidden">
+          {/* A wrapping row, not a sideways scroller. Radix's Select opens on
+              `click` for touch (its pointerdown path is mouse-only), and a tap
+              inside a horizontal pan surface can be consumed by the scroll
+              gesture, so the menu never opened. Wrapping removes the pan
+              surface; the chips still fit and no facet needs a swipe. */}
+          <div className="mb-4 flex flex-wrap items-center gap-2 lg:hidden">
             {facets.map((facet) =>
               facet.options.length ? <FacetSelect key={facet.key} facet={facet} value={filters[facet.key]} onChoose={choose} /> : null,
             )}
@@ -338,7 +343,7 @@ function FacetList({ facet, value, onChoose }: { facet: Facet; value: string | n
   )
 }
 
-/** Below `lg` the facets sit in one scrolling row of selects instead of a sidebar. */
+/** Below `lg` the facets sit in one wrapping row of selects instead of a sidebar. */
 function FacetSelect({ facet, value, onChoose }: { facet: Facet; value: string | null; onChoose: (key: FacetKey, value: string | null) => void }) {
   const { t } = useTranslation()
   return (
