@@ -135,8 +135,10 @@ export function ReceiptScanDialog({ open, onOpenChange }: { open: boolean; onOpe
     <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : close())}>
       {/* One column that can shrink: with the grid's implicit auto column, the
           account select's longest option and the match rows set the width
-          and push the dialog past a phone screen. */}
-      <DialogContent className="grid-cols-[minmax(0,1fr)] sm:max-w-lg">
+          and push the dialog past a phone screen. Capped at the screen height
+          and scrolling, so the title, close button and footer stay reachable
+          when a read brings several matches. */}
+      <DialogContent className="max-h-[calc(100dvh-2rem)] grid-cols-[minmax(0,1fr)] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{t('documentAi.receipt.title')}</DialogTitle>
           <DialogDescription>{t('documentAi.receipt.description')}</DialogDescription>

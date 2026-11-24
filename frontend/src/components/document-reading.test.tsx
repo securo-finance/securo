@@ -156,4 +156,13 @@ describe('ReceiptScanDialog', () => {
     expect(screen.getByRole('dialog').className).toContain('grid-cols-[minmax(0,1fr)]')
     expect(screen.getByRole('button', { name: t('documentAi.receipt.attach') })).toBeInTheDocument()
   })
+
+  it('caps the dialog at the screen height and scrolls, so the header and footer stay on a short phone', async () => {
+    await readReceipt()
+    // Without a cap, two matches and the create form made the dialog ~769px
+    // tall on a 375x667 screen, with the close button and Cancel off screen.
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.className).toContain('max-h-[calc(100dvh-2rem)]')
+    expect(dialog.className).toContain('overflow-y-auto')
+  })
 })
