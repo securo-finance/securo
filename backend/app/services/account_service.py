@@ -900,7 +900,14 @@ async def sync_opening_balance_for_connected_account(
     sum_result = await session.execute(
         select(func.coalesce(func.sum(signed_amount), 0)).where(
             Transaction.account_id == account.id,
-            Transaction.source != "opening_balance",
+            # Every row except the opening this call is about to rewrite. An
+            # opening in another currency is a row of the ledger like any
+            # other and has to be counted, or the offset computed below would
+            # leave the account short by exactly its amount.
+            or_(
+                Transaction.source != "opening_balance",
+                Transaction.currency != account.currency,
+            ),
             Transaction.date <= balance_cutoff,
             Transaction.is_ignored == False,
             or_(
