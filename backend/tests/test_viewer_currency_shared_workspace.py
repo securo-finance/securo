@@ -857,6 +857,30 @@ async def test_owner_moving_only_the_date_keeps_her_typed_stamp(
 
 
 @pytest.mark.asyncio
+async def test_owner_changing_the_amount_keeps_her_typed_conversion(
+    client, session, couple
+):
+    """#482: Ana raises 300 USD to 400 and the dialog shows R$ 2.080 at 5,2.
+    The save carries that figure, and it is what gets stored as typed, not a
+    conversion derived at the market rate."""
+    row = await _usd_row(client, couple, "300.00", "1560.00")
+    resp = await client.patch(
+        f"/api/transactions/{row['id']}", headers=couple["ana"],
+        json=_dialog_save(
+            row, amount="400.00", amount_primary=2080.0, fx_rate_used=5.2
+        ),
+    )
+    assert resp.status_code == 200, resp.text
+    tx = await _stored(session, row["id"])
+    assert tx.amount == Decimal("400.00")
+    assert tx.amount_primary == Decimal("2080.00")
+    assert (tx.amount_primary_typed, tx.amount_primary_typed_currency) == (
+        Decimal("2080.00"), "BRL",
+    )
+    assert Decimal(str(tx.fx_rate_used)) == Decimal("5.2")
+
+
+@pytest.mark.asyncio
 async def test_member_renaming_after_a_rate_sync_keeps_the_owners_stamp(
     client, session, couple
 ):
