@@ -402,6 +402,26 @@ async def test_a_stale_pending_twin_leaves_the_posted_row_as_it_is(
 
 
 @pytest.mark.asyncio
+async def test_a_payee_a_stale_pending_twin_fills_in_still_takes_a_correction(
+    session: AsyncSession, bank_connection, test_user
+):
+    """A posted row with no payee takes one from a stale pending twin; the
+    snapshot records it, so the posted entry's later correction applies."""
+    await _pipeline(session, bank_connection, _account_txns(_txn("p1", status="pending")), test_user)
+    await _pipeline(session, bank_connection, _account_txns(_txn("p2")), test_user)
+    await _pipeline(session, bank_connection, _account_txns({**_txn("p1", status="pending"), "payee": "VISA SHOP"}), test_user)
+    row = await _only_row(session, bank_connection)
+    assert (row.status, row.payee) == ("posted", "VISA SHOP")
+    external_id = row.external_id
+    assert external_id is not None
+
+    corrected = {**_txn(external_id), "payee": "Example Shop"}
+    await _pipeline(session, bank_connection, _account_txns(corrected), test_user)
+    row = await _only_row(session, bank_connection)
+    assert row.payee == "Example Shop"
+
+
+@pytest.mark.asyncio
 async def test_a_hidden_row_takes_no_correction_from_its_twin(session: AsyncSession, bank_connection, test_user):
     await _pipeline(session, bank_connection, _account_txns({**_txn("p1", status="pending"), "payee": "VISA SHOP"}), test_user)
     row = await _only_row(session, bank_connection)

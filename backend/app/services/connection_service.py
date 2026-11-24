@@ -2487,10 +2487,15 @@ def _merge_sync_metadata(
         transaction.payee = txn_data.payee
     if isinstance(sent, dict) and not _takes_plugin_correction(transaction, txn_data):
         # A stale pending twin of a posted row (or a row the user hid) changes
-        # nothing of the plugin's, and the snapshot stays what the row took.
+        # nothing of the plugin's, and the snapshot stays what the row took,
+        # bar a payee filled in above where the row had none: the snapshot
+        # records it, or a later correction would take it for an edit.
+        kept = sent
+        if transaction.payee and not sent.get("payee"):
+            kept = {**sent, "payee": transaction.payee}
         raw = transaction.raw_data if isinstance(transaction.raw_data, dict) else {}
-        if raw.get(SYNCED_TEXT) != sent:
-            transaction.raw_data = {**raw, SYNCED_TEXT: sent}
+        if raw.get(SYNCED_TEXT) != kept:
+            transaction.raw_data = {**raw, SYNCED_TEXT: kept}
     elif isinstance(sent, dict):
         if not _refresh_synced_notes(transaction, sent.get("notes"), txn_data.notes):
             # Someone took the notes over: the snapshot keeps the plugin's text
