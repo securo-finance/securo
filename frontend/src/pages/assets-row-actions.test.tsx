@@ -158,6 +158,8 @@ describe('Holding row actions menu', () => {
 
   it('offers no price refresh for a sold holding', async () => {
     api.assets.list.mockResolvedValue([asset({ sell_date: '2026-01-10', sell_price: 210 })])
+    // Sold holdings sit in a collapsed section until it is opened.
+    localStorage.setItem('securo:assets:showSold', '1')
     renderWithProviders(<AssetsPage />)
     await screen.findByText('Apple Inc.')
 

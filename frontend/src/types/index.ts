@@ -1612,6 +1612,11 @@ export interface Asset {
   total_invested: number | null
   realized_gain: number | null
   transaction_count: number
+  /** Sold holdings only: average buy and sell price, cost of what was sold and what it brought in. */
+  average_buy_price?: number | null
+  average_sell_price?: number | null
+  sold_cost?: number | null
+  sale_proceeds?: number | null
 }
 
 /** One order read from a broker CSV, before it reaches a holding. */

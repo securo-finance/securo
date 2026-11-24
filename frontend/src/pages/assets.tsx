@@ -185,6 +185,11 @@ const HOLDINGS_GRID = 'minmax(0,2.4fr) 0.7fr 1.1fr 1fr 0.9fr 1.3fr 0.6fr 4.5rem'
 /** Whether archived holdings are shown, kept across visits (issue #1046). */
 const SHOW_ARCHIVED_KEY = 'securo:assets:showArchived'
 
+// Sold section: Ativo · Período · P. médio compra · P. médio venda · Investido · Recuperado · Resultado · actions.
+const SOLD_GRID = 'minmax(0,2fr) 1.4fr 1fr 1fr 1fr 1fr 1fr 4.5rem'
+/** Whether the sold section is open; it starts collapsed. */
+const SHOW_SOLD_KEY = 'securo:assets:showSold'
+
 // Surface the backend's actual error message (FastAPI puts it in
 // response.data.detail) instead of a generic toast. Makes failures
 // diagnosable — e.g. the oversell guard message, or a "Not Found" when a
@@ -318,6 +323,13 @@ export default function AssetsPage() {
   const toggleArchived = (checked: boolean) => {
     setShowArchived(checked)
     localStorage.setItem(SHOW_ARCHIVED_KEY, checked ? '1' : '0')
+  }
+  const [showSold, setShowSold] = useState(() => {
+    try { return localStorage.getItem(SHOW_SOLD_KEY) === '1' } catch { return false }
+  })
+  const toggleSold = (open: boolean) => {
+    setShowSold(open)
+    try { localStorage.setItem(SHOW_SOLD_KEY, open ? '1' : '0') } catch { /* storage unavailable */ }
   }
   // The default list stays loaded underneath the archived one, so a failed
   // archived request leaves the page as it was instead of emptying it.
@@ -632,6 +644,18 @@ export default function AssetsPage() {
 
   const activeAssets = useMemo(() => assetsList?.filter(a => !a.sell_date && !a.is_archived) ?? [], [assetsList])
   const soldAssets = assetsList?.filter(a => a.sell_date && !a.is_archived) ?? []
+  // Realized result per currency, never converted; primary currency first.
+  const soldTotals = (() => {
+    const sums = new Map<string, number>()
+    for (const a of soldAssets) {
+      const amount = getAssetProfit(a)?.amount
+      // In cents, so results that cancel out read +0.00 rather than -0.00.
+      if (amount != null) sums.set(a.currency, (sums.get(a.currency) ?? 0) + Math.round(amount * 100))
+    }
+    return [...sums.entries()]
+      .map(([currency, cents]): [string, number] => [currency, cents / 100])
+      .sort(([a], [b]) => a === userCurrency ? -1 : b === userCurrency ? 1 : a.localeCompare(b))
+  })()
   // Denominator for the "% of portfolio" column: current holdings only, in the
   // user's primary currency, so the active rows add up to 100%. Assets with
   // no resolvable FX rate are left out of the denominator (their rows show
@@ -935,7 +959,7 @@ export default function AssetsPage() {
   // Preço Atual · Rentabilidade · Saldo · % da carteira. Market-priced rows
   // are fully populated; holdings with no recorded cost show "—" for the
   // cost-based columns and offer a one-tap way to add their buys.
-  function renderHoldingRow(asset: Asset) {
+  function renderHoldingRow(asset: Asset, variant: 'holding' | 'sold' = 'holding') {
     const config = getTypeConfig(asset.type)
     const Icon = config.icon
     const isExpanded = expandedId === asset.id
@@ -968,7 +992,7 @@ export default function AssetsPage() {
         <AssetRowContextMenu actions={actions}>
         <div
           className="grid items-center gap-2 px-3 py-3 cursor-pointer hover:bg-muted/20 transition-colors text-sm"
-          style={{ gridTemplateColumns: HOLDINGS_GRID }}
+          style={{ gridTemplateColumns: variant === 'sold' ? SOLD_GRID : HOLDINGS_GRID }}
           onClick={() => setExpandedId(isExpanded ? null : asset.id)}
         >
           {/* Ativo */}
@@ -1009,7 +1033,7 @@ export default function AssetsPage() {
                     })}
                   </Badge>
                 )}
-                {asset.sell_date && (
+                {asset.sell_date && variant !== 'sold' && (
                   <Badge variant="outline" className="text-[9px] px-1 py-0 text-rose-600 border-rose-200">{t('assets.sold')}</Badge>
                 )}
                 {isSynced && !isMarketPriced && (
@@ -1019,6 +1043,38 @@ export default function AssetsPage() {
               <span className="text-[11px] text-muted-foreground truncate block">{asset.ticker && !asset.ticker.startsWith('TD:') ? asset.name : (asset.ticker?.startsWith('TD:') ? 'Tesouro Direto' : t(`assets.type${asset.type.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()).replace(/^./, c => c.toUpperCase())}`))}</span>
             </div>
           </div>
+          {variant === 'sold' ? (
+            <>
+              {/* Período */}
+              <div className="tabular-nums">
+                {asset.purchase_date ? <span className="block">{new Date(asset.purchase_date + 'T00:00:00').toLocaleDateString(dateLocale)}</span> : <span className="block text-muted-foreground">—</span>}
+                {asset.sell_date && (
+                  <span className="block text-[11px] text-muted-foreground">→ {new Date(asset.sell_date + 'T00:00:00').toLocaleDateString(dateLocale)}</span>
+                )}
+              </div>
+              {[asset.average_buy_price, asset.average_sell_price, asset.sold_cost, asset.sale_proceeds].map((value, i) => (
+                <div key={i} className="text-end tabular-nums">
+                  {value != null ? mask(formatCurrency(value, asset.currency, locale)) : <span className="text-muted-foreground">—</span>}
+                </div>
+              ))}
+              {/* Resultado */}
+              <div className="text-end tabular-nums">
+                {profit ? (
+                  <span className={profit.amount >= 0 ? 'text-emerald-600' : 'text-rose-500'}>
+                    <span className="block">
+                      <span dir="ltr">{profit.amount >= 0 ? '+' : ''}{mask(formatCurrency(profit.amount, asset.currency, locale))}</span>
+                    </span>
+                    {profit.percentage != null && (
+                      <span className="block text-[10px]">
+                        {profit.percentage >= 0 ? '+' : ''}{profit.percentage.toFixed(1)}%
+                      </span>
+                    )}
+                  </span>
+                ) : <span className="text-muted-foreground">—</span>}
+              </div>
+            </>
+          ) : (
+            <>
           {/* Quant. */}
           <div className="text-end tabular-nums text-muted-foreground">
             {asset.units != null ? mask(`${asset.units}`) : '—'}
@@ -1076,6 +1132,8 @@ export default function AssetsPage() {
           <div className="text-end tabular-nums text-muted-foreground">
             {pctOfPortfolio != null ? `${pctOfPortfolio.toFixed(1)}%` : '—'}
           </div>
+            </>
+          )}
           {/* actions */}
           <div className="flex items-center justify-end gap-0.5">
             {actions.length > 0 && <AssetRowMenuButton label={`${t('common.more')}: ${displayName}`} actions={actions} />}
@@ -1119,7 +1177,24 @@ export default function AssetsPage() {
   }
 
   // Column header for a holdings section — same grid template as the rows.
-  function renderHoldingsHeader() {
+  function renderHoldingsHeader(variant: 'holding' | 'sold' = 'holding') {
+    if (variant === 'sold') {
+      return (
+        <div
+          className="grid items-center gap-2 px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-b border-border"
+          style={{ gridTemplateColumns: SOLD_GRID }}
+        >
+          <div>{t('assets.colAsset')}</div>
+          <div>{t('assets.colDates')}</div>
+          <div className="text-end">{t('assets.colAvgBuyPrice')}</div>
+          <div className="text-end">{t('assets.colAvgSellPrice')}</div>
+          <div className="text-end">{t('assets.colInvested')}</div>
+          <div className="text-end">{t('assets.colProceeds')}</div>
+          <div className="text-end">{t('assets.colResult')}</div>
+          <div />
+        </div>
+      )
+    }
     return (
       <div
         className="grid items-center gap-2 px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-b border-border"
@@ -1139,12 +1214,12 @@ export default function AssetsPage() {
 
   // Wrap a set of holding rows in a horizontally-scrollable table shell so the
   // columns stay aligned (and usable on narrow screens).
-  function renderHoldingsTable(rows: Asset[]) {
+  function renderHoldingsTable(rows: Asset[], variant: 'holding' | 'sold' = 'holding') {
     return (
       <div className="rounded-xl border border-border bg-card shadow-sm overflow-x-auto">
         <div className="min-w-[720px]">
-          {renderHoldingsHeader()}
-          {rows.map(renderHoldingRow)}
+          {renderHoldingsHeader(variant)}
+          {rows.map((row) => renderHoldingRow(row, variant))}
         </div>
       </div>
     )
@@ -1440,10 +1515,31 @@ export default function AssetsPage() {
           {/* Sold Assets */}
           {soldAssets.length > 0 && (
             <div className="space-y-2">
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">
-                {t('assets.soldAssets')}
+              <h3>
+              <button
+                type="button"
+                onClick={() => toggleSold(!showSold)}
+                aria-expanded={showSold}
+                className="flex w-full items-center gap-2 px-1 text-start"
+              >
+                {showSold ? <ChevronDown size={14} className="text-muted-foreground" /> : <ChevronRight size={14} className="text-muted-foreground" />}
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  {t('assets.soldAssets')}
+                </span>
+                <span className="text-xs text-muted-foreground">· {soldAssets.length} {t('assets.itemsCount')}</span>
+                {soldTotals.length > 0 && (
+                  <span className="ms-auto flex flex-wrap justify-end gap-x-2 text-xs tabular-nums" title={t('assets.soldTotalsTitle')}>
+                    <span className="text-muted-foreground">{t('assets.soldRealized')}</span>
+                    {soldTotals.map(([currency, amount]) => (
+                      <span key={currency} dir="ltr" className={amount >= 0 ? 'text-emerald-600' : 'text-rose-500'}>
+                        {amount >= 0 ? '+' : ''}{mask(formatCurrency(amount, currency, locale))}
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </button>
               </h3>
-              {renderHoldingsTable(soldAssets)}
+              {showSold && renderHoldingsTable(soldAssets, 'sold')}
             </div>
           )}
 
