@@ -3,9 +3,10 @@ from datetime import date as _Date
 from decimal import Decimal
 from typing import Annotated, Optional
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
 from pydantic_core import PydanticCustomError
 
+from app.core.currency import parse_supported_currency
 from app.core.money import MAX_MONEY_AMOUNT
 
 # A budget limit is money in the same Numeric(15, 2) column as a transaction
@@ -179,6 +180,14 @@ class ExpectedIncomeCreate(BaseModel):
         default=None, ge=Decimal("0"), le=Decimal("9999999999999.99")
     )
     currency: Optional[str] = Field(default=None, max_length=3)
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def check_currency(cls, value: object) -> object:
+        # The column is varchar(3): "usd", "  " and "XYZ" were stored as typed,
+        # and only the first even had a chance to convert. Normalize a
+        # supported code and refuse the rest at the schema (422).
+        return parse_supported_currency(value) if isinstance(value, str) else value
 
 
 class ExpectedIncomeRead(BaseModel):

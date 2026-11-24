@@ -129,6 +129,52 @@ async def test_a_currency_longer_than_the_code_column_is_refused(client, auth_he
 
 
 @pytest.mark.asyncio
+async def test_a_supported_currency_is_trimmed_and_upper_cased(client, auth_headers):
+    put = await client.put(
+        "/api/budgets/expected-income",
+        json={"month": _MONTH, "amount": "10.00", "currency": " usd "},
+        headers=auth_headers,
+    )
+    assert put.status_code == 200, put.text
+    assert put.json()["currency"] == "USD"
+
+    get = await client.get(
+        "/api/budgets/expected-income", params={"month": _MONTH}, headers=auth_headers
+    )
+    assert get.status_code == 200
+    assert get.json()["currency"] == "USD"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("currency", ["XYZ", "", "  "])
+async def test_an_unsupported_or_empty_currency_is_refused(client, auth_headers, currency):
+    put = await client.put(
+        "/api/budgets/expected-income",
+        json={"month": _MONTH, "amount": "10.00", "currency": currency},
+        headers=auth_headers,
+    )
+    assert put.status_code == 422, put.text
+    assert "currency" in put.text
+
+    get = await client.get(
+        "/api/budgets/expected-income", params={"month": _MONTH}, headers=auth_headers
+    )
+    assert get.status_code == 200
+    assert get.json() is None
+
+
+@pytest.mark.asyncio
+async def test_a_null_currency_keeps_the_writer_display_currency(client, auth_headers):
+    put = await client.put(
+        "/api/budgets/expected-income",
+        json={"month": _MONTH, "amount": "10.00", "currency": None},
+        headers=auth_headers,
+    )
+    assert put.status_code == 200, put.text
+    assert put.json()["currency"] == "BRL"
+
+
+@pytest.mark.asyncio
 async def test_an_amount_beyond_the_money_column_is_refused(client, auth_headers):
     too_big = await client.put(
         "/api/budgets/expected-income",
