@@ -303,11 +303,17 @@ def _accounts_with_balances_query(
             func.coalesce(future_charges_sq.c.future_charges, 0).label("future_charges"),
             open_bill_sq.c.total_amount.label("open_bill_total"),
             # The opening balance's date, so the edit form can show it and
-            # leave it alone (issue #1204).
+            # leave it alone (issue #1204). Upper-cased on both sides here
+            # and at the other four sites that match the account currency:
+            # a sync stores the provider's code as it comes, so a row and
+            # its account can name one currency in two cases. Comparing
+            # them exactly would miss the opening and the update path would
+            # add a second one. Same rule as `amount_in_account_currency`.
             select(func.min(Transaction.date))
             .where(
                 Transaction.account_id == Account.id,
                 Transaction.source == "opening_balance",
+                func.upper(Transaction.currency) == func.upper(Account.currency),
             )
             .correlate(Account)
             .scalar_subquery()
@@ -739,6 +745,7 @@ async def update_account(
             select(Transaction).where(
                 Transaction.account_id == account_id,
                 Transaction.source == "opening_balance",
+                func.upper(Transaction.currency) == func.upper(account.currency),
             )
         )
         opening_tx = existing_opening.scalar_one_or_none()
@@ -772,6 +779,7 @@ async def update_account(
             select(Transaction).where(
                 Transaction.account_id == account_id,
                 Transaction.source == "opening_balance",
+                func.upper(Transaction.currency) == func.upper(account.currency),
             )
         )
         opening_tx = existing_opening.scalar_one_or_none()
@@ -897,7 +905,13 @@ async def sync_opening_balance_for_connected_account(
     sum_result = await session.execute(
         select(func.coalesce(func.sum(signed_amount), 0)).where(
             Transaction.account_id == account.id,
-            Transaction.source != "opening_balance",
+            # Every row but the opening this call is about to rewrite. An
+            # opening in another currency has to be counted here, or the
+            # offset below leaves the account short by exactly its amount.
+            or_(
+                Transaction.source != "opening_balance",
+                func.upper(Transaction.currency) != func.upper(account.currency),
+            ),
             Transaction.date <= balance_cutoff,
             Transaction.is_ignored == False,
             or_(
@@ -921,6 +935,7 @@ async def sync_opening_balance_for_connected_account(
         .where(
             Transaction.account_id == account.id,
             Transaction.source == "opening_balance",
+            func.upper(Transaction.currency) == func.upper(account.currency),
         )
         .order_by(Transaction.created_at.desc(), Transaction.id.desc())
     )
@@ -995,7 +1010,11 @@ async def keep_balance_as_manual(session: AsyncSession, account: Account, balanc
     if abs(offset) < Decimal("0.01"):
         return
     opening = await session.scalar(
-        select(Transaction).where(Transaction.account_id == account.id, Transaction.source == "opening_balance")
+        select(Transaction).where(
+            Transaction.account_id == account.id,
+            Transaction.source == "opening_balance",
+            func.upper(Transaction.currency) == func.upper(account.currency),
+        )
     )
     if opening is None:
         oldest = await session.scalar(select(func.min(Transaction.date)).where(Transaction.account_id == account.id))
