@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { renderWithProviders, t } from '@/test/utils'
@@ -21,7 +21,7 @@ vi.mock('@/lib/api', () => ({
   categoryGroups: { list: vi.fn().mockResolvedValue([]) },
 }))
 
-import { documentAi } from '@/lib/api'
+import { accounts, documentAi } from '@/lib/api'
 import { isDocumentFile, isImageFile } from '@/hooks/use-document-extraction'
 import { DocumentStatementSummary } from './document-statement-summary'
 import { ReceiptScanDialog } from './receipt-scan-dialog'
@@ -107,5 +107,53 @@ describe('ReceiptScanDialog', () => {
     renderWithProviders(<ReceiptScanDialog open onOpenChange={() => {}} />)
     expect(await screen.findByText(t('documentAi.textOnlyModel', { model: 'llama3.1:8b' }))).toBeInTheDocument()
     expect(screen.getByRole('button', { name: t('documentAi.receipt.takePhoto') })).toBeDisabled()
+  })
+
+  async function readReceipt() {
+    status.mockResolvedValue({
+      enabled: true, configured: true, provider: 'ollama', model: 'qwen2.5vl:7b', connection_id: 'c1', connection_name: 'Local',
+      vision: 'yes', vision_source: 'provider', max_file_size_mb: 10, max_pages: 20,
+    })
+    // Sorted by name, the loan comes first.
+    vi.mocked(accounts.list).mockResolvedValue([
+      { id: 'loan', name: 'Car loan', type: 'loan', is_closed: false },
+      { id: 'checking', name: 'Checking', type: 'checking', is_closed: false },
+    ] as never)
+    const read = extraction({
+      id: 'r1', kind: 'receipt', filename: 'receipt.jpg', content_type: 'image/jpeg', statement: null,
+      receipt: {
+        merchant: 'Corner Market', merchant_tax_id: null, date: '2026-11-24', total: '35.70', currency: 'BRL',
+        kind: 'purchase', payment_method: null, category_hint: null, items: [],
+      },
+      matches: [{
+        transaction_id: 't1', date: '2026-11-24', description: 'CORNER MARKET LTDA', amount: '35.70', currency: 'BRL',
+        type: 'debit', account_id: 'checking', account_name: 'Checking', attachments: 0,
+      }],
+    })
+    vi.mocked(documentAi.upload).mockResolvedValue(read)
+    vi.mocked(documentAi.get).mockResolvedValue(read)
+    renderWithProviders(<ReceiptScanDialog open onOpenChange={() => {}} />)
+    const input = document.querySelector('input[type="file"]:not([capture])') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [new File(['x'], 'receipt.jpg', { type: 'image/jpeg' })] } })
+    return screen.findByTestId('receipt-result')
+  }
+
+  it('leaves the account for the person to pick, so a receipt never lands on the first account (a loan) unnoticed', async () => {
+    await readReceipt()
+    const account = screen.getByLabelText(t('transactions.account')) as HTMLSelectElement
+    await waitFor(() => expect(within(account).getByRole('option', { name: 'Car loan' })).toBeInTheDocument())
+    expect(account.value).toBe('')
+    const create = screen.getByRole('button', { name: t('documentAi.receipt.create') })
+    expect(create).toBeDisabled()
+    fireEvent.change(account, { target: { value: 'checking' } })
+    expect(create).toBeEnabled()
+  })
+
+  it('lays the dialog out in one column that can shrink to a phone width', async () => {
+    await readReceipt()
+    // The default implicit grid column grows to the widest child (the account
+    // select's longest option, a match row), pushing Attach off a 390px screen.
+    expect(screen.getByRole('dialog').className).toContain('grid-cols-[minmax(0,1fr)]')
+    expect(screen.getByRole('button', { name: t('documentAi.receipt.attach') })).toBeInTheDocument()
   })
 })

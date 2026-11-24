@@ -33,7 +33,7 @@ type Draft = {
   categoryId: string
 }
 
-function draftFrom(extraction: DocumentExtraction, accountId: string): Draft {
+function draftFrom(extraction: DocumentExtraction): Draft {
   const receipt = extraction.receipt
   return {
     description: receipt?.merchant ?? '',
@@ -41,7 +41,9 @@ function draftFrom(extraction: DocumentExtraction, accountId: string): Draft {
     date: receipt?.date ?? new Date().toISOString().slice(0, 10),
     type: receipt?.kind === 'refund' ? 'credit' : 'debit',
     currency: receipt?.currency ?? '',
-    accountId,
+    // No account up front: the first one in the list can be a loan, and a
+    // receipt booked there unnoticed costs more than one more pick.
+    accountId: '',
     categoryId: extraction.suggested_category_id ?? '',
   }
 }
@@ -70,7 +72,7 @@ export function ReceiptScanDialog({ open, onOpenChange }: { open: boolean; onOpe
   // Seed the form once per read, during render (no effect round trip).
   if (extraction?.status === 'done' && draftFor !== extraction.id) {
     setDraftFor(extraction.id)
-    setDraft(draftFrom(extraction, openAccounts[0]?.id ?? ''))
+    setDraft(draftFrom(extraction))
   }
 
   useEffect(() => {
@@ -131,7 +133,10 @@ export function ReceiptScanDialog({ open, onOpenChange }: { open: boolean; onOpe
 
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : close())}>
-      <DialogContent className="sm:max-w-lg">
+      {/* One column that can shrink: with the grid's implicit auto column, the
+          account select's longest option and the match rows set the width
+          and push the dialog past a phone screen. */}
+      <DialogContent className="grid-cols-[minmax(0,1fr)] sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{t('documentAi.receipt.title')}</DialogTitle>
           <DialogDescription>{t('documentAi.receipt.description')}</DialogDescription>
