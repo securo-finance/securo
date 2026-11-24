@@ -1559,7 +1559,8 @@ async def test_provider_categories_lists_distinct_workspace_values(
     """The rule editor is fed the exact labels the provider sent (#280).
 
     Values come from `raw_data["category"]`, are de-duplicated, ordered
-    case-insensitively, and never leak from another workspace.
+    case-insensitively, and never leak from another workspace. A numeric code
+    comes in its text form, the same string a rule matches against.
     """
     account = Account(
         id=uuid.uuid4(),
@@ -1610,6 +1611,15 @@ async def test_provider_categories_lists_distinct_workspace_values(
         _row(test_workspace.id, account.id, "MANUAL", None, 4),
         _row(test_workspace.id, account.id, "NO CATEGORY KEY", {"other": "x"}, 5),
         _row(test_workspace.id, account.id, "EMPTY CATEGORY", {"category": ""}, 6),
+        # Payloads whose category is not a label the engine matches: a list
+        # and an object are never offered (#353).
+        _row(test_workspace.id, account.id, "A LIST", {"category": ["Groceries"]}, 9),
+        _row(test_workspace.id, account.id, "AN OBJECT", {"category": {"id": 7}}, 10),
+        # A numeric code is offered in its text form, which is exactly what a
+        # saved rule already matched: 5411 beside 42 as the two codes.
+        _row(test_workspace.id, account.id, "NUMERIC CODE", {"category": 42}, 8),
+        _row(test_workspace.id, account.id, "ANOTHER CODE", {"category": 5411}, 11),
+        _row(test_workspace.id, account.id, "SAME CODE AGAIN", {"category": 42}, 12),
         # Another workspace's label must not show up here.
         _row(other_workspace.id, other_account.id, "FLIGHT", {"category": "Travel"}, 7),
     ]
@@ -1619,7 +1629,7 @@ async def test_provider_categories_lists_distinct_workspace_values(
     response = await client.get("/api/rules/provider-categories", headers=auth_headers)
 
     assert response.status_code == 200
-    assert response.json() == ["Food and drinks", "Groceries"]
+    assert response.json() == ["42", "5411", "Food and drinks", "Groceries"]
 
 
 @pytest.mark.asyncio
@@ -1648,3 +1658,65 @@ async def test_transaction_detail_exposes_provider_category(
 
     assert synced_body["provider_category"] == "Groceries"
     assert manual_body["provider_category"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"category": ["Groceries"]},
+        {"category": {"id": 7}},
+        {"category": True},
+        {"category": ""},
+        {"category": "   "},
+        {"category": None},
+    ],
+    ids=["list", "object", "bool", "empty", "blank", "null"],
+)
+async def test_transaction_reads_survive_a_non_textual_provider_category(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_transactions, payload,
+):
+    """A payload whose category is not a label reads as no label, never as a 500.
+
+    `TransactionRead.provider_category` is a string, and the bank or plugin
+    payload is whatever it sent: a value it cannot carry used to fail
+    validation of the whole response, taking the month's list down (#353).
+    """
+    row = test_transactions[0]
+    row.raw_data = payload
+    await session.commit()
+
+    detail = await client.get(f"/api/transactions/{row.id}", headers=auth_headers)
+    listing = await client.get(
+        "/api/transactions",
+        params={"from": row.date.isoformat(), "to": row.date.isoformat()},
+        headers=auth_headers,
+    )
+
+    assert detail.status_code == 200
+    assert detail.json()["provider_category"] is None
+    assert listing.status_code == 200
+    items = listing.json()
+    items = items["items"] if isinstance(items, dict) else items
+    listed = next(item for item in items if item["id"] == str(row.id))
+    assert listed["provider_category"] is None
+
+
+@pytest.mark.asyncio
+async def test_transaction_reads_a_numeric_provider_category_as_text(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_transactions,
+):
+    """A numeric code reads as its text form, not as a 500 and not as no label.
+
+    Dropping it would silently stop a saved rule on an MCC like 5411 from
+    matching on the next sync: `_match_condition` has always compared the text
+    form of the value (#353).
+    """
+    row = test_transactions[0]
+    row.raw_data = {"category": 5411}
+    await session.commit()
+
+    detail = await client.get(f"/api/transactions/{row.id}", headers=auth_headers)
+
+    assert detail.status_code == 200
+    assert detail.json()["provider_category"] == "5411"

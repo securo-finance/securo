@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import axios from 'axios'
-import { Copy, LogIn, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { Copy, FileUp, KeyRound, LogIn, Play, Plus, RefreshCw, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { invalidateSyncedRecords } from '@/lib/invalidate-queries'
@@ -21,9 +21,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { plugins as pluginsApi } from '@/lib/api'
 import { localized } from '@/lib/localized-text'
-import { relativeDate } from '@/lib/plugin-format'
+import { intervalLabel, relativeDate } from '@/lib/plugin-format'
 import { cn } from '@/lib/utils'
-import type { InstalledPlugin, PluginConnection, PluginIntegration } from '@/types'
+import type { InstalledPlugin, PluginConnection, PluginField, PluginFileValue, PluginIntegration } from '@/types'
 
 const STATUS_STYLE: Record<PluginConnection['status'], string> = {
   active: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
@@ -37,6 +37,16 @@ function errorMessage(err: unknown, fallback: string): string {
   return fallback
 }
 
+/** A file's content in base64, as the API takes it. */
+function readFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result).split(',', 2)[1] ?? '')
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+
 /** The connections a workspace made through one installed plugin with code. */
 export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
   const { t, i18n } = useTranslation()
@@ -44,6 +54,7 @@ export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
   const { canWrite } = useWorkspace()
   const queryClient = useQueryClient()
   const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState<PluginConnection | null>(null)
   const [removing, setRemoving] = useState<PluginConnection | null>(null)
 
   const { data, isLoading, isError, refetch } = useQuery({
@@ -68,6 +79,22 @@ export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
     },
     onError: (err) => toast.error(errorMessage(err, t('plugins.connections.syncFailed'))),
   })
+
+  const routineMutation = useMutation({
+    mutationFn: pluginsApi.runRoutine,
+    onSuccess: (connection, { routine }) => {
+      void refresh()
+      const ran = connection.routines?.find((r) => r.key === routine)
+      if (ran && !ran.last_error) toast.success(t('plugins.connections.routineRan', { name: routineName(connection.integration, routine) }))
+      else toast.error(ran?.last_error || t('plugins.connections.routineFailed'))
+    },
+    onError: (err) => toast.error(errorMessage(err, t('plugins.connections.routineFailed'))),
+  })
+
+  const routineName = (integrationKey: string, key: string) => {
+    const routine = integrations.get(integrationKey)?.routines?.find((r) => r.key === key)
+    return routine ? localized(routine.name, lang) : key
+  }
 
   const authorizeMutation = useMutation({
     mutationFn: pluginsApi.authorize,
@@ -108,6 +135,9 @@ export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
         <ul className="divide-y rounded-xl border bg-card">
           {connections.map((connection) => {
             const integration = integrations.get(connection.integration)
+            // An integration with routines and no schedule of its own only runs its routines.
+            const syncs =
+              !integration || integration.sync_minutes !== null || !!integration.provides?.length || !integration.routines?.length
             // Sign-in integrations sign in again; for keys, "needs auth" means the key was refused.
             const signIn = connection.status === 'needs_auth' && integration?.auth === 'oauth'
             const statusKey =
@@ -126,13 +156,55 @@ export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {integration ? localized(integration.name, lang) : connection.integration}
-                    {' · '}
-                    {connection.last_sync_at
-                      ? t('plugins.connections.lastSync', { when: relativeDate(connection.last_sync_at, lang) })
-                      : t('plugins.connections.neverSynced')}
+                    {syncs && (
+                      <>
+                        {' · '}
+                        {connection.last_sync_at
+                          ? t('plugins.connections.lastSync', { when: relativeDate(connection.last_sync_at, lang) })
+                          : t('plugins.connections.neverSynced')}
+                      </>
+                    )}
                   </p>
                   {connection.last_error && connection.status !== 'active' && (
                     <p className="text-xs text-rose-700 dark:text-rose-300">{connection.last_error}</p>
+                  )}
+                  {(connection.routines?.length ?? 0) > 0 && (
+                    <ul className="mt-2 space-y-1.5 border-s ps-3" aria-label={t('plugins.connections.routines')}>
+                      {connection.routines!.map((routine) => {
+                        const running =
+                          routineMutation.isPending &&
+                          routineMutation.variables?.connectionId === connection.id &&
+                          routineMutation.variables?.routine === routine.key
+                        return (
+                          <li key={routine.key} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+                            <span className="font-medium text-foreground">{routineName(connection.integration, routine.key)}</span>
+                            <span className="text-muted-foreground">
+                              {t('plugins.connections.routineEvery', { interval: intervalLabel(routine.every_minutes, lang) })}
+                              {' · '}
+                              {routine.last_run_at
+                                ? t('plugins.connections.routineLastRun', { when: relativeDate(routine.last_run_at, lang) })
+                                : t('plugins.connections.routineNeverRan')}
+                            </span>
+                            {canWrite && connection.status !== 'needs_auth' && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 px-1.5 text-xs"
+                                disabled={running}
+                                aria-label={t('plugins.connections.runRoutineAria', { name: routineName(connection.integration, routine.key) })}
+                                onClick={() => routineMutation.mutate({ connectionId: connection.id, routine: routine.key })}
+                              >
+                                <Play size={12} className={cn('me-1', running && 'animate-pulse')} />
+                                {t('plugins.connections.runRoutine')}
+                              </Button>
+                            )}
+                            {routine.last_error && (
+                              <span className="basis-full text-rose-700 dark:text-rose-300">{routine.last_error}</span>
+                            )}
+                          </li>
+                        )
+                      })}
+                    </ul>
                   )}
                 </div>
                 {canWrite && (
@@ -142,10 +214,19 @@ export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
                         <LogIn size={14} className="me-1" />
                         {t('plugins.connections.signIn')}
                       </Button>
-                    ) : (
+                    ) : syncs ? (
                       <Button size="sm" variant="outline" disabled={busy} onClick={() => syncMutation.mutate(connection.id)}>
                         <RefreshCw size={14} className={cn('me-1', busy && 'animate-spin')} />
                         {t('plugins.connections.syncNow')}
+                      </Button>
+                    ) : null}
+                    {!signIn && integration?.auth !== 'oauth' && (
+                      // The same form that connected it: new keys, or a new name.
+                      <Button size="sm" variant="outline" onClick={() => setEditing(connection)}>
+                        <KeyRound size={14} className="me-1" />
+                        {connection.status === 'needs_auth'
+                          ? t('plugins.connections.updateKeys')
+                          : t('plugins.connections.edit')}
                       </Button>
                     )}
                     <Button
@@ -168,6 +249,14 @@ export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
 
       {adding && (
         <PluginConnectionDialog plugin={plugin} onClose={() => setAdding(false)} onDone={() => void refresh()} />
+      )}
+      {editing && (
+        <PluginConnectionDialog
+          plugin={plugin}
+          connection={editing}
+          onClose={() => setEditing(null)}
+          onDone={() => void refresh()}
+        />
       )}
       {removing && (
         <RemoveConnectionDialog
@@ -204,7 +293,7 @@ export function PluginConnectionDialog({
   const lang = i18n.language
   const [key, setKey] = useState(connection?.integration ?? preselected ?? plugin.integrations[0]?.key ?? '')
   const [name, setName] = useState(connection?.name ?? '')
-  const [values, setValues] = useState<Record<string, string>>({})
+  const [values, setValues] = useState<Record<string, string | PluginFileValue>>({})
   const integration: PluginIntegration | undefined = plugin.integrations.find((i) => i.key === key)
   const redirectUri = plugin.redirect_uri ?? `${window.location.origin}/plugins/oauth/callback`
   const choosing = !connection && !preselected && plugin.integrations.length > 1
@@ -234,7 +323,44 @@ export function PluginConnectionDialog({
     onError: (err) => toast.error(errorMessage(err, t('common.error'))),
   })
 
-  const missing = integration?.fields.some((f) => f.required && !values[f.key]?.trim() && !isSet(f.key)) ?? true
+  const filled = (field: PluginField) => {
+    const value = values[field.key]
+    return typeof value === 'string' ? value.trim() !== '' : value !== undefined
+  }
+  const missing = integration?.fields.some((f) => f.required && !filled(f) && !isSet(f.key)) ?? true
+
+  const pickFile = async (field: PluginField, file: File | undefined) => {
+    // A new pick replaces the last one at once: a refused file never leaves the previous one to be sent.
+    setValues((current) => {
+      const next = { ...current }
+      delete next[field.key]
+      return next
+    })
+    if (!file) return
+    const accept = field.accept ?? []
+    const maxKb = field.max_kb ?? 512
+    if (accept.length > 0 && !accept.some((ext) => file.name.toLowerCase().endsWith(ext))) {
+      toast.error(t('plugins.connections.fileWrongType', { name: file.name, types: accept.join(', ') }))
+      return
+    }
+    if (file.size > maxKb * 1024) {
+      toast.error(t('plugins.connections.fileTooBig', { name: file.name, size: maxKb }))
+      return
+    }
+    try {
+      const content = await readFile(file)
+      setValues((current) => ({ ...current, [field.key]: { name: file.name, content } }))
+    } catch {
+      toast.error(t('plugins.connections.fileReadFailed', { name: file.name }))
+    }
+  }
+
+  const currentFile = (field: PluginField): string | null => {
+    if (!isSet(field.key)) return null
+    const stored = connection?.config?.[field.key]
+    if (stored && typeof stored === 'object') return t('plugins.connections.currentFile', { name: stored.name })
+    return t('plugins.connections.fileSaved')
+  }
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !mutation.isPending) onClose() }}>
@@ -299,18 +425,37 @@ export function PluginConnectionDialog({
                 {localized(field.label, lang)}
                 {!field.required && <span className="ms-1 font-normal text-muted-foreground">({t('plugins.connections.optional')})</span>}
               </Label>
-              <Input
-                id={`plugin-field-${field.key}`}
-                type={field.secret ? 'password' : 'text'}
-                autoComplete="off"
-                placeholder={
-                  isSet(field.key)
-                    ? field.secret ? '••••••••' : String(connection?.config?.[field.key] ?? '')
-                    : undefined
-                }
-                value={values[field.key] ?? ''}
-                onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.value }))}
-              />
+              {field.type === 'file' ? (
+                <>
+                  <Input
+                    id={`plugin-field-${field.key}`}
+                    type="file"
+                    accept={field.accept?.length ? field.accept.join(',') : undefined}
+                    className="cursor-pointer file:me-3 file:cursor-pointer"
+                    onChange={(event) => void pickFile(field, event.target.files?.[0])}
+                  />
+                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <FileUp size={12} className="shrink-0" />
+                    {field.accept?.length
+                      ? t('plugins.connections.fileAccepts', { types: field.accept.join(', '), size: field.max_kb ?? 512 })
+                      : t('plugins.connections.fileAny', { size: field.max_kb ?? 512 })}
+                    {currentFile(field) && <span>{' · '}{currentFile(field)}</span>}
+                  </p>
+                </>
+              ) : (
+                <Input
+                  id={`plugin-field-${field.key}`}
+                  type={field.secret ? 'password' : 'text'}
+                  autoComplete="off"
+                  placeholder={
+                    isSet(field.key)
+                      ? field.secret ? '••••••••' : String(connection?.config?.[field.key] ?? '')
+                      : undefined
+                  }
+                  value={(values[field.key] as string | undefined) ?? ''}
+                  onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.value }))}
+                />
+              )}
             </div>
           ))}
 

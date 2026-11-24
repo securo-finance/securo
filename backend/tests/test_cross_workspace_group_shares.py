@@ -72,9 +72,12 @@ async def _make_category(session, user, workspace, name: str, color: str) -> Cat
 
 async def _record_split_expense(
     session, payer, workspace, members, amount: str, description: str,
-    category: Category | None = None,
+    category: Category | None = None, txn_type: str = "debit",
+    amount_primary: str | None = None,
+    splits: TransactionSplitsInput | None = None,
 ) -> Transaction:
-    """`payer` pays `amount` from an account in `workspace`, split equally."""
+    """`payer` pays `amount` from an account in `workspace`, split equally
+    unless `splits` says otherwise."""
     account = Account(
         id=uuid.uuid4(),
         user_id=payer.id,
@@ -95,8 +98,9 @@ async def _record_split_expense(
         description=description,
         amount=Decimal(amount),
         currency="BRL",
+        amount_primary=Decimal(amount_primary) if amount_primary else None,
         date=date.today(),
-        type="debit",
+        type=txn_type,
         source="manual",
     )
     session.add(tx)
@@ -104,7 +108,8 @@ async def _record_split_expense(
     await split_service.replace_splits(
         session,
         tx,
-        TransactionSplitsInput(
+        splits
+        or TransactionSplitsInput(
             share_type="equal",
             splits=[TransactionSplitInput(group_member_id=m.id) for m in members],
         ),
@@ -306,6 +311,44 @@ async def test_reports_count_the_owners_share_of_an_invited_members_expense(
 
 
 @pytest.mark.asyncio
+async def test_a_negative_exact_share_on_an_unstamped_row_lowers_the_total(
+    session: AsyncSession, test_user, test_workspace
+):
+    """An exact split may give the owner a negative share. On a row without
+    `amount_primary` it must lower the total read in the owner's currency,
+    as it does on a stamped row and in the nominal sum, not add to it."""
+    _group, me, friend, guest, guest_ws = await _trip_group(
+        session, test_user, test_workspace, linked_self=False
+    )
+    await _record_split_expense(
+        session, guest, guest_ws, [me, friend], "200.00", "Hotel",
+        amount_primary="200.00",
+    )
+    await _record_split_expense(
+        session, guest, guest_ws, [me, friend], "40.00", "Refunded taxi",
+        splits=TransactionSplitsInput(
+            share_type="exact",
+            splits=[
+                TransactionSplitInput(
+                    group_member_id=me.id, share_amount=Decimal("-20.00")
+                ),
+                TransactionSplitInput(
+                    group_member_id=friend.id, share_amount=Decimal("60.00")
+                ),
+            ],
+        ),
+    )
+
+    today = date.today()
+    month_start = today.replace(day=1)
+    month_end = (month_start + timedelta(days=32)).replace(day=1)
+    _income, expense = await viewer_shared_pnl(
+        session, test_user.id, month_start, month_end, primary_currency="BRL"
+    )
+    assert expense == pytest.approx(80.0)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("linked_self", [False, True])
 async def test_dashboard_counts_a_third_party_row_in_the_owners_workspace_once(
     session: AsyncSession, test_user, test_workspace, linked_self
@@ -395,6 +438,65 @@ async def test_report_category_totals_count_the_owners_shared_share(
         point for point in trend["Groceries"].series if point.date == current_point.date
     )
     assert current_series.value == pytest.approx(50.0)
+
+
+@pytest.mark.asyncio
+async def test_report_views_skip_a_shared_share_of_unknown_type(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Only debit and credit are spending and income, in every view.
+
+    The summary's shared-splits query sums just those two types, so the
+    owner's share of a row saved as "expense" never reached it. The
+    composition, the category trend and the trend point read every
+    non-credit share as expense, so the same share showed up there alone
+    and the views disagreed (#345)."""
+    _group, me, friend, guest, guest_ws = await _trip_group(
+        session, test_user, test_workspace, linked_self=False
+    )
+    groceries = await _make_category(
+        session, guest, guest_ws, "Groceries", "#22C55E"
+    )
+    odd = await _make_category(session, guest, guest_ws, "Odd", "#EF4444")
+    await _record_split_expense(
+        session, guest, guest_ws, [me, friend], "100.00", "Groceries",
+        category=groceries,
+    )
+    await _record_split_expense(
+        session, guest, guest_ws, [me, friend], "80.00", "Odd purchase",
+        category=odd, txn_type="expense",
+    )
+
+    report = await report_service.get_income_expenses_report(
+        session, test_workspace.id, test_user.id, months=1
+    )
+
+    expenses = next(b for b in report.summary.breakdowns if b.key == "expenses")
+    assert expenses.value == pytest.approx(50.0)
+
+    composition = {
+        item.label: item.value
+        for item in report.composition
+        if item.group == "expenses"
+    }
+    assert composition == {"Groceries": pytest.approx(50.0)}
+
+    trend = {
+        item.label: item
+        for item in report.category_trend
+        if item.group == "expenses"
+    }
+    assert set(trend) == {"Groceries"}
+    assert trend["Groceries"].total == pytest.approx(50.0)
+
+    current_point = report.trend[-1]
+    assert current_point.breakdowns["expenses"] == pytest.approx(50.0)
+    point_composition = {
+        item.label: item.value
+        for item in current_point.composition
+        if item.group == "expenses"
+    }
+    assert point_composition == {"Groceries": pytest.approx(50.0)}
 
 
 @pytest.mark.asyncio

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from app.core.app_clock import use_timezone
 from app.worker import celery_app
 from app.core.config import get_settings
+from app.core.money import bounded_conversion
 from app.models.transaction import Transaction
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.asset import Asset
@@ -80,13 +81,16 @@ async def _backfill_primary_amounts() -> dict:
             # 4. Re-stamp candidates only when a real rate is now resolvable.
             for tx in candidate_txs:
                 primary_currency = _primary(tx.user_id)
+                before = (tx.amount_primary, tx.fx_rate_used)
                 try:
                     rate = await _resolve_rate(
                         session, tx.currency, primary_currency, tx.date,
                     )
                     if rate is None:
                         continue  # still no rate — leave as-is, heal next run
-                    tx.amount_primary = (Decimal(str(tx.amount)) * rate).quantize(Decimal("0.01"))
+                    tx.amount_primary = bounded_conversion(
+                        (Decimal(str(tx.amount)) * rate).quantize(Decimal("0.01"))
+                    )
                     tx.fx_rate_used = rate
                     # A repair of the reporting stamp: a bank charge or an
                     # amount the user typed stays.
@@ -95,6 +99,9 @@ async def _backfill_primary_amounts() -> dict:
                     )
                     stats["transactions"] += 1
                 except Exception:
+                    # Left as it was, not half stamped: the account leg can
+                    # convert past the column after the primary one fit (#422).
+                    tx.amount_primary, tx.fx_rate_used = before
                     logger.exception("Failed to backfill tx %s", tx.id)
             await session.commit()
 

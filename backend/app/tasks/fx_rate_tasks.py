@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from app.core.app_clock import use_timezone
 from app.worker import celery_app
 from app.core.config import get_settings
+from app.core.money import MoneyOutOfRange
 
 logger = logging.getLogger(__name__)
 
@@ -53,9 +54,12 @@ async def _restamp_recurring_fx() -> int:
                     )
                 )
                 for rec in result.scalars().all():
-                    await stamp_primary_amount(
-                        session, user.id, rec, date_field="start_date",
-                    )
+                    try:
+                        await stamp_primary_amount(
+                            session, user.id, rec, date_field="start_date",
+                        )
+                    except MoneyOutOfRange:
+                        continue  # converts past the column: left as it was
                     count += 1
             await session.commit()
     finally:
@@ -105,7 +109,10 @@ async def _restamp_fallback_transactions() -> int:
                 if tx.currency == primary:
                     continue  # genuine same-currency row — never touch
                 before = (tx.amount_primary, tx.fx_rate_used)
-                await stamp_primary_amount(session, tx.user_id, tx, allow_fetch=False)
+                try:
+                    await stamp_primary_amount(session, tx.user_id, tx, allow_fetch=False)
+                except MoneyOutOfRange:
+                    continue  # converts past the column: left as it was (#422)
                 if (tx.amount_primary, tx.fx_rate_used) != before:
                     count += 1
             await session.commit()

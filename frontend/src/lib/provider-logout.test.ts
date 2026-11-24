@@ -1,16 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const auth = vi.hoisted(() => ({ oidcConfig: vi.fn() }))
+const auth = vi.hoisted(() => ({ oidcLogoutUrl: vi.fn() }))
 vi.mock('@/lib/api', () => ({ auth }))
 
 import { endProviderSession } from '@/lib/provider-logout'
 
-const CONFIG = {
-  enabled: true,
-  provider_name: 'Keycloak',
-  local_auth_enabled: true,
-  logout_url: 'https://id.example.com/logout?client_id=securo',
-}
+const LOGOUT_URL = { logout_url: 'https://id.example.com/logout?client_id=securo' }
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -18,7 +13,7 @@ beforeEach(() => {
 
 describe('endProviderSession', () => {
   it('sends the browser to the provider logout URL (issue #1623)', async () => {
-    auth.oidcConfig.mockResolvedValue(CONFIG)
+    auth.oidcLogoutUrl.mockResolvedValue(LOGOUT_URL)
     const redirect = vi.fn()
 
     await endProviderSession({ redirect })
@@ -27,7 +22,7 @@ describe('endProviderSession', () => {
   })
 
   it('stays put when the instance has no logout URL', async () => {
-    auth.oidcConfig.mockResolvedValue({ ...CONFIG, logout_url: '' })
+    auth.oidcLogoutUrl.mockResolvedValue({ logout_url: '' })
     const redirect = vi.fn()
 
     await endProviderSession({ redirect })
@@ -35,8 +30,8 @@ describe('endProviderSession', () => {
     expect(redirect).not.toHaveBeenCalled()
   })
 
-  it('swallows a failing config request so the local sign-out stands', async () => {
-    auth.oidcConfig.mockRejectedValue(new Error('network down'))
+  it('swallows a failing logout-url request so the local sign-out stands', async () => {
+    auth.oidcLogoutUrl.mockRejectedValue(new Error('network down'))
     const redirect = vi.fn()
 
     await expect(endProviderSession({ redirect })).resolves.toBeUndefined()
@@ -44,7 +39,7 @@ describe('endProviderSession', () => {
   })
 
   it('skips the redirect when a new sign-in won the race', async () => {
-    auth.oidcConfig.mockResolvedValue(CONFIG)
+    auth.oidcLogoutUrl.mockResolvedValue(LOGOUT_URL)
     const redirect = vi.fn()
 
     await endProviderSession({ redirect, shouldRedirect: () => false })

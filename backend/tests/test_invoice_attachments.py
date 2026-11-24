@@ -484,3 +484,18 @@ async def test_an_extension_without_a_known_type_is_served_as_bytes(
         f"/api/invoices/{invoice['id']}/attachments/{attachment['id']}", headers=biz_headers
     )
     assert resp.headers["content-type"] == "application/octet-stream"
+
+
+@pytest.mark.asyncio
+async def test_an_xml_document_is_filed_and_handed_over_as_a_download(client: AsyncClient, biz_headers):
+    """A fiscal XML files like any document, and is downloaded, never shown as a page (ADR 0036)."""
+    invoice = await make_invoice(client, biz_headers)
+    attachment = await upload_claiming(client, biz_headers, invoice["id"], "nfe.xml", "application/xml")
+    assert attachment["content_type"] == "application/octet-stream"
+
+    resp = await client.get(
+        f"/api/invoices/{invoice['id']}/attachments/{attachment['id']}", headers=biz_headers
+    )
+    assert resp.headers["content-type"] == "application/octet-stream"
+    assert resp.headers["content-disposition"] == 'attachment; filename="nfe.xml"'
+    assert resp.headers["x-content-type-options"] == "nosniff"

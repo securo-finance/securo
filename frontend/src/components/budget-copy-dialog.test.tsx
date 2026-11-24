@@ -43,8 +43,9 @@ describe('Budget copy dialog', () => {
     )
 
     // Both the read and the copy are pinned to the workspace the preview is
-    // built from, so a switch in another tab cannot move the copy.
-    expect(api.budgets.list).toHaveBeenCalledWith('2026-09-01', 'ws-1')
+    // built from, so a switch in another tab cannot move the copy. The read
+    // asks for `amount_primary` at the target month's rate.
+    expect(api.budgets.list).toHaveBeenCalledWith('2026-09-01', 'ws-1', '2026-10-01')
     expect(await screen.findByText(t('budgets.copyPreviewCount', { count: 1 }))).toBeInTheDocument()
     expect(screen.getByText(t('budgets.copyPreviewTotal', { amount: '$300.00' }))).toBeInTheDocument()
 
@@ -123,6 +124,33 @@ describe('Budget copy dialog', () => {
     // Rent already is $990 in October, so replacing it would write nothing.
     expect(screen.getByText(t('budgets.copyPreviewCount', { count: 1 }))).toBeInTheDocument()
     expect(screen.getByText(t('budgets.copyPreviewTotal', { amount: '$330.00' }))).toBeInTheDocument()
+  })
+
+  it('replaces a category at the same number in another currency, like the service', async () => {
+    api.budgets.list.mockResolvedValue([{ ...rent, amount: 100, currency: 'BRL', amount_primary: 20 }])
+    const { user } = renderWithProviders(
+      <BudgetCopyDialog open onOpenChange={vi.fn()} targetMonth="2026-10" targetBudgets={[{ ...budget('b-rent-oct', 'rent', 100, '2026-10-01'), currency: 'USD' }]} targetRefreshing={false} />,
+    )
+
+    await waitFor(() => expect(api.budgets.list).toHaveBeenCalled())
+    await user.click(await screen.findByRole('radio', { name: t('budgets.copyOverwrite') }))
+
+    // 100 BRL over 100 USD is a different limit, so the copy replaces it.
+    expect(await screen.findByText(t('budgets.copyPreviewCount', { count: 1 }))).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('budgets.copyConfirm') })).toBeEnabled()
+  })
+
+  it('totals a copied limit at the target month rate, not the source month rate', async () => {
+    // 100 BRL is $20 at September's rate and $25 at October's. The copy keeps
+    // the raw 100 BRL, so October shows $25 and the preview must say $25.
+    api.budgets.list.mockResolvedValue([{ ...rent, amount: 100, currency: 'BRL', amount_primary: 25 }])
+    renderWithProviders(
+      <BudgetCopyDialog open onOpenChange={vi.fn()} targetMonth="2026-10" targetBudgets={[]} targetRefreshing={false} />,
+    )
+
+    await waitFor(() => expect(api.budgets.list).toHaveBeenCalledWith('2026-09-01', 'ws-1', '2026-10-01'))
+    expect(await screen.findByText(t('budgets.copyPreviewCount', { count: 1 }))).toBeInTheDocument()
+    expect(screen.getByText(t('budgets.copyPreviewTotal', { amount: '$25.00' }))).toBeInTheDocument()
   })
 
   it('rounds each adjusted amount to cents before summing them', async () => {

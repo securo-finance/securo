@@ -1,0 +1,138 @@
+{{- if include "securo.pluginsRunnerEnabled" . }}
+{{- if gt (int .Values.plugins.runner.replicaCount) 1 }}
+{{- fail "plugins.runner.replicaCount must stay at 1: the runner store keeps its registry and uid allocation in process-local locks" }}
+{{- end }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "securo.fullname" . }}-plugins-runner
+  labels:
+    {{- include "securo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: plugins-runner
+spec:
+  # A StatefulSet holds at most one pod per ordinal: the replacement is only
+  # created after the previous pod is fully gone, including a manual delete.
+  serviceName: {{ include "securo.fullname" . }}-plugins-runner
+  replicas: {{ .Values.plugins.runner.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "securo.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: plugins-runner
+  template:
+    metadata:
+      {{- if not .Values.plugins.runner.existingSecret }}
+      annotations:
+        checksum/plugins-secret: {{ include "securo.pluginsSecretChecksum" . }}
+      {{- end }}
+      labels:
+        {{- include "securo.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: plugins-runner
+    spec:
+      automountServiceAccountToken: false
+      # Reap plugin processes the runner kills, like `init: true` in Compose:
+      # uvicorn is PID 1 and does not reap orphans on its own.
+      shareProcessNamespace: true
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: plugins-runner
+          image: "{{ include "securo.pluginsImage" . }}"
+          imagePullPolicy: {{ .Values.plugins.runner.image.pullPolicy }}
+          command:
+            - uvicorn
+            - --factory
+            - plugin_runner.main:create_app
+            - --host
+            - 0.0.0.0
+            - --port
+            - {{ .Values.plugins.runner.service.port | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.plugins.runner.service.port }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          env:
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+            - name: PLUGINS_DATA_DIR
+              value: /var/lib/securo-plugins
+            - name: PLUGINS_RUNNER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "securo.pluginsSecretName" . }}
+                  key: PLUGINS_RUNNER_TOKEN
+            - name: PLUGINS_EGRESS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "securo.pluginsSecretName" . }}
+                  key: PLUGINS_EGRESS_SECRET
+            {{- if .Values.plugins.egress.enabled }}
+            - name: PLUGINS_EGRESS_PROXY
+              value: {{ printf "%s-plugins-egress:%v" (include "securo.fullname" .) .Values.plugins.egress.port | quote }}
+            {{- end }}
+            - name: PLUGINS_CALL_TIMEOUT
+              value: {{ .Values.plugins.runner.callTimeoutSeconds | quote }}
+            - name: PLUGINS_INSTALL_TIMEOUT
+              value: {{ .Values.plugins.runner.installTimeoutSeconds | quote }}
+            - name: PLUGINS_MEMORY_MB
+              value: {{ .Values.plugins.runner.memoryMbPerCall | quote }}
+            - name: PLUGINS_MAX_CALLS
+              value: {{ .Values.plugins.runner.maxConcurrentCalls | quote }}
+            - name: PLUGINS_ARCHIVE_LIMIT_MB
+              value: {{ .Values.plugins.runner.archiveLimitMb | quote }}
+            - name: PLUGINS_PACKAGE_INDEX
+              value: {{ .Values.plugins.runner.packageIndex | quote }}
+            - name: PLUGINS_PACKAGE_HOSTS
+              value: {{ .Values.plugins.runner.packageHosts | quote }}
+            {{- with .Values.plugins.runner.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          securityContext:
+            # Root only to give each plugin its own uid and clean up after it.
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - SETUID
+                - SETGID
+                - CHOWN
+                - DAC_OVERRIDE
+                - FOWNER
+                - KILL
+          volumeMounts:
+            - name: plugins-data
+              mountPath: /var/lib/securo-plugins
+            - name: tmp
+              mountPath: /tmp
+          {{- if .Values.plugins.runner.resources }}
+          resources:
+            {{- toYaml .Values.plugins.runner.resources | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: plugins-data
+          {{- if .Values.plugins.runner.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "securo.fullname" . }}-plugins-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 128Mi
+{{- end }}

@@ -92,6 +92,41 @@ def test_portuguese_broker_headers_are_recognised():
     assert str(orders[0].date) == "2026-02-10"
 
 
+def test_comma_grouped_quantities_keep_their_thousands():
+    """A US export groups thousands with commas: "1,500" shares is 1500, not 1.5."""
+    orders, errors, _ = asset_import_service.parse_orders_csv(_csv(
+        "ticker,date,quantity,price",
+        'AAPL,2026-01-15,"1,500","1,234.50"',
+        "MSFT,2026-01-16,\"2,000\",410.25",
+        "KO,2026-01-17,10,60.10",
+    ))
+    assert errors == []
+    assert [o.quantity for o in orders] == [Decimal("1500"), Decimal("2000"), Decimal("10")]
+    assert orders[0].price == Decimal("1234.50")
+
+
+def test_comma_decimal_quantities_stay_fractional():
+    """In a comma-decimal file, "1,5" is still one and a half units."""
+    orders, errors, _ = asset_import_service.parse_orders_csv(_csv(
+        "Ativo;Data;Quantidade;Preço",
+        "BTC;10/02/2026;1,5;38,50",
+        "ETH;11/02/2026;2,000;12,00",
+    ))
+    assert errors == []
+    assert [o.quantity for o in orders] == [Decimal("1.5"), Decimal("2.000")]
+
+
+def test_zero_led_comma_quantities_are_decimals():
+    """With "0,125" in the column, "1,125" is one and an eighth, not 1125."""
+    orders, errors, _ = asset_import_service.parse_orders_csv(_csv(
+        "ticker;date;quantity;price",
+        "BTC;2026-02-10;0,125;38,50",
+        "ETH;2026-02-11;1,125;12,00",
+    ))
+    assert errors == []
+    assert [o.quantity for o in orders] == [Decimal("0.125"), Decimal("1.125")]
+
+
 def test_negative_quantity_reads_as_a_sale():
     """The convention most broker exports use for a sale."""
     orders, _, _ = asset_import_service.parse_orders_csv(_csv(

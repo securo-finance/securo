@@ -732,7 +732,8 @@ async def test_update_without_changes_is_refused(
         ({"date": "not-a-date"}, "invalid date"),
         ({"type": "transfer"}, "type must be 'debit' or 'credit'"),
         ({"currency": "AB"}, "currency must be a 3-letter code"),
-        ({"amount_primary": 0}, "amount_primary must be greater than zero"),
+        # 0.00 is a real conversion (issue #330); a negative one is not.
+        ({"amount_primary": -1}, "amount_primary must be greater than zero"),
         ({"fx_rate_used": -1}, "fx_rate_used must be greater than zero"),
         ({"status": "done"}, "status must be 'posted' or 'pending'"),
         ({"account_id": "not-a-uuid"}, "invalid account_id"),
@@ -754,6 +755,53 @@ async def test_invalid_values_are_refused_before_the_preview(
     )
 
     assert result["error"] == expected
+
+
+def test_the_published_schema_allows_a_zero_conversion():
+    """The handler takes back a conversion of 0.00 and the rate rounded from
+    it (issue #330), so the schema a client validates against says so too."""
+    properties = REGISTRY[TOOL].parameters["properties"]
+    for field in ("amount_primary", "fx_rate_used"):
+        assert properties[field]["minimum"] == 0
+        assert "exclusiveMinimum" not in properties[field]
+
+
+async def test_a_rate_rounded_to_zero_is_taken_back_with_its_pair(
+    session: AsyncSession, ext_ctx: CallContext, clp_transaction: Transaction
+):
+    clp_transaction.amount = Decimal("9999999999999.99")
+    await session.commit()
+
+    result = await _call(
+        session=session,
+        ctx=ext_ctx,
+        transaction_id=str(clp_transaction.id),
+        amount_primary=0.01,
+        fx_rate_used=0,
+        apply=True,
+    )
+
+    assert result.get("applied") is True, result
+    fresh = await _fresh(session, clp_transaction.id)
+    assert fresh.amount_primary == Decimal("0.01")
+    assert fresh.fx_rate_used == 0
+
+
+async def test_a_zero_rate_next_to_a_real_conversion_is_refused(
+    session: AsyncSession, ext_ctx: CallContext, clp_transaction: Transaction
+):
+    result = await _call(
+        session=session,
+        ctx=ext_ctx,
+        transaction_id=str(clp_transaction.id),
+        amount_primary=3730.56,
+        fx_rate_used=0,
+        apply=True,
+    )
+
+    assert result["error"] == "fx_rate_used must be greater than zero"
+    fresh = await _fresh(session, clp_transaction.id)
+    assert fresh.amount_primary is None
 
 
 async def test_an_amount_past_the_column_is_refused_without_sql_text(

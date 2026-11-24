@@ -43,6 +43,14 @@ These can be configured by providing the necessary API keys in your `values.yaml
 
 For detailed configuration instructions, please refer to the official documentation:
   https://github.com/securo-finance/securo-docs
+{{- if include "securo.pluginsRunnerEnabled" . }}
+
+Plugins with code are enabled. The runner is reachable at
+  http://{{ include "securo.fullname" . }}-plugins-runner:{{ .Values.plugins.runner.service.port }}
+inside the cluster, and plugin code leaves this namespace (DNS aside) only through
+  {{ include "securo.fullname" . }}-plugins-egress:{{ .Values.plugins.egress.port }}
+The runner and egress secrets live in the "{{ include "securo.pluginsSecretName" . }}" Secret.
+{{- end }}
 
 ================================================================================
 3. Check Deployment Status

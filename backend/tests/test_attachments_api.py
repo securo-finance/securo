@@ -239,7 +239,8 @@ async def test_download_attachment(
         )
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/png"
-    assert "photo.png" in response.headers.get("content-disposition", "")
+    assert response.headers["content-disposition"] == 'inline; filename="photo.png"'
+    assert response.headers["x-content-type-options"] == "nosniff"
     assert response.content == b"fake-file-content"
 
 
@@ -421,7 +422,7 @@ async def test_get_attachment_settings(client: AsyncClient):
     response = await client.get("/api/settings/attachments")
     assert response.status_code == 200
     data = response.json()
-    assert data["allowed_extensions"] == ["jpg", "jpeg", "png", "webp", "gif", "heic", "pdf"]
+    assert data["allowed_extensions"] == ["jpg", "jpeg", "png", "webp", "gif", "heic", "pdf", "xml"]
     assert data["max_file_size_mb"] == 10
     assert data["max_attachments_per_transaction"] == 10
 
@@ -506,3 +507,34 @@ async def test_download_serves_the_extension_type_not_the_claimed_one(
             headers=auth_headers,
         )
     assert response.headers["content-type"] == "application/pdf"
+
+
+XML_WITH_SCRIPT = (
+    b'<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml">'
+    b"<script>alert(localStorage.getItem('token'))</script></html>"
+)
+
+
+@pytest.mark.asyncio
+async def test_an_xml_file_is_attached_and_handed_over_as_a_download(
+    client: AsyncClient, auth_headers, test_transactions: list[Transaction]
+):
+    """XML is accepted, and never rendered on the app's origin: an XML page can run script (ADR 0036)."""
+    txn = test_transactions[0]
+    mock_storage = _make_mock_storage()
+    mock_storage.download.return_value = XML_WITH_SCRIPT
+    with patch(STORAGE_PATCH, return_value=mock_storage):
+        upload = await client.post(
+            f"/api/transactions/{txn.id}/attachments",
+            headers=auth_headers,
+            files={"file": ("NFe-3525.xml", XML_WITH_SCRIPT, "application/xml")},
+        )
+        assert upload.status_code == 201, upload.text
+        response = await client.get(
+            f"/api/transactions/{txn.id}/attachments/{upload.json()['id']}", headers=auth_headers
+        )
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/octet-stream"
+    assert response.headers["content-disposition"] == 'attachment; filename="NFe-3525.xml"'
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.content == XML_WITH_SCRIPT

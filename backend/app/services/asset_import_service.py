@@ -54,6 +54,7 @@ from app.services.asset_group_service import ensure_group_in_workspace
 from app.services.import_service import (
     DATE_FORMAT_MAP,
     _sniff_csv_dialect,
+    infer_decimal_separator,
     normalize_amount,
 )
 from app.services.rule_engine import _strip_accents
@@ -306,12 +307,12 @@ def _parse_date(raw: str, date_format: Optional[str]) -> Optional[date_type]:
     return None
 
 
-def _parse_decimal(raw: str) -> Optional[Decimal]:
+def _parse_decimal(raw: str, decimal_separator: Optional[str] = None) -> Optional[Decimal]:
     raw = (raw or '').strip()
     if not raw:
         return None
     try:
-        return Decimal(str(normalize_amount(raw)))
+        return Decimal(str(normalize_amount(raw, decimal_separator)))
     except (InvalidOperation, ValueError, TypeError):
         return None
 
@@ -355,10 +356,22 @@ def parse_orders_csv(
             return ''
         return (row.get(header) or '').strip()
 
+    rows = list(reader)
+    # A cell alone cannot tell "1,500" (fifteen hundred) from "1,5" (one and a
+    # half), so each money column's separator is inferred from the whole
+    # column, as parse_csv does for transaction amounts.
+    separators = {
+        field: infer_decimal_separator(cell(row, field) for row in rows)
+        for field in ('quantity', 'price', 'fee')
+    }
+
+    def number(row: dict, field: str) -> Optional[Decimal]:
+        return _parse_decimal(cell(row, field), separators[field])
+
     orders: list[AssetOrderImport] = []
     errors: list[AssetImportRowError] = []
 
-    for index, row in enumerate(reader, start=2):  # row 1 is the header
+    for index, row in enumerate(rows, start=2):  # row 1 is the header
         if not any((v or '').strip() for v in row.values()):
             continue
 
@@ -380,7 +393,7 @@ def parse_orders_csv(
             # cannot read is a bad row, not an empty one: `_parse_decimal`
             # answers None for both, so the text is checked as well.
             money = [
-                (cell(row, field), _parse_decimal(cell(row, field)))
+                (cell(row, field), number(row, field))
                 for field in ('quantity', 'price', 'fee')
             ]
             if (
@@ -413,12 +426,12 @@ def parse_orders_csv(
             errors.append(AssetImportRowError(row=index, reason='invalid_split', ticker=ticker))
             continue
 
-        quantity = _parse_decimal(cell(row, 'quantity'))
+        quantity = number(row, 'quantity')
         if quantity is None or quantity == 0:
             errors.append(AssetImportRowError(row=index, reason='invalid_quantity', ticker=ticker))
             continue
 
-        price = _parse_decimal(cell(row, 'price'))
+        price = number(row, 'price')
         if price is None or price < 0:
             errors.append(AssetImportRowError(row=index, reason='invalid_price', ticker=ticker))
             continue
@@ -439,7 +452,7 @@ def parse_orders_csv(
         # a malformed fee is reported like the other bad cells instead of
         # being read as zero.
         fee_raw = cell(row, 'fee')
-        fee = _parse_decimal(fee_raw)
+        fee = number(row, 'fee')
         if fee_raw and (fee is None or fee < 0):
             errors.append(AssetImportRowError(row=index, reason='invalid_fee', ticker=ticker))
             continue

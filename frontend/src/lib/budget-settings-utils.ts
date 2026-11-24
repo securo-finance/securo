@@ -24,6 +24,11 @@ export function normalizeBudgetComparisonRows(rows: BudgetVsActualApiRow[]): Bud
   }))
 }
 
+/** A budget's limit in the viewer's display currency (the API sends decimals as strings). */
+export function budgetDisplayAmount(budget: Budget): number {
+  return Number(budget.amount_primary ?? budget.amount)
+}
+
 export type BudgetOperation =
   | { type: 'create'; data: { category_id: string; amount: number; month: string; is_recurring: boolean } }
   | { type: 'update'; id: string; data: { amount: number; effective_month?: string } }
@@ -68,8 +73,8 @@ export function planBudgetChange({
   series?: Budget[]
   month: string
 }): BudgetOperation[] {
-  // The API sends decimals as strings.
-  const currentAmount = Number(current?.amount ?? 0)
+  // What the editor shows, so an untouched limit plans no change.
+  const currentAmount = current ? budgetDisplayAmount(current) : 0
   if (amount > 0 && currentAmount === amount && current?.is_recurring === recurring) return []
 
   if (amount === 0) {

@@ -32,10 +32,12 @@ export type DrillDownTotals = {
  * projections from falling through the gaps: they have no transaction behind
  * them, so a status test can never place them.
  *
- * Foreign-currency rows are converted through `amountPrimary`; when that is
- * missing the row is skipped rather than added as if its raw amount were
- * already in the user's currency. This matches how `get_summary` computes
- * `monthly_*_primary` on the backend.
+ * A row counts its primary stamp whenever it has one: that is the value the
+ * dashboard, the reports and the list summary total a row with, so the
+ * footer agrees with the counter that opened the panel (#467), a typed
+ * conversion included (ADR 0031). A row in the user's own currency without a
+ * stamp counts its amount; a foreign row without one is skipped rather than
+ * added as if its raw amount were already in the user's currency.
  */
 export function sumDrillDownTotals(
   items: DrillDownTotalsItem[],
@@ -43,10 +45,10 @@ export function sumDrillDownTotals(
 ): DrillDownTotals {
   return items.reduce<DrillDownTotals>(
     (totals, item) => {
-      const amount = item.currency === userCurrency
-        ? Math.abs(item.amount)
-        : item.amountPrimary != null
-          ? Math.abs(item.amountPrimary)
+      const amount = item.amountPrimary != null
+        ? Math.abs(item.amountPrimary)
+        : item.currency === userCurrency
+          ? Math.abs(item.amount)
           : 0
 
       totals.absTotal += amount
