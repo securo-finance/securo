@@ -807,7 +807,8 @@ async def get_transactions(
         # the amount it has now, because the bank sync rewrites `amount`
         # without touching the splits. An expense of this workspace that another
         # member paid counts the viewer's share when they are part of its
-        # split, and whole when they are not, as in the dashboard.
+        # split, and whole when they are not or under an account filter, as in
+        # the dashboard.
         # Rows without splits count whole. `share_amount` is in
         # the row's own currency, so the ratio rides the FX stamp already
         # stored on the row.
@@ -841,11 +842,15 @@ async def get_transactions(
             .correlate(Transaction)
             .scalar_subquery()
         )
+        # Under an account filter it counts whole, as in the reports and the
+        # dashboard, which drop the split rules there.
+        account_filtered = bool(account_ids) or account_id is not None
         viewer_share_fraction = case(
             # Another member's expense of this workspace: the viewer's share
             # when they are in its split.
             (
                 and_(
+                    literal(not account_filtered),
                     Transaction.workspace_id == workspace_id,
                     Transaction.user_id != user_id,
                     Transaction.type == "debit",

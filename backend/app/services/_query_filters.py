@@ -582,6 +582,7 @@ async def _owner_split_rows(
     workspace_id: Optional[uuid.UUID],
     extra_filters: tuple = (),
     primary_currency: Optional[str] = None,
+    stamped_members_only: bool = False,
 ):
     """One row per posted split transaction of the user's: the non-owner
     shares summed in the row's own currency, next to what is needed to
@@ -632,6 +633,8 @@ async def _owner_split_rows(
     rows = [*result.all(), *settled.all()]
     if workspace_id is not None:
         viewer = await viewer_currency(session, primary_currency) if primary_currency else None
+        if stamped_members_only:
+            row_filters += (Transaction.amount_primary.is_not(None),)
         rows += await member_split_rows(session, user_id, row_filters, viewer)
     return rows
 
@@ -686,13 +689,16 @@ async def owner_split_offset_pnl(
     use_effective_date: bool = False,
     primary_currency: Optional[str] = None,
     workspace_id: Optional[uuid.UUID] = None,
+    stamped_members_only: bool = False,
 ) -> tuple[float, float]:
     """Return (income_offset, expense_offset) — the totals to *subtract*
     from the owner's full-amount aggregations so only their own share
     remains. We sum every split share that belongs to a non-owner
     member; subtracting that from the parent's full amount leaves the
     owner's share. A split expense another member of the workspace paid
-    comes off the same way, down to the viewer's share.
+    comes off the same way, down to the viewer's share. A total that leaves
+    out rows with no ``amount_primary`` passes ``stamped_members_only``, so
+    nothing comes off it for another member's row it never added.
 
     Without ``primary_currency`` the shares are summed as stored, in each
     row's own currency; with it they are brought into that currency by
@@ -700,6 +706,7 @@ async def owner_split_offset_pnl(
     rows = await _owner_split_rows(
         session, user_id, month_start, month_end, use_effective_date, workspace_id,
         primary_currency=primary_currency,
+        stamped_members_only=stamped_members_only,
     )
     rates: dict[tuple[str, date], Optional[Decimal]] = {}
     income_total = Decimal("0")

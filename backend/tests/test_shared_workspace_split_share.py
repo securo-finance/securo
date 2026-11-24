@@ -214,3 +214,86 @@ async def test_an_account_filter_keeps_the_full_amounts(session, test_workspace,
         account_ids=accounts,
     )
     assert _expenses(report) == pytest.approx(280.0)
+
+    # The footer behind the report's drill-down follows, with either way of
+    # naming the account.
+    for account_id, account_ids in ((None, accounts), (accounts[0], None)):
+        for user_pnl_only in (True, False):
+            result = await get_transactions(
+                session, test_workspace.id, home["bruno"].id,
+                from_date=home["month"], to_date=_last_day(home["month"]),
+                include_summary=True, user_pnl_only=user_pnl_only,
+                account_id=account_id, account_ids=account_ids,
+            )
+            footer = result[2]
+            assert footer is not None
+            assert float(footer["expense"]) == pytest.approx(280.0)
+
+
+async def _add_unstamped_split(session, test_workspace, home) -> None:
+    """A JPY 10.000 expense with no rate, split in half."""
+    from sqlalchemy import select
+
+    members = (
+        await session.execute(
+            select(GroupMember).where(GroupMember.workspace_id == test_workspace.id)
+        )
+    ).scalars().all()
+    account_id = await session.scalar(
+        select(Account.id).where(Account.workspace_id == test_workspace.id, Account.name == "Joint")
+    )
+    row = Transaction(
+        id=uuid.uuid4(), user_id=home["ana"].id, workspace_id=test_workspace.id,
+        account_id=account_id, category_id=home["rent_id"], description="Trip",
+        amount=Decimal("10000"), currency="JPY", amount_primary=None,
+        date=home["month"] + timedelta(days=4), type="debit", source="manual",
+    )
+    session.add(row)
+    await session.flush()
+    session.add_all([_split(row, member, "5000") for member in members])
+    await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_a_split_without_a_rate_takes_nothing_off_the_dashboard_card(
+    session, test_workspace, home
+):
+    """The card leaves a row with no stamp out of its sum, so its share can't
+    come off it: 10.000 JPY used to turn Bruno's expenses negative."""
+    await _add_unstamped_split(session, test_workspace, home)
+    summary = await get_summary(session, test_workspace.id, home["bruno"].id, home["month"])
+    assert float(summary.monthly_expenses_primary) == pytest.approx(130.0)
+
+
+@pytest.mark.asyncio
+async def test_a_split_without_a_rate_counts_its_share_where_the_row_counts(
+    session, test_workspace, home
+):
+    """These read the row 1:1, so the viewer's share stays on top: 5.000."""
+    await _add_unstamped_split(session, test_workspace, home)
+    bruno, month, ws = home["bruno"], home["month"], test_workspace.id
+
+    statement = await get_category_statement(
+        session, ws, bruno.id, month, months=1, primary_currency="EUR"
+    )
+    assert statement.expenses.totals == pytest.approx([-5130.0])
+    report = await _report(session, ws, bruno.id, month, "EUR")
+    assert _expenses(report) == pytest.approx(5130.0)
+    spending = await get_spending_by_category(session, ws, bruno.id, month)
+    assert sum(row.total for row in spending) == pytest.approx(5130.0)
+
+
+@pytest.mark.asyncio
+async def test_the_card_stays_right_when_no_row_has_a_rate(session, test_workspace, home):
+    """With no stamped row at all the card falls back to the native sum,
+    which already took the shares off once."""
+    from sqlalchemy import update
+
+    await session.execute(
+        update(Transaction)
+        .where(Transaction.workspace_id == test_workspace.id)
+        .values(amount_primary=None)
+    )
+    await session.commit()
+    summary = await get_summary(session, test_workspace.id, home["bruno"].id, home["month"])
+    assert float(summary.monthly_expenses_primary) == pytest.approx(650.0)

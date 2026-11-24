@@ -701,6 +701,8 @@ async def get_summary(
             use_effective_date=accounting_mode == "accrual",
             primary_currency=primary_currency,
             workspace_id=workspace_id,
+            # The sum above leaves out rows with no stamp.
+            stamped_members_only=True,
         )
         monthly_income_primary -= own_offset_inc_pri
         monthly_expenses_primary -= own_offset_exp_pri
