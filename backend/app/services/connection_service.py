@@ -4396,6 +4396,21 @@ async def sync_connection(
 
             if account is not None:
                 account.user_id = user_id
+                if account.workspace_id != connection.workspace_id:
+                    # A pocket and its ledger live in its account's workspace.
+                    pocket_ids = select(Goal.id).where(
+                        Goal.account_id == account.id, Goal.tracking_type == "pocket"
+                    )
+                    await session.execute(
+                        update(GoalAllocation)
+                        .where(GoalAllocation.goal_id.in_(pocket_ids))
+                        .values(workspace_id=connection.workspace_id)
+                    )
+                    await session.execute(
+                        update(Goal)
+                        .where(Goal.id.in_(pocket_ids))
+                        .values(workspace_id=connection.workspace_id)
+                    )
                 account.workspace_id = connection.workspace_id
                 await session.execute(
                     update(Transaction)

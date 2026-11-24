@@ -36,13 +36,13 @@ def _provider(account, *transactions):
     return provider
 
 
-async def _sync(session, account, provider):
+async def _sync(session, account, provider, workspace_id=None):
     with patch("app.services.connection_service.get_provider", return_value=provider), \
          patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
          patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
          patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
         await connection_service.sync_connection(
-            session, account.connection_id, account.workspace_id, account.user_id
+            session, account.connection_id, workspace_id or account.workspace_id, account.user_id
         )
 
 
@@ -191,3 +191,51 @@ async def test_a_raised_bank_amount_keeps_its_assignments(
 
     assert await _assignments(session, deposit_id) == {goal_id: Decimal("100.00")}
     assert await _pocket_current_amount(session, goal_id) == Decimal("40.00")
+
+
+async def test_pockets_follow_an_account_the_sync_moves_to_its_connection_workspace(
+    client, auth_headers, session, test_user, test_workspace, test_account
+):
+    from sqlalchemy import update
+
+    from app.models.account import Account
+    from app.models.goal import Goal
+    from app.models.workspace import Workspace
+
+    goal_id, _ = await _funded_deposit(client, auth_headers, test_account)
+    home_id, account_id = test_workspace.id, test_account.id
+    old_home = Workspace(
+        id=uuid.uuid4(), name="Old Home", kind="personal",
+        created_by_user_id=test_user.id, default_currency="BRL", locale="en-US",
+    )
+    session.add(old_home)
+    await session.flush()
+    # The account drifted away from its connection's workspace, pockets with it.
+    await session.execute(
+        update(Account).where(Account.id == account_id).values(workspace_id=old_home.id)
+    )
+    await session.execute(
+        update(Goal).where(Goal.id == goal_id).values(workspace_id=old_home.id)
+    )
+    await session.execute(
+        update(GoalAllocation)
+        .where(GoalAllocation.goal_id == goal_id)
+        .values(workspace_id=old_home.id)
+    )
+    await session.commit()
+    session.expire_all()
+    account = await session.get(Account, account_id)
+    assert account is not None
+
+    await _sync(session, account, _provider(account), home_id)
+
+    session.expire_all()
+    assert (await session.get(Goal, goal_id)).workspace_id == home_id
+    workspaces = set(
+        (
+            await session.scalars(
+                select(GoalAllocation.workspace_id).where(GoalAllocation.goal_id == goal_id)
+            )
+        ).all()
+    )
+    assert workspaces == {home_id}

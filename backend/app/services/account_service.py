@@ -915,6 +915,9 @@ async def sync_opening_balance_for_connected_account(
 
     Call after adding new transactions in a sync (initial or incremental).
     Does not commit; the caller is responsible for the transaction boundary.
+    The caller must already hold the account's lock (the sync does): the
+    opening rows are locked here without it, and taking them first would
+    invert the account-then-row order pocket writers use.
     """
     if account.connection_id is None:
         return
