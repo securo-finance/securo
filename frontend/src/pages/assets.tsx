@@ -18,6 +18,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
+import { AssetRowContextMenu, AssetRowMenuButton, type AssetRowAction } from '@/components/asset-row-actions'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import type { Asset, AssetGroup, AssetTransaction, AssetValue, MarketSymbolMatch, MarketSymbolQuote } from '@/types'
@@ -467,17 +468,19 @@ export default function AssetsPage() {
     mutationFn: (id: string) => assets.refreshPrice(id),
     onSuccess: (updated) => {
       // Sync the dialog's preview to the fresh quote so the user sees the
-      // new price without closing the dialog. The list + chart refetch
-      // via our standard helper.
-      setSelectedQuote({
-        symbol: updated.ticker || '',
-        name: updated.name,
-        exchange: updated.ticker_exchange,
-        currency: updated.currency,
-        price: updated.last_price ?? 0,
-        quote_type: null,
-      })
-      setEditingAsset(updated)
+      // new price without closing the dialog (a refresh from a row's menu
+      // leaves it alone). The list + chart refetch via our standard helper.
+      if (dialogOpen && editingAsset?.id === updated.id) {
+        setSelectedQuote({
+          symbol: updated.ticker || '',
+          name: updated.name,
+          exchange: updated.ticker_exchange,
+          currency: updated.currency,
+          price: updated.last_price ?? 0,
+          quote_type: null,
+        })
+        setEditingAsset(updated)
+      }
       refetchAssetViews()
       toast.success(t('assets.priceRefreshed'))
     },
@@ -893,6 +896,40 @@ export default function AssetsPage() {
     setPendingGrowthSave(null)
   }
 
+  // The row's actions, shared by its "⋯" button and its right-click menu.
+  function holdingActions(asset: Asset): AssetRowAction[] {
+    if (!canWrite) return []
+    const isMarketPriced = asset.valuation_method === 'market_price'
+    const isProviderOwned = asset.source !== 'manual' && !isMarketPriced
+    const actions: AssetRowAction[] = [
+      {
+        key: 'edit',
+        label: t('common.edit'),
+        icon: Pencil,
+        onSelect: () => openEdit(asset),
+        disabled: isProviderOwned,
+        hint: isProviderOwned ? t('assets.syncedReadOnly') : undefined,
+      },
+    ]
+    if (isMarketPriced) {
+      actions.push({ key: 'add-transaction', label: t('assets.addTransaction'), icon: Plus, onSelect: () => openAddTransaction(asset.id) })
+      if (asset.ticker && !asset.sell_date) {
+        actions.push({
+          key: 'refresh-price',
+          label: t('assets.refreshPrice'),
+          icon: RefreshCw,
+          onSelect: () => refreshPriceMutation.mutate(asset.id),
+          disabled: refreshPriceMutation.isPending,
+        })
+      }
+    }
+    actions.push(
+      { key: 'move', label: t('assets.moveToWallet'), icon: FolderInput, onSelect: () => setMovingAsset(asset) },
+      { key: 'delete', label: t('common.delete'), icon: Trash2, onSelect: () => setDeletingId(asset.id), destructive: true },
+    )
+    return actions
+  }
+
   // Consolidated holdings table (issue #235). One row per holding (ticker),
   // Investidor10/Status Invest style: Ativo · Quant. · Preço Médio ·
   // Preço Atual · Rentabilidade · Saldo · % da carteira. Market-priced rows
@@ -904,7 +941,6 @@ export default function AssetsPage() {
     const isExpanded = expandedId === asset.id
     const isSynced = asset.source !== 'manual'
     const isMarketPriced = asset.valuation_method === 'market_price'
-    const isProviderOwned = isSynced && !isMarketPriced
     const hasCost = asset.average_price != null && asset.total_invested != null
     const profit = getAssetProfit(asset)
     // Foreign-currency asset the backend could not convert (no FX rate):
@@ -924,8 +960,12 @@ export default function AssetsPage() {
     const staleValueDate =
       isSynced && today ? getStaleProviderValueDate(asset, today) : null
 
+    const displayName = asset.ticker && !asset.ticker.startsWith('TD:') ? asset.ticker : asset.name
+    const actions = holdingActions(asset)
+
     return (
       <div key={asset.id} className="border-b border-border last:border-b-0">
+        <AssetRowContextMenu actions={actions}>
         <div
           className="grid items-center gap-2 px-3 py-3 cursor-pointer hover:bg-muted/20 transition-colors text-sm"
           style={{ gridTemplateColumns: HOLDINGS_GRID }}
@@ -936,7 +976,7 @@ export default function AssetsPage() {
             <AssetIcon logoUrl={asset.logo_url} Icon={Icon} colorClass={config.color} bgClass={config.bg} size={16} tile="w-8 h-8" />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="font-semibold text-foreground truncate">{asset.ticker && !asset.ticker.startsWith('TD:') ? asset.ticker : asset.name}</span>
+                <span className="font-semibold text-foreground truncate">{displayName}</span>
                 {needsBuys && (
                   <Badge
                     variant="outline"
@@ -1038,22 +1078,11 @@ export default function AssetsPage() {
           </div>
           {/* actions */}
           <div className="flex items-center justify-end gap-0.5">
-            {canWrite && (
-              <>
-                <button onClick={(e) => { e.stopPropagation(); setMovingAsset(asset) }} title={t('assets.moveToWallet')} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
-                  <FolderInput size={13} />
-                </button>
-                <button onClick={(e) => { e.stopPropagation(); if (!isProviderOwned) openEdit(asset) }} disabled={isProviderOwned} title={isProviderOwned ? t('assets.syncedReadOnly') : t('common.edit')} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
-                  <Pencil size={13} />
-                </button>
-                <button onClick={(e) => { e.stopPropagation(); setDeletingId(asset.id) }} title={t('common.delete')} aria-label={t('common.delete')} className="p-1 rounded text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-colors">
-                  <Trash2 size={13} />
-                </button>
-              </>
-            )}
+            {actions.length > 0 && <AssetRowMenuButton label={`${t('common.more')}: ${displayName}`} actions={actions} />}
             {isExpanded ? <ChevronUp size={15} className="text-muted-foreground" /> : <ChevronDown size={15} className="text-muted-foreground" />}
           </div>
         </div>
+        </AssetRowContextMenu>
 
         {isExpanded && (
           <>
