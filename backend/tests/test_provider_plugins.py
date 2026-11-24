@@ -396,7 +396,7 @@ async def test_a_stale_pending_twin_leaves_the_posted_row_as_it_is(
     await _pipeline(session, bank_connection, _account_txns(posted), test_user)
     await _pipeline(session, bank_connection, _account_txns(pending), test_user)
     row = await _only_row(session, bank_connection)
-    assert (row.status, row.payee, row.notes) == ("posted", "Example Shop", "Ihr Einkauf")
+    assert (row.external_id, row.status, row.payee, row.notes) == ("p2", "posted", "Example Shop", "Ihr Einkauf")
     sent = (row.raw_data or {})["securo_synced"]
     assert (sent["payee"], sent["notes"]) == ("Example Shop", "Ihr Einkauf")
 
@@ -1185,3 +1185,18 @@ async def test_an_oauth_return_without_new_secrets_keeps_the_reason_on_the_bank(
     await connections.finish_oauth(session, workspace_id=workspace_id, user_id=user_id, code="c", state="s")
     bank = await _bank(session, connection)
     assert bank.last_sync_failure is None
+
+
+@pytest.mark.asyncio
+async def test_a_stale_pending_entry_does_not_duplicate_its_posted_row(session: AsyncSession, bank_connection, test_user):
+    """A pending entry that comes back after it posted under a new id is a
+    stale twin of the posted row: the row keeps the posted entry's id, so the
+    posted entry still finds it and nothing is inserted twice."""
+    pending = {"external_id": "p1", "description": "Example Shop", "amount": "12.34", "date": "2026-11-14",
+               "type": "debit", "status": "pending"}
+    posted = {**pending, "external_id": "p2", "status": "posted"}
+    for transactions in ([pending], [posted], [pending], [posted], [pending, posted]):
+        await _pipeline(session, bank_connection, payload_data(transactions=transactions, holdings=None), test_user)
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    rows = await _rows(session, Transaction, account_id=account.id)
+    assert [(row.external_id, row.status) for row in rows] == [("p2", "posted")]

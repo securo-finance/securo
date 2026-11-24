@@ -11622,3 +11622,44 @@ async def test_simplefin_resync_takes_the_corrected_charge_under_the_same_id(
     else:
         assert tx.payee == "Merchant"
         assert tx.payee_id is not None
+
+
+@pytest.mark.asyncio
+async def test_first_import_keeps_the_posted_id_when_a_stale_pending_twin_follows(
+    session: AsyncSession, test_user, test_workspace
+):
+    """The first import collapses a pending entry listed after its posted
+    twin into the posted row, which keeps the posted entry's id: otherwise
+    the next sync would find no row for that id and insert it again."""
+    posted = TransactionData(
+        external_id="p2", description="Example Shop", amount=Decimal("12.34"),
+        date=date(2026, 11, 14), type="debit", status="posted",
+    )
+    pending = TransactionData(
+        external_id="p1", description="Example Shop", amount=Decimal("12.34"),
+        date=date(2026, 11, 14), type="debit", status="pending",
+    )
+    mock_provider = AsyncMock()
+    mock_provider.handle_oauth_callback = AsyncMock(return_value=ConnectionData(
+        external_id="ext-stale-twin",
+        institution_name="Twin Bank",
+        credentials={"token": "x"},
+        accounts=[AccountData(
+            external_id="acc-1", name="Checking", type="checking",
+            balance=Decimal("100.00"), currency="EUR",
+        )],
+    ))
+    mock_provider.get_transactions = AsyncMock(return_value=[posted, pending])
+    mock_provider.get_holdings = AsyncMock(return_value=[])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock):
+        connection = await handle_oauth_callback(
+            session, test_workspace.id, test_user.id, "code", "pluggy",
+        )
+
+    assert connection is not None
+    rows = (
+        await session.execute(select(Transaction).where(Transaction.external_id.is_not(None)))
+    ).scalars().all()
+    assert [(row.external_id, row.status) for row in rows] == [("p2", "posted")]
