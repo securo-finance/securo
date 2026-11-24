@@ -259,6 +259,11 @@ class Settings(BaseSettings):
     # plugins that declared `api_scopes` get a token to use it.
     plugins_api_url: str = "http://backend:8000/api"
 
+    # Document reading limits (ADR 0037). The feature itself, its provider and
+    # model are set by an admin in Admin Settings, not here.
+    document_ai_max_pages: int = 20
+    document_ai_max_file_size_mb: int = 10
+
     @property
     def oidc_login_available(self) -> bool:
         return bool(self.oidc_enabled and self.oidc_client_id and self.oidc_discovery_url)

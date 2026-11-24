@@ -84,6 +84,8 @@ celery_app.conf.include = [
     "app.tasks.fx_rate_tasks",
     "app.tasks.backup_tasks",
     "app.tasks.plugin_tasks",
+    # Dispatched only by the document routes (DOCUMENT_AI_ENABLED).
+    "app.tasks.document_tasks",
     # Optional agents module — registering the import is harmless when
     # AGENTS_ENABLED=false (the task just won't be dispatched).
     "app.agents.tasks.ingest",

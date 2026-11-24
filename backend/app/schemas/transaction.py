@@ -511,3 +511,6 @@ class TransactionImportRequest(BaseModel):
     filename: str = ""
     detected_format: str = ""
     detect_duplicates: bool = True
+    # Set when the rows came from a document read by a model (ADR 0037): the
+    # read is marked confirmed, with the rows as the person kept them.
+    document_extraction_id: Optional[uuid.UUID] = None

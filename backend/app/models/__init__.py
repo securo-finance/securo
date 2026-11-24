@@ -24,6 +24,7 @@ from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
 from app.models.fx_rate import FxRate
 from app.models.transaction_attachment import TransactionAttachment
+from app.models.document_extraction import DocumentExtraction, WorkspaceDocumentAiSettings
 from app.models.payee import Payee, PayeeMapping, PayeeTaxId
 from app.models.app_settings import AppSetting
 from app.models.goal import Goal
@@ -58,6 +59,8 @@ from app.models.reconciliation import (
 from app.core import workspace_autostamp  # noqa: F401, E402
 
 __all__ = [
+    "DocumentExtraction",
+    "WorkspaceDocumentAiSettings",
     "AccessToken",
     "User",
     "UserPasskey",

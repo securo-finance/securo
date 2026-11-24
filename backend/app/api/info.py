@@ -17,5 +17,8 @@ async def get_app_info():
             "agents": feature_flag("AGENTS_ENABLED"),
             "tesouro_direto": feature_flag("TESOURO_DIRETO_ENABLED"),
             "plugins": feature_flag("PLUGINS_ENABLED"),
+            # Document reading rides on the agents module (ADR 0037); each
+            # workspace turns it on by picking one of its LLM connections.
+            "document_ai": feature_flag("AGENTS_ENABLED"),
         },
     }
