@@ -31,8 +31,8 @@ function formFrom(settings: DocumentAiSettings | undefined): Form {
 export function DocumentAiSettingsSection() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const { data: settings } = useQuery({ queryKey: ['document-ai', 'settings'], queryFn: documentAi.getSettings })
-  const { data: status } = useQuery({ queryKey: ['document-ai', 'status'], queryFn: documentAi.status })
+  const { data: settings } = useQuery({ queryKey: ['document-ai', 'settings'], queryFn: () => documentAi.getSettings() })
+  const { data: status } = useQuery({ queryKey: ['document-ai', 'status'], queryFn: () => documentAi.status() })
   const [form, setForm] = useState<Form>(formFrom(undefined))
   const [loadedFrom, setLoadedFrom] = useState<DocumentAiSettings | undefined>(undefined)
   if (settings && settings !== loadedFrom) {
@@ -61,7 +61,7 @@ export function DocumentAiSettingsSection() {
   })
 
   const reset = useMutation({
-    mutationFn: documentAi.resetSettings,
+    mutationFn: () => documentAi.resetSettings(),
     onSuccess: () => { toast.success(t('documentAi.settings.resetDone')); refresh() },
     onError: () => toast.error(t('documentAi.settings.saveError')),
   })

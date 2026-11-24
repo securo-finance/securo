@@ -43,7 +43,7 @@ export function useDocumentAiStatus() {
   const { documentAiEnabled } = useFeatureFlags()
   const query = useQuery({
     queryKey: ['document-ai', 'status'],
-    queryFn: documentAi.status,
+    queryFn: () => documentAi.status(),
     enabled: documentAiEnabled,
     staleTime: 60_000,
   })
