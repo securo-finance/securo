@@ -1,0 +1,163 @@
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { screen, waitFor, within } from '@testing-library/react'
+import { renderWithProviders, t } from '@/test/utils'
+import { goal } from '@/test/goal-fixtures'
+import GoalsPage from '@/pages/goals'
+
+const mocks = vi.hoisted(() => ({
+  goals: { list: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
+  accounts: { list: vi.fn() },
+  assets: { list: vi.fn() },
+  assetGroups: { list: vi.fn() },
+  currencies: { list: vi.fn() },
+  history: vi.fn(),
+  writable: true,
+  privacy: false,
+}))
+vi.mock('@/lib/api', () => mocks)
+vi.mock('@/lib/goal-history', () => ({ loadGoalHistory: mocks.history }))
+vi.mock('@/hooks/use-display-locale', () => ({
+  useDisplayLocale: () => 'en-US',
+  useDateLocale: () => 'en-US',
+}))
+vi.mock('@/contexts/auth-context', () => ({
+  useAuth: () => ({ user: { preferences: { currency_display: 'USD' } } }),
+}))
+vi.mock('@/contexts/workspace-context', () => ({
+  useWorkspace: () => ({
+    canWrite: mocks.writable,
+    current: { id: 'ws-1', timezone: 'America/New_York' },
+  }),
+}))
+vi.mock('@/hooks/use-privacy-mode', () => ({
+  usePrivacyMode: () => ({
+    mask: (value: string) => (mocks.privacy ? '••••' : value),
+    privacyMode: mocks.privacy,
+  }),
+}))
+const today = '2026-11-21'
+/**
+ * Builds one goal for each tracking scenario exercised by the chart tests.
+ *
+ * @returns {import('@/types').Goal[]} Goal fixtures covering each tracking scenario.
+ */
+const fixtures = () => [
+  goal(
+    {
+      id: 'server',
+      name: 'Server Fund',
+      tracking_type: 'account',
+      account_id: 'server-account',
+      monthly_contribution: 471.43,
+    },
+    today,
+  ),
+  goal(
+    {
+      id: 'house',
+      name: 'House Fund',
+      tracking_type: 'account',
+      account_id: 'house-account',
+      target_date: null,
+    },
+    today,
+  ),
+  goal({ id: 'studio', name: 'Studio Upgrade', tracking_type: 'asset', asset_id: 'studio' }, today),
+  goal(
+    {
+      id: 'wallet',
+      name: 'Retirement Wallet',
+      tracking_type: 'asset_group',
+      asset_group_id: 'wallet',
+    },
+    today,
+  ),
+  goal({ id: 'net-worth', name: 'Net Worth Milestone', tracking_type: 'net_worth' }, today),
+  goal({ id: 'manual', name: 'Holiday Fund', tracking_type: 'manual' }, today),
+]
+beforeEach(() => {
+  vi.resetAllMocks()
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date(today + 'T18:00:00Z'))
+  mocks.writable = true
+  mocks.privacy = false
+  mocks.goals.list.mockResolvedValue(fixtures())
+  for (const api of [mocks.accounts, mocks.assets, mocks.assetGroups, mocks.currencies]) {
+    api.list.mockResolvedValue([])
+  }
+  mocks.history.mockResolvedValue({
+    points: [
+      { date: '2020-01-01', amount: 500 },
+      { date: today, amount: 2700 },
+    ],
+    notes: [],
+  })
+})
+afterEach(() => vi.useRealTimers())
+
+it('keeps native stats and shows charts only for nonmanual goals', async () => {
+  const { container } = renderWithProviders(<GoalsPage />)
+  const server = within(await screen.findByRole('region', { name: 'Progress for Server Fund' }))
+  await waitFor(() =>
+    expect(screen.getAllByRole('img', { name: /history and projection in USD/ })).toHaveLength(5),
+  )
+  expect(screen.getByText('Holiday Fund')).toBeVisible()
+  expect(
+    screen.queryByRole('region', { name: 'Progress for Holiday Fund' }),
+  ).not.toBeInTheDocument()
+  expect(screen.getByText('$471.43/mo')).toBeVisible()
+  expect(server.queryByRole('combobox')).not.toBeInTheDocument()
+  expect(server.queryByText('$471.43')).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Save plan' })).not.toBeInTheDocument()
+  expect(container.querySelector('path[stroke-dasharray="6 5"]')).toBeTruthy()
+  expect(server.getByText('6.6K')).toBeVisible()
+  expect(mocks.goals.update).not.toHaveBeenCalled()
+})
+
+it('shows only history and the current point when the API supplies no monthly amount', async () => {
+  renderWithProviders(<GoalsPage />)
+  const house = await screen.findByRole('region', { name: 'Progress for House Fund' })
+  await waitFor(() => expect(house.querySelector('path.recharts-line-curve')).toBeTruthy())
+  expect(house.querySelector('path[stroke-dasharray="6 5"]')).toBeNull()
+  expect(within(house).getByText('Current amount')).toBeVisible()
+})
+
+it('allows a failed history request to be retried', async () => {
+  mocks.goals.list.mockResolvedValue([fixtures()[0]])
+  mocks.history
+    .mockRejectedValueOnce(new Error('offline'))
+    .mockResolvedValue({ points: [{ date: today, amount: 2700 }], notes: [] })
+  const { user } = renderWithProviders(<GoalsPage />)
+  await screen.findByRole('alert')
+  await user.click(screen.getByRole('button', { name: 'Retry' }))
+  await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+  expect(mocks.history).toHaveBeenCalledTimes(2)
+})
+
+it('preserves native viewer permissions', async () => {
+  mocks.writable = false
+  renderWithProviders(<GoalsPage />)
+  await screen.findByRole('region', { name: 'Progress for Server Fund' })
+  expect(screen.queryByRole('button', { name: t('goals.add') })).not.toBeInTheDocument()
+})
+
+it('hides chart values in privacy mode', async () => {
+  mocks.privacy = true
+  renderWithProviders(<GoalsPage />)
+  await screen.findByRole('region', { name: 'Progress for Server Fund' })
+  expect(screen.queryByRole('img', { name: /history and projection/ })).not.toBeInTheDocument()
+  expect(screen.queryByText('$471.43/mo')).not.toBeInTheDocument()
+})
+
+it('does not project reached or overdue goals', async () => {
+  mocks.goals.list.mockResolvedValue([
+    { ...fixtures()[0], current_amount: 6500 },
+    { ...fixtures()[2], target_date: '2026-10-01', monthly_contribution: 100 },
+  ])
+  renderWithProviders(<GoalsPage />)
+  for (const name of ['Server Fund', 'Studio Upgrade']) {
+    const region = await screen.findByRole('region', { name: `Progress for ${name}` })
+    expect(within(region).getByText('Current amount')).toBeVisible()
+    expect(region.querySelector('path[stroke-dasharray="6 5"]')).toBeNull()
+  }
+})
