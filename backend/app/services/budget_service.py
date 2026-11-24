@@ -458,7 +458,7 @@ async def get_budget_vs_actual(
             continue
         amount = await viewer.convert(
             session, tx.user_id, tx.amount_primary, tx.date,
-            currency=tx.currency, amount=tx.amount, typed=tx.amount_primary_typed,
+            currency=tx.currency, amount=tx.amount,
         )
         if amount is not None:
             converted = abs(Decimal(str(amount)))
@@ -568,7 +568,7 @@ async def get_budget_vs_actual(
             continue
         amount = await viewer.convert(
             session, tx.user_id, tx.amount_primary, tx.date,
-            currency=tx.currency, amount=tx.amount, typed=tx.amount_primary_typed,
+            currency=tx.currency, amount=tx.amount,
         )
         if amount is not None:
             converted = abs(Decimal(str(amount)))

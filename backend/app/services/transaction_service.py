@@ -199,7 +199,7 @@ async def _fx_override_in_owner_currency(
     amount_unchanged = amount == Decimal(str(tx.amount))
     shown = await viewer.convert(
         session, tx.user_id, tx.amount_primary, tx.date,
-        currency=tx.currency, amount=tx.amount, typed=tx.amount_primary_typed,
+        currency=tx.currency, amount=tx.amount,
     )
     if amount_unchanged and shown is not None:
         # The stored stamp itself counts as an echo too: a client that read

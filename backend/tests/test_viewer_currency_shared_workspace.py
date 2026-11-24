@@ -817,11 +817,12 @@ async def test_a_changed_conversion_is_still_converted_with_amount_primary_shown
 
 
 @pytest.mark.asyncio
-async def test_calendar_shows_the_owners_conversion_of_a_row_in_the_members_currency(
+async def test_a_typed_row_in_the_members_currency_reads_as_its_own_amount(
     client, session, couple
 ):
-    """Ana's 300 € with a typed R$ 1.560: Bruno's list shows 312 € (0,20), and
-    the calendar showed the row's own 300 € because it is already in euros."""
+    """Ana's 300 € with a typed R$ 1.560: the R$ 1.560 holds in reais only.
+    Read back into euros it showed 312 € to Bruno, who sees the 300 € that
+    were charged in every view (#463). His rename keeps Ana's typed stamp."""
     _, day5, _ = _last_month()
     accounts = (await client.get("/api/accounts", headers=couple["ana"])).json()
     (joint,) = [a for a in accounts if a["name"] == "Conta conjunta"]
@@ -836,11 +837,18 @@ async def test_calendar_shows_the_owners_conversion_of_a_row_in_the_members_curr
     assert resp.status_code == 201, resp.text
     row_id = resp.json()["id"]
 
-    (listed,) = (await _list(client, couple["bruno"], couple["month"], q="R440 euros"))["items"]
-    assert abs(listed["amount_primary"]) == pytest.approx(312.0)
+    bruno = couple["bruno"]
+    body = await _list(client, bruno, couple["month"], q="R440 euros")
+    (listed,) = body["items"]
+    assert abs(listed["amount_primary"]) == pytest.approx(300.0)
+    assert listed["fx_fallback"] is False
+    assert body["summary"]["expense"] == pytest.approx(300.0)
+
+    detail = (await client.get(f"/api/transactions/{row_id}", headers=bruno)).json()
+    assert abs(detail["amount_primary"]) == pytest.approx(300.0)
 
     resp = await client.get(
-        "/api/transactions/calendar", headers=couple["bruno"],
+        "/api/transactions/calendar", headers=bruno,
         params={"month": couple["month"].isoformat()},
     )
     assert resp.status_code == 200, resp.text
@@ -848,7 +856,17 @@ async def test_calendar_shows_the_owners_conversion_of_a_row_in_the_members_curr
         item for day in resp.json()["days"] for item in day["items"]
         if item.get("id") == row_id
     ]
-    assert item["amount_primary"] == pytest.approx(312.0)
+    assert item["amount_primary"] == pytest.approx(300.0)
+
+    resp = await client.patch(
+        f"/api/transactions/{row_id}", headers=bruno,
+        json=_dialog_save(detail, description="R269 R440 euros renamed"),
+    )
+    assert resp.status_code == 200, resp.text
+    tx = await _stored(session, row_id)
+    assert tx.description == "R269 R440 euros renamed"
+    assert tx.amount_primary == Decimal("1560.00")
+    assert tx.amount_primary_typed == Decimal("1560.00")
 
 
 @pytest.mark.asyncio

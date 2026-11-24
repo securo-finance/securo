@@ -445,7 +445,7 @@ async def _viewer_primary_amount(
     if viewer.stamp_currency(tx.user_id) != viewer.currency:
         shown = await viewer.convert(
             session, tx.user_id, tx.amount_primary, tx.date,
-            currency=tx.currency, amount=tx.amount, typed=tx.amount_primary_typed,
+            currency=tx.currency, amount=tx.amount,
         )
         if shown is not None:
             return float(abs(shown))
