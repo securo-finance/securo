@@ -8,7 +8,7 @@ import type { Asset } from '@/types'
 const api = vi.hoisted(() => ({
   assets: {
     list: vi.fn(), portfolioTrend: vi.fn(), refreshPrice: vi.fn(), delete: vi.fn(), update: vi.fn(),
-    values: vi.fn(), valueTrend: vi.fn(), transactions: vi.fn(),
+    values: vi.fn(), valueTrend: vi.fn(), transactions: vi.fn(), marketSearch: vi.fn(),
   },
   assetGroups: { list: vi.fn() },
   accounts: { list: vi.fn() },
@@ -74,6 +74,7 @@ beforeEach(() => {
   api.assets.valueTrend.mockResolvedValue([])
   api.assets.transactions.mockResolvedValue([])
   api.assets.refreshPrice.mockResolvedValue(asset({ last_price: 210 }))
+  api.assets.marketSearch.mockResolvedValue([])
   api.assetGroups.list.mockResolvedValue([])
   api.accounts.list.mockResolvedValue([])
   api.currencies.list.mockResolvedValue([])
@@ -262,5 +263,43 @@ describe('Holding row actions menu', () => {
     expect(screen.queryByRole('button', { name: `${t('common.more')}: AAPL` })).not.toBeInTheDocument()
     fireEvent.contextMenu(row)
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+  it('offers a ticker link instead of manual buys for a bank-synced holding', async () => {
+    // A Pluggy B3 position priced by its ticker: the connection still owns
+    // the units, so buys and sells can't be recorded by hand.
+    api.assets.list.mockResolvedValue([asset({ name: 'Petrobras PN', ticker: 'PETR4.SA', source: 'pluggy', connection_id: 'conn-1' })])
+    renderWithProviders(<AssetsPage />)
+    await screen.findByText('Petrobras PN')
+
+    openMenu('PETR4.SA')
+
+    await screen.findByRole('menu')
+    expect(menuNames()).toEqual([
+      expect.stringContaining(t('common.edit')), t('assets.linkTicker'), t('assets.refreshPrice'),
+      t('assets.moveToWallet'), t('common.delete'),
+    ])
+  })
+
+  it('opens the ticker dialog from Link ticker', async () => {
+    api.assets.list.mockResolvedValue([asset({ ...MANUAL, type: 'fund', name: 'Some FII', source: 'pluggy', connection_id: 'conn-1' })])
+    renderWithProviders(<AssetsPage />)
+    await screen.findByText('Some FII')
+
+    openMenu('Some FII')
+    fireEvent.click(await screen.findByRole('menuitem', { name: t('assets.linkTicker') }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(t('assets.linkTickerTitle'))).toBeVisible()
+  })
+
+  it('offers no ticker link for a synced holding a ticker cannot price', async () => {
+    api.assets.list.mockResolvedValue([asset({ ...MANUAL, type: 'investment', name: 'CDB 110%', source: 'pluggy', connection_id: 'conn-1' })])
+    renderWithProviders(<AssetsPage />)
+    await screen.findByText('CDB 110%')
+
+    openMenu('CDB 110%')
+
+    await screen.findByRole('menu')
+    expect(menuNames()).not.toContain(t('assets.linkTicker'))
   })
 })
