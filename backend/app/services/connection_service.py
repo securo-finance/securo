@@ -2549,12 +2549,18 @@ async def _refresh_provider_values(
         session, transaction, txn_data,
         account_currency=account_currency, user_currency=user_currency,
     )
-    if not isinstance(transaction.raw_data, dict):
-        return
     if not isinstance(provider, BankProvider):
         return
-    previous = provider.parse_raw_transaction(transaction.raw_data, payee_source)
+    previous = (
+        provider.parse_raw_transaction(transaction.raw_data, payee_source)
+        if isinstance(transaction.raw_data, dict)
+        else None
+    )
     if previous is None:
+        # A row from before the provider's last payload was kept: only empty
+        # notes take the provider's, nothing that may be someone's is replaced.
+        if txn_data.notes and not (transaction.notes or "").strip():
+            transaction.notes = txn_data.notes
         return
 
     stored = (Decimal(str(transaction.amount)), transaction.type)
@@ -2574,6 +2580,9 @@ async def _refresh_provider_values(
                 txn_data.amount_in_account_currency, restamp_account=True,
             )
             await category_line_service.rescale_lines(session, transaction, old_amount)
+
+    if (transaction.notes or None) == (previous.notes or None) and (txn_data.notes or None) != (previous.notes or None):
+        transaction.notes = txn_data.notes
 
     if transaction.payee == previous.payee and txn_data.payee != previous.payee:
         transaction.payee = txn_data.payee

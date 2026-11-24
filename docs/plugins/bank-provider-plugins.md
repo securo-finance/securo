@@ -266,6 +266,11 @@ shows both named errors: access code `expired` and `busy`.
      entry the sync adopts) gets them appended to what it has, cut to the
      column's 1000 characters; notes the plugin sent never count as the
      user's when a `complete_feed` hold expires;
+   - a plugin may correct what it sent: a row it sent before takes a new
+     `description`, `payee`, `notes` or amount where the row still holds what
+     the plugin sent last; text someone edited (or a rule manages) stays.
+     Securo keeps what the plugin sent under `securo_synced` in the row's
+     `raw_data` to tell the two apart;
    - transactions are deduplicated by `external_id`; a `pending` one becomes
      `posted` in place. The connection's own settings (pending import, payee
      source) apply; with `complete_feed`, a pending row that left the feed

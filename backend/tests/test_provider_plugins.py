@@ -96,6 +96,7 @@ from app.models.account_reserved_balance import AccountReservedBalance  # noqa: 
 from app.models.asset import Asset  # noqa: E402
 from app.models.bank_connection import BankConnection  # noqa: E402
 from app.models.transaction import Transaction  # noqa: E402
+from app.models.payee import Payee  # noqa: E402
 from app.plugins.contract import PayloadError, parse_payload  # noqa: E402
 from app.services import account_service  # noqa: E402
 from app.plugins.provider import PluginPayloadProvider, provider_name  # noqa: E402
@@ -285,6 +286,52 @@ def test_notes_longer_than_the_column_are_refused():
     data["accounts"][0]["transactions"][0]["notes"] = "x" * 1001
     with pytest.raises(PayloadError):
         parse_payload(data, ALL_KINDS)
+
+
+async def _t1(session, bank_connection):
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    (row,) = await _rows(session, Transaction, account_id=account.id, external_id="t1")
+    return row
+
+
+def _with_text(**fields):
+    data = payload_data()
+    data["accounts"][0]["transactions"][0].update(fields)
+    return data
+
+
+@pytest.mark.asyncio
+async def test_a_plugin_corrects_its_text_on_rows_nobody_edited(session: AsyncSession, bank_connection, test_user):
+    """A plugin that learns to read its bank better sends better text for rows it sent before: they take it."""
+    await _pipeline(session, bank_connection, _with_text(description="VISAEXAMPLE SHOP", payee="VISAEXAMPLE SHOP", notes="raw"), test_user)
+    await _pipeline(session, bank_connection, _with_text(description="EXAMPLE SHOP", payee="EXAMPLE SHOP", notes="Ihr Einkauf"), test_user)
+    row = await _t1(session, bank_connection)
+    assert (row.description, row.payee, row.notes) == ("EXAMPLE SHOP", "EXAMPLE SHOP", "Ihr Einkauf")
+    payee = await session.get(Payee, row.payee_id) if row.payee_id else None
+    assert payee is not None and payee.name == "EXAMPLE SHOP"
+
+
+@pytest.mark.asyncio
+async def test_text_someone_edited_stays(session: AsyncSession, bank_connection, test_user):
+    await _pipeline(session, bank_connection, _with_text(description="VISAEXAMPLE SHOP", payee="VISAEXAMPLE SHOP", notes="raw"), test_user)
+    row = await _t1(session, bank_connection)
+    row.description, row.payee, row.notes = "Groceries", "My shop", "split with Ann"
+    await session.commit()
+    await _pipeline(session, bank_connection, _with_text(description="EXAMPLE SHOP", payee="EXAMPLE SHOP", notes="Ihr Einkauf"), test_user)
+    row = await _t1(session, bank_connection)
+    assert (row.description, row.payee, row.notes) == ("Groceries", "My shop", "split with Ann")
+
+
+@pytest.mark.asyncio
+async def test_a_row_from_before_the_snapshot_gets_its_empty_notes_filled(session: AsyncSession, bank_connection, test_user):
+    """Rows a plugin sent before Securo kept what it sent: their empty notes are filled, nothing else is guessed."""
+    await _pipeline(session, bank_connection, _with_text(description="VISAEXAMPLE SHOP", payee="VISAEXAMPLE SHOP"), test_user)
+    row = await _t1(session, bank_connection)
+    row.raw_data = None
+    await session.commit()
+    await _pipeline(session, bank_connection, _with_text(description="EXAMPLE SHOP", payee="EXAMPLE SHOP", notes="Ihr Einkauf"), test_user)
+    row = await _t1(session, bank_connection)
+    assert (row.description, row.payee, row.notes) == ("EXAMPLE SHOP", "VISAEXAMPLE SHOP", "Ihr Einkauf")
 
 
 @pytest.mark.asyncio

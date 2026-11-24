@@ -120,6 +120,14 @@ class _Model(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+#: The key of a plugin row's `raw_data` that keeps what the plugin last sent (see `Transaction.to_data`).
+SYNCED_TEXT = "securo_synced"
+
+
+def synced_text(txn: Transaction) -> dict[str, Any]:
+    return {"amount": str(txn.amount), "type": txn.type, "payee": txn.payee, "notes": txn.notes}
+
+
 class Transaction(_Model):
     external_id: ExternalId
     description: str = Field(min_length=1, max_length=500)
@@ -143,6 +151,9 @@ class Transaction(_Model):
 
     def to_data(self) -> TransactionData:
         fields = self.model_dump(exclude={"provider_category"})
+        # What the plugin sent, kept with the row: the next sync tells from it whether the row's payee and notes are
+        # still the plugin's (a correction then replaces them) or someone's edit (which stays).
+        fields["raw_data"] = {**(self.raw_data or {}), SYNCED_TEXT: synced_text(self)}
         return TransactionData(**fields, pluggy_category=self.provider_category)
 
 
