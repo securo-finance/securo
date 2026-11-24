@@ -34,6 +34,7 @@ from app.services._query_filters import (
     viewer_shares_in_primary,
     with_category_lines,
     reporting_date_value,
+    member_split_rows,
 )
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.category_defaults import DEFAULT_CATEGORIES, name_variants
@@ -752,8 +753,7 @@ async def get_income_expenses_report(
     )
     from app.models.group_settlement import GroupSettlement as _GS_
 
-    owner_filters = (
-        Transaction.user_id == user_id,
+    split_filters = (
         Transaction.workspace_id == workspace_id,
         report_date >= start,
         report_date <= axis_end,
@@ -761,6 +761,7 @@ async def get_income_expenses_report(
         Transaction.status == "posted",
         counts_as_user_pnl(Transaction.category_id),
     )
+    owner_filters = (Transaction.user_id == user_id, *split_filters)
     owner_offset_rows = [] if filtered else [
         *(await session.execute(
             select(label_expr, *owner_columns, func.sum(_TS_.share_amount))
@@ -778,6 +779,10 @@ async def get_income_expenses_report(
             .where(*owner_filters, Transaction.type == "credit")
             .group_by(label_expr, *owner_columns)
         )).all(),
+        # Another member's split expense counts the viewer's share.
+        *await member_split_rows(
+            session, user_id, split_filters, viewer, lead=(label_expr,)
+        ),
     ]
     owner_rates: dict[tuple[str, date], Optional[Decimal]] = {}
     # (period, category_id, type, share in primary), reused by the category

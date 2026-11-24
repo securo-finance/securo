@@ -510,6 +510,69 @@ def _viewer_member_ids(user_id: uuid.UUID):
     )
 
 
+def member_shares(user_id: uuid.UUID):
+    """Subquery: what the user owes of each split row, as a linked member.
+
+    The share other people's rows of a shared workspace count for the viewer.
+    The self-member of a group they own is left out on purpose, as in the
+    category statement: those rows keep counting whole for the owner.
+    """
+    from app.models.group import GroupMember
+    from app.models.transaction_split import TransactionSplit
+
+    return (
+        select(
+            TransactionSplit.transaction_id,
+            func.sum(TransactionSplit.share_amount).label("share"),
+        )
+        .join(GroupMember, GroupMember.id == TransactionSplit.group_member_id)
+        .where(GroupMember.linked_user_id == user_id, GroupMember.is_self.is_(False))
+        .group_by(TransactionSplit.transaction_id)
+        .subquery()
+    )
+
+
+async def member_split_rows(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    filters: tuple,
+    viewer: Optional["ViewerCurrency"] = None,
+    lead: tuple = (),
+):
+    """One row per split expense another member of the workspace paid and the
+    viewer is part of: the part that is not the viewer's share.
+
+    The workspace totals hold these rows at their full amount, so this comes
+    off them to leave the viewer's share, the way the category
+    statement does it. Same columns as :func:`_owner_split_rows`, after the
+    ``lead`` ones; the stamp is read in the viewer's currency, with the
+    totals' own fallback, so the share comes off at the value they added.
+    Credits stay whole, as in the statement.
+    """
+    shares = member_shares(user_id)
+    stamp = viewer.amount() if viewer is not None else Transaction.amount_primary
+    result = await session.execute(
+        select(
+            *lead,
+            Transaction.id,
+            Transaction.category_id,
+            Transaction.type,
+            Transaction.currency,
+            Transaction.amount,
+            func.coalesce(stamp, Transaction.amount).label("amount_primary"),
+            Transaction.date,
+            (func.abs(Transaction.amount) - shares.c.share).label("others"),
+        )
+        .join(shares, shares.c.transaction_id == Transaction.id)
+        .where(
+            *filters,
+            Transaction.user_id != user_id,
+            Transaction.type == "debit",
+        )
+    )
+    return result.all()
+
+
 async def _owner_split_rows(
     session: AsyncSession,
     user_id: uuid.UUID,
@@ -518,16 +581,20 @@ async def _owner_split_rows(
     use_effective_date: bool,
     workspace_id: Optional[uuid.UUID],
     extra_filters: tuple = (),
+    primary_currency: Optional[str] = None,
 ):
     """One row per posted split transaction of the user's: the non-owner
     shares summed in the row's own currency, next to what is needed to
-    bring them into the primary currency.
+    bring them into the primary currency. With a workspace, the split
+    expenses its other members paid are included
+    (:func:`member_split_rows`).
 
     A credit that settles group debts (their receiver transaction) gives a
     row too: the settled part is money paid back, not income, the way a
     settlement's own credit never counts. Any remainder stays income."""
     from app.models.group_settlement import GroupSettlement
     from app.models.transaction_split import TransactionSplit
+    from app.services.viewer_currency import viewer_currency
 
     date_col = reporting_date_col("accrual" if use_effective_date else "cash")
     columns = (
@@ -539,8 +606,7 @@ async def _owner_split_rows(
         Transaction.amount_primary,
         Transaction.date,
     )
-    filters = (
-        Transaction.user_id == user_id,
+    row_filters = (
         *([Transaction.workspace_id == workspace_id] if workspace_id is not None else []),
         *extra_filters,
         Transaction.source != "opening_balance",
@@ -550,6 +616,7 @@ async def _owner_split_rows(
         Transaction.status == "posted",
         counts_as_user_pnl(Transaction.category_id),
     )
+    filters = (Transaction.user_id == user_id, *row_filters)
     result = await session.execute(
         select(*columns, func.sum(TransactionSplit.share_amount))
         .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
@@ -562,7 +629,11 @@ async def _owner_split_rows(
         .where(*filters, Transaction.type == "credit")
         .group_by(*columns)
     )
-    return [*result.all(), *settled.all()]
+    rows = [*result.all(), *settled.all()]
+    if workspace_id is not None:
+        viewer = await viewer_currency(session, primary_currency) if primary_currency else None
+        rows += await member_split_rows(session, user_id, row_filters, viewer)
+    return rows
 
 
 async def _others_share_in_primary(
@@ -620,13 +691,15 @@ async def owner_split_offset_pnl(
     from the owner's full-amount aggregations so only their own share
     remains. We sum every split share that belongs to a non-owner
     member; subtracting that from the parent's full amount leaves the
-    owner's share.
+    owner's share. A split expense another member of the workspace paid
+    comes off the same way, down to the viewer's share.
 
     Without ``primary_currency`` the shares are summed as stored, in each
     row's own currency; with it they are brought into that currency by
     :func:`_others_share_in_primary`."""
     rows = await _owner_split_rows(
-        session, user_id, month_start, month_end, use_effective_date, workspace_id
+        session, user_id, month_start, month_end, use_effective_date, workspace_id,
+        primary_currency=primary_currency,
     )
     rates: dict[tuple[str, date], Optional[Decimal]] = {}
     income_total = Decimal("0")
@@ -662,6 +735,7 @@ async def owner_split_offset_by_category(
         use_effective_date,
         workspace_id,
         extra_filters=(Transaction.type == "debit",),
+        primary_currency=primary_currency,
     )
     rates: dict[tuple[str, date], Optional[Decimal]] = {}
     totals: dict = {}
@@ -678,7 +752,11 @@ async def forecast_owner_share_fractions(
     user_id: uuid.UUID,
     transactions: Iterable[Transaction],
 ) -> dict[uuid.UUID, Decimal]:
-    """Map the user's own split forecast rows to the fraction that is their cost.
+    """Map split forecast rows to the fraction that is the user's cost.
+
+    Their own rows keep what the other members' shares leave; a split expense
+    another member of the workspace paid keeps the user's share, as
+    :func:`member_split_rows` does for posted rows.
 
     The `owner_split_offset_*` helpers only see posted rows dated up to today.
     Pending and future-dated rows reach the projections one by one through
@@ -687,15 +765,34 @@ async def forecast_owner_share_fractions(
     currency, so multiplying it into `amount_primary` keeps the conversion
     already stored on the row and needs no FX lookup.
 
-    Rows without non-owner shares are left out; callers treat a missing id
+    Rows with nothing to take off are left out; callers treat a missing id
     as 1.
     """
     from app.models.group import Group, GroupMember
     from app.models.transaction_split import TransactionSplit
 
-    own_rows = {tx.id: tx for tx in transactions if tx.user_id == user_id}
+    own_rows: dict[uuid.UUID, Transaction] = {}
+    others_rows: dict[uuid.UUID, Transaction] = {}
+    for tx in transactions:
+        if tx.user_id == user_id:
+            own_rows[tx.id] = tx
+        elif tx.type == "debit":
+            others_rows[tx.id] = tx
+
+    fractions: dict[uuid.UUID, Decimal] = {}
+    if others_rows:
+        shares = member_shares(user_id)
+        owed = await session.execute(
+            select(shares.c.transaction_id, shares.c.share).where(
+                shares.c.transaction_id.in_(list(others_rows))
+            )
+        )
+        for tx_id, share in owed.all():
+            full = abs(Decimal(str(others_rows[tx_id].amount)))
+            if full:
+                fractions[tx_id] = Decimal(str(share or 0)) / full
     if not own_rows:
-        return {}
+        return fractions
 
     viewer_member_ids = (
         select(GroupMember.id)
@@ -716,7 +813,6 @@ async def forecast_owner_share_fractions(
         .group_by(TransactionSplit.transaction_id)
     )
 
-    fractions: dict[uuid.UUID, Decimal] = {}
     for tx_id, others in result.all():
         full = abs(Decimal(str(own_rows[tx_id].amount)))
         if not full:
