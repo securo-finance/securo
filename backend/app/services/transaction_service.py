@@ -22,7 +22,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.app_clock import app_today
-from app.core.currency import same_currency
+from app.core.currency import check_transaction_currency, same_currency
 from app.core.money import (
     MoneyOutOfRange,
     bounded_conversion,
@@ -1397,7 +1397,11 @@ async def create_transaction(
         raise ValueError("Choose either a category or a split across categories")
 
     # Resolve currency: explicit value > account currency
-    currency = data.currency or account.currency
+    currency = (
+        check_transaction_currency(data.currency, account.currency)
+        if data.currency
+        else account.currency
+    )
 
     transaction = Transaction(
         user_id=user_id,
@@ -2141,6 +2145,8 @@ async def _apply_update_to_row(
     paths behave identically (FX restamp, bill re-link, transfer cascade,
     splits replacement).
     """
+    if update_data.get("currency") is not None:
+        update_data["currency"] = check_transaction_currency(update_data["currency"], tx.currency)
     # Preflight already rejected amount/date changes. Drop equal provider values
     # so an idempotent form save cannot restamp FX or cascade to the manual leg.
     if tx.source == "sync" and ({"amount", "currency", "date"} & update_data.keys()):

@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
-from app.core.currency import normalize_currency_code
+from app.core.currency import UnsupportedCurrency, normalize_currency_code
 from app.core.database import get_async_session
 from app.core.money import MoneyOutOfRange
 from app.core.workspace_context import (
@@ -703,7 +703,7 @@ async def create_transaction(
         full_tx = await transaction_service.get_transaction(session, transaction.id, ctx.workspace.id)
         primary_currency = ctx.user.primary_currency
         return await _read_in_viewer_currency(session, primary_currency, full_tx)
-    except MoneyOutOfRange as e:
+    except (MoneyOutOfRange, UnsupportedCurrency) as e:
         raise HTTPException(status_code=422, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -722,7 +722,7 @@ async def update_transaction(
         )
     except PermissionError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
-    except MoneyOutOfRange as e:
+    except (MoneyOutOfRange, UnsupportedCurrency) as e:
         raise HTTPException(status_code=422, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
