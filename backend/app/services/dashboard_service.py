@@ -726,7 +726,10 @@ async def get_summary(
         pnl_ratio = user_pnl_ratio(tx)
         if not pnl_ratio:
             continue
-        stamped = await viewer.convert(session, tx.user_id, tx.amount_primary, tx.date)
+        stamped = await viewer.convert(
+            session, tx.user_id, tx.amount_primary, tx.date,
+            currency=tx.currency, amount=tx.amount, typed=tx.amount_primary_typed,
+        )
         if stamped is not None:
             forecast_converted = stamped
         else:
@@ -1033,7 +1036,10 @@ async def get_spending_by_category(
         parts = user_pnl_parts(tx)
         if not parts:
             continue
-        stamped = await viewer.convert(session, tx.user_id, tx.amount_primary, tx.date)
+        stamped = await viewer.convert(
+            session, tx.user_id, tx.amount_primary, tx.date,
+            currency=tx.currency, amount=tx.amount, typed=tx.amount_primary_typed,
+        )
         if stamped is not None:
             tx_amount = abs(stamped)
         else:
@@ -1154,7 +1160,10 @@ async def get_monthly_trend(
         tx_report_date = reporting_date_value(tx, accounting_mode)
         month_key = f"{tx_report_date.year:04d}-{tx_report_date.month:02d}"
         bucket = trend_map.setdefault(month_key, [0.0, 0.0])
-        stamped = await viewer.convert(session, tx.user_id, tx.amount_primary, tx.date)
+        stamped = await viewer.convert(
+            session, tx.user_id, tx.amount_primary, tx.date,
+            currency=tx.currency, amount=tx.amount, typed=tx.amount_primary_typed,
+        )
         if stamped is not None:
             amount = abs(float(stamped))
         else:
