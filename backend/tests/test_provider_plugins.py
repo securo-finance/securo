@@ -365,6 +365,53 @@ async def test_a_twin_under_a_new_id_corrects_the_notes_and_later_syncs_still_ca
 
 
 @pytest.mark.asyncio
+async def test_a_twin_under_a_new_id_corrects_the_payee_and_later_syncs_still_can(
+    session: AsyncSession, bank_connection, test_user
+):
+    """The payee follows a twin under a new id like the notes do, linked
+    payee included, so the row doesn't read as edited from then on."""
+    await _pipeline(session, bank_connection, _account_txns({**_txn("p1", status="pending"), "payee": "VISA SHOP"}), test_user)
+    await _pipeline(session, bank_connection, _account_txns({**_txn("p2"), "payee": "Example Shop"}), test_user)
+    row = await _only_row(session, bank_connection)
+    assert (row.external_id, row.payee) == ("p2", "Example Shop")
+    payee = await session.get(Payee, row.payee_id) if row.payee_id else None
+    assert payee is not None and payee.name == "Example Shop"
+
+    await _pipeline(session, bank_connection, _account_txns({**_txn("p2"), "payee": "Example Shop GmbH"}), test_user)
+    row = await _only_row(session, bank_connection)
+    payee = await session.get(Payee, row.payee_id) if row.payee_id else None
+    assert row.payee == "Example Shop GmbH" and payee is not None and payee.name == "Example Shop GmbH"
+
+
+@pytest.mark.asyncio
+async def test_a_payee_of_only_spaces_is_none(session: AsyncSession, bank_connection, test_user):
+    """Securo can't name a payee entity after blank text: a blank payee is none, sent first or as a correction."""
+    await _pipeline(session, bank_connection, _with_text(payee="   "), test_user)
+    row = await _t1(session, bank_connection)
+    assert (row.payee, row.payee_id) == (None, None)
+
+    await _pipeline(session, bank_connection, _with_text(payee="Example Shop"), test_user)
+    await _pipeline(session, bank_connection, _with_text(payee="  "), test_user)
+    row = await _t1(session, bank_connection)
+    assert (row.payee, row.payee_id) == (None, None)
+
+
+@pytest.mark.asyncio
+async def test_notes_someone_cleared_stay_cleared_after_the_plugin_sends_none(
+    session: AsyncSession, bank_connection, test_user
+):
+    """A payload without notes must not make the cleared row look like the plugin's again."""
+    await _pipeline(session, bank_connection, _with_text(notes="raw"), test_user)
+    row = await _t1(session, bank_connection)
+    row.notes = None
+    await session.commit()
+    await _pipeline(session, bank_connection, _with_text(notes=None), test_user)
+    await _pipeline(session, bank_connection, _with_text(notes="corrected"), test_user)
+    row = await _t1(session, bank_connection)
+    assert row.notes is None
+
+
+@pytest.mark.asyncio
 async def test_notes_someone_cleared_stay_cleared(session: AsyncSession, bank_connection, test_user):
     await _pipeline(session, bank_connection, _with_text(notes="raw"), test_user)
     row = await _t1(session, bank_connection)

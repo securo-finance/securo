@@ -2080,6 +2080,7 @@ async def _run_first_import(
                     synced_dup.card_masked_number = txn_data.card_masked_number
                 if settles:
                     synced_dup.status = "posted"
+                    linked_payee_id = await _refresh_twin_payee(session, synced_dup, txn_data)
                     _merge_sync_metadata(
                         synced_dup,
                         txn_data,
@@ -2090,7 +2091,8 @@ async def _run_first_import(
                         account_currency=account.currency, user_currency=user_currency,
                     )
                     await apply_rules_to_settled_transaction(
-                        session, user_id, synced_dup, manual_description=manual_description
+                        session, user_id, synced_dup, manual_description=manual_description,
+                        synced_payee_id=linked_payee_id,
                     )
                     if (
                         txn_data.bill_external_id
@@ -2103,6 +2105,7 @@ async def _run_first_import(
                                 synced_dup, account, bill_due_date=bill.due_date
                             )
                 elif synced_dup.external_id != txn_data.external_id:
+                    await _refresh_twin_payee(session, synced_dup, txn_data)
                     _merge_sync_metadata(
                         synced_dup,
                         txn_data,
@@ -2483,7 +2486,16 @@ def _merge_sync_metadata(
     if txn_data.payee and not transaction.payee:
         transaction.payee = txn_data.payee
     if isinstance(sent, dict):
-        _refresh_synced_notes(transaction, sent.get("notes"), txn_data.notes)
+        if not _refresh_synced_notes(transaction, sent.get("notes"), txn_data.notes):
+            # Someone took the notes over: the snapshot keeps the plugin's text
+            # from before, so a later payload without notes can't make an
+            # empty (cleared) row look like the plugin's again.
+            raw = transaction.raw_data if isinstance(transaction.raw_data, dict) else {}
+            merged_sent = raw.get(SYNCED_TEXT)
+            if isinstance(merged_sent, dict):
+                transaction.raw_data = {
+                    **raw, SYNCED_TEXT: {**merged_sent, "notes": sent.get("notes")}
+                }
     else:
         _merge_synced_notes(transaction, txn_data.notes)
 
@@ -2586,29 +2598,62 @@ async def _refresh_provider_values(
             )
             await category_line_service.rescale_lines(session, transaction, old_amount)
 
-    if transaction.payee == previous.payee and txn_data.payee != previous.payee:
-        transaction.payee = txn_data.payee
-        # The linked payee follows only while it is still the one the old
-        # name gave; one a rule or the user picked stays.
-        previous_entity = (
-            await find_payee_by_name(session, transaction.workspace_id, previous.payee)
-            if previous.payee
-            else None
-        )
-        previous_id = previous_entity.id if previous_entity else None
-        if transaction.payee_id == previous_id:
-            transaction.payee_id = (
-                (
-                    await get_or_create_payee(
-                        session,
-                        transaction.user_id,
-                        txn_data.payee,
-                        workspace_id=transaction.workspace_id,
-                    )
-                ).id
-                if txn_data.payee
-                else None
+    await _refresh_payee(session, transaction, previous.payee, txn_data.payee)
+
+
+async def _refresh_payee(
+    session: AsyncSession,
+    transaction: Transaction,
+    previous: Optional[str],
+    incoming: Optional[str],
+) -> Optional[uuid.UUID]:
+    """Take a provider's corrected payee where the row still holds its last one.
+
+    The linked payee follows only while it is still the one the old name
+    gave; one a rule or the user picked stays. A blank name links none.
+    Returns the payee this linked, if any, so the settled row's rules may
+    still replace it (`apply_rules_to_settled_transaction`).
+    """
+    if transaction.payee != previous or incoming == previous:
+        return None
+    transaction.payee = incoming
+    previous_entity = (
+        await find_payee_by_name(session, transaction.workspace_id, previous)
+        if previous
+        else None
+    )
+    previous_id = previous_entity.id if previous_entity else None
+    if transaction.payee_id != previous_id:
+        return None
+    name = (incoming or "").strip()
+    transaction.payee_id = (
+        (
+            await get_or_create_payee(
+                session, transaction.user_id, name, workspace_id=transaction.workspace_id
             )
+        ).id
+        if name
+        else None
+    )
+    return transaction.payee_id
+
+
+async def _refresh_twin_payee(
+    session: AsyncSession, transaction: Transaction, txn_data
+) -> Optional[uuid.UUID]:
+    """`_refresh_payee` for a plugin row matched other than by its own id.
+
+    A pending row that posts under a new id (or a re-keyed row) never went
+    through `_refresh_provider_values`, yet its snapshot advances to the new
+    payload's: unless the payee follows too, the row reads as edited from
+    then on and no later correction reaches it. Must run before
+    `_merge_sync_metadata`, which merges the new snapshot in. Rows without a
+    plugin's snapshot are left as they are.
+    """
+    sent = transaction.raw_data.get(SYNCED_TEXT) if isinstance(transaction.raw_data, dict) else None
+    if transaction.source != "sync" or not isinstance(sent, dict):
+        return None
+    return await _refresh_payee(session, transaction, sent.get("payee"), txn_data.payee)
 
 
 #: How many days an Enable Banking card hold can precede the booked entry that
@@ -3331,12 +3376,14 @@ async def _promote_settled_pending(
         return None
     manual_description = await read_description_is_manual(session, transaction)
     transaction.status = "posted"
+    linked_payee_id = await _refresh_twin_payee(session, transaction, txn_data)
     _merge_sync_metadata(transaction, txn_data, replace_external_id=rekeyed)
     await _refresh_account_charge(
         session, transaction, txn_data, account_currency=account.currency
     )
     await apply_rules_to_settled_transaction(
-        session, account.user_id, transaction, manual_description=manual_description
+        session, account.user_id, transaction, manual_description=manual_description,
+        synced_payee_id=linked_payee_id,
     )
     _relink_bill(transaction, txn_data, account, bills_by_external_id)
     await _remember_linked_card(
@@ -3440,22 +3487,26 @@ def _merge_synced_notes(transaction: Transaction, incoming: Optional[str]) -> No
 
 def _refresh_synced_notes(
     transaction: Transaction, sent: Optional[str], incoming: Optional[str]
-) -> None:
+) -> bool:
     """Take a plugin's notes on a row it sent before, knowing what it sent last.
 
     Notes that are still the plugin's last take its correction. Notes someone
     wrote where the plugin sent none get the plugin's new text beside them
     (`merge_notes`). Text the plugin sent that someone then changed or cleared
-    stays as they left it.
+    stays as they left it: then this returns False, and the caller keeps
+    `sent` in the snapshot.
     """
     sent = (sent or "").strip()
-    if (incoming or "").strip() == sent:
-        return
     current = (transaction.notes or "").strip()
+    if sent and current != sent:
+        return False
+    if (incoming or "").strip() == sent:
+        return True
     if current == sent:
         _set_synced_notes(transaction, incoming)
-    elif not sent:
+    else:
         _merge_synced_notes(transaction, incoming)
+    return True
 
 
 def _differs_from_sync(raw: dict, key: str, value: Optional[uuid.UUID]) -> bool:
@@ -4808,6 +4859,9 @@ async def sync_connection(
                         # Posted truth wins: swap in the new id so subsequent
                         # syncs match by external_id and update raw_data.
                         synced_dup.status = "posted"
+                        linked_payee_id = await _refresh_twin_payee(
+                            session, synced_dup, txn_data
+                        )
                         had_payee = bool(synced_dup.payee)
                         _merge_sync_metadata(
                             synced_dup,
@@ -4821,7 +4875,6 @@ async def sync_connection(
                         )
                         # A hold that named nobody gets the payee only now;
                         # link it like a row inserted with it.
-                        linked_payee_id = None
                         if (
                             not had_payee
                             and synced_dup.payee
@@ -4846,6 +4899,7 @@ async def sync_connection(
                         # Same logical posted row re-keyed by a provider such
                         # as SimpleFIN. Keep the user's row and move its
                         # idempotency key forward instead of inserting a twin.
+                        await _refresh_twin_payee(session, synced_dup, txn_data)
                         _merge_sync_metadata(
                             synced_dup,
                             txn_data,

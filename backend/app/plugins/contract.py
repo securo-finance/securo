@@ -120,8 +120,16 @@ class _Model(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-#: The key of a plugin row's `raw_data` that keeps what the plugin last sent (see `Transaction.to_data`).
+#: The key of a plugin row's `raw_data` that keeps what the plugin last sent (see `Transaction.to_data`). Its
+#: `notes` are the exception: on a row whose notes someone took over, they stay the plugin's text from before (see
+#: `_refresh_synced_notes` in the connection service).
 SYNCED_TEXT = "securo_synced"
+
+
+def _blank_is_none(value: Any) -> Any:
+    if isinstance(value, str):
+        return value.strip() or None
+    return value
 
 
 def column_amount(value: Decimal) -> Decimal:
@@ -149,7 +157,8 @@ class Transaction(_Model):
     amount_in_account_currency: PositiveMoney | None = None
     provider_category: str | None = Field(default=None, max_length=100)
     status: Literal["posted", "pending"] = "posted"
-    payee: str | None = Field(default=None, max_length=200)
+    payee: Annotated[str | None, BeforeValidator(_blank_is_none)] = Field(default=None, max_length=200)
+    """A payee of only spaces is none: Securo can't name a payee entity after it."""
     notes: str | None = Field(default=None, max_length=1000)
     """Text the list doesn't show but search and rules read: the bank's full purpose, a reference, an order number."""
     raw_data: dict[str, Any] | None = None
