@@ -239,6 +239,29 @@ describe('localized API errors', () => {
     ]))).toBe('O valor é maior do que o Securo consegue guardar., date: Input should be a valid date')
   })
 
+  // Linking an incoming transaction to a group settlement, refused by the
+  // service: the settle dialog must say why in the user's language (#494).
+  it.each([
+    ['en', 'The settlements already linked to this credit add up to more than its amount.'],
+    ['pt-BR', 'Os acertos já vinculados a este crédito passam do valor dele.'],
+  ])('shows why a payback cannot exceed the credit in %s', async (language, expected) => {
+    await i18n.changeLanguage(language)
+
+    expect(
+      extractApiError(apiError('Settlements linked to this transaction would exceed its amount')),
+    ).toBe(expected)
+  })
+
+  it('translates the other refusals of a linked transaction', async () => {
+    await i18n.changeLanguage('pt-BR')
+
+    expect(extractApiError(apiError('Only the receiver can link their incoming transaction')))
+      .toBe('Só quem recebe o dinheiro pode vincular a transação de entrada.')
+    expect(extractApiError(
+      apiError("Linked transaction must be your own credit in the settlement's currency"),
+    )).toBe('Escolha uma transação de entrada sua, na moeda do acerto.')
+  })
+
   it('falls back to the message of a code it does not know', async () => {
     await i18n.changeLanguage('pt-BR')
 
