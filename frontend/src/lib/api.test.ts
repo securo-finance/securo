@@ -128,4 +128,9 @@ describe('transfer responses carry numeric pocket amounts', () => {
     respondWith(null)
     expect(await transactions.transferPair('t')).toBeNull()
   })
+
+  it('normalizes a transaction marked as read', async () => {
+    respondWith(leg('r', '7.25'))
+    expect((await transactions.markRead('r')).goal_allocations?.[0].amount).toBe(7.25)
+  })
 })

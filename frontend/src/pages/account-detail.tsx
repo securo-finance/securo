@@ -14,6 +14,7 @@ import { isTransferTransaction } from '@/lib/transaction-transfer'
 import { closeDateForBill, isOpenCycleWindow } from '@/lib/credit-card-cycle'
 import { toast } from 'sonner'
 import type { AccountCard, CreditCardBill, ProjectedTransaction, Transaction, GoalAllocationInput } from '@/types'
+import { pocketAvailable, sumPocketAmounts } from '@/lib/pocket-allocation-utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Clock, CreditCard, EyeClosed, HelpCircle, Paperclip, Pencil, Plus, X } from 'lucide-react'
@@ -913,8 +914,8 @@ export default function AccountDetailPage() {
   const accountPocketGoals = (pocketGoals ?? []).filter(
     goal => goal.tracking_type === 'pocket' && goal.account_id === id,
   )
-  const pocketReserved = accountPocketGoals.reduce((sum, goal) => sum + goal.current_amount, 0)
-  const pocketFree = (summary?.current_balance ?? 0) - pocketReserved
+  const pocketReserved = sumPocketAmounts(accountPocketGoals.map(goal => goal.current_amount))
+  const pocketFree = pocketAvailable(summary?.current_balance ?? 0, pocketReserved)
   const projectedBalance = isCreditCard
     ? (displayRows[0]?.runningBalance ?? openingBalance)
     : (chartData.at(-1)?.balance ?? openingBalance)

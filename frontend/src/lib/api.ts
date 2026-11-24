@@ -757,7 +757,7 @@ export const transactions = {
   // in the meantime.
   markRead: async (id: string, workspaceId?: string | null): Promise<Transaction> => {
     const { data } = await api.patch(`/transactions/${id}/read`, undefined, workspaceHeader(workspaceId))
-    return data
+    return normalizeTransactionGoalAllocations(data)
   },
   markAllRead: async (workspaceId?: string | null): Promise<{ updated: number }> => {
     const { data } = await api.post('/transactions/read-all', undefined, workspaceHeader(workspaceId))

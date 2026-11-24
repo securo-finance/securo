@@ -40,6 +40,7 @@ import { useWorkspace } from '@/contexts/workspace-context'
 import { formatCurrency } from '@/lib/format'
 import { extractApiError } from '@/lib/api-errors'
 import { todayInTimezone } from '@/lib/date-utils'
+import { pocketAvailable, roundToCents, sumPocketAmounts } from '@/lib/pocket-allocation-utils'
 
 const PRESET_COLORS = [
   '#3B82F6', '#10B981', '#F59E0B', '#EF4444',
@@ -266,14 +267,16 @@ export default function GoalsPage() {
       goal => goal.tracking_type === 'pocket' && goal.account_id === accountId,
     )
     if (snapshot?.account_reserved_total != null) return snapshot.account_reserved_total
-    return (allGoals ?? [])
-      .filter(goal => goal.tracking_type === 'pocket' && goal.account_id === accountId)
-      .reduce((sum, goal) => sum + goal.current_amount, 0)
+    return sumPocketAmounts(
+      (allGoals ?? [])
+        .filter(goal => goal.tracking_type === 'pocket' && goal.account_id === accountId)
+        .map(goal => goal.current_amount),
+    )
   }
 
   const selectedPocketAccount = (accountsList ?? []).find(account => account.id === pocketAccountId)
   const selectedAccountAvailable = selectedPocketAccount
-    ? selectedPocketAccount.current_balance - reservedForAccount(selectedPocketAccount.id)
+    ? pocketAvailable(selectedPocketAccount.current_balance, reservedForAccount(selectedPocketAccount.id))
     : 0
 
   const openCreateDialog = () => {
@@ -557,7 +560,7 @@ export default function GoalsPage() {
                   payload.initial_allocation = initialMode === 'available'
                     ? Math.max(0, selectedAccountAvailable)
                     : initialMode === 'custom'
-                      ? parseFloat(initialAmount || '0')
+                      ? roundToCents(parseFloat(initialAmount || '0'))
                       : 0
                 }
               }
