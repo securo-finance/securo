@@ -7,7 +7,7 @@ import type { Asset } from '@/types'
 
 const api = vi.hoisted(() => ({
   assets: {
-    list: vi.fn(), portfolioTrend: vi.fn(), refreshPrice: vi.fn(), delete: vi.fn(),
+    list: vi.fn(), portfolioTrend: vi.fn(), refreshPrice: vi.fn(), delete: vi.fn(), update: vi.fn(),
     values: vi.fn(), valueTrend: vi.fn(), transactions: vi.fn(),
   },
   assetGroups: { list: vi.fn() },
@@ -150,9 +150,10 @@ describe('Holding row actions menu', () => {
 
     openMenu('Old Car')
 
-    const edit = await screen.findByRole('menuitem', { name: t('common.edit') })
+    const edit = await screen.findByRole('menuitem', { name: new RegExp(`^${t('common.edit')}`) })
     expect(edit).toHaveAttribute('data-disabled')
-    expect(edit).toHaveAttribute('title', t('assets.syncedReadOnly'))
+    // Shown as text: a disabled item gets no hover for a tooltip.
+    expect(within(edit).getByText(t('assets.syncedReadOnly'))).toBeVisible()
   })
 
   it('offers no price refresh for a sold holding', async () => {
@@ -182,6 +183,28 @@ describe('Holding row actions menu', () => {
     // The row shows the new quote once the list is fetched again.
     expect(await screen.findByText('$210.00')).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('keeps a refresh from the row out of another holding\'s edit dialog', async () => {
+    api.assets.list.mockResolvedValue([asset(), MANUAL])
+    api.assets.update.mockResolvedValue(MANUAL)
+    let answer: (value: Asset) => void = () => {}
+    api.assets.refreshPrice.mockReturnValue(new Promise<Asset>((resolve) => { answer = resolve }))
+    renderWithProviders(<AssetsPage />)
+    await screen.findByText('Old Car')
+
+    // The quote arrives while the user is already editing another holding.
+    openMenu('AAPL')
+    fireEvent.click(await screen.findByRole('menuitem', { name: t('assets.refreshPrice') }))
+    openMenu('Old Car')
+    fireEvent.click(await screen.findByRole('menuitem', { name: t('common.edit') }))
+    const dialog = await screen.findByRole('dialog')
+    answer(asset({ last_price: 210 }))
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(t('assets.priceRefreshed')))
+
+    fireEvent.click(within(dialog).getByRole('button', { name: t('common.save') }))
+    await waitFor(() => expect(api.assets.update).toHaveBeenCalled())
+    expect(api.assets.update.mock.calls[0][0]).toBe('asset-manual')
   })
 
   it('asks for confirmation before deleting', async () => {
