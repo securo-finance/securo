@@ -740,7 +740,7 @@ async def get_summary(
             continue
         stamped = await viewer.convert(
             session, tx.user_id, tx.amount_primary, tx.date,
-            currency=tx.currency, amount=tx.amount, typed=tx.amount_primary_typed,
+            currency=tx.currency, amount=tx.amount,
         )
         if stamped is not None:
             forecast_converted = stamped
@@ -1050,7 +1050,7 @@ async def get_spending_by_category(
             continue
         stamped = await viewer.convert(
             session, tx.user_id, tx.amount_primary, tx.date,
-            currency=tx.currency, amount=tx.amount, typed=tx.amount_primary_typed,
+            currency=tx.currency, amount=tx.amount,
         )
         if stamped is not None:
             tx_amount = abs(stamped)
@@ -1174,7 +1174,7 @@ async def get_monthly_trend(
         bucket = trend_map.setdefault(month_key, [0.0, 0.0])
         stamped = await viewer.convert(
             session, tx.user_id, tx.amount_primary, tx.date,
-            currency=tx.currency, amount=tx.amount, typed=tx.amount_primary_typed,
+            currency=tx.currency, amount=tx.amount,
         )
         if stamped is not None:
             amount = abs(float(stamped))
