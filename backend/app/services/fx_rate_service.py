@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.core.app_clock import app_today
 from app.core.config import get_settings
 from app.core.currency import same_currency
+from app.core.money import MoneyOutOfRange, bounded_conversion
 from app.models.account import Account
 from app.models.fx_rate import FxRate
 from app.models.transaction import Transaction
@@ -332,18 +333,27 @@ async def stamp_primary_amount(
     currency, date or account changed; a stamp that only heals the reporting
     value keeps the account amount (see `stamp_account_amount`).
     """
+    before = (getattr(obj, primary_field, None), getattr(obj, rate_field, None))
     await _stamp_primary_fields(
         session, user_id, obj, amount_field, primary_field, rate_field,
         date_field, currency_field, allow_fetch=allow_fetch,
     )
     if isinstance(obj, Transaction) and primary_field == "amount_primary":
-        await stamp_account_amount(
-            session,
-            obj,
-            bank_amount=account_amount,
-            allow_fetch=allow_fetch,
-            recompute=restamp_account,
-        )
+        try:
+            await stamp_account_amount(
+                session,
+                obj,
+                bank_amount=account_amount,
+                allow_fetch=allow_fetch,
+                recompute=restamp_account,
+            )
+        except MoneyOutOfRange:
+            # The account leg converts past the column (issue #422): put the
+            # primary stamp back, so the row is left as it was instead of
+            # half stamped and out of the healers' reach.
+            setattr(obj, primary_field, before[0])
+            setattr(obj, rate_field, before[1])
+            raise
 
 
 # Where a stored `amount_account` came from. NULL is a derived value: a copy of
@@ -414,9 +424,10 @@ async def stamp_account_amount(
         allow_fetch=allow_fetch,
     )
     if rate is not None:
-        transaction.amount_account = (
-            Decimal(str(transaction.amount)) * rate
-        ).quantize(Decimal("0.01"))
+        transaction.amount_account = bounded_conversion(
+            (Decimal(str(transaction.amount)) * rate).quantize(Decimal("0.01")),
+            "amount_account",
+        )
         transaction.amount_account_source = None
 
 
@@ -450,6 +461,9 @@ async def resolve_primary_stamp(
     row is in a foreign currency and no real rate can be resolved for its
     date. A preview uses it so it can show the conversion a save will make
     instead of guessing (issue #271).
+
+    Raises ``MoneyOutOfRange`` when the conversion does not fit the column
+    (issue #422).
     """
     amount_dec = Decimal(str(amount))
 
@@ -476,7 +490,7 @@ async def resolve_primary_stamp(
             exact = False
             break
     return PrimaryStamp(
-        (amount_dec * rate).quantize(Decimal("0.01")), rate, exact
+        bounded_conversion((amount_dec * rate).quantize(Decimal("0.01"))), rate, exact
     )
 
 

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
+import { Toaster } from 'sonner'
 
 import { monthLabel, monthRange } from '@/lib/month-utils'
 
@@ -34,6 +35,27 @@ vi.mock('@/contexts/collection-filter-context', () => ({
 vi.mock('@/hooks/use-privacy-mode', () => ({
   usePrivacyMode: () => ({ mask: api.mask, privacyMode: api.privacyMode, MASK: '••••' }),
 }))
+const toasts = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
+// The spies forward to sonner's real toast, and a test renders its real
+// Toaster, so what the user would read is asserted on the screen and not only
+// on the mock.
+vi.mock('sonner', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('sonner')>()
+  return {
+    ...actual,
+    toast: {
+      ...actual.toast,
+      success: vi.fn((...args: Parameters<typeof actual.toast.success>) => {
+        toasts.success(...args)
+        return actual.toast.success(...args)
+      }),
+      error: vi.fn((...args: Parameters<typeof actual.toast.error>) => {
+        toasts.error(...args)
+        return actual.toast.error(...args)
+      }),
+    },
+  }
+})
 
 function category(id: string, name: string, is_hidden = false): Category {
   return { id, user_id: 'u', group_id: 'g', name, icon: 'circle-help', color: '#000', is_system: false, is_hidden, treat_as_transfer: false, is_ignored: false }
@@ -123,6 +145,31 @@ describe('Budget settings page', () => {
     expect(api.budgets.update).toHaveBeenCalledWith('b-rent', { amount: 950, effective_month: '2026-10-01' })
     expect(api.budgets.delete).not.toHaveBeenCalledWith('b-food-zero')
   })
+
+  it('shows the limit error a rejected save answers with, in the page language', async () => {
+    api.budgets.update.mockRejectedValue({
+      response: {
+        data: {
+          detail: [
+            {
+              type: 'budget_amount_too_large',
+              loc: ['body', 'amount'],
+              msg: 'The budget limit is too large',
+              ctx: {},
+            },
+          ],
+        },
+      },
+    })
+    const { user } = renderWithProviders(<><BudgetsPage /><Toaster /></>)
+    const rentInput = await screen.findByRole('textbox', { name: t('budgets.budgetFor', { category: 'Rent' }) })
+    await user.clear(rentInput)
+    await user.type(rentInput, '99999999999999')
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    await waitFor(() => expect(toasts.error).toHaveBeenCalledWith(t('budgets.amountTooLarge')))
+    expect(await screen.findByText(t('budgets.amountTooLarge'))).toBeInTheDocument()
+  })
 })
 
 
@@ -211,6 +258,18 @@ describe('Budget spending in the inline editor', () => {
     await waitFor(() => expect(budgetRow().getByRole('progressbar')).toHaveAttribute('aria-valuenow', String(percentage)))
     expect(budgetRow().getByRole('progressbar').firstElementChild).toHaveStyle({ width: `${percentage}%` })
     expect(budgetRow().getByRole('progressbar').firstElementChild).toHaveClass(color)
+  })
+
+  it('edits a limit typed in another currency in the display currency', async () => {
+    api.budgets.list.mockResolvedValue([{ ...rent, amount: 4500, currency: 'BRL', amount_primary: '900.00' }])
+    mockSpending()
+    renderWithProviders(<BudgetsPage />)
+    await screen.findByText('$450.00')
+
+    expect(budgetInput()).toHaveValue('900')
+    expect(budgetRow().getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50')
+    expect(screen.getByRole('button', { name: t('common.save') })).toBeDisabled()
+    expectNoBudgetWrites()
   })
 
   it('previews a valid draft without persisting anything before Save', async () => {
@@ -525,8 +584,9 @@ describe('Copying the previous month', () => {
 
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: t('budgets.copyTitle') })).toBeInTheDocument()
-    // Pinned to the active workspace, so a switch in another tab cannot move it.
-    expect(api.budgets.list).toHaveBeenCalledWith('2026-09-01', 'ws-1')
+    // Pinned to the active workspace, so a switch in another tab cannot move
+    // it, and read at the target month's rate for the preview total.
+    expect(api.budgets.list).toHaveBeenCalledWith('2026-09-01', 'ws-1', '2026-10-01')
   })
 
   it('offers the copy action in the empty month state', async () => {

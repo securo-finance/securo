@@ -5,7 +5,10 @@ workspace whose totals no longer match the original, so these tests compare the
 money before and after a round trip instead of only counting rows.
 """
 
+import io
+import json
 import uuid
+import zipfile
 from datetime import date
 from decimal import Decimal
 
@@ -18,6 +21,7 @@ from app.models.account import Account
 from app.models.account_card import AccountCard
 from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.asset import Asset
+from app.models.budget import Budget
 from app.models.category import Category
 from app.models.mortgage_payment_allocation import (
     MORTGAGE_PRINCIPAL_SOURCE,
@@ -466,3 +470,115 @@ async def test_configuration_restore_refuses_to_orphan_a_split(
         )
     assert "split uses a category" in str(getattr(refused.value, "detail", refused.value))
     assert await _money(session, ws_id) == before
+
+
+def _patch_archive(
+    data: bytes, *, format_version: str, entity: str | None = None, rows: list | None = None
+) -> bytes:
+    """Rewrite an exported archive's version and, optionally, one entity file."""
+    output = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(data)) as source:
+        with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as target:
+            for name in source.namelist():
+                payload = source.read(name)
+                if name == "metadata.json":
+                    metadata = json.loads(payload)
+                    metadata["format_version"] = format_version
+                    payload = json.dumps(metadata).encode()
+                elif entity is not None and name == f"{entity}.json" and rows is not None:
+                    payload = json.dumps(rows).encode()
+                target.writestr(name, payload)
+    return output.getvalue()
+
+
+async def _restore_into_a_new_workspace(
+    client: AsyncClient, auth_headers, data: bytes
+) -> uuid.UUID:
+    restored = await client.post(
+        "/api/backups/restore-upload",
+        files={"file": ("backup.zip", data, "application/zip")},
+        data={"content": "both", "mode": "new_workspace"},
+        headers=auth_headers,
+    )
+    assert restored.status_code == 200, restored.text
+    return uuid.UUID(restored.json()["workspace_id"])
+
+
+async def _budget_rows(
+    session: AsyncSession, workspace_id: uuid.UUID
+) -> list[tuple[Decimal, str | None]]:
+    session.expire_all()
+    rows = (
+        await session.execute(select(Budget).where(Budget.workspace_id == workspace_id))
+    ).scalars()
+    return sorted((row.amount, row.currency) for row in rows)
+
+
+async def test_older_backup_gives_a_budget_its_owner_display_currency(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace: Workspace,
+    test_categories,
+):
+    """A backup written before 1.2 carries 'BRL' on every limit.
+
+    Restored into a workspace whose owner reads money in USD, that stale label
+    turned 1,800 into R$ 1,800 converted instead of $ 1,800 and moved the
+    budget's percentage with it. The restore has to stamp the owner's currency,
+    the same rule migration 125 applied to the rows already in the database.
+    """
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "USD"}
+    budget = Budget(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        category_id=test_categories[0].id,
+        amount=Decimal("1800"),
+        month=date(2026, 1, 1),
+        currency="BRL",
+    )
+    session.add(budget)
+    await session.commit()
+
+    archive = await client.get("/api/export/backup", headers=auth_headers)
+    assert archive.status_code == 200
+    legacy = _patch_archive(archive.content, format_version="1.1")
+
+    restored_workspace_id = await _restore_into_a_new_workspace(client, auth_headers, legacy)
+
+    assert await _budget_rows(session, restored_workspace_id) == [(Decimal("1800.00"), "USD")]
+
+
+async def test_round_trip_keeps_the_currency_a_budget_was_typed_in(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace: Workspace,
+    test_categories,
+):
+    """From format 1.2 on, the archive already says how each limit was typed."""
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "USD"}
+    budget = Budget(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        category_id=test_categories[0].id,
+        amount=Decimal("900"),
+        month=date(2026, 2, 1),
+        currency="EUR",
+    )
+    session.add(budget)
+    await session.commit()
+
+    archive = await client.get("/api/export/backup", headers=auth_headers)
+    assert archive.status_code == 200
+    assert backup_service.FORMAT_VERSION == "1.2"
+
+    restored_workspace_id = await _restore_into_a_new_workspace(
+        client, auth_headers, archive.content
+    )
+
+    assert await _budget_rows(session, restored_workspace_id) == [(Decimal("900.00"), "EUR")]

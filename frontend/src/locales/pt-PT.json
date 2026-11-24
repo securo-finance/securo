@@ -881,6 +881,8 @@
     "savingsRateCaption": "do rendimento deste mês ficou guardado",
     "spendingProjection": "A esse ritmo, vais gastar {{amount}} até ao fim do mês",
     "uncategorizedCta": "{{count}} transações precisam de ser categorizadas",
+    "uncategorizedCta_one": "{{count}} transação precisa de ser categorizada",
+    "uncategorizedCta_other": "{{count}} transações precisam de ser categorizadas",
     "uncategorizedTotal": "{{amount}} no total",
     "categorizeNow": "Categorizar agora",
     "drillDownQuickCategorize": "Escolher categoria",
@@ -1009,6 +1011,15 @@
     "unflagAction": "Desmarcar",
     "flagSuccess": "Transação marcada",
     "unflagSuccess": "Marcação removida",
+    "paid": "Pago",
+    "unpaid": "Não pago",
+    "onlyUnpaid": "Apenas não pagos",
+    "markPaid": "Marcar como pago",
+    "markUnpaid": "Marcar como não pago",
+    "markPaidHint": "O dinheiro já saiu ou entrou na conta",
+    "markUnpaidHint": "Marcar esta linha como ainda por pagar ou receber",
+    "paidSuccess": "Marcado como pago",
+    "unpaidSuccess": "Marcado como não pago",
     "flagFilterAll": "Todas assinaladas",
     "flagFilterOverdue": "Em atraso",
     "flagFilterSoon": "A vencer esta semana",
@@ -1029,11 +1040,33 @@
       "nextWeek": "Daqui a 1 semana",
       "nextMonth": "Daqui a 1 mês"
     },
+    "newBadge": "Nova",
+    "newBadgeTooltip": "Veio da sincronização ou de uma importação e ainda não foi aberta",
+    "onlyUnread": "Apenas transações novas",
+    "onlyUnreadShort": "Apenas novas",
+    "unreadRows": "Transações novas",
+    "unreadCount_one": "{{count}} transação para revisão",
+    "unreadCount_other": "{{count}} transações para revisão",
+    "unreadCount_zero": "Nada para rever",
+    "markAllRead": "Marcar todas como lidas neste espaço de trabalho ({{count}})",
+    "unreadOutsideFilters": "Fora destes filtros: {{count}}",
+    "markAllReadPending": "A marcar como lidas",
+    "markAllReadDone": "Todas as transações foram marcadas como lidas",
     "statusCleared": "Compensada",
     "sortAsc": "Ordem crescente",
     "sortDesc": "Ordem decrescente",
     "syncedInfo": "Transação sincronizada: valor, data e conta não podem ser editados",
     "syncedAmountDateError": "Não é possível alterar o valor ou a data de uma transação sincronizada",
+    "amountErrors": {
+      "notPositive": "O valor tem de ser superior a zero.",
+      "tooSmall": "O valor tem de ser de pelo menos 0,01.",
+      "tooLarge": "O valor é superior ao que o Securo consegue guardar.",
+      "convertedNegative": "O valor convertido não pode ser negativo.",
+      "convertedTooLarge": "O valor convertido é superior ao que o Securo consegue guardar.",
+      "rateNotPositive": "A taxa de câmbio não pode ser negativa. Uma taxa zero só é aceite quando o valor convertido arredonda para zero.",
+      "rateTooLarge": "A taxa de câmbio é superior ao que o Securo consegue guardar.",
+      "required": "Introduza um valor."
+    },
     "uncategorized": "Sem categoria",
     "selected": "selecionadas",
     "summaryCount": "{{count}} transações",
@@ -1079,7 +1112,7 @@
     "attachmentDeleted": "Anexo eliminado",
     "attachmentDeleteConfirm": "Eliminar este anexo?",
     "attachmentTooLarge": "Ficheiro muito grande. Tamanho máximo: 10 MB.",
-    "attachmentTypeNotAllowed": "Tipo de ficheiro não suportado. Permitidos: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "Tipo de ficheiro não suportado. Permitidos: {{types}}",
     "attachmentMaxReached": "Número máximo de anexos atingido",
     "attachmentRenamed": "Anexo renomeado",
     "attachmentRename": "Renomear",
@@ -1217,7 +1250,8 @@
     "invoiceBadgeTooltip": "Esta transação quita uma cobrança. Abrir.",
     "suggestionBadge": "Pergunta",
     "suggestionBadgeTooltip": "Um pagamento pode liquidar esta cobrança. Abra a fila para responder.",
-    "clearGroupFilter": "Limpar filtro de grupo"
+    "clearGroupFilter": "Limpar filtro de grupo",
+    "attachmentNoPreview": "Não há pré-visualização para este ficheiro. Transfira-o para o abrir."
   },
   "accounts": {
     "title": "Contas",
@@ -1533,6 +1567,9 @@
     "saved": "Orçamentos guardados",
     "budgetFor": "Orçamento para {{category}}",
     "invalidAmount": "Introduza um montante válido igual ou superior a zero.",
+    "amountTooSmall": "O limite do orçamento deve ser de pelo menos 0,01.",
+    "amountTooLarge": "O limite do orçamento é demasiado grande.",
+    "amountNegative": "O limite do orçamento não pode ser negativo.",
     "repeatEveryMonthFor": "Repetir o orçamento de {{category}} todos os meses",
     "previousMonth": "Mês anterior",
     "nextMonth": "Mês seguinte",
@@ -3613,7 +3650,8 @@
       "undoFirstGroupSplit": "Desfaça a divisão antes de dividir entre pessoas.",
       "undoFirstMortgage": "Desfaça a divisão antes de detalhar o crédito à habitação.",
       "categoryInUse": "Esta categoria tem partes de transações divididas. Altere essas divisões primeiro.",
-      "destinationInvalid": "Partes de transações divididas não podem passar para uma categoria ignorada ou oculta."
+      "destinationInvalid": "Partes de transações divididas não podem passar para uma categoria ignorada ou oculta.",
+      "mergeNeedsRate": "Estes orçamentos estão em moedas diferentes e não há câmbio do mês para os juntar."
     }
   },
   "plugins": {
@@ -3858,9 +3896,26 @@
       "removed": "{{name}} removida",
       "copyFailed": "Não foi possível copiar. Selecione o endereço e copie-o manualmente.",
       "editTitle": "Voltar a ligar {{name}}",
-      "editHint": "Atualize o que mudou, como uma nova palavra-passe ou token. A ligação sincroniza de novo a seguir.",
+      "editHint": "Atualize o que mudou, como uma nova palavra-passe ou token. A ligação volta a correr a seguir.",
+      "edit": "Editar",
+      "updateKeys": "Atualizar chaves",
       "keepBlank": "Deixe um campo em branco para manter o valor atual.",
-      "updated": "{{name}} atualizada"
+      "updated": "{{name}} atualizada",
+      "routines": "Rotinas",
+      "routineEvery": "a cada {{interval}}",
+      "routineLastRun": "correu {{when}}",
+      "routineNeverRan": "ainda não correu",
+      "runRoutine": "Executar agora",
+      "runRoutineAria": "Executar {{name}} agora",
+      "routineRan": "{{name}} foi executada",
+      "routineFailed": "Não foi executada.",
+      "fileAccepts": "{{types}}, até {{size}} KB",
+      "fileAny": "Qualquer ficheiro, até {{size}} KB",
+      "currentFile": "atual: {{name}}",
+      "fileSaved": "há um ficheiro guardado",
+      "fileWrongType": "{{name}} não é um ficheiro {{types}}.",
+      "fileTooBig": "{{name}} tem mais de {{size}} KB.",
+      "fileReadFailed": "Não foi possível ler {{name}}."
     },
     "oauth": {
       "title": "A concluir o início de sessão",
@@ -4029,6 +4084,12 @@
     "recurringRevenue": {
       "title": "Receita recorrente",
       "hint": "Quanto as faturas recorrentes trazem por mês, e o que se perdeu recentemente."
+    },
+    "plugin": {
+      "period": {
+        "year_to_date": "Ano até à data",
+        "last_12_months": "Últimos 12 meses"
+      }
     }
   },
   "offline": {

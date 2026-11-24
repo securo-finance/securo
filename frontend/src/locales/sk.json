@@ -1027,6 +1027,15 @@
     "unflagAction": "Zrušiť označenie",
     "flagSuccess": "Transakcia označená",
     "unflagSuccess": "Označenie zrušené",
+    "paid": "Zaplatené",
+    "unpaid": "Nezaplatené",
+    "onlyUnpaid": "Iba nezaplatené",
+    "markPaid": "Označiť ako zaplatené",
+    "markUnpaid": "Označiť ako nezaplatené",
+    "markPaidHint": "Peniaze už z účtu odišli alebo naň prišli",
+    "markUnpaidHint": "Označiť tento riadok ako ešte čakajúci na zaplatenie alebo prijatie",
+    "paidSuccess": "Označené ako zaplatené",
+    "unpaidSuccess": "Označené ako nezaplatené",
     "flagFilterAll": "Všetky označené",
     "flagFilterOverdue": "Po termíne",
     "flagFilterSoon": "Tento týždeň",
@@ -1047,11 +1056,35 @@
       "nextWeek": "O týždeň",
       "nextMonth": "O mesiac"
     },
+    "newBadge": "Nová",
+    "newBadgeTooltip": "Prišla synchronizáciou alebo importom a ešte nebola otvorená",
+    "onlyUnread": "Len nové transakcie",
+    "onlyUnreadShort": "Len nové",
+    "unreadRows": "Nové transakcie",
+    "unreadCount_one": "{{count}} transakcia na kontrolu",
+    "unreadCount_few": "{{count}} transakcie na kontrolu",
+    "unreadCount_many": "{{count}} transakcie na kontrolu",
+    "unreadCount_other": "{{count}} transakcií na kontrolu",
+    "unreadCount_zero": "Nič na kontrolu",
+    "markAllRead": "Označiť všetko ako prečítané v tomto pracovnom priestore ({{count}})",
+    "unreadOutsideFilters": "Mimo týchto filtrov: {{count}}",
+    "markAllReadPending": "Označovanie ako prečítané",
+    "markAllReadDone": "Všetky transakcie sú označené ako prečítané",
     "statusCleared": "Zaúčtovaná",
     "sortAsc": "Zoradiť vzostupne",
     "sortDesc": "Zoradiť zostupne",
     "syncedInfo": "Transakcia synchronizovaná z banky: sumu, dátum a účet nemožno upraviť",
     "syncedAmountDateError": "Sumu ani dátum synchronizovanej transakcie nemožno zmeniť",
+    "amountErrors": {
+      "notPositive": "Suma musí byť väčšia ako nula.",
+      "tooSmall": "Suma musí byť aspoň 0,01.",
+      "tooLarge": "Suma je väčšia, ako dokáže Securo uložiť.",
+      "convertedNegative": "Prepočítaná suma nemôže byť záporná.",
+      "convertedTooLarge": "Prepočítaná suma je väčšia, ako dokáže Securo uložiť.",
+      "rateNotPositive": "Výmenný kurz nesmie byť záporný. Nulový kurz je akceptovaný len vtedy, keď sa prepočítaná suma zaokrúhli na nulu.",
+      "rateTooLarge": "Výmenný kurz je väčší, ako dokáže Securo uložiť.",
+      "required": "Zadajte sumu."
+    },
     "uncategorized": "Bez kategórie",
     "selected": "vybraných",
     "summaryCount": "{{count}} transakcií",
@@ -1124,7 +1157,7 @@
     "attachmentDeleted": "Príloha vymazaná",
     "attachmentDeleteConfirm": "Vymazať túto prílohu?",
     "attachmentTooLarge": "Súbor je príliš veľký. Maximálna veľkosť je 10 MB.",
-    "attachmentTypeNotAllowed": "Nepodporovaný typ súboru. Povolené: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "Nepodporovaný typ súboru. Povolené: {{types}}",
     "attachmentMaxReached": "Dosiahnutý maximálny počet príloh",
     "attachmentRenamed": "Príloha premenovaná",
     "attachmentRename": "Premenovať",
@@ -1268,7 +1301,8 @@
     "invoiceBadgeTooltip": "Táto transakcia vyrovnáva faktúru. Otvorte ju.",
     "suggestionBadge": "Otázka",
     "suggestionBadgeTooltip": "Platba môže uhradiť túto faktúru. Otvorte front a odpovedzte.",
-    "clearGroupFilter": "Zrušiť filter skupiny"
+    "clearGroupFilter": "Zrušiť filter skupiny",
+    "attachmentNoPreview": "Tento súbor nemá náhľad. Stiahnite si ho a otvorte."
   },
   "accounts": {
     "title": "Účty",
@@ -1598,6 +1632,9 @@
     "saved": "Rozpočty uložené",
     "budgetFor": "Rozpočet pre {{category}}",
     "invalidAmount": "Zadajte platnú sumu nula alebo viac.",
+    "amountTooSmall": "Limit rozpočtu musí byť aspoň 0,01.",
+    "amountTooLarge": "Limit rozpočtu je príliš veľký.",
+    "amountNegative": "Limit rozpočtu nesmie byť záporný.",
     "repeatEveryMonthFor": "Opakovať rozpočet {{category}} každý mesiac",
     "previousMonth": "Predchádzajúci mesiac",
     "nextMonth": "Nasledujúci mesiac",
@@ -3775,7 +3812,8 @@
       "undoFirstGroupSplit": "Pred rozdelením medzi osoby zrušte rozdelenie.",
       "undoFirstMortgage": "Pred pridaním rozpisu hypotéky zrušte rozdelenie.",
       "categoryInUse": "Táto kategória obsahuje časti rozdelených transakcií. Najprv upravte tieto rozdelenia.",
-      "destinationInvalid": "Časti rozdelených transakcií nemôžu prejsť do ignorovanej ani skrytej kategórie."
+      "destinationInvalid": "Časti rozdelených transakcií nemôžu prejsť do ignorovanej ani skrytej kategórie.",
+      "mergeNeedsRate": "Tieto rozpočty sú v rôznych menách a pre ich mesiac nie je kurz, ktorým ich spojiť."
     }
   },
   "plugins": {
@@ -4034,9 +4072,26 @@
       "removed": "{{name}}: odstránené",
       "copyFailed": "Kopírovanie zlyhalo. Označte adresu a skopírujte ju ručne.",
       "editTitle": "Znovu pripojiť {{name}}",
-      "editHint": "Aktualizujte, čo sa zmenilo, napríklad nové heslo alebo token. Potom sa pripojenie znova synchronizuje.",
+      "editHint": "Aktualizujte, čo sa zmenilo, napríklad nové heslo alebo token. Potom sa pripojenie znova spustí.",
+      "edit": "Upraviť",
+      "updateKeys": "Aktualizovať kľúče",
       "keepBlank": "Nechajte pole prázdne, aby sa zachovala jeho súčasná hodnota.",
-      "updated": "{{name}} aktualizované"
+      "updated": "{{name}} aktualizované",
+      "routines": "Rutiny",
+      "routineEvery": "každých {{interval}}",
+      "routineLastRun": "spustené {{when}}",
+      "routineNeverRan": "zatiaľ nespustené",
+      "runRoutine": "Spustiť teraz",
+      "runRoutineAria": "Spustiť {{name}} teraz",
+      "routineRan": "{{name}} prebehla",
+      "routineFailed": "Neprebehla.",
+      "fileAccepts": "{{types}}, do {{size}} KB",
+      "fileAny": "Akýkoľvek súbor, do {{size}} KB",
+      "currentFile": "aktuálny: {{name}}",
+      "fileSaved": "súbor je uložený",
+      "fileWrongType": "{{name}} nie je súbor {{types}}.",
+      "fileTooBig": "{{name}} je väčší ako {{size}} KB.",
+      "fileReadFailed": "{{name}} sa nepodarilo prečítať."
     },
     "oauth": {
       "title": "Dokončuje sa prihlásenie",
@@ -4205,6 +4260,12 @@
     "recurringRevenue": {
       "title": "Opakované príjmy",
       "hint": "Čo mesačne prinášajú opakované faktúry a čo sa nedávno stratilo."
+    },
+    "plugin": {
+      "period": {
+        "year_to_date": "Od začiatku roka",
+        "last_12_months": "Posledných 12 mesiacov"
+      }
     }
   },
   "offline": {

@@ -893,6 +893,9 @@
     "savingsRateCaption": "חלק ההכנסה שנחסך החודש",
     "spendingProjection": "בקצב הזה, תוציאו {{amount}} עד סוף החודש",
     "uncategorizedCta": "{{count}} תנועות ממתינות לסיווג",
+    "uncategorizedCta_one": "{{count}} תנועה ממתינה לסיווג",
+    "uncategorizedCta_two": "{{count}} תנועות ממתינות לסיווג",
+    "uncategorizedCta_other": "{{count}} תנועות ממתינות לסיווג",
     "uncategorizedTotal": "{{amount}} בסך הכול",
     "categorizeNow": "סיווג עכשיו",
     "drillDownQuickCategorize": "בחירת קטגוריה",
@@ -1019,6 +1022,15 @@
     "unflagAction": "הסר סימון",
     "flagSuccess": "העסקה סומנה",
     "unflagSuccess": "הסימון הוסר",
+    "paid": "שולם",
+    "unpaid": "לא שולם",
+    "onlyUnpaid": "רק לא שולמו",
+    "markPaid": "סמן כשולם",
+    "markUnpaid": "סמן כלא שולם",
+    "markPaidHint": "הכסף כבר יצא מהחשבון או נכנס אליו",
+    "markUnpaidHint": "סמן שורה זו כממתינה עדיין לתשלום או לקבלה",
+    "paidSuccess": "סומן כשולם",
+    "unpaidSuccess": "סומן כלא שולם",
     "flagFilterAll": "כל המסומנות",
     "flagFilterOverdue": "באיחור",
     "flagFilterSoon": "השבוע",
@@ -1039,11 +1051,34 @@
       "nextWeek": "בעוד שבוע",
       "nextMonth": "בעוד חודש"
     },
+    "newBadge": "חדשה",
+    "newBadgeTooltip": "הגיעה מסנכרון או מייבוא ועדיין לא נפתחה",
+    "onlyUnread": "רק תנועות חדשות",
+    "onlyUnreadShort": "רק חדשות",
+    "unreadRows": "תנועות חדשות",
+    "unreadCount_one": "{{count}} תנועה לבדיקה",
+    "unreadCount_two": "{{count}} תנועות לבדיקה",
+    "unreadCount_other": "{{count}} תנועות לבדיקה",
+    "unreadCount_zero": "אין מה לבדוק",
+    "markAllRead": "סמן הכול כנקרא בסביבת העבודה הזו ({{count}})",
+    "unreadOutsideFilters": "מחוץ למסננים האלה: {{count}}",
+    "markAllReadPending": "מסמן כנקרא",
+    "markAllReadDone": "כל התנועות סומנו כנקראו",
     "statusCleared": "נסגרה",
     "sortAsc": "מיון בסדר עולה",
     "sortDesc": "מיון בסדר יורד",
     "syncedInfo": "תנועה מסונכרנת מהבנק: לא ניתן לערוך סכום, תאריך וחשבון",
     "syncedAmountDateError": "לא ניתן לשנות את הסכום או התאריך של תנועה מסונכרנת",
+    "amountErrors": {
+      "notPositive": "הסכום חייב להיות גדול מאפס.",
+      "tooSmall": "הסכום חייב להיות לפחות 0.01.",
+      "tooLarge": "הסכום גדול ממה ש-Securo יכול לשמור.",
+      "convertedNegative": "הסכום המומר לא יכול להיות שלילי.",
+      "convertedTooLarge": "הסכום המומר גדול ממה ש-Securo יכול לשמור.",
+      "rateNotPositive": "שער החליפין לא יכול להיות שלילי. שער של אפס מתקבל רק כאשר הסכום המומר מתעגל לאפס.",
+      "rateTooLarge": "שער החליפין גדול ממה ש-Securo יכול לשמור.",
+      "required": "הזינו סכום."
+    },
     "uncategorized": "ללא קטגוריה",
     "selected": "נבחרו",
     "summaryCount": "{{count}} תנועות",
@@ -1092,7 +1127,7 @@
     "attachmentDeleted": "הקובץ נמחק",
     "attachmentDeleteConfirm": "למחוק את הקובץ המצורף?",
     "attachmentTooLarge": "הקובץ גדול מדי. הגודל המרבי הוא 10MB.",
-    "attachmentTypeNotAllowed": "סוג הקובץ אינו נתמך. מותרים: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "סוג הקובץ אינו נתמך. מותרים: {{types}}",
     "attachmentMaxReached": "הגעתם למספר הקבצים המרבי",
     "attachmentRenamed": "שם הקובץ שונה",
     "attachmentRename": "שינוי שם",
@@ -1227,7 +1262,8 @@
     "invoiceBadgeTooltip": "תנועה זו סוגרת חשבונית. פתחו אותה.",
     "suggestionBadge": "שאלה",
     "suggestionBadgeTooltip": "ייתכן שתשלום סוגר את זה. פתחו את התור כדי לענות.",
-    "clearGroupFilter": "ניקוי סינון הקבוצה"
+    "clearGroupFilter": "ניקוי סינון הקבוצה",
+    "attachmentNoPreview": "אין תצוגה מקדימה לקובץ הזה. הורידו אותו כדי לפתוח."
   },
   "accounts": {
     "title": "חשבונות",
@@ -1541,6 +1577,9 @@
     "saved": "התקציבים נשמרו",
     "budgetFor": "תקציב עבור {{category}}",
     "invalidAmount": "הזינו סכום תקין של אפס ומעלה.",
+    "amountTooSmall": "מגבלת התקציב חייבת להיות לפחות 0.01.",
+    "amountTooLarge": "מגבלת התקציב גדולה מדי.",
+    "amountNegative": "מגבלת התקציב לא יכולה להיות שלילית.",
     "repeatEveryMonthFor": "חזרה על תקציב {{category}} כל חודש",
     "previousMonth": "החודש הקודם",
     "nextMonth": "החודש הבא",
@@ -3627,7 +3666,8 @@
       "undoFirstGroupSplit": "בטלו את החלוקה לפני חלוקה בין אנשים.",
       "undoFirstMortgage": "בטלו את החלוקה לפני הוספת פירוק משכנתא.",
       "categoryInUse": "קטגוריה זו מחזיקה חלקים של תנועות מחולקות. שנו קודם את החלוקות האלה.",
-      "destinationInvalid": "חלקים של תנועות מחולקות לא יכולים לעבור לקטגוריה מוסתרת או כזו שמתעלמים ממנה."
+      "destinationInvalid": "חלקים של תנועות מחולקות לא יכולים לעבור לקטגוריה מוסתרת או כזו שמתעלמים ממנה.",
+      "mergeNeedsRate": "התקציבים האלה במטבעות שונים ואין שער חליפין לחודש שלהם כדי לאחד אותם."
     }
   },
   "plugins": {
@@ -3879,9 +3919,26 @@
       "removed": "{{name}} הוסר",
       "copyFailed": "לא ניתן להעתיק. סמנו את הכתובת והעתיקו ידנית.",
       "editTitle": "חיבור מחדש של {{name}}",
-      "editHint": "עדכנו את מה שהשתנה, למשל סיסמה או טוקן חדשים. לאחר מכן החיבור יסתנכרן שוב.",
+      "editHint": "עדכנו את מה שהשתנה, למשל סיסמה או טוקן חדשים. לאחר מכן החיבור ירוץ שוב.",
+      "edit": "עריכה",
+      "updateKeys": "עדכון מפתחות",
       "keepBlank": "השאירו שדה ריק כדי לשמור על הערך הנוכחי שלו.",
-      "updated": "{{name}} עודכן"
+      "updated": "{{name}} עודכן",
+      "routines": "משימות",
+      "routineEvery": "כל {{interval}}",
+      "routineLastRun": "רצה {{when}}",
+      "routineNeverRan": "עוד לא רצה",
+      "runRoutine": "הפעלה עכשיו",
+      "runRoutineAria": "הפעלת {{name}} עכשיו",
+      "routineRan": "{{name}} רצה",
+      "routineFailed": "היא לא רצה.",
+      "fileAccepts": "{{types}}, עד {{size}} KB",
+      "fileAny": "כל קובץ, עד {{size}} KB",
+      "currentFile": "נוכחי: {{name}}",
+      "fileSaved": "יש קובץ שמור",
+      "fileWrongType": "{{name}} אינו קובץ {{types}}.",
+      "fileTooBig": "{{name}} גדול מ-{{size}} KB.",
+      "fileReadFailed": "לא ניתן לקרוא את {{name}}."
     },
     "oauth": {
       "title": "משלים את ההתחברות",
@@ -4050,6 +4107,12 @@
     "recurringRevenue": {
       "title": "הכנסה חוזרת",
       "hint": "כמה מכניסות החשבוניות החוזרות בכל חודש, ומה אבד לאחרונה."
+    },
+    "plugin": {
+      "period": {
+        "year_to_date": "מתחילת השנה",
+        "last_12_months": "12 החודשים האחרונים"
+      }
     }
   },
   "offline": {

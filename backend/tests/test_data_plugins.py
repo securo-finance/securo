@@ -619,7 +619,7 @@ async def test_details_never_read_a_readme_off_the_catalog_host(client: AsyncCli
 async def test_details_of_a_plugin_this_securo_cannot_apply_have_no_contents(
     client: AsyncClient, auth_headers, catalog
 ):
-    catalog.extra = {"contributes": {"widgets": 2}}
+    catalog.extra = {"contributes": {"parsers": 2}}
     body = (await client.get(f"/api/plugins/{PLUGIN}", headers=auth_headers)).json()
     assert body["contents"] is None and body["readme"].startswith("# Home")
     assert (await client.get("/api/plugins/nobody/nothing", headers=auth_headers)).status_code == 404

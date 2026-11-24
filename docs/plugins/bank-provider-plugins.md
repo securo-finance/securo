@@ -97,9 +97,11 @@ integration doesn't declare is refused.
 
 `complete_feed: true` (optional, needs `transactions`) says the plugin returns
 every entry of an account from `since` on, pending ones included. Securo then
-treats a pending row the plugin stops returning as cancelled: once it is older
-than the days a booking could still settle it, the row is removed, as for
-Enable Banking. Without it, a pending row that leaves the feed stays until
+treats a pending row the plugin stops returning as cancelled and removes it on
+that sync. (Enable Banking's rows wait out a settle window first, because a
+booked entry there can still claim its hold; a plugin's booked entries never
+do.) A plugin that books an entry under its pending entry's `external_id`
+turns the row `posted` in place instead. Without it, a pending row that leaves the feed stays until
 someone deletes it. Only declare it when every sync really returns the whole
 window: a plugin that pages and stops early must leave `transactions` out for
 that account (`null`), which also skips the clean-up.

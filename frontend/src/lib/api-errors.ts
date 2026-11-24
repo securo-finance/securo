@@ -1,4 +1,8 @@
-import { translateApiDetail, translateApiMessage } from '@/lib/api-error-translations'
+import {
+  translateApiDetail,
+  translateApiMessage,
+  translateValidationMessage,
+} from '@/lib/api-error-translations'
 
 const DEFAULT_ERROR = 'An unexpected error occurred'
 
@@ -30,6 +34,10 @@ export function extractApiError(
       }
       if (Array.isArray(detail)) {
         const message = detail.map((d: { msg?: string; loc?: string[] }) => {
+          // A message with a translation already names the value it is about,
+          // so the toast shows it alone instead of an `amount:` prefix.
+          const known = d.msg ? translateValidationMessage(d.msg) : null
+          if (known) return known
           const field = d.loc?.slice(-1)[0] ?? ''
           return `${field}: ${d.msg ?? 'invalid'}`
         }).join(', ')

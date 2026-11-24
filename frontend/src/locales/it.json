@@ -881,6 +881,9 @@
     "savingsRateCaption": "del reddito di questo mese risparmiato",
     "spendingProjection": "A questo ritmo, spenderai {{amount}} entro fine mese",
     "uncategorizedCta": "{{count}} transazioni da categorizzare",
+    "uncategorizedCta_one": "{{count}} transazione da categorizzare",
+    "uncategorizedCta_many": "{{count}} di transazioni da categorizzare",
+    "uncategorizedCta_other": "{{count}} transazioni da categorizzare",
     "uncategorizedTotal": "{{amount}} in totale",
     "categorizeNow": "Categorizza ora",
     "drillDownQuickCategorize": "Scegli una categoria",
@@ -1009,6 +1012,15 @@
     "unflagAction": "Rimuovi contrassegno",
     "flagSuccess": "Transazione contrassegnata",
     "unflagSuccess": "Contrassegno rimosso",
+    "paid": "Pagato",
+    "unpaid": "Non pagato",
+    "onlyUnpaid": "Solo non pagati",
+    "markPaid": "Segna come pagato",
+    "markUnpaid": "Segna come non pagato",
+    "markPaidHint": "Il denaro ha già lasciato il conto o vi è entrato",
+    "markUnpaidHint": "Segna questa riga come ancora da pagare o da incassare",
+    "paidSuccess": "Segnato come pagato",
+    "unpaidSuccess": "Segnato come non pagato",
     "flagFilterAll": "Tutte contrassegnate",
     "flagFilterOverdue": "Scadute",
     "flagFilterSoon": "In scadenza questa settimana",
@@ -1029,11 +1041,33 @@
       "nextWeek": "Tra una settimana",
       "nextMonth": "Tra un mese"
     },
+    "newBadge": "Nuova",
+    "newBadgeTooltip": "Arrivata da sincronizzazione o importazione e non ancora aperta",
+    "onlyUnread": "Solo transazioni nuove",
+    "onlyUnreadShort": "Solo nuove",
+    "unreadRows": "Transazioni nuove",
+    "unreadCount_one": "{{count}} transazione da rivedere",
+    "unreadCount_other": "{{count}} transazioni da rivedere",
+    "unreadCount_zero": "Niente da rivedere",
+    "markAllRead": "Segna tutto come letto in questa area di lavoro ({{count}})",
+    "unreadOutsideFilters": "Fuori da questi filtri: {{count}}",
+    "markAllReadPending": "Segnalazione in corso",
+    "markAllReadDone": "Tutte le transazioni sono segnate come lette",
     "statusCleared": "Contabilizzata",
     "sortAsc": "Ordine crescente",
     "sortDesc": "Ordine decrescente",
     "syncedInfo": "Transazione sincronizzata dalla banca: importo, data e conto non possono essere modificati",
     "syncedAmountDateError": "Non è possibile modificare l'importo o la data di una transazione sincronizzata",
+    "amountErrors": {
+      "notPositive": "L'importo deve essere maggiore di zero.",
+      "tooSmall": "L'importo deve essere almeno 0,01.",
+      "tooLarge": "L'importo è più grande di quanto Securo possa salvare.",
+      "convertedNegative": "L'importo convertito non può essere negativo.",
+      "convertedTooLarge": "L'importo convertito è più grande di quanto Securo possa salvare.",
+      "rateNotPositive": "Il tasso di cambio non può essere negativo. Un tasso pari a zero è accettato solo se l'importo convertito si arrotonda a zero.",
+      "rateTooLarge": "Il tasso di cambio è più grande di quanto Securo possa salvare.",
+      "required": "Inserisci un importo."
+    },
     "uncategorized": "Senza categoria",
     "selected": "selezionate",
     "summaryCount": "{{count}} transazioni",
@@ -1079,7 +1113,7 @@
     "attachmentDeleted": "Allegato eliminato",
     "attachmentDeleteConfirm": "Eliminare questo allegato?",
     "attachmentTooLarge": "Il file è troppo grande. La dimensione massima è 10 MB.",
-    "attachmentTypeNotAllowed": "Tipo di file non supportato. Consentiti: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "Tipo di file non supportato. Consentiti: {{types}}",
     "attachmentMaxReached": "Numero massimo di allegati raggiunto",
     "attachmentRenamed": "Allegato rinominato",
     "attachmentRename": "Rinomina",
@@ -1217,7 +1251,8 @@
     "invoiceBadgeTooltip": "Questa transazione salda una fattura. Aprila.",
     "suggestionBadge": "Domanda",
     "suggestionBadgeTooltip": "Un pagamento potrebbe saldare questa fattura. Apri la coda per rispondere.",
-    "clearGroupFilter": "Rimuovi filtro gruppo"
+    "clearGroupFilter": "Rimuovi filtro gruppo",
+    "attachmentNoPreview": "Nessuna anteprima per questo file. Scaricalo per aprirlo."
   },
   "accounts": {
     "title": "Conti",
@@ -1533,6 +1568,9 @@
     "saved": "Budget salvati",
     "budgetFor": "Budget per {{category}}",
     "invalidAmount": "Inserisci un importo valido pari o superiore a zero.",
+    "amountTooSmall": "Il limite del budget deve essere almeno 0,01.",
+    "amountTooLarge": "Il limite del budget è troppo grande.",
+    "amountNegative": "Il limite del budget non può essere negativo.",
     "repeatEveryMonthFor": "Ripeti il budget di {{category}} ogni mese",
     "previousMonth": "Mese precedente",
     "nextMonth": "Mese successivo",
@@ -3613,7 +3651,8 @@
       "undoFirstGroupSplit": "Annulla la divisione prima di dividere tra persone.",
       "undoFirstMortgage": "Annulla la divisione prima di aggiungere la ripartizione del mutuo.",
       "categoryInUse": "Questa categoria contiene parti di transazioni divise. Modifica prima quelle divisioni.",
-      "destinationInvalid": "Le parti di transazioni divise non possono passare a una categoria ignorata o nascosta."
+      "destinationInvalid": "Le parti di transazioni divise non possono passare a una categoria ignorata o nascosta.",
+      "mergeNeedsRate": "Questi budget sono in valute diverse e non c'è un tasso di cambio del loro mese per unirli."
     }
   },
   "plugins": {
@@ -3858,9 +3897,26 @@
       "removed": "{{name}} rimossa",
       "copyFailed": "Impossibile copiare. Seleziona l'indirizzo e copialo a mano.",
       "editTitle": "Ricollega {{name}}",
-      "editHint": "Aggiorna ciò che è cambiato, come una nuova password o un token. Poi la connessione si sincronizza di nuovo.",
+      "editHint": "Aggiorna ciò che è cambiato, come una nuova password o un token. Poi la connessione viene eseguita di nuovo.",
+      "edit": "Modifica",
+      "updateKeys": "Aggiorna le chiavi",
       "keepBlank": "Lascia un campo vuoto per mantenere il valore attuale.",
-      "updated": "{{name}} aggiornata"
+      "updated": "{{name}} aggiornata",
+      "routines": "Routine",
+      "routineEvery": "ogni {{interval}}",
+      "routineLastRun": "eseguita {{when}}",
+      "routineNeverRan": "non ancora eseguita",
+      "runRoutine": "Esegui ora",
+      "runRoutineAria": "Esegui {{name}} ora",
+      "routineRan": "{{name}} è stata eseguita",
+      "routineFailed": "Non è stata eseguita.",
+      "fileAccepts": "{{types}}, fino a {{size}} KB",
+      "fileAny": "Qualsiasi file, fino a {{size}} KB",
+      "currentFile": "attuale: {{name}}",
+      "fileSaved": "c'è un file salvato",
+      "fileWrongType": "{{name}} non è un file {{types}}.",
+      "fileTooBig": "{{name}} supera {{size}} KB.",
+      "fileReadFailed": "Impossibile leggere {{name}}."
     },
     "oauth": {
       "title": "Completamento dell'accesso",
@@ -4029,6 +4085,12 @@
     "recurringRevenue": {
       "title": "Entrate ricorrenti",
       "hint": "Quanto portano le fatture ricorrenti ogni mese, e cosa si è perso di recente."
+    },
+    "plugin": {
+      "period": {
+        "year_to_date": "Da inizio anno",
+        "last_12_months": "Ultimi 12 mesi"
+      }
     }
   },
   "offline": {

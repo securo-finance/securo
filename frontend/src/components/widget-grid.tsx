@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { resizeItem, snapSpan, SPANS, widgetSpan, type LayoutItem, type Span, type WidgetEntry } from '@/lib/library'
+import { localized } from '@/lib/localized-text'
 import { cn } from '@/lib/utils'
 
 // Tailwind only ships classes it can see written out.
@@ -150,8 +151,9 @@ function SortableWidget({
   onRemove: () => void
   children: ReactNode
 }) {
-  const { t } = useTranslation()
-  const title = t(entry.titleKey)
+  const { t, i18n } = useTranslation()
+  // A plugin's widget carries its own name, in the languages it gave.
+  const title = entry.plugin ? localized(entry.plugin.title, i18n.language) : t(entry.titleKey)
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id: entry.id,
     disabled: !editing,

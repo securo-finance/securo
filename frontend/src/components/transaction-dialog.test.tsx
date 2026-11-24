@@ -906,6 +906,41 @@ describe('TransactionDialog save and next', () => {
   })
 })
 
+describe('TransactionDialog scroll region gutter (#458)', () => {
+  function renderWithScrollbar(scrollbarPx: number) {
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(600)
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(600 - scrollbarPx)
+    vi.spyOn(currencies, 'list').mockResolvedValue([])
+    vi.spyOn(payees, 'list').mockResolvedValue([])
+    vi.spyOn(groups, 'list').mockResolvedValue([])
+    renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={syncedTransaction()}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={vi.fn()}
+        loading={false}
+        error={null}
+        isSynced
+      />,
+    )
+    return screen.getByTestId('transaction-form-scroll')
+  }
+
+  it('gives the whole end padding back when the scrollbar overlays the content', () => {
+    const region = renderWithScrollbar(0)
+    expect(region.style.getPropertyValue('--scrollbar-w')).toBe('0px')
+  })
+
+  it('leaves room for a classic scrollbar inside the padding', () => {
+    const region = renderWithScrollbar(11)
+    expect(region.style.getPropertyValue('--scrollbar-w')).toBe('11px')
+  })
+})
+
 /** Shows the flag state a mounted list query holds, as a page would. */
 function FlagConsumer({ queryKey, read }: { queryKey: string[]; read: () => Promise<Transaction> }) {
   const { data } = useQuery({ queryKey, queryFn: read })
@@ -953,9 +988,11 @@ describe('TransactionDialog flag (#56)', () => {
     expect(transactions.update).toHaveBeenCalledWith(tx.id, { is_flagged: true })
     expect(await screen.findByText('transactions: flagged')).toBeInTheDocument()
     expect(await screen.findByText('drill-down: flagged')).toBeInTheDocument()
+    // The label already says what a press does now; aria-pressed on top would
+    // read as "Unflag, pressed" (#458).
     expect(
       await screen.findByRole('button', { name: t('transactions.unflagAction') }),
-    ).toBeInTheDocument()
+    ).not.toHaveAttribute('aria-pressed')
   })
 
   it('sets a reminder date and note on the flag, each saved on its own', async () => {
@@ -1021,6 +1058,44 @@ describe('TransactionDialog flag (#56)', () => {
     await user.click(screen.getByRole('button', { name: t('transactions.unflagAction') }))
 
     await waitFor(() => expect(screen.queryByTestId('flag-reminder')).not.toBeInTheDocument())
+  })
+})
+
+describe('TransactionDialog paid mark (#15)', () => {
+  it('marks the row paid from the footer, without saving the form', async () => {
+    const tx = syncedTransaction({ is_paid: false })
+    let stored = tx
+    vi.spyOn(transactions, 'update').mockImplementation(async (_id, body) => {
+      stored = { ...stored, is_paid: body.is_paid ?? stored.is_paid }
+      return stored
+    })
+    vi.spyOn(currencies, 'list').mockResolvedValue([])
+    vi.spyOn(payees, 'list').mockResolvedValue([])
+    vi.spyOn(groups, 'list').mockResolvedValue([])
+    const onSave = vi.fn()
+    const { user } = renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={tx}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={onSave}
+        loading={false}
+        error={null}
+        isSynced
+      />,
+    )
+
+    await user.click(await screen.findByRole('button', { name: t('transactions.markPaid') }))
+
+    expect(transactions.update).toHaveBeenCalledWith(tx.id, { is_paid: true })
+    expect(
+      await screen.findByRole('button', { name: t('transactions.markUnpaid') }),
+    ).toBeInTheDocument()
+    // The mark is its own save: the dialog form never goes out with it.
+    expect(onSave).not.toHaveBeenCalled()
   })
 })
 
@@ -1095,4 +1170,60 @@ it('names the existing-rule picker after the field and the chosen rule', async (
   expect(await screen.findByRole('button', {
     name: `${t('transactions.existingRule')} ${groceriesRule.name}`,
   })).toBeInTheDocument()
+})
+
+describe('TransactionDialog conversion of an existing row (#440)', () => {
+  // Another member's row comes converted to this viewer's currency; the
+  // dialog must not send that figure back unless the user changed it.
+  function renderForeignRow() {
+    vi.spyOn(currencies, 'list').mockResolvedValue([])
+    vi.spyOn(payees, 'list').mockResolvedValue([])
+    vi.spyOn(groups, 'list').mockResolvedValue([])
+    const onSave = vi.fn()
+    const rendered = renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={transferLegFixture(null, {
+          id: 'tx-440',
+          description: 'Groceries',
+          amount: 300,
+          currency: 'BRL',
+          source: 'manual',
+          amount_primary: 62.4,
+          fx_rate_used: 0.208,
+        })}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={onSave}
+        loading={false}
+        error={null}
+      />,
+    )
+    return { ...rendered, onSave }
+  }
+
+  it('leaves an untouched conversion out of the save', async () => {
+    const { user, onSave } = renderForeignRow()
+
+    await user.type(screen.getByLabelText(t('transactions.description')), ' renamed')
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    const payload = onSave.mock.calls[0][0]
+    expect(payload).toMatchObject({ description: 'Groceries renamed' })
+    expect(payload).not.toHaveProperty('amount_primary')
+    expect(payload).not.toHaveProperty('fx_rate_used')
+  })
+
+  it('sends a conversion the user typed', async () => {
+    const { user, onSave } = renderForeignRow()
+
+    const converted = screen.getByLabelText(t('transactions.convertedAmount', { currency: 'USD' }))
+    await user.clear(converted)
+    await user.type(converted, '66')
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave.mock.calls[0][0]).toMatchObject({ amount_primary: 66 })
+  })
 })

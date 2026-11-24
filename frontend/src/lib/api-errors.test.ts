@@ -143,6 +143,102 @@ describe('localized API errors', () => {
     }))).toBe(expected)
   })
 
+  // The budget amount bounds come back as a pydantic 422 with the message in
+  // `msg`; the toast must show the sentence alone, translated, not the
+  // `amount: ...` prefix built for the validation entries nobody translates.
+  it.each([
+    ['en', 'The budget limit must be at least 0.01.'],
+    ['pt-BR', 'O limite do orçamento deve ser de pelo menos 0,01.'],
+  ])('shows the budget minimum from a 422 detail in %s', async (language, expected) => {
+    await i18n.changeLanguage(language)
+
+    expect(extractApiError(apiError([
+      {
+        type: 'budget_amount_not_positive',
+        loc: ['body', 'amount'],
+        msg: 'The budget limit must be at least 0.01',
+        ctx: {},
+      },
+    ]))).toBe(expected)
+  })
+
+  it.each([
+    ['en', 'The budget limit is too large.'],
+    ['pt-BR', 'O limite do orçamento é grande demais.'],
+  ])('shows the budget maximum from a 422 detail in %s', async (language, expected) => {
+    await i18n.changeLanguage(language)
+
+    expect(extractApiError(apiError([
+      {
+        type: 'budget_amount_too_large',
+        loc: ['body', 'amount'],
+        msg: 'The budget limit is too large',
+        ctx: {},
+      },
+    ]))).toBe(expected)
+  })
+
+  it.each([
+    ['en', 'The budget limit cannot be negative.'],
+    ['pt-BR', 'O limite do orçamento não pode ser negativo.'],
+  ])('shows the budget negative-limit error in %s', async (language, expected) => {
+    await i18n.changeLanguage(language)
+
+    expect(extractApiError(apiError([
+      {
+        type: 'budget_amount_negative',
+        loc: ['body', 'amount'],
+        msg: 'The budget limit cannot be negative',
+        ctx: {},
+      },
+    ]))).toBe(expected)
+  })
+
+  // A refused amount comes as a 422 list from pydantic ("Value error, ...")
+  // or, when the service works it out, as a plain detail (issue #330).
+  it.each([
+    ['en', 'The converted amount cannot be negative.'],
+    ['pt-BR', 'O valor convertido não pode ser negativo.'],
+  ])('shows a refused converted amount in %s', async (language, expected) => {
+    await i18n.changeLanguage(language)
+
+    expect(extractApiError(apiError([
+      {
+        loc: ['body', 'amount_primary'],
+        msg: 'Value error, amount_primary must be greater than zero',
+      },
+    ]))).toBe(expected)
+    expect(extractApiError(apiError('amount_primary must be greater than zero'))).toBe(expected)
+  })
+
+  // The backend answers the same message for a negative rate (never accepted)
+  // and for a zero rate next to a real conversion (only a converted amount that
+  // rounds to zero allows it), so the text has to refuse the negative outright
+  // and give the zero rule as the exception instead of the other way round.
+  it.each([
+    ['en', 'The exchange rate cannot be negative. A zero rate is only accepted when the converted amount rounds to zero.'],
+    ['pt-BR', 'A taxa de câmbio não pode ser negativa. Uma taxa zero só é aceita quando o valor convertido arredonda para zero.'],
+  ])('shows a refused exchange rate in %s', async (language, expected) => {
+    await i18n.changeLanguage(language)
+
+    expect(extractApiError(apiError([
+      {
+        loc: ['body', 'fx_rate_used'],
+        msg: 'Value error, fx_rate_used must be greater than zero',
+      },
+    ]))).toBe(expected)
+    expect(extractApiError(apiError('fx_rate_used must be greater than zero'))).toBe(expected)
+  })
+
+  it('shows a refused amount in pt-BR and keeps an unknown entry as it was', async () => {
+    await i18n.changeLanguage('pt-BR')
+
+    expect(extractApiError(apiError([
+      { loc: ['body', 'amount'], msg: 'Value error, amount must be at most 9999999999999.99' },
+      { loc: ['body', 'date'], msg: 'Input should be a valid date' },
+    ]))).toBe('O valor é maior do que o Securo consegue guardar., date: Input should be a valid date')
+  })
+
   it('falls back to the message of a code it does not know', async () => {
     await i18n.changeLanguage('pt-BR')
 

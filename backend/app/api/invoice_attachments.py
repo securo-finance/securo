@@ -18,7 +18,7 @@ from app.services.module_service import ModuleId
 from app.core.workspace_context import WorkspaceContext
 from app.schemas.invoice import InvoiceAttachmentRead, InvoiceAttachmentUpdate
 from app.services import invoice_attachment_service
-from app.services.attachment_service import served_content_type
+from app.services.attachment_service import served_content_type, served_headers
 
 router = APIRouter(
     prefix="/api/invoices/{invoice_id}/attachments", tags=["invoices"]
@@ -99,7 +99,7 @@ async def download_attachment(
     return Response(
         content=data,
         media_type=served_content_type(attachment.filename),
-        headers={"Content-Disposition": f'inline; filename="{attachment.filename}"'},
+        headers=served_headers(attachment.filename),
     )
 
 

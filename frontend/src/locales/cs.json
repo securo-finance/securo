@@ -1043,6 +1043,15 @@
     "unflagAction": "Zrušit označení",
     "flagSuccess": "Transakce označena",
     "unflagSuccess": "Označení zrušeno",
+    "paid": "Zaplaceno",
+    "unpaid": "Nezaplaceno",
+    "onlyUnpaid": "Pouze nezaplacené",
+    "markPaid": "Označit jako zaplaceno",
+    "markUnpaid": "Označit jako nezaplaceno",
+    "markPaidHint": "Peníze už z účtu odešly nebo na něj přišly",
+    "markUnpaidHint": "Označit tento řádek jako ještě čekající na zaplacení nebo přijetí",
+    "paidSuccess": "Označeno jako zaplaceno",
+    "unpaidSuccess": "Označeno jako nezaplaceno",
     "flagFilterAll": "Všechny označené",
     "flagFilterOverdue": "Po termínu",
     "flagFilterSoon": "Tento týden",
@@ -1063,11 +1072,35 @@
       "nextWeek": "Za týden",
       "nextMonth": "Za měsíc"
     },
+    "newBadge": "Nová",
+    "newBadgeTooltip": "Přišla synchronizací nebo importem a ještě nebyla otevřena",
+    "onlyUnread": "Jen nové transakce",
+    "onlyUnreadShort": "Jen nové",
+    "unreadRows": "Nové transakce",
+    "unreadCount_one": "{{count}} transakce ke kontrole",
+    "unreadCount_few": "{{count}} transakce ke kontrole",
+    "unreadCount_many": "{{count}} transakce ke kontrole",
+    "unreadCount_other": "{{count}} transakcí ke kontrole",
+    "unreadCount_zero": "Nic ke kontrole",
+    "markAllRead": "Označit vše jako přečtené v tomto pracovním prostoru ({{count}})",
+    "unreadOutsideFilters": "Mimo tyto filtry: {{count}}",
+    "markAllReadPending": "Označování jako přečtené",
+    "markAllReadDone": "Všechny transakce jsou označené jako přečtené",
     "statusCleared": "Zaúčtovaná",
     "sortAsc": "Seřadit vzestupně",
     "sortDesc": "Seřadit sestupně",
     "syncedInfo": "Transakce synchronizovaná z banky: částku, datum a účet nelze upravit",
     "syncedAmountDateError": "Částku ani datum synchronizované transakce nelze změnit",
+    "amountErrors": {
+      "notPositive": "Částka musí být větší než nula.",
+      "tooSmall": "Částka musí být alespoň 0,01.",
+      "tooLarge": "Částka je větší, než Securo dokáže uložit.",
+      "convertedNegative": "Přepočtená částka nemůže být záporná.",
+      "convertedTooLarge": "Přepočtená částka je větší, než Securo dokáže uložit.",
+      "rateNotPositive": "Směnný kurz nesmí být záporný. Nulový kurz je přijat pouze tehdy, když se přepočtená částka zaokrouhlí na nulu.",
+      "rateTooLarge": "Směnný kurz je větší, než Securo dokáže uložit.",
+      "required": "Zadejte částku."
+    },
     "uncategorized": "Bez kategorie",
     "selected": "vybraných",
     "summaryCount": "{{count}} transakcí",
@@ -1140,7 +1173,7 @@
     "attachmentDeleted": "Příloha smazána",
     "attachmentDeleteConfirm": "Smazat tuto přílohu?",
     "attachmentTooLarge": "Soubor je příliš velký. Maximální velikost je 10 MB.",
-    "attachmentTypeNotAllowed": "Nepodporovaný typ souboru. Povolené: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "Nepodporovaný typ souboru. Povolené: {{types}}",
     "attachmentMaxReached": "Dosažen maximální počet příloh",
     "attachmentRenamed": "Příloha přejmenována",
     "attachmentRename": "Přejmenovat",
@@ -1284,7 +1317,8 @@
     "invoiceBadgeTooltip": "Tato transakce vyrovnává fakturu. Otevřete ji.",
     "suggestionBadge": "Otázka",
     "suggestionBadgeTooltip": "Platba může uhradit tuto fakturu. Otevřete frontu a odpovězte.",
-    "clearGroupFilter": "Zrušit filtr skupiny"
+    "clearGroupFilter": "Zrušit filtr skupiny",
+    "attachmentNoPreview": "Tento soubor nemá náhled. Stáhněte si ho a otevřete."
   },
   "accounts": {
     "title": "Účty",
@@ -1614,6 +1648,9 @@
     "saved": "Budgets saved",
     "budgetFor": "Budget for {{category}}",
     "invalidAmount": "Zadejte platnou částku nula nebo vyšší.",
+    "amountTooSmall": "Limit rozpočtu musí být alespoň 0,01.",
+    "amountTooLarge": "Limit rozpočtu je příliš velký.",
+    "amountNegative": "Limit rozpočtu nesmí být záporný.",
     "repeatEveryMonthFor": "Repeat the {{category}} budget every month",
     "previousMonth": "Previous month",
     "nextMonth": "Next month",
@@ -3791,7 +3828,8 @@
       "undoFirstGroupSplit": "Před rozdělením mezi osoby zrušte rozdělení.",
       "undoFirstMortgage": "Před přidáním rozpisu hypotéky zrušte rozdělení.",
       "categoryInUse": "Tato kategorie obsahuje části rozdělených transakcí. Nejprve upravte tato rozdělení.",
-      "destinationInvalid": "Části rozdělených transakcí nemohou přejít do ignorované ani skryté kategorie."
+      "destinationInvalid": "Části rozdělených transakcí nemohou přejít do ignorované ani skryté kategorie.",
+      "mergeNeedsRate": "Tyto rozpočty jsou v různých měnách a pro jejich měsíc není kurz, kterým je spojit."
     }
   },
   "plugins": {
@@ -4050,9 +4088,26 @@
       "removed": "{{name}}: odebráno",
       "copyFailed": "Kopírování se nezdařilo. Označte adresu a zkopírujte ji ručně.",
       "editTitle": "Znovu připojit {{name}}",
-      "editHint": "Aktualizujte, co se změnilo, například nové heslo nebo token. Poté se připojení znovu synchronizuje.",
+      "editHint": "Aktualizujte, co se změnilo, například nové heslo nebo token. Poté se připojení znovu spustí.",
+      "edit": "Upravit",
+      "updateKeys": "Aktualizovat klíče",
       "keepBlank": "Ponechte pole prázdné, aby se zachovala jeho současná hodnota.",
-      "updated": "{{name}} aktualizováno"
+      "updated": "{{name}} aktualizováno",
+      "routines": "Rutiny",
+      "routineEvery": "každých {{interval}}",
+      "routineLastRun": "spuštěno {{when}}",
+      "routineNeverRan": "zatím nespuštěno",
+      "runRoutine": "Spustit nyní",
+      "runRoutineAria": "Spustit {{name}} nyní",
+      "routineRan": "{{name}} proběhla",
+      "routineFailed": "Neproběhla.",
+      "fileAccepts": "{{types}}, do {{size}} KB",
+      "fileAny": "Jakýkoli soubor, do {{size}} KB",
+      "currentFile": "aktuální: {{name}}",
+      "fileSaved": "soubor je uložen",
+      "fileWrongType": "{{name}} není soubor {{types}}.",
+      "fileTooBig": "{{name}} je větší než {{size}} KB.",
+      "fileReadFailed": "{{name}} nelze přečíst."
     },
     "oauth": {
       "title": "Dokončování přihlášení",
@@ -4221,6 +4276,12 @@
     "recurringRevenue": {
       "title": "Opakované příjmy",
       "hint": "Co měsíčně přinášejí opakované faktury a co se nedávno ztratilo."
+    },
+    "plugin": {
+      "period": {
+        "year_to_date": "Od začátku roku",
+        "last_12_months": "Posledních 12 měsíců"
+      }
     }
   },
   "offline": {

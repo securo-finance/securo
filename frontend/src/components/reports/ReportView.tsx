@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { createContext, useContext, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight } from 'lucide-react'
 import {
@@ -45,14 +45,18 @@ const tooltipStyle: React.CSSProperties = {
 
 const axis = { fontSize: 11 }
 
-// Full class names, so the stylesheet keeps them: a phone stacks every block.
+// Full class names, so the stylesheet keeps them. Widths follow the space the
+// view has, not the screen: a phone, or a narrow dashboard widget, stacks every block.
 const WIDTHS: Record<ReportViewWidth, string> = {
-  quarter: 'col-span-12 sm:col-span-6 lg:col-span-3',
-  third: 'col-span-12 lg:col-span-4',
-  half: 'col-span-12 lg:col-span-6',
-  two_thirds: 'col-span-12 lg:col-span-8',
+  quarter: 'col-span-12 @lg:col-span-6 @2xl:col-span-3',
+  third: 'col-span-12 @2xl:col-span-4',
+  half: 'col-span-12 @2xl:col-span-6',
+  two_thirds: 'col-span-12 @2xl:col-span-8',
   full: 'col-span-12',
 }
+
+// Inside a dashboard widget the widget is the card: blocks drop their own frame.
+const Flat = createContext(false)
 
 type Block<T extends ReportViewBlock['type']> = Extract<ReportViewBlock, { type: T }>
 type Formatter = ReturnType<typeof useFormatter>
@@ -91,8 +95,9 @@ function useFormatter(currency: string) {
 }
 
 function Card({ title, children }: { title?: string | null; children: React.ReactNode }) {
+  const flat = useContext(Flat)
   return (
-    <section className="h-full bg-card rounded-xl border border-border shadow-sm p-5">
+    <section className={cn('h-full', !flat && 'bg-card rounded-xl border border-border shadow-sm p-5')}>
       {title && <h3 className="mb-3 text-sm font-semibold">{title}</h3>}
       {children}
     </section>
@@ -108,8 +113,9 @@ function Kpi({ block, f }: { block: Block<'kpi'>; f: Formatter }) {
   const format = block.format ?? 'currency'
   const delta = block.delta
   const good = delta !== null && delta !== undefined && (block.delta_good === 'down' ? delta <= 0 : delta >= 0)
+  const flat = useContext(Flat)
   return (
-    <div className="h-full bg-card rounded-xl border border-border shadow-sm px-5 py-4">
+    <div className={cn('h-full', !flat && 'bg-card rounded-xl border border-border shadow-sm px-5 py-4')}>
       <p className="text-xs font-medium text-muted-foreground">{block.label}</p>
       <p className="mt-1 text-2xl font-semibold tabular-nums">{f.value(block.value, format)}</p>
       {delta !== null && delta !== undefined && (
@@ -579,9 +585,11 @@ function Table({ block, f }: { block: Block<'table'>; f: Formatter }) {
  * treemaps, flows, waterfalls, progress, tables and plain text. Values follow
  * privacy mode and the person's language; nothing in a view is run or fetched.
  */
-export function ReportView({ view, currency }: { view: View; currency: string }) {
+export function ReportView({ view, currency, flat = false }: { view: View; currency: string; flat?: boolean }) {
   const f = useFormatter(view.currency ?? currency)
   return (
+    <Flat.Provider value={flat}>
+    <div className="@container">
     <div className="grid grid-cols-12 gap-5">
       {view.blocks.map((block, i) => {
         const width = WIDTHS[block.width ?? (block.type === 'kpi' ? 'quarter' : 'full')]
@@ -623,5 +631,7 @@ export function ReportView({ view, currency }: { view: View; currency: string })
         )
       })}
     </div>
+    </div>
+    </Flat.Provider>
   )
 }

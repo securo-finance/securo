@@ -879,6 +879,8 @@
     "savingsRateCaption": "इस महीने की आय का बचाया गया हिस्सा",
     "spendingProjection": "इस रफ़्तार से, आप महीने के अंत तक {{amount}} खर्च करेंगे",
     "uncategorizedCta": "{{count}} लेन-देन को वर्गीकृत करना है",
+    "uncategorizedCta_one": "{{count}} लेन-देन को वर्गीकृत करना है",
+    "uncategorizedCta_other": "{{count}} लेन-देन को वर्गीकृत करना है",
     "uncategorizedTotal": "कुल {{amount}}",
     "categorizeNow": "अभी वर्गीकृत करें",
     "drillDownQuickCategorize": "श्रेणी चुनें",
@@ -1007,6 +1009,15 @@
     "unflagAction": "चिह्न हटाएँ",
     "flagSuccess": "लेन-देन चिह्नित किया गया",
     "unflagSuccess": "चिह्न हटा दिया गया",
+    "paid": "भुगतान हो गया",
+    "unpaid": "भुगतान बाकी",
+    "onlyUnpaid": "केवल भुगतान बाकी",
+    "markPaid": "भुगतान हुआ के रूप में चिह्नित करें",
+    "markUnpaid": "भुगतान बाकी के रूप में चिह्नित करें",
+    "markPaidHint": "पैसा खाते से जा चुका है या उसमें आ चुका है",
+    "markUnpaidHint": "इस पंक्ति को अभी भुगतान या प्राप्ति बाकी के रूप में चिह्नित करें",
+    "paidSuccess": "भुगतान हुआ के रूप में चिह्नित",
+    "unpaidSuccess": "भुगतान बाकी के रूप में चिह्नित",
     "flagFilterAll": "सभी चिह्नित",
     "flagFilterOverdue": "समय निकल गया",
     "flagFilterSoon": "इस सप्ताह",
@@ -1027,11 +1038,33 @@
       "nextWeek": "एक सप्ताह में",
       "nextMonth": "एक महीने में"
     },
+    "newBadge": "नया",
+    "newBadgeTooltip": "सिंक या इम्पोर्ट से आया और अभी तक खोला नहीं गया",
+    "onlyUnread": "केवल नए लेन-देन",
+    "onlyUnreadShort": "केवल नए",
+    "unreadRows": "नए लेन-देन",
+    "unreadCount_one": "{{count}} लेन-देन समीक्षा के लिए",
+    "unreadCount_other": "{{count}} लेन-देन समीक्षा के लिए",
+    "unreadCount_zero": "समीक्षा के लिए कुछ नहीं",
+    "markAllRead": "इस वर्कस्पेस में सभी को पढ़ा हुआ चिह्नित करें ({{count}})",
+    "unreadOutsideFilters": "इन फ़िल्टरों के बाहर: {{count}}",
+    "markAllReadPending": "पढ़ा हुआ चिह्नित कर रहे हैं",
+    "markAllReadDone": "सभी लेन-देन पढ़े हुए चिह्नित कर दिए गए",
     "statusCleared": "क्लियर",
     "sortAsc": "बढ़ते क्रम में लगाएँ",
     "sortDesc": "घटते क्रम में लगाएँ",
     "syncedInfo": "बैंक-सिंक किया गया लेन-देन: राशि, तिथि और खाता संपादित नहीं किए जा सकते",
     "syncedAmountDateError": "सिंक किए गए लेन-देन की राशि या तिथि नहीं बदली जा सकती",
+    "amountErrors": {
+      "notPositive": "राशि शून्य से अधिक होनी चाहिए।",
+      "tooSmall": "राशि कम से कम 0.01 होनी चाहिए।",
+      "tooLarge": "राशि Securo द्वारा सहेजी जा सकने वाली सीमा से बड़ी है।",
+      "convertedNegative": "परिवर्तित राशि ऋणात्मक नहीं हो सकती।",
+      "convertedTooLarge": "परिवर्तित राशि Securo द्वारा सहेजी जा सकने वाली सीमा से बड़ी है।",
+      "rateNotPositive": "विनिमय दर ऋणात्मक नहीं हो सकती। शून्य दर केवल तब स्वीकार की जाती है जब परिवर्तित राशि शून्य तक पूर्णांकित हो।",
+      "rateTooLarge": "विनिमय दर Securo द्वारा सहेजी जा सकने वाली सीमा से बड़ी है।",
+      "required": "राशि दर्ज करें।"
+    },
     "uncategorized": "अवर्गीकृत",
     "selected": "चयनित",
     "summaryCount": "{{count}} लेन-देन",
@@ -1080,7 +1113,7 @@
     "attachmentDeleted": "अटैचमेंट हटाया गया",
     "attachmentDeleteConfirm": "यह अटैचमेंट हटाएँ?",
     "attachmentTooLarge": "फ़ाइल बहुत बड़ी है। अधिकतम आकार 10 MB है।",
-    "attachmentTypeNotAllowed": "फ़ाइल प्रकार समर्थित नहीं। अनुमत: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "फ़ाइल प्रकार समर्थित नहीं। अनुमत: {{types}}",
     "attachmentMaxReached": "अटैचमेंट की अधिकतम संख्या पूरी हो गई",
     "attachmentRenamed": "अटैचमेंट का नाम बदला गया",
     "attachmentRename": "नाम बदलें",
@@ -1214,7 +1247,8 @@
     "invoiceBadgeTooltip": "यह लेन-देन एक इनवॉइस चुकाता है। इसे खोलें।",
     "suggestionBadge": "सवाल",
     "suggestionBadgeTooltip": "एक भुगतान इसे चुका सकता है। जवाब देने के लिए कतार खोलें।",
-    "clearGroupFilter": "समूह फ़िल्टर हटाएँ"
+    "clearGroupFilter": "समूह फ़िल्टर हटाएँ",
+    "attachmentNoPreview": "इस फ़ाइल का पूर्वावलोकन नहीं है। खोलने के लिए इसे डाउनलोड करें।"
   },
   "accounts": {
     "title": "खाते",
@@ -1528,6 +1562,9 @@
     "saved": "बजट सहेजे गए",
     "budgetFor": "{{category}} के लिए बजट",
     "invalidAmount": "शून्य या उससे अधिक की मान्य राशि दर्ज करें।",
+    "amountTooSmall": "बजट सीमा कम से कम 0.01 होनी चाहिए।",
+    "amountTooLarge": "बजट सीमा बहुत बड़ी है।",
+    "amountNegative": "बजट की सीमा ऋणात्मक नहीं हो सकती।",
     "repeatEveryMonthFor": "{{category}} बजट हर महीने दोहराएँ",
     "previousMonth": "पिछला महीना",
     "nextMonth": "अगला महीना",
@@ -3599,7 +3636,8 @@
       "undoFirstGroupSplit": "लोगों के बीच बाँटने से पहले बँटवारा हटाएँ।",
       "undoFirstMortgage": "होम लोन का विवरण जोड़ने से पहले बँटवारा हटाएँ।",
       "categoryInUse": "इस श्रेणी में बँटे हुए लेन-देन के हिस्से हैं। पहले उन बँटवारों को बदलें।",
-      "destinationInvalid": "बँटे हुए लेन-देन के हिस्से अनदेखी या छिपी श्रेणी में नहीं जा सकते।"
+      "destinationInvalid": "बँटे हुए लेन-देन के हिस्से अनदेखी या छिपी श्रेणी में नहीं जा सकते।",
+      "mergeNeedsRate": "ये बजट अलग-अलग मुद्राओं में हैं और इन्हें मिलाने के लिए उनके महीने की कोई विनिमय दर नहीं है।"
     }
   },
   "plugins": {
@@ -3844,9 +3882,26 @@
       "removed": "{{name}} हटाया गया",
       "copyFailed": "कॉपी नहीं हो सका। पता चुनें और खुद कॉपी करें।",
       "editTitle": "{{name}} फिर से कनेक्ट करें",
-      "editHint": "जो बदला है उसे अपडेट करें, जैसे नया पासवर्ड या टोकन। इसके बाद कनेक्शन फिर से सिंक होगा।",
+      "editHint": "जो बदला है उसे अपडेट करें, जैसे नया पासवर्ड या टोकन। इसके बाद कनेक्शन फिर से चलेगा।",
+      "edit": "संपादित करें",
+      "updateKeys": "कुंजियाँ अपडेट करें",
       "keepBlank": "मौजूदा मान रखने के लिए फ़ील्ड खाली छोड़ें।",
-      "updated": "{{name}} अपडेट हुआ"
+      "updated": "{{name}} अपडेट हुआ",
+      "routines": "रूटीन",
+      "routineEvery": "हर {{interval}}",
+      "routineLastRun": "{{when}} चला",
+      "routineNeverRan": "अभी तक नहीं चला",
+      "runRoutine": "अभी चलाएँ",
+      "runRoutineAria": "{{name}} अभी चलाएँ",
+      "routineRan": "{{name}} चल गया",
+      "routineFailed": "नहीं चला।",
+      "fileAccepts": "{{types}}, {{size}} KB तक",
+      "fileAny": "कोई भी फ़ाइल, {{size}} KB तक",
+      "currentFile": "मौजूदा: {{name}}",
+      "fileSaved": "एक फ़ाइल सहेजी गई है",
+      "fileWrongType": "{{name}} {{types}} फ़ाइल नहीं है।",
+      "fileTooBig": "{{name}} {{size}} KB से बड़ी है।",
+      "fileReadFailed": "{{name}} पढ़ी नहीं जा सकी।"
     },
     "oauth": {
       "title": "साइन इन पूरा हो रहा है",
@@ -4015,6 +4070,12 @@
     "recurringRevenue": {
       "title": "आवर्ती आय",
       "hint": "आवर्ती इनवॉइस हर महीने कितना लाते हैं, और हाल में क्या खोया।"
+    },
+    "plugin": {
+      "period": {
+        "year_to_date": "वर्ष की शुरुआत से",
+        "last_12_months": "पिछले 12 महीने"
+      }
     }
   },
   "offline": {

@@ -879,6 +879,8 @@
     "savingsRateCaption": "van het inkomen deze maand gespaard",
     "spendingProjection": "In dit tempo geeft u aan het einde van de maand {{amount}} uit",
     "uncategorizedCta": "{{count}} transacties moeten worden gecategoriseerd",
+    "uncategorizedCta_one": "{{count}} transactie moet worden gecategoriseerd",
+    "uncategorizedCta_other": "{{count}} transacties moeten worden gecategoriseerd",
     "uncategorizedTotal": "{{amount}} in totaal",
     "categorizeNow": "Categoriseer nu",
     "drillDownQuickCategorize": "Kies een categorie",
@@ -1007,6 +1009,15 @@
     "unflagAction": "Markering verwijderen",
     "flagSuccess": "Transactie gemarkeerd",
     "unflagSuccess": "Markering verwijderd",
+    "paid": "Betaald",
+    "unpaid": "Onbetaald",
+    "onlyUnpaid": "Alleen onbetaald",
+    "markPaid": "Als betaald markeren",
+    "markUnpaid": "Als onbetaald markeren",
+    "markPaidHint": "Het geld heeft de rekening al verlaten of is erop bijgeschreven",
+    "markUnpaidHint": "Deze rij markeren als nog te betalen of te ontvangen",
+    "paidSuccess": "Gemarkeerd als betaald",
+    "unpaidSuccess": "Gemarkeerd als onbetaald",
     "flagFilterAll": "Alle gemarkeerd",
     "flagFilterOverdue": "Verlopen",
     "flagFilterSoon": "Deze week",
@@ -1027,11 +1038,33 @@
       "nextWeek": "Over een week",
       "nextMonth": "Over een maand"
     },
+    "newBadge": "Nieuw",
+    "newBadgeTooltip": "Binnengekomen via synchronisatie of import en nog niet geopend",
+    "onlyUnread": "Alleen nieuwe transacties",
+    "onlyUnreadShort": "Alleen nieuw",
+    "unreadRows": "Nieuwe transacties",
+    "unreadCount_one": "{{count}} transactie om te controleren",
+    "unreadCount_other": "{{count}} transacties om te controleren",
+    "unreadCount_zero": "Niets om te controleren",
+    "markAllRead": "Alles als gelezen markeren in deze workspace ({{count}})",
+    "unreadOutsideFilters": "Buiten deze filters: {{count}}",
+    "markAllReadPending": "Wordt als gelezen gemarkeerd",
+    "markAllReadDone": "Alle transacties zijn als gelezen gemarkeerd",
     "statusCleared": "Gewist",
     "sortAsc": "Sorteer oplopend",
     "sortDesc": "Sorteer aflopend",
     "syncedInfo": "Bankgesynchroniseerde transactie: bedrag, datum en rekening kunnen niet worden bewerkt",
     "syncedAmountDateError": "Het bedrag of de datum van een gesynchroniseerde transactie kan niet worden gewijzigd",
+    "amountErrors": {
+      "notPositive": "Het bedrag moet groter dan nul zijn.",
+      "tooSmall": "Het bedrag moet minstens 0,01 zijn.",
+      "tooLarge": "Het bedrag is groter dan Securo kan opslaan.",
+      "convertedNegative": "Het omgerekende bedrag kan niet negatief zijn.",
+      "convertedTooLarge": "Het omgerekende bedrag is groter dan Securo kan opslaan.",
+      "rateNotPositive": "De wisselkoers mag niet negatief zijn. Een koers van nul wordt alleen geaccepteerd als het omgerekende bedrag op nul afrondt.",
+      "rateTooLarge": "De wisselkoers is groter dan Securo kan opslaan.",
+      "required": "Voer een bedrag in."
+    },
     "uncategorized": "Niet gecategoriseerd",
     "selected": "geselecteerd",
     "summaryCount": "{{count}} transacties",
@@ -1080,7 +1113,7 @@
     "attachmentDeleted": "Bijlage verwijderd",
     "attachmentDeleteConfirm": "Deze bijlage verwijderen?",
     "attachmentTooLarge": "Bestand is te groot. Maximale grootte is 10 MB.",
-    "attachmentTypeNotAllowed": "Bestandstype niet ondersteund. Toegestaan: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "Bestandstype niet ondersteund. Toegestaan: {{types}}",
     "attachmentMaxReached": "Maximaal aantal bijlagen bereikt",
     "attachmentRenamed": "Bijlage hernoemd",
     "attachmentRename": "Hernoemen",
@@ -1214,7 +1247,8 @@
     "invoiceBadgeTooltip": "Deze transactie rekent een factuur af. Openen.",
     "suggestionBadge": "Vraag",
     "suggestionBadgeTooltip": "Een betaling kan deze factuur voldoen. Open de wachtrij om te antwoorden.",
-    "clearGroupFilter": "Groepsfilter wissen"
+    "clearGroupFilter": "Groepsfilter wissen",
+    "attachmentNoPreview": "Er is geen voorbeeld van dit bestand. Download het om het te openen."
   },
   "accounts": {
     "title": "Rekeningen",
@@ -1530,6 +1564,9 @@
     "saved": "Budgetten opgeslagen",
     "budgetFor": "Budget voor {{category}}",
     "invalidAmount": "Vul een geldig bedrag van nul of meer in.",
+    "amountTooSmall": "De budgetlimiet moet minstens 0,01 zijn.",
+    "amountTooLarge": "De budgetlimiet is te groot.",
+    "amountNegative": "De budgetlimiet kan niet negatief zijn.",
     "repeatEveryMonthFor": "Budget voor {{category}} elke maand herhalen",
     "previousMonth": "Vorige maand",
     "nextMonth": "Volgende maand",
@@ -3601,7 +3638,8 @@
       "undoFirstGroupSplit": "Maak de verdeling ongedaan voordat je tussen personen verdeelt.",
       "undoFirstMortgage": "Maak de verdeling ongedaan voordat je de hypotheek uitsplitst.",
       "categoryInUse": "Deze categorie bevat delen van verdeelde transacties. Pas die verdelingen eerst aan.",
-      "destinationInvalid": "Delen van verdeelde transacties kunnen niet naar een genegeerde of verborgen categorie."
+      "destinationInvalid": "Delen van verdeelde transacties kunnen niet naar een genegeerde of verborgen categorie.",
+      "mergeNeedsRate": "Deze budgetten staan in verschillende valuta en er is geen wisselkoers voor hun maand om ze samen te voegen."
     }
   },
   "plugins": {
@@ -3846,9 +3884,26 @@
       "removed": "{{name}} verwijderd",
       "copyFailed": "Kopiëren lukte niet. Selecteer het adres en kopieer het zelf.",
       "editTitle": "{{name}} opnieuw koppelen",
-      "editHint": "Werk bij wat er veranderd is, zoals een nieuw wachtwoord of token. Daarna synchroniseert de koppeling opnieuw.",
+      "editHint": "Werk bij wat er veranderd is, zoals een nieuw wachtwoord of token. Daarna draait de koppeling opnieuw.",
+      "edit": "Bewerken",
+      "updateKeys": "Sleutels bijwerken",
       "keepBlank": "Laat een veld leeg om de huidige waarde te houden.",
-      "updated": "{{name}} bijgewerkt"
+      "updated": "{{name}} bijgewerkt",
+      "routines": "Routines",
+      "routineEvery": "elke {{interval}}",
+      "routineLastRun": "liep {{when}}",
+      "routineNeverRan": "nog niet gelopen",
+      "runRoutine": "Nu uitvoeren",
+      "runRoutineAria": "{{name}} nu uitvoeren",
+      "routineRan": "{{name}} is uitgevoerd",
+      "routineFailed": "Niet uitgevoerd.",
+      "fileAccepts": "{{types}}, tot {{size}} KB",
+      "fileAny": "Elk bestand, tot {{size}} KB",
+      "currentFile": "huidig: {{name}}",
+      "fileSaved": "er is een bestand opgeslagen",
+      "fileWrongType": "{{name}} is geen {{types}}-bestand.",
+      "fileTooBig": "{{name}} is groter dan {{size}} KB.",
+      "fileReadFailed": "{{name}} kon niet worden gelezen."
     },
     "oauth": {
       "title": "Inloggen afronden",
@@ -4017,6 +4072,12 @@
     "recurringRevenue": {
       "title": "Terugkerende omzet",
       "hint": "Wat terugkerende facturen per maand opleveren, en wat onlangs verloren ging."
+    },
+    "plugin": {
+      "period": {
+        "year_to_date": "Dit jaar tot nu",
+        "last_12_months": "Laatste 12 maanden"
+      }
     }
   },
   "offline": {

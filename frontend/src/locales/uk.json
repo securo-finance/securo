@@ -887,6 +887,10 @@
     "savingsRateCaption": "доходу заощаджено цього місяця",
     "spendingProjection": "Такими темпами ви витратите {{amount}} до кінця місяця",
     "uncategorizedCta": "{{count}} транзакцій потрібно категоризувати",
+    "uncategorizedCta_one": "{{count}} транзакцію потрібно категоризувати",
+    "uncategorizedCta_few": "{{count}} транзакції потрібно категоризувати",
+    "uncategorizedCta_many": "{{count}} транзакцій потрібно категоризувати",
+    "uncategorizedCta_other": "{{count}} транзакцій потрібно категоризувати",
     "uncategorizedTotal": "На суму {{amount}}",
     "categorizeNow": "Категоризувати зараз",
     "drillDownQuickCategorize": "Вибрати категорію",
@@ -1015,6 +1019,15 @@
     "unflagAction": "Зняти позначку",
     "flagSuccess": "Транзакцію позначено",
     "unflagSuccess": "Позначку знято",
+    "paid": "Сплачено",
+    "unpaid": "Не сплачено",
+    "onlyUnpaid": "Лише несплачені",
+    "markPaid": "Позначити як сплачене",
+    "markUnpaid": "Позначити як несплачене",
+    "markPaidHint": "Гроші вже пішли з рахунку або надійшли на нього",
+    "markUnpaidHint": "Позначити рядок як ще не сплачений або не отриманий",
+    "paidSuccess": "Позначено як сплачене",
+    "unpaidSuccess": "Позначено як несплачене",
     "flagFilterAll": "Усі позначені",
     "flagFilterOverdue": "Прострочені",
     "flagFilterSoon": "Цього тижня",
@@ -1035,11 +1048,35 @@
       "nextWeek": "Через тиждень",
       "nextMonth": "Через місяць"
     },
+    "newBadge": "Нова",
+    "newBadgeTooltip": "Надійшла із синхронізації чи імпорту і ще не відкрита",
+    "onlyUnread": "Лише нові транзакції",
+    "onlyUnreadShort": "Лише нові",
+    "unreadRows": "Нові транзакції",
+    "unreadCount_one": "{{count}} транзакція на перевірку",
+    "unreadCount_few": "{{count}} транзакції на перевірку",
+    "unreadCount_many": "{{count}} транзакцій на перевірку",
+    "unreadCount_other": "{{count}} транзакції на перевірку",
+    "unreadCount_zero": "Нічого перевіряти",
+    "markAllRead": "Позначити все як прочитане в цьому робочому просторі ({{count}})",
+    "unreadOutsideFilters": "Поза цими фільтрами: {{count}}",
+    "markAllReadPending": "Позначаємо як прочитані",
+    "markAllReadDone": "Усі транзакції позначено як прочитані",
     "statusCleared": "Проведена",
     "sortAsc": "Сортування за зростанням",
     "sortDesc": "Сортування за спаданням",
     "syncedInfo": "Транзакція, синхронізована з банком: суму, дату та рахунок змінити не можна",
     "syncedAmountDateError": "Неможливо змінити суму або дату синхронізованої транзакції",
+    "amountErrors": {
+      "notPositive": "Сума має бути більшою за нуль.",
+      "tooSmall": "Сума має бути не меншою за 0,01.",
+      "tooLarge": "Сума більша, ніж може зберегти Securo.",
+      "convertedNegative": "Перерахована сума не може бути від'ємною.",
+      "convertedTooLarge": "Перерахована сума більша, ніж може зберегти Securo.",
+      "rateNotPositive": "Обмінний курс не може бути від'ємним. Нульовий курс приймається, лише якщо перерахована сума округлюється до нуля.",
+      "rateTooLarge": "Обмінний курс більший, ніж може зберегти Securo.",
+      "required": "Введіть суму."
+    },
     "uncategorized": "Без категорії",
     "selected": "обрано",
     "summaryCount": "{{count}} транзакцій",
@@ -1094,7 +1131,7 @@
     "attachmentDeleted": "Вкладення видалено",
     "attachmentDeleteConfirm": "Видалити це вкладення?",
     "attachmentTooLarge": "Файл занадто великий. Максимальний розмір — 10 МБ.",
-    "attachmentTypeNotAllowed": "Тип файлу не підтримується. Дозволені: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "Тип файлу не підтримується. Дозволені: {{types}}",
     "attachmentMaxReached": "Досягнуто максимальної кількості вкладень",
     "attachmentRenamed": "Вкладення перейменовано",
     "attachmentRename": "Перейменувати",
@@ -1230,7 +1267,8 @@
     "invoiceBadgeTooltip": "Ця операція закриває рахунок. Відкрити.",
     "suggestionBadge": "Питання",
     "suggestionBadgeTooltip": "Платіж може закрити цей рахунок. Відкрийте чергу, щоб відповісти.",
-    "clearGroupFilter": "Скинути фільтр групи"
+    "clearGroupFilter": "Скинути фільтр групи",
+    "attachmentNoPreview": "Для цього файлу немає попереднього перегляду. Завантажте його, щоб відкрити."
   },
   "accounts": {
     "title": "Рахунки",
@@ -1547,6 +1585,9 @@
     "saved": "Бюджети збережено",
     "budgetFor": "Бюджет для {{category}}",
     "invalidAmount": "Введіть коректну суму від нуля.",
+    "amountTooSmall": "Ліміт бюджету має бути не менше 0,01.",
+    "amountTooLarge": "Ліміт бюджету завеликий.",
+    "amountNegative": "Ліміт бюджету не може бути від'ємним.",
     "repeatEveryMonthFor": "Повторювати бюджет «{{category}}» щомісяця",
     "previousMonth": "Минулий місяць",
     "nextMonth": "Наступний місяць",
@@ -3648,7 +3689,8 @@
       "undoFirstGroupSplit": "Скасуйте розділення, перш ніж ділити між людьми.",
       "undoFirstMortgage": "Скасуйте розділення, перш ніж додати розбивку іпотеки.",
       "categoryInUse": "У цій категорії є частини розділених операцій. Спершу змініть ці розділення.",
-      "destinationInvalid": "Частини розділених операцій не можна перенести в ігноровану чи приховану категорію."
+      "destinationInvalid": "Частини розділених операцій не можна перенести в ігноровану чи приховану категорію.",
+      "mergeNeedsRate": "Ці бюджети в різних валютах, і для їхнього місяця немає курсу, щоб їх об'єднати."
     }
   },
   "plugins": {
@@ -3907,9 +3949,26 @@
       "removed": "{{name}}: видалено",
       "copyFailed": "Не вдалося скопіювати. Виділіть адресу та скопіюйте її вручну.",
       "editTitle": "Перепідключити {{name}}",
-      "editHint": "Оновіть те, що змінилося, наприклад новий пароль або токен. Після цього підключення знову синхронізується.",
+      "editHint": "Оновіть те, що змінилося, наприклад новий пароль або токен. Після цього підключення знову запуститься.",
+      "edit": "Змінити",
+      "updateKeys": "Оновити ключі",
       "keepBlank": "Залиште поле порожнім, щоб зберегти поточне значення.",
-      "updated": "{{name}} оновлено"
+      "updated": "{{name}} оновлено",
+      "routines": "Завдання",
+      "routineEvery": "кожні {{interval}}",
+      "routineLastRun": "запускалося {{when}}",
+      "routineNeverRan": "ще не запускалося",
+      "runRoutine": "Запустити",
+      "runRoutineAria": "Запустити {{name}} зараз",
+      "routineRan": "{{name}} виконано",
+      "routineFailed": "Не виконано.",
+      "fileAccepts": "{{types}}, до {{size}} КБ",
+      "fileAny": "Будь-який файл, до {{size}} КБ",
+      "currentFile": "поточний: {{name}}",
+      "fileSaved": "файл збережено",
+      "fileWrongType": "{{name}} не є файлом {{types}}.",
+      "fileTooBig": "{{name}} більший за {{size}} КБ.",
+      "fileReadFailed": "Не вдалося прочитати {{name}}."
     },
     "oauth": {
       "title": "Завершення входу",
@@ -4078,6 +4137,12 @@
     "recurringRevenue": {
       "title": "Регулярний дохід",
       "hint": "Скільки приносять регулярні рахунки щомісяця і що нещодавно втрачено."
+    },
+    "plugin": {
+      "period": {
+        "year_to_date": "З початку року",
+        "last_12_months": "Останні 12 місяців"
+      }
     }
   },
   "offline": {

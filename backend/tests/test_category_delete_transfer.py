@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.budget import Budget
 from app.models.category import Category
+from app.models.fx_rate import FxRate
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.rule import Rule
 from app.models.transaction import Transaction
@@ -84,12 +85,14 @@ async def _make_budget(
     amount: str,
     month: date,
     is_recurring: bool = False,
+    currency: str = "USD",
 ) -> Budget:
     budget = Budget(
         user_id=user.id,
         workspace_id=workspace.id,
         category_id=category_id,
         amount=Decimal(amount),
+        currency=currency,
         month=month,
         is_recurring=is_recurring,
     )
@@ -655,5 +658,155 @@ async def test_transfer_is_one_transaction(
     monkeypatch.undo()
     await session.rollback()
 
+    assert (await _reload(session, Transaction, transaction_id)).category_id == source_id
+    assert await session.get(Category, source_id) is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("destination_amount", "destination_currency", "expected"),
+    [
+        pytest.param("1000", "BRL", ("1500.00", "BRL"), id="kept-row-in-brl"),
+        pytest.param("50", "USD", ("150.00", "USD"), id="kept-row-in-usd"),
+    ],
+)
+async def test_category_transfer_converts_a_limit_into_the_kept_rows_currency(
+    session: AsyncSession,
+    test_user: User,
+    test_workspace,
+    test_categories: list[Category],
+    destination_amount: str,
+    destination_currency: str,
+    expected: tuple[str, str],
+):
+    """US$ 100 moved onto R$ 1,000 at 5 BRL per USD is R$ 1,500, not 1,100."""
+    source, destination = test_categories[:2]
+    month = date(2025, 3, 1)
+    session.add(FxRate(
+        base_currency="USD", quote_currency="BRL", date=month, rate=Decimal("5"), source="test",
+    ))
+    await session.commit()
+    await _make_budget(
+        session, test_user, test_workspace, source.id,
+        amount="100", month=month, is_recurring=True, currency="USD",
+    )
+    await _make_budget(
+        session, test_user, test_workspace, destination.id,
+        amount=destination_amount, month=month, is_recurring=True,
+        currency=destination_currency,
+    )
+    workspace_id, destination_id = test_workspace.id, destination.id
+
+    assert await category_service.delete_category(
+        session, source.id, workspace_id, transfer_to_id=destination_id
+    )
+
+    session.expire_all()
+    remaining = (
+        await session.execute(select(Budget).where(Budget.workspace_id == workspace_id))
+    ).scalars().all()
+    assert [(b.category_id, b.amount, b.currency) for b in remaining] == [
+        (destination_id, Decimal(expected[0]), expected[1])
+    ]
+
+
+@pytest.mark.asyncio
+async def test_category_transfer_refuses_limits_in_two_currencies_without_a_rate(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace,
+    test_categories: list[Category],
+):
+    """With no USD/BRL rate, US$ 100 onto R$ 1,000 is refused, not stored as 1,100."""
+    source, destination = test_categories[:2]
+    month = date(2025, 3, 1)
+    await _make_budget(
+        session, test_user, test_workspace, source.id,
+        amount="100", month=month, is_recurring=True, currency="USD",
+    )
+    await _make_budget(
+        session, test_user, test_workspace, destination.id,
+        amount="1000", month=month, is_recurring=True, currency="BRL",
+    )
+    workspace_id, source_id, destination_id = test_workspace.id, source.id, destination.id
+
+    response = await client.delete(
+        f"/api/categories/{source_id}",
+        headers=auth_headers,
+        params={"transfer_to_category_id": str(destination_id)},
+    )
+
+    assert response.status_code == 400
+    assert "exchange rate" in response.json()["detail"]
+    session.expire_all()
+    remaining = (
+        await session.execute(select(Budget).where(Budget.workspace_id == workspace_id))
+    ).scalars().all()
+    assert sorted((b.category_id == source_id, b.amount, b.currency) for b in remaining) == [
+        (False, Decimal("1000.00"), "BRL"),
+        (True, Decimal("100.00"), "USD"),
+    ]
+    assert await session.get(Category, source_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_category_transfer_does_not_commit_halfway_while_looking_up_a_rate(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace,
+    test_account: Account,
+    test_categories: list[Category],
+    monkeypatch,
+):
+    """A provider that answers without the BRL rate must not commit the moves made so far.
+
+    The on-demand sync commits the session it is given. Called in the middle of
+    a transfer, it would store the repointed transactions, and the refusal that
+    follows would leave them in the destination with the source still there.
+    """
+    source, destination = test_categories[:2]
+    month = date(2025, 3, 1)
+    transaction = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=test_account.id,
+        category_id=source.id,
+        description="UBER TRIP",
+        amount=Decimal("25.50"),
+        date=month,
+        type="debit",
+        source="manual",
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(transaction)
+    await session.commit()
+    await _make_budget(
+        session, test_user, test_workspace, source.id,
+        amount="100", month=month, is_recurring=True, currency="USD",
+    )
+    await _make_budget(
+        session, test_user, test_workspace, destination.id,
+        amount="1000", month=month, is_recurring=True, currency="BRL",
+    )
+    source_id, destination_id, transaction_id = source.id, destination.id, transaction.id
+
+    async def provider_without_brl(sync_session, *_args, **_kwargs):
+        await sync_session.commit()
+        return 1
+
+    monkeypatch.setattr("app.services.fx_rate_service.sync_rates", provider_without_brl)
+
+    response = await client.delete(
+        f"/api/categories/{source_id}",
+        headers=auth_headers,
+        params={"transfer_to_category_id": str(destination_id)},
+    )
+
+    assert response.status_code == 400
+    session.expire_all()
     assert (await _reload(session, Transaction, transaction_id)).category_id == source_id
     assert await session.get(Category, source_id) is not None
