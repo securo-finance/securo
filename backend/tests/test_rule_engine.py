@@ -7,7 +7,7 @@ from datetime import date
 import pytest
 
 from app.models import Transaction
-from app.services.rule_engine import evaluate_conditions, apply_rule_actions
+from app.services.rule_engine import NOTES_MAX_LENGTH, apply_rule_actions, evaluate_conditions, merge_notes
 
 
 def make_tx(**kwargs) -> Transaction:
@@ -1005,3 +1005,12 @@ def test_equals_amount_non_numeric_falls_back_to_text():
     conditions = [{"field": "amount", "op": "equals", "value": "abc"}]
     tx = make_tx(type="credit", amount=Decimal("100.00"))
     assert evaluate_conditions("and", conditions, tx) is False
+
+
+def test_merge_notes_cuts_the_incoming_part_to_the_column():
+    """A note merged past `Transaction.notes` would fail the write."""
+    existing = "x" * 990
+    assert merge_notes(existing, "purpose text from the bank") == f"{existing} purpose t"
+    assert len(merge_notes(existing, "y" * 50) or "") == NOTES_MAX_LENGTH
+    assert merge_notes("x" * NOTES_MAX_LENGTH, "more") == "x" * NOTES_MAX_LENGTH
+    assert merge_notes(None, "y" * 1500) == "y" * NOTES_MAX_LENGTH

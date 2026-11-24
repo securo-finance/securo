@@ -38,6 +38,7 @@ from app.models.transaction_attachment import TransactionAttachment
 from app.models.transaction_split import TransactionSplit
 from app.models.transaction_category_line import TransactionCategoryLine
 from app.models.user import User
+from app.plugins.contract import SYNCED_TEXT, column_amount
 from app.plugins.provider import is_plugin_provider
 from app.providers import get_provider
 from app.providers.enable_banking import SKIPPED_TRANSACTION_STATUSES, is_account_txn_id
@@ -2079,6 +2080,7 @@ async def _run_first_import(
                     synced_dup.card_masked_number = txn_data.card_masked_number
                 if settles:
                     synced_dup.status = "posted"
+                    linked_payee_id = await _refresh_twin_payee(session, synced_dup, txn_data)
                     _merge_sync_metadata(
                         synced_dup,
                         txn_data,
@@ -2089,7 +2091,8 @@ async def _run_first_import(
                         account_currency=account.currency, user_currency=user_currency,
                     )
                     await apply_rules_to_settled_transaction(
-                        session, user_id, synced_dup, manual_description=manual_description
+                        session, user_id, synced_dup, manual_description=manual_description,
+                        synced_payee_id=linked_payee_id,
                     )
                     if (
                         txn_data.bill_external_id
@@ -2102,6 +2105,7 @@ async def _run_first_import(
                                 synced_dup, account, bill_due_date=bill.due_date
                             )
                 elif synced_dup.external_id != txn_data.external_id:
+                    await _refresh_twin_payee(session, synced_dup, txn_data)
                     _merge_sync_metadata(
                         synced_dup,
                         txn_data,
@@ -2158,6 +2162,7 @@ async def _run_first_import(
                 status=txn_data.status,
                 payee=txn_data.payee,
                 payee_id=payee_id,
+                notes=txn_data.notes,
                 raw_data=txn_data.raw_data,
                 category_id=None,
                 installment_number=txn_data.installment_number,
@@ -2444,6 +2449,8 @@ def _merge_sync_metadata(
         replace_external_id = True
     if txn_data.external_id and (replace_external_id or not transaction.external_id):
         transaction.external_id = txn_data.external_id
+    # What a plugin sent last, read before its new payload is merged in.
+    sent = transaction.raw_data.get(SYNCED_TEXT) if isinstance(transaction.raw_data, dict) else None
     if txn_data.raw_data:
         if not transaction.raw_data:
             transaction.raw_data = txn_data.raw_data
@@ -2478,6 +2485,30 @@ def _merge_sync_metadata(
         transaction.card_masked_number = txn_data.card_masked_number
     if txn_data.payee and not transaction.payee:
         transaction.payee = txn_data.payee
+    if isinstance(sent, dict) and not _takes_plugin_correction(transaction, txn_data):
+        # A stale pending twin of a posted row (or a row the user hid) changes
+        # nothing of the plugin's, and the snapshot stays what the row took,
+        # bar a payee filled in above where the row had none: the snapshot
+        # records it, or a later correction would take it for an edit.
+        kept = sent
+        if transaction.payee and not sent.get("payee"):
+            kept = {**sent, "payee": transaction.payee}
+        raw = transaction.raw_data if isinstance(transaction.raw_data, dict) else {}
+        if raw.get(SYNCED_TEXT) != kept:
+            transaction.raw_data = {**raw, SYNCED_TEXT: kept}
+    elif isinstance(sent, dict):
+        if not _refresh_synced_notes(transaction, sent.get("notes"), txn_data.notes):
+            # Someone took the notes over: the snapshot keeps the plugin's text
+            # from before, so a later payload without notes can't make an
+            # empty (cleared) row look like the plugin's again.
+            raw = transaction.raw_data if isinstance(transaction.raw_data, dict) else {}
+            merged_sent = raw.get(SYNCED_TEXT)
+            if isinstance(merged_sent, dict):
+                transaction.raw_data = {
+                    **raw, SYNCED_TEXT: {**merged_sent, "notes": sent.get("notes")}
+                }
+    else:
+        _merge_synced_notes(transaction, txn_data.notes)
 
 
 async def _refresh_account_charge(
@@ -2547,16 +2578,21 @@ async def _refresh_provider_values(
         session, transaction, txn_data,
         account_currency=account_currency, user_currency=user_currency,
     )
-    if not isinstance(transaction.raw_data, dict):
-        return
     if not isinstance(provider, BankProvider):
         return
-    previous = provider.parse_raw_transaction(transaction.raw_data, payee_source)
+    previous = (
+        provider.parse_raw_transaction(transaction.raw_data, payee_source)
+        if isinstance(transaction.raw_data, dict)
+        else None
+    )
     if previous is None:
         return
 
-    stored = (Decimal(str(transaction.amount)), transaction.type)
-    incoming = (txn_data.amount, txn_data.type)
+    # Compare at the column's scale: a plugin may send more decimals than
+    # `Numeric(15, 2)` keeps, and an unrounded side never matches (or, the
+    # other way round, rewrites the amount on every sync).
+    stored = (column_amount(Decimal(str(transaction.amount))), transaction.type)
+    incoming = (column_amount(txn_data.amount), txn_data.type)
     if stored == (previous.amount, previous.type) and incoming != stored:
         old_amount = transaction.amount
         transaction.type = txn_data.type
@@ -2573,29 +2609,78 @@ async def _refresh_provider_values(
             )
             await category_line_service.rescale_lines(session, transaction, old_amount)
 
-    if transaction.payee == previous.payee and txn_data.payee != previous.payee:
-        transaction.payee = txn_data.payee
-        # The linked payee follows only while it is still the one the old
-        # name gave; one a rule or the user picked stays.
-        previous_entity = (
-            await find_payee_by_name(session, transaction.workspace_id, previous.payee)
-            if previous.payee
-            else None
-        )
-        previous_id = previous_entity.id if previous_entity else None
-        if transaction.payee_id == previous_id:
-            transaction.payee_id = (
-                (
-                    await get_or_create_payee(
-                        session,
-                        transaction.user_id,
-                        txn_data.payee,
-                        workspace_id=transaction.workspace_id,
-                    )
-                ).id
-                if txn_data.payee
-                else None
+    await _refresh_payee(session, transaction, previous.payee, txn_data.payee)
+
+
+async def _refresh_payee(
+    session: AsyncSession,
+    transaction: Transaction,
+    previous: Optional[str],
+    incoming: Optional[str],
+) -> Optional[uuid.UUID]:
+    """Take a provider's corrected payee where the row still holds its last one.
+
+    The linked payee follows only while it is still the one the old name
+    gave; one a rule or the user picked stays. A blank name links none.
+    Returns the payee this linked, if any, so the settled row's rules may
+    still replace it (`apply_rules_to_settled_transaction`).
+    """
+    if transaction.payee != previous or incoming == previous:
+        return None
+    transaction.payee = incoming
+    previous_entity = (
+        await find_payee_by_name(session, transaction.workspace_id, previous)
+        if previous
+        else None
+    )
+    previous_id = previous_entity.id if previous_entity else None
+    if transaction.payee_id != previous_id:
+        return None
+    name = (incoming or "").strip()
+    transaction.payee_id = (
+        (
+            await get_or_create_payee(
+                session, transaction.user_id, name, workspace_id=transaction.workspace_id
             )
+        ).id
+        if name
+        else None
+    )
+    return transaction.payee_id
+
+
+async def _refresh_twin_payee(
+    session: AsyncSession, transaction: Transaction, txn_data
+) -> Optional[uuid.UUID]:
+    """`_refresh_payee` for a plugin row matched other than by its own id.
+
+    A pending row that posts under a new id (or a re-keyed row) never went
+    through `_refresh_provider_values`, yet its snapshot advances to the new
+    payload's: unless the payee follows too, the row reads as edited from
+    then on and no later correction reaches it. Must run before
+    `_merge_sync_metadata`, which merges the new snapshot in. Rows without a
+    plugin's snapshot are left as they are.
+    """
+    sent = transaction.raw_data.get(SYNCED_TEXT) if isinstance(transaction.raw_data, dict) else None
+    if (
+        transaction.source != "sync"
+        or not isinstance(sent, dict)
+        or not _takes_plugin_correction(transaction, txn_data)
+    ):
+        return None
+    return await _refresh_payee(session, transaction, sent.get("payee"), txn_data.payee)
+
+
+def _takes_plugin_correction(transaction: Transaction, txn_data) -> bool:
+    """Whether a matched row may take a plugin's corrected text.
+
+    Not a row the user hid (the same-id and re-read paths skip those whole),
+    and not a posted row a stale pending twin comes back for: what the posted
+    entry brought stands.
+    """
+    if transaction.is_ignored:
+        return False
+    return not (transaction.status == "posted" and txn_data.status == "pending")
 
 
 #: How many days an Enable Banking card hold can precede the booked entry that
@@ -2674,10 +2759,15 @@ SYNC_CATEGORY_KEY = "securo_sync_category"
 #: The same record for the payee the sync gave a pending row.
 SYNC_PAYEE_KEY = "securo_sync_payee"
 
+#: The same record for the notes the sync stored on a pending row (the
+#: provider's, and what its rules appended). Notes other than these are the
+#: user's.
+SYNC_NOTES_KEY = "securo_sync_notes"
+
 #: Keys Securo writes into `raw_data` itself. They are not the provider's,
 #: so payload comparisons leave them out.
 _SECURO_RAW_KEYS = frozenset(
-    {ADOPTED_MANUAL_KEY, SYNC_CATEGORY_KEY, SYNC_PAYEE_KEY, USER_EDITED_KEY}
+    {ADOPTED_MANUAL_KEY, SYNC_CATEGORY_KEY, SYNC_NOTES_KEY, SYNC_PAYEE_KEY, USER_EDITED_KEY}
 )
 
 
@@ -3313,12 +3403,14 @@ async def _promote_settled_pending(
         return None
     manual_description = await read_description_is_manual(session, transaction)
     transaction.status = "posted"
+    linked_payee_id = await _refresh_twin_payee(session, transaction, txn_data)
     _merge_sync_metadata(transaction, txn_data, replace_external_id=rekeyed)
     await _refresh_account_charge(
         session, transaction, txn_data, account_currency=account.currency
     )
     await apply_rules_to_settled_transaction(
-        session, account.user_id, transaction, manual_description=manual_description
+        session, account.user_id, transaction, manual_description=manual_description,
+        synced_payee_id=linked_payee_id,
     )
     _relink_bill(transaction, txn_data, account, bills_by_external_id)
     await _remember_linked_card(
@@ -3344,9 +3436,9 @@ def _mark_adopted_manual(tx: Transaction) -> None:
 
 
 def _record_sync_category(tx: Transaction) -> None:
-    """Record on a pending row the category and payee the sync gave it.
+    """Record on a pending row the category, payee and notes the sync gave it.
 
-    Both are recorded even when empty (as ""), so a value the user later
+    All are recorded even when empty (as ""), so a value the user later
     clears differs from the record as much as one they change.
     """
     if tx.status != "pending":
@@ -3356,7 +3448,92 @@ def _record_sync_category(tx: Transaction) -> None:
         **raw,
         SYNC_CATEGORY_KEY: str(tx.category_id) if tx.category_id else "",
         SYNC_PAYEE_KEY: str(tx.payee_id) if tx.payee_id else "",
+        SYNC_NOTES_KEY: (tx.notes or "").strip(),
     }
+
+
+def _recorded_sync_notes(raw: dict) -> Optional[str]:
+    """The notes the sync recorded storing on a row, or None without a record.
+
+    A row the sync recorded before notes were part of the record stored none
+    of its own then (no provider sent notes), so it reads as "".
+    """
+    recorded = raw.get(SYNC_NOTES_KEY)
+    if isinstance(recorded, str):
+        return recorded
+    if SYNC_CATEGORY_KEY in raw:
+        return ""
+    return None
+
+
+def _notes_differ_from_sync(raw: dict, notes: Optional[str]) -> bool:
+    """Whether a row's notes differ from the ones the sync recorded storing.
+
+    A row stored before any record existed has none: any notes on it count
+    as the user's, as they did before a provider could send notes.
+    """
+    notes = (notes or "").strip()
+    recorded = _recorded_sync_notes(raw)
+    if recorded is None:
+        return bool(notes)
+    return notes != recorded
+
+
+def _set_synced_notes(transaction: Transaction, notes: Optional[str]) -> None:
+    """Give a row the notes the sync worked out for it.
+
+    On a row whose notes are still the ones the sync recorded, the record
+    follows, so the provider's own text never reads as the user's
+    (`_holds_user_work`). Notes the user changed keep the record as it was.
+    """
+    if notes == transaction.notes:
+        return
+    raw = transaction.raw_data if isinstance(transaction.raw_data, dict) else {}
+    follows = _recorded_sync_notes(raw) is not None and not _notes_differ_from_sync(
+        raw, transaction.notes
+    )
+    transaction.notes = notes
+    if follows:
+        transaction.raw_data = {**raw, SYNC_NOTES_KEY: (notes or "").strip()}
+
+
+def _merge_synced_notes(transaction: Transaction, incoming: Optional[str]) -> None:
+    """Add the provider's notes to a row the sync matched (`merge_notes`).
+
+    Text the sync already gave the row (its record) is not given again: what
+    the user did with it, cleared or rewritten, stays, and keeps counting as
+    their work.
+    """
+    raw = transaction.raw_data if isinstance(transaction.raw_data, dict) else {}
+    recorded = _recorded_sync_notes(raw)
+    text = (incoming or "").strip()
+    if recorded and text and text in recorded:
+        return
+    _set_synced_notes(transaction, merge_notes(transaction.notes, incoming))
+
+
+def _refresh_synced_notes(
+    transaction: Transaction, sent: Optional[str], incoming: Optional[str]
+) -> bool:
+    """Take a plugin's notes on a row it sent before, knowing what it sent last.
+
+    Notes that are still the plugin's last take its correction. Notes someone
+    wrote where the plugin sent none get the plugin's new text beside them
+    (`merge_notes`). Text the plugin sent that someone then changed or cleared
+    stays as they left it: then this returns False, and the caller keeps
+    `sent` in the snapshot.
+    """
+    sent = (sent or "").strip()
+    current = (transaction.notes or "").strip()
+    if sent and current != sent:
+        return False
+    if (incoming or "").strip() == sent:
+        return True
+    if current == sent:
+        _set_synced_notes(transaction, incoming)
+    else:
+        _merge_synced_notes(transaction, incoming)
+    return True
 
 
 def _differs_from_sync(raw: dict, key: str, value: Optional[uuid.UUID]) -> bool:
@@ -3380,10 +3557,10 @@ def _holds_user_work(tx: Transaction) -> bool:
     set by the edit even when the value later went back to the sync's). An
     edited description shows as it differing from the bank's text in
     `original_description`; a row whose provenance is unknown (no
-    `original_description`) counts as the user's too. So does a category or
-    payee other than the one the sync recorded when it stored the row
-    (`SYNC_CATEGORY_KEY`, `SYNC_PAYEE_KEY`), which also catches a bulk
-    recategorization and a cleared value.
+    `original_description`) counts as the user's too. So does a category,
+    payee or notes other than the ones the sync recorded when it stored the
+    row (`SYNC_CATEGORY_KEY`, `SYNC_PAYEE_KEY`, `SYNC_NOTES_KEY`), which also
+    catches a bulk recategorization and a cleared value.
     """
     raw = tx.raw_data if isinstance(tx.raw_data, dict) else {}
     if raw.get(ADOPTED_MANUAL_KEY) or raw.get(USER_EDITED_KEY):
@@ -3392,7 +3569,7 @@ def _holds_user_work(tx: Transaction) -> bool:
         return True
     if _differs_from_sync(raw, SYNC_PAYEE_KEY, tx.payee_id):
         return True
-    if (tx.notes or "").strip():
+    if _notes_differ_from_sync(raw, tx.notes):
         return True
     if (
         tx.reporting_date_override is not None
@@ -4709,6 +4886,9 @@ async def sync_connection(
                         # Posted truth wins: swap in the new id so subsequent
                         # syncs match by external_id and update raw_data.
                         synced_dup.status = "posted"
+                        linked_payee_id = await _refresh_twin_payee(
+                            session, synced_dup, txn_data
+                        )
                         had_payee = bool(synced_dup.payee)
                         _merge_sync_metadata(
                             synced_dup,
@@ -4722,7 +4902,6 @@ async def sync_connection(
                         )
                         # A hold that named nobody gets the payee only now;
                         # link it like a row inserted with it.
-                        linked_payee_id = None
                         if (
                             not had_payee
                             and synced_dup.payee
@@ -4747,6 +4926,7 @@ async def sync_connection(
                         # Same logical posted row re-keyed by a provider such
                         # as SimpleFIN. Keep the user's row and move its
                         # idempotency key forward instead of inserting a twin.
+                        await _refresh_twin_payee(session, synced_dup, txn_data)
                         _merge_sync_metadata(
                             synced_dup,
                             txn_data,
@@ -4813,6 +4993,7 @@ async def sync_connection(
                     status=txn_data.status,
                     payee=txn_data.payee,
                     payee_id=sync_payee_id,
+                    notes=txn_data.notes,
                     raw_data=txn_data.raw_data,
                     category_id=None,
                     installment_number=txn_data.installment_number,

@@ -216,17 +216,22 @@ def merge_notes(existing: str | None, incoming: str | None) -> str | None:
 
     Used when an incoming charge is folded into a row that already has notes:
     the existing text is never dropped, the incoming one is only appended when
-    it is not already in there.
+    it is not already in there. The incoming part is cut to what still fits
+    `Transaction.notes` (`NOTES_MAX_LENGTH`): a longer note would fail the
+    write and the batch with it.
     """
     incoming = (incoming or "").strip()
     if not incoming:
         return existing
     existing = (existing or "").strip()
     if not existing:
-        return incoming
+        return incoming[:NOTES_MAX_LENGTH]
     if incoming in existing:
         return existing
-    return f"{existing} {incoming}"
+    room = NOTES_MAX_LENGTH - len(existing) - 1
+    if room <= 0:
+        return existing
+    return f"{existing} {incoming[:room]}"
 
 
 def apply_rule_actions(

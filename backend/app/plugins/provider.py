@@ -8,9 +8,10 @@ exactly the code a native provider's do.
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 from typing import Optional
 
-from app.plugins.contract import Payload
+from app.plugins.contract import SYNCED_TEXT, Payload, column_amount
 from app.providers.base import (
     AccountData,
     BankProvider,
@@ -68,6 +69,21 @@ class PluginPayloadProvider(BankProvider):
     @property
     def name(self) -> str:
         return self._name
+
+    def parse_raw_transaction(self, raw: dict, payee_source: str = "auto") -> Optional[TransactionData]:
+        """What the plugin last sent for a row, from the snapshot `Transaction.to_data` keeps in its `raw_data`."""
+        sent = raw.get(SYNCED_TEXT) if isinstance(raw, dict) else None
+        if not isinstance(sent, dict):
+            return None
+        try:
+            # A snapshot from before the rounding keeps up to eight decimals; the row's column has two.
+            amount = column_amount(Decimal(str(sent["amount"])))
+        except (KeyError, ArithmeticError, ValueError):
+            return None
+        return TransactionData(
+            external_id="", description="", amount=amount, date=date.min, type=str(sent.get("type") or ""),
+            payee=sent.get("payee"), notes=sent.get("notes"),
+        )
 
     async def get_oauth_url(self, redirect_uri: str, state: str, flow_params: Optional[dict] = None) -> str:
         raise NotImplementedError("a plugin connection signs in through its plugin")

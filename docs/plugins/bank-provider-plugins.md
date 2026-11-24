@@ -259,6 +259,20 @@ shows both named errors: access code `expired` and `busy`.
    `PluginPayloadProvider` (`backend/app/plugins/provider.py`). From there it
    is the same code as a native provider's:
    - accounts are matched by `external_id` and get their balance;
+   - a transaction's `notes` (the bank's full purpose, a reference, an order
+     number) land in the row's notes: not shown in the list, but searched and
+     matched by rules, so `description` can stay what the bank's app shows.
+     A row that already exists (the pending one a booking settles, a manual
+     entry the sync adopts) gets them appended to what it has, cut to the
+     column's 1000 characters; notes the plugin sent never count as the
+     user's when a `complete_feed` hold expires;
+   - a plugin may correct what it sent: a row it sent before takes a new
+     `description`, `payee`, `notes` or amount where the row still holds what
+     the plugin sent last, also when a pending row posts under a new id; text
+     someone edited, cleared (or a rule manages) stays. Notes someone wrote
+     where the plugin sent none get the plugin's beside them. Securo keeps
+     what the plugin sent under `securo_synced` in the row's `raw_data` to
+     tell the two apart, its amount rounded to cents as the row stores it;
    - transactions are deduplicated by `external_id`; a `pending` one becomes
      `posted` in place. The connection's own settings (pending import, payee
      source) apply; with `complete_feed`, a pending row that left the feed

@@ -144,6 +144,8 @@ class TransactionData:
     pluggy_category: Optional[str] = None
     status: str = "posted"  # posted, pending
     payee: Optional[str] = None
+    # Text a provider keeps beside the description: searched and matched by rules, not shown in the list.
+    notes: Optional[str] = None
     raw_data: Optional[dict] = None
     # Installment metadata (parcelamento) — populated by CC providers that expose it.
     installment_number: Optional[int] = None
