@@ -168,6 +168,40 @@ describe('LinkTickerDialog', () => {
     expect(linkTicker).not.toHaveBeenCalled()
   })
 
+  it('a link that finishes after the dialog moved to another holding leaves that one open', async () => {
+    let finish: (value: Asset) => void = () => {}
+    linkTicker.mockImplementation(() => new Promise<Asset>((resolve) => { finish = resolve }))
+    const onClose = vi.fn()
+    const { rerender } = renderWithProviders(<LinkTickerDialog asset={syncedHolding()} onClose={onClose} />)
+
+    fireEvent.change(screen.getByLabelText(t('assets.linkTickerLabel')), { target: { value: 'PSSA3.SA' } })
+    fireEvent.click(screen.getByRole('button', { name: t('assets.linkTickerAction') }))
+    await waitFor(() => expect(linkTicker).toHaveBeenCalledWith('asset-1', 'PSSA3.SA'))
+    // Closed while pending, then opened for another holding.
+    rerender(<LinkTickerDialog asset={syncedHolding({ id: 'asset-2', name: 'ITUB4' })} onClose={onClose} />)
+    finish(syncedHolding({ ticker: 'PSSA3.SA', valuation_method: 'market_price' }))
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled())
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByLabelText(t('assets.linkTickerLabel'))).toHaveValue('ITUB4')
+  })
+
+  it('an unlink that finishes after the dialog moved to another holding leaves that one open', async () => {
+    let finish: (value: Asset) => void = () => {}
+    unlinkTicker.mockImplementation(() => new Promise<Asset>((resolve) => { finish = resolve }))
+    const onClose = vi.fn()
+    const linked = syncedHolding({ ticker: 'PSSA3.SA', valuation_method: 'market_price' })
+    const { rerender } = renderWithProviders(<LinkTickerDialog asset={linked} onClose={onClose} />)
+
+    fireEvent.click(screen.getByRole('button', { name: t('assets.linkTickerUnlink') }))
+    await waitFor(() => expect(unlinkTicker).toHaveBeenCalledWith('asset-1'))
+    rerender(<LinkTickerDialog asset={syncedHolding({ id: 'asset-2', name: 'ITUB4' })} onClose={onClose} />)
+    finish(syncedHolding({ ticker: 'PSSA3.SA' }))
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled())
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it('cannot submit a blank ticker', () => {
     renderDialog()
 

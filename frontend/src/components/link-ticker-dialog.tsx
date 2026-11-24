@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -72,22 +72,35 @@ export function LinkTickerDialog({ asset, onClose }: { asset: Asset | null; onCl
     queryClient.refetchQueries({ queryKey: ['dashboard'] })
   }
 
+  // The dialog stays mounted, and closing it does not cancel a request. A
+  // request that finishes after the dialog was reopened for another holding
+  // must not close that one, so each request carries its holding's id and
+  // closes the dialog only while it still shows that holding.
+  const shownAssetId = useRef(asset?.id)
+  useEffect(() => {
+    shownAssetId.current = asset?.id
+  }, [asset])
+  const closeIfStillShowing = (assetId: string) => {
+    if (shownAssetId.current === assetId) onClose()
+  }
+
   const mutation = useMutation({
-    mutationFn: (ticker: string) => assets.linkTicker(asset!.id, ticker),
-    onSuccess: (linked) => {
+    mutationFn: ({ assetId, ticker }: { assetId: string; ticker: string }) =>
+      assets.linkTicker(assetId, ticker),
+    onSuccess: (linked, { assetId }) => {
       refetchAssetViews()
       toast.success(t('assets.linkTickerLinked', { ticker: linked.ticker }))
-      onClose()
+      closeIfStillShowing(assetId)
     },
     onError: (error) => toast.error(extractApiError(error, t('common.error'))),
   })
 
   const unlink = useMutation({
-    mutationFn: () => assets.unlinkTicker(asset!.id),
-    onSuccess: () => {
+    mutationFn: (assetId: string) => assets.unlinkTicker(assetId),
+    onSuccess: (_unlinked, assetId) => {
       refetchAssetViews()
       toast.success(t('assets.linkTickerUnlinked'))
-      onClose()
+      closeIfStillShowing(assetId)
     },
     onError: (error) => toast.error(extractApiError(error, t('common.error'))),
   })
@@ -107,7 +120,7 @@ export function LinkTickerDialog({ asset, onClose }: { asset: Asset | null; onCl
           className="min-w-0 space-y-3"
           onSubmit={(event) => {
             event.preventDefault()
-            if (ticker) mutation.mutate(ticker)
+            if (ticker && asset) mutation.mutate({ assetId: asset.id, ticker })
           }}
         >
           <div className="space-y-1">
@@ -148,7 +161,7 @@ export function LinkTickerDialog({ asset, onClose }: { asset: Asset | null; onCl
           </ul>
           <DialogFooter>
             {isMarketPriced && (
-              <Button type="button" variant="ghost" className="sm:mr-auto" disabled={busy} onClick={() => unlink.mutate()}>
+              <Button type="button" variant="ghost" className="sm:mr-auto" disabled={busy} onClick={() => { if (asset) unlink.mutate(asset.id) }}>
                 {unlink.isPending ? t('common.loading') : t('assets.linkTickerUnlink')}
               </Button>
             )}
