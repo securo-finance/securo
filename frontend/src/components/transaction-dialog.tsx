@@ -1116,8 +1116,12 @@ function TransactionForm({
         // so sending them untouched is not a statement about the rate: a
         // date move must let the server derive it again (#481), and an echo
         // must not rewrite the owner's stamp (#440). A new amount or currency
-        // is a new figure, shown at the shown rate, so it is sent (#482).
+        // is a new figure, shown at the shown rate, so it is sent (#482). A
+        // new row is different too: a duplicate opens seeded from the
+        // previous payload, and the figures shown are the ones the user
+        // chose to copy.
         const sendConversion =
+          isCreating ||
           conversionEdited ||
           parsedAmount !== parseAmountInput(initialMoney.amount, displayLocale) ||
           currency !== initialMoney.currency
