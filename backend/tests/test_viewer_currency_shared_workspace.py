@@ -27,7 +27,16 @@ from app.models.user import User
 from app.models.workspace import WorkspaceMember
 from app.schemas.group import GroupCreate, GroupMemberCreate
 from app.schemas.transaction_split import TransactionSplitInput, TransactionSplitsInput
-from app.services import group_service, split_service, workspace_service
+from app.plugins.manifest import parse_manifest
+from app.services import (
+    group_service,
+    plugin_report_service,
+    split_service,
+    workspace_service,
+)
+from app.services._query_filters import reporting_date_col
+from app.services.admin_service import get_credit_card_accounting_mode
+from tests.test_report_plugins import _manifest
 
 
 def _last_month() -> tuple[date, date, date]:
@@ -1280,3 +1289,177 @@ async def test_a_lowercase_code_in_the_viewers_currency_reads_as_its_own_amount(
         pytest.approx(total)
     )
     assert await _report_expenses(client, ana, month) == pytest.approx(total)
+
+
+async def _statement(client: AsyncClient, headers: dict, month: date, **params) -> dict:
+    resp = await client.get(
+        "/api/reports/category-statement", headers=headers,
+        params={"month": month.strftime("%Y-%m"), "months": 1, **params},
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+async def _cash_flow(client: AsyncClient, headers: dict, **params) -> dict:
+    resp = await client.get(
+        "/api/reports/cash-flow", headers=headers, params={"months": 3, **params}
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+async def _joint_account(client: AsyncClient, couple: dict) -> str:
+    accounts = (await client.get("/api/accounts", headers=couple["ana"])).json()
+    (joint,) = [a for a in accounts if a["name"] == "Conta conjunta"]
+    return joint["id"]
+
+
+async def _ana_posts(client: AsyncClient, couple: dict, category_id: str, **fields) -> None:
+    resp = await client.post(
+        "/api/transactions", headers=couple["ana"],
+        json={
+            "account_id": await _joint_account(client, couple), "category_id": category_id,
+            "description": "R302 row", "currency": "BRL", **fields,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+
+
+@pytest.mark.asyncio
+async def test_the_category_statement_is_read_in_the_viewers_currency(
+    client, couple, test_categories
+):
+    """Ana also receives R$ 5.000 on day 5 (1.000 € for Bruno). The statement
+    added her reais as euros; it now agrees with Income vs Expenses."""
+    month, day5, _ = _last_month()
+    await _ana_posts(
+        client, couple, str(test_categories[1].id),
+        amount="5000.00", date=day5.isoformat(), type="credit",
+    )
+    joint = await _joint_account(client, couple)
+
+    for who, currency, income, expenses in (
+        ("bruno", "EUR", 1000.0, 300.0), ("ana", "BRL", 5000.0, 1400.0),
+    ):
+        for params in ({}, {"account_ids": joint}):
+            body = await _statement(client, couple[who], month, **params)
+            assert body["currency"] == currency
+            assert body["income"]["totals"] == pytest.approx([income])
+            assert body["expenses"]["totals"] == pytest.approx([-expenses])
+        report = await _report(client, couple[who], month)
+        breakdowns = {b["key"]: b["value"] for b in report["summary"]["breakdowns"]}
+        assert (breakdowns["income"], breakdowns["expenses"]) == pytest.approx(
+            (income, expenses)
+        )
+
+
+@pytest.mark.asyncio
+async def test_the_category_statement_keeps_the_viewers_split_share_converted(
+    client, couple_with_groups
+):
+    """Bruno's half of Ana's R$ 1.000 is 100 €, her R$ 400 are 100 € and his
+    share of the trip outside this workspace is 100 €."""
+    body = await _statement(client, couple_with_groups["bruno"], couple_with_groups["month"])
+    assert body["expenses"]["totals"] == pytest.approx([-300.0])
+
+
+@pytest.mark.asyncio
+async def test_the_category_statement_section_follows_the_viewers_net(
+    client, couple, test_categories
+):
+    """R$ 1.000 in at 0,20 and R$ 900 out at 0,25 is a net income for Ana
+    (R$ 100) and a net expense for Bruno (-25 €), so the row sits in the
+    section its own numbers point to."""
+    month, day5, day15 = _last_month()
+    category = str(test_categories[1].id)
+    for amount, when, kind in (("1000.00", day5, "credit"), ("900.00", day15, "debit")):
+        await _ana_posts(
+            client, couple, category, amount=amount, date=when.isoformat(), type=kind
+        )
+
+    ana = await _statement(client, couple["ana"], month)
+    bruno = await _statement(client, couple["bruno"], month)
+    assert ana["income"]["totals"] == pytest.approx([100.0])
+    assert bruno["income"]["totals"] == pytest.approx([0.0])
+    assert bruno["expenses"]["totals"] == pytest.approx([-325.0])
+
+
+@pytest.mark.asyncio
+async def test_the_cash_flow_posted_rows_are_read_in_the_viewers_currency(client, couple):
+    for who, expenses in (("bruno", 300.0), ("ana", 1400.0)):
+        body = await _cash_flow(client, couple[who])
+        outflow = sum(p["breakdowns"]["outflow"] for p in body["trend"])
+        assert outflow == pytest.approx(expenses)
+
+
+@pytest.mark.asyncio
+async def test_the_cash_flow_pending_rows_are_read_in_the_viewers_currency(
+    client, session: AsyncSession, couple, test_user: User
+):
+    """Ana's pending R$ 100 next week is 25 € for Bruno."""
+    due = app_today() + timedelta(days=7)
+    account = (
+        await session.execute(select(Account).where(Account.name == "Conta conjunta"))
+    ).scalar_one()
+    session.add(
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=account.workspace_id,
+            account_id=account.id, description="R302 pending", amount=Decimal("100.00"),
+            currency="BRL", amount_primary=Decimal("100.00"), date=due, type="debit",
+            source="manual", status="pending", category_id=uuid.UUID(couple["category_id"]),
+        )
+    )
+    await session.commit()
+    for who, expected in (("bruno", 25.0), ("ana", 100.0)):
+        body = await _cash_flow(client, couple[who])
+        (point,) = [p for p in body["trend"] if p["date"] == due.isoformat()]
+        assert point["breakdowns"]["outflow"] == pytest.approx(expected)
+
+
+@pytest.mark.asyncio
+async def test_the_cash_flow_baseline_is_read_in_the_viewers_currency(client, couple):
+    """The projection averages the past over the same days: R$ 1.400 for
+    Ana, 300 € for Bruno."""
+    projected = {}
+    today = app_today().isoformat()
+    for who in ("ana", "bruno"):
+        body = await _cash_flow(client, couple[who], baseline="true")
+        projected[who] = sum(
+            p["breakdowns"]["outflow"] for p in body["trend"] if p["date"] > today
+        )
+    assert projected["ana"] > 0
+    # Each daily point is rounded to the cent.
+    assert projected["bruno"] / projected["ana"] == pytest.approx(300 / 1400, rel=0.01)
+
+
+@pytest.mark.asyncio
+async def test_plugin_reports_are_read_in_the_viewers_currency(
+    client, session: AsyncSession, couple, test_user: User, test_workspace
+):
+    """A manifest report and the rows a code report gets: 300 € for Bruno,
+    R$ 1.400 for Ana."""
+    bruno = (
+        await session.execute(select(User).where(User.email.like("bruno-%@example.com")))
+    ).scalar_one()
+    month, _, day15 = _last_month()
+    manifest = parse_manifest(_manifest({
+        "key": "by-category", "name": {"en": "By category"},
+        "group_by": "category", "chart": "pie",
+    }))
+    report_date = reporting_date_col(await get_credit_card_accounting_mode(session))
+    for user, currency, parts in (
+        (bruno, "EUR", ["100.00", "200.00"]), (test_user, "BRL", ["1000.00", "400.00"]),
+    ):
+        result = await plugin_report_service.run_report(
+            session, test_workspace.id, user.id, manifest, manifest.contributes.reports[0],
+            month, day15,
+        )
+        assert result.currency == currency
+        assert float(result.total) == pytest.approx(sum(float(p) for p in parts))
+
+        data = await plugin_report_service._transactions_input(
+            session, test_workspace.id, user.id, currency, month, day15, None, report_date,
+        )
+        assert sorted(r["amount_primary"] for r in data["rows"]) == parts
+        assert sorted(r["my_share_amount_primary"] for r in data["rows"]) == parts
+        assert sorted(r["amount"] for r in data["rows"]) == ["1000.00", "400.00"]

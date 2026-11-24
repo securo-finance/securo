@@ -35,6 +35,7 @@ from app.services._query_filters import (
     with_category_lines,
 )
 from app.services.admin_service import get_credit_card_accounting_mode
+from app.services.viewer_currency import viewer_currency
 
 UNCATEGORIZED_KEY = "uncategorized"
 
@@ -157,7 +158,9 @@ async def get_category_statement(
     acct_filter = [Transaction.account_id.in_(account_ids)] if filtered else []
     accounting_mode = await get_credit_card_accounting_mode(session)
     report_date = reporting_date_col(accounting_mode)
-    amount_expr = func.abs(func.coalesce(Transaction.amount_primary, Transaction.amount))
+    # Another member's rows are stamped in their display currency (ADR 0032).
+    viewer = await viewer_currency(session, primary_currency)
+    amount_expr = func.abs(func.coalesce(viewer.amount(), Transaction.amount))
     today = app_today()
 
     selected = month.replace(day=1)
@@ -171,7 +174,7 @@ async def get_category_statement(
     ]
     # The statement's own sums go part by part, so a row split across
     # categories lands in each of them; group-split offsets stay whole rows.
-    line_amount_expr = func.abs(line_primary_or_amount())
+    line_amount_expr = func.abs(line_primary_or_amount(viewer))
     line_filters = [*base_filters, counts_as_user_pnl(line_category_id())]
     base_filters.append(counts_as_user_pnl(Transaction.category_id))
 
