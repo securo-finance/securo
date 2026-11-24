@@ -2771,6 +2771,15 @@ _SECURO_RAW_KEYS = frozenset(
 )
 
 
+def _eb_leads_with_label(remittance: Optional[str]) -> bool:
+    """Whether a remittance text opens with one word the bank marked as a
+    label: "TRASPASO: ahorro" does, "BETA SHOP" and "PAGO RECIBO: ahorro"
+    do not. The colon is read from the text as the bank sent it, since
+    `normalize_words` drops it."""
+    label, colon, _ = (remittance or "").partition(":")
+    return bool(colon) and len(normalize_words(label)) == 1
+
+
 def _eb_reworded_entry(held: dict, booked: dict) -> bool:
     """Whether `booked` is `held` with a reference filled in and its
     remittance text reworded.
@@ -2782,9 +2791,18 @@ def _eb_reworded_entry(held: dict, booked: dict) -> bool:
     agree on everything but the reference and the remittance text, and the
     two texts have to end in the same words, covering at least 80% of the
     shorter one: a bank that rewords an entry swaps the label in front and
-    keeps the concept the payer typed at the end. Shared words elsewhere are
-    not enough, since "CARD PAYMENT AT SHOP ALPHA" and "CARD PAYMENT AT SHOP
-    BETA" are two purchases when no creditor field tells them apart.
+    keeps the concept the payer typed at the end. A short concept falls under
+    80% once the label is counted ("TRASPASO: ahorro" shares one word of two),
+    so the shorter text also matches when its shared ending covers every word
+    but one, the label in front. That word is only taken for a label when the
+    bank's own text marks it as one with a colon (`_eb_leads_with_label`) and
+    the other text is at least two words longer, as a rewording that swaps a
+    long label for a short one is. Without the colon the word may as well be
+    the merchant: "COMPRA EN ALPHA SHOP" and "BETA SHOP" are two purchases,
+    and so are "ALPHA SHOP" and "BETA SHOP".
+    Shared words elsewhere are not enough, since "CARD PAYMENT AT SHOP ALPHA"
+    and "CARD PAYMENT AT SHOP BETA" are two purchases when no creditor field
+    tells them apart.
     """
     def rest(raw: dict) -> dict:
         return {
@@ -2796,8 +2814,9 @@ def _eb_reworded_entry(held: dict, booked: dict) -> bool:
 
     if rest(held) != rest(booked):
         return False
-    held_words = normalize_words(_eb_remittance(held))
-    booked_words = normalize_words(_eb_remittance(booked))
+    held_text, booked_text = _eb_remittance(held), _eb_remittance(booked)
+    held_words = normalize_words(held_text)
+    booked_words = normalize_words(booked_text)
     if not held_words or not booked_words:
         return False
     shared_tail = 0
@@ -2805,7 +2824,19 @@ def _eb_reworded_entry(held: dict, booked: dict) -> bool:
         if held_word != booked_word:
             break
         shared_tail += 1
-    return shared_tail / min(len(held_words), len(booked_words)) >= 0.8
+    if shared_tail == 0:
+        return False
+    (shorter, shorter_text), (longer, _) = sorted(
+        ((len(held_words), held_text), (len(booked_words), booked_text)),
+        key=lambda counted: counted[0],
+    )
+    if shared_tail / shorter >= 0.8:
+        return True
+    return (
+        shared_tail >= shorter - 1
+        and longer - shorter >= 2
+        and _eb_leads_with_label(shorter_text)
+    )
 
 
 def _eb_exact_twin_in_batch(
