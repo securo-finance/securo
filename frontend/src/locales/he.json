@@ -2799,6 +2799,7 @@
     "shareEqual": "שווה",
     "shareExact": "סכומים מדויקים",
     "sharePercent": "אחוזים",
+    "shareSettlement": "החזר (התחשבנות)",
     "percentSum": "סכום: {{total}}%",
     "amountSum": "סכום: {{total}} / {{target}} {{currency}}",
     "equalHint": "כל חבר שנבחר מקבל חלק שווה.",

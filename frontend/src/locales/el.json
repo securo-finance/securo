@@ -2777,6 +2777,7 @@
     "shareEqual": "Ίσο επιμερισμό",
     "shareExact": "Ακριβή ποσά",
     "sharePercent": "Ποσοστά",
+    "shareSettlement": "Επιστροφή (διακανονισμός)",
     "percentSum": "Άθροισμα: {{total}}%",
     "amountSum": "Άθροισμα: {{total}} / {{target}} {{currency}}",
     "equalHint": "Κάθε επιλεγμένο μέλος λαμβάνει ίσο μερίδιο.",

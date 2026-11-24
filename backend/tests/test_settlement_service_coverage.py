@@ -11,9 +11,11 @@ from decimal import Decimal
 
 import bcrypt as _bcrypt
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.group_settlement import GroupSettlement
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.schemas.group import GroupCreate, GroupMemberCreate
@@ -21,6 +23,8 @@ from app.schemas.group_settlement import (
     GroupSettlementCreate,
     GroupSettlementUpdate,
 )
+from app.schemas.transaction import TransactionPaybackInput, TransactionPaybackPayer, TransactionRead, TransactionUpdate
+from app.services.transaction_service import get_transactions, update_transaction
 from app.services import (
     group_service,
     settlement_service,
@@ -221,6 +225,240 @@ async def test_create_settlement_receiver_self_member_owner_fallback(session: As
     assert rx is not None
     assert rx.account_id == owner_account.id
     assert rx.type == "credit"
+
+
+async def _settle_to_me(session, user_id, workspace_id, group, payer, me, amount, tx_id, currency="USD"):
+    return await settlement_service.create_settlement(
+        session, group.id, workspace_id, user_id,
+        GroupSettlementCreate(
+            from_member_id=payer.id, to_member_id=me.id, amount=Decimal(amount),
+            currency=currency, date=date.today(), receiver_transaction_id=tx_id,
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_settlement_links_the_receivers_real_credit(
+    session: AsyncSession, test_user, test_workspace
+):
+    """No synthetic credit, and deleting the settlement leaves the real one."""
+    group, me, bob, _c = await _setup_group(session, test_user.id, test_workspace.id)
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    received = await _make_transaction(session, test_user.id, test_workspace.id, account.id)
+    received.type = "credit"
+
+    s = await _settle_to_me(session, test_user.id, test_workspace.id, group, bob, me, "5.00", received.id)
+
+    assert s is not None and s.receiver_transaction_id == received.id
+    credits = await session.execute(select(Transaction.id).where(Transaction.type == "credit"))
+    assert credits.scalars().all() == [received.id]
+    rows, _, _ = await get_transactions(session, test_workspace.id, test_user.id, transaction_ids=[received.id])
+    settled_by = TransactionRead.model_validate(rows[0]).settled_by
+    assert [(x.id, x.group_id, x.from_member_id) for x in settled_by] == [(s.id, group.id, bob.id)]
+    assert await settlement_service.delete_settlement(
+        session, group.id, s.id, test_workspace.id, test_user.id
+    )
+    assert await session.get(Transaction, received.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_a_payback_is_saved_with_its_transaction(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Replaced as a whole against the amount being saved, and left as it was
+    when the replacement doesn't fit."""
+    group, me, bob, carol = await _setup_group(session, test_user.id, test_workspace.id)
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    received = await _make_transaction(session, test_user.id, test_workspace.id, account.id)
+    received.type = "credit"
+    await session.commit()
+    # Plain ids: a rollback below expires the ORM objects.
+    group_id, me_id, bob_id, carol_id, tx_id = group.id, me.id, bob.id, carol.id, received.id
+    workspace_id, user_id = test_workspace.id, test_user.id
+
+    async def save(payers, amount=None):
+        payback = TransactionPaybackInput(
+            group_id=group_id, to_member_id=me_id,
+            payers=[TransactionPaybackPayer(member_id=m, amount=Decimal(a)) for m, a in payers],
+        )
+        update = TransactionUpdate.model_validate(
+            {"payback": payback, **({"amount": Decimal(amount)} if amount else {})}
+        )
+        await update_transaction(session, tx_id, workspace_id, user_id, update)
+
+    async def linked():
+        rows = await session.execute(
+            select(GroupSettlement.from_member_id, GroupSettlement.amount)
+            .where(GroupSettlement.receiver_transaction_id == tx_id)
+        )
+        return sorted((m, str(a)) for m, a in rows.all())
+
+    await save([(bob_id, "5.00")])
+    assert await linked() == [(bob_id, "5.00")]
+    # The new amount and the new payback are checked together.
+    await save([(bob_id, "4.00"), (carol_id, "4.00")], amount="8.00")
+    assert await linked() == sorted([(bob_id, "4.00"), (carol_id, "4.00")])
+    # The first payer fits and the second doesn't: nothing is kept.
+    with pytest.raises(ValueError, match="exceed its amount"):
+        await save([(bob_id, "5.00"), (carol_id, "4.00")])
+    await session.rollback()
+    assert await linked() == sorted([(bob_id, "4.00"), (carol_id, "4.00")])
+    # An empty payback removes it; the transaction stays.
+    await save([])
+    assert await linked() == []
+    assert await session.get(Transaction, tx_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_a_payback_cannot_replace_a_settlements_own_credit(
+    session: AsyncSession, test_user, test_workspace
+):
+    """The mirror credit a settlement created is managed from that settlement."""
+    await _make_account(session, test_user.id, test_workspace.id)
+    group, me, bob, _c = await _setup_group(session, test_user.id, test_workspace.id)
+    s = await settlement_service.create_settlement(
+        session, group.id, test_workspace.id, test_user.id,
+        GroupSettlementCreate(
+            from_member_id=bob.id, to_member_id=me.id,
+            amount=Decimal("5.00"), currency="USD", date=date.today(),
+        ),
+    )
+    assert s is not None and s.receiver_transaction_id is not None
+    mirror_id, settlement_id = s.receiver_transaction_id, s.id
+
+    with pytest.raises(ValueError, match="created by a settlement"):
+        await update_transaction(
+            session, mirror_id, test_workspace.id, test_user.id,
+            TransactionUpdate(payback=TransactionPaybackInput()),
+        )
+    await session.rollback()
+    assert await session.get(GroupSettlement, settlement_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_a_credit_and_its_settlements_stay_consistent_when_edited(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Neither the credit nor a settlement on it can be edited past the other."""
+    group, me, bob, _c = await _setup_group(session, test_user.id, test_workspace.id)
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    received = await _make_transaction(session, test_user.id, test_workspace.id, account.id)
+    received.type = "credit"
+    s = await _settle_to_me(session, test_user.id, test_workspace.id, group, bob, me, "5.00", received.id)
+    assert s is not None
+    tx_id, settlement_id, group_id, me_id = received.id, s.id, group.id, me.id
+    workspace_id, user_id = test_workspace.id, test_user.id
+
+    with pytest.raises(ValueError, match="pays back group debts"):
+        await update_transaction(session, tx_id, workspace_id, user_id, TransactionUpdate(amount=Decimal("4.00")))
+    await session.rollback()
+    with pytest.raises(ValueError, match="pays back group debts"):
+        await settlement_service.update_settlement(
+            session, group_id, settlement_id, workspace_id, user_id,
+            GroupSettlementUpdate(amount=Decimal("6.00")),
+        )
+    await session.rollback()
+    kept = await session.get(GroupSettlement, settlement_id)
+    assert kept is not None and kept.amount == Decimal("5.00")
+    # Resending the same receiver is not a change.
+    await settlement_service.update_settlement(
+        session, group_id, settlement_id, workspace_id, user_id,
+        GroupSettlementUpdate(to_member_id=me_id, amount=Decimal("4.00")),
+    )
+
+
+@pytest.mark.asyncio
+async def test_every_installment_an_edit_reaches_stays_covered(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Clearing the opened installment's payback doesn't skip its siblings."""
+    group, me, bob, carol = await _setup_group(session, test_user.id, test_workspace.id)
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    series_id = uuid.uuid4()
+    rows = []
+    for number, payer in ((1, bob), (2, carol)):
+        row = await _make_transaction(session, test_user.id, test_workspace.id, account.id)
+        row.type = "credit"
+        row.installment_series_id = series_id
+        row.installment_number, row.total_installments = number, 2
+        row.installment_purchase_date = date.today()
+        await _settle_to_me(session, test_user.id, test_workspace.id, group, payer, me, "4.00", row.id)
+        rows.append(row.id)
+
+    with pytest.raises(ValueError, match="pays back group debts"):
+        await update_transaction(
+            session, rows[0], test_workspace.id, test_user.id,
+            TransactionUpdate(amount=Decimal("3.00"), apply_to="all", payback=TransactionPaybackInput()),
+        )
+
+
+@pytest.mark.asyncio
+async def test_a_transfer_leg_that_settles_debts_stays_covered(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Editing one leg of a transfer moves the other; that leg is checked too."""
+    group, me, bob, _c = await _setup_group(session, test_user.id, test_workspace.id)
+    sent_from = await _make_account(session, test_user.id, test_workspace.id)
+    received_in = await _make_account(session, test_user.id, test_workspace.id)
+    debit = await _make_transaction(session, test_user.id, test_workspace.id, sent_from.id)
+    credit = await _make_transaction(session, test_user.id, test_workspace.id, received_in.id)
+    credit.type = "credit"
+    debit.transfer_pair_id = credit.transfer_pair_id = uuid.uuid4()
+    await _settle_to_me(session, test_user.id, test_workspace.id, group, bob, me, "5.00", credit.id)
+    debit_id, workspace_id, user_id = debit.id, test_workspace.id, test_user.id
+
+    with pytest.raises(ValueError, match="pays back group debts"):
+        await update_transaction(
+            session, debit_id, workspace_id, user_id, TransactionUpdate(amount=Decimal("4.00"))
+        )
+
+
+@pytest.mark.asyncio
+async def test_settled_by_shows_only_on_the_viewers_own_transactions(
+    session: AsyncSession, test_user, test_workspace
+):
+    group, me, bob, _c = await _setup_group(session, test_user.id, test_workspace.id)
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    received = await _make_transaction(session, test_user.id, test_workspace.id, account.id)
+    received.type = "credit"
+    await _settle_to_me(session, test_user.id, test_workspace.id, group, bob, me, "5.00", received.id)
+
+    # Another member of the workspace lists the same row without its paybacks.
+    rows, _, _ = await get_transactions(session, test_workspace.id, uuid.uuid4(), transaction_ids=[received.id])
+    assert TransactionRead.model_validate(rows[0]).settled_by == []
+
+
+@pytest.mark.asyncio
+async def test_one_credit_settles_several_debts_up_to_its_amount(
+    session: AsyncSession, test_user, test_workspace
+):
+    group, me, bob, carol = await _setup_group(session, test_user.id, test_workspace.id)
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    received = await _make_transaction(session, test_user.id, test_workspace.id, account.id)
+    received.type = "credit"
+
+    await _settle_to_me(session, test_user.id, test_workspace.id, group, bob, me, "3.00", received.id)
+    await _settle_to_me(session, test_user.id, test_workspace.id, group, carol, me, "2.00", received.id)
+    with pytest.raises(ValueError, match="exceed its amount"):
+        await _settle_to_me(session, test_user.id, test_workspace.id, group, bob, me, "0.01", received.id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ["debit", "other currency", "not the receiver"])
+async def test_create_settlement_rejects_a_receiver_transaction_that_does_not_fit(
+    session: AsyncSession, test_user, test_workspace, case
+):
+    group, me, bob, _c = await _setup_group(session, test_user.id, test_workspace.id)
+    account = await _make_account(session, test_user.id, test_workspace.id)
+    tx = await _make_transaction(session, test_user.id, test_workspace.id, account.id)
+    tx.type = "debit" if case == "debit" else "credit"
+    payer, receiver = (me, bob) if case == "not the receiver" else (bob, me)
+
+    with pytest.raises(ValueError):
+        await _settle_to_me(
+            session, test_user.id, test_workspace.id, group, payer, receiver, "5.00", tx.id,
+            currency="EUR" if case == "other currency" else "USD",
+        )
 
 
 @pytest.mark.asyncio
