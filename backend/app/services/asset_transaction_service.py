@@ -176,14 +176,19 @@ def _recompute(transactions: list[AssetTransaction]) -> dict:
     }
 
 
-def closed_position(transactions: list[AssetTransaction]) -> Optional[dict[str, Decimal]]:
+def closed_position(
+    transactions: list[AssetTransaction], realized_gain: Optional[Decimal] = None
+) -> Optional[dict[str, Decimal]]:
     """What a closed holding's sold units cost and brought in, from its ledger.
 
     None when nothing was sold. Per-unit prices are in the units held after the
     last split, so a sell from before a split reads at the same scale as the rest.
-    `sold_cost` is taken as proceeds minus the stored realized gain, so the three
-    figures on screen add up to the cent; the average buy price comes from the
-    unrounded cost, which a cent would skew on a fraction of a unit.
+    `sold_cost` is taken as proceeds minus `realized_gain`, the holding's stored
+    one, so the three figures on screen add up to the cent; the average buy
+    price comes from the unrounded cost, which a cent would skew on a fraction
+    of a unit. The stored gain is passed in rather than replayed: it was worked
+    out before the price column rounded the prices to six decimals, so a
+    replay of the stored prices can land a cent away from it.
     """
     pos = _recompute(transactions)
     sold_units = pos["sold_units"]
@@ -191,8 +196,9 @@ def closed_position(transactions: list[AssetTransaction]) -> Optional[dict[str, 
         return None
     cent = Decimal("0.01")
     proceeds = pos["sale_proceeds"].quantize(cent, rounding=ROUND_HALF_UP)
-    # Rounded as recompute_and_cache stores it, so it matches realized_gain.
-    realized = pos["realized_gain"].quantize(cent)
+    realized = (
+        realized_gain if realized_gain is not None else pos["realized_gain"]
+    ).quantize(cent)
     cost = proceeds - realized
     price = Decimal(1).scaleb(-ASSET_PRICE_DECIMALS)
     return {

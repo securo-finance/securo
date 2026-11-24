@@ -533,6 +533,25 @@ async def test_sold_ledger_holding_carries_its_closed_position(
 
 
 @pytest.mark.asyncio
+async def test_closed_position_adds_up_with_prices_past_six_decimals(
+    client: AsyncClient, auth_headers: dict, market_asset_api: Asset
+):
+    # The stored realized gain is worked out before the price column rounds
+    # these to six decimals; a replay of the stored prices lands a cent away.
+    for body in (
+        {"kind": "buy", "quantity": 5000, "price": "1.0000004999", "date": "2026-01-01"},
+        {"kind": "sell", "quantity": 5000, "price": "2.0000014999", "date": "2026-02-01"},
+    ):
+        r = await client.post(
+            f"/api/assets/{market_asset_api.id}/transactions", headers=auth_headers, json=body
+        )
+        assert r.status_code == 201
+
+    body = (await client.get(f"/api/assets/{market_asset_api.id}", headers=auth_headers)).json()
+    assert round(body["sold_cost"] + body["realized_gain"], 2) == body["sale_proceeds"]
+
+
+@pytest.mark.asyncio
 async def test_held_ledger_holding_has_no_closed_position(
     client: AsyncClient, auth_headers: dict, market_asset_api: Asset
 ):

@@ -672,7 +672,9 @@ async def _fill_closed_positions(
     price_quantum = Decimal(1).scaleb(-ASSET_PRICE_DECIMALS)
     for asset, read in sold:
         if read.transaction_count > 0:
-            position = asset_transaction_service.closed_position(by_asset.get(asset.id, []))
+            position = asset_transaction_service.closed_position(
+                by_asset.get(asset.id, []), asset.realized_gain
+            )
             if position is None:
                 continue
             read.average_buy_price = float(position["average_buy_price"])
