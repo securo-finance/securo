@@ -1785,6 +1785,7 @@
     "holidayCalendar": "Sviatky",
     "holidayCalendarNone": "Nebrať sviatky do úvahy",
     "holidayCalendarBRHelp": "V Brazílii sa počítajú aj dni, keď FEBRABAN uzatvára zúčtovanie (Karneval, Božie telo), aj tam, kde nejde o štátne sviatky.",
+    "holidayCalendarsLoadError": "Kalendáre sviatkov sa nepodarilo načítať.",
 
     "holidayRegion": "Štát alebo región",
 

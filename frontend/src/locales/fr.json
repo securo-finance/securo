@@ -1713,6 +1713,7 @@
     "holidayCalendar": "Jours fériés",
     "holidayCalendarNone": "Ne pas tenir compte des jours fériés",
     "holidayCalendarBRHelp": "Au Brésil, les jours où la FEBRABAN ferme la compensation (Carnaval, Fête-Dieu) comptent aussi, même là où ils ne sont pas fériés.",
+    "holidayCalendarsLoadError": "Les calendriers des jours fériés n'ont pas pu être chargés.",
 
     "holidayRegion": "État ou région",
 

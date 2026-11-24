@@ -640,7 +640,12 @@ function RecurringFormFields({
   // Country names follow the UI language, not the currency-derived display
   // locale: a Hindi UI with BRL amounts should still read "ब्राज़ील".
   const uiLocale = i18n.language
-  const { data: holidayCalendars } = useQuery({
+  const {
+    data: holidayCalendars,
+    isError: holidayCalendarsFailed,
+    refetch: refetchHolidayCalendars,
+    isFetching: holidayCalendarsFetching,
+  } = useQuery({
     queryKey: ['holiday-calendars'],
     queryFn: recurringApi.holidayCalendars,
     staleTime: Infinity,
@@ -841,6 +846,21 @@ function RecurringFormFields({
                 <option key={c.country} value={c.country}>{c.name}</option>
               ))}
             </select>
+            {/* A failed request is not an empty list: say so, and offer to retry. */}
+            {holidayCalendarsFailed && !holidayCalendars && (
+              <div role="alert" className="flex items-center justify-between gap-2 text-xs text-destructive">
+                <span>{t('recurring.holidayCalendarsLoadError')}</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={holidayCalendarsFetching}
+                  onClick={() => { void refetchHolidayCalendars() }}
+                >
+                  {t('common.retry')}
+                </Button>
+              </div>
+            )}
           </div>
         )}
         {monthBased && holidayCountry && (holidayRegions.length > 0 || holidayRegion) && (
@@ -965,7 +985,7 @@ function RecurringFormFields({
           </div>
           <div className="space-y-2">
             <Label>{t('recurring.amountTolerance')}</Label>
-            <Input type="number" min="0" max="50" step="0.5" value={amountTolerance} onChange={(e) => setAmountTolerance(e.target.value)} />
+            <Input type="number" min="0" max="50" step="0.01" value={amountTolerance} onChange={(e) => setAmountTolerance(e.target.value)} />
           </div>
         </div>
         <div className="space-y-2">

@@ -1707,6 +1707,7 @@
     "holidayCalendar": "Αργίες",
     "holidayCalendarNone": "Να μη λαμβάνονται υπόψη αργίες",
     "holidayCalendarBRHelp": "Στη Βραζιλία μετρούν και οι ημέρες που η FEBRABAN κλείνει τον συμψηφισμό (Καρναβάλι, Corpus Christi), ακόμη κι όπου δεν είναι επίσημες αργίες.",
+    "holidayCalendarsLoadError": "Δεν ήταν δυνατή η φόρτωση των ημερολογίων αργιών.",
 
     "holidayRegion": "Πολιτεία ή περιφέρεια",
 

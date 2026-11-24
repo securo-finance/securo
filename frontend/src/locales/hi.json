@@ -1707,6 +1707,7 @@
     "holidayCalendar": "छुट्टियाँ",
     "holidayCalendarNone": "छुट्टियों पर विचार न करें",
     "holidayCalendarBRHelp": "ब्राज़ील में वे दिन भी गिने जाते हैं जब FEBRABAN क्लियरिंग बंद रखता है (कार्निवल, कॉर्पस क्रिस्टी), भले ही वे आधिकारिक छुट्टियाँ न हों।",
+    "holidayCalendarsLoadError": "छुट्टियों के कैलेंडर लोड नहीं हो सके।",
 
     "holidayRegion": "राज्य या क्षेत्र",
 

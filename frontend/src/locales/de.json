@@ -1708,6 +1708,7 @@
     "holidayCalendar": "Feiertage",
     "holidayCalendarNone": "Feiertage nicht berücksichtigen",
     "holidayCalendarBRHelp": "In Brasilien zählen auch die Tage, an denen die FEBRABAN den Zahlungsverkehr schließt (Karneval, Fronleichnam), auch wo sie keine gesetzlichen Feiertage sind.",
+    "holidayCalendarsLoadError": "Die Feiertagskalender konnten nicht geladen werden.",
 
     "holidayRegion": "Bundesland oder Region",
 

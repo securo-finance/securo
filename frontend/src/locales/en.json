@@ -1707,6 +1707,7 @@
     "holidayCalendar": "Holidays",
     "holidayCalendarNone": "Do not consider holidays",
     "holidayCalendarBRHelp": "Brazil also counts the days FEBRABAN closes the clearing system (Carnival, Corpus Christi), even where they are not public holidays.",
+    "holidayCalendarsLoadError": "The holiday calendars could not be loaded.",
 
     "holidayRegion": "State or region",
 

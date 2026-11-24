@@ -1709,6 +1709,7 @@
     "holidayCalendar": "Feestdagen",
     "holidayCalendarNone": "Geen rekening houden met feestdagen",
     "holidayCalendarBRHelp": "In Brazilië tellen ook de dagen waarop FEBRABAN de clearing sluit (Carnaval, Sacramentsdag), ook waar het geen officiële feestdagen zijn.",
+    "holidayCalendarsLoadError": "De feestdagenkalenders konden niet worden geladen.",
 
     "holidayRegion": "Staat of regio",
 

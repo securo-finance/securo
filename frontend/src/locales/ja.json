@@ -1707,6 +1707,7 @@
     "holidayCalendar": "祝日",
     "holidayCalendarNone": "祝日を考慮しない",
     "holidayCalendarBRHelp": "ブラジルでは、法定の祝日でなくても FEBRABAN が決済を停止する日(カーニバル、聖体祭)も含まれます。",
+    "holidayCalendarsLoadError": "祝日カレンダーを読み込めませんでした。",
 
     "holidayRegion": "州・地域",
 

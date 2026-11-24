@@ -1707,6 +1707,7 @@
     "holidayCalendar": "Ünnepnapok",
     "holidayCalendarNone": "Ne vegye figyelembe az ünnepnapokat",
     "holidayCalendarBRHelp": "Brazíliában azok a napok is számítanak, amikor a FEBRABAN zárva tartja az elszámolást (karnevál, úrnapja), ott is, ahol ezek nem hivatalos ünnepek.",
+    "holidayCalendarsLoadError": "Az ünnepnapnaptárakat nem sikerült betölteni.",
 
     "holidayRegion": "Állam vagy régió",
 

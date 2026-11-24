@@ -1722,6 +1722,7 @@
     "holidayCalendar": "חגים",
     "holidayCalendarNone": "לא להתחשב בחגים",
     "holidayCalendarBRHelp": "בברזיל נספרים גם הימים שבהם FEBRABAN סוגרת את מערכת הסליקה (קרנבל, קורפוס כריסטי), גם במקומות שבהם הם אינם חגים רשמיים.",
+    "holidayCalendarsLoadError": "לא ניתן היה לטעון את לוחות החגים.",
     "holidayRegion": "מדינה או אזור",
     "holidayRegionNational": "חגים לאומיים בלבד",
     "matching": "התאמה לתנועות בנק",

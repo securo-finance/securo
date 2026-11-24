@@ -1713,6 +1713,7 @@
     "holidayCalendar": "Festivos",
     "holidayCalendarNone": "No considerar festivos",
     "holidayCalendarBRHelp": "En Brasil también cuentan los días en que FEBRABAN cierra la compensación (Carnaval, Corpus Christi), aunque no sean festivos oficiales.",
+    "holidayCalendarsLoadError": "No se pudieron cargar los calendarios de festivos.",
 
     "holidayRegion": "Estado o región",
 

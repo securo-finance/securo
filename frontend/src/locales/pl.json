@@ -1768,6 +1768,7 @@
     "holidayCalendar": "Święta",
     "holidayCalendarNone": "Nie uwzględniaj świąt",
     "holidayCalendarBRHelp": "W Brazylii liczą się też dni, w które FEBRABAN zamyka rozliczenia (Karnawał, Boże Ciało), nawet tam, gdzie nie są to święta ustawowe.",
+    "holidayCalendarsLoadError": "Nie udało się wczytać kalendarzy świąt.",
 
     "holidayRegion": "Stan lub region",
 

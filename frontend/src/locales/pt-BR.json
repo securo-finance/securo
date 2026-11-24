@@ -1713,6 +1713,7 @@
     "holidayCalendar": "Feriados",
     "holidayCalendarNone": "Não considerar feriados",
     "holidayCalendarBRHelp": "No Brasil também contam os dias em que a FEBRABAN fecha a compensação (Carnaval, Corpus Christi), mesmo onde não são feriados oficiais.",
+    "holidayCalendarsLoadError": "Não foi possível carregar os calendários de feriados.",
 
     "holidayRegion": "Estado ou região",
 

@@ -1730,6 +1730,7 @@
     "holidayCalendar": "Свята",
     "holidayCalendarNone": "Не враховувати свята",
     "holidayCalendarBRHelp": "У Бразилії враховуються й дні, коли FEBRABAN закриває клірінг (карнавал, свято Тіла Христового), навіть там, де це не офіційні свята.",
+    "holidayCalendarsLoadError": "Не вдалося завантажити календарі свят.",
 
     "holidayRegion": "Штат або регіон",
 
