@@ -37,6 +37,7 @@ const api = vi.hoisted(() => ({
   },
   reconciliation: {
     suggestions: vi.fn(),
+    history: vi.fn(),
     rules: vi.fn(),
   },
 }))
@@ -50,6 +51,12 @@ const workspace = vi.hoisted(() => ({ canWrite: true }))
 
 vi.mock('@/lib/api', () => api)
 vi.mock('sonner', () => ({ toast }))
+vi.mock('@/contexts/auth-context', () => ({
+  useAuth: () => ({ user: { preferences: { currency_display: 'BRL' } } }),
+}))
+vi.mock('@/hooks/use-privacy-mode', () => ({
+  usePrivacyMode: () => ({ mask: (value: string) => value, privacyMode: false, MASK: '***' }),
+}))
 vi.mock('@/contexts/workspace-context', () => ({
   useWorkspace: () => ({ canWrite: workspace.canWrite }),
   WorkspaceContext: createContext<{ canWrite: boolean } | undefined>({ canWrite: true }),
@@ -67,6 +74,7 @@ beforeEach(() => {
   api.payees.list.mockResolvedValue([])
   api.connections.detectTransfers.mockResolvedValue({ pairs_created: 0 })
   api.reconciliation.suggestions.mockResolvedValue([])
+  api.reconciliation.history.mockResolvedValue([])
   api.reconciliation.rules.mockResolvedValue([])
   vi.spyOn(window, 'confirm').mockReturnValue(true)
 })
@@ -111,19 +119,24 @@ describe('the transfer scan on the rules page', () => {
     )
   })
 
-  it('refreshes the reconciliation queue when the scan only filed questions', async () => {
+  it('refreshes the reconciliation queue and history after the scan', async () => {
     // No pair was certain, so the toast says nothing was found — but the scan
-    // still wrote every ambiguous pair to the queue the tab counts.
+    // still wrote every ambiguous pair to the queue the tab counts. The
+    // history tab matters for the same reason on the runs that do pair rows.
     api.connections.detectTransfers.mockResolvedValue({ pairs_created: 0 })
     renderWithProviders(<RulesPage />)
 
+    fireEvent.click(await screen.findByRole('button', { name: t('rules.tab.history') }))
+    await waitFor(() => expect(api.reconciliation.history).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(api.reconciliation.suggestions).toHaveBeenCalledTimes(1))
+
     await clickScan()
 
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith(t('rules.transferScanNone')),
     )
     await waitFor(() => expect(api.reconciliation.suggestions).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(api.reconciliation.history).toHaveBeenCalledTimes(2))
   })
 
   it('keeps the button busy until the scan comes back', async () => {

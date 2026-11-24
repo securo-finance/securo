@@ -261,8 +261,10 @@ export default function RulesPage() {
       invalidateFinancialQueries(queryClient)
       // The scan also files a question for every pair it was not sure about,
       // so the queue and its count on the tab are stale even when no pair
-      // was created and the toast says nothing was found.
+      // was created and the toast says nothing was found. Each pair it does
+      // link lands in the history for the same reason.
       queryClient.invalidateQueries({ queryKey: ['reconciliation-suggestions'] })
+      queryClient.invalidateQueries({ queryKey: ['reconciliation-history'] })
       if (data.pairs_created > 0) {
         toast.success(t('rules.transferScanCreated', { count: data.pairs_created }))
       } else {
