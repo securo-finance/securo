@@ -94,7 +94,8 @@ class ViewerCurrency:
             whens.append(
                 (
                     and_(
-                        Transaction.currency == self.currency,
+                        # `convert()` normalizes the code; so does this.
+                        func.upper(Transaction.currency) == self.currency,
                         Transaction.amount_primary_typed.is_(None),
                         Transaction.user_id.in_(foreign),
                         column.is_not(None),

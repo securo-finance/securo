@@ -992,3 +992,70 @@ async def test_a_row_in_the_viewers_currency_reads_as_its_own_amount(
     )
     assert resp.status_code == 200, resp.text
     assert (await _stored(session, row_id)).amount_primary == Decimal("2.01")
+
+
+@pytest.mark.asyncio
+async def test_a_split_row_in_the_viewers_currency_matches_its_own_part(
+    client, couple, test_categories
+):
+    """Bruno splits R$ 10,03 into R$ 5,01 and R$ 5,02. Ana filtering the
+    first category sees R$ 5,01 matched, not the R$ 5,00 his euro stamp
+    gave back."""
+    month, day5, _ = _last_month()
+    accounts = (await client.get("/api/accounts", headers=couple["bruno"])).json()
+    (joint,) = [a for a in accounts if a["name"] == "Conta conjunta"]
+    first, second = couple["category_id"], str(test_categories[1].id)
+    resp = await client.post(
+        "/api/transactions", headers=couple["bruno"],
+        json={
+            "account_id": joint["id"], "description": "R269 R468 split",
+            "amount": "10.03", "currency": "BRL", "date": day5.isoformat(),
+            "type": "debit",
+            "category_lines": {
+                "share_type": "exact",
+                "lines": [
+                    {"category_id": first, "amount": "5.01"},
+                    {"category_id": second, "amount": "5.02"},
+                ],
+            },
+        },
+    )
+    assert resp.status_code == 201, resp.text
+
+    body = await _list(client, couple["ana"], month, q="R468", category_id=first)
+    (listed,) = body["items"]
+    assert listed["amount_primary"] == pytest.approx(10.03)
+    assert float(listed["matched_amount_primary"]) == pytest.approx(5.01)
+
+
+@pytest.mark.asyncio
+async def test_a_lowercase_code_in_the_viewers_currency_reads_as_its_own_amount(
+    client, session, couple
+):
+    """A row stored as "brl" (an import, an old row) by Bruno still reads as
+    its own R$ 10,03 for Ana in the SQL totals, like the rows they drill
+    into."""
+    month, day5, _ = _last_month()
+    bruno = (
+        await session.execute(select(User).where(User.email.like("bruno-%@example.com")))
+    ).scalar_one()
+    joint = (
+        await session.execute(select(Account).where(Account.name == "Conta conjunta"))
+    ).scalar_one()
+    session.add(
+        Transaction(
+            id=uuid.uuid4(), user_id=bruno.id, workspace_id=joint.workspace_id,
+            account_id=joint.id, category_id=uuid.UUID(couple["category_id"]),
+            description="R269 R468 lowercase", amount=Decimal("10.03"),
+            currency="brl", amount_primary=Decimal("2.01"), date=day5,
+            type="debit", source="manual",
+        )
+    )
+    await session.commit()
+
+    ana, total = couple["ana"], 1410.03
+    assert (await _list(client, ana, month))["summary"]["expense"] == pytest.approx(total)
+    assert (await _dashboard(client, ana, month))["monthly_expenses_primary"] == (
+        pytest.approx(total)
+    )
+    assert await _report_expenses(client, ana, month) == pytest.approx(total)

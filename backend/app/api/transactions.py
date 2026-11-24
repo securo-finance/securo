@@ -172,7 +172,8 @@ async def _in_viewer_currency(
         )
         item.amount_primary = float(converted) if converted is not None else None
         item.matched_amount_primary = await viewer.convert(
-            session, item.user_id, item.matched_amount_primary, item.date
+            session, item.user_id, item.matched_amount_primary, item.date,
+            currency=item.currency, amount=item.matched_amount, typed=typed.get(item.id),
         )
         if item.amount_primary is not None and item.amount:
             item.fx_rate_used = float(
