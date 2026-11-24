@@ -1236,3 +1236,69 @@ async def test_transaction_edit_waits_for_running_manual_account_delete(
     async with postgres_sessions() as fresh:
         assert await fresh.get(Account, account.id) is None
         assert await fresh.get(Goal, goal.id) is None
+
+
+async def test_deleting_user_waits_for_an_assignment_to_their_unassigned_deposit(
+    session, postgres_sessions, pocket_state
+):
+    """The race CodeRabbit found: the deposit had no assignment when the
+    deletion started, and another member assigns and spends it meanwhile."""
+    user, workspace, account, goal, _ = pocket_state
+    editor = User(email="late-depositor@example.com", hashed_password="unused")
+    session.add(editor)
+    await session.flush()
+    session.add(WorkspaceMember(workspace_id=workspace.id, user_id=editor.id, role="editor"))
+
+    def entry(owner, description, amount, type_):
+        return Transaction(
+            user_id=owner.id,
+            workspace_id=workspace.id,
+            account_id=account.id,
+            description=description,
+            amount=Decimal(amount),
+            currency=account.currency,
+            date=date(2026, 1, 1),
+            type=type_,
+            source="manual",
+        )
+
+    deposit = entry(editor, "Editor deposit", "100", "credit")
+    spending = entry(user, "Owner spending", "60", "debit")
+    session.add_all([deposit, spending])
+    await session.commit()
+    ids = (editor.id, user.id, workspace.id, account.id, goal.id, deposit.id, spending.id)
+    editor_id, owner_id, workspace_id, account_id, goal_id, deposit_id, spending_id = ids
+
+    async with postgres_sessions() as assigner, postgres_sessions() as deleter:
+        await assigner.execute(
+            select(Account).where(Account.id == account_id).with_for_update(key_share=True)
+        )
+        deleter_pid = await _backend_pid(deleter)
+        outcome: list[BaseException | bool] = []
+
+        async def remove():
+            try:
+                outcome.append(await delete_user(deleter, editor_id, owner_id))
+            except ValueError as exc:
+                outcome.append(exc)
+                await deleter.rollback()
+
+        async with asyncio.TaskGroup() as tasks:
+            tasks.create_task(remove())
+            await _wait_for_lock(assigner, deleter_pid)
+            for transaction_id, amount in ((deposit_id, 100), (spending_id, 60)):
+                row = await assigner.get(Transaction, transaction_id)
+                assert row is not None
+                await replace_transaction_allocations(
+                    assigner,
+                    workspace_id,
+                    owner_id,
+                    row,
+                    [GoalAllocationInput(goal_id=goal_id, amount=amount)],
+                )
+            await assigner.commit()
+
+    assert len(outcome) == 1 and isinstance(outcome[0], ValueError)
+    async with postgres_sessions() as fresh:
+        assert await fresh.get(User, editor_id) is not None
+        assert await _pocket_current_amount(fresh, goal_id) == 40

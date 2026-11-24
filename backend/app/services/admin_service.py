@@ -2,7 +2,7 @@ import uuid
 from typing import Optional
 
 from fastapi_users.exceptions import UserAlreadyExists
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import UserManager
@@ -143,6 +143,10 @@ async def update_user(
     return user
 
 
+def _rowcount(result) -> int:
+    return result.rowcount  # type: ignore[attr-defined]
+
+
 async def delete_user(
     session: AsyncSession,
     user_id: uuid.UUID,
@@ -189,33 +193,67 @@ async def delete_user(
     # Pockets go with the accounts deleted below. Pocket assignments on the
     # user's transactions in other members' accounts are removed together,
     # and rejected when a pocket's spending still depends on them.
-    # Account locks first, in ID order, as pocket writers take them, so this
-    # cannot deadlock with an assignment being saved on one of these accounts.
-    user_account_ids = list(
+    # Locks follow the writers' order (bank connection, accounts in ID order,
+    # then transaction rows in ID order) so this cannot deadlock with a sync
+    # or an assignment, and nothing can be assigned to these rows meanwhile.
+    connection_ids = list(
         (
             await session.scalars(
-                select(Account.id)
-                .where(Account.user_id == user_id)
+                select(BankConnection.id)
+                .where(BankConnection.user_id == user_id)
+                .order_by(BankConnection.id)
+                .with_for_update()
+            )
+        ).all()
+    )
+    involved_accounts = or_(
+        Account.user_id == user_id,
+        Account.connection_id.in_(connection_ids),
+        Account.id.in_(select(Transaction.account_id).where(Transaction.user_id == user_id)),
+    )
+    locked_accounts = list(
+        (
+            await session.execute(
+                select(Account.id, Account.user_id)
+                .where(involved_accounts)
                 .order_by(Account.id)
                 .with_for_update(key_share=True)
             )
         ).all()
     )
-    await goal_service.delete_account_pockets(session, user_account_ids)
-    allocated = (
-        await session.scalars(
-            select(Transaction).where(
-                Transaction.user_id == user_id,
-                Transaction.id.in_(select(GoalAllocation.transaction_id)),
+    locked_account_ids = {account_id for account_id, _ in locked_accounts}
+    user_account_ids = [account_id for account_id, owner in locked_accounts if owner == user_id]
+    transactions = list(
+        (
+            await session.scalars(
+                select(Transaction)
+                .where(Transaction.user_id == user_id)
+                .order_by(Transaction.id)
+                .with_for_update(of=Transaction)
+                .execution_options(populate_existing=True)
             )
-        )
-    ).all()
+        ).all()
+    )
+    if any(transaction.account_id not in locked_account_ids for transaction in transactions):
+        raise ValueError("The user's transactions changed during deletion; try again")
+
+    await goal_service.delete_account_pockets(session, user_account_ids)
+    allocated_ids = set(
+        (
+            await session.scalars(
+                select(GoalAllocation.transaction_id)
+                .join(Transaction, Transaction.id == GoalAllocation.transaction_id)
+                .where(Transaction.user_id == user_id)
+            )
+        ).all()
+    )
     by_workspace: dict[uuid.UUID, list[Transaction]] = {}
-    for transaction in allocated:
-        by_workspace.setdefault(transaction.workspace_id, []).append(transaction)
-    for workspace_id, transactions in by_workspace.items():
+    for transaction in transactions:
+        if transaction.id in allocated_ids:
+            by_workspace.setdefault(transaction.workspace_id, []).append(transaction)
+    for workspace_id, workspace_transactions in by_workspace.items():
         await goal_allocation_service.clear_transactions_allocations(
-            session, workspace_id, transactions
+            session, workspace_id, workspace_transactions
         )
 
     # Delete attachments for user's transactions
@@ -227,7 +265,11 @@ async def delete_user(
     )
 
     # Delete in dependency order
-    await session.execute(delete(Transaction).where(Transaction.user_id == user_id))
+    deleted = await session.execute(delete(Transaction).where(Transaction.user_id == user_id))
+    # A row committed after the lock above was never checked for pocket
+    # assignments; roll back rather than cascade them away.
+    if _rowcount(deleted) != len(transactions):
+        raise ValueError("The user's transactions changed during deletion; try again")
     await session.execute(delete(Budget).where(Budget.user_id == user_id))
     await session.execute(delete(RecurringTransaction).where(RecurringTransaction.user_id == user_id))
     await session.execute(delete(ImportLog).where(ImportLog.user_id == user_id))
@@ -251,7 +293,9 @@ async def delete_user(
             ~select(InvoiceSchedule.id).where(InvoiceSchedule.payee_id == Payee.id).exists(),
         )
     )
-    await session.execute(delete(Account).where(Account.user_id == user_id))
+    deleted = await session.execute(delete(Account).where(Account.user_id == user_id))
+    if _rowcount(deleted) != len(user_account_ids):
+        raise ValueError("The user's accounts changed during deletion; try again")
     await session.execute(delete(Category).where(Category.user_id == user_id))
     await session.execute(delete(CategoryGroup).where(CategoryGroup.user_id == user_id))
     await session.execute(delete(BankConnection).where(BankConnection.user_id == user_id))
