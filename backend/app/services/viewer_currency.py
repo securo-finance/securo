@@ -13,10 +13,11 @@ The SQL expression and the per-row conversion use the same rates (the
 stored USD rates closest to the row's date, crossed through USD) and the
 same rounding, so a total and the rows it drills into agree to the cent.
 
-A row already in the viewer's currency reads as its own `amount` when its
-owner's stamp was derived from it: converting R$ 10,03 to the owner's euros
-and back gave R$ 10,06 (#463). A stamp the owner typed is a figure of its
-own (what the card really charged), so that one is still converted (#440).
+A row already in the viewer's currency reads as its own `amount`: that is
+what was charged in that currency. Converting R$ 10,03 to the owner's euros
+and back gave R$ 10,06, and a US$ 300 row with a typed R$ 1.560 read
+US$ 312 to a viewer in dollars (#463). A typed conversion is the truth in
+the owner's currency only.
 """
 
 import uuid
@@ -96,7 +97,6 @@ class ViewerCurrency:
                     and_(
                         # `convert()` normalizes the code; so does this.
                         func.upper(Transaction.currency) == self.currency,
-                        Transaction.amount_primary_typed.is_(None),
                         Transaction.user_id.in_(foreign),
                         column.is_not(None),
                     ),
@@ -150,14 +150,12 @@ class ViewerCurrency:
         *,
         currency: Optional[str] = None,
         amount=None,
-        typed=None,
     ) -> Optional[Decimal]:
         """One stamped value of `owner_id`'s row, in the viewer's currency.
 
-        Pass the row's `currency`, `amount` and `amount_primary_typed` with
-        its `amount_primary`: a row already in the viewer's currency whose
-        stamp was derived then reads as its own amount, like `amount()` does
-        in SQL (see the module docstring)."""
+        Pass the row's `currency` and `amount` with its `amount_primary`: a
+        row already in the viewer's currency then reads as its own amount,
+        like `amount()` does in SQL (see the module docstring)."""
         if value is None:
             return None
         value = Decimal(str(value))
@@ -165,7 +163,6 @@ class ViewerCurrency:
             return value
         if (
             amount is not None
-            and typed is None
             and currency is not None
             and _code(currency) == self.currency
         ):

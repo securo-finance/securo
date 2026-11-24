@@ -880,7 +880,7 @@ async def get_income_expenses_report(
                 continue
             stamped = await viewer.convert(
                 session, tx.user_id, tx.amount_primary, tx.date,
-                currency=tx.currency, amount=tx.amount, typed=tx.amount_primary_typed,
+                currency=tx.currency, amount=tx.amount,
             )
             if stamped is not None:
                 amount = abs(float(stamped))
@@ -1317,7 +1317,7 @@ async def get_income_expenses_report(
             forecast_period_label = _format_date_label(tx_report_date, interval)
             stamped = await viewer.convert(
                 session, tx.user_id, tx.amount_primary, tx.date,
-                currency=tx.currency, amount=tx.amount, typed=tx.amount_primary_typed,
+                currency=tx.currency, amount=tx.amount,
             )
             if stamped is not None:
                 tx_amount = abs(float(stamped))
