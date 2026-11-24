@@ -130,15 +130,14 @@ async def test_a_lost_link_race_is_not_turned_into_a_question(
     first, second = await asyncio.wait_for(asyncio.gather(scan(), scan()), timeout=30)
     assert sorted((first, second)) == [0, 1]
 
-    pairs = dict(
-        (
-            await session.execute(
-                select(Transaction.id, Transaction.transfer_pair_id).where(
-                    Transaction.id.in_((debit.id, credit.id))
-                )
+    linked_rows = (
+        await session.execute(
+            select(Transaction.id, Transaction.transfer_pair_id).where(
+                Transaction.id.in_((debit.id, credit.id))
             )
-        ).all()
-    )
+        )
+    ).all()
+    pairs = {row.id: row.transfer_pair_id for row in linked_rows}
     assert pairs[debit.id] is not None
     assert pairs[debit.id] == pairs[credit.id]
 
