@@ -1205,9 +1205,18 @@ async def get_portfolio_performance_multi(
     )
     benchmark_returns: dict[str, list[tuple[date, float]]] = {}
     benchmark_starts: dict[str, date] = {}
+    # The chart shows every benchmark on every date any series has, so each
+    # one is converted on all of them: a close only another benchmark adds
+    # still needs that day's rate, not the last portfolio date's.
+    comparison_dates = portfolio_dates | {
+        point.date
+        for history in native_histories.values()
+        for point in history
+        if portfolio_start <= point.date <= last_date
+    }
     for key, history in native_histories.items():
         pairs = await _in_portfolio_currency(
-            session, history, primary_currency, on_dates=portfolio_dates
+            session, history, primary_currency, on_dates=comparison_dates
         )
         if pairs is None:
             source_errors[key] = "no_fx_rate"

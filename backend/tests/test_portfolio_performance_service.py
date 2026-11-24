@@ -438,6 +438,73 @@ async def test_benchmark_converts_at_the_comparison_dates_rate_after_its_last_cl
 
 
 @pytest.mark.asyncio
+async def test_benchmark_converts_on_dates_only_another_benchmark_adds(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """A BRL portfolio valued on Monday and Friday, a flat USD index closing on
+    those days and a BRL index closing daily. The dollar rises 10% on
+    Wednesday: the USD index reads +10% from Wednesday on, not 0% until a
+    later portfolio date picks up the move."""
+    monday, wednesday, friday = date(2026, 6, 22), date(2026, 6, 24), date(2026, 6, 26)
+    start = friday - timedelta(days=90)
+    asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Manual fund",
+        type="fund",
+        currency="BRL",
+        valuation_method="manual",
+    )
+    session.add(asset)
+    await session.flush()
+    session.add_all(
+        AssetValue(
+            asset_id=asset.id,
+            workspace_id=test_workspace.id,
+            amount=Decimal("100"),
+            date=when,
+            source="manual",
+        )
+        for when in (start, monday, friday)
+    )
+    session.add_all(
+        FxRate(
+            base_currency="USD",
+            quote_currency="BRL",
+            date=start + timedelta(days=offset),
+            rate=Decimal("5.5") if start + timedelta(days=offset) >= wednesday else Decimal("5"),
+            source="test",
+        )
+        for offset in range(-10, 91)
+    )
+    await session.commit()
+
+    provider = MultiHistoryProvider(
+        {
+            "^USD": [
+                BenchmarkHistoryPoint(when, 100.0, "USD") for when in (start, monday, friday)
+            ],
+            "^BRL": [
+                BenchmarkHistoryPoint(start + timedelta(days=offset), 100.0, "BRL")
+                for offset in range(91)
+            ],
+        }
+    )
+    result = await get_portfolio_performance_multi(
+        session, test_workspace.id, test_user.id, "BRL",
+        [("yahoo", "^USD"), ("yahoo", "^BRL")], "3m",
+        end_date=friday, provider=provider,  # type: ignore[arg-type]
+    )
+    by_date = {point.date: point.benchmarks for point in result.points}
+    assert by_date[monday]["yahoo:^USD"] == pytest.approx(0.0)
+    assert by_date[wednesday]["yahoo:^USD"] == pytest.approx(10.0)
+    assert by_date[friday]["yahoo:^USD"] == pytest.approx(10.0)
+    assert result.benchmarks[0].benchmark_return == pytest.approx(10.0)
+    assert result.portfolio_return == pytest.approx(0.0)
+
+
+@pytest.mark.asyncio
 async def test_benchmark_without_a_stored_rate_reports_it_instead_of_mixing_currencies(
     session: AsyncSession, test_user: User, test_workspace
 ):
