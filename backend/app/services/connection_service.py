@@ -2933,7 +2933,9 @@ async def _find_settled_eb_hold(
             Transaction.currency == txn_data.currency,
             Transaction.type == txn_data.type,
             Transaction.date >= txn_data.date - timedelta(days=_EB_HOLD_SETTLE_DAYS),
-            Transaction.date <= txn_data.date,
+            # A hold stored before the provider read the value date keeps the
+            # later booking date; its payload date is checked below.
+            Transaction.date <= txn_data.date + timedelta(days=_EB_HOLD_SETTLE_DAYS),
             Transaction.external_id != txn_data.external_id,
         )
     )
@@ -2942,6 +2944,7 @@ async def _find_settled_eb_hold(
         for candidate in result.scalars()
         if candidate.external_id not in live_external_ids
         and isinstance(candidate.raw_data, dict)
+        and _eb_held_by(candidate, txn_data.date)
     ]
     holds = [candidate for candidate, held in gone if _eb_same_merchant(held, raw)]
     if holds:
@@ -2978,6 +2981,23 @@ async def _find_settled_eb_hold(
         ]
     blank = [candidate for candidate, _ in blank_pairs]
     return blank[0] if len(blank) == 1 else None
+
+
+def _eb_held_by(hold: Transaction, booked_on: date) -> bool:
+    """Whether `hold` was held on or before `booked_on`, within the window a
+    charge settles it in.
+
+    Its stored date decides, unless the row was stored before the provider's
+    date order changed and still carries a later date: then the date its
+    payload gives the entry now decides.
+    """
+    if hold.date <= booked_on:
+        return True
+    held_on = entry_date(hold.raw_data) if isinstance(hold.raw_data, dict) else None
+    return (
+        held_on is not None
+        and booked_on - timedelta(days=_EB_HOLD_SETTLE_DAYS) <= held_on <= booked_on
+    )
 
 
 def _eb_dated_charge_in_batch(

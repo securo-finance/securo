@@ -4466,6 +4466,53 @@ async def test_sync_connection_enable_banking_hold_claim_date_window(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    ("hold_value_date", "claimed"),
+    [("2026-11-04", True), ("2026-11-06", False)],
+    ids=["held-before-charge", "held-after-charge"],
+)
+@pytest.mark.usefixtures("_paypal_week")
+async def test_sync_connection_enable_banking_charge_claims_hold_stored_with_booking_date(
+    session: AsyncSession, test_user, test_workspace, hold_value_date, claimed,
+):
+    """#664: a hold stored while the booking date came first keeps that date,
+    which can be later than the charge now dated by its value date. Its
+    payload date decides instead: a hold held on or before the charge is
+    claimed, one held after it is not."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    hold = {
+        **_paypal_payload("1HD00000AA0000001", "2026-11-04", booked=False),
+        "transaction_date": None,
+        "booking_date": "2026-11-06",
+        "value_date": hold_value_date,
+    }
+    charge = {
+        **_paypal_payload("7PY00000AA0000001", "2026-11-04", booked=True),
+        "transaction_date": None,
+        "booking_date": "2026-11-07",
+        "value_date": "2026-11-05",
+    }
+    await _sync_paypal_holds(session, conn, test_workspace.id, test_user.id, [hold])
+    (held,) = await _account_rows(session, account_id)
+    # The row was dated the way the provider read the payload before #664.
+    held.date = date(2026, 11, 6)
+    await session.commit()
+    held_id = held.id
+
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, await _eb_fetch([charge], []),
+    )
+
+    rows = await _account_rows(session, account_id)
+    if claimed:
+        assert [(row.id, row.status) for row in rows] == [(held_id, "posted")]
+    else:
+        assert sorted(row.status for row in rows) == ["pending", "posted"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
     "hold_fields",
     [
         {"creditor": "PARCEL LOGISTICS", "debtor": "EXAMPLE TRADING SL"},
