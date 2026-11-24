@@ -537,6 +537,13 @@ async def test_held_ledger_holding_has_no_closed_position(
     client: AsyncClient, auth_headers: dict, market_asset_api: Asset
 ):
     await _seed_buy(client, auth_headers, market_asset_api)
+    # A partial sale: realized, but the position is still open.
+    r = await client.post(
+        f"/api/assets/{market_asset_api.id}/transactions",
+        headers=auth_headers,
+        json={"kind": "sell", "quantity": 5, "price": 500, "date": "2026-01-06"},
+    )
+    assert r.status_code == 201
     body = (await client.get(f"/api/assets/{market_asset_api.id}", headers=auth_headers)).json()
     for key in ("sold_cost", "sale_proceeds", "average_buy_price", "average_sell_price"):
         assert body[key] is None

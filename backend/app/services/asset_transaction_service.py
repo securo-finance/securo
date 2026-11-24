@@ -182,7 +182,8 @@ def closed_position(transactions: list[AssetTransaction]) -> Optional[dict[str, 
     None when nothing was sold. Per-unit prices are in the units held after the
     last split, so a sell from before a split reads at the same scale as the rest.
     `sold_cost` is taken as proceeds minus the stored realized gain, so the three
-    figures on screen add up to the cent.
+    figures on screen add up to the cent; the average buy price comes from the
+    unrounded cost, which a cent would skew on a fraction of a unit.
     """
     pos = _recompute(transactions)
     sold_units = pos["sold_units"]
@@ -195,7 +196,7 @@ def closed_position(transactions: list[AssetTransaction]) -> Optional[dict[str, 
     cost = proceeds - realized
     price = Decimal(1).scaleb(-ASSET_PRICE_DECIMALS)
     return {
-        "average_buy_price": (cost / sold_units).quantize(price, rounding=ROUND_HALF_UP),
+        "average_buy_price": (pos["sold_cost"] / sold_units).quantize(price, rounding=ROUND_HALF_UP),
         "average_sell_price": (pos["gross_sales"] / sold_units).quantize(
             price, rounding=ROUND_HALF_UP
         ),

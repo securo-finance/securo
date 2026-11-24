@@ -161,6 +161,16 @@ def test_closed_position_rescales_sells_from_before_a_split():
     assert pos["sold_cost"] + realized == pos["sale_proceeds"]
 
 
+def test_closed_position_average_buy_price_survives_a_fraction_of_a_unit():
+    # 0.001 units: the cost is 0.104, which rounded to the cent would read 100.
+    pos = asset_transaction_service.closed_position([
+        _tx("buy", "0.001", "104", date(2026, 1, 1)),
+        _tx("sell", "0.001", "204", date(2026, 2, 1)),
+    ])
+    assert pos is not None
+    assert pos["average_buy_price"] == Decimal("104")
+
+
 def test_closed_position_is_none_without_sells():
     assert asset_transaction_service.closed_position([
         _tx("buy", "10", "100", date(2026, 1, 1)),
