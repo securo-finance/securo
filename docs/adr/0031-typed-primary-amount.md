@@ -4,6 +4,7 @@
 - Date: 2026-11-19
 - Origin: #1561 (restamp of stored primary amounts on a display currency change)
 - Extends: [0027](0027-amount-in-account-currency.md)
+- Extended by [0039](0039-date-move-keeps-typed-stamp.md): a move of the row's own date keeps the typed amount; a transfer leg's date and a pending row posted to today still drop it (#1816).
 
 ## Context
 
