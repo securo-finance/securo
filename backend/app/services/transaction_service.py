@@ -1522,7 +1522,12 @@ async def create_installment_series(
     await _ensure_payee_in_workspace(session, workspace_id, base.payee_id)
 
     total = base.amount * n
-    currency = base.currency or account.currency
+    # Same rule as create_transaction, checked before any row is written.
+    currency = (
+        check_transaction_currency(base.currency, account.currency)
+        if base.currency
+        else account.currency
+    )
     purchase_date = base.date
     intended_day = base.date.day
     series_id = uuid.uuid4()
