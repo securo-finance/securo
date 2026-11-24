@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-11-23
-- Origin: #1821 and #1826 (issue #463: R$ 10,03 read back as R$ 10,06, and US$ 300 as US$ 312)
+- Origin: #1821 and #1826 (board task #463: R$ 10,03 read back as R$ 10,06, and US$ 300 as US$ 312)
 - Extends: [0032](0032-viewer-display-currency.md)
 
 ## Context
