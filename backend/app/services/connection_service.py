@@ -2572,6 +2572,9 @@ async def _refresh_provider_values(
                 txn_data.amount_in_account_currency, restamp_account=True,
             )
             await category_line_service.rescale_lines(session, transaction, old_amount)
+        await goal_allocation_service.fit_to_provider_correction(
+            session, transaction.workspace_id, transaction
+        )
 
     if transaction.payee == previous.payee and txn_data.payee != previous.payee:
         transaction.payee = txn_data.payee

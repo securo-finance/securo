@@ -91,3 +91,103 @@ async def test_a_placeholder_whose_pocket_money_was_spent_is_kept_and_the_charge
     assert added is not None and added.amount == Decimal("80.00")
     assert added.recurring_transaction_id is None
     assert await _pocket_current_amount(session, goal_id) == Decimal("40.00")
+
+
+async def _bank_correction(session, transaction_id, amount, type_):
+    """Run the provider's correction of a synced row the user never edited."""
+    from unittest.mock import MagicMock
+
+    from app.providers.base import BankProvider
+    from app.services.connection_service import _refresh_provider_values
+
+    row = await session.get(Transaction, transaction_id)
+    assert row is not None
+    row.source = "sync"
+    row.raw_data = {"id": "bank-1"}
+    await session.flush()
+    provider = MagicMock(spec=BankProvider)
+    provider.parse_raw_transaction.return_value = TransactionData(
+        external_id="bank-1", description=row.description, amount=Decimal(row.amount),
+        date=row.date, type=row.type, currency=row.currency,
+    )
+    await _refresh_provider_values(
+        session, provider, row,
+        TransactionData(
+            external_id="bank-1", description=row.description, amount=Decimal(amount),
+            date=row.date, type=type_, currency=row.currency,
+        ),
+        payee_source="auto", account_currency=row.currency, user_currency=row.currency,
+    )
+    await session.commit()
+    session.expire_all()
+    return await session.get(Transaction, transaction_id)
+
+
+async def _assignments(session, transaction_id):
+    rows = await session.execute(
+        select(GoalAllocation.goal_id, GoalAllocation.amount)
+        .where(GoalAllocation.transaction_id == transaction_id)
+    )
+    return dict(rows.all())
+
+
+async def test_a_lowered_bank_amount_shrinks_its_assignments_pro_rata(
+    client, auth_headers, session, test_account
+):
+    first = await create_pocket(client, auth_headers, test_account, name="Trip")
+    second = await create_pocket(client, auth_headers, test_account, name="Car")
+    deposit = await post_transaction(
+        client, auth_headers, test_account, "Salary", "100", "credit",
+        allocations=[(first["id"], "33.33"), (second["id"], "16.67")],
+    )
+    assert deposit.status_code == 201, deposit.text
+    deposit_id = uuid.UUID(deposit.json()["id"])
+
+    corrected = await _bank_correction(session, deposit_id, "40", "credit")
+
+    assert corrected.amount == Decimal("40.00")
+    assert await _assignments(session, deposit_id) == {
+        uuid.UUID(first["id"]): Decimal("26.67"),
+        uuid.UUID(second["id"]): Decimal("13.33"),
+    }
+
+
+async def test_a_lowered_bank_amount_sets_a_spent_pocket_to_zero(
+    client, auth_headers, session, test_account
+):
+    goal_id, deposit_id = await _funded_deposit(client, auth_headers, test_account)
+
+    corrected = await _bank_correction(session, deposit_id, "50", "credit")
+
+    assert corrected.amount == Decimal("50.00")
+    assert await _assignments(session, deposit_id) == {goal_id: Decimal("50.00")}
+    assert await _pocket_current_amount(session, goal_id) == Decimal("0.00")
+    adjustment = await session.scalar(
+        select(GoalAllocation.amount).where(
+            GoalAllocation.goal_id == goal_id, GoalAllocation.source == "adjustment"
+        )
+    )
+    assert adjustment == Decimal("10.00")
+
+
+async def test_a_flipped_bank_type_drops_its_assignments(
+    client, auth_headers, session, test_account
+):
+    goal_id, deposit_id = await _funded_deposit(client, auth_headers, test_account)
+
+    corrected = await _bank_correction(session, deposit_id, "100", "debit")
+
+    assert corrected.type == "debit"
+    assert await _assignments(session, deposit_id) == {}
+    assert await _pocket_current_amount(session, goal_id) == Decimal("0.00")
+
+
+async def test_a_raised_bank_amount_keeps_its_assignments(
+    client, auth_headers, session, test_account
+):
+    goal_id, deposit_id = await _funded_deposit(client, auth_headers, test_account)
+
+    await _bank_correction(session, deposit_id, "120", "credit")
+
+    assert await _assignments(session, deposit_id) == {goal_id: Decimal("100.00")}
+    assert await _pocket_current_amount(session, goal_id) == Decimal("40.00")

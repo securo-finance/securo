@@ -4,6 +4,7 @@ The transaction remains the only financial fact. These rows only describe
 which part of that fact a user earmarked for a pocket.
 """
 
+import logging
 import uuid
 from decimal import Decimal
 
@@ -23,6 +24,8 @@ from app.services.goal_service import (
     _lock_pocket_account,
     _pocket_current_amount,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _transaction_allocations_for_update(
@@ -221,6 +224,87 @@ async def release_invalid_for_background_edit(
     except ValueError:
         return await release_for_background_delete(session, workspace_id, transaction)
     return True
+
+
+def _scaled_to(rows: list[GoalAllocation], amount: Decimal) -> dict[uuid.UUID, Decimal]:
+    """Signed amounts per pocket, shrunk pro rata so they add up to `amount`.
+
+    Whole cents; the cents lost to rounding go to the largest assignments
+    first, ties broken by pocket id so the result does not depend on order.
+    """
+    target_cents = int((amount * 100).to_integral_value())
+    total_cents = sum(int(abs(row.amount) * 100) for row in rows)
+    ordered = sorted(rows, key=lambda row: (-abs(row.amount), str(row.goal_id)))
+    cents = {row.goal_id: int(abs(row.amount) * 100) * target_cents // total_cents for row in ordered}
+    for row in ordered[: target_cents - sum(cents.values())]:
+        cents[row.goal_id] += 1
+    return {
+        row.goal_id: (Decimal(cents[row.goal_id]) / 100) * (1 if row.amount > 0 else -1)
+        for row in ordered
+    }
+
+
+async def fit_to_provider_correction(
+    session: AsyncSession, workspace_id: uuid.UUID, transaction: Transaction
+) -> None:
+    """Make a synced row's assignments fit the amount or type its bank corrected.
+
+    The bank's value stands, so the assignments give way: shrunk pro rata when
+    the amount fell, dropped when the direction flipped or the row can no
+    longer be assigned. A pocket whose spending depended on the difference
+    would go below zero; it is brought back to zero with an adjustment, which
+    its activity shows, and the shortfall is logged.
+    """
+    await session.flush()
+    accounts, existing, goals = await _lock_allocation_state(session, workspace_id, [transaction])
+    if not existing:
+        return
+    try:
+        await validate_transaction_allocations(session, workspace_id, transaction)
+        return
+    except ValueError:
+        pass
+
+    target: dict[uuid.UUID, Decimal] = {}
+    try:
+        await _ensure_assignable(session, workspace_id, transaction, Decimal("0"))
+        for row in existing:
+            _ensure_matching_pocket(transaction, accounts[transaction.account_id], goals[row.goal_id])
+        same_direction = all((row.amount > 0) == (transaction.type == "credit") for row in existing)
+    except ValueError:
+        same_direction = False
+    if same_direction and transaction.amount > 0:
+        assigned = sum((abs(row.amount) for row in existing), Decimal("0"))
+        target = _scaled_to(existing, min(Decimal(str(transaction.amount)), assigned))
+
+    for row in existing:
+        amount = target.get(row.goal_id, Decimal("0"))
+        if amount == 0:
+            await session.delete(row)
+        else:
+            row.amount = amount
+    await session.flush()
+
+    for goal_id in sorted({row.goal_id for row in existing}, key=str):
+        balance = await _pocket_current_amount(session, goal_id)
+        if balance < 0:
+            session.add(
+                GoalAllocation(
+                    workspace_id=workspace_id,
+                    goal_id=goal_id,
+                    transaction_id=None,
+                    user_id=None,
+                    amount=-balance,
+                    source="adjustment",
+                )
+            )
+            logger.warning(
+                "Bank corrected transaction %s; pocket %s was short %s and is set to zero",
+                transaction.id,
+                goal_id,
+                -balance,
+            )
+    await session.flush()
 
 
 async def replace_transaction_allocations(
