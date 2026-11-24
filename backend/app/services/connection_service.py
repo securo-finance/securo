@@ -1678,7 +1678,7 @@ def _holding_value_for_today(asset: Asset, holding: HoldingData):
     asset list shows, so the chart and the header agree. Every other holding
     uses the provider's reported balance.
     """
-    if asset.valuation_method == "market_price" and asset.last_price is not None and asset.units:
+    if asset.valuation_method == "market_price" and asset.last_price is not None and asset.units is not None:
         return Decimal(str(asset.last_price)) * Decimal(str(asset.units))
     return holding.current_value
 
@@ -1693,7 +1693,7 @@ def _holding_price_for_today(asset: Asset, holding: HoldingData) -> Optional[Dec
     point keeps the unit price the provider reported (None when it sends
     none), which the chart uses between syncs.
     """
-    if asset.valuation_method == "market_price" and asset.last_price is not None and asset.units:
+    if asset.valuation_method == "market_price" and asset.last_price is not None and asset.units is not None:
         return Decimal(str(asset.last_price))
     return holding.unit_price
 

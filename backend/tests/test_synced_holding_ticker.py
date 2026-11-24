@@ -32,7 +32,7 @@ from app.providers.market_price import (
 from app.providers.pluggy import _b3_market_ticker, _build_holding_data
 from app.schemas.asset import AssetBuyCreate, MarketSymbolMatch, MarketSymbolQuote
 from app.services import asset_transaction_service
-from app.services.connection_service import _sync_holdings
+from app.services.connection_service import _holding_value_for_today, _sync_holdings
 from tests.test_sync_holdings import (  # noqa: F401 - autouse fixture
     _MockProvider,
     _register_mock_provider,
@@ -848,3 +848,86 @@ async def test_unlink_endpoint_rejects_manual_assets(
     assert response.status_code == 422
     await session.refresh(asset)
     assert asset.valuation_method == "market_price"
+
+
+# ---------------------------------------------------------------------------
+# A manual valuation of the same day stays manual
+# ---------------------------------------------------------------------------
+
+# Sorts after any uuid4, so an `order_by(desc(id))` lookup would pick it.
+_LATE_ID = uuid.UUID("ffffffff-ffff-4fff-bfff-ffffffffffff")
+
+
+async def _today_rows(session: AsyncSession, asset_id: uuid.UUID) -> list[AssetValue]:
+    # The API wrote through its own session: read the rows afresh.
+    rows = await session.execute(
+        select(AssetValue)
+        .where(AssetValue.asset_id == asset_id, AssetValue.date == date.today())
+        .execution_options(populate_existing=True)
+    )
+    return list(rows.scalars().all())
+
+
+def _add_manual_point(session: AsyncSession, asset_id: uuid.UUID) -> None:
+    session.add(AssetValue(
+        id=_LATE_ID, asset_id=asset_id, amount=Decimal("999.00"), date=date.today(),
+        source="manual",
+    ))
+
+
+@pytest.mark.asyncio
+async def test_link_reprices_the_sync_point_and_leaves_a_manual_one_of_the_same_day(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user: User,
+    conn: BankConnection, synced_asset: Asset, market: _FakeMarket,
+):
+    asset_id = synced_asset.id
+    _add_manual_point(session, asset_id)
+    await session.commit()
+    market.quotes["PSSA3.SA"] = _quote("PSSA3.SA", 44.00)
+
+    response = await client.post(
+        f"/api/assets/{asset_id}/link-ticker", json={"ticker": "PSSA3.SA"}, headers=auth_headers
+    )
+
+    assert response.status_code == 200, response.text
+    rows = await _today_rows(session, asset_id)
+    by_source = {row.source: row for row in rows}
+    assert len(rows) == 2
+    assert Decimal(str(by_source["sync"].amount)) == Decimal("308.00")
+    assert by_source["manual"].id == _LATE_ID
+    assert Decimal(str(by_source["manual"].amount)) == Decimal("999.00")
+    # The next sync finds a single sync point for the day.
+    await _sync(session, test_user, conn)
+
+
+@pytest.mark.asyncio
+async def test_unlink_restores_the_sync_point_and_leaves_a_manual_one_of_the_same_day(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user: User,
+    conn: BankConnection, synced_asset: Asset, market: _FakeMarket,
+):
+    asset_id = synced_asset.id
+    market.quotes["PSSA3.SA"] = _quote("PSSA3.SA", 44.00)
+    linked = await client.post(
+        f"/api/assets/{asset_id}/link-ticker", json={"ticker": "PSSA3.SA"}, headers=auth_headers
+    )
+    assert linked.status_code == 200, linked.text
+    _add_manual_point(session, asset_id)
+    await session.commit()
+
+    response = await client.delete(f"/api/assets/{asset_id}/link-ticker", headers=auth_headers)
+
+    assert response.status_code == 200, response.text
+    rows = await _today_rows(session, asset_id)
+    by_source = {row.source: row for row in rows}
+    assert len(rows) == 2
+    assert Decimal(str(by_source["sync"].amount)) == Decimal("300.00")
+    assert by_source["sync"].price is None
+    assert Decimal(str(by_source["manual"].amount)) == Decimal("999.00")
+    await _sync(session, test_user, conn)
+
+
+def test_a_linked_holding_with_no_units_is_snapshotted_at_zero_like_the_live_value():
+    asset = Asset(valuation_method="market_price", last_price=Decimal("44"), units=Decimal("0"))
+    holding = _b3_holding(quantity=Decimal("0"), current_value=Decimal("300.00"))
+
+    assert _holding_value_for_today(asset, holding) == Decimal("0")

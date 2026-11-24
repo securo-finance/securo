@@ -1692,12 +1692,14 @@ async def upsert_today_value(
             "Not storing today's value for asset %s (units × price): %s", asset.id, exc
         )
         return
-    existing = await session.execute(
-        select(AssetValue)
-        .where(AssetValue.asset_id == asset.id, AssetValue.date == today)
-        .order_by(desc(AssetValue.id))
-        .limit(1)
-    )
+    query = select(AssetValue).where(AssetValue.asset_id == asset.id, AssetValue.date == today)
+    if asset.connection_id is not None:
+        # A synced holding keeps one sync point per day next to any manual
+        # valuation of the same day. Only the sync point is rewritten: taking
+        # the manual one and relabelling it would leave two sync points, and
+        # the next sync's daily lookup would fail on them.
+        query = query.where(AssetValue.source == "sync")
+    existing = await session.execute(query.order_by(desc(AssetValue.id)).limit(1))
     today_value = existing.scalar_one_or_none()
     if today_value is not None:
         today_value.amount = new_amount
@@ -1828,17 +1830,19 @@ async def unlink_market_ticker(session: AsyncSession, asset: Asset) -> None:
         provider_value = None
     if provider_value is not None:
         today = app_today()
+        # Today's sync point only: a manual valuation of the same day stays
+        # as the person entered it (see upsert_today_value).
         existing = await session.execute(
-            select(AssetValue)
-            .where(AssetValue.asset_id == asset.id, AssetValue.date == today)
-            .order_by(desc(AssetValue.id))
-            .limit(1)
+            select(AssetValue).where(
+                AssetValue.asset_id == asset.id,
+                AssetValue.date == today,
+                AssetValue.source == "sync",
+            )
         )
         today_value = existing.scalar_one_or_none()
         if today_value is not None:
             today_value.amount = provider_value
             today_value.price = None
-            today_value.source = "sync"
         else:
             session.add(
                 AssetValue(
