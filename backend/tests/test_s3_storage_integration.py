@@ -1,7 +1,7 @@
 """Opt-in real S3 round trip; use a dedicated, pre-created test bucket.
 
 Only SECURO_S3_TEST_* variables are used, never application storage credentials.
-See the README's Attachment Storage section for invocation.
+Set them as the settings below read them to run against a dedicated bucket.
 """
 
 import os

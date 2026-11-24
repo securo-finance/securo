@@ -14,7 +14,6 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useWorkspace } from '@/contexts/workspace-context'
-import { plugins as pluginsApi } from '@/lib/api'
 import { localized } from '@/lib/localized-text'
 import {
   NO_FILTERS,
@@ -31,6 +30,7 @@ import {
   sortPlugins,
   trendingPlugins,
 } from '@/lib/plugin-catalog'
+import { pluginCatalogQuery } from '@/lib/plugin-catalog-query'
 import { compactNumber, languageName, pluginPath, relativeDate } from '@/lib/plugin-format'
 import { cn } from '@/lib/utils'
 import type { PluginAction, PluginCatalogEntry } from '@/types'
@@ -58,12 +58,7 @@ export default function PluginsPage() {
   const [target, setTarget] = useState<PluginTarget | null>(null)
 
   // One request to the catalog, made because the user opened this page.
-  const { data: entries, isFetching, isError, refetch } = useQuery({
-    queryKey: ['plugins', 'catalog'],
-    queryFn: pluginsApi.catalog,
-    staleTime: 5 * 60 * 1000,
-    retry: 1,
-  })
+  const { data: entries, isFetching, isError, refetch } = useQuery(pluginCatalogQuery)
 
   // "/" focuses the search, as in most catalogs, unless the user is typing.
   useEffect(() => {

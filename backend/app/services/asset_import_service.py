@@ -54,6 +54,7 @@ from app.services.asset_group_service import ensure_group_in_workspace
 from app.services.import_service import (
     DATE_FORMAT_MAP,
     _sniff_csv_dialect,
+    infer_decimal_separator,
     normalize_amount,
 )
 from app.services.rule_engine import _strip_accents
@@ -235,8 +236,14 @@ def _invalid_split(
 
 
 def _decode(content: bytes) -> str:
-    """Broker exports are not always UTF-8; fall back rather than blow up."""
-    for encoding in ('utf-8-sig', 'latin-1'):
+    """Broker exports are not always UTF-8; fall back rather than blow up.
+
+    Windows-1252 comes before Latin-1 because 0x80-0x9F are typographic
+    characters (euro sign, en dash) there, while Latin-1 maps them to C1
+    controls, which read as a sale with no sign. cp1252 leaves 0x81, 0x8D,
+    0x8F, 0x90 and 0x9D undefined, so Latin-1 is the last resort.
+    """
+    for encoding in ('utf-8-sig', 'cp1252', 'latin-1'):
         try:
             return content.decode(encoding)
         except UnicodeDecodeError:
@@ -300,12 +307,12 @@ def _parse_date(raw: str, date_format: Optional[str]) -> Optional[date_type]:
     return None
 
 
-def _parse_decimal(raw: str) -> Optional[Decimal]:
+def _parse_decimal(raw: str, decimal_separator: Optional[str] = None) -> Optional[Decimal]:
     raw = (raw or '').strip()
     if not raw:
         return None
     try:
-        return Decimal(str(normalize_amount(raw)))
+        return Decimal(str(normalize_amount(raw, decimal_separator)))
     except (InvalidOperation, ValueError, TypeError):
         return None
 
@@ -349,10 +356,22 @@ def parse_orders_csv(
             return ''
         return (row.get(header) or '').strip()
 
+    rows = list(reader)
+    # A cell alone cannot tell "1,500" (fifteen hundred) from "1,5" (one and a
+    # half), so each money column's separator is inferred from the whole
+    # column, as parse_csv does for transaction amounts.
+    separators = {
+        field: infer_decimal_separator(cell(row, field) for row in rows)
+        for field in ('quantity', 'price', 'fee')
+    }
+
+    def number(row: dict, field: str) -> Optional[Decimal]:
+        return _parse_decimal(cell(row, field), separators[field])
+
     orders: list[AssetOrderImport] = []
     errors: list[AssetImportRowError] = []
 
-    for index, row in enumerate(reader, start=2):  # row 1 is the header
+    for index, row in enumerate(rows, start=2):  # row 1 is the header
         if not any((v or '').strip() for v in row.values()):
             continue
 
@@ -374,7 +393,7 @@ def parse_orders_csv(
             # cannot read is a bad row, not an empty one: `_parse_decimal`
             # answers None for both, so the text is checked as well.
             money = [
-                (cell(row, field), _parse_decimal(cell(row, field)))
+                (cell(row, field), number(row, field))
                 for field in ('quantity', 'price', 'fee')
             ]
             if (
@@ -407,12 +426,12 @@ def parse_orders_csv(
             errors.append(AssetImportRowError(row=index, reason='invalid_split', ticker=ticker))
             continue
 
-        quantity = _parse_decimal(cell(row, 'quantity'))
+        quantity = number(row, 'quantity')
         if quantity is None or quantity == 0:
             errors.append(AssetImportRowError(row=index, reason='invalid_quantity', ticker=ticker))
             continue
 
-        price = _parse_decimal(cell(row, 'price'))
+        price = number(row, 'price')
         if price is None or price < 0:
             errors.append(AssetImportRowError(row=index, reason='invalid_price', ticker=ticker))
             continue
@@ -433,7 +452,7 @@ def parse_orders_csv(
         # a malformed fee is reported like the other bad cells instead of
         # being read as zero.
         fee_raw = cell(row, 'fee')
-        fee = _parse_decimal(fee_raw)
+        fee = number(row, 'fee')
         if fee_raw and (fee is None or fee < 0):
             errors.append(AssetImportRowError(row=index, reason='invalid_fee', ticker=ticker))
             continue
@@ -891,7 +910,7 @@ async def _recheck_before_write(
     *,
     seen_before_lock: dict[tuple, set[Optional[str]]],
     origin: dict[int, tuple[str, Decimal]],
-) -> tuple[list[tuple[AssetOrderImport, AssetTransaction]], list[AssetImportRowError], int]:
+) -> tuple[list[tuple[AssetOrderImport, AssetTransaction]], list[AssetImportRowError], list[int]]:
     """Measure every accepted row again against the ledger as it is now.
 
     The replay read the stored ledger before the quotes were fetched, and a
@@ -917,7 +936,7 @@ async def _recheck_before_write(
     tickers = {order.ticker for order, _ in accepted}
     asset_ids = sorted(asset.id for ticker, asset in holdings.items() if ticker in tickers)
     ledgers: dict[str, list[AssetTransaction]] = {ticker: [] for ticker in tickers if ticker in holdings}
-    settled = 0
+    settled_rows: list[int] = []
     appeared: dict[tuple, set[Optional[str]]] = {}
     moved: set[str] = set()
     if asset_ids:
@@ -969,7 +988,7 @@ async def _recheck_before_write(
                 for key in _appearance_keys(asset.id, order, entry, origin.get(order.row))
             ):
                 # Somebody wrote this very order between the replay and the lock.
-                settled += 1
+                settled_rows.append(order.row)
                 continue
             if origin.get(order.row) is not None and _same_order(
                 appeared, ('plain', *_order_key(asset.id, entry), entry.price), ext,
@@ -992,7 +1011,7 @@ async def _recheck_before_write(
             continue
         ledger.append(entry)
         kept.append((order, entry))
-    return kept, errors, settled
+    return kept, errors, settled_rows
 
 
 async def import_orders(
@@ -1075,7 +1094,7 @@ async def import_orders(
 
     errors: list[AssetImportRowError] = []
     accepted: list[tuple[AssetOrderImport, AssetTransaction]] = []
-    skipped = 0
+    skipped_rows: list[int] = []
 
     # Each holding's ledger as the file is replayed onto it: what it already
     # holds, splits included, plus the rows accepted so far. Every row is
@@ -1138,7 +1157,7 @@ async def import_orders(
                 or (stated and _same_order(seen, ('source', *fingerprint, stated[0], order.price), ext))
                 or (not converts and _same_order(seen, _row_key(asset.id, order), ext))
             ):
-                skipped += 1
+                skipped_rows.append(order.row)
                 continue
             if converts and _same_order(seen, ('plain', *fingerprint, order.price), ext):
                 # A row stored at this very number in the holding's currency:
@@ -1242,7 +1261,9 @@ async def import_orders(
     to_create = sorted({o.ticker for o, _ in accepted if o.ticker not in holdings})
     summary = {
         'imported': len(accepted),
-        'skipped': skipped,
+        'skipped': len(skipped_rows),
+        'skipped_rows': skipped_rows,
+        'orders': _preview_rows(orders, accepted, skipped_rows, errors, origin, priced_in, quotes),
         'holdings_created': len(to_create),
         'holdings_matched': len({o.ticker for o, _ in accepted if o.ticker in holdings}),
         'errors': errors,
@@ -1251,15 +1272,17 @@ async def import_orders(
     if dry_run or not accepted:
         return summary
 
-    accepted, errors, settled = await _recheck_before_write(
+    accepted, errors, settled_rows = await _recheck_before_write(
         session, accepted, holdings, quotes, errors, group_id,
         seen_before_lock=seen, origin=origin,
     )
-    skipped += settled
+    skipped_rows.extend(settled_rows)
     to_create = sorted({o.ticker for o, _ in accepted if o.ticker not in holdings})
     summary.update({
         'imported': len(accepted),
-        'skipped': skipped,
+        'skipped': len(skipped_rows),
+        'skipped_rows': skipped_rows,
+        'orders': _preview_rows(orders, accepted, skipped_rows, errors, origin, priced_in, quotes),
         'holdings_created': len(to_create),
         'holdings_matched': len({o.ticker for o, _ in accepted if o.ticker in holdings}),
         'errors': errors,
@@ -1345,6 +1368,49 @@ async def import_orders(
     summary['import_log_id'] = str(log.id) if written else None
     summary['holdings_created'] = len([t for t in to_create if t in touched])
     return summary
+
+
+def _preview_rows(
+    orders: list[AssetOrderImport],
+    accepted: list[tuple[AssetOrderImport, AssetTransaction]],
+    skipped_rows: list[int],
+    errors: list[AssetImportRowError],
+    origin: dict[int, tuple[str, Decimal]],
+    priced_in: dict[str, str],
+    quotes: dict[str, Optional[MarketSymbolQuote]],
+) -> list[AssetOrderImport]:
+    """The table's rows: what this run would import, and in which currency.
+
+    A row the dry run already finds in the ledger, or refuses, is left out, so
+    the table, the count and the button describe the same import. A row the
+    file paid in another currency keeps the price and currency it was read
+    with, and carries what it becomes at its own date's rate, so both numbers
+    can be shown before the person confirms.
+    """
+    converted = {order.row: order for order, _ in accepted if order.row in origin}
+    left_out = set(skipped_rows) | {error.row for error in errors}
+    # A holding the file creates takes the currency of the quote it is
+    # created at, fetched after the holdings were read.
+    display_currency = dict(priced_in)
+    for ticker, quote in quotes.items():
+        if quote is not None and quote.currency:
+            display_currency.setdefault(ticker, quote.currency.upper())
+
+    rows: list[AssetOrderImport] = []
+    for order in orders:
+        if order.row in left_out:
+            continue
+        shown = converted.get(order.row)
+        if shown is not None:
+            rows.append(order.model_copy(update={
+                'converted_price': shown.price,
+                'converted_fee': shown.fee,
+                'converted_currency': shown.currency,
+            }))
+            continue
+        currency = order.currency or display_currency.get(order.ticker)
+        rows.append(order.model_copy(update={'currency': currency}) if currency else order)
+    return rows
 
 
 def csv_template() -> str:

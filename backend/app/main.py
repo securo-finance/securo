@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.accounts import router as accounts_router
 from app.api.budgets import router as budgets_router
+from app.api.backups import router as backups_router
 from app.api.goals import router as goals_router
 from app.api.groups import router as groups_router
 from app.api.categories import router as categories_router
@@ -224,6 +225,7 @@ app.include_router(currencies_router)
 app.include_router(timezones_router)
 app.include_router(fx_rates_router)
 app.include_router(export_router)
+app.include_router(backups_router)
 app.include_router(attachments_router)
 app.include_router(fiscal_router)
 app.include_router(payees_router)
@@ -253,6 +255,9 @@ if os.getenv("AGENTS_ENABLED", "false").strip().lower() in ("1", "true", "yes", 
         from app.agents.api.chat import router as agents_chat_router
         from app.agents.api.knowledge import router as agents_knowledge_router
         from app.agents.api.mcp_tokens import router as agents_mcp_tokens_router
+        # Document reading is part of the agents module (ADR 0037): with
+        # agents off, none of its code is even imported.
+        from app.api.document_extractions import router as document_ai_router
 
         # Mount literal-prefix routers (conversations, connections,
         # mcp-tokens) BEFORE the generic agents router so paths like
@@ -264,6 +269,7 @@ if os.getenv("AGENTS_ENABLED", "false").strip().lower() in ("1", "true", "yes", 
         app.include_router(agents_router)
         app.include_router(agents_chat_router)
         app.include_router(agents_knowledge_router)
+        app.include_router(document_ai_router)
         logger.info("Agents feature enabled — mounted /api/agents routes")
     except Exception:
         logger.exception("Agents feature flag is on but import failed; routes not mounted")

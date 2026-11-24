@@ -45,7 +45,7 @@ setattr(_pgv, "Vector", _VectorJSON)
 import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
-from sqlalchemy import text  # noqa: E402
+from sqlalchemy import event, text  # noqa: E402
 from sqlalchemy.dialects.postgresql import UUID  # noqa: E402
 from sqlalchemy.ext.compiler import compiles  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker  # noqa: E402
@@ -57,6 +57,7 @@ from app.models.passkey import UserPasskey  # noqa: E402,F401
 from app.models.category import Category  # noqa: E402
 from app.models.bank_connection import BankConnection  # noqa: E402
 from app.models.account import Account  # noqa: E402
+from app.models.account_card import AccountCard  # noqa: E402,F401
 from app.models.transaction import Transaction  # noqa: E402
 from app.models.rule import Rule  # noqa: E402
 from app.models.asset import Asset  # noqa: E402,F401
@@ -95,6 +96,29 @@ engine = create_async_engine(
     poolclass=StaticPool,
 )
 TestSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+
+# The income/expenses report buckets its periods with PostgreSQL's `to_char`
+# (and `extract` for weekly). SQLite has neither, so register a minimal
+# emulation of the formats the report uses (daily, monthly, yearly) on the
+# test engine. Weekly is left out: SQLite cannot compile `extract('isoyear')`,
+# and its label helper is covered by the pure-function tests.
+def sqlite_to_char(value, fmt):
+    if value is None:
+        return None
+    year, month, day = str(value)[:10].split("-")
+    if fmt == "YYYY-MM-DD":
+        return f"{year}-{month}-{day}"
+    if fmt == "YYYY-MM":
+        return f"{year}-{month}"
+    if fmt == "YYYY":
+        return year
+    return str(value)[:10]
+
+
+@event.listens_for(engine.sync_engine, "connect")
+def _register_sqlite_to_char(dbapi_connection, _connection_record):
+    dbapi_connection.create_function("to_char", 2, sqlite_to_char)
 
 
 # SQLite gives the PostgreSQL UUID type numeric affinity, corrupting UUID hex

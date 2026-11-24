@@ -50,6 +50,7 @@ class Plugin:
             "proxy": os.environ.get("HTTPS_PROXY", ""),
             "secret_key": os.environ.get("SECRET_KEY"),
             "path": [p for p in sys.path if "site-packages" in p],
+            "threads": [os.environ.get(k) for k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS")],
         }
 
     def leaves(self, params, context):
@@ -403,6 +404,8 @@ async def test_call_environment_has_no_core_secrets_and_no_site_packages(install
     result = await installed.call("acme/echo", "environment", {})
     assert result["secret_key"] is None
     assert result["path"] == []
+    # Numeric libraries start one thread, so importing numpy fits a call's limits.
+    assert result["threads"] == ["1", "1", "1"]
     proxy = result["proxy"]
     assert proxy.startswith("http://plugin:") and proxy.endswith("@egress.test:3128")
     granted = egress_token.verify(SECRET, proxy.removeprefix("http://plugin:").split("@")[0])

@@ -1,8 +1,14 @@
-import { translateApiDetail, translateApiMessage } from '@/lib/api-error-translations'
+import {
+  translateApiDetail,
+  translateApiMessage,
+  translateValidationMessage,
+} from '@/lib/api-error-translations'
+
+const DEFAULT_ERROR = 'An unexpected error occurred'
 
 export function extractApiError(
   error: unknown,
-  fallback = 'An unexpected error occurred',
+  fallback = DEFAULT_ERROR,
 ): string {
   if (
     error &&
@@ -28,6 +34,10 @@ export function extractApiError(
       }
       if (Array.isArray(detail)) {
         const message = detail.map((d: { msg?: string; loc?: string[] }) => {
+          // A message with a translation already names the value it is about,
+          // so the toast shows it alone instead of an `amount:` prefix.
+          const known = d.msg ? translateValidationMessage(d.msg) : null
+          if (known) return known
           const field = d.loc?.slice(-1)[0] ?? ''
           return `${field}: ${d.msg ?? 'invalid'}`
         }).join(', ')
@@ -36,4 +46,36 @@ export function extractApiError(
     }
   }
   return fallback
+}
+
+/**
+ * Extract an API error when Axios was configured with responseType: "blob".
+ * Axios keeps error responses as Blob objects in that mode, even when the
+ * server returned FastAPI JSON. Local errors retain their own message.
+ */
+export async function extractApiErrorAsync(
+  error: unknown,
+  fallback = DEFAULT_ERROR,
+): Promise<string> {
+  const axiosError = error as {
+    isAxiosError?: boolean
+    response?: { data?: unknown }
+  } | null
+  const response = axiosError?.response
+  // Axios network/transport failures are Error instances too, but their raw
+  // messages are not user-facing and must not replace a translated fallback.
+  const localFallback = !response && error instanceof Error && !axiosError?.isAxiosError
+    ? error.message
+    : fallback
+  const data = response?.data
+
+  if (!(data instanceof Blob)) return extractApiError(error, localFallback)
+
+  try {
+    const text = await data.text()
+    const decoded: unknown = JSON.parse(text)
+    return extractApiError({ response: { data: decoded } }, fallback)
+  } catch {
+    return localFallback
+  }
 }

@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -103,3 +105,31 @@ class CategoryStatementResponse(BaseModel):
     months: list[str]
     income: CategoryStatementSection
     expenses: CategoryStatementSection
+
+
+class PluginReportRow(BaseModel):
+    """One group of a plugin's report: a category, a payee, a month..."""
+
+    key: str
+    #: Null for rows the frontend names itself: `none` (no category or payee) and `other`.
+    label: str | None
+    value: float
+    color: str | None = None
+
+
+class PluginReportResponse(BaseModel):
+    """A plugin's report for the period asked (ADR 0028).
+
+    A query report comes back as `rows` Securo added up; a code report as the
+    `view` the plugin computed, already checked.
+    """
+
+    key: str
+    code: bool = False
+    measure: str | None = None
+    group_by: str | None = None
+    chart: str | None = None
+    currency: str
+    rows: list[PluginReportRow] = []
+    total: float = 0
+    view: dict[str, Any] | None = None

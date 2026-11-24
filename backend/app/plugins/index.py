@@ -1,4 +1,5 @@
-"""The plugin catalog: a static index, fetched only when someone opens it.
+"""The plugin catalog: a static index, fetched only when someone opens it,
+or when a screen shows an installed plugin's icon (ADR 0026).
 
 The index is built outside Securo by an indexer that finds plugins by their
 GitHub topic and pins each to the commit of its latest release. It carries
@@ -136,7 +137,15 @@ class IndexEntry(BaseModel):
 
     @property
     def supported(self) -> bool:
-        """Everything it contributes is something this Securo can apply."""
+        """Everything it contributes is something this Securo can apply.
+
+        A plugin that ships code (its archive is in the catalog) needs the
+        runner whatever it contributes: a code report runs there too.
+        """
+        from app.plugins import runner
+
+        if self.archive and not runner.configured():
+            return False
         return {kind for kind, count in self.contributes.items() if count} <= supported_contributions()
 
     @property

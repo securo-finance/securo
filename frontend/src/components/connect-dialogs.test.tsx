@@ -1,16 +1,27 @@
 import { act, screen, waitFor } from '@testing-library/react'
+import { useQuery } from '@tanstack/react-query'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/test/utils'
 import { ConnectorSelectDialog } from './connector-select-dialog'
 import { OAuthConnectDialog } from './oauth-connect-dialog'
 import { BankConnectDialog } from './bank-connect-dialog'
 
-const api = vi.hoisted(() => ({ getProviders: vi.fn(), listInstitutions: vi.fn(), getReconnectToken: vi.fn(), getConnectToken: vi.fn(), toastError: vi.fn() }))
+const api = vi.hoisted(() => ({ getProviders: vi.fn(), listInstitutions: vi.fn(), getReconnectToken: vi.fn(), getConnectToken: vi.fn(), handleCallback: vi.fn(), sync: vi.fn(), toastError: vi.fn(), catalog: vi.fn() }))
 const authState = vi.hoisted(() => ({ isAdmin: true }))
-vi.mock('@/lib/api', () => ({ connections: api, auth: api }))
+vi.mock('@/lib/api', () => ({ connections: api, auth: api, plugins: { catalog: api.catalog } }))
 vi.mock('@/contexts/auth-context', () => ({ useAuth: () => ({ user: { is_superuser: authState.isAdmin } }) }))
-vi.mock('sonner', () => ({ toast: { error: api.toastError } }))
-vi.mock('react-pluggy-connect', () => ({ PluggyConnect: ({ connectToken }: { connectToken: string }) => <div>{connectToken}</div> }))
+vi.mock('sonner', () => ({ toast: { error: api.toastError, success: vi.fn(), warning: vi.fn() } }))
+vi.mock('react-pluggy-connect', () => ({
+  PluggyConnect: ({ connectToken, onSuccess }: {
+    connectToken: string
+    onSuccess: (data: { item: { id: string } }) => void
+  }) => (
+    <div>
+      {connectToken}
+      <button onClick={() => onSuccess({ item: { id: 'item-1' } })}>Finish connect</button>
+    </div>
+  ),
+}))
 
 beforeEach(() => { vi.resetAllMocks(); authState.isAdmin = true })
 
@@ -111,16 +122,59 @@ it('ignores token failures after the bank dialog closes', async () => {
   expect(api.toastError).not.toHaveBeenCalled()
 })
 
+/** Keeps the connection list in the cache as the accounts page would. */
+function ConnectionsList({ ids }: { ids: string[] }) {
+  useQuery({ queryKey: ['connections'], queryFn: async () => ids.map((id) => ({ id })) })
+  return null
+}
+
+it('syncs the bank connection a second consent re-authorized', async () => {
+  // The callback only replaced the credentials of the connection that already
+  // held the bank (#1224): the accounts of this consent appear on a sync.
+  api.getConnectToken.mockResolvedValue('token')
+  api.handleCallback.mockResolvedValue({ id: 'known-connection', status: 'active', last_sync_at: null })
+  const { user } = renderWithProviders(
+    <>
+      <ConnectionsList ids={['known-connection']} />
+      <BankConnectDialog open provider="pluggy" onClose={vi.fn()} />
+    </>,
+  )
+  await user.click(await screen.findByRole('button', { name: 'Finish connect' }))
+  await waitFor(() => expect(api.sync).toHaveBeenCalledWith('known-connection'))
+})
+
+it('does not sync a bank connection the callback just created', async () => {
+  api.getConnectToken.mockResolvedValue('token')
+  api.handleCallback.mockResolvedValue({ id: 'new-connection', status: 'active', last_sync_at: null })
+  const { user } = renderWithProviders(
+    <>
+      <ConnectionsList ids={['known-connection']} />
+      <BankConnectDialog open provider="pluggy" onClose={vi.fn()} />
+    </>,
+  )
+  await user.click(await screen.findByRole('button', { name: 'Finish connect' }))
+  // The callback imported the first history itself; a sync right after would
+  // read the same accounts again from the provider.
+  await waitFor(() => expect(api.handleCallback).toHaveBeenCalled())
+  expect(api.sync).not.toHaveBeenCalled()
+  expect(api.toastError).not.toHaveBeenCalled()
+})
+
+const ledgerIntegration = {
+  key: 'keys', name: { en: 'Ledger (API key)' }, description: { en: 'Your payouts' }, auth: 'credentials' as const,
+  fields: [], sync_minutes: 60, provides: ['accounts' as const],
+}
+const ledgerPlugin = {
+  plugin_id: 'acme/ledger', name: { en: 'Ledger' }, version: '1.0.0', commit: '1'.repeat(40),
+  installed_at: '2026-11-12T00:00:00Z', integrations: [ledgerIntegration], network: [], api_scopes: [], redirect_uri: null,
+}
+const LEDGER_ICON = `/api/plugins/icons/${'a'.repeat(64)}.png`
+
 it('offers the installed plugins that sync as a bank, after the providers', async () => {
   api.getProviders.mockResolvedValue([{ name: 'pluggy', display_name: 'Pluggy', description: 'Bank connection', configured: true }])
-  const integration = {
-    key: 'keys', name: { en: 'Ledger (API key)' }, description: { en: 'Your payouts' }, auth: 'credentials' as const,
-    fields: [], sync_minutes: 60, provides: ['accounts' as const],
-  }
-  const plugin = {
-    plugin_id: 'acme/ledger', name: { en: 'Ledger' }, version: '1.0.0', commit: '1'.repeat(40),
-    installed_at: '2026-11-12T00:00:00Z', integrations: [integration], network: [], api_scopes: [], redirect_uri: null,
-  }
+  api.catalog.mockResolvedValue([])
+  const integration = ledgerIntegration
+  const plugin = ledgerPlugin
   const onSelectPlugin = vi.fn()
   const { user } = renderWithProviders(
     <ConnectorSelectDialog open onClose={vi.fn()} onSelect={vi.fn()} plugins={[{ plugin, integration }]} onSelectPlugin={onSelectPlugin} />,
@@ -131,3 +185,44 @@ it('offers the installed plugins that sync as a bank, after the providers', asyn
   expect(onSelectPlugin).toHaveBeenCalledWith({ plugin, integration })
 })
 
+
+it("shows a plugin's catalog icon instead of its generated badge", async () => {
+  api.getProviders.mockResolvedValue([])
+  api.catalog.mockResolvedValue([{ id: 'acme/ledger', icon_url: LEDGER_ICON }, { id: 'acme/other', icon_url: null }])
+  renderWithProviders(
+    <ConnectorSelectDialog open onClose={vi.fn()} onSelect={vi.fn()} plugins={[{ plugin: ledgerPlugin, integration: ledgerIntegration }]} />,
+  )
+  const button = await screen.findByRole('button', { name: /Ledger \(API key\)/ })
+  await waitFor(() => expect(button.querySelector('img')).toHaveAttribute('src', LEDGER_ICON))
+})
+
+it('keeps the generated badge when the catalog lists the plugin without an icon', async () => {
+  api.getProviders.mockResolvedValue([])
+  api.catalog.mockResolvedValue([{ id: 'acme/ledger', icon_url: null }])
+  renderWithProviders(
+    <ConnectorSelectDialog open onClose={vi.fn()} onSelect={vi.fn()} plugins={[{ plugin: ledgerPlugin, integration: ledgerIntegration }]} />,
+  )
+  const button = await screen.findByRole('button', { name: /Ledger \(API key\)/ })
+  await waitFor(() => expect(api.catalog).toHaveBeenCalled())
+  expect(button.querySelector('img')).toBeNull()
+  expect(button).toHaveTextContent('LE')
+})
+
+it('keeps the generated badge when the catalog has no icon for the plugin or cannot be reached', async () => {
+  api.getProviders.mockResolvedValue([])
+  api.catalog.mockRejectedValue(new Error('index unreachable'))
+  renderWithProviders(
+    <ConnectorSelectDialog open onClose={vi.fn()} onSelect={vi.fn()} plugins={[{ plugin: ledgerPlugin, integration: ledgerIntegration }]} />,
+  )
+  const button = await screen.findByRole('button', { name: /Ledger \(API key\)/ })
+  await waitFor(() => expect(api.catalog).toHaveBeenCalled())
+  expect(button.querySelector('img')).toBeNull()
+  expect(button).toHaveTextContent('LE')
+})
+
+it('does not ask the catalog for icons when no plugin is offered', async () => {
+  api.getProviders.mockResolvedValue([{ name: 'pluggy', display_name: 'Pluggy', description: 'Bank connection', configured: true }])
+  renderWithProviders(<ConnectorSelectDialog open onClose={vi.fn()} onSelect={vi.fn()} />)
+  await screen.findByText('Pluggy')
+  expect(api.catalog).not.toHaveBeenCalled()
+})

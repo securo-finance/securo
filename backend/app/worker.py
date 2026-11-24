@@ -61,6 +61,10 @@ celery_app.conf.beat_schedule = {
         # stamped with the 1:1 fallback (or left NULL) once real rates land.
         "schedule": 60 * 60 * 12,
     },
+    "run-scheduled-backups-hourly": {
+        "task": "app.tasks.backup_tasks.run_scheduled_backups",
+        "schedule": 60 * 60,
+    },
 }
 
 if feature_flag("PLUGINS_ENABLED"):
@@ -78,7 +82,10 @@ celery_app.conf.include = [
     "app.tasks.invoice_schedule_tasks",
     "app.tasks.asset_tasks",
     "app.tasks.fx_rate_tasks",
+    "app.tasks.backup_tasks",
     "app.tasks.plugin_tasks",
+    # Dispatched only by the document routes (DOCUMENT_AI_ENABLED).
+    "app.tasks.document_tasks",
     # Optional agents module — registering the import is harmless when
     # AGENTS_ENABLED=false (the task just won't be dispatched).
     "app.agents.tasks.ingest",

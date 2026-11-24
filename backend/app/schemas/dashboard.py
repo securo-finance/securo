@@ -102,6 +102,9 @@ class ProjectedTransaction(BaseModel):
     currency: str
     type: str  # debit, credit
     date: str  # YYYY-MM-DD
+    # The date the month list files it under: the card bill's due date in
+    # accrual mode, else ``date``.
+    reporting_date: Optional[str] = None
     category_id: Optional[str]
     category_name: Optional[str]
     category_icon: Optional[str]

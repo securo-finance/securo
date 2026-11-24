@@ -1,3 +1,4 @@
+import ipaddress
 import time
 from collections.abc import Callable
 from uuid import uuid4
@@ -5,28 +6,57 @@ from uuid import uuid4
 from fastapi import HTTPException, Request
 from redis.exceptions import RedisError
 
-from app.core.config import get_settings
+from app.core.config import (
+    DEFAULT_TRUSTED_PROXY_NETWORKS,
+    get_settings,
+    parse_trusted_proxy_networks,
+)
 from app.core.redis import get_redis
 
 
-def resolve_client_ip(request: Request, trusted_proxy_hops: int) -> str:
-    """Client IP for rate-limit keys, honoring `trusted_proxy_hops` trusted reverse proxies.
+def _is_trusted(address: str, trusted_proxy_networks: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return False
+    return any(ip in network for network in parse_trusted_proxy_networks(trusted_proxy_networks))
 
-    Each trusted proxy appends its own observed peer address to the right end of
-    X-Forwarded-For, so the Nth entry from the right is always a real, unspoofable
-    observation rather than something the original client could have written into
-    the header itself. A chain shorter than the configured hop count means the
-    trust setting does not match what actually reached us, so it is not trusted.
+
+def resolve_client_ip(
+    request: Request,
+    trusted_proxy_hops: int,
+    trusted_proxy_networks: str = DEFAULT_TRUSTED_PROXY_NETWORKS,
+) -> str:
+    """Client IP for rate-limit keys, honoring up to `trusted_proxy_hops` reverse proxies.
+
+    Each proxy appends the peer it saw to the right end of X-Forwarded-For, so
+    the chain is read from the right, starting at the socket peer. A hop is
+    only crossed while the address in hand is a trusted proxy (one of
+    `trusted_proxy_networks`, the private and loopback ranges by default): an
+    address outside them is the client itself, whatever it wrote in the header. That
+    keeps a caller who reaches the backend port, or nginx past an outer
+    proxy, from picking its own rate-limit bucket (ADR 0024).
+
+    A chain shorter than the hops still to cross means the trust setting does
+    not match what reached us, so it is not trusted either.
     """
+    peer = request.client.host if request.client else None
+    if peer is None:
+        return "unknown"
     if trusted_proxy_hops <= 0:
-        return request.client.host if request.client else "unknown"
+        return peer
 
     forwarded_for = request.headers.get("x-forwarded-for")
     hops = [hop.strip() for hop in forwarded_for.split(",")] if forwarded_for else []
-    if len(hops) < trusted_proxy_hops:
-        return "unknown"
 
-    return hops[-trusted_proxy_hops]
+    address = peer
+    for crossed in range(1, trusted_proxy_hops + 1):
+        if not _is_trusted(address, trusted_proxy_networks):
+            return address
+        if len(hops) < crossed:
+            return "unknown"
+        address = hops[-crossed]
+    return address
 
 
 class RateLimiter:
@@ -70,7 +100,10 @@ class RateLimiter:
         if limit <= 0:
             return
 
-        client_ip = resolve_client_ip(request, get_settings().trusted_proxy_hops)
+        settings = get_settings()
+        client_ip = resolve_client_ip(
+            request, settings.trusted_proxy_hops, settings.trusted_proxy_networks
+        )
         key = f"rate_limit:{self.scope or request.url.path}:{client_ip}"
 
         try:

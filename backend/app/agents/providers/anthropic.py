@@ -52,6 +52,15 @@ def _serialize_messages(messages: list[ChatMessage]) -> list[dict]:
                 blocks.append({"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.arguments})
             out.append({"role": "assistant", "content": blocks})
             continue
+        if m.images:
+            image_blocks: list[dict] = [
+                {"type": "image", "source": {"type": "base64", "media_type": img.media_type, "data": img.data}}
+                for img in m.images
+            ]
+            if m.content:
+                image_blocks.append({"type": "text", "text": m.content})
+            out.append({"role": m.role, "content": image_blocks})
+            continue
         out.append({"role": m.role, "content": m.content or ""})
     return out
 

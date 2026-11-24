@@ -1,4 +1,5 @@
 import asyncio
+import ipaddress
 import logging
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
@@ -16,6 +17,26 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 CREDENTIALS_DIRECTORY: list[Path] = [
     Path(p) for p in getenv("CREDENTIALS_DIRECTORY", "/run/secrets").split(":") if p
 ]
+
+# Where a reverse proxy in front of the backend can sit: loopback, the
+# private ranges Docker and Podman give container networks, and a LAN.
+DEFAULT_TRUSTED_PROXY_NETWORKS = (
+    "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"
+)
+
+
+@lru_cache(maxsize=8)
+def parse_trusted_proxy_networks(
+    value: str,
+) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    """The networks in a comma-separated TRUSTED_PROXY_NETWORKS value; a bare
+    address is a network of one. Raises ValueError on anything else."""
+    return tuple(
+        ipaddress.ip_network(entry.strip(), strict=False)
+        for entry in value.split(",")
+        if entry.strip()
+    )
+
 
 class Settings(BaseSettings):
     # App
@@ -97,12 +118,16 @@ class Settings(BaseSettings):
     storage_provider: Literal["local", "s3"] = "local"
     storage_local_path: str = "./data/attachments"
     storage_max_file_size_mb: int = 10
-    storage_allowed_extensions: str = "jpg,jpeg,png,webp,gif,heic,pdf"
+    storage_allowed_extensions: str = "jpg,jpeg,png,webp,gif,heic,pdf,xml"
     storage_max_attachments_per_transaction: int = 10
     # An invoice gathers more paper than a transaction does: the bill, the
     # fiscal document, a receipt, the contract behind it, and a correction
     # of any of them.
     storage_max_attachments_per_invoice: int = 20
+
+    # Scheduled backups require one filesystem shared by the API and Celery
+    # worker. Docker Compose provides it; Helm sets this from its backups PVC.
+    backup_storage_shared: bool = True
 
     # S3 storage: blank credentials use the SDK's default credential chain.
     storage_s3_bucket: str = ""
@@ -134,6 +159,11 @@ class Settings(BaseSettings):
     oidc_roles_claim: str = "groups"
     oidc_admin_roles: str = ""  # comma-separated provider roles/groups that grant Securo admin
     oidc_workspace_role_map: str = ""  # JSON: {"provider-role": "owner|editor|viewer"}
+    # RP-initiated logout (#1623): where to send the browser so signing out
+    # ends the provider's own session too. Empty reads end_session_endpoint
+    # from the discovery document; a provider with neither keeps today's
+    # behaviour (the local token is dropped and nothing else).
+    oidc_logout_url: str = ""
 
     # Deploy scripts that source the .env file with a shell need values with
     # spaces to be quoted, and some panels (PaaS env vars, manual exports)
@@ -174,6 +204,22 @@ class Settings(BaseSettings):
     # The same IP is the Psu-Ip-Address of user-triggered Enable Banking syncs
     # (app.providers.psu), which only sends it when it is a public address.
     trusted_proxy_hops: int = 0
+    # Where those proxies can be, as comma-separated networks or addresses.
+    # X-Forwarded-For is only read past a peer inside them; any other peer is
+    # the client itself, so a caller who reaches the backend port (or nginx,
+    # past an outer proxy) cannot pick its own address (ADR 0024). The default
+    # covers loopback and the private ranges container networks use; narrow
+    # it when untrusted clients share those ranges with the proxies.
+    trusted_proxy_networks: str = DEFAULT_TRUSTED_PROXY_NETWORKS
+
+    @field_validator("trusted_proxy_networks")
+    @classmethod
+    def _check_trusted_proxy_networks(cls, value: str) -> str:
+        try:
+            parse_trusted_proxy_networks(value)
+        except ValueError as exc:
+            raise ValueError(f"TRUSTED_PROXY_NETWORKS is not a list of networks: {exc}") from exc
+        return value
 
     # Per-IP ceiling on the assistant chat endpoint, in requests per minute.
     # Every message spends provider tokens, so a public demo should keep it
@@ -212,6 +258,11 @@ class Settings(BaseSettings):
     # How a plugin's code reaches this API, over the internal network. Only
     # plugins that declared `api_scopes` get a token to use it.
     plugins_api_url: str = "http://backend:8000/api"
+
+    # Document reading limits (ADR 0037). The feature itself, its provider and
+    # model are set by an admin in Admin Settings, not here.
+    document_ai_max_pages: int = 20
+    document_ai_max_file_size_mb: int = 10
 
     @property
     def oidc_login_available(self) -> bool:

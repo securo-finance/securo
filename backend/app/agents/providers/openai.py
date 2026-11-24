@@ -52,8 +52,21 @@ def normalize_openai_base_url(url: str) -> str:
 def _serialize_messages(messages: list[ChatMessage]) -> list[dict]:
     out: list[dict] = []
     for m in messages:
+        # Some chat templates (Qwen on vLLM) refuse a system message that is
+        # not the first one, so fold the leading system messages into one.
+        if m.role == "system" and len(out) == 1 and out[0]["role"] == "system":
+            out[0]["content"] = f"{out[0].get('content') or ''}\n\n{m.content or ''}"
+            continue
         msg: dict = {"role": m.role}
-        if m.content is not None:
+        if m.images:
+            parts: list[dict] = [
+                {"type": "image_url", "image_url": {"url": f"data:{img.media_type};base64,{img.data}"}}
+                for img in m.images
+            ]
+            if m.content:
+                parts.append({"type": "text", "text": m.content})
+            msg["content"] = parts
+        elif m.content is not None:
             msg["content"] = m.content
         if m.tool_calls:
             msg["tool_calls"] = [

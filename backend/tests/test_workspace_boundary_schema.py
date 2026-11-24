@@ -42,6 +42,7 @@ VIA_PARENT: dict[str, str] = {
     "collection_accounts": "collection_id",
     "collection_asset_groups": "collection_id",
     "institutions": "connection_id",
+    "plugin_connection_routines": "connection_id",
 }
 
 EXEMPT = GLOBAL.keys() | USER_OWNED.keys() | VIA_PARENT.keys()

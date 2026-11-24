@@ -3,7 +3,9 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.core.currency import parse_supported_currency
 
 LoanKind = Literal["mortgage", "auto", "personal", "student", "other"]
 LoanRatePeriod = Literal["monthly", "yearly_effective", "yearly_nominal"]
@@ -24,7 +26,9 @@ class AccountCreate(BaseModel):
     type: str
     balance: Decimal = Decimal("0.00")
     balance_date: Optional[date] = None
-    currency: str = "USD"
+    # `validate_default` so an instance that does not support USD refuses the
+    # omitted field too instead of storing it unvalidated.
+    currency: str = Field(default="USD", validate_default=True)
     secured_asset_id: Optional[uuid.UUID] = None
     credit_limit: Optional[Decimal] = None
     statement_close_day: Optional[int] = None
@@ -40,6 +44,13 @@ class AccountCreate(BaseModel):
     loan_term_months: Optional[int] = Field(default=None, ge=1, le=600)
     loan_first_payment_date: Optional[date] = None
     loan_amortization: Optional[LoanAmortization] = None
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def check_currency(cls, value: object) -> object:
+        # The column is varchar(3): " eur " reached the database and failed
+        # there with a 500, while "brl" and "XYZ" were stored as typed.
+        return parse_supported_currency(value) if isinstance(value, str) else value
 
 
 class AccountUpdate(BaseModel):
@@ -134,6 +145,34 @@ class AccountRead(AccountBase):
     closed_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AccountCardRead(BaseModel):
+    id: uuid.UUID
+    account_id: uuid.UUID
+    masked_number: str
+    label: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AccountCardLabelUpdate(BaseModel):
+    id: uuid.UUID
+    # Required so an item without a label cannot erase one by accident; an
+    # explicit empty value clears the alias. The final four is never editable
+    # here because it is supplied by the financial institution.
+    label: str = Field(max_length=80)
+
+    @field_validator("label")
+    @classmethod
+    def _reject_nul(cls, value: str) -> str:
+        if "\x00" in value:
+            raise ValueError("Label cannot contain a NUL character")
+        return value
+
+
+class AccountCardsUpdate(BaseModel):
+    cards: list[AccountCardLabelUpdate] = Field(default_factory=list, max_length=100)
 
 
 class CreditCardBillRead(BaseModel):

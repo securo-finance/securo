@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useId } from 'react'
 import { getAccountLabel, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { localDateString } from '@/lib/date-utils'
@@ -45,6 +45,7 @@ export function TransferDialog({
   defaultFromAccountId?: string
 }) {
   const { t } = useTranslation()
+  const id = useId()
   const sortedAccounts = useMemo(() => sortAccountsByDisplayName(accounts), [accounts])
   const firstAccountId = sortedAccounts[0]?.id ?? ''
   const [fromAccountId, setFromAccountId] = useState(defaultFromAccountId || firstAccountId)
@@ -118,8 +119,9 @@ export function TransferDialog({
         >
           <div className="grid grid-cols-[1fr,auto,1fr] items-end gap-2">
             <div className="space-y-2">
-              <Label>{t('transactions.transferFromAccount')}</Label>
+              <Label htmlFor={`${id}-from-account`}>{t('transactions.transferFromAccount')}</Label>
               <select
+                id={`${id}-from-account`}
                 className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
                 value={fromAccountId}
                 onChange={(e) => {
@@ -142,8 +144,9 @@ export function TransferDialog({
               <ArrowRight size={18} className="text-muted-foreground" />
             </div>
             <div className="space-y-2">
-              <Label>{t('transactions.transferToAccount')}</Label>
+              <Label htmlFor={`${id}-to-account`}>{t('transactions.transferToAccount')}</Label>
               <select
+                id={`${id}-to-account`}
                 className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
                 value={toAccountId}
                 onChange={(e) => {
@@ -178,11 +181,12 @@ export function TransferDialog({
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>
+              <Label htmlFor={`${id}-amount`}>
                 {t('transactions.transferAmount')}
                 {fromAccount && <span className="text-muted-foreground ms-1">({fromAccount.currency})</span>}
               </Label>
               <Input
+                id={`${id}-amount`}
                 type="number"
                 step="0.01"
                 min="0.01"
@@ -192,8 +196,10 @@ export function TransferDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label>{t('transactions.date')}</Label>
+              <Label htmlFor={`${id}-date`} id={`${id}-date-label`}>{t('transactions.date')}</Label>
               <DatePickerInput
+                id={`${id}-date`}
+                labelledBy={`${id}-date-label`}
                 value={date}
                 onChange={setDate}
                 className="w-full justify-start"
@@ -203,10 +209,11 @@ export function TransferDialog({
 
           {isCrossCurrency && (
             <div className="space-y-2 p-3 bg-muted/50 border border-border rounded-md">
-              <Label className="text-xs">
+              <Label htmlFor={`${id}-destination-amount`} className="text-xs">
                 {t('transactions.convertedAmount', { currency: toAccount?.currency })}
               </Label>
               <Input
+                id={`${id}-destination-amount`}
                 type="number"
                 step="0.01"
                 min="0.01"
@@ -236,8 +243,9 @@ export function TransferDialog({
           />
 
           <div className="space-y-2">
-            <Label>{t('transactions.transferDescription')}</Label>
+            <Label htmlFor={`${id}-description`}>{t('transactions.transferDescription')}</Label>
             <Input
+              id={`${id}-description`}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               required
@@ -245,11 +253,12 @@ export function TransferDialog({
           </div>
 
           <div className="space-y-2">
-            <Label>
+            <Label htmlFor={`${id}-notes`}>
               {t('transactions.transferNotes')}{' '}
               <span className="text-muted-foreground font-normal text-xs">({t('transactions.notesHint')})</span>
             </Label>
             <textarea
+              id={`${id}-notes`}
               className="w-full border border-input rounded-md px-3 py-2 text-sm bg-card resize-none focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-0"
               rows={2}
               value={notes}

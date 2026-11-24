@@ -79,9 +79,20 @@ def parse_tool_arguments(buf: str) -> tuple[dict[str, Any], Optional[str]]:
 
 
 @dataclass
+class ImagePart:
+    """An image sent along with a message, base64 encoded (no data: prefix)."""
+    media_type: str  # image/png, image/jpeg, image/webp
+    data: str
+
+
+@dataclass
 class ChatMessage:
     role: Role
     content: Optional[str] = None
+    # Images for a model that reads them (user messages only). A provider
+    # that cannot send them raises LLMNotSupportedError rather than
+    # silently dropping them.
+    images: list[ImagePart] = field(default_factory=list)
     tool_calls: list[ToolCall] = field(default_factory=list)
     # For role="tool":
     tool_call_id: Optional[str] = None

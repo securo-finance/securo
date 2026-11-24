@@ -2,6 +2,7 @@ import uuid
 from decimal import Decimal
 from typing import Optional, cast
 
+from sqlalchemy import select
 from fastapi import Depends, Request
 from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin, schemas
 from fastapi_users.authentication import (
@@ -25,6 +26,36 @@ async def get_user_db(session: AsyncSession = Depends(get_async_session)):
     yield SQLAlchemyUserDatabase(session, User)
 
 
+class _FlushingUserDatabase(SQLAlchemyUserDatabase):
+    """The SQLAlchemy adapter, with an `update` that flushes and leaves the
+    commit to the caller."""
+
+    async def update(self, user, update_dict):
+        for key, value in update_dict.items():
+            setattr(user, key, value)
+        self.session.add(user)
+        await self.session.flush()
+        return user
+
+
+def _requested_currency(user_update: schemas.BaseUserUpdate) -> Optional[str]:
+    """The display currency a profile update asks for, or None when it does
+    not touch the preferences.
+
+    An explicit `null` clears every preference, so the user falls back to the
+    default currency like a dict without `currency_display` does.
+    """
+    fields = user_update.model_dump(exclude_unset=True)
+    if "preferences" not in fields:
+        return None
+    preferences = fields["preferences"]
+    if preferences is None:
+        return settings.default_currency
+    if not isinstance(preferences, dict):
+        return None
+    return preferences.get("currency_display", settings.default_currency)
+
+
 class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     reset_password_token_secret = settings.secret_key
     verification_token_secret = settings.secret_key
@@ -44,7 +75,65 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     ) -> User:
         if user_update.password is not None:
             require_local_auth_enabled()
-        return await super().update(user_update, user, safe=safe, request=request)
+        new_currency = _requested_currency(user_update)
+        if new_currency is None:
+            return await super().update(user_update, user, safe=safe, request=request)
+        # Compare with the committed currency, under the row lock the restamp
+        # also takes: a switch another request committed meanwhile must not
+        # let this one change the currency without restamping. The lock lasts
+        # until this update commits, on either branch.
+        current = (
+            await self.db_session.execute(
+                select(User)
+                .where(User.id == user.id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
+        if new_currency == current.primary_currency:
+            return await super().update(user_update, user, safe=safe, request=request)
+        return await self._update_and_restamp(
+            user_update, user, new_currency, safe=safe, request=request
+        )
+
+    async def _update_and_restamp(
+        self,
+        user_update: schemas.BaseUserUpdate,
+        user: User,
+        new_currency: str,
+        *,
+        safe: bool,
+        request: Request | None,
+    ) -> User:
+        """Change the display currency and the stored amounts in one commit.
+
+        Stored primary amounts are in the old currency; totals that sum them
+        would show old numbers under the new symbol (#1381). The SQLAlchemy
+        adapter commits inside `update`, so for this one call the manager
+        uses one that only flushes: the preference and the restamp then
+        commit together or not at all, and a retry after a failure still sees
+        the change. Today's quotes are fetched first, since that commits.
+        """
+        from app.services.primary_restamp_service import (
+            fetch_missing_today_rates,
+            restamp_user_primary_amounts,
+        )
+
+        session = self.db_session
+        await fetch_missing_today_rates(session, user.id, new_currency)
+        committing_db = self.user_db
+        self.user_db = _FlushingUserDatabase(session, User)
+        try:
+            updated = await super().update(user_update, user, safe=safe, request=request)
+            await restamp_user_primary_amounts(session, updated.id)
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            self.user_db = committing_db
+        await session.refresh(updated)
+        return updated
 
     async def on_after_register(self, user: User, request: Optional[Request] = None):
         print(f"User {user.id} has registered.")

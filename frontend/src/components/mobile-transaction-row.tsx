@@ -3,8 +3,9 @@ import { AccountIcon } from '@/components/account-icon'
 import { CategorySplitBadge, TransactionCategoryIcon } from '@/components/category-lines-display'
 import { isSplitByCategory } from '@/lib/category-lines'
 import type { Transaction, Account } from '@/types'
-import { AlertTriangle, ArrowLeftRight, CalendarClock, ChartNoAxesColumn, Clock, EyeClosed, Paperclip, WalletCards } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, CalendarClock, ChartNoAxesColumn, CircleDashed, Clock, EyeClosed, Paperclip, Repeat, WalletCards } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
+import { TransactionFlagMarker } from '@/components/transaction-flag-marker'
 import { useTranslation } from 'react-i18next'
 import { formatCurrency, ltrAmount } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
@@ -32,10 +33,17 @@ interface MobileTransactionRowProps {
   userCurrency: string
   onSelect: (id: string, shiftKey: boolean) => void
   onClick: (tx: Transaction) => void
+  /** Turns the transaction into a bill; the phone list has no context menu. */
+  onMakeRecurring?: (tx: Transaction) => void
   /** Show the payee instead of the account name in an account-scoped view. */
   showPayee?: boolean
   /** Localize synthetic opening-balance descriptions only in account detail. */
   localizeOpeningBalance?: boolean
+  /**
+   * Show the "new" dot. Opt-in: only a caller whose click clears the marker
+   * should show it, or the dot would stay after the row is opened.
+   */
+  showUnread?: boolean
 }
 
 export function MobileTransactionRow({
@@ -52,8 +60,10 @@ export function MobileTransactionRow({
   userCurrency,
   onSelect,
   onClick,
+  onMakeRecurring,
   showPayee = false,
   localizeOpeningBalance = false,
+  showUnread = false,
 }: MobileTransactionRowProps) {
   const { mask } = usePrivacyMode()
   const { t } = useTranslation()
@@ -72,6 +82,35 @@ export function MobileTransactionRow({
       : 'text-rose-500'
 
   const virtual = tx.virtual === true
+
+  // Badges that ride under the description. They are listed once here so the
+  // row only renders the badge line when at least one of them is on.
+  const showGroupBadge = !!tx.group_id
+  const showUnreadDot = showUnread && tx.is_read === false && !tx.is_shared
+  const showSplitBadge = isSplitByCategory(tx)
+  const showTransferIcon = isTransferTransaction(tx)
+  const showExcludedIcon = tx.exclude_from_pnl && !tx.is_ignored
+  const showUnpaidIcon = tx.is_paid === false
+  const showRecurringBadge = tx.recurring_transaction_id != null && !virtual
+  const showInstallmentBadge = tx.installment_number != null && tx.total_installments != null
+  const showPendingBadge = shouldShowPendingBadge(tx)
+  const showAttachmentIcon = (tx.attachment_count ?? 0) > 0
+  const pocketCount = tx.goal_allocations?.length ?? 0
+  const hasBadges =
+    pocketCount > 0 ||
+    showGroupBadge ||
+    showUnreadDot ||
+    showSplitBadge ||
+    showTransferIcon ||
+    virtual ||
+    tx.is_ignored ||
+    showExcludedIcon ||
+    tx.is_flagged === true ||
+    showUnpaidIcon ||
+    showRecurringBadge ||
+    showInstallmentBadge ||
+    showPendingBadge ||
+    showAttachmentIcon
 
   return (
     <div
@@ -113,66 +152,90 @@ export function MobileTransactionRow({
 
       {/* Content */}
       <div className="min-w-0 flex-1">
-        {/* Description row */}
-        <div className="flex items-center gap-1.5">
-          <p className={`text-sm font-semibold text-foreground leading-tight min-w-0 ${hasWordBreaks(description) ? 'break-words whitespace-normal' : 'truncate'}`}>
-            {description}
-          </p>
-          {tx.group_id && (
-            <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1 py-0.5 rounded-full shrink-0">
-              {tx.is_shared && tx.parent_owner_name ? tx.parent_owner_name : t('splitGroups.ownerRowBadge', { group: groupName ?? '' })}
-            </span>
-          )}
-          {isSplitByCategory(tx) && <CategorySplitBadge tx={tx} compact className="shrink-0 text-[9px] px-1" />}
-          {isTransferTransaction(tx) && (
-            <ArrowLeftRight
-              className="h-3 w-3 text-blue-600 shrink-0"
-              aria-label={t('transactions.transfer')}
-            />
-          )}
-          {(tx.goal_allocations?.length ?? 0) > 0 && (
-            <span
-              className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-violet-700 dark:text-violet-300 shrink-0"
-              title={tx.goal_allocations?.map(item => item.goal_name).join(', ')}
-            >
-              <WalletCards className="h-3 w-3" />
-              {tx.goal_allocations?.length}
-            </span>
-          )}
-          {virtual && (
-            <CalendarClock className="h-3 w-3 text-primary shrink-0" />
-          )}
-          {tx.is_ignored && (
-            <EyeClosed className="h-3 w-3 text-gray-500 shrink-0" />
-          )}
-          {tx.exclude_from_pnl && !tx.is_ignored && (
-            <ChartNoAxesColumn
-              className="h-3 w-3 text-slate-500 shrink-0"
-              aria-label={t('transactions.excludedFromReports')}
-            />
-          )}
-          {tx.recurring_transaction_id != null && !virtual && (
-            <span className="text-[9px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1 py-0.5 rounded-full shrink-0">
-              R
-            </span>
-          )}
-          {tx.installment_number != null && tx.total_installments != null && (
-            <span className="text-[9px] font-bold tabular-nums text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 px-1 py-0.5 rounded-full shrink-0">
-              {tx.installment_number}/{tx.total_installments}
-            </span>
-          )}
-          {shouldShowPendingBadge(tx) && (
-            <span
-              title={t('transactions.pending')}
-              className="shrink-0 inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10"
-            >
-              <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
-            </span>
-          )}
-          {(tx.attachment_count ?? 0) > 0 && (
-            <Paperclip size={11} className="text-muted-foreground shrink-0" />
-          )}
-        </div>
+        {/* Description gets its own line with the row's full width: sharing
+            it with the badges left it a few characters wide on a phone and
+            broke words in the middle (#433). The badges wrap below. */}
+        <p className={`text-sm font-semibold text-foreground leading-tight ${hasWordBreaks(description) ? 'break-words whitespace-normal' : 'truncate'}`}>
+          {description}
+        </p>
+        {hasBadges && (
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5" data-testid="transaction-badges">
+            {showGroupBadge && (
+              <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1 py-0.5 rounded-full shrink-0">
+                {tx.is_shared && tx.parent_owner_name ? tx.parent_owner_name : t('splitGroups.ownerRowBadge', { group: groupName ?? '' })}
+              </span>
+            )}
+            {showUnreadDot && (
+              <span
+                className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500"
+                title={t('transactions.newBadge')}
+                role="img"
+                aria-label={t('transactions.newBadge')}
+              />
+            )}
+            {showSplitBadge && <CategorySplitBadge tx={tx} compact className="shrink-0 text-[9px] px-1" />}
+            {showTransferIcon && (
+              <ArrowLeftRight
+                className="h-3 w-3 text-blue-600 shrink-0"
+                aria-label={t('transactions.transfer')}
+              />
+            )}
+            {pocketCount > 0 && (
+              <span
+                className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-violet-700 dark:text-violet-300 shrink-0"
+                title={tx.goal_allocations?.map(item => item.goal_name).join(', ')}
+              >
+                <WalletCards className="h-3 w-3" />
+                {pocketCount}
+              </span>
+            )}
+            {virtual && (
+              <CalendarClock className="h-3 w-3 text-primary shrink-0" />
+            )}
+            {tx.is_ignored && (
+              <EyeClosed className="h-3 w-3 text-gray-500 shrink-0" />
+            )}
+            {showExcludedIcon && (
+              <ChartNoAxesColumn
+                className="h-3 w-3 text-slate-500 shrink-0"
+                aria-label={t('transactions.excludedFromReports')}
+              />
+            )}
+            <TransactionFlagMarker tx={tx} locale={dateLocale ?? locale} className="[&>svg]:h-3 [&>svg]:w-3" />
+            {/* Unpaid (issue #15). The mark itself is flipped in the dialog the
+                row opens; here it only says the money has not moved. */}
+            {showUnpaidIcon && (
+              <CircleDashed
+                className="h-3 w-3 shrink-0 text-amber-500"
+                role="img"
+                aria-label={t('transactions.unpaid')}
+              >
+                <title>{t('transactions.unpaid')}</title>
+              </CircleDashed>
+            )}
+            {showRecurringBadge && (
+              <span className="text-[9px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1 py-0.5 rounded-full shrink-0">
+                R
+              </span>
+            )}
+            {showInstallmentBadge && (
+              <span className="text-[9px] font-bold tabular-nums text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 px-1 py-0.5 rounded-full shrink-0">
+                {tx.installment_number}/{tx.total_installments}
+              </span>
+            )}
+            {showPendingBadge && (
+              <span
+                title={t('transactions.pending')}
+                className="shrink-0 inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10"
+              >
+                <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
+              </span>
+            )}
+            {showAttachmentIcon && (
+              <Paperclip size={11} className="text-muted-foreground shrink-0" />
+            )}
+          </div>
+        )}
 
         {/* Account row or payee row */}
         {showPayee ? (
@@ -224,6 +287,22 @@ export function MobileTransactionRow({
           </div>
         )}
       </div>
+
+      {/* The phone list has no context menu, so the bill action sits on the
+          row itself. */}
+      {onMakeRecurring && (
+        <button
+          type="button"
+          aria-label={t('transactions.makeRecurring')}
+          onClick={(e) => {
+            e.stopPropagation()
+            onMakeRecurring(tx)
+          }}
+          className="shrink-0 rounded-md p-2 -me-1 text-muted-foreground hover:bg-muted hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+        >
+          <Repeat size={16} />
+        </button>
+      )}
     </div>
   )
 }

@@ -1044,12 +1044,12 @@ async def test_deleting_user_cannot_leave_pocket_funded_by_their_deposit_negativ
 
 
 def _migrate(connection, direction):
-    path = Path(__file__).resolve().parent.parent / "alembic/versions/128_goal_pockets.py"
+    path = Path(__file__).resolve().parent.parent / "alembic/versions/132_goal_pockets.py"
     spec = importlib.util.spec_from_file_location("goal_pockets_migration", path)
     assert spec is not None and spec.loader is not None
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
-    assert (migration.revision, migration.down_revision) == ("128", "127")
+    assert (migration.revision, migration.down_revision) == ("132", "131")
     with Operations.context(MigrationContext.configure(connection)):
         getattr(migration, direction)()
 

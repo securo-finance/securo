@@ -16,6 +16,8 @@ from app.core.workspace_context import (
 )
 from app.schemas.account import (
     AccountCreate,
+    AccountCardRead,
+    AccountCardsUpdate,
     AccountRead,
     AccountRunningBalancePoint,
     LoanBalanceAdjustment,
@@ -64,6 +66,15 @@ async def _convert_to_primary(session: AsyncSession, acc: dict, primary_currency
     if acc["open_bill_total"] is not None:
         bill = Decimal(str(acc["open_bill_total"])) * rate
         acc["open_bill_total_primary"] = float(bill.quantize(Decimal("0.01")))
+
+
+@router.get("/linked-cards", response_model=list[AccountCardRead])
+async def list_linked_cards(
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """List provider-discovered card endings for the current workspace."""
+    return await account_service.get_workspace_linked_cards(session, ctx.workspace.id)
 
 
 @router.get("/{account_id}/summary", response_model=AccountSummary)
@@ -219,6 +230,36 @@ async def adjust_loan_balance(
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loan account not found")
     return result
+
+
+@router.get("/{account_id}/linked-cards", response_model=list[AccountCardRead])
+async def get_linked_cards(
+    account_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    cards = await account_service.get_linked_cards(session, account_id, ctx.workspace.id)
+    if cards is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+    return cards
+
+
+@router.patch("/{account_id}/linked-cards", response_model=list[AccountCardRead])
+async def update_linked_cards(
+    account_id: uuid.UUID,
+    data: AccountCardsUpdate,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        cards = await account_service.update_linked_card_labels(
+            session, account_id, ctx.workspace.id, data.cards
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    if cards is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+    return cards
 
 
 @router.get("/{account_id}", response_model=AccountRead)

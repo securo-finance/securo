@@ -10,6 +10,19 @@ class PluginFieldRead(BaseModel):
     label: dict[str, str]
     secret: bool
     required: bool
+    type: Literal["text", "file"] = "text"
+    accept: list[str] = Field(default=[], description="For a file: the extensions it takes; empty for any.")
+    max_kb: int = Field(default=512, description="For a file: the largest it takes, in KB.")
+
+
+class PluginRoutineRead(BaseModel):
+    """A routine an integration runs on its own schedule (ADR 0035)."""
+
+    key: str
+    name: dict[str, str]
+    description: dict[str, str] | None = None
+    every_minutes: int
+    timeout_seconds: int | None = None
 
 
 class PluginIntegrationRead(BaseModel):
@@ -19,6 +32,7 @@ class PluginIntegrationRead(BaseModel):
     auth: Literal["credentials", "oauth", "none"]
     fields: list[PluginFieldRead] = []
     sync_minutes: int | None = None
+    routines: list[PluginRoutineRead] = []
     provides: list[str] | None = Field(
         default=None, description="Records it syncs as a connected bank: accounts, transactions, bills, holdings, trades."
     )
@@ -43,6 +57,26 @@ class PluginThemeRead(BaseModel):
     font: Literal["sans", "mono", "serif"] | None = None
 
 
+class PluginReportDefinitionRead(BaseModel):
+    """A report a plugin adds to the library: what it adds up and how it's drawn."""
+
+    key: str
+    name: dict[str, str]
+    description: dict[str, str] | None = None
+    code: bool = False
+    inputs: list[Literal["transactions", "accounts", "categories"]] = []
+    measure: Literal["expenses", "income", "net"]
+    group_by: Literal["category", "category_group", "payee", "account", "month"] | None = None
+    chart: Literal["bar", "line", "area", "pie", "table"]
+
+
+class PluginWidgetDefinitionRead(PluginReportDefinitionRead):
+    """A dashboard widget a plugin adds to the library (ADR 0034): a report sized for a card."""
+
+    width: Literal["third", "half", "two_thirds", "full"] = "half"
+    period: Literal["month", "year_to_date", "last_12_months"] = "month"
+
+
 class InstalledPluginRead(BaseModel):
     """A catalog plugin installed in this workspace, as recorded here: no catalog needed."""
 
@@ -58,6 +92,8 @@ class InstalledPluginRead(BaseModel):
         default=None, description="For sign-in integrations: the address to register with the service."
     )
     themes: list[PluginThemeRead] = Field(default=[], description="Themes it adds to the library.")
+    reports: list[PluginReportDefinitionRead] = Field(default=[], description="Reports it adds to the library.")
+    widgets: list[PluginWidgetDefinitionRead] = Field(default=[], description="Dashboard widgets it adds to the library.")
 
 
 class PluginCatalogRead(BaseModel):
@@ -136,6 +172,8 @@ class PluginContentsRead(BaseModel):
     network: list[PluginHostRead] = []
     api_scopes: list[PluginScopeRead] = []
     themes: list[PluginThemeRead] = []
+    reports: list[PluginReportDefinitionRead] = []
+    widgets: list[PluginWidgetDefinitionRead] = []
 
 
 class PluginDetailRead(BaseModel):
@@ -224,6 +262,19 @@ class PluginConnectionRead(BaseModel):
     last_sync_at: datetime | None
     last_error: str | None
     created_at: datetime
+    routines: list["PluginConnectionRoutineRead"] = []
+
+
+class PluginConnectionRoutineRead(BaseModel):
+    """How one routine of a connection last ran. Its state stays with the plugin."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    key: str = Field(validation_alias="routine")
+    every_minutes: int
+    last_run_at: datetime | None
+    last_error: str | None
+    failures: int
 
 
 class PluginConnectionCreate(BaseModel):
@@ -260,3 +311,4 @@ class PluginApplyRequest(BaseModel):
 
 
 PluginPlanRead.model_rebuild()
+PluginConnectionRead.model_rebuild()

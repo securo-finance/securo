@@ -1,9 +1,12 @@
+import asyncio
 import base64
 import hashlib
 import json
+import logging
 import secrets
+import time
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -30,11 +33,19 @@ from app.services.workspace_service import create_personal_workspace_for_user
 router = APIRouter(prefix="/api/auth/oidc", tags=["auth"])
 OIDC_STATE_TTL = 600
 
+logger = logging.getLogger(__name__)
+
 
 class OIDCConfigResponse(BaseModel):
     enabled: bool
     provider_name: str = "OIDC"
     local_auth_enabled: bool = True
+
+
+class OIDCLogoutUrlResponse(BaseModel):
+    # Where the browser goes after the local sign-out so the provider's own
+    # session ends too (#1623); empty when there is nowhere to send it.
+    logout_url: str = ""
 
 
 async def _discover() -> dict[str, Any]:
@@ -54,6 +65,145 @@ def _redirect_uri() -> str:
     return settings.oidc_redirect_uri or f"{settings.frontend_url.rstrip('/')}/api/auth/oidc/callback"
 
 
+def _with_client_id(url: str, client_id: str) -> str:
+    """Add `client_id` to a logout URL that doesn't carry it yet.
+
+    Keycloak needs either `id_token_hint` or `client_id` to end the session;
+    Securo keeps only its own JWT, so the client id is what it can send.
+    """
+    parts = urlsplit(url)
+    query = parse_qsl(parts.query, keep_blank_values=True)
+    if client_id and not any(key == "client_id" for key, _ in query):
+        query.append(("client_id", client_id))
+    return urlunsplit(parts._replace(query=urlencode(query)))
+
+
+def _safe_logout_url(url: str, client_id: str) -> str:
+    """`_with_client_id`, but an unparsable URL answers "" instead of raising.
+
+    `urlsplit` raises `ValueError` on a broken URL (`https://[broken`). The
+    local sign-out already happened by then, so the logout-url route must
+    keep answering rather than fail over a logout hint.
+    """
+    try:
+        return _with_client_id(url, client_id)
+    except ValueError:
+        return ""
+
+
+_LOGOUT_URL_TTL = 300.0
+# A discovery that failed is cached too, but briefly: caching the empty answer
+# for the full TTL turned one hiccup into five minutes without provider logout
+# (#1639). Long enough to spare a down provider a burst of sign-outs.
+_LOGOUT_URL_FAILURE_TTL = 30.0
+# The sign-out waits on this answer and the browser gives up at 10 s; the
+# discovery has to answer well inside it, or the redirect is silently skipped
+# (#1623). A hung lookup is cached too, so it does not delay every sign-out.
+_LOGOUT_DISCOVERY_TIMEOUT = 3.0
+# (monotonic time, discovery url + client id it was read for, resolved URL,
+# whether the discovery answered at all)
+_logout_url_cache: tuple[float, str, str, bool] | None = None
+
+
+def _loggable_url(url: str) -> str:
+    """`url` with only scheme, host, port and path, for a log line.
+
+    A discovery URL can carry a credential in its userinfo or a token in its
+    query; neither belongs in the log. Only the log sees this: discovery keeps
+    reading the configured URL as it is.
+    """
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname or ""
+        if ":" in host:
+            host = f"[{host}]"
+        netloc = f"{host}:{parts.port}" if parts.port else host
+    except ValueError:
+        return "<unparsable discovery URL>"
+    return urlunsplit((parts.scheme, netloc, parts.path, "", ""))
+
+
+def _logout_failure_reason(error: BaseException) -> str:
+    """Why discovery failed, in words an operator can act on. The caller
+    masks the discovery URL in it; the client secret is not read here."""
+    if isinstance(error, (asyncio.TimeoutError, TimeoutError)):
+        return f"discovery timed out after {_LOGOUT_DISCOVERY_TIMEOUT:g}s"
+    if isinstance(error, httpx.HTTPStatusError):
+        return f"discovery answered HTTP {error.response.status_code}"
+    if isinstance(error, httpx.HTTPError):
+        return f"discovery request failed ({type(error).__name__}: {error})"
+    if isinstance(error, HTTPException):
+        return f"discovery is not available (HTTP {error.status_code}: {error.detail})"
+    return f"discovery failed ({type(error).__name__}: {error})"
+
+
+async def _provider_logout_url() -> str:
+    """Where to send the browser so the provider's own session ends (#1623).
+
+    An explicit `OIDC_LOGOUT_URL` wins; otherwise the discovery document's
+    `end_session_endpoint`. Cached because the route is public and the document
+    rarely changes: a few minutes for an answer, seconds for a failure, so one
+    hiccup does not disable provider sign-out for long (#1639). Every failure
+    answers "": the local sign-out already happened and must never wait on the
+    provider.
+
+    A failure is logged once, where it is cached: `/logout-url` takes no
+    authentication, so a down provider would otherwise write one line per
+    call. Until the cache window ends, sign-out is local-only and this
+    warning is the only sign of it. This is the only route that talks to the
+    provider; `/config` must stay local, because the sign-in page blocks on
+    it to decide what to show.
+    """
+    global _logout_url_cache
+    settings = get_settings()
+    if not settings.oidc_login_available:
+        return ""
+    if settings.oidc_logout_url:
+        return _safe_logout_url(settings.oidc_logout_url, settings.oidc_client_id)
+
+    cache_key = f"{settings.oidc_discovery_url}|{settings.oidc_client_id}"
+    now = time.monotonic()
+    if _logout_url_cache is not None and _logout_url_cache[1] == cache_key:
+        cached_at, _cached_key, cached_url, discovery_answered = _logout_url_cache
+        ttl = _LOGOUT_URL_TTL if discovery_answered else _LOGOUT_URL_FAILURE_TTL
+        if now - cached_at < ttl:
+            return cached_url
+    failure_reason: str | None = None
+    try:
+        discovery = await asyncio.wait_for(
+            _discover(), timeout=_LOGOUT_DISCOVERY_TIMEOUT
+        )
+        raw_endpoint = discovery.get("end_session_endpoint") if isinstance(discovery, dict) else None
+        endpoint = raw_endpoint if isinstance(raw_endpoint, str) else ""
+    # Every failure has the same answer, including the ones httpx raises
+    # outside HTTPError: InvalidURL for an unparsable URL, and an
+    # ExceptionGroup(OverflowError) for an out-of-range port.
+    except Exception as exc:
+        endpoint = ""
+        discovery_answered = False
+        failure_reason = _logout_failure_reason(exc)
+    else:
+        discovery_answered = True
+    url = _safe_logout_url(endpoint, settings.oidc_client_id) if endpoint else ""
+    if failure_reason is None and endpoint and not url:
+        failure_reason = "the end_session_endpoint is not a usable URL"
+    if failure_reason is not None:
+        raw_url = settings.oidc_discovery_url
+        log_url = _loggable_url(raw_url)
+        # An httpx error can quote the URL it was asked for; mask it there too.
+        if raw_url:
+            failure_reason = failure_reason.replace(raw_url, log_url)
+        logger.warning(
+            "OIDC logout discovery failed for %s: %s. SSO sign-out stays off "
+            "until it answers; the empty answer is cached and retried when "
+            "the window ends.",
+            log_url,
+            failure_reason,
+        )
+    _logout_url_cache = (now, cache_key, url, discovery_answered)
+    return url
+
+
 @router.get("/config", response_model=OIDCConfigResponse)
 async def oidc_config():
     settings = get_settings()
@@ -62,6 +212,12 @@ async def oidc_config():
         provider_name=settings.oidc_provider_name or "OIDC",
         local_auth_enabled=settings.local_auth_enabled,
     )
+
+
+@router.get("/logout-url", response_model=OIDCLogoutUrlResponse)
+async def oidc_logout_url():
+    """Only the sign-out asks this: it may reach the provider (#1623)."""
+    return OIDCLogoutUrlResponse(logout_url=await _provider_logout_url())
 
 
 @router.get("/login")

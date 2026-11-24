@@ -665,6 +665,30 @@ async def test_import_placeholder_takes_the_files_fx_rate(
 
 
 @pytest.mark.asyncio
+async def test_import_placeholder_rate_keeps_a_typed_account_amount(
+    session, test_user, test_workspace, test_account
+):
+    """The file's rate restamps the reporting value only: the same charge keeps
+    the account amount the user typed (ADR 0027)."""
+    account_id = test_account.id
+    placeholder_id = await _usd_placeholder(session, test_workspace, test_user, test_account)
+    placeholder = await session.get(Transaction, placeholder_id)
+    assert placeholder is not None
+    placeholder.amount_account, placeholder.amount_account_source = Decimal("95.00"), "user"
+    await session.commit()
+
+    txns = [TransactionImport(description="NETFLIX SUBSCRIPTION", amount=Decimal("18.43"),
+                              date=date(2026, 1, 11), type="debit", currency="USD",
+                              fx_rate=Decimal("5.28"))]
+    await _run_import(session, test_workspace, test_user, account_id, txns, stamp=AsyncMock())
+
+    txs = await _real_txs(session, account_id)
+    await session.refresh(txs[0])
+    assert txs[0].amount_primary == Decimal("97.31")
+    assert txs[0].amount_account == Decimal("95.00")
+
+
+@pytest.mark.asyncio
 async def test_import_placeholder_without_a_rate_is_not_restamped(
     session, test_user, test_workspace, test_account
 ):

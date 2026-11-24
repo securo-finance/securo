@@ -9,7 +9,7 @@ from sqlalchemy import select, func, desc, or_, update as sa_update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.app_clock import app_today
+from app.core.app_clock import app_timezone, app_today
 from app.models.account import Account
 from app.models.asset import (
     ASSET_PRICE_DECIMALS,
@@ -26,7 +26,14 @@ from app.providers.market_price import (
     MarketPriceRateLimitedError,
     get_market_price_provider,
 )
-from app.schemas.asset import AssetCreate, AssetUpdate, AssetValueCreate, AssetRead, AssetValueRead
+from app.schemas.asset import (
+    AssetCreate,
+    AssetUpdate,
+    AssetValueCreate,
+    AssetRead,
+    AssetValueRead,
+    MarketSymbolMatch,
+)
 from app.services.asset_group_service import ensure_group_in_workspace
 from app.services.fx_rate_service import convert, convert_or_none, has_rate, stamp_primary_amount
 
@@ -253,10 +260,90 @@ def split_units(quantity: Decimal, old_units: int, new_units: int) -> Decimal:
     return (quantity * new_units / old_units).quantize(_UNIT_STEP, rounding=ROUND_DOWN)
 
 
+def _normalize_symbol_text(value: Optional[str]) -> str:
+    """Case- and punctuation-insensitive form used to compare a query to a row."""
+    return "".join(ch for ch in (value or "").casefold() if ch.isalnum())
+
+
+def _quote_currency(symbol: str) -> Optional[str]:
+    """The quote currency of a pair symbol (`CRO-EUR` → `EUR`), else None."""
+    base, sep, quote = (symbol or "").partition("-")
+    if not sep or not base or not quote:
+        return None
+    return quote.upper()
+
+
+def _is_crypto_match(match: MarketSymbolMatch) -> bool:
+    quote_type = (match.quote_type or "").upper()
+    exchange = (match.exchange or "").upper()
+    return quote_type == "CRYPTOCURRENCY" or exchange in {"CCC", "CCY"}
+
+
+def _match_score(match: MarketSymbolMatch, query_norm: str) -> int:
+    """How exactly a result answers the query; lower is a closer match."""
+    symbol = match.symbol or ""
+    if _normalize_symbol_text(symbol) == query_norm:
+        return 0
+    base, sep, quote = symbol.partition("-")
+    # A pair is named by its base: "BTC-USD" is how Yahoo lists "BTC".
+    if sep and quote and _normalize_symbol_text(base) == query_norm:
+        return 0
+    if _normalize_symbol_text(base) == query_norm:
+        return 1
+    name_norm = _normalize_symbol_text(match.name)
+    if name_norm == query_norm:
+        return 2
+    if name_norm.startswith(query_norm):
+        return 3
+    return 4
+
+
+def rank_symbol_matches(
+    matches: Sequence[MarketSymbolMatch],
+    query: str,
+    preferred_currency: Optional[str] = None,
+) -> list[MarketSymbolMatch]:
+    """Order ticker suggestions so the one the user most likely means comes first.
+
+    Yahoo answers a coin name with one row per currency pair (`CRO-EUR`,
+    `CRO-USD`, ...) and with unrelated assets whose names merely resemble the
+    query, in no useful order (issue #621). Nothing is filtered out — the
+    user still picks — but the rows are ranked: an exact symbol or name beats
+    a similar one, and when the query names a cryptocurrency its pairs move
+    ahead of the rest, the pair quoted in `preferred_currency` first and
+    USD after it. Ties keep the provider's own order.
+    """
+    query_norm = _normalize_symbol_text(query)
+    if not query_norm or len(matches) < 2:
+        return list(matches)
+
+    preferred = (preferred_currency or "").strip().upper()
+    scored = [(match, _match_score(match, query_norm)) for match in matches]
+    # Only push crypto ahead when the query actually names one: a bare "gold"
+    # should not rank a gold-backed token above the gold ETFs.
+    crypto_first = any(score <= 3 and _is_crypto_match(match) for match, score in scored)
+
+    def sort_key(entry: tuple[MarketSymbolMatch, int]) -> tuple[int, int, int]:
+        match, score = entry
+        if crypto_first and _is_crypto_match(match):
+            quote = _quote_currency(match.symbol)
+            currency_rank = 0 if quote == preferred else 1 if quote == "USD" else 2
+            return (score, 0, currency_rank)
+        # The query names no coin (or this row is not one): at the same score a
+        # non-crypto instrument goes first, so "gold" keeps the gold ETFs above
+        # a gold-backed token. No symbol in the key: equal rows keep the
+        # provider's own order (sorted() is stable).
+        return (score, 1, int(_is_crypto_match(match)))
+
+    return [match for match, _ in sorted(scored, key=sort_key)]
+
+
 def build_market_value_series(
     value_rows: list[ValueRecord],
     txs: list[TxRecord],
     splits: Sequence[SplitRecord] = (),
+    has_ledger: bool = False,
+    keep_stored_amounts: bool = False,
 ) -> list[tuple[date, float]]:
     """Rebuild a market-priced holding's value series from the ledger.
 
@@ -284,9 +371,18 @@ def build_market_value_series(
 
     A holding with no ledger at all (e.g. a pre-ledger "no cost" position that
     still has a stored quantity) keeps its baked amounts — replaying an empty
-    ledger would wrongly zero it out.
+    ledger would wrongly zero it out. `has_ledger` says the holding has trades
+    outside `txs` (the caller cut the ledger at a date): it is then valued by
+    the replay like any other range, so a date reads the same wherever the
+    range ends.
+
+    `keep_stored_amounts` is for a holding a provider syncs: a stored point
+    keeps the amount the provider reported on its date (which may differ from
+    its unit price × units, e.g. a net balance against a quote), so the chart
+    agrees with the holding's current value; only the trade dates in between
+    are replayed. Its price still carries forward to those dates.
     """
-    if not txs:
+    if not txs and not has_ledger:
         return [(d, float(amount)) for d, amount, _ in value_rows]
 
     # Net quantity change per trade date, plus a representative per-share price
@@ -331,13 +427,67 @@ def build_market_value_series(
             # Once market prices begin they take over and carry forward.
             last_price = tx_price[d]
 
-        if d in value_by_date and price is None:
-            out.append((d, float(amount)))  # stored point with no per-share price
+        if d in value_by_date and (price is None or keep_stored_amounts):
+            # A stored point with no per-share price, or the provider's own figure.
+            out.append((d, float(amount)))
         elif last_price is not None:
             out.append((d, float(last_price * held)))
         else:
             out.append((d, float(amount)))
     return out
+
+
+
+def _replays_provider_ledger(asset: Asset) -> bool:
+    """A synced holding whose chart may come from its provider's trades."""
+    return asset.valuation_method != "market_price" and asset.connection_id is not None and bool(asset.source)
+
+
+def _ledger_valued(asset: Asset, provider_units: Optional[tuple[Decimal, Decimal, Optional[Decimal]]]) -> bool:
+    """Whether the asset's chart is its ledger replayed (units held each day x price).
+
+    Market-priced holdings always are. A holding a bank connection syncs is
+    while its provider's trades (`provider_units`: their buys minus sells,
+    their largest lot and the hand trades' buys minus sells, None without any
+    provider trade) add up to the units the provider reports, within the
+    tolerance the import checked them with: they carry each buy and sale on its
+    own date, which the stored values (one per sync) cannot. A set that stopped
+    adding up (the sync kept an older ledger) falls back to the stored values,
+    and trades entered by hand never count.
+
+    A trade recorded by hand recomputes `units` from the whole ledger, so until
+    the next sync puts back the provider's count they are the provider's plus
+    the hand trades'. Either matches. A hand split can't be netted out
+    (the hand net is None), so only the stored units count then.
+    """
+    if asset.valuation_method == "market_price":
+        return True
+    if not _replays_provider_ledger(asset) or provider_units is None or asset.units is None:
+        return False
+    units = Decimal(str(asset.units))
+    net, largest_lot, by_hand = provider_units
+    targets = [units] if not by_hand else [units, units - by_hand]
+    # The import's tolerance (connection_service._reconciled_trades): one
+    # millionth of the largest lot, at least 0.0001.
+    largest = max(abs(units), largest_lot)
+    tolerance = max(Decimal("0.0001"), largest * Decimal("0.000001"))
+    return any(abs(net - target) <= tolerance for target in targets)
+
+
+def _provider_units(asset: Asset, rows) -> Optional[tuple[Decimal, Decimal, Optional[Decimal]]]:
+    """Of `rows` of (kind, quantity, source): the asset's own provider's buys minus sells and its largest lot, and
+    the other rows' buys minus sells (None when one of them is a split, which a net can't express)."""
+    mine = [
+        (kind, Decimal(str(qty))) for kind, qty, source in rows if source == asset.source and kind in ("buy", "sell")
+    ]
+    if not mine:
+        return None
+    net = sum((q if k == "buy" else -q for k, q in mine), Decimal(0))
+    others = [(kind, Decimal(str(qty or 0))) for kind, qty, source in rows if source != asset.source]
+    by_hand: Optional[Decimal] = sum((q if k == "buy" else -q for k, q in others if k in ("buy", "sell")), Decimal(0))
+    if any(k == "split" for k, _ in others):
+        by_hand = None
+    return net, max(q for _, q in mine), by_hand
 
 
 async def _load_asset_native_values(
@@ -370,19 +520,33 @@ async def _load_asset_native_values(
     for aid, d, amt, price in rows:
         raw[str(aid)].append((d, amt, price))
 
-    # Bulk-load the ledger for market-priced holdings (one query).
-    market_ids = [a.id for a in assets if a.valuation_method == "market_price"]
+    # Bulk-load the ledger for market-priced and synced holdings (one query).
+    market_ids = [a.id for a in assets if a.valuation_method == "market_price" or a.connection_id is not None]
     txs_by_aid: dict[str, list[TxRecord]] = {}
     splits_by_aid: dict[str, list[SplitRecord]] = {}
+    # Holdings with any trade, before the cutoff: whether a holding has a
+    # ledger must not depend on where the range ends.
+    ledger_ids: set[str] = set()
+    by_id = {str(a.id): a for a in assets}
+    provider_rows: dict[str, list[tuple[str, Any, Optional[str]]]] = {}
     if market_ids:
         tq = select(
             AssetTransaction.asset_id, AssetTransaction.date,
             AssetTransaction.kind, AssetTransaction.quantity, AssetTransaction.price,
-            AssetTransaction.old_units, AssetTransaction.new_units,
+            AssetTransaction.old_units, AssetTransaction.new_units, AssetTransaction.source,
         ).where(AssetTransaction.asset_id.in_(market_ids))
-        if up_to_date is not None:
-            tq = tq.where(AssetTransaction.date <= up_to_date)
-        for aid, d, kind, qty, price, old_units, new_units in (await session.execute(tq)).all():
+        for aid, d, kind, qty, price, old_units, new_units, source in (await session.execute(tq)).all():
+            owner = by_id[str(aid)]
+            if _replays_provider_ledger(owner):
+                # Every row decides whether the provider's trades add up (hand trades
+                # are netted out there); a synced holding replays only its provider's.
+                provider_rows.setdefault(str(aid), []).append((kind, qty, source))
+                if source != owner.source:
+                    continue
+            if kind != "split":
+                ledger_ids.add(str(aid))
+            if up_to_date is not None and d > up_to_date:
+                continue
             if kind == "split":
                 # A split has no quantity or price of its own; replaying it as a
                 # "sell of 0" would leave the units unchanged.
@@ -395,9 +559,11 @@ async def _load_asset_native_values(
     values_map: dict[str, list[tuple[date, float]]] = {}
     for asset in assets:
         aid = str(asset.id)
-        if asset.valuation_method == "market_price":
+        if _ledger_valued(asset, _provider_units(asset, provider_rows.get(aid, []))):
             values_map[aid] = build_market_value_series(
-                raw[aid], txs_by_aid.get(aid, []), splits_by_aid.get(aid, [])
+                raw[aid], txs_by_aid.get(aid, []), splits_by_aid.get(aid, []),
+                has_ledger=aid in ledger_ids,
+                keep_stored_amounts=_replays_provider_ledger(asset),
             )
         else:
             values_map[aid] = [(d, float(amt)) for d, amt, _ in raw[aid]]
@@ -973,25 +1139,32 @@ async def get_asset_value_trend(
         )
     ).all()
 
-    if asset.valuation_method == "market_price":
+    txs = []
+    if asset.valuation_method == "market_price" or asset.connection_id is not None:
         txs = (
             await session.execute(
                 select(
                     AssetTransaction.date, AssetTransaction.kind,
                     AssetTransaction.quantity, AssetTransaction.price,
                     AssetTransaction.old_units, AssetTransaction.new_units,
+                    AssetTransaction.source,
                 )
                 .where(AssetTransaction.asset_id == asset_id)
             )
         ).all()
+    provider_units = _provider_units(asset, [(k, q, src) for _, k, q, _, _, _, src in txs])
+    if _replays_provider_ledger(asset):
+        txs = [tx for tx in txs if tx[-1] == asset.source]
+    if _ledger_valued(asset, provider_units):
         series = build_market_value_series(
             [(d, a, p) for d, a, p in rows],
             [
                 (d, k, Decimal(str(q)), Decimal(str(pr)) if pr is not None else None)
-                for d, k, q, pr, _, _ in txs
+                for d, k, q, pr, _, _, _ in txs
                 if k != "split"
             ],
-            [(d, old, new) for d, k, _, _, old, new in txs if k == "split"],
+            [(d, old, new) for d, k, _, _, old, new, _ in txs if k == "split"],
+            keep_stored_amounts=_replays_provider_ledger(asset),
         )
         return [{"date": d.isoformat(), "amount": v} for d, v in series]
 
@@ -1078,6 +1251,11 @@ async def get_portfolio_trend(
 
         for d, _ in vals:
             all_dates.add(d)
+        # The drop to 0 needs a point after the sale; without one the last
+        # row, and so the total, still counts the sold asset.
+        if vals and asset.sell_date is not None and asset.sell_date < app_today():
+            all_dates.add(asset.sell_date)
+            all_dates.add(asset.sell_date + timedelta(days=1))
 
     if not all_dates:
         return {"assets": asset_meta, "trend": [], "total": 0.0}
@@ -1307,7 +1485,30 @@ async def refresh_market_price_asset(
     if quote is None or quote.price is None:
         return False
 
-    await _apply_price_to_asset(session, asset, Decimal(str(quote.price)))
+    # The quote carries no trading day. On a split day, before the market
+    # opens, it is the previous session's close per pre-split unit, and stored
+    # under today it would be multiplied by the units after the split (issue
+    # #1357). Ask for the latest close's day and wait for one from the split
+    # day on, as the batch refresh does.
+    split_on = (await _last_split_dates(session, [asset.id])).get(asset.id)
+    price = Decimal(str(quote.price))
+    if split_on is not None and quote_may_predate_split(asset.last_price_at, split_on):
+        try:
+            closes = await provider.get_latest_closes([asset.ticker])
+        except MarketPriceRateLimitedError:
+            raise
+        except Exception as e:
+            logger.warning("Latest close lookup failed for %s: %s", asset.ticker, e)
+            return False
+        close = closes.get(asset.ticker.upper())
+        if close is None or close.on is None or close.on < split_on:
+            return False
+        # The validated close carries both the trading day and the price that
+        # belongs to it. Keeping the live quote's price here would pair an
+        # undated, possibly pre-split quote with a post-split close date.
+        price = close.price
+
+    await _apply_price_to_asset(session, asset, price)
     # Opportunistic logo backfill: assets created before Brandfetch was
     # configured have no logo_url. On the next single-asset refresh (which
     # goes through the full get_quote → website lookup), stamp it in.
@@ -1317,6 +1518,24 @@ async def refresh_market_price_asset(
         asset.logo_url = quote.logo_url
     await session.flush()
     return True
+
+
+def quote_may_predate_split(last_price_at: Optional[datetime], split_on: Optional[date]) -> bool:
+    """Whether a price quoted at ``last_price_at`` can be per pre-split unit.
+
+    A quote taken on the split day itself counts: before the market opens it
+    is still the previous session's close, and the time it was taken doesn't
+    tell which session it came from.
+    """
+    if split_on is None:
+        return False
+    if last_price_at is None:
+        # Never quoted: only a split dated today leaves the latest close
+        # possibly from before it.
+        return split_on >= app_today()
+    if last_price_at.tzinfo is None:
+        last_price_at = last_price_at.replace(tzinfo=timezone.utc)
+    return split_on >= last_price_at.astimezone(app_timezone()).date()
 
 
 async def _last_split_dates(
@@ -1475,6 +1694,11 @@ async def refresh_all_market_prices(
         price: Optional[Decimal] = close.price if close is not None else None
         logo_url: Optional[str] = None
         if price is None and current.ticker:
+            if quote_may_predate_split(current.last_price_at, split_on):
+                # A single quote has no trading day, so on a split day it
+                # can't be told from the previous session's pre-split close.
+                skipped += 1
+                continue
             # Only a quote for the ticker the holding has now: one fetched
             # for the ticker it used to have belongs to another holding.
             price = fallback_quotes.get(current.ticker)

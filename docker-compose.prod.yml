@@ -8,7 +8,11 @@ x-podman:
   in_pod: false
 
 x-backend-env: &backend-env
-  DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/securo
+  # Unset keeps the historical `postgres` password, so existing installs keep
+  # working. The database only reads it when the volume is first created: on
+  # an existing install, run ALTER USER postgres PASSWORD '...' in `db` first.
+  # It is part of a URL, so use URL-safe characters (openssl rand -hex 24).
+  DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/securo
   # Optional. Left empty, Securo generates a unique key on first start and
   # keeps it in the database. Set one (openssl rand -hex 32) to manage it yourself.
   SECRET_KEY: ${SECRET_KEY:-}
@@ -55,10 +59,15 @@ x-backend-env: &backend-env
   # limiting needs to trust exactly one reverse-proxy hop to key by real
   # client IP instead of nginx's own container address. With
   # TRAEFIK_ENABLE=true there is a second proxy ahead of nginx, so the
-  # visitor's address is two hops from the right: set this to 2, and keep the
-  # frontend port unreachable directly, or that hop is an entry the client
-  # wrote itself.
+  # visitor's address is two hops from the right: set this to 2. A hop is only
+  # read past a proxy inside TRUSTED_PROXY_NETWORKS (loopback and private
+  # ranges by default), so a public visitor who reaches the backend or
+  # frontend port directly is keyed by its own address, whatever
+  # X-Forwarded-For it sends. Callers inside those networks count as proxies:
+  # if untrusted clients share those ranges, or Docker shows direct callers as
+  # the bridge gateway, list only the proxies' own addresses (ADR 0024).
   TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-1}
+  TRUSTED_PROXY_NETWORKS: ${TRUSTED_PROXY_NETWORKS:-127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7}
   REDIS_URL: redis://redis:6379/0
   BANK_SYNC_MIN_INTERVAL_HOURS: ${BANK_SYNC_MIN_INTERVAL_HOURS:-4}
   STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
@@ -122,9 +131,16 @@ x-backend-base: &backend-base
     db: { condition: service_healthy }
     redis: { condition: service_healthy }
     migrate: { condition: service_completed_successfully }
+  # `z` lets containers read the host folders on SELinux hosts (Fedora, RHEL)
+  # by relabelling them; elsewhere it does nothing.
   volumes:
-    - ./secrets:/app/secrets:ro
+    - ./secrets:/app/secrets:ro,z
     - attachments:/app/data/attachments
+    # Managed/scheduled backup ZIPs are written inside containers to /app/data/backups.
+    # Set BACKUP_HOST_PATH to expose that internal directory wherever you want on
+    # the host, e.g. BACKUP_HOST_PATH=/srv/securo/backups. Use a folder kept for
+    # backups alone: on SELinux hosts it is relabelled for container use.
+    - ${BACKUP_HOST_PATH:-./data/backups}:/app/data/backups:z
     - agent_knowledge:/app/data/agent_knowledge
     - agent_embedding_models:/app/data/embedding_models
   # `plugins` is internal: it lets the backend reach the plugin runner and
@@ -150,7 +166,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: securo
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -183,8 +199,11 @@ services:
       start_period: 30s
       retries: 12
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    # Loopback only by default: the frontend's nginx proxies /api over the
+    # Compose network, so nothing outside the host needs this port. Set
+    # BACKEND_BIND_ADDRESS=0.0.0.0 to reach it from other machines.
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      - "${BACKEND_BIND_ADDRESS:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
 
   frontend:
     image: ghcr.io/securo-finance/securo-frontend:latest

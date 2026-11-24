@@ -185,6 +185,49 @@ async def test_sync_links_and_advances_bill(session, test_user, test_workspace, 
 
 
 @pytest.mark.asyncio
+async def test_sync_marks_a_filled_placeholder_unread(
+    session, test_user, test_workspace, conn_account
+):
+    """The person knows the generated placeholder, not the bank charge that
+    replaced it, so the row rejoins the review queue (issue #636)."""
+    conn, account = conn_account
+    conn_id, account_id = conn.id, account.id
+    bill = await _make_bill(
+        session, test_workspace, test_user, account, start_date=date(2025, 1, 10)
+    )
+    placeholder = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account_id,
+        description="Netflix Subscription",
+        amount=Decimal("39.90"),
+        currency="BRL",
+        date=date(2025, 1, 10),
+        type="debit",
+        source="recurring",
+        status="posted",
+        recurring_transaction_id=bill.id,
+        is_read=True,
+    )
+    session.add(placeholder)
+    await session.commit()
+    placeholder_id = placeholder.id
+    provider = _provider([_tx(
+        external_id="read-state-1",
+        description="NETFLIX SUBSCRIPTION",
+        amount=Decimal("39.90"),
+        date=date(2025, 1, 12),
+    )])
+
+    await _run_sync(session, conn_id, test_workspace, test_user, provider)
+
+    txs = await _all_txs(session, account_id)
+    assert len(txs) == 1  # merged into the placeholder, no duplicate
+    assert txs[0].id == placeholder_id
+    assert txs[0].is_read is False
+
+
+@pytest.mark.asyncio
 async def test_sync_normalizes_before_active_recurring_match(
     session,
     test_user,
@@ -808,6 +851,42 @@ async def test_sync_placeholder_keeps_the_banks_conversion(
     assert txs[0].amount_primary == Decimal("97.30")
     assert txs[0].fx_rate_used == pytest.approx(Decimal("97.30") / Decimal("18.43"))
     stamp.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_sync_placeholder_takes_the_bank_charge_outside_the_primary_currency(
+    session, test_user, test_workspace, conn_account
+):
+    """Same USD bill on a BRL account, with a USD display currency: the bank's
+    BRL figure is not the primary amount, but it is what the account was
+    charged, so the placeholder keeps it as its account amount (ADR 0027)."""
+    from app.services.fx_rate_service import stamp_primary_amount
+
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "USD"}
+    conn, account = conn_account
+    conn_id, account_id = conn.id, account.id
+    bill = await _make_bill(session, test_workspace, test_user, account,
+                            amount=Decimal("18.43"), currency="USD",
+                            start_date=date(2025, 1, 10))
+    bill_id = bill.id
+    bill.next_occurrence = date(2025, 2, 10)
+    placeholder_id = await _usd_placeholder(
+        session, test_workspace, test_user, account, bill_id
+    )
+    provider = _provider([_tx(external_id="s1", description="NETFLIX SUBSCRIPTION",
+                              amount=Decimal("18.43"), currency="USD",
+                              amount_in_account_currency=Decimal("97.30"),
+                              date=date(2025, 1, 11))])
+
+    await _run_sync(
+        session, conn_id, test_workspace, test_user, provider, stamp=stamp_primary_amount
+    )
+
+    txs = await _all_txs(session, account_id)
+    assert len(txs) == 1
+    assert txs[0].id == placeholder_id
+    assert txs[0].amount_primary == Decimal("18.43")
+    assert txs[0].amount_account == Decimal("97.30")
 
 
 @pytest.mark.asyncio

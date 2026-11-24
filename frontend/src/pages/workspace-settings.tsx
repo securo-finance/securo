@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { IconPicker } from '@/components/icon-picker'
 import { PluginsSection } from '@/components/plugins-section'
+import { DocumentAiSettingsSection } from '@/components/document-ai-settings-section'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
 import { CategoryIcon } from '@/components/category-icon'
 import {
@@ -42,6 +43,7 @@ import {
 } from '@/components/ui/dialog'
 import { AlertTriangle, Archive, Plus, Save, Trash2, Users } from 'lucide-react'
 import { WORKSPACE_KIND_LABEL_KEY } from '@/lib/workspace-kinds'
+import { AccountantExportSection } from '@/components/accountant-export'
 import { SUPPORTED_LANGS } from '@/lib/i18n'
 import { countryFlag } from '@/lib/country-flag'
 import { countryName } from '@/lib/country-name'
@@ -85,7 +87,7 @@ export default function WorkspaceSettingsPage() {
   const navigate = useNavigate()
   const localeForFormat = useDateLocale()
   const { current, canManage, workspaces: allWorkspaces, refresh, switchWorkspace } = useWorkspace()
-  const { pluginsEnabled } = useFeatureFlags()
+  const { pluginsEnabled, documentAiEnabled } = useFeatureFlags()
   const { user: currentUser, updateUser } = useAuth()
   const queryClient = useQueryClient()
 
@@ -599,7 +601,14 @@ export default function WorkspaceSettingsPage() {
         )}
       </section>
 
+      {/* Accountant export: the business workspace's books, for the period
+          the user picks. Any member may export; the server refuses other
+          workspace kinds. */}
+      {current.kind === 'business' && <AccountantExportSection />}
+
       {pluginsEnabled && <PluginsSection />}
+
+      {documentAiEnabled && canManage && <DocumentAiSettingsSection />}
 
       {/* Danger zone — owners only */}
       {canManage && (

@@ -1,0 +1,21 @@
+{{- if .Values.persistence.backups.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "securo.fullname" . }}-backups
+  labels:
+    {{- include "securo.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.backups.accessMode | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.backups.size | quote }}
+  {{- if .Values.persistence.backups.storageClass }}
+  {{- if (eq "-" .Values.persistence.backups.storageClass) }}
+  storageClassName: ""
+  {{- else }}
+  storageClassName: "{{ .Values.persistence.backups.storageClass }}"
+  {{- end }}
+  {{- end }}
+{{- end }}

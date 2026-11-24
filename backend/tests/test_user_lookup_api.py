@@ -1,4 +1,28 @@
+import uuid
+
 import pytest
+
+from app.models.user import User
+from app.models.workspace import Workspace, WorkspaceMember
+
+
+async def _user_with_own_workspace(session, email: str) -> tuple[User, Workspace]:
+    user = User(
+        id=uuid.uuid4(),
+        email=email,
+        hashed_password="unused",
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+    )
+    session.add(user)
+    await session.flush()
+    workspace = Workspace(id=uuid.uuid4(), name=email, kind="personal", created_by_user_id=user.id)
+    session.add(workspace)
+    await session.flush()
+    session.add(WorkspaceMember(id=uuid.uuid4(), workspace_id=workspace.id, user_id=user.id, role="owner"))
+    await session.commit()
+    return user, workspace
 
 
 @pytest.mark.asyncio
@@ -105,3 +129,53 @@ async def test_directory_returns_display_names(client, auth_headers, session, te
     entry = next(u for u in resp.json() if u["id"] == str(test_user.id))
     assert entry["email"] == test_user.email
     assert entry["display_name"] == "User Name"
+
+
+@pytest.mark.asyncio
+async def test_directory_hides_users_who_share_no_workspace(
+    client, auth_headers, session, test_user
+):
+    """The directory must not list every account on the instance (#1173)."""
+    stranger, _ = await _user_with_own_workspace(session, "stranger@example.org")
+
+    resp = await client.get("/api/users/directory", headers=auth_headers)
+
+    assert resp.status_code == 200
+    ids = {u["id"] for u in resp.json()}
+    assert str(test_user.id) in ids
+    assert str(stranger.id) not in ids
+
+
+@pytest.mark.asyncio
+async def test_directory_lists_members_of_a_shared_workspace(
+    client, auth_headers, session, test_user, test_workspace
+):
+    partner, _ = await _user_with_own_workspace(session, "partner@example.org")
+    session.add(WorkspaceMember(
+        id=uuid.uuid4(), workspace_id=test_workspace.id, user_id=partner.id, role="viewer",
+    ))
+    await session.commit()
+
+    resp = await client.get("/api/users/directory", headers=auth_headers)
+
+    assert resp.status_code == 200
+    emails = [u["email"] for u in resp.json()]
+    assert emails == sorted(emails)
+    assert emails.count("partner@example.org") == 1
+
+
+@pytest.mark.asyncio
+async def test_lookup_still_finds_a_user_outside_the_callers_workspaces(
+    client, auth_headers, session, test_user
+):
+    """Inviting someone from outside still works by typing their exact email."""
+    stranger, _ = await _user_with_own_workspace(session, "stranger@example.org")
+
+    resp = await client.get(
+        "/api/users/lookup",
+        params={"email": "Stranger@example.org"},
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["id"] == str(stranger.id)

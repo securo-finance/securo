@@ -4,6 +4,7 @@
 - Date: 2026-11-17
 - Origin: #1462 (plugin icons, served from the catalog)
 - Extends: [0015](0015-plugins.md), [0016](0016-outbound-calls-and-no-telemetry.md)
+- Extended by: [0026](0026-plugin-icons-outside-the-catalog.md), which shows the icon on Connect Bank and Accounts too
 
 ## Context
 

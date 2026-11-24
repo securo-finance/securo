@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.schemas.conversation import ConversationRead, MessageRead
 from app.agents.services import agent_service, conversation_service
 from app.core.database import get_async_session
+from app.core.rate_limit import agents_chat_rate_limit
 from app.core.workspace_context import (
     WorkspaceContext,
     current_workspace,
@@ -85,7 +86,11 @@ async def rename_conversation(
     return conv
 
 
-@router.post("/conversations/{conversation_id}/generate-title", response_model=ConversationRead)
+@router.post(
+    "/conversations/{conversation_id}/generate-title",
+    response_model=ConversationRead,
+    dependencies=[Depends(agents_chat_rate_limit)],
+)
 async def generate_title(
     conversation_id: uuid.UUID,
     ctx: WorkspaceContext = Depends(current_writable_workspace),

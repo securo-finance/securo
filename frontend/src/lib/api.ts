@@ -28,6 +28,7 @@ import type {
   ConnectionSettings,
   SyncResult,
   Account,
+  AccountCard,
   AccountSummary,
   AccountRunningBalancePoint,
   Collection,
@@ -79,6 +80,7 @@ import type {
   RulePackRemoval,
   InstalledPlugin,
   PluginConnection,
+  PluginFileValue,
   PluginAction,
   PluginCatalogEntry,
   PluginPlan,
@@ -115,6 +117,7 @@ import type {
   BalanceHistory,
   PaginatedTransactions,
   ReportResponse,
+  PluginReportResponse,
   CategoryStatementResponse,
   Group,
   GroupKind,
@@ -124,6 +127,8 @@ import type {
   GroupSummary,
   TransactionSplitsInput,
   TransactionEditPayload,
+  FlagDue,
+  FlaggedSummary,
   InstallmentSeriesInput,
   TransactionApplyScope,
   InvoiceAttachment,
@@ -134,6 +139,12 @@ import type {
   ReconciliationRulePatch,
   ReconciliationSuggestion,
   ReconciliationHistoryEvent,
+  DocumentAiSettings,
+  DocumentAiSettingsUpdate,
+  DocumentAiStatus,
+  DocumentExtraction,
+  DocumentKind,
+  DocumentReceiptTransaction,
 } from '@/types'
 
 const api = axios.create({
@@ -369,6 +380,15 @@ export const auth = {
     const { data } = await api.get('/auth/oidc/config', { timeout: 5000 })
     return data
   },
+  oidcLogoutUrl: async (): Promise<{
+    /** Where to send the browser so the provider session ends too (#1623). */
+    logout_url: string
+  }> => {
+    // Only the sign-out asks this: it may reach the provider, so it is kept
+    // off /config, which the sign-in page waits on.
+    const { data } = await api.get('/auth/oidc/logout-url', { timeout: 10000 })
+    return data
+  },
 }
 
 // Categories
@@ -569,6 +589,17 @@ export const accounts = {
     const { data } = await api.get(`/accounts/${id}/bills`, { params: { limit } })
     return data
   },
+  linkedCards: async (id?: string): Promise<AccountCard[]> => {
+    const { data } = await api.get(id ? `/accounts/${id}/linked-cards` : '/accounts/linked-cards')
+    return data
+  },
+  updateLinkedCards: async (
+    id: string,
+    cards: { id: string; label: string }[],
+  ): Promise<AccountCard[]> => {
+    const { data } = await api.patch(`/accounts/${id}/linked-cards`, { cards })
+    return data
+  },
   close: async (id: string): Promise<Account> => {
     const { data } = await api.post(`/accounts/${id}/close`)
     return data
@@ -627,11 +658,13 @@ export const transactions = {
   list: async (params?: {
     account_id?: string
     account_ids?: string[]
+    linked_card_ids?: string[]
     category_id?: string
     category_ids?: string[]
     payee_id?: string
     uncategorized?: boolean
     shared_as_uncategorized?: boolean
+    workspace_only?: boolean
     type?: string
     status?: string
     from?: string
@@ -648,6 +681,10 @@ export const transactions = {
     exclude_transfers?: boolean
     user_pnl_only?: boolean
     exclude_ignored?: boolean
+    flagged?: boolean
+    flag_due?: FlagDue
+    unpaid_only?: boolean
+    unread_only?: boolean
     tags?: string[]
     min_amount?: number
     max_amount?: number
@@ -705,6 +742,18 @@ export const transactions = {
     const { data } = await api.patch(`/transactions/${id}/ignore`)
     return normalizeTransactionGoalAllocations(data)
   },
+  // Issue #636: clear the "new" marker of one row, or of every unread row in
+  // the workspace. `workspaceId` pins the write to the workspace the list was
+  // rendered with, whatever the interceptor would send if another tab switched
+  // in the meantime.
+  markRead: async (id: string, workspaceId?: string | null): Promise<Transaction> => {
+    const { data } = await api.patch(`/transactions/${id}/read`, undefined, workspaceHeader(workspaceId))
+    return data
+  },
+  markAllRead: async (workspaceId?: string | null): Promise<{ updated: number }> => {
+    const { data } = await api.post('/transactions/read-all', undefined, workspaceHeader(workspaceId))
+    return data
+  },
   unlinkRecurring: async (id: string): Promise<Transaction> => {
     const { data } = await api.patch(`/transactions/${id}/unlink-recurring`)
     return normalizeTransactionGoalAllocations(data)
@@ -743,6 +792,22 @@ export const transactions = {
       transaction_ids: transactionIds,
       tags,
     })
+    return data
+  },
+  bulkFlag: async (
+    transactionIds: string[],
+    isFlagged: boolean,
+    flagDueDate?: string,
+  ): Promise<{ updated: number }> => {
+    const { data } = await api.patch('/transactions/bulk-flag', {
+      transaction_ids: transactionIds,
+      is_flagged: isFlagged,
+      flag_due_date: flagDueDate,
+    })
+    return data
+  },
+  flaggedSummary: async (): Promise<FlaggedSummary> => {
+    const { data } = await api.get('/transactions/flagged-summary')
     return data
   },
   bulkRemoveTags: async (transactionIds: string[], tags: string[]): Promise<{ updated: number }> => {
@@ -824,7 +889,7 @@ export const transactions = {
     transactions: ImportPreviewTransaction[],
     filename: string,
     detected_format: string,
-    options?: { detect_duplicates?: boolean },
+    options?: { detect_duplicates?: boolean; document_extraction_id?: string },
   ): Promise<{ imported: number; skipped: number; excluded: number; import_log_id: string }> => {
     const payload: {
       account_id: string
@@ -832,10 +897,14 @@ export const transactions = {
       filename: string
       detected_format: string
       detect_duplicates?: boolean
+      document_extraction_id?: string
     } = { account_id, transactions, filename, detected_format }
 
     if (typeof options?.detect_duplicates === 'boolean') {
       payload.detect_duplicates = options.detect_duplicates
+    }
+    if (options?.document_extraction_id) {
+      payload.document_extraction_id = options.document_extraction_id
     }
 
     const { data } = await api.post('/transactions/import', payload)
@@ -844,6 +913,7 @@ export const transactions = {
   export: async (params?: {
     account_id?: string
     account_ids?: string[]
+    linked_card_ids?: string[]
     category_id?: string
     category_ids?: string[]
     payee_id?: string
@@ -855,6 +925,10 @@ export const transactions = {
     q?: string
     tags?: string[]
     exclude_ignored?: boolean
+    flagged?: boolean
+    flag_due?: FlagDue
+    unpaid_only?: boolean
+    unread_only?: boolean
     transaction_ids?: string[]
   }): Promise<void> => {
     const { data } = await api.get('/transactions/export', {
@@ -1057,6 +1131,8 @@ export interface GroupSettlementPayload {
   currency: string
   date: string
   transaction_id?: string | null
+  // The receiver's credit that already arrived, linked instead of creating one.
+  receiver_transaction_id?: string | null
   notes?: string | null
   // When provided, the backend creates a debit transaction on this
   // account and links it via transaction_id. Mutually exclusive with
@@ -1169,6 +1245,12 @@ export const users = {
 export const rules = {
   list: async (): Promise<Rule[]> => {
     const { data } = await api.get('/rules')
+    return data
+  },
+  /** Provider categories the workspace already received, for the
+   * `provider_category` condition's suggestions. */
+  providerCategories: async (): Promise<string[]> => {
+    const { data } = await api.get('/rules/provider-categories')
     return data
   },
   create: async (rule: Omit<Rule, 'id' | 'user_id'>): Promise<Rule & { applied_count: number }> => {
@@ -1359,10 +1441,15 @@ export const recurring = {
     const { data } = await api.get('/recurring-transactions')
     return data
   },
-  // `skip_first` is write-only: it moves the first occurrence one period ahead
-  // when the transaction that would cover it already exists.
+  // `skip_first` and `source_transaction_id` are write-only: the first moves
+  // the first occurrence one period ahead when the transaction that would
+  // cover it already exists, and the second links that transaction to the new
+  // bill so it is not offered again.
   create: async (
-    rt: Partial<RecurringTransaction> & { skip_first?: boolean },
+    rt: Partial<RecurringTransaction> & {
+      skip_first?: boolean
+      source_transaction_id?: string
+    },
   ): Promise<RecurringTransaction> => {
     const { data } = await api.post('/recurring-transactions', rt)
     return data
@@ -1402,9 +1489,13 @@ export const recurring = {
 // Budgets
 export const budgets = {
   // `workspaceId` pins the read to one workspace, for a screen that must not
-  // follow the active one when another tab switches it.
-  list: async (month?: string, workspaceId?: string | null): Promise<Budget[]> => {
-    const { data } = await api.get('/budgets', { params: { month }, ...workspaceHeader(workspaceId) })
+  // follow the active one when another tab switches it. `primaryMonth` gives
+  // `amount_primary` at that month's rate, for a copy preview into it.
+  list: async (month?: string, workspaceId?: string | null, primaryMonth?: string): Promise<Budget[]> => {
+    const { data } = await api.get('/budgets', {
+      params: { month, primary_month: primaryMonth },
+      ...workspaceHeader(workspaceId),
+    })
     return data
   },
   create: async (budget: { category_id: string; amount: number; month: string; is_recurring?: boolean }): Promise<Budget> => {
@@ -1585,8 +1676,10 @@ export const assets = {
     const { data } = await api.get('/assets/portfolio-trend')
     return data
   },
-  marketSearch: async (q: string, limit = 15): Promise<MarketSymbolMatch[]> => {
-    const { data } = await api.get('/assets/market/search', { params: { q, limit } })
+  marketSearch: async (q: string, limit = 15, currency?: string): Promise<MarketSymbolMatch[]> => {
+    const { data } = await api.get('/assets/market/search', {
+      params: { q, limit, ...(currency ? { currency } : {}) },
+    })
     return data
   },
   marketQuote: async (symbol: string): Promise<MarketSymbolQuote> => {
@@ -1787,6 +1880,25 @@ export const reports = {
   // Oldest and newest transaction dates in the workspace (opening
   // balances excluded). The reports page builds its year picker from
   // these bounds (issue #765).
+  /**
+   * A report an installed plugin declares, or (on the dashboard) one of its
+   * widgets (ADR 0034); `pluginId` is "owner/name".
+   */
+  plugin: async (
+    pluginId: string,
+    key: string,
+    startDate: string,
+    endDate: string,
+    accountIds?: string[],
+    surface: 'reports' | 'dashboard' = 'reports',
+  ): Promise<PluginReportResponse> => {
+    const extra = acctIdsParam(accountIds)
+    const { data } = await api.get(`/${surface}/plugins/${pluginId}/${encodeURIComponent(key)}`, {
+      params: { start_date: startDate, end_date: endDate, ...(extra.params ?? {}) },
+      ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}),
+    })
+    return data
+  },
   dataRange: async (): Promise<{ min_date: string | null; max_date: string | null }> => {
     const { data } = await api.get('/reports/data-range')
     return data
@@ -1833,23 +1945,160 @@ export const settings = {
 }
 
 // Backup
+export type BackupContent = 'configuration' | 'data' | 'both'
+export type BackupRestoreMode = 'new_workspace' | 'current_workspace'
+
+export interface BackupConfig {
+  scheduled_enabled: boolean
+  storage_shared: boolean
+  schedule: 'daily' | 'weekly'
+  content: BackupContent
+  retention_count: number
+  retention_days: number | null
+  last_run_at: string | null
+  next_run_at: string | null
+}
+
+export interface BackupItem {
+  id: string
+  filename: string
+  size_bytes: number
+  created_at: string
+  workspace_id: string | null
+  workspace_name: string | null
+  content: BackupContent
+  entity_counts: Record<string, number>
+}
+
+export interface BackupPreview {
+  valid: boolean
+  format_version: string | null
+  export_date: string | null
+  workspace_id: string | null
+  workspace_name: string | null
+  content: BackupContent
+  entity_counts: Record<string, number>
+  warnings: string[]
+}
+
+export interface BackupRestoreResult {
+  workspace_id: string
+  workspace_name: string
+  mode: BackupRestoreMode
+  content: BackupContent
+  restored_counts: Record<string, number>
+  warnings: string[]
+}
+
+export type BackupConfigUpdate = Partial<Omit<BackupConfig, 'last_run_at' | 'next_run_at'>>
+
+function downloadBlob(data: BlobPart, filename: string) {
+  const blob = new Blob([data], { type: 'application/zip' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+function filenameFromDisposition(disposition?: string): string | null {
+  const match = disposition?.match(/filename="?([^";]+)"?/i)
+  return match?.[1] ?? null
+}
+
 export const backup = {
-  /**
-   * Download the workspace archive, encrypted with AES-256 when a password is
-   * given. POST rather than GET so the password stays out of browser history
-   * and proxy logs.
-   */
-  download: async (password?: string): Promise<void> => {
+  getConfig: async (): Promise<BackupConfig> => {
+    const { data } = await api.get('/backups/config')
+    return data
+  },
+  updateConfig: async (payload: BackupConfigUpdate): Promise<BackupConfig> => {
+    const { data } = await api.put('/backups/config', payload)
+    return data
+  },
+  list: async (): Promise<BackupItem[]> => {
+    const { data } = await api.get('/backups')
+    return data
+  },
+  run: async (content?: BackupContent): Promise<BackupItem> => {
+    const { data } = await api.post('/backups/run', content ? { content } : {})
+    return data
+  },
+  previewUpload: async (file: File, password?: string): Promise<BackupPreview> => {
+    const form = new FormData()
+    form.append('file', file)
+    if (password) form.append('password', password)
+    const { data } = await api.post('/backups/preview-upload', form)
+    return data
+  },
+  restoreUpload: async (
+    file: File,
+    payload: {
+      content: BackupContent
+      mode: BackupRestoreMode
+      confirmation?: string
+      password?: string
+    },
+  ): Promise<BackupRestoreResult> => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('content', payload.content)
+    form.append('mode', payload.mode)
+    if (payload.confirmation) form.append('confirmation', payload.confirmation)
+    if (payload.password) form.append('password', payload.password)
+    const { data } = await api.post('/backups/restore-upload', form)
+    return data
+  },
+  previewStored: async (id: string): Promise<BackupPreview> => {
+    const { data } = await api.get(`/backups/${id}/preview`)
+    return data
+  },
+  restoreStored: async (
+    id: string,
+    payload: { content: BackupContent; mode: BackupRestoreMode; confirmation?: string },
+  ): Promise<BackupRestoreResult> => {
+    const { data } = await api.post(`/backups/${id}/restore`, payload)
+    return data
+  },
+  downloadStored: async (id: string): Promise<void> => {
+    const response = await api.get(`/backups/${id}/download`, { responseType: 'blob' })
+    const filename = filenameFromDisposition(response.headers['content-disposition']) ?? `${id}.zip`
+    downloadBlob(response.data, filename)
+  },
+  download: async (content: BackupContent = 'both'): Promise<void> => {
+    const { data } = await api.get('/export/backup', { params: { content }, responseType: 'blob' })
+    downloadBlob(data, `securo-backup-${new Date().toISOString().slice(0, 10)}.zip`)
+  },
+  /** Send the optional password in the body so it never enters URL logs. */
+  downloadProtected: async (password?: string): Promise<void> => {
     const { data } = await api.post(
       '/export/backup',
       password ? { password } : {},
       { ...readOnly, responseType: 'blob' },
     )
+    downloadBlob(data, `securo-backup-${new Date().toISOString().slice(0, 10)}.zip`)
+  },
+}
+
+// Accountant export: the categorized transactions and the profit and loss of
+// one period, as two CSV files inside a zip. Business workspaces only.
+export const accountantExport = {
+  download: async (startDate: string, endDate: string): Promise<void> => {
+    const { data, headers } = await api.get('/export/accountant', {
+      params: { start_date: startDate, end_date: endDate },
+      responseType: 'blob',
+    })
     const blob = new Blob([data], { type: 'application/zip' })
     const url = URL.createObjectURL(blob)
+    // The server names the file after the workspace and the period; fall
+    // back to the same shape when the header isn't readable.
+    const disposition = String(headers['content-disposition'] ?? '')
+    const filename = /filename="?([^";]+)"?/.exec(disposition)?.[1]
     const a = document.createElement('a')
     a.href = url
-    a.download = `securo-backup-${new Date().toISOString().slice(0, 10)}.zip`
+    a.download = filename ?? `securo-accountant-${startDate}_${endDate}.zip`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -2015,12 +2264,58 @@ export const search = {
 
 // App-level feature flags (whether optional modules like agents are mounted)
 export interface AppInfo {
-  features: { agents: boolean; tesouro_direto?: boolean; plugins?: boolean }
+  features: { agents: boolean; tesouro_direto?: boolean; plugins?: boolean; document_ai?: boolean }
 }
 
 export const info = {
   get: async (): Promise<AppInfo> => {
     const { data } = await api.get('/info')
+    return data
+  },
+}
+
+// Document reading -- only reachable when info.features.document_ai === true.
+export const documentAi = {
+  status: async (): Promise<DocumentAiStatus> => {
+    const { data } = await api.get('/document-ai/status')
+    return data
+  },
+  getSettings: async (): Promise<DocumentAiSettings> => {
+    const { data } = await api.get('/document-ai/settings')
+    return data
+  },
+  updateSettings: async (payload: DocumentAiSettingsUpdate): Promise<DocumentAiSettings> => {
+    const { data } = await api.put('/document-ai/settings', payload)
+    return data
+  },
+  resetSettings: async (): Promise<void> => {
+    await api.delete('/document-ai/settings')
+  },
+  upload: async (file: File, kind: DocumentKind): Promise<DocumentExtraction> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('kind', kind)
+    // Stores the file and queues the read; nothing lands until confirmed.
+    const { data } = await api.post('/document-ai/extractions', formData, readOnly)
+    return data
+  },
+  get: async (id: string): Promise<DocumentExtraction> => {
+    const { data } = await api.get(`/document-ai/extractions/${id}`)
+    return data
+  },
+  retry: async (id: string): Promise<DocumentExtraction> => {
+    const { data } = await api.post(`/document-ai/extractions/${id}/retry`, undefined, readOnly)
+    return data
+  },
+  remove: async (id: string): Promise<void> => {
+    await api.delete(`/document-ai/extractions/${id}`, readOnly)
+  },
+  attach: async (id: string, transactionId: string): Promise<DocumentExtraction> => {
+    const { data } = await api.post(`/document-ai/extractions/${id}/attach`, { transaction_id: transactionId })
+    return data
+  },
+  createTransaction: async (id: string, payload: DocumentReceiptTransaction): Promise<DocumentExtraction> => {
+    const { data } = await api.post(`/document-ai/extractions/${id}/transaction`, payload)
     return data
   },
 }
@@ -2032,7 +2327,7 @@ export const plugins = {
     const { data } = await api.get('/plugins')
     return data
   },
-  /** The catalog: fetched from the index now, so only call it when the user asks. */
+  /** The catalog: fetched from the index now, so only call it when the user asks or a plugin's icon is on screen (ADR 0026). */
   catalog: async (): Promise<PluginCatalogEntry[]> => {
     const { data } = await api.get('/plugins/catalog')
     return data
@@ -2065,7 +2360,7 @@ export const plugins = {
     plugin_id: string
     integration: string
     name: string
-    values: Record<string, string>
+    values: Record<string, string | PluginFileValue>
   }): Promise<{ connection: PluginConnection; authorize_url: string | null }> => {
     const { data } = await api.post('/plugins/connections', body)
     return data
@@ -2073,7 +2368,7 @@ export const plugins = {
   /** New form values; fields left blank keep what they had. Then it syncs afresh. */
   updateValues: async (
     connectionId: string,
-    body: { name?: string; values: Record<string, string> },
+    body: { name?: string; values: Record<string, string | PluginFileValue> },
   ): Promise<PluginConnection> => {
     const { data } = await api.put(`/plugins/connections/${connectionId}/values`, body)
     return data
@@ -2084,6 +2379,11 @@ export const plugins = {
   },
   sync: async (connectionId: string): Promise<PluginConnection> => {
     const { data } = await api.post(`/plugins/connections/${connectionId}/sync`)
+    return data
+  },
+  /** Run one routine of a connection now, and wait for it (ADR 0035). */
+  runRoutine: async ({ connectionId, routine }: { connectionId: string; routine: string }): Promise<PluginConnection> => {
+    const { data } = await api.post(`/plugins/connections/${connectionId}/routines/${encodeURIComponent(routine)}/run`)
     return data
   },
   disconnect: async (connectionId: string): Promise<void> => {

@@ -5,18 +5,18 @@ These exercise the large uncovered blocks: get_income_expenses_report
 branches, and the net-worth credit-card / asset composition branches.
 
 `get_income_expenses_report` builds its period buckets with PostgreSQL's
-``to_char`` (and ``extract`` for weekly). Tests run on SQLite, so we register
-a ``to_char`` user-defined function on the shared test engine for the
-daily / monthly / yearly intervals (weekly relies on ``extract('isoyear')``
-which SQLite cannot compile and is therefore not exercised here — its label
-helper is covered by the existing pure-function tests).
+``to_char`` (and ``extract`` for weekly). Tests run on SQLite, so
+``tests/conftest.py`` registers a ``to_char`` user-defined function on the
+shared test engine for the daily / monthly / yearly intervals (weekly relies
+on ``extract('isoyear')`` which SQLite cannot compile and is therefore not
+exercised here; its label helper is covered by the existing pure-function
+tests).
 """
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -33,52 +33,6 @@ from app.services.report_service import (
     get_income_expenses_report,
     get_net_worth_report,
 )
-
-from tests.conftest import engine as _test_engine
-
-
-# ---------------------------------------------------------------------------
-# Register a `to_char` UDF on the SQLite test engine so the income/expenses
-# report (which uses Postgres `to_char`) can run. Idempotent across tests.
-# ---------------------------------------------------------------------------
-
-
-def _py_to_char(value, fmt):
-    """Minimal emulation of PostgreSQL to_char(date, fmt) for the formats
-    the report uses: 'YYYY-MM-DD', 'YYYY-MM', 'YYYY'."""
-    if value is None:
-        return None
-    s = str(value)[:10]  # 'YYYY-MM-DD'
-    y, m, d = s.split("-")
-    if fmt == "YYYY-MM-DD":
-        return f"{y}-{m}-{d}"
-    if fmt == "YYYY-MM":
-        return f"{y}-{m}"
-    if fmt == "YYYY":
-        return y
-    return s
-
-
-@event.listens_for(_test_engine.sync_engine, "connect")
-def _register_to_char(dbapi_connection, _connection_record):
-    dbapi_connection.create_function("to_char", 2, _py_to_char)
-
-
-@pytest.fixture(autouse=True)
-async def _ensure_to_char(session: AsyncSession):
-    """Make sure the UDF is registered on the live connection.
-
-    The `connect` listener covers fresh connections; for the StaticPool's
-    already-open connection we register directly via the raw DBAPI handle.
-    """
-    raw = await session.connection()
-
-    def _do(sync_conn):
-        dbapi = sync_conn.connection.dbapi_connection
-        dbapi.create_function("to_char", 2, _py_to_char)
-
-    await raw.run_sync(_do)
-    yield
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +181,52 @@ async def test_income_expenses_basic_structure(session, test_user, test_workspac
     assert "income" in groups
     for ct in report.category_trend:
         assert len(ct.series) == len(report.trend)
+
+
+async def test_income_expenses_views_ignore_unknown_transaction_type(
+    session, test_user, test_workspace
+):
+    """A stored type other than debit or credit is not part of the P&L.
+
+    The summary query sums expenses only for `debit` and income only for
+    `credit`. The category trend and the composition used to read every
+    non-credit row as spending, so three uncategorized rows saved with type
+    "expense" added R$ 150.00 to the donut and the sparkline while the
+    summary left them out (issue #345). A row stored as "income" was read as
+    an expense the same way.
+    """
+    acct = await _make_account(session, test_user.id, "Unknown Type Acct")
+    today = date.today()
+    booked = 900.00
+
+    await _add_txn(session, test_user.id, acct.id, booked, "debit", today)
+    for _ in range(3):
+        await _add_txn(session, test_user.id, acct.id, 50, "expense", today)
+    await _add_txn(session, test_user.id, acct.id, 70, "income", today)
+
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id,
+        start_date=today.replace(day=1), end_date=today,
+    )
+
+    totals = {b.key: b.value for b in report.summary.breakdowns}
+    assert totals["expenses"] == pytest.approx(booked, abs=0.001)
+    assert totals["income"] == pytest.approx(0.0, abs=0.001)
+
+    expense_slices = [c for c in report.composition if c.group == "expenses"]
+    assert sum(c.value for c in expense_slices) == pytest.approx(booked, abs=0.001)
+    assert [c.key for c in expense_slices] == ["uncategorized"]
+    assert not [c for c in report.composition if c.group == "income"]
+
+    expense_trend = [ct for ct in report.category_trend if ct.group == "expenses"]
+    assert sum(ct.total for ct in expense_trend) == pytest.approx(booked, abs=0.001)
+    assert [ct.key for ct in expense_trend] == ["uncategorized"]
+    assert not [ct for ct in report.category_trend if ct.group == "income"]
+
+    point = next(p for p in report.trend if p.date == today.strftime("%Y-%m"))
+    assert point.breakdowns["expenses"] == pytest.approx(booked, abs=0.001)
+    point_slices = [c for c in point.composition if c.group == "expenses"]
+    assert sum(c.value for c in point_slices) == pytest.approx(booked, abs=0.001)
 
 
 async def test_income_expenses_uses_reporting_date_override(session, test_user, test_workspace):

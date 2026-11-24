@@ -1,7 +1,7 @@
 """add virtual pocket allocations to goals
 
-Revision ID: 128
-Revises: 127
+Revision ID: 132
+Revises: 131
 Create Date: 2026-09-19
 
 Allocations are metadata over existing account money. They deliberately live
@@ -16,8 +16,8 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 
-revision: str = "128"
-down_revision: Union[str, None] = "127"
+revision: str = "132"
+down_revision: Union[str, None] = "131"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -108,6 +108,12 @@ class TestTransactionReadInstallmentFields:
         assert data.installment_purchase_date == date(2026, 2, 10)
         assert data.installment_series_id == series_id
 
+    def test_card_masked_number_round_trips_without_provider_payload(self):
+        data = TransactionRead.model_validate(self._base(card_masked_number="8172"))
+
+        assert data.card_masked_number == "8172"
+        assert data.model_dump(mode="json")["card_masked_number"] == "8172"
+
     def test_installment_fields_default_none(self):
         data = TransactionRead.model_validate(self._base())
         assert data.installment_number is None
@@ -296,7 +302,8 @@ class TestInstallmentSeriesCreate:
             )
 
     def test_rejects_negative_base_amount(self):
-        with pytest.raises(ValidationError, match="amount must be positive"):
+        # The base is a TransactionCreate, whose own bound answers first (#321).
+        with pytest.raises(ValidationError, match="amount must be greater than zero"):
             InstallmentSeriesCreate.model_validate({
                 "base": {**self.BASE, "amount": "-5.00"},
                 "installments": 2,
