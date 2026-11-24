@@ -1797,6 +1797,7 @@
     "scanningForTransfers": "סורק...",
     "confirmScanForTransfers": "לסרוק את כל ההיסטוריה ולזווג העברות בין חשבונות שונים? בהיסטוריה גדולה זה עשוי לקחת רגע.",
     "transferScanCreated_one": "נוצר {{count}} זוג העברות",
+    "transferScanCreated_two": "נוצרו {{count}} זוגות העברות",
     "transferScanCreated_other": "נוצרו {{count}} זוגות העברות",
     "transferScanNone": "לא נמצאו זוגות העברות חדשים",
     "add": "הוספה",
