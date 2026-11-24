@@ -567,7 +567,7 @@ async def test_restore_accepts_an_archive_written_before_the_income_row(
     database = await backup_service.build_backup_zip(session, test_workspace)
     await session.refresh(test_workspace)
 
-    # An archive written before migration 125 simply has no income file: re-pack
+    # An archive written before migration 132 simply has no income file: re-pack
     # one without it, the same shape an older Securo produced.
     source = zipfile.ZipFile(io.BytesIO(database))
     buffer = io.BytesIO()
