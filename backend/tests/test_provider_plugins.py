@@ -384,6 +384,35 @@ async def test_a_twin_under_a_new_id_corrects_the_payee_and_later_syncs_still_ca
 
 
 @pytest.mark.asyncio
+async def test_a_stale_pending_twin_leaves_the_posted_row_as_it_is(
+    session: AsyncSession, bank_connection, test_user
+):
+    """A pending entry that comes back under its old id after the row posted
+    changes neither its payee nor its notes, nor the snapshot later
+    corrections compare against."""
+    pending = {**_txn("p1", status="pending", notes="raw"), "payee": "VISA SHOP"}
+    posted = {**_txn("p2", notes="Ihr Einkauf"), "payee": "Example Shop"}
+    await _pipeline(session, bank_connection, _account_txns(pending), test_user)
+    await _pipeline(session, bank_connection, _account_txns(posted), test_user)
+    await _pipeline(session, bank_connection, _account_txns(pending), test_user)
+    row = await _only_row(session, bank_connection)
+    assert (row.status, row.payee, row.notes) == ("posted", "Example Shop", "Ihr Einkauf")
+    sent = (row.raw_data or {})["securo_synced"]
+    assert (sent["payee"], sent["notes"]) == ("Example Shop", "Ihr Einkauf")
+
+
+@pytest.mark.asyncio
+async def test_a_hidden_row_takes_no_correction_from_its_twin(session: AsyncSession, bank_connection, test_user):
+    await _pipeline(session, bank_connection, _account_txns({**_txn("p1", status="pending"), "payee": "VISA SHOP"}), test_user)
+    row = await _only_row(session, bank_connection)
+    row.is_ignored = True
+    await session.commit()
+    await _pipeline(session, bank_connection, _account_txns({**_txn("p2", notes="Ihr Einkauf"), "payee": "Example Shop"}), test_user)
+    row = await _only_row(session, bank_connection)
+    assert (row.payee, row.notes) == ("VISA SHOP", None)
+
+
+@pytest.mark.asyncio
 async def test_a_payee_of_only_spaces_is_none(session: AsyncSession, bank_connection, test_user):
     """Securo can't name a payee entity after blank text: a blank payee is none, sent first or as a correction."""
     await _pipeline(session, bank_connection, _with_text(payee="   "), test_user)

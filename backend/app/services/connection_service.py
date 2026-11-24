@@ -2485,7 +2485,13 @@ def _merge_sync_metadata(
         transaction.card_masked_number = txn_data.card_masked_number
     if txn_data.payee and not transaction.payee:
         transaction.payee = txn_data.payee
-    if isinstance(sent, dict):
+    if isinstance(sent, dict) and not _takes_plugin_correction(transaction, txn_data):
+        # A stale pending twin of a posted row (or a row the user hid) changes
+        # nothing of the plugin's, and the snapshot stays what the row took.
+        raw = transaction.raw_data if isinstance(transaction.raw_data, dict) else {}
+        if raw.get(SYNCED_TEXT) != sent:
+            transaction.raw_data = {**raw, SYNCED_TEXT: sent}
+    elif isinstance(sent, dict):
         if not _refresh_synced_notes(transaction, sent.get("notes"), txn_data.notes):
             # Someone took the notes over: the snapshot keeps the plugin's text
             # from before, so a later payload without notes can't make an
@@ -2651,9 +2657,25 @@ async def _refresh_twin_payee(
     plugin's snapshot are left as they are.
     """
     sent = transaction.raw_data.get(SYNCED_TEXT) if isinstance(transaction.raw_data, dict) else None
-    if transaction.source != "sync" or not isinstance(sent, dict):
+    if (
+        transaction.source != "sync"
+        or not isinstance(sent, dict)
+        or not _takes_plugin_correction(transaction, txn_data)
+    ):
         return None
     return await _refresh_payee(session, transaction, sent.get("payee"), txn_data.payee)
+
+
+def _takes_plugin_correction(transaction: Transaction, txn_data) -> bool:
+    """Whether a matched row may take a plugin's corrected text.
+
+    Not a row the user hid (the same-id and re-read paths skip those whole),
+    and not a posted row a stale pending twin comes back for: what the posted
+    entry brought stands.
+    """
+    if transaction.is_ignored:
+        return False
+    return not (transaction.status == "posted" and txn_data.status == "pending")
 
 
 #: How many days an Enable Banking card hold can precede the booked entry that
