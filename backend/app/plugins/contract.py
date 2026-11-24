@@ -132,6 +132,8 @@ class Transaction(_Model):
     provider_category: str | None = Field(default=None, max_length=100)
     status: Literal["posted", "pending"] = "posted"
     payee: str | None = Field(default=None, max_length=200)
+    notes: str | None = Field(default=None, max_length=1000)
+    """Text the list doesn't show but search and rules read: the bank's full purpose, a reference, an order number."""
     raw_data: dict[str, Any] | None = None
     installment_number: int | None = Field(default=None, ge=1)
     total_installments: int | None = Field(default=None, ge=1)

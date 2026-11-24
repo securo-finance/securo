@@ -173,6 +173,24 @@ async def test_a_payload_syncs_like_a_connected_bank(session: AsyncSession, bank
 
 
 @pytest.mark.asyncio
+async def test_a_transaction_brings_its_notes(session: AsyncSession, bank_connection, test_user):
+    """The bank's full purpose text goes to the notes: searched and matched by rules, not shown in the list."""
+    data = payload_data()
+    data["accounts"][0]["transactions"][0]["notes"] = "Ihr Einkauf bei Example Shop, order 123-4567890"
+    await _pipeline(session, bank_connection, data, test_user)
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    notes = {t.external_id: t.notes for t in await _rows(session, Transaction, account_id=account.id)}
+    assert notes == {"t1": "Ihr Einkauf bei Example Shop, order 123-4567890", "t2": None}
+
+
+def test_notes_longer_than_the_column_are_refused():
+    data = payload_data()
+    data["accounts"][0]["transactions"][0]["notes"] = "x" * 1001
+    with pytest.raises(PayloadError):
+        parse_payload(data, ALL_KINDS)
+
+
+@pytest.mark.asyncio
 async def test_the_same_payload_twice_adds_nothing(session: AsyncSession, bank_connection, test_user):
     await _pipeline(session, bank_connection, payload_data(), test_user)
     await _pipeline(session, bank_connection, payload_data(), test_user)

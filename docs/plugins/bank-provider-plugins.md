@@ -259,6 +259,9 @@ shows both named errors: access code `expired` and `busy`.
    `PluginPayloadProvider` (`backend/app/plugins/provider.py`). From there it
    is the same code as a native provider's:
    - accounts are matched by `external_id` and get their balance;
+   - a transaction's `notes` (the bank's full purpose, a reference, an order
+     number) land in the row's notes: not shown in the list, but searched and
+     matched by rules, so `description` can stay what the bank's app shows;
    - transactions are deduplicated by `external_id`; a `pending` one becomes
      `posted` in place. The connection's own settings (pending import, payee
      source) apply; with `complete_feed`, a pending row that left the feed
