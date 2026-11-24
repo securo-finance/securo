@@ -3413,7 +3413,17 @@ def _set_synced_notes(transaction: Transaction, notes: Optional[str]) -> None:
 
 
 def _merge_synced_notes(transaction: Transaction, incoming: Optional[str]) -> None:
-    """Add the provider's notes to a row the sync matched (`merge_notes`)."""
+    """Add the provider's notes to a row the sync matched (`merge_notes`).
+
+    Text the sync already gave the row (its record) is not given again: what
+    the user did with it, cleared or rewritten, stays, and keeps counting as
+    their work.
+    """
+    raw = transaction.raw_data if isinstance(transaction.raw_data, dict) else {}
+    recorded = _recorded_sync_notes(raw)
+    text = (incoming or "").strip()
+    if recorded and text and text in recorded:
+        return
     _set_synced_notes(transaction, merge_notes(transaction.notes, incoming))
 
 

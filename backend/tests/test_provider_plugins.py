@@ -243,13 +243,16 @@ async def test_a_cancelled_hold_with_the_providers_notes_still_goes(
     session: AsyncSession, bank_connection, test_user, edit
 ):
     """Notes the plugin sent are not the user's work: a complete feed that
-    drops the hold removes it. Notes the user changed (or cleared) keep it."""
+    drops the hold removes it. Notes the user changed (or cleared) keep it,
+    also after a sync that still listed the hold with the plugin's notes."""
     hold = _txn("h1", status="pending", notes="Hotel deposit")
     await _complete_feed_sync(session, bank_connection, _account_txns(hold, _txn("k1", amount="99.00")), test_user)
     if edit is not None:
         row = next(r for r in await _rows(session, Transaction, external_id="h1"))
         row.notes = "Hotel deposit, refund due" if edit == "typed over" else None
         await session.commit()
+    # A sync that still lists the hold, its notes unchanged, must not undo the edit.
+    await _complete_feed_sync(session, bank_connection, _account_txns(hold, _txn("k1", amount="99.00")), test_user)
 
     await _complete_feed_sync(session, bank_connection, _account_txns(_txn("k1", amount="99.00")), test_user)
 
