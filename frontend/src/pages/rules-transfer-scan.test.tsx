@@ -8,6 +8,7 @@
  * Viewers read rules; they never run a scan.
  */
 import { createContext } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 
@@ -120,9 +121,9 @@ describe('the transfer scan on the rules page', () => {
   })
 
   it('refreshes the reconciliation queue and history after the scan', async () => {
-    // No pair was certain, so the toast says nothing was found — but the scan
-    // still wrote every ambiguous pair to the queue the tab counts. The
-    // history tab matters for the same reason on the runs that do pair rows.
+    // No pair was certain, so the toast says nothing found, but the scan
+    // still wrote every ambiguous pair to the queue the tab counts, and each
+    // question writes a "suggested" event to the history.
     api.connections.detectTransfers.mockResolvedValue({ pairs_created: 0 })
     renderWithProviders(<RulesPage />)
 
@@ -137,6 +138,30 @@ describe('the transfer scan on the rules page', () => {
     )
     await waitFor(() => expect(api.reconciliation.suggestions).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(api.reconciliation.history).toHaveBeenCalledTimes(2))
+  })
+
+  it('invalidates the money views so a linked pair shows without a reload', async () => {
+    // A probe standing in for the transaction list: the scan links two rows
+    // the person can already see, so the view has to be marked stale and
+    // refetched on its own. Without the financial invalidation the count
+    // stays at one and this test fails.
+    const moneyViews = vi.fn().mockResolvedValue([])
+    function MoneyViewsProbe() {
+      useQuery({ queryKey: ['transactions'], queryFn: moneyViews })
+      return null
+    }
+    renderWithProviders(
+      <>
+        <MoneyViewsProbe />
+        <RulesPage />
+      </>,
+    )
+
+    await waitFor(() => expect(moneyViews).toHaveBeenCalledTimes(1))
+
+    await clickScan()
+
+    await waitFor(() => expect(moneyViews).toHaveBeenCalledTimes(2))
   })
 
   it('keeps the button busy until the scan comes back', async () => {
