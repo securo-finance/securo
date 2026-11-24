@@ -1158,6 +1158,10 @@ export default function DashboardPage() {
             onClick={() => setDrillDown({
               title: t('dashboard.drillDownUncategorized'),
               uncategorized: true,
+              // The counter above is this workspace's rows: a share of an
+              // expense from another workspace cannot be categorized from
+              // here, so it would sit in the queue forever (#469).
+              workspaceOnly: true,
             })}
           >
             <div className="flex items-center gap-2.5 min-w-0">

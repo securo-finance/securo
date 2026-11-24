@@ -881,6 +881,8 @@
     "savingsRateCaption": "a bevétel megtakarított része ebben a hónapban",
     "spendingProjection": "Ilyen ütemben a hónap végéig {{amount}} lesz a költésed",
     "uncategorizedCta": "{{count}} tranzakció vár kategorizálásra",
+    "uncategorizedCta_one": "{{count}} tranzakció vár kategorizálásra",
+    "uncategorizedCta_other": "{{count}} tranzakció vár kategorizálásra",
     "uncategorizedTotal": "Összesen {{amount}}",
     "categorizeNow": "Kategorizálás most",
     "drillDownQuickCategorize": "Kategória választása",

@@ -881,6 +881,8 @@
     "savingsRateCaption": "share of income saved this month",
     "spendingProjection": "At this pace, you'll spend {{amount}} by month end",
     "uncategorizedCta": "{{count}} transactions need categorizing",
+    "uncategorizedCta_one": "{{count}} transaction needs categorizing",
+    "uncategorizedCta_other": "{{count}} transactions need categorizing",
     "uncategorizedTotal": "{{amount}} in total",
     "categorizeNow": "Categorize now",
     "drillDownQuickCategorize": "Pick a category",

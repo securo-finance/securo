@@ -879,6 +879,8 @@
     "savingsRateCaption": "今月の収入に占める貯蓄の割合",
     "spendingProjection": "このペースでは、月末までに{{amount}}を使います",
     "uncategorizedCta": "{{count}}件の取引にカテゴリが必要です",
+    "uncategorizedCta_one": "{{count}}件の取引にカテゴリが必要です",
+    "uncategorizedCta_other": "{{count}}件の取引にカテゴリが必要です",
     "uncategorizedTotal": "合計{{amount}}",
     "categorizeNow": "今すぐ分類",
     "drillDownQuickCategorize": "カテゴリを選択",

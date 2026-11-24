@@ -170,6 +170,30 @@ async def test_list_transactions_tx_type_filter(
     assert debits["total"] + credits["total"] >= len(debits["items"])  # sanity
 
 
+async def test_list_transactions_reads_all_and_aggregate_words(
+    session: AsyncSession, ctx: CallContext, test_transactions
+):
+    """The aggregate tool takes status='all' and tx_type='expense'; a model
+    passing the same here used to get an empty list, and kept retrying."""
+    handler = REGISTRY["list_transactions"].handler
+    everything = await handler(session=session, ctx=ctx)
+    assert (await handler(session=session, ctx=ctx, status="all"))["total"] == everything["total"] > 0
+    debits = await handler(session=session, ctx=ctx, tx_type="debit")
+    assert (await handler(session=session, ctx=ctx, tx_type="expense"))["total"] == debits["total"]
+    credits = await handler(session=session, ctx=ctx, tx_type="credit")
+    assert (await handler(session=session, ctx=ctx, tx_type="income"))["total"] == credits["total"]
+
+
+async def test_list_transactions_refuses_an_unknown_status(
+    session: AsyncSession, ctx: CallContext, test_transactions
+):
+    import pytest
+
+    handler = REGISTRY["list_transactions"].handler
+    with pytest.raises(ValueError, match="posted, pending, all"):
+        await handler(session=session, ctx=ctx, status="settled")
+
+
 async def test_list_transactions_currency_filter_matches_native(
     session: AsyncSession, ctx: CallContext, test_transactions
 ):

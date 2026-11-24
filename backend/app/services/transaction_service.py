@@ -197,7 +197,10 @@ async def _fx_override_in_owner_currency(
     update_data = dict(update_data)
     amount = Decimal(str(update_data.get("amount", tx.amount)))
     amount_unchanged = amount == Decimal(str(tx.amount))
-    shown = await viewer.convert(session, tx.user_id, tx.amount_primary, tx.date)
+    shown = await viewer.convert(
+        session, tx.user_id, tx.amount_primary, tx.date,
+        currency=tx.currency, amount=tx.amount,
+    )
     if amount_unchanged and shown is not None:
         # The stored stamp itself counts as an echo too: a client that read
         # the row unconverted sends it back as it was (#440).
@@ -287,12 +290,18 @@ def _drop_typed_primary(transaction: Transaction) -> None:
 
 async def _restore_typed_primary(
     session: AsyncSession, transaction: Transaction, user_id: uuid.UUID
-) -> None:
-    """Put back the typed conversion after a stamp derived it from a rate."""
+) -> bool:
+    """Put back the typed conversion after a stamp derived it from a rate.
+
+    Returns whether a typed figure was put back, so the caller knows the
+    primary amount no longer comes from the rate.
+    """
     user = await session.get(User, user_id)
     typed = typed_primary_amount(transaction, user.primary_currency) if user else None
-    if typed is not None:
-        transaction.amount_primary, transaction.fx_rate_used = typed
+    if typed is None:
+        return False
+    transaction.amount_primary, transaction.fx_rate_used = typed
+    return True
 
 
 FlagDue = Literal["overdue", "soon"]
@@ -344,6 +353,7 @@ async def get_transactions(
     unread_only: bool = False,
     include_running_balance: bool = False,
     primary_currency: Optional[str] = None,
+    workspace_only: bool = False,
 ) -> tuple[list[Transaction], int, Optional[dict]]:
     """List transactions for a workspace.
 
@@ -355,6 +365,12 @@ async def get_transactions(
     currency other than `primary_currency`, `running_balance_primary`) when the
     list is one account's ledger from `from_date` in the default order, a
     credit card's statement window included; see `_running_balance_account`.
+
+    `workspace_only` drops the viewer's shares of group expenses that live in
+    another workspace, which the default scope adds. A queue the viewer clears
+    from this workspace asks for it: the write that would clear the row is
+    scoped to this workspace, so a shared row from another one stays pending
+    forever (the unread queue and the dashboard's categorize counter, #469).
     """
     # In "accrual" mode, bucket/order by effective_date so list filters
     # line up with the cash-flow view used by the dashboard and reports.
@@ -421,6 +437,11 @@ async def get_transactions(
             Transaction.id.in_(tx_ids_subq),
             in_bound_workspace(Transaction.workspace_id),
         )
+    elif workspace_only:
+        # A queue view of this workspace's own rows. Kept instead of the
+        # generic scope so a caller that means "rows I can act on here" does
+        # not pick up shares of another workspace's rows (#469).
+        base_query = base_query.where(Transaction.workspace_id == workspace_id)
     else:
         # Default scope: transactions in this workspace PLUS cross-workspace
         # shares the viewer participates in. The union surfaces the
@@ -2140,9 +2161,15 @@ async def _apply_update_to_row(
     previous_account_id = tx.account_id
     # Compared before the update: a save that resends the same amount must
     # not work out the account amount again.
-    account_inputs_changed = any(
+    money_inputs_changed = any(
         key in update_data and update_data[key] != getattr(tx, key)
-        for key in ("amount", "currency", "date")
+        for key in ("amount", "currency")
+    )
+    # A move of the date restamps the account amount too, but it does not
+    # invalidate a typed conversion: that figure is about the amount, and the
+    # dialog sends it back unchanged when only the date moved (#444).
+    account_inputs_changed = money_inputs_changed or (
+        "date" in update_data and update_data["date"] != tx.date
     )
     fx_keys = {"amount_primary", "fx_rate_used"}
     for key, value in update_data.items():
@@ -2192,13 +2219,17 @@ async def _apply_update_to_row(
     elif needs_restamp or heals_fx_on_post or account_moved:
         # Posting only heals the reporting stamp; the account amount follows
         # a change of amount, currency, date or account.
-        if account_inputs_changed or account_moved:
+        if money_inputs_changed or account_moved:
             _drop_typed_primary(tx)
         await stamp_primary_amount(
             session, stamp_user_id, tx, restamp_account=account_inputs_changed or account_moved
         )
         # A save that resends the same amount keeps what the user typed.
-        await _restore_typed_primary(session, tx, stamp_user_id)
+        if await _restore_typed_primary(session, tx, stamp_user_id):
+            # The stamp above wrote the derived figure into the account leg
+            # when the account is in the owner's currency; the restored one
+            # is the row's value there.
+            await stamp_account_amount(session, tx, typed_primary=True, recompute=False)
 
     # Refresh effective_date when the purchase date, account, or the manual
     # bill-cycle override changed. Also re-link bill_id when the override

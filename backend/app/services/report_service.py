@@ -878,7 +878,10 @@ async def get_income_expenses_report(
             pnl_ratio = user_pnl_ratio(tx)
             if not pnl_ratio:
                 continue
-            stamped = await viewer.convert(session, tx.user_id, tx.amount_primary, tx.date)
+            stamped = await viewer.convert(
+                session, tx.user_id, tx.amount_primary, tx.date,
+                currency=tx.currency, amount=tx.amount,
+            )
             if stamped is not None:
                 amount = abs(float(stamped))
             else:
@@ -1312,7 +1315,10 @@ async def get_income_expenses_report(
             group = "income" if tx.type == "credit" else "expenses"
             tx_report_date = reporting_date_value(tx, accounting_mode)
             forecast_period_label = _format_date_label(tx_report_date, interval)
-            stamped = await viewer.convert(session, tx.user_id, tx.amount_primary, tx.date)
+            stamped = await viewer.convert(
+                session, tx.user_id, tx.amount_primary, tx.date,
+                currency=tx.currency, amount=tx.amount,
+            )
             if stamped is not None:
                 tx_amount = abs(float(stamped))
             else:

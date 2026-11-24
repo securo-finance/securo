@@ -883,6 +883,8 @@
     "savingsRateCaption": "da renda deste mês ficou guardada",
     "spendingProjection": "Nesse ritmo, você gastará {{amount}} até o fim do mês",
     "uncategorizedCta": "{{count}} transações precisam ser categorizadas",
+    "uncategorizedCta_one": "{{count}} transação precisa ser categorizada",
+    "uncategorizedCta_other": "{{count}} transações precisam ser categorizadas",
     "uncategorizedTotal": "{{amount}} no total",
     "categorizeNow": "Categorizar agora",
     "drillDownQuickCategorize": "Escolher categoria",

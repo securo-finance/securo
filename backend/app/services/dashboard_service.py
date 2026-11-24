@@ -557,6 +557,10 @@ async def get_summary(
             .where(Account.workspace_id == workspace_id)
         ) or 0
 
+    # Get user's primary currency (user already loaded above for reporting mode)
+    primary_currency = user.primary_currency if user else get_settings().default_currency
+    viewer = await viewer_currency(session, primary_currency)
+
     # Pending categorization: uncategorized rows that count toward the
     # user's P/L. That is the same filter the uncategorized list behind the
     # counter uses (user_pnl_only), so ignored rows, rows excluded from P/L,
@@ -571,10 +575,32 @@ async def get_summary(
         counts_as_user_pnl(Transaction.category_id),
         *acct_filter,
     ]
+    # The rows are in different currencies, so the total is read in the
+    # viewer's display currency (#462) through the same expression the rest
+    # of the app totals a row's value with: its primary stamp, converted at
+    # the row's date when another owner stamped it. Reading the stamp even
+    # for a row already in the viewer's currency is what keeps a typed
+    # conversion (ADR 0031) on the figure the user typed instead of the
+    # account charge (#467). A row with no stamp counts its own amount when
+    # it is already in the viewer's currency, and counts nothing when it is
+    # foreign, as the drill-down skips it instead of taking another
+    # currency's figure as theirs. The codes are compared upper-cased, like
+    # `amount_in_account_currency`: imports store whatever case they got.
+    pending_amount = func.abs(
+        func.coalesce(
+            viewer.amount(),
+            case(
+                (
+                    func.upper(Transaction.currency) == viewer.currency.upper(),
+                    Transaction.amount,
+                ),
+            ),
+        )
+    )
     pending_categorization_result = await session.execute(
         select(
             func.count(),
-            func.coalesce(func.sum(func.abs(Transaction.amount)), 0),
+            func.coalesce(func.sum(pending_amount), 0),
         )
         .select_from(Transaction)
         .where(*pending_cat_filters)
@@ -583,9 +609,6 @@ async def get_summary(
         pending_categorization_result.one()
     )
     pending_categorization_amount = abs(float(pending_categorization_amount or 0))
-
-    # Get user's primary currency (user already loaded above for reporting mode)
-    primary_currency = user.primary_currency if user else get_settings().default_currency
 
     # Asset values — use cutoff so past months show historical values. Under a
     # collection filter, include only assets in the collection's wallets
@@ -644,7 +667,6 @@ async def get_summary(
     # Use amount_primary sums for more accurate multi-currency income/expenses.
     # Same posted-only rule as the native-currency totals above. Another
     # member's stamp is in their currency, so it is read in the viewer's.
-    viewer = await viewer_currency(session, primary_currency)
     primary_result = await session.execute(
         with_category_lines(
             select(
@@ -716,7 +738,10 @@ async def get_summary(
         pnl_ratio = user_pnl_ratio(tx)
         if not pnl_ratio:
             continue
-        stamped = await viewer.convert(session, tx.user_id, tx.amount_primary, tx.date)
+        stamped = await viewer.convert(
+            session, tx.user_id, tx.amount_primary, tx.date,
+            currency=tx.currency, amount=tx.amount,
+        )
         if stamped is not None:
             forecast_converted = stamped
         else:
@@ -1023,7 +1048,10 @@ async def get_spending_by_category(
         parts = user_pnl_parts(tx)
         if not parts:
             continue
-        stamped = await viewer.convert(session, tx.user_id, tx.amount_primary, tx.date)
+        stamped = await viewer.convert(
+            session, tx.user_id, tx.amount_primary, tx.date,
+            currency=tx.currency, amount=tx.amount,
+        )
         if stamped is not None:
             tx_amount = abs(stamped)
         else:
@@ -1144,7 +1172,10 @@ async def get_monthly_trend(
         tx_report_date = reporting_date_value(tx, accounting_mode)
         month_key = f"{tx_report_date.year:04d}-{tx_report_date.month:02d}"
         bucket = trend_map.setdefault(month_key, [0.0, 0.0])
-        stamped = await viewer.convert(session, tx.user_id, tx.amount_primary, tx.date)
+        stamped = await viewer.convert(
+            session, tx.user_id, tx.amount_primary, tx.date,
+            currency=tx.currency, amount=tx.amount,
+        )
         if stamped is not None:
             amount = abs(float(stamped))
         else:

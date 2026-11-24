@@ -879,6 +879,8 @@
     "savingsRateCaption": "van het inkomen deze maand gespaard",
     "spendingProjection": "In dit tempo geeft u aan het einde van de maand {{amount}} uit",
     "uncategorizedCta": "{{count}} transacties moeten worden gecategoriseerd",
+    "uncategorizedCta_one": "{{count}} transactie moet worden gecategoriseerd",
+    "uncategorizedCta_other": "{{count}} transacties moeten worden gecategoriseerd",
     "uncategorizedTotal": "{{amount}} in totaal",
     "categorizeNow": "Categoriseer nu",
     "drillDownQuickCategorize": "Kies een categorie",

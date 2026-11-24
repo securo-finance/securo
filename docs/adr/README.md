@@ -51,3 +51,5 @@ Each file here records one decision about how Securo is built: what we chose, wh
 | [0036](0036-xml-attachments.md) | XML files can be attached, and anything that isn't an image or a PDF is served as a download |
 | [0037](0037-document-reading.md) | Documents are read into transactions by an LLM, reviewed before anything is saved |
 | [0038](0038-plugin-connection-recovers-with-new-values.md) | A plugin connection is fixed in place with new values, and a routine-only one proves them at once |
+| [0039](0039-date-move-keeps-typed-stamp.md) | A move of the date alone keeps the amount the owner typed |
+| [0040](0040-viewer-currency-reads-own-amount.md) | A row already in the viewer's currency reads as its own amount |
