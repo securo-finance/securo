@@ -30,14 +30,16 @@ def test_shift_month_crosses_year_boundaries():
     assert _shift_month(date(2025, 3, 1), -14) == date(2024, 1, 1)
 
 
-async def _account(session: AsyncSession, user_id, name="Statement", closed=False) -> Account:
+async def _account(
+    session: AsyncSession, user_id, name="Statement", closed=False, currency="BRL",
+) -> Account:
     account = Account(
         id=uuid.uuid4(),
         user_id=user_id,
         name=name,
         type="checking",
         balance=Decimal("0"),
-        currency="BRL",
+        currency=currency,
         is_closed=closed,
     )
     session.add(account)
@@ -455,32 +457,37 @@ async def test_statement_drops_a_credit_settled_in_full(
     assert statement.expenses.rows == []
 
 
+@pytest.mark.parametrize(
+    "excluded_flags",
+    [{"is_ignored": True}, {"treat_as_transfer": True}],
+    ids=["ignored-category", "transfer-category"],
+)
 @pytest.mark.asyncio
-async def test_statement_ignores_the_settled_part_of_an_ignored_line(
-    session: AsyncSession, test_user, test_workspace
+async def test_statement_leaves_a_non_pnl_line_out_of_the_settled_offset(
+    session: AsyncSession, test_user, test_workspace, excluded_flags
 ):
-    """A credit split across a group where one category is ignored: the
-    offset follows the counted lines, so the ignored line cannot drag the
-    group's net negative and push its income into the expense section
-    (#493).
+    """A credit split across a group where one category does not count as
+    the user's income (ignored, or flagged as a transfer): the offset
+    follows the counted lines, so the excluded line cannot drag the group's
+    net negative and push its income into the expense section (#493).
 
-    100 split 60 into an ignored category and 40 into a counted one, with
+    100 split 60 into the excluded category and 40 into a counted one, with
     60 paid back: the 24 that belong to the counted part come off it, and
-    the 36 of the ignored part are not income and not an offset either.
+    the 36 of the excluded part are not income and not an offset either.
     """
     group = CategoryGroup(
         id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
         name="Shared", icon="users", color="#222222", position=0,
     )
-    ignored = Category(
+    excluded = Category(
         id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
-        name="Ignored", group_id=group.id, is_ignored=True,
+        name="Excluded", group_id=group.id, **excluded_flags,
     )
     counted = Category(
         id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
         name="Counted", group_id=group.id,
     )
-    session.add_all([group, ignored, counted])
+    session.add_all([group, excluded, counted])
     await session.flush()
 
     account = await _account(session, test_user.id)
@@ -491,7 +498,7 @@ async def test_statement_ignores_the_settled_part_of_an_ignored_line(
     )
     session.add(credit)
     await session.flush()
-    for position, (cat, amount) in enumerate(((ignored, "60"), (counted, "40"))):
+    for position, (cat, amount) in enumerate(((excluded, "60"), (counted, "40"))):
         session.add(TransactionCategoryLine(
             workspace_id=credit.workspace_id, transaction_id=credit.id,
             category_id=cat.id, amount=Decimal(amount), position=position,
@@ -509,6 +516,39 @@ async def test_statement_ignores_the_settled_part_of_an_ignored_line(
     assert [child.key for child in row.children] == [str(counted.id)]
     assert statement.income.totals == [16.0]
     assert statement.expenses.rows == []
+
+
+@pytest.mark.asyncio
+async def test_statement_settles_a_foreign_credit_that_has_no_rate(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
+    """A USD credit with no stored primary amount keeps the row's own amount
+    in the statement, as it did before, and the settled part comes off in
+    that same unit: 100 settled by 60 reads 40 (#493).
+
+    The currency of the cell is the conversion work on its own (#302); what
+    this locks down is that a missing rate cannot make the offset swallow
+    the whole credit or leave it untouched.
+    """
+    _, _, salary = test_categories
+    payers, me, friend = await _group_with_friend(session, test_user, test_workspace)
+    account = await _account(session, test_user.id, name="Dollar", currency="USD")
+    credit = _txn(
+        test_user.id, account, "100", date(2025, 2, 10), "credit", salary.id,
+        currency="USD",
+    )
+    session.add(credit)
+    await session.flush()
+    session.add(_payback(payers, me, friend, "60", date(2025, 2, 20), credit))
+    await session.commit()
+
+    statement = await get_category_statement(
+        session, test_workspace.id, test_user.id, date(2025, 2, 1), months=1,
+        primary_currency="BRL",
+    )
+    [row] = statement.income.rows
+    assert (row.key, row.values) == (str(salary.id), [40.0])
+    assert statement.income.totals == [40.0]
 
 
 @pytest.mark.asyncio
