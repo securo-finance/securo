@@ -1010,7 +1010,11 @@ async def keep_balance_as_manual(session: AsyncSession, account: Account, balanc
     if abs(offset) < Decimal("0.01"):
         return
     opening = await session.scalar(
-        select(Transaction).where(Transaction.account_id == account.id, Transaction.source == "opening_balance")
+        select(Transaction).where(
+            Transaction.account_id == account.id,
+            Transaction.source == "opening_balance",
+            func.upper(Transaction.currency) == func.upper(account.currency),
+        )
     )
     if opening is None:
         oldest = await session.scalar(select(func.min(Transaction.date)).where(Transaction.account_id == account.id))

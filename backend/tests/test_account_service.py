@@ -35,6 +35,7 @@ from app.services.account_service import (
     get_account_summary,
     get_accounts,
     get_period_opening_balance,
+    keep_balance_as_manual,
     reopen_account,
     serialize_account,
     sync_opening_balance_for_connected_account,
@@ -1468,6 +1469,62 @@ async def test_sync_opening_balance_ignores_other_currency_opening(
     # The other rows add up to 250 (the 500 credit less the 250 the USD
     # opening is worth here), which leaves an offset of -850.
     assert local_opening.amount == Decimal("850.00")
+    assert local_opening.type == "debit"
+
+    await session.refresh(foreign_opening)
+    assert foreign_opening.amount == Decimal("50.00")
+    assert foreign_opening.currency == "USD"
+    assert foreign_opening.type == "debit"
+
+
+@pytest.mark.asyncio
+async def test_keep_balance_as_manual_offsets_the_account_currency_opening(
+    session, test_user, test_workspace, test_connection
+):
+    """Unlinking has to put the offset in the opening held in the account's currency.
+
+    The lookup took any opening_balance row on the account, so with a
+    foreign-currency opening alive it could rewrite that one instead. Its
+    `amount_account` keeps the old value, so the offset never reaches the
+    ledger and the account goes on showing the balance it had while synced.
+    """
+    account = await _make_account(
+        session, test_user.id, "Shared Limit Card", acc_type="credit_card", balance="600.00",
+        connection_id=test_connection.id,
+    )
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 500, "credit", today - timedelta(days=5))
+    foreign_opening = await _add_txn(
+        session, test_user.id, account.id, 50, "debit", today - timedelta(days=30),
+        source="opening_balance", currency="USD",
+    )
+    foreign_opening.amount_account = Decimal("250.00")
+    await session.commit()
+
+    await sync_opening_balance_for_connected_account(session, account)
+    await session.commit()
+
+    # `unlink_connection` makes the account manual before asking it to keep
+    # what it showed, which is where the 50 of debt the ledger does not have
+    # comes from: the provider counted a charge the ledger still calls pending.
+    account.connection_id = None
+    await keep_balance_as_manual(session, account, Decimal("-650.00"))
+    await session.commit()
+
+    summary = await get_account_summary(session, account.id, account.workspace_id)
+    assert summary is not None
+    assert Decimal(str(summary["current_balance"])) == Decimal("-650.00")
+
+    from sqlalchemy import select
+
+    local_opening = (await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == account.id,
+            Transaction.source == "opening_balance",
+            Transaction.currency == "BRL",
+        )
+    )).scalar_one()
+    assert local_opening.amount == Decimal("900.00")
     assert local_opening.type == "debit"
 
     await session.refresh(foreign_opening)
