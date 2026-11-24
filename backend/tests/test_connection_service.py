@@ -3691,6 +3691,35 @@ async def test_sync_connection_enable_banking_adopts_a_row_stored_with_the_booki
 
 
 @pytest.mark.asyncio
+async def test_sync_connection_enable_banking_adopts_a_row_booked_days_after_its_value_date(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """#664: a row stored while the booking date came first keeps that date,
+    while the entry is now dated by its value date, more than three days
+    earlier across a long weekend. The reference arrives on a later fetch, and
+    the held row is still found and takes the new id instead of a twin."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    dates = {"booking_date": "2026-09-08", "value_date": "2026-09-03"}
+    first = _eb_txn({**_eb_late_ref_payload(None), **dates})
+    held = _eb_late_ref_row(test_user.id, test_workspace.id, account, first)
+    # The row was dated the way the provider read the payload before #664.
+    held.date = date(2026, 9, 8)
+    session.add(held)
+    await session.commit()
+    held_id = held.id
+
+    refetched = _eb_txn({**_eb_late_ref_payload("2026-09-08.1"), **dates})
+    assert refetched.date == date(2026, 9, 3)
+    assert refetched.external_id != first.external_id
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [refetched])
+
+    rows = await _account_rows(session, account_id)
+    assert [row.id for row in rows] == [held_id]
+    assert rows[0].external_id == refetched.external_id
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "held_fields",
     [{"remittance": "COMPRA TARJ. FARMACIA SOL"}, {"currency": "USD"}],
@@ -4057,6 +4086,40 @@ async def test_sync_connection_enable_banking_reworded_remittance_yields_to_exac
 
     alpha = _eb_txn(_eb_reworded_payload("2026-11-11.1", _ALPHA))
     beta = _eb_txn(_eb_reworded_payload("2026-11-11.2", _BETA))
+    fetched = [beta, alpha] if beta_first else [alpha, beta]
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, fetched)
+
+    rows = await _account_rows(session, account_id)
+    assert {row.external_id for row in rows} == {alpha.external_id, beta.external_id}
+    assert next(row for row in rows if row.id == held_id).external_id == alpha.external_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("beta_first", [False, True], ids=["alpha_first", "beta_first"])
+async def test_sync_connection_enable_banking_reworded_remittance_yields_to_twin_of_a_legacy_row(
+    session: AsyncSession, test_user, test_workspace, beta_first,
+):
+    """#664: the held ALPHA row keeps the booking date it was stored with,
+    while the fetch dates ALPHA and BETA by their earlier value date. ALPHA is
+    still recognised as the held row's exact twin, so BETA never takes it."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    dates = {"transaction_date": None, "value_date": "2026-11-09"}
+    held_txn = _eb_txn({**_eb_reworded_payload(None, _ALPHA), **dates})
+    held = _eb_row(
+        test_user.id, test_workspace.id, account, held_txn.external_id,
+        held_txn.raw_data, "120.00", description=held_txn.description,
+        original_description=held_txn.description,
+        # The row was dated the way the provider read the payload before #664.
+        date=date(2026, 11, 11), currency=held_txn.currency,
+    )
+    session.add(held)
+    await session.commit()
+    held_id = held.id
+
+    alpha = _eb_txn({**_eb_reworded_payload("2026-11-11.1", _ALPHA), **dates})
+    beta = _eb_txn({**_eb_reworded_payload("2026-11-11.2", _BETA), **dates})
+    assert alpha.date == date(2026, 11, 9)
     fetched = [beta, alpha] if beta_first else [alpha, beta]
     await _sync_eb(session, conn, test_workspace.id, test_user.id, fetched)
 

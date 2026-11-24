@@ -2873,12 +2873,17 @@ def _eb_exact_twin_in_batch(
     referenced copy of ALPHA in the same fetch landed as a new row.
     """
     held_text = held.original_description or held.description
+    # A row stored before the provider's date order changed keeps the date it
+    # was given then; its payload names the date its entry carries now.
+    held_dates = {held.date}
+    if isinstance(held.raw_data, dict):
+        held_dates.add(entry_date(held.raw_data))
     return any(
         other.external_id != txn_data.external_id
         and other.amount == held.amount
         and other.type == held.type
         and other.currency == held.currency
-        and other.date == held.date
+        and other.date in held_dates
         and other.status == held.status
         and token_overlap(held_text, other.description) >= 0.9
         for other in incoming_batch
@@ -3216,7 +3221,10 @@ async def _find_synced_duplicate(
             Transaction.raw_data.is_not(None),
             Transaction.date
             >= txn_data.date - timedelta(days=3 + _EB_HOLD_SETTLE_DAYS),
-            Transaction.date <= txn_data.date + timedelta(days=3),
+            # A row stored before the provider read the value date keeps the
+            # later booking date; its payload date is checked below.
+            Transaction.date
+            <= txn_data.date + timedelta(days=3 + _EB_HOLD_SETTLE_DAYS),
             Transaction.amount == txn_data.amount,
             Transaction.type == txn_data.type,
             Transaction.external_id != txn_data.external_id,
