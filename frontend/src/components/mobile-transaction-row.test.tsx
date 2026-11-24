@@ -174,6 +174,23 @@ describe('MobileTransactionRow description line (#433)', () => {
   })
 })
 
+describe('MobileTransactionRow payback badge', () => {
+  it('marks a credit that pays back a group debt (#424)', () => {
+    renderRow(makeTx({
+      type: 'credit',
+      amount: 30,
+      settled_by: [{ id: 's-1', group_id: 'g-1', from_member_id: 'm-1', amount: 30 }],
+    }))
+    expect(screen.getByText('splitGroups.shareSettlement')).toBeInTheDocument()
+  })
+
+  it('shows no payback badge on a credit that settles nothing', () => {
+    renderRow(makeTx({ type: 'credit', amount: 30, settled_by: [] }))
+    expect(screen.queryByText('splitGroups.shareSettlement')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('transaction-badges')).not.toBeInTheDocument()
+  })
+})
+
 describe('MobileTransactionRow reporting date indicator', () => {
   it('shows reporting and original bank dates for moved rows', () => {
     renderRow(makeTx({ reporting_date_override: '2026-09-30' }))

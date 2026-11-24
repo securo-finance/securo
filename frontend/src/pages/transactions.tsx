@@ -6,6 +6,7 @@ import { currentMonth, monthRange, monthFromRange } from '@/lib/month-utils'
 import { loadRange, saveRange } from '@/lib/remembered-range'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { PaybackBadge } from '@/components/payback-badge'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { transactions, categories as categoriesApi, categoryGroups as categoryGroupsApi, accounts as accountsApi, recurring, payees as payeesApi, admin, groups as groupsApi, rules as rulesApi, reconciliation as reconciliationApi } from '@/lib/api'
@@ -1375,6 +1376,7 @@ export default function TransactionsPage() {
                 <span className="truncate" title={groupBadgeLabel}>{groupBadgeLabel}</span>
               </span>
             )}
+            <PaybackBadge tx={tx} />
             {/* The invoice this settles. Same badge shape as the split
                 and transfer markers beside it, and absent entirely in a
                 workspace without the invoicing module — the server does
