@@ -111,6 +111,21 @@ describe('the transfer scan on the rules page', () => {
     )
   })
 
+  it('refreshes the reconciliation queue when the scan only filed questions', async () => {
+    // No pair was certain, so the toast says nothing was found — but the scan
+    // still wrote every ambiguous pair to the queue the tab counts.
+    api.connections.detectTransfers.mockResolvedValue({ pairs_created: 0 })
+    renderWithProviders(<RulesPage />)
+
+    await waitFor(() => expect(api.reconciliation.suggestions).toHaveBeenCalledTimes(1))
+    await clickScan()
+
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(t('rules.transferScanNone')),
+    )
+    await waitFor(() => expect(api.reconciliation.suggestions).toHaveBeenCalledTimes(2))
+  })
+
   it('keeps the button busy until the scan comes back', async () => {
     let resolve: (value: { pairs_created: number }) => void = () => {}
     api.connections.detectTransfers.mockReturnValue(
