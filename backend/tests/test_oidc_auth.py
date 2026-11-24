@@ -15,6 +15,10 @@ from app.core.config import get_settings
 from app.models.app_settings import AppSetting
 from app.models.workspace import WorkspaceMember
 
+# The oidc_settings fixture replaces _discover; tests that need the real one
+# put this back.
+_real_discover = oidc_auth._discover
+
 
 class FakeRedis:
     def __init__(self):
@@ -488,6 +492,45 @@ async def test_logout_discovery_warning_hides_url_credentials(
     assert "hunter2" not in message
     assert "user:" not in message
     assert "s3cr3t-token" not in message
+
+
+@pytest.mark.asyncio
+async def test_logout_discovery_survives_an_unparsable_discovery_url(
+    oidc_settings, monkeypatch, caplog
+):
+    """httpx.InvalidURL is neither an HTTPError nor a ValueError; it still
+    answers "" and is reported like any other discovery failure."""
+    oidc_settings.oidc_discovery_url = "https://[::1/.well-known/openid-configuration"
+    monkeypatch.setattr(oidc_auth, "_discover", _real_discover)
+    monkeypatch.setattr(oidc_auth, "_logout_url_cache", None)
+    caplog.set_level(logging.WARNING, logger="app.api.oidc_auth")
+
+    assert await oidc_auth._provider_logout_url() == ""
+
+    warnings = _oidc_warnings(caplog)
+    assert len(warnings) == 1
+    assert "InvalidURL" in warnings[0].getMessage()
+
+
+@pytest.mark.asyncio
+async def test_logout_discovery_survives_an_out_of_range_port(
+    oidc_settings, monkeypatch, caplog
+):
+    """On Linux a port such as :99999 fails inside the connect as an
+    ExceptionGroup wrapping OverflowError."""
+
+    async def failing_discover():
+        raise ExceptionGroup(
+            "connection failed", [OverflowError("port must be 0-65535.")]
+        )
+
+    monkeypatch.setattr(oidc_auth, "_discover", failing_discover)
+    monkeypatch.setattr(oidc_auth, "_logout_url_cache", None)
+    caplog.set_level(logging.WARNING, logger="app.api.oidc_auth")
+
+    assert await oidc_auth._provider_logout_url() == ""
+
+    assert len(_oidc_warnings(caplog)) == 1
 
 
 def test_loggable_url_keeps_port_and_handles_broken_urls():

@@ -42,7 +42,9 @@ def _bound_money_field(
     field = info.field_name or "amount"
     if field == "fx_rate_used":
         return bounded_fx_rate(value, field, allow_zero=True)
-    return bounded_money(value, field, allow_zero=field == "amount_primary")
+    return bounded_money(
+        value, field, allow_zero=field in ("amount_primary", "amount_primary_shown")
+    )
 
 
 class TransactionBase(BaseModel):
@@ -151,6 +153,18 @@ class TransactionCreate(TransactionBase):
         return self
 
 
+class TransactionPaybackPayer(BaseModel):
+    member_id: uuid.UUID
+    amount: Decimal = Field(gt=0, decimal_places=2)
+
+
+class TransactionPaybackInput(BaseModel):
+    """Group members paying back an incoming transaction, one settlement each."""
+    group_id: Optional[uuid.UUID] = None
+    to_member_id: Optional[uuid.UUID] = None
+    payers: list[TransactionPaybackPayer] = []
+
+
 class TransactionUpdate(BaseModel):
     description: Optional[str] = None
     amount: Optional[Decimal] = None
@@ -163,6 +177,11 @@ class TransactionUpdate(BaseModel):
     notes: Optional[str] = None
     amount_primary: Optional[Decimal] = None
     fx_rate_used: Optional[Decimal] = None
+    # The converted amount the client was shown when it loaded the row (the
+    # `amount_primary` it read). A conversion sent back equal to it is an
+    # echo and keeps the owner's stamp, even after a rate sync moved the
+    # conversion the server would show now (#440). Never stored.
+    amount_primary_shown: Optional[Decimal] = None
     is_ignored: Optional[bool] = None
     exclude_from_pnl: Optional[bool] = None
     # Not Optional: the column is NOT NULL, so an explicit null is a 422, not a
@@ -193,6 +212,9 @@ class TransactionUpdate(BaseModel):
     # When provided, replaces the transaction's splits wholesale. Pass
     # an object with an empty `splits` list to clear them.
     splits: Optional[TransactionSplitsInput] = None
+    # When provided, replaces the settlements this credit pays back, like
+    # `splits`; an empty `payers` list removes them.
+    payback: Optional[TransactionPaybackInput] = None
     # When provided, replaces the category split wholesale; an empty `lines`
     # list undoes it. Required alongside a new `amount` on a split row.
     category_lines: Optional[TransactionCategoryLinesInput] = None
@@ -207,7 +229,7 @@ class TransactionUpdate(BaseModel):
     def normalize_currency(cls, value: Optional[str]) -> Optional[str]:
         return normalize_currency_code(value)
 
-    @field_validator("amount", "amount_primary", "fx_rate_used")
+    @field_validator("amount", "amount_primary", "fx_rate_used", "amount_primary_shown")
     @classmethod
     def check_amount_bounds(
         cls, value: Optional[Decimal], info: ValidationInfo
@@ -275,6 +297,15 @@ class TransactionTransferCounterpart(BaseModel):
     account_name: str
 
 
+class TransactionSettledBy(BaseModel):
+    id: uuid.UUID
+    group_id: uuid.UUID
+    from_member_id: uuid.UUID
+    amount: Decimal
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class TransactionRead(TransactionBase):
     id: uuid.UUID
     user_id: uuid.UUID
@@ -308,6 +339,9 @@ class TransactionRead(TransactionBase):
     amount_primary: Optional[float] = None
     fx_rate_used: Optional[float] = None
     fx_fallback: bool = False
+    # The owner typed the conversion (ADR 0031). A derived one follows the
+    # date and the amount, so the dialog leaves it to the server (#483).
+    fx_typed: bool = False
     attachment_count: int = 0
     installment_number: Optional[int] = None
     total_installments: Optional[int] = None
@@ -344,6 +378,8 @@ class TransactionRead(TransactionBase):
     # is_self member at request time. Helps the UI show who paid
     # instead of a generic "shared" badge.
     parent_owner_name: Optional[str] = None
+    # Settlements this credit pays back (it is their receiver transaction).
+    settled_by: list["TransactionSettledBy"] = []
     is_ignored: bool = False
     exclude_from_pnl: bool = False
     is_flagged: bool = False
@@ -504,3 +540,6 @@ class TransactionImportRequest(BaseModel):
     filename: str = ""
     detected_format: str = ""
     detect_duplicates: bool = True
+    # Set when the rows came from a document read by a model (ADR 0037): the
+    # read is marked confirmed, with the rows as the person kept them.
+    document_extraction_id: Optional[uuid.UUID] = None

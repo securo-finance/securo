@@ -1,8 +1,9 @@
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import case, or_, select
+from sqlalchemy import case, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -14,6 +15,7 @@ from app.schemas.group_settlement import (
     GroupSettlementCreate,
     GroupSettlementUpdate,
 )
+from app.schemas.transaction import TransactionPaybackInput
 
 
 async def _ensure_group_visible(
@@ -223,6 +225,31 @@ async def _validate_transaction(
         raise ValueError("Linked transaction not found")
 
 
+async def _validate_receiver_transaction(
+    session: AsyncSession, data: GroupSettlementCreate, workspace_id: uuid.UUID, user_id: uuid.UUID
+) -> None:
+    """The caller's own credit, in the settlement's currency. One transfer can
+    pay back several debts, so settlements may share it up to its amount."""
+    tx = await session.scalar(
+        select(Transaction).where(
+            Transaction.id == data.receiver_transaction_id,
+            Transaction.workspace_id == workspace_id,
+            Transaction.user_id == user_id,
+            Transaction.type == "credit",
+            Transaction.currency == data.currency,
+        ).with_for_update()
+    )
+    if tx is None:
+        raise ValueError("Linked transaction must be your own credit in the settlement's currency")
+    linked = await session.scalar(
+        select(func.coalesce(func.sum(GroupSettlement.amount), 0)).where(
+            GroupSettlement.receiver_transaction_id == tx.id
+        )
+    )
+    if Decimal(str(linked)) + data.amount > tx.amount:
+        raise ValueError("Settlements linked to this transaction would exceed its amount")
+
+
 async def list_settlements(
     session: AsyncSession,
     group_id: uuid.UUID,
@@ -245,6 +272,8 @@ async def create_settlement(
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
     data: GroupSettlementCreate,
+    *,
+    commit: bool = True,
 ) -> Optional[GroupSettlement]:
     group = await _ensure_group_visible(session, group_id, workspace_id, user_id)
     if not group:
@@ -288,6 +317,12 @@ async def create_settlement(
         if receiver_user_id is None and to_meta.is_self:
             receiver_user_id = group.user_id
 
+    receiver_tx_id = data.receiver_transaction_id
+    if receiver_tx_id is not None:
+        if receiver_user_id != user_id:
+            raise ValueError("Only the receiver can link their incoming transaction")
+        await _validate_receiver_transaction(session, data, workspace_id, user_id)
+
     # Optional integration with the real account ledger: create a debit
     # transaction on the payer's account and link it via transaction_id.
     if account_id is not None:
@@ -311,9 +346,9 @@ async def create_settlement(
 
     # Receiver-side mirror credit: when the receiver maps to a Securo
     # user and has a checking/savings account, record the cash-in side
-    # so their books reflect the actual money received.
-    receiver_tx_id = None
-    if receiver_user_id is not None:
+    # so their books reflect the actual money received. Not when the
+    # receiver linked the transaction that really arrived.
+    if receiver_tx_id is None and receiver_user_id is not None:
         receiver_desc = description or f"Acerto · {group.name} · {from_name}"
         receiver_tx = await _create_receiver_credit(
             session,
@@ -332,9 +367,64 @@ async def create_settlement(
         group_id=group_id, workspace_id=workspace_id, **payload
     )
     session.add(settlement)
+    if not commit:
+        await session.flush()
+        return settlement
     await session.commit()
     await session.refresh(settlement)
     return settlement
+
+
+async def replace_receiver_settlements(
+    session: AsyncSession,
+    transaction: Transaction,
+    payback: TransactionPaybackInput,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> None:
+    """Replace the settlements a credit pays back, within the transaction's
+    own save, so a failed replacement leaves the previous one in place."""
+    if transaction.source == "settlement":
+        # A settlement's own mirror credit belongs to that settlement, which
+        # may have been recorded by another member.
+        raise ValueError("This credit was created by a settlement; change it from the group")
+    if transaction.user_id != user_id:
+        raise ValueError("Only the transaction's owner can record its payback")
+    await session.execute(
+        delete(GroupSettlement).where(GroupSettlement.receiver_transaction_id == transaction.id)
+    )
+    for payer in payback.payers:
+        if payback.group_id is None or payback.to_member_id is None:
+            raise ValueError("A payback needs its group and the member being paid")
+        settlement = await create_settlement(
+            session, payback.group_id, workspace_id, user_id,
+            GroupSettlementCreate(
+                from_member_id=payer.member_id, to_member_id=payback.to_member_id,
+                amount=payer.amount, currency=transaction.currency, date=transaction.date,
+                receiver_transaction_id=transaction.id,
+            ),
+            commit=False,
+        )
+        if settlement is None:
+            raise ValueError("Group not found")
+
+
+async def check_receiver_settlements(session: AsyncSession, transaction: Transaction) -> None:
+    """A credit that settles debts stays a credit in their currency, and
+    can't drop below what they add up to."""
+    rows = (
+        await session.execute(
+            select(GroupSettlement.amount, GroupSettlement.currency).where(
+                GroupSettlement.receiver_transaction_id == transaction.id
+            )
+        )
+    ).all()
+    if rows and (
+        transaction.type != "credit"
+        or any(currency != transaction.currency for _, currency in rows)
+        or sum(amount for amount, _ in rows) > transaction.amount
+    ):
+        raise ValueError("This transaction pays back group debts; change its payback too")
 
 
 async def update_settlement(
@@ -382,8 +472,22 @@ async def update_settlement(
     if "transaction_id" in update_data:
         await _validate_transaction(session, update_data["transaction_id"], workspace_id)
 
+    # A transaction that really arrived must still cover what settles it. Its
+    # row is locked before the settlement's, the order a transaction save uses.
+    receiver_tx = None
+    if settlement.receiver_transaction_id is not None and {"amount", "currency", "to_member_id"} & update_data.keys():
+        receiver_tx = await session.get(Transaction, settlement.receiver_transaction_id, with_for_update=True)
+        if receiver_tx is not None and receiver_tx.source == "settlement":
+            receiver_tx = None
+        if receiver_tx is not None and update_data.get("to_member_id", settlement.to_member_id) != settlement.to_member_id:
+            raise ValueError("Unlink the incoming transaction before changing who is paid")
+
     for key, value in update_data.items():
         setattr(settlement, key, value)
+
+    if receiver_tx is not None:
+        await session.flush()
+        await check_receiver_settlements(session, receiver_tx)
 
     await session.commit()
     await session.refresh(settlement)

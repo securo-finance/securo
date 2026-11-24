@@ -27,6 +27,10 @@ export type DrillDownFilter = {
   // other workspaces: their categories live there, so reports count them
   // as uncategorized here.
   sharedAsUncategorized?: boolean
+  // Leave out the viewer's shares of expenses from other workspaces. A queue
+  // the viewer clears from this workspace sets it: the write that would clear
+  // such a row belongs to its own workspace, so it would stay pending here.
+  workspaceOnly?: boolean
   account_id?: string
   // Scope to a set of accounts (e.g. the active collection's accounts).
   account_ids?: string[]
@@ -125,6 +129,7 @@ export function TransactionDrillDown({
         category_ids: filter?.category_ids,
         uncategorized: filter?.uncategorized,
         shared_as_uncategorized: filter?.sharedAsUncategorized,
+        workspace_only: filter?.workspaceOnly,
         account_id: filter?.account_id,
         account_ids: filter?.account_ids,
         type: filter?.type,
@@ -188,13 +193,17 @@ export function TransactionDrillDown({
       // share, the owner the amount less everyone else's shares, and anyone
       // else the full amount.
       const splits = tx.splits ?? []
+      // A credit's settled part is a payback, not income, as on the card.
+      const settled = tx.type === 'credit'
+        ? (tx.settled_by ?? []).reduce((sum, s) => sum + Number(s.amount), 0)
+        : 0
       const countsShare = tx.type === 'debit' || (tx.type === 'credit' && !!filter?.ownShareCredits)
       const ownShare = viewerShare != null || !filter?.ownShare || !countsShare
         ? null
         : tx.is_shared
           ? Number(tx.viewer_share ?? 0)
-          : splits.length > 0 && tx.user_id === user?.id
-            ? parentAmount - (splits.reduce((sum, s) => sum + Number(s.share_amount), 0) - Number(tx.viewer_share ?? 0))
+          : (splits.length > 0 || settled > 0) && tx.user_id === user?.id
+            ? parentAmount - (splits.reduce((sum, s) => sum + Number(s.share_amount), 0) - Number(tx.viewer_share ?? 0)) - settled
             : null
       const share = viewerShare ?? ownShare
       // Shares are in the row's own currency, so the primary amount scales

@@ -881,6 +881,8 @@
     "savingsRateCaption": "do rendimento deste mês ficou guardado",
     "spendingProjection": "A esse ritmo, vais gastar {{amount}} até ao fim do mês",
     "uncategorizedCta": "{{count}} transações precisam de ser categorizadas",
+    "uncategorizedCta_one": "{{count}} transação precisa de ser categorizada",
+    "uncategorizedCta_other": "{{count}} transações precisam de ser categorizadas",
     "uncategorizedTotal": "{{amount}} no total",
     "categorizeNow": "Categorizar agora",
     "drillDownQuickCategorize": "Escolher categoria",
@@ -1110,7 +1112,7 @@
     "attachmentDeleted": "Anexo eliminado",
     "attachmentDeleteConfirm": "Eliminar este anexo?",
     "attachmentTooLarge": "Ficheiro muito grande. Tamanho máximo: 10 MB.",
-    "attachmentTypeNotAllowed": "Tipo de ficheiro não suportado. Permitidos: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "Tipo de ficheiro não suportado. Permitidos: {{types}}",
     "attachmentMaxReached": "Número máximo de anexos atingido",
     "attachmentRenamed": "Anexo renomeado",
     "attachmentRename": "Renomear",
@@ -1248,7 +1250,8 @@
     "invoiceBadgeTooltip": "Esta transação quita uma cobrança. Abrir.",
     "suggestionBadge": "Pergunta",
     "suggestionBadgeTooltip": "Um pagamento pode liquidar esta cobrança. Abra a fila para responder.",
-    "clearGroupFilter": "Limpar filtro de grupo"
+    "clearGroupFilter": "Limpar filtro de grupo",
+    "attachmentNoPreview": "Não há pré-visualização para este ficheiro. Transfira-o para o abrir."
   },
   "accounts": {
     "title": "Contas",
@@ -2793,6 +2796,7 @@
     "shareEqual": "Igual",
     "shareExact": "Valores manuais",
     "sharePercent": "Porcentagens",
+    "shareSettlement": "Reembolso (acerto)",
     "percentSum": "Soma: {{total}}%",
     "amountSum": "Soma: {{total}} / {{target}} {{currency}}",
     "equalHint": "Cada membro selecionado recebe uma parcela igual.",
@@ -3903,9 +3907,26 @@
       "removed": "{{name}} removida",
       "copyFailed": "Não foi possível copiar. Selecione o endereço e copie-o manualmente.",
       "editTitle": "Voltar a ligar {{name}}",
-      "editHint": "Atualize o que mudou, como uma nova palavra-passe ou token. A ligação sincroniza de novo a seguir.",
+      "editHint": "Atualize o que mudou, como uma nova palavra-passe ou token. A ligação volta a correr a seguir.",
+      "edit": "Editar",
+      "updateKeys": "Atualizar chaves",
       "keepBlank": "Deixe um campo em branco para manter o valor atual.",
-      "updated": "{{name}} atualizada"
+      "updated": "{{name}} atualizada",
+      "routines": "Rotinas",
+      "routineEvery": "a cada {{interval}}",
+      "routineLastRun": "correu {{when}}",
+      "routineNeverRan": "ainda não correu",
+      "runRoutine": "Executar agora",
+      "runRoutineAria": "Executar {{name}} agora",
+      "routineRan": "{{name}} foi executada",
+      "routineFailed": "Não foi executada.",
+      "fileAccepts": "{{types}}, até {{size}} KB",
+      "fileAny": "Qualquer ficheiro, até {{size}} KB",
+      "currentFile": "atual: {{name}}",
+      "fileSaved": "há um ficheiro guardado",
+      "fileWrongType": "{{name}} não é um ficheiro {{types}}.",
+      "fileTooBig": "{{name}} tem mais de {{size}} KB.",
+      "fileReadFailed": "Não foi possível ler {{name}}."
     },
     "oauth": {
       "title": "A concluir o início de sessão",
@@ -4074,10 +4095,113 @@
     "recurringRevenue": {
       "title": "Receita recorrente",
       "hint": "Quanto as faturas recorrentes trazem por mês, e o que se perdeu recentemente."
+    },
+    "plugin": {
+      "period": {
+        "year_to_date": "Ano até à data",
+        "last_12_months": "Últimos 12 meses"
+      }
     }
   },
   "offline": {
     "title": "Não foi possível contactar o servidor",
     "description": "Está sem ligação ou o Securo está a reiniciar. Os seus dados estão seguros e nada foi alterado. Vamos reconectar automaticamente assim que o servidor responder."
+  },
+  "documentAi": {
+    "reading": "A ler o documento…",
+    "readingHint": "{{model}} está a ler. Isto pode demorar um minuto.",
+    "failed": "Não foi possível ler o documento",
+    "retry": "Tentar novamente",
+    "acceptedFormats": "Formatos aceites: OFX, CSV, QIF, CAMT, e PDF ou fotografias de um extrato",
+    "statement": "Extrato",
+    "kindBank": "Extrato bancário",
+    "kindCreditCard": "Fatura do cartão de crédito",
+    "period": "{{start}} a {{end}}",
+    "readFromText": "Lido a partir do texto do PDF por {{model}}",
+    "readFromImages": "Lido a partir das imagens por {{model}}",
+    "balanceOk": "Os movimentos batem certo: de {{opening}} para {{closing}}, como indica o extrato.",
+    "balanceMismatch": "Os movimentos somam {{computed}}, mas o extrato indica {{closing}} (uma diferença de {{difference}}). Verifique se faltam ou se repetem linhas antes de importar.",
+    "droppedLines_one": "{{count}} linha não pôde ser lida e foi deixada de fora.",
+    "droppedLines_other": "{{count}} linhas não puderam ser lidas e foram deixadas de fora.",
+    "truncated": "Só foram lidas as primeiras páginas; o documento tem {{count}} páginas.",
+    "suggestedAccount": "A conta foi escolhida com base no último extrato com este formato.",
+    "textOnlyModel": "{{model}} só lê texto: os PDF com texto funcionam, mas as fotografias e os PDF digitalizados precisam de um modelo que leia imagens.",
+    "errors": {
+      "not_configured": "A leitura de documentos não está configurada neste espaço de trabalho. Escolha uma ligação de LLM nas definições do espaço de trabalho, ou em Agentes → Ligações.",
+      "vision_required": "Este documento é uma fotografia ou uma digitalização, e o modelo não lê imagens. Escolha um que leia (qwen2.5vl, llama3.2-vision, gpt-4o-mini, Claude) nas definições do espaço de trabalho.",
+      "unsupported_file": "Só é possível ler ficheiros PDF, PNG, JPEG e WebP.",
+      "file_too_large": "O ficheiro é demasiado grande.",
+      "encrypted_pdf": "O PDF está protegido por palavra-passe. Guarde uma cópia sem a palavra-passe e tente novamente.",
+      "unreadable_file": "Não foi possível abrir o ficheiro. Pode estar danificado.",
+      "empty_document": "O documento está vazio.",
+      "provider_error": "Não foi possível contactar o modelo, ou este respondeu com um erro.",
+      "provider_auth": "O fornecedor do modelo recusou a chave de API.",
+      "invalid_response": "Não foi possível compreender a resposta do modelo. Tentar novamente, ou usar um modelo maior, costuma resolver.",
+      "timeout": "A leitura demorou demasiado e foi interrompida.",
+      "already_confirmed": "Este documento já foi utilizado.",
+      "attachment_refused": "Não foi possível anexar o ficheiro à transação.",
+      "internal_error": "Ocorreu um erro ao ler o documento.",
+      "generic": "Não foi possível ler o documento.",
+      "queue_unavailable": "A fila de processamento está indisponível. Tente novamente daqui a pouco."
+    },
+    "receipt": {
+      "action": "Ler recibo",
+      "title": "Ler um recibo",
+      "description": "Uma fotografia ou um PDF de um recibo. Anexe-o à transação que pagou, ou crie uma a partir dele.",
+      "chooseFile": "Escolher ficheiro",
+      "takePhoto": "Tirar fotografia",
+      "another": "Usar outro ficheiro",
+      "matchesTitle": "Transações a que este recibo pode pertencer",
+      "hasAttachments_one": "{{count}} anexo",
+      "hasAttachments_other": "{{count}} anexos",
+      "attach": "Anexar",
+      "orCreate": "Ou crie uma nova transação",
+      "noMatches": "Ainda nenhuma transação corresponde a este recibo. Crie uma:",
+      "create": "Criar transação",
+      "attached": "Recibo anexado",
+      "created": "Transação criada com o recibo anexado",
+      "createdWithoutFile": "Transação criada, mas não foi possível anexar o ficheiro. Abra a transação para o anexar."
+    },
+    "settings": {
+      "title": "Leitura de documentos",
+      "description": "A ligação de LLM que lê extratos, recibos e anexos neste espaço de trabalho, escolhida entre as suas ligações em Agentes.",
+      "current": "A ler com {{connection}} · {{model}}",
+      "vision_yes": "Lê imagens: as fotografias e os PDF digitalizados funcionam.",
+      "vision_no": "Só lê texto: as fotografias e os PDF digitalizados precisam de um modelo que leia imagens.",
+      "vision_unknown": "Não se sabe se este modelo lê imagens. O Securo vai tentar e avisa caso não leia.",
+      "visionSource_setting": "conforme definido",
+      "visionSource_provider": "indicado pelo fornecedor",
+      "visionSource_catalog": "reconhecido pelo nome do modelo",
+      "model": "Modelo",
+      "readsImages": "Lê imagens",
+      "visionAuto": "Detetar automaticamente",
+      "visionYes": "Sim",
+      "visionNo": "Não, só texto",
+      "visionHint": "A deteção pergunta ao Ollama, ou reconhece o nome do modelo. Defina manualmente quando errar num modelo.",
+      "privacy": "Os documentos são enviados ao fornecedor desta ligação. Com o Ollama no seu próprio servidor, nunca saem dele.",
+      "reset": "Usar predefinições da instância",
+      "saved": "Definições de leitura de documentos guardadas",
+      "saveError": "Não foi possível guardar as definições",
+      "resetDone": "De volta às predefinições da instância",
+      "connection": "Ligação de LLM",
+      "off": "Desligado",
+      "modelPlaceholder": "O modelo da ligação ({{model}})",
+      "manageConnections": "Gerir ligações",
+      "noConnections": "Ainda não tem nenhuma ligação de LLM. Adicione uma em Agentes para ler documentos."
+    },
+    "fill": {
+      "read": "Preencher com este ficheiro",
+      "reading": "A ler o ficheiro para preencher a transação…",
+      "filled": "Preenchido a partir do ficheiro: {{fields}}",
+      "nothingNew": "O ficheiro não tinha nada de novo para preencher."
+    },
+    "agents": {
+      "use": "Usar para ler documentos",
+      "inUse": "Lê documentos",
+      "stop": "Deixar de ler documentos",
+      "turnedOn": "{{name}} lê agora os documentos deste espaço de trabalho",
+      "turnedOff": "Leitura de documentos desligada"
+    },
+    "unreadPages": "Páginas não lidas (digitalizadas, e o modelo não lê imagens): {{pages}}. As linhas delas não estão nesta revisão."
   }
 }

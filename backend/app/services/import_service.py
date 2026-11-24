@@ -4,11 +4,13 @@ import io
 import re
 import unicodedata
 import uuid
+from collections.abc import Awaitable, Callable
+from typing import Optional
 import warnings
 import xml.etree.ElementTree as ET
 from xml.parsers import expat
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from bs4 import XMLParsedAsHTMLWarning
 from ofxparse import OfxParser
@@ -16,6 +18,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.money import bounded_conversion
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.category import Category
@@ -36,6 +39,7 @@ from app.services.rule_service import apply_rules_to_transaction, preview_rules_
 from app.services.fx_rate_service import stamp_account_amount, stamp_primary_amount
 from app.services.payee_service import get_or_create_payee
 from app.services.transaction_match_service import find_unique_transaction_match
+from app.services.transfer_detection_service import detect_transfer_pairs
 
 
 # Descriptions used by some Brazilian banks (e.g. Banco do Brasil) for
@@ -233,6 +237,22 @@ def _is_balance_summary_row(description: str | None) -> bool:
         return False
     normalized = description.strip().lower()
     return any(normalized.startswith(prefix) for prefix in _OFX_BALANCE_ROW_DESCRIPTIONS)
+
+
+_DOCUMENT_EXTENSIONS = (".pdf", ".png", ".jpg", ".jpeg", ".webp", ".heic", ".gif")
+
+
+def is_document_file(filename: str, content: bytes) -> bool:
+    """A PDF or an image: something to read with a model, not to parse."""
+    if (filename or "").lower().endswith(_DOCUMENT_EXTENSIONS):
+        return True
+    head = content[:16]
+    return (
+        head.startswith(b"%PDF")
+        or head.startswith(b"\x89PNG")
+        or head.startswith(b"\xff\xd8\xff")
+        or (head[:4] == b"RIFF" and head[8:12] == b"WEBP")
+    )
 
 
 def parse_ofx(content: bytes) -> list[TransactionImport]:
@@ -1129,6 +1149,12 @@ async def enrich_with_category_suggestions(
     return transactions
 
 
+def _cents(value: Decimal) -> Decimal:
+    """A conversion as `Numeric(15, 2)` stores it, rounded before it is bounded:
+    9999999999999.9918 fits as 9999999999999.99 (issue #422)."""
+    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
 async def import_transactions(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -1139,6 +1165,7 @@ async def import_transactions(
     filename: str = "",
     detected_format: str = "",
     detect_duplicates: bool = True,
+    before_commit: Optional[Callable[[uuid.UUID], Awaitable[None]]] = None,
 ) -> tuple[int, int, int, uuid.UUID]:
     """Import transactions into an account in the given workspace.
 
@@ -1408,7 +1435,9 @@ async def import_transactions(
                 charge_changed = amount_changed or currency_changed
                 if txn_data.fx_rate:
                     placeholder.fx_rate_used = txn_data.fx_rate
-                    placeholder.amount_primary = txn_data.amount * txn_data.fx_rate
+                    placeholder.amount_primary = bounded_conversion(
+                        _cents(txn_data.amount * txn_data.fx_rate)
+                    )
                     await stamp_account_amount(
                         session, placeholder, recompute=charge_changed
                     )
@@ -1460,7 +1489,9 @@ async def import_transactions(
         )
         if txn_data.fx_rate:
             incoming.fx_rate_used = txn_data.fx_rate
-            incoming.amount_primary = txn_data.amount * txn_data.fx_rate
+            incoming.amount_primary = bounded_conversion(
+                _cents(txn_data.amount * txn_data.fx_rate)
+            )
 
         session.add(incoming)
         await session.flush()
@@ -1510,6 +1541,20 @@ async def import_transactions(
     # at a transaction, which has to exist first.
     await reconciliation_service.match_incoming(session, workspace_id, landed)
 
+    # Two files that carry the two legs of one transfer land as a pair, just
+    # as rows from a connection do (#1802). Every row this import created is
+    # a candidate, so the rule still holds: a pair needs one leg that just
+    # arrived, and two rows already in the books are never linked on the
+    # strength of a third one being imported.
+    if landed:
+        await detect_transfer_pairs(
+            session, workspace_id, candidate_ids=[tx.id for tx in landed]
+        )
+
+    # Anything that has to land with the rows (a document read marked as
+    # imported) is written into this same commit.
+    if before_commit is not None:
+        await before_commit(import_log.id)
     await session.commit()
     return imported, skipped, excluded_count, import_log.id
 

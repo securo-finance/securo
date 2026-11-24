@@ -881,6 +881,8 @@
     "savingsRateCaption": "share of income saved this month",
     "spendingProjection": "At this pace, you'll spend {{amount}} by month end",
     "uncategorizedCta": "{{count}} transactions need categorizing",
+    "uncategorizedCta_one": "{{count}} transaction needs categorizing",
+    "uncategorizedCta_other": "{{count}} transactions need categorizing",
     "uncategorizedTotal": "{{amount}} in total",
     "categorizeNow": "Categorize now",
     "drillDownQuickCategorize": "Pick a category",
@@ -1111,7 +1113,7 @@
     "attachmentDeleted": "Attachment deleted",
     "attachmentDeleteConfirm": "Delete this attachment?",
     "attachmentTooLarge": "File is too large. Maximum size is 10 MB.",
-    "attachmentTypeNotAllowed": "File type not supported. Allowed: jpg, jpeg, png, webp, gif, heic, pdf",
+    "attachmentTypeNotAllowed": "File type not supported. Allowed: {{types}}",
     "attachmentMaxReached": "Maximum number of attachments reached",
     "attachmentRenamed": "Attachment renamed",
     "attachmentRename": "Rename",
@@ -1245,7 +1247,8 @@
     "invoiceBadgeTooltip": "This transaction settles an invoice. Open it.",
     "suggestionBadge": "Question",
     "suggestionBadgeTooltip": "A payment may settle this. Open the queue to answer.",
-    "clearGroupFilter": "Clear group filter"
+    "clearGroupFilter": "Clear group filter",
+    "attachmentNoPreview": "There's no preview for this file. Download it to open it."
   },
   "accounts": {
     "title": "Accounts",
@@ -2785,6 +2788,7 @@
     "shareEqual": "Equal",
     "shareExact": "Exact amounts",
     "sharePercent": "Percentages",
+    "shareSettlement": "Payback (settlement)",
     "percentSum": "Sum: {{total}}%",
     "amountSum": "Sum: {{total}} / {{target}} {{currency}}",
     "equalHint": "Each selected member gets an equal share.",
@@ -3889,9 +3893,26 @@
       "removed": "{{name}} removed",
       "copyFailed": "Couldn't copy. Select the address and copy it by hand.",
       "editTitle": "Reconnect {{name}}",
-      "editHint": "Update what changed, such as a new password or token. The connection syncs again afterwards.",
+      "editHint": "Update what changed, such as a new password or token. The connection runs again afterwards.",
+      "edit": "Edit",
+      "updateKeys": "Update keys",
       "keepBlank": "Leave a field blank to keep its current value.",
-      "updated": "{{name}} updated"
+      "updated": "{{name}} updated",
+      "routines": "Routines",
+      "routineEvery": "every {{interval}}",
+      "routineLastRun": "ran {{when}}",
+      "routineNeverRan": "hasn't run yet",
+      "runRoutine": "Run now",
+      "runRoutineAria": "Run {{name}} now",
+      "routineRan": "{{name}} ran",
+      "routineFailed": "It didn't run.",
+      "fileAccepts": "{{types}}, up to {{size}} KB",
+      "fileAny": "Any file, up to {{size}} KB",
+      "currentFile": "current: {{name}}",
+      "fileSaved": "a file is saved",
+      "fileWrongType": "{{name}} isn't a {{types}} file.",
+      "fileTooBig": "{{name}} is larger than {{size}} KB.",
+      "fileReadFailed": "Couldn't read {{name}}."
     },
     "oauth": {
       "title": "Finishing the sign in",
@@ -4060,10 +4081,113 @@
     "recurringRevenue": {
       "title": "Recurring revenue",
       "hint": "What recurring invoices bring in each month, and what was lost lately."
+    },
+    "plugin": {
+      "period": {
+        "year_to_date": "Year to date",
+        "last_12_months": "Last 12 months"
+      }
     }
   },
   "offline": {
     "title": "Can't reach the server",
     "description": "You're offline or Securo is restarting. Your data is safe and nothing was changed. We'll reconnect automatically as soon as the server answers."
+  },
+  "documentAi": {
+    "reading": "Reading the document…",
+    "readingHint": "{{model}} is reading it. This can take a minute.",
+    "failed": "The document could not be read",
+    "retry": "Try again",
+    "acceptedFormats": "Accepted formats: OFX, CSV, QIF, CAMT, and PDF or photos of a statement",
+    "statement": "Statement",
+    "kindBank": "Bank statement",
+    "kindCreditCard": "Credit card bill",
+    "period": "{{start}} to {{end}}",
+    "readFromText": "Read from the PDF's text by {{model}}",
+    "readFromImages": "Read from images by {{model}}",
+    "balanceOk": "The rows add up: from {{opening}} to {{closing}}, as the statement says.",
+    "balanceMismatch": "The rows add up to {{computed}}, but the statement says {{closing}} (a difference of {{difference}}). Check for missing or repeated lines before importing.",
+    "droppedLines_one": "{{count}} line could not be read and was left out.",
+    "droppedLines_other": "{{count}} lines could not be read and were left out.",
+    "truncated": "Only the first pages were read; the document has {{count}} pages.",
+    "suggestedAccount": "The account was picked from the last statement with this layout.",
+    "textOnlyModel": "{{model}} reads text only: PDFs with text work, but photos and scanned PDFs need a model that reads images.",
+    "errors": {
+      "not_configured": "Document reading is not set up in this workspace. Pick an LLM connection in the workspace settings, or under Agents → Connections.",
+      "vision_required": "This document is a photo or a scan, and the model does not read images. Pick one that does (qwen2.5vl, llama3.2-vision, gpt-4o-mini, Claude) in the workspace settings.",
+      "unsupported_file": "Only PDF, PNG, JPEG and WebP files can be read.",
+      "file_too_large": "The file is too large.",
+      "encrypted_pdf": "The PDF is password protected. Save a copy without the password and try again.",
+      "unreadable_file": "The file could not be opened. It may be damaged.",
+      "empty_document": "The document is empty.",
+      "provider_error": "The model could not be reached, or it answered with an error.",
+      "provider_auth": "The model's provider refused the API key.",
+      "invalid_response": "The model's answer could not be understood. Trying again, or a larger model, usually helps.",
+      "timeout": "Reading took too long and was stopped.",
+      "already_confirmed": "This document was already used.",
+      "attachment_refused": "The file could not be attached to the transaction.",
+      "internal_error": "Something went wrong while reading the document.",
+      "generic": "The document could not be read.",
+      "queue_unavailable": "The background queue is unavailable. Try again in a moment."
+    },
+    "receipt": {
+      "action": "Read receipt",
+      "title": "Read a receipt",
+      "description": "A photo or a PDF of a receipt. Attach it to the transaction it paid for, or create one from it.",
+      "chooseFile": "Choose a file",
+      "takePhoto": "Take a photo",
+      "another": "Use another file",
+      "matchesTitle": "Transactions this receipt may belong to",
+      "hasAttachments_one": "{{count}} attachment",
+      "hasAttachments_other": "{{count}} attachments",
+      "attach": "Attach",
+      "orCreate": "Or create a new transaction",
+      "noMatches": "No transaction matches this receipt yet. Create one:",
+      "create": "Create transaction",
+      "attached": "Receipt attached",
+      "created": "Transaction created with the receipt attached",
+      "createdWithoutFile": "Transaction created, but the file could not be attached. Open the transaction to attach it."
+    },
+    "settings": {
+      "title": "Document reading",
+      "description": "The LLM connection that reads statements, receipts and attachments in this workspace, picked from your connections under Agents.",
+      "current": "Reading with {{connection}} · {{model}}",
+      "vision_yes": "Reads images: photos and scanned PDFs work.",
+      "vision_no": "Reads text only: photos and scanned PDFs need a model that reads images.",
+      "vision_unknown": "Not known whether this model reads images. Securo will try, and say so if it doesn't.",
+      "visionSource_setting": "as set",
+      "visionSource_provider": "reported by the provider",
+      "visionSource_catalog": "recognised from the model's name",
+      "model": "Model",
+      "readsImages": "Reads images",
+      "visionAuto": "Detect automatically",
+      "visionYes": "Yes",
+      "visionNo": "No, text only",
+      "visionHint": "Detection asks Ollama, or recognises the model's name. Set it by hand when it gets a model wrong.",
+      "privacy": "Documents are sent to this connection's provider. With Ollama on your own server, they never leave it.",
+      "reset": "Use instance defaults",
+      "saved": "Document reading settings saved",
+      "saveError": "The settings could not be saved",
+      "resetDone": "Back to the instance defaults",
+      "connection": "LLM connection",
+      "off": "Off",
+      "modelPlaceholder": "The connection's model ({{model}})",
+      "manageConnections": "Manage connections",
+      "noConnections": "You have no LLM connection yet. Add one under Agents to read documents."
+    },
+    "fill": {
+      "read": "Fill in from this file",
+      "reading": "Reading the file to fill in the transaction…",
+      "filled": "Filled in from the file: {{fields}}",
+      "nothingNew": "The file had nothing new to fill in."
+    },
+    "agents": {
+      "use": "Use for document reading",
+      "inUse": "Reads documents",
+      "stop": "Stop reading documents",
+      "turnedOn": "{{name}} now reads this workspace's documents",
+      "turnedOff": "Document reading turned off"
+    },
+    "unreadPages": "Pages not read (scans, and the model does not read images): {{pages}}. Their lines are missing from this review."
   }
 }

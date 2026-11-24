@@ -175,7 +175,10 @@ async def _provider_logout_url() -> str:
         )
         raw_endpoint = discovery.get("end_session_endpoint") if isinstance(discovery, dict) else None
         endpoint = raw_endpoint if isinstance(raw_endpoint, str) else ""
-    except (HTTPException, httpx.HTTPError, ValueError, asyncio.TimeoutError) as exc:
+    # Every failure has the same answer, including the ones httpx raises
+    # outside HTTPError: InvalidURL for an unparsable URL, and an
+    # ExceptionGroup(OverflowError) for an out-of-range port.
+    except Exception as exc:
         endpoint = ""
         discovery_answered = False
         failure_reason = _logout_failure_reason(exc)

@@ -83,6 +83,33 @@ export function MobileTransactionRow({
 
   const virtual = tx.virtual === true
 
+  // Badges that ride under the description. They are listed once here so the
+  // row only renders the badge line when at least one of them is on.
+  const showGroupBadge = !!tx.group_id
+  const showUnreadDot = showUnread && tx.is_read === false && !tx.is_shared
+  const showSplitBadge = isSplitByCategory(tx)
+  const showTransferIcon = isTransferTransaction(tx)
+  const showExcludedIcon = tx.exclude_from_pnl && !tx.is_ignored
+  const showUnpaidIcon = tx.is_paid === false
+  const showRecurringBadge = tx.recurring_transaction_id != null && !virtual
+  const showInstallmentBadge = tx.installment_number != null && tx.total_installments != null
+  const showPendingBadge = shouldShowPendingBadge(tx)
+  const showAttachmentIcon = (tx.attachment_count ?? 0) > 0
+  const hasBadges =
+    showGroupBadge ||
+    showUnreadDot ||
+    showSplitBadge ||
+    showTransferIcon ||
+    virtual ||
+    tx.is_ignored ||
+    showExcludedIcon ||
+    tx.is_flagged === true ||
+    showUnpaidIcon ||
+    showRecurringBadge ||
+    showInstallmentBadge ||
+    showPendingBadge ||
+    showAttachmentIcon
+
   return (
     <div
       ref={highlighted ? highlightedRowRef : undefined}
@@ -123,77 +150,81 @@ export function MobileTransactionRow({
 
       {/* Content */}
       <div className="min-w-0 flex-1">
-        {/* Description row */}
-        <div className="flex items-center gap-1.5">
-          <p className={`text-sm font-semibold text-foreground leading-tight min-w-0 ${hasWordBreaks(description) ? 'break-words whitespace-normal' : 'truncate'}`}>
-            {description}
-          </p>
-          {tx.group_id && (
-            <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1 py-0.5 rounded-full shrink-0">
-              {tx.is_shared && tx.parent_owner_name ? tx.parent_owner_name : t('splitGroups.ownerRowBadge', { group: groupName ?? '' })}
-            </span>
-          )}
-          {showUnread && tx.is_read === false && !tx.is_shared && (
-            <span
-              className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500"
-              title={t('transactions.newBadge')}
-              role="img"
-              aria-label={t('transactions.newBadge')}
-            />
-          )}
-          {isSplitByCategory(tx) && <CategorySplitBadge tx={tx} compact className="shrink-0 text-[9px] px-1" />}
-          {isTransferTransaction(tx) && (
-            <ArrowLeftRight
-              className="h-3 w-3 text-blue-600 shrink-0"
-              aria-label={t('transactions.transfer')}
-            />
-          )}
-          {virtual && (
-            <CalendarClock className="h-3 w-3 text-primary shrink-0" />
-          )}
-          {tx.is_ignored && (
-            <EyeClosed className="h-3 w-3 text-gray-500 shrink-0" />
-          )}
-          {tx.exclude_from_pnl && !tx.is_ignored && (
-            <ChartNoAxesColumn
-              className="h-3 w-3 text-slate-500 shrink-0"
-              aria-label={t('transactions.excludedFromReports')}
-            />
-          )}
-          <TransactionFlagMarker tx={tx} locale={dateLocale ?? locale} className="[&>svg]:h-3 [&>svg]:w-3" />
-          {/* Unpaid (issue #15). The mark itself is flipped in the dialog the
-              row opens; here it only says the money has not moved. */}
-          {tx.is_paid === false && (
-            <CircleDashed
-              className="h-3 w-3 shrink-0 text-amber-500"
-              role="img"
-              aria-label={t('transactions.unpaid')}
-            >
-              <title>{t('transactions.unpaid')}</title>
-            </CircleDashed>
-          )}
-          {tx.recurring_transaction_id != null && !virtual && (
-            <span className="text-[9px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1 py-0.5 rounded-full shrink-0">
-              R
-            </span>
-          )}
-          {tx.installment_number != null && tx.total_installments != null && (
-            <span className="text-[9px] font-bold tabular-nums text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 px-1 py-0.5 rounded-full shrink-0">
-              {tx.installment_number}/{tx.total_installments}
-            </span>
-          )}
-          {shouldShowPendingBadge(tx) && (
-            <span
-              title={t('transactions.pending')}
-              className="shrink-0 inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10"
-            >
-              <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
-            </span>
-          )}
-          {(tx.attachment_count ?? 0) > 0 && (
-            <Paperclip size={11} className="text-muted-foreground shrink-0" />
-          )}
-        </div>
+        {/* Description gets its own line with the row's full width: sharing
+            it with the badges left it a few characters wide on a phone and
+            broke words in the middle (#433). The badges wrap below. */}
+        <p className={`text-sm font-semibold text-foreground leading-tight ${hasWordBreaks(description) ? 'break-words whitespace-normal' : 'truncate'}`}>
+          {description}
+        </p>
+        {hasBadges && (
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5" data-testid="transaction-badges">
+            {showGroupBadge && (
+              <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1 py-0.5 rounded-full shrink-0">
+                {tx.is_shared && tx.parent_owner_name ? tx.parent_owner_name : t('splitGroups.ownerRowBadge', { group: groupName ?? '' })}
+              </span>
+            )}
+            {showUnreadDot && (
+              <span
+                className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500"
+                title={t('transactions.newBadge')}
+                role="img"
+                aria-label={t('transactions.newBadge')}
+              />
+            )}
+            {showSplitBadge && <CategorySplitBadge tx={tx} compact className="shrink-0 text-[9px] px-1" />}
+            {showTransferIcon && (
+              <ArrowLeftRight
+                className="h-3 w-3 text-blue-600 shrink-0"
+                aria-label={t('transactions.transfer')}
+              />
+            )}
+            {virtual && (
+              <CalendarClock className="h-3 w-3 text-primary shrink-0" />
+            )}
+            {tx.is_ignored && (
+              <EyeClosed className="h-3 w-3 text-gray-500 shrink-0" />
+            )}
+            {showExcludedIcon && (
+              <ChartNoAxesColumn
+                className="h-3 w-3 text-slate-500 shrink-0"
+                aria-label={t('transactions.excludedFromReports')}
+              />
+            )}
+            <TransactionFlagMarker tx={tx} locale={dateLocale ?? locale} className="[&>svg]:h-3 [&>svg]:w-3" />
+            {/* Unpaid (issue #15). The mark itself is flipped in the dialog the
+                row opens; here it only says the money has not moved. */}
+            {showUnpaidIcon && (
+              <CircleDashed
+                className="h-3 w-3 shrink-0 text-amber-500"
+                role="img"
+                aria-label={t('transactions.unpaid')}
+              >
+                <title>{t('transactions.unpaid')}</title>
+              </CircleDashed>
+            )}
+            {showRecurringBadge && (
+              <span className="text-[9px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1 py-0.5 rounded-full shrink-0">
+                R
+              </span>
+            )}
+            {showInstallmentBadge && (
+              <span className="text-[9px] font-bold tabular-nums text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 px-1 py-0.5 rounded-full shrink-0">
+                {tx.installment_number}/{tx.total_installments}
+              </span>
+            )}
+            {showPendingBadge && (
+              <span
+                title={t('transactions.pending')}
+                className="shrink-0 inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10"
+              >
+                <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
+              </span>
+            )}
+            {showAttachmentIcon && (
+              <Paperclip size={11} className="text-muted-foreground shrink-0" />
+            )}
+          </div>
+        )}
 
         {/* Account row or payee row */}
         {showPayee ? (

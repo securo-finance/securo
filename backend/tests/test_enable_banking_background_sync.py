@@ -348,6 +348,42 @@ async def test_cached_account_with_an_unavailable_balance_is_not_synced_as_zero(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [httpx.Response(503), httpx.ReadTimeout("slow")])
+async def test_user_present_account_with_an_unavailable_balance_is_not_synced_as_zero(
+    eb_keys, failure,
+):
+    """With the user present /details is read fresh, but a balance that then
+    fails still skips the account for this run instead of reading as 0.00."""
+    provider = EnableBankingProvider()
+    accounts = [{"uid": "acc-1"}, {"uid": "acc-2"}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/sessions/sess-1":
+            return httpx.Response(200, json={"accounts_data": accounts})
+        if path.endswith("/details"):
+            uid = path.split("/")[2]
+            return httpx.Response(200, json={**DETAILS, "uid": uid})
+        if path == "/accounts/acc-1/balances":
+            if isinstance(failure, Exception):
+                raise failure
+            return failure
+        return httpx.Response(200, json={"balances": [
+            {"balance_type": "CLBD", "balance_amount": {"amount": "5.00", "currency": "NOK"}},
+        ]})
+
+    with _patch_client(provider, handler), psu_present(USER):
+        result = await provider.get_accounts(_credentials())
+
+    assert [(a.external_id, a.balance) for a in result] == [("acc-2", Decimal("5.00"))]
+
+    # When it was the only account, the failure itself is what the sync sees.
+    accounts = [{"uid": "acc-1"}]
+    with _patch_client(provider, handler), psu_present(USER), pytest.raises(httpx.HTTPError):
+        await provider.get_accounts(_credentials())
+
+
+@pytest.mark.asyncio
 async def test_sync_persists_credentials_the_provider_updated(
     session: AsyncSession, test_user, test_workspace,
 ):

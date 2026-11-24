@@ -27,6 +27,7 @@ from app.schemas.budget import (
     BudgetVsActual,
     ExpectedIncomeRead,
 )
+from app.services.viewer_currency import viewer_currency
 from app.services._query_filters import (
     counts_as_user_pnl,
     forecast_owner_share_fractions,
@@ -360,6 +361,7 @@ async def get_budget_vs_actual(
 
     # Viewer's primary currency for FX conversion + reporting mode
     primary_currency = await _primary_currency(session, user_id)
+    viewer = await viewer_currency(session, primary_currency)
     accounting_mode = await get_credit_card_accounting_mode(session)
     report_date = reporting_date_col(accounting_mode)
 
@@ -372,8 +374,8 @@ async def get_budget_vs_actual(
                 line_category_id(),
                 func.sum(
                     case(
-                        (Transaction.type == "debit", line_primary_or_amount()),
-                        (Transaction.type == "credit", -line_primary_or_amount()),
+                        (Transaction.type == "debit", line_primary_or_amount(viewer)),
+                        (Transaction.type == "credit", -line_primary_or_amount(viewer)),
                         else_=0,
                     )
                 ),
@@ -458,7 +460,10 @@ async def get_budget_vs_actual(
         parts = [part for part in user_pnl_parts(tx) if part[0] is not None]
         if not parts:
             continue
-        amount = tx.amount_primary
+        amount = await viewer.convert(
+            session, tx.user_id, tx.amount_primary, tx.date,
+            currency=tx.currency, amount=tx.amount,
+        )
         if amount is not None:
             converted = abs(Decimal(str(amount)))
         else:
@@ -484,8 +489,8 @@ async def get_budget_vs_actual(
                 line_category_id(),
                 func.sum(
                     case(
-                        (Transaction.type == "debit", line_primary_or_amount()),
-                        (Transaction.type == "credit", -line_primary_or_amount()),
+                        (Transaction.type == "debit", line_primary_or_amount(viewer)),
+                        (Transaction.type == "credit", -line_primary_or_amount(viewer)),
                         else_=0,
                     )
                 ),
@@ -565,7 +570,10 @@ async def get_budget_vs_actual(
         parts = [part for part in user_pnl_parts(tx) if part[0] is not None]
         if not parts:
             continue
-        amount = tx.amount_primary
+        amount = await viewer.convert(
+            session, tx.user_id, tx.amount_primary, tx.date,
+            currency=tx.currency, amount=tx.amount,
+        )
         if amount is not None:
             converted = abs(Decimal(str(amount)))
         else:
@@ -670,6 +678,7 @@ async def get_budget_suggestions(
     window_end = _add_months(max(analyzed), 1)
 
     primary_currency = await _primary_currency(session, user_id)
+    viewer = await viewer_currency(session, primary_currency)
     accounting_mode = await get_credit_card_accounting_mode(session)
     report_date = reporting_date_col(accounting_mode)
 
@@ -681,8 +690,8 @@ async def get_budget_suggestions(
     all_categories = cats_result.all()
 
     net_expr = case(
-        (Transaction.type == "debit", line_primary_or_amount()),
-        (Transaction.type == "credit", -line_primary_or_amount()),
+        (Transaction.type == "debit", line_primary_or_amount(viewer)),
+        (Transaction.type == "credit", -line_primary_or_amount(viewer)),
         else_=0,
     )
     window_filters = (

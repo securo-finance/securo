@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import copy
 import re
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, ClassVar, Literal, cast
 
 from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
@@ -37,7 +37,7 @@ DATA_KINDS = frozenset({"category_groups", "categories", "rules"})
 #: Contributions that run the plugin's code, in the plugin runner.
 CODE_KINDS = frozenset({"integrations"})
 #: Contributions to the interface, drawn by Securo's own components (a code report computes its view in the runner).
-UI_KINDS = frozenset({"themes", "reports"})
+UI_KINDS = frozenset({"themes", "reports", "widgets"})
 ALL_KINDS = DATA_KINDS | CODE_KINDS | UI_KINDS
 #: Design tokens a theme may color; the same list as the frontend's THEME_TOKENS.
 THEME_TOKENS = frozenset(
@@ -214,14 +214,60 @@ class Category(_Model):
     treat_as_transfer: bool = False
 
 
+#: A file extension a file field accepts, lowercase with its dot: `.pdf`.
+FILE_EXTENSION_PATTERN = r"^\.[a-z0-9]{1,10}$"
+#: The largest file a connection form takes, in KB.
+MAX_FILE_KB = 2048
+#: What a file field takes when the plugin doesn't say.
+DEFAULT_FILE_KB = 512
+
+
 class FormField(_Model):
-    """One field of an integration's connection form."""
+    """One field of an integration's connection form.
+
+    A `file` field takes a file the person picks (ADR 0035). The plugin gets it
+    as `{"name": ..., "content": <base64>}`, in `context.secrets` when the field
+    is secret and in `context.config` otherwise.
+    """
 
     key: str = Field(pattern=KEY_PATTERN)
     label: Text
     secret: bool = False
     """Kept in the encrypted store and never shown again."""
     required: bool = True
+    type: Literal["text", "file"] = "text"
+    accept: list[Annotated[str, Field(pattern=FILE_EXTENSION_PATTERN)]] = Field(default=[], max_length=10)
+    """For a file: the extensions it takes. None means any."""
+    max_kb: int = Field(default=DEFAULT_FILE_KB, ge=1, le=MAX_FILE_KB)
+    """For a file: the largest it takes, in KB."""
+
+    @model_validator(mode="after")
+    def _file_options_for_files(self) -> FormField:
+        # By value, not by what was written: a stored manifest reads back with every default filled in.
+        if self.type != "file" and (self.accept or self.max_kb != DEFAULT_FILE_KB):
+            raise ValueError(f"field {self.key}: accept and max_kb are for a file field")
+        return self
+
+
+#: The longest a routine may ask to run. The runner's own limit (PLUGINS_CALL_TIMEOUT) still applies.
+MAX_ROUTINE_SECONDS = 600
+
+
+class Routine(_Model):
+    """Work an integration runs on a schedule of its own, apart from `sync` (ADR 0035).
+
+    Every `every_minutes`, Securo calls the plugin's `routine(params, context)`
+    with `params["routine"]` naming this one, on each connection made with
+    the integration. Each routine keeps its own `state` and backs off on its
+    own failures; `timeout_seconds` asks for a longer (or shorter) run than
+    the runner's default.
+    """
+
+    key: str = Field(pattern=KEY_PATTERN)
+    name: Text
+    description: Text | None = None
+    every_minutes: int = Field(ge=15, le=7 * 24 * 60)
+    timeout_seconds: int | None = Field(default=None, ge=5, le=MAX_ROUTINE_SECONDS)
 
 
 class Integration(_Model):
@@ -230,7 +276,8 @@ class Integration(_Model):
     `credentials`: the person fills in `fields` (an API key, say).
     `oauth`: the person signs in at the service; the plugin builds the sign-in
     link and trades the code for a token. `none`: nothing to fill in.
-    With `sync_minutes`, Securo calls the plugin's `sync` on that schedule.
+    With `sync_minutes`, Securo calls the plugin's `sync` on that schedule;
+    each of `routines` runs on its own.
     With `provides`, `sync` returns those records as data and Securo writes
     them as it does for a connected bank (see `app.plugins.contract`).
     """
@@ -241,6 +288,7 @@ class Integration(_Model):
     auth: Literal["credentials", "oauth", "none"] = "credentials"
     fields: list[FormField] = Field(default=[], max_length=20)
     sync_minutes: int | None = Field(default=None, ge=15, le=7 * 24 * 60)
+    routines: list[Routine] = Field(default=[], max_length=10)
     provides: list[ProvidedKind] | None = None
     complete_feed: bool = False
     """The plugin returns every entry, pending ones included, from `since` on.
@@ -255,6 +303,9 @@ class Integration(_Model):
         keys = [f.key for f in self.fields]
         if len(keys) != len(set(keys)):
             raise ValueError(f"integration {self.key}: field keys must be unique")
+        routines = [r.key for r in self.routines]
+        if len(routines) != len(set(routines)):
+            raise ValueError(f"integration {self.key}: routine keys must be unique")
         return self
 
     @model_validator(mode="after")
@@ -277,6 +328,16 @@ class Integration(_Model):
     def is_provider(self) -> bool:
         """Its records go through the bank sync pipeline."""
         return bool(self.provides)
+
+    @property
+    def syncs(self) -> bool:
+        """Whether the plugin implements `sync` for it.
+
+        An integration with routines and no `sync_minutes` (nor records to
+        provide) only runs its routines: nothing calls `sync`, not even once
+        after connecting.
+        """
+        return self.sync_minutes is not None or self.is_provider or not self.routines
 
 
 class Runtime(_Model):
@@ -398,6 +459,11 @@ class Report(_Model):
     read for whoever is looking, and draws the view it returns (ADR 0028).
     """
 
+    #: What it's called in validation errors.
+    NOUN: ClassVar[str] = "report"
+    #: The plugin method that computes it, with `code`.
+    METHOD: ClassVar[str] = "report"
+
     key: str = Field(pattern=KEY_PATTERN)
     name: Name
     description: Text | None = None
@@ -415,22 +481,54 @@ class Report(_Model):
 
     @model_validator(mode="after")
     def _drawable(self) -> Report:
+        it = f"{self.NOUN} {self.key}"
         if len(self.inputs) != len(set(self.inputs)):
-            raise ValueError(f"report {self.key}: inputs must be unique")
+            raise ValueError(f"{it}: inputs must be unique")
         if self.code:
             if self.group_by is not None or self.categories:
-                raise ValueError(f"report {self.key}: a code report computes its own view; leave out group_by and categories")
+                raise ValueError(f"{it}: a code {self.NOUN} computes its own view; leave out group_by and categories")
             return self
         if self.inputs:
-            raise ValueError(f"report {self.key}: inputs are for a code report")
+            raise ValueError(f"{it}: inputs are for a code {self.NOUN}")
         if self.group_by is None:
-            raise ValueError(f"report {self.key}: needs group_by, or code: true")
+            raise ValueError(f"{it}: needs group_by, or code: true")
         if self.chart in TIME_CHARTS and self.group_by != "month":
-            raise ValueError(f"report {self.key}: a {self.chart} chart reads along time, so it needs group_by month")
+            raise ValueError(f"{it}: a {self.chart} chart reads along time, so it needs group_by month")
         if self.chart == "pie" and (self.group_by == "month" or self.measure == "net"):
-            raise ValueError(f"report {self.key}: a pie shows the parts of a total, not months or a net that can go negative")
+            raise ValueError(f"{it}: a pie shows the parts of a total, not months or a net that can go negative")
         if len(self.categories) != len(set(self.categories)):
-            raise ValueError(f"report {self.key}: categories must be unique")
+            raise ValueError(f"{it}: categories must be unique")
+        return self
+
+
+#: How wide a widget starts on the dashboard's 12-column grid, until someone resizes it.
+WidgetWidth = Literal["third", "half", "two_thirds", "full"]
+#: What a widget reads, counted back from the month the dashboard shows: that
+#: month, the year up to it, or the twelve months ending with it.
+WidgetPeriod = Literal["month", "year_to_date", "last_12_months"]
+
+
+class Widget(Report):
+    """A widget for the dashboard: a report sized for a card (ADR 0034).
+
+    The same query or code as a report, read over `period` (counted back from
+    the month the dashboard shows) and the accounts in view. With `code`, the
+    plugin's `widget` method computes it.
+    """
+
+    NOUN: ClassVar[str] = "widget"
+    METHOD: ClassVar[str] = "widget"
+
+    width: WidgetWidth = "half"
+    period: WidgetPeriod = "month"
+
+    @model_validator(mode="after")
+    def _has_months_to_chart(self) -> Widget:
+        if self.group_by == "month" and self.period == "month":
+            raise ValueError(
+                f"widget {self.key}: one month has nothing to split by month; "
+                "set period to year_to_date or last_12_months"
+            )
         return self
 
 
@@ -441,14 +539,21 @@ class Contributes(_Model):
     integrations: list[Integration] = []
     themes: list[Theme] = Field(default=[], max_length=50)
     reports: list[Report] = Field(default=[], max_length=20)
+    widgets: list[Widget] = Field(default=[], max_length=20)
 
     @model_validator(mode="after")
     def _well_formed(self) -> Contributes:
         if not (
-            self.category_groups or self.categories or self.rules or self.integrations or self.themes or self.reports
+            self.category_groups
+            or self.categories
+            or self.rules
+            or self.integrations
+            or self.themes
+            or self.reports
+            or self.widgets
         ):
             raise ValueError("contributes nothing")
-        for kind in ("category_groups", "categories", "rules", "integrations", "themes", "reports"):
+        for kind in ("category_groups", "categories", "rules", "integrations", "themes", "reports", "widgets"):
             keys = [item.key for item in getattr(self, kind)]
             if len(keys) != len(set(keys)):
                 raise ValueError(f"{kind}: keys must be unique")
@@ -465,10 +570,10 @@ class Contributes(_Model):
             missing = rule.category_keys() - categories
             if missing:
                 raise ValueError(f"rule {rule.key}: unknown category {', '.join(sorted(missing))}")
-        for report in self.reports:
+        for report in [*self.reports, *self.widgets]:
             missing = set(report.categories) - categories
             if missing:
-                raise ValueError(f"report {report.key}: unknown category {', '.join(sorted(missing))}")
+                raise ValueError(f"{report.NOUN} {report.key}: unknown category {', '.join(sorted(missing))}")
         return self
 
 
@@ -509,17 +614,17 @@ class Manifest(_Model):
             raise ValueError("network, api_scopes and logos are only for plugins with a runtime")
         if any(".." in path.split("/") for path in self.logos.values()):
             raise ValueError("logos must be paths inside the package")
-        code_reports = [r for r in self.contributes.reports if r.code]
+        code_reports = [r for r in [*self.contributes.reports, *self.contributes.widgets] if r.code]
         if code_reports and self.runtime is None:
-            raise ValueError("code reports need a runtime")
+            raise ValueError("code reports and widgets need a runtime")
         if self.runtime is not None and not (self.contributes.integrations or code_reports):
-            raise ValueError("a runtime needs something to run: add an integration or a code report")
+            raise ValueError("a runtime needs something to run: add an integration, or a code report or widget")
         granted = {a.scope for a in self.api_scopes}
         for report in code_reports:
             for name in report.inputs:
                 read = REPORT_INPUTS[name]
                 if read not in granted and read.replace(":read", ":write") not in granted:
-                    raise ValueError(f"report {report.key}: input {name} needs {read} in api_scopes")
+                    raise ValueError(f"{report.NOUN} {report.key}: input {name} needs {read} in api_scopes")
         if len(self.workspaces) != len(set(self.workspaces)):
             raise ValueError("workspaces must be unique")
         hosts = [h.host for h in self.network]
