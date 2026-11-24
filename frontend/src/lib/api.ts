@@ -505,6 +505,12 @@ export const connections = {
     const { data } = await api.post(`/connections/${id}/sync`)
     return data
   },
+  // One-time backfill: pairs the transfer rows the active rules are sure
+  // about across the whole history, not only the rows that just arrived.
+  detectTransfers: async (): Promise<{ pairs_created: number }> => {
+    const { data } = await api.post('/connections/transfers/detect')
+    return data
+  },
   getReconnectToken: async (connectionId: string): Promise<string> => {
     const { data } = await api.post(`/connections/${connectionId}/reconnect-token`, undefined, readOnly)
     return data.access_token

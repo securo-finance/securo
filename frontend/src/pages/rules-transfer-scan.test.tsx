@@ -1,0 +1,152 @@
+/**
+ * "Scan for transfers" on the Rules page.
+ *
+ * The scan is the one-time backfill that pairs transfer rows imported before
+ * the detector ran on arrival. It covers the whole history, so on a large
+ * workspace it is one long request: the action asks before running, keeps the
+ * button in a busy state while it runs, and reports how many pairs it made.
+ * Viewers read rules; they never run a scan.
+ */
+import { createContext } from 'react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
+
+import RulesPage from '@/pages/rules'
+import { renderWithProviders, t } from '@/test/utils'
+
+const api = vi.hoisted(() => ({
+  rules: {
+    list: vi.fn(),
+    packs: vi.fn(),
+    applyAll: vi.fn(),
+  },
+  categories: {
+    listIncludingHidden: vi.fn(),
+  },
+  categoryGroups: {
+    list: vi.fn(),
+  },
+  accounts: {
+    list: vi.fn(),
+  },
+  payees: {
+    list: vi.fn(),
+  },
+  connections: {
+    detectTransfers: vi.fn(),
+  },
+  reconciliation: {
+    suggestions: vi.fn(),
+    rules: vi.fn(),
+  },
+}))
+
+const toast = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+}))
+
+const workspace = vi.hoisted(() => ({ canWrite: true }))
+
+vi.mock('@/lib/api', () => api)
+vi.mock('sonner', () => ({ toast }))
+vi.mock('@/contexts/workspace-context', () => ({
+  useWorkspace: () => ({ canWrite: workspace.canWrite }),
+  WorkspaceContext: createContext<{ canWrite: boolean } | undefined>({ canWrite: true }),
+}))
+
+beforeEach(() => {
+  vi.restoreAllMocks()
+  vi.clearAllMocks()
+  workspace.canWrite = true
+  api.rules.list.mockResolvedValue([])
+  api.rules.packs.mockResolvedValue([])
+  api.categories.listIncludingHidden.mockResolvedValue([])
+  api.categoryGroups.list.mockResolvedValue([])
+  api.accounts.list.mockResolvedValue([])
+  api.payees.list.mockResolvedValue([])
+  api.connections.detectTransfers.mockResolvedValue({ pairs_created: 0 })
+  api.reconciliation.suggestions.mockResolvedValue([])
+  api.reconciliation.rules.mockResolvedValue([])
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
+})
+
+async function clickScan() {
+  const button = await screen.findByRole('button', { name: t('rules.scanForTransfers') })
+  fireEvent.click(button)
+  return button
+}
+
+describe('the transfer scan on the rules page', () => {
+  it('asks before running and creates nothing when the user backs out', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    renderWithProviders(<RulesPage />)
+
+    await clickScan()
+
+    expect(window.confirm).toHaveBeenCalledWith(t('rules.confirmScanForTransfers'))
+    expect(api.connections.detectTransfers).not.toHaveBeenCalled()
+  })
+
+  it('runs the scan once confirmed and reports how many pairs it created', async () => {
+    api.connections.detectTransfers.mockResolvedValue({ pairs_created: 3 })
+    renderWithProviders(<RulesPage />)
+
+    await clickScan()
+
+    await waitFor(() => expect(api.connections.detectTransfers).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(t('rules.transferScanCreated', { count: 3 })),
+    )
+  })
+
+  it('says so when the scan found nothing to pair', async () => {
+    api.connections.detectTransfers.mockResolvedValue({ pairs_created: 0 })
+    renderWithProviders(<RulesPage />)
+
+    await clickScan()
+
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(t('rules.transferScanNone')),
+    )
+  })
+
+  it('keeps the button busy until the scan comes back', async () => {
+    let resolve: (value: { pairs_created: number }) => void = () => {}
+    api.connections.detectTransfers.mockReturnValue(
+      new Promise<{ pairs_created: number }>((r) => {
+        resolve = r
+      }),
+    )
+    renderWithProviders(<RulesPage />)
+
+    await clickScan()
+
+    const busy = await screen.findByRole('button', { name: t('rules.scanningForTransfers') })
+    expect(busy).toBeDisabled()
+
+    resolve({ pairs_created: 1 })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: t('rules.scanForTransfers') })).toBeEnabled(),
+    )
+  })
+
+  it('hides the action from a viewer', async () => {
+    workspace.canWrite = false
+    renderWithProviders(<RulesPage />)
+
+    await screen.findByRole('combobox', { name: t('rules.filterByCategory') })
+
+    expect(screen.queryByRole('button', { name: t('rules.scanForTransfers') })).not.toBeInTheDocument()
+  })
+
+  it('reports a failure instead of a count', async () => {
+    api.connections.detectTransfers.mockRejectedValue(new Error('boom'))
+    renderWithProviders(<RulesPage />)
+
+    await clickScan()
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled())
+    expect(toast.success).not.toHaveBeenCalled()
+  })
+})
