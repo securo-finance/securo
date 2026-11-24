@@ -312,6 +312,50 @@ async def test_a_non_string_type_row_does_not_block_the_holdings_refresh():
     assert [t.external_id for t in holdings[0].trades] == ["b1"]
 
 
+@pytest.mark.asyncio
+async def test_a_non_string_investment_type_does_not_block_the_holdings_refresh():
+    holdings, calls = await _holdings(
+        [
+            {"id": "odd", "type": 7, "code": "PSSA3", "balance": 100, "quantity": 2},
+            {"id": "eq", "type": "EQUITY", "code": "ITUB4", "balance": 280.49, "quantity": 7},
+        ],
+        {"eq": [_tx(id="b1", quantity=7, value=40.07)]},
+    )
+
+    by_id = {h.external_id: h for h in holdings}
+    assert set(by_id) == {"odd", "eq"}
+    # The unreadable type is not taken as exchange-traded: no trades asked.
+    assert by_id["odd"].trades is None
+    assert "/investments/odd/transactions" not in calls
+    assert [t.external_id for t in by_id["eq"].trades] == ["b1"]
+
+
+@pytest.mark.parametrize(
+    ("currency", "expected_currency", "expected_ticker"),
+    [
+        (123, "BRL", None),
+        ("REAIS", "BRL", None),
+        ([], "BRL", None),
+        (" brl ", "BRL", "PSSA3.SA"),
+        ("USD", "USD", None),
+    ],
+)
+@pytest.mark.asyncio
+async def test_an_unreadable_currency_reads_as_brl_and_stays_provider_valued(
+    currency, expected_currency, expected_ticker
+):
+    holdings, _ = await _holdings(
+        [{"id": "eq", "type": "EQUITY", "code": "PSSA3", "currencyCode": currency,
+          "balance": 312.62, "quantity": 7}],
+        {"eq": []},
+    )
+
+    # Asset.currency holds three characters: only a readable ISO code gets
+    # through, and an unreadable one is not taken as B3-listed.
+    assert holdings[0].currency == expected_currency
+    assert holdings[0].ticker == expected_ticker
+
+
 @pytest.mark.parametrize(
     "body",
     [

@@ -222,6 +222,24 @@ def _upper_text(value) -> str:
     return value.upper() if isinstance(value, str) else ""
 
 
+_CURRENCY_CODE = re.compile(r"^[A-Z]{3}$")
+
+
+def _holding_currency(inv: dict) -> str:
+    """The holding's ISO currency code, or BRL when it is missing or unreadable.
+
+    `Asset.currency` holds three characters, so a non-string or malformed
+    code (123, "REAIS") would fail the write and take the sync down with
+    it. It reads as missing instead; `_b3_market_ticker` sees the same raw
+    value as unknown, so such a holding is not taken as B3-listed and keeps
+    the provider's valuation.
+    """
+    code = inv.get("currencyCode")
+    if isinstance(code, str) and _CURRENCY_CODE.match(code.strip().upper()):
+        return code.strip().upper()
+    return "BRL"
+
+
 def _decimal_or_none(value) -> Optional[Decimal]:
     if value is None:
         return None
@@ -349,7 +367,7 @@ def _b3_market_ticker(inv: dict) -> Optional[str]:
     # A non-string currency is unreadable, so the position is not taken as
     # B3-listed: it stays provider-valued instead of failing the refresh.
     currency = inv.get("currencyCode")
-    if currency not in (None, "") and _upper_text(currency) != "BRL":
+    if currency not in (None, "") and _upper_text(currency).strip() != "BRL":
         return None
     code = inv.get("code")
     if not isinstance(code, str):
@@ -523,7 +541,7 @@ def _build_holding_data(inv: dict) -> HoldingData:
     return HoldingData(
         external_id=str(inv["id"]),
         name=inv.get("name") or "Investment",
-        currency=inv.get("currencyCode") or "BRL",
+        currency=_holding_currency(inv),
         current_value=current_value,
         gross_value=_storable_gross(inv.get("amount")),
         quantity=quantity,
@@ -1277,7 +1295,7 @@ class PluggyProvider(BankProvider):
                     holding = _build_holding_data(inv)
                     if (
                         not trades_unknown
-                        and (inv.get("type") or "").upper() in _EXCHANGE_TRADED_TYPES
+                        and _upper_text(inv.get("type")) in _EXCHANGE_TRADED_TYPES
                     ):
                         rows = await self._fetch_investment_trades(
                             client, headers, str(inv["id"])
