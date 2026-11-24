@@ -17,7 +17,7 @@ from app.models.asset import ASSET_PRICE_DECIMALS, Asset
 from app.models.transaction import Transaction
 from app.models.category import Category
 from app.models.user import User
-from app.services.viewer_currency import viewer_currency
+from app.services.viewer_currency import ViewerCurrency, viewer_currency
 from app.services._query_filters import (
     _others_share_in_primary,
     _viewer_member_ids,
@@ -1488,6 +1488,7 @@ async def _get_baseline_projection(
     to_primary,
     account_ids: Optional[list[uuid.UUID]] = None,
     accounting_mode: str = "cash",
+    viewer: Optional[ViewerCurrency] = None,
 ) -> tuple[list[dict], int]:
     """Estimate future flows by averaging the user's recent transaction history.
 
@@ -1538,7 +1539,7 @@ async def _get_baseline_projection(
             select(
                 Transaction.type,
                 line_amount(),
-                line_amount_primary(),
+                line_amount_primary(viewer),
                 Transaction.currency,
             ).select_from(Transaction)
         )
@@ -1661,6 +1662,18 @@ async def get_cash_flow_report(
             rate_cache[ccy] = rate
         return float((amount * rate).quantize(Decimal("0.01")))
 
+    # Another member's rows are stamped in their display currency (ADR 0032).
+    viewer = await viewer_currency(session, primary_currency)
+
+    async def _row_primary(tx: Transaction) -> float:
+        stamped = await viewer.convert(
+            session, tx.user_id, tx.amount_primary, tx.date,
+            currency=tx.currency, amount=tx.amount,
+        )
+        if stamped is not None:
+            return abs(float(stamped))
+        return await _to_primary(Decimal(str(abs(tx.amount))), tx.currency)
+
     flows: dict[date, dict[str, float]] = {}
     balance_flows: dict[date, dict[str, float]] = {}
 
@@ -1691,7 +1704,7 @@ async def get_cash_flow_report(
                 balance_date_col,
                 Transaction.type,
                 line_amount(),
-                line_amount_primary(),
+                line_amount_primary(viewer),
                 Transaction.currency,
             ).select_from(Transaction)
         )
@@ -1754,11 +1767,7 @@ async def get_cash_flow_report(
             continue
         balance_date = tx.effective_bill_date or (tx.effective_date if accrual else tx.date)
         report_date = tx.reporting_date_override or balance_date
-        if tx.amount_primary is not None:
-            amount_primary = abs(float(tx.amount_primary))
-        else:
-            amount_primary = await _to_primary(Decimal(str(abs(tx.amount))), tx.currency)
-        amount_primary *= float(pnl_ratio)
+        amount_primary = await _row_primary(tx) * float(pnl_ratio)
         if not amount_primary:
             continue
         if today < report_date <= end:
@@ -1788,12 +1797,8 @@ async def get_cash_flow_report(
             balance_date = tx.effective_date
             if balance_date <= today or balance_date > end:
                 continue
-            if tx.amount_primary is not None:
-                amount_primary = abs(float(tx.amount_primary))
-            else:
-                amount_primary = await _to_primary(Decimal(str(abs(tx.amount))), tx.currency)
             # Only the part the booked flow above counts is moved back.
-            amount_primary *= float(pnl_ratio)
+            amount_primary = await _row_primary(tx) * float(pnl_ratio)
             if tx.type == "debit":
                 current_balance += amount_primary
             else:
@@ -1810,7 +1815,7 @@ async def get_cash_flow_report(
     if baseline:
         projections, baseline_lookback_days = await _get_baseline_projection(
             session, workspace_id, today, end, primary_currency, _to_primary, account_ids,
-            accounting_mode,
+            accounting_mode, viewer,
         )
     else:
         projections = await _get_recurring_projections(
