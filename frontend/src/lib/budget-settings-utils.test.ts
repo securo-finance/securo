@@ -41,6 +41,13 @@ describe('savedPlannedTotal', () => {
     ])).toBe(1280.5)
   })
 
+  it('sums the limit in the display currency, not the typed one', () => {
+    expect(savedPlannedTotal([
+      budget({ category_id: 'food', amount: 1800, currency: 'BRL', amount_primary: '360.00' }),
+      budget({ category_id: 'bus', amount: 80, id: 'b2' }),
+    ])).toBe(440)
+  })
+
   it('counts a zero tombstone as zero so the masked series adds nothing', () => {
     expect(savedPlannedTotal([
       budget({ category_id: 'food', amount: 0 }),

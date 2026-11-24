@@ -138,15 +138,16 @@ export function planBudgetChange({
  * `savedBudgets` are the resolved rows of `GET /api/budgets?month=`: month
  * overrides and recurring defaults are already merged, one row per budgetable
  * category. A tombstone row carries amount zero and sums zero, masking the
- * series it stops. The effective limit today is only `amount` — PR 2 switches
- * this to min/max, PR 3 adds group budgets, PR 4 dedups overlapping scopes,
- * and the income-share epic reads a derived limit here.
+ * series it stops. The effective limit today is the row's own limit, read in
+ * the viewer's display currency like the save bar — PR 2 switches this to
+ * min/max, PR 3 adds group budgets, PR 4 dedups overlapping scopes, and the
+ * income-share epic reads a derived limit here.
  *
  * The API sends decimals as strings; `Number` reads them, and every stored
  * row counts once.
  */
 export function savedPlannedTotal(savedBudgets: Budget[]): number {
-  return savedBudgets.reduce((total, budget) => total + Number(budget.amount), 0)
+  return savedBudgets.reduce((total, budget) => total + budgetDisplayAmount(budget), 0)
 }
 
 export interface IncomeShare {
