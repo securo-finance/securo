@@ -398,6 +398,13 @@ async def seed(email: str, password: str, months: int) -> None:
                     "type": "credit",
                     "source": "manual",
                     "status": "posted",
+                    # Seeded history already happened: born read and paid, the
+                    # same way migration 128 backfills stored rows. Set here
+                    # because a core bulk insert cannot run the model's
+                    # Python-side default (`default_is_paid` reads the row's
+                    # source through `get_current_parameters`).
+                    "is_read": True,
+                    "is_paid": True,
                 })
 
         def _add(account: Account, day: date, payee: str, cat_name: str,
@@ -417,6 +424,10 @@ async def seed(email: str, password: str, months: int) -> None:
                 "type": kind,
                 "source": "manual",
                 "status": "posted",
+                # Past, settled history: read and paid (see the opening balance
+                # row above for why they are not left to the model default).
+                "is_read": True,
+                "is_paid": True,
             })
 
         # Salário no dia 5 de cada mês (típico no Brasil).
