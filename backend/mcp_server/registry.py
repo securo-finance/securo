@@ -16,6 +16,15 @@ from mcp_server.auth import CallContext
 ToolHandler = Callable[..., Awaitable[Any]]
 
 
+class ToolInputError(ValueError):
+    """A tool refused an argument value it does not know.
+
+    Expected, not a bug: the model sent something the schema did not hold it
+    to. The server reports it as a tool result and logs it without a
+    traceback, unlike a handler that crashes.
+    """
+
+
 @dataclass
 class ToolSpec:
     name: str
