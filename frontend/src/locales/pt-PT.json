@@ -4180,6 +4180,12 @@
       "saved": "Definições de leitura de documentos guardadas",
       "saveError": "Não foi possível guardar as definições",
       "resetDone": "De volta às predefinições da instância"
+    },
+    "fill": {
+      "read": "Preencher com este ficheiro",
+      "reading": "A ler o ficheiro para preencher a transação…",
+      "filled": "Preenchido a partir do ficheiro: {{fields}}",
+      "nothingNew": "O ficheiro não tinha nada de novo para preencher."
     }
   }
 }

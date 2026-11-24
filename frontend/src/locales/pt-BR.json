@@ -4181,6 +4181,12 @@
       "saved": "Configurações de leitura de documentos salvas",
       "saveError": "Não foi possível salvar as configurações",
       "resetDone": "De volta aos padrões da instância"
+    },
+    "fill": {
+      "read": "Preencher com este arquivo",
+      "reading": "Lendo o arquivo para preencher a transação…",
+      "filled": "Preenchido a partir do arquivo: {{fields}}",
+      "nothingNew": "O arquivo não tinha nada novo para preencher."
     }
   }
 }

@@ -32,7 +32,10 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { AlertTriangle, ArrowRight, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Flag, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check, CircleCheck, Pencil, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowRight, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Flag, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check, CircleCheck, Pencil, Trash2, ScanText } from 'lucide-react'
+import { documentAi } from '@/lib/api'
+import { documentErrorMessage, errorFromResponse, isDocumentFile, isImageFile, useDocumentAiStatus } from '@/hooks/use-document-extraction'
+import type { DocumentExtraction } from '@/types'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -724,6 +727,86 @@ function TransactionForm({
   const [pendingDragOver, setPendingDragOver] = useState(false)
   const pendingFileInputRef = useRef<HTMLInputElement>(null)
   const pendingActionRef = useRef<SaveAction>('save')
+
+  // Document reading (DOCUMENT_AI_ENABLED): a receipt or a PDF added while
+  // creating fills in the fields that are still empty. What the person typed
+  // is never replaced, and the temporary read is deleted once applied; the
+  // file itself is attached on save like any other.
+  const { enabled: documentAiEnabled, status: documentAiStatus } = useDocumentAiStatus()
+  const [readingFile, setReadingFile] = useState(false)
+  const formNow = useRef({ description, amount, date, categoryId })
+  formNow.current = { description, amount, date, categoryId }
+  const readCancelled = useRef(false)
+  useEffect(() => {
+    // Re-armed on every mount: StrictMode mounts twice, and a flag left set by
+    // the first cleanup would stop every read before it starts.
+    readCancelled.current = false
+    return () => { readCancelled.current = true }
+  }, [])
+  const canReadFile = (file: File) =>
+    documentAiEnabled && isCreating && !!documentAiStatus?.configured && isDocumentFile(file.name)
+    && !(isImageFile(file.name) && documentAiStatus?.vision === 'no')
+
+  const applyReadFile = (extraction: DocumentExtraction) => {
+    const receipt = extraction.receipt
+    if (!receipt) return
+    const now = formNow.current
+    const filled: string[] = []
+    if (!now.description.trim() && receipt.merchant) {
+      setDescription(receipt.merchant)
+      filled.push(t('transactions.description'))
+    }
+    if (!now.amount && receipt.total) {
+      setAmount(formatAmountInput(Number(receipt.total), displayLocale, 8))
+      setType(receipt.kind === 'refund' ? 'credit' : 'debit')
+      if (receipt.currency) setCurrency(receipt.currency)
+      filled.push(t('transactions.amount'))
+    }
+    // Today is the form's default, not a choice; another date someone picked is.
+    if (receipt.date && now.date === localDateString() && receipt.date !== now.date) {
+      setDate(receipt.date)
+      filled.push(t('transactions.date'))
+    }
+    if (!now.categoryId && extraction.suggested_category_id) {
+      setCategoryId(extraction.suggested_category_id)
+      filled.push(t('transactions.category'))
+    }
+    if (filled.length) toast.success(t('documentAi.fill.filled', { fields: filled.join(', ') }))
+    else toast.info(t('documentAi.fill.nothingNew'))
+  }
+
+  const readFile = async (file: File) => {
+    if (readingFile) return
+    setReadingFile(true)
+    try {
+      let extraction = await documentAi.upload(file, 'receipt')
+      for (let i = 0; i < 150 && (extraction.status === 'pending' || extraction.status === 'processing'); i++) {
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        if (readCancelled.current) break
+        extraction = await documentAi.get(extraction.id)
+      }
+      if (!readCancelled.current) {
+        if (extraction.status === 'done') applyReadFile(extraction)
+        else if (extraction.status === 'failed') toast.error(documentErrorMessage(t, extraction.error_code, extraction.error))
+      }
+      // The file is attached on save; the read was only for the fields.
+      documentAi.remove(extraction.id).catch(() => {})
+    } catch (error) {
+      if (!readCancelled.current) toast.error(errorFromResponse(t, error))
+    } finally {
+      if (!readCancelled.current) setReadingFile(false)
+    }
+  }
+
+  // A form still empty means the person started from the file: read it right
+  // away. Otherwise the button on the file does it, so attaching a proof never
+  // spends a paid model's tokens unasked.
+  const addPendingFilesAndRead = (files: FileList | File[]) => {
+    const list = Array.from(files)
+    addPendingFiles(list)
+    const first = list.find(canReadFile)
+    if (first && !formNow.current.description.trim() && !formNow.current.amount) void readFile(first)
+  }
   const formRef = useRef<HTMLFormElement>(null)
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
 
@@ -1916,9 +1999,12 @@ function TransactionForm({
           fileInputRef={pendingFileInputRef}
           onDragOver={() => setPendingDragOver(true)}
           onDragLeave={() => setPendingDragOver(false)}
-          onDrop={(e) => { e.preventDefault(); setPendingDragOver(false); if (e.dataTransfer.files?.length) addPendingFiles(e.dataTransfer.files) }}
-          onFileChange={(e) => { if (e.target.files?.length) { addPendingFiles(e.target.files); e.target.value = '' } }}
+          onDrop={(e) => { e.preventDefault(); setPendingDragOver(false); if (e.dataTransfer.files?.length) addPendingFilesAndRead(e.dataTransfer.files) }}
+          onFileChange={(e) => { if (e.target.files?.length) { addPendingFilesAndRead(e.target.files); e.target.value = '' } }}
           onRemove={removePendingFile}
+          canRead={canReadFile}
+          onRead={(file) => void readFile(file)}
+          reading={readingFile}
         />
       )}
 
@@ -2518,6 +2604,9 @@ function PendingAttachmentsSection({
   onDrop,
   onFileChange,
   onRemove,
+  canRead,
+  onRead,
+  reading = false,
 }: {
   files: File[]
   dragOver: boolean
@@ -2529,6 +2618,10 @@ function PendingAttachmentsSection({
   onDrop: (e: React.DragEvent) => void
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void
   onRemove: (index: number) => void
+  /** Whether a file can be read to fill in the form (document reading on). */
+  canRead?: (file: File) => boolean
+  onRead?: (file: File) => void
+  reading?: boolean
 }) {
   const { t } = useTranslation()
   const hasFiles = files.length > 0
@@ -2543,6 +2636,13 @@ function PendingAttachmentsSection({
           <span className="text-xs text-muted-foreground font-normal">({files.length})</span>
         )}
       </div>
+
+      {reading && (
+        <div className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-foreground" data-testid="reading-attachment">
+          <ScanText size={14} className="animate-pulse text-primary" />
+          {t('documentAi.fill.reading')}
+        </div>
+      )}
 
       {hasFiles ? (
         <>
@@ -2582,6 +2682,18 @@ function PendingAttachmentsSection({
                   {/* Remove button */}
                   <div className="absolute start-0 end-0 bottom-[44px] flex items-center justify-center gap-1 px-2 py-1.5 opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200">
                     <div className="flex items-center gap-1 bg-background/90 dark:bg-card/90 backdrop-blur-sm rounded-lg ring-1 ring-border/50 shadow-lg shadow-black/10 px-1 py-0.5">
+                      {onRead && canRead?.(file) && (
+                        <button
+                          type="button"
+                          className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 cursor-pointer transition-colors disabled:opacity-50"
+                          onClick={() => onRead(file)}
+                          disabled={reading}
+                          title={t('documentAi.fill.read')}
+                          aria-label={t('documentAi.fill.read')}
+                        >
+                          <ScanText size={14} />
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer transition-colors"

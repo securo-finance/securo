@@ -4166,6 +4166,12 @@
       "saved": "Document reading settings saved",
       "saveError": "The settings could not be saved",
       "resetDone": "Back to the instance defaults"
+    },
+    "fill": {
+      "read": "Fill in from this file",
+      "reading": "Reading the file to fill in the transaction…",
+      "filled": "Filled in from the file: {{fields}}",
+      "nothingNew": "The file had nothing new to fill in."
     }
   }
 }

@@ -4168,6 +4168,12 @@
       "saved": "Instellingen voor documenten lezen opgeslagen",
       "saveError": "De instellingen konden niet worden opgeslagen",
       "resetDone": "Terug naar de standaarden van de instantie"
+    },
+    "fill": {
+      "read": "Invullen vanuit dit bestand",
+      "reading": "Bestand wordt gelezen om de transactie in te vullen…",
+      "filled": "Ingevuld vanuit het bestand: {{fields}}",
+      "nothingNew": "Het bestand had niets nieuws om in te vullen."
     }
   }
 }

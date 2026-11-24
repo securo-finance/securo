@@ -4180,6 +4180,12 @@
       "saved": "Paramètres de lecture des documents enregistrés",
       "saveError": "Les paramètres n'ont pas pu être enregistrés",
       "resetDone": "Valeurs par défaut de l'instance rétablies"
+    },
+    "fill": {
+      "read": "Remplir à partir de ce fichier",
+      "reading": "Lecture du fichier pour remplir la transaction…",
+      "filled": "Rempli à partir du fichier : {{fields}}",
+      "nothingNew": "Le fichier n'avait rien de nouveau à remplir."
     }
   }
 }

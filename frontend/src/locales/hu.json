@@ -4166,6 +4166,12 @@
       "saved": "A dokumentumolvasási beállítások mentve",
       "saveError": "A beállításokat nem sikerült menteni",
       "resetDone": "Visszaállítva a példány alapértelmezéseire"
+    },
+    "fill": {
+      "read": "Kitöltés ebből a fájlból",
+      "reading": "A fájl olvasása a tranzakció kitöltéséhez…",
+      "filled": "Kitöltve a fájlból: {{fields}}",
+      "nothingNew": "A fájlban nem volt semmi új, amit ki lehetne tölteni."
     }
   }
 }

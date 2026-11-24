@@ -4378,6 +4378,12 @@
       "saved": "Nastavení čtení dokumentů uloženo",
       "saveError": "Nastavení se nepodařilo uložit",
       "resetDone": "Obnoveno výchozí nastavení instance"
+    },
+    "fill": {
+      "read": "Vyplnit z tohoto souboru",
+      "reading": "Čtení souboru pro vyplnění transakce…",
+      "filled": "Vyplněno ze souboru: {{fields}}",
+      "nothingNew": "Soubor neobsahoval nic nového k vyplnění."
     }
   }
 }

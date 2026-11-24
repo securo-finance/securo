@@ -4167,6 +4167,12 @@
       "saved": "Einstellungen zum Lesen von Dokumenten gespeichert",
       "saveError": "Die Einstellungen konnten nicht gespeichert werden",
       "resetDone": "Standards der Instanz wiederhergestellt"
+    },
+    "fill": {
+      "read": "Aus dieser Datei ausfüllen",
+      "reading": "Datei wird gelesen, um die Transaktion auszufüllen…",
+      "filled": "Aus der Datei ausgefüllt: {{fields}}",
+      "nothingNew": "Die Datei enthielt nichts Neues zum Ausfüllen."
     }
   }
 }

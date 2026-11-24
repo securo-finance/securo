@@ -4180,6 +4180,12 @@
       "saved": "Configuración de lectura de documentos guardada",
       "saveError": "No se pudo guardar la configuración",
       "resetDone": "Se restauraron los valores predeterminados de la instancia"
+    },
+    "fill": {
+      "read": "Rellenar con este archivo",
+      "reading": "Leyendo el archivo para rellenar la transacción…",
+      "filled": "Rellenado a partir del archivo: {{fields}}",
+      "nothingNew": "El archivo no tenía nada nuevo que rellenar."
     }
   }
 }

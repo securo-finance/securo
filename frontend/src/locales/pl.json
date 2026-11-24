@@ -4328,6 +4328,12 @@
       "saved": "Zapisano ustawienia odczytu dokumentów",
       "saveError": "Nie udało się zapisać ustawień",
       "resetDone": "Przywrócono ustawienia domyślne instancji"
+    },
+    "fill": {
+      "read": "Uzupełnij z tego pliku",
+      "reading": "Odczytywanie pliku, aby uzupełnić transakcję…",
+      "filled": "Uzupełniono z pliku: {{fields}}",
+      "nothingNew": "Plik nie zawierał niczego nowego do uzupełnienia."
     }
   }
 }

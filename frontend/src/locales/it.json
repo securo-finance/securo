@@ -4180,6 +4180,12 @@
       "saved": "Impostazioni di lettura dei documenti salvate",
       "saveError": "Non è stato possibile salvare le impostazioni",
       "resetDone": "Ripristinati i valori predefiniti dell'istanza"
+    },
+    "fill": {
+      "read": "Compila da questo file",
+      "reading": "Lettura del file per compilare la transazione…",
+      "filled": "Compilato dal file: {{fields}}",
+      "nothingNew": "Il file non aveva niente di nuovo da compilare."
     }
   }
 }

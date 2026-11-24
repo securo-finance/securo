@@ -4362,6 +4362,12 @@
       "saved": "Nastavenia čítania dokumentov boli uložené",
       "saveError": "Nastavenia sa nepodarilo uložiť",
       "resetDone": "Obnovené predvolené hodnoty inštancie"
+    },
+    "fill": {
+      "read": "Vyplniť z tohto súboru",
+      "reading": "Čítanie súboru na vyplnenie transakcie…",
+      "filled": "Vyplnené zo súboru: {{fields}}",
+      "nothingNew": "Súbor neobsahoval nič nové na vyplnenie."
     }
   }
 }
