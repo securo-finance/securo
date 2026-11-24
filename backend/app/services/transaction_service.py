@@ -197,7 +197,10 @@ async def _fx_override_in_owner_currency(
     update_data = dict(update_data)
     amount = Decimal(str(update_data.get("amount", tx.amount)))
     amount_unchanged = amount == Decimal(str(tx.amount))
-    shown = await viewer.convert(session, tx.user_id, tx.amount_primary, tx.date)
+    shown = await viewer.convert(
+        session, tx.user_id, tx.amount_primary, tx.date,
+        currency=tx.currency, amount=tx.amount, typed=tx.amount_primary_typed,
+    )
     if amount_unchanged and shown is not None:
         # The stored stamp itself counts as an echo too: a client that read
         # the row unconverted sends it back as it was (#440).

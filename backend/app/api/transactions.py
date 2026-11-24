@@ -133,7 +133,10 @@ def _tag_fx_fallback(tx: TransactionRead, primary_currency: str) -> TransactionR
 
 
 async def _in_viewer_currency(
-    session: AsyncSession, primary_currency: str, items: list[TransactionRead]
+    session: AsyncSession,
+    primary_currency: str,
+    items: list[TransactionRead],
+    typed: dict[uuid.UUID, Optional[Decimal]],
 ) -> list[TransactionRead]:
     """Show each row's stamp in the viewer's currency (#269).
 
@@ -142,6 +145,8 @@ async def _in_viewer_currency(
     Those are converted at the row's date, with the rates and rounding the
     list footer and the dashboard use, so the rows add up to the totals.
     Only the response objects change; the stored stamp stays the owner's.
+    `typed` holds each row's `amount_primary_typed`, which the response
+    does not carry.
     """
     viewer = await viewer_currency(session, primary_currency)
     if not viewer.foreign_owners:
@@ -149,12 +154,22 @@ async def _in_viewer_currency(
     for item in items:
         if viewer.stamp_currency(item.user_id) == viewer.currency:
             continue
-        # Judged on the stored stamp, in its owner's currency: converting a
-        # legacy 1:1 stamp scales it and rewrites `fx_rate_used`, which would
-        # hide the warning.
-        _tag_fx_fallback(item, viewer.stamp_currency(item.user_id))
+        own_amount = (
+            item.currency == viewer.currency
+            and typed.get(item.id) is None
+            and item.amount_primary is not None
+        )
+        if not own_amount:
+            # Judged on the stored stamp, in its owner's currency: converting
+            # a legacy 1:1 stamp scales it and rewrites `fx_rate_used`, which
+            # would hide the warning. A row read as its own amount needs no
+            # rate, so it carries no warning.
+            _tag_fx_fallback(item, viewer.stamp_currency(item.user_id))
         ratio = await viewer.ratio(session, item.user_id, item.date)
-        converted = await viewer.convert(session, item.user_id, item.amount_primary, item.date)
+        converted = await viewer.convert(
+            session, item.user_id, item.amount_primary, item.date,
+            currency=item.currency, amount=item.amount, typed=typed.get(item.id),
+        )
         item.amount_primary = float(converted) if converted is not None else None
         item.matched_amount_primary = await viewer.convert(
             session, item.user_id, item.matched_amount_primary, item.date
@@ -174,6 +189,7 @@ async def _read_all_in_viewer_currency(
     """Rows as the list shows them: stamps in the viewer's currency, then
     tagged. Every response the transaction dialog can open must read like
     this; it sends `amount_primary` back as it got it (#440)."""
+    rows = list(rows)
     items = [TransactionRead.model_validate(tx, from_attributes=True) for tx in rows]
     viewer = await viewer_currency(session, primary_currency)
     # The warning is judged on each row as it was stored, in its owner's
@@ -186,7 +202,8 @@ async def _read_all_in_viewer_currency(
     for item in items:
         if item.id not in converted:
             _tag_fx_fallback(item, primary_currency)
-    return await _in_viewer_currency(session, primary_currency, items)
+    typed = {tx.id: tx.amount_primary_typed for tx in rows}
+    return await _in_viewer_currency(session, primary_currency, items, typed)
 
 
 async def _read_in_viewer_currency(

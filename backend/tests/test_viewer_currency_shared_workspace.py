@@ -862,3 +862,69 @@ async def test_a_converted_row_landing_on_one_to_one_is_not_flagged(client, coup
 
     resp = await client.get(f"/api/transactions/{row['id']}", headers=couple["bruno"])
     assert resp.json()["fx_fallback"] is False
+
+
+@pytest.mark.asyncio
+async def test_a_row_in_the_viewers_currency_reads_as_its_own_amount(
+    client, session, couple
+):
+    """Bruno (EUR) enters R$ 10,03 on day 5 (BRL→EUR 0,20): stamped 2,01 €.
+    Read back through his stamp it was R$ 10,05 for Ana; it is her currency,
+    so every view shows R$ 10,03 and her totals move by exactly that (#463)."""
+    month, day5, _ = _last_month()
+    accounts = (await client.get("/api/accounts", headers=couple["bruno"])).json()
+    (joint,) = [a for a in accounts if a["name"] == "Conta conjunta"]
+    resp = await client.post(
+        "/api/transactions", headers=couple["bruno"],
+        json={
+            "account_id": joint["id"], "category_id": couple["category_id"],
+            "description": "R269 R463 reais", "amount": "10.03", "currency": "BRL",
+            "date": day5.isoformat(), "type": "debit",
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    row_id = resp.json()["id"]
+    assert (await _stored(session, row_id)).amount_primary == Decimal("2.01")
+
+    ana = couple["ana"]
+    body = await _list(client, ana, month, q="R463")
+    (listed,) = body["items"]
+    assert listed["amount_primary"] == pytest.approx(10.03)
+    assert listed["fx_rate_used"] == pytest.approx(1.0)
+    assert listed["fx_fallback"] is False
+    assert body["summary"]["expense"] == pytest.approx(10.03)
+
+    detail = (await client.get(f"/api/transactions/{row_id}", headers=ana)).json()
+    assert detail["amount_primary"] == pytest.approx(10.03)
+
+    total = 1410.03
+    assert (await _list(client, ana, month))["summary"]["expense"] == pytest.approx(total)
+    assert (await _dashboard(client, ana, month))["monthly_expenses_primary"] == (
+        pytest.approx(total)
+    )
+    assert await _category_total(client, ana, month, couple["category_id"]) == (
+        pytest.approx(total)
+    )
+    assert await _report_expenses(client, ana, month) == pytest.approx(total)
+    assert await _budget_actual(client, ana, month, couple["category_id"]) == (
+        pytest.approx(total)
+    )
+
+    resp = await client.get(
+        "/api/transactions/calendar", headers=ana, params={"month": month.isoformat()}
+    )
+    assert resp.status_code == 200, resp.text
+    (item,) = [
+        item for day in resp.json()["days"] for item in day["items"]
+        if item.get("id") == row_id
+    ]
+    assert item["amount_primary"] == pytest.approx(10.03)
+
+    # Ana editing only the description sends back the 10,03 she was shown,
+    # and Bruno's stamp stays as he had it.
+    resp = await client.patch(
+        f"/api/transactions/{row_id}", headers=ana,
+        json={**_dialog_save(detail), "description": "R269 R463 renamed"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert (await _stored(session, row_id)).amount_primary == Decimal("2.01")
