@@ -21,7 +21,7 @@ A derived stamp only moves the cents on the way back: Bruno (EUR) enters R$ 10,0
 ## Consequences
 
 - Every caller of `ViewerCurrency.convert()` that shows a row passes its `currency` and `amount`, or the row falls back to the round trip.
-- The stamp is not touched: the rule is a read. An edit by the viewer still sends the owner's typed figure back unchanged, so it stays stored (0032's write rules).
+- The stamp is not touched: the rule is a read. An edit by the viewer sends back the figure it was shown, the row's own amount in its own currency (US$ 300, not the owner's typed R$ 1.560). 0032's write guard takes a conversion sent back unchanged from what was shown as an echo and drops it, and that is what keeps the owner's typed stamp stored.
 
 ## Enforced by
 
