@@ -557,6 +557,10 @@ async def get_summary(
             .where(Account.workspace_id == workspace_id)
         ) or 0
 
+    # Get user's primary currency (user already loaded above for reporting mode)
+    primary_currency = user.primary_currency if user else get_settings().default_currency
+    viewer = await viewer_currency(session, primary_currency)
+
     # Pending categorization: uncategorized rows that count toward the
     # user's P/L. That is the same filter the uncategorized list behind the
     # counter uses (user_pnl_only), so ignored rows, rows excluded from P/L,
@@ -571,10 +575,20 @@ async def get_summary(
         counts_as_user_pnl(Transaction.category_id),
         *acct_filter,
     ]
+    # The rows are in different currencies, so the total is read in the
+    # viewer's display currency (#462), with the rule the list behind the
+    # counter adds it up with: a row in their own currency counts its
+    # amount, any other row counts its primary stamp converted at the row's
+    # date, and a row left without a stamp counts nothing, as the
+    # drill-down skips it instead of taking a foreign amount as theirs.
+    pending_amount = case(
+        (Transaction.currency == viewer.currency, func.abs(Transaction.amount)),
+        else_=func.abs(viewer.amount()),
+    )
     pending_categorization_result = await session.execute(
         select(
             func.count(),
-            func.coalesce(func.sum(func.abs(Transaction.amount)), 0),
+            func.coalesce(func.sum(pending_amount), 0),
         )
         .select_from(Transaction)
         .where(*pending_cat_filters)
@@ -583,9 +597,6 @@ async def get_summary(
         pending_categorization_result.one()
     )
     pending_categorization_amount = abs(float(pending_categorization_amount or 0))
-
-    # Get user's primary currency (user already loaded above for reporting mode)
-    primary_currency = user.primary_currency if user else get_settings().default_currency
 
     # Asset values — use cutoff so past months show historical values. Under a
     # collection filter, include only assets in the collection's wallets
@@ -644,7 +655,6 @@ async def get_summary(
     # Use amount_primary sums for more accurate multi-currency income/expenses.
     # Same posted-only rule as the native-currency totals above. Another
     # member's stamp is in their currency, so it is read in the viewer's.
-    viewer = await viewer_currency(session, primary_currency)
     primary_result = await session.execute(
         with_category_lines(
             select(
