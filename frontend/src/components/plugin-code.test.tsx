@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 
 import { PluginConnections } from '@/components/plugin-connections'
 import { PluginPlanDialog } from '@/components/plugin-plan-dialog'
@@ -16,6 +16,7 @@ const api = vi.hoisted(() => ({
     sync: vi.fn(),
     authorize: vi.fn(),
     disconnect: vi.fn(),
+    runRoutine: vi.fn(),
   },
 }))
 
@@ -274,5 +275,153 @@ describe('PluginConnections', () => {
     expect(await screen.findByText('Main')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: t('plugins.connections.add') })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: t('plugins.connections.syncNow') })).not.toBeInTheDocument()
+  })
+})
+
+const FILES: InstalledPlugin = {
+  ...PLUGIN,
+  integrations: [
+    {
+      key: 'files',
+      name: { en: 'Files' },
+      auth: 'credentials',
+      fields: [
+        { key: 'bundle', label: { en: 'Key bundle' }, secret: true, required: true, type: 'file', accept: ['.p12'], max_kb: 1 },
+        { key: 'layout', label: { en: 'Layout' }, secret: false, required: false, type: 'file' },
+      ],
+      sync_minutes: null,
+      routines: [
+        { key: 'send', name: { en: 'Send' }, every_minutes: 15 },
+        { key: 'collect', name: { en: 'Collect' }, every_minutes: 1440 },
+      ],
+    },
+  ],
+}
+
+const WITH_ROUTINES: PluginConnection = {
+  ...CONNECTION,
+  integration: 'files',
+  status: 'active',
+  last_error: null,
+  sync_minutes: null,
+  config: { layout: { name: 'layout.csv', size: 8 } },
+  secret_fields: ['bundle'],
+  routines: [
+    { key: 'send', every_minutes: 15, last_run_at: null, last_error: null, failures: 0 },
+    { key: 'collect', every_minutes: 1440, last_run_at: null, last_error: 'RuntimeError: refused', failures: 2 },
+  ],
+}
+
+describe('PluginConnections: files and routines', () => {
+  it('sends a picked file as its name and base64 content, and refuses one of another type or too large', async () => {
+    api.plugins.connections.mockResolvedValue([])
+    api.plugins.connect.mockResolvedValue({ connection: { ...WITH_ROUTINES, id: 'c3' }, authorize_url: null })
+    const { user } = renderWithProviders(
+      <WorkspaceContext.Provider value={workspace(true)}>
+        <PluginConnections plugin={FILES} />
+      </WorkspaceContext.Provider>,
+    )
+    await user.click(await screen.findByRole('button', { name: t('plugins.connections.add') }))
+    const input = screen.getByLabelText('Key bundle')
+    expect(input).toHaveAttribute('type', 'file')
+    expect(input).toHaveAttribute('accept', '.p12')
+    expect(screen.getByText(t('plugins.connections.fileAccepts', { types: '.p12', size: 1 }))).toBeInTheDocument()
+    const connect = screen.getByRole('button', { name: t('plugins.connections.connect') })
+
+    fireEvent.change(input, { target: { files: [new File(['x'], 'notes.txt')] } })
+    expect(connect).toBeDisabled()
+    fireEvent.change(input, { target: { files: [new File(['x'.repeat(2048)], 'big.p12')] } })
+    expect(connect).toBeDisabled()
+
+    fireEvent.change(input, { target: { files: [new File(['hello'], 'keys.p12')] } })
+    await waitFor(() => expect(connect).toBeEnabled())
+    // A refused replacement drops the file picked before it.
+    fireEvent.change(input, { target: { files: [new File(['x'], 'other.txt')] } })
+    await waitFor(() => expect(connect).toBeDisabled())
+    fireEvent.change(input, { target: { files: [new File(['hello'], 'keys.p12')] } })
+    await waitFor(() => expect(connect).toBeEnabled())
+    await user.click(connect)
+    await waitFor(() =>
+      expect(api.plugins.connect).toHaveBeenCalledWith({
+        plugin_id: 'acme/ledger', integration: 'files', name: '', values: { bundle: { name: 'keys.p12', content: btoa('hello') } },
+      }),
+    )
+  })
+
+  it("says which file a connection keeps, without asking for it again", async () => {
+    api.plugins.connections.mockResolvedValue([])
+    const { PluginConnectionDialog } = await import('@/components/plugin-connections')
+    renderWithProviders(
+      <WorkspaceContext.Provider value={workspace(true)}>
+        <PluginConnectionDialog plugin={FILES} connection={WITH_ROUTINES} onClose={() => {}} onDone={() => {}} />
+      </WorkspaceContext.Provider>,
+    )
+    expect(await screen.findByText(/layout\.csv/)).toBeInTheDocument()
+    expect(screen.getByText(new RegExp(t('plugins.connections.fileSaved')))).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('common.save') })).toBeEnabled()
+  })
+
+  it('lists each routine with its schedule and error, and runs one now', async () => {
+    const ran: PluginConnection = {
+      ...WITH_ROUTINES,
+      routines: [{ ...WITH_ROUTINES.routines![0], last_run_at: new Date().toISOString() }, WITH_ROUTINES.routines![1]],
+    }
+    // Like the server: once it ran, the list reads it as run.
+    let current = WITH_ROUTINES
+    api.plugins.connections.mockImplementation(async () => [current])
+    api.plugins.runRoutine.mockImplementation(async () => {
+      current = ran
+      return ran
+    })
+    const { user } = renderWithProviders(
+      <WorkspaceContext.Provider value={workspace(true)}>
+        <PluginConnections plugin={FILES} />
+      </WorkspaceContext.Provider>,
+    )
+    expect(await screen.findByText('Send')).toBeInTheDocument()
+    expect(screen.getByText('Collect')).toBeInTheDocument()
+    expect(screen.getByText('RuntimeError: refused')).toBeInTheDocument()
+    expect(screen.getAllByText(new RegExp(t('plugins.connections.routineNeverRan'))).length).toBe(2)
+    // It only runs routines: nothing to sync.
+    expect(screen.queryByRole('button', { name: t('plugins.connections.syncNow') })).not.toBeInTheDocument()
+    expect(screen.queryByText(new RegExp(t('plugins.connections.neverSynced')))).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: t('plugins.connections.runRoutineAria', { name: 'Send' }) }))
+    await waitFor(() => expect(api.plugins.runRoutine).toHaveBeenCalledWith(
+      { connectionId: 'c1', routine: 'send' }, expect.anything(),
+    ))
+    // Send now shows it ran; Collect still hasn't.
+    await waitFor(() => expect(screen.getAllByText(new RegExp(t('plugins.connections.routineNeverRan'))).length).toBe(1))
+  })
+
+  it('offers to update the keys of a connection whose key was refused', async () => {
+    const refused: PluginConnection = {
+      ...WITH_ROUTINES,
+      status: 'needs_auth',
+      last_error: 'AuthError: the key was refused',
+    }
+    api.plugins.connections.mockResolvedValue([refused])
+    const { user } = renderWithProviders(
+      <WorkspaceContext.Provider value={workspace(true)}>
+        <PluginConnections plugin={FILES} />
+      </WorkspaceContext.Provider>,
+    )
+    // Nothing runs until the keys are fixed, but the form that set it up is there.
+    expect(await screen.findByText(t('plugins.connections.status.keysRefused'))).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: t('plugins.connections.runRoutineAria', { name: 'Send' }) })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: t('plugins.connections.updateKeys') }))
+    expect(screen.getByText(t('plugins.connections.editTitle', { name: 'Main' }))).toBeInTheDocument()
+    // A field already set can stay blank; it keeps its value.
+    expect(screen.getByLabelText('Key bundle')).toHaveAttribute('type', 'file')
+  })
+
+  it("doesn't offer to run a routine to viewers", async () => {
+    api.plugins.connections.mockResolvedValue([WITH_ROUTINES])
+    renderWithProviders(
+      <WorkspaceContext.Provider value={workspace(false, false)}>
+        <PluginConnections plugin={FILES} />
+      </WorkspaceContext.Provider>,
+    )
+    expect(await screen.findByText('Send')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: t('plugins.connections.runRoutineAria', { name: 'Send' }) })).not.toBeInTheDocument()
   })
 })

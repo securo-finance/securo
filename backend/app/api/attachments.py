@@ -79,7 +79,7 @@ async def download_attachment(
     return Response(
         content=data,
         media_type=attachment_service.served_content_type(attachment.filename),
-        headers={"Content-Disposition": f'inline; filename="{attachment.filename}"'},
+        headers=attachment_service.served_headers(attachment.filename),
     )
 
 

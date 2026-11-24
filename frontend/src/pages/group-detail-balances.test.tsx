@@ -9,6 +9,8 @@ const api = vi.hoisted(() => ({
   balances: vi.fn(),
   settlements: vi.fn(),
   transactions: vi.fn(),
+  createSettlement: vi.fn(),
+  listTransactions: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
@@ -16,11 +18,11 @@ vi.mock('@/lib/api', () => ({
     get: api.get,
     balances: api.balances,
     transactions: api.transactions,
-    settlements: { list: api.settlements, create: vi.fn(), delete: vi.fn() },
+    settlements: { list: api.settlements, create: api.createSettlement, delete: vi.fn() },
     members: { create: vi.fn(), update: vi.fn(), delete: vi.fn() },
   },
   accounts: { list: vi.fn().mockResolvedValue([]) },
-  transactions: { list: vi.fn().mockResolvedValue({ items: [], total: 0 }) },
+  transactions: { list: api.listTransactions },
 }))
 
 const auth = vi.hoisted(() => ({ userId: 'user-bob' }))
@@ -83,6 +85,7 @@ describe('GroupDetailPage balances', () => {
     vi.clearAllMocks()
     api.settlements.mockResolvedValue([])
     api.transactions.mockResolvedValue([])
+    api.listTransactions.mockResolvedValue({ items: [], total: 0 })
   })
 
   it('shows a linked member what they owe the owner, not the other way round', async () => {
@@ -146,6 +149,37 @@ describe('GroupDetailPage balances', () => {
     const [from, to] = within(dialog).getAllByRole('combobox')
     expect(from).toHaveValue('m-alice')
     expect(to).toHaveValue('m-carol')
+  })
+
+  it('lets the owner link the credit that already arrived when they are paid', async () => {
+    auth.userId = 'user-alice'
+    api.get.mockResolvedValue(group('alice'))
+    api.balances.mockResolvedValue({
+      group_id: 'g1', self_member_id: 'm-alice', default_currency: 'USD', lines: [line('m-bob', 30)],
+    })
+    api.listTransactions.mockResolvedValue({
+      items: [{ id: 'tx-in', date: '2026-10-21', description: 'Transfer from Bob', amount: 30, currency: 'USD', type: 'credit' }],
+      total: 1,
+    })
+    const { user } = renderPage()
+
+    await screen.findByText(t('splitGroups.owesYou', { name: 'Bob' }))
+    await user.click(balanceRows().getByRole('button', { name: t('splitGroups.settleUp') }))
+    const dialog = await screen.findByRole('dialog')
+    const [from, to, action] = within(dialog).getAllByRole('combobox')
+    expect(from).toHaveValue('m-bob')
+    expect(to).toHaveValue('m-alice')
+    // The receiver can link what arrived, not create a new transaction.
+    expect(within(action).queryByRole('option', { name: t('splitGroups.txActionCreate') })).not.toBeInTheDocument()
+    await user.selectOptions(action, 'existing')
+    await user.click(await within(dialog).findByRole('button', { name: /Transfer from Bob/ }))
+    await user.click(within(dialog).getByRole('button', { name: t('common.save') }))
+
+    expect(api.listTransactions).toHaveBeenCalledWith(expect.objectContaining({ type: 'credit' }))
+    expect(api.createSettlement).toHaveBeenCalledWith('g1', expect.objectContaining({
+      from_member_id: 'm-bob', to_member_id: 'm-alice', receiver_transaction_id: 'tx-in',
+    }))
+    expect(api.createSettlement.mock.calls[0][1]).not.toHaveProperty('transaction_id')
   })
 
   it('shows a workspace member outside the group the owner\'s balances in the third person', async () => {

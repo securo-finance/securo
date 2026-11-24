@@ -1,5 +1,7 @@
 import calendar
 import uuid
+from bisect import bisect_left, bisect_right
+from collections import deque
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Optional
@@ -15,6 +17,7 @@ from app.models.asset import ASSET_PRICE_DECIMALS, Asset
 from app.models.transaction import Transaction
 from app.models.category import Category
 from app.models.user import User
+from app.services.viewer_currency import viewer_currency
 from app.services._query_filters import (
     _others_share_in_primary,
     _viewer_member_ids,
@@ -25,14 +28,15 @@ from app.services._query_filters import (
     line_amount_primary,
     line_category_id,
     line_primary_or_amount,
-    owner_split_offset_by_category,
     reporting_date_col,
     user_pnl_parts,
     user_pnl_ratio,
+    viewer_shares_in_primary,
     with_category_lines,
     reporting_date_value,
 )
 from app.services.admin_service import get_credit_card_accounting_mode
+from app.services.category_defaults import DEFAULT_CATEGORIES, name_variants
 from app.services.account_service import get_account_name
 from app.services.asset_service import (
     _fill_forward_at,
@@ -481,6 +485,179 @@ def _interval_label_expr(interval: str, date_col=None):
         return func.to_char(col, 'YYYY-MM')
 
 
+# How far apart the two legs of one unpaired movement may be booked, the
+# same window transfer detection uses for its suggestions.
+MIRRORED_LEG_DAYS = 2
+
+
+def _as_date(value) -> date:
+    return value if isinstance(value, date) else date.fromisoformat(str(value)[:10])
+
+
+def _without_mirrored_legs(rows):
+    """Drop the two legs of one movement that were never paired.
+
+    A card bill paid from a tracked account and imported from two statements
+    is a debit on the account and a credit on the card, both in a
+    `treat_as_transfer` category and neither with a `transfer_pair_id`. They
+    are the same money, so neither is an investment contribution nor a
+    withdrawal (#1551). A credit and a debit cancel when they share the
+    category and the amount, sit on different accounts and are booked within
+    `MIRRORED_LEG_DAYS`. Pairs are a maximum matching, so the result does not
+    depend on row order. Rows are (category id, name, color, type, amount,
+    account id, booking date, ...); the rest come back without account and
+    date, with any column after them kept.
+
+    Legs of one group on the same account and day are interchangeable, so
+    they are matched as one class with a count: a thousand identical legs
+    are one node, not a thousand (#319).
+    """
+    groups: dict[tuple, tuple[dict, dict]] = {}
+    for index, row in enumerate(rows):
+        key = (row[0], round(abs(float(row[4] or 0)), 2))
+        credits, debits = groups.setdefault(key, ({}, {}))
+        side = credits if row[3] == "credit" else debits
+        side.setdefault((_as_date(row[6]), str(row[5])), []).append(index)
+
+    dropped: set[int] = set()
+    for credits, debits in groups.values():
+        credit_keys = sorted(credits)
+        debit_keys = sorted(debits)
+        debit_days = [day for day, _ in debit_keys]
+        window = timedelta(days=MIRRORED_LEG_DAYS)
+        fits = [
+            [
+                j
+                for j in range(
+                    bisect_left(debit_days, day - window),
+                    bisect_right(debit_days, day + window),
+                )
+                if debit_keys[j][1] != account
+            ]
+            for day, account in credit_keys
+        ]
+        pairs = _max_leg_pairs(
+            [len(credits[k]) for k in credit_keys],
+            [len(debits[k]) for k in debit_keys],
+            fits,
+        )
+        for (i, j), count in pairs.items():
+            dropped.update(credits[credit_keys[i]][:count])
+            del credits[credit_keys[i]][:count]
+            dropped.update(debits[debit_keys[j]][:count])
+            del debits[debit_keys[j]][:count]
+    return [row[:5] + tuple(row[7:]) for index, row in enumerate(rows) if index not in dropped]
+
+
+# Accounts that owe money: a credit on one pays the debt down, so it is never
+# money taken out of an investment (#251).
+_DEBT_ACCOUNT_TYPES = frozenset({"credit_card", "loan"})
+# The default "Transfers" category in every language: money moved between the
+# user's own accounts, not set aside or taken out of an investment (#251).
+_TRANSFER_CATEGORY_NAMES = frozenset(name_variants(DEFAULT_CATEGORIES["transfers"]))
+
+
+def _investment_move_group(txn_type: str, account_type: str | None, category_name: str | None):
+    """The Money Map group of a one-sided movement, or None when it is not one.
+
+    A debit is a contribution and a credit a withdrawal (#1418), except a
+    one-sided leg in the default Transfers category, which only moves money
+    between accounts, and a credit on a card or loan, which pays a bill.
+    """
+    if category_name in _TRANSFER_CATEGORY_NAMES:
+        return None
+    if txn_type != "credit":
+        return "investments"
+    if account_type in _DEBT_ACCOUNT_TYPES:
+        return None
+    return "withdrawals"
+
+
+def _max_leg_pairs(
+    credit_sizes: list[int], debit_sizes: list[int], fits: list[list[int]]
+) -> dict[tuple[int, int], int]:
+    """How many legs of credit class i pair with debit class j, at most.
+
+    Maximum flow (Dinic) from the credit classes to the debit classes, each
+    with its number of legs as capacity. Iterative, so a large group never
+    runs into the recursion limit.
+    """
+    n_credits = len(credit_sizes)
+    source = n_credits + len(debit_sizes)
+    sink = source + 1
+    graph: list[list[int]] = [[] for _ in range(sink + 1)]
+    to: list[int] = []
+    cap: list[int] = []
+
+    def add(u: int, v: int, w: int) -> int:
+        graph[u].append(len(to))
+        to.append(v)
+        cap.append(w)
+        graph[v].append(len(to))
+        to.append(u)
+        cap.append(0)
+        return len(to) - 2
+
+    for i, size in enumerate(credit_sizes):
+        add(source, i, size)
+    for j, size in enumerate(debit_sizes):
+        add(n_credits + j, sink, size)
+    pair_edges = {
+        (i, j): add(i, n_credits + j, credit_sizes[i])
+        for i, js in enumerate(fits)
+        for j in js
+    }
+
+    while True:
+        level = [-1] * len(graph)
+        level[source] = 0
+        queue = deque([source])
+        while queue:
+            u = queue.popleft()
+            for e in graph[u]:
+                if cap[e] > 0 and level[to[e]] < 0:
+                    level[to[e]] = level[u] + 1
+                    queue.append(to[e])
+        if level[sink] < 0:
+            break
+        next_edge = [0] * len(graph)
+        path: list[int] = []
+        u = source
+        while True:
+            if u == sink:
+                push = min(cap[e] for e in path)
+                for e in path:
+                    cap[e] -= push
+                    cap[e ^ 1] += push
+                path.clear()
+                u = source
+                continue
+            edges = graph[u]
+            while next_edge[u] < len(edges):
+                e = edges[next_edge[u]]
+                if cap[e] > 0 and level[to[e]] == level[u] + 1:
+                    break
+                next_edge[u] += 1
+            if next_edge[u] < len(edges):
+                e = edges[next_edge[u]]
+                path.append(e)
+                u = to[e]
+                continue
+            if not path:
+                break
+            # Dead end: back up and skip the edge that led here.
+            level[u] = -1
+            u = to[path.pop() ^ 1]
+            next_edge[u] += 1
+
+    pairs: dict[tuple[int, int], int] = {}
+    for (i, j), e in pair_edges.items():
+        flow = credit_sizes[i] - cap[e]
+        if flow > 0:
+            pairs[(i, j)] = flow
+    return pairs
+
+
 async def get_income_expenses_report(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -517,6 +694,7 @@ async def get_income_expenses_report(
     # Get user's primary currency + global reporting mode
     user = await session.get(User, user_id)
     primary_currency = user.primary_currency if user else get_settings().default_currency
+    viewer = await viewer_currency(session, primary_currency)
     accounting_mode = await get_credit_card_accounting_mode(session)
     report_date = reporting_date_col(accounting_mode)
 
@@ -525,7 +703,7 @@ async def get_income_expenses_report(
     # Use amount_primary when available, fall back to amount. Every query
     # summing it joins the category lines, so a split transaction counts part
     # by part (and its transfer-like parts drop out alone).
-    amount_expr = line_primary_or_amount()
+    amount_expr = line_primary_or_amount(viewer)
 
     result = await session.execute(
         with_category_lines(
@@ -572,22 +750,35 @@ async def get_income_expenses_report(
         Transaction.amount_primary,
         Transaction.date,
     )
-    owner_offset_rows = [] if filtered else (await session.execute(
-        select(label_expr, *owner_columns, func.sum(_TS_.share_amount))
-        .select_from(_TS_)
-        .join(Transaction, _TS_.transaction_id == Transaction.id)
-        .where(
-            Transaction.user_id == user_id,
-            Transaction.workspace_id == workspace_id,
-            _TS_.group_member_id.notin_(_viewer_member_ids(user_id)),
-            report_date >= start,
-            report_date <= axis_end,
-            Transaction.source != "opening_balance",
-            Transaction.status == "posted",
-            counts_as_user_pnl(Transaction.category_id),
-        )
-        .group_by(label_expr, *owner_columns)
-    )).all()
+    from app.models.group_settlement import GroupSettlement as _GS_
+
+    owner_filters = (
+        Transaction.user_id == user_id,
+        Transaction.workspace_id == workspace_id,
+        report_date >= start,
+        report_date <= axis_end,
+        Transaction.source != "opening_balance",
+        Transaction.status == "posted",
+        counts_as_user_pnl(Transaction.category_id),
+    )
+    owner_offset_rows = [] if filtered else [
+        *(await session.execute(
+            select(label_expr, *owner_columns, func.sum(_TS_.share_amount))
+            .select_from(_TS_)
+            .join(Transaction, _TS_.transaction_id == Transaction.id)
+            .where(*owner_filters, _TS_.group_member_id.notin_(_viewer_member_ids(user_id)))
+            .group_by(label_expr, *owner_columns)
+        )).all(),
+        # A credit's settled part is money paid back, not income, as on the
+        # dashboard (_owner_split_rows).
+        *(await session.execute(
+            select(label_expr, *owner_columns, func.sum(_GS_.amount))
+            .select_from(_GS_)
+            .join(Transaction, _GS_.receiver_transaction_id == Transaction.id)
+            .where(*owner_filters, Transaction.type == "credit")
+            .group_by(label_expr, *owner_columns)
+        )).all(),
+    ]
     owner_rates: dict[tuple[str, date], Optional[Decimal]] = {}
     # (period, category_id, type, share in primary), reused by the category
     # trend below so both views take off the same amounts.
@@ -627,57 +818,31 @@ async def get_income_expenses_report(
     # created stay out via `user_id != user_id`, so an in-Pessoal
     # transaction never surfaces in Trabalho's report.
     viewer_member_ids = invited_group_member_ids(user_id)
-    shared_result = await session.execute(
-        select(
-            label_expr,
-            Transaction.currency,
-            func.sum(
-                case(
-                    (Transaction.type == "credit", TransactionSplit.share_amount),
-                    else_=0,
-                )
-            ),
-            func.sum(
-                case(
-                    (Transaction.type == "debit", TransactionSplit.share_amount),
-                    else_=0,
-                )
-            ),
-        )
-        .select_from(TransactionSplit)
-        .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
-        .where(
-            TransactionSplit.group_member_id.in_(viewer_member_ids),
-            Transaction.user_id != user_id,
-            Transaction.workspace_id != workspace_id,
-            in_bound_workspace(Transaction.workspace_id),
-            report_date >= start,
-            report_date <= axis_end,
-            Transaction.source != "opening_balance",
-            Transaction.status == "posted",
-            counts_as_user_pnl(Transaction.category_id),
-        )
-        .group_by(label_expr, Transaction.currency)
+    # Each share is read in the viewer's currency at its row's date, the
+    # value the transactions list shows for the projected row (#269).
+    shared_filters = (
+        TransactionSplit.group_member_id.in_(viewer_member_ids),
+        Transaction.user_id != user_id,
+        Transaction.workspace_id != workspace_id,
+        in_bound_workspace(Transaction.workspace_id),
+        report_date >= start,
+        report_date <= axis_end,
+        # The same two types the summary sums, so a row with an unknown
+        # stored type adds to neither (#345).
+        Transaction.type.in_(("credit", "debit")),
+        Transaction.source != "opening_balance",
+        Transaction.status == "posted",
+        counts_as_user_pnl(Transaction.category_id),
+    )
+    shared_by_period = {} if filtered else await viewer_shares_in_primary(
+        session, (label_expr,), shared_filters, primary_currency, viewer
     )
     from app.services.fx_rate_service import convert as fx_convert
-    for row in (shared_result.all() if not filtered else []):
-        period, currency, raw_credit, raw_debit = row
-        share_income_pri = 0.0
-        share_expenses_pri = 0.0
-        if raw_credit:
-            inc_pri, _ = await fx_convert(
-                session, Decimal(str(raw_credit)), currency, primary_currency
-            )
-            share_income_pri = float(inc_pri)
-        if raw_debit:
-            exp_pri, _ = await fx_convert(
-                session, Decimal(str(raw_debit)), currency, primary_currency
-            )
-            share_expenses_pri = abs(float(exp_pri))
+    for (period,), (share_income, share_expenses) in shared_by_period.items():
         existing_income, existing_expenses = data_map.get(period, (0.0, 0.0))
         data_map[period] = (
-            existing_income + share_income_pri,
-            existing_expenses + share_expenses_pri,
+            existing_income + float(share_income),
+            existing_expenses + abs(float(share_expenses)),
         )
 
     # Custom windows report only actuals, including when they end today.
@@ -726,8 +891,12 @@ async def get_income_expenses_report(
             pnl_ratio = user_pnl_ratio(tx)
             if not pnl_ratio:
                 continue
-            if tx.amount_primary is not None:
-                amount = abs(float(tx.amount_primary))
+            stamped = await viewer.convert(
+                session, tx.user_id, tx.amount_primary, tx.date,
+                currency=tx.currency, amount=tx.amount,
+            )
+            if stamped is not None:
+                amount = abs(float(stamped))
             else:
                 converted, _ = await fx_convert(
                     session, Decimal(str(abs(tx.amount))), tx.currency, primary_currency,
@@ -858,62 +1027,12 @@ async def get_income_expenses_report(
         interval=interval,
     )
 
-    # Build per-category composition for the full date range
-    cat_result = await session.execute(
-        with_category_lines(
-            select(
-                Category.id,
-                Category.name,
-                Category.color,
-                Transaction.type,
-                func.sum(amount_expr),
-            ).select_from(Transaction)
-        )
-        .outerjoin(Category, line_category_id() == Category.id)
-        .where(
-            Transaction.workspace_id == workspace_id,
-            report_date >= start,
-            report_date <= axis_end,
-            Transaction.source != "opening_balance",
-            Transaction.status == "posted",
-            counts_as_user_pnl(line_category_id()),
-            *acct_filter,
-        )
-        .group_by(Category.id, Category.name, Category.color, Transaction.type)
-    )
-
-    # Collect composition into a mutable map so projections can be added
+    # Collect composition into a mutable map so projections can be added.
+    # The P&L entries are filled once the category trend has taken the owner
+    # shares off period by period, so a slice carries the same zero floor as
+    # the summary and the sparkline total (#264).
     # Key: (cat_key, group) -> {label, color, value}
     comp_map: dict[tuple[str, str], dict] = {}
-    for row in cat_result.all():
-        cat_id, cat_name, cat_color, txn_type, total_amount = row
-        amount = abs(float(total_amount or 0))
-        if amount <= 0:
-            continue
-        cat_key = str(cat_id) if cat_id else "uncategorized"
-        group = "income" if txn_type == "credit" else "expenses"
-        comp_map[(cat_key, group)] = {
-            "label": cat_name if cat_name else "Uncategorized",
-            "color": cat_color if cat_color else "#6B7280",
-            "value": amount,
-        }
-
-    # Subtract non-owner shares of own splits from composition (debit only —
-    # owner_split_offset_by_category is debit-only). Keeps the report's
-    # composition consistent with summary totals under share-only model.
-    full_range_offset = {} if filtered else await owner_split_offset_by_category(
-        session, user_id, start, axis_end + timedelta(days=1),
-        use_effective_date=accounting_mode == "accrual",
-        primary_currency=primary_currency,
-        workspace_id=workspace_id,
-    )
-    for cat_uuid, offset_total in full_range_offset.items():
-        cat_key = str(cat_uuid) if cat_uuid else "uncategorized"
-        comp_key = (cat_key, "expenses")
-        if comp_key in comp_map:
-            comp_map[comp_key]["value"] -= offset_total
-            if comp_map[comp_key]["value"] <= 0:
-                comp_map.pop(comp_key)
 
     # Investment-style outflows: transactions in `treat_as_transfer` categories
     # are excluded from P&L by counts_as_user_pnl (an investment application's
@@ -923,7 +1042,9 @@ async def get_income_expenses_report(
     # "Investment Contributions" node). Paired account transfers stay excluded via
     # the transfer_pair_id filter, so only one-sided movements appear here:
     # debits are contributions, credits are withdrawals, which the Sankey draws
-    # as a source of money beside income (#1418).
+    # as a source of money beside income (#1418). Rows, not sums: the two legs
+    # of one movement that were never paired are dropped first. What is left
+    # of a bill payment or a plain transfer stays out (#251).
     inv_result = await session.execute(
         with_category_lines(
             select(
@@ -931,10 +1052,19 @@ async def get_income_expenses_report(
                 Category.name,
                 Category.color,
                 Transaction.type,
-                func.sum(amount_expr),
+                # Legs pair on the stored amount: converted at each leg's own
+                # date, two equal legs a day apart differ by the rate move.
+                line_primary_or_amount(),
+                Transaction.account_id,
+                # Legs pair by when they were booked; the reporting date only
+                # picks the period.
+                Transaction.date,
+                Account.type,
+                amount_expr,
             ).select_from(Transaction)
         )
         .join(Category, line_category_id() == Category.id)
+        .outerjoin(Account, Transaction.account_id == Account.id)
         .where(
             Transaction.workspace_id == workspace_id,
             report_date >= start,
@@ -948,13 +1078,19 @@ async def get_income_expenses_report(
             Category.is_ignored.is_(False),
             *acct_filter,
         )
-        .group_by(Category.id, Category.name, Category.color, Transaction.type)
     )
-    for cat_id, cat_name, cat_color, txn_type, total_amount in inv_result.all():
-        amount = abs(float(total_amount or 0))
-        if amount <= 0:
+    moves: dict[tuple[uuid.UUID, str], list] = {}
+    for cat_id, cat_name, cat_color, txn_type, _stored, account_type, total_amount in (
+        _without_mirrored_legs(list(inv_result.all()))
+    ):
+        group = _investment_move_group(txn_type, account_type, cat_name)
+        if group is None:
             continue
-        group = "withdrawals" if txn_type == "credit" else "investments"
+        entry = moves.setdefault((cat_id, group), [cat_name, cat_color, 0.0])
+        entry[2] += abs(float(total_amount or 0))
+    for (cat_id, group), (cat_name, cat_color, amount) in moves.items():
+        if round(amount, 2) <= 0:
+            continue
         comp_map[(str(cat_id), group)] = {
             "label": cat_name or "Investments",
             "color": cat_color or "#0EA5E9",
@@ -978,6 +1114,11 @@ async def get_income_expenses_report(
             Transaction.workspace_id == workspace_id,
             report_date >= start,
             report_date <= axis_end,
+            # Same two types the summary sums: "credit" is income and "debit"
+            # is expenses, and any other stored value belongs to neither. The
+            # sparkline and the donut read this query, so a row the summary
+            # leaves out must not reach them or both read higher (#345).
+            Transaction.type.in_(("credit", "debit")),
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
             counts_as_user_pnl(line_category_id()),
@@ -1015,102 +1156,99 @@ async def get_income_expenses_report(
     # like the summary, so row order cannot change the result.
     cat_offsets: dict[tuple[str, str], dict[str, float]] = {}
     for period_label, cat_id, tx_type, offset in owner_offsets:
-        if tx_type != "debit":
+        if tx_type not in ("debit", "credit"):
             continue
         cat_key = str(cat_id) if cat_id else "uncategorized"
-        map_key = (cat_key, "expenses")
+        map_key = (cat_key, "expenses" if tx_type == "debit" else "income")
         if map_key not in cat_trend_map:
             continue
         by_period = cat_offsets.setdefault(map_key, {})
         by_period[period_label] = by_period.get(period_label, 0.0) + offset
+    # The total is the sum of the floored periods, the same boundary the
+    # summary uses, so the series and its total always agree.
     for map_key, by_period in cat_offsets.items():
         entry = cat_trend_map[map_key]
-        entry["total"] = max(0.0, entry["total"] - sum(by_period.values()))
         for period_label, offset in by_period.items():
             cur_period = entry["periods"].get(period_label, 0.0)
             entry["periods"][period_label] = max(0.0, cur_period - offset)
+        entry["total"] = sum(entry["periods"].values())
+
+    # A composition slice reads the same totals the sparkline shows, so the
+    # donut, the trend and the summary cannot disagree when a month hits the
+    # floor, and the category does not disappear from the chart.
+    for (cat_key, group), entry in cat_trend_map.items():
+        if entry["total"] <= 0:
+            continue
+        comp_map[(cat_key, group)] = {
+            "label": entry["label"],
+            "color": entry["color"],
+            "value": entry["total"],
+        }
 
     # Layer in the viewer's share of splits they did not pay for, the same
     # cross-workspace rows the summary above adds (#242). The author guard
     # and the current-workspace exclusion mirror it: a row that lives in the
     # reported workspace is already counted whole in the composition below.
-    if not filtered:
-        shared_cat_result = await session.execute(
-            select(
-                label_expr,
-                Category.id,
-                Category.name,
-                Category.color,
-                Transaction.type,
-                Transaction.currency,
-                func.sum(TransactionSplit.share_amount),
-            )
-            .select_from(TransactionSplit)
-            .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
-            .outerjoin(Category, Transaction.category_id == Category.id)
-            .where(
-                TransactionSplit.group_member_id.in_(viewer_member_ids),
-                Transaction.user_id != user_id,
-                Transaction.workspace_id != workspace_id,
-                in_bound_workspace(Transaction.workspace_id),
-                report_date >= start,
-                report_date <= axis_end,
-                Transaction.source != "opening_balance",
-                Transaction.status == "posted",
-                counts_as_user_pnl(Transaction.category_id),
-            )
-            .group_by(
-                label_expr,
-                Category.id,
-                Category.name,
-                Category.color,
-                Transaction.type,
-                Transaction.currency,
-            )
+    # Each share is read as the summary reads it, so a slice adds up to its
+    # drill-down (#269).
+    shared_by_category = {} if filtered else await viewer_shares_in_primary(
+        session,
+        (label_expr, Transaction.category_id),
+        shared_filters,
+        primary_currency,
+        viewer,
+    )
+    shared_category_ids = {cat for (_p, cat) in shared_by_category if cat is not None}
+    shared_category_meta = (
+        {
+            cat_id: (name, color)
+            for cat_id, name, color in (
+                await session.execute(
+                    select(Category.id, Category.name, Category.color).where(
+                        Category.id.in_(shared_category_ids)
+                    )
+                )
+            ).all()
+        }
+        if shared_category_ids
+        else {}
+    )
+    shared_slices = [
+        (period_label, cat_id, txn_type, value)
+        for (period_label, cat_id), totals in shared_by_category.items()
+        for txn_type, value in zip(("credit", "debit"), totals)
+    ]
+    for period_label, cat_id, txn_type, value in shared_slices:
+        amount = abs(float(value))
+        if amount <= 0:
+            continue
+        cat_name, cat_color = shared_category_meta.get(cat_id, (None, None))
+        cat_key = str(cat_id) if cat_id else "uncategorized"
+        group = "income" if txn_type == "credit" else "expenses"
+        label = cat_name or "Uncategorized"
+        color = cat_color or "#6B7280"
+
+        comp_key = (cat_key, group)
+        if comp_key in comp_map:
+            comp_map[comp_key]["value"] += amount
+        else:
+            comp_map[comp_key] = {
+                "label": label,
+                "color": color,
+                "value": amount,
+            }
+
+        if comp_key not in cat_trend_map:
+            cat_trend_map[comp_key] = {
+                "label": label,
+                "color": color,
+                "total": 0.0,
+                "periods": {},
+            }
+        cat_trend_map[comp_key]["total"] += amount
+        cat_trend_map[comp_key]["periods"][period_label] = (
+            cat_trend_map[comp_key]["periods"].get(period_label, 0.0) + amount
         )
-        for (
-            period_label,
-            cat_id,
-            cat_name,
-            cat_color,
-            txn_type,
-            currency,
-            raw_share,
-        ) in shared_cat_result.all():
-            if not raw_share:
-                continue
-            share_primary, _ = await fx_convert(
-                session, Decimal(str(raw_share)), currency, primary_currency
-            )
-            amount = abs(float(share_primary))
-            if amount <= 0:
-                continue
-            cat_key = str(cat_id) if cat_id else "uncategorized"
-            group = "income" if txn_type == "credit" else "expenses"
-            label = cat_name or "Uncategorized"
-            color = cat_color or "#6B7280"
-
-            comp_key = (cat_key, group)
-            if comp_key in comp_map:
-                comp_map[comp_key]["value"] += amount
-            else:
-                comp_map[comp_key] = {
-                    "label": label,
-                    "color": color,
-                    "value": amount,
-                }
-
-            if comp_key not in cat_trend_map:
-                cat_trend_map[comp_key] = {
-                    "label": label,
-                    "color": color,
-                    "total": 0.0,
-                    "periods": {},
-                }
-            cat_trend_map[comp_key]["total"] += amount
-            cat_trend_map[comp_key]["periods"][period_label] = (
-                cat_trend_map[comp_key]["periods"].get(period_label, 0.0) + amount
-            )
 
     # Drop categories that fully zeroed out
     for key in list(cat_trend_map.keys()):
@@ -1190,8 +1328,12 @@ async def get_income_expenses_report(
             group = "income" if tx.type == "credit" else "expenses"
             tx_report_date = reporting_date_value(tx, accounting_mode)
             forecast_period_label = _format_date_label(tx_report_date, interval)
-            if tx.amount_primary is not None:
-                tx_amount = abs(float(tx.amount_primary))
+            stamped = await viewer.convert(
+                session, tx.user_id, tx.amount_primary, tx.date,
+                currency=tx.currency, amount=tx.amount,
+            )
+            if stamped is not None:
+                tx_amount = abs(float(stamped))
             else:
                 converted, _ = await fx_convert(
                     session, Decimal(str(abs(tx.amount))), tx.currency, primary_currency,

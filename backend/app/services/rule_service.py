@@ -10,7 +10,7 @@ from sqlalchemy.orm import load_only
 from app.models.rule import Rule
 from app.models.category import Category
 from app.models.payee import Payee
-from app.models.transaction import Transaction
+from app.models.transaction import Transaction, provider_category_text
 
 from app.schemas.rule import (
     RuleCreate,
@@ -414,6 +414,44 @@ async def get_rules(session: AsyncSession, workspace_id: uuid.UUID) -> list[Rule
     return list(result.scalars().all())
 
 
+async def list_provider_categories(
+    session: AsyncSession, workspace_id: uuid.UUID
+) -> list[str]:
+    """Distinct provider categories the workspace's transactions already carry.
+
+    The `provider_category` condition compares against the exact label the
+    provider sent (often an English name such as "Groceries"), so the rule
+    editor offers these values instead of letting people guess a translation
+    (#280). Values arrive in different cases across providers, so they are
+    ordered case-insensitively.
+
+    The JSON value is read as JSON, not as text, and turned into a suggestion
+    by `provider_category_text`, the same function behind
+    `Transaction.provider_category`: the editor offers exactly what a rule can
+    match, including a numeric code in its text form, and nothing the engine
+    treats as no label (#353).
+
+    There is deliberately no `DISTINCT`: `raw_data` is a `JSON` column, so the
+    bare value is typed `json`, and PostgreSQL has no equality operator for it
+    — `SELECT DISTINCT raw_data -> 'category'` fails at planning on every
+    PostgreSQL instance (#375). The set below de-duplicates instead, after the
+    values that are no label are dropped.
+    """
+    value = Transaction.raw_data["category"]
+    result = await session.execute(
+        select(value).where(
+            Transaction.workspace_id == workspace_id,
+            Transaction.raw_data.is_not(None),
+        )
+    )
+    return sorted(
+        {
+            text
+            for raw in result.scalars()
+            if (text := provider_category_text(raw)) is not None
+        },
+        key=str.casefold,
+    )
 
 
 async def export_rules(session: AsyncSession, workspace_id: uuid.UUID) -> RuleExportPayload:

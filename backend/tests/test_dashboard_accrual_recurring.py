@@ -167,13 +167,9 @@ async def test_accrual_income_expenses_report_forecasts_one_bill_per_month(
     session, test_user, test_workspace, seeded
 ):
     await _set_mode(session, "accrual")
-    # The report buckets with Postgres' to_char; SQLite needs a stand-in.
-    raw = await session.connection()
-    await raw.run_sync(
-        lambda conn: conn.connection.dbapi_connection.create_function(
-            "to_char", 2, lambda value, _fmt: None if value is None else str(value)[:7]
-        )
-    )
+    # The report buckets with Postgres' to_char, which the test engine already
+    # emulates (conftest's `sqlite_to_char`). A month-only stand-in registered
+    # here would stay on the shared connection and break later daily buckets.
 
     report = await report_service.get_income_expenses_report(
         session, test_workspace.id, test_user.id, months=1, currency="BRL"
@@ -254,13 +250,8 @@ async def test_accrual_daily_report_puts_a_projection_on_its_due_day(
     ))
     await session.commit()
     await _set_mode(session, "accrual")
-    # The report buckets with Postgres' to_char; SQLite needs a stand-in.
-    raw = await session.connection()
-    await raw.run_sync(
-        lambda conn: conn.connection.dbapi_connection.create_function(
-            "to_char", 2, lambda value, fmt: None if value is None else str(value)[: len(fmt)]
-        )
-    )
+    # The report buckets with Postgres' to_char, which the test engine already
+    # emulates (conftest's `sqlite_to_char`) for daily, monthly and yearly.
 
     report = await report_service.get_income_expenses_report(
         session, test_workspace.id, test_user.id, interval="daily", currency="BRL",

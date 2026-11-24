@@ -6,9 +6,11 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 
+from app.models.account import Account
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.models.workspace import Workspace
+from app.services import recurring_transaction_service
 
 
 @pytest.fixture(autouse=True)
@@ -1010,3 +1012,199 @@ async def test_price_history_rejects_non_evidence_sources(
     )
     assert recent.status_code == 200
     assert recent.json() == []
+
+
+def _bill_payload(account_id, **overrides):
+    """The payload the "make recurring" dialog sends for a paid bill."""
+    payload = {
+        "description": "Academia Smart Fit",
+        "amount": 129.90,
+        "currency": "BRL",
+        "type": "debit",
+        "frequency": "monthly",
+        "start_date": "2026-10-31",
+        "account_id": str(account_id),
+        "skip_first": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
+@pytest.mark.asyncio
+async def test_saving_the_same_bill_twice_returns_409(client, auth_headers, test_account):
+    """A second save of the same bill is a 409 with a readable message, not a 500."""
+    payload = _bill_payload(test_account.id)
+
+    first = await client.post("/api/recurring-transactions", json=payload, headers=auth_headers)
+    assert first.status_code == 201
+
+    second = await client.post("/api/recurring-transactions", json=payload, headers=auth_headers)
+    assert second.status_code == 409
+    assert second.json()["detail"] == "A recurring transaction with the same description, frequency and start date already exists"
+
+
+@pytest.mark.asyncio
+async def test_create_from_transaction_links_the_source(
+    client, auth_headers, test_account, test_transactions, session
+):
+    """The transaction the bill is made from belongs to it afterwards."""
+    source = test_transactions[0]
+    payload = _bill_payload(
+        test_account.id,
+        description=source.description,
+        start_date=source.date.isoformat(),
+        source_transaction_id=str(source.id),
+    )
+
+    response = await client.post(
+        "/api/recurring-transactions", json=payload, headers=auth_headers
+    )
+    assert response.status_code == 201, response.text
+
+    linked = (
+        await session.execute(
+            select(Transaction.recurring_transaction_id).where(Transaction.id == source.id)
+        )
+    ).scalar_one()
+    assert str(linked) == response.json()["id"]
+
+
+@pytest.mark.asyncio
+async def test_create_from_a_transaction_that_already_has_a_bill_returns_409(
+    client, auth_headers, test_account, test_transactions
+):
+    """The source is linked, so the row stops offering "make recurring"."""
+    source = test_transactions[0]
+    first = await client.post(
+        "/api/recurring-transactions",
+        json=_bill_payload(
+            test_account.id,
+            description="Academia Smart Fit",
+            source_transaction_id=str(source.id),
+        ),
+        headers=auth_headers,
+    )
+    assert first.status_code == 201
+
+    # A different description and start date dodge the unique constraint, so
+    # only the source link can catch the second save.
+    second = await client.post(
+        "/api/recurring-transactions",
+        json=_bill_payload(
+            test_account.id,
+            description="Academia Smart Fit ",
+            start_date="2026-11-30",
+            source_transaction_id=str(source.id),
+        ),
+        headers=auth_headers,
+    )
+    assert second.status_code == 409
+    assert second.json()["detail"] == "This transaction already belongs to a recurring transaction"
+
+
+@pytest.mark.asyncio
+async def test_source_transaction_from_another_workspace_is_rejected(
+    client, auth_headers, session, test_user, test_account
+):
+    """Only a transaction of the workspace this request writes to can be linked."""
+    # The row exists, in another workspace: the request finds it only if the
+    # workspace filter on the lookup goes missing.
+    other = Workspace(
+        id=uuid.uuid4(),
+        name="Outro",
+        kind="personal",
+        created_by_user_id=test_user.id,
+        default_currency="BRL",
+        locale="pt-BR",
+    )
+    other_account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=other.id,
+        name="Conta do outro workspace",
+        type="checking",
+        currency="BRL",
+        balance=Decimal("0"),
+    )
+    foreign = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=other.id,
+        account_id=other_account.id,
+        description="Academia do outro workspace",
+        amount=Decimal("129.90"),
+        currency="BRL",
+        date=date(2026, 10, 31),
+        type="debit",
+        source="manual",
+        status="posted",
+    )
+    session.add_all([other, other_account, foreign])
+    await session.commit()
+
+    payload = _bill_payload(test_account.id, source_transaction_id=str(foreign.id))
+
+    response = await client.post(
+        "/api/recurring-transactions", json=payload, headers=auth_headers
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Source transaction not found"
+
+
+@pytest.mark.asyncio
+async def test_source_on_the_start_date_covers_the_first_occurrence(
+    client, auth_headers, session, test_user, test_workspace, test_account
+):
+    """A source dated on start_date is the first occurrence, even without skip_first."""
+    source = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=test_account.id,
+        description="Aluguel",
+        amount=Decimal("2500"),
+        currency="BRL",
+        date=date(2026, 10, 31),
+        type="debit",
+        source="manual",
+        status="posted",
+    )
+    session.add(source)
+    await session.commit()
+
+    # A direct API call leaves skip_first out; generation must not create a
+    # second row for a charge the source already is.
+    payload = _bill_payload(
+        test_account.id,
+        description="Aluguel",
+        start_date="2026-10-31",
+        source_transaction_id=str(source.id),
+    )
+    payload.pop("skip_first")
+
+    response = await client.post(
+        "/api/recurring-transactions", json=payload, headers=auth_headers
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["next_occurrence"] == "2026-11-30"
+
+
+@pytest.mark.asyncio
+async def test_race_past_the_duplicate_check_still_returns_409(
+    client, auth_headers, test_account, monkeypatch
+):
+    """The unique constraint backs up the check: a lost race is a 409, never a 500."""
+    payload = _bill_payload(test_account.id)
+    first = await client.post("/api/recurring-transactions", json=payload, headers=auth_headers)
+    assert first.status_code == 201
+
+    async def _no_duplicate_found(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(
+        recurring_transaction_service, "_find_duplicate_recurring", _no_duplicate_found
+    )
+
+    second = await client.post("/api/recurring-transactions", json=payload, headers=auth_headers)
+    assert second.status_code == 409
+    assert second.json()["detail"] == "A recurring transaction with the same description, frequency and start date already exists"

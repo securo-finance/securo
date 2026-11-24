@@ -446,6 +446,8 @@ export default function RulesPage() {
                   className="gap-1.5 h-8"
                   onClick={() => exportMutation.mutate()}
                   disabled={exportMutation.isPending}
+                  aria-label={t('rules.export')}
+                  title={t('rules.export')}
                 >
                   <Download size={12} />
                   <span className="hidden sm:inline">{t('rules.export')}</span>
@@ -456,6 +458,8 @@ export default function RulesPage() {
                   className="gap-1.5 h-8"
                   onClick={() => importInputRef.current?.click()}
                   disabled={importMutation.isPending}
+                  aria-label={t('rules.import')}
+                  title={t('rules.import')}
                 >
                   <Upload size={12} />
                   <span className="hidden sm:inline">{t('rules.import')}</span>
@@ -465,6 +469,8 @@ export default function RulesPage() {
                   size="sm"
                   className="gap-1.5 h-8"
                   onClick={() => setPacksDialogOpen(true)}
+                  aria-label={t('rules.packs')}
+                  title={t('rules.packs')}
                 >
                   <Package size={12} />
                   <span className="hidden sm:inline">{t('rules.packs')}</span>
@@ -479,11 +485,19 @@ export default function RulesPage() {
                     }
                   }}
                   disabled={applyAllMutation.isPending}
+                  aria-label={t('rules.resetAndReapplyAll', 'Reset and reapply')}
+                  title={t('rules.resetAndReapplyAll', 'Reset and reapply')}
                 >
                   <RefreshCw size={12} />
                   <span className="hidden sm:inline">{t('rules.resetAndReapplyAll', 'Reset and reapply')}</span>
                 </Button>
-                <Button size="sm" className="gap-1.5 h-8" onClick={openCreate}>
+                <Button
+                  size="sm"
+                  className="gap-1.5 h-8"
+                  onClick={openCreate}
+                  aria-label={t('rules.add')}
+                  title={t('rules.add')}
+                >
                   <Plus size={13} /> <span className="hidden sm:inline">{t('rules.add')}</span>
                 </Button>
               </div>
@@ -503,6 +517,7 @@ export default function RulesPage() {
           </div>
           <select
             className={FILTER_CONTROL_CLASS}
+            aria-label={t('rules.filterByCategory')}
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
           >
@@ -515,6 +530,7 @@ export default function RulesPage() {
           </select>
           <select
             className={FILTER_CONTROL_CLASS}
+            aria-label={t('rules.filterByStatus')}
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value as '' | 'active' | 'inactive')}
           >
@@ -524,6 +540,7 @@ export default function RulesPage() {
           </select>
           <select
             className={FILTER_CONTROL_CLASS}
+            aria-label={t('rules.filterByAction')}
             value={filterAction}
             onChange={(e) => setFilterAction(e.target.value)}
           >

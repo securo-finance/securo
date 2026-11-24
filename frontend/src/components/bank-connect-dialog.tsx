@@ -83,12 +83,21 @@ export function BankConnectDialog({
         await connections.handleCallback(data.item.id, provider, undefined, undefined, reconnectConnectionId)
         await connections.sync(reconnectConnectionId)
       } else {
+        const knownConnectionIds = new Set(
+          (queryClient.getQueryData<BankConnection[]>(['connections']) ?? []).map((c) => c.id),
+        )
         connection = await connections.handleCallback(
           data.item.id,
           provider,
           undefined,
           supportsAssetSync ? { sync_assets: syncAssets } : undefined,
         )
+        if (knownConnectionIds.has(connection.id)) {
+          // Connecting the bank again re-authored the connection that already
+          // held it (#1224): the callback only replaced its credentials, so the
+          // accounts of this consent appear on a sync, not before.
+          await connections.sync(connection.id)
+        }
       }
       invalidateFinancialQueries(queryClient)
       if (connection?.status === 'error') {

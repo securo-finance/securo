@@ -259,6 +259,13 @@ describe('formatAmountInput', () => {
     expect(formatAmountInput(2, 'en-US')).toBe('2')
   })
 
+  it('keeps the cents when a minimum is asked for', () => {
+    // Money fields write both decimals: "129,90", never "129,9".
+    expect(formatAmountInput(129.9, 'pt-BR', 2, 2)).toBe('129,90')
+    expect(formatAmountInput(350, 'en-US', 2, 2)).toBe('350.00')
+    expect(parseAmountInput(formatAmountInput(129.9, 'de-DE', 2, 2), 'de-DE')).toBe(129.9)
+  })
+
   it('falls back to a dot format on a malformed locale', () => {
     expect(formatAmountInput(1.5, 'not a locale')).toBe('1.50')
   })

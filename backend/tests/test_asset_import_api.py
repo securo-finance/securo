@@ -154,3 +154,29 @@ async def test_preview_lists_only_the_rows_it_will_import(client: AsyncClient, a
     body = resp.json()
     assert [o["ticker"] for o in body["orders"]] == ["AAPL"]
     assert [(e["row"], e["reason"]) for e in body["errors"]] == [(3, "unknown_ticker")]
+
+
+@pytest.mark.asyncio
+async def test_preview_drops_the_rows_it_already_has(client: AsyncClient, auth_headers):
+    """A row the dry run already finds in the ledger is counted as skipped, so
+    it must leave the table and the button too: uploading the same file twice
+    cannot promise to import more than it will."""
+    first = await client.post(
+        "/api/assets/import/preview",
+        files={"file": ("orders.csv", CSV, "text/csv")},
+        headers=auth_headers,
+    )
+    await client.post(
+        "/api/assets/import",
+        json={"orders": first.json()["orders"]},
+        headers=auth_headers,
+    )
+
+    again = await client.post(
+        "/api/assets/import/preview",
+        files={"file": ("orders.csv", CSV, "text/csv")},
+        headers=auth_headers,
+    )
+    body = again.json()
+    assert body["skipped"] == 2
+    assert body["orders"] == []

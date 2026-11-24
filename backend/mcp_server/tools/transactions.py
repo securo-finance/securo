@@ -13,6 +13,28 @@ from mcp_server.registry import tool
 from mcp_server.tools._helpers import num, parse_date, parse_uuid, parse_uuid_list, resolve_workspace_id
 
 
+_STATUS_ALIASES = {"all": None, "any": None, "both": None, "": None, "posted": "posted", "pending": "pending"}
+_TX_TYPE_ALIASES = {"debit": "debit", "expense": "debit", "credit": "credit", "income": "credit", "": None}
+
+
+def _normalize_status(status: str | None) -> str | None:
+    if status is None:
+        return None
+    key = status.strip().lower()
+    if key not in _STATUS_ALIASES:
+        raise ValueError("status must be one of: posted, pending, all")
+    return _STATUS_ALIASES[key]
+
+
+def _normalize_tx_type(tx_type: str | None) -> str | None:
+    if tx_type is None:
+        return None
+    key = tx_type.strip().lower()
+    if key not in _TX_TYPE_ALIASES:
+        raise ValueError("tx_type must be one of: debit, credit")
+    return _TX_TYPE_ALIASES[key]
+
+
 @tool(
     name="list_transactions",
     description=(
@@ -72,7 +94,7 @@ from mcp_server.tools._helpers import num, parse_date, parse_uuid, parse_uuid_li
                 "description": "Maximum absolute amount (primary-currency view).",
             },
             "tx_type": {"type": "string", "enum": ["debit", "credit"], "description": "debit = expense, credit = income"},
-            "status": {"type": "string", "enum": ["posted", "pending"], "description": "Filter by posting status: posted = settled, pending = not yet settled."},
+            "status": {"type": "string", "enum": ["posted", "pending", "all"], "description": "Filter by posting status: posted = settled, pending = not yet settled, all (or omitted) = both."},
             "uncategorized": {"type": "boolean", "default": False, "description": "Only transactions without a category"},
             "exclude_transfers": {"type": "boolean", "default": False, "description": "Exclude transfers between user's own accounts"},
             "tags": {"type": "array", "items": {"type": "string"}, "description": "Match any of these tags"},
@@ -130,6 +152,13 @@ async def list_transactions(
     # Hard cap regardless of what the LLM asks — the schema says 50 but
     # not every provider enforces additionalProperties / maximum.
     limit = max(1, min(int(limit), 50))
+    # Nor does every provider hold the model to the enums. A value the filter
+    # does not know used to match nothing, and an empty list for a busy week
+    # sent the model retrying until it ran out of tool calls. The words the
+    # aggregate tool uses are read the same way here; anything else is refused
+    # with the values that work, so the model can correct itself.
+    status = _normalize_status(status)
+    tx_type = _normalize_tx_type(tx_type)
     ws_id = await resolve_workspace_id(session, ctx)
     txs, total, _ = await transaction_service.get_transactions(
         session,

@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { Link2 } from 'lucide-react'
@@ -25,6 +26,7 @@ export function MemberForm({
 }: MemberFormProps) {
   const { t } = useTranslation()
   const { user } = useAuth()
+  const id = useId()
 
   // You and the users who share a workspace with you. Anyone else is
   // linked by typing their exact email below.
@@ -54,8 +56,9 @@ export function MemberForm({
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <Label>{t('splitGroups.linkedUser')}</Label>
+        <Label htmlFor={`${id}-linked-user`}>{t('splitGroups.linkedUser')}</Label>
         <select
+          id={`${id}-linked-user`}
           className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card h-9 focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
           value={linkedUserId ?? ''}
           onChange={(e) => {
@@ -91,8 +94,9 @@ export function MemberForm({
       </div>
 
       <div className="space-y-2">
-        <Label>{t('splitGroups.memberName')}</Label>
+        <Label htmlFor={`${id}-member-name`}>{t('splitGroups.memberName')}</Label>
         <Input
+          id={`${id}-member-name`}
           value={name}
           onChange={(e) => onChangeName(e.target.value)}
           disabled={linkedUserId !== null}
@@ -100,8 +104,9 @@ export function MemberForm({
       </div>
 
       <div className="space-y-2">
-        <Label>{t('splitGroups.memberEmail')}</Label>
+        <Label htmlFor={`${id}-member-email`}>{t('splitGroups.memberEmail')}</Label>
         <Input
+          id={`${id}-member-email`}
           type="email"
           value={email}
           onChange={(e) => onChangeEmail(e.target.value)}

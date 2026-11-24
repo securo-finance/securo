@@ -53,6 +53,10 @@ vi.mock('@/contexts/workspace-context', () => ({
   useWorkspace: () => ({ canWrite: true }),
 }))
 
+vi.mock('@/hooks/use-timezone', () => ({
+  useEffectiveTimezone: () => 'UTC',
+}))
+
 vi.mock('@/contexts/collection-filter-context', () => ({
   useCollectionFilter: () => ({ activeAccountIds: null }),
 }))

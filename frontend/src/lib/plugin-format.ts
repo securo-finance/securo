@@ -42,3 +42,14 @@ export function scopeLabel(scope: string, t: (key: string, options?: Record<stri
   const what = t(`plugins.code.resource.${resource}`, { defaultValue: resource })
   return t(level === 'write' ? 'plugins.code.write' : 'plugins.code.read', { what })
 }
+
+/** "15 minutes", "1 hour", "7 days": a schedule's interval in the UI language. */
+export function intervalLabel(minutes: number, lang: string): string {
+  const [value, unit] =
+    minutes % 1440 === 0 ? [minutes / 1440, 'day'] : minutes % 60 === 0 ? [minutes / 60, 'hour'] : [minutes, 'minute']
+  try {
+    return new Intl.NumberFormat(lang, { style: 'unit', unit, unitDisplay: 'long' }).format(value)
+  } catch {
+    return `${value} ${unit}`
+  }
+}

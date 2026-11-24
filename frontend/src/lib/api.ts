@@ -71,6 +71,7 @@ import type {
   RulePackRemoval,
   InstalledPlugin,
   PluginConnection,
+  PluginFileValue,
   PluginAction,
   PluginCatalogEntry,
   PluginPlan,
@@ -127,6 +128,12 @@ import type {
   ReconciliationRulePatch,
   ReconciliationSuggestion,
   ReconciliationHistoryEvent,
+  DocumentAiSettings,
+  DocumentAiSettingsUpdate,
+  DocumentAiStatus,
+  DocumentExtraction,
+  DocumentKind,
+  DocumentReceiptTransaction,
 } from '@/types'
 
 const api = axios.create({
@@ -355,17 +362,20 @@ export const auth = {
     }, readOnly)
     return data
   },
-  oidcConfig: async (): Promise<{
-    enabled: boolean
-    provider_name: string
-    local_auth_enabled: boolean
-    /** Where to send the browser so the provider session ends too (#1623). */
-    logout_url: string
-  }> => {
+  oidcConfig: async (): Promise<{ enabled: boolean; provider_name: string; local_auth_enabled: boolean }> => {
     // The login card blocks on this call while it decides which sign-in
     // methods to offer, so a hung request must fail fast and let the caller
     // fall back instead of leaving the page stuck on its loading state.
     const { data } = await api.get('/auth/oidc/config', { timeout: 5000 })
+    return data
+  },
+  oidcLogoutUrl: async (): Promise<{
+    /** Where to send the browser so the provider session ends too (#1623). */
+    logout_url: string
+  }> => {
+    // Only the sign-out asks this: it may reach the provider, so it is kept
+    // off /config, which the sign-in page waits on.
+    const { data } = await api.get('/auth/oidc/logout-url', { timeout: 10000 })
     return data
   },
 }
@@ -643,6 +653,7 @@ export const transactions = {
     payee_id?: string
     uncategorized?: boolean
     shared_as_uncategorized?: boolean
+    workspace_only?: boolean
     type?: string
     status?: string
     from?: string
@@ -661,6 +672,8 @@ export const transactions = {
     exclude_ignored?: boolean
     flagged?: boolean
     flag_due?: FlagDue
+    unpaid_only?: boolean
+    unread_only?: boolean
     tags?: string[]
     min_amount?: number
     max_amount?: number
@@ -716,6 +729,18 @@ export const transactions = {
   },
   toggleIgnore: async (id: string): Promise<Transaction> => {
     const { data } = await api.patch(`/transactions/${id}/ignore`)
+    return data
+  },
+  // Issue #636: clear the "new" marker of one row, or of every unread row in
+  // the workspace. `workspaceId` pins the write to the workspace the list was
+  // rendered with, whatever the interceptor would send if another tab switched
+  // in the meantime.
+  markRead: async (id: string, workspaceId?: string | null): Promise<Transaction> => {
+    const { data } = await api.patch(`/transactions/${id}/read`, undefined, workspaceHeader(workspaceId))
+    return data
+  },
+  markAllRead: async (workspaceId?: string | null): Promise<{ updated: number }> => {
+    const { data } = await api.post('/transactions/read-all', undefined, workspaceHeader(workspaceId))
     return data
   },
   unlinkRecurring: async (id: string): Promise<Transaction> => {
@@ -847,7 +872,7 @@ export const transactions = {
     transactions: ImportPreviewTransaction[],
     filename: string,
     detected_format: string,
-    options?: { detect_duplicates?: boolean },
+    options?: { detect_duplicates?: boolean; document_extraction_id?: string },
   ): Promise<{ imported: number; skipped: number; excluded: number; import_log_id: string }> => {
     const payload: {
       account_id: string
@@ -855,10 +880,14 @@ export const transactions = {
       filename: string
       detected_format: string
       detect_duplicates?: boolean
+      document_extraction_id?: string
     } = { account_id, transactions, filename, detected_format }
 
     if (typeof options?.detect_duplicates === 'boolean') {
       payload.detect_duplicates = options.detect_duplicates
+    }
+    if (options?.document_extraction_id) {
+      payload.document_extraction_id = options.document_extraction_id
     }
 
     const { data } = await api.post('/transactions/import', payload)
@@ -881,6 +910,8 @@ export const transactions = {
     exclude_ignored?: boolean
     flagged?: boolean
     flag_due?: FlagDue
+    unpaid_only?: boolean
+    unread_only?: boolean
     transaction_ids?: string[]
   }): Promise<void> => {
     const { data } = await api.get('/transactions/export', {
@@ -1083,6 +1114,8 @@ export interface GroupSettlementPayload {
   currency: string
   date: string
   transaction_id?: string | null
+  // The receiver's credit that already arrived, linked instead of creating one.
+  receiver_transaction_id?: string | null
   notes?: string | null
   // When provided, the backend creates a debit transaction on this
   // account and links it via transaction_id. Mutually exclusive with
@@ -1195,6 +1228,12 @@ export const users = {
 export const rules = {
   list: async (): Promise<Rule[]> => {
     const { data } = await api.get('/rules')
+    return data
+  },
+  /** Provider categories the workspace already received, for the
+   * `provider_category` condition's suggestions. */
+  providerCategories: async (): Promise<string[]> => {
+    const { data } = await api.get('/rules/provider-categories')
     return data
   },
   create: async (rule: Omit<Rule, 'id' | 'user_id'>): Promise<Rule & { applied_count: number }> => {
@@ -1385,10 +1424,15 @@ export const recurring = {
     const { data } = await api.get('/recurring-transactions')
     return data
   },
-  // `skip_first` is write-only: it moves the first occurrence one period ahead
-  // when the transaction that would cover it already exists.
+  // `skip_first` and `source_transaction_id` are write-only: the first moves
+  // the first occurrence one period ahead when the transaction that would
+  // cover it already exists, and the second links that transaction to the new
+  // bill so it is not offered again.
   create: async (
-    rt: Partial<RecurringTransaction> & { skip_first?: boolean },
+    rt: Partial<RecurringTransaction> & {
+      skip_first?: boolean
+      source_transaction_id?: string
+    },
   ): Promise<RecurringTransaction> => {
     const { data } = await api.post('/recurring-transactions', rt)
     return data
@@ -1428,9 +1472,13 @@ export const recurring = {
 // Budgets
 export const budgets = {
   // `workspaceId` pins the read to one workspace, for a screen that must not
-  // follow the active one when another tab switches it.
-  list: async (month?: string, workspaceId?: string | null): Promise<Budget[]> => {
-    const { data } = await api.get('/budgets', { params: { month }, ...workspaceHeader(workspaceId) })
+  // follow the active one when another tab switches it. `primaryMonth` gives
+  // `amount_primary` at that month's rate, for a copy preview into it.
+  list: async (month?: string, workspaceId?: string | null, primaryMonth?: string): Promise<Budget[]> => {
+    const { data } = await api.get('/budgets', {
+      params: { month, primary_month: primaryMonth },
+      ...workspaceHeader(workspaceId),
+    })
     return data
   },
   create: async (budget: { category_id: string; amount: number; month: string; is_recurring?: boolean }): Promise<Budget> => {
@@ -1807,16 +1855,20 @@ export const reports = {
   // Oldest and newest transaction dates in the workspace (opening
   // balances excluded). The reports page builds its year picker from
   // these bounds (issue #765).
-  /** A report an installed plugin declares, added up by Securo; `pluginId` is "owner/name". */
+  /**
+   * A report an installed plugin declares, or (on the dashboard) one of its
+   * widgets (ADR 0034); `pluginId` is "owner/name".
+   */
   plugin: async (
     pluginId: string,
     key: string,
     startDate: string,
     endDate: string,
     accountIds?: string[],
+    surface: 'reports' | 'dashboard' = 'reports',
   ): Promise<PluginReportResponse> => {
     const extra = acctIdsParam(accountIds)
-    const { data } = await api.get(`/reports/plugins/${pluginId}/${encodeURIComponent(key)}`, {
+    const { data } = await api.get(`/${surface}/plugins/${pluginId}/${encodeURIComponent(key)}`, {
       params: { start_date: startDate, end_date: endDate, ...(extra.params ?? {}) },
       ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}),
     })
@@ -2191,7 +2243,13 @@ export interface AppInfo {
   version?: string
   /** Source revision baked into the image, when the deployment set one. */
   revision?: string | null
-  features: { agents: boolean; demo?: boolean; tesouro_direto?: boolean; plugins?: boolean }
+  features: {
+    agents: boolean
+    demo?: boolean
+    tesouro_direto?: boolean
+    plugins?: boolean
+    document_ai?: boolean
+  }
 }
 
 export const info = {
@@ -2201,6 +2259,52 @@ export const info = {
   },
   demoLogin: async (): Promise<{ access_token: string }> => {
     const { data } = await api.post('/auth/demo-login')
+    return data
+  },
+}
+
+// Document reading -- only reachable when info.features.document_ai === true.
+export const documentAi = {
+  status: async (): Promise<DocumentAiStatus> => {
+    const { data } = await api.get('/document-ai/status')
+    return data
+  },
+  getSettings: async (): Promise<DocumentAiSettings> => {
+    const { data } = await api.get('/document-ai/settings')
+    return data
+  },
+  updateSettings: async (payload: DocumentAiSettingsUpdate): Promise<DocumentAiSettings> => {
+    const { data } = await api.put('/document-ai/settings', payload)
+    return data
+  },
+  resetSettings: async (): Promise<void> => {
+    await api.delete('/document-ai/settings')
+  },
+  upload: async (file: File, kind: DocumentKind): Promise<DocumentExtraction> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('kind', kind)
+    // Stores the file and queues the read; nothing lands until confirmed.
+    const { data } = await api.post('/document-ai/extractions', formData, readOnly)
+    return data
+  },
+  get: async (id: string): Promise<DocumentExtraction> => {
+    const { data } = await api.get(`/document-ai/extractions/${id}`)
+    return data
+  },
+  retry: async (id: string): Promise<DocumentExtraction> => {
+    const { data } = await api.post(`/document-ai/extractions/${id}/retry`, undefined, readOnly)
+    return data
+  },
+  remove: async (id: string): Promise<void> => {
+    await api.delete(`/document-ai/extractions/${id}`, readOnly)
+  },
+  attach: async (id: string, transactionId: string): Promise<DocumentExtraction> => {
+    const { data } = await api.post(`/document-ai/extractions/${id}/attach`, { transaction_id: transactionId })
+    return data
+  },
+  createTransaction: async (id: string, payload: DocumentReceiptTransaction): Promise<DocumentExtraction> => {
+    const { data } = await api.post(`/document-ai/extractions/${id}/transaction`, payload)
     return data
   },
 }
@@ -2245,7 +2349,7 @@ export const plugins = {
     plugin_id: string
     integration: string
     name: string
-    values: Record<string, string>
+    values: Record<string, string | PluginFileValue>
   }): Promise<{ connection: PluginConnection; authorize_url: string | null }> => {
     const { data } = await api.post('/plugins/connections', body)
     return data
@@ -2253,7 +2357,7 @@ export const plugins = {
   /** New form values; fields left blank keep what they had. Then it syncs afresh. */
   updateValues: async (
     connectionId: string,
-    body: { name?: string; values: Record<string, string> },
+    body: { name?: string; values: Record<string, string | PluginFileValue> },
   ): Promise<PluginConnection> => {
     const { data } = await api.put(`/plugins/connections/${connectionId}/values`, body)
     return data
@@ -2264,6 +2368,11 @@ export const plugins = {
   },
   sync: async (connectionId: string): Promise<PluginConnection> => {
     const { data } = await api.post(`/plugins/connections/${connectionId}/sync`)
+    return data
+  },
+  /** Run one routine of a connection now, and wait for it (ADR 0035). */
+  runRoutine: async ({ connectionId, routine }: { connectionId: string; routine: string }): Promise<PluginConnection> => {
+    const { data } = await api.post(`/plugins/connections/${connectionId}/routines/${encodeURIComponent(routine)}/run`)
     return data
   },
   disconnect: async (connectionId: string): Promise<void> => {

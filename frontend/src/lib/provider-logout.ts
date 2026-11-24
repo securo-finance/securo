@@ -23,8 +23,8 @@ export async function endProviderSession({
   shouldRedirect = () => true,
 }: EndProviderSessionOptions = {}): Promise<void> {
   try {
-    const config = await auth.oidcConfig()
-    if (config.logout_url && shouldRedirect()) redirect(config.logout_url)
+    const { logout_url } = await auth.oidcLogoutUrl()
+    if (logout_url && shouldRedirect()) redirect(logout_url)
   } catch {
     // The local sign-out already happened; nothing else to do.
   }

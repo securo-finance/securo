@@ -22,7 +22,7 @@ const api = vi.hoisted(() => ({
     balanceHistoryMonths: vi.fn(),
     projectedTransactions: vi.fn(),
   },
-  transactions: { list: vi.fn(), calendar: vi.fn() },
+  transactions: { list: vi.fn(), calendar: vi.fn(), update: vi.fn(), get: vi.fn() },
   budgets: { comparison: vi.fn() },
   categories: { list: vi.fn(), listIncludingHidden: vi.fn() },
   categoryGroups: { list: vi.fn(), listIncludingHidden: vi.fn() },
@@ -33,8 +33,12 @@ const api = vi.hoisted(() => ({
   goals: { summary: vi.fn() },
   groups: { list: vi.fn() },
   payees: { list: vi.fn() },
+  fiscal: { taxIdKinds: vi.fn() },
   rules: { create: vi.fn(), list: vi.fn() },
   settings: { attachments: vi.fn() },
+  info: { get: vi.fn() },
+  plugins: { installed: vi.fn() },
+  reports: { plugin: vi.fn() },
   // Nobody arranged anything: Securo's default layout. Tests that need one set `layouts.saved`.
   uiLayouts: {
     get: async () => ({ dashboard: null, reports: null, ...layouts.saved }),
@@ -192,6 +196,8 @@ beforeEach(() => {
   api.payees.list.mockResolvedValue([])
   api.rules.list.mockResolvedValue([])
   api.settings.attachments.mockResolvedValue({ enabled: false })
+  // Unread flags, as before plugins joined the dashboard: plugin items are kept but not drawn.
+  api.info.get.mockRejectedValue(new Error('no info'))
 })
 
 describe('Dashboard net worth breakdown', () => {
@@ -1063,6 +1069,38 @@ it('identifies each category in its spending progress bar accessible name', asyn
 describe('Dashboard arranged from the library', () => {
   const regions = () => screen.getAllByRole('region').map((region) => region.getAttribute('aria-label'))
 
+  it("draws a plugin's widget where it was placed, for the month and accounts on screen", async () => {
+    api.info.get.mockResolvedValue({ features: { plugins: true } })
+    api.plugins.installed.mockResolvedValue([{
+      plugin_id: 'maria/casa', name: { en: 'Home' }, themes: [], reports: [],
+      widgets: [{ key: 'pets-card', name: { en: 'Pets this month' }, measure: 'expenses', group_by: 'category', chart: 'bar', width: 'third', period: 'month' }],
+    }])
+    api.reports.plugin.mockResolvedValue({
+      key: 'pets-card', code: false, measure: 'expenses', group_by: 'category', chart: 'bar', currency: 'USD', total: 321,
+      rows: [{ key: 'c1', label: 'Pets', value: 321, color: null }],
+    })
+    collectionFilter.activeAccountIds = ['a1']
+    layouts.saved = { dashboard: [{ id: 'plugin:maria/casa:pets-card' }, { id: 'overview' }] }
+    renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
+
+    expect(await screen.findByText(formatCurrency(321, 'USD', 'en-US'))).toBeInTheDocument()
+    expect(regions()).toEqual(['Pets this month', t('library.widget.overview')])
+    const month = new Date()
+    const ym = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`
+    expect(api.reports.plugin).toHaveBeenCalledWith('maria/casa', 'pets-card', `${ym}-01`, expect.stringMatching(new RegExp(`^${ym}-`)), ['a1'], 'dashboard')
+  })
+
+  it("keeps a plugin's widget in the saved arrangement while the plugins can't be read", async () => {
+    layouts.saved = { dashboard: [{ id: 'plugin:maria/casa:pets-card' }, { id: 'overview' }, { id: 'transactions' }] }
+    const { user } = renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
+    await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
+    expect(regions()).toEqual([t('library.widget.overview'), t('dashboard.periodTransactions')])
+
+    await user.click(screen.getByRole('button', { name: t('library.customizeDashboard') }))
+    await user.click(screen.getByRole('button', { name: t('library.removeFrom.dashboard', { name: t('library.widget.overview') }) }))
+    await waitFor(() => expect(layouts.saves.at(-1)?.ids).toEqual(['transactions', 'plugin:maria/casa:pets-card']))
+  })
+
   it("shows Securo's arrangement when nothing was saved", async () => {
     renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
     await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
@@ -1113,5 +1151,208 @@ describe('Dashboard arranged from the library', () => {
 
     await user.click(screen.getByRole('button', { name: t('library.done') }))
     expect(screen.queryByText(t('library.editingDashboard'))).not.toBeInTheDocument()
+  })
+})
+
+describe('Dashboard uncategorized drill-down', () => {
+  const uncategorized = (id: string, description: string, date: string) => ({
+    id, description, date, account_id: 'checking', category_id: null, category: null,
+    payee: null, payee_id: null, amount: 12, amount_primary: 12, currency: 'USD', type: 'debit',
+    status: 'posted', source: 'manual', notes: null, attachment_count: 0, splits: [],
+    viewer_share: null, is_shared: false, user_id: 'user-1', transfer_pair_id: null,
+    is_ignored: false, tags: [],
+  })
+
+  it('saves a row and loads the next one into the open dialog with Save & Next', async () => {
+    api.dashboard.summary.mockResolvedValue({ ...summary, pending_categorization: 2, pending_categorization_amount: 24 })
+    api.transactions.list.mockImplementation(async (params?: { uncategorized?: boolean }) => (
+      params?.uncategorized
+        ? {
+            items: [
+              uncategorized('first', 'First uncategorized', '2026-09-01'),
+              uncategorized('second', 'Second uncategorized', '2026-09-02'),
+            ],
+            total: 2,
+          }
+        : { items: [], total: 0 }
+    ))
+    api.transactions.update.mockResolvedValue({})
+    api.transactions.get.mockImplementation(async (id: string) => (
+      id === 'first'
+        ? uncategorized('first', 'First uncategorized', '2026-09-01')
+        : uncategorized('second', 'Second uncategorized', '2026-09-02')
+    ))
+
+    const { user } = renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+      { route: '/?month=2026-09' },
+    )
+
+    await user.click(await screen.findByText(t('dashboard.categorizeNow'), { exact: false }))
+    const open = await screen.findAllByRole('button', { name: t('dashboard.drillDownOpenTransaction') })
+    await user.click(open[0])
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByDisplayValue('First uncategorized')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: t('transactions.saveAndNext') }))
+
+    await waitFor(() => expect(api.transactions.update).toHaveBeenCalledTimes(1))
+    const [savedId, payload] = api.transactions.update.mock.calls[0]
+    expect(savedId).toBe('first')
+    expect(payload).not.toHaveProperty('action')
+
+    // Same dialog, now on the next row; it was the last one, so no next again.
+    const next = await screen.findByRole('dialog')
+    expect(await within(next).findByDisplayValue('Second uncategorized')).toBeInTheDocument()
+    expect(within(next).queryByRole('button', { name: t('transactions.saveAndNext') })).not.toBeInTheDocument()
+  })
+
+  it('re-reads the next row and skips it once a save has categorized it', async () => {
+    // Saving the first installment for the whole series also categorizes the second.
+    const rows = [
+      uncategorized('first', 'Phone 1/2', '2026-09-01'),
+      uncategorized('second', 'Phone 2/2', '2026-09-02'),
+      uncategorized('third', 'Third uncategorized', '2026-09-03'),
+    ]
+    api.dashboard.summary.mockResolvedValue({ ...summary, pending_categorization: 3, pending_categorization_amount: 36 })
+    api.transactions.list.mockImplementation(async (params?: { uncategorized?: boolean }) => (
+      params?.uncategorized ? { items: rows, total: rows.length } : { items: [], total: 0 }
+    ))
+    api.transactions.update.mockResolvedValue({})
+    api.transactions.get.mockImplementation(async (id: string) => {
+      const row = rows.find((r) => r.id === id)!
+      return id === 'second' && api.transactions.update.mock.calls.length > 0
+        ? { ...row, category_id: 'cat-phone' }
+        : row
+    })
+
+    const { user } = renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+      { route: '/?month=2026-09' },
+    )
+
+    await user.click(await screen.findByText(t('dashboard.categorizeNow'), { exact: false }))
+    const open = await screen.findAllByRole('button', { name: t('dashboard.drillDownOpenTransaction') })
+    await user.click(open[0])
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByDisplayValue('Phone 1/2')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: t('transactions.saveAndNext') }))
+
+    const next = await screen.findByRole('dialog')
+    expect(await within(next).findByDisplayValue('Third uncategorized')).toBeInTheDocument()
+    expect(api.transactions.get).toHaveBeenCalledWith('second')
+  })
+
+  async function openPanel(rows: ReturnType<typeof uncategorized>[]) {
+    api.dashboard.summary.mockResolvedValue({ ...summary, pending_categorization: rows.length, pending_categorization_amount: 12 * rows.length })
+    api.transactions.list.mockImplementation(async (params?: { uncategorized?: boolean }) => (
+      params?.uncategorized ? { items: rows, total: rows.length } : { items: [], total: 0 }
+    ))
+    api.transactions.update.mockResolvedValue({})
+    const utils = renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+      { route: '/?month=2026-09' },
+    )
+    await utils.user.click(await screen.findByText(t('dashboard.categorizeNow'), { exact: false }))
+    const open = await screen.findAllByRole('button', { name: t('dashboard.drillDownOpenTransaction') })
+    return { ...utils, open }
+  }
+
+  it('skips a next row that was ignored after the panel loaded', async () => {
+    const rows = [
+      uncategorized('first', 'First row', '2026-09-01'),
+      uncategorized('second', 'Second row', '2026-09-02'),
+      uncategorized('third', 'Third row', '2026-09-03'),
+    ]
+    api.transactions.get.mockImplementation(async (id: string) => {
+      const row = rows.find((r) => r.id === id)!
+      return id === 'second' ? { ...row, is_ignored: true } : row
+    })
+    const { user, open } = await openPanel(rows)
+
+    await user.click(open[0])
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: t('transactions.saveAndNext') }))
+
+    expect(await within(await screen.findByRole('dialog')).findByDisplayValue('Third row')).toBeInTheDocument()
+  })
+
+  it('stops at a next row that fails to load, leaving it in the panel', async () => {
+    const rows = [
+      uncategorized('first', 'First row', '2026-09-01'),
+      uncategorized('second', 'Second row', '2026-09-02'),
+      uncategorized('third', 'Third row', '2026-09-03'),
+    ]
+    api.transactions.get.mockImplementation(async (id: string) => {
+      if (id === 'second') throw { response: { status: 503 } }
+      return rows.find((r) => r.id === id)
+    })
+    const { user, open } = await openPanel(rows)
+
+    await user.click(open[0])
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: t('transactions.saveAndNext') }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    // Not skipped past: the third row was never loaded into the dialog.
+    expect(api.transactions.get).not.toHaveBeenCalledWith('third')
+    expect(api.transactions.update).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('Second row')).toBeInTheDocument()
+  })
+
+  it('opens the row clicked last even when an earlier click loads later', async () => {
+    const rows = [uncategorized('first', 'First row', '2026-09-01'), uncategorized('second', 'Second row', '2026-09-02')]
+    let finishFirst: (tx: unknown) => void = () => {}
+    api.transactions.get.mockImplementation((id: string) => (
+      id === 'first' ? new Promise((resolve) => { finishFirst = resolve }) : Promise.resolve(rows[1])
+    ))
+    const { user, open } = await openPanel(rows)
+
+    await user.click(open[0])
+    await user.click(open[1])
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByDisplayValue('Second row')).toBeInTheDocument()
+
+    await act(async () => finishFirst(rows[0]))
+    expect(within(screen.getByRole('dialog')).getByDisplayValue('Second row')).toBeInTheDocument()
+  })
+
+  it('keeps a row opened after closing the dialog when an earlier Save & next finishes late', async () => {
+    const rows = [
+      uncategorized('first', 'First row', '2026-09-01'),
+      uncategorized('second', 'Second row', '2026-09-02'),
+      uncategorized('third', 'Third row', '2026-09-03'),
+    ]
+    let finishSecond: (tx: unknown) => void = () => {}
+    api.transactions.get.mockImplementation((id: string) => (
+      id === 'second'
+        ? new Promise((resolve) => { finishSecond = resolve })
+        : Promise.resolve(rows.find((r) => r.id === id))
+    ))
+    const { user, open } = await openPanel(rows)
+
+    await user.click(open[0])
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: t('transactions.saveAndNext') }))
+    await waitFor(() => expect(api.transactions.get).toHaveBeenCalledWith('second'))
+
+    // Leave while the next row is still loading, and open another one.
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await user.click(screen.getAllByRole('button', { name: t('dashboard.drillDownOpenTransaction') })[2])
+    const third = await screen.findByRole('dialog')
+    expect(await within(third).findByDisplayValue('Third row')).toBeInTheDocument()
+    // The abandoned lookup doesn't keep the new dialog busy.
+    expect(within(third).getByRole('button', { name: t('common.save') })).toBeEnabled()
+
+    await act(async () => finishSecond(rows[1]))
+    expect(within(screen.getByRole('dialog')).getByDisplayValue('Third row')).toBeInTheDocument()
   })
 })

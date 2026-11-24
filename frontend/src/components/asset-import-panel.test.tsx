@@ -122,13 +122,8 @@ describe('AssetImportPanel column mapping', () => {
 
     // The preview now succeeds: two orders ready, two rows that will be skipped.
     await screen.findByText(t('assetImport.rowsSkipped', { count: 2 }))
-    expect(
-      screen.getByText(
-        (content) =>
-          content.startsWith('Row 10') &&
-          content.includes(t('assetImport.reason.missing_ticker')),
-      ),
-    ).toBeInTheDocument()
+    // The refused row is in the list, where the file has it.
+    expect(screen.getAllByText(t('assetImport.reason.missing_ticker')).length).toBeGreaterThan(0)
 
     // The grid collapses, but the bar stays with the choices the user made,
     // so a wrong column is visible without re-uploading the file.
@@ -197,6 +192,129 @@ describe('AssetImportPanel column mapping', () => {
   })
 })
 
+/** The body row that holds a given file row number. */
+function bodyRow(rendered: ReturnType<typeof renderWithProviders>, row: number): HTMLTableRowElement {
+  const found = [...rendered.container.querySelectorAll('tbody tr')].find((tr) =>
+    tr.textContent?.includes(`#${row}`),
+  )
+  expect(found).not.toBeUndefined()
+  return found as HTMLTableRowElement
+}
+
+describe('AssetImportPanel refused rows', () => {
+  it('lists a refused row in the table with its reason instead of only counting it', async () => {
+    api.previewImport.mockResolvedValue(successPreview)
+    const rendered = renderWithProviders(<AssetImportPanel />)
+    await uploadFile(rendered)
+
+    await screen.findByText(t('assetImport.confirm', { count: 2 }))
+
+    // Two importable orders and two refused rows, in the file's own order.
+    const bodyRows = rendered.container.querySelectorAll('tbody tr')
+    expect(bodyRows).toHaveLength(4)
+
+    const noTicker = bodyRow(rendered, 10)
+    expect(noTicker).toHaveTextContent('#10')
+    expect(noTicker).toHaveTextContent('—')
+    expect(noTicker).toHaveTextContent(t('assetImport.reason.missing_ticker'))
+
+    const badDate = bodyRow(rendered, 11)
+    expect(badDate).toHaveTextContent('#11')
+    expect(badDate).toHaveTextContent('XPTO')
+    expect(badDate).toHaveTextContent(t('assetImport.reason.invalid_date'))
+
+    // An importable row has no reason cell at all.
+    const okRow = screen.getByText('AAPL').closest('tr')
+    expect(okRow?.querySelectorAll('td')).toHaveLength(6)
+  })
+
+  it('puts the reason under the ticker for a phone and keeps the column for a desktop', async () => {
+    // The reason column is the last one; at 390px it sits past the right edge
+    // of the table. The phone gets the same text inside the row's first cell,
+    // which is on screen at any width.
+    api.previewImport.mockResolvedValue(successPreview)
+    const rendered = renderWithProviders(<AssetImportPanel />)
+    await uploadFile(rendered)
+
+    await screen.findByText(t('assetImport.confirm', { count: 2 }))
+    const row = bodyRow(rendered, 10)
+    const cells = [...row.querySelectorAll('td')]
+    const reason = t('assetImport.reason.missing_ticker')
+
+    // First cell: reachable without scrolling sideways on a phone.
+    expect(cells[0].textContent).toContain(reason)
+    const mobileLine = [...cells[0].querySelectorAll('span')].find((span) =>
+      span.className.includes('sm:hidden'),
+    )
+    expect(mobileLine).toHaveTextContent(reason)
+
+    // Last cell: the column itself, shown only from the sm breakpoint up.
+    const desktopReason = cells[cells.length - 1]
+    expect(desktopReason).toHaveTextContent(reason)
+    expect(desktopReason.className).toContain('hidden')
+    expect(desktopReason.className).toContain('sm:table-cell')
+  })
+
+  it('summarises date, kind, quantity and price under the ticker on a phone', async () => {
+    // The desktop columns are hidden on a phone, so the row itself has to say
+    // what the file holds.
+    api.previewImport.mockResolvedValue(successPreview)
+    const rendered = renderWithProviders(<AssetImportPanel />)
+    await uploadFile(rendered)
+
+    await screen.findByText(t('assetImport.confirm', { count: 2 }))
+    const okRow = screen.getByText('AAPL').closest('tr') as HTMLTableRowElement
+    const tickerCell = okRow.querySelector('td') as HTMLTableCellElement
+    expect(tickerCell).toHaveTextContent('2026-01-15')
+    expect(tickerCell).toHaveTextContent(t('assetImport.kind.buy'))
+    expect(tickerCell).toHaveTextContent('10 × 150')
+    expect(tickerCell).toHaveTextContent(t('assetImport.field.fee'))
+
+    // Every other column stays hidden below the breakpoint.
+    for (const cell of [...okRow.querySelectorAll('td')].slice(1)) {
+      expect(cell.className).toContain('hidden')
+      expect(cell.className).toContain('sm:table-cell')
+    }
+  })
+
+  it('keeps a refusal past the first page of the table one click away', async () => {
+    // 51 orders fill more than the first page of 50: the refused row at the
+    // end of the file would otherwise be counted but never explained.
+    api.previewImport.mockResolvedValue({
+      ...successPreview,
+      orders: Array.from({ length: 51 }, (_, i) => order(i + 2, `T${i}`, '2026-01-15')),
+      errors: [{ row: 99, reason: 'missing_ticker', ticker: null, detail: null }],
+      holdings_created: 51,
+      skipped: 1,
+    })
+    const rendered = renderWithProviders(<AssetImportPanel />)
+    const { user } = rendered
+    await uploadFile(rendered)
+
+    await screen.findByText(t('assetImport.rowsSkipped', { count: 1 }))
+    expect(screen.queryByText('#99')).not.toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', { name: t('assetImport.showAllRows', { count: 52 }) }),
+    )
+
+    // The whole file is on screen, reason included.
+    const refused = bodyRow(rendered, 99)
+    expect(refused).toHaveTextContent(t('assetImport.reason.missing_ticker'))
+  })
+
+  it('lists the refused rows even when nothing in the file can be imported', async () => {
+    api.previewImport.mockResolvedValue({ ...successPreview, orders: [], holdings_created: 0 })
+    const rendered = renderWithProviders(<AssetImportPanel />)
+    await uploadFile(rendered)
+
+    await screen.findByText(t('assetImport.nothingToImport'))
+    expect(rendered.container.querySelectorAll('tbody tr')).toHaveLength(2)
+    expect(bodyRow(rendered, 10)).toHaveTextContent(t('assetImport.reason.missing_ticker'))
+    expect(bodyRow(rendered, 11)).toHaveTextContent(t('assetImport.reason.invalid_date'))
+  })
+})
+
 describe('AssetImportPanel split rows', () => {
   it('shows a split with its ratio instead of a quantity and price', async () => {
     const split: AssetOrderImport = {
@@ -215,5 +333,63 @@ describe('AssetImportPanel split rows', () => {
     expect(row).not.toBeNull()
     expect(row).toHaveTextContent(t('assetImport.splitRatio', { old: 1, new: 4 }))
     expect(row?.querySelectorAll('td')).toHaveLength(4)
+  })
+})
+
+describe('AssetImportPanel currencies', () => {
+  it('shows the currency the file paid in and what the row becomes', async () => {
+    api.previewImport.mockResolvedValue({
+      ...successPreview,
+      orders: [{
+        ...order(2, 'AAPL', '2026-01-15'),
+        price: 400,
+        fee: 2,
+        currency: 'EUR',
+        converted_price: 500,
+        converted_fee: 2.5,
+        converted_currency: 'USD',
+      }],
+    })
+    await uploadFile(renderWithProviders(<AssetImportPanel />))
+
+    const row = (await screen.findByText(t('assetImport.kind.buy'))).closest('tr')
+    expect(row).not.toBeNull()
+    expect(row).toHaveTextContent('€400.00')
+    expect(row).toHaveTextContent('$500.00')
+    expect(row).toHaveTextContent('€2.00')
+    expect(row).toHaveTextContent('$2.50')
+  })
+
+  it('shows the holding currency the backend filled in', async () => {
+    api.previewImport.mockResolvedValue({
+      ...successPreview,
+      orders: [{ ...order(2, 'AAPL', '2026-01-15'), currency: 'BRL' }],
+    })
+    await uploadFile(renderWithProviders(<AssetImportPanel />))
+
+    const row = (await screen.findByText(t('assetImport.kind.buy'))).closest('tr')
+    expect(row).toHaveTextContent('R$150.00')
+  })
+
+  it('keeps a minor-unit price in the label the file used', async () => {
+    // Intl reads "GBp" as GBP, so formatting 100 pence as a currency would
+    // show GBP 100.00 instead of GBP 1.00.
+    api.previewImport.mockResolvedValue({
+      ...successPreview,
+      orders: [{
+        ...order(2, 'IITU.L', '2026-01-15'),
+        price: 100,
+        currency: 'GBp',
+        converted_price: 1,
+        converted_currency: 'GBP',
+      }],
+    })
+    await uploadFile(renderWithProviders(<AssetImportPanel />))
+
+    const row = (await screen.findByText(t('assetImport.kind.buy'))).closest('tr')
+    expect(row).not.toBeNull()
+    expect(row).toHaveTextContent('100.00 GBp')
+    expect(row).toHaveTextContent('£1.00')
+    expect(row).not.toHaveTextContent('£100.00')
   })
 })

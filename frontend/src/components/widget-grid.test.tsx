@@ -41,6 +41,16 @@ describe('WidgetGrid', () => {
     expect(screen.getByRole('region', { name: t('dashboard.spendingByCategory') })).toHaveClass('lg:col-span-6')
   })
 
+  // jsdom computes no layout, so this pins the classes. Without an explicit
+  // minmax(0, 1fr) column, the implicit `auto` track is never narrower than the
+  // widget's min-content, and a nowrap line pushes the card past a phone screen.
+  it('gives each widget and its content a column that can shrink below its content', () => {
+    renderGrid()
+    const section = screen.getByRole('region', { name: t('dashboard.spendingByCategory') })
+    expect(section).toHaveClass('grid-cols-1', 'min-w-0')
+    expect(within(section).getByText('Spending card').parentElement).toHaveClass('grid-cols-1', 'min-w-0')
+  })
+
   it('has no edit controls outside editing', () => {
     renderGrid()
     expect(screen.queryByRole('button', { name: t('library.dragToMove', { name: t('library.widget.overview') }) })).not.toBeInTheDocument()

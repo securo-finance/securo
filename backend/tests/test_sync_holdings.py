@@ -469,6 +469,30 @@ async def test_same_day_resync_updates_asset_value_in_place(
 
 
 @pytest.mark.asyncio
+async def test_a_sync_value_keeps_the_reported_unit_price(
+    session: AsyncSession, test_user: User, mock_connection: BankConnection
+):
+    """The day's value keeps the provider's price per unit, so a chart built
+    from the ledger can value each day's units at the provider's own price."""
+    holding = _holding(external_id="h-1", current_value=Decimal("125"), quantity=Decimal("10"))
+    holding.unit_price = Decimal("12.5")
+    _MockProvider._holdings = [holding]
+    assert mock_connection.credentials is not None
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await session.commit()
+    [asset] = await _assets_for(session, test_user)
+
+    again = _holding(external_id="h-1", current_value=Decimal("130"), quantity=Decimal("10"))
+    again.unit_price = Decimal("13")
+    _MockProvider._holdings = [again]
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await session.commit()
+
+    [today] = [v for v in await _values_for(session, asset.id) if v.date == date.today()]
+    assert (today.amount, today.price) == (Decimal("130"), Decimal("13"))
+
+
+@pytest.mark.asyncio
 async def test_sparse_fields_are_preserved_on_later_sync(
     session: AsyncSession, test_user: User, mock_connection: BankConnection
 ):

@@ -23,6 +23,12 @@ class AssetOrderImport(BaseModel):
     # Split only: `old_units` held before it became `new_units` after it.
     old_units: Optional[int] = None
     new_units: Optional[int] = None
+    # Preview only: the file paid in another currency, and this is what the
+    # price and the fee become at the row's own date's rate. They are shown,
+    # never read back: the import converts the file's own numbers again.
+    converted_price: Optional[Decimal] = None
+    converted_fee: Optional[Decimal] = None
+    converted_currency: Optional[str] = None
 
 
 class AssetImportRowError(BaseModel):

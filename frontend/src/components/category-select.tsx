@@ -1,4 +1,4 @@
-import { useState, useMemo, useContext } from 'react'
+import { useState, useMemo, useContext, useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDownIcon } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -27,6 +27,13 @@ interface CategorySelectProps {
    */
   creatable?: boolean
   contentProps?: React.ComponentProps<typeof PopoverContent>
+  /** The id of the trigger button, so a `<Label htmlFor>` names this field. */
+  id?: string
+  /**
+   * The id of the label naming this field. The trigger is named after it and
+   * the category it shows, so a screen reader announces both on focus.
+   */
+  labelledBy?: string
 }
 
 
@@ -42,7 +49,10 @@ export function CategorySelect({
   allowNone = false,
   creatable = false,
   contentProps,
+  id,
+  labelledBy,
 }: CategorySelectProps) {
+  const valueId = useId()
   const [open, setOpen] = useState(false)
   // The category just created here. The list catches up once the refetch
   // lands; until then this keeps the trigger showing the new name.
@@ -72,14 +82,16 @@ export function CategorySelect({
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <button
+          id={id}
           type="button"
           disabled={disabled}
+          aria-labelledby={labelledBy ? `${labelledBy} ${valueId}` : undefined}
           className={cn(
             "flex w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-3 py-2 text-sm text-start shadow-xs transition-[color,box-shadow] outline-hidden focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 dark:hover:bg-input/50 h-9 cursor-pointer",
             className
           )}
         >
-          <span className="flex items-center gap-2 min-w-0 truncate">
+          <span id={valueId} className="flex items-center gap-2 min-w-0 truncate">
             {selectedCategory ? (
               <>
                 {selectedCategory.color ? (

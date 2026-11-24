@@ -1,9 +1,9 @@
-import { useEffect, useRef, useMemo } from 'react'
+import { useEffect, useRef, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery } from '@tanstack/react-query'
 import { transactions as transactionsApi, dashboard, admin } from '@/lib/api'
-import { AlertTriangle, Clock, Info, Paperclip, X } from 'lucide-react'
+import { AlertTriangle, ChevronRight, Clock, Info, Paperclip, X } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
 import { TransactionCategoryIcon } from '@/components/category-lines-display'
 import { isSplitByCategory } from '@/lib/category-lines'
@@ -13,7 +13,8 @@ import { hasOpenDialog, isInsideOverlayLayer } from '@/lib/overlay-layers'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAuth } from '@/contexts/auth-context'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
-import type { Transaction } from '@/types'
+import { CategorySelect } from '@/components/category-select'
+import type { Category, CategoryGroup, Transaction } from '@/types'
 import { formatCurrency } from '@/lib/format'
 
 export type DrillDownFilter = {
@@ -26,6 +27,10 @@ export type DrillDownFilter = {
   // other workspaces: their categories live there, so reports count them
   // as uncategorized here.
   sharedAsUncategorized?: boolean
+  // Leave out the viewer's shares of expenses from other workspaces. A queue
+  // the viewer clears from this workspace sets it: the write that would clear
+  // such a row belongs to its own workspace, so it would stay pending here.
+  workspaceOnly?: boolean
   account_id?: string
   // Scope to a set of accounts (e.g. the active collection's accounts).
   account_ids?: string[]
@@ -64,18 +69,50 @@ type DisplayItem = {
   partOf: number | null
 }
 
+/** Categorize uncategorized rows in place; the host saves and refreshes. */
+export type DrillDownQuickCategorize = {
+  categories: Category[]
+  groups: CategoryGroup[]
+  onCategorize: (tx: Transaction, categoryId: string) => Promise<unknown>
+}
+
+function canQuickCategorize(tx: Transaction | null): tx is Transaction {
+  return !!tx && !tx.category_id && !tx.is_shared && !isSplitByCategory(tx)
+}
+
 export function TransactionDrillDown({
   filter,
   onClose,
   onTransactionClick,
   useViewerShare = false,
+  quickCategorize,
 }: {
   filter: DrillDownFilter | null
   onClose: () => void
-  onTransactionClick?: (tx: Transaction) => void
+  /** `queue` lists the panel's transactions in order, for stepping to the next one. */
+  onTransactionClick?: (tx: Transaction, queue: Transaction[]) => void
   useViewerShare?: boolean
+  quickCategorize?: DrillDownQuickCategorize
 }) {
   const { t } = useTranslation()
+  // Rows being saved, so a second pick can't race the first.
+  const [savingIds, setSavingIds] = useState<ReadonlySet<string>>(() => new Set())
+
+  const handleQuickCategorize = async (tx: Transaction, categoryId: string) => {
+    if (!quickCategorize || !categoryId || savingIds.has(tx.id)) return
+    setSavingIds((prev) => new Set(prev).add(tx.id))
+    try {
+      await quickCategorize.onCategorize(tx, categoryId)
+    } catch {
+      // The host reports the error; the row stays as it was.
+    } finally {
+      setSavingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(tx.id)
+        return next
+      })
+    }
+  }
   const { user } = useAuth()
   const { mask } = usePrivacyMode()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
@@ -92,6 +129,7 @@ export function TransactionDrillDown({
         category_ids: filter?.category_ids,
         uncategorized: filter?.uncategorized,
         shared_as_uncategorized: filter?.sharedAsUncategorized,
+        workspace_only: filter?.workspaceOnly,
         account_id: filter?.account_id,
         account_ids: filter?.account_ids,
         type: filter?.type,
@@ -155,13 +193,17 @@ export function TransactionDrillDown({
       // share, the owner the amount less everyone else's shares, and anyone
       // else the full amount.
       const splits = tx.splits ?? []
+      // A credit's settled part is a payback, not income, as on the card.
+      const settled = tx.type === 'credit'
+        ? (tx.settled_by ?? []).reduce((sum, s) => sum + Number(s.amount), 0)
+        : 0
       const countsShare = tx.type === 'debit' || (tx.type === 'credit' && !!filter?.ownShareCredits)
       const ownShare = viewerShare != null || !filter?.ownShare || !countsShare
         ? null
         : tx.is_shared
           ? Number(tx.viewer_share ?? 0)
-          : splits.length > 0 && tx.user_id === user?.id
-            ? parentAmount - (splits.reduce((sum, s) => sum + Number(s.share_amount), 0) - Number(tx.viewer_share ?? 0))
+          : (splits.length > 0 || settled > 0) && tx.user_id === user?.id
+            ? parentAmount - (splits.reduce((sum, s) => sum + Number(s.share_amount), 0) - Number(tx.viewer_share ?? 0)) - settled
             : null
       const share = viewerShare ?? ownShare
       // Shares are in the row's own currency, so the primary amount scales
@@ -284,6 +326,11 @@ export function TransactionDrillDown({
     return items
   }, [data, projectedTxs, filter, noAccounts, useViewerShare, user?.id])
 
+  const queue = useMemo(
+    () => displayItems.flatMap((item) => (!item.isProjected && item.transaction ? [item.transaction] : [])),
+    [displayItems],
+  )
+
   const isOpen = !!filter
   useEffect(() => {
     if (!isOpen) return
@@ -402,13 +449,18 @@ export function TransactionDrillDown({
             </p>
           ) : (
             <div className="divide-y divide-border">
-              {displayItems.map((item) => (
+              {displayItems.map((item) => {
+                const quickTx = quickCategorize && canQuickCategorize(item.transaction) ? item.transaction : null
+                // Opening a row mid-save would show it without the category being saved.
+                const saving = !!item.transaction && savingIds.has(item.transaction.id)
+                return (
                 <div
                   key={item.key}
-                  className={`flex items-center gap-3 px-5 py-3 hover:bg-muted transition-colors ${!item.isProjected && onTransactionClick ? 'cursor-pointer' : ''}`}
+                  aria-busy={saving || undefined}
+                  className={`flex items-center gap-3 px-5 py-3 hover:bg-muted transition-colors ${!item.isProjected && onTransactionClick ? 'cursor-pointer' : ''} ${saving ? 'opacity-60' : ''}`}
                   onClick={() => {
-                    if (!item.isProjected && item.transaction) {
-                      onTransactionClick?.(item.transaction)
+                    if (!item.isProjected && item.transaction && !saving) {
+                      onTransactionClick?.(item.transaction, queue)
                     }
                   }}
                 >
@@ -448,6 +500,26 @@ export function TransactionDrillDown({
                         value: mask(formatCurrency(item.partOf, item.currency ?? userCurrency, locale)),
                       })}`}
                     </p>
+                    {quickTx && quickCategorize && (
+                      // Picking here must not also open the row's dialog.
+                      <div
+                        className="mt-1.5 max-w-[240px]"
+                        onClick={(e) => e.stopPropagation()}
+                        // Escape still reaches the panel; an open picker handles it first.
+                        onKeyDown={(e) => { if (e.key !== 'Escape') e.stopPropagation() }}
+                      >
+                        <CategorySelect
+                          value=""
+                          onChange={(categoryId) => handleQuickCategorize(quickTx, categoryId)}
+                          categories={quickCategorize.categories}
+                          groups={quickCategorize.groups}
+                          placeholder={t('dashboard.drillDownQuickCategorize')}
+                          disabled={saving}
+                          creatable
+                          className="h-7 px-2 text-xs"
+                        />
+                      </div>
+                    )}
                   </div>
                   <div className="text-end shrink-0">
                     <span
@@ -471,8 +543,25 @@ export function TransactionDrillDown({
                       </div>
                     )}
                   </div>
+                  {onTransactionClick && item.transaction && !item.isProjected && (
+                    // Makes the row's dialog discoverable next to the picker.
+                    <button
+                      type="button"
+                      aria-label={t('dashboard.drillDownOpenTransaction')}
+                      title={t('dashboard.drillDownOpenTransaction')}
+                      disabled={saving}
+                      className="-me-2 w-7 h-7 shrink-0 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-background transition-colors disabled:pointer-events-none"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onTransactionClick(item.transaction!, queue)
+                      }}
+                    >
+                      <ChevronRight size={16} className="rtl-mirror" aria-hidden="true" />
+                    </button>
+                  )}
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>

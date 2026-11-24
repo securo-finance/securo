@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import and_, or_, select, true
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -22,6 +23,20 @@ from app.services import category_line_service, recurring_match_service
 from app.services.credit_card_service import apply_effective_date
 from app.services.fx_rate_service import convert_or_none, stamp_primary_amount
 from app.services.rule_service import apply_rules_to_transaction
+
+
+class RecurringConflictError(Exception):
+    """The bill already exists, or the source transaction already has one.
+
+    The router turns this into a 409 so the UI can say what happened instead
+    of showing a 500 from the unique constraint or a silent duplicate.
+    """
+
+
+DUPLICATE_RECURRING_MESSAGE = (
+    "A recurring transaction with the same description, frequency and start date already exists"
+)
+SOURCE_ALREADY_LINKED_MESSAGE = "This transaction already belongs to a recurring transaction"
 
 
 async def _verify_account_in_workspace(
@@ -64,6 +79,28 @@ async def get_recurring_transaction(
     return result.scalar_one_or_none()
 
 
+async def _find_duplicate_recurring(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    description: str,
+    frequency: str,
+    start_date: date,
+) -> Optional[uuid.UUID]:
+    """The id of the bill the uq_recurring_tx constraint would collide with."""
+    return (
+        await session.execute(
+            select(RecurringTransaction.id).where(
+                RecurringTransaction.workspace_id == workspace_id,
+                RecurringTransaction.user_id == user_id,
+                RecurringTransaction.description == description,
+                RecurringTransaction.frequency == frequency,
+                RecurringTransaction.start_date == start_date,
+            )
+        )
+    ).scalar_one_or_none()
+
+
 async def create_recurring_transaction(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -71,14 +108,43 @@ async def create_recurring_transaction(
     data: RecurringTransactionCreate,
 ) -> RecurringTransaction:
     await _verify_account_in_workspace(session, workspace_id, data.account_id)
+    if data.category_id and data.category_lines and data.category_lines.lines:
+        raise ValueError("Choose either a category or a split across categories")
+    source_transaction = None
+    if data.source_transaction_id is not None:
+        source_transaction = (
+            await session.execute(
+                select(Transaction).where(
+                    Transaction.id == data.source_transaction_id,
+                    Transaction.workspace_id == workspace_id,
+                )
+                # Two requests making a bill from the same charge wait for each
+                # other here, so the second one reads the committed link and
+                # answers 409 instead of building a second bill over it.
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if source_transaction is None:
+            raise ValueError("Source transaction not found")
+        if source_transaction.recurring_transaction_id is not None:
+            raise RecurringConflictError(SOURCE_ALREADY_LINKED_MESSAGE)
     next_occ = data.start_date
-    if data.skip_first:
+    # The first occurrence is already covered while skip_first says so, and
+    # while the source transaction itself sits on the start date: generating it
+    # would charge the user twice for the same bill.
+    if data.skip_first or (
+        source_transaction is not None and source_transaction.date == data.start_date
+    ):
         next_occ = _advance_date(
             data.start_date, data.frequency,
             intended_day=data.day_of_month or data.start_date.day,
         )
-    if data.category_id and data.category_lines and data.category_lines.lines:
-        raise ValueError("Choose either a category or a split across categories")
+    # The same check the uq_recurring_tx constraint makes, done first so the
+    # caller gets a readable message instead of an IntegrityError.
+    if await _find_duplicate_recurring(
+        session, workspace_id, user_id, data.description, data.frequency, data.start_date
+    ) is not None:
+        raise RecurringConflictError(DUPLICATE_RECURRING_MESSAGE)
     recurring = RecurringTransaction(
         user_id=user_id,
         workspace_id=workspace_id,
@@ -97,7 +163,18 @@ async def create_recurring_transaction(
         next_occurrence=next_occ,
     )
     session.add(recurring)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        # Two requests racing past the check above still end in the 409, never
+        # in a 500 from the constraint.
+        await session.rollback()
+        raise RecurringConflictError(DUPLICATE_RECURRING_MESSAGE) from exc
+    if source_transaction is not None:
+        # The transaction the bill was made from becomes its first occurrence,
+        # so the row stops offering "make recurring" and the series knows the
+        # charge it already covers.
+        source_transaction.recurring_transaction_id = recurring.id
     await category_line_service.replace_template_lines(session, recurring, data.category_lines)
     await stamp_primary_amount(
         session, user_id, recurring,

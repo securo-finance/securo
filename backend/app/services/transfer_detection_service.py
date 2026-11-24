@@ -47,12 +47,13 @@ reason we will not say so on our own.
 """
 import uuid
 from collections import defaultdict
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
-from sqlalchemy import exists, select
+from sqlalchemy import CursorResult, exists, select, update
 from sqlalchemy.orm import noload
+from sqlalchemy.orm.attributes import set_committed_value
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -116,6 +117,45 @@ def _widest_amount_ratio(policy: dict[str, Any]) -> Optional[Decimal]:
         elif match != "exact":
             return None
     return worst
+
+
+def _candidate_batches(
+    candidate_rows: list[tuple[uuid.UUID, date]], window: int
+) -> list[list[uuid.UUID]]:
+    """Split new rows into date batches that no rule can reach across.
+
+    A row is only a neighbour of another within `window` days. Batches run
+    one after the other, so a pair an earlier batch links leaves the pool
+    before the next one looks, and that can settle a tie the next batch
+    would otherwise have seen: a new row's best match (one window away)
+    may have been weighing a competitor (two windows away) that the
+    earlier batch just paired with one of its own rows (three windows
+    away). Past `3 * window` no such chain fits, so groups of new rows
+    further apart than that give the same pairs in one call or one batch
+    at a time.
+
+    Splitting matters for a file import: the pool it loads runs from the
+    earliest candidate date to the latest, so a file carrying one very old
+    row and one from today would otherwise read the whole history between
+    them. In a batch, the pool is only as wide as the rows that can
+    matter.
+    """
+    reach = 3 * window
+    ids_by_date: dict[date, list[uuid.UUID]] = defaultdict(list)
+    for row_id, day in candidate_rows:
+        ids_by_date[day].append(row_id)
+    batches: list[list[uuid.UUID]] = []
+    current: list[uuid.UUID] = []
+    previous: Optional[date] = None
+    for day in sorted(ids_by_date):
+        if previous is not None and (day - previous).days > reach:
+            batches.append(current)
+            current = []
+        current.extend(ids_by_date[day])
+        previous = day
+    if current:
+        batches.append(current)
+    return batches
 
 
 def _as_movement(tx: Transaction, account: Optional[Account]) -> Movement:
@@ -192,8 +232,20 @@ async def _pool(
     ignored_sources: set[str],
     excluded: list[dict[str, Any]],
     accounts: dict[uuid.UUID, Account],
+    *,
+    near_dates: Optional[list[date]] = None,
+    window_days: int = 0,
 ) -> list[Transaction]:
-    """Every row still looking for its other half."""
+    """Every row still looking for its other half.
+
+    `near_dates` narrows the history to the rows that can still take part
+    when only some rows are new: the new rows, their neighbours, and the
+    rows those neighbours can see. Each neighbour has a rule window of its
+    own to look in, so a row two windows away from a new row can still
+    contest the answer; anything further is out of reach of every rule
+    that could run, and loading it would make every hand-added row pay
+    for the whole workspace.
+    """
     query = select(Transaction).where(
         Transaction.workspace_id == workspace_id,
         Transaction.transfer_pair_id.is_(None),
@@ -212,12 +264,66 @@ async def _pool(
     query = query.options(noload(Transaction.category_lines))
     if ignored_sources:
         query = query.where(Transaction.source.not_in(ignored_sources))
+    if near_dates:
+        earliest = min(near_dates) - timedelta(days=2 * window_days)
+        latest = max(near_dates) + timedelta(days=2 * window_days)
+        query = query.where(Transaction.date >= earliest, Transaction.date <= latest)
     result = await session.execute(query)
     return [
         tx
         for tx in result.scalars().all()
         if not _excluded_leg(tx, accounts.get(tx.account_id), excluded)
     ]
+
+
+class _PairTaken(Exception):
+    """Raised inside the savepoint when a leg is no longer free."""
+
+
+async def _link_pair(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    first: Transaction,
+    second: Transaction,
+) -> Optional[uuid.UUID]:
+    """Write the shared pair id only when both legs are still free.
+
+    Two requests can reach the same decision at once: each loaded the pool
+    while the other leg still said free, so both believe they found the
+    counterpart. Writing the value already on the ORM objects would let the
+    later commit overwrite the pair the earlier one made and leave the
+    losing new row pointing at a pair id no other row carries, which takes
+    it out of income with no counterpart to show for it (issue #448).
+
+    One conditional statement makes the link all-or-nothing. A row a
+    concurrent writer claimed stops matching `IS NULL`, and the savepoint
+    undoes the half that did match, so the caller can fall back to asking.
+    """
+    pair_id = uuid.uuid4()
+    try:
+        async with session.begin_nested():
+            result = await session.execute(
+                update(Transaction)
+                .where(
+                    Transaction.workspace_id == workspace_id,
+                    Transaction.id.in_((first.id, second.id)),
+                    Transaction.transfer_pair_id.is_(None),
+                )
+                .values(transfer_pair_id=pair_id)
+                # The guard is the database's: whether each row still
+                # matched is in `rowcount`, not in the attributes this
+                # request loaded earlier.
+                .execution_options(synchronize_session=False)
+            )
+            if cast(CursorResult, result).rowcount != 2:
+                raise _PairTaken
+    except _PairTaken:
+        return None
+    # The write did not go through the unit of work, so tell the objects
+    # what the database now holds. The create response reads it back.
+    set_committed_value(first, "transfer_pair_id", pair_id)
+    set_committed_value(second, "transfer_pair_id", pair_id)
+    return pair_id
 
 
 async def detect_transfer_pairs(
@@ -248,6 +354,46 @@ async def detect_transfer_pairs(
         # hand.
         return 0
 
+    # **An empty list is not the same as no list.** `None` means "look at
+    # everything"; `[]` means "a sync just ran and brought nothing new",
+    # which is the one case where there is certainly nothing to do.
+    # Collapsing the two sent a quiet sync off to reconsider the whole
+    # workspace and pair two rows that had both been sitting there for
+    # months, which is exactly what restricting to new rows prevents.
+    if candidate_ids is not None and not candidate_ids:
+        return 0
+
+    window = _widest_window(policy)
+    ratio = _widest_amount_ratio(policy)
+
+    near_dates: Optional[list[date]] = None
+    if candidate_ids is not None:
+        result = await session.execute(
+            select(Transaction.id, Transaction.date).where(
+                Transaction.workspace_id == workspace_id,
+                Transaction.id.in_(candidate_ids),
+            )
+        )
+        candidate_rows = [(row.id, row.date) for row in result.all()]
+        if not candidate_rows:
+            # A pair needs one new leg, and these rows are not here.
+            return 0
+        batches = _candidate_batches(candidate_rows, window)
+        if len(batches) > 1:
+            # A file import can carry rows years apart in a single call
+            # (#1802). No rule reaches across that gap, so those rows can
+            # never contest each other, and one pool running from the
+            # earliest date to the latest would load every unpaired row in
+            # between for nothing. Each batch gets its own narrowed pool,
+            # and the outcome is identical.
+            created = 0
+            for batch in batches:
+                created += await detect_transfer_pairs(
+                    session, workspace_id, candidate_ids=batch
+                )
+            return created
+        near_dates = [day for _row_id, day in candidate_rows]
+
     scope = policy.get("scope", {})
     # Loaded before the pool, because what counts as a leg at all depends
     # on the kind of account it sits on.
@@ -262,13 +408,16 @@ async def detect_transfer_pairs(
 
     ignored = set(scope.get("ignore_transaction_sources", []))
     pool = await _pool(
-        session, workspace_id, ignored, scope.get("exclude_legs", []), accounts
+        session,
+        workspace_id,
+        ignored,
+        scope.get("exclude_legs", []),
+        accounts,
+        near_dates=near_dates,
+        window_days=window,
     )
     if len(pool) < 2:
         return 0
-
-    window = _widest_window(policy)
-    ratio = _widest_amount_ratio(policy)
     by_date: dict[Any, list[Transaction]] = defaultdict(list)
     for tx in pool:
         by_date[tx.date].append(tx)
@@ -290,12 +439,6 @@ async def detect_transfer_pairs(
                 found.append(other)
         return found
 
-    # **An empty list is not the same as no list.** `None` means "look at
-    # everything"; `[]` means "a sync just ran and brought nothing new",
-    # which is the one case where there is certainly nothing to do.
-    # Collapsing the two sent a quiet sync off to reconsider the whole
-    # workspace and pair two rows that had both been sitting there for
-    # months, which is exactly what restricting to new rows prevents.
     new_ids = None if candidate_ids is None else set(candidate_ids)
 
     # Which rows to ask about. Everything when this is a full run;
@@ -351,9 +494,10 @@ async def detect_transfer_pairs(
             # queue is where that gets settled.
             continue
 
-        pair_id = uuid.uuid4()
-        tx.transfer_pair_id = pair_id
-        other_tx.transfer_pair_id = pair_id
+        if await _link_pair(session, workspace_id, tx, other_tx) is None:
+            # Another request claimed a leg between our decision and this
+            # write. Pass two turns the claim into a question instead.
+            continue
         paired.update({tx_id, other_id})
         pairs_created += 1
 

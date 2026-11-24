@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 
 import ReportsPage from '@/pages/reports'
+import { saveReportsRange } from '@/lib/remembered-range'
 import { renderWithProviders, t } from '@/test/utils'
 import type { ReportResponse } from '@/types'
 
@@ -921,7 +922,7 @@ describe('Reports page: a plugin\'s report', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Pet spending' }))
     expect(await screen.findByText('Vet')).toBeInTheDocument()
     // The default 1Y preset, sent as dates like every stepped window.
-    expect(api.reports.plugin).toHaveBeenCalledWith('maria/casa', 'pets', '2025-09-01', '2026-09-12', undefined)
+    expect(api.reports.plugin).toHaveBeenCalledWith('maria/casa', 'pets', '2025-09-01', '2026-09-12', undefined, 'reports')
     expect(api.reports.netWorth).toHaveBeenCalledTimes(1)
   })
 
@@ -944,6 +945,34 @@ describe('Reports page: a plugin\'s report', () => {
       reports: [{ key: 'pets', name: { en: 'Pet spending' }, measure: 'expenses', group_by: 'category', chart: 'table' }],
     }])
     expect(await screen.findByText('Vet')).toBeInTheDocument()
+  })
+
+  it('trims a custom range older than the two years a plugin report reads', async () => {
+    saveReportsRange('plugin:maria/casa:pets', {
+      rangeKey: 'custom', from: '2023-01-01', to: '2026-09-12', interval: 'monthly', periodOffset: 0,
+    })
+    layouts.saved = { reports: [{ id: 'net_worth' }, { id: 'plugin:maria/casa:pets' }] }
+    renderWithProviders(<ReportsPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Pet spending' }))
+    await waitFor(() => expect(api.reports.plugin).toHaveBeenCalledWith(
+      'maria/casa', 'pets', '2024-09-11', '2026-09-12', undefined, 'reports',
+    ))
+    expect(await screen.findByText(t('reports.pluginReport.periodTrimmed', {
+      from: 'Sep 11, 2024', to: 'Sep 12, 2026',
+    }))).toBeInTheDocument()
+  })
+
+  it('fits the 2Y preset, which spans more than 731 days, into the plugin report limit', async () => {
+    layouts.saved = { reports: [{ id: 'net_worth' }, { id: 'plugin:maria/casa:pets' }] }
+    const { user } = renderWithProviders(<ReportsPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Pet spending' }))
+    await waitFor(() => expect(api.reports.plugin).toHaveBeenCalled())
+
+    await user.click(screen.getByRole('button', { name: t('reports.range2y') }))
+    // The preset's own window is 2024-09-01 through today (741 days).
+    await waitFor(() => expect(api.reports.plugin).toHaveBeenLastCalledWith(
+      'maria/casa', 'pets', '2024-09-11', '2026-09-12', undefined, 'reports',
+    ))
   })
 
   it("keeps a plugin's tab saved when the plugins can't be read", async () => {

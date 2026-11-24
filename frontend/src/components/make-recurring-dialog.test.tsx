@@ -134,8 +134,9 @@ describe('MakeRecurringDialog', () => {
 
     expect(screen.getByText(t('recurring.makeFromTransaction'))).toBeInTheDocument()
     expect(screen.getByLabelText(t('recurring.description'))).toHaveValue('School fee')
-    // The amount is shown unsigned; the direction rides in `type`.
-    expect(screen.getByLabelText(t('recurring.amount'))).toHaveValue('350')
+    // The amount is shown unsigned; the direction rides in `type`. Money keeps
+    // its two decimals, so the field reads "350.00", never "350".
+    expect(screen.getByLabelText(t('recurring.amount'))).toHaveValue('350.00')
     // The day of the transaction is the bill's day of the month.
     expect(screen.getByDisplayValue('15')).toBeInTheDocument()
     expect(
@@ -164,6 +165,9 @@ describe('MakeRecurringDialog', () => {
         start_date: '2026-03-15',
         category_id: category.id,
         account_id: account.id,
+        // The bill is made from this transaction, which the API links back so
+        // the row stops offering "make recurring".
+        source_transaction_id: 'tx-1',
         // The transaction already covers the first occurrence.
         skip_first: true,
       }),
@@ -287,7 +291,7 @@ describe('MakeRecurringDialog', () => {
 
     await openDialog(schoolFee({ id: 'tx-7' }))
 
-    expect(screen.getByLabelText(t('recurring.amount'))).toHaveValue('350')
+    expect(screen.getByLabelText(t('recurring.amount'))).toHaveValue('350.00')
     // A setting that already failed is not asked for again on every mount.
     expect(vi.mocked(admin.numberFormat)).toHaveBeenCalledTimes(1)
   })

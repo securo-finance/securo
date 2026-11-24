@@ -3,9 +3,9 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { TransactionDialog } from '@/components/transaction-dialog'
-import { assets, currencies, groups, mortgagePayments, payees, transactions } from '@/lib/api'
+import { assets, categories, categoryGroups, currencies, groups, mortgagePayments, payees, rules, transactions } from '@/lib/api'
 import { renderWithProviders, t } from '@/test/utils'
-import type { Account, RecurringTransaction, Transaction } from '@/types'
+import type { Account, RecurringTransaction, Rule, Transaction } from '@/types'
 
 vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => ({ user: { preferences: { currency_display: 'USD' } } }),
@@ -13,6 +13,18 @@ vi.mock('@/contexts/auth-context', () => ({
 vi.mock('@/hooks/use-display-locale', () => ({
   useDateLocale: () => 'en-US',
   useDisplayLocale: () => 'en-US',
+}))
+
+// Stands in for the attachment list: one button opens a preview, as a real file would.
+vi.mock('@/components/transaction-attachments', () => ({
+  TransactionAttachments: ({ onPreviewChange }: { onPreviewChange: (p: unknown) => void }) => (
+    <button
+      type="button"
+      onClick={() => onPreviewChange({ attachmentId: 'att-1', url: 'blob:receipt', contentType: 'image/png', filename: 'receipt-a.png' })}
+    >
+      Preview receipt
+    </button>
+  ),
 }))
 
 vi.mock('@/components/ui/date-picker-input', () => ({
@@ -468,6 +480,116 @@ it('reopens a transaction split among people with its members still selected', a
   expect(screen.getByDisplayValue('Trip')).toBeInTheDocument()
 })
 
+it('records an incoming transaction as a payback from the members picked', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  const member = (id: string, name: string, is_self = false) => ({ id, name, is_self })
+  const trip = { id: 'g1', name: 'Trip', is_owner: true, members: [member('m-me', 'Me', true), member('m-jara', 'Jara'), member('m-alatz', 'Alatz')] }
+  vi.spyOn(groups, 'list').mockResolvedValue([trip] as never)
+  vi.spyOn(groups, 'get').mockResolvedValue(trip as never)
+  const onSave = vi.fn()
+  const { user } = renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture('unused', {
+        id: 'tx-in', type: 'credit', amount: 66.01, source: 'sync', transfer_pair_id: null,
+      })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      onSave={onSave}
+      loading={false}
+      error={null}
+      isSynced
+    />,
+  )
+
+  await user.click(screen.getByRole('checkbox', { name: t('splitGroups.splitTransaction') }))
+  await user.selectOptions(await screen.findByDisplayValue(t('splitGroups.shareEqual')), 'settlement')
+  await user.click(await screen.findByRole('checkbox', { name: 'Jara' }))
+  await user.click(screen.getByRole('checkbox', { name: 'Alatz' }))
+  // You receive the payback, so you are not offered as a payer.
+  expect(screen.queryByText('Me')).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+  await vi.waitFor(() => expect(onSave).toHaveBeenCalled())
+  // The payback goes with the transaction's own save, like splits.
+  expect(onSave.mock.calls[0][0].payback).toEqual({
+    group_id: 'g1',
+    to_member_id: 'm-me',
+    payers: [{ member_id: 'm-jara', amount: 33.01 }, { member_id: 'm-alatz', amount: 33 }],
+  })
+  expect(onSave.mock.calls[0][0]).not.toHaveProperty('splits')
+})
+
+it('reopens a payback with its payers, and replaces it only when it changes', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  const trip = { id: 'g1', name: 'Trip', is_owner: true, members: [{ id: 'm-me', name: 'Me', is_self: true }, { id: 'm-jara', name: 'Jara', is_self: false }] }
+  vi.spyOn(groups, 'list').mockResolvedValue([trip] as never)
+  vi.spyOn(groups, 'get').mockResolvedValue(trip as never)
+  const onSave = vi.fn()
+  const { user } = renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture('unused', {
+        id: 'tx-in', type: 'credit', amount: 20, source: 'sync', transfer_pair_id: null,
+        settled_by: [{ id: 'set-1', group_id: 'g1', from_member_id: 'm-jara', amount: 20 }],
+      })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      onSave={onSave}
+      loading={false}
+      error={null}
+    />,
+  )
+
+  expect(screen.getByRole('checkbox', { name: t('splitGroups.splitTransaction') })).toBeChecked()
+  expect(await screen.findByRole('checkbox', { name: 'Jara' })).toBeChecked()
+  expect(screen.getByDisplayValue(t('splitGroups.shareSettlement'))).toBeInTheDocument()
+  // Saving it unchanged leaves the settlement as it is.
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+  await vi.waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+  expect(onSave.mock.calls[0][0]).not.toHaveProperty('payback')
+
+  // Turning it off removes the settlement; the transaction stays.
+  await user.click(screen.getByRole('checkbox', { name: t('splitGroups.splitTransaction') }))
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+  await vi.waitFor(() => expect(onSave).toHaveBeenCalledTimes(2))
+  expect(onSave.mock.calls[1][0].payback).toEqual({ payers: [] })
+})
+
+it('leaves the payback of a credit a settlement created alone when it is saved', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  const onSave = vi.fn()
+  const { user } = renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture('unused', {
+        id: 'tx-acerto', type: 'credit', amount: 20, source: 'settlement', transfer_pair_id: null,
+        settled_by: [{ id: 'set-1', group_id: 'g1', from_member_id: 'm-jara', amount: 20 }],
+      })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      onSave={onSave}
+      loading={false}
+      error={null}
+    />,
+  )
+
+  // The split section doesn't show for it, so saving must not read that as a removal.
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+  await vi.waitFor(() => expect(onSave).toHaveBeenCalled())
+  expect(onSave.mock.calls[0][0]).not.toHaveProperty('payback')
+})
+
 function splitFixture(): Transaction {
   const food = { id: 'cat-food', name: 'Food', icon: 'utensils', color: '#f59e0b' }
   const home = { id: 'cat-home', name: 'Home', icon: 'house', color: '#3b82f6' }
@@ -703,6 +825,122 @@ describe('TransactionDialog reporting date override', () => {
   })
 })
 
+describe('TransactionDialog save and next', () => {
+  function renderEdit(hasNext: boolean, loading = false) {
+    vi.spyOn(currencies, 'list').mockResolvedValue([])
+    vi.spyOn(payees, 'list').mockResolvedValue([])
+    vi.spyOn(groups, 'list').mockResolvedValue([])
+    const onSave = vi.fn()
+    const utils = renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={syncedTransaction()}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={onSave}
+        loading={loading}
+        error={null}
+        isSynced
+        hasNext={hasNext}
+      />,
+    )
+    return { ...utils, onSave }
+  }
+
+  it('saves with the saveAndNext action when the host has a next row', async () => {
+    const { onSave, user } = renderEdit(true)
+
+    await user.click(screen.getByRole('button', { name: t('transactions.saveAndNext') }))
+
+    expect(onSave).toHaveBeenCalledOnce()
+    expect(onSave.mock.calls[0][4]).toBe('saveAndNext')
+  })
+
+  it('keeps a plain save next to it', async () => {
+    const { onSave, user } = renderEdit(true)
+
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave.mock.calls[0][4]).toBe('save')
+  })
+
+  it('drops the previous transaction preview when the next one loads', async () => {
+    const { user, rerender } = renderEdit(true)
+
+    await user.click(screen.getByRole('button', { name: 'Preview receipt' }))
+    expect(screen.getAllByText('receipt-a.png').length).toBeGreaterThan(0)
+
+    rerender(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={syncedTransaction({ id: 'tx-next' })}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={vi.fn()}
+        loading={false}
+        error={null}
+        isSynced
+        hasNext={false}
+      />,
+    )
+
+    expect(screen.queryByText('receipt-a.png')).not.toBeInTheDocument()
+  })
+
+  it('ignores Enter while the host is still busy', async () => {
+    const { onSave, user } = renderEdit(true, true)
+
+    await user.type(screen.getByLabelText(t('transactions.description')), '{Enter}')
+
+    expect(onSave).not.toHaveBeenCalled()
+  })
+
+  it('offers no save and next without a next row', () => {
+    renderEdit(false)
+
+    expect(screen.queryByRole('button', { name: t('transactions.saveAndNext') })).not.toBeInTheDocument()
+  })
+})
+
+describe('TransactionDialog scroll region gutter (#458)', () => {
+  function renderWithScrollbar(scrollbarPx: number) {
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(600)
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(600 - scrollbarPx)
+    vi.spyOn(currencies, 'list').mockResolvedValue([])
+    vi.spyOn(payees, 'list').mockResolvedValue([])
+    vi.spyOn(groups, 'list').mockResolvedValue([])
+    renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={syncedTransaction()}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={vi.fn()}
+        loading={false}
+        error={null}
+        isSynced
+      />,
+    )
+    return screen.getByTestId('transaction-form-scroll')
+  }
+
+  it('gives the whole end padding back when the scrollbar overlays the content', () => {
+    const region = renderWithScrollbar(0)
+    expect(region.style.getPropertyValue('--scrollbar-w')).toBe('0px')
+  })
+
+  it('leaves room for a classic scrollbar inside the padding', () => {
+    const region = renderWithScrollbar(11)
+    expect(region.style.getPropertyValue('--scrollbar-w')).toBe('11px')
+  })
+})
+
 /** Shows the flag state a mounted list query holds, as a page would. */
 function FlagConsumer({ queryKey, read }: { queryKey: string[]; read: () => Promise<Transaction> }) {
   const { data } = useQuery({ queryKey, queryFn: read })
@@ -750,9 +988,11 @@ describe('TransactionDialog flag (#56)', () => {
     expect(transactions.update).toHaveBeenCalledWith(tx.id, { is_flagged: true })
     expect(await screen.findByText('transactions: flagged')).toBeInTheDocument()
     expect(await screen.findByText('drill-down: flagged')).toBeInTheDocument()
+    // The label already says what a press does now; aria-pressed on top would
+    // read as "Unflag, pressed" (#458).
     expect(
       await screen.findByRole('button', { name: t('transactions.unflagAction') }),
-    ).toBeInTheDocument()
+    ).not.toHaveAttribute('aria-pressed')
   })
 
   it('sets a reminder date and note on the flag, each saved on its own', async () => {
@@ -818,5 +1058,346 @@ describe('TransactionDialog flag (#56)', () => {
     await user.click(screen.getByRole('button', { name: t('transactions.unflagAction') }))
 
     await waitFor(() => expect(screen.queryByTestId('flag-reminder')).not.toBeInTheDocument())
+  })
+})
+
+describe('TransactionDialog paid mark (#15)', () => {
+  it('marks the row paid from the footer, without saving the form', async () => {
+    const tx = syncedTransaction({ is_paid: false })
+    let stored = tx
+    vi.spyOn(transactions, 'update').mockImplementation(async (_id, body) => {
+      stored = { ...stored, is_paid: body.is_paid ?? stored.is_paid }
+      return stored
+    })
+    vi.spyOn(currencies, 'list').mockResolvedValue([])
+    vi.spyOn(payees, 'list').mockResolvedValue([])
+    vi.spyOn(groups, 'list').mockResolvedValue([])
+    const onSave = vi.fn()
+    const { user } = renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={tx}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={onSave}
+        loading={false}
+        error={null}
+        isSynced
+      />,
+    )
+
+    await user.click(await screen.findByRole('button', { name: t('transactions.markPaid') }))
+
+    expect(transactions.update).toHaveBeenCalledWith(tx.id, { is_paid: true })
+    expect(
+      await screen.findByRole('button', { name: t('transactions.markUnpaid') }),
+    ).toBeInTheDocument()
+    // The mark is its own save: the dialog form never goes out with it.
+    expect(onSave).not.toHaveBeenCalled()
+  })
+})
+
+it('shows the bank’s own category when the provider sent one', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture(null, {
+        source: 'sync',
+        provider_category: 'Groceries',
+      })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+      isSynced
+    />,
+  )
+
+  expect(
+    await screen.findByText(`${t('transactions.providerCategory')}: Groceries`),
+  ).toBeInTheDocument()
+})
+
+it('names the existing-rule picker after the field and the chosen rule', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  const groceriesRule: Rule = {
+    id: 'rule-groceries',
+    user_id: 'synthetic-user',
+    name: 'Groceries rule',
+    conditions_op: 'and',
+    conditions: [{ field: 'description', op: 'contains', value: 'market' }],
+    actions: [{ op: 'set_category', value: 'cat-food' }],
+    priority: 0,
+    is_active: true,
+  }
+  vi.spyOn(rules, 'list').mockResolvedValue([groceriesRule])
+  vi.spyOn(categories, 'listIncludingHidden').mockResolvedValue([])
+  vi.spyOn(categoryGroups, 'listIncludingHidden').mockResolvedValue([])
+
+  const { user } = renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture(null, {
+        id: 'tx-rule-source',
+        description: 'Market run',
+      })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      onCreateRule={vi.fn()}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+    />,
+  )
+
+  await user.click(await screen.findByRole('button', { name: t('transactions.ruleActions') }))
+  await user.click(await screen.findByRole('menuitem', { name: t('transactions.addToExistingRule') }))
+
+  // A <label for> naming a <button> does not name it, so the button carries the
+  // label and the selected rule: losing either leaves the field unannounced.
+  expect(await screen.findByRole('button', {
+    name: `${t('transactions.existingRule')} ${groceriesRule.name}`,
+  })).toBeInTheDocument()
+})
+
+describe('TransactionDialog conversion of an existing row (#440)', () => {
+  // Another member's row comes converted to this viewer's currency; the
+  // dialog must not send that figure back unless the user changed it.
+  function renderForeignRow() {
+    vi.spyOn(currencies, 'list').mockResolvedValue([])
+    vi.spyOn(payees, 'list').mockResolvedValue([])
+    vi.spyOn(groups, 'list').mockResolvedValue([])
+    const onSave = vi.fn()
+    const rendered = renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={transferLegFixture(null, {
+          id: 'tx-440',
+          description: 'Groceries',
+          amount: 300,
+          currency: 'BRL',
+          source: 'manual',
+          amount_primary: 62.4,
+          fx_rate_used: 0.208,
+        })}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={onSave}
+        loading={false}
+        error={null}
+      />,
+    )
+    return { ...rendered, onSave }
+  }
+
+  it('leaves an untouched conversion out of the save', async () => {
+    const { user, onSave } = renderForeignRow()
+
+    await user.type(screen.getByLabelText(t('transactions.description')), ' renamed')
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    const payload = onSave.mock.calls[0][0]
+    expect(payload).toMatchObject({ description: 'Groceries renamed' })
+    expect(payload).not.toHaveProperty('amount_primary')
+    expect(payload).not.toHaveProperty('fx_rate_used')
+  })
+
+  it('sends a conversion the user typed', async () => {
+    const { user, onSave } = renderForeignRow()
+
+    const converted = screen.getByLabelText(t('transactions.convertedAmount', { currency: 'USD' }))
+    await user.clear(converted)
+    await user.type(converted, '66')
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave.mock.calls[0][0]).toMatchObject({ amount_primary: 66 })
+  })
+})
+
+describe('TransactionDialog moving only the date of a conversion (#481)', () => {
+  // The conversion fields come filled with the row's own figure, so a save
+  // that did not touch them must not send them: the server read them as a
+  // typed figure and froze the old day's rate.
+  function renderRow(fxTyped = true) {
+    vi.spyOn(currencies, 'list').mockResolvedValue([])
+    vi.spyOn(payees, 'list').mockResolvedValue([])
+    vi.spyOn(groups, 'list').mockResolvedValue([])
+    const onSave = vi.fn()
+    const rendered = renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={transferLegFixture(null, {
+          id: 'tx-481',
+          description: 'Market run',
+          amount: 300,
+          currency: 'BRL',
+          source: 'manual',
+          date: '2026-11-20',
+          amount_primary: 62.4,
+          fx_rate_used: 0.208,
+          fx_typed: fxTyped,
+        })}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={onSave}
+        loading={false}
+        error={null}
+      />,
+    )
+    return { ...rendered, onSave }
+  }
+
+  it('leaves the conversion out so the new date sets the rate', async () => {
+    const { user, onSave } = renderRow()
+
+    fireEvent.change(screen.getByLabelText('date'), { target: { value: '2026-10-15' } })
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    const payload = onSave.mock.calls[0][0]
+    expect(payload).toMatchObject({ date: '2026-10-15' })
+    expect(payload).not.toHaveProperty('amount_primary')
+    expect(payload).not.toHaveProperty('fx_rate_used')
+  })
+
+  it('sends a conversion typed together with the new date', async () => {
+    const { user, onSave } = renderRow()
+
+    fireEvent.change(screen.getByLabelText('date'), { target: { value: '2026-10-15' } })
+    const converted = screen.getByLabelText(t('transactions.convertedAmount', { currency: 'USD' }))
+    await user.clear(converted)
+    await user.type(converted, '66')
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave.mock.calls[0][0]).toMatchObject({ date: '2026-10-15', amount_primary: 66 })
+  })
+
+  it('sends the conversion it shows when only the amount changes (#482)', async () => {
+    const { user, onSave } = renderRow()
+
+    const amount = screen.getByLabelText(t('transactions.amount'))
+    await user.clear(amount)
+    await user.type(amount, '400')
+    const converted = screen.getByLabelText(t('transactions.convertedAmount', { currency: 'USD' }))
+    expect(converted).toHaveValue('83.2')
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave.mock.calls[0][0]).toMatchObject({
+      amount: 400,
+      amount_primary: 83.2,
+      fx_rate_used: 0.208,
+    })
+  })
+
+  // A conversion that came from a rate is not the owner's figure: it follows
+  // the date and the amount, so the server works it out again (#483).
+  it('lets a derived conversion follow a new date and amount', async () => {
+    const { user, onSave } = renderRow(false)
+
+    fireEvent.change(screen.getByLabelText('date'), { target: { value: '2026-10-15' } })
+    const amount = screen.getByLabelText(t('transactions.amount'))
+    await user.clear(amount)
+    await user.type(amount, '600')
+    // The old day's rate says nothing about the new date.
+    expect(screen.getByLabelText(t('transactions.convertedAmount', { currency: 'USD' }))).toHaveValue('')
+    expect(screen.getByLabelText(t('transactions.exchangeRate'))).toHaveValue('')
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    const payload = onSave.mock.calls[0][0]
+    expect(payload).toMatchObject({ date: '2026-10-15', amount: 600 })
+    expect(payload).not.toHaveProperty('amount_primary')
+    expect(payload).not.toHaveProperty('fx_rate_used')
+  })
+
+  it('keeps a derived conversion derived when only the amount changes', async () => {
+    const { user, onSave } = renderRow(false)
+
+    const amount = screen.getByLabelText(t('transactions.amount'))
+    await user.clear(amount)
+    await user.type(amount, '400')
+    // Same day, same rate: the figure shown is the one the server derives.
+    expect(screen.getByLabelText(t('transactions.convertedAmount', { currency: 'USD' }))).toHaveValue('83.2')
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    const payload = onSave.mock.calls[0][0]
+    expect(payload).toMatchObject({ amount: 400 })
+    expect(payload).not.toHaveProperty('amount_primary')
+    expect(payload).not.toHaveProperty('fx_rate_used')
+  })
+
+  it('sends a rate typed on a derived row with a new date', async () => {
+    const { user, onSave } = renderRow(false)
+
+    fireEvent.change(screen.getByLabelText('date'), { target: { value: '2026-10-15' } })
+    await user.type(screen.getByLabelText(t('transactions.exchangeRate')), '0.25')
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave.mock.calls[0][0]).toMatchObject({
+      date: '2026-10-15',
+      amount_primary: 75,
+      fx_rate_used: 0.25,
+    })
+  })
+})
+
+describe('TransactionDialog duplicate draft conversion (#481)', () => {
+  // A duplicate opens as a new row seeded from the previous payload, so the
+  // conversion fields already hold the figures the user chose to copy: the
+  // save must carry them instead of letting the server derive them again.
+  function renderDuplicate() {
+    vi.spyOn(currencies, 'list').mockResolvedValue([])
+    vi.spyOn(payees, 'list').mockResolvedValue([])
+    vi.spyOn(groups, 'list').mockResolvedValue([])
+    const onSave = vi.fn()
+    const rendered = renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={null}
+        duplicateDraft={{
+          account_id: 'acc-z',
+          description: 'Market run',
+          amount: 300,
+          currency: 'BRL',
+          date: '2026-11-20',
+          amount_primary: 62.4,
+          fx_rate_used: 0.208,
+        }}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={onSave}
+        loading={false}
+        error={null}
+      />,
+    )
+    return { ...rendered, onSave }
+  }
+
+  it('saves the conversion the duplicate carries', async () => {
+    const { user, onSave } = renderDuplicate()
+
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave.mock.calls[0][0]).toMatchObject({
+      amount: 300,
+      amount_primary: 62.4,
+      fx_rate_used: 0.208,
+    })
   })
 })

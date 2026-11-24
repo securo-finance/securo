@@ -60,7 +60,8 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.17"
+          # renovate: datasource=pypi depName=uv
+          version: "0.13.0"
           enable-cache: true
           cache-dependency-glob: |
             backend/uv.lock
@@ -122,7 +123,8 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.17"
+          # renovate: datasource=pypi depName=uv
+          version: "0.13.0"
           enable-cache: true
           cache-dependency-glob: |
             backend/uv.lock
@@ -208,7 +210,8 @@ jobs:
         if: needs.backend-changes.outputs.run_backend != 'false'
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.17"
+          # renovate: datasource=pypi depName=uv
+          version: "0.13.0"
           enable-cache: true
           cache-dependency-glob: |
             backend/uv.lock
@@ -301,6 +304,21 @@ jobs:
       - name: Check the paths AGENTS.md and the ADRs cite
         run: python3 .github/ci/check_doc_paths.py
 
+  installer:
+    name: Installer Script
+    runs-on: ubuntu-latest
+
+    steps:
+      # The installer is the first thing someone self-hosting runs, and the
+      # paths it takes on a second run only show up against a real folder. The
+      # test drives it with stub docker, curl and git, so it needs no daemon.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Test the installer
+        run: python3 .github/ci/test_install_sh.py
+
   frontend-checks:
     name: Frontend Checks
     runs-on: ubuntu-latest
@@ -381,3 +399,45 @@ jobs:
           sudo mv kubeconform /usr/local/bin/
 
           helm template securo-test charts/securo | kubeconform -summary -strict
+
+      # The default values keep the MCP server off, so the render above never
+      # reaches its Deployment. Render it with values for an external
+      # PostgreSQL behind a TLS client certificate and check the four extras
+      # reach the pod: a renamed values key would otherwise be silently ignored.
+      - name: Check the MCP server pod takes the extra settings
+        if: steps.helm-changes.outputs.run_helm != 'false'
+        run: |
+          helm template securo-test charts/securo \
+            --show-only templates/mcp-server/deployment.yaml \
+            --set mcpServer.enabled=true \
+            --set config.agentsEnabled=true \
+            --set-json 'mcpServer.extraEnv=[{"name":"PGSSLMODE","value":"verify-full"}]' \
+            --set-json 'mcpServer.extraEnvFrom=[{"secretRef":{"name":"mcp-extra-env"}}]' \
+            --set-json 'mcpServer.extraVolumes=[{"name":"pg-client-tls","secret":{"secretName":"pg-client-tls"}}]' \
+            --set-json 'mcpServer.extraVolumeMounts=[{"name":"pg-client-tls","mountPath":"/etc/pg-tls","readOnly":true}]' \
+            > mcp-server.yaml
+          grep -q 'name: PGSSLMODE' mcp-server.yaml
+          grep -q 'name: mcp-extra-env' mcp-server.yaml
+          grep -q 'mountPath: /etc/pg-tls' mcp-server.yaml
+          grep -q 'secretName: pg-client-tls' mcp-server.yaml
+          kubeconform -summary -strict mcp-server.yaml
+
+      # Helm runs post-install/post-upgrade hooks only after the new pods are
+      # ready, so a hooked migration Job let new code serve the old schema.
+      # Check the Job is a plain resource and every pod that runs the backend
+      # image waits for the schema before it starts.
+      - name: Check the pods wait for the migration
+        if: steps.helm-changes.outputs.run_helm != 'false'
+        run: |
+          helm template securo-test charts/securo \
+            --show-only templates/backend/job-migration.yaml > migration-job.yaml
+          if grep -q 'helm.sh/hook' migration-job.yaml; then
+            echo "The migration Job must not be a Helm hook"; exit 1
+          fi
+          for t in backend worker beat mcp-server; do
+            helm template securo-test charts/securo \
+              --show-only "templates/$t/deployment.yaml" \
+              --set mcpServer.enabled=true \
+              --set config.agentsEnabled=true > "$t.yaml"
+            grep -q 'name: wait-for-schema' "$t.yaml" || { echo "$t does not wait for the schema"; exit 1; }
+          done

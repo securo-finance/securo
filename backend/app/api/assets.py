@@ -314,12 +314,12 @@ async def preview_asset_import(
             detail="Market data provider is currently rate-limiting. Try again in a minute.",
         )
 
-    # The dry run rejects rows the parser could not know about — an unknown
-    # ticker, a sell with nothing to sell. Drop those from the list too, so the
-    # table, the count and the button all describe the same import.
-    rejected = {e.row for e in summary["errors"]}
+    # The dry run leaves out the rows it rejects (an unknown ticker, a sell
+    # with nothing to sell) and the ones already in the ledger, and hands back
+    # what each kept row is worth in its own currency, so the table, the count
+    # and the button all describe the same import.
     return AssetImportPreview(
-        orders=[o for o in orders if o.row not in rejected],
+        orders=summary["orders"],
         errors=errors + summary["errors"],
         warnings=summary["warnings"],
         csv_columns=columns,
