@@ -259,10 +259,12 @@ export default function RulesPage() {
     mutationFn: () => connectionsApi.detectTransfers(),
     onSuccess: (data) => {
       invalidateFinancialQueries(queryClient)
-      // The scan also files a question for every pair it was not sure about,
-      // so the queue and its count on the tab are stale even when no pair
-      // was created and the toast says nothing was found. Each pair it does
-      // link lands in the history for the same reason.
+      // The scan files a question for every pair it was not sure about, and
+      // each question writes a "suggested" event to the history. So the
+      // queue, its count on the tab and the history are stale even when no
+      // pair was linked and the toast says nothing was found. Linking a pair
+      // writes only the pair id on the two rows, which is what the money
+      // views above are invalidated for.
       queryClient.invalidateQueries({ queryKey: ['reconciliation-suggestions'] })
       queryClient.invalidateQueries({ queryKey: ['reconciliation-history'] })
       if (data.pairs_created > 0) {
