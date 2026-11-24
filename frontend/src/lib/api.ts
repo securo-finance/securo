@@ -654,6 +654,15 @@ export const mortgagePayments = {
 }
 
 // Transactions
+// Both legs of a transfer response carry Pocket allocations with string amounts.
+function normalizeTransferLegs<T extends { debit: Transaction; credit: Transaction }>(data: T): T {
+  return {
+    ...data,
+    debit: normalizeTransactionGoalAllocations(data.debit),
+    credit: normalizeTransactionGoalAllocations(data.credit),
+  }
+}
+
 export const transactions = {
   list: async (params?: {
     account_id?: string
@@ -774,11 +783,7 @@ export const transactions = {
     to_goal_allocations?: GoalAllocationInput[]
   }): Promise<{ debit: Transaction; credit: Transaction; transfer_pair_id: string }> => {
     const { data } = await api.post('/transactions/transfer', transfer)
-    return {
-      ...data,
-      debit: normalizeTransactionGoalAllocations(data.debit),
-      credit: normalizeTransactionGoalAllocations(data.credit),
-    }
+    return normalizeTransferLegs(data)
   },
   bulkCategorize: async (transactionIds: string[], categoryId: string | null): Promise<{ updated: number; skipped_split?: number }> => {
     const { data } = await api.patch('/transactions/bulk-categorize', {
@@ -843,7 +848,7 @@ export const transactions = {
     const { data } = await api.post('/transactions/link-transfer', {
       transaction_ids: transactionIds,
     })
-    return data
+    return normalizeTransferLegs(data)
   },
   createTransferCounterpart: async (
     transactionId: string,
@@ -852,15 +857,15 @@ export const transactions = {
     const { data } = await api.post(`/transactions/${transactionId}/create-counterpart`, {
       to_account_id: toAccountId,
     })
-    return data
+    return normalizeTransferLegs(data)
   },
   transferCandidates: async (transactionId: string, params?: { limit?: number; window_days?: number }): Promise<Transaction[]> => {
     const { data } = await api.get(`/transactions/${transactionId}/transfer-candidates`, { params })
-    return data
+    return (data as Transaction[]).map(normalizeTransactionGoalAllocations)
   },
   transferPair: async (transactionId: string): Promise<Transaction | null> => {
     const { data } = await api.get(`/transactions/${transactionId}/transfer-pair`)
-    return data
+    return data ? normalizeTransactionGoalAllocations(data) : null
   },
   unlinkTransfer: async (pairId: string): Promise<void> => {
     await api.delete(`/connections/transfers/${pairId}`)
