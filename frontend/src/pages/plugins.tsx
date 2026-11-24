@@ -36,12 +36,12 @@ import { cn } from '@/lib/utils'
 import type { PluginAction, PluginCatalogEntry } from '@/types'
 
 type View = 'all' | 'trending' | 'new'
-type FacetKey = 'type' | 'kind' | 'locale' | 'status' | 'workspace'
+export type FacetKey = 'type' | 'kind' | 'locale' | 'status' | 'workspace'
 
 const SORTS: PluginSort[] = ['popular', 'trending', 'updated', 'newest', 'name']
 const STATUSES = ['installed', 'updates'] as const
 
-interface Facet {
+export interface Facet {
   key: FacetKey
   title: string
   options: { value: string; label: string; count: number }[]
@@ -343,19 +343,23 @@ function FacetList({ facet, value, onChoose }: { facet: Facet; value: string | n
   )
 }
 
-/** Below `lg` the facets sit in one wrapping row of selects instead of a sidebar. */
-function FacetSelect({ facet, value, onChoose }: { facet: Facet; value: string | null; onChoose: (key: FacetKey, value: string | null) => void }) {
+/**
+ * Below `lg` the facets sit in one wrapping row of selects instead of a sidebar.
+ *
+ * It shows the chosen label through `SelectValue`, not a bare span: the
+ * trigger's value node is what Radix measures to place the menu, and without
+ * it the menu stayed unanchored below the page.
+ */
+export function FacetSelect({ facet, value, onChoose }: { facet: Facet; value: string | null; onChoose: (key: FacetKey, value: string | null) => void }) {
   const { t } = useTranslation()
   return (
     <Select value={value ?? 'any'} onValueChange={(next) => onChoose(facet.key, next === 'any' ? null : next)}>
       <SelectTrigger
         size="sm"
         aria-label={facet.title}
-        className={cn('h-8 w-auto shrink-0 rounded-full text-sm', value && 'border-foreground/30 bg-accent dark:bg-accent')}
+        className={cn('h-8 w-auto shrink-0 rounded-full text-sm', !value && 'text-muted-foreground', value && 'border-foreground/30 bg-accent dark:bg-accent')}
       >
-        <span className={cn(!value && 'text-muted-foreground')}>
-          {value ? facet.options.find((option) => option.value === value)?.label : facet.title}
-        </span>
+        <SelectValue>{value ? facet.options.find((option) => option.value === value)?.label : facet.title}</SelectValue>
       </SelectTrigger>
       <SelectContent>
         <SelectItem value="any">{t('plugins.page.any')}</SelectItem>
