@@ -281,6 +281,7 @@ async def list_transactions(
     include_running_balance: bool = Query(False, description="Fill running_balance per row (issue #1202): one account, `from` set, include_opening_balance, default order, and no filter beyond a credit card's statement window (`bill_id`/`unbilled_only`); null otherwise"),
     exclude_transfers: bool = Query(False),
     user_pnl_only: bool = Query(False, description="Return only rows that count toward dashboard/user income/expense totals"),
+    workspace_only: bool = Query(False, description="Only rows of this workspace: drop the viewer's shares of group expenses that live in another workspace (queue views, #469)"),
     exclude_ignored: bool = Query(False, description="Drop rows the user marked ignored, or whose category is ignored"),
     flagged: bool = Query(False, description="Return only rows the user flagged"),
     unpaid_only: bool = Query(False, description="Return only rows not yet marked as paid (issue #15)"),
@@ -324,6 +325,7 @@ async def list_transactions(
         include_summary=True,
         include_running_balance=include_running_balance,
         primary_currency=ctx.user.primary_currency,
+        workspace_only=workspace_only,
     )
     primary_currency = ctx.user.primary_currency
     items = await _read_all_in_viewer_currency(session, primary_currency, transactions)

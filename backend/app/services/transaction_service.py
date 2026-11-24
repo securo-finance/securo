@@ -347,6 +347,7 @@ async def get_transactions(
     unread_only: bool = False,
     include_running_balance: bool = False,
     primary_currency: Optional[str] = None,
+    workspace_only: bool = False,
 ) -> tuple[list[Transaction], int, Optional[dict]]:
     """List transactions for a workspace.
 
@@ -358,6 +359,12 @@ async def get_transactions(
     currency other than `primary_currency`, `running_balance_primary`) when the
     list is one account's ledger from `from_date` in the default order, a
     credit card's statement window included; see `_running_balance_account`.
+
+    `workspace_only` drops the viewer's shares of group expenses that live in
+    another workspace, which the default scope adds. A queue the viewer clears
+    from this workspace asks for it: the write that would clear the row is
+    scoped to this workspace, so a shared row from another one stays pending
+    forever (the unread queue and the dashboard's categorize counter, #469).
     """
     # In "accrual" mode, bucket/order by effective_date so list filters
     # line up with the cash-flow view used by the dashboard and reports.
@@ -424,6 +431,11 @@ async def get_transactions(
             Transaction.id.in_(tx_ids_subq),
             in_bound_workspace(Transaction.workspace_id),
         )
+    elif workspace_only:
+        # A queue view of this workspace's own rows. Kept instead of the
+        # generic scope so a caller that means "rows I can act on here" does
+        # not pick up shares of another workspace's rows (#469).
+        base_query = base_query.where(Transaction.workspace_id == workspace_id)
     else:
         # Default scope: transactions in this workspace PLUS cross-workspace
         # shares the viewer participates in. The union surfaces the

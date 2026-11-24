@@ -879,6 +879,8 @@
     "savingsRateCaption": "des Einkommens diesen Monat gespart",
     "spendingProjection": "Bei diesem Tempo wirst du bis Ende des Monats {{amount}} ausgeben",
     "uncategorizedCta": "{{count}} Transaktionen müssen kategorisiert werden",
+    "uncategorizedCta_one": "{{count}} Transaktion muss kategorisiert werden",
+    "uncategorizedCta_other": "{{count}} Transaktionen müssen kategorisiert werden",
     "uncategorizedTotal": "{{amount}} insgesamt",
     "categorizeNow": "Jetzt kategorisieren",
     "drillDownQuickCategorize": "Kategorie wählen",

@@ -27,6 +27,10 @@ export type DrillDownFilter = {
   // other workspaces: their categories live there, so reports count them
   // as uncategorized here.
   sharedAsUncategorized?: boolean
+  // Leave out the viewer's shares of expenses from other workspaces. A queue
+  // the viewer clears from this workspace sets it: the write that would clear
+  // such a row belongs to its own workspace, so it would stay pending here.
+  workspaceOnly?: boolean
   account_id?: string
   // Scope to a set of accounts (e.g. the active collection's accounts).
   account_ids?: string[]
@@ -125,6 +129,7 @@ export function TransactionDrillDown({
         category_ids: filter?.category_ids,
         uncategorized: filter?.uncategorized,
         shared_as_uncategorized: filter?.sharedAsUncategorized,
+        workspace_only: filter?.workspaceOnly,
         account_id: filter?.account_id,
         account_ids: filter?.account_ids,
         type: filter?.type,

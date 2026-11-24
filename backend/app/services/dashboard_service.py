@@ -576,14 +576,26 @@ async def get_summary(
         *acct_filter,
     ]
     # The rows are in different currencies, so the total is read in the
-    # viewer's display currency (#462), with the rule the list behind the
-    # counter adds it up with: a row in their own currency counts its
-    # amount, any other row counts its primary stamp converted at the row's
-    # date, and a row left without a stamp counts nothing, as the
-    # drill-down skips it instead of taking a foreign amount as theirs.
-    pending_amount = case(
-        (Transaction.currency == viewer.currency, func.abs(Transaction.amount)),
-        else_=func.abs(viewer.amount()),
+    # viewer's display currency (#462) through the same expression the rest
+    # of the app totals a row's value with: its primary stamp, converted at
+    # the row's date when another owner stamped it. Reading the stamp even
+    # for a row already in the viewer's currency is what keeps a typed
+    # conversion (ADR 0031) on the figure the user typed instead of the
+    # account charge (#467). A row with no stamp counts its own amount when
+    # it is already in the viewer's currency, and counts nothing when it is
+    # foreign, as the drill-down skips it instead of taking another
+    # currency's figure as theirs. The codes are compared upper-cased, like
+    # `amount_in_account_currency`: imports store whatever case they got.
+    pending_amount = func.abs(
+        func.coalesce(
+            viewer.amount(),
+            case(
+                (
+                    func.upper(Transaction.currency) == viewer.currency.upper(),
+                    Transaction.amount,
+                ),
+            ),
+        )
     )
     pending_categorization_result = await session.execute(
         select(
