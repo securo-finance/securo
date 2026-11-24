@@ -123,13 +123,20 @@ describe('LinkTickerDialog', () => {
     let serverValue = 308
     const listAssets = vi.fn(async () => [{ id: 'asset-1', current_value: serverValue }])
     const portfolioTrend = vi.fn(async () => ({ total: serverValue }))
+    const assetTrend = vi.fn(async () => ({ last: serverValue }))
+    const dashboard = vi.fn(async () => ({ assets: serverValue }))
     function AssetViews() {
       const list = useQuery({ queryKey: ['assets'], queryFn: listAssets })
       const trend = useQuery({ queryKey: ['portfolio-trend'], queryFn: portfolioTrend })
+      // An expanded holding's chart and the dashboard show it too.
+      const holdingTrend = useQuery({ queryKey: ['asset-trend', 'asset-1'], queryFn: assetTrend })
+      const summary = useQuery({ queryKey: ['dashboard', 'summary'], queryFn: dashboard })
       return (
         <>
           <p>holding {list.data?.[0].current_value ?? '…'}</p>
           <p>portfolio {trend.data?.total ?? '…'}</p>
+          <p>holding chart {holdingTrend.data?.last ?? '…'}</p>
+          <p>dashboard {summary.data?.assets ?? '…'}</p>
         </>
       )
     }
@@ -146,12 +153,16 @@ describe('LinkTickerDialog', () => {
     )
     expect(await screen.findByText('holding 308')).toBeInTheDocument()
     expect(await screen.findByText('portfolio 308')).toBeInTheDocument()
+    expect(await screen.findByText('holding chart 308')).toBeInTheDocument()
+    expect(await screen.findByText('dashboard 308')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: t('assets.linkTickerUnlink') }))
 
     await waitFor(() => expect(unlinkTicker).toHaveBeenCalledWith('asset-1'))
     expect(await screen.findByText('holding 300')).toBeInTheDocument()
     expect(await screen.findByText('portfolio 300')).toBeInTheDocument()
+    expect(await screen.findByText('holding chart 300')).toBeInTheDocument()
+    expect(await screen.findByText('dashboard 300')).toBeInTheDocument()
     await waitFor(() => expect(onClose).toHaveBeenCalled())
     expect(toastSuccess).toHaveBeenCalledWith(t('assets.linkTickerUnlinked'))
     expect(linkTicker).not.toHaveBeenCalled()

@@ -62,11 +62,14 @@ export function LinkTickerDialog({ asset, onClose }: { asset: Asset | null; onCl
     }
   }, [asset, query])
 
-  // The valuation changes, so the chart and total (portfolio-trend) refresh
-  // with the list, as refetchAssetViews does on the assets page.
+  // The valuation changes, so every view showing it refreshes with the list,
+  // the same set refetchAssetViews refreshes on the assets page: the
+  // portfolio chart and total, an expanded holding's chart and the dashboard.
   const refetchAssetViews = () => {
     queryClient.refetchQueries({ queryKey: ['assets'] })
     queryClient.refetchQueries({ queryKey: ['portfolio-trend'] })
+    queryClient.refetchQueries({ queryKey: ['asset-trend'] })
+    queryClient.refetchQueries({ queryKey: ['dashboard'] })
   }
 
   const mutation = useMutation({
