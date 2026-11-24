@@ -818,3 +818,53 @@ async def test_a_receipt_pdf_with_a_scanned_page_keeps_what_each_page_said():
         provider=FakeProvider([first]), model="m", kind="receipt", content=mixed_pdf(), vision="no", max_pages=5,
     )
     assert text_only.result["unread_pages"] == [2]
+
+
+# --- Categories ---------------------------------------------------------------
+
+async def test_the_model_picks_among_the_workspace_categories(
+    client, auth_headers, configured, storage, no_dispatch, session, test_workspace, test_categories,
+):
+    names = list((await extraction_service.category_choices(session, test_workspace.id)).keys())
+    assert names, "the fixture workspace has categories"
+    picked = names[0]
+
+    answer = json.loads(json.dumps(STATEMENT_ANSWER))
+    answer["transactions"][1]["category"] = picked
+    answer["transactions"][0]["category"] = "Something I made up"
+    provider = FakeProvider([answer])
+    resp = await client.post(
+        "/api/document-ai/extractions", headers=auth_headers,
+        files={"file": ("s.pdf", text_pdf(STATEMENT_LINES), "application/pdf")}, data={"kind": "statement"},
+    )
+    extraction_id = uuid.UUID(resp.json()["id"])
+    with use_provider(provider):
+        await extraction_service.run_extraction(session, extraction_id)
+
+    system = provider.calls[0][0].content or ""
+    assert f"- {picked}" in system and "never invent a category" in system
+    read = (await client.get(f"/api/document-ai/extractions/{extraction_id}", headers=auth_headers)).json()
+    rows = read["transactions"]
+    assert rows[1]["suggested_category_name"] == picked
+    # A name that is not one of the workspace's categories is dropped.
+    assert rows[0]["suggested_category_id"] is None
+
+
+async def test_a_receipt_takes_the_models_category_when_no_rule_matches(
+    client, auth_headers, configured, storage, no_dispatch, session, test_workspace, test_categories,
+):
+    choices = await extraction_service.category_choices(session, test_workspace.id)
+    picked, picked_id = next(iter(choices.items()))
+    resp = await client.post(
+        "/api/document-ai/extractions", headers=auth_headers,
+        files={"file": ("recibo.png", png_bytes(), "image/png")}, data={"kind": "receipt"},
+    )
+    extraction_id = uuid.UUID(resp.json()["id"])
+    with use_provider(FakeProvider([{**RECEIPT_ANSWER, "merchant": "Loja Sem Regra 123", "category": picked.upper()}])):
+        await extraction_service.run_extraction(session, extraction_id)
+    read = (await client.get(f"/api/document-ai/extractions/{extraction_id}", headers=auth_headers)).json()
+    assert read["suggested_category_id"] == str(picked_id)
+
+
+def test_no_categories_means_no_category():
+    assert "always use null" in document_reader._categories_instruction([])

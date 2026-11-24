@@ -197,6 +197,7 @@ async def run_extraction(session: AsyncSession, extraction_id: uuid.UUID) -> Non
             content=content,
             vision=answer.vision,
             max_pages=get_settings().document_ai_max_pages,
+            categories=list((await category_choices(session, extraction.workspace_id)).keys()),
         )
     except ReaderError as exc:
         extraction.status = "failed"
@@ -243,6 +244,10 @@ def statement_rows(extraction: DocumentExtraction) -> list[TransactionImport]:
             type="credit" if amount > 0 else "debit",
             currency=currency,
             payee_raw=row.get("payee"),
+            # The model's pick among the workspace's categories. The import
+            # applies it only when no rule categorized the row, and only if
+            # it names a category that can take entries.
+            category_name=row.get("category"),
         ))
     return rows
 
@@ -405,7 +410,8 @@ async def receipt_matches(
 async def receipt_category(
     session: AsyncSession, workspace_id: uuid.UUID, extraction: DocumentExtraction
 ) -> Optional[uuid.UUID]:
-    """A category for a new transaction: the rules first, then the hint's name."""
+    """A category for a new transaction: the rules first, then the model's
+    pick among the workspace's categories, then its one-word hint."""
     from app.services import import_service
     from app.services.category_service import get_assignable_category_ids
 
@@ -422,6 +428,12 @@ async def receipt_category(
         [enriched] = await import_service.enrich_with_category_suggestions(session, workspace_id, [probe])
         if enriched.suggested_category_id:
             return enriched.suggested_category_id
+    picked = (result.get("category") or "").strip().lower()
+    if picked:
+        choices = {_display_key(name): cid for name, cid in (await category_choices(session, workspace_id)).items()}
+        choice = choices.get(_display_key(picked))
+        if choice is not None:
+            return choice
     hint = (result.get("category_hint") or "").strip().lower()
     if not hint:
         return None
@@ -434,6 +446,33 @@ async def receipt_category(
         if category.id in assignable and (name == hint or hint in name or name in hint):
             return category.id
     return None
+
+
+def _display_key(name: str) -> str:
+    return " ".join(name.split()).lower()
+
+
+async def category_choices(session: AsyncSession, workspace_id: uuid.UUID) -> dict[str, uuid.UUID]:
+    """The categories a model may pick, by name: only those that take entries,
+    and never a name two categories share (it could not tell them apart)."""
+    from app.services.category_service import get_assignable_category_ids
+
+    assignable = await get_assignable_category_ids(session, workspace_id)
+    categories = (
+        await session.execute(select(Category).where(Category.workspace_id == workspace_id))
+    ).scalars().all()
+    by_name: dict[str, uuid.UUID] = {}
+    display: dict[str, str] = {}
+    shared: set[str] = set()
+    for category in categories:
+        if category.id not in assignable or not category.name.strip():
+            continue
+        key = _display_key(category.name)
+        if key in by_name:
+            shared.add(key)
+        by_name[key] = category.id
+        display[key] = " ".join(category.name.split())
+    return {display[k]: by_name[k] for k in sorted(by_name, key=lambda k: display[k]) if k not in shared}
 
 
 async def _require_receipt_ready(

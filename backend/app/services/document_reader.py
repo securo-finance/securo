@@ -145,7 +145,7 @@ Return one JSON object, and nothing else, with this shape:
     "closing_balance": number or null      // bank: balance after the last transaction. card: this bill's total due
   },
   "transactions": [
-    {"date": "YYYY-MM-DD", "description": string, "amount": number, "payee": string or null}
+    {"date": "YYYY-MM-DD", "description": string, "amount": number, "payee": string or null, "category": string or null}
   ]
 }
 
@@ -171,10 +171,24 @@ Return one JSON object, and nothing else, with this shape:
   "kind": "purchase" | "refund",
   "payment_method": string or null,    // e.g. "credit card", "debit card", "cash", "pix"
   "category_hint": string or null,     // one or two words for what was bought, e.g. "groceries", "fuel", "restaurant"
+  "category": string or null,          // one of the listed categories, written exactly as listed, or null
   "items": [{"description": string, "amount": number}]   // the lines, when legible; may be empty
 }
 
 Use the number exactly as printed, with a dot as the decimal separator in JSON ("1.234,56" is 1234.56). The total is the amount actually paid, after discounts and including taxes and tips. Never invent values: use null when something is not printed or not legible."""
+
+
+def _categories_instruction(categories: Optional[list[str]]) -> str:
+    """The person's own categories, for the model to pick from by name."""
+    if not categories:
+        return "\n\nThere are no categories to pick from: always use null for \"category\"."
+    listed = "\n".join(f"- {name}" for name in categories[:300])
+    return (
+        "\n\nCategories you may use for \"category\" (the person's own, in their language). "
+        "Pick the one that fits what was bought or paid, written exactly as listed. Use null when "
+        "none fits or you are unsure; never invent a category. Transfers between the person's own "
+        "accounts and card bill payments get null.\n" + listed
+    )
 
 
 # --- Parsing ---------------------------------------------------------------
@@ -310,6 +324,7 @@ def clean_statement(raw_chunks: list[dict]) -> dict:
                 "description": description,
                 "amount": str(amount),
                 "payee": _text(txn.get("payee"), 255),
+                "category": _text(txn.get("category"), 120),
             })
     kind = meta.get("kind") if meta.get("kind") in ("bank", "credit_card", "other") else "other"
     statement = {
@@ -366,6 +381,7 @@ def clean_receipt(raw: dict) -> dict:
         "kind": "refund" if raw.get("kind") == "refund" else "purchase",
         "payment_method": _text(raw.get("payment_method"), 60),
         "category_hint": _text(raw.get("category_hint"), 60),
+        "category": _text(raw.get("category"), 120),
         "items": items[:100],
     }
 
@@ -462,11 +478,13 @@ async def read_document(
     content: bytes,
     vision: Vision,
     max_pages: int,
+    categories: Optional[list[str]] = None,
 ) -> ReadOutcome:
     file_type = sniff(content)
     if file_type is None:
         raise ReaderError("unsupported_file", "Only PDF, PNG, JPEG and WebP files can be read.")
     system = _STATEMENT_PROMPT if kind == "statement" else _RECEIPT_PROMPT
+    system += _categories_instruction(categories)
     usage = Usage()
     answers: list[dict] = []
     first_page_text = ""
