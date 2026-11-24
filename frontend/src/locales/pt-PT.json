@@ -1781,7 +1781,7 @@
     "confirmResetAndReapplyAll": "Redefinir categorias, notas e descrições geridas por regras das transações correspondentes e reaplicar todas as regras ativas?",
     "scanForTransfers": "Procurar transferências",
     "scanningForTransfers": "A procurar...",
-    "confirmScanForTransfers": "Procurar em todo o histórico e emparelhar as transferências entre contas diferentes? Pode demorar um pouco num histórico grande.",
+    "confirmScanForTransfers": "Procurar em todo o histórico e emparelhar as transferências entre contas diferentes? Transferências que desfez manualmente podem voltar a ser emparelhadas. Pode demorar um pouco num histórico grande.",
     "transferScanCreated_one": "{{count}} par de transferência criado",
     "transferScanCreated_other": "{{count}} pares de transferência criados",
     "transferScanNone": "Nenhum novo par de transferência encontrado",

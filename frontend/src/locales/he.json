@@ -1795,7 +1795,7 @@
     "confirmResetAndReapplyAll": "לאפס את הקטגוריות, ההערות והתיאורים שמנוהלים על ידי כללים בתנועות תואמות, ואז להחיל מחדש את כל הכללים הפעילים?",
     "scanForTransfers": "סריקת העברות",
     "scanningForTransfers": "סורק...",
-    "confirmScanForTransfers": "לסרוק את כל ההיסטוריה ולזווג העברות בין חשבונות שונים? בהיסטוריה גדולה זה עשוי לקחת רגע.",
+    "confirmScanForTransfers": "לסרוק את כל ההיסטוריה ולזווג העברות בין חשבונות שונים? העברות שניתקת ידנית יכולות להיות מזווגות שוב. בהיסטוריה גדולה זה עשוי לקחת רגע.",
     "transferScanCreated_one": "נוצר {{count}} זוג העברות",
     "transferScanCreated_two": "נוצרו {{count}} זוגות העברות",
     "transferScanCreated_other": "נוצרו {{count}} זוגות העברות",

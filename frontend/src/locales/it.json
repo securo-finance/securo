@@ -1782,7 +1782,7 @@
     "confirmResetAndReapplyAll": "Reimpostare categorie, note e descrizioni gestite dalle regole delle transazioni corrispondenti e riapplicare tutte le regole attive?",
     "scanForTransfers": "Cerca trasferimenti",
     "scanningForTransfers": "Ricerca in corso...",
-    "confirmScanForTransfers": "Cercare in tutto lo storico e abbinare i trasferimenti tra conti diversi? Su uno storico grande può richiedere un momento.",
+    "confirmScanForTransfers": "Cercare in tutto lo storico e abbinare i trasferimenti tra conti diversi? I trasferimenti separati a mano possono essere abbinati di nuovo. Su uno storico grande può richiedere un momento.",
     "transferScanCreated_one": "{{count}} coppia di trasferimenti creata",
     "transferScanCreated_other": "{{count}} coppie di trasferimenti create",
     "transferScanNone": "Nessuna nuova coppia di trasferimenti trovata",

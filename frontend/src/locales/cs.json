@@ -1890,7 +1890,7 @@
     "confirmResetAndReapplyAll": "Resetovat kategorie, poznámky a popisy spravované pravidly u odpovídajících transakcí a poté znovu použít všechna aktivní pravidla?",
     "scanForTransfers": "Hledat převody",
     "scanningForTransfers": "Hledání...",
-    "confirmScanForTransfers": "Prohledat celou historii a spárovat převody mezi různými účty? U velké historie to může chvíli trvat.",
+    "confirmScanForTransfers": "Prohledat celou historii a spárovat převody mezi různými účty? Převody, které jste ručně rozdělili, lze spárovat znovu. U velké historie to může chvíli trvat.",
     "transferScanCreated_one": "Vytvořen {{count}} pár převodů",
     "transferScanCreated_few": "Vytvořeny {{count}} páry převodů",
     "transferScanCreated_many": "Vytvořeno {{count}} párů převodů",
