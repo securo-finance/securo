@@ -157,8 +157,8 @@ describe('the transfer scan on the rules page', () => {
 
   it('refreshes the reconciliation queue and history after the scan', async () => {
     // No pair was certain, so the toast says nothing found, but the scan
-    // still wrote the ambiguous pair to the queue the tab counts. The history
-    // tab matters for the same reason on the runs that do pair rows.
+    // still wrote every ambiguous pair to the queue the tab counts, and each
+    // question writes a "suggested" event to the history.
     api.connections.detectTransfers.mockResolvedValue({ pairs_created: 0 })
     // Empty on the first read and one question waiting on the refetch: the
     // badge on the tab is what has to change, not only the number of calls.
