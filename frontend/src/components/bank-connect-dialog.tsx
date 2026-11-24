@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import { PluggyConnect } from 'react-pluggy-connect'
 import { connections } from '@/lib/api'
-import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
+import { invalidateSyncedRecords } from '@/lib/invalidate-queries'
 import type { BankConnection } from '@/types'
 import { toast } from 'sonner'
 import {
@@ -99,7 +99,7 @@ export function BankConnectDialog({
           await connections.sync(connection.id)
         }
       }
-      invalidateFinancialQueries(queryClient)
+      invalidateSyncedRecords(queryClient)
       if (connection?.status === 'error') {
         // The bank is connected; only the first import was refused. The
         // connection card retries it with the credentials already stored.

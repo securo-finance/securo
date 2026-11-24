@@ -10,7 +10,7 @@ const api = vi.hoisted(() => ({
   toastError: vi.fn(),
 }))
 vi.mock('@/lib/api', () => ({ connections: { handleCallback: api.handleCallback } }))
-vi.mock('@/lib/invalidate-queries', () => ({ invalidateFinancialQueries: vi.fn() }))
+vi.mock('@/lib/invalidate-queries', () => ({ invalidateSyncedRecords: vi.fn() }))
 vi.mock('sonner', () => ({
   toast: { success: api.toastSuccess, warning: api.toastWarning, error: api.toastError },
 }))

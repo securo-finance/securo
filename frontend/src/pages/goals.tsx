@@ -167,7 +167,7 @@ export default function GoalsPage() {
 
   const { data: walletsList } = useQuery({
     queryKey: ['asset-groups'],
-    queryFn: assetGroupsApi.list,
+    queryFn: () => assetGroupsApi.list(),
   })
 
   const { data: supportedCurrencies } = useQuery({
