@@ -399,8 +399,9 @@ async def _report(client: AsyncClient, headers: dict, month: date) -> dict:
 async def test_group_shares_agree_across_card_footer_report_and_drill_down(
     client, couple_with_groups
 ):
-    """Bruno's November in the shared workspace (#269 re-test): 300 € of
-    Ana's rows plus his 100 € share of the trip. The card used to add his
+    """Bruno's November in the shared workspace (#269 re-test): his 100 €
+    half of Ana's split row, her other 100 € row whole and his 100 € share of
+    the trip (the split row used to count whole). The card used to add his
     share of Ana's split row again on top of the whole row, and every
     share at today's rate; the report's slice took the trip at today's
     rate (80 €) while its drill-down read 100 €."""
@@ -408,7 +409,7 @@ async def test_group_shares_agree_across_card_footer_report_and_drill_down(
     month, bruno = data["month"], data["bruno"]
 
     footer = (await _list(client, bruno, month))["summary"]["expense"]
-    assert footer == pytest.approx(400.0)
+    assert footer == pytest.approx(300.0)
 
     summary = await _dashboard(client, bruno, month)
     assert summary["monthly_expenses_primary"] == pytest.approx(footer)

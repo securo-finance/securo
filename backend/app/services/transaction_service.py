@@ -84,6 +84,7 @@ from app.services._query_filters import (
     reporting_date_col,
     reporting_date_value,
     with_category_lines,
+    member_shares,
 )
 from app.services.recurring_transaction_service import _advance_date
 
@@ -804,9 +805,11 @@ async def get_transactions(
         # another workspace counts the viewer's split share; a split row
         # the viewer paid counts what the other members' shares leave of
         # the amount it has now, because the bank sync rewrites `amount`
-        # without touching the splits. A row of this workspace that another
-        # member created (shared workspace) counts whole, as it does in the
-        # dashboard. Rows without splits count whole. `share_amount` is in
+        # without touching the splits. An expense of this workspace that another
+        # member paid counts the viewer's share when they are part of its
+        # split, and whole when they are not or under an account filter, as in
+        # the dashboard.
+        # Rows without splits count whole. `share_amount` is in
         # the row's own currency, so the ratio rides the FX stamp already
         # stored on the row.
         from app.models.transaction_split import TransactionSplit
@@ -832,8 +835,30 @@ async def get_transactions(
             )
             .scalar_subquery()
         )
+        member_share = member_shares(user_id)
+        own_member_share = (
+            select(member_share.c.share)
+            .where(member_share.c.transaction_id == Transaction.id)
+            .correlate(Transaction)
+            .scalar_subquery()
+        )
+        # Under an account filter it counts whole, as in the reports and the
+        # dashboard, which drop the split rules there.
+        account_filtered = bool(account_ids) or account_id is not None
         viewer_share_fraction = case(
-            # Another member's row of this workspace is native here.
+            # Another member's expense of this workspace: the viewer's share
+            # when they are in its split.
+            (
+                and_(
+                    literal(not account_filtered),
+                    Transaction.workspace_id == workspace_id,
+                    Transaction.user_id != user_id,
+                    Transaction.type == "debit",
+                    own_member_share.is_not(None),
+                ),
+                own_member_share / func.nullif(func.abs(Transaction.amount), 0),
+            ),
+            # Any other row of theirs is native here.
             (
                 and_(
                     Transaction.workspace_id == workspace_id,
