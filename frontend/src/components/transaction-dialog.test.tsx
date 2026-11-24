@@ -1117,3 +1117,126 @@ describe('TransactionDialog conversion of an existing row (#440)', () => {
     expect(onSave.mock.calls[0][0]).toMatchObject({ amount_primary: 66 })
   })
 })
+
+describe('TransactionDialog moving only the date of a conversion (#481)', () => {
+  // The conversion fields come filled with the row's own figure, so a save
+  // that did not touch them must not send them: the server read them as a
+  // typed figure and froze the old day's rate.
+  function renderRow() {
+    vi.spyOn(currencies, 'list').mockResolvedValue([])
+    vi.spyOn(payees, 'list').mockResolvedValue([])
+    vi.spyOn(groups, 'list').mockResolvedValue([])
+    const onSave = vi.fn()
+    const rendered = renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={transferLegFixture(null, {
+          id: 'tx-481',
+          description: 'Market run',
+          amount: 300,
+          currency: 'BRL',
+          source: 'manual',
+          date: '2026-11-20',
+          amount_primary: 62.4,
+          fx_rate_used: 0.208,
+        })}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={onSave}
+        loading={false}
+        error={null}
+      />,
+    )
+    return { ...rendered, onSave }
+  }
+
+  it('leaves the conversion out so the new date sets the rate', async () => {
+    const { user, onSave } = renderRow()
+
+    fireEvent.change(screen.getByLabelText('date'), { target: { value: '2026-10-15' } })
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    const payload = onSave.mock.calls[0][0]
+    expect(payload).toMatchObject({ date: '2026-10-15' })
+    expect(payload).not.toHaveProperty('amount_primary')
+    expect(payload).not.toHaveProperty('fx_rate_used')
+  })
+
+  it('sends a conversion typed together with the new date', async () => {
+    const { user, onSave } = renderRow()
+
+    fireEvent.change(screen.getByLabelText('date'), { target: { value: '2026-10-15' } })
+    const converted = screen.getByLabelText(t('transactions.convertedAmount', { currency: 'USD' }))
+    await user.clear(converted)
+    await user.type(converted, '66')
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave.mock.calls[0][0]).toMatchObject({ date: '2026-10-15', amount_primary: 66 })
+  })
+
+  it('sends the conversion it shows when only the amount changes (#482)', async () => {
+    const { user, onSave } = renderRow()
+
+    const amount = screen.getByLabelText(t('transactions.amount'))
+    await user.clear(amount)
+    await user.type(amount, '400')
+    const converted = screen.getByLabelText(t('transactions.convertedAmount', { currency: 'USD' }))
+    expect(converted).toHaveValue('83.2')
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave.mock.calls[0][0]).toMatchObject({
+      amount: 400,
+      amount_primary: 83.2,
+      fx_rate_used: 0.208,
+    })
+  })
+})
+
+describe('TransactionDialog duplicate draft conversion (#481)', () => {
+  // A duplicate opens as a new row seeded from the previous payload, so the
+  // conversion fields already hold the figures the user chose to copy: the
+  // save must carry them instead of letting the server derive them again.
+  function renderDuplicate() {
+    vi.spyOn(currencies, 'list').mockResolvedValue([])
+    vi.spyOn(payees, 'list').mockResolvedValue([])
+    vi.spyOn(groups, 'list').mockResolvedValue([])
+    const onSave = vi.fn()
+    const rendered = renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={null}
+        duplicateDraft={{
+          account_id: 'acc-z',
+          description: 'Market run',
+          amount: 300,
+          currency: 'BRL',
+          date: '2026-11-20',
+          amount_primary: 62.4,
+          fx_rate_used: 0.208,
+        }}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={onSave}
+        loading={false}
+        error={null}
+      />,
+    )
+    return { ...rendered, onSave }
+  }
+
+  it('saves the conversion the duplicate carries', async () => {
+    const { user, onSave } = renderDuplicate()
+
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave.mock.calls[0][0]).toMatchObject({
+      amount: 300,
+      amount_primary: 62.4,
+      fx_rate_used: 0.208,
+    })
+  })
+})

@@ -649,13 +649,16 @@ function TransactionForm({
   const [hadInitialFx] = useState(
     !!transaction && (seed?.amount_primary != null || seed?.fx_rate_used != null)
   )
-  // The conversion as the dialog opened, to tell an edit from an echo.
-  // Another member's row comes converted to this viewer's currency (#269);
-  // sending it back untouched made the server read it as a new conversion,
-  // and a rate synced in between moved the owner's stamp (#440).
-  const [initialConversion] = useState(() => ({
-    convertedAmount, fxRate, amount, currency, date,
-  }))
+  // Whether the user edited the conversion fields themselves. The fields are
+  // also filled from the row, and following the amount and the rate, so
+  // sending them back as they stand would freeze a derived figure as typed:
+  // a date move left the conversion on the old day's rate (#481), and an
+  // untouched echo rewrote the owner's stamp (#440). Only an edit counts.
+  const [conversionEdited, setConversionEdited] = useState(false)
+  // The amount and currency the dialog opened with. Changing either makes the
+  // shown conversion a new figure (the amount at the shown rate), so the save
+  // sends it: what is saved is what the dialog showed (#482).
+  const [initialMoney] = useState(() => ({ amount, currency }))
   const [isRecurring, setIsRecurring] = useState(false)
   const [frequency, setFrequency] = useState<RecurringTransaction['frequency']>('monthly')
   const [endDate, setEndDate] = useState('')
@@ -1123,6 +1126,7 @@ function TransactionForm({
   }
 
   const handleConvertedAmountChange = (val: string) => {
+    setConversionEdited(true)
     setConvertedAmount(val)
     const numVal = parseAmountInput(val, displayLocale)
     const numAmount = parseAmountInput(amount, displayLocale)
@@ -1135,6 +1139,7 @@ function TransactionForm({
   }
 
   const handleFxRateChange = (val: string) => {
+    setConversionEdited(true)
     setFxRate(val)
     const numRate = parseAmountInput(val, displayLocale)
     const numAmount = parseAmountInput(amount, displayLocale)
@@ -1191,17 +1196,23 @@ function TransactionForm({
           toast.error(t('common.error'))
           return
         }
-        const conversionUntouched =
-          !!transaction &&
-          convertedAmount === initialConversion.convertedAmount &&
-          fxRate === initialConversion.fxRate &&
-          amount === initialConversion.amount &&
-          currency === initialConversion.currency &&
-          date === initialConversion.date
-        if (showConversion && !conversionUntouched && parsedConverted != null) {
+        // The fields carry the row's own conversion and follow the amount,
+        // so sending them untouched is not a statement about the rate: a
+        // date move must let the server derive it again (#481), and an echo
+        // must not rewrite the owner's stamp (#440). A new amount or currency
+        // is a new figure, shown at the shown rate, so it is sent (#482). A
+        // new row is different too: a duplicate opens seeded from the
+        // previous payload, and the figures shown are the ones the user
+        // chose to copy.
+        const sendConversion =
+          isCreating ||
+          conversionEdited ||
+          parsedAmount !== parseAmountInput(initialMoney.amount, displayLocale) ||
+          currency !== initialMoney.currency
+        if (showConversion && sendConversion && parsedConverted != null) {
           fxFields.amount_primary = parsedConverted
         }
-        if (showConversion && !conversionUntouched && parsedFxRate != null) {
+        if (showConversion && sendConversion && parsedFxRate != null) {
           fxFields.fx_rate_used = parsedFxRate
         }
         if (showConversion && hadInitialFx && !convertedAmount && !fxRate) {
