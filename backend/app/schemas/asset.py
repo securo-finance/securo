@@ -117,6 +117,15 @@ class AssetRead(BaseModel):
     total_invested: Optional[float] = None
     realized_gain: Optional[float] = None
     transaction_count: int = 0
+    # Closed holdings only (sell_date set), on list and single reads: what the
+    # sold units cost (`sold_cost`) and brought in after sell fees
+    # (`sale_proceeds`), and the average buy and sell price per unit, in the
+    # units held after any split. From the ledger, or from the purchase and
+    # sell prices of a holding sold by hand. Null otherwise.
+    average_buy_price: Optional[float] = None
+    average_sell_price: Optional[float] = None
+    sold_cost: Optional[float] = None
+    sale_proceeds: Optional[float] = None
 
     model_config = ConfigDict(from_attributes=True)
 

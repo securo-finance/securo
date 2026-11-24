@@ -507,3 +507,61 @@ async def test_database_accepts_the_two_valid_shapes(session: AsyncSession, mark
             )
         )
     await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_sold_ledger_holding_carries_its_closed_position(
+    client: AsyncClient, auth_headers: dict, market_asset_api: Asset
+):
+    for body in (
+        {"kind": "buy", "quantity": 10, "price": 100, "fee": 5, "date": "2026-01-01"},
+        {"kind": "sell", "quantity": 10, "price": 120, "fee": 3, "date": "2026-02-01"},
+    ):
+        r = await client.post(
+            f"/api/assets/{market_asset_api.id}/transactions", headers=auth_headers, json=body
+        )
+        assert r.status_code == 201
+
+    listed = (await client.get("/api/assets", headers=auth_headers)).json()
+    single = (await client.get(f"/api/assets/{market_asset_api.id}", headers=auth_headers)).json()
+    row = next(a for a in listed if a["id"] == str(market_asset_api.id))
+    for body in (row, single):
+        assert body["sold_cost"] == 1005.0
+        assert body["sale_proceeds"] == 1197.0
+        assert body["average_buy_price"] == 100.5
+        assert body["average_sell_price"] == 120.0
+
+
+@pytest.mark.asyncio
+async def test_held_ledger_holding_has_no_closed_position(
+    client: AsyncClient, auth_headers: dict, market_asset_api: Asset
+):
+    await _seed_buy(client, auth_headers, market_asset_api)
+    body = (await client.get(f"/api/assets/{market_asset_api.id}", headers=auth_headers)).json()
+    for key in ("sold_cost", "sale_proceeds", "average_buy_price", "average_sell_price"):
+        assert body[key] is None
+
+
+@pytest.mark.asyncio
+async def test_manual_sold_holding_reads_its_closed_position_from_prices(
+    client: AsyncClient, auth_headers: dict
+):
+    payload = {
+        "name": "Old stake", "type": "other", "currency": "EUR",
+        "valuation_method": "manual", "purchase_date": "2025-01-01",
+        "purchase_price": 1000, "sell_price": 1500, "sell_date": "2026-01-01",
+    }
+    with_units = await client.post(
+        "/api/assets", headers=auth_headers, json={**payload, "units": 4}
+    )
+    assert with_units.status_code == 201, with_units.text
+    no_units = await client.post("/api/assets", headers=auth_headers, json=payload)
+    assert no_units.status_code == 201, no_units.text
+
+    a = (await client.get(f"/api/assets/{with_units.json()['id']}", headers=auth_headers)).json()
+    assert (a["sold_cost"], a["sale_proceeds"]) == (1000.0, 1500.0)
+    assert (a["average_buy_price"], a["average_sell_price"]) == (250.0, 375.0)
+
+    b = (await client.get(f"/api/assets/{no_units.json()['id']}", headers=auth_headers)).json()
+    assert (b["sold_cost"], b["sale_proceeds"]) == (1000.0, 1500.0)
+    assert b["average_buy_price"] is None and b["average_sell_price"] is None
