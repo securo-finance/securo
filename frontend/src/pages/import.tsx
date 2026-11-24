@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
@@ -15,7 +15,7 @@ import type {
   ImportReviewTransaction,
   FailedRow,
 } from '@/types'
-import { Upload, FileText, X, CheckCircle2, AlertCircle, Settings2, Download } from 'lucide-react'
+import { Upload, FileText, X, CheckCircle2, AlertCircle, Settings2, Download, ScanText } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { PageHeader } from '@/components/page-header'
 import { AssetImportPanel } from '@/components/asset-import-panel'
@@ -24,6 +24,16 @@ import { ImportReviewTable } from '@/components/import-review-table'
 import { ImportHistory } from '@/components/import-history'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
+import { DocumentStatementSummary } from '@/components/document-statement-summary'
+import {
+  DOCUMENT_EXTENSIONS,
+  documentErrorMessage,
+  errorFromResponse,
+  isDocumentFile,
+  isImageFile,
+  useDocumentAiStatus,
+  useDocumentExtraction,
+} from '@/hooks/use-document-extraction'
 
 const TYPE_LABELS: Record<AccountType, string> = {
   checking: 'accounts.typeChecking',
@@ -89,6 +99,34 @@ function TransactionImportPanel() {
   const [csvOutflowColumn, setCsvOutflowColumn] = useState('')
   const [csvColumnMapping, setCsvColumnMapping] = useState<Record<string, string>>({})
 
+  // Document reading (when an admin turned it on): a PDF or a photo is read by a
+  // model in the background, then lands in the same review table.
+  const { enabled: documentAiEnabled, status: documentAiStatus } = useDocumentAiStatus()
+  const doc = useDocumentExtraction('statement')
+  const [appliedExtractionId, setAppliedExtractionId] = useState<string | null>(null)
+  const extraction = doc.extraction
+
+  useEffect(() => {
+    if (!extraction || extraction.status !== 'done' || appliedExtractionId === extraction.id) return
+    setAppliedExtractionId(extraction.id)
+    setPreviewData({ transactions: extraction.transactions, detected_format: 'pdf' })
+    setReviewTransactions(toReviewTransactions(extraction.transactions))
+    setSearchQuery('')
+    setFilterCategoryIds([])
+    setFilterUncategorized(false)
+    setStatusFilter('all')
+    setCurrentPage(1)
+    if (extraction.suggested_account_id) {
+      setSelectedAccount(prev => prev || (extraction.suggested_account_id as string))
+    }
+  }, [extraction, appliedExtractionId])
+
+  useEffect(() => {
+    if (doc.uploadError) toast.error(errorFromResponse(t, doc.uploadError))
+  }, [doc.uploadError, t])
+
+  const documentFailed = extraction?.status === 'failed'
+
   const { data: accountsList } = useQuery({
     queryKey: ['accounts'],
     queryFn: () => accountsApi.list(),
@@ -148,7 +186,9 @@ function TransactionImportPanel() {
         txns,
         fileName ?? '',
         previewData!.detected_format,
-        isCsvFile ? { detect_duplicates: csvDetectDuplicates } : undefined,
+        isCsvFile
+          ? { detect_duplicates: csvDetectDuplicates }
+          : extraction?.status === 'done' ? { document_extraction_id: extraction.id } : undefined,
       )
     },
     onSuccess: (data) => {
@@ -167,11 +207,13 @@ function TransactionImportPanel() {
       setFileName(null)
       setCurrentFile(null)
       resetCsvOptions()
+      doc.reset()
+      setAppliedExtractionId(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
     },
     onError: (error: unknown) => {
-      const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      toast.error(detail || t('import.importError'))
+      const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+      toast.error(typeof detail === 'string' ? detail : detail ? errorFromResponse(t, error) : t('import.importError'))
     },
   })
 
@@ -190,6 +232,20 @@ function TransactionImportPanel() {
     setFileName(file.name)
     setCurrentFile(file)
     resetCsvOptions()
+    // A new file never carries the last document's rows or its id, whether
+    // it is read by the model or parsed (an OFX must not import as a PDF).
+    doc.reset()
+    setAppliedExtractionId(null)
+    if (documentAiEnabled && isDocumentFile(file.name)) {
+      setPreviewData(null)
+      setReviewTransactions([])
+      if (isImageFile(file.name) && documentAiStatus?.vision === 'no') {
+        toast.error(t('documentAi.errors.vision_required'))
+        return
+      }
+      doc.start(file)
+      return
+    }
     // CSV headers come back from the preview response (csv_columns), which
     // parses the file server-side and handles any delimiter/quoting.
     previewMutation.mutate({ file })
@@ -248,6 +304,8 @@ function TransactionImportPanel() {
   }
 
   const handleReset = () => {
+    doc.reset()
+    setAppliedExtractionId(null)
     setPreviewData(null)
     setReviewTransactions([])
     setFileName(null)
@@ -296,18 +354,50 @@ function TransactionImportPanel() {
         onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
-        onClick={() => !previewMutation.isPending && fileInputRef.current?.click()}
+        onClick={() => !previewMutation.isPending && !doc.reading && !documentFailed && fileInputRef.current?.click()}
       >
         <input
           ref={fileInputRef}
           type="file"
-          accept=".ofx,.qfx,.csv,.qif,.xml,.camt"
+          accept={documentAiEnabled ? `.ofx,.qfx,.csv,.qif,.xml,.camt,${DOCUMENT_EXTENSIONS.join(',')}` : '.ofx,.qfx,.csv,.qif,.xml,.camt'}
           onChange={handleFileChange}
           className="hidden"
         />
 
         <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
-          {previewMutation.isPending ? (
+          {doc.reading ? (
+            <>
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4 animate-pulse">
+                <ScanText size={22} className="text-primary" />
+              </div>
+              <p className="text-sm font-semibold text-foreground">{t('documentAi.reading')}</p>
+              <p className="text-xs text-muted-foreground mt-1">{fileName}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {t('documentAi.readingHint', { model: extraction?.model ?? documentAiStatus?.model ?? '' })}
+              </p>
+            </>
+          ) : documentFailed ? (
+            <>
+              <div className="w-12 h-12 rounded-full bg-rose-100 dark:bg-rose-500/15 flex items-center justify-center mb-4">
+                <AlertCircle size={22} className="text-rose-500" />
+              </div>
+              <p className="text-sm font-semibold text-foreground">{t('documentAi.failed')}</p>
+              <p className="text-xs text-muted-foreground mt-1 max-w-md">
+                {documentErrorMessage(t, extraction?.error_code, extraction?.error)}
+              </p>
+              <div className="mt-3 flex items-center gap-3">
+                <Button size="sm" variant="outline" disabled={doc.retrying} onClick={(e) => { e.stopPropagation(); doc.retry() }}>
+                  {t('documentAi.retry')}
+                </Button>
+                <button
+                  className="text-xs text-muted-foreground hover:text-rose-500 transition-colors flex items-center gap-1"
+                  onClick={(e) => { e.stopPropagation(); handleReset() }}
+                >
+                  <X size={12} /> {t('import.removeFile')}
+                </button>
+              </div>
+            </>
+          ) : previewMutation.isPending ? (
             <>
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4 animate-pulse">
                 <FileText size={22} className="text-primary" />
@@ -339,7 +429,9 @@ function TransactionImportPanel() {
               <p className="text-sm font-semibold text-foreground mb-1">
                 {t('import.dragOrClick')}
               </p>
-              <p className="text-xs text-muted-foreground">{t('import.acceptedFormats')}</p>
+              <p className="text-xs text-muted-foreground">
+                {documentAiEnabled ? t('documentAi.acceptedFormats') : t('import.acceptedFormats')}
+              </p>
               <button
                 className="mt-2 text-xs text-primary hover:text-primary/80 transition-colors flex items-center gap-1"
                 onClick={(e) => {
@@ -406,6 +498,10 @@ function TransactionImportPanel() {
               )}
             </div>
           </div>
+
+          {extraction?.status === 'done' && appliedExtractionId === extraction.id && (
+            <DocumentStatementSummary extraction={extraction} />
+          )}
 
           {/* CSV/QIF Options */}
           {(isCsvFile || isQifFile) && previewData && (

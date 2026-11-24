@@ -189,6 +189,10 @@ def contents(manifest: Manifest) -> dict[str, list[dict[str, Any]]]:
             r.model_dump(include={"key", "name", "description", "code", "inputs", "measure", "group_by", "chart"})
             for r in manifest.contributes.reports
         ],
+        "widgets": [
+            r.model_dump(include={"key", "name", "description", "code", "inputs", "measure", "group_by", "chart", "width", "period"})
+            for r in manifest.contributes.widgets
+        ],
         "network": [h.model_dump() for h in manifest.network],
         "api_scopes": [a.model_dump() for a in manifest.api_scopes],
     }

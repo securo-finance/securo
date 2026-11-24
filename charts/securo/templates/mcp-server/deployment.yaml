@@ -20,6 +20,8 @@ spec:
         {{- include "securo.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: mcp-server
     spec:
+      initContainers:
+        {{- include "securo.waitForSchema" (dict "root" . "component" .Values.mcpServer) | nindent 8 }}
       containers:
         - name: mcp-server
           image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
@@ -56,6 +58,13 @@ spec:
                 {{- else }}
                 name: {{ include "securo.fullname" . }}-secrets
                 {{- end }}
+            {{- with .Values.mcpServer.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.mcpServer.extraEnv }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           volumeMounts:
             {{- if .Values.persistence.attachments.enabled }}
             - name: attachments
@@ -68,6 +77,9 @@ spec:
             {{- if and (eq (.Values.config.agentsEnabled | toString) "true") .Values.persistence.agentEmbeddingModels.enabled }}
             - name: agent-embedding-models
               mountPath: /app/data/embedding_models
+            {{- end }}
+            {{- with .Values.mcpServer.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
           {{- if .Values.mcpServer.resources }}
           resources:
@@ -88,5 +100,8 @@ spec:
         - name: agent-embedding-models
           persistentVolumeClaim:
             claimName: {{ include "securo.fullname" . }}-agent-embedding-models
+        {{- end }}
+        {{- with .Values.mcpServer.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
         {{- end }}
 {{- end }}

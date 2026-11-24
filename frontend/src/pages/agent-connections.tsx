@@ -2,12 +2,12 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, CheckCircle2, Edit2, Plug, Plus, Star, Trash2, XCircle } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Edit2, Plug, Plus, ScanText, Star, Trash2, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { PageHeader } from '@/components/page-header'
-import { agents } from '@/lib/api'
+import { agents, documentAi } from '@/lib/api'
 import type { LlmConnection } from '@/lib/api'
 import { ConnectionFormDialog } from '@/components/agents/connection-form-dialog'
 import { McpExternalPanel } from '@/components/agents/mcp-external-panel'
@@ -16,7 +16,7 @@ import { useWorkspace } from '@/contexts/workspace-context'
 export default function AgentConnectionsPage() {
   const { t } = useTranslation()
   const qc = useQueryClient()
-  const { canWrite } = useWorkspace()
+  const { canWrite, canManage } = useWorkspace()
   const [editing, setEditing] = useState<LlmConnection | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [testResults, setTestResults] = useState<Record<string, { ok: boolean; detail: string }>>({})
@@ -32,6 +32,30 @@ export default function AgentConnectionsPage() {
       qc.invalidateQueries({ queryKey: ['agent-connections'] })
       toast.success(t('agents.connections.deleted'))
     },
+  })
+
+  // Document reading uses one of these connections per workspace; an owner
+  // picks it here or in the workspace settings (the same setting).
+  const { data: documentSettings } = useQuery({
+    queryKey: ['document-ai', 'settings'],
+    queryFn: () => documentAi.getSettings(),
+    enabled: canManage,
+  })
+  const readingConnectionId = documentSettings?.connection_id ?? null
+  const readingMut = useMutation({
+    mutationFn: (connection: LlmConnection | null) => documentAi.updateSettings({
+      connection_id: connection?.id ?? null,
+      // A model picked for another connection may not exist on this one.
+      model: null,
+      vision: documentSettings?.vision ?? 'auto',
+    }),
+    onSuccess: (_data, connection) => {
+      qc.invalidateQueries({ queryKey: ['document-ai'] })
+      toast.success(connection
+        ? t('documentAi.agents.turnedOn', { name: connection.name })
+        : t('documentAi.agents.turnedOff'))
+    },
+    onError: () => toast.error(t('documentAi.settings.saveError')),
   })
 
   const testMut = useMutation({
@@ -102,6 +126,11 @@ export default function AgentConnectionsPage() {
                       <Badge variant="secondary" className="text-[10px] uppercase tracking-wider px-1.5 py-0">
                         {c.kind}
                       </Badge>
+                      {readingConnectionId === c.id && (
+                        <Badge className="text-[10px] uppercase tracking-wider px-1.5 py-0 bg-primary/10 hover:bg-primary/10 text-primary inline-flex items-center gap-1">
+                          <ScanText className="h-3 w-3" /> {t('documentAi.agents.inUse')}
+                        </Badge>
+                      )}
                       {c.is_default && (
                         <Badge className="text-[10px] uppercase tracking-wider px-1.5 py-0 bg-amber-100 hover:bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 inline-flex items-center gap-1">
                           <Star className="h-3 w-3" /> {t('agents.connections.default')}
@@ -125,6 +154,18 @@ export default function AgentConnectionsPage() {
                   </div>
                   {canWrite && (
                     <div className="flex items-center gap-1 shrink-0">
+                      {canManage && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 text-xs gap-1"
+                          disabled={readingMut.isPending}
+                          onClick={() => readingMut.mutate(readingConnectionId === c.id ? null : c)}
+                        >
+                          <ScanText className="h-3.5 w-3.5" />
+                          {readingConnectionId === c.id ? t('documentAi.agents.stop') : t('documentAi.agents.use')}
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="outline"

@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
+from app.models.transaction import Transaction
 from app.models.user import User
 
 
@@ -703,15 +704,54 @@ async def _create_manual_tx(
     return response.json()
 
 
+async def _insert_unpaired(
+    session: AsyncSession,
+    user: User,
+    account: Account,
+    *,
+    type: str,
+    amount: float,
+    description: str,
+    tx_date: str | None = None,
+) -> dict:
+    """A row sitting in the books that transfer detection has not seen.
+
+    Creating a transaction now pairs it when its other leg matches
+    (#1798), so tests about linking two rows by hand start from the
+    store, the way a row imported before pairing existed would.
+    """
+    transaction = Transaction(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        account_id=account.id,
+        description=description,
+        amount=Decimal(str(amount)),
+        currency=account.currency,
+        date=date.fromisoformat(tx_date) if tx_date else date.today(),
+        type=type,
+        source="manual",
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(transaction)
+    await session.commit()
+    await session.refresh(transaction)
+    return {"id": str(transaction.id)}
+
+
 @pytest.mark.asyncio
 async def test_link_existing_transactions_as_transfer(
-    client: AsyncClient, auth_headers, test_account: Account, second_account: Account
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_account: Account,
+    second_account: Account,
 ):
-    debit = await _create_manual_tx(
-        client, auth_headers, test_account.id, type="debit", amount=200.00, description="Sent"
+    debit = await _insert_unpaired(
+        session, test_user, test_account, type="debit", amount=200.00, description="Sent"
     )
-    credit = await _create_manual_tx(
-        client, auth_headers, second_account.id, type="credit", amount=200.00, description="Received"
+    credit = await _insert_unpaired(
+        session, test_user, second_account, type="credit", amount=200.00, description="Received"
     )
 
     response = await client.post(
@@ -822,21 +862,27 @@ async def test_link_transfer_rejects_already_linked(
 
 @pytest.mark.asyncio
 async def test_link_transfer_excludes_from_reports(
-    client: AsyncClient, auth_headers, test_account: Account, second_account: Account
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_account: Account,
+    second_account: Account,
 ):
     """After linking, both transactions should be excluded when exclude_transfers=true."""
-    debit = await _create_manual_tx(
-        client, auth_headers, test_account.id, type="debit", amount=300.00, description="To exclude"
+    debit = await _insert_unpaired(
+        session, test_user, test_account, type="debit", amount=300.00, description="To exclude"
     )
-    credit = await _create_manual_tx(
-        client, auth_headers, second_account.id, type="credit", amount=300.00, description="To exclude"
+    credit = await _insert_unpaired(
+        session, test_user, second_account, type="credit", amount=300.00, description="To exclude"
     )
 
-    await client.post(
+    link_response = await client.post(
         "/api/transactions/link-transfer",
         json={"transaction_ids": [debit["id"], credit["id"]]},
         headers=auth_headers,
     )
+    assert link_response.status_code == 200
 
     list_response = await client.get(
         "/api/transactions", params={"exclude_transfers": True}, headers=auth_headers
@@ -850,31 +896,36 @@ async def test_link_transfer_excludes_from_reports(
 
 @pytest.mark.asyncio
 async def test_transfer_candidates_returns_ranked_matches(
-    client: AsyncClient, auth_headers, test_account: Account, second_account: Account
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_account: Account,
+    second_account: Account,
 ):
     """Closest date and amount candidates should rank first."""
     today = date.today()
-    anchor = await _create_manual_tx(
-        client, auth_headers, test_account.id,
+    anchor = await _insert_unpaired(
+        session, test_user, test_account,
         type="debit", amount=500.00, description="Anchor",
         tx_date=today.isoformat(),
     )
 
     # Best match: same date, exact amount
-    best = await _create_manual_tx(
-        client, auth_headers, second_account.id,
+    best = await _insert_unpaired(
+        session, test_user, second_account,
         type="credit", amount=500.00, description="Best",
         tx_date=today.isoformat(),
     )
     # Same amount but a few days off
-    far_date = await _create_manual_tx(
-        client, auth_headers, second_account.id,
+    far_date = await _insert_unpaired(
+        session, test_user, second_account,
         type="credit", amount=500.00, description="Far date",
         tx_date=(today - __import__("datetime").timedelta(days=5)).isoformat(),
     )
     # Same date but different amount
-    different_amount = await _create_manual_tx(
-        client, auth_headers, second_account.id,
+    different_amount = await _insert_unpaired(
+        session, test_user, second_account,
         type="credit", amount=499.00, description="Different amount",
         tx_date=today.isoformat(),
     )

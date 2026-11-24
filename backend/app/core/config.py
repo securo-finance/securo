@@ -118,7 +118,7 @@ class Settings(BaseSettings):
     storage_provider: Literal["local", "s3"] = "local"
     storage_local_path: str = "./data/attachments"
     storage_max_file_size_mb: int = 10
-    storage_allowed_extensions: str = "jpg,jpeg,png,webp,gif,heic,pdf"
+    storage_allowed_extensions: str = "jpg,jpeg,png,webp,gif,heic,pdf,xml"
     storage_max_attachments_per_transaction: int = 10
     # An invoice gathers more paper than a transaction does: the bill, the
     # fiscal document, a receipt, the contract behind it, and a correction
@@ -258,6 +258,11 @@ class Settings(BaseSettings):
     # How a plugin's code reaches this API, over the internal network. Only
     # plugins that declared `api_scopes` get a token to use it.
     plugins_api_url: str = "http://backend:8000/api"
+
+    # Document reading limits (ADR 0037). The feature itself, its provider and
+    # model are set by an admin in Admin Settings, not here.
+    document_ai_max_pages: int = 20
+    document_ai_max_file_size_mb: int = 10
 
     @property
     def oidc_login_available(self) -> bool:

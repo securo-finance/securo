@@ -12,8 +12,9 @@ Alembic allows branching histories with hash revision ids. With many pull reques
 
 - Migrations live in `backend/alembic/versions/`, named with a zero-padded sequence number that is also the revision id; `down_revision` is the previous number. The history is one line. Steps are in `CONTRIBUTING.md` ("Adding a migration").
 - A pull request whose number collides with one merged meanwhile renumbers.
-- A merged migration is not edited. A fix is a new migration.
+- A merged migration is not edited. A fix is a new migration. The one exception is a migration that fails on databases a renumbering left behind, since no later migration runs there: it may learn to recognise that state (126, after #1778 shipped it as 125).
 - In Compose, the one-shot `migrate` service runs `alembic upgrade head`. The backend, workers and MCP server wait for it and refuse to start unless the database is at head (`alembic current --check-heads`). Restarting the backend does not migrate: run `docker compose run --rm migrate`.
+- In the Helm chart, a migration Job (a plain resource, not a post-install or post-upgrade hook, which Helm runs only after the new pods are ready) runs `alembic upgrade head`, and the same pods wait in an init container until `alembic current --check-heads` passes (`charts/securo/templates/backend/job-migration.yaml`, `charts/securo/templates/_helpers.tpl`).
 
 ## Consequences
 

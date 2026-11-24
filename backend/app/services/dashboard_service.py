@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 from app.core.app_clock import app_timezone, app_today
 from app.core.config import get_settings
 from app.core.currency import same_currency
-from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
+from app.core.shared_scope import in_bound_workspace
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.transaction import Transaction
@@ -41,6 +41,7 @@ from app.services.credit_card_service import compute_effective_date
 from app.services.recurring_transaction_service import get_occurrences_in_range
 from app.services.asset_service import get_asset_values_at
 from app.services.fx_rate_service import _resolve_rate, convert
+from app.services.viewer_currency import viewer_currency
 from app.models.user import User
 
 BASELINE_MONTHS = 12
@@ -556,6 +557,10 @@ async def get_summary(
             .where(Account.workspace_id == workspace_id)
         ) or 0
 
+    # Get user's primary currency (user already loaded above for reporting mode)
+    primary_currency = user.primary_currency if user else get_settings().default_currency
+    viewer = await viewer_currency(session, primary_currency)
+
     # Pending categorization: uncategorized rows that count toward the
     # user's P/L. That is the same filter the uncategorized list behind the
     # counter uses (user_pnl_only), so ignored rows, rows excluded from P/L,
@@ -570,10 +575,32 @@ async def get_summary(
         counts_as_user_pnl(Transaction.category_id),
         *acct_filter,
     ]
+    # The rows are in different currencies, so the total is read in the
+    # viewer's display currency (#462) through the same expression the rest
+    # of the app totals a row's value with: its primary stamp, converted at
+    # the row's date when another owner stamped it. Reading the stamp even
+    # for a row already in the viewer's currency is what keeps a typed
+    # conversion (ADR 0031) on the figure the user typed instead of the
+    # account charge (#467). A row with no stamp counts its own amount when
+    # it is already in the viewer's currency, and counts nothing when it is
+    # foreign, as the drill-down skips it instead of taking another
+    # currency's figure as theirs. The codes are compared upper-cased, like
+    # `amount_in_account_currency`: imports store whatever case they got.
+    pending_amount = func.abs(
+        func.coalesce(
+            viewer.amount(),
+            case(
+                (
+                    func.upper(Transaction.currency) == viewer.currency.upper(),
+                    Transaction.amount,
+                ),
+            ),
+        )
+    )
     pending_categorization_result = await session.execute(
         select(
             func.count(),
-            func.coalesce(func.sum(func.abs(Transaction.amount)), 0),
+            func.coalesce(func.sum(pending_amount), 0),
         )
         .select_from(Transaction)
         .where(*pending_cat_filters)
@@ -582,9 +609,6 @@ async def get_summary(
         pending_categorization_result.one()
     )
     pending_categorization_amount = abs(float(pending_categorization_amount or 0))
-
-    # Get user's primary currency (user already loaded above for reporting mode)
-    primary_currency = user.primary_currency if user else get_settings().default_currency
 
     # Asset values — use cutoff so past months show historical values. Under a
     # collection filter, include only assets in the collection's wallets
@@ -641,12 +665,13 @@ async def get_summary(
     monthly_expenses_primary = abs(real_monthly_expenses)
 
     # Use amount_primary sums for more accurate multi-currency income/expenses.
-    # Same posted-only rule as the native-currency totals above.
+    # Same posted-only rule as the native-currency totals above. Another
+    # member's stamp is in their currency, so it is read in the viewer's.
     primary_result = await session.execute(
         with_category_lines(
             select(
-                func.sum(case((Transaction.type == "credit", line_amount_primary()), else_=0)),
-                func.sum(case((Transaction.type == "debit", line_amount_primary()), else_=0)),
+                func.sum(case((Transaction.type == "credit", line_amount_primary(viewer)), else_=0)),
+                func.sum(case((Transaction.type == "debit", line_amount_primary(viewer)), else_=0)),
             ).select_from(Transaction)
         )
         .where(
@@ -680,61 +705,21 @@ async def get_summary(
         monthly_income_primary -= own_offset_inc_pri
         monthly_expenses_primary -= own_offset_exp_pri
 
-    # Add the viewer's shared shares to primary totals too. The shares
-    # are stored in the parent transaction's currency, so we convert
-    # each currency bucket separately rather than re-using shared_income
-    # / shared_expenses (which were summed without conversion).
+    # Add the viewer's shares of rows other people created in other
+    # workspaces, read in the viewer's currency at each row's date, like
+    # the rows the transactions list projects. Rows of this workspace are
+    # already in the sum above, whole, so they stay out here (#269).
     # Gated under a collection filter — those parent transactions live in
     # other users'/workspaces' accounts, outside the filtered account set.
     if not filtered:
-        from app.models.transaction_split import TransactionSplit
-
-        viewer_member_ids = invited_group_member_ids(user_id)
-        shared_currency_rows = await session.execute(
-            select(
-                Transaction.currency,
-                func.sum(
-                    case(
-                        (Transaction.type == "credit", TransactionSplit.share_amount),
-                        else_=0,
-                    )
-                ),
-                func.sum(
-                    case(
-                        (Transaction.type == "debit", TransactionSplit.share_amount),
-                        else_=0,
-                    )
-                ),
-            )
-            .select_from(TransactionSplit)
-            .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
-            .where(
-                TransactionSplit.group_member_id.in_(viewer_member_ids),
-                in_bound_workspace(Transaction.workspace_id),
-                Transaction.user_id != user_id,
-                Transaction.source != "opening_balance",
-                report_date >= month_start,
-                report_date < month_end,
-                report_date <= today,
-                Transaction.status == "posted",
-                counts_as_user_pnl(Transaction.category_id),
-            )
-            .group_by(Transaction.currency)
+        shared_inc_pri, shared_exp_pri = await viewer_shared_pnl(
+            session, user_id, month_start, month_end,
+            use_effective_date=accounting_mode == "accrual",
+            primary_currency=primary_currency,
+            exclude_workspace_id=workspace_id,
         )
-        for row in shared_currency_rows.all():
-            cur = row[0]
-            in_credit = float(row[1] or 0)
-            in_debit = float(row[2] or 0)
-            if in_credit:
-                credit_pri, _ = await convert(
-                    session, Decimal(str(in_credit)), cur, primary_currency
-                )
-                monthly_income_primary += float(credit_pri)
-            if in_debit:
-                debit_pri, _ = await convert(
-                    session, Decimal(str(in_debit)), cur, primary_currency
-                )
-                monthly_expenses_primary += abs(float(debit_pri))
+        monthly_income_primary += shared_inc_pri
+        monthly_expenses_primary += abs(shared_exp_pri)
 
     projected_income_primary = monthly_income_primary
     projected_expenses_primary = monthly_expenses_primary
@@ -753,8 +738,12 @@ async def get_summary(
         pnl_ratio = user_pnl_ratio(tx)
         if not pnl_ratio:
             continue
-        if tx.amount_primary is not None:
-            forecast_converted = Decimal(str(tx.amount_primary))
+        stamped = await viewer.convert(
+            session, tx.user_id, tx.amount_primary, tx.date,
+            currency=tx.currency, amount=tx.amount,
+        )
+        if stamped is not None:
+            forecast_converted = stamped
         else:
             forecast_converted, _ = await convert(
                 session, Decimal(str(tx.amount)), tx.currency, primary_currency,
@@ -901,7 +890,9 @@ async def get_spending_by_category(
     report_date = reporting_date_col(accounting_mode)
 
     # Real transactions grouped by category (exclude transfer-like movements
-    # and closed accounts). Use amount_primary for multi-currency support.
+    # and closed accounts). Use amount_primary for multi-currency support,
+    # read in the viewer's currency.
+    viewer = await viewer_currency(session, primary_currency)
     result = await session.execute(
         with_category_lines(
             select(
@@ -909,7 +900,7 @@ async def get_spending_by_category(
                 Category.name,
                 Category.icon,
                 Category.color,
-                func.sum(line_primary_or_amount()),
+                func.sum(line_primary_or_amount(viewer)),
             ).select_from(Transaction)
         )
         .outerjoin(Category, line_category_id() == Category.id)
@@ -925,7 +916,7 @@ async def get_spending_by_category(
             *acct_filter,
         )
         .group_by(Category.id, Category.name, Category.icon, Category.color)
-        .order_by(func.sum(line_primary_or_amount()).desc())
+        .order_by(func.sum(line_primary_or_amount(viewer)).desc())
     )
 
     # Build a dict of category_id -> {name, icon, color, total}
@@ -1057,8 +1048,12 @@ async def get_spending_by_category(
         parts = user_pnl_parts(tx)
         if not parts:
             continue
-        if tx.amount_primary is not None:
-            tx_amount = abs(Decimal(str(tx.amount_primary)))
+        stamped = await viewer.convert(
+            session, tx.user_id, tx.amount_primary, tx.date,
+            currency=tx.currency, amount=tx.amount,
+        )
+        if stamped is not None:
+            tx_amount = abs(stamped)
         else:
             tx_amount, _ = await convert(
                 session,
@@ -1122,7 +1117,10 @@ async def get_monthly_trend(
     accounting_mode = await get_credit_card_accounting_mode(session)
     report_date = reporting_date_col(accounting_mode)
     month_label = func.to_char(report_date, 'YYYY-MM').label('month')
-    primary_amt = line_primary_or_amount()
+    user = await session.get(User, user_id)
+    primary_currency = user.primary_currency if user else get_settings().default_currency
+    viewer = await viewer_currency(session, primary_currency)
+    primary_amt = line_primary_or_amount(viewer)
     result = await session.execute(
         with_category_lines(
             select(
@@ -1143,9 +1141,6 @@ async def get_monthly_trend(
         .order_by(month_label.desc())
         .limit(months)
     )
-
-    user = await session.get(User, user_id)
-    primary_currency = user.primary_currency if user else get_settings().default_currency
 
     trend_map: dict[str, list[float]] = {}
     for row in result.all():
@@ -1177,8 +1172,12 @@ async def get_monthly_trend(
         tx_report_date = reporting_date_value(tx, accounting_mode)
         month_key = f"{tx_report_date.year:04d}-{tx_report_date.month:02d}"
         bucket = trend_map.setdefault(month_key, [0.0, 0.0])
-        if tx.amount_primary is not None:
-            amount = abs(float(tx.amount_primary))
+        stamped = await viewer.convert(
+            session, tx.user_id, tx.amount_primary, tx.date,
+            currency=tx.currency, amount=tx.amount,
+        )
+        if stamped is not None:
+            amount = abs(float(stamped))
         else:
             converted, _ = await convert(
                 session, Decimal(str(abs(tx.amount))), tx.currency, primary_currency,

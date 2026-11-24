@@ -17,6 +17,8 @@ Talking to your finances through an LLM is useful to some people and unwanted by
 - LLM providers (Anthropic, OpenAI, OpenAI-compatible, Ollama) are configured by the user per connection; nothing is called until one is. A local model through Ollama keeps everything on the machine.
 - Agents reach financial data through the same services and the same workspace and scope checks as the API (ADR 0002, 0011, 0012).
 
+- Extended by [0037](0037-document-reading.md): document reading uses the same LLM connections, one picked per workspace.
+
 ## Consequences
 
 - The agents tables and the `vector` extension exist on every instance, because their migrations always run (noted in ADR 0004).

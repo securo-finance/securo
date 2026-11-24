@@ -20,5 +20,6 @@ export function useFeatureFlags() {
     isKnown: data !== undefined,
     agentsEnabled: !!data?.features?.agents,
     pluginsEnabled: !!data?.features?.plugins,
+    documentAiEnabled: !!data?.features?.document_ai,
   }
 }
