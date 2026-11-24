@@ -38,6 +38,7 @@ from app.models.transaction_attachment import TransactionAttachment
 from app.models.transaction_split import TransactionSplit
 from app.models.transaction_category_line import TransactionCategoryLine
 from app.models.user import User
+from app.plugins.contract import SYNCED_TEXT, column_amount
 from app.plugins.provider import is_plugin_provider
 from app.providers import get_provider
 from app.providers.enable_banking import SKIPPED_TRANSACTION_STATUSES, is_account_txn_id
@@ -2445,6 +2446,8 @@ def _merge_sync_metadata(
         replace_external_id = True
     if txn_data.external_id and (replace_external_id or not transaction.external_id):
         transaction.external_id = txn_data.external_id
+    # What a plugin sent last, read before its new payload is merged in.
+    sent = transaction.raw_data.get(SYNCED_TEXT) if isinstance(transaction.raw_data, dict) else None
     if txn_data.raw_data:
         if not transaction.raw_data:
             transaction.raw_data = txn_data.raw_data
@@ -2479,7 +2482,10 @@ def _merge_sync_metadata(
         transaction.card_masked_number = txn_data.card_masked_number
     if txn_data.payee and not transaction.payee:
         transaction.payee = txn_data.payee
-    _merge_synced_notes(transaction, txn_data.notes)
+    if isinstance(sent, dict):
+        _refresh_synced_notes(transaction, sent.get("notes"), txn_data.notes)
+    else:
+        _merge_synced_notes(transaction, txn_data.notes)
 
 
 async def _refresh_account_charge(
@@ -2557,14 +2563,13 @@ async def _refresh_provider_values(
         else None
     )
     if previous is None:
-        # A row from before the provider's last payload was kept: only empty
-        # notes take the provider's, nothing that may be someone's is replaced.
-        if txn_data.notes and not (transaction.notes or "").strip():
-            transaction.notes = txn_data.notes
         return
 
-    stored = (Decimal(str(transaction.amount)), transaction.type)
-    incoming = (txn_data.amount, txn_data.type)
+    # Compare at the column's scale: a plugin may send more decimals than
+    # `Numeric(15, 2)` keeps, and an unrounded side never matches (or, the
+    # other way round, rewrites the amount on every sync).
+    stored = (column_amount(Decimal(str(transaction.amount))), transaction.type)
+    incoming = (column_amount(txn_data.amount), txn_data.type)
     if stored == (previous.amount, previous.type) and incoming != stored:
         old_amount = transaction.amount
         transaction.type = txn_data.type
@@ -2580,9 +2585,6 @@ async def _refresh_provider_values(
                 txn_data.amount_in_account_currency, restamp_account=True,
             )
             await category_line_service.rescale_lines(session, transaction, old_amount)
-
-    if (transaction.notes or None) == (previous.notes or None) and (txn_data.notes or None) != (previous.notes or None):
-        transaction.notes = txn_data.notes
 
     if transaction.payee == previous.payee and txn_data.payee != previous.payee:
         transaction.payee = txn_data.payee
@@ -3434,6 +3436,26 @@ def _merge_synced_notes(transaction: Transaction, incoming: Optional[str]) -> No
     if recorded and text and text in recorded:
         return
     _set_synced_notes(transaction, merge_notes(transaction.notes, incoming))
+
+
+def _refresh_synced_notes(
+    transaction: Transaction, sent: Optional[str], incoming: Optional[str]
+) -> None:
+    """Take a plugin's notes on a row it sent before, knowing what it sent last.
+
+    Notes that are still the plugin's last take its correction. Notes someone
+    wrote where the plugin sent none get the plugin's new text beside them
+    (`merge_notes`). Text the plugin sent that someone then changed or cleared
+    stays as they left it.
+    """
+    sent = (sent or "").strip()
+    if (incoming or "").strip() == sent:
+        return
+    current = (transaction.notes or "").strip()
+    if current == sent:
+        _set_synced_notes(transaction, incoming)
+    elif not sent:
+        _merge_synced_notes(transaction, incoming)
 
 
 def _differs_from_sync(raw: dict, key: str, value: Optional[uuid.UUID]) -> bool:

@@ -124,8 +124,18 @@ class _Model(BaseModel):
 SYNCED_TEXT = "securo_synced"
 
 
+def column_amount(value: Decimal) -> Decimal:
+    """`value` as the row's `Numeric(15, 2)` column keeps it.
+
+    The contract takes up to eight decimals and the column rounds the rest, so the snapshot rounds the same way: an
+    unrounded amount there never matches the stored one, and the refresh reading it back would take the amount for
+    the user's.
+    """
+    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
 def synced_text(txn: Transaction) -> dict[str, Any]:
-    return {"amount": str(txn.amount), "type": txn.type, "payee": txn.payee, "notes": txn.notes}
+    return {"amount": str(column_amount(txn.amount)), "type": txn.type, "payee": txn.payee, "notes": txn.notes}
 
 
 class Transaction(_Model):

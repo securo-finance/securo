@@ -323,6 +323,60 @@ async def test_text_someone_edited_stays(session: AsyncSession, bank_connection,
 
 
 @pytest.mark.asyncio
+async def test_an_amount_the_column_rounds_still_takes_a_correction(session: AsyncSession, bank_connection, test_user):
+    """The contract takes eight decimals, the row's column keeps two.
+
+    The snapshot records the figure the column stores, so a later correction
+    still applies; and a payload repeating the same rounded amount is not an
+    edit, so it must not clear what the amount block clears (a typed
+    conversion is the one that shows it). SQLite doesn't round the column, so
+    the three decimals here are what make an unrounded comparison fail.
+    """
+    await _pipeline(session, bank_connection, _with_text(amount="12.345", type="credit"), test_user)
+    row = await _t1(session, bank_connection)
+    assert row.raw_data["securo_synced"]["amount"] == "12.35"
+
+    row.amount_primary_typed = Decimal("99.99")
+    await session.commit()
+    await _pipeline(session, bank_connection, _with_text(amount="12.345", type="credit"), test_user)
+    row = await _t1(session, bank_connection)
+    assert row.amount_primary_typed == Decimal("99.99")
+
+    await _pipeline(session, bank_connection, _with_text(amount="13.00", type="credit"), test_user)
+    row = await _t1(session, bank_connection)
+    assert (row.amount, row.raw_data["securo_synced"]["amount"]) == (Decimal("13.00"), "13.00")
+
+
+@pytest.mark.asyncio
+async def test_a_twin_under_a_new_id_corrects_the_notes_and_later_syncs_still_can(
+    session: AsyncSession, bank_connection, test_user
+):
+    """A pending row that posts as a twin under a new id takes the twin's
+    notes in place of its own, not beside them, so they stay the plugin's and
+    a later correction reaches them too."""
+    await _pipeline(session, bank_connection, _account_txns(_txn("p1", status="pending", notes="raw")), test_user)
+    await _pipeline(session, bank_connection, _account_txns(_txn("p2", notes="Ihr Einkauf")), test_user)
+    row = await _only_row(session, bank_connection)
+    assert (row.external_id, row.notes) == ("p2", "Ihr Einkauf")
+
+    await _pipeline(session, bank_connection, _account_txns(_txn("p2", notes="Ihr Einkauf, order 123")), test_user)
+    row = await _only_row(session, bank_connection)
+    assert row.notes == "Ihr Einkauf, order 123"
+
+
+@pytest.mark.asyncio
+async def test_notes_someone_cleared_stay_cleared(session: AsyncSession, bank_connection, test_user):
+    await _pipeline(session, bank_connection, _with_text(notes="raw"), test_user)
+    row = await _t1(session, bank_connection)
+    row.notes = None
+    await session.commit()
+    await _pipeline(session, bank_connection, _with_text(notes="raw"), test_user)
+    await _pipeline(session, bank_connection, _with_text(notes="Ihr Einkauf"), test_user)
+    row = await _t1(session, bank_connection)
+    assert row.notes is None
+
+
+@pytest.mark.asyncio
 async def test_a_row_from_before_the_snapshot_gets_its_empty_notes_filled(session: AsyncSession, bank_connection, test_user):
     """Rows a plugin sent before Securo kept what it sent: their empty notes are filled, nothing else is guessed."""
     await _pipeline(session, bank_connection, _with_text(description="VISAEXAMPLE SHOP", payee="VISAEXAMPLE SHOP"), test_user)

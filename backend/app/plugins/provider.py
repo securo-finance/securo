@@ -11,7 +11,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
-from app.plugins.contract import SYNCED_TEXT, Payload
+from app.plugins.contract import SYNCED_TEXT, Payload, column_amount
 from app.providers.base import (
     AccountData,
     BankProvider,
@@ -76,7 +76,8 @@ class PluginPayloadProvider(BankProvider):
         if not isinstance(sent, dict):
             return None
         try:
-            amount = Decimal(str(sent["amount"]))
+            # A snapshot from before the rounding keeps up to eight decimals; the row's column has two.
+            amount = column_amount(Decimal(str(sent["amount"])))
         except (KeyError, ArithmeticError, ValueError):
             return None
         return TransactionData(
