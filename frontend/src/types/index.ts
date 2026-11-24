@@ -352,6 +352,11 @@ export interface Transaction {
   amount_primary: number | null
   fx_rate_used: number | null
   fx_fallback: boolean
+  /**
+   * Whether the owner typed the conversion (ADR 0031). A derived one follows
+   * the date and the amount, so the dialog never sends it back (#483).
+   */
+  fx_typed?: boolean
   attachment_count?: number
   installment_number: number | null
   total_installments: number | null

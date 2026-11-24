@@ -1232,7 +1232,7 @@ describe('TransactionDialog moving only the date of a conversion (#481)', () => 
   // The conversion fields come filled with the row's own figure, so a save
   // that did not touch them must not send them: the server read them as a
   // typed figure and froze the old day's rate.
-  function renderRow() {
+  function renderRow(fxTyped = true) {
     vi.spyOn(currencies, 'list').mockResolvedValue([])
     vi.spyOn(payees, 'list').mockResolvedValue([])
     vi.spyOn(groups, 'list').mockResolvedValue([])
@@ -1250,6 +1250,7 @@ describe('TransactionDialog moving only the date of a conversion (#481)', () => 
           date: '2026-11-20',
           amount_primary: 62.4,
           fx_rate_used: 0.208,
+          fx_typed: fxTyped,
         })}
         categories={[]}
         categoryGroups={[]}
@@ -1300,6 +1301,56 @@ describe('TransactionDialog moving only the date of a conversion (#481)', () => 
       amount: 400,
       amount_primary: 83.2,
       fx_rate_used: 0.208,
+    })
+  })
+
+  // A conversion that came from a rate is not the owner's figure: it follows
+  // the date and the amount, so the server works it out again (#483).
+  it('lets a derived conversion follow a new date and amount', async () => {
+    const { user, onSave } = renderRow(false)
+
+    fireEvent.change(screen.getByLabelText('date'), { target: { value: '2026-10-15' } })
+    const amount = screen.getByLabelText(t('transactions.amount'))
+    await user.clear(amount)
+    await user.type(amount, '600')
+    // The old day's rate says nothing about the new date.
+    expect(screen.getByLabelText(t('transactions.convertedAmount', { currency: 'USD' }))).toHaveValue('')
+    expect(screen.getByLabelText(t('transactions.exchangeRate'))).toHaveValue('')
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    const payload = onSave.mock.calls[0][0]
+    expect(payload).toMatchObject({ date: '2026-10-15', amount: 600 })
+    expect(payload).not.toHaveProperty('amount_primary')
+    expect(payload).not.toHaveProperty('fx_rate_used')
+  })
+
+  it('keeps a derived conversion derived when only the amount changes', async () => {
+    const { user, onSave } = renderRow(false)
+
+    const amount = screen.getByLabelText(t('transactions.amount'))
+    await user.clear(amount)
+    await user.type(amount, '400')
+    // Same day, same rate: the figure shown is the one the server derives.
+    expect(screen.getByLabelText(t('transactions.convertedAmount', { currency: 'USD' }))).toHaveValue('83.2')
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    const payload = onSave.mock.calls[0][0]
+    expect(payload).toMatchObject({ amount: 400 })
+    expect(payload).not.toHaveProperty('amount_primary')
+    expect(payload).not.toHaveProperty('fx_rate_used')
+  })
+
+  it('sends a rate typed on a derived row with a new date', async () => {
+    const { user, onSave } = renderRow(false)
+
+    fireEvent.change(screen.getByLabelText('date'), { target: { value: '2026-10-15' } })
+    await user.type(screen.getByLabelText(t('transactions.exchangeRate')), '0.25')
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave.mock.calls[0][0]).toMatchObject({
+      date: '2026-10-15',
+      amount_primary: 75,
+      fx_rate_used: 0.25,
     })
   })
 })
