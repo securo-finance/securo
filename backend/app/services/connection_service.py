@@ -41,7 +41,11 @@ from app.models.user import User
 from app.plugins.contract import SYNCED_TEXT, column_amount
 from app.plugins.provider import is_plugin_provider
 from app.providers import get_provider
-from app.providers.enable_banking import SKIPPED_TRANSACTION_STATUSES, is_account_txn_id
+from app.providers.enable_banking import (
+    SKIPPED_TRANSACTION_STATUSES,
+    entry_date,
+    is_account_txn_id,
+)
 from app.providers.base import (
     AccountData,
     BankProvider,
@@ -2881,20 +2885,6 @@ def _eb_exact_twin_in_batch(
     )
 
 
-def _eb_entry_date(raw: dict) -> Optional[date]:
-    """The date an Enable Banking payload gives its entry, read the way the
-    provider reads it: the transaction date, else the booking date, else the
-    value date."""
-    for key in ("transaction_date", "booking_date", "value_date"):
-        value = raw.get(key)
-        if isinstance(value, str):
-            try:
-                return date.fromisoformat(value[:10])
-            except ValueError:
-                continue
-    return None
-
-
 async def _find_settled_eb_hold(
     session: AsyncSession,
     account_id: uuid.UUID,
@@ -2967,7 +2957,7 @@ async def _find_settled_eb_hold(
         blank_pairs = [
             (candidate, held)
             for candidate, held in blank_pairs
-            if _eb_entry_date(held) == purchase_date
+            if entry_date(held) == purchase_date
         ]
     else:
         # The entries of a fetch are matched one at a time, so an undated
@@ -2991,7 +2981,7 @@ def _eb_dated_charge_in_batch(
     """Whether another entry of this fetch names `held`'s date in its
     reference, so it is the charge that settles this hold and not the
     undated one being matched now."""
-    held_date = _eb_entry_date(held)
+    held_date = entry_date(held)
     if held_date is None:
         return False
     for other in incoming_batch:
@@ -3245,7 +3235,7 @@ async def _find_synced_duplicate(
                 continue
             if not isinstance(candidate.raw_data, dict):
                 continue
-            stored_date = _eb_entry_date(candidate.raw_data)
+            stored_date = entry_date(candidate.raw_data)
             if abs((candidate.date - txn_data.date).days) > 3 and (
                 stored_date is None or abs((stored_date - txn_data.date).days) > 3
             ):

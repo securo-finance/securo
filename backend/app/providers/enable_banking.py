@@ -262,6 +262,23 @@ def _parse_iso_date(value: Any) -> Optional[date]:
         return None
 
 
+def entry_date(raw: dict) -> Optional[date]:
+    """The day an entry happened, from the dates its payload carries.
+
+    The transaction date is the day of the operation itself, so it wins.
+    Without it, the earlier of the value and booking dates is the closest to
+    that day: a card purchase made on Saturday has Saturday's value date and
+    is booked on Monday, while a bank that sets a later value date (interest
+    on a card statement, a forward-dated credit) still keeps the booking date.
+    """
+    txn_date = _parse_iso_date(raw.get("transaction_date"))
+    if txn_date:
+        return txn_date
+    value = _parse_iso_date(raw.get("value_date"))
+    booking = _parse_iso_date(raw.get("booking_date"))
+    return min(filter(None, (value, booking)), default=None)
+
+
 def _join_remittance(value: Any) -> str:
     if isinstance(value, list):
         return " ".join(str(v) for v in value if v).strip()
@@ -1619,16 +1636,9 @@ class EnableBankingProvider(BankProvider):
         txn_type = "debit" if indicator == "DBIT" else "credit"
         amount = amount.copy_abs()
         currency = amount_obj.get("currency") or "EUR"
-        # The date the operation happened wins over the dates the bank adds
-        # while processing it: a card purchase made on the 1st and booked on
-        # the 3rd belongs to the 1st. Booking then value date are the fallback
-        # for the institutions that fill only those. The identity below still
-        # hashes all three, so this choice does not move any row's id.
-        booking = _parse_iso_date(raw.get("booking_date"))
-        value = _parse_iso_date(raw.get("value_date"))
-        txn_date = (
-            _parse_iso_date(raw.get("transaction_date")) or booking or value
-        )
+        # The identity below hashes all three dates, so which one is chosen
+        # does not move any row's id.
+        txn_date = entry_date(raw)
         if not txn_date:
             return None
         additional_value = raw.get("additional_information")
