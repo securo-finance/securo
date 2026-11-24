@@ -64,6 +64,7 @@ from app.services.credit_card_service import apply_effective_date, cc_cycle_bill
 from app.services.rule_service import apply_rules_to_transaction
 from app.services.transfer_detection_service import detect_transfer_pairs
 from app.services.fx_rate_service import (
+    ACCOUNT_AMOUNT_FROM_BANK,
     ACCOUNT_AMOUNT_FROM_USER,
     convert as fx_convert,
     stamp_account_amount,
@@ -2184,6 +2185,7 @@ async def _apply_update_to_row(
         key in update_data and update_data[key] != getattr(tx, key)
         for key in ("amount", "currency")
     )
+    currency_changed = "currency" in update_data and update_data["currency"] != tx.currency
     # A move of the date restamps the account amount too, but it does not
     # invalidate a typed conversion: that figure is about the amount, and the
     # dialog sends it back unchanged when only the date moved (#444).
@@ -2240,6 +2242,16 @@ async def _apply_update_to_row(
         # a change of amount, currency, date or account.
         if money_inputs_changed or account_moved:
             _drop_typed_primary(tx)
+        if currency_changed:
+            # The stamp converted the old currency. With no rate for the new
+            # one the stamp below leaves the fields as they are, which counted
+            # 1,500 JPY as the old R$ 500 without a warning (#496): start from
+            # unconverted, as a new row in that currency does.
+            tx.amount_primary = None
+            tx.fx_rate_used = None
+            if tx.amount_account_source != ACCOUNT_AMOUNT_FROM_BANK:
+                tx.amount_account = None
+                tx.amount_account_source = None
         await stamp_primary_amount(
             session, stamp_user_id, tx, restamp_account=account_inputs_changed or account_moved
         )
