@@ -156,6 +156,7 @@ async def validate_transaction_allocations(
     session: AsyncSession, workspace_id: uuid.UUID, transaction: Transaction
 ) -> None:
     """Retained assignments must fit an edited transaction, even when cash is underfunded."""
+    await session.flush()
     accounts, existing, goals = await _lock_allocation_state(session, workspace_id, [transaction])
     if not existing:
         return
@@ -205,12 +206,21 @@ async def release_for_background_delete(
 
 async def release_invalid_for_background_edit(
     session: AsyncSession, workspace_id: uuid.UUID, transaction: Transaction
-) -> None:
-    """Drop assignments a job's edit made invalid, without ever raising."""
+) -> bool:
+    """Drop assignments a job's edit made invalid, without ever raising.
+
+    Returns False when the row still carries assignments it no longer fits,
+    because dropping them would leave a pocket's spending unfunded; the
+    caller must then undo its edit.
+    """
+    # The lock below reloads the row; pending in-memory edits must be in the
+    # database first or the reload would discard them.
+    await session.flush()
     try:
         await validate_transaction_allocations(session, workspace_id, transaction)
     except ValueError:
-        await release_for_background_delete(session, workspace_id, transaction)
+        return await release_for_background_delete(session, workspace_id, transaction)
+    return True
 
 
 async def replace_transaction_allocations(

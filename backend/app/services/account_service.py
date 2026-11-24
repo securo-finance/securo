@@ -1065,20 +1065,22 @@ async def sync_opening_balance_for_connected_account(
     await session.flush()
 
 
-async def keep_balance_as_manual(session: AsyncSession, account: Account, balance: Decimal) -> None:
+async def keep_balance_as_manual(
+    session: AsyncSession, account: Account, balance: Decimal
+) -> Optional[Transaction]:
     """Make an account that just became manual show `balance`, the balance it showed while synced.
 
     A synced account shows its provider's balance; a manual one adds up its
     transactions, leaving out pending ones. The opening-balance transaction
     takes up the difference, so the account reads the same after unlinking.
-    Does not commit.
+    Returns the opening-balance row it changed, if any. Does not commit.
     """
     summary = await get_account_summary(session, account.id, account.workspace_id)
     if summary is None:
-        return
+        return None
     offset = balance - Decimal(str(summary["current_balance"]))
     if abs(offset) < Decimal("0.01"):
-        return
+        return None
     opening = await session.scalar(
         select(Transaction).where(Transaction.account_id == account.id, Transaction.source == "opening_balance")
     )
@@ -1102,6 +1104,7 @@ async def keep_balance_as_manual(session: AsyncSession, account: Account, balanc
     opening.type = "credit" if signed >= 0 else "debit"
     apply_effective_date(opening, account)
     await session.flush()
+    return opening
 
 
 async def delete_account(session: AsyncSession, account_id: uuid.UUID, workspace_id: uuid.UUID) -> bool:

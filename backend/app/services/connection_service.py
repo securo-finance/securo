@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal, Optional
 
-from sqlalchemy import delete, exists, func, or_, select, update
+from sqlalchemy import and_, delete, exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -28,7 +28,7 @@ from app.models.category import Category
 from app.models.institution import Institution
 from app.models.invoice import Invoice, InvoiceAllocation
 from app.models.invoice_schedule import InvoiceSchedule
-from app.models.goal import Goal
+from app.models.goal import Goal, GoalAllocation
 from app.models.collection import collection_asset_groups
 from app.models.credit_card_bill import CreditCardBill
 from app.models.payee import Payee, PayeeMapping
@@ -3473,8 +3473,9 @@ async def _rows_with_links(
 ) -> set[uuid.UUID]:
     """The rows among ``transaction_ids`` something else hangs off.
 
-    A file, a group share or an invoice payment would go with the row:
-    deleting an allocated hold would reopen the invoice, and a deleted row
+    A file, a group share, an invoice payment or a pocket assignment would go
+    with the row: deleting an allocated hold would reopen the invoice, a
+    pocket would lose money its spending may depend on, and a deleted row
     loses what the user attached to it.
     """
     if not transaction_ids:
@@ -3484,6 +3485,7 @@ async def _rows_with_links(
         TransactionAttachment.transaction_id,
         TransactionSplit.transaction_id,
         InvoiceAllocation.transaction_id,
+        GoalAllocation.transaction_id,
     ):
         kept.update(
             tx_id for tx_id in (await session.execute(
@@ -4863,86 +4865,105 @@ async def sync_connection(
                         preview.description,
                     )
                 )
+                skip_bill_match = False
                 if placeholder:
                     if placeholder.is_ignored:
                         continue
-                    placeholder.external_id = txn_data.external_id
-                    placeholder.source = "sync"
-                    # The bill's charge reached the statement (#15).
-                    placeholder.is_paid = True
-                    placeholder.status = txn_data.status
-                    placeholder.raw_data = txn_data.raw_data
-                    if txn_data.card_masked_number is not None:
-                        placeholder.card_masked_number = txn_data.card_masked_number
-                    # The person knows the generated placeholder, not the bank
-                    # charge that replaced it, so the row rejoins the review
-                    # queue (issue #636). This runs once, on the transition:
-                    # later syncs find the row by external_id above and leave
-                    # its read state alone.
-                    placeholder.is_read = False
-                    # Same shape as the import path: fold in the `preview` the
-                    # rules already produced from the incoming charge instead of
-                    # re-running them against the placeholder, whose description
-                    # is the recurring definition's own wording. Existing values
-                    # win, the charge fills the empty ones, and only its
-                    # provenance is recorded outright.
-                    placeholder.original_description = txn_data.description
-                    # A bill kept in a foreign currency is answered by a
-                    # charge in the account's own (#1073): the row takes the
-                    # charged currency.
-                    currency_changed = placeholder.currency != incoming_currency
-                    placeholder.currency = incoming_currency
-                    if (
-                        placeholder.amount != txn_data.amount
-                        or converted is not None
-                        or txn_data.amount_in_account_currency is not None
-                        or currency_changed
-                    ):
-                        # Matched under a tolerance, or the bank said what the
-                        # charge cost in the primary currency: the row now
-                        # stands for what was actually charged, not for what
-                        # the bill expected.
-                        expected_amount = placeholder.amount
-                        placeholder.amount = txn_data.amount
-                        if currency_changed:
-                            # The stamp on the row was made from the bill's
-                            # currency. Keeping it through a rate lookup that
-                            # finds nothing would publish a conversion of an
-                            # amount that never moved (#1073); clearing it
-                            # leaves an honest "not converted" until a rate
-                            # lands.
-                            placeholder.amount_primary = None
-                            placeholder.fx_rate_used = None
-                            placeholder.amount_account = None
-                            placeholder.amount_account_source = None
-                        await _stamp_synced_primary_amount(
-                            session, user_id, placeholder, converted,
-                            txn_data.amount_in_account_currency, restamp_account=True,
+                    placeholder_id = placeholder.id
+                    try:
+                        async with session.begin_nested():
+                            placeholder.external_id = txn_data.external_id
+                            placeholder.source = "sync"
+                            # The bill's charge reached the statement (#15).
+                            placeholder.is_paid = True
+                            placeholder.status = txn_data.status
+                            placeholder.raw_data = txn_data.raw_data
+                            if txn_data.card_masked_number is not None:
+                                placeholder.card_masked_number = txn_data.card_masked_number
+                            # The person knows the generated placeholder, not the bank
+                            # charge that replaced it, so the row rejoins the review
+                            # queue (issue #636). This runs once, on the transition:
+                            # later syncs find the row by external_id above and leave
+                            # its read state alone.
+                            placeholder.is_read = False
+                            # Same shape as the import path: fold in the `preview` the
+                            # rules already produced from the incoming charge instead of
+                            # re-running them against the placeholder, whose description
+                            # is the recurring definition's own wording. Existing values
+                            # win, the charge fills the empty ones, and only its
+                            # provenance is recorded outright.
+                            placeholder.original_description = txn_data.description
+                            # A bill kept in a foreign currency is answered by a
+                            # charge in the account's own (#1073): the row takes the
+                            # charged currency.
+                            currency_changed = placeholder.currency != incoming_currency
+                            placeholder.currency = incoming_currency
+                            if (
+                                placeholder.amount != txn_data.amount
+                                or converted is not None
+                                or txn_data.amount_in_account_currency is not None
+                                or currency_changed
+                            ):
+                                # Matched under a tolerance, or the bank said what the
+                                # charge cost in the primary currency: the row now
+                                # stands for what was actually charged, not for what
+                                # the bill expected.
+                                expected_amount = placeholder.amount
+                                placeholder.amount = txn_data.amount
+                                if currency_changed:
+                                    # The stamp on the row was made from the bill's
+                                    # currency. Keeping it through a rate lookup that
+                                    # finds nothing would publish a conversion of an
+                                    # amount that never moved (#1073); clearing it
+                                    # leaves an honest "not converted" until a rate
+                                    # lands.
+                                    placeholder.amount_primary = None
+                                    placeholder.fx_rate_used = None
+                                    placeholder.amount_account = None
+                                    placeholder.amount_account_source = None
+                                await _stamp_synced_primary_amount(
+                                    session, user_id, placeholder, converted,
+                                    txn_data.amount_in_account_currency, restamp_account=True,
+                                )
+                                # A split placeholder keeps its split, resized.
+                                await category_line_service.rescale_lines(
+                                    session, placeholder, expected_amount
+                                )
+                            if placeholder.category_id is None and not placeholder.has_category_lines:
+                                placeholder.category_id = preview.category_id or category_id
+                            if txn_data.payee and not placeholder.payee:
+                                placeholder.payee = txn_data.payee
+                            if placeholder.payee_id is None:
+                                placeholder.payee_id = preview.payee_id
+                            placeholder.notes = merge_notes(
+                                placeholder.notes, preview.notes
+                            )
+                            if preview.is_ignored:
+                                placeholder.is_ignored = True
+                            # Merged only if the pocket assignments it carries still fit;
+                            # otherwise the savepoint undoes the merge.
+                            if not await goal_allocation_service.release_invalid_for_background_edit(
+                                session, placeholder.workspace_id, placeholder
+                            ):
+                                raise _PlaceholderKeepsPockets
+                    except _PlaceholderKeepsPockets:
+                        # Pocket spending depends on the placeholder as it is. Keep it, and
+                        # store the charge as its own row rather than lose it. The bill
+                        # already counted this occurrence, so it is not matched again.
+                        session.expire(placeholder)
+                        logger.warning(
+                            "Kept recurring placeholder %s: its pocket assignments do not fit the charge",
+                            placeholder_id,
                         )
-                        # A split placeholder keeps its split, resized.
-                        await category_line_service.rescale_lines(
-                            session, placeholder, expected_amount
-                        )
-                    if placeholder.category_id is None and not placeholder.has_category_lines:
-                        placeholder.category_id = preview.category_id or category_id
-                    if txn_data.payee and not placeholder.payee:
-                        placeholder.payee = txn_data.payee
-                    if placeholder.payee_id is None:
-                        placeholder.payee_id = preview.payee_id
-                    placeholder.notes = merge_notes(
-                        placeholder.notes, preview.notes
-                    )
-                    if preview.is_ignored:
-                        placeholder.is_ignored = True
-                    if placeholder.goal_allocations:
-                        await goal_allocation_service.release_invalid_for_background_edit(
-                            session, placeholder.workspace_id, placeholder
-                        )
-                    merged_count += 1
-                    continue
+                        skip_bill_match = True
+                    else:
+                        merged_count += 1
+                        continue
 
                 recurring_link = (
-                    await recurring_match_service.find_bill_for_incoming(
+                    None
+                    if skip_bill_match
+                    else await recurring_match_service.find_bill_for_incoming(
                         session,
                         user_id,
                         account.id,
@@ -5383,6 +5404,27 @@ class ConnectionDisconnectedError(Exception):
     """A sync was asked of a connection the user disconnected."""
 
 
+class _PlaceholderKeepsPockets(Exception):
+    """Undo a placeholder merge whose pocket assignments no longer fit."""
+
+
+async def _lock_accounts_for_removal(
+    session: AsyncSession, account_ids
+) -> None:
+    """Lock accounts in ID order, as pocket writers and the sync take them.
+
+    Called with the connection already locked, so the order matches a sync
+    (connection, then accounts) and pocket writers cannot add a pocket or an
+    assignment to these accounts until the removal commits.
+    """
+    await session.execute(
+        select(Account.id)
+        .where(Account.id.in_(account_ids))
+        .order_by(Account.id)
+        .with_for_update(key_share=True)
+    )
+
+
 async def unlink_connection(
     session: AsyncSession, connection_id: uuid.UUID, workspace_id: uuid.UUID
 ) -> bool:
@@ -5394,9 +5436,12 @@ async def unlink_connection(
     are archived, as on a disconnect, and the connection and its institutions
     are deleted.
     """
-    connection = await get_connection(session, connection_id, workspace_id)
+    connection = await get_connection(session, connection_id, workspace_id, for_update=True)
     if not connection:
         return False
+    await _lock_accounts_for_removal(
+        session, select(Account.id).where(Account.connection_id == connection_id)
+    )
     await session.execute(
         update(Asset).where(Asset.connection_id == connection_id).values(is_archived=True)
     )
@@ -5419,7 +5464,15 @@ async def unlink_connection(
         .values(connection_id=None, institution_id=None)
     )
     for account in accounts:
-        await keep_balance_as_manual(session, account, Decimal(str(shown[account.id])))
+        opening = await keep_balance_as_manual(session, account, Decimal(str(shown[account.id])))
+        # A manual opening balance can carry pocket assignments; the new
+        # amount must still fit them.
+        if opening is not None and not await goal_allocation_service.release_invalid_for_background_edit(
+            session, account.workspace_id, opening
+        ):
+            raise ValueError(
+                "Unlinking would change an opening balance that funds pocket spending"
+            )
     # Bulk statements, so the relationship's delete-orphan cascade can't
     # reach the accounts just unlinked.
     await session.execute(delete(Institution).where(Institution.connection_id == connection_id))
@@ -5442,7 +5495,7 @@ async def delete_connection(
     accounts. `commit=False` leaves the commit to the caller (a plugin being
     removed disconnects its connections inside the removal's transaction).
     """
-    connection = await get_connection(session, connection_id, workspace_id)
+    connection = await get_connection(session, connection_id, workspace_id, for_update=True)
     if not connection:
         return False
 
@@ -5504,25 +5557,36 @@ async def delete_connection(
             Transaction.transfer_pair_id.isnot(None),
         )
     )
-    await session.execute(
-        update(Transaction)
-        .where(
-            Transaction.workspace_id == workspace_id,
-            Transaction.transfer_pair_id.in_(pair_ids),
-        )
-        .values(transfer_pair_id=None)
+    paired_rows = and_(
+        Transaction.workspace_id == workspace_id,
+        Transaction.transfer_pair_id.in_(pair_ids),
     )
-
-    await goal_service.delete_account_pockets(
+    connection_account_ids = list(
+        (
+            await session.scalars(
+                select(Account.id).where(Account.connection_id == connection.id)
+            )
+        ).all()
+    )
+    # The partners' accounts too: un-pairing writes their rows. Then the rows
+    # themselves in ID order, as every transaction writer takes them.
+    await _lock_accounts_for_removal(
         session,
-        list(
-            (
-                await session.scalars(
-                    select(Account.id).where(Account.connection_id == connection.id)
-                )
-            ).all()
+        select(Account.id).where(
+            or_(
+                Account.id.in_(connection_account_ids),
+                Account.id.in_(select(Transaction.account_id).where(paired_rows)),
+            )
         ),
     )
+    await session.execute(
+        select(Transaction.id).where(paired_rows).order_by(Transaction.id).with_for_update()
+    )
+    await session.execute(
+        update(Transaction).where(paired_rows).values(transfer_pair_id=None)
+    )
+
+    await goal_service.delete_account_pockets(session, connection_account_ids)
     await session.delete(connection)
     await session.flush()
 
