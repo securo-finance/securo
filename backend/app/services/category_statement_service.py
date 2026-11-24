@@ -13,7 +13,7 @@ import uuid
 from datetime import date
 from typing import Optional
 
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import and_, case, func, literal_column, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
@@ -96,6 +96,44 @@ async def _owner_split_offset_by_category(
     return {cat_id: float(total or 0) for cat_id, total in result.all()}
 
 
+async def _settled_credit_offset_by_category(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    filters: list,
+) -> dict[Optional[uuid.UUID], float]:
+    """Per category, the part of the viewer's credits that a group payback
+    already settled, for the viewer to subtract.
+
+    The settled amount comes off the credit at the row's own rate, so it
+    matches the total it is subtracted from, and it follows the row's
+    category lines, so a credit split across categories keeps the same
+    proportions. What the credit holds beyond the settled part stays income,
+    as on the dashboard and in Income vs Expenses (#493).
+    """
+    from app.models.group_settlement import GroupSettlement
+
+    settled_part = (
+        GroupSettlement.amount
+        * func.abs(line_primary_or_amount())
+        * literal_column("1.0")
+        / func.nullif(func.abs(Transaction.amount), 0)
+    )
+    result = await session.execute(
+        with_category_lines(
+            select(line_category_id(), func.sum(settled_part))
+            .select_from(GroupSettlement)
+            .join(Transaction, GroupSettlement.receiver_transaction_id == Transaction.id)
+        )
+        .where(
+            *filters,
+            Transaction.type == "credit",
+            Transaction.user_id == user_id,
+        )
+        .group_by(line_category_id())
+    )
+    return {cat_id: float(total or 0) for cat_id, total in result.all()}
+
+
 async def _member_split_offset_by_category(
     session: AsyncSession,
     user_id: uuid.UUID,
@@ -150,8 +188,10 @@ async def get_category_statement(
     as in the other period reports. A split expense counts only the viewer's
     share: the owner keeps the amount less the other members' shares, a
     workspace member in the split keeps their own share, and someone else's
-    split from outside the workspace adds the viewer's share. All of that is
-    skipped when the report is scoped to some accounts.
+    split from outside the workspace adds the viewer's share. A credit a
+    group payback already settled counts only its remainder, as in the
+    dashboard and Income vs Expenses. All of that is skipped when the report
+    is scoped to some accounts.
     """
     filtered = account_ids is not None
     acct_filter = [Transaction.account_id.in_(account_ids)] if filtered else []
@@ -214,6 +254,14 @@ async def get_category_statement(
             for cat_id, offset in own_offset.items():
                 credits, debits = totals.get(cat_id, (0.0, 0.0))
                 totals[cat_id] = (credits, max(0.0, debits - offset))
+            # A credit already paid back is not income: only its remainder stays.
+            settled = await _settled_credit_offset_by_category(
+                session, user_id,
+                [*base_filters, report_date >= m_start, report_date < m_end],
+            )
+            for cat_id, offset in settled.items():
+                credits, debits = totals.get(cat_id, (0.0, 0.0))
+                totals[cat_id] = (max(0.0, credits - offset), debits)
             # Another member's split expense in this workspace is already in
             # the totals at its full amount; keep only the viewer's share.
             member_offset = await _member_split_offset_by_category(
@@ -271,6 +319,13 @@ async def get_category_statement(
             for cat_id, offset in offsets.items():
                 if cat_id is not None:
                     lifetime_net[cat_id] = lifetime_net.get(cat_id, 0.0) + float(offset)
+        # The section follows the same settled-credit rule as the monthly values.
+        settled = await _settled_credit_offset_by_category(
+            session, user_id, [*base_filters, report_date < lifetime_end],
+        )
+        for cat_id, offset in settled.items():
+            if cat_id is not None:
+                lifetime_net[cat_id] = lifetime_net.get(cat_id, 0.0) - float(offset)
         shared = await viewer_shared_spending_by_category(
             session, user_id, date.min, lifetime_end,
             use_effective_date=use_effective_date,

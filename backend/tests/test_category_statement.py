@@ -10,6 +10,7 @@ from app.models.category import Category
 from app.models.category_group import CategoryGroup
 from app.models.fx_rate import FxRate
 from app.models.group import Group, GroupMember
+from app.models.group_settlement import GroupSettlement
 from app.models.transaction_split import TransactionSplit
 from app.models.user import User
 from app.models.workspace import WorkspaceMember
@@ -366,6 +367,91 @@ async def test_statement_places_rows_by_the_users_share(
         primary_currency="BRL",
     )
     assert [row.values for row in statement.income.rows] == [[50.0]]
+    assert statement.expenses.rows == []
+
+
+async def _group_with_friend(session: AsyncSession, test_user, test_workspace):
+    group = Group(id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id, name="Home")
+    session.add(group)
+    await session.flush()
+    me = GroupMember(id=uuid.uuid4(), group_id=group.id, workspace_id=test_workspace.id, name="Me", is_self=True)
+    friend = GroupMember(id=uuid.uuid4(), group_id=group.id, workspace_id=test_workspace.id, name="Friend")
+    session.add_all([me, friend])
+    await session.flush()
+    return group, me, friend
+
+
+def _payback(group, me, friend, amount, day, received) -> GroupSettlement:
+    """A payback linked to the credit that really arrived, as the settle-up
+    flow records one."""
+    return GroupSettlement(
+        id=uuid.uuid4(), group_id=group.id, workspace_id=received.workspace_id,
+        from_member_id=friend.id, to_member_id=me.id, amount=Decimal(amount),
+        currency="BRL", date=day, receiver_transaction_id=received.id,
+    )
+
+
+@pytest.mark.asyncio
+async def test_statement_takes_a_linked_payback_off_income(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
+    """A 100 credit with 60 paid back reads 40 as income, not 100: the
+    settled part is money returned, never income, the way the dashboard and
+    Income vs Expenses already count it (#493)."""
+    _, _, salary = test_categories
+    group, me, friend = await _group_with_friend(session, test_user, test_workspace)
+    account = await _account(session, test_user.id)
+    credit = _txn(
+        test_user.id, account, "100", date(2025, 2, 10), "credit", salary.id,
+        currency="BRL",
+    )
+    session.add(credit)
+    await session.flush()
+    session.add(_payback(group, me, friend, "60", date(2025, 2, 20), credit))
+    # The other reports convert into the user's own currency.
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "BRL"}
+    await session.commit()
+
+    statement = await get_category_statement(
+        session, test_workspace.id, test_user.id, date(2025, 2, 1), months=1,
+        primary_currency="BRL",
+    )
+    [row] = statement.income.rows
+    assert (row.key, row.values) == (str(salary.id), [40.0])
+    assert statement.income.totals == [40.0]
+
+    # The same income the other reports show for the month.
+    from app.services.report_service import get_income_expenses_report
+
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id, currency="BRL",
+        start_date=date(2025, 2, 1), end_date=date(2025, 2, 28),
+    )
+    totals = {breakdown.key: breakdown.value for breakdown in report.summary.breakdowns}
+    assert totals["income"] == pytest.approx(40.0, abs=0.01)
+
+
+@pytest.mark.asyncio
+async def test_statement_drops_a_credit_settled_in_full(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
+    """A credit fully paid back is no income at all, so it leaves the
+    statement instead of showing the whole amount."""
+    _, _, salary = test_categories
+    group, me, friend = await _group_with_friend(session, test_user, test_workspace)
+    account = await _account(session, test_user.id)
+    credit = _txn(test_user.id, account, "100", date(2025, 2, 10), "credit", salary.id)
+    session.add(credit)
+    await session.flush()
+    session.add(_payback(group, me, friend, "100", date(2025, 2, 20), credit))
+    await session.commit()
+
+    statement = await get_category_statement(
+        session, test_workspace.id, test_user.id, date(2025, 2, 1), months=1,
+        primary_currency="BRL",
+    )
+    assert statement.income.rows == []
+    assert statement.income.totals == [0.0]
     assert statement.expenses.rows == []
 
 
