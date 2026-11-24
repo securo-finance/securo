@@ -137,6 +137,68 @@ async def test_update_keeps_a_row_already_in_an_unsupported_currency_editable(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("currency", ["XXX", "KWD", "US D", "", "   "])
+async def test_series_create_refuses_an_unsupported_or_empty_currency(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_account, currency
+):
+    before = await _count(session)
+
+    resp = await client.post(
+        "/api/transactions/installments",
+        headers=auth_headers,
+        json={"installments": 3, "base": _body(test_account.id, currency=currency)},
+    )
+
+    assert resp.status_code == 422, resp.text
+    assert "currency" in resp.text
+    await session.rollback()
+    assert await _count(session) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("currency", "stored"), [(" usd ", "USD"), ("EUR", "EUR"), (None, None)]
+)
+async def test_series_create_accepts_a_supported_or_null_currency(
+    client: AsyncClient, auth_headers, test_account, currency, stored
+):
+    resp = await client.post(
+        "/api/transactions/installments",
+        headers=auth_headers,
+        json={"installments": 3, "base": _body(test_account.id, currency=currency)},
+    )
+
+    assert resp.status_code == 201, resp.text
+    expected = stored or test_account.currency
+    assert [row["currency"] for row in resp.json()] == [expected] * 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("currency", ["kwd", None])
+async def test_series_create_keeps_an_unsupported_account_currency(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user: User, currency
+):
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="Kuwait",
+        type="checking",
+        currency="KWD",
+    )
+    session.add(account)
+    await session.commit()
+
+    resp = await client.post(
+        "/api/transactions/installments",
+        headers=auth_headers,
+        json={"installments": 2, "base": _body(account.id, currency=currency)},
+    )
+
+    assert resp.status_code == 201, resp.text
+    assert [row["currency"] for row in resp.json()] == ["KWD", "KWD"]
+
+
+@pytest.mark.asyncio
 async def test_a_refused_series_edit_writes_no_installment(
     client: AsyncClient, auth_headers, session: AsyncSession, test_user: User, test_account
 ):
