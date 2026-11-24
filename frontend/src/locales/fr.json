@@ -4113,7 +4113,7 @@
     "suggestedAccount": "Le compte a été choisi d'après le dernier relevé ayant cette mise en page.",
     "textOnlyModel": "{{model}} ne lit que le texte : les PDF avec du texte fonctionnent, mais les photos et les PDF numérisés nécessitent un modèle qui lit les images.",
     "errors": {
-      "not_configured": "Aucun modèle n'est configuré pour lire les documents. Un administrateur peut définir DOCUMENT_AI_PROVIDER et DOCUMENT_AI_MODEL, ou le propriétaire de l'espace de travail peut en choisir un dans les paramètres de l'espace de travail.",
+      "not_configured": "Aucun modèle n'est configuré pour lire les documents. Un administrateur peut en choisir un dans Paramètres d'administration → Lecture de documents, ou le propriétaire de l'espace de travail dans ses paramètres.",
       "vision_required": "Ce document est une photo ou une numérisation, et le modèle ne lit pas les images. Choisissez-en un qui le fait (qwen2.5vl, llama3.2-vision, gpt-4o-mini, Claude) dans les paramètres de l'espace de travail.",
       "unsupported_file": "Seuls les fichiers PDF, PNG, JPEG et WebP peuvent être lus.",
       "file_too_large": "Le fichier est trop volumineux.",
@@ -4186,6 +4186,15 @@
       "reading": "Lecture du fichier pour remplir la transaction…",
       "filled": "Rempli à partir du fichier : {{fields}}",
       "nothingNew": "Le fichier n'avait rien de nouveau à remplir."
+    },
+    "admin": {
+      "title": "Lecture de documents",
+      "description": "Lisez les relevés PDF, les photos de reçus et les pièces jointes en transactions, avec un LLM. Rien n'est enregistré avant une vérification.",
+      "enable": "Activé",
+      "notConfigured": "Choisissez un fournisseur et un modèle pour commencer à lire des documents.",
+      "optional": "(facultatif)",
+      "keyNeedsSecret": "Définissez une SECRET_KEY d'au moins 32 caractères pour enregistrer une clé dans l'application.",
+      "saved": "Lecture de documents enregistrée"
     }
   }
 }

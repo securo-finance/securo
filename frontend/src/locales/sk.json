@@ -4293,7 +4293,7 @@
     "suggestedAccount": "Účet bol vybraný podľa posledného výpisu s rovnakým rozložením.",
     "textOnlyModel": "{{model}} číta iba text: PDF s textom fungujú, ale fotografie a naskenované PDF vyžadujú model, ktorý číta obrázky.",
     "errors": {
-      "not_configured": "Nie je nastavený žiadny model na čítanie dokumentov. Správca môže nastaviť DOCUMENT_AI_PROVIDER a DOCUMENT_AI_MODEL alebo vlastník pracovného priestoru môže model vybrať v jeho nastaveniach.",
+      "not_configured": "Nie je nastavený žiadny model na čítanie dokumentov. Správca ho môže vybrať v Nastaveniach správcu → Čítanie dokumentov, alebo vlastník pracovného priestoru v jeho nastaveniach.",
       "vision_required": "Tento dokument je fotografia alebo sken a model nečíta obrázky. V nastaveniach pracovného priestoru vyberte model, ktorý ich číta (qwen2.5vl, llama3.2-vision, gpt-4o-mini, Claude).",
       "unsupported_file": "Prečítať sa dajú iba súbory PDF, PNG, JPEG a WebP.",
       "file_too_large": "Súbor je príliš veľký.",
@@ -4368,6 +4368,15 @@
       "reading": "Čítanie súboru na vyplnenie transakcie…",
       "filled": "Vyplnené zo súboru: {{fields}}",
       "nothingNew": "Súbor neobsahoval nič nové na vyplnenie."
+    },
+    "admin": {
+      "title": "Čítanie dokumentov",
+      "description": "Čítajte výpisy v PDF, fotky bločkov a prílohy ako transakcie pomocou LLM. Nič sa neuloží, kým to niekto neskontroluje.",
+      "enable": "Zapnuté",
+      "notConfigured": "Vyberte poskytovateľa a model, aby ste mohli čítať dokumenty.",
+      "optional": "(voliteľné)",
+      "keyNeedsSecret": "Nastavte SECRET_KEY s aspoň 32 znakmi, aby ste mohli uložiť kľúč v aplikácii.",
+      "saved": "Čítanie dokumentov uložené"
     }
   }
 }

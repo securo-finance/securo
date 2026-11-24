@@ -4113,7 +4113,7 @@
     "suggestedAccount": "A conta foi escolhida com base no último extrato com este formato.",
     "textOnlyModel": "{{model}} só lê texto: os PDF com texto funcionam, mas as fotografias e os PDF digitalizados precisam de um modelo que leia imagens.",
     "errors": {
-      "not_configured": "Nenhum modelo está configurado para ler documentos. Um administrador pode definir DOCUMENT_AI_PROVIDER e DOCUMENT_AI_MODEL, ou o proprietário do espaço de trabalho pode escolher um nas definições do espaço de trabalho.",
+      "not_configured": "Nenhum modelo está configurado para ler documentos. Um administrador pode escolher um em Definições de administração → Leitura de documentos, ou o proprietário do espaço de trabalho nas definições do espaço de trabalho.",
       "vision_required": "Este documento é uma fotografia ou uma digitalização, e o modelo não lê imagens. Escolha um que leia (qwen2.5vl, llama3.2-vision, gpt-4o-mini, Claude) nas definições do espaço de trabalho.",
       "unsupported_file": "Só é possível ler ficheiros PDF, PNG, JPEG e WebP.",
       "file_too_large": "O ficheiro é demasiado grande.",
@@ -4186,6 +4186,15 @@
       "reading": "A ler o ficheiro para preencher a transação…",
       "filled": "Preenchido a partir do ficheiro: {{fields}}",
       "nothingNew": "O ficheiro não tinha nada de novo para preencher."
+    },
+    "admin": {
+      "title": "Leitura de documentos",
+      "description": "Leia extratos em PDF, fotografias de recibos e anexos como transações, com um LLM. Nada é guardado antes de alguém rever.",
+      "enable": "Ligado",
+      "notConfigured": "Escolha um fornecedor e um modelo para começar a ler documentos.",
+      "optional": "(opcional)",
+      "keyNeedsSecret": "Defina uma SECRET_KEY com pelo menos 32 caracteres para guardar uma chave na aplicação.",
+      "saved": "Leitura de documentos guardada"
     }
   }
 }

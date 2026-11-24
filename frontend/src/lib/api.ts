@@ -128,6 +128,8 @@ import type {
   ReconciliationRulePatch,
   ReconciliationSuggestion,
   ReconciliationHistoryEvent,
+  DocumentAiAdminSettings,
+  DocumentAiAdminSettingsUpdate,
   DocumentAiSettings,
   DocumentAiSettingsUpdate,
   DocumentAiStatus,
@@ -2248,6 +2250,15 @@ export const info = {
 
 // Document reading -- only reachable when info.features.document_ai === true.
 export const documentAi = {
+  /** The instance's switch and model (superusers). Never returns the key. */
+  getAdmin: async (): Promise<DocumentAiAdminSettings> => {
+    const { data } = await api.get('/admin/document-ai')
+    return data
+  },
+  updateAdmin: async (payload: DocumentAiAdminSettingsUpdate): Promise<DocumentAiAdminSettings> => {
+    const { data } = await api.put('/admin/document-ai', payload)
+    return data
+  },
   status: async (): Promise<DocumentAiStatus> => {
     const { data } = await api.get('/document-ai/status')
     return data

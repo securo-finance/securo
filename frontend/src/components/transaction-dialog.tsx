@@ -728,7 +728,7 @@ function TransactionForm({
   const pendingFileInputRef = useRef<HTMLInputElement>(null)
   const pendingActionRef = useRef<SaveAction>('save')
 
-  // Document reading (DOCUMENT_AI_ENABLED): a receipt or a PDF added while
+  // Document reading (when an admin turned it on): a receipt or a PDF added while
   // creating fills in the fields that are still empty. What the person typed
   // is never replaced, and the temporary read is deleted once applied; the
   // file itself is attached on save like any other.

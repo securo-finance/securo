@@ -99,7 +99,7 @@ function TransactionImportPanel() {
   const [csvOutflowColumn, setCsvOutflowColumn] = useState('')
   const [csvColumnMapping, setCsvColumnMapping] = useState<Record<string, string>>({})
 
-  // Document reading (DOCUMENT_AI_ENABLED): a PDF or a photo is read by a
+  // Document reading (when an admin turned it on): a PDF or a photo is read by a
   // model in the background, then lands in the same review table.
   const { enabled: documentAiEnabled, status: documentAiStatus } = useDocumentAiStatus()
   const doc = useDocumentExtraction('statement')

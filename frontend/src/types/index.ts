@@ -1174,6 +1174,29 @@ export interface DocumentAiStatus {
   max_pages: number
 }
 
+export interface DocumentAiAdminSettings {
+  enabled: boolean
+  provider: string | null
+  base_url: string | null
+  model: string | null
+  has_api_key: boolean
+  vision: 'auto' | 'true' | 'false'
+  configured: boolean
+  detected_vision: DocumentVision
+  detected_vision_source: 'setting' | 'provider' | 'catalog' | 'none'
+  can_store_secrets: boolean
+}
+
+export interface DocumentAiAdminSettingsUpdate {
+  enabled: boolean
+  provider: string | null
+  base_url: string | null
+  model: string | null
+  api_key?: string | null
+  clear_api_key?: boolean
+  vision: 'auto' | 'true' | 'false'
+}
+
 export interface DocumentAiSettings {
   provider: string | null
   base_url: string | null

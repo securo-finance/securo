@@ -4113,7 +4113,7 @@
     "suggestedAccount": "Il conto è stato scelto in base all'ultimo estratto conto con questo layout.",
     "textOnlyModel": "{{model}} legge solo testo: i PDF con testo funzionano, ma foto e PDF scansionati richiedono un modello che legga le immagini.",
     "errors": {
-      "not_configured": "Nessun modello è configurato per leggere i documenti. Un amministratore può impostare DOCUMENT_AI_PROVIDER e DOCUMENT_AI_MODEL, oppure il proprietario del workspace può sceglierne uno nelle impostazioni del workspace.",
+      "not_configured": "Nessun modello è configurato per leggere i documenti. Un amministratore può sceglierne uno in Impostazioni di amministrazione → Lettura documenti, o il proprietario del workspace nelle impostazioni del workspace.",
       "vision_required": "Questo documento è una foto o una scansione, e il modello non legge le immagini. Scegline uno che lo faccia (qwen2.5vl, llama3.2-vision, gpt-4o-mini, Claude) nelle impostazioni del workspace.",
       "unsupported_file": "Si possono leggere solo file PDF, PNG, JPEG e WebP.",
       "file_too_large": "Il file è troppo grande.",
@@ -4186,6 +4186,15 @@
       "reading": "Lettura del file per compilare la transazione…",
       "filled": "Compilato dal file: {{fields}}",
       "nothingNew": "Il file non aveva niente di nuovo da compilare."
+    },
+    "admin": {
+      "title": "Lettura documenti",
+      "description": "Leggi estratti conto PDF, foto di ricevute e allegati come transazioni, con un LLM. Nulla viene salvato prima di una revisione.",
+      "enable": "Attivo",
+      "notConfigured": "Scegli un provider e un modello per iniziare a leggere documenti.",
+      "optional": "(facoltativo)",
+      "keyNeedsSecret": "Imposta una SECRET_KEY di almeno 32 caratteri per salvare una chiave nell'app.",
+      "saved": "Lettura documenti salvata"
     }
   }
 }

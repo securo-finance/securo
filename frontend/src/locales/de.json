@@ -4100,7 +4100,7 @@
     "suggestedAccount": "Das Konto wurde anhand des letzten Auszugs mit diesem Layout gewählt.",
     "textOnlyModel": "{{model}} liest nur Text: PDFs mit Text funktionieren, aber Fotos und gescannte PDFs brauchen ein Modell, das Bilder liest.",
     "errors": {
-      "not_configured": "Es ist kein Modell zum Lesen von Dokumenten eingerichtet. Ein Admin kann DOCUMENT_AI_PROVIDER und DOCUMENT_AI_MODEL setzen, oder der Workspace-Inhaber kann in den Workspace-Einstellungen eines auswählen.",
+      "not_configured": "Es ist kein Modell zum Lesen von Dokumenten eingerichtet. Ein Admin kann eines unter Admin-Einstellungen → Dokumente lesen wählen, oder der Workspace-Inhaber in den Workspace-Einstellungen.",
       "vision_required": "Dieses Dokument ist ein Foto oder ein Scan, und das Modell liest keine Bilder. Wähle in den Workspace-Einstellungen eines, das es kann (qwen2.5vl, llama3.2-vision, gpt-4o-mini, Claude).",
       "unsupported_file": "Nur PDF-, PNG-, JPEG- und WebP-Dateien können gelesen werden.",
       "file_too_large": "Die Datei ist zu groß.",
@@ -4173,6 +4173,15 @@
       "reading": "Datei wird gelesen, um die Transaktion auszufüllen…",
       "filled": "Aus der Datei ausgefüllt: {{fields}}",
       "nothingNew": "Die Datei enthielt nichts Neues zum Ausfüllen."
+    },
+    "admin": {
+      "title": "Dokumente lesen",
+      "description": "Kontoauszüge als PDF, Belegfotos und Anhänge mit einem LLM als Transaktionen lesen. Nichts wird gespeichert, bevor es jemand prüft.",
+      "enable": "An",
+      "notConfigured": "Wähle einen Anbieter und ein Modell, um Dokumente zu lesen.",
+      "optional": "(optional)",
+      "keyNeedsSecret": "Setze einen SECRET_KEY mit mindestens 32 Zeichen, um einen Schlüssel in der App zu speichern.",
+      "saved": "Dokumente lesen gespeichert"
     }
   }
 }

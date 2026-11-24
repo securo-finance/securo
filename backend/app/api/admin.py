@@ -127,7 +127,8 @@ async def get_setting(
     session: AsyncSession = Depends(get_async_session),
     _user: User = Depends(current_superuser),
 ):
-    if key in provider_settings.SETTING_FIELDS:
+    # Credentials have routes of their own that never hand the value back.
+    if key in provider_settings.SETTING_FIELDS or key.startswith("document_ai_"):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Setting not found")
     setting = await admin_service.get_app_setting(session, key)
     if not setting:

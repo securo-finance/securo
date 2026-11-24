@@ -4099,7 +4099,7 @@
     "suggestedAccount": "A számla az ugyanilyen elrendezésű legutóbbi kivonat alapján lett kiválasztva.",
     "textOnlyModel": "A(z) {{model}} csak szöveget olvas: a szöveges PDF-ek működnek, de a fotókhoz és a szkennelt PDF-ekhez képeket olvasó modell kell.",
     "errors": {
-      "not_configured": "Nincs beállítva modell a dokumentumok olvasásához. Egy rendszergazda beállíthatja a DOCUMENT_AI_PROVIDER és DOCUMENT_AI_MODEL értékét, vagy a munkaterület tulajdonosa választhat egyet a munkaterület beállításaiban.",
+      "not_configured": "Nincs beállítva modell a dokumentumok olvasásához. Egy rendszergazda kiválaszthatja a Rendszergazdai beállítások → Dokumentumok olvasása alatt, vagy a munkaterület tulajdonosa a munkaterület beállításaiban.",
       "vision_required": "Ez a dokumentum fotó vagy szkennelt kép, a modell pedig nem olvas képeket. Válasszon olyat, amely igen (qwen2.5vl, llama3.2-vision, gpt-4o-mini, Claude), a munkaterület beállításaiban.",
       "unsupported_file": "Csak PDF, PNG, JPEG és WebP fájlok olvashatók.",
       "file_too_large": "A fájl túl nagy.",
@@ -4172,6 +4172,15 @@
       "reading": "A fájl olvasása a tranzakció kitöltéséhez…",
       "filled": "Kitöltve a fájlból: {{fields}}",
       "nothingNew": "A fájlban nem volt semmi új, amit ki lehetne tölteni."
+    },
+    "admin": {
+      "title": "Dokumentumok olvasása",
+      "description": "PDF-kivonatok, nyugtafotók és mellékletek beolvasása tranzakcióként LLM-mel. Semmi sem mentődik, amíg valaki át nem nézi.",
+      "enable": "Be",
+      "notConfigured": "Válassz szolgáltatót és modellt a dokumentumok olvasásához.",
+      "optional": "(nem kötelező)",
+      "keyNeedsSecret": "Állíts be legalább 32 karakteres SECRET_KEY-t, hogy kulcsot menthess az alkalmazásban.",
+      "saved": "Dokumentumok olvasása mentve"
     }
   }
 }

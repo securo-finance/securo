@@ -4099,7 +4099,7 @@
     "suggestedAccount": "The account was picked from the last statement with this layout.",
     "textOnlyModel": "{{model}} reads text only: PDFs with text work, but photos and scanned PDFs need a model that reads images.",
     "errors": {
-      "not_configured": "No model is set up to read documents. An admin can set DOCUMENT_AI_PROVIDER and DOCUMENT_AI_MODEL, or a workspace owner can pick one in the workspace settings.",
+      "not_configured": "No model is set up to read documents. An admin can pick one under Admin Settings → Document reading, or a workspace owner in the workspace settings.",
       "vision_required": "This document is a photo or a scan, and the model does not read images. Pick one that does (qwen2.5vl, llama3.2-vision, gpt-4o-mini, Claude) in the workspace settings.",
       "unsupported_file": "Only PDF, PNG, JPEG and WebP files can be read.",
       "file_too_large": "The file is too large.",
@@ -4172,6 +4172,15 @@
       "reading": "Reading the file to fill in the transaction…",
       "filled": "Filled in from the file: {{fields}}",
       "nothingNew": "The file had nothing new to fill in."
+    },
+    "admin": {
+      "title": "Document reading",
+      "description": "Read statement PDFs, receipt photos and attachments into transactions with an LLM. Nothing is saved until someone reviews it.",
+      "enable": "On",
+      "notConfigured": "Pick a provider and a model to start reading documents.",
+      "optional": "(optional)",
+      "keyNeedsSecret": "Set a SECRET_KEY of at least 32 characters to save a key in the app.",
+      "saved": "Document reading saved"
     }
   }
 }

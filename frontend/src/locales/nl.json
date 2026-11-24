@@ -4101,7 +4101,7 @@
     "suggestedAccount": "De rekening is gekozen op basis van het laatste afschrift met deze opmaak.",
     "textOnlyModel": "{{model}} leest alleen tekst: PDF's met tekst werken, maar foto's en gescande PDF's hebben een model nodig dat afbeeldingen leest.",
     "errors": {
-      "not_configured": "Er is geen model ingesteld om documenten te lezen. Een beheerder kan DOCUMENT_AI_PROVIDER en DOCUMENT_AI_MODEL instellen, of een eigenaar van de werkruimte kan er een kiezen in de werkruimte-instellingen.",
+      "not_configured": "Er is geen model ingesteld om documenten te lezen. Een beheerder kan er een kiezen onder Beheerinstellingen → Documenten lezen, of de eigenaar van de workspace in de workspace-instellingen.",
       "vision_required": "Dit document is een foto of een scan, en het model leest geen afbeeldingen. Kies er een die dat wel doet (qwen2.5vl, llama3.2-vision, gpt-4o-mini, Claude) in de werkruimte-instellingen.",
       "unsupported_file": "Alleen PDF-, PNG-, JPEG- en WebP-bestanden kunnen worden gelezen.",
       "file_too_large": "Het bestand is te groot.",
@@ -4174,6 +4174,15 @@
       "reading": "Bestand wordt gelezen om de transactie in te vullen…",
       "filled": "Ingevuld vanuit het bestand: {{fields}}",
       "nothingNew": "Het bestand had niets nieuws om in te vullen."
+    },
+    "admin": {
+      "title": "Documenten lezen",
+      "description": "Lees pdf-afschriften, foto's van bonnen en bijlagen als transacties met een LLM. Er wordt niets opgeslagen voordat iemand het controleert.",
+      "enable": "Aan",
+      "notConfigured": "Kies een provider en een model om documenten te lezen.",
+      "optional": "(optioneel)",
+      "keyNeedsSecret": "Stel een SECRET_KEY van minstens 32 tekens in om een sleutel in de app op te slaan.",
+      "saved": "Documenten lezen opgeslagen"
     }
   }
 }

@@ -4259,7 +4259,7 @@
     "suggestedAccount": "Konto wybrano na podstawie ostatniego wyciągu o tym układzie.",
     "textOnlyModel": "{{model}} odczytuje tylko tekst: pliki PDF z tekstem działają, ale zdjęcia i zeskanowane pliki PDF wymagają modelu, który odczytuje obrazy.",
     "errors": {
-      "not_configured": "Nie skonfigurowano modelu do odczytu dokumentów. Administrator może ustawić DOCUMENT_AI_PROVIDER i DOCUMENT_AI_MODEL, a właściciel przestrzeni roboczej może wybrać model w jej ustawieniach.",
+      "not_configured": "Nie skonfigurowano modelu do odczytu dokumentów. Administrator może go wybrać w Ustawieniach administratora → Odczyt dokumentów, a właściciel obszaru roboczego w jego ustawieniach.",
       "vision_required": "Ten dokument jest zdjęciem lub skanem, a model nie odczytuje obrazów. Wybierz taki, który to potrafi (qwen2.5vl, llama3.2-vision, gpt-4o-mini, Claude), w ustawieniach przestrzeni roboczej.",
       "unsupported_file": "Można odczytać tylko pliki PDF, PNG, JPEG i WebP.",
       "file_too_large": "Plik jest za duży.",
@@ -4334,6 +4334,15 @@
       "reading": "Odczytywanie pliku, aby uzupełnić transakcję…",
       "filled": "Uzupełniono z pliku: {{fields}}",
       "nothingNew": "Plik nie zawierał niczego nowego do uzupełnienia."
+    },
+    "admin": {
+      "title": "Odczyt dokumentów",
+      "description": "Odczytuj wyciągi PDF, zdjęcia paragonów i załączniki jako transakcje za pomocą LLM. Nic nie jest zapisywane przed sprawdzeniem.",
+      "enable": "Włączone",
+      "notConfigured": "Wybierz dostawcę i model, aby zacząć odczytywać dokumenty.",
+      "optional": "(opcjonalnie)",
+      "keyNeedsSecret": "Ustaw SECRET_KEY o długości co najmniej 32 znaków, aby zapisać klucz w aplikacji.",
+      "saved": "Zapisano odczyt dokumentów"
     }
   }
 }

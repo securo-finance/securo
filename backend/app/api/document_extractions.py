@@ -1,6 +1,8 @@
 """Reading documents into transactions (ADR 0037).
 
-Every route answers 404 while DOCUMENT_AI_ENABLED is off. An upload stores
+An admin turns document reading on and picks its model in Admin Settings
+(`/api/admin/document-ai`). While it is off, every `/api/document-ai/*`
+route answers 404. An upload stores
 the file and queues the read; the client polls the extraction until it is
 done, then confirms through the import (statements) or the receipt routes.
 """
@@ -9,11 +11,15 @@ import uuid
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import current_superuser
 from app.core.config import get_settings
 from app.core.database import get_async_session
 from app.core.workspace_context import WorkspaceContext, current_workspace, current_writable_workspace
 from app.models.document_extraction import DocumentExtraction
+from app.models.user import User
 from app.schemas.document_extraction import (
+    AdminDocumentAiSettingsRead,
+    AdminDocumentAiSettingsUpdate,
     AttachReceiptRequest,
     BalanceCheck,
     DocumentAiSettingsRead,
@@ -29,12 +35,60 @@ from app.services import import_service
 from app.services.document_extraction_service import ExtractionError
 
 
-def _document_ai_enabled() -> None:
-    if not ai_settings.document_ai_enabled():
+async def _document_ai_enabled(session: AsyncSession = Depends(get_async_session)) -> None:
+    if not await ai_settings.document_ai_enabled(session):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document reading is not enabled")
 
 
 router = APIRouter(prefix="/api/document-ai", tags=["document-ai"], dependencies=[Depends(_document_ai_enabled)])
+# Reachable while reading is off: this is where an admin turns it on.
+admin_router = APIRouter(prefix="/api/admin/document-ai", tags=["document-ai"])
+
+
+async def _admin_read(session: AsyncSession) -> AdminDocumentAiSettingsRead:
+    from app.services.provider_settings import can_store_secrets
+
+    instance = await ai_settings.instance_model(session)
+    answer = await ai_settings.vision_for(instance) if instance.configured else None
+    return AdminDocumentAiSettingsRead(
+        enabled=await ai_settings.document_ai_enabled(session),
+        provider=instance.provider or None,
+        base_url=instance.base_url or None,
+        model=instance.model or None,
+        has_api_key=await ai_settings.instance_has_api_key(session),
+        vision=instance.vision_setting,
+        configured=instance.configured,
+        detected_vision=answer.vision if answer else "unknown",
+        detected_vision_source=answer.source if answer else "none",
+        can_store_secrets=can_store_secrets(),
+    )
+
+
+@admin_router.get("", response_model=AdminDocumentAiSettingsRead)
+async def get_admin_settings(
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_superuser),
+):
+    return await _admin_read(session)
+
+
+@admin_router.put("", response_model=AdminDocumentAiSettingsRead)
+async def update_admin_settings(
+    data: AdminDocumentAiSettingsUpdate,
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_superuser),
+):
+    try:
+        await ai_settings.save_instance_settings(
+            session,
+            enabled=data.enabled, provider=data.provider, base_url=data.base_url, model=data.model,
+            api_key=data.api_key, clear_api_key=data.clear_api_key, vision=data.vision,
+        )
+    except ai_settings.SecretStorageUnavailable as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from None
+    return await _admin_read(session)
 
 
 def _refuse(exc: ExtractionError) -> HTTPException:
@@ -99,7 +153,7 @@ async def get_workspace_settings(
     session: AsyncSession = Depends(get_async_session),
 ):
     ctx.require_owner()
-    settings = get_settings()
+    instance = await ai_settings.instance_model(session)
     row = await ai_settings.get_workspace_settings(session, ctx.workspace.id)
     return DocumentAiSettingsRead(
         provider=row.provider if row else None,
@@ -107,9 +161,9 @@ async def get_workspace_settings(
         model=row.model if row else None,
         has_api_key=bool(row and row.api_key_encrypted),
         vision=row.vision if row else "auto",
-        instance_provider=settings.document_ai_provider or None,
-        instance_model=settings.document_ai_model or None,
-        instance_base_url=settings.document_ai_base_url or None,
+        instance_provider=instance.provider or None,
+        instance_model=instance.model or None,
+        instance_base_url=instance.base_url or None,
     )
 
 
@@ -126,8 +180,10 @@ async def update_workspace_settings(
             provider=data.provider, base_url=data.base_url, model=data.model,
             api_key=data.api_key, clear_api_key=data.clear_api_key, vision=data.vision,
         )
+    except ai_settings.SecretStorageUnavailable as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from None
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from None
     return await get_workspace_settings(ctx, session)
 
 

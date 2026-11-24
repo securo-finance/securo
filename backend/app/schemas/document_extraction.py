@@ -22,6 +22,33 @@ class DocumentAiStatus(BaseModel):
     max_pages: int
 
 
+class AdminDocumentAiSettingsRead(BaseModel):
+    """The instance's document reading, as an admin sets it. Never the key."""
+
+    enabled: bool
+    provider: Optional[str] = None
+    base_url: Optional[str] = None
+    model: Optional[str] = None
+    has_api_key: bool = False
+    vision: str = "auto"
+    configured: bool = False
+    detected_vision: Literal["yes", "no", "unknown"] = "unknown"
+    detected_vision_source: Literal["setting", "provider", "catalog", "none"] = "none"
+    # False when SECRET_KEY is too short to seal a key saved in the app.
+    can_store_secrets: bool = True
+
+
+class AdminDocumentAiSettingsUpdate(BaseModel):
+    enabled: bool
+    provider: Optional[str] = None
+    base_url: Optional[str] = None
+    model: Optional[str] = None
+    # Blank keeps the stored key; `clear_api_key` removes it.
+    api_key: Optional[str] = None
+    clear_api_key: bool = False
+    vision: str = "auto"
+
+
 class DocumentAiSettingsRead(BaseModel):
     provider: Optional[str] = None
     base_url: Optional[str] = None

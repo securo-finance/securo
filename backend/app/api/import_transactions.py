@@ -49,7 +49,7 @@ async def preview_import(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 "PDF and image files are not statement formats. Export the statement as OFX, CSV, QIF "
-                "or CAMT, or turn on document reading (DOCUMENT_AI_ENABLED) to read it with a model."
+                "or CAMT, or ask an admin to turn on document reading to read it with a model."
             ),
         )
 
@@ -176,7 +176,7 @@ async def import_transactions(
     if data.document_extraction_id is not None:
         from app.services import document_ai_settings_service, document_extraction_service
 
-        if not document_ai_settings_service.document_ai_enabled():
+        if not await document_ai_settings_service.document_ai_enabled(session):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document reading is not enabled")
         try:
             await document_extraction_service.require_statement_ready(

@@ -10,11 +10,10 @@ from typing import Optional
 from unittest.mock import patch
 
 import pytest
-from pydantic import SecretStr
+import pytest_asyncio
 from sqlalchemy import select
 
 from app.agents.providers.base import ChatChunk, ChatMessage, ImagePart, LLMProvider, LLMUnavailableError, Usage
-from app.core.config import get_settings
 from app.models.document_extraction import DocumentExtraction
 from app.models.transaction import Transaction
 from app.models.transaction_attachment import TransactionAttachment
@@ -140,20 +139,31 @@ def storage():
         yield store
 
 
-@pytest.fixture
-def configured(monkeypatch):
-    monkeypatch.setenv("DOCUMENT_AI_ENABLED", "true")
-    settings = get_settings()
-    monkeypatch.setattr(settings, "document_ai_provider", "ollama")
-    monkeypatch.setattr(settings, "document_ai_model", "qwen2.5vl:7b")
-    monkeypatch.setattr(settings, "document_ai_base_url", "http://ollama:11434")
-    monkeypatch.setattr(settings, "document_ai_vision", "auto")
+@pytest.fixture(autouse=True)
+def keys_can_be_sealed(monkeypatch):
+    monkeypatch.setattr("app.services.provider_settings.can_store_secrets", lambda: True)
+
+
+@pytest.fixture(autouse=True)
+def no_ollama_probe(monkeypatch):
     # Never reach a real Ollama from the tests.
     async def no_probe(*args, **kwargs):
         return None
 
     monkeypatch.setattr("app.services.document_ai_capabilities.ollama_vision", no_probe)
-    return settings
+
+
+async def turn_on(session, *, provider="ollama", model="qwen2.5vl:7b", base_url="http://ollama:11434",
+                  api_key=None, vision="auto", enabled=True):
+    await ai_settings.save_instance_settings(
+        session, enabled=enabled, provider=provider, base_url=base_url, model=model,
+        api_key=api_key, clear_api_key=False, vision=vision,
+    )
+
+
+@pytest_asyncio.fixture
+async def configured(session, test_user):
+    await turn_on(session)
 
 
 @pytest.fixture
@@ -304,11 +314,8 @@ async def test_unsupported_file():
 
 # --- Settings ------------------------------------------------------------------
 
-async def test_workspace_url_never_receives_the_instance_key(session, test_workspace, test_user, monkeypatch):
-    settings = get_settings()
-    monkeypatch.setattr(settings, "document_ai_provider", "openai")
-    monkeypatch.setattr(settings, "document_ai_model", "gpt-4o-mini")
-    monkeypatch.setattr(settings, "document_ai_api_key", SecretStr("sk-instance"))
+async def test_workspace_url_never_receives_the_instance_key(session, test_workspace, test_user):
+    await turn_on(session, provider="openai", model="gpt-4o-mini", base_url=None, api_key="sk-instance")
     resolved = await ai_settings.resolve_model(session, test_workspace.id)
     assert resolved.configured and resolved.api_key == "sk-instance" and resolved.source == "instance"
 
@@ -329,16 +336,50 @@ async def test_workspace_url_never_receives_the_instance_key(session, test_works
 
 # --- API -----------------------------------------------------------------------
 
-async def test_routes_are_closed_while_the_flag_is_off(client, auth_headers, monkeypatch):
-    monkeypatch.delenv("DOCUMENT_AI_ENABLED", raising=False)
+async def test_routes_are_closed_until_an_admin_turns_reading_on(client, auth_headers, session):
     assert (await client.get("/api/document-ai/status", headers=auth_headers)).status_code == 404
-    info = (await client.get("/api/info")).json()
-    assert info["features"]["document_ai"] is False
+    assert (await client.get("/api/info")).json()["features"]["document_ai"] is False
+    # Configured but switched off is still off.
+    await turn_on(session, enabled=False)
+    assert (await client.get("/api/document-ai/status", headers=auth_headers)).status_code == 404
+    await turn_on(session)
+    assert (await client.get("/api/info")).json()["features"]["document_ai"] is True
+    assert (await client.get("/api/document-ai/status", headers=auth_headers)).status_code == 200
 
 
-async def test_status_and_unconfigured_upload(client, auth_headers, monkeypatch, storage):
-    monkeypatch.setenv("DOCUMENT_AI_ENABLED", "true")
-    monkeypatch.setattr(get_settings(), "document_ai_provider", "")
+async def test_admin_sets_up_reading_in_the_app_and_never_gets_the_key_back(
+    client, auth_headers, admin_auth_headers, session,
+):
+    body = {
+        "enabled": True, "provider": "openai_compatible", "base_url": "https://llm.example/v1",
+        "model": "qwen3.8-flash-next", "api_key": "sk-secret", "vision": "true",
+    }
+    assert (await client.put("/api/admin/document-ai", headers=auth_headers, json=body)).status_code == 403
+    saved = await client.put("/api/admin/document-ai", headers=admin_auth_headers, json=body)
+    assert saved.status_code == 200, saved.text
+    data = saved.json()
+    assert data["enabled"] and data["configured"] and data["has_api_key"]
+    assert (data["detected_vision"], data["detected_vision_source"]) == ("yes", "setting")
+    assert "sk-secret" not in saved.text
+    stored = (await client.get("/api/admin/settings/document_ai_api_key", headers=admin_auth_headers))
+    assert stored.status_code == 404
+    resolved = await ai_settings.instance_model(session)
+    assert resolved.api_key == "sk-secret"
+
+    # A blank key keeps the stored one; clearing removes it.
+    kept = await client.put("/api/admin/document-ai", headers=admin_auth_headers, json={**body, "api_key": ""})
+    assert kept.json()["has_api_key"] is True
+    cleared = await client.put(
+        "/api/admin/document-ai", headers=admin_auth_headers, json={**body, "api_key": None, "clear_api_key": True},
+    )
+    assert cleared.json()["has_api_key"] is False
+    off = await client.put("/api/admin/document-ai", headers=admin_auth_headers, json={**body, "enabled": False})
+    assert off.json()["enabled"] is False
+    assert (await client.get("/api/info")).json()["features"]["document_ai"] is False
+
+
+async def test_status_and_unconfigured_upload(client, auth_headers, session, storage):
+    await turn_on(session, provider=None, model=None)
     status = (await client.get("/api/document-ai/status", headers=auth_headers)).json()
     assert status["enabled"] and not status["configured"]
     resp = await client.post(
@@ -349,8 +390,8 @@ async def test_status_and_unconfigured_upload(client, auth_headers, monkeypatch,
     assert storage.files == {}
 
 
-async def test_a_photo_is_refused_up_front_for_a_text_only_model(client, auth_headers, configured, storage, monkeypatch):
-    monkeypatch.setattr(configured, "document_ai_model", "llama3.1:8b")
+async def test_a_photo_is_refused_up_front_for_a_text_only_model(client, auth_headers, session, storage):
+    await turn_on(session, model="llama3.1:8b")
     status = (await client.get("/api/document-ai/status", headers=auth_headers)).json()
     assert (status["vision"], status["vision_source"]) == ("no", "catalog")
     resp = await client.post(
@@ -546,4 +587,4 @@ async def test_import_preview_refuses_a_pdf_clearly(client, auth_headers):
         files={"file": ("extrato.pdf", text_pdf(STATEMENT_LINES), "application/pdf")},
     )
     assert resp.status_code == 400
-    assert "DOCUMENT_AI_ENABLED" in resp.json()["detail"]
+    assert "turn on document reading" in resp.json()["detail"]
