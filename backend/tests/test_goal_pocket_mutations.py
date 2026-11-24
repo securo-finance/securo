@@ -669,8 +669,9 @@ async def test_negative_transactions_cannot_be_assigned_to_pockets(
         allocations=[(pocket["id"], "40")],
     )
 
-    assert response.status_code == 400
-    assert "positive" in response.json()["detail"]
+    # The schema rejects a non-positive amount before the Pocket check runs.
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", "amount"]
 
 
 async def test_deleting_connection_removes_its_pockets(session, test_user, test_connection):

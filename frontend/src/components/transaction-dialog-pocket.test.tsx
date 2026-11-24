@@ -56,7 +56,7 @@ it('submits the visible pocket assignments of a duplicated create draft without 
 
 it('retains allocations after selecting an ignored category and lets the user explicitly clear them', async () => {
   const { user, onSave } = renderDraft()
-  await user.click(screen.getByRole('button', { name: t('transactions.noCategory') }))
+  await user.click(screen.getByRole('button', { name: new RegExp(t('transactions.noCategory')) }))
   await user.click(screen.getByRole('option', { name: 'Ignored category' }))
 
   await user.click(screen.getByRole('button', { name: 'Edit pockets' }))

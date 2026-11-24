@@ -19,9 +19,13 @@ vi.mock('@/lib/api', () => ({
   assetGroups: api.assetGroups,
   currencies: api.currencies,
 }))
+vi.mock('@/hooks/use-timezone', () => ({ useEffectiveTimezone: () => 'UTC' }))
 vi.mock('@/hooks/use-display-locale', () => ({ useDisplayLocale: () => 'en-US', useDateLocale: () => 'en-US' }))
 vi.mock('@/contexts/auth-context', () => ({ useAuth: () => ({ user: { preferences: { currency_display: 'USD' } } }) }))
-vi.mock('@/contexts/workspace-context', () => ({ useWorkspace: () => ({ canWrite: true, current: { id: 'ws-1' } }) }))
+vi.mock('@/contexts/workspace-context', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/contexts/workspace-context')>()),
+  useWorkspace: () => ({ canWrite: true, current: { id: 'ws-1' } }),
+}))
 vi.mock('@/hooks/use-privacy-mode', () => ({
   usePrivacyMode: () => ({ mask: (value: string) => value, privacyMode: false, MASK: '••••' }),
 }))
