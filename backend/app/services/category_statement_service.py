@@ -107,8 +107,10 @@ async def _settled_credit_offset_by_category(
     The settled amount comes off the credit at the row's own rate, so it
     matches the total it is subtracted from, and it follows the row's
     category lines, so a credit split across categories keeps the same
-    proportions. What the credit holds beyond the settled part stays income,
-    as on the dashboard and in Income vs Expenses (#493).
+    proportions. Only the lines the statement itself counts take part, so a
+    credit with one ignored line does not report an offset for it. What the
+    credit holds beyond the settled part stays income, as on the dashboard
+    and in Income vs Expenses (#493).
     """
     from app.models.group_settlement import GroupSettlement
 
@@ -126,6 +128,7 @@ async def _settled_credit_offset_by_category(
         )
         .where(
             *filters,
+            counts_as_user_pnl(line_category_id()),
             Transaction.type == "credit",
             Transaction.user_id == user_id,
         )
@@ -213,7 +216,7 @@ async def get_category_statement(
     # categories lands in each of them; group-split offsets stay whole rows.
     line_amount_expr = func.abs(line_primary_or_amount())
     line_filters = [*base_filters, counts_as_user_pnl(line_category_id())]
-    base_filters.append(counts_as_user_pnl(Transaction.category_id))
+    row_filters = [*base_filters, counts_as_user_pnl(Transaction.category_id)]
 
     cats_result = await session.execute(
         select(Category, CategoryGroup)
@@ -249,12 +252,14 @@ async def get_category_statement(
             use_effective_date = accounting_mode == "accrual"
             own_offset = await _owner_split_offset_by_category(
                 session, user_id, amount_expr,
-                [*base_filters, report_date >= m_start, report_date < m_end],
+                [*row_filters, report_date >= m_start, report_date < m_end],
             )
             for cat_id, offset in own_offset.items():
                 credits, debits = totals.get(cat_id, (0.0, 0.0))
                 totals[cat_id] = (credits, max(0.0, debits - offset))
             # A credit already paid back is not income: only its remainder stays.
+            # The offset follows the same lines as the totals it comes off, so
+            # an ignored line cannot drag a group's net into the expenses.
             settled = await _settled_credit_offset_by_category(
                 session, user_id,
                 [*base_filters, report_date >= m_start, report_date < m_end],
@@ -266,7 +271,7 @@ async def get_category_statement(
             # the totals at its full amount; keep only the viewer's share.
             member_offset = await _member_split_offset_by_category(
                 session, user_id, amount_expr,
-                [*base_filters, report_date >= m_start, report_date < m_end],
+                [*row_filters, report_date >= m_start, report_date < m_end],
             )
             for cat_id, offset in member_offset.items():
                 credits, debits = totals.get(cat_id, (0.0, 0.0))
@@ -310,10 +315,10 @@ async def get_category_statement(
     if not filtered:
         use_effective_date = accounting_mode == "accrual"
         own_offset = await _owner_split_offset_by_category(
-            session, user_id, amount_expr, [*base_filters, report_date < lifetime_end],
+            session, user_id, amount_expr, [*row_filters, report_date < lifetime_end],
         )
         member_offset = await _member_split_offset_by_category(
-            session, user_id, amount_expr, [*base_filters, report_date < lifetime_end],
+            session, user_id, amount_expr, [*row_filters, report_date < lifetime_end],
         )
         for offsets in (own_offset, member_offset):
             for cat_id, offset in offsets.items():

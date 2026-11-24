@@ -456,6 +456,62 @@ async def test_statement_drops_a_credit_settled_in_full(
 
 
 @pytest.mark.asyncio
+async def test_statement_ignores_the_settled_part_of_an_ignored_line(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A credit split across a group where one category is ignored: the
+    offset follows the counted lines, so the ignored line cannot drag the
+    group's net negative and push its income into the expense section
+    (#493).
+
+    100 split 60 into an ignored category and 40 into a counted one, with
+    60 paid back: the 24 that belong to the counted part come off it, and
+    the 36 of the ignored part are not income and not an offset either.
+    """
+    group = CategoryGroup(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Shared", icon="users", color="#222222", position=0,
+    )
+    ignored = Category(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Ignored", group_id=group.id, is_ignored=True,
+    )
+    counted = Category(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Counted", group_id=group.id,
+    )
+    session.add_all([group, ignored, counted])
+    await session.flush()
+
+    account = await _account(session, test_user.id)
+    payers, me, friend = await _group_with_friend(session, test_user, test_workspace)
+    credit = _txn(
+        test_user.id, account, "100", date(2025, 2, 10), "credit",
+        has_category_lines=True,
+    )
+    session.add(credit)
+    await session.flush()
+    for position, (cat, amount) in enumerate(((ignored, "60"), (counted, "40"))):
+        session.add(TransactionCategoryLine(
+            workspace_id=credit.workspace_id, transaction_id=credit.id,
+            category_id=cat.id, amount=Decimal(amount), position=position,
+        ))
+    session.add(_payback(payers, me, friend, "60", date(2025, 2, 20), credit))
+    await session.commit()
+
+    statement = await get_category_statement(
+        session, test_workspace.id, test_user.id, date(2025, 2, 1), months=1,
+        primary_currency="BRL",
+    )
+    [row] = statement.income.rows
+    assert (row.key, row.kind) == (str(group.id), "group")
+    assert row.values == [16.0]
+    assert [child.key for child in row.children] == [str(counted.id)]
+    assert statement.income.totals == [16.0]
+    assert statement.expenses.rows == []
+
+
+@pytest.mark.asyncio
 async def test_uncategorized_drill_down_lists_shares_from_other_workspaces(
     session: AsyncSession, client, auth_headers, test_user, test_workspace
 ):
