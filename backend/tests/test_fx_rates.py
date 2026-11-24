@@ -1756,6 +1756,7 @@ class TestFxFallbackFlag:
         assert data["fx_fallback"] is True
 
         row = await session.get(Transaction, uuid.UUID(txn_id))
+        assert row is not None
         await session.refresh(row)
         assert row.amount_primary is None
         assert row.fx_rate_used is None
