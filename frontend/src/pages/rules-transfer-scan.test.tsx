@@ -185,12 +185,15 @@ describe('the transfer scan on the rules page', () => {
   it('invalidates the money views so a linked pair shows without a reload', async () => {
     // A probe standing in for the transaction list: the scan links two rows
     // the person can already see, so the view has to be marked stale and
-    // refetched on its own. Without the financial invalidation the count
-    // stays at one and this test fails.
-    const moneyViews = vi.fn().mockResolvedValue([])
+    // refetched on its own. Without the financial invalidation the rendered
+    // rows stay as they were and this test fails.
+    const moneyViews = vi
+      .fn()
+      .mockResolvedValueOnce(['debit-1'])
+      .mockResolvedValue(['debit-1', 'credit-1'])
     function MoneyViewsProbe() {
-      useQuery({ queryKey: ['transactions'], queryFn: moneyViews })
-      return null
+      const { data } = useQuery<string[]>({ queryKey: ['transactions'], queryFn: moneyViews })
+      return <span data-testid="money-rows">{(data ?? []).join(',')}</span>
     }
     renderWithProviders(
       <>
@@ -199,11 +202,15 @@ describe('the transfer scan on the rules page', () => {
       </>,
     )
 
-    await waitFor(() => expect(moneyViews).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.getByTestId('money-rows')).toHaveTextContent('debit-1'))
+    expect(screen.getByTestId('money-rows')).not.toHaveTextContent('credit-1')
 
     await clickScan()
 
-    await waitFor(() => expect(moneyViews).toHaveBeenCalledTimes(2))
+    await waitFor(() =>
+      expect(screen.getByTestId('money-rows')).toHaveTextContent('debit-1,credit-1'),
+    )
+    expect(moneyViews).toHaveBeenCalledTimes(2)
   })
 
   it('keeps the button busy until the scan comes back', async () => {
