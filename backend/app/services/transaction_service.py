@@ -2146,8 +2146,6 @@ async def _apply_update_to_row(
     paths behave identically (FX restamp, bill re-link, transfer cascade,
     splits replacement).
     """
-    if update_data.get("currency") is not None:
-        update_data["currency"] = check_transaction_currency(update_data["currency"], tx.currency)
     # Preflight already rejected amount/date changes. Drop equal provider values
     # so an idempotent form save cannot restamp FX or cascade to the manual leg.
     if tx.source == "sync" and ({"amount", "currency", "date"} & update_data.keys()):
@@ -2546,6 +2544,12 @@ async def update_transaction(
     # Mortgage principal entries remain owned by their payment breakdown.
     for row in rows:
         row_update = update_data if row.id == transaction.id else scoped_update or {}
+        # Here and not while applying: an FX lookup for an earlier row can
+        # commit, which would keep half of an edit a later row refuses.
+        if row_update.get("currency") is not None:
+            row_update["currency"] = check_transaction_currency(
+                row_update["currency"], row.currency
+            )
         if row.source == "sync":
             for field in ("amount", "date"):
                 if (
