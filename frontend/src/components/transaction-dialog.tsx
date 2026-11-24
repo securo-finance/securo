@@ -652,6 +652,10 @@ function TransactionForm({
   // a date move left the conversion on the old day's rate (#481), and an
   // untouched echo rewrote the owner's stamp (#440). Only an edit counts.
   const [conversionEdited, setConversionEdited] = useState(false)
+  // The amount and currency the dialog opened with. Changing either makes the
+  // shown conversion a new figure (the amount at the shown rate), so the save
+  // sends it: what is saved is what the dialog showed (#482).
+  const [initialMoney] = useState(() => ({ amount, currency }))
   const [isRecurring, setIsRecurring] = useState(false)
   const [frequency, setFrequency] = useState<RecurringTransaction['frequency']>('monthly')
   const [endDate, setEndDate] = useState('')
@@ -1111,11 +1115,16 @@ function TransactionForm({
         // The fields carry the row's own conversion and follow the amount,
         // so sending them untouched is not a statement about the rate: a
         // date move must let the server derive it again (#481), and an echo
-        // must not rewrite the owner's stamp (#440).
-        if (showConversion && conversionEdited && parsedConverted != null) {
+        // must not rewrite the owner's stamp (#440). A new amount or currency
+        // is a new figure, shown at the shown rate, so it is sent (#482).
+        const sendConversion =
+          conversionEdited ||
+          parsedAmount !== parseAmountInput(initialMoney.amount, displayLocale) ||
+          currency !== initialMoney.currency
+        if (showConversion && sendConversion && parsedConverted != null) {
           fxFields.amount_primary = parsedConverted
         }
-        if (showConversion && conversionEdited && parsedFxRate != null) {
+        if (showConversion && sendConversion && parsedFxRate != null) {
           fxFields.fx_rate_used = parsedFxRate
         }
         if (showConversion && hadInitialFx && !convertedAmount && !fxRate) {

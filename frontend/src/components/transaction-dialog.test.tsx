@@ -1175,4 +1175,21 @@ describe('TransactionDialog moving only the date of a conversion (#481)', () => 
 
     expect(onSave.mock.calls[0][0]).toMatchObject({ date: '2026-10-15', amount_primary: 66 })
   })
+
+  it('sends the conversion it shows when only the amount changes (#482)', async () => {
+    const { user, onSave } = renderRow()
+
+    const amount = screen.getByLabelText(t('transactions.amount'))
+    await user.clear(amount)
+    await user.type(amount, '400')
+    const converted = screen.getByLabelText(t('transactions.convertedAmount', { currency: 'USD' }))
+    expect(converted).toHaveValue('83.2')
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave.mock.calls[0][0]).toMatchObject({
+      amount: 400,
+      amount_primary: 83.2,
+      fx_rate_used: 0.208,
+    })
+  })
 })
