@@ -879,6 +879,8 @@
     "savingsRateCaption": "ποσοστό του εισοδήματος που αποταμιεύτηκε αυτόν τον μήνα",
     "spendingProjection": "Με αυτόν τον ρυθμό, θα ξοδέψετε {{amount}} μέχρι το τέλος του μήνα",
     "uncategorizedCta": "{{count}} συναλλαγές χρειάζονται κατηγοριοποίηση",
+    "uncategorizedCta_one": "{{count}} συναλλαγή χρειάζεται κατηγοριοποίηση",
+    "uncategorizedCta_other": "{{count}} συναλλαγές χρειάζονται κατηγοριοποίηση",
     "uncategorizedTotal": "{{amount}} συνολικά",
     "categorizeNow": "Κατηγοριοποίηση τώρα",
     "drillDownQuickCategorize": "Επιλογή κατηγορίας",
