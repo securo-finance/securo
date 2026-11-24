@@ -1727,12 +1727,14 @@ class TestFxFallbackFlag:
         1,500 JPY as R$ 500 without a warning. The row is left unconverted,
         as creating it in JPY does.
         """
-        usd_account = await _make_account(session, test_user, currency="USD")
+        brl_account = await _make_account(
+            session, test_user, currency="BRL", name="Test BRL Account"
+        )
         resp = await client.post(
             "/api/transactions",
             headers=auth_headers,
             json={
-                "account_id": str(usd_account.id),
+                "account_id": str(brl_account.id),
                 "description": "Currency moves to JPY",
                 "amount": "100.00",
                 "date": date.today().isoformat(),
@@ -1743,6 +1745,9 @@ class TestFxFallbackFlag:
         assert resp.status_code == 201
         assert resp.json()["amount_primary"] == 500.0
         txn_id = resp.json()["id"]
+        row = await session.get(Transaction, uuid.UUID(txn_id))
+        assert row is not None
+        assert row.amount_account == Decimal("500.00")
 
         resp = await client.patch(
             f"/api/transactions/{txn_id}",
@@ -1755,12 +1760,10 @@ class TestFxFallbackFlag:
         assert data["fx_rate_used"] is None
         assert data["fx_fallback"] is True
 
-        row = await session.get(Transaction, uuid.UUID(txn_id))
-        assert row is not None
         await session.refresh(row)
         assert row.amount_primary is None
         assert row.fx_rate_used is None
-        # The USD account's figure was a conversion of the old currency too.
+        # The BRL account's R$ 500 was a conversion of the old currency too.
         assert row.amount_account is None
 
     @pytest.mark.asyncio
