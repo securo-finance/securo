@@ -687,6 +687,9 @@ async def test_yahoo_history_without_prices_is_empty(monkeypatch):
     from yfinance.exceptions import YFPricesMissingError
 
     class EmptyTicker:
+        # A chart result without quotes still carries the chart's metadata.
+        history_metadata = {"symbol": "^SPBTCFU", "currency": "USD", "YF repair?": False}
+
         def __init__(self, symbol):
             pass
 
@@ -696,6 +699,28 @@ async def test_yahoo_history_without_prices_is_empty(monkeypatch):
     monkeypatch.setattr("yfinance.Ticker", EmptyTicker)
     points = await YahooBenchmarkProvider().history("^SPBTCFU", date(2026, 1, 1), date(2026, 1, 5))
     assert points == []
+
+
+@pytest.mark.asyncio
+async def test_yahoo_history_null_body_is_a_source_failure(monkeypatch):
+    """A JSON null body raises YFPricesMissingError without a reason too, but
+    it carries no chart: the source failed, it did not answer "no prices"."""
+    from yfinance.exceptions import YFPricesMissingError
+
+    class NullBodyTicker:
+        # What yfinance keeps as metadata after a null body: no chart fields.
+        history_metadata = {"YF repair?": False}
+
+        def __init__(self, symbol):
+            pass
+
+        def history(self, **kwargs):
+            raise YFPricesMissingError("^GSPC", " (1d 2026-01-01 -> 2026-01-06)")
+
+    monkeypatch.setattr("yfinance.Ticker", NullBodyTicker)
+    with pytest.raises(BenchmarkProviderError) as raised:
+        await YahooBenchmarkProvider().history("^GSPC", date(2026, 1, 1), date(2026, 1, 5))
+    assert not isinstance(raised.value, BenchmarkRateLimitedError)
 
 
 def _prices_missing_ticker(**error_kwargs):
