@@ -9,7 +9,8 @@ a row synced in an unsupported currency still saves when the form sends its
 own currency back.
 """
 import uuid
-from datetime import date
+from datetime import date, timedelta
+from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
@@ -133,3 +134,46 @@ async def test_update_keeps_a_row_already_in_an_unsupported_currency_editable(
     assert resp.status_code == 200, resp.text
     assert resp.json()["currency"] == "KWD"
     assert resp.json()["description"] == "Renamed"
+
+
+@pytest.mark.asyncio
+async def test_a_refused_series_edit_writes_no_installment(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user: User, test_account
+):
+    """The first installment keeps its KWD, the second refuses it. The first
+    one's FX lookup commits the session (`sync_rates`), so its amount stayed
+    changed behind the 422."""
+    series_id = uuid.uuid4()
+    purchase = date.today() - timedelta(days=40)
+    rows = [
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_account.workspace_id,
+            account_id=test_account.id, description="Notebook", amount=Decimal("100.00"),
+            currency=currency, date=purchase + timedelta(days=30 * index), type="debit",
+            source="manual", installment_series_id=series_id, installment_number=index + 1,
+            total_installments=2, installment_purchase_date=purchase,
+            installment_total_amount=Decimal("200.00"),
+        )
+        for index, currency in enumerate(("KWD", "USD"))
+    ]
+    session.add_all(rows)
+    await session.commit()
+    ids = [row.id for row in rows]
+
+    resp = await client.patch(
+        f"/api/transactions/{ids[0]}",
+        headers=auth_headers,
+        json={"currency": "KWD", "amount": "150.00", "apply_to": "all"},
+    )
+
+    assert resp.status_code == 422, resp.text
+    assert "currency" in resp.text
+    await session.rollback()
+    stored = (
+        await session.execute(
+            select(Transaction.currency, Transaction.amount)
+            .where(Transaction.id.in_(ids))
+            .order_by(Transaction.installment_number)
+        )
+    ).all()
+    assert [tuple(row) for row in stored] == [("KWD", 100), ("USD", 100)]
