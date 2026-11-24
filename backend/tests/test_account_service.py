@@ -1424,9 +1424,8 @@ async def test_sync_opening_balance_ignores_other_currency_opening(
     duplicate: it must be left alone while the account-currency opening
     still reconciles normally.
 
-    And surviving is not enough: once the row stays, the sum of the
-    account's rows has to keep landing on the provider balance, so the
-    offset has to be computed with it counted.
+    And surviving is not enough: once the row stays, the account's rows
+    have to keep summing to the provider balance.
     """
     account = await _make_account(
         session, test_user.id, "Shared Limit Card", acc_type="credit_card", balance="600.00",
@@ -1438,9 +1437,8 @@ async def test_sync_opening_balance_ignores_other_currency_opening(
         session, test_user.id, account.id, 50, "debit", today - timedelta(days=30),
         source="opening_balance", currency="USD",
     )
-    # Converted, so the ledger reads it: 50 USD charged as 250 on a card kept
-    # in BRL. Without `amount_account` a foreign row counts as zero (#353),
-    # and the sum below could not tell the two fixes apart.
+    # 50 USD charged as 250 on a card kept in BRL. Without `amount_account`
+    # a foreign row counts as zero (#353) and nothing below would move.
     foreign_opening.amount_account = Decimal("250.00")
     await session.commit()
 
@@ -1451,11 +1449,8 @@ async def test_sync_opening_balance_ignores_other_currency_opening(
 
     from app.services._query_filters import signed_amount_expr
 
-    # What the whole fix is for, asserted first because it is the invariant
-    # the rest only describes: the ledger still reconciles to the provider
-    # balance. A card stores positive debt, so the target is -600. Leaving
-    # the USD opening out of the offset left this at -850, short by exactly
-    # that row.
+    # A card stores positive debt, so the ledger has to reconcile to -600.
+    # Leaving the USD opening out of the offset left this at -850.
     total = (await session.execute(
         select(func.coalesce(func.sum(signed_amount_expr(account.currency)), 0)).where(
             Transaction.account_id == account.id,
@@ -1475,7 +1470,6 @@ async def test_sync_opening_balance_ignores_other_currency_opening(
     assert local_opening.amount == Decimal("850.00")
     assert local_opening.type == "debit"
 
-    # And the second opening came through the sync untouched.
     await session.refresh(foreign_opening)
     assert foreign_opening.amount == Decimal("50.00")
     assert foreign_opening.currency == "USD"
