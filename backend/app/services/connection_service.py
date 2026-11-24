@@ -2109,7 +2109,7 @@ async def _run_first_import(
                     _merge_sync_metadata(
                         synced_dup,
                         txn_data,
-                        replace_external_id=synced_dup.source == "sync",
+                        replace_external_id=_takes_twin_key(synced_dup, txn_data),
                     )
                 continue
 
@@ -2434,6 +2434,26 @@ async def _fuzzy_match_manual(
     return None
 
 
+def _is_stale_pending_twin(transaction: Transaction, txn_data) -> bool:
+    """Whether `txn_data` is a pending entry come back for a row that posted.
+
+    What the posted entry brought stands against it: its id and the
+    provider's text (`_takes_twin_key`, `_takes_plugin_correction`).
+    """
+    return transaction.status == "posted" and txn_data.status == "pending"
+
+
+def _takes_twin_key(transaction: Transaction, txn_data) -> bool:
+    """Whether a row matched as a twin under another id takes the new id.
+
+    A synced row follows its provider's re-keying, except a posted row that a
+    stale pending entry comes back for: the posted entry's id stays. Moving
+    it to the pending one's would leave the posted entry matching nothing on
+    its next sync, and it would be inserted a second time.
+    """
+    return transaction.source == "sync" and not _is_stale_pending_twin(transaction, txn_data)
+
+
 def _merge_sync_metadata(
     transaction: Transaction,
     txn_data,
@@ -2678,9 +2698,7 @@ def _takes_plugin_correction(transaction: Transaction, txn_data) -> bool:
     and not a posted row a stale pending twin comes back for: what the posted
     entry brought stands.
     """
-    if transaction.is_ignored:
-        return False
-    return not (transaction.status == "posted" and txn_data.status == "pending")
+    return not transaction.is_ignored and not _is_stale_pending_twin(transaction, txn_data)
 
 
 #: How many days an Enable Banking card hold can precede the booked entry that
@@ -4926,11 +4944,12 @@ async def sync_connection(
                         # Same logical posted row re-keyed by a provider such
                         # as SimpleFIN. Keep the user's row and move its
                         # idempotency key forward instead of inserting a twin.
+                        # A stale pending twin of a posted row moves nothing.
                         await _refresh_twin_payee(session, synced_dup, txn_data)
                         _merge_sync_metadata(
                             synced_dup,
                             txn_data,
-                            replace_external_id=synced_dup.source == "sync",
+                            replace_external_id=_takes_twin_key(synced_dup, txn_data),
                         )
                     continue
 
