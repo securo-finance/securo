@@ -1477,6 +1477,43 @@ async def test_sync_opening_balance_ignores_other_currency_opening(
 
 
 @pytest.mark.asyncio
+async def test_update_account_matches_opening_currency_case_insensitively(
+    session, test_user, test_workspace
+):
+    """The account and its opening may name one currency in two cases.
+
+    A sync stores the provider's code as it comes, so an account can be
+    held as `brl` while its opening says `BRL`. Matching the two exactly
+    would miss the opening here and write a second one, leaving the
+    account with two and its balance counting both.
+    """
+    account = await _make_account(
+        session, test_user.id, "Lowercase Currency", balance="100.00", currency="brl",
+    )
+    opening = await _add_txn(
+        session, test_user.id, account.id, 100, "credit", date.today() - timedelta(days=30),
+        source="opening_balance", currency="BRL",
+    )
+
+    from sqlalchemy import select
+
+    updated = await update_account(
+        session, account.id, test_workspace.id, AccountUpdate(balance=Decimal("250.00"))
+    )
+    assert updated is not None
+
+    openings = (await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == account.id,
+            Transaction.source == "opening_balance",
+        )
+    )).scalars().all()
+    assert len(openings) == 1
+    assert openings[0].id == opening.id
+    assert openings[0].amount == Decimal("250.00")
+
+
+@pytest.mark.asyncio
 async def test_sync_opening_balance_ignores_unconverted_foreign_rows(
     session, test_user, test_workspace, test_connection
 ):
