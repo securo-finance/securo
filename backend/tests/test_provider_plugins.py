@@ -183,6 +183,100 @@ async def test_a_transaction_brings_its_notes(session: AsyncSession, bank_connec
     assert notes == {"t1": "Ihr Einkauf bei Example Shop, order 123-4567890", "t2": None}
 
 
+def _account_txns(*transactions: dict[str, Any]) -> dict[str, Any]:
+    return payload_data(transactions=list(transactions), holdings=None)
+
+
+def _txn(
+    external_id: str, *, status: str = "posted", notes: str | None = None, amount: str = "12.34"
+) -> dict[str, Any]:
+    txn = {"external_id": external_id, "description": "Example Shop", "amount": amount,
+           "date": "2026-11-14", "type": "debit", "status": status}
+    if notes is not None:
+        txn["notes"] = notes
+    return txn
+
+
+async def _only_row(session, connection) -> Transaction:
+    (account,) = await _rows(session, Account, connection_id=connection.id)
+    (row,) = await _rows(session, Transaction, account_id=account.id)
+    return row
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("posted_id", ["p1", "p2"], ids=["same-id", "new-id"])
+async def test_notes_reach_a_pending_row_when_it_posts(
+    session: AsyncSession, bank_connection, test_user, posted_id
+):
+    """The bank often adds the purpose text only on booking, under the same id
+    or as a twin with a new one: the notes reach the row the hold left."""
+    await _pipeline(session, bank_connection, _account_txns(_txn("p1", status="pending")), test_user)
+    await _pipeline(session, bank_connection, _account_txns(_txn(posted_id, notes="Ihr Einkauf")), test_user)
+    row = await _only_row(session, bank_connection)
+    assert (row.external_id, row.status, row.notes) == (posted_id, "posted", "Ihr Einkauf")
+
+
+@pytest.mark.asyncio
+async def test_a_users_notes_stay_and_the_providers_join_them(session: AsyncSession, bank_connection, test_user):
+    await _pipeline(session, bank_connection, _account_txns(_txn("p1", status="pending")), test_user)
+    row = await _only_row(session, bank_connection)
+    row.notes = "split with Alex"
+    await session.commit()
+    await _pipeline(session, bank_connection, _account_txns(_txn("p1", notes="Ihr Einkauf")), test_user)
+    await _pipeline(session, bank_connection, _account_txns(_txn("p1", notes="Ihr Einkauf")), test_user)
+    row = await _only_row(session, bank_connection)
+    assert row.notes == "split with Alex Ihr Einkauf"
+
+
+async def _complete_feed_sync(session, connection, data, user):
+    payload = parse_payload(data, ALL_KINDS)
+    assert payload is not None
+    provider = PluginPayloadProvider(provider_name(PLUGIN), payload, complete_feed=True)
+    return await connection_service.sync_connection(
+        session, connection.id, connection.workspace_id, user.id, provider=provider
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("edit", [None, "typed over", "cleared"])
+async def test_a_cancelled_hold_with_the_providers_notes_still_goes(
+    session: AsyncSession, bank_connection, test_user, edit
+):
+    """Notes the plugin sent are not the user's work: a complete feed that
+    drops the hold removes it. Notes the user changed (or cleared) keep it."""
+    hold = _txn("h1", status="pending", notes="Hotel deposit")
+    await _complete_feed_sync(session, bank_connection, _account_txns(hold, _txn("k1", amount="99.00")), test_user)
+    if edit is not None:
+        row = next(r for r in await _rows(session, Transaction, external_id="h1"))
+        row.notes = "Hotel deposit, refund due" if edit == "typed over" else None
+        await session.commit()
+
+    await _complete_feed_sync(session, bank_connection, _account_txns(_txn("k1", amount="99.00")), test_user)
+
+    kept = {r.external_id for r in await _rows(session, Transaction)}
+    assert kept == ({"k1"} if edit is None else {"h1", "k1"})
+
+
+@pytest.mark.asyncio
+async def test_a_hold_whose_notes_grew_from_the_provider_still_goes(
+    session: AsyncSession, bank_connection, test_user
+):
+    """Notes the plugin added on a later sync are still its own."""
+    await _complete_feed_sync(
+        session, bank_connection, _account_txns(_txn("h1", status="pending"), _txn("k1", amount="99.00")), test_user
+    )
+    await _complete_feed_sync(
+        session, bank_connection,
+        _account_txns(_txn("h1", status="pending", notes="Hotel deposit"), _txn("k1", amount="99.00")), test_user,
+    )
+    row = next(r for r in await _rows(session, Transaction, external_id="h1"))
+    assert row.notes == "Hotel deposit"
+
+    await _complete_feed_sync(session, bank_connection, _account_txns(_txn("k1", amount="99.00")), test_user)
+
+    assert {r.external_id for r in await _rows(session, Transaction)} == {"k1"}
+
+
 def test_notes_longer_than_the_column_are_refused():
     data = payload_data()
     data["accounts"][0]["transactions"][0]["notes"] = "x" * 1001

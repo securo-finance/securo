@@ -261,7 +261,11 @@ shows both named errors: access code `expired` and `busy`.
    - accounts are matched by `external_id` and get their balance;
    - a transaction's `notes` (the bank's full purpose, a reference, an order
      number) land in the row's notes: not shown in the list, but searched and
-     matched by rules, so `description` can stay what the bank's app shows;
+     matched by rules, so `description` can stay what the bank's app shows.
+     A row that already exists (the pending one a booking settles, a manual
+     entry the sync adopts) gets them appended to what it has, cut to the
+     column's 1000 characters; notes the plugin sent never count as the
+     user's when a `complete_feed` hold expires;
    - transactions are deduplicated by `external_id`; a `pending` one becomes
      `posted` in place. The connection's own settings (pending import, payee
      source) apply; with `complete_feed`, a pending row that left the feed

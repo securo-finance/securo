@@ -2479,6 +2479,7 @@ def _merge_sync_metadata(
         transaction.card_masked_number = txn_data.card_masked_number
     if txn_data.payee and not transaction.payee:
         transaction.payee = txn_data.payee
+    _merge_synced_notes(transaction, txn_data.notes)
 
 
 async def _refresh_account_charge(
@@ -2675,10 +2676,15 @@ SYNC_CATEGORY_KEY = "securo_sync_category"
 #: The same record for the payee the sync gave a pending row.
 SYNC_PAYEE_KEY = "securo_sync_payee"
 
+#: The same record for the notes the sync stored on a pending row (the
+#: provider's, and what its rules appended). Notes other than these are the
+#: user's.
+SYNC_NOTES_KEY = "securo_sync_notes"
+
 #: Keys Securo writes into `raw_data` itself. They are not the provider's,
 #: so payload comparisons leave them out.
 _SECURO_RAW_KEYS = frozenset(
-    {ADOPTED_MANUAL_KEY, SYNC_CATEGORY_KEY, SYNC_PAYEE_KEY, USER_EDITED_KEY}
+    {ADOPTED_MANUAL_KEY, SYNC_CATEGORY_KEY, SYNC_NOTES_KEY, SYNC_PAYEE_KEY, USER_EDITED_KEY}
 )
 
 
@@ -3345,9 +3351,9 @@ def _mark_adopted_manual(tx: Transaction) -> None:
 
 
 def _record_sync_category(tx: Transaction) -> None:
-    """Record on a pending row the category and payee the sync gave it.
+    """Record on a pending row the category, payee and notes the sync gave it.
 
-    Both are recorded even when empty (as ""), so a value the user later
+    All are recorded even when empty (as ""), so a value the user later
     clears differs from the record as much as one they change.
     """
     if tx.status != "pending":
@@ -3357,7 +3363,58 @@ def _record_sync_category(tx: Transaction) -> None:
         **raw,
         SYNC_CATEGORY_KEY: str(tx.category_id) if tx.category_id else "",
         SYNC_PAYEE_KEY: str(tx.payee_id) if tx.payee_id else "",
+        SYNC_NOTES_KEY: (tx.notes or "").strip(),
     }
+
+
+def _recorded_sync_notes(raw: dict) -> Optional[str]:
+    """The notes the sync recorded storing on a row, or None without a record.
+
+    A row the sync recorded before notes were part of the record stored none
+    of its own then (no provider sent notes), so it reads as "".
+    """
+    recorded = raw.get(SYNC_NOTES_KEY)
+    if isinstance(recorded, str):
+        return recorded
+    if SYNC_CATEGORY_KEY in raw:
+        return ""
+    return None
+
+
+def _notes_differ_from_sync(raw: dict, notes: Optional[str]) -> bool:
+    """Whether a row's notes differ from the ones the sync recorded storing.
+
+    A row stored before any record existed has none: any notes on it count
+    as the user's, as they did before a provider could send notes.
+    """
+    notes = (notes or "").strip()
+    recorded = _recorded_sync_notes(raw)
+    if recorded is None:
+        return bool(notes)
+    return notes != recorded
+
+
+def _set_synced_notes(transaction: Transaction, notes: Optional[str]) -> None:
+    """Give a row the notes the sync worked out for it.
+
+    On a row whose notes are still the ones the sync recorded, the record
+    follows, so the provider's own text never reads as the user's
+    (`_holds_user_work`). Notes the user changed keep the record as it was.
+    """
+    if notes == transaction.notes:
+        return
+    raw = transaction.raw_data if isinstance(transaction.raw_data, dict) else {}
+    follows = _recorded_sync_notes(raw) is not None and not _notes_differ_from_sync(
+        raw, transaction.notes
+    )
+    transaction.notes = notes
+    if follows:
+        transaction.raw_data = {**raw, SYNC_NOTES_KEY: (notes or "").strip()}
+
+
+def _merge_synced_notes(transaction: Transaction, incoming: Optional[str]) -> None:
+    """Add the provider's notes to a row the sync matched (`merge_notes`)."""
+    _set_synced_notes(transaction, merge_notes(transaction.notes, incoming))
 
 
 def _differs_from_sync(raw: dict, key: str, value: Optional[uuid.UUID]) -> bool:
@@ -3381,10 +3438,10 @@ def _holds_user_work(tx: Transaction) -> bool:
     set by the edit even when the value later went back to the sync's). An
     edited description shows as it differing from the bank's text in
     `original_description`; a row whose provenance is unknown (no
-    `original_description`) counts as the user's too. So does a category or
-    payee other than the one the sync recorded when it stored the row
-    (`SYNC_CATEGORY_KEY`, `SYNC_PAYEE_KEY`), which also catches a bulk
-    recategorization and a cleared value.
+    `original_description`) counts as the user's too. So does a category,
+    payee or notes other than the ones the sync recorded when it stored the
+    row (`SYNC_CATEGORY_KEY`, `SYNC_PAYEE_KEY`, `SYNC_NOTES_KEY`), which also
+    catches a bulk recategorization and a cleared value.
     """
     raw = tx.raw_data if isinstance(tx.raw_data, dict) else {}
     if raw.get(ADOPTED_MANUAL_KEY) or raw.get(USER_EDITED_KEY):
@@ -3393,7 +3450,7 @@ def _holds_user_work(tx: Transaction) -> bool:
         return True
     if _differs_from_sync(raw, SYNC_PAYEE_KEY, tx.payee_id):
         return True
-    if (tx.notes or "").strip():
+    if _notes_differ_from_sync(raw, tx.notes):
         return True
     if (
         tx.reporting_date_override is not None
