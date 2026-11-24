@@ -757,7 +757,8 @@ function TransactionForm({
       filled.push(t('transactions.description'))
     }
     if (!now.amount && receipt.total) {
-      setAmount(formatAmountInput(Number(receipt.total), displayLocale, 8))
+      // Money as printed on a receipt: always two decimals (35.70, not 35.7).
+      setAmount(formatAmountInput(Number(receipt.total), displayLocale, 2, 2))
       setType(receipt.kind === 'refund' ? 'credit' : 'debit')
       if (receipt.currency) setCurrency(receipt.currency)
       filled.push(t('transactions.amount'))
