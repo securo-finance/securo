@@ -120,7 +120,11 @@ describe('Holding row actions menu', () => {
     renderWithProviders(<AssetsPage />)
     await screen.findByText('Old Car')
 
+    // The whole click, not only the pointer-down that opens the menu: it is
+    // the click that would reach the row and expand it.
+    const trigger = screen.getByRole('button', { name: `${t('common.more')}: Old Car` })
     openMenu('Old Car')
+    fireEvent.click(trigger)
     const menu = await screen.findByRole('menu')
     fireEvent.click(within(menu).getByRole('menuitem', { name: t('assets.moveToWallet') }))
 
@@ -167,12 +171,16 @@ describe('Holding row actions menu', () => {
     api.assets.list.mockResolvedValue([asset()])
     renderWithProviders(<AssetsPage />)
     await screen.findByText('Apple Inc.')
+    expect(screen.queryByText('$210.00')).not.toBeInTheDocument()
+    api.assets.list.mockResolvedValue([asset({ last_price: 210 })])
 
     openMenu('AAPL')
     fireEvent.click(await screen.findByRole('menuitem', { name: t('assets.refreshPrice') }))
 
     await waitFor(() => expect(api.assets.refreshPrice).toHaveBeenCalledWith('asset-1'))
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith(t('assets.priceRefreshed')))
+    // The row shows the new quote once the list is fetched again.
+    expect(await screen.findByText('$210.00')).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
