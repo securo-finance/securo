@@ -222,7 +222,9 @@ def to_decimal(value: Any) -> Optional[Decimal]:
         if "(" in raw or ")" in raw or raw.count("-") + raw.count("+") > 1:
             return None
         if raw.startswith("-"):
-            negative, raw = not negative, raw[1:]
+            if negative:
+                return None  # "(-120.50)": two sign markers, meaning unclear
+            negative, raw = True, raw[1:]
         raw = raw.lstrip("+")
         if "-" in raw or "+" in raw:
             return None
@@ -322,6 +324,26 @@ def clean_statement(raw_chunks: list[dict]) -> dict:
         "closing_balance": (str(v) if (v := to_decimal(meta.get("closing_balance"))) is not None else None),
     }
     return {"statement": statement, "transactions": rows, "dropped": dropped}
+
+
+def merge_receipt_answers(answers: list[dict]) -> dict:
+    """One receipt from several answers (a PDF read in parts), in page order.
+
+    Lines add up across pages. The total and the payment come from the last
+    page that printed them, where a receipt closes; everything else from the
+    first.
+    """
+    merged: dict[str, Any] = {"items": []}
+    for answer in answers:
+        if not isinstance(answer, dict):
+            continue
+        merged["items"].extend(answer.get("items") or [])
+        for key, value in answer.items():
+            if key == "items" or value in (None, ""):
+                continue
+            if key in ("total", "payment_method") or key not in merged:
+                merged[key] = value
+    return merged
 
 
 def clean_receipt(raw: dict) -> dict:
@@ -508,5 +530,6 @@ async def read_document(
         result["layout_fingerprint"] = layout_fingerprint(kind, result, first_page_text)
         result["unread_pages"] = unread_pages
     else:
-        result = clean_receipt(answers[0] if answers else {})
+        result = clean_receipt(merge_receipt_answers(answers))
+        result["unread_pages"] = unread_pages
     return ReadOutcome(result=result, method=method, pages=page_count, usage=usage)

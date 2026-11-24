@@ -29,7 +29,7 @@ function formFrom(settings: DocumentAiSettings | undefined): Form {
 export function DocumentAiSettingsSection() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const { data: settings } = useQuery({ queryKey: ['document-ai', 'settings'], queryFn: () => documentAi.getSettings() })
+  const { data: settings, isSuccess: settingsLoaded } = useQuery({ queryKey: ['document-ai', 'settings'], queryFn: () => documentAi.getSettings() })
   const { data: status } = useQuery({ queryKey: ['document-ai', 'status'], queryFn: () => documentAi.status() })
   const { data: connections = [] } = useQuery({ queryKey: ['agent-connections'], queryFn: () => agents.connections.list() })
   const [form, setForm] = useState<Form>(formFrom(undefined))
@@ -139,7 +139,8 @@ export function DocumentAiSettingsSection() {
 
       {connections.length > 0 && (
         <div className="flex justify-end">
-          <Button size="sm" disabled={save.isPending} onClick={() => save.mutate()}>
+          {/* Until the saved choice is read, the form holds blanks: saving them would turn reading off. */}
+          <Button size="sm" disabled={save.isPending || !settingsLoaded} onClick={() => save.mutate()}>
             {t('common.save')}
           </Button>
         </div>

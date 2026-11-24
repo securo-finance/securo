@@ -206,6 +206,12 @@ export function ReceiptScanDialog({ open, onOpenChange }: { open: boolean; onOpe
 
         {extraction?.status === 'done' && draft && (
           <div className="space-y-4" data-testid="receipt-result">
+            {extraction.unread_pages.length > 0 && (
+              <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                <AlertCircle size={14} className="mt-px shrink-0" />
+                <span>{t('documentAi.unreadPages', { pages: extraction.unread_pages.join(', ') })}</span>
+              </div>
+            )}
             {extraction.matches.length > 0 && (
               <div className="space-y-2">
                 <p className="text-xs font-medium text-muted-foreground">{t('documentAi.receipt.matchesTitle')}</p>

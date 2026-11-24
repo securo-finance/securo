@@ -76,7 +76,8 @@ async def _read(
         out.unread_pages = [int(n) for n in result.get("unread_pages") or []]
         out.suggested_account_id = await extraction_service.suggested_account_id(session, extraction)
     else:
-        out.receipt = {k: v for k, v in result.items() if k != "usage"}
+        out.receipt = {k: v for k, v in result.items() if k not in ("usage", "unread_pages")}
+        out.unread_pages = [int(n) for n in result.get("unread_pages") or []]
         if extraction.confirmed_at is None:
             matches = await extraction_service.receipt_matches(session, ctx.workspace.id, extraction)
             out.matches = [ReceiptMatch.model_validate(m) for m in matches]

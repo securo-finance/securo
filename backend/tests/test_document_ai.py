@@ -797,3 +797,24 @@ async def test_a_statement_can_be_confirmed_once(
     with pytest.raises(extraction_service.ExtractionError) as err:
         await confirm(False)
     assert err.value.code == "already_confirmed"
+
+
+def test_two_sign_markers_are_refused():
+    assert document_reader.to_decimal("(-120.50)") is None
+
+
+async def test_a_receipt_pdf_with_a_scanned_page_keeps_what_each_page_said():
+    first = {"merchant": "Padaria Central", "date": "2026-03-10", "items": [{"description": "Pao", "amount": 10}]}
+    second = {"total": 120.5, "currency": "BRL", "items": [{"description": "Bolo", "amount": 110.5}]}
+    provider = FakeProvider([first, second])
+    outcome = await document_reader.read_document(
+        provider=provider, model="m", kind="receipt", content=mixed_pdf(), vision="yes", max_pages=5,
+    )
+    receipt = outcome.result
+    assert (receipt["merchant"], receipt["total"], receipt["currency"]) == ("Padaria Central", "120.50", "BRL")
+    assert [i["description"] for i in receipt["items"]] == ["Pao", "Bolo"]
+
+    text_only = await document_reader.read_document(
+        provider=FakeProvider([first]), model="m", kind="receipt", content=mixed_pdf(), vision="no", max_pages=5,
+    )
+    assert text_only.result["unread_pages"] == [2]
