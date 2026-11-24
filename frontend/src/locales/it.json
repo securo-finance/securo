@@ -4146,7 +4146,7 @@
       "create": "Crea transazione",
       "attached": "Ricevuta allegata",
       "created": "Transazione creata con la ricevuta allegata",
-      "createdWithoutFile": "Transazione creata, ma non è stato possibile allegare il file."
+      "createdWithoutFile": "Transazione creata, ma non è stato possibile allegare il file. Apri la transazione per allegarlo."
     },
     "settings": {
       "title": "Lettura dei documenti",

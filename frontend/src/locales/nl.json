@@ -4134,7 +4134,7 @@
       "create": "Transactie maken",
       "attached": "Bon gekoppeld",
       "created": "Transactie gemaakt met de bon als bijlage",
-      "createdWithoutFile": "Transactie aangemaakt, maar het bestand kon niet worden bijgevoegd."
+      "createdWithoutFile": "Transactie aangemaakt, maar het bestand kon niet worden bijgevoegd. Open de transactie om het bij te voegen."
     },
     "settings": {
       "title": "Documenten lezen",

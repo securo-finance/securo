@@ -4147,7 +4147,7 @@
       "create": "Criar transação",
       "attached": "Recibo anexado",
       "created": "Transação criada com o recibo anexado",
-      "createdWithoutFile": "Transação criada, mas não foi possível anexar o arquivo a ela."
+      "createdWithoutFile": "Transação criada, mas não foi possível anexar o arquivo. Abra a transação para anexá-lo."
     },
     "settings": {
       "title": "Leitura de documentos",

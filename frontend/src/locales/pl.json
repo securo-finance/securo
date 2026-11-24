@@ -4294,7 +4294,7 @@
       "create": "Utwórz transakcję",
       "attached": "Paragon dołączony",
       "created": "Utworzono transakcję z dołączonym paragonem",
-      "createdWithoutFile": "Transakcja utworzona, ale nie udało się dołączyć pliku."
+      "createdWithoutFile": "Transakcja utworzona, ale nie udało się dołączyć pliku. Otwórz transakcję, aby go dołączyć."
     },
     "settings": {
       "title": "Odczyt dokumentów",

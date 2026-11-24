@@ -84,10 +84,10 @@ export function ReceiptScanDialog({ open, onOpenChange }: { open: boolean; onOpe
     onOpenChange(false)
   }
 
-  const done = (message: string) => {
+  const done = (message: string, level: 'success' | 'warning' = 'success') => {
     invalidateFinancialQueries(queryClient)
     queryClient.invalidateQueries({ queryKey: ['attachments'] })
-    toast.success(message)
+    toast[level](message)
     close()
   }
 
@@ -108,9 +108,10 @@ export function ReceiptScanDialog({ open, onOpenChange }: { open: boolean; onOpe
       category_id: draft!.categoryId || null,
     }),
     onSuccess: (result) => {
-      // The transaction exists either way; say when its file did not make it.
-      if (result.attached === false) toast.warning(t('documentAi.receipt.createdWithoutFile'))
-      done(t('documentAi.receipt.created'))
+      // The transaction exists either way; when its file did not make it,
+      // say only that (it can be attached from the transaction itself).
+      if (result.attached === false) done(t('documentAi.receipt.createdWithoutFile'), 'warning')
+      else done(t('documentAi.receipt.created'))
     },
     onError: (error) => toast.error(errorFromResponse(t, error)),
   })

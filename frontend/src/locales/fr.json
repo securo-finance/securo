@@ -4146,7 +4146,7 @@
       "create": "Créer la transaction",
       "attached": "Reçu joint",
       "created": "Transaction créée avec le reçu joint",
-      "createdWithoutFile": "Transaction créée, mais le fichier n'a pas pu y être joint."
+      "createdWithoutFile": "Transaction créée, mais le fichier n'a pas pu être joint. Ouvrez la transaction pour le joindre."
     },
     "settings": {
       "title": "Lecture des documents",

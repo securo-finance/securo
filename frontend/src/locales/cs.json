@@ -4344,7 +4344,7 @@
       "create": "Vytvořit transakci",
       "attached": "Účtenka připojena",
       "created": "Transakce vytvořena s připojenou účtenkou",
-      "createdWithoutFile": "Transakce vytvořena, ale soubor se nepodařilo připojit."
+      "createdWithoutFile": "Transakce vytvořena, ale soubor se nepodařilo připojit. Otevřete transakci a připojte ho."
     },
     "settings": {
       "title": "Čtení dokumentů",

@@ -4133,7 +4133,7 @@
       "create": "Transaktion erstellen",
       "attached": "Beleg angehängt",
       "created": "Transaktion mit angehängtem Beleg erstellt",
-      "createdWithoutFile": "Transaktion erstellt, aber die Datei konnte nicht angehängt werden."
+      "createdWithoutFile": "Transaktion erstellt, aber die Datei konnte nicht angehängt werden. Öffne die Transaktion, um sie anzuhängen."
     },
     "settings": {
       "title": "Dokumente lesen",

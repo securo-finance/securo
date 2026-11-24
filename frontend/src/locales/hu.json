@@ -4132,7 +4132,7 @@
       "create": "Tranzakció létrehozása",
       "attached": "Nyugta csatolva",
       "created": "Tranzakció létrehozva, a nyugta csatolva",
-      "createdWithoutFile": "A tranzakció létrejött, de a fájlt nem sikerült csatolni."
+      "createdWithoutFile": "A tranzakció létrejött, de a fájlt nem sikerült csatolni. Nyisd meg a tranzakciót a csatoláshoz."
     },
     "settings": {
       "title": "Dokumentumok olvasása",

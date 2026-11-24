@@ -4132,7 +4132,7 @@
       "create": "Create transaction",
       "attached": "Receipt attached",
       "created": "Transaction created with the receipt attached",
-      "createdWithoutFile": "Transaction created, but the file could not be attached to it."
+      "createdWithoutFile": "Transaction created, but the file could not be attached. Open the transaction to attach it."
     },
     "settings": {
       "title": "Document reading",
