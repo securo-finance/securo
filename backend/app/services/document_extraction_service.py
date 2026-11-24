@@ -280,23 +280,19 @@ async def mark_statement_confirmed(
     user_id: uuid.UUID,
     extraction_id: uuid.UUID,
     account_id: uuid.UUID,
-    import_log_id: uuid.UUID,
+    import_log_id: Optional[uuid.UUID],
     rows: list[TransactionImport],
     commit: bool = True,
 ) -> None:
     """Record what the person kept, next to what the model read.
 
     The import calls this with commit=False just before its own commit, so
-    the rows and the confirmation land together or not at all.
+    the rows and the confirmation land together or not at all. The write is
+    conditional on the read not being confirmed yet: of two imports of the
+    same document racing, the second raises already_confirmed and its rows
+    are rolled back with it.
     """
-    extraction = await get_extraction(session, workspace_id, extraction_id)
-    if extraction is None or extraction.kind != "statement":
-        return
-    extraction.account_id = account_id
-    extraction.import_log_id = import_log_id
-    extraction.confirmed_by_user_id = user_id
-    extraction.confirmed_at = _now()
-    extraction.confirmed = {
+    confirmed = {
         "transactions": [
             {
                 "date": r.date.isoformat(),
@@ -308,6 +304,24 @@ async def mark_statement_confirmed(
             for r in rows
         ],
     }
+    written = await session.execute(
+        update(DocumentExtraction)
+        .where(
+            DocumentExtraction.id == extraction_id,
+            DocumentExtraction.workspace_id == workspace_id,
+            DocumentExtraction.kind == "statement",
+            DocumentExtraction.confirmed_at.is_(None),
+        )
+        .values(
+            account_id=account_id,
+            import_log_id=import_log_id,
+            confirmed_by_user_id=user_id,
+            confirmed_at=_now(),
+            confirmed=confirmed,
+        )
+    )
+    if getattr(written, "rowcount", 0) != 1:
+        raise ExtractionError("already_confirmed", "This document was already imported.", 409)
     if commit:
         await session.commit()
 

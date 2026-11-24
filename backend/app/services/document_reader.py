@@ -457,38 +457,47 @@ async def read_document(
         pages = pages[:max_pages]
         first_page_text = pages[0]
         # Each page on its own: a statement can mix text pages with scans.
-        text_pages = [i for i, page in enumerate(pages) if page_has_text(page)]
-        scanned = [i for i in range(len(pages)) if i not in text_pages]
-        if not text_pages and vision == "no":
+        is_text = [page_has_text(page) for page in pages]
+        if not any(is_text) and vision == "no":
             raise ReaderError("vision_required", "This PDF is scanned and the model does not read images.")
         method: Literal["text", "vision"] = "text"
-        if text_pages:
-            # Pages keep their numbers; a scan in between goes as an image.
-            readable = [pages[i] if i in text_pages else "" for i in range(len(pages))]
-            for start, end, text in _chunks(readable):
-                answers.append(await _ask(
-                    provider, model, system,
-                    f"Pages {start + 1} to {end + 1} of {page_count}. Read them:\n\n{text}",
-                    [], usage,
-                ))
-        if scanned and vision != "no":
-            images = render_pdf_pages(content, scanned)
-            for offset in range(0, len(images), IMAGES_PER_CALL):
-                numbers = scanned[offset : offset + IMAGES_PER_CALL]
-                batch = images[offset : offset + IMAGES_PER_CALL]
-                answers.append(await _ask(
-                    provider, model, system,
-                    f"Pages {', '.join(str(n + 1) for n in numbers)} of {page_count}, as images. Read them.",
-                    batch, usage,
-                ))
-            method = "vision"
-            scanned = []
-        # Scans the model could not take stay listed, so the review says so.
-        unread_pages = [n + 1 for n in scanned]
+        unread_pages: list[int] = []
+        # Runs of consecutive pages of one kind, read in page order: the
+        # answers merge in that order, so the period's end and the closing
+        # balance come from the last page, whatever kind it is.
+        runs: list[tuple[bool, list[int]]] = []
+        for index, text in enumerate(is_text):
+            if runs and runs[-1][0] == text:
+                runs[-1][1].append(index)
+            else:
+                runs.append((text, [index]))
+        for text, indexes in runs:
+            if text:
+                run_pages = [pages[i] if i in indexes else "" for i in range(len(pages))]
+                for start, end, chunk in _chunks(run_pages):
+                    answers.append(await _ask(
+                        provider, model, system,
+                        f"Pages {start + 1} to {end + 1} of {page_count}. Read them:\n\n{chunk}",
+                        [], usage,
+                    ))
+            elif vision == "no":
+                # Scans the model cannot take stay listed, so the review says so.
+                unread_pages.extend(i + 1 for i in indexes)
+            else:
+                images = render_pdf_pages(content, indexes)
+                for offset in range(0, len(images), IMAGES_PER_CALL):
+                    numbers = indexes[offset : offset + IMAGES_PER_CALL]
+                    batch = images[offset : offset + IMAGES_PER_CALL]
+                    answers.append(await _ask(
+                        provider, model, system,
+                        f"Pages {', '.join(str(n + 1) for n in numbers)} of {page_count}, as images. Read them.",
+                        batch, usage,
+                    ))
+                method = "vision"
     else:
         if vision == "no":
             raise ReaderError("vision_required", "The model does not read images.")
-        unread_pages: list[int] = []
+        unread_pages = []
         page_count = 1
         answers.append(await _ask(provider, model, system, "Read this document.", [normalize_image(content)], usage))
         method = "vision"

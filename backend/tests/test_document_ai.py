@@ -738,3 +738,62 @@ async def test_storage_failing_after_creation_still_returns_the_transaction(
         json=_new_transaction(test_account),
     )
     assert again.status_code == 409
+
+
+def text_scan_text_pdf() -> bytes:
+    from reportlab.pdfgen import canvas
+
+    buf = io.BytesIO()
+    pdf = canvas.Canvas(buf)
+    for page in range(3):
+        if page == 1:
+            pdf.rect(50, 50, 300, 300, fill=1)
+        else:
+            y = 800
+            for line in STATEMENT_LINES:
+                pdf.drawString(40, y, f"{line} p{page + 1}")
+                y -= 16
+        pdf.showPage()
+    pdf.save()
+    return buf.getvalue()
+
+
+async def test_mixed_pages_are_read_in_page_order_so_the_last_balance_wins():
+    first = {"statement": {"kind": "bank", "closing_balance": 1}, "transactions": []}
+    middle = {"statement": {"closing_balance": 2}, "transactions": []}
+    last = {"statement": {"closing_balance": 3}, "transactions": []}
+    provider = FakeProvider([first, middle, last])
+    outcome = await document_reader.read_document(
+        provider=provider, model="m", kind="statement", content=text_scan_text_pdf(), vision="yes", max_pages=5,
+    )
+    first_call, image_call, last_call = provider.calls
+    assert "--- page 1 ---" in (first_call[1].content or "") and not first_call[1].images
+    assert "Pages 2 of 3" in (image_call[1].content or "") and image_call[1].images
+    assert "--- page 3 ---" in (last_call[1].content or "") and "--- page 1 ---" not in (last_call[1].content or "")
+    assert outcome.result["statement"]["closing_balance"] == "3.00"
+
+
+async def test_a_statement_can_be_confirmed_once(
+    client, auth_headers, configured, storage, no_dispatch, session, test_workspace, test_user, test_account,
+):
+    resp = await client.post(
+        "/api/document-ai/extractions", headers=auth_headers,
+        files={"file": ("s.pdf", text_pdf(STATEMENT_LINES), "application/pdf")}, data={"kind": "statement"},
+    )
+    extraction_id = uuid.UUID(resp.json()["id"])
+    with use_provider(FakeProvider([STATEMENT_ANSWER])):
+        await extraction_service.run_extraction(session, extraction_id)
+    rows = extraction_service.statement_rows(
+        (await session.execute(select(DocumentExtraction).where(DocumentExtraction.id == extraction_id))).scalar_one()
+    )
+    async def confirm(commit: bool):
+        await extraction_service.mark_statement_confirmed(
+            session, workspace_id=test_workspace.id, user_id=test_user.id, extraction_id=extraction_id,
+            account_id=test_account.id, import_log_id=None, rows=rows, commit=commit,
+        )
+
+    await confirm(True)
+    # The second one lost the race: its import is rolled back with it.
+    with pytest.raises(extraction_service.ExtractionError) as err:
+        await confirm(False)
+    assert err.value.code == "already_confirmed"

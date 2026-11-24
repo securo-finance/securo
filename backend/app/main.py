@@ -21,7 +21,6 @@ from app.api.oidc_auth import router as oidc_auth_router
 from app.api.passkeys import router as passkeys_router
 from app.api.forecast import router as forecast_router
 from app.api.import_transactions import router as import_router
-from app.api.document_extractions import router as document_ai_router
 from app.api.info import router as info_router
 from app.api.recurring_transactions import router as recurring_router
 from app.api.reconciliation import router as reconciliation_router
@@ -206,8 +205,6 @@ app.include_router(reconciliation_router)
 app.include_router(transactions_router)
 app.include_router(mortgage_payments_router)
 app.include_router(import_router)
-# Part of the agents module: answers 404 while AGENTS_ENABLED is off (ADR 0037).
-app.include_router(document_ai_router)
 app.include_router(import_logs_router)
 app.include_router(accounts_router)
 app.include_router(connections_router)
@@ -258,6 +255,9 @@ if os.getenv("AGENTS_ENABLED", "false").strip().lower() in ("1", "true", "yes", 
         from app.agents.api.chat import router as agents_chat_router
         from app.agents.api.knowledge import router as agents_knowledge_router
         from app.agents.api.mcp_tokens import router as agents_mcp_tokens_router
+        # Document reading is part of the agents module (ADR 0037): with
+        # agents off, none of its code is even imported.
+        from app.api.document_extractions import router as document_ai_router
 
         # Mount literal-prefix routers (conversations, connections,
         # mcp-tokens) BEFORE the generic agents router so paths like
@@ -269,6 +269,7 @@ if os.getenv("AGENTS_ENABLED", "false").strip().lower() in ("1", "true", "yes", 
         app.include_router(agents_router)
         app.include_router(agents_chat_router)
         app.include_router(agents_knowledge_router)
+        app.include_router(document_ai_router)
         logger.info("Agents feature enabled — mounted /api/agents routes")
     except Exception:
         logger.exception("Agents feature flag is on but import failed; routes not mounted")

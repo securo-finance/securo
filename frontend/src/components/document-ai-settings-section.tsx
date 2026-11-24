@@ -94,7 +94,8 @@ export function DocumentAiSettingsSection() {
               id="document-ai-connection"
               className={SELECT_CLASS}
               value={form.connection_id}
-              onChange={(e) => setForm({ ...form, connection_id: e.target.value })}
+              // A model picked for another connection may not exist on this one.
+              onChange={(e) => setForm({ ...form, connection_id: e.target.value, model: '' })}
             >
               <option value="">{t('documentAi.settings.off')}</option>
               {connections.map(c => (
