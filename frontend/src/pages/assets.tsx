@@ -908,7 +908,7 @@ export default function AssetsPage() {
         icon: Pencil,
         onSelect: () => openEdit(asset),
         disabled: isProviderOwned,
-        title: isProviderOwned ? t('assets.syncedReadOnly') : undefined,
+        hint: isProviderOwned ? t('assets.syncedReadOnly') : undefined,
       },
     ]
     if (isMarketPriced) {

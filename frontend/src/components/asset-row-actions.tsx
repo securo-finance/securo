@@ -23,8 +23,23 @@ export type AssetRowAction = {
   disabled?: boolean
   /** Shown in red, after a separator. */
   destructive?: boolean
-  /** Why the action is disabled. */
-  title?: string
+  /** Why the action is disabled, shown under its label: a disabled item gets
+   *  no hover, so a tooltip would never appear. */
+  hint?: string
+}
+
+function ActionContent({ action }: { action: AssetRowAction }) {
+  return (
+    <>
+      <action.icon className="me-2 h-4 w-4" />
+      {action.hint ? (
+        <span className="flex flex-col">
+          <span>{action.label}</span>
+          <span className="text-[11px] text-muted-foreground">{action.hint}</span>
+        </span>
+      ) : action.label}
+    </>
+  )
 }
 
 /** Separator before the first destructive action. */
@@ -61,11 +76,9 @@ export function AssetRowMenuButton({ label, actions }: { label: string; actions:
             <DropdownMenuItem
               variant={a.destructive ? 'destructive' : 'default'}
               disabled={a.disabled}
-              title={a.title}
               onSelect={a.onSelect}
             >
-              <a.icon className="me-2 h-4 w-4" />
-              {a.label}
+              <ActionContent action={a} />
             </DropdownMenuItem>
           </Fragment>
         ))}
@@ -87,11 +100,9 @@ export function AssetRowContextMenu({ actions, children }: { actions: AssetRowAc
             <ContextMenuItem
               variant={a.destructive ? 'destructive' : 'default'}
               disabled={a.disabled}
-              title={a.title}
               onSelect={a.onSelect}
             >
-              <a.icon className="me-2 h-4 w-4" />
-              {a.label}
+              <ActionContent action={a} />
             </ContextMenuItem>
           </Fragment>
         ))}
