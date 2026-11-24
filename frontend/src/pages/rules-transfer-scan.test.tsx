@@ -9,10 +9,11 @@
  */
 import { createContext } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 
 import RulesPage from '@/pages/rules'
 import { renderWithProviders, t } from '@/test/utils'
+import type { ReconciliationSuggestion } from '@/types'
 
 const api = vi.hoisted(() => ({
   rules: {
@@ -85,6 +86,40 @@ async function clickScan() {
   return button
 }
 
+/** One ambiguous pair waiting in the queue: the scan writes these even when
+ *  it creates no pair, and the count on the tab is how the reader learns it. */
+function pendingSuggestion(): ReconciliationSuggestion {
+  return {
+    id: 'suggestion-1',
+    node: 'transaction:debit-1',
+    strategy_id: 'transfer_pair',
+    expectation_kind: 'transaction',
+    expectation_id: 'debit-1',
+    expectation_label: 'Conta corrente',
+    amount: '321.45',
+    scores: { currency: 'BRL', amount_exact: true, days_apart: 0 },
+    status: 'pending',
+    created_at: '2026-11-20T12:00:00Z',
+    covers: [
+      {
+        expectation_kind: 'transaction',
+        expectation_id: 'debit-1',
+        label: 'Conta corrente',
+        amount: '321.45',
+      },
+    ],
+    transaction: {
+      id: 'credit-1',
+      description: 'Transferência recebida',
+      amount: '321.45',
+      currency: 'BRL',
+      date: '2026-11-20',
+      type: 'credit',
+      account_id: 'account-1',
+    },
+  }
+}
+
 describe('the transfer scan on the rules page', () => {
   it('asks before running and creates nothing when the user backs out', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(false)
@@ -121,21 +156,28 @@ describe('the transfer scan on the rules page', () => {
 
   it('refreshes the reconciliation queue and history after the scan', async () => {
     // No pair was certain, so the toast says nothing was found — but the scan
-    // still wrote every ambiguous pair to the queue the tab counts. The
-    // history tab matters for the same reason on the runs that do pair rows.
+    // still wrote the ambiguous pair to the queue the tab counts. The history
+    // tab matters for the same reason on the runs that do pair rows.
     api.connections.detectTransfers.mockResolvedValue({ pairs_created: 0 })
+    // Empty on the first read and one question waiting on the refetch: the
+    // badge on the tab is what has to change, not only the number of calls.
+    api.reconciliation.suggestions
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([pendingSuggestion()])
     renderWithProviders(<RulesPage />)
 
     fireEvent.click(await screen.findByRole('button', { name: t('rules.tab.history') }))
     await waitFor(() => expect(api.reconciliation.history).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(api.reconciliation.suggestions).toHaveBeenCalledTimes(1))
+    const queueTab = screen.getByTestId('automation-tab-queue')
+    expect(within(queueTab).queryByText('1')).not.toBeInTheDocument()
 
     await clickScan()
 
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith(t('rules.transferScanNone')),
     )
-    await waitFor(() => expect(api.reconciliation.suggestions).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(within(queueTab).getByText('1')).toBeInTheDocument())
     await waitFor(() => expect(api.reconciliation.history).toHaveBeenCalledTimes(2))
   })
 
