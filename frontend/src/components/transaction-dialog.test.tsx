@@ -1117,3 +1117,62 @@ describe('TransactionDialog conversion of an existing row (#440)', () => {
     expect(onSave.mock.calls[0][0]).toMatchObject({ amount_primary: 66 })
   })
 })
+
+describe('TransactionDialog moving only the date of a conversion (#481)', () => {
+  // The conversion fields come filled with the row's own figure, so a save
+  // that did not touch them must not send them: the server read them as a
+  // typed figure and froze the old day's rate.
+  function renderRow() {
+    vi.spyOn(currencies, 'list').mockResolvedValue([])
+    vi.spyOn(payees, 'list').mockResolvedValue([])
+    vi.spyOn(groups, 'list').mockResolvedValue([])
+    const onSave = vi.fn()
+    const rendered = renderWithProviders(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={transferLegFixture(null, {
+          id: 'tx-481',
+          description: 'Market run',
+          amount: 300,
+          currency: 'BRL',
+          source: 'manual',
+          date: '2026-11-20',
+          amount_primary: 62.4,
+          fx_rate_used: 0.208,
+        })}
+        categories={[]}
+        categoryGroups={[]}
+        accounts={accountFixtures}
+        onSave={onSave}
+        loading={false}
+        error={null}
+      />,
+    )
+    return { ...rendered, onSave }
+  }
+
+  it('leaves the conversion out so the new date sets the rate', async () => {
+    const { user, onSave } = renderRow()
+
+    fireEvent.change(screen.getByLabelText('date'), { target: { value: '2026-10-15' } })
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    const payload = onSave.mock.calls[0][0]
+    expect(payload).toMatchObject({ date: '2026-10-15' })
+    expect(payload).not.toHaveProperty('amount_primary')
+    expect(payload).not.toHaveProperty('fx_rate_used')
+  })
+
+  it('sends a conversion typed together with the new date', async () => {
+    const { user, onSave } = renderRow()
+
+    fireEvent.change(screen.getByLabelText('date'), { target: { value: '2026-10-15' } })
+    const converted = screen.getByLabelText(t('transactions.convertedAmount', { currency: 'USD' }))
+    await user.clear(converted)
+    await user.type(converted, '66')
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave.mock.calls[0][0]).toMatchObject({ date: '2026-10-15', amount_primary: 66 })
+  })
+})
