@@ -2879,7 +2879,7 @@
     "selectedTransaction": "Zaznaczona",
     "settled": "Zapisano rozliczenie",
     "linkableHint": "Połączyć można tylko tę część wpłaty, która nie została jeszcze zwrócona.",
-    "errorExceedsAmount": "Rozliczenia już powiązane z tą wpłatą przekraczają jej kwotę.",
+    "errorExceedsAmount": "Rozliczenia powiązane z tą wpłatą przekroczyłyby jej kwotę.",
     "errorOnlyReceiver": "Tylko osoba otrzymująca pieniądze może powiązać transakcję przychodzącą.",
     "errorReceiverCurrency": "Wybierz własną transakcję przychodzącą w walucie rozliczenia.",
     "settlements": "Rozliczenia",

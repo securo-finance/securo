@@ -241,9 +241,11 @@ describe('localized API errors', () => {
 
   // Linking an incoming transaction to a group settlement, refused by the
   // service: the settle dialog must say why in the user's language (#494).
+  // The sentence names the settlement being saved as the one that goes over,
+  // since the paybacks already there can still be under the credit.
   it.each([
-    ['en', 'The settlements already linked to this credit add up to more than its amount.'],
-    ['pt-BR', 'Os acertos já vinculados a este crédito passam do valor dele.'],
+    ['en', 'The paybacks linked to this credit would add up to more than its amount.'],
+    ['pt-BR', 'Os acertos vinculados a este crédito passariam do valor dele.'],
   ])('shows why a payback cannot exceed the credit in %s', async (language, expected) => {
     await i18n.changeLanguage(language)
 

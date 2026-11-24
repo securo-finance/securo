@@ -2760,7 +2760,7 @@
     "selectedTransaction": "Ausgewählt",
     "settled": "Abrechnung erfasst",
     "linkableHint": "Nur der noch nicht zurückgezahlte Teil einer Gutschrift kann verknüpft werden.",
-    "errorExceedsAmount": "Die bereits mit dieser Gutschrift verknüpften Abrechnungen übersteigen ihren Betrag.",
+    "errorExceedsAmount": "Die mit dieser Gutschrift verknüpften Abrechnungen würden ihren Betrag übersteigen.",
     "errorOnlyReceiver": "Nur wer das Geld erhält, kann die eingehende Transaktion verknüpfen.",
     "errorReceiverCurrency": "Wähle eine eigene eingehende Transaktion in der Währung der Abrechnung.",
     "settlements": "Abrechnungen",

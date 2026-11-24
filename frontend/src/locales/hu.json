@@ -2759,7 +2759,7 @@
     "selectedTransaction": "Kiválasztva",
     "settled": "Kiegyenlítés rögzítve",
     "linkableHint": "Egy jóváírásnak csak a még vissza nem fizetett része kapcsolható hozzá.",
-    "errorExceedsAmount": "A jóváíráshoz már kapcsolt elszámolások meghaladják annak összegét.",
+    "errorExceedsAmount": "A jóváíráshoz kapcsolt elszámolások meghaladnák annak összegét.",
     "errorOnlyReceiver": "A bejövő tranzakciót csak az kapcsolhatja hozzá, aki a pénzt kapja.",
     "errorReceiverCurrency": "Válassz saját bejövő tranzakciót az elszámolás pénznemében.",
     "settlements": "Kiegyenlítések",

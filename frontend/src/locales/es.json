@@ -2768,7 +2768,7 @@
     "selectedTransaction": "Seleccionada",
     "settled": "Liquidación registrada",
     "linkableHint": "Solo se puede vincular la parte de un crédito que aún no se ha devuelto.",
-    "errorExceedsAmount": "Las liquidaciones ya vinculadas a este crédito superan su importe.",
+    "errorExceedsAmount": "Las liquidaciones vinculadas a este crédito superarían su importe.",
     "errorOnlyReceiver": "Solo quien recibe el dinero puede vincular la transacción de entrada.",
     "errorReceiverCurrency": "Elige una transacción de entrada tuya en la moneda de la liquidación.",
     "settlements": "Liquidaciones",

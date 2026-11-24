@@ -2911,7 +2911,7 @@
     "selectedTransaction": "Vybraná",
     "settled": "Vyrovnanie zaznamenané",
     "linkableHint": "Prepojiť sa dá len tá časť prichádzajúcej platby, ktorá ešte nebola vrátená.",
-    "errorExceedsAmount": "Vyrovnania už prepojené s touto prichádzajúcou platbou presahujú jej sumu.",
+    "errorExceedsAmount": "Vyrovnania prepojené s touto prichádzajúcou platbou by presiahli jej sumu.",
     "errorOnlyReceiver": "Prichádzajúcu transakciu môže prepojiť len ten, kto peniaze prijíma.",
     "errorReceiverCurrency": "Vyberte svoju vlastnú prichádzajúcu transakciu v mene vyrovnania.",
     "settlements": "Vyrovnania",

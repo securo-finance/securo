@@ -2768,7 +2768,7 @@
     "selectedTransaction": "Selezionata",
     "settled": "Saldo registrato",
     "linkableHint": "Solo la parte di un accredito non ancora rimborsata può essere collegata.",
-    "errorExceedsAmount": "Le liquidazioni già collegate a questo accredito superano il suo importo.",
+    "errorExceedsAmount": "Le liquidazioni collegate a questo accredito supererebbero il suo importo.",
     "errorOnlyReceiver": "Solo chi riceve il denaro può collegare la transazione in entrata.",
     "errorReceiverCurrency": "Scegli una tua transazione in entrata nella valuta della liquidazione.",
     "settlements": "Saldi",

@@ -2768,7 +2768,7 @@
     "selectedTransaction": "Selecionada",
     "settled": "Acerto registrado",
     "linkableHint": "Só a parte de um crédito ainda não reembolsada pode ser vinculada.",
-    "errorExceedsAmount": "Os acertos já vinculados a este crédito passam do valor dele.",
+    "errorExceedsAmount": "Os acertos vinculados a este crédito passariam do valor dele.",
     "errorOnlyReceiver": "Só quem recebe o dinheiro pode vincular a transação de entrada.",
     "errorReceiverCurrency": "Escolha uma transação de entrada sua, na moeda do acerto.",
     "settlements": "Acertos",

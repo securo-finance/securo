@@ -2759,7 +2759,7 @@
     "selectedTransaction": "Geselecteerd",
     "settled": "Facturering geregistreerd",
     "linkableHint": "Alleen het deel van een tegoed dat nog niet is terugbetaald, kan worden gekoppeld.",
-    "errorExceedsAmount": "De afrekeningen die al aan dit tegoed zijn gekoppeld, komen boven het bedrag uit.",
+    "errorExceedsAmount": "De afrekeningen die aan dit tegoed zijn gekoppeld, zouden boven het bedrag uitkomen.",
     "errorOnlyReceiver": "Alleen wie het geld ontvangt, kan de inkomende transactie koppelen.",
     "errorReceiverCurrency": "Kies een eigen inkomende transactie in de valuta van de afrekening.",
     "settlements": "Facturen",
