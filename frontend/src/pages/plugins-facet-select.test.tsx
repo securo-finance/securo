@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -40,12 +41,30 @@ describe('FacetSelect', () => {
   })
 
   it('clears the filter when Any is chosen', async () => {
+    // Controlled by a small harness, so the assertion is on what the user sees:
+    // the chip goes back to the facet title, not only that the callback fired.
     const onChoose = vi.fn()
-    const { user } = renderWithProviders(<FacetSelect facet={TYPE_FACET} value="code" onChoose={onChoose} />)
+    function Controlled() {
+      const [value, setValue] = useState<string | null>('code')
+      return (
+        <FacetSelect
+          facet={TYPE_FACET}
+          value={value}
+          onChoose={(key, next) => {
+            onChoose(key, next)
+            setValue(next)
+          }}
+        />
+      )
+    }
+
+    const { user } = renderWithProviders(<Controlled />)
+    expect(screen.getByRole('combobox')).toHaveTextContent('Code')
 
     await user.click(screen.getByRole('combobox'))
     await user.click(await screen.findByRole('option', { name: 'Any' }))
 
     expect(onChoose).toHaveBeenCalledWith('type', null)
+    expect(screen.getByRole('combobox')).toHaveTextContent('Type')
   })
 })
