@@ -4099,7 +4099,7 @@
     "suggestedAccount": "A számla az ugyanilyen elrendezésű legutóbbi kivonat alapján lett kiválasztva.",
     "textOnlyModel": "A(z) {{model}} csak szöveget olvas: a szöveges PDF-ek működnek, de a fotókhoz és a szkennelt PDF-ekhez képeket olvasó modell kell.",
     "errors": {
-      "not_configured": "Nincs beállítva modell a dokumentumok olvasásához. Egy rendszergazda kiválaszthatja a Rendszergazdai beállítások → Dokumentumok olvasása alatt, vagy a munkaterület tulajdonosa a munkaterület beállításaiban.",
+      "not_configured": "A dokumentumok olvasása nincs beállítva ebben a munkaterületben. Válassz LLM-kapcsolatot a munkaterület beállításaiban, vagy az Ügynökök → Kapcsolatok alatt.",
       "vision_required": "Ez a dokumentum fotó vagy szkennelt kép, a modell pedig nem olvas képeket. Válasszon olyat, amely igen (qwen2.5vl, llama3.2-vision, gpt-4o-mini, Claude), a munkaterület beállításaiban.",
       "unsupported_file": "Csak PDF, PNG, JPEG és WebP fájlok olvashatók.",
       "file_too_large": "A fájl túl nagy.",
@@ -4113,7 +4113,8 @@
       "already_confirmed": "Ezt a dokumentumot már felhasználták.",
       "attachment_refused": "A fájlt nem sikerült csatolni a tranzakcióhoz.",
       "internal_error": "Hiba történt a dokumentum beolvasása közben.",
-      "generic": "A dokumentumot nem sikerült beolvasni."
+      "generic": "A dokumentumot nem sikerült beolvasni.",
+      "queue_unavailable": "A feldolgozási sor nem érhető el. Próbáld újra egy kis idő múlva."
     },
     "receipt": {
       "action": "Nyugta beolvasása",
@@ -4130,42 +4131,35 @@
       "noMatches": "Egyetlen tranzakció sem illik még ehhez a nyugtához. Hozzon létre egyet:",
       "create": "Tranzakció létrehozása",
       "attached": "Nyugta csatolva",
-      "created": "Tranzakció létrehozva, a nyugta csatolva"
+      "created": "Tranzakció létrehozva, a nyugta csatolva",
+      "createdWithoutFile": "A tranzakció létrejött, de a fájlt nem sikerült csatolni."
     },
     "settings": {
       "title": "Dokumentumok olvasása",
-      "description": "Az a modell, amely ebben a munkaterületen a kivonatokat és nyugtákat olvassa. Hagyjon üresen egy mezőt a példány alapértelmezésének használatához.",
-      "current": "Használatban: {{provider}} · {{model}}",
-      "sourceWorkspace": "ehhez a munkaterülethez beállítva",
-      "sourceInstance": "a példány alapértelmezése",
+      "description": "Az LLM-kapcsolat, amely ebben a munkaterületben olvassa a kivonatokat, nyugtákat és mellékleteket, az Ügynökök alatti kapcsolataid közül választva.",
+      "current": "Olvasás: {{connection}} · {{model}}",
       "vision_yes": "Képeket is olvas: a fotók és a szkennelt PDF-ek működnek.",
       "vision_no": "Csak szöveget olvas: a fotókhoz és a szkennelt PDF-ekhez képeket olvasó modell kell.",
       "vision_unknown": "Nem ismert, hogy ez a modell olvas-e képeket. A Securo megpróbálja, és jelzi, ha nem.",
       "visionSource_setting": "beállítás szerint",
       "visionSource_provider": "a szolgáltató szerint",
       "visionSource_catalog": "a modell nevéből felismerve",
-      "provider": "Szolgáltató",
-      "useInstance": "Példány alapértelmezése ({{value}})",
-      "none": "nincs",
-      "provider_ollama": "Ollama (helyi)",
-      "provider_openai": "OpenAI",
-      "provider_anthropic": "Anthropic",
-      "provider_openai_compatible": "OpenAI-kompatibilis",
       "model": "Modell",
-      "baseUrl": "Szerver URL",
-      "apiKey": "API-kulcs",
-      "keyStored": "Kulcs elmentve",
       "readsImages": "Képeket olvas",
       "visionAuto": "Automatikus felismerés",
       "visionYes": "Igen",
       "visionNo": "Nem, csak szöveget",
       "visionHint": "A felismerés az Ollamától kérdez, vagy a modell nevéből ismeri fel. Állítsa be kézzel, ha egy modellnél téved.",
-      "privacy": "A dokumentumok ehhez a modellhez kerülnek. Saját szerveren futó Ollamával sosem hagyják el azt.",
-      "removeKey": "Kulcs eltávolítása",
+      "privacy": "A dokumentumok ennek a kapcsolatnak a szolgáltatójához kerülnek. Saját szerveren futó Ollamával sosem hagyják el azt.",
       "reset": "Példány alapértelmezéseinek használata",
       "saved": "A dokumentumolvasási beállítások mentve",
       "saveError": "A beállításokat nem sikerült menteni",
-      "resetDone": "Visszaállítva a példány alapértelmezéseire"
+      "resetDone": "Visszaállítva a példány alapértelmezéseire",
+      "connection": "LLM-kapcsolat",
+      "off": "Ki",
+      "modelPlaceholder": "A kapcsolat modellje ({{model}})",
+      "manageConnections": "Kapcsolatok kezelése",
+      "noConnections": "Még nincs LLM-kapcsolatod. Adj hozzá egyet az Ügynökök alatt a dokumentumok olvasásához."
     },
     "fill": {
       "read": "Kitöltés ebből a fájlból",
@@ -4173,14 +4167,13 @@
       "filled": "Kitöltve a fájlból: {{fields}}",
       "nothingNew": "A fájlban nem volt semmi új, amit ki lehetne tölteni."
     },
-    "admin": {
-      "title": "Dokumentumok olvasása",
-      "description": "PDF-kivonatok, nyugtafotók és mellékletek beolvasása tranzakcióként LLM-mel. Semmi sem mentődik, amíg valaki át nem nézi.",
-      "enable": "Be",
-      "notConfigured": "Válassz szolgáltatót és modellt a dokumentumok olvasásához.",
-      "optional": "(nem kötelező)",
-      "keyNeedsSecret": "Állíts be legalább 32 karakteres SECRET_KEY-t, hogy kulcsot menthess az alkalmazásban.",
-      "saved": "Dokumentumok olvasása mentve"
-    }
+    "agents": {
+      "use": "Használat dokumentumok olvasására",
+      "inUse": "Dokumentumokat olvas",
+      "stop": "Dokumentumok olvasásának leállítása",
+      "turnedOn": "{{name}} mostantól ennek a munkaterületnek a dokumentumait olvassa",
+      "turnedOff": "Dokumentumok olvasása kikapcsolva"
+    },
+    "unreadPages": "Be nem olvasott oldalak (szkennelt, és a modell nem olvas képeket): {{pages}}. A soraik hiányoznak ebből az áttekintésből."
   }
 }

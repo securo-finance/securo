@@ -68,7 +68,7 @@ import { MobileBulkSelectionActions } from '@/components/mobile-bulk-selection-a
 import { type ColumnDef, type ColumnId, useTransactionsGridState } from '@/components/transactions-grid-columns'
 import { TransferDialog } from '@/components/transfer-dialog'
 import { ReceiptScanDialog } from '@/components/receipt-scan-dialog'
-import { useFeatureFlags } from '@/hooks/use-feature-flags'
+import { useDocumentAiStatus } from '@/hooks/use-document-extraction'
 import { MakeRecurringDialog } from '@/components/make-recurring-dialog'
 import { useSidebarState } from '@/contexts/sidebar-state-context'
 import { cn } from '@/lib/utils'
@@ -271,7 +271,7 @@ export default function TransactionsPage() {
   const [exporting, setExporting] = useState(false)
   const [transferDialogOpen, setTransferDialogOpen] = useState(false)
   const [receiptDialogOpen, setReceiptDialogOpen] = useState(false)
-  const { documentAiEnabled } = useFeatureFlags()
+  const { enabled: documentAiEnabled } = useDocumentAiStatus()
   const [linkTransferDialogOpen, setLinkTransferDialogOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null)

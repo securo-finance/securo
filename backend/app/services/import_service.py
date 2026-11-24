@@ -4,6 +4,8 @@ import io
 import re
 import unicodedata
 import uuid
+from collections.abc import Awaitable, Callable
+from typing import Optional
 import warnings
 import xml.etree.ElementTree as ET
 from xml.parsers import expat
@@ -1163,6 +1165,7 @@ async def import_transactions(
     filename: str = "",
     detected_format: str = "",
     detect_duplicates: bool = True,
+    before_commit: Optional[Callable[[uuid.UUID], Awaitable[None]]] = None,
 ) -> tuple[int, int, int, uuid.UUID]:
     """Import transactions into an account in the given workspace.
 
@@ -1548,6 +1551,10 @@ async def import_transactions(
             session, workspace_id, candidate_ids=[tx.id for tx in landed]
         )
 
+    # Anything that has to land with the rows (a document read marked as
+    # imported) is written into this same commit.
+    if before_commit is not None:
+        await before_commit(import_log.id)
     await session.commit()
     return imported, skipped, excluded_count, import_log.id
 

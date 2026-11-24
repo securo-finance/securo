@@ -107,7 +107,11 @@ export function ReceiptScanDialog({ open, onOpenChange }: { open: boolean; onOpe
       currency: draft!.currency || null,
       category_id: draft!.categoryId || null,
     }),
-    onSuccess: () => done(t('documentAi.receipt.created')),
+    onSuccess: (result) => {
+      // The transaction exists either way; say when its file did not make it.
+      if (result.attached === false) toast.warning(t('documentAi.receipt.createdWithoutFile'))
+      done(t('documentAi.receipt.created'))
+    },
     onError: (error) => toast.error(errorFromResponse(t, error)),
   })
 

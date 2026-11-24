@@ -232,10 +232,13 @@ function TransactionImportPanel() {
     setFileName(file.name)
     setCurrentFile(file)
     resetCsvOptions()
+    // A new file never carries the last document's rows or its id, whether
+    // it is read by the model or parsed (an OFX must not import as a PDF).
+    doc.reset()
+    setAppliedExtractionId(null)
     if (documentAiEnabled && isDocumentFile(file.name)) {
       setPreviewData(null)
       setReviewTransactions([])
-      setAppliedExtractionId(null)
       if (isImageFile(file.name) && documentAiStatus?.vision === 'no') {
         toast.error(t('documentAi.errors.vision_required'))
         return

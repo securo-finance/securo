@@ -4113,7 +4113,7 @@
     "suggestedAccount": "Il conto è stato scelto in base all'ultimo estratto conto con questo layout.",
     "textOnlyModel": "{{model}} legge solo testo: i PDF con testo funzionano, ma foto e PDF scansionati richiedono un modello che legga le immagini.",
     "errors": {
-      "not_configured": "Nessun modello è configurato per leggere i documenti. Un amministratore può sceglierne uno in Impostazioni di amministrazione → Lettura documenti, o il proprietario del workspace nelle impostazioni del workspace.",
+      "not_configured": "La lettura documenti non è configurata in questo workspace. Scegli una connessione LLM nelle impostazioni del workspace, o in Agenti → Connessioni.",
       "vision_required": "Questo documento è una foto o una scansione, e il modello non legge le immagini. Scegline uno che lo faccia (qwen2.5vl, llama3.2-vision, gpt-4o-mini, Claude) nelle impostazioni del workspace.",
       "unsupported_file": "Si possono leggere solo file PDF, PNG, JPEG e WebP.",
       "file_too_large": "Il file è troppo grande.",
@@ -4127,7 +4127,8 @@
       "already_confirmed": "Questo documento è già stato utilizzato.",
       "attachment_refused": "Non è stato possibile allegare il file alla transazione.",
       "internal_error": "Si è verificato un problema durante la lettura del documento.",
-      "generic": "Non è stato possibile leggere il documento."
+      "generic": "Non è stato possibile leggere il documento.",
+      "queue_unavailable": "La coda di elaborazione non è disponibile. Riprova tra un momento."
     },
     "receipt": {
       "action": "Leggi ricevuta",
@@ -4144,42 +4145,35 @@
       "noMatches": "Nessuna transazione corrisponde ancora a questa ricevuta. Creane una:",
       "create": "Crea transazione",
       "attached": "Ricevuta allegata",
-      "created": "Transazione creata con la ricevuta allegata"
+      "created": "Transazione creata con la ricevuta allegata",
+      "createdWithoutFile": "Transazione creata, ma non è stato possibile allegare il file."
     },
     "settings": {
       "title": "Lettura dei documenti",
-      "description": "Il modello che legge estratti conto e ricevute in questo workspace. Lascia un campo vuoto per usare il valore predefinito dell'istanza.",
-      "current": "In uso: {{provider}} · {{model}}",
-      "sourceWorkspace": "impostato per questo workspace",
-      "sourceInstance": "il valore predefinito dell'istanza",
+      "description": "La connessione LLM che legge estratti conto, ricevute e allegati in questo workspace, scelta tra le tue connessioni in Agenti.",
+      "current": "Lettura con {{connection}} · {{model}}",
       "vision_yes": "Legge le immagini: foto e PDF scansionati funzionano.",
       "vision_no": "Legge solo testo: foto e PDF scansionati richiedono un modello che legga le immagini.",
       "vision_unknown": "Non è noto se questo modello legga le immagini. Securo proverà e lo segnalerà se non ci riesce.",
       "visionSource_setting": "come impostato",
       "visionSource_provider": "indicato dal provider",
       "visionSource_catalog": "riconosciuto dal nome del modello",
-      "provider": "Provider",
-      "useInstance": "Predefinito dell'istanza ({{value}})",
-      "none": "nessuno",
-      "provider_ollama": "Ollama (locale)",
-      "provider_openai": "OpenAI",
-      "provider_anthropic": "Anthropic",
-      "provider_openai_compatible": "Compatibile con OpenAI",
       "model": "Modello",
-      "baseUrl": "URL del server",
-      "apiKey": "Chiave API",
-      "keyStored": "È salvata una chiave",
       "readsImages": "Legge le immagini",
       "visionAuto": "Rileva automaticamente",
       "visionYes": "Sì",
       "visionNo": "No, solo testo",
       "visionHint": "Il rilevamento interroga Ollama, oppure riconosce il nome del modello. Impostalo a mano quando sbaglia un modello.",
-      "privacy": "I documenti vengono inviati a questo modello. Con Ollama sul tuo server, non lo lasciano mai.",
-      "removeKey": "Rimuovi chiave",
+      "privacy": "I documenti vengono inviati al provider di questa connessione. Con Ollama sul tuo server, non lo lasciano mai.",
       "reset": "Usa i valori predefiniti dell'istanza",
       "saved": "Impostazioni di lettura dei documenti salvate",
       "saveError": "Non è stato possibile salvare le impostazioni",
-      "resetDone": "Ripristinati i valori predefiniti dell'istanza"
+      "resetDone": "Ripristinati i valori predefiniti dell'istanza",
+      "connection": "Connessione LLM",
+      "off": "Disattivato",
+      "modelPlaceholder": "Il modello della connessione ({{model}})",
+      "manageConnections": "Gestisci connessioni",
+      "noConnections": "Non hai ancora nessuna connessione LLM. Aggiungine una in Agenti per leggere documenti."
     },
     "fill": {
       "read": "Compila da questo file",
@@ -4187,14 +4181,13 @@
       "filled": "Compilato dal file: {{fields}}",
       "nothingNew": "Il file non aveva niente di nuovo da compilare."
     },
-    "admin": {
-      "title": "Lettura documenti",
-      "description": "Leggi estratti conto PDF, foto di ricevute e allegati come transazioni, con un LLM. Nulla viene salvato prima di una revisione.",
-      "enable": "Attivo",
-      "notConfigured": "Scegli un provider e un modello per iniziare a leggere documenti.",
-      "optional": "(facoltativo)",
-      "keyNeedsSecret": "Imposta una SECRET_KEY di almeno 32 caratteri per salvare una chiave nell'app.",
-      "saved": "Lettura documenti salvata"
-    }
+    "agents": {
+      "use": "Usa per leggere documenti",
+      "inUse": "Legge documenti",
+      "stop": "Smetti di leggere documenti",
+      "turnedOn": "{{name}} ora legge i documenti di questo workspace",
+      "turnedOff": "Lettura documenti disattivata"
+    },
+    "unreadPages": "Pagine non lette (scansioni, e il modello non legge immagini): {{pages}}. Le loro righe mancano da questa revisione."
   }
 }

@@ -66,6 +66,12 @@ export function DocumentStatementSummary({ extraction }: { extraction: DocumentE
           <span>{t('documentAi.truncated', { count: extraction.pages ?? 0 })}</span>
         </div>
       )}
+      {extraction.unread_pages.length > 0 && (
+        <div className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+          <AlertTriangle size={14} className="mt-px shrink-0" />
+          <span>{t('documentAi.unreadPages', { pages: extraction.unread_pages.join(', ') })}</span>
+        </div>
+      )}
       {extraction.suggested_account_id && (
         <p className="text-xs text-muted-foreground">{t('documentAi.suggestedAccount')}</p>
       )}

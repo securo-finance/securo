@@ -71,11 +71,13 @@ class DocumentExtraction(Base):
 
 
 class WorkspaceDocumentAiSettings(Base):
-    """The model a workspace reads its documents with, over the instance's.
+    """Which LLM connection reads this workspace's documents.
 
-    One row per workspace, set by its owner. Any field left blank falls back
-    to the DOCUMENT_AI_* defaults, so an owner can, say, keep the instance's
-    Ollama and only pick another model. The key is Fernet sealed.
+    The connection is one of the agents module's (`agent_llm_connections`),
+    picked by a workspace owner from their own: provider, URL and key live
+    there and nowhere else. No row, or no connection, means reading is off
+    for the workspace. `model` replaces the connection's default model, and
+    `vision` corrects the detection of whether that model reads images.
     """
 
     __tablename__ = "workspace_document_ai_settings"
@@ -84,10 +86,11 @@ class WorkspaceDocumentAiSettings(Base):
     workspace_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), unique=True, index=True
     )
-    provider: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
-    base_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    # No foreign key on purpose: the agents models are imported only while
+    # that module is on, and a key here would tie the core schema to them. A
+    # connection deleted since reads as no connection: reading is off.
+    connection_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     model: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
-    api_key_encrypted: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     # auto, true or false
     vision: Mapped[str] = mapped_column(String(10), server_default="auto")
     updated_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(

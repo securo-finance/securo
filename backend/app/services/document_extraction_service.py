@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -140,6 +140,19 @@ async def get_extraction(
             extraction.error = "Reading took too long and was stopped."
             await session.commit()
             await session.refresh(extraction)
+    return extraction
+
+
+async def mark_unqueued(
+    session: AsyncSession, extraction: DocumentExtraction, exc: Exception
+) -> DocumentExtraction:
+    logger.error("Could not queue document extraction %s: %s", extraction.id, exc)
+    extraction.status = "failed"
+    extraction.error_code = "queue_unavailable"
+    extraction.error = "The background queue is unavailable. Try again in a moment."
+    extraction.completed_at = _now()
+    await session.commit()
+    await session.refresh(extraction)
     return extraction
 
 
@@ -269,8 +282,13 @@ async def mark_statement_confirmed(
     account_id: uuid.UUID,
     import_log_id: uuid.UUID,
     rows: list[TransactionImport],
+    commit: bool = True,
 ) -> None:
-    """Record what the person kept, next to what the model read."""
+    """Record what the person kept, next to what the model read.
+
+    The import calls this with commit=False just before its own commit, so
+    the rows and the confirmation land together or not at all.
+    """
     extraction = await get_extraction(session, workspace_id, extraction_id)
     if extraction is None or extraction.kind != "statement":
         return
@@ -290,7 +308,8 @@ async def mark_statement_confirmed(
             for r in rows
         ],
     }
-    await session.commit()
+    if commit:
+        await session.commit()
 
 
 async def require_statement_ready(
@@ -424,8 +443,8 @@ async def _attach_file(
 ) -> None:
     from app.services import attachment_service
 
-    content = await get_storage_provider().download(extraction.storage_key)
     try:
+        content = await get_storage_provider().download(extraction.storage_key)
         await attachment_service.upload_attachment(
             session, extraction.workspace_id, user_id, transaction_id, extraction.filename, content,
         )
@@ -433,6 +452,54 @@ async def _attach_file(
         raise ExtractionError("not_found", "Transaction not found.", 404) from exc
     except ValueError as exc:
         raise ExtractionError("attachment_refused", str(exc)) from exc
+    except Exception as exc:  # storage unreachable, and the like
+        logger.exception("Attaching document %s failed", extraction.id)
+        raise ExtractionError("attachment_refused", "The file could not be stored with the transaction.") from exc
+
+
+def _check_attachable(extraction: DocumentExtraction) -> None:
+    """Refuse before anything is written when the file cannot become an attachment."""
+    from app.services import attachment_service
+
+    try:
+        attachment_service._validate_file(extraction.filename, extraction.size)
+    except ValueError as exc:
+        raise ExtractionError("attachment_refused", str(exc)) from exc
+
+
+async def _claim_receipt(
+    session: AsyncSession, workspace_id: uuid.UUID, extraction_id: uuid.UUID, user_id: uuid.UUID
+) -> DocumentExtraction:
+    """Take the receipt for this request alone, committed before anything else.
+
+    The claim is one conditional UPDATE: of two requests racing, only one
+    sees a row change, the other gets already_confirmed. It is committed on
+    its own because creating the transaction commits too, which would release
+    a row lock taken instead.
+    """
+    extraction = await _require_receipt_ready(session, workspace_id, extraction_id)
+    _check_attachable(extraction)
+    claimed = await session.execute(
+        update(DocumentExtraction)
+        .where(DocumentExtraction.id == extraction.id, DocumentExtraction.confirmed_at.is_(None))
+        .values(confirmed_at=_now(), confirmed_by_user_id=user_id)
+    )
+    await session.commit()
+    if getattr(claimed, "rowcount", 0) != 1:
+        raise ExtractionError("already_confirmed", "This receipt was already used.", 409)
+    await session.refresh(extraction)
+    return extraction
+
+
+async def _release_receipt(session: AsyncSession, extraction: DocumentExtraction) -> None:
+    extraction_id = extraction.id  # read before the rollback expires it
+    await session.rollback()
+    await session.execute(
+        update(DocumentExtraction)
+        .where(DocumentExtraction.id == extraction_id)
+        .values(confirmed_at=None, confirmed_by_user_id=None)
+    )
+    await session.commit()
 
 
 async def attach_receipt(
@@ -442,11 +509,14 @@ async def attach_receipt(
     extraction_id: uuid.UUID,
     transaction_id: uuid.UUID,
 ) -> DocumentExtraction:
-    extraction = await _require_receipt_ready(session, workspace_id, extraction_id)
-    await _attach_file(session, extraction, user_id, transaction_id)
+    extraction = await _claim_receipt(session, workspace_id, extraction_id, user_id)
+    try:
+        await _attach_file(session, extraction, user_id, transaction_id)
+    except ExtractionError:
+        # Nothing was written: the receipt can be used again.
+        await _release_receipt(session, extraction)
+        raise
     extraction.transaction_id = transaction_id
-    extraction.confirmed_by_user_id = user_id
-    extraction.confirmed_at = _now()
     extraction.confirmed = {"action": "attach", "transaction_id": str(transaction_id)}
     await session.commit()
     await session.refresh(extraction)
@@ -462,25 +532,27 @@ async def create_transaction_from_receipt(
 ) -> tuple[DocumentExtraction, Transaction]:
     from app.services import transaction_service
 
-    extraction = await _require_receipt_ready(session, workspace_id, extraction_id)
+    extraction = await _claim_receipt(session, workspace_id, extraction_id, user_id)
     if data.is_paid is None:
         # A receipt is the proof the money already moved.
         data = data.model_copy(update={"is_paid": True})
     try:
         transaction = await transaction_service.create_transaction(session, workspace_id, user_id, data)
-    except ValueError as exc:
-        raise ExtractionError("invalid_transaction", str(exc)) from exc
+    except Exception as exc:
+        # Nothing was created: release the receipt so it can be used again.
+        await _release_receipt(session, extraction)
+        if isinstance(exc, ValueError):
+            raise ExtractionError("invalid_transaction", str(exc)) from exc
+        raise
     attach_error: Optional[ExtractionError] = None
     try:
         await _attach_file(session, extraction, user_id, transaction.id)
     except ExtractionError as exc:
-        # The transaction exists either way: record it, so trying again
-        # cannot create it twice, and say the file did not make it.
+        # Checked beforehand, so this is storage failing. The transaction
+        # exists: the response carries it and says the file did not make it.
         attach_error = exc
     extraction.transaction_id = transaction.id
     extraction.account_id = data.account_id
-    extraction.confirmed_by_user_id = user_id
-    extraction.confirmed_at = _now()
     extraction.confirmed = {
         "action": "create",
         "transaction_id": str(transaction.id),
@@ -494,8 +566,6 @@ async def create_transaction_from_receipt(
     }
     await session.commit()
     await session.refresh(extraction)
-    if attach_error is not None:
-        raise attach_error
     return extraction, transaction
 
 

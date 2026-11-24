@@ -33,7 +33,7 @@ function extraction(overrides: Partial<DocumentExtraction> = {}): DocumentExtrac
     id: 'e1', kind: 'statement', status: 'done', filename: 'march.pdf', content_type: 'application/pdf', size: 10,
     provider: 'ollama', model: 'qwen2.5vl:7b', method: 'text', pages: 2, error_code: null, error: null,
     created_at: '2026-03-31T00:00:00Z', completed_at: null, confirmed_at: null, transaction_id: null,
-    import_log_id: null, transactions: [], dropped: 0, truncated: false, receipt: null, matches: [],
+    import_log_id: null, transactions: [], dropped: 0, truncated: false, unread_pages: [], attached: null, receipt: null, matches: [],
     suggested_category_id: null, suggested_account_id: null,
     statement: {
       kind: 'bank', institution: 'Banco Exemplo', account_name: null, account_last_digits: null, currency: 'USD',
@@ -91,7 +91,7 @@ describe('ReceiptScanDialog', () => {
 
   it('offers a file or a photo', async () => {
     status.mockResolvedValue({
-      enabled: true, configured: true, provider: 'ollama', model: 'qwen2.5vl:7b', source: 'instance',
+      enabled: true, configured: true, provider: 'ollama', model: 'qwen2.5vl:7b', connection_id: 'c1', connection_name: 'Local',
       vision: 'yes', vision_source: 'provider', max_file_size_mb: 10, max_pages: 20,
     })
     renderWithProviders(<ReceiptScanDialog open onOpenChange={() => {}} />)
@@ -101,7 +101,7 @@ describe('ReceiptScanDialog', () => {
 
   it('says ahead of time that a text-only model cannot read photos', async () => {
     status.mockResolvedValue({
-      enabled: true, configured: true, provider: 'ollama', model: 'llama3.1:8b', source: 'instance',
+      enabled: true, configured: true, provider: 'ollama', model: 'llama3.1:8b', connection_id: 'c1', connection_name: 'Local',
       vision: 'no', vision_source: 'catalog', max_file_size_mb: 10, max_pages: 20,
     })
     renderWithProviders(<ReceiptScanDialog open onOpenChange={() => {}} />)

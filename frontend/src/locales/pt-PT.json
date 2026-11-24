@@ -4113,7 +4113,7 @@
     "suggestedAccount": "A conta foi escolhida com base no último extrato com este formato.",
     "textOnlyModel": "{{model}} só lê texto: os PDF com texto funcionam, mas as fotografias e os PDF digitalizados precisam de um modelo que leia imagens.",
     "errors": {
-      "not_configured": "Nenhum modelo está configurado para ler documentos. Um administrador pode escolher um em Definições de administração → Leitura de documentos, ou o proprietário do espaço de trabalho nas definições do espaço de trabalho.",
+      "not_configured": "A leitura de documentos não está configurada neste espaço de trabalho. Escolha uma ligação de LLM nas definições do espaço de trabalho, ou em Agentes → Ligações.",
       "vision_required": "Este documento é uma fotografia ou uma digitalização, e o modelo não lê imagens. Escolha um que leia (qwen2.5vl, llama3.2-vision, gpt-4o-mini, Claude) nas definições do espaço de trabalho.",
       "unsupported_file": "Só é possível ler ficheiros PDF, PNG, JPEG e WebP.",
       "file_too_large": "O ficheiro é demasiado grande.",
@@ -4127,7 +4127,8 @@
       "already_confirmed": "Este documento já foi utilizado.",
       "attachment_refused": "Não foi possível anexar o ficheiro à transação.",
       "internal_error": "Ocorreu um erro ao ler o documento.",
-      "generic": "Não foi possível ler o documento."
+      "generic": "Não foi possível ler o documento.",
+      "queue_unavailable": "A fila de processamento está indisponível. Tente novamente daqui a pouco."
     },
     "receipt": {
       "action": "Ler recibo",
@@ -4144,42 +4145,35 @@
       "noMatches": "Ainda nenhuma transação corresponde a este recibo. Crie uma:",
       "create": "Criar transação",
       "attached": "Recibo anexado",
-      "created": "Transação criada com o recibo anexado"
+      "created": "Transação criada com o recibo anexado",
+      "createdWithoutFile": "Transação criada, mas não foi possível anexar o ficheiro."
     },
     "settings": {
       "title": "Leitura de documentos",
-      "description": "O modelo que lê extratos e recibos neste espaço de trabalho. Deixe um campo em branco para usar a predefinição da instância.",
-      "current": "Em uso: {{provider}} · {{model}}",
-      "sourceWorkspace": "definido para este espaço de trabalho",
-      "sourceInstance": "a predefinição da instância",
+      "description": "A ligação de LLM que lê extratos, recibos e anexos neste espaço de trabalho, escolhida entre as suas ligações em Agentes.",
+      "current": "A ler com {{connection}} · {{model}}",
       "vision_yes": "Lê imagens: as fotografias e os PDF digitalizados funcionam.",
       "vision_no": "Só lê texto: as fotografias e os PDF digitalizados precisam de um modelo que leia imagens.",
       "vision_unknown": "Não se sabe se este modelo lê imagens. O Securo vai tentar e avisa caso não leia.",
       "visionSource_setting": "conforme definido",
       "visionSource_provider": "indicado pelo fornecedor",
       "visionSource_catalog": "reconhecido pelo nome do modelo",
-      "provider": "Fornecedor",
-      "useInstance": "Predefinição da instância ({{value}})",
-      "none": "nenhum",
-      "provider_ollama": "Ollama (local)",
-      "provider_openai": "OpenAI",
-      "provider_anthropic": "Anthropic",
-      "provider_openai_compatible": "Compatível com OpenAI",
       "model": "Modelo",
-      "baseUrl": "URL do servidor",
-      "apiKey": "Chave de API",
-      "keyStored": "Existe uma chave guardada",
       "readsImages": "Lê imagens",
       "visionAuto": "Detetar automaticamente",
       "visionYes": "Sim",
       "visionNo": "Não, só texto",
       "visionHint": "A deteção pergunta ao Ollama, ou reconhece o nome do modelo. Defina manualmente quando errar num modelo.",
-      "privacy": "Os documentos são enviados para este modelo. Com o Ollama no seu próprio servidor, nunca saem dele.",
-      "removeKey": "Remover chave",
+      "privacy": "Os documentos são enviados ao fornecedor desta ligação. Com o Ollama no seu próprio servidor, nunca saem dele.",
       "reset": "Usar predefinições da instância",
       "saved": "Definições de leitura de documentos guardadas",
       "saveError": "Não foi possível guardar as definições",
-      "resetDone": "De volta às predefinições da instância"
+      "resetDone": "De volta às predefinições da instância",
+      "connection": "Ligação de LLM",
+      "off": "Desligado",
+      "modelPlaceholder": "O modelo da ligação ({{model}})",
+      "manageConnections": "Gerir ligações",
+      "noConnections": "Ainda não tem nenhuma ligação de LLM. Adicione uma em Agentes para ler documentos."
     },
     "fill": {
       "read": "Preencher com este ficheiro",
@@ -4187,14 +4181,13 @@
       "filled": "Preenchido a partir do ficheiro: {{fields}}",
       "nothingNew": "O ficheiro não tinha nada de novo para preencher."
     },
-    "admin": {
-      "title": "Leitura de documentos",
-      "description": "Leia extratos em PDF, fotografias de recibos e anexos como transações, com um LLM. Nada é guardado antes de alguém rever.",
-      "enable": "Ligado",
-      "notConfigured": "Escolha um fornecedor e um modelo para começar a ler documentos.",
-      "optional": "(opcional)",
-      "keyNeedsSecret": "Defina uma SECRET_KEY com pelo menos 32 caracteres para guardar uma chave na aplicação.",
-      "saved": "Leitura de documentos guardada"
-    }
+    "agents": {
+      "use": "Usar para ler documentos",
+      "inUse": "Lê documentos",
+      "stop": "Deixar de ler documentos",
+      "turnedOn": "{{name}} lê agora os documentos deste espaço de trabalho",
+      "turnedOff": "Leitura de documentos desligada"
+    },
+    "unreadPages": "Páginas não lidas (digitalizadas, e o modelo não lê imagens): {{pages}}. As linhas delas não estão nesta revisão."
   }
 }

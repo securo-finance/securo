@@ -11,9 +11,10 @@ from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.agents.providers.base import ChatChunk, ChatMessage, ImagePart, LLMProvider, LLMUnavailableError, Usage
+from app.core.config import get_settings
 from app.models.document_extraction import DocumentExtraction
 from app.models.transaction import Transaction
 from app.models.transaction_attachment import TransactionAttachment
@@ -140,11 +141,6 @@ def storage():
 
 
 @pytest.fixture(autouse=True)
-def keys_can_be_sealed(monkeypatch):
-    monkeypatch.setattr("app.services.provider_settings.can_store_secrets", lambda: True)
-
-
-@pytest.fixture(autouse=True)
 def no_ollama_probe(monkeypatch):
     # Never reach a real Ollama from the tests.
     async def no_probe(*args, **kwargs):
@@ -153,22 +149,33 @@ def no_ollama_probe(monkeypatch):
     monkeypatch.setattr("app.services.document_ai_capabilities.ollama_vision", no_probe)
 
 
-async def turn_on(session, *, provider="ollama", model="qwen2.5vl:7b", base_url="http://ollama:11434",
-                  api_key=None, vision="auto", enabled=True):
-    await ai_settings.save_instance_settings(
-        session, enabled=enabled, provider=provider, base_url=base_url, model=model,
-        api_key=api_key, clear_api_key=False, vision=vision,
+async def make_connection(session, user, *, kind="ollama", model="qwen2.5vl:7b", name="Local",
+                          base_url="http://ollama:11434"):
+    from app.agents.models.connection import LlmConnection
+
+    conn = LlmConnection(user_id=user.id, name=name, kind=kind, base_url=base_url, default_model=model, extra={})
+    session.add(conn)
+    await session.commit()
+    await session.refresh(conn)
+    return conn
+
+
+async def turn_on(session, workspace, user, *, model="qwen2.5vl:7b", override=None, vision="auto"):
+    conn = await make_connection(session, user, model=model)
+    await ai_settings.save_workspace_settings(
+        session, workspace.id, user.id, connection_id=conn.id, model=override, vision=vision,
     )
+    return conn
 
 
 @pytest_asyncio.fixture
-async def configured(session, test_user):
-    await turn_on(session)
+async def configured(session, test_workspace, test_user):
+    return await turn_on(session, test_workspace, test_user)
 
 
 @pytest.fixture
 def no_dispatch():
-    with patch("app.api.document_extractions._dispatch") as dispatch:
+    with patch("app.tasks.document_tasks.extract_document.delay") as dispatch:
         yield dispatch
 
 
@@ -314,74 +321,15 @@ async def test_unsupported_file():
 
 # --- Settings ------------------------------------------------------------------
 
-async def test_workspace_url_never_receives_the_instance_key(session, test_workspace, test_user):
-    await turn_on(session, provider="openai", model="gpt-4o-mini", base_url=None, api_key="sk-instance")
-    resolved = await ai_settings.resolve_model(session, test_workspace.id)
-    assert resolved.configured and resolved.api_key == "sk-instance" and resolved.source == "instance"
-
-    await ai_settings.save_workspace_settings(
-        session, test_workspace.id, test_user.id, provider="openai", base_url="https://elsewhere.example/v1",
-        model=None, api_key=None, clear_api_key=False, vision="auto",
-    )
-    resolved = await ai_settings.resolve_model(session, test_workspace.id)
-    assert resolved.api_key == "" and resolved.model == "gpt-4o-mini" and not resolved.configured
-
-    await ai_settings.save_workspace_settings(
-        session, test_workspace.id, test_user.id, provider="anthropic", base_url=None,
-        model="claude-sonnet-4-5", api_key="sk-own", clear_api_key=False, vision="false",
-    )
-    resolved = await ai_settings.resolve_model(session, test_workspace.id)
-    assert (resolved.provider, resolved.api_key, resolved.vision_setting) == ("anthropic", "sk-own", "false")
-
-
-# --- API -----------------------------------------------------------------------
-
-async def test_routes_are_closed_until_an_admin_turns_reading_on(client, auth_headers, session):
+async def test_routes_are_closed_while_agents_are_off(client, auth_headers, monkeypatch):
+    monkeypatch.setenv("AGENTS_ENABLED", "false")
     assert (await client.get("/api/document-ai/status", headers=auth_headers)).status_code == 404
     assert (await client.get("/api/info")).json()["features"]["document_ai"] is False
-    # Configured but switched off is still off.
-    await turn_on(session, enabled=False)
-    assert (await client.get("/api/document-ai/status", headers=auth_headers)).status_code == 404
-    await turn_on(session)
-    assert (await client.get("/api/info")).json()["features"]["document_ai"] is True
-    assert (await client.get("/api/document-ai/status", headers=auth_headers)).status_code == 200
 
 
-async def test_admin_sets_up_reading_in_the_app_and_never_gets_the_key_back(
-    client, auth_headers, admin_auth_headers, session,
-):
-    body = {
-        "enabled": True, "provider": "openai_compatible", "base_url": "https://llm.example/v1",
-        "model": "qwen3.8-flash-next", "api_key": "sk-secret", "vision": "true",
-    }
-    assert (await client.put("/api/admin/document-ai", headers=auth_headers, json=body)).status_code == 403
-    saved = await client.put("/api/admin/document-ai", headers=admin_auth_headers, json=body)
-    assert saved.status_code == 200, saved.text
-    data = saved.json()
-    assert data["enabled"] and data["configured"] and data["has_api_key"]
-    assert (data["detected_vision"], data["detected_vision_source"]) == ("yes", "setting")
-    assert "sk-secret" not in saved.text
-    stored = (await client.get("/api/admin/settings/document_ai_api_key", headers=admin_auth_headers))
-    assert stored.status_code == 404
-    resolved = await ai_settings.instance_model(session)
-    assert resolved.api_key == "sk-secret"
-
-    # A blank key keeps the stored one; clearing removes it.
-    kept = await client.put("/api/admin/document-ai", headers=admin_auth_headers, json={**body, "api_key": ""})
-    assert kept.json()["has_api_key"] is True
-    cleared = await client.put(
-        "/api/admin/document-ai", headers=admin_auth_headers, json={**body, "api_key": None, "clear_api_key": True},
-    )
-    assert cleared.json()["has_api_key"] is False
-    off = await client.put("/api/admin/document-ai", headers=admin_auth_headers, json={**body, "enabled": False})
-    assert off.json()["enabled"] is False
-    assert (await client.get("/api/info")).json()["features"]["document_ai"] is False
-
-
-async def test_status_and_unconfigured_upload(client, auth_headers, session, storage):
-    await turn_on(session, provider=None, model=None)
+async def test_reading_is_off_until_a_connection_is_picked(client, auth_headers, storage):
     status = (await client.get("/api/document-ai/status", headers=auth_headers)).json()
-    assert status["enabled"] and not status["configured"]
+    assert not status["enabled"] and status["connection_id"] is None
     resp = await client.post(
         "/api/document-ai/extractions", headers=auth_headers,
         files={"file": ("s.pdf", text_pdf(STATEMENT_LINES), "application/pdf")}, data={"kind": "statement"},
@@ -390,8 +338,52 @@ async def test_status_and_unconfigured_upload(client, auth_headers, session, sto
     assert storage.files == {}
 
 
-async def test_a_photo_is_refused_up_front_for_a_text_only_model(client, auth_headers, session, storage):
-    await turn_on(session, model="llama3.1:8b")
+async def test_owner_picks_one_of_their_own_connections(client, auth_headers, session, test_user, test_workspace):
+    from app.models.user import User
+
+    mine = await make_connection(session, test_user, model="llama3.2-vision", name="Home server")
+    stranger = User(email="other@example.com", hashed_password="x", is_active=True, is_verified=True)
+    session.add(stranger)
+    await session.commit()
+    theirs = await make_connection(session, stranger, name="Not yours")
+
+    refused = await client.put(
+        "/api/document-ai/settings", headers=auth_headers, json={"connection_id": str(theirs.id)},
+    )
+    assert refused.status_code == 404
+    picked = await client.put(
+        "/api/document-ai/settings", headers=auth_headers, json={"connection_id": str(mine.id), "vision": "auto"},
+    )
+    assert picked.status_code == 200 and picked.json()["connection_id"] == str(mine.id)
+    status = (await client.get("/api/document-ai/status", headers=auth_headers)).json()
+    assert status["enabled"] and status["connection_name"] == "Home server"
+    assert (status["model"], status["vision"], status["vision_source"]) == ("llama3.2-vision", "yes", "catalog")
+
+    # A model of its own for document reading, without touching the connection.
+    await client.put(
+        "/api/document-ai/settings", headers=auth_headers,
+        json={"connection_id": str(mine.id), "model": "llama3.1:8b"},
+    )
+    status = (await client.get("/api/document-ai/status", headers=auth_headers)).json()
+    assert (status["model"], status["vision"]) == ("llama3.1:8b", "no")
+
+    off = await client.put("/api/document-ai/settings", headers=auth_headers, json={"connection_id": None})
+    assert off.status_code == 200
+    assert (await client.get("/api/document-ai/status", headers=auth_headers)).json()["enabled"] is False
+
+
+async def test_a_deleted_connection_turns_reading_off(session, test_workspace, test_user):
+    conn = await turn_on(session, test_workspace, test_user)
+    assert (await ai_settings.resolve_model(session, test_workspace.id)).configured
+    await session.delete(conn)
+    await session.commit()
+    assert not (await ai_settings.resolve_model(session, test_workspace.id)).configured
+
+
+async def test_a_photo_is_refused_up_front_for_a_text_only_model(
+    client, auth_headers, session, storage, test_workspace, test_user,
+):
+    await turn_on(session, test_workspace, test_user, model="llama3.1:8b")
     status = (await client.get("/api/document-ai/status", headers=auth_headers)).json()
     assert (status["vision"], status["vision_source"]) == ("no", "catalog")
     resp = await client.post(
@@ -422,7 +414,7 @@ async def test_statement_end_to_end(
     body = resp.json()
     assert body["status"] == "pending" and body["filename"].endswith(".pdf")
     extraction_id = uuid.UUID(body["id"])
-    no_dispatch.assert_called_once_with(extraction_id)
+    no_dispatch.assert_called_once_with(str(extraction_id))
     assert all(key.startswith(f"{test_workspace.id}/documents/") for key in storage.files)
 
     with use_provider(FakeProvider([STATEMENT_ANSWER])):
@@ -587,4 +579,162 @@ async def test_import_preview_refuses_a_pdf_clearly(client, auth_headers):
         files={"file": ("extrato.pdf", text_pdf(STATEMENT_LINES), "application/pdf")},
     )
     assert resp.status_code == 400
-    assert "turn on document reading" in resp.json()["detail"]
+    assert "document reading" in resp.json()["detail"]
+
+
+# --- Review fixes -------------------------------------------------------------
+
+@pytest.mark.parametrize("raw, expected", [
+    ("(120.50)", "-120.50"), ("120.50-", "-120.50"), ("−12,30", "-12.30"), ("-(5)", None),
+    ("(1.234,56)", "-1234.56"), ("+7", "7.00"), ("1-2", None), ("(12)-", None),
+])
+def test_accounting_amounts_keep_their_sign(raw, expected):
+    value = document_reader.to_decimal(raw)
+    assert (str(value) if value is not None else None) == expected
+
+
+def mixed_pdf() -> bytes:
+    from reportlab.pdfgen import canvas
+
+    buf = io.BytesIO()
+    pdf = canvas.Canvas(buf)
+    y = 800
+    for line in STATEMENT_LINES:
+        pdf.drawString(40, y, line)
+        y -= 16
+    pdf.showPage()
+    pdf.rect(50, 50, 300, 300, fill=1)
+    pdf.showPage()
+    pdf.save()
+    return buf.getvalue()
+
+
+async def test_a_scanned_page_in_a_text_pdf_is_read_as_an_image():
+    provider = FakeProvider([STATEMENT_ANSWER, {"transactions": []}])
+    outcome = await document_reader.read_document(
+        provider=provider, model="m", kind="statement", content=mixed_pdf(), vision="yes", max_pages=5,
+    )
+    text_call, image_call = provider.calls
+    assert not text_call[1].images and "page 1" in (text_call[1].content or "")
+    assert "page 2" not in (text_call[1].content or "")
+    assert len(image_call[1].images) == 1 and "Pages 2 of 2" in (image_call[1].content or "")
+    assert outcome.method == "vision" and outcome.result["unread_pages"] == []
+
+
+async def test_a_scanned_page_a_text_model_cannot_read_is_reported():
+    provider = FakeProvider([STATEMENT_ANSWER])
+    outcome = await document_reader.read_document(
+        provider=provider, model="m", kind="statement", content=mixed_pdf(), vision="no", max_pages=5,
+    )
+    assert len(provider.calls) == 1
+    assert outcome.method == "text" and outcome.result["unread_pages"] == [2]
+
+
+async def test_a_queue_that_is_down_leaves_a_read_to_retry(client, auth_headers, configured, storage):
+    with patch("app.tasks.document_tasks.extract_document.delay", side_effect=ConnectionError("redis down")):
+        resp = await client.post(
+            "/api/document-ai/extractions", headers=auth_headers,
+            files={"file": ("s.pdf", text_pdf(STATEMENT_LINES), "application/pdf")}, data={"kind": "statement"},
+        )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert (body["status"], body["error_code"]) == ("failed", "queue_unavailable")
+    with patch("app.tasks.document_tasks.extract_document.delay") as delay:
+        retried = await client.post(f"/api/document-ai/extractions/{body['id']}/retry", headers=auth_headers)
+    assert retried.json()["status"] == "pending"
+    delay.assert_called_once_with(body["id"])
+
+
+async def test_the_worker_rechecks_the_switch_before_reading(
+    client, auth_headers, configured, storage, no_dispatch, session, monkeypatch,
+):
+    resp = await client.post(
+        "/api/document-ai/extractions", headers=auth_headers,
+        files={"file": ("s.pdf", text_pdf(STATEMENT_LINES), "application/pdf")}, data={"kind": "statement"},
+    )
+    extraction_id = uuid.UUID(resp.json()["id"])
+    monkeypatch.setenv("AGENTS_ENABLED", "false")
+    provider = FakeProvider([STATEMENT_ANSWER])
+    with use_provider(provider):
+        await extraction_service.run_extraction(session, extraction_id)
+    assert provider.calls == []
+    row = (await session.execute(select(DocumentExtraction).where(DocumentExtraction.id == extraction_id))).scalar_one()
+    await session.refresh(row)
+    assert (row.status, row.error_code) == ("failed", "not_configured")
+
+
+async def _read_receipt(client, auth_headers, session):
+    resp = await client.post(
+        "/api/document-ai/extractions", headers=auth_headers,
+        files={"file": ("recibo.png", png_bytes(), "image/png")}, data={"kind": "receipt"},
+    )
+    extraction_id = uuid.UUID(resp.json()["id"])
+    with use_provider(FakeProvider([RECEIPT_ANSWER])):
+        await extraction_service.run_extraction(session, extraction_id)
+    return extraction_id
+
+
+def _new_transaction(account) -> dict:
+    return {
+        "account_id": str(account.id), "description": "Padaria Central", "amount": "120.50",
+        "date": "2026-03-10", "type": "debit", "currency": "BRL",
+    }
+
+
+async def test_a_receipt_can_be_claimed_once(
+    client, auth_headers, configured, storage, no_dispatch, session, test_workspace, test_user,
+):
+    extraction_id = await _read_receipt(client, auth_headers, session)
+    await extraction_service._claim_receipt(session, test_workspace.id, extraction_id, test_user.id)
+    with pytest.raises(extraction_service.ExtractionError) as err:
+        await extraction_service._claim_receipt(session, test_workspace.id, extraction_id, test_user.id)
+    assert err.value.code == "already_confirmed"
+
+
+async def test_a_failed_creation_releases_the_receipt(
+    client, auth_headers, configured, storage, no_dispatch, session, test_account,
+):
+    extraction_id = await _read_receipt(client, auth_headers, session)
+    bad = await client.post(
+        f"/api/document-ai/extractions/{extraction_id}/transaction", headers=auth_headers,
+        json={**_new_transaction(test_account), "account_id": str(uuid.uuid4())},
+    )
+    assert bad.status_code >= 400
+    good = await client.post(
+        f"/api/document-ai/extractions/{extraction_id}/transaction", headers=auth_headers,
+        json=_new_transaction(test_account),
+    )
+    assert good.status_code == 200, good.text
+
+
+async def test_a_file_too_large_to_attach_is_refused_before_anything_is_created(
+    client, auth_headers, configured, storage, no_dispatch, session, test_account, monkeypatch,
+):
+    extraction_id = await _read_receipt(client, auth_headers, session)
+    monkeypatch.setattr(get_settings(), "storage_max_file_size_mb", 0)
+    before = (await session.execute(select(func.count()).select_from(Transaction))).scalar_one()
+    resp = await client.post(
+        f"/api/document-ai/extractions/{extraction_id}/transaction", headers=auth_headers,
+        json=_new_transaction(test_account),
+    )
+    assert resp.status_code == 400 and resp.json()["detail"]["code"] == "attachment_refused"
+    assert (await session.execute(select(func.count()).select_from(Transaction))).scalar_one() == before
+
+
+async def test_storage_failing_after_creation_still_returns_the_transaction(
+    client, auth_headers, configured, storage, no_dispatch, session, test_account,
+):
+    extraction_id = await _read_receipt(client, auth_headers, session)
+    with patch("app.services.attachment_service.upload_attachment", side_effect=RuntimeError("bucket down")):
+        resp = await client.post(
+            f"/api/document-ai/extractions/{extraction_id}/transaction", headers=auth_headers,
+            json=_new_transaction(test_account),
+        )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["transaction_id"] and body["attached"] is False
+    again = await client.post(
+        f"/api/document-ai/extractions/{extraction_id}/transaction", headers=auth_headers,
+        json=_new_transaction(test_account),
+    )
+    assert again.status_code == 409

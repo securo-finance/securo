@@ -49,7 +49,7 @@ async def preview_import(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 "PDF and image files are not statement formats. Export the statement as OFX, CSV, QIF "
-                "or CAMT, or ask an admin to turn on document reading to read it with a model."
+                "or CAMT, or turn on document reading (an LLM connection under Agents) to read it with a model."
             ),
         )
 
@@ -176,7 +176,7 @@ async def import_transactions(
     if data.document_extraction_id is not None:
         from app.services import document_ai_settings_service, document_extraction_service
 
-        if not await document_ai_settings_service.document_ai_enabled(session):
+        if not document_ai_settings_service.document_ai_available():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document reading is not enabled")
         try:
             await document_extraction_service.require_statement_ready(
@@ -185,27 +185,35 @@ async def import_transactions(
         except document_extraction_service.ExtractionError as exc:
             raise HTTPException(status_code=exc.status, detail={"code": exc.code, "message": exc.message})
 
+    before_commit = None
+    if data.document_extraction_id is not None:
+        extraction_id = data.document_extraction_id
+
+        async def before_commit(import_log_id):
+            # Same commit as the rows: the read is marked imported only if
+            # they landed, and they land only with it marked.
+            await document_extraction_service.mark_statement_confirmed(
+                session,
+                workspace_id=ctx.workspace.id,
+                user_id=ctx.user_id,
+                extraction_id=extraction_id,
+                account_id=data.account_id,
+                import_log_id=import_log_id,
+                rows=data.transactions,
+                commit=False,
+            )
+
     try:
         imported, skipped, excluded, import_log_id = await import_service.import_transactions(
             session, ctx.workspace.id, ctx.user_id, data.account_id, data.transactions, "import",
             filename=data.filename, detected_format=data.detected_format,
             detect_duplicates=data.detect_duplicates,
+            before_commit=before_commit,
         )
     except MoneyOutOfRange as e:
         # A row whose conversion does not fit the column (issue #422): the
         # import commits once at the end, so nothing of it was saved.
         raise HTTPException(status_code=422, detail=str(e))
-
-    if data.document_extraction_id is not None:
-        await document_extraction_service.mark_statement_confirmed(
-            session,
-            workspace_id=ctx.workspace.id,
-            user_id=ctx.user_id,
-            extraction_id=data.document_extraction_id,
-            account_id=data.account_id,
-            import_log_id=import_log_id,
-            rows=data.transactions,
-        )
 
     return {
         "imported": imported,

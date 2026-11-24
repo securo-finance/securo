@@ -10,64 +10,30 @@ from app.schemas.transaction import TransactionImport
 class DocumentAiStatus(BaseModel):
     """What this workspace can read, for the UI to say before an upload."""
 
+    # True once an owner picked a connection that still works for it.
     enabled: bool
     configured: bool
+    connection_id: Optional[uuid.UUID] = None
+    connection_name: Optional[str] = None
     provider: Optional[str] = None
     model: Optional[str] = None
-    # Where the model comes from: the instance's defaults or this workspace.
-    source: Optional[str] = None
     vision: Literal["yes", "no", "unknown"] = "unknown"
     vision_source: Literal["setting", "provider", "catalog", "none"] = "none"
     max_file_size_mb: int
     max_pages: int
 
 
-class AdminDocumentAiSettingsRead(BaseModel):
-    """The instance's document reading, as an admin sets it. Never the key."""
-
-    enabled: bool
-    provider: Optional[str] = None
-    base_url: Optional[str] = None
-    model: Optional[str] = None
-    has_api_key: bool = False
-    vision: str = "auto"
-    configured: bool = False
-    detected_vision: Literal["yes", "no", "unknown"] = "unknown"
-    detected_vision_source: Literal["setting", "provider", "catalog", "none"] = "none"
-    # False when SECRET_KEY is too short to seal a key saved in the app.
-    can_store_secrets: bool = True
-
-
-class AdminDocumentAiSettingsUpdate(BaseModel):
-    enabled: bool
-    provider: Optional[str] = None
-    base_url: Optional[str] = None
-    model: Optional[str] = None
-    # Blank keeps the stored key; `clear_api_key` removes it.
-    api_key: Optional[str] = None
-    clear_api_key: bool = False
-    vision: str = "auto"
-
-
 class DocumentAiSettingsRead(BaseModel):
-    provider: Optional[str] = None
-    base_url: Optional[str] = None
+    connection_id: Optional[uuid.UUID] = None
+    # Replaces the connection's default model when set.
     model: Optional[str] = None
-    has_api_key: bool = False
     vision: str = "auto"
-    # The instance's defaults, shown as placeholders. Never its key.
-    instance_provider: Optional[str] = None
-    instance_model: Optional[str] = None
-    instance_base_url: Optional[str] = None
 
 
 class DocumentAiSettingsUpdate(BaseModel):
-    provider: Optional[str] = None
-    base_url: Optional[str] = None
+    # One of the owner's own agents connections; None turns reading off.
+    connection_id: Optional[uuid.UUID] = None
     model: Optional[str] = None
-    # Blank keeps the stored key; `clear_api_key` removes it.
-    api_key: Optional[str] = None
-    clear_api_key: bool = False
     vision: str = "auto"
 
 
@@ -116,10 +82,15 @@ class DocumentExtractionRead(BaseModel):
     suggested_account_id: Optional[uuid.UUID] = None
     dropped: int = 0
     truncated: bool = False
+    # Scanned pages the model could not read (it takes no images).
+    unread_pages: list[int] = []
     # Receipts: what was read, transactions it may be, a category for a new one.
     receipt: Optional[dict[str, Any]] = None
     matches: list[ReceiptMatch] = []
     suggested_category_id: Optional[uuid.UUID] = None
+    # False when a transaction was created from the receipt but its file
+    # could not be stored with it; the transaction is there either way.
+    attached: Optional[bool] = None
 
 
 class AttachReceiptRequest(BaseModel):

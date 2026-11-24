@@ -4099,7 +4099,7 @@
     "suggestedAccount": "このレイアウトの前回の明細書から口座を選択しました。",
     "textOnlyModel": "{{model}} はテキストのみ読み取れます: テキスト付きの PDF は使えますが、写真やスキャンした PDF には画像を読み取れるモデルが必要です。",
     "errors": {
-      "not_configured": "ドキュメントを読み取るモデルが設定されていません。管理者は「管理者設定 → ドキュメントの読み取り」で、ワークスペースのオーナーはワークスペース設定でモデルを選択できます。",
+      "not_configured": "このワークスペースではドキュメントの読み取りが設定されていません。ワークスペース設定か、エージェント → 接続で LLM 接続を選んでください。",
       "vision_required": "このドキュメントは写真またはスキャンですが、モデルは画像を読み取れません。ワークスペース設定で画像を読み取れるモデル（qwen2.5vl、llama3.2-vision、gpt-4o-mini、Claude）を選択してください。",
       "unsupported_file": "読み取れるのは PDF、PNG、JPEG、WebP ファイルのみです。",
       "file_too_large": "ファイルが大きすぎます。",
@@ -4113,7 +4113,8 @@
       "already_confirmed": "このドキュメントはすでに使用されています。",
       "attachment_refused": "ファイルを取引に添付できませんでした。",
       "internal_error": "ドキュメントの読み取り中に問題が発生しました。",
-      "generic": "ドキュメントを読み取れませんでした。"
+      "generic": "ドキュメントを読み取れませんでした。",
+      "queue_unavailable": "処理キューを利用できません。しばらくしてから再試行してください。"
     },
     "receipt": {
       "action": "レシートを読み取る",
@@ -4130,42 +4131,35 @@
       "noMatches": "このレシートに一致する取引はまだありません。新しく作成してください:",
       "create": "取引を作成",
       "attached": "レシートを添付しました",
-      "created": "レシートを添付した取引を作成しました"
+      "created": "レシートを添付した取引を作成しました",
+      "createdWithoutFile": "取引は作成されましたが、ファイルを添付できませんでした。"
     },
     "settings": {
       "title": "ドキュメントの読み取り",
-      "description": "このワークスペースで明細書やレシートを読み取るモデルです。インスタンスのデフォルトを使う場合は空欄のままにしてください。",
-      "current": "使用中: {{provider}} · {{model}}",
-      "sourceWorkspace": "このワークスペースで設定",
-      "sourceInstance": "インスタンスのデフォルト",
+      "description": "このワークスペースで明細書、レシート、添付ファイルを読み取る LLM 接続です。エージェントの接続から選びます。",
+      "current": "{{connection}} で読み取り中 · {{model}}",
       "vision_yes": "画像を読み取れます: 写真やスキャンした PDF も使えます。",
       "vision_no": "テキストのみ読み取れます: 写真やスキャンした PDF には画像を読み取れるモデルが必要です。",
       "vision_unknown": "このモデルが画像を読み取れるかは不明です。Securo が試して、読み取れない場合はお知らせします。",
       "visionSource_setting": "設定どおり",
       "visionSource_provider": "プロバイダーからの情報",
       "visionSource_catalog": "モデル名から判定",
-      "provider": "プロバイダー",
-      "useInstance": "インスタンスのデフォルト（{{value}}）",
-      "none": "なし",
-      "provider_ollama": "Ollama（ローカル）",
-      "provider_openai": "OpenAI",
-      "provider_anthropic": "Anthropic",
-      "provider_openai_compatible": "OpenAI 互換",
       "model": "モデル",
-      "baseUrl": "サーバー URL",
-      "apiKey": "API キー",
-      "keyStored": "キーが保存されています",
       "readsImages": "画像の読み取り",
       "visionAuto": "自動検出",
       "visionYes": "はい",
       "visionNo": "いいえ、テキストのみ",
       "visionHint": "検出は Ollama への問い合わせ、またはモデル名から行います。誤って判定された場合は手動で設定してください。",
-      "privacy": "ドキュメントはこのモデルに送信されます。自分のサーバー上の Ollama なら、外部に出ることはありません。",
-      "removeKey": "キーを削除",
+      "privacy": "ドキュメントはこの接続のプロバイダーに送信されます。自分のサーバーの Ollama なら、外に出ることはありません。",
       "reset": "インスタンスのデフォルトを使う",
       "saved": "ドキュメント読み取りの設定を保存しました",
       "saveError": "設定を保存できませんでした",
-      "resetDone": "インスタンスのデフォルトに戻しました"
+      "resetDone": "インスタンスのデフォルトに戻しました",
+      "connection": "LLM 接続",
+      "off": "オフ",
+      "modelPlaceholder": "接続のモデル ({{model}})",
+      "manageConnections": "接続を管理",
+      "noConnections": "LLM 接続がまだありません。ドキュメントを読み取るには、エージェントで追加してください。"
     },
     "fill": {
       "read": "このファイルから入力",
@@ -4173,14 +4167,13 @@
       "filled": "ファイルから入力しました: {{fields}}",
       "nothingNew": "ファイルに新しく入力できる内容はありませんでした。"
     },
-    "admin": {
-      "title": "ドキュメントの読み取り",
-      "description": "LLM で PDF の明細書、レシートの写真、添付ファイルを取引として読み取ります。確認されるまで何も保存されません。",
-      "enable": "オン",
-      "notConfigured": "ドキュメントの読み取りを始めるには、プロバイダーとモデルを選択してください。",
-      "optional": "(任意)",
-      "keyNeedsSecret": "アプリにキーを保存するには、32 文字以上の SECRET_KEY を設定してください。",
-      "saved": "ドキュメントの読み取りを保存しました"
-    }
+    "agents": {
+      "use": "ドキュメントの読み取りに使用",
+      "inUse": "ドキュメントを読み取り中",
+      "stop": "ドキュメントの読み取りを停止",
+      "turnedOn": "{{name}} がこのワークスペースのドキュメントを読み取ります",
+      "turnedOff": "ドキュメントの読み取りをオフにしました"
+    },
+    "unreadPages": "読み取れなかったページ (スキャンで、モデルが画像を読めません): {{pages}}。これらの行はこの確認に含まれていません。"
   }
 }

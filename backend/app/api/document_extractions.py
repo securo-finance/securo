@@ -1,25 +1,22 @@
 """Reading documents into transactions (ADR 0037).
 
-An admin turns document reading on and picks its model in Admin Settings
-(`/api/admin/document-ai`). While it is off, every `/api/document-ai/*`
-route answers 404. An upload stores
-the file and queues the read; the client polls the extraction until it is
-done, then confirms through the import (statements) or the receipt routes.
+Part of the agents module: every route answers 404 while AGENTS_ENABLED is
+off. A workspace reads with one of the agents LLM connections, picked by an
+owner (`/settings`); until then an upload is refused as not configured. An
+upload stores the file and queues the read; the client polls the extraction
+until it is done, then confirms through the import (statements) or the
+receipt routes.
 """
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import current_superuser
 from app.core.config import get_settings
 from app.core.database import get_async_session
 from app.core.workspace_context import WorkspaceContext, current_workspace, current_writable_workspace
 from app.models.document_extraction import DocumentExtraction
-from app.models.user import User
 from app.schemas.document_extraction import (
-    AdminDocumentAiSettingsRead,
-    AdminDocumentAiSettingsUpdate,
     AttachReceiptRequest,
     BalanceCheck,
     DocumentAiSettingsRead,
@@ -35,76 +32,36 @@ from app.services import import_service
 from app.services.document_extraction_service import ExtractionError
 
 
-async def _document_ai_enabled(session: AsyncSession = Depends(get_async_session)) -> None:
-    if not await ai_settings.document_ai_enabled(session):
+def _document_ai_available() -> None:
+    if not ai_settings.document_ai_available():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document reading is not enabled")
 
 
-router = APIRouter(prefix="/api/document-ai", tags=["document-ai"], dependencies=[Depends(_document_ai_enabled)])
-# Reachable while reading is off: this is where an admin turns it on.
-admin_router = APIRouter(prefix="/api/admin/document-ai", tags=["document-ai"])
-
-
-async def _admin_read(session: AsyncSession) -> AdminDocumentAiSettingsRead:
-    from app.services.provider_settings import can_store_secrets
-
-    instance = await ai_settings.instance_model(session)
-    answer = await ai_settings.vision_for(instance) if instance.configured else None
-    return AdminDocumentAiSettingsRead(
-        enabled=await ai_settings.document_ai_enabled(session),
-        provider=instance.provider or None,
-        base_url=instance.base_url or None,
-        model=instance.model or None,
-        has_api_key=await ai_settings.instance_has_api_key(session),
-        vision=instance.vision_setting,
-        configured=instance.configured,
-        detected_vision=answer.vision if answer else "unknown",
-        detected_vision_source=answer.source if answer else "none",
-        can_store_secrets=can_store_secrets(),
-    )
-
-
-@admin_router.get("", response_model=AdminDocumentAiSettingsRead)
-async def get_admin_settings(
-    session: AsyncSession = Depends(get_async_session),
-    _user: User = Depends(current_superuser),
-):
-    return await _admin_read(session)
-
-
-@admin_router.put("", response_model=AdminDocumentAiSettingsRead)
-async def update_admin_settings(
-    data: AdminDocumentAiSettingsUpdate,
-    session: AsyncSession = Depends(get_async_session),
-    _user: User = Depends(current_superuser),
-):
-    try:
-        await ai_settings.save_instance_settings(
-            session,
-            enabled=data.enabled, provider=data.provider, base_url=data.base_url, model=data.model,
-            api_key=data.api_key, clear_api_key=data.clear_api_key, vision=data.vision,
-        )
-    except ai_settings.SecretStorageUnavailable as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from None
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from None
-    return await _admin_read(session)
+router = APIRouter(prefix="/api/document-ai", tags=["document-ai"], dependencies=[Depends(_document_ai_available)])
 
 
 def _refuse(exc: ExtractionError) -> HTTPException:
     return HTTPException(status_code=exc.status, detail={"code": exc.code, "message": exc.message})
 
 
-def _dispatch(extraction_id: uuid.UUID) -> None:
+async def _dispatch(session: AsyncSession, extraction: DocumentExtraction) -> DocumentExtraction:
+    """Queue the read. If the queue cannot take it, the read is failed with a
+    code the client can retry from, never left pending with no job."""
     from app.tasks.document_tasks import extract_document
 
-    extract_document.delay(str(extraction_id))
+    try:
+        extract_document.delay(str(extraction.id))
+    except Exception as exc:  # broker down past Celery's own publish retries
+        return await extraction_service.mark_unqueued(session, extraction, exc)
+    return extraction
 
 
 async def _read(
     session: AsyncSession, ctx: WorkspaceContext, extraction: DocumentExtraction
 ) -> DocumentExtractionRead:
     out = DocumentExtractionRead.model_validate(extraction, from_attributes=True)
+    if extraction.confirmed and "attached" in extraction.confirmed:
+        out.attached = bool(extraction.confirmed["attached"])
     if extraction.status != "done" or not extraction.result:
         return out
     result = extraction.result
@@ -116,6 +73,7 @@ async def _read(
         out.balance_check = BalanceCheck.model_validate(check) if check else None
         out.dropped = int(result.get("dropped") or 0)
         out.truncated = bool(result.get("truncated"))
+        out.unread_pages = [int(n) for n in result.get("unread_pages") or []]
         out.suggested_account_id = await extraction_service.suggested_account_id(session, extraction)
     else:
         out.receipt = {k: v for k, v in result.items() if k != "usage"}
@@ -135,11 +93,12 @@ async def get_status(
     resolved = await ai_settings.resolve_model(session, ctx.workspace.id)
     answer = await ai_settings.vision_for(resolved) if resolved.configured else None
     return DocumentAiStatus(
-        enabled=True,
+        enabled=resolved.configured,
         configured=resolved.configured,
+        connection_id=resolved.connection_id,
+        connection_name=resolved.connection_name,
         provider=resolved.provider or None,
         model=resolved.model or None,
-        source=resolved.source,
         vision=answer.vision if answer else "unknown",
         vision_source=answer.source if answer else "none",
         max_file_size_mb=settings.document_ai_max_file_size_mb,
@@ -153,17 +112,11 @@ async def get_workspace_settings(
     session: AsyncSession = Depends(get_async_session),
 ):
     ctx.require_owner()
-    instance = await ai_settings.instance_model(session)
     row = await ai_settings.get_workspace_settings(session, ctx.workspace.id)
     return DocumentAiSettingsRead(
-        provider=row.provider if row else None,
-        base_url=row.base_url if row else None,
+        connection_id=row.connection_id if row else None,
         model=row.model if row else None,
-        has_api_key=bool(row and row.api_key_encrypted),
         vision=row.vision if row else "auto",
-        instance_provider=instance.provider or None,
-        instance_model=instance.model or None,
-        instance_base_url=instance.base_url or None,
     )
 
 
@@ -177,11 +130,10 @@ async def update_workspace_settings(
     try:
         await ai_settings.save_workspace_settings(
             session, ctx.workspace.id, ctx.user_id,
-            provider=data.provider, base_url=data.base_url, model=data.model,
-            api_key=data.api_key, clear_api_key=data.clear_api_key, vision=data.vision,
+            connection_id=data.connection_id, model=data.model, vision=data.vision,
         )
-    except ai_settings.SecretStorageUnavailable as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from None
+    except LookupError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found") from None
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from None
     return await get_workspace_settings(ctx, session)
@@ -210,7 +162,7 @@ async def create_extraction(
         )
     except ExtractionError as exc:
         raise _refuse(exc)
-    _dispatch(extraction.id)
+    extraction = await _dispatch(session, extraction)
     return await _read(session, ctx, extraction)
 
 
@@ -241,7 +193,7 @@ async def retry_extraction(
         extraction = await extraction_service.reset_for_retry(session, extraction)
     except ExtractionError as exc:
         raise _refuse(exc)
-    _dispatch(extraction.id)
+    extraction = await _dispatch(session, extraction)
     return await _read(session, ctx, extraction)
 
 

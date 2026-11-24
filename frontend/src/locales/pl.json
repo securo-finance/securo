@@ -4259,7 +4259,7 @@
     "suggestedAccount": "Konto wybrano na podstawie ostatniego wyciągu o tym układzie.",
     "textOnlyModel": "{{model}} odczytuje tylko tekst: pliki PDF z tekstem działają, ale zdjęcia i zeskanowane pliki PDF wymagają modelu, który odczytuje obrazy.",
     "errors": {
-      "not_configured": "Nie skonfigurowano modelu do odczytu dokumentów. Administrator może go wybrać w Ustawieniach administratora → Odczyt dokumentów, a właściciel obszaru roboczego w jego ustawieniach.",
+      "not_configured": "Odczyt dokumentów nie jest skonfigurowany w tym obszarze roboczym. Wybierz połączenie LLM w jego ustawieniach lub w Agenci → Połączenia.",
       "vision_required": "Ten dokument jest zdjęciem lub skanem, a model nie odczytuje obrazów. Wybierz taki, który to potrafi (qwen2.5vl, llama3.2-vision, gpt-4o-mini, Claude), w ustawieniach przestrzeni roboczej.",
       "unsupported_file": "Można odczytać tylko pliki PDF, PNG, JPEG i WebP.",
       "file_too_large": "Plik jest za duży.",
@@ -4273,7 +4273,8 @@
       "already_confirmed": "Ten dokument został już użyty.",
       "attachment_refused": "Nie udało się dołączyć pliku do transakcji.",
       "internal_error": "Coś poszło nie tak podczas odczytu dokumentu.",
-      "generic": "Nie udało się odczytać dokumentu."
+      "generic": "Nie udało się odczytać dokumentu.",
+      "queue_unavailable": "Kolejka przetwarzania jest niedostępna. Spróbuj ponownie za chwilę."
     },
     "receipt": {
       "action": "Odczytaj paragon",
@@ -4292,42 +4293,35 @@
       "noMatches": "Żadna transakcja nie pasuje jeszcze do tego paragonu. Utwórz ją:",
       "create": "Utwórz transakcję",
       "attached": "Paragon dołączony",
-      "created": "Utworzono transakcję z dołączonym paragonem"
+      "created": "Utworzono transakcję z dołączonym paragonem",
+      "createdWithoutFile": "Transakcja utworzona, ale nie udało się dołączyć pliku."
     },
     "settings": {
       "title": "Odczyt dokumentów",
-      "description": "Model, który odczytuje wyciągi i paragony w tej przestrzeni roboczej. Pozostaw pole puste, aby użyć domyślnego ustawienia instancji.",
-      "current": "W użyciu: {{provider}} · {{model}}",
-      "sourceWorkspace": "ustawiony dla tej przestrzeni roboczej",
-      "sourceInstance": "domyślny dla instancji",
+      "description": "Połączenie LLM, które odczytuje wyciągi, paragony i załączniki w tym obszarze roboczym, wybrane spośród Twoich połączeń w Agentach.",
+      "current": "Odczyt przez {{connection}} · {{model}}",
       "vision_yes": "Odczytuje obrazy: zdjęcia i zeskanowane pliki PDF działają.",
       "vision_no": "Odczytuje tylko tekst: zdjęcia i zeskanowane pliki PDF wymagają modelu, który odczytuje obrazy.",
       "vision_unknown": "Nie wiadomo, czy ten model odczytuje obrazy. Securo spróbuje i poinformuje, jeśli się nie uda.",
       "visionSource_setting": "zgodnie z ustawieniem",
       "visionSource_provider": "według dostawcy",
       "visionSource_catalog": "rozpoznano po nazwie modelu",
-      "provider": "Dostawca",
-      "useInstance": "Domyślny dla instancji ({{value}})",
-      "none": "brak",
-      "provider_ollama": "Ollama (lokalnie)",
-      "provider_openai": "OpenAI",
-      "provider_anthropic": "Anthropic",
-      "provider_openai_compatible": "Zgodny z OpenAI",
       "model": "Model",
-      "baseUrl": "URL serwera",
-      "apiKey": "Klucz API",
-      "keyStored": "Klucz jest zapisany",
       "readsImages": "Odczytuje obrazy",
       "visionAuto": "Wykryj automatycznie",
       "visionYes": "Tak",
       "visionNo": "Nie, tylko tekst",
       "visionHint": "Wykrywanie pyta Ollama lub rozpoznaje nazwę modelu. Ustaw ręcznie, jeśli źle oceni model.",
-      "privacy": "Dokumenty są wysyłane do tego modelu. Z Ollama na własnym serwerze nigdy go nie opuszczają.",
-      "removeKey": "Usuń klucz",
+      "privacy": "Dokumenty są wysyłane do dostawcy tego połączenia. Z Ollamą na własnym serwerze nigdy go nie opuszczają.",
       "reset": "Użyj ustawień domyślnych instancji",
       "saved": "Zapisano ustawienia odczytu dokumentów",
       "saveError": "Nie udało się zapisać ustawień",
-      "resetDone": "Przywrócono ustawienia domyślne instancji"
+      "resetDone": "Przywrócono ustawienia domyślne instancji",
+      "connection": "Połączenie LLM",
+      "off": "Wyłączone",
+      "modelPlaceholder": "Model połączenia ({{model}})",
+      "manageConnections": "Zarządzaj połączeniami",
+      "noConnections": "Nie masz jeszcze połączenia LLM. Dodaj je w Agentach, aby odczytywać dokumenty."
     },
     "fill": {
       "read": "Uzupełnij z tego pliku",
@@ -4335,14 +4329,13 @@
       "filled": "Uzupełniono z pliku: {{fields}}",
       "nothingNew": "Plik nie zawierał niczego nowego do uzupełnienia."
     },
-    "admin": {
-      "title": "Odczyt dokumentów",
-      "description": "Odczytuj wyciągi PDF, zdjęcia paragonów i załączniki jako transakcje za pomocą LLM. Nic nie jest zapisywane przed sprawdzeniem.",
-      "enable": "Włączone",
-      "notConfigured": "Wybierz dostawcę i model, aby zacząć odczytywać dokumenty.",
-      "optional": "(opcjonalnie)",
-      "keyNeedsSecret": "Ustaw SECRET_KEY o długości co najmniej 32 znaków, aby zapisać klucz w aplikacji.",
-      "saved": "Zapisano odczyt dokumentów"
-    }
+    "agents": {
+      "use": "Używaj do odczytu dokumentów",
+      "inUse": "Odczytuje dokumenty",
+      "stop": "Przestań odczytywać dokumenty",
+      "turnedOn": "{{name}} odczytuje teraz dokumenty tego obszaru roboczego",
+      "turnedOff": "Wyłączono odczyt dokumentów"
+    },
+    "unreadPages": "Nieodczytane strony (skany, a model nie czyta obrazów): {{pages}}. Ich wierszy brakuje w tym przeglądzie."
   }
 }

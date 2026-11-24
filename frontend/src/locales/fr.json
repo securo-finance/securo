@@ -4113,7 +4113,7 @@
     "suggestedAccount": "Le compte a été choisi d'après le dernier relevé ayant cette mise en page.",
     "textOnlyModel": "{{model}} ne lit que le texte : les PDF avec du texte fonctionnent, mais les photos et les PDF numérisés nécessitent un modèle qui lit les images.",
     "errors": {
-      "not_configured": "Aucun modèle n'est configuré pour lire les documents. Un administrateur peut en choisir un dans Paramètres d'administration → Lecture de documents, ou le propriétaire de l'espace de travail dans ses paramètres.",
+      "not_configured": "La lecture de documents n'est pas configurée dans cet espace de travail. Choisissez une connexion LLM dans ses paramètres, ou dans Agents → Connexions.",
       "vision_required": "Ce document est une photo ou une numérisation, et le modèle ne lit pas les images. Choisissez-en un qui le fait (qwen2.5vl, llama3.2-vision, gpt-4o-mini, Claude) dans les paramètres de l'espace de travail.",
       "unsupported_file": "Seuls les fichiers PDF, PNG, JPEG et WebP peuvent être lus.",
       "file_too_large": "Le fichier est trop volumineux.",
@@ -4127,7 +4127,8 @@
       "already_confirmed": "Ce document a déjà été utilisé.",
       "attachment_refused": "Le fichier n'a pas pu être joint à la transaction.",
       "internal_error": "Un problème est survenu lors de la lecture du document.",
-      "generic": "Le document n'a pas pu être lu."
+      "generic": "Le document n'a pas pu être lu.",
+      "queue_unavailable": "La file de traitement est indisponible. Réessayez dans un instant."
     },
     "receipt": {
       "action": "Lire un reçu",
@@ -4144,42 +4145,35 @@
       "noMatches": "Aucune transaction ne correspond encore à ce reçu. Créez-en une :",
       "create": "Créer la transaction",
       "attached": "Reçu joint",
-      "created": "Transaction créée avec le reçu joint"
+      "created": "Transaction créée avec le reçu joint",
+      "createdWithoutFile": "Transaction créée, mais le fichier n'a pas pu y être joint."
     },
     "settings": {
       "title": "Lecture des documents",
-      "description": "Le modèle qui lit les relevés et les reçus dans cet espace de travail. Laissez un champ vide pour utiliser la valeur par défaut de l'instance.",
-      "current": "Utilisé : {{provider}} · {{model}}",
-      "sourceWorkspace": "défini pour cet espace de travail",
-      "sourceInstance": "la valeur par défaut de l'instance",
+      "description": "La connexion LLM qui lit les relevés, reçus et pièces jointes de cet espace de travail, choisie parmi vos connexions dans Agents.",
+      "current": "Lecture avec {{connection}} · {{model}}",
       "vision_yes": "Lit les images : les photos et les PDF numérisés fonctionnent.",
       "vision_no": "Lit uniquement le texte : les photos et les PDF numérisés nécessitent un modèle qui lit les images.",
       "vision_unknown": "On ne sait pas si ce modèle lit les images. Securo essaiera, et le signalera si ce n'est pas le cas.",
       "visionSource_setting": "selon le paramètre",
       "visionSource_provider": "indiqué par le fournisseur",
       "visionSource_catalog": "reconnu d'après le nom du modèle",
-      "provider": "Fournisseur",
-      "useInstance": "Valeur par défaut de l'instance ({{value}})",
-      "none": "aucun",
-      "provider_ollama": "Ollama (local)",
-      "provider_openai": "OpenAI",
-      "provider_anthropic": "Anthropic",
-      "provider_openai_compatible": "Compatible OpenAI",
       "model": "Modèle",
-      "baseUrl": "URL du serveur",
-      "apiKey": "Clé d'API",
-      "keyStored": "Une clé est enregistrée",
       "readsImages": "Lit les images",
       "visionAuto": "Détecter automatiquement",
       "visionYes": "Oui",
       "visionNo": "Non, texte uniquement",
       "visionHint": "La détection interroge Ollama, ou reconnaît le nom du modèle. Définissez-le manuellement si elle se trompe pour un modèle.",
-      "privacy": "Les documents sont envoyés à ce modèle. Avec Ollama sur votre propre serveur, ils ne le quittent jamais.",
-      "removeKey": "Supprimer la clé",
+      "privacy": "Les documents sont envoyés au fournisseur de cette connexion. Avec Ollama sur votre propre serveur, ils ne le quittent jamais.",
       "reset": "Utiliser les valeurs par défaut de l'instance",
       "saved": "Paramètres de lecture des documents enregistrés",
       "saveError": "Les paramètres n'ont pas pu être enregistrés",
-      "resetDone": "Valeurs par défaut de l'instance rétablies"
+      "resetDone": "Valeurs par défaut de l'instance rétablies",
+      "connection": "Connexion LLM",
+      "off": "Désactivé",
+      "modelPlaceholder": "Le modèle de la connexion ({{model}})",
+      "manageConnections": "Gérer les connexions",
+      "noConnections": "Vous n'avez encore aucune connexion LLM. Ajoutez-en une dans Agents pour lire des documents."
     },
     "fill": {
       "read": "Remplir à partir de ce fichier",
@@ -4187,14 +4181,13 @@
       "filled": "Rempli à partir du fichier : {{fields}}",
       "nothingNew": "Le fichier n'avait rien de nouveau à remplir."
     },
-    "admin": {
-      "title": "Lecture de documents",
-      "description": "Lisez les relevés PDF, les photos de reçus et les pièces jointes en transactions, avec un LLM. Rien n'est enregistré avant une vérification.",
-      "enable": "Activé",
-      "notConfigured": "Choisissez un fournisseur et un modèle pour commencer à lire des documents.",
-      "optional": "(facultatif)",
-      "keyNeedsSecret": "Définissez une SECRET_KEY d'au moins 32 caractères pour enregistrer une clé dans l'application.",
-      "saved": "Lecture de documents enregistrée"
-    }
+    "agents": {
+      "use": "Utiliser pour lire les documents",
+      "inUse": "Lit les documents",
+      "stop": "Arrêter de lire les documents",
+      "turnedOn": "{{name}} lit désormais les documents de cet espace de travail",
+      "turnedOff": "Lecture de documents désactivée"
+    },
+    "unreadPages": "Pages non lues (numérisées, et le modèle ne lit pas les images) : {{pages}}. Leurs lignes manquent dans cette vérification."
   }
 }

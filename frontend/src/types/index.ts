@@ -1163,57 +1163,29 @@ export type DocumentKind = 'statement' | 'receipt'
 export type DocumentVision = 'yes' | 'no' | 'unknown'
 
 export interface DocumentAiStatus {
+  /** An owner picked a connection that still works for this workspace. */
   enabled: boolean
   configured: boolean
+  connection_id: string | null
+  connection_name: string | null
   provider: string | null
   model: string | null
-  source: 'instance' | 'workspace' | null
   vision: DocumentVision
   vision_source: 'setting' | 'provider' | 'catalog' | 'none'
   max_file_size_mb: number
   max_pages: number
 }
 
-export interface DocumentAiAdminSettings {
-  enabled: boolean
-  provider: string | null
-  base_url: string | null
-  model: string | null
-  has_api_key: boolean
-  vision: 'auto' | 'true' | 'false'
-  configured: boolean
-  detected_vision: DocumentVision
-  detected_vision_source: 'setting' | 'provider' | 'catalog' | 'none'
-  can_store_secrets: boolean
-}
-
-export interface DocumentAiAdminSettingsUpdate {
-  enabled: boolean
-  provider: string | null
-  base_url: string | null
-  model: string | null
-  api_key?: string | null
-  clear_api_key?: boolean
-  vision: 'auto' | 'true' | 'false'
-}
-
 export interface DocumentAiSettings {
-  provider: string | null
-  base_url: string | null
+  connection_id: string | null
+  /** Replaces the connection's default model when set. */
   model: string | null
-  has_api_key: boolean
   vision: 'auto' | 'true' | 'false'
-  instance_provider: string | null
-  instance_model: string | null
-  instance_base_url: string | null
 }
 
 export interface DocumentAiSettingsUpdate {
-  provider: string | null
-  base_url: string | null
+  connection_id: string | null
   model: string | null
-  api_key?: string | null
-  clear_api_key?: boolean
   vision: 'auto' | 'true' | 'false'
 }
 
@@ -1285,6 +1257,10 @@ export interface DocumentExtraction {
   suggested_account_id: string | null
   dropped: number
   truncated: boolean
+  /** Scanned pages the model could not read (it takes no images). */
+  unread_pages: number[]
+  /** False when a transaction was created but its file could not be stored. */
+  attached: boolean | null
   receipt: DocumentReceiptInfo | null
   matches: DocumentReceiptMatch[]
   suggested_category_id: string | null

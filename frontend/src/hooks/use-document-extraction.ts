@@ -20,7 +20,7 @@ export function isImageFile(name: string | null | undefined): boolean {
 const KNOWN_ERRORS = new Set([
   'not_configured', 'vision_required', 'unsupported_file', 'file_too_large', 'encrypted_pdf',
   'unreadable_file', 'empty_document', 'provider_error', 'provider_auth', 'invalid_response', 'timeout',
-  'already_confirmed', 'attachment_refused', 'internal_error',
+  'already_confirmed', 'attachment_refused', 'internal_error', 'queue_unavailable',
 ])
 
 /** A translated message for a refusal (`{code, message}`) or a failed read. */
@@ -47,7 +47,8 @@ export function useDocumentAiStatus() {
     enabled: documentAiEnabled,
     staleTime: 60_000,
   })
-  return { enabled: documentAiEnabled, status: query.data, isLoading: query.isLoading }
+  // Available with the agents module; on once the workspace picked a connection.
+  return { available: documentAiEnabled, enabled: documentAiEnabled && !!query.data?.enabled, status: query.data, isLoading: query.isLoading }
 }
 
 /**

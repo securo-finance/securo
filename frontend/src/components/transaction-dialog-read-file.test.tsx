@@ -26,7 +26,7 @@ const read: DocumentExtraction = {
   id: 'r1', kind: 'receipt', status: 'done', filename: 'r.pdf', content_type: 'application/pdf', size: 1,
   provider: 'ollama', model: 'qwen2.5vl', method: 'text', pages: 1, error_code: null, error: null,
   created_at: '', completed_at: null, confirmed_at: null, transaction_id: null, import_log_id: null,
-  statement: null, transactions: [], balance_check: null, suggested_account_id: null, dropped: 0, truncated: false,
+  statement: null, transactions: [], balance_check: null, suggested_account_id: null, dropped: 0, truncated: false, unread_pages: [], attached: null,
   receipt: {
     merchant: 'Blue Bottle Coffee', merchant_tax_id: null, date: '2026-11-20', total: '12.75', currency: 'EUR',
     kind: 'purchase', payment_method: null, category_hint: null, items: [],
@@ -41,7 +41,7 @@ beforeEach(() => {
     allowed_extensions: ['pdf', 'jpg'], max_file_size_mb: 10, max_attachments_per_transaction: 10,
   })
   vi.mocked(documentAi.status).mockResolvedValue({
-    enabled: true, configured: true, provider: 'ollama', model: 'qwen2.5vl', source: 'instance',
+    enabled: true, configured: true, provider: 'ollama', model: 'qwen2.5vl', connection_id: 'c1', connection_name: 'Local',
     vision: 'yes', vision_source: 'provider', max_file_size_mb: 10, max_pages: 20,
   })
   vi.mocked(documentAi.upload).mockReset().mockResolvedValue(read)

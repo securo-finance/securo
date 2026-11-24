@@ -80,12 +80,9 @@ def pdf_text_pages(content: bytes) -> list[str]:
         raise ReaderError("unreadable_file", f"The PDF could not be opened: {exc}") from exc
 
 
-def has_usable_text(pages: list[str]) -> bool:
-    if not pages:
-        return False
-    text = "".join(pages)
-    chars = len(re.sub(r"\s+", "", text))
-    return chars >= MIN_TEXT_PER_PAGE * len(pages) and bool(re.search(r"\d", text))
+def page_has_text(page: str) -> bool:
+    """A page whose own text can be read; otherwise it is a scan."""
+    return len(re.sub(r"\s+", "", page or "")) >= MIN_TEXT_PER_PAGE and bool(re.search(r"\d", page or ""))
 
 
 def _jpeg_part(image) -> ImagePart:
@@ -97,7 +94,7 @@ def _jpeg_part(image) -> ImagePart:
     return ImagePart(media_type="image/jpeg", data=base64.b64encode(buf.getvalue()).decode("ascii"))
 
 
-def render_pdf_pages(content: bytes, max_pages: int) -> list[ImagePart]:
+def render_pdf_pages(content: bytes, indexes: list[int]) -> list[ImagePart]:
     import pypdfium2 as pdfium
 
     try:
@@ -106,7 +103,9 @@ def render_pdf_pages(content: bytes, max_pages: int) -> list[ImagePart]:
         raise ReaderError("unreadable_file", f"The PDF could not be rendered: {exc}") from exc
     try:
         parts: list[ImagePart] = []
-        for index in range(min(len(pdf), max_pages)):
+        for index in indexes:
+            if index >= len(pdf):
+                continue
             page = pdf[index]
             # ~150 dpi: small print on a statement stays legible.
             bitmap = page.render(scale=150 / 72)
@@ -210,8 +209,22 @@ def to_decimal(value: Any) -> Optional[Decimal]:
     if isinstance(value, (int, float)):
         raw = str(value)
     elif isinstance(value, str):
-        raw = value.strip().replace(" ", "")
+        raw = value.strip().replace(" ", "").replace("\u2212", "-")
         if not raw:
+            return None
+        # Accounting notation keeps its sign: "(120.50)" and "120.50-" are
+        # debits. A sign the text cannot settle is refused, not guessed.
+        negative = False
+        if raw.startswith("(") and raw.endswith(")"):
+            negative, raw = True, raw[1:-1]
+        elif raw.endswith("-") and not raw.startswith("-"):
+            negative, raw = True, raw[:-1]
+        if "(" in raw or ")" in raw or raw.count("-") + raw.count("+") > 1:
+            return None
+        if raw.startswith("-"):
+            negative, raw = not negative, raw[1:]
+        raw = raw.lstrip("+")
+        if "-" in raw or "+" in raw:
             return None
         # "1.234,56" or "1,234.56": the last separator is the decimal one.
         if "," in raw and "." in raw:
@@ -221,7 +234,9 @@ def to_decimal(value: Any) -> Optional[Decimal]:
                 raw = raw.replace(",", "")
         elif "," in raw:
             raw = raw.replace(",", ".")
-        raw = re.sub(r"[^\d.\-+]", "", raw)
+        raw = re.sub(r"[^\d.]", "", raw)
+        if negative:
+            raw = "-" + raw
     else:
         return None
     try:
@@ -377,16 +392,22 @@ def layout_fingerprint(kind: Kind, statement_result: dict, first_page_text: str)
 # --- Reading ---------------------------------------------------------------
 
 def _chunks(pages: list[str]) -> list[tuple[int, int, str]]:
+    """Group text pages into model-sized chunks; empty pages (scans) are skipped."""
     chunks: list[tuple[int, int, str]] = []
-    start, buf, size = 0, [], 0
+    start, last, buf, size = 0, 0, [], 0
     for index, page in enumerate(pages):
+        if not page.strip():
+            continue  # a scan, read as an image instead
         if buf and size + len(page) > MAX_CHARS_PER_CHUNK:
-            chunks.append((start, index - 1, "\n\n".join(buf)))
-            start, buf, size = index, [], 0
+            chunks.append((start, last, "\n\n".join(buf)))
+            buf, size = [], 0
+        if not buf:
+            start = index
         buf.append(f"--- page {index + 1} ---\n{page}")
         size += len(page)
+        last = index
     if buf:
-        chunks.append((start, len(pages) - 1, "\n\n".join(buf)))
+        chunks.append((start, last, "\n\n".join(buf)))
     return chunks
 
 
@@ -435,29 +456,39 @@ async def read_document(
         page_count = len(pages)
         pages = pages[:max_pages]
         first_page_text = pages[0]
-        if has_usable_text(pages):
-            for start, end, text in _chunks(pages):
+        # Each page on its own: a statement can mix text pages with scans.
+        text_pages = [i for i, page in enumerate(pages) if page_has_text(page)]
+        scanned = [i for i in range(len(pages)) if i not in text_pages]
+        if not text_pages and vision == "no":
+            raise ReaderError("vision_required", "This PDF is scanned and the model does not read images.")
+        method: Literal["text", "vision"] = "text"
+        if text_pages:
+            # Pages keep their numbers; a scan in between goes as an image.
+            readable = [pages[i] if i in text_pages else "" for i in range(len(pages))]
+            for start, end, text in _chunks(readable):
                 answers.append(await _ask(
                     provider, model, system,
                     f"Pages {start + 1} to {end + 1} of {page_count}. Read them:\n\n{text}",
                     [], usage,
                 ))
-            method: Literal["text", "vision"] = "text"
-        else:
-            if vision == "no":
-                raise ReaderError("vision_required", "This PDF is scanned and the model does not read images.")
-            images = render_pdf_pages(content, max_pages)
+        if scanned and vision != "no":
+            images = render_pdf_pages(content, scanned)
             for offset in range(0, len(images), IMAGES_PER_CALL):
+                numbers = scanned[offset : offset + IMAGES_PER_CALL]
                 batch = images[offset : offset + IMAGES_PER_CALL]
                 answers.append(await _ask(
                     provider, model, system,
-                    f"Pages {offset + 1} to {offset + len(batch)} of {page_count}, as images. Read them.",
+                    f"Pages {', '.join(str(n + 1) for n in numbers)} of {page_count}, as images. Read them.",
                     batch, usage,
                 ))
             method = "vision"
+            scanned = []
+        # Scans the model could not take stay listed, so the review says so.
+        unread_pages = [n + 1 for n in scanned]
     else:
         if vision == "no":
             raise ReaderError("vision_required", "The model does not read images.")
+        unread_pages: list[int] = []
         page_count = 1
         answers.append(await _ask(provider, model, system, "Read this document.", [normalize_image(content)], usage))
         method = "vision"
@@ -466,6 +497,7 @@ async def read_document(
         result = clean_statement(answers)
         result["balance_check"] = balance_check(result)
         result["layout_fingerprint"] = layout_fingerprint(kind, result, first_page_text)
+        result["unread_pages"] = unread_pages
     else:
         result = clean_receipt(answers[0] if answers else {})
     return ReadOutcome(result=result, method=method, pages=page_count, usage=usage)

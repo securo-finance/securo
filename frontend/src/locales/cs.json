@@ -4309,7 +4309,7 @@
     "suggestedAccount": "Účet byl vybrán podle posledního výpisu se stejným rozvržením.",
     "textOnlyModel": "{{model}} čte jen text: PDF s textem fungují, ale fotografie a naskenovaná PDF potřebují model, který čte obrázky.",
     "errors": {
-      "not_configured": "Není nastaven žádný model pro čtení dokumentů. Správce ho může vybrat v Nastavení správce → Čtení dokumentů, nebo vlastník pracovního prostoru v jeho nastavení.",
+      "not_configured": "Čtení dokumentů není v tomto pracovním prostoru nastaveno. Vyberte připojení LLM v jeho nastavení, nebo v Agenti → Připojení.",
       "vision_required": "Tento dokument je fotografie nebo sken a model neumí číst obrázky. Vyberte v nastavení pracovního prostoru model, který to umí (qwen2.5vl, llama3.2-vision, gpt-4o-mini, Claude).",
       "unsupported_file": "Číst lze pouze soubory PDF, PNG, JPEG a WebP.",
       "file_too_large": "Soubor je příliš velký.",
@@ -4323,7 +4323,8 @@
       "already_confirmed": "Tento dokument už byl použit.",
       "attachment_refused": "Soubor se nepodařilo připojit k transakci.",
       "internal_error": "Při čtení dokumentu se něco pokazilo.",
-      "generic": "Dokument se nepodařilo přečíst."
+      "generic": "Dokument se nepodařilo přečíst.",
+      "queue_unavailable": "Fronta zpracování není dostupná. Zkuste to za chvíli znovu."
     },
     "receipt": {
       "action": "Přečíst účtenku",
@@ -4342,42 +4343,35 @@
       "noMatches": "Této účtence zatím neodpovídá žádná transakce. Vytvořte ji:",
       "create": "Vytvořit transakci",
       "attached": "Účtenka připojena",
-      "created": "Transakce vytvořena s připojenou účtenkou"
+      "created": "Transakce vytvořena s připojenou účtenkou",
+      "createdWithoutFile": "Transakce vytvořena, ale soubor se nepodařilo připojit."
     },
     "settings": {
       "title": "Čtení dokumentů",
-      "description": "Model, který v tomto pracovním prostoru čte výpisy a účtenky. Ponechte pole prázdné, chcete-li použít výchozí nastavení instance.",
-      "current": "Používá se: {{provider}} · {{model}}",
-      "sourceWorkspace": "nastaveno pro tento pracovní prostor",
-      "sourceInstance": "výchozí nastavení instance",
+      "description": "Připojení LLM, které čte výpisy, účtenky a přílohy v tomto pracovním prostoru, vybrané z vašich připojení v Agentech.",
+      "current": "Čte pomocí {{connection}} · {{model}}",
       "vision_yes": "Čte obrázky: fotografie a naskenovaná PDF fungují.",
       "vision_no": "Čte jen text: fotografie a naskenovaná PDF potřebují model, který čte obrázky.",
       "vision_unknown": "Není známo, zda tento model čte obrázky. Securo to zkusí a dá vědět, pokud ne.",
       "visionSource_setting": "podle nastavení",
       "visionSource_provider": "podle poskytovatele",
       "visionSource_catalog": "rozpoznáno podle názvu modelu",
-      "provider": "Poskytovatel",
-      "useInstance": "Výchozí nastavení instance ({{value}})",
-      "none": "žádný",
-      "provider_ollama": "Ollama (lokálně)",
-      "provider_openai": "OpenAI",
-      "provider_anthropic": "Anthropic",
-      "provider_openai_compatible": "Kompatibilní s OpenAI",
       "model": "Model",
-      "baseUrl": "URL serveru",
-      "apiKey": "Klíč API",
-      "keyStored": "Klíč je uložen",
       "readsImages": "Čte obrázky",
       "visionAuto": "Zjistit automaticky",
       "visionYes": "Ano",
       "visionNo": "Ne, jen text",
       "visionHint": "Zjišťování se ptá Ollama, nebo rozpozná název modelu. Pokud model určí špatně, nastavte to ručně.",
-      "privacy": "Dokumenty se odesílají tomuto modelu. S Ollama na vlastním serveru ho nikdy neopustí.",
-      "removeKey": "Odebrat klíč",
+      "privacy": "Dokumenty se odesílají poskytovateli tohoto připojení. S Ollamou na vlastním serveru ho nikdy neopustí.",
       "reset": "Použít výchozí nastavení instance",
       "saved": "Nastavení čtení dokumentů uloženo",
       "saveError": "Nastavení se nepodařilo uložit",
-      "resetDone": "Obnoveno výchozí nastavení instance"
+      "resetDone": "Obnoveno výchozí nastavení instance",
+      "connection": "Připojení LLM",
+      "off": "Vypnuto",
+      "modelPlaceholder": "Model připojení ({{model}})",
+      "manageConnections": "Spravovat připojení",
+      "noConnections": "Zatím nemáte žádné připojení LLM. Přidejte ho v Agentech, abyste mohli číst dokumenty."
     },
     "fill": {
       "read": "Vyplnit z tohoto souboru",
@@ -4385,14 +4379,13 @@
       "filled": "Vyplněno ze souboru: {{fields}}",
       "nothingNew": "Soubor neobsahoval nic nového k vyplnění."
     },
-    "admin": {
-      "title": "Čtení dokumentů",
-      "description": "Čtěte výpisy v PDF, fotky účtenek a přílohy jako transakce pomocí LLM. Nic se neuloží, dokud to někdo nezkontroluje.",
-      "enable": "Zapnuto",
-      "notConfigured": "Vyberte poskytovatele a model, abyste mohli číst dokumenty.",
-      "optional": "(volitelné)",
-      "keyNeedsSecret": "Nastavte SECRET_KEY s alespoň 32 znaky, abyste mohli uložit klíč v aplikaci.",
-      "saved": "Čtení dokumentů uloženo"
-    }
+    "agents": {
+      "use": "Použít pro čtení dokumentů",
+      "inUse": "Čte dokumenty",
+      "stop": "Přestat číst dokumenty",
+      "turnedOn": "{{name}} nyní čte dokumenty tohoto pracovního prostoru",
+      "turnedOff": "Čtení dokumentů vypnuto"
+    },
+    "unreadPages": "Nepřečtené stránky (skeny, a model nečte obrázky): {{pages}}. Jejich řádky v této kontrole chybí."
   }
 }

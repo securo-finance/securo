@@ -1,11 +1,12 @@
-"""document extractions: documents read into transactions, and each workspace's model
+"""document extractions: documents read into transactions, and the connection each workspace reads with
 
 Revision ID: 131
 Revises: 130
 
 A statement PDF or a receipt photo read by an LLM (ADR 0037). The table keeps
 the file's place in storage, what the model read and what the person
-confirmed; the second one holds the model a workspace reads with.
+confirmed; the second one holds which agents LLM connection a workspace
+reads with.
 """
 
 import sqlalchemy as sa
@@ -93,10 +94,8 @@ def upgrade() -> None:
             sa.ForeignKey("workspaces.id", ondelete="CASCADE"),
             nullable=False,
         ),
-        sa.Column("provider", sa.String(40), nullable=True),
-        sa.Column("base_url", sa.String(500), nullable=True),
+        sa.Column("connection_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("model", sa.String(120), nullable=True),
-        sa.Column("api_key_encrypted", sa.String(500), nullable=True),
         sa.Column("vision", sa.String(10), nullable=False, server_default="auto"),
         sa.Column(
             "updated_by_user_id",

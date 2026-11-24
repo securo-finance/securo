@@ -4099,7 +4099,7 @@
     "suggestedAccount": "The account was picked from the last statement with this layout.",
     "textOnlyModel": "{{model}} reads text only: PDFs with text work, but photos and scanned PDFs need a model that reads images.",
     "errors": {
-      "not_configured": "No model is set up to read documents. An admin can pick one under Admin Settings → Document reading, or a workspace owner in the workspace settings.",
+      "not_configured": "Document reading is not set up in this workspace. Pick an LLM connection in the workspace settings, or under Agents → Connections.",
       "vision_required": "This document is a photo or a scan, and the model does not read images. Pick one that does (qwen2.5vl, llama3.2-vision, gpt-4o-mini, Claude) in the workspace settings.",
       "unsupported_file": "Only PDF, PNG, JPEG and WebP files can be read.",
       "file_too_large": "The file is too large.",
@@ -4113,7 +4113,8 @@
       "already_confirmed": "This document was already used.",
       "attachment_refused": "The file could not be attached to the transaction.",
       "internal_error": "Something went wrong while reading the document.",
-      "generic": "The document could not be read."
+      "generic": "The document could not be read.",
+      "queue_unavailable": "The background queue is unavailable. Try again in a moment."
     },
     "receipt": {
       "action": "Read receipt",
@@ -4130,42 +4131,35 @@
       "noMatches": "No transaction matches this receipt yet. Create one:",
       "create": "Create transaction",
       "attached": "Receipt attached",
-      "created": "Transaction created with the receipt attached"
+      "created": "Transaction created with the receipt attached",
+      "createdWithoutFile": "Transaction created, but the file could not be attached to it."
     },
     "settings": {
       "title": "Document reading",
-      "description": "The model that reads statements and receipts in this workspace. Leave a field blank to use the instance's default.",
-      "current": "In use: {{provider}} · {{model}}",
-      "sourceWorkspace": "set for this workspace",
-      "sourceInstance": "the instance's default",
+      "description": "The LLM connection that reads statements, receipts and attachments in this workspace, picked from your connections under Agents.",
+      "current": "Reading with {{connection}} · {{model}}",
       "vision_yes": "Reads images: photos and scanned PDFs work.",
       "vision_no": "Reads text only: photos and scanned PDFs need a model that reads images.",
       "vision_unknown": "Not known whether this model reads images. Securo will try, and say so if it doesn't.",
       "visionSource_setting": "as set",
       "visionSource_provider": "reported by the provider",
       "visionSource_catalog": "recognised from the model's name",
-      "provider": "Provider",
-      "useInstance": "Instance default ({{value}})",
-      "none": "none",
-      "provider_ollama": "Ollama (local)",
-      "provider_openai": "OpenAI",
-      "provider_anthropic": "Anthropic",
-      "provider_openai_compatible": "OpenAI-compatible",
       "model": "Model",
-      "baseUrl": "Server URL",
-      "apiKey": "API key",
-      "keyStored": "A key is stored",
       "readsImages": "Reads images",
       "visionAuto": "Detect automatically",
       "visionYes": "Yes",
       "visionNo": "No, text only",
       "visionHint": "Detection asks Ollama, or recognises the model's name. Set it by hand when it gets a model wrong.",
-      "privacy": "Documents are sent to this model. With Ollama on your own server, they never leave it.",
-      "removeKey": "Remove key",
+      "privacy": "Documents are sent to this connection's provider. With Ollama on your own server, they never leave it.",
       "reset": "Use instance defaults",
       "saved": "Document reading settings saved",
       "saveError": "The settings could not be saved",
-      "resetDone": "Back to the instance defaults"
+      "resetDone": "Back to the instance defaults",
+      "connection": "LLM connection",
+      "off": "Off",
+      "modelPlaceholder": "The connection's model ({{model}})",
+      "manageConnections": "Manage connections",
+      "noConnections": "You have no LLM connection yet. Add one under Agents to read documents."
     },
     "fill": {
       "read": "Fill in from this file",
@@ -4173,14 +4167,13 @@
       "filled": "Filled in from the file: {{fields}}",
       "nothingNew": "The file had nothing new to fill in."
     },
-    "admin": {
-      "title": "Document reading",
-      "description": "Read statement PDFs, receipt photos and attachments into transactions with an LLM. Nothing is saved until someone reviews it.",
-      "enable": "On",
-      "notConfigured": "Pick a provider and a model to start reading documents.",
-      "optional": "(optional)",
-      "keyNeedsSecret": "Set a SECRET_KEY of at least 32 characters to save a key in the app.",
-      "saved": "Document reading saved"
-    }
+    "agents": {
+      "use": "Use for document reading",
+      "inUse": "Reads documents",
+      "stop": "Stop reading documents",
+      "turnedOn": "{{name}} now reads this workspace's documents",
+      "turnedOff": "Document reading turned off"
+    },
+    "unreadPages": "Pages not read (scans, and the model does not read images): {{pages}}. Their lines are missing from this review."
   }
 }
