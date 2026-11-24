@@ -474,6 +474,25 @@ def effective_date_for(recurring, nominal: date) -> date:
     return adjust_weekend_date(nominal, **occurrence_rules(recurring))
 
 
+# Days between two occurrences of the schedules short enough for a bill's
+# grace (at most 15 days) to reach the next one.
+_SHORT_PERIOD_DAYS = {"weekly": 7, "biweekly": 14}
+
+
+def grace_days_for(recurring) -> int:
+    """The grace a bill's late charge gets, kept shorter than its period.
+
+    A grace as long as the period makes an on-day charge read as the previous
+    occurrence paid late: a weekly bill with ten days of grace would take a
+    charge on the 15th for the occurrence of the 8th. So a weekly bill gets at
+    most six days and a biweekly one thirteen, whatever is stored; month-based
+    periods are longer than any grace a bill may carry.
+    """
+    grace = int(recurring.grace_days or 0)
+    period = _SHORT_PERIOD_DAYS.get(recurring.frequency)
+    return min(grace, period - 1) if period else grace
+
+
 def nearest_occurrence(recurring, when: date) -> tuple[date, date]:
     """The occurrence, from the pointer onward, whose due date is nearest ``when``.
 
@@ -486,7 +505,7 @@ def nearest_occurrence(recurring, when: date) -> tuple[date, date]:
     not considered; when none is left the pointer's own occurrence is
     returned.
     """
-    grace = int(recurring.grace_days or 0)
+    grace = grace_days_for(recurring)
 
     def distance(effective: date) -> int:
         late = (when - effective).days
@@ -516,12 +535,16 @@ def _first_pointer(start: date, frequency: str, intended_day: int, rules: dict) 
     charged, and no charge on the 17th could ever be matched to it. An
     occurrence whose effective date would land before ``start`` (the 5th
     business day, for a schedule starting on the 20th) is not one either.
+
+    With a business-day rule only the month of the pointer matters, so the
+    start month is judged by its effective date (the 15th business day of a
+    month starting on the 10th is still ahead), never by the nominal day.
     """
     pointer = start
     if frequency in _MONTH_BASED_FREQUENCIES:
         day = min(intended_day, calendar.monthrange(start.year, start.month)[1])
         pointer = date(start.year, start.month, day)
-        if pointer < start:
+        if pointer < start and not rules.get("business_day"):
             pointer = _advance_date(pointer, frequency, intended_day=intended_day)
     if not rules.get("business_day"):
         # A weekend adjustment moving the first occurrence a day or two
@@ -582,14 +605,19 @@ def adjust_weekend_date(
     return day
 
 
+# The furthest an effective date can sit from its nominal one, in days. A
+# business day can be anywhere in the pointer's month; a holiday calendar can
+# close for over a week (China's Spring Festival moves 28 January 2025 to
+# 5 February), and no calendar closes for a month. Queries that preselect
+# schedules by date widen their bound by this much, so a shifted occurrence
+# reaches the scan that dates it.
+MAX_EFFECTIVE_SHIFT_DAYS = 35
+
+
 def _scan_margin(business_day: Optional[int], holiday_calendar: Optional[str]) -> int:
     """How far an effective date can sit from its nominal one, in days."""
-    if business_day:
-        # The pointer can be anywhere in the month, and the effective day too.
-        return 35
-    if holiday_calendar:
-        # A weekend next to a holiday (Good Friday, Carnival) moves further.
-        return 6
+    if business_day or holiday_calendar:
+        return MAX_EFFECTIVE_SHIFT_DAYS
     return 2
 
 
@@ -645,6 +673,21 @@ def get_occurrences_in_range(
     return occurrences
 
 
+def _schedule_anchor(rec) -> date:
+    """The nominal occurrence a scan of the whole schedule starts from.
+
+    The schedule's first occurrence as creation sets it, not ``start_date``:
+    with a business-day rule the start month's occurrence can fall before the
+    start (the first business day, for a bill starting on the 20th), and a day
+    of month other than the start's (start 1 Aug, day 17) puts it later. A
+    pointer behind that, as on a row created before the first occurrence was
+    computed this way, keeps the occurrences it already reached.
+    """
+    intended_day = rec.day_of_month or rec.start_date.day
+    first = _first_pointer(rec.start_date, rec.frequency, intended_day, occurrence_rules(rec))
+    return min(first, rec.next_occurrence) if rec.next_occurrence else first
+
+
 async def _charged_occurrences(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -673,11 +716,21 @@ async def _charged_occurrences(
     )).scalars().all()
     if not stopped:
         return {}
-    reach = {
+    rule_reach = {
         frequency: await recurring_match_service.occurrence_reach(
             session, workspace_id, frequency
         )
         for frequency in {rec.frequency for rec in stopped}
+    }
+    # Each bill's grace widens the late side, as it does when generation
+    # links a charge (find_real_tx_for_occurrence), so a charge linked within
+    # the grace is attributed to its occurrence here too.
+    reach = {
+        rec.id: (
+            rule_reach[rec.frequency][0],
+            rule_reach[rec.frequency][1] + grace_days_for(rec),
+        )
+        for rec in stopped
     }
     # A charge sits at most `before` days ahead of its occurrence or `after`
     # days behind it. The walk covers one reach on each side of the month, so
@@ -703,13 +756,13 @@ async def _charged_occurrences(
         pending = charges.get(rec.id, [])
         if not pending:
             continue
-        before, after = reach[rec.frequency]
+        before, after = reach[rec.id]
         # Nominal dates past the pointer were never generated.
         reached_until = rec.next_occurrence - timedelta(days=1)
         if rec.end_date and rec.end_date < reached_until:
             reached_until = rec.end_date
         for occurrence in reversed(get_occurrences_in_range(
-            start=rec.start_date,
+            start=_schedule_anchor(rec),
             frequency=rec.frequency,
             end_date=reached_until,
             range_start=walk_start,
@@ -769,7 +822,11 @@ async def get_month_summary(
                 RecurringTransaction.is_active == True,
                 RecurringTransaction.id.in_(list(charged)),
             ),
-            RecurringTransaction.start_date < month_end + timedelta(days=2),
+            # A shifted occurrence can fall before its nominal date (a
+            # holiday next to the start of the next month), so the bound
+            # leaves room for the furthest shift; the scan dates each one.
+            RecurringTransaction.start_date
+            < month_end + timedelta(days=MAX_EFFECTIVE_SHIFT_DAYS),
             or_(Account.id.is_(None), Account.is_closed == False),
         )
         .options(selectinload(RecurringTransaction.category))
@@ -780,7 +837,7 @@ async def get_month_summary(
     rates: dict[str, Optional[Decimal]] = {}
     for rec in result.scalars().all():
         occurrences = get_occurrences_in_range(
-            start=rec.start_date,
+            start=_schedule_anchor(rec),
             frequency=rec.frequency,
             end_date=rec.end_date,
             range_start=month_start,

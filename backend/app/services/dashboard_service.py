@@ -39,6 +39,7 @@ from app.services import invoice_forecast_service
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.credit_card_service import compute_effective_date
 from app.services.recurring_transaction_service import (
+    MAX_EFFECTIVE_SHIFT_DAYS,
     get_occurrences_in_range,
     occurrence_rules,
 )
@@ -179,7 +180,7 @@ async def _get_recurring_projections(
     filters = [
         RecurringTransaction.workspace_id == workspace_id,
         RecurringTransaction.is_active == True,
-        RecurringTransaction.start_date < month_end + timedelta(days=2),
+        RecurringTransaction.start_date < month_end + timedelta(days=MAX_EFFECTIVE_SHIFT_DAYS),
         or_(
             RecurringTransaction.category_id.is_(None),
             Category.is_ignored.is_not(True),
@@ -1286,7 +1287,7 @@ async def get_projected_transactions(
         .where(
             RecurringTransaction.workspace_id == workspace_id,
             RecurringTransaction.is_active == True,
-            RecurringTransaction.start_date < range_end + timedelta(days=2),
+            RecurringTransaction.start_date < range_end + timedelta(days=MAX_EFFECTIVE_SHIFT_DAYS),
             or_(
                 RecurringTransaction.category_id.is_(None),
                 Category.is_ignored.is_not(True),

@@ -31,6 +31,7 @@ from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.fx_rate_service import convert as fx_convert
 from app.services.viewer_currency import ViewerCurrency, viewer_currency
 from app.services.recurring_transaction_service import (
+    MAX_EFFECTIVE_SHIFT_DAYS,
     effective_date_for,
     get_occurrences_in_range,
     occurrence_rules,
@@ -585,7 +586,7 @@ async def _project_recurring_items(
         .where(
             RecurringTransaction.workspace_id == workspace_id,
             RecurringTransaction.is_active == True,
-            RecurringTransaction.start_date < end + timedelta(days=2),
+            RecurringTransaction.start_date < end + timedelta(days=MAX_EFFECTIVE_SHIFT_DAYS),
             Account.is_closed == False,
         )
         .options(

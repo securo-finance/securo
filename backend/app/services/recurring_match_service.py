@@ -145,7 +145,9 @@ def _bill_policy(
     charge, the rule then asks for a single candidate. Returned unchanged (not
     copied) when none applies.
     """
-    grace = int(recurring.grace_days or 0)
+    from app.services.recurring_transaction_service import grace_days_for
+
+    grace = grace_days_for(recurring)
     tolerance = Decimal(recurring.amount_tolerance_percent or 0)
     hit = keyword_hit(recurring, description)
     if not grace and not hit and not tolerance:
@@ -161,27 +163,39 @@ def _bill_policy(
         amount = when.get("amount") or {"match": "exact"}
         if tolerance and amount.get("match", "exact") in ("exact", "tolerance"):
             current = Decimal(str(amount.get("percent", "0")))
-            when["amount"] = {"match": "tolerance", "percent": str(max(current, tolerance))}
+            # Only how close the money must be changes: a workspace's own
+            # limits on the amount (min, max) still hold, so a tolerance
+            # never lets a charge past a cap the rule sets.
+            when["amount"] = {
+                **amount, "match": "tolerance", "percent": str(max(current, tolerance)),
+            }
             when["unique_candidate"] = True
     return policy
 
 
-def _pick_across_bills(
+def _pick_judged(
     linked: list[tuple[Any, Any, dict[str, Any]]], composed: dict[str, Any]
-) -> Any:
-    """``pick_linked`` for candidates that each belong to a different bill.
+) -> tuple[Any, bool]:
+    """``pick_linked`` for candidates each judged under a policy of its own.
 
-    Each bill was judged under its own ``_bill_policy``, which asks for a
-    single candidate when the bill matches on an approximate amount, and
-    ``composed`` knows nothing of that. So when several bills linked under the
-    winning rule and any of them did so under such a policy, none wins: the
-    charge goes to a person, as it would for one bill with two close charges.
+    Each candidate was judged under its bill's ``_bill_policy``, which asks
+    for a single candidate when the bill matches on an approximate amount,
+    and ``composed`` knows nothing of that. So when several candidates linked
+    under the winning rule and any of them did so under such a policy, none
+    wins: the charge goes to a person, as it would for one bill with two
+    close charges.
+
+    Returns the winner and whether the pick was refused as ambiguous, which
+    is not the same as nothing linking: a caller with a fallback pass must
+    not let it choose what this one refused.
     """
     winner, rivals = reconciliation_rule_service.pick_linked(
         [(candidate, decision) for candidate, decision, _ in linked], composed
     )
-    if winner is None or len(rivals) < 2:
-        return winner
+    if len(rivals) < 2:
+        return winner, False
+    if winner is None:
+        return None, True
     policies = {id(candidate): policy for candidate, _, policy in linked}
     for candidate, decision in rivals:
         strategy = next(
@@ -189,8 +203,15 @@ def _pick_across_bills(
             {},
         )
         if strategy.get("when", {}).get("unique_candidate", False):
-            return None
-    return winner
+            return None, True
+    return winner, False
+
+
+def _pick_across_bills(
+    linked: list[tuple[Any, Any, dict[str, Any]]], composed: dict[str, Any]
+) -> Any:
+    """``_pick_judged`` for candidates that each belong to a different bill."""
+    return _pick_judged(linked, composed)[0]
 
 
 def _as_movement(transaction: Transaction) -> Movement:
@@ -233,7 +254,7 @@ def _best_movement(
     policy: dict,
     alternative_descriptions: Optional[dict[uuid.UUID, str]] = None,
     policy_for: Optional[Callable[[Transaction], dict]] = None,
-) -> Optional[Transaction]:
+) -> tuple[Optional[Transaction], bool]:
     """The charge that best answers one expected occurrence.
 
     The engine takes one movement and many promises; here it is the other way
@@ -252,21 +273,25 @@ def _best_movement(
 
     `policy_for` gives a candidate the policy as its bill reads it (grace days,
     match keywords, amount tolerance); without it every candidate is judged
-    under `policy`.
+    under `policy`. The ranking keeps each candidate's own policy, so a bill
+    that matches on an approximate amount still asks for a single candidate.
+
+    Returns the winner and whether the pick was refused as ambiguous.
     """
     linked = []
     for candidate in candidates:
         if candidate.is_ignored:
             continue
+        candidate_policy = policy_for(candidate) if policy_for else policy
         decision = _evaluate_candidate(
             _as_movement(candidate),
             expectation,
-            policy_for(candidate) if policy_for else policy,
+            candidate_policy,
             (alternative_descriptions or {}).get(candidate.id),
         )
         if decision.port == "linked":
-            linked.append((candidate, decision))
-    return reconciliation_rule_service.pick_linked(linked, policy)[0]
+            linked.append((candidate, decision, candidate_policy))
+    return _pick_judged(linked, policy)
 
 
 def _evaluate_candidate(
@@ -314,12 +339,10 @@ async def find_real_tx_for_occurrence(
     Used by generate_pending: instead of writing a duplicate placeholder for an
     occurrence a real charge already covers, link that charge to the bill.
     """
-    policy = _bill_policy(
-        await reconciliation_rule_service.resolve_recurring(
-            session, recurring.workspace_id, recurring.frequency
-        ),
-        recurring,
+    resolved = await reconciliation_rule_service.resolve_recurring(
+        session, recurring.workspace_id, recurring.frequency
     )
+    policy = _bill_policy(resolved, recurring)
     # The charge is the movement and the occurrence the expectation, so the
     # charge may be up to `before` days earlier than the occurrence, or `after`
     # days later.
@@ -348,14 +371,17 @@ async def find_real_tx_for_occurrence(
         key=lambda tx: (abs((tx.date - occurrence_date).days), tx.date, tx.id),
     )
     def policy_for(tx: Transaction) -> dict:
-        # A match keyword in the charge's description drops the similarity check.
+        # A match keyword in the charge's description drops the similarity
+        # check. Built from the rule as resolved, not from `policy`, which
+        # already carries the bill's grace: adapting it again would add the
+        # grace twice.
         if keyword_hit(recurring, tx.description):
-            return _bill_policy(policy, recurring, tx.description)
+            return _bill_policy(resolved, recurring, tx.description)
         return policy
 
     occurrence = _as_occurrence(recurring, occurrence_date)
-    found = _best_movement(nearest, occurrence, policy, policy_for=policy_for)
-    if found is not None:
+    found, refused = _best_movement(nearest, occurrence, policy, policy_for=policy_for)
+    if found is not None or refused:
         return found
 
     # A bill in a currency other than its account's is charged in the
@@ -599,7 +625,7 @@ async def find_placeholder_for_incoming(
     bills = {row[0].id: row[1] for row in rows}
     # Here the placeholder is the movement and the charge the expectation, so
     # a charge that arrives late leaves the placeholder *before* it.
-    found = _best_movement(
+    found, refused = _best_movement(
         [row[0] for row in rows],
         incoming,
         policy,
@@ -608,6 +634,10 @@ async def find_placeholder_for_incoming(
             policy, bills[placeholder.id], description, late_side="before_days"
         ),
     )
+    # Two placeholders this charge fits equally under a bill's tolerance are a
+    # question for a person: no later pass may answer it by picking one.
+    if refused:
+        return None
     if found is None and rows:
         found = _placeholder_under_workspace_rule(rows, charge, composed)
     if found is not None:
@@ -812,7 +842,9 @@ def advance_past(recurring: RecurringTransaction, fulfilled_date: date) -> None:
     intended_day = recurring.day_of_month or recurring.start_date.day
     target, _ = nearest_occurrence(recurring, fulfilled_date)
     guard = 0
-    while recurring.next_occurrence <= target and guard < 500:
+    # The same bound as nearest_occurrence, so every occurrence it can find
+    # is one the pointer can be moved past.
+    while recurring.next_occurrence <= target and guard < 600:
         recurring.next_occurrence = _advance_date(
             recurring.next_occurrence, recurring.frequency, intended_day=intended_day
         )
