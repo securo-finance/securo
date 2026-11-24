@@ -807,8 +807,8 @@ async def get_transactions(
         # the amount it has now, because the bank sync rewrites `amount`
         # without touching the splits. An expense of this workspace that another
         # member paid counts the viewer's share when they are part of its
-        # split, and whole when they are not, as it does in the dashboard
-        #. Rows without splits count whole. `share_amount` is in
+        # split, and whole when they are not, as in the dashboard.
+        # Rows without splits count whole. `share_amount` is in
         # the row's own currency, so the ratio rides the FX stamp already
         # stored on the row.
         from app.models.transaction_split import TransactionSplit
