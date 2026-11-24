@@ -12,6 +12,12 @@ currency at the row's date and leaves every other row as stored.
 The SQL expression and the per-row conversion use the same rates (the
 stored USD rates closest to the row's date, crossed through USD) and the
 same rounding, so a total and the rows it drills into agree to the cent.
+
+A row already in the viewer's currency reads as its own `amount`: that is
+what was charged in that currency. Converting R$ 10,03 to the owner's euros
+and back gave R$ 10,06, and a US$ 300 row with a typed R$ 1.560 read
+US$ 312 to a viewer in dollars (#463). A typed conversion is the truth in
+the owner's currency only.
 """
 
 import uuid
@@ -20,7 +26,7 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Optional
 
-from sqlalchemy import case, func, literal, select
+from sqlalchemy import and_, case, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -77,12 +83,26 @@ class ViewerCurrency:
         """SQL: `column` (a value stamped like `amount_primary`) in the
         viewer's currency. Rows of owners in the viewer's currency, and NULL
         stamps, come through unchanged."""
+        same_currency_shortcut = column is None
         column = Transaction.amount_primary if column is None else column
         if not self.foreign_owners:
             return column
         on_date = Transaction.date if on_date is None else on_date
         target = _usd_rate_on(self.currency, on_date)
         whens = []
+        if same_currency_shortcut:
+            foreign = tuple(o for owners in self.foreign_owners.values() for o in owners)
+            whens.append(
+                (
+                    and_(
+                        # `convert()` normalizes the code; so does this.
+                        func.upper(Transaction.currency) == self.currency,
+                        Transaction.user_id.in_(foreign),
+                        column.is_not(None),
+                    ),
+                    Transaction.amount,
+                )
+            )
         for currency, owners in self.foreign_owners.items():
             source = _usd_rate_on(currency, on_date)
             # A pair with no stored rate reads 1:1, like `fx_rate_service.convert`.
@@ -127,13 +147,26 @@ class ViewerCurrency:
         owner_id: Optional[uuid.UUID],
         value,
         on_date: date,
+        *,
+        currency: Optional[str] = None,
+        amount=None,
     ) -> Optional[Decimal]:
-        """One stamped value of `owner_id`'s row, in the viewer's currency."""
+        """One stamped value of `owner_id`'s row, in the viewer's currency.
+
+        Pass the row's `currency` and `amount` with its `amount_primary`: a
+        row already in the viewer's currency then reads as its own amount,
+        like `amount()` does in SQL (see the module docstring)."""
         if value is None:
             return None
         value = Decimal(str(value))
         if self.stamp_currency(owner_id) == self.currency:
             return value
+        if (
+            amount is not None
+            and currency is not None
+            and _code(currency) == self.currency
+        ):
+            return Decimal(str(amount)).quantize(_CENT, rounding=ROUND_HALF_UP)
         ratio = await self.ratio(session, owner_id, on_date)
         return (value * ratio).quantize(_CENT, rounding=ROUND_HALF_UP)
 

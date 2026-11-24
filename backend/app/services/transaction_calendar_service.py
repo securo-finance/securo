@@ -439,12 +439,14 @@ async def _viewer_primary_amount(
 ) -> float:
     """A row's amount in the viewer's currency, as the list shows it.
 
-    Another member's stamp is converted from their currency (#269); it wins
-    over the row's own amount even when that is already in the viewer's
-    currency, since the stamp may be a conversion its owner typed (#440).
+    Another member's stamp is converted from their currency (#269), and a
+    row already in the viewer's currency reads as its own amount (#463).
     """
     if viewer.stamp_currency(tx.user_id) != viewer.currency:
-        shown = await viewer.convert(session, tx.user_id, tx.amount_primary, tx.date)
+        shown = await viewer.convert(
+            session, tx.user_id, tx.amount_primary, tx.date,
+            currency=tx.currency, amount=tx.amount,
+        )
         if shown is not None:
             return float(abs(shown))
     return await _positive_primary_amount(

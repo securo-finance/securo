@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
+from app.core.currency import normalize_currency_code
 from app.core.database import get_async_session
 from app.core.money import MoneyOutOfRange
 from app.core.workspace_context import (
@@ -149,15 +150,25 @@ async def _in_viewer_currency(
     for item in items:
         if viewer.stamp_currency(item.user_id) == viewer.currency:
             continue
-        # Judged on the stored stamp, in its owner's currency: converting a
-        # legacy 1:1 stamp scales it and rewrites `fx_rate_used`, which would
-        # hide the warning.
-        _tag_fx_fallback(item, viewer.stamp_currency(item.user_id))
+        own_amount = (
+            normalize_currency_code(item.currency) == viewer.currency
+            and item.amount_primary is not None
+        )
+        if not own_amount:
+            # Judged on the stored stamp, in its owner's currency: converting
+            # a legacy 1:1 stamp scales it and rewrites `fx_rate_used`, which
+            # would hide the warning. A row read as its own amount needs no
+            # rate, so it carries no warning.
+            _tag_fx_fallback(item, viewer.stamp_currency(item.user_id))
         ratio = await viewer.ratio(session, item.user_id, item.date)
-        converted = await viewer.convert(session, item.user_id, item.amount_primary, item.date)
+        converted = await viewer.convert(
+            session, item.user_id, item.amount_primary, item.date,
+            currency=item.currency, amount=item.amount,
+        )
         item.amount_primary = float(converted) if converted is not None else None
         item.matched_amount_primary = await viewer.convert(
-            session, item.user_id, item.matched_amount_primary, item.date
+            session, item.user_id, item.matched_amount_primary, item.date,
+            currency=item.currency, amount=item.matched_amount,
         )
         if item.amount_primary is not None and item.amount:
             item.fx_rate_used = float(
@@ -263,6 +274,7 @@ async def list_transactions(
     include_running_balance: bool = Query(False, description="Fill running_balance per row (issue #1202): one account, `from` set, include_opening_balance, default order, and no filter beyond a credit card's statement window (`bill_id`/`unbilled_only`); null otherwise"),
     exclude_transfers: bool = Query(False),
     user_pnl_only: bool = Query(False, description="Return only rows that count toward dashboard/user income/expense totals"),
+    workspace_only: bool = Query(False, description="Only rows of this workspace: drop the viewer's shares of group expenses that live in another workspace (queue views, #469)"),
     exclude_ignored: bool = Query(False, description="Drop rows the user marked ignored, or whose category is ignored"),
     flagged: bool = Query(False, description="Return only rows the user flagged"),
     unpaid_only: bool = Query(False, description="Return only rows not yet marked as paid (issue #15)"),
@@ -306,6 +318,7 @@ async def list_transactions(
         include_summary=True,
         include_running_balance=include_running_balance,
         primary_currency=ctx.user.primary_currency,
+        workspace_only=workspace_only,
     )
     primary_currency = ctx.user.primary_currency
     items = await _read_all_in_viewer_currency(session, primary_currency, transactions)

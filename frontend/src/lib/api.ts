@@ -647,6 +647,7 @@ export const transactions = {
     payee_id?: string
     uncategorized?: boolean
     shared_as_uncategorized?: boolean
+    workspace_only?: boolean
     type?: string
     status?: string
     from?: string

@@ -456,7 +456,10 @@ async def get_budget_vs_actual(
         parts = [part for part in user_pnl_parts(tx) if part[0] is not None]
         if not parts:
             continue
-        amount = await viewer.convert(session, tx.user_id, tx.amount_primary, tx.date)
+        amount = await viewer.convert(
+            session, tx.user_id, tx.amount_primary, tx.date,
+            currency=tx.currency, amount=tx.amount,
+        )
         if amount is not None:
             converted = abs(Decimal(str(amount)))
         else:
@@ -563,7 +566,10 @@ async def get_budget_vs_actual(
         parts = [part for part in user_pnl_parts(tx) if part[0] is not None]
         if not parts:
             continue
-        amount = await viewer.convert(session, tx.user_id, tx.amount_primary, tx.date)
+        amount = await viewer.convert(
+            session, tx.user_id, tx.amount_primary, tx.date,
+            currency=tx.currency, amount=tx.amount,
+        )
         if amount is not None:
             converted = abs(Decimal(str(amount)))
         else:
