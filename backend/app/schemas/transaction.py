@@ -339,6 +339,9 @@ class TransactionRead(TransactionBase):
     amount_primary: Optional[float] = None
     fx_rate_used: Optional[float] = None
     fx_fallback: bool = False
+    # The owner typed the conversion (ADR 0031). A derived one follows the
+    # date and the amount, so the dialog leaves it to the server (#483).
+    fx_typed: bool = False
     attachment_count: int = 0
     installment_number: Optional[int] = None
     total_installments: Optional[int] = None

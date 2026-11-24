@@ -121,6 +121,11 @@ class Transaction(Base):
     amount_primary_typed_currency: Mapped[Optional[str]] = mapped_column(
         String(3), nullable=True
     )
+
+    @property
+    def fx_typed(self) -> bool:
+        """Whether the conversion is one the user typed, not one from a rate."""
+        return self.amount_primary_typed is not None
     # Installment (parcelamento) metadata. Populated from provider data when available.
     # `installment_number` is 1-indexed (e.g. 3 for "3/12"). Storing alongside the
     # raw tx row so the door stays open to a plan view or manual entry later

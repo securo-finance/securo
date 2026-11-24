@@ -658,7 +658,7 @@ function TransactionForm({
   // The amount and currency the dialog opened with. Changing either makes the
   // shown conversion a new figure (the amount at the shown rate), so the save
   // sends it: what is saved is what the dialog showed (#482).
-  const [initialMoney] = useState(() => ({ amount, currency }))
+  const [initialMoney] = useState(() => ({ amount, currency, date }))
   const [isRecurring, setIsRecurring] = useState(false)
   const [frequency, setFrequency] = useState<RecurringTransaction['frequency']>('monthly')
   const [endDate, setEndDate] = useState('')
@@ -724,6 +724,13 @@ function TransactionForm({
   const showReportingDateOverride =
     isSynced && selectedAccount != null && !isCreditCardSelected
   const showConversion = currency !== userCurrency && !isSynced
+  // A row whose conversion came from a rate follows its date and amount: the
+  // server works it out again, so the dialog never sends it back, and after
+  // a new date or currency the old day's rate is not shown as if it held
+  // (#483). Editing the fields makes the figure the user's own.
+  const followsRate = !!transaction && !transaction.fx_typed && !conversionEdited
+  const conversionStale =
+    followsRate && (date !== initialMoney.date || currency !== initialMoney.currency)
   // Privacy mode hides monetary values across the app, but the edit modal
   // surfaced the raw amount anyway (issue #323). Only existing transactions
   // carry a value worth hiding — when creating, the user must see what they
@@ -1205,15 +1212,17 @@ function TransactionForm({
         // so sending them untouched is not a statement about the rate: a
         // date move must let the server derive it again (#481), and an echo
         // must not rewrite the owner's stamp (#440). A new amount or currency
-        // is a new figure, shown at the shown rate, so it is sent (#482). A
+        // on a typed conversion is a new figure, shown at the shown rate, so
+        // it is sent (#482); a derived one is left to the server (#483). A
         // new row is different too: a duplicate opens seeded from the
         // previous payload, and the figures shown are the ones the user
         // chose to copy.
         const sendConversion =
           isCreating ||
           conversionEdited ||
-          parsedAmount !== parseAmountInput(initialMoney.amount, displayLocale) ||
-          currency !== initialMoney.currency
+          (!followsRate &&
+            (parsedAmount !== parseAmountInput(initialMoney.amount, displayLocale) ||
+              currency !== initialMoney.currency))
         if (showConversion && sendConversion && parsedConverted != null) {
           fxFields.amount_primary = parsedConverted
         }
@@ -1687,7 +1696,7 @@ function TransactionForm({
                   id={`${id}-converted-amount`}
                   type="text"
                   inputMode="decimal"
-                  value={convertedAmount}
+                  value={conversionStale ? '' : convertedAmount}
                   onChange={(e) => handleConvertedAmountChange(e.target.value)}
                   placeholder={t('transactions.autoCalculated')}
                   className="bg-card"
@@ -1700,7 +1709,7 @@ function TransactionForm({
                 id={`${id}-exchange-rate`}
                 type="text"
                 inputMode="decimal"
-                value={fxRate}
+                value={conversionStale ? '' : fxRate}
                 onChange={(e) => handleFxRateChange(e.target.value)}
                 placeholder={t('transactions.autoCalculated')}
                 className="bg-card"

@@ -835,6 +835,37 @@ async def test_owner_moving_only_the_date_restamps_a_derived_stamp(
 
 
 @pytest.mark.asyncio
+async def test_owner_moving_date_and_amount_of_a_derived_stamp_follows_the_new_day(
+    client, session, couple
+):
+    """#483: the dialog reads `fx_typed` to know a derived stamp, and then
+    sends only the date and the amount; the stamp follows the new day's rate,
+    600 USD at day 15 (4,00) being R$ 2.400, and stays derived."""
+    _, _, day15 = _last_month()
+    row = await _usd_row(client, couple, "300.00", None)
+    assert row["fx_typed"] is False
+    resp = await client.patch(
+        f"/api/transactions/{row['id']}", headers=couple["ana"],
+        json={"date": day15.isoformat(), "amount": "600.00"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["fx_typed"] is False
+    tx = await _stored(session, row["id"])
+    assert tx.amount_primary == Decimal("2400.00")
+    assert tx.amount_primary_typed is None
+
+
+@pytest.mark.asyncio
+async def test_a_typed_stamp_reads_as_typed(client, couple):
+    """The dialog sends a typed stamp back when the amount changes (#482),
+    and only a typed one (#483)."""
+    row = await _usd_row(client, couple, "300.00", "1560.00")
+    assert row["fx_typed"] is True
+    resp = await client.get(f"/api/transactions/{row['id']}", headers=couple["ana"])
+    assert resp.json()["fx_typed"] is True
+
+
+@pytest.mark.asyncio
 async def test_owner_moving_only_the_date_keeps_her_typed_stamp(
     client, session, couple
 ):
