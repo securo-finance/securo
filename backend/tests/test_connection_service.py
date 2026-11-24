@@ -3940,16 +3940,25 @@ _TRANSFER_SHORT_CONCEPT_REMITTANCE = "TRANSFERENCIA A FAVOR DE Cuenta Ahorro CON
         ("ALPHA SHOP", "BETA SHOP"),
         # One word longer is not a long label swapped for a short one either.
         ("COMPRA TARJ 1234", "PAGO 1234"),
+        # Two words longer, but no colon marks the word in front as a label:
+        # it is the merchant, whichever of the two entries was held.
+        ("COMPRA EN ALPHA SHOP", "BETA SHOP"),
+        ("BETA SHOP", "COMPRA EN ALPHA SHOP"),
+        # A colon further in does not make the word in front a label.
+        ("COMPRA EN ALPHA SHOP REF: 77", "BETA REF: 77"),
+        # A marked label still needs the long text on the other side.
+        ("ENVIO: ahorro", "TRASPASO: ahorro"),
+        ("ENVIO SEPA: ahorro", "TRASPASO: ahorro"),
     ],
 )
 async def test_sync_connection_enable_banking_reworded_short_text_needs_the_concept(
     session: AsyncSession, test_user, test_workspace, held, reworded,
 ):
-    """A short text still has to end in the held text's concept with no more
+    """A short text still has to end in the other text's concept with no more
     than one word in front of it, and that word only passes for a label when
-    the held text is at least two words longer. Another entry of the same
-    amount on the same day lands as its own row, also when the held one has
-    left the feed."""
+    the bank marked it with a colon and the other text is at least two words
+    longer. Another entry of the same amount on the same day lands as its own
+    row, also when the held one has left the feed."""
     conn, account = await _eb_account(session, test_user.id, test_workspace.id)
     account_id = account.id
     held_txn, held_id = await _hold_reworded_entry(
