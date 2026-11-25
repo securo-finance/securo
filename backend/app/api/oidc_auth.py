@@ -40,6 +40,9 @@ class OIDCConfigResponse(BaseModel):
     enabled: bool
     provider_name: str = "OIDC"
     local_auth_enabled: bool = True
+    # Recovery by email exists only with EMAIL_ENABLED; the sign-in page reads
+    # it here, next to the other sign-in options.
+    password_reset_enabled: bool = False
 
 
 class OIDCLogoutUrlResponse(BaseModel):
@@ -211,6 +214,7 @@ async def oidc_config():
         enabled=settings.oidc_login_available,
         provider_name=settings.oidc_provider_name or "OIDC",
         local_auth_enabled=settings.local_auth_enabled,
+        password_reset_enabled=settings.email_enabled,
     )
 
 
@@ -441,7 +445,11 @@ async def _get_or_create_oidc_user(
     email = merged.get("email")
     if not email:
         raise HTTPException(status_code=400, detail="OIDC provider did not return an email claim")
-    email = str(EmailStr._validate(email)).lower()
+    # Keep the spelling the provider sent for every lookup: the resolver picks
+    # the row written exactly that way when an instance holds two accounts for
+    # one mailbox (#568). Only the account created here is stored in lower
+    # case, so a new row never comes in shouting.
+    email = str(EmailStr._validate(email))
     email_verified = merged.get("email_verified")
 
     # One address can name two accounts on an instance built before the
@@ -481,7 +489,7 @@ async def _get_or_create_oidc_user(
     provider_roles = _claim_values(merged, settings.oidc_roles_claim)
     admin_roles = {role.strip() for role in settings.oidc_admin_roles.split(",") if role.strip()}
     user_create = schemas.BaseUserCreate(
-        email=email,
+        email=email.lower(),
         password=secrets.token_urlsafe(32),
         is_verified=True,
         is_superuser=bool(settings.oidc_sync_roles and admin_roles and provider_roles & admin_roles),

@@ -1065,6 +1065,7 @@ def _fake_provider(monkeypatch, *, email: str, subject: str = "shared-sub") -> F
     ("link_mode", "expected_status"),
     [("disabled", 403), ("verified_email", 307), ("email", 307)],
 )
+@pytest.mark.parametrize("provider_email", [PAIR_ADDRESS, PAIR_OTHER_CASE])
 @pytest.mark.asyncio
 async def test_oidc_callback_resolves_an_address_shared_by_two_accounts(
     client: AsyncClient,
@@ -1074,13 +1075,16 @@ async def test_oidc_callback_resolves_an_address_shared_by_two_accounts(
     monkeypatch,
     link_mode,
     expected_status,
+    provider_email,
 ):
     """One address naming two accounts answers like any other account: never
     a 500, in any of the three link modes, and the row written in the exact
-    spelling is the one that gets linked (#568)."""
+    spelling the provider sent is the one that gets linked (#568)."""
     oidc_settings.oidc_existing_user_link_mode = link_mode
-    exact, other = await _pair_of_accounts(session)
-    fake_redis = _fake_provider(monkeypatch, email=PAIR_ADDRESS)
+    lower_row, upper_row = await _pair_of_accounts(session)
+    spelled = lower_row if provider_email == PAIR_ADDRESS else upper_row
+    other = upper_row if provider_email == PAIR_ADDRESS else lower_row
+    fake_redis = _fake_provider(monkeypatch, email=provider_email)
     await fake_redis.set("oidc_state:state123", json.dumps({"nonce": "nonce123"}))
 
     response = await client.get(
@@ -1088,16 +1092,37 @@ async def test_oidc_callback_resolves_an_address_shared_by_two_accounts(
     )
 
     assert response.status_code == expected_status, response.text
-    await session.refresh(exact)
+    await session.refresh(spelled)
     await session.refresh(other)
     if expected_status == 307:
-        assert exact.oidc_issuer == "https://id.example.com"
-        assert exact.oidc_subject == "shared-sub"
+        assert spelled.oidc_issuer == "https://id.example.com"
+        assert spelled.oidc_subject == "shared-sub"
     else:
-        assert exact.oidc_issuer is None
+        assert spelled.oidc_issuer is None
     # The other spelling is left alone in every mode.
     assert other.oidc_issuer is None
     assert other.oidc_subject is None
+
+
+@pytest.mark.asyncio
+async def test_oidc_auto_registration_stores_the_address_in_lower_case(
+    client: AsyncClient, session, clean_db, oidc_settings, monkeypatch
+):
+    """The spelling the provider sent is only used to find an existing row:
+    an account created here is stored in lower case, so the new row never
+    arrives shouting (#568)."""
+    fake_redis = _fake_provider(monkeypatch, email=PAIR_OTHER_CASE, subject="new-sub")
+    await fake_redis.set("oidc_state:state123", json.dumps({"nonce": "nonce123"}))
+
+    response = await client.get(
+        "/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False
+    )
+
+    assert response.status_code == 307, response.text
+    registered = (
+        await session.execute(select(User).where(User.oidc_subject == "new-sub"))
+    ).scalar_one()
+    assert registered.email == PAIR_ADDRESS
 
 
 @pytest.mark.asyncio

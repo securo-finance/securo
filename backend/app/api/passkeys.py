@@ -322,7 +322,7 @@ async def passkey_authentication_options(
     session: AsyncSession = Depends(get_async_session),
 ):
     context = resolve_webauthn_context(request)
-    email = body.email.strip().lower() if body.email else None
+    email = body.email.strip() if body.email else None
     expected_user_id: str | None = None
     allow_credentials: list[PublicKeyCredentialDescriptor] | None = None
 

@@ -19,6 +19,7 @@ from app.api.custom_auth import router as custom_auth_router
 from app.api.dashboard import router as dashboard_router
 from app.api.import_logs import router as import_logs_router
 from app.api.oidc_auth import router as oidc_auth_router
+from app.api.password_reset import router as password_reset_router
 from app.api.passkeys import router as passkeys_router
 from app.api.forecast import router as forecast_router
 from app.api.import_transactions import router as import_router
@@ -187,7 +188,7 @@ app.include_router(
     ],
 )
 app.include_router(
-    fastapi_users.get_reset_password_router(),
+    password_reset_router,
     prefix="/api/auth",
     tags=["auth"],
     dependencies=[Depends(require_local_auth_enabled), Depends(password_reset_rate_limit)],

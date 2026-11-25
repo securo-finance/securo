@@ -547,13 +547,19 @@ async def test_authenticate_email_bound_challenge_rejects_unknown_email(
     verify_mock.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    ("asked", "expected_key"),
+    [("pair@example.com", "exact"), ("Pair@example.com", "other")],
+)
 async def test_authenticate_options_resolve_an_address_shared_by_two_accounts(
     client: AsyncClient,
     session: AsyncSession,
     clean_db,
+    asked: str,
+    expected_key: str,
 ):
     """One address naming two accounts offers the passkeys of the row written
-    in the exact spelling, and never answers 500 (#568)."""
+    in the exact spelling that was asked for, and never answers 500 (#568)."""
     import uuid as _uuid
 
     # The exact row carries the higher id, so an ordering by id alone would
@@ -593,12 +599,13 @@ async def test_authenticate_options_resolve_an_address_shared_by_two_accounts(
 
     response = await client.post(
         "/api/auth/passkeys/authenticate/options",
-        json={"email": "pair@example.com"},
+        json={"email": asked},
     )
 
     assert response.status_code == 200, response.text
     allow = response.json()["options"]["allowCredentials"]
-    assert [credential["id"] for credential in allow] == [exact_key.credential_id]
+    wanted = exact_key if expected_key == "exact" else other_key
+    assert [credential["id"] for credential in allow] == [wanted.credential_id]
 
 
 async def test_delete_passkey_is_owner_scoped(
