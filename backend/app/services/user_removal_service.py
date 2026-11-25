@@ -82,18 +82,17 @@ def _table(name: str) -> sa.TableClause:
 
 
 async def _workspaces_to_delete(session: AsyncSession, user_id: uuid.UUID) -> list[uuid.UUID]:
-    """The workspaces this person owns and nobody else reaches, locked.
+    """The workspaces this person owns and nobody else reaches.
 
-    Refuses when one has members but no other owner: they would lose it, or be
+    Locks every workspace they are in, so nobody becomes or stops being an
+    owner until this commits. Refuses when one has members but no other owner: they would lose it, or be
     left with a workspace nobody can administer.
     """
-    owned = select(WorkspaceMember.workspace_id).where(
-        WorkspaceMember.user_id == user_id, WorkspaceMember.role == "owner"
-    )
+    joined = select(WorkspaceMember.workspace_id).where(WorkspaceMember.user_id == user_id)
     workspaces = (
         await session.scalars(
             select(Workspace)
-            .where(or_(Workspace.managed_by_user_id == user_id, Workspace.id.in_(owned)))
+            .where(or_(Workspace.managed_by_user_id == user_id, Workspace.id.in_(joined)))
             .order_by(Workspace.id)
             .with_for_update()
             .execution_options(populate_existing=True)
@@ -101,15 +100,16 @@ async def _workspaces_to_delete(session: AsyncSession, user_id: uuid.UUID) -> li
     ).all()
     doomed = []
     for workspace in workspaces:
-        roles = (
-            await session.scalars(
-                select(WorkspaceMember.role).where(
-                    WorkspaceMember.workspace_id == workspace.id,
-                    WorkspaceMember.user_id != user_id,
-                )
+        members = await session.execute(
+            select(WorkspaceMember.user_id, WorkspaceMember.role).where(
+                WorkspaceMember.workspace_id == workspace.id
             )
-        ).all()
-        if "owner" in roles or workspace.managed_by_user_id not in (None, user_id):
+        )
+        roles = {member_id: role for member_id, role in members}
+        own_role = roles.pop(user_id, None)
+        if own_role != "owner" and workspace.managed_by_user_id != user_id:
+            continue
+        if "owner" in roles.values() or workspace.managed_by_user_id not in (None, user_id):
             continue
         if roles:
             raise ValueError(

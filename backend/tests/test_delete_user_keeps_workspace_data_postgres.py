@@ -362,6 +362,39 @@ async def test_a_co_owner_cannot_leave_while_the_other_is_deleted(
             await changing
 
 
+async def test_a_member_cannot_be_promoted_while_they_are_deleted(postgres_sessions, monkeypatch):
+    async with postgres_sessions() as session:
+        admin, owner, editor = await _people(session, "owner", "editor")
+        shared = await _workspace(session, "Household", owner=owner, editor=editor)
+        ids = (shared.id, editor.id)
+        await session.commit()
+
+        decided, finish = asyncio.Event(), asyncio.Event()
+        decide = user_removal_service._workspaces_to_delete
+
+        async def paused(*args):
+            found = await decide(*args)
+            decided.set()
+            await finish.wait()
+            return found
+
+        monkeypatch.setattr(user_removal_service, "_workspaces_to_delete", paused)
+
+        async def promote():
+            async with postgres_sessions() as other:
+                await workspace_service.update_member_role(other, *ids, "owner")
+                await other.commit()
+
+        deleting = asyncio.create_task(admin_service.delete_user(session, ids[1], admin.id))
+        await asyncio.wait_for(decided.wait(), 5)
+        promoting = asyncio.create_task(promote())
+        await asyncio.wait([promoting], timeout=0.5)
+        finish.set()
+        assert await deleting
+        with pytest.raises(HTTPException, match="Member not found"):
+            await promoting
+
+
 async def test_an_active_account_is_never_hidden_by_its_address(postgres_sessions):
     async with postgres_sessions() as session:
         [admin] = await _people(session)
