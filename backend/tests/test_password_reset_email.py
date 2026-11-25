@@ -135,6 +135,82 @@ async def test_recovery_link_sets_a_new_password(
 
 
 @pytest.mark.asyncio
+async def test_account_without_a_stored_language_gets_the_english_message(
+    client: AsyncClient, test_user: User, sent_emails, session
+):
+    """A null preference is not a language: fall back instead of failing.
+
+    Only known addresses reach this path, so an exception here would answer
+    500 for them and 202 for everyone else, which is the enumeration oracle
+    the identical answer exists to avoid.
+    """
+    sent, _settings = sent_emails
+    test_user.preferences = {**test_user.preferences, "language": None}
+    session.add(test_user)
+    await session.commit()
+
+    await _ask_for_link(client, "test@example.com")
+
+    assert len(sent) == 1
+    assert sent[0].subject == "Reset your Securo password"
+    assert sent[0].text.startswith("Hi")
+
+
+@pytest.mark.asyncio
+async def test_relay_connection_verifies_the_certificate(monkeypatch):
+    """smtplib's own STARTTLS default skips the certificate check."""
+    import smtplib
+    import ssl
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "email_enabled", True)
+    monkeypatch.setattr(settings, "smtp_host", "smtp.example.com")
+    monkeypatch.setattr(settings, "smtp_username", "")
+    contexts: list[ssl.SSLContext | None] = []
+
+    class _FakeSMTP:
+        def __init__(self, host, port, timeout=None, context=None):
+            self.context = context
+            if context is not None:
+                contexts.append(context)
+
+        def starttls(self, context=None):
+            self.starttls_context = context
+            if context is not None:
+                contexts.append(context)
+
+        def login(self, username, password):
+            pass
+
+        def send_message(self, message):
+            pass
+
+        def quit(self):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
+    monkeypatch.setattr(smtplib, "SMTP_SSL", _FakeSMTP)
+
+    message = email_service.Email(to="someone@example.com", subject="s", text="t")
+
+    settings.smtp_security = "ssl"
+    await email_service.send_email(message, settings)
+    settings.smtp_security = "starttls"
+    await email_service.send_email(message, settings)
+
+    # One for SMTP_SSL, one handed to starttls — neither may be omitted.
+    assert len(contexts) == 2
+    for context in contexts:
+        assert isinstance(context, ssl.SSLContext)
+        # Without these, anything on the path can stand in for the relay.
+        assert context.check_hostname is True
+        assert context.verify_mode == ssl.CERT_REQUIRED
+
+
+@pytest.mark.asyncio
 async def test_expired_recovery_token_is_refused(
     client: AsyncClient, test_user: User, sent_emails
 ):

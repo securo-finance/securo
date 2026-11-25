@@ -771,6 +771,8 @@
     "changePassword": "Zmień hasło",
     "newPassword": "Nowe hasło",
     "passwordTooShort": "Hasło musi mieć co najmniej 8 znaków",
+    "passwordTooLong": "Hasło może mieć najwyżej 72 znaki",
+    "resetPassword": "Zresetuj hasło",
     "currentPassword": "Bieżące hasło",
     "currentPasswordWrong": "Bieżące hasło jest nieprawidłowe",
     "passwordChanged": "Hasło zmienione pomyślnie",

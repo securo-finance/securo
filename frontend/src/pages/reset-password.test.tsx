@@ -66,6 +66,21 @@ describe('ResetPasswordPage', () => {
     )
   })
 
+  it('refuses a password past the length the server accepts', async () => {
+    const { user } = renderWithProviders(<ResetPasswordPage />, {
+      route: '/reset-password?token=tok123',
+    })
+
+    // bcrypt stops at 72 bytes, and the route refuses anything longer.
+    const tooLong = 'a'.repeat(73)
+    await user.type(screen.getByLabelText(t('auth.newPassword')), tooLong)
+    await user.type(screen.getByLabelText(t('auth.confirmPassword')), tooLong)
+    await user.click(screen.getByRole('button', { name: t('auth.resetPassword') }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(t('auth.passwordTooLong'))
+    expect(authApi.resetPassword).not.toHaveBeenCalled()
+  })
+
   it('asks for a fresh link when the address has no token', () => {
     renderWithProviders(<ResetPasswordPage />, { route: '/reset-password' })
 

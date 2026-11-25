@@ -763,6 +763,8 @@
     "changePassword": "पासवर्ड बदलें",
     "newPassword": "नया पासवर्ड",
     "passwordTooShort": "पासवर्ड कम से कम 8 अक्षरों का होना चाहिए",
+    "passwordTooLong": "पासवर्ड अधिकतम 72 अक्षरों का होना चाहिए",
+    "resetPassword": "पासवर्ड रीसेट करें",
     "currentPassword": "मौजूदा पासवर्ड",
     "currentPasswordWrong": "मौजूदा पासवर्ड ग़लत है",
     "passwordChanged": "पासवर्ड सफलतापूर्वक बदला गया",

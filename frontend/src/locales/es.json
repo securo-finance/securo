@@ -765,6 +765,8 @@
     "changePassword": "Cambiar contraseña",
     "newPassword": "Nueva contraseña",
     "passwordTooShort": "La contraseña debe tener al menos 8 caracteres",
+    "passwordTooLong": "La contraseña debe tener como máximo 72 caracteres",
+    "resetPassword": "Restablecer contraseña",
     "currentPassword": "Contraseña actual",
     "currentPasswordWrong": "La contraseña actual es incorrecta",
     "passwordChanged": "Contraseña cambiada correctamente",

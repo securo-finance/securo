@@ -763,6 +763,8 @@
     "changePassword": "Jelszó módosítása",
     "newPassword": "Új jelszó",
     "passwordTooShort": "A jelszónak legalább 8 karakterből kell állnia",
+    "passwordTooLong": "A jelszó legfeljebb 72 karakter lehet",
+    "resetPassword": "Jelszó visszaállítása",
     "currentPassword": "Jelenlegi jelszó",
     "currentPasswordWrong": "A jelenlegi jelszó hibás",
     "passwordChanged": "Jelszó sikeresen módosítva",

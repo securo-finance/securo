@@ -151,20 +151,25 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         settings = get_settings()
         if not settings.email_enabled:
             return
-        language = (user.preferences or {}).get("language", "en")
+        # A stored null is not a language; keep the default instead of
+        # crashing while composing (which only a known address would hit).
+        language = (user.preferences or {}).get("language") or "en"
         message = email_service.password_reset_email(
             to=user.email,
             link=email_service.password_reset_link(token, settings),
             language=language,
             token_minutes=settings.password_reset_token_minutes,
         )
-        try:
-            await email_service.send_email(message, settings)
-        except Exception:
+        # Not sent here: handing it to the relay on this path would make a
+        # known address answer later than an unknown one whenever the relay is
+        # slow, which reveals that the account exists. The route picks the
+        # message up and schedules the delivery after the response.
+        if request is not None:
+            request.state.password_reset_message = (message, settings)
+        else:
             logger.warning(
-                "Could not send the password recovery email to %s",
+                "Password recovery email for %s not sent: no request to deliver it from",
                 user.email,
-                exc_info=True,
             )
 
     async def on_after_register(self, user: User, request: Optional[Request] = None):

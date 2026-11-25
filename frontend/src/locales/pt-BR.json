@@ -765,6 +765,8 @@
     "changePassword": "Alterar senha",
     "newPassword": "Nova senha",
     "passwordTooShort": "A senha deve ter pelo menos 8 caracteres",
+    "passwordTooLong": "A senha deve ter no máximo 72 caracteres",
+    "resetPassword": "Redefinir senha",
     "currentPassword": "Senha atual",
     "currentPasswordWrong": "Senha atual incorreta",
     "passwordChanged": "Senha alterada com sucesso",

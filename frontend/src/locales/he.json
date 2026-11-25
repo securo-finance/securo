@@ -775,6 +775,8 @@
     "changePassword": "שינוי סיסמה",
     "newPassword": "סיסמה חדשה",
     "passwordTooShort": "הסיסמה חייבת להכיל לפחות 8 תווים",
+    "passwordTooLong": "הסיסמה יכולה להכיל עד 72 תווים",
+    "resetPassword": "איפוס סיסמה",
     "currentPassword": "הסיסמה הנוכחית",
     "currentPasswordWrong": "הסיסמה הנוכחית שגויה",
     "passwordChanged": "הסיסמה שונתה בהצלחה",

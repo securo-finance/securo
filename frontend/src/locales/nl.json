@@ -761,6 +761,8 @@
     "changePassword": "Wachtwoord wijzigen",
     "newPassword": "Nieuw wachtwoord",
     "passwordTooShort": "Wachtwoord moet minimaal 8 tekens lang zijn",
+    "passwordTooLong": "Wachtwoord mag maximaal 72 tekens lang zijn",
+    "resetPassword": "Wachtwoord opnieuw instellen",
     "currentPassword": "Huidig wachtwoord",
     "currentPasswordWrong": "Het huidige wachtwoord is onjuist",
     "passwordChanged": "Wachtwoord succesvol gewijzigd",

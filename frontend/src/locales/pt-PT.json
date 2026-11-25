@@ -765,6 +765,8 @@
     "changePassword": "Alterar palavra-passe",
     "newPassword": "Nova palavra-passe",
     "passwordTooShort": "A palavra-passe deve ter pelo menos 8 caracteres",
+    "passwordTooLong": "A palavra-passe deve ter no máximo 72 caracteres",
+    "resetPassword": "Redefinir palavra-passe",
     "currentPassword": "Palavra-passe atual",
     "currentPasswordWrong": "Palavra-passe atual incorreta",
     "passwordChanged": "Palavra-passe alterada com sucesso",

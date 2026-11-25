@@ -771,6 +771,8 @@
     "changePassword": "Zmeniť heslo",
     "newPassword": "Nové heslo",
     "passwordTooShort": "Heslo musí mať aspoň 8 znakov",
+    "passwordTooLong": "Heslo môže mať najviac 72 znakov",
+    "resetPassword": "Obnoviť heslo",
     "currentPassword": "Aktuálne heslo",
     "currentPasswordWrong": "Aktuálne heslo je nesprávne",
     "passwordChanged": "Heslo bolo zmenené",
