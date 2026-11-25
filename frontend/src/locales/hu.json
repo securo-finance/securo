@@ -4324,6 +4324,8 @@
     "accepted": "A fiókja mostantól a(z) {{email}} címet használja",
     "declined": "A fiókja megtartja a jelenlegi címet",
     "unavailable": "Ez a cím már nem elérhető",
-    "failed": "A döntését nem sikerült rögzíteni"
+    "failed": "A döntését nem sikerült rögzíteni",
+    "replaced": "Az adminisztrátor új kérést küldött. Elfogadás előtt ellenőrizze az új címet",
+    "withdrawn": "A kérést visszavonták. A fiókja megtartja a jelenlegi címét"
   }
 }

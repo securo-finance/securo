@@ -4339,6 +4339,8 @@
     "accepted": "Votre compte utilise désormais {{email}}",
     "declined": "Votre compte conserve son adresse actuelle",
     "unavailable": "Cette adresse n'est plus disponible",
-    "failed": "Impossible d'enregistrer votre décision"
+    "failed": "Impossible d'enregistrer votre décision",
+    "replaced": "L'administrateur a envoyé une nouvelle demande. Vérifiez la nouvelle adresse avant d'accepter",
+    "withdrawn": "La demande a été retirée. Votre compte conserve son adresse actuelle"
   }
 }

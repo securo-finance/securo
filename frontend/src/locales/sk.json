@@ -4520,6 +4520,8 @@
     "accepted": "Váš účet teraz používa {{email}}",
     "declined": "Účet si ponechá aktuálnu adresu",
     "unavailable": "Táto adresa už nie je dostupná",
-    "failed": "Vaše rozhodnutie sa nepodarilo uložiť"
+    "failed": "Vaše rozhodnutie sa nepodarilo uložiť",
+    "replaced": "Administrátor poslal novú žiadosť. Pred prijatím skontrolujte novú adresu",
+    "withdrawn": "Žiadosť bola stiahnutá. Váš účet si ponechá aktuálnu adresu"
   }
 }

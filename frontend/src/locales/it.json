@@ -4339,6 +4339,8 @@
     "accepted": "Il tuo account ora usa {{email}}",
     "declined": "Il tuo account mantiene l'indirizzo attuale",
     "unavailable": "Questo indirizzo non è più disponibile",
-    "failed": "Impossibile registrare la tua decisione"
+    "failed": "Impossibile registrare la tua decisione",
+    "replaced": "L'amministratore ha inviato una nuova richiesta. Controlla il nuovo indirizzo prima di accettare",
+    "withdrawn": "La richiesta è stata ritirata. Il tuo account mantiene l'indirizzo attuale"
   }
 }

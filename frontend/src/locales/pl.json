@@ -4486,6 +4486,8 @@
     "accepted": "Twoje konto używa teraz {{email}}",
     "declined": "Konto zachowuje obecny adres",
     "unavailable": "Ten adres nie jest już dostępny",
-    "failed": "Nie udało się zapisać decyzji"
+    "failed": "Nie udało się zapisać decyzji",
+    "replaced": "Administrator wysłał nową prośbę. Sprawdź nowy adres przed zaakceptowaniem",
+    "withdrawn": "Prośba została wycofana. Twoje konto zachowuje obecny adres"
   }
 }

@@ -4536,6 +4536,8 @@
     "accepted": "Váš účet nyní používá {{email}}",
     "declined": "Účet si ponechá současnou adresu",
     "unavailable": "Tato adresa již není dostupná",
-    "failed": "Vaše rozhodnutí se nepodařilo uložit"
+    "failed": "Vaše rozhodnutí se nepodařilo uložit",
+    "replaced": "Administrátor poslal novou žádost. Před přijetím zkontrolujte novou adresu",
+    "withdrawn": "Žádost byla stažena. Váš účet si ponechá současnou adresu"
   }
 }

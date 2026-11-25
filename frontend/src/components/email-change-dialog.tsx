@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import axios from 'axios'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/auth-context'
 import { auth } from '@/lib/api'
@@ -30,15 +31,44 @@ export function EmailChangeDialog() {
   const pendingEmail = user?.pending_email ?? null
   const open = Boolean(pendingEmail) && pendingEmail !== dismissed
 
+  /** The account as the server holds it now, or null when it can't be read. */
+  const currentAccount = async () => {
+    try {
+      const current = await auth.me()
+      updateUser(current)
+      return current
+    } catch {
+      return null
+    }
+  }
+
   const accept = async () => {
     if (!user || !pendingEmail) return
+    const asked = pendingEmail
     setDeciding('accept')
     try {
-      const updated = await auth.confirmEmailChange(pendingEmail)
+      const updated = await auth.confirmEmailChange(asked)
       updateUser(updated)
       toast.success(t('emailChange.accepted', { email: updated.email }))
-      setDismissed(pendingEmail)
-    } catch {
+      setDismissed(asked)
+    } catch (error) {
+      // A refusal is not always an address that was taken: an administrator
+      // can replace the request while this dialog is open, and the address on
+      // screen is then no longer the one waiting (#569). Ask the server which
+      // request it holds now, so the dialog shows the truth instead of
+      // repeating the same refusal until the page is reloaded.
+      if (axios.isAxiosError(error) && error.response?.status === 400) {
+        const current = await currentAccount()
+        if (current && !current.pending_email) {
+          toast.info(t('emailChange.withdrawn'))
+          setDismissed(asked)
+          return
+        }
+        if (current && current.pending_email !== asked) {
+          toast.error(t('emailChange.replaced'))
+          return
+        }
+      }
       // The address may have been taken by someone else in the meantime.
       toast.error(t('emailChange.unavailable'))
     } finally {
@@ -66,11 +96,11 @@ export function EmailChangeDialog() {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{t('emailChange.title')}</DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="wrap-anywhere">
             {t('emailChange.description', { email: pendingEmail ?? '' })}
           </DialogDescription>
         </DialogHeader>
-        <DialogFooter className="gap-2 sm:justify-between">
+        <DialogFooter className="gap-2 sm:flex-wrap sm:justify-between">
           <Button
             type="button"
             variant="outline"

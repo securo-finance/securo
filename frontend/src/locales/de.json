@@ -4325,6 +4325,8 @@
     "accepted": "Ihr Konto verwendet jetzt {{email}}",
     "declined": "Ihr Konto behält seine aktuelle Adresse",
     "unavailable": "Diese Adresse ist nicht mehr verfügbar",
-    "failed": "Ihre Entscheidung konnte nicht gespeichert werden"
+    "failed": "Ihre Entscheidung konnte nicht gespeichert werden",
+    "replaced": "Der Administrator hat eine neue Anfrage gesendet. Prüfe die neue Adresse, bevor du annimmst",
+    "withdrawn": "Die Anfrage wurde zurückgezogen. Dein Konto behält seine aktuelle Adresse"
   }
 }

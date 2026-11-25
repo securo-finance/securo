@@ -4324,6 +4324,8 @@
     "accepted": "Your account now uses {{email}}",
     "declined": "Your account keeps its current address",
     "unavailable": "That address is no longer available",
-    "failed": "Could not record your decision"
+    "failed": "Could not record your decision",
+    "replaced": "The administrator sent a new request. Check the new address before accepting",
+    "withdrawn": "The request was withdrawn. Your account keeps its current address"
   }
 }

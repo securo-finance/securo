@@ -16,9 +16,22 @@ const updateUser = vi.hoisted(() =>
 const auth = vi.hoisted(() => ({
   confirmEmailChange: vi.fn(),
   declineEmailChange: vi.fn(),
+  me: vi.fn(),
 }))
 const state = vi.hoisted(() => ({ user: null as User | null }))
-const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
+const toast = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
+}))
+
+/** The refusal the API answers when the address on screen is not the one waiting. */
+function badRequest() {
+  return Object.assign(new Error('bad request'), {
+    isAxiosError: true,
+    response: { status: 400 },
+  })
+}
 
 vi.mock('sonner', () => ({ toast }))
 vi.mock('@/lib/api', () => ({ auth }))
@@ -105,6 +118,49 @@ describe('EmailChangeDialog', () => {
     // Nothing moved: the account stays as it was and the request is still open.
     expect(updateUser).not.toHaveBeenCalled()
     expect(screen.getByText('Change of email address')).toBeInTheDocument()
+  })
+
+  it('reads the new request when the one on screen was replaced', async () => {
+    // An administrator replaced the request while the dialog was open, so the
+    // address on screen is no longer the one waiting and the acceptance is
+    // refused. The dialog must show the request that is really pending, not
+    // repeat the same refusal until the page reloads (#569).
+    auth.confirmEmailChange.mockRejectedValue(badRequest())
+    auth.me.mockResolvedValue(
+      account({ pending_email: 'later@example.com' }),
+    )
+
+    const { user } = renderWithProviders(<EmailChangeDialog />)
+
+    await user.click(screen.getByRole('button', { name: 'Accept the new address' }))
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        'The administrator sent a new request. Check the new address before accepting',
+      ),
+    )
+    expect(await screen.findByText(/later@example\.com/)).toBeInTheDocument()
+  })
+
+  it('closes when the request was withdrawn in the meantime', async () => {
+    auth.confirmEmailChange.mockRejectedValue(badRequest())
+    auth.me.mockResolvedValue(account({ pending_email: null }))
+
+    const { user } = renderWithProviders(<EmailChangeDialog />)
+
+    await user.click(screen.getByRole('button', { name: 'Accept the new address' }))
+
+    await waitFor(() =>
+      expect(toast.info).toHaveBeenCalledWith(
+        'The request was withdrawn. Your account keeps its current address',
+      ),
+    )
+    expect(updateUser).toHaveBeenCalledWith(
+      expect.objectContaining({ pending_email: null }),
+    )
+    await waitFor(() =>
+      expect(screen.queryByText('Change of email address')).not.toBeInTheDocument(),
+    )
   })
 
   it('reopens when an administrator replaces the request that was put away', async () => {
