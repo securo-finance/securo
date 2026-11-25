@@ -478,6 +478,7 @@
   "POST /api/transactions/link-transfer": 422,
   "POST /api/transactions/transfer": 422,
   "POST /api/transactions/{transaction_id}/create-counterpart": 422,
+  "POST /api/users/me/email-change": 422,
   "POST /api/workspaces": 422,
   "POST /api/workspaces/{workspace_id}/members": 422,
   "PUT /api/mortgage-payments/{payment_id}": 422,

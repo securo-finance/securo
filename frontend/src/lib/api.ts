@@ -303,9 +303,12 @@ export const auth = {
    * Move the account to the address an administrator asked for (ADR 0042,
    * #556). Only the person whose account it is can, from their own session —
    * which is what makes the request useless as a way into the account.
+   *
+   * `email` is the address that was on screen: sending it back means accepting
+   * the address the person read, not whatever an administrator asked for after.
    */
-  confirmEmailChange: async (): Promise<User> => {
-    const { data } = await api.post('/users/me/email-change')
+  confirmEmailChange: async (email: string): Promise<User> => {
+    const { data } = await api.post('/users/me/email-change', { email })
     return data
   },
   declineEmailChange: async (): Promise<void> => {

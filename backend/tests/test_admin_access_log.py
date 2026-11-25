@@ -287,6 +287,36 @@ async def test_a_workspace_manager_sees_access_to_a_member(
     assert viewer.email in targets
 
 
+async def test_a_workspace_owner_sees_access_to_the_account_that_manages_it(
+    client: AsyncClient, admin_auth_headers: dict, auth_headers: dict,
+    test_user: User, test_workspace: Workspace, session: AsyncSession,
+):
+    """The manager rule read the other way.
+
+    Someone who manages a workspace holds owner rights over it (ADR 0003), so
+    that person's account can read the workspace. An administrator who reached
+    that account reached the workspace, and its owner is entitled to know.
+    """
+    manager = await _add_user(session, "managing@example.com", "managerpass123")
+    test_workspace.managed_by_user_id = manager.id
+    await session.commit()
+
+    patched = await client.patch(
+        f"/api/admin/users/{manager.id}",
+        json={"reason": REASON, "preferences": {"language": "en"}},
+        headers=admin_auth_headers,
+    )
+    assert patched.status_code == 200
+
+    # test_user owns test_workspace and is not on the roster of anything the
+    # manager is a member of: only the reverse rule can let them see this.
+    response = await client.get("/api/access-log/mine", headers=auth_headers)
+
+    assert response.status_code == 200
+    targets = [item["target_email"] for item in response.json()["items"]]
+    assert manager.email in targets
+
+
 async def test_someone_else_sees_nothing(
     client: AsyncClient, admin_auth_headers: dict, test_user: User, session: AsyncSession
 ):

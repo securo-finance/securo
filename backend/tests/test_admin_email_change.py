@@ -145,7 +145,9 @@ async def test_the_owner_confirms_and_only_then_the_address_changes(
     )
 
     headers = await _headers_for(test_user)
-    confirmed = await client.post("/api/users/me/email-change", headers=headers)
+    confirmed = await client.post(
+        "/api/users/me/email-change", json={"email": NEW_EMAIL}, headers=headers
+    )
 
     assert confirmed.status_code == 200
     assert confirmed.json()["email"] == NEW_EMAIL
@@ -178,7 +180,9 @@ async def test_confirming_without_a_pending_change_is_refused(
     client: AsyncClient, test_user: User
 ):
     response = await client.post(
-        "/api/users/me/email-change", headers=await _headers_for(test_user)
+        "/api/users/me/email-change",
+        json={"email": "whatever@example.com"},
+        headers=await _headers_for(test_user),
     )
     assert response.status_code == 400
 
@@ -210,13 +214,97 @@ async def test_confirming_an_address_taken_meanwhile_is_refused(
     await _add_user(session, NEW_EMAIL, "whatever12345")
 
     headers = await _headers_for(test_user)
-    response = await client.post("/api/users/me/email-change", headers=headers)
+    response = await client.post(
+        "/api/users/me/email-change", json={"email": NEW_EMAIL}, headers=headers
+    )
 
     assert response.status_code == 400
     await session.refresh(test_user)
     assert test_user.email == VICTIM_EMAIL
     # The request stays so its owner can look at it; the address just changed.
     assert test_user.pending_email == NEW_EMAIL
+
+
+async def test_accepting_an_address_replaced_meanwhile_is_refused(
+    client: AsyncClient, admin_auth_headers: dict, test_user: User, session: AsyncSession
+):
+    """The owner accepts the address they read, not whatever is stored by then.
+
+    An administrator can replace a request that is still waiting. If the owner
+    had the dialog open on one address, pressing accept must not move the
+    account to a second one they never saw.
+    """
+    await client.patch(
+        f"/api/admin/users/{test_user.id}",
+        json={"reason": REASON, "email": NEW_EMAIL},
+        headers=admin_auth_headers,
+    )
+    await client.patch(
+        f"/api/admin/users/{test_user.id}",
+        json={"reason": "Customer asked for another address", "email": "later@example.com"},
+        headers=admin_auth_headers,
+    )
+
+    headers = await _headers_for(test_user)
+    stale = await client.post(
+        "/api/users/me/email-change", json={"email": NEW_EMAIL}, headers=headers
+    )
+
+    assert stale.status_code == 400
+    await session.refresh(test_user)
+    assert test_user.email == VICTIM_EMAIL
+    assert test_user.pending_email == "later@example.com"
+
+    # Accepting the one that is actually waiting goes through.
+    fresh = await client.post(
+        "/api/users/me/email-change", json={"email": "later@example.com"}, headers=headers
+    )
+    assert fresh.status_code == 200
+    assert fresh.json()["email"] == "later@example.com"
+
+
+async def test_accepting_without_naming_an_address_is_refused(
+    client: AsyncClient, admin_auth_headers: dict, test_user: User
+):
+    await client.patch(
+        f"/api/admin/users/{test_user.id}",
+        json={"reason": REASON, "email": NEW_EMAIL},
+        headers=admin_auth_headers,
+    )
+
+    response = await client.post(
+        "/api/users/me/email-change",
+        json={"email": "not an address"},
+        headers=await _headers_for(test_user),
+    )
+
+    assert response.status_code == 422
+
+
+async def test_a_conflict_decided_at_commit_is_the_same_refusal(
+    test_user: User, session: AsyncSession, monkeypatch
+):
+    """Two accounts can be asked for one address and both pass the check.
+
+    The unique index decides at commit; the owner still gets the "belongs to
+    another account" answer instead of a 500.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    from app.services import account_email_service
+
+    test_user.pending_email = NEW_EMAIL
+    session.add(test_user)
+    await session.commit()
+
+    async def _conflict():
+        raise IntegrityError("UPDATE users", {}, Exception("unique"))
+
+    monkeypatch.setattr(session, "commit", _conflict)
+    with pytest.raises(ValueError, match="another account"):
+        await account_email_service.confirm_pending_email(
+            session, test_user, expected_email=NEW_EMAIL
+        )
 
 
 async def test_the_owner_changing_their_own_address_clears_the_pending_one(

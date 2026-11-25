@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import current_active_user
 from app.core.database import get_async_session
 from app.models.user import User
-from app.schemas.user import UserRead
+from app.schemas.user import EmailChangeConfirm, UserRead
 from app.services import account_email_service
 
 router = APIRouter(prefix="/api/users/me", tags=["users"])
@@ -20,12 +20,19 @@ router = APIRouter(prefix="/api/users/me", tags=["users"])
 
 @router.post("/email-change", response_model=UserRead)
 async def confirm_email_change(
+    body: EmailChangeConfirm,
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Move the account to the address an administrator asked for."""
+    """Move the account to the address an administrator asked for.
+
+    ``body.email`` is the address that was on screen; a request replaced in the
+    meantime is refused instead of applied.
+    """
     try:
-        updated = await account_email_service.confirm_pending_email(session, user)
+        updated = await account_email_service.confirm_pending_email(
+            session, user, expected_email=str(body.email)
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)

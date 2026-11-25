@@ -2,7 +2,7 @@ import uuid
 from typing import Optional
 
 from fastapi_users import schemas
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 #: A theme from the library: a built-in id (`ocean`) or, later, a plugin's
 #: (`plugin:owner/name:key`). The frontend owns the registry and falls back to
@@ -28,6 +28,17 @@ class UserRead(schemas.BaseUser[uuid.UUID]):
 
 class UserCreate(schemas.BaseUserCreate):
     preferences: Optional[dict] = None
+
+
+class EmailChangeConfirm(BaseModel):
+    """The address the owner is accepting, named as they saw it (#556, ADR 0042).
+
+    An administrator can replace a request that is still waiting. Sending the
+    address back is what makes the acceptance be about the one the owner read,
+    and not about whatever is stored by the time the button is pressed.
+    """
+
+    email: EmailStr
 
 
 class UserUpdate(schemas.BaseUserUpdate):

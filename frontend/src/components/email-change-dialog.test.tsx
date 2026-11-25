@@ -55,7 +55,11 @@ describe('EmailChangeDialog', () => {
 
     await user.click(screen.getByRole('button', { name: 'Accept the new address' }))
 
-    await waitFor(() => expect(auth.confirmEmailChange).toHaveBeenCalled())
+    // The address that was on screen goes back with the acceptance, so what
+    // moves is the one the owner read (ADR 0042).
+    await waitFor(() =>
+      expect(auth.confirmEmailChange).toHaveBeenCalledWith('asked@example.com'),
+    )
     expect(updateUser).toHaveBeenCalledWith(
       expect.objectContaining({ email: 'asked@example.com', pending_email: null }),
     )
@@ -84,6 +88,23 @@ describe('EmailChangeDialog', () => {
     await waitFor(() => expect(auth.confirmEmailChange).toHaveBeenCalled())
     // Nothing moved: the account stays as it was and the request is still open.
     expect(updateUser).not.toHaveBeenCalled()
+  })
+
+  it('reopens when an administrator replaces the request that was put away', async () => {
+    const { user, rerender } = renderWithProviders(<EmailChangeDialog />)
+
+    // The owner closes it without deciding; the request is still waiting.
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+    await waitFor(() =>
+      expect(screen.queryByText('Change of email address')).not.toBeInTheDocument(),
+    )
+
+    // An administrator replaces it: the new address has not been read yet.
+    state.user = account({ pending_email: 'later@example.com' })
+    rerender(<EmailChangeDialog />)
+
+    expect(await screen.findByText('Change of email address')).toBeInTheDocument()
+    expect(screen.getByText(/later@example\.com/)).toBeInTheDocument()
   })
 
   it('shows nothing when no change was asked for', () => {

@@ -22,20 +22,22 @@ import { Button } from '@/components/ui/button'
 export function EmailChangeDialog() {
   const { t } = useTranslation()
   const { user, updateUser } = useAuth()
-  const [dismissed, setDismissed] = useState(false)
+  // The address that was put away, not a flag: an administrator can replace a
+  // request that is still waiting, and the new one has to be read by its owner.
+  const [dismissed, setDismissed] = useState<string | null>(null)
   const [deciding, setDeciding] = useState<'accept' | 'decline' | null>(null)
 
   const pendingEmail = user?.pending_email ?? null
-  const open = Boolean(pendingEmail) && !dismissed
+  const open = Boolean(pendingEmail) && pendingEmail !== dismissed
 
   const accept = async () => {
-    if (!user) return
+    if (!user || !pendingEmail) return
     setDeciding('accept')
     try {
-      const updated = await auth.confirmEmailChange()
+      const updated = await auth.confirmEmailChange(pendingEmail)
       updateUser(updated)
       toast.success(t('emailChange.accepted', { email: updated.email }))
-      setDismissed(true)
+      setDismissed(pendingEmail)
     } catch {
       // The address may have been taken by someone else in the meantime.
       toast.error(t('emailChange.unavailable'))
@@ -51,7 +53,7 @@ export function EmailChangeDialog() {
       await auth.declineEmailChange()
       updateUser({ ...user, pending_email: null })
       toast.success(t('emailChange.declined'))
-      setDismissed(true)
+      setDismissed(pendingEmail)
     } catch {
       toast.error(t('emailChange.failed'))
     } finally {
@@ -60,7 +62,7 @@ export function EmailChangeDialog() {
   }
 
   return (
-    <Dialog open={open} onOpenChange={(value) => !value && setDismissed(true)}>
+    <Dialog open={open} onOpenChange={(value) => !value && setDismissed(pendingEmail)}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{t('emailChange.title')}</DialogTitle>

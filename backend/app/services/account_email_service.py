@@ -7,17 +7,42 @@ which is what makes the request useless as a way into the account.
 """
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
 
+STALE_REQUEST = (
+    "The address waiting for you is no longer the one you were shown"
+)
 
-async def confirm_pending_email(session: AsyncSession, user: User) -> User:
-    """Move the account to the address it was asked for, if it is still free."""
+
+async def confirm_pending_email(
+    session: AsyncSession, user: User, *, expected_email: str
+) -> User:
+    """Move the account to the address its owner accepted, if it is still free.
+
+    ``expected_email`` is the address the owner saw when they accepted: an
+    administrator can replace a request that is still waiting, and accepting
+    must be about the address that was read, never about whatever the row holds
+    by the time this runs. The row is locked before it is read so a decline or
+    a replacement in another request cannot land between the check and the
+    write.
+    """
+    locked = await session.execute(
+        select(User)
+        .where(User.id == user.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    user = locked.scalar_one()
+
     if not user.pending_email:
         raise ValueError("There is no pending change of email to confirm")
-
     requested = user.pending_email
+    if requested != expected_email:
+        raise ValueError(STALE_REQUEST)
+
     # The address may have been taken between the request and this moment.
     taken = await session.execute(
         select(User.id).where(User.email == requested, User.id != user.id)
@@ -29,7 +54,14 @@ async def confirm_pending_email(session: AsyncSession, user: User) -> User:
     user.pending_email = None
     user.pending_email_requested_at = None
     session.add(user)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        # Two accounts can be asked for the same address; both pass the check
+        # above and the unique index decides at commit. That is the same
+        # conflict, answered the same way, not a 500.
+        await session.rollback()
+        raise ValueError("That address belongs to another account now") from exc
     await session.refresh(user)
     return user
 

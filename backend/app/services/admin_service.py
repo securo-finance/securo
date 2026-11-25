@@ -345,7 +345,19 @@ async def _audience_for(session: AsyncSession, target: User) -> set[uuid.UUID]:
     managers = await session.execute(
         select(Workspace.managed_by_user_id).where(Workspace.id.in_(member_workspaces))
     )
-    audience = {target.id, *owners.scalars().all()}
+    # The same rule read the other way: someone who manages a workspace holds
+    # owner rights over it without being on the roster, so its owners could have
+    # been read through that account and get to see the record too.
+    managed_workspaces = select(Workspace.id).where(
+        Workspace.managed_by_user_id == target.id
+    )
+    managed_owners = await session.execute(
+        select(WorkspaceMember.user_id).where(
+            WorkspaceMember.workspace_id.in_(managed_workspaces),
+            WorkspaceMember.role == "owner",
+        )
+    )
+    audience = {target.id, *owners.scalars().all(), *managed_owners.scalars().all()}
     # The column is nullable, and a workspace without a manager says so with a
     # null instead of staying out of the query.
     audience.update(manager_id for manager_id in managers.scalars().all() if manager_id)
