@@ -2969,8 +2969,9 @@
       "deleted": "Felhasználó törölve",
       "confirmDeleteTitle": "Törlöd a felhasználót?",
       "confirmDeleteDesc": "Ezzel véglegesen törlöd a(z) {{email}} felhasználót és az összes adatát. Ez a művelet nem vonható vissza.",
-      "resetPassword": "Jelszó visszaállítása",
-      "resetPasswordPlaceholder": "Hagyd üresen a jelenlegi megtartásához",
+      "reason": "Indok",
+      "reasonPlaceholder": "Miért történik ez a módosítás?",
+      "reasonHint": "A hozzáférési naplóba kerül, és az érintett fiók látja.",
       "addDesc": "Új felhasználói fiók létrehozása, amely hozzáfér az alkalmazáshoz.",
       "adminRole": "Adminisztrátori jogosultságok",
       "enabled": "Be",
@@ -4295,5 +4296,18 @@
       "share": "A te részed itt: {{group}}: {{amount}}",
       "paid": "{{actor}} fizetést rögzített"
     }
+  },
+  "accessLog": {
+    "title": "Hozzáférési napló",
+    "description": "Minden adminisztratív művelet a fiókján és az Ön tulajdonában lévő munkaterületek tagjain.",
+    "empty": "Nincs rögzített adminisztratív művelet.",
+    "actionUpdate": "Fiók módosítva",
+    "actionDelete": "Fiók törölve",
+    "actionOther": "Fiók módosítva",
+    "by": "Végrehajtó: {{email}}",
+    "target": "Fiók: {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Továbbiak betöltése",
+    "loadError": "A hozzáférési napló nem tölthető be."
   }
 }

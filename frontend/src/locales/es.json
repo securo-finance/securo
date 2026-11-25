@@ -2984,8 +2984,9 @@
       "deleted": "Usuario eliminado",
       "confirmDeleteTitle": "¿Eliminar usuario?",
       "confirmDeleteDesc": "Esto eliminará permanentemente al usuario {{email}} y todos sus datos. Esta acción no se puede deshacer.",
-      "resetPassword": "Restablecer contraseña",
-      "resetPasswordPlaceholder": "Déjalo vacío para mantener la actual",
+      "reason": "Motivo",
+      "reasonPlaceholder": "¿Por qué se hace este cambio?",
+      "reasonHint": "Queda registrado en el registro de accesos y se muestra a la cuenta afectada.",
       "addDesc": "Crea una nueva cuenta de usuario con acceso a la aplicación.",
       "adminRole": "Privilegios de administrador",
       "enabled": "Activado",
@@ -4310,5 +4311,18 @@
       "share": "Tu parte en {{group}}: {{amount}}",
       "paid": "{{actor}} registró un pago"
     }
+  },
+  "accessLog": {
+    "title": "Registro de acceso",
+    "description": "Todas las acciones administrativas en tu cuenta y en los miembros de los espacios de trabajo que posees.",
+    "empty": "No hay acciones administrativas registradas.",
+    "actionUpdate": "Cuenta modificada",
+    "actionDelete": "Cuenta eliminada",
+    "actionOther": "Cuenta modificada",
+    "by": "Por {{email}}",
+    "target": "Cuenta {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Cargar más",
+    "loadError": "No se pudo cargar el registro de acceso."
   }
 }

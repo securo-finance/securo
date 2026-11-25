@@ -69,7 +69,7 @@ class TestAdminUserCRUD:
         assert response.status_code == 403
         assert response.json()["detail"] == "LOCAL_AUTH_DISABLED"
 
-    async def test_admin_password_update_forbidden_but_profile_update_allowed(
+    async def test_admin_profile_update_allowed_with_local_auth_disabled(
         self,
         client: AsyncClient,
         test_superuser: User,
@@ -78,19 +78,14 @@ class TestAdminUserCRUD:
         headers = {
             "Authorization": f"Bearer {await get_jwt_strategy().write_token(test_superuser)}"
         }
-        password_response = await client.patch(
-            f"/api/admin/users/{test_superuser.id}",
-            json={"password": "newpassword456"},
-            headers=headers,
-        )
+        # No password field: an administrator never sets one (ADR 0042), so
+        # this route no longer depends on local auth being enabled.
         profile_response = await client.patch(
             f"/api/admin/users/{test_superuser.id}",
-            json={"preferences": {"language": "de"}},
+            json={"reason": "Customer asked for German", "preferences": {"language": "de"}},
             headers=headers,
         )
 
-        assert password_response.status_code == 403
-        assert password_response.json()["detail"] == "LOCAL_AUTH_DISABLED"
         assert profile_response.status_code == 200
         assert profile_response.json()["preferences"]["language"] == "de"
 
@@ -166,7 +161,7 @@ class TestAdminUserCRUD:
 
         response = await client.patch(
             f"/api/admin/users/{user_id}",
-            json={"is_active": False},
+            json={"reason": "Customer asked for a pause", "is_active": False},
             headers=admin_auth_headers,
         )
         assert response.status_code == 200
@@ -182,7 +177,9 @@ class TestAdminUserCRUD:
         user_id = create_resp.json()["id"]
 
         response = await client.delete(
-            f"/api/admin/users/{user_id}", headers=admin_auth_headers
+            f"/api/admin/users/{user_id}",
+            params={"reason": "Account closed at the customer's request"},
+            headers=admin_auth_headers,
         )
         assert response.status_code == 204
 
@@ -209,14 +206,17 @@ class TestAdminUserCRUD:
         # Try to update user A's email to user B's email
         response = await client.patch(
             f"/api/admin/users/{user_a_id}",
-            json={"email": "userb@example.com"},
+            json={"reason": "Typo in the address", "email": "userb@example.com"},
             headers=admin_auth_headers,
         )
         assert response.status_code == 400
         assert "email already exists" in response.json()["detail"].lower()
 
-    async def test_update_user_password(self, client: AsyncClient, admin_auth_headers: dict, test_superuser: User):
-        # Create a user
+    async def test_update_user_password_is_refused(
+        self, client: AsyncClient, admin_auth_headers: dict, test_superuser: User
+    ):
+        """The audit finding: an admin could set a password and sign in as the
+        customer. The field is gone from the request (ADR 0042)."""
         create_resp = await client.post(
             "/api/admin/users",
             json={"email": "pwdtest@example.com", "password": "oldpassword123"},
@@ -224,39 +224,25 @@ class TestAdminUserCRUD:
         )
         user_id = create_resp.json()["id"]
 
-        # Update the password
         response = await client.patch(
             f"/api/admin/users/{user_id}",
-            json={"password": "newpassword456"},
+            json={"reason": "The customer asked us to", "password": "newpassword456"},
             headers=admin_auth_headers,
         )
-        assert response.status_code == 200
+        assert response.status_code == 422
 
-        # Login with the new password
-        login_resp = await client.post(
+        old_login = await client.post(
+            "/api/auth/login",
+            data={"username": "pwdtest@example.com", "password": "oldpassword123"},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        assert old_login.status_code == 200
+        new_login = await client.post(
             "/api/auth/login",
             data={"username": "pwdtest@example.com", "password": "newpassword456"},
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
-        assert login_resp.status_code == 200
-        assert "access_token" in login_resp.json()
-
-    async def test_update_user_password_too_short(self, client: AsyncClient, admin_auth_headers: dict, test_superuser: User):
-        # Create a user
-        create_resp = await client.post(
-            "/api/admin/users",
-            json={"email": "shortpwd@example.com", "password": "password123"},
-            headers=admin_auth_headers,
-        )
-        user_id = create_resp.json()["id"]
-
-        # Try to update with a too-short password
-        response = await client.patch(
-            f"/api/admin/users/{user_id}",
-            json={"password": "short"},
-            headers=admin_auth_headers,
-        )
-        assert response.status_code == 422
+        assert new_login.status_code != 200
 
 
 class TestAdminProtections:
@@ -272,7 +258,9 @@ class TestAdminProtections:
 
     async def test_cannot_delete_self(self, client: AsyncClient, admin_auth_headers: dict, test_superuser: User):
         response = await client.delete(
-            f"/api/admin/users/{test_superuser.id}", headers=admin_auth_headers
+            f"/api/admin/users/{test_superuser.id}",
+            params={"reason": "Cleaning up my own account"},
+            headers=admin_auth_headers,
         )
         assert response.status_code == 400
         assert "own account" in response.json()["detail"].lower()
@@ -280,7 +268,7 @@ class TestAdminProtections:
     async def test_cannot_demote_self(self, client: AsyncClient, admin_auth_headers: dict, test_superuser: User):
         response = await client.patch(
             f"/api/admin/users/{test_superuser.id}",
-            json={"is_superuser": False},
+            json={"reason": "Stepping down", "is_superuser": False},
             headers=admin_auth_headers,
         )
         assert response.status_code == 400
@@ -289,7 +277,7 @@ class TestAdminProtections:
     async def test_cannot_deactivate_self(self, client: AsyncClient, admin_auth_headers: dict, test_superuser: User):
         response = await client.patch(
             f"/api/admin/users/{test_superuser.id}",
-            json={"is_active": False},
+            json={"reason": "Pausing my own account", "is_active": False},
             headers=admin_auth_headers,
         )
         assert response.status_code == 400
@@ -317,7 +305,9 @@ class TestAdminProtections:
 
         # admin2 deletes admin1 — should succeed because admin2 still exists
         response = await client.delete(
-            f"/api/admin/users/{test_superuser.id}", headers=admin2_headers
+            f"/api/admin/users/{test_superuser.id}",
+            params={"reason": "Handing the instance over"},
+            headers=admin2_headers,
         )
         assert response.status_code == 204
 

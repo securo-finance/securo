@@ -3135,8 +3135,9 @@
       "deleted": "Používateľ vymazaný",
       "confirmDeleteTitle": "Vymazať používateľa?",
       "confirmDeleteDesc": "Používateľ {{email}} a všetky jeho dáta budú natrvalo vymazané. Túto akciu nie je možné vrátiť späť.",
-      "resetPassword": "Resetovať heslo",
-      "resetPasswordPlaceholder": "Nechaj prázdne pre zachovanie aktuálneho",
+      "reason": "Dôvod",
+      "reasonPlaceholder": "Prečo sa táto zmena robí?",
+      "reasonHint": "Zaznamená sa do protokolu prístupov a zobrazí sa dotknutému účtu.",
       "addDesc": "Vytvor nový používateľský účet s prístupom do aplikácie.",
       "adminRole": "Administrátorské oprávnenia",
       "enabled": "Zapnuté",
@@ -4491,5 +4492,18 @@
       "share": "Váš podiel v skupine {{group}}: {{amount}}",
       "paid": "{{actor}}: zaznamenaná platba"
     }
+  },
+  "accessLog": {
+    "title": "Protokol prístupov",
+    "description": "Každá administratívna akcia na vašom účte a na členoch pracovných priestorov, ktoré vlastníte.",
+    "empty": "Nie sú zaznamenané žiadne administratívne akcie.",
+    "actionUpdate": "Účet zmenený",
+    "actionDelete": "Účet odstránený",
+    "actionOther": "Účet zmenený",
+    "by": "Vykonal {{email}}",
+    "target": "Účet {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Načítať ďalšie",
+    "loadError": "Protokol prístupov sa nepodarilo načítať."
   }
 }

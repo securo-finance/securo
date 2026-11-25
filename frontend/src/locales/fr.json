@@ -2984,8 +2984,9 @@
       "deleted": "Utilisateur supprimé",
       "confirmDeleteTitle": "Supprimer l'utilisateur ?",
       "confirmDeleteDesc": "Cela supprimera définitivement l'utilisateur {{email}} et toutes ses données. Cette action est irréversible.",
-      "resetPassword": "Réinitialiser le mot de passe",
-      "resetPasswordPlaceholder": "Laissez vide pour conserver l'actuel",
+      "reason": "Motif",
+      "reasonPlaceholder": "Pourquoi ce changement est-il fait ?",
+      "reasonHint": "Consigné dans le journal d'accès et visible par le compte concerné.",
       "addDesc": "Créez un nouveau compte utilisateur avec accès à l'application.",
       "adminRole": "Privilèges d'administrateur",
       "enabled": "Activé",
@@ -4310,5 +4311,18 @@
       "share": "Votre part dans {{group}} : {{amount}}",
       "paid": "{{actor}} a enregistré un paiement"
     }
+  },
+  "accessLog": {
+    "title": "Journal d'accès",
+    "description": "Toutes les actions administratives sur votre compte et sur les membres des espaces de travail que vous possédez.",
+    "empty": "Aucune action administrative enregistrée.",
+    "actionUpdate": "Compte modifié",
+    "actionDelete": "Compte supprimé",
+    "actionOther": "Compte modifié",
+    "by": "Par {{email}}",
+    "target": "Compte {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Charger plus",
+    "loadError": "Impossible de charger le journal d'accès."
   }
 }

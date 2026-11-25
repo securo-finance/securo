@@ -24,6 +24,23 @@ export interface AdminUserList {
   total: number
 }
 
+/** One administrative action on an account, with the reason given (ADR 0042). */
+export interface AdminAccessLogEntry {
+  id: string
+  actor_email: string
+  target_email: string
+  target_user_id: string | null
+  action: string
+  reason: string
+  ip: string | null
+  created_at: string
+}
+
+export interface AdminAccessLogList {
+  items: AdminAccessLogEntry[]
+  total: number
+}
+
 export interface Passkey {
   id: string
   name: string

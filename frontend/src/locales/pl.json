@@ -3103,8 +3103,9 @@
       "deleted": "Usunięto użytkownika",
       "confirmDeleteTitle": "Usunąć użytkownika?",
       "confirmDeleteDesc": "Spowoduje to trwałe usunięcie użytkownika {{email}} oraz wszystkich jego danych. Tej operacji nie można cofnąć.",
-      "resetPassword": "Zresetuj hasło",
-      "resetPasswordPlaceholder": "Zostaw puste, aby zachować obecne",
+      "reason": "Powód",
+      "reasonPlaceholder": "Dlaczego wprowadzasz tę zmianę?",
+      "reasonHint": "Zapisywane w dzienniku dostępu i widoczne dla danego konta.",
       "addDesc": "Utwórz nowe konto użytkownika z dostępem do aplikacji.",
       "adminRole": "Uprawnienia administratora",
       "enabled": "Wł.",
@@ -4457,5 +4458,18 @@
       "share": "Twoja część w {{group}}: {{amount}}",
       "paid": "{{actor}}: zapisano płatność"
     }
+  },
+  "accessLog": {
+    "title": "Dziennik dostępu",
+    "description": "Każde działanie administracyjne na Twoim koncie oraz na członkach przestrzeni roboczych, których jesteś właścicielem.",
+    "empty": "Brak zapisanych działań administracyjnych.",
+    "actionUpdate": "Konto zmienione",
+    "actionDelete": "Konto usunięte",
+    "actionOther": "Konto zmienione",
+    "by": "Przez {{email}}",
+    "target": "Konto {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Wczytaj więcej",
+    "loadError": "Nie udało się wczytać dziennika dostępu."
   }
 }

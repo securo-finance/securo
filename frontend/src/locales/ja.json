@@ -2969,8 +2969,9 @@
       "deleted": "ユーザーを削除しました",
       "confirmDeleteTitle": "ユーザーを削除しますか?",
       "confirmDeleteDesc": "{{email}}とそのすべてのデータを完全に削除します。この操作は取り消せません。",
-      "resetPassword": "パスワードをリセット",
-      "resetPasswordPlaceholder": "空欄で現在のパスワードを保持",
+      "reason": "理由",
+      "reasonPlaceholder": "この変更を行う理由は何ですか?",
+      "reasonHint": "アクセスログに記録され、対象アカウントに表示されます。",
       "addDesc": "アプリケーションにアクセスできる新しいユーザーアカウントを作成します。",
       "adminRole": "管理者権限",
       "enabled": "オン",
@@ -4295,5 +4296,18 @@
       "share": "{{group}}でのあなたの負担：{{amount}}",
       "paid": "{{actor}}が支払いを記録しました"
     }
+  },
+  "accessLog": {
+    "title": "アクセスログ",
+    "description": "あなたのアカウントと、あなたが所有するワークスペースのメンバーに対するすべての管理者操作。",
+    "empty": "管理者操作は記録されていません。",
+    "actionUpdate": "アカウントを更新しました",
+    "actionDelete": "アカウントを削除しました",
+    "actionOther": "アカウントを更新しました",
+    "by": "実行者: {{email}}",
+    "target": "アカウント: {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "さらに読み込む",
+    "loadError": "アクセスログを読み込めませんでした。"
   }
 }

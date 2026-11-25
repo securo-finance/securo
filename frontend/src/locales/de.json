@@ -2970,8 +2970,9 @@
       "deleted": "Benutzer gelöscht",
       "confirmDeleteTitle": "Benutzer löschen?",
       "confirmDeleteDesc": "Dadurch wird der Benutzer {{email}} und all seine Daten dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
-      "resetPassword": "Passwort zurücksetzen",
-      "resetPasswordPlaceholder": "Leer lassen, um aktuelles zu behalten",
+      "reason": "Grund",
+      "reasonPlaceholder": "Warum wird diese Änderung vorgenommen?",
+      "reasonHint": "Wird im Zugriffsprotokoll erfasst und dem betroffenen Konto angezeigt.",
       "addDesc": "Erstelle ein neues Benutzerkonto mit Zugriff auf die Anwendung.",
       "adminRole": "Administrator-Rechte",
       "enabled": "An",
@@ -4296,5 +4297,18 @@
       "share": "Dein Anteil in {{group}}: {{amount}}",
       "paid": "{{actor}} hat eine Zahlung erfasst"
     }
+  },
+  "accessLog": {
+    "title": "Zugriffsprotokoll",
+    "description": "Jede administrative Aktion an Ihrem Konto und an Mitgliedern von Arbeitsbereichen, die Ihnen gehören.",
+    "empty": "Keine administrativen Aktionen erfasst.",
+    "actionUpdate": "Konto geändert",
+    "actionDelete": "Konto gelöscht",
+    "actionOther": "Konto geändert",
+    "by": "Von {{email}}",
+    "target": "Konto {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Mehr laden",
+    "loadError": "Das Zugriffsprotokoll konnte nicht geladen werden."
   }
 }

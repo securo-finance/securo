@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -23,8 +24,19 @@ class AdminUserCreate(BaseModel):
 
 
 class AdminUserUpdate(BaseModel):
+    """What an administrator may change on someone's account.
+
+    There is no password here on purpose (ADR 0042): a password only ever
+    belongs to the person it authenticates. Unknown fields are refused, so an
+    older client that still sends ``password`` gets a 422 instead of silently
+    having it dropped.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: Why the account is being touched. Required, and logged with the change.
+    reason: str = Field(min_length=3, max_length=500)
     email: Optional[EmailStr] = None
-    password: Optional[str] = Field(None, min_length=8, max_length=72)
     is_active: Optional[bool] = None
     is_superuser: Optional[bool] = None
     preferences: Optional[dict] = None
@@ -32,6 +44,26 @@ class AdminUserUpdate(BaseModel):
 
 class AdminUserList(BaseModel):
     items: list[AdminUserRead]
+    total: int
+
+
+class AdminAccessLogRead(BaseModel):
+    """One administrative action on an account, as the affected side sees it."""
+
+    id: uuid.UUID
+    actor_email: str
+    target_email: str
+    target_user_id: Optional[uuid.UUID] = None
+    action: str
+    reason: str
+    ip: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AdminAccessLogList(BaseModel):
+    items: list[AdminAccessLogRead]
     total: int
 
 

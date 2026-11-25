@@ -2998,8 +2998,9 @@
       "deleted": "המשתמש נמחק",
       "confirmDeleteTitle": "למחוק את המשתמש?",
       "confirmDeleteDesc": "פעולה זו תמחק לצמיתות את המשתמש {{email}} ואת כל הנתונים שלו. לא ניתן לבטל פעולה זו.",
-      "resetPassword": "איפוס סיסמה",
-      "resetPasswordPlaceholder": "השאירו ריק כדי לשמור את הנוכחית",
+      "reason": "סיבה",
+      "reasonPlaceholder": "למה מתבצע השינוי?",
+      "reasonHint": "נרשם ביומן הגישה ומוצג לחשבון המושפע.",
       "addDesc": "יצירת חשבון משתמש חדש עם גישה ליישום.",
       "adminRole": "הרשאות מנהל",
       "enabled": "פועל",
@@ -4335,5 +4336,18 @@
       "share": "החלק שלך ב-{{group}}: {{amount}}",
       "paid": "תשלום שנרשם על ידי {{actor}}"
     }
+  },
+  "accessLog": {
+    "title": "יומן גישה",
+    "description": "כל פעולה מנהלית בחשבון שלך ובחברי סביבות עבודה שבבעלותך.",
+    "empty": "לא נרשמו פעולות מנהליות.",
+    "actionUpdate": "החשבון עודכן",
+    "actionDelete": "החשבון נמחק",
+    "actionOther": "החשבון עודכן",
+    "by": "על ידי {{email}}",
+    "target": "חשבון {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "טען עוד",
+    "loadError": "לא ניתן לטעון את יומן הגישה."
   }
 }

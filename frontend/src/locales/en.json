@@ -2969,8 +2969,9 @@
       "deleted": "User deleted",
       "confirmDeleteTitle": "Delete user?",
       "confirmDeleteDesc": "This will permanently delete the user {{email}} and all their data. This action cannot be undone.",
-      "resetPassword": "Reset password",
-      "resetPasswordPlaceholder": "Leave blank to keep current",
+      "reason": "Reason",
+      "reasonPlaceholder": "Why is this change being made?",
+      "reasonHint": "Recorded in the access log and shown to the affected account.",
       "addDesc": "Create a new user account with access to the application.",
       "adminRole": "Administrator privileges",
       "enabled": "On",
@@ -4295,5 +4296,18 @@
       "share": "Your share in {{group}}: {{amount}}",
       "paid": "{{actor}} recorded a payment"
     }
+  },
+  "accessLog": {
+    "title": "Access log",
+    "description": "Every administrative action on your account, and on members of workspaces you own.",
+    "empty": "No administrative actions recorded.",
+    "actionUpdate": "Account updated",
+    "actionDelete": "Account deleted",
+    "actionOther": "Account changed",
+    "by": "By {{email}}",
+    "target": "Account {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Load more",
+    "loadError": "Could not load the access log."
   }
 }

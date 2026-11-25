@@ -2971,8 +2971,9 @@
       "deleted": "Gebruiker verwijderd",
       "confirmDeleteTitle": "Gebruiker verwijderen?",
       "confirmDeleteDesc": "Hierdoor wordt de gebruiker {{email}} en al zijn gegevens permanent verwijderd. Deze actie kan niet ongedaan worden gemaakt.",
-      "resetPassword": "Wachtwoord opnieuw instellen",
-      "resetPasswordPlaceholder": "Laat dit leeg om actueel te blijven",
+      "reason": "Reden",
+      "reasonPlaceholder": "Waarom wordt deze wijziging gedaan?",
+      "reasonHint": "Wordt vastgelegd in het toegangslogboek en getoond aan het betrokken account.",
       "addDesc": "Maak een nieuw gebruikersaccount aan met toegang tot de applicatie.",
       "adminRole": "Beheerdersrechten",
       "enabled": "Aan",
@@ -4297,5 +4298,18 @@
       "share": "Jouw deel in {{group}}: {{amount}}",
       "paid": "{{actor}} heeft een betaling vastgelegd"
     }
+  },
+  "accessLog": {
+    "title": "Toegangslogboek",
+    "description": "Elke administratieve actie op je account en op leden van werkruimten die je bezit.",
+    "empty": "Geen administratieve acties vastgelegd.",
+    "actionUpdate": "Account gewijzigd",
+    "actionDelete": "Account verwijderd",
+    "actionOther": "Account gewijzigd",
+    "by": "Door {{email}}",
+    "target": "Account {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Meer laden",
+    "loadError": "Het toegangslogboek kon niet worden geladen."
   }
 }

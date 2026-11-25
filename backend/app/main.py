@@ -50,6 +50,7 @@ from app.api.transactions import router as transactions_router
 from app.api.two_factor import router as two_factor_router
 from app.api.user_lookup import router as user_lookup_router
 from app.api.workspaces import router as workspaces_router
+from app.api.access_log import router as access_log_router
 from app.api.access_tokens import router as access_tokens_router
 from app.api.plugins import router as plugins_router
 from app.api.ui_layouts import router as ui_layouts_router
@@ -242,6 +243,7 @@ app.include_router(access_tokens_router)
 app.include_router(plugins_router)
 app.include_router(ui_layouts_router)
 app.include_router(admin_router)
+app.include_router(access_log_router)
 app.include_router(info_router)
 
 

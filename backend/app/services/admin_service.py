@@ -2,11 +2,12 @@ import uuid
 from typing import Optional
 
 from fastapi_users.exceptions import UserAlreadyExists
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import UserManager
 from app.core.config import get_settings
+from app.models.admin_access_log import AdminAccessLog
 from app.models.app_settings import AppSetting
 from app.models.user import User
 from app.schemas.admin import AdminUserCreate, AdminUserUpdate
@@ -106,6 +107,8 @@ async def update_user(
     user_id: uuid.UUID,
     data: AdminUserUpdate,
     current_user_id: uuid.UUID,
+    *,
+    ip: Optional[str] = None,
 ) -> Optional[User]:
     user = await get_user(session, user_id)
     if not user:
@@ -131,12 +134,8 @@ async def update_user(
         user.is_superuser = data.is_superuser
     if data.preferences is not None:
         user.preferences = data.preferences
-    if data.password is not None:
-        from fastapi_users.password import PasswordHelper
 
-        password_helper = PasswordHelper()
-        user.hashed_password = password_helper.hash(data.password)
-
+    await _record_admin_access(session, current_user_id, user, "user.update", data.reason, ip)
     session.add(user)
     await session.commit()
     await session.refresh(user)
@@ -147,6 +146,9 @@ async def delete_user(
     session: AsyncSession,
     user_id: uuid.UUID,
     current_user_id: uuid.UUID,
+    *,
+    reason: str,
+    ip: Optional[str] = None,
 ) -> bool:
     if user_id == current_user_id:
         raise ValueError("Cannot delete your own account")
@@ -222,10 +224,100 @@ async def delete_user(
     await session.execute(delete(CategoryGroup).where(CategoryGroup.user_id == user_id))
     await session.execute(delete(BankConnection).where(BankConnection.user_id == user_id))
 
+    # The log row goes in the same commit as the deletion: either the account
+    # is gone and the record says why, or neither happened.
+    await _record_admin_access(session, current_user_id, user, "user.delete", reason, ip)
+
     # Delete the user
     await session.delete(user)
     await session.commit()
     return True
+
+
+async def _record_admin_access(
+    session: AsyncSession,
+    actor_id: uuid.UUID,
+    target: User,
+    action: str,
+    reason: str,
+    ip: Optional[str],
+) -> AdminAccessLog:
+    """Add the audit row to the session. The caller commits it with the change."""
+    actor = await get_user(session, actor_id)
+    entry = AdminAccessLog(
+        actor_id=actor_id,
+        actor_email=actor.email if actor else "unknown",
+        target_user_id=target.id,
+        target_email=target.email,
+        action=action,
+        reason=reason,
+        ip=ip,
+    )
+    session.add(entry)
+    return entry
+
+
+async def list_access_log(
+    session: AsyncSession,
+    target_user_id: Optional[uuid.UUID] = None,
+    page: int = 1,
+    limit: int = 50,
+) -> tuple[list[AdminAccessLog], int]:
+    """Every administrative action, newest first, optionally for one account."""
+    query = select(AdminAccessLog)
+    count_query = select(func.count()).select_from(AdminAccessLog)
+    if target_user_id is not None:
+        query = query.where(AdminAccessLog.target_user_id == target_user_id)
+        count_query = count_query.where(AdminAccessLog.target_user_id == target_user_id)
+
+    total = (await session.execute(count_query)).scalar() or 0
+    query = (
+        query.order_by(AdminAccessLog.created_at.desc())
+        .offset((page - 1) * limit)
+        .limit(limit)
+    )
+    return list((await session.execute(query)).scalars().all()), total
+
+
+async def list_access_log_for_viewer(
+    session: AsyncSession,
+    viewer_id: uuid.UUID,
+    page: int = 1,
+    limit: int = 50,
+) -> tuple[list[AdminAccessLog], int]:
+    """Administrative actions the viewer is entitled to see (ADR 0042).
+
+    Entries about the viewer's own account, and entries about a member of a
+    workspace the viewer owns: whoever could be impersonated through that
+    account gets to know it happened.
+    """
+    from app.models.workspace import WorkspaceMember
+
+    owned_workspaces = select(WorkspaceMember.workspace_id).where(
+        WorkspaceMember.user_id == viewer_id,
+        WorkspaceMember.role == "owner",
+    )
+    owned_members = select(WorkspaceMember.user_id).where(
+        WorkspaceMember.workspace_id.in_(owned_workspaces)
+    )
+    visible = or_(
+        AdminAccessLog.target_user_id == viewer_id,
+        AdminAccessLog.target_user_id.in_(owned_members),
+    )
+
+    total = (
+        await session.execute(
+            select(func.count()).select_from(AdminAccessLog).where(visible)
+        )
+    ).scalar() or 0
+    query = (
+        select(AdminAccessLog)
+        .where(visible)
+        .order_by(AdminAccessLog.created_at.desc())
+        .offset((page - 1) * limit)
+        .limit(limit)
+    )
+    return list((await session.execute(query)).scalars().all()), total
 
 
 async def get_app_setting(session: AsyncSession, key: str) -> Optional[AppSetting]:
