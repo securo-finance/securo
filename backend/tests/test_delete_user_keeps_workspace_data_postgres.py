@@ -34,6 +34,8 @@ from app.models.workspace import Workspace, WorkspaceMember
 from app.services import admin_service, user_removal_service, workspace_service
 
 DAY = date(2026, 10, 5)
+#: Every deletion is logged with why it happened (ADR 0042).
+REASON = "Support ticket 12"
 
 KEPT = (
     Account, Asset, BankConnection, Budget, Category, CategoryGroup, Collection, Goal, Group,
@@ -150,7 +152,7 @@ async def test_deleting_an_editor_keeps_what_they_added(postgres_sessions):
         assert min(before.values()) >= 1
         await session.commit()
 
-        assert await admin_service.delete_user(session, editor_id, admin.id)
+        assert await admin_service.delete_user(session, editor_id, admin.id, reason=REASON)
         session.expunge_all()
 
         assert await _counts(session, shared.id) == before
@@ -158,7 +160,7 @@ async def test_deleting_an_editor_keeps_what_they_added(postgres_sessions):
         listed, total = await admin_service.list_users(session)
         assert {user.email for user in listed} == {"admin@example.invalid", "owner@example.invalid"}
         assert total == 2
-        assert not await admin_service.delete_user(session, editor_id, admin.id)
+        assert not await admin_service.delete_user(session, editor_id, admin.id, reason=REASON)
         left = (await session.scalars(
             select(WorkspaceMember.user_id).where(WorkspaceMember.workspace_id == shared.id)
         )).all()
@@ -185,7 +187,7 @@ async def test_personal_rows_go_with_the_editor(postgres_sessions):
         )
         await session.commit()
 
-        assert await admin_service.delete_user(session, editor_id, admin.id)
+        assert await admin_service.delete_user(session, editor_id, admin.id, reason=REASON)
 
         assert await session.scalar(select(func.count()).select_from(AccessToken)) == 0
 
@@ -197,7 +199,7 @@ async def test_an_editor_with_nothing_written_is_deleted_outright(postgres_sessi
         shared = await _workspace(session, "Household", owner=owner, editor=editor)
         await session.commit()
 
-        assert await admin_service.delete_user(session, editor_id, admin.id)
+        assert await admin_service.delete_user(session, editor_id, admin.id, reason=REASON)
         session.expunge_all()
 
         assert await session.get(User, editor_id) is None
@@ -230,7 +232,7 @@ async def test_deleting_a_sole_owner_deletes_their_workspace_only(postgres_sessi
         own_id, theirs_id = own.id, theirs.id
         await session.commit()
 
-        assert await admin_service.delete_user(session, owner_id, admin.id)
+        assert await admin_service.delete_user(session, owner_id, admin.id, reason=REASON)
         session.expunge_all()
 
         assert await session.get(User, owner_id) is None
@@ -249,7 +251,7 @@ async def test_a_managed_workspace_nobody_else_reaches_is_deleted(postgres_sessi
         await _fill(session, managed, manager)
         await session.commit()
 
-        assert await admin_service.delete_user(session, manager_id, admin.id)
+        assert await admin_service.delete_user(session, manager_id, admin.id, reason=REASON)
         session.expunge_all()
 
         assert await session.get(Workspace, managed_id) is None
@@ -273,7 +275,7 @@ async def test_a_workspace_somebody_else_runs_is_kept(postgres_sessions, by):
         shared_id = shared.id
         await session.commit()
 
-        assert await admin_service.delete_user(session, leaving.id, admin.id)
+        assert await admin_service.delete_user(session, leaving.id, admin.id, reason=REASON)
         session.expunge_all()
 
         assert await session.get(Workspace, shared_id) is not None
@@ -290,7 +292,7 @@ async def test_a_managers_client_with_its_own_owner_is_kept(postgres_sessions):
         managed_id = managed.id
         await session.commit()
 
-        assert await admin_service.delete_user(session, manager.id, admin.id)
+        assert await admin_service.delete_user(session, manager.id, admin.id, reason=REASON)
         session.expunge_all()
 
         kept = await session.get_one(Workspace, managed_id)
@@ -310,7 +312,7 @@ async def test_the_only_owner_of_a_workspace_with_members_is_refused(postgres_se
         await session.commit()
 
         with pytest.raises(ValueError, match="Household has other members"):
-            await admin_service.delete_user(session, owner_id, admin.id)
+            await admin_service.delete_user(session, owner_id, admin.id, reason=REASON)
         await session.rollback()
         session.expunge_all()
 
@@ -351,7 +353,7 @@ async def test_a_co_owner_cannot_leave_while_the_other_is_deleted(
                 await other.commit()
 
         deleting = asyncio.create_task(
-            admin_service.delete_user(session, leaving.id, admin.id)
+            admin_service.delete_user(session, leaving.id, admin.id, reason=REASON)
         )
         await asyncio.wait_for(decided.wait(), 5)
         changing = asyncio.create_task(change_owner())
@@ -385,7 +387,9 @@ async def test_a_member_cannot_be_promoted_while_they_are_deleted(postgres_sessi
                 await workspace_service.update_member_role(other, *ids, "owner")
                 await other.commit()
 
-        deleting = asyncio.create_task(admin_service.delete_user(session, ids[1], admin.id))
+        deleting = asyncio.create_task(
+            admin_service.delete_user(session, ids[1], admin.id, reason=REASON)
+        )
         await asyncio.wait_for(decided.wait(), 5)
         promoting = asyncio.create_task(promote())
         await asyncio.wait([promoting], timeout=0.5)
@@ -407,7 +411,7 @@ async def test_parallel_deletions_delete_once(postgres_sessions, wrote):
 
     async def remove():
         async with postgres_sessions() as other:
-            return await admin_service.delete_user(other, editor_id, admin_id)
+            return await admin_service.delete_user(other, editor_id, admin_id, reason=REASON)
 
     results = await asyncio.gather(*(remove() for _ in range(6)), return_exceptions=True)
     assert sorted(results, key=str) == [False] * 5 + [True]

@@ -117,7 +117,7 @@ async def test_deleting_a_schedule_author_preserves_and_continues_billing(
         if migrate_existing:
             await _migrate_existing(session)
 
-        assert await admin_service.delete_user(session, author_id, admin.id)
+        assert await admin_service.delete_user(session, author_id, admin.id, reason="Support ticket 12")
         await session.refresh(schedule)
         await _assert_author_gone(session, author_id, closed=with_client)
         kept_author = author_id if with_client else None
@@ -158,7 +158,7 @@ async def test_deleting_the_author_of_a_billed_agreement_keeps_what_it_issued(
         if migrate_existing:
             await _migrate_existing(session)
 
-        assert await admin_service.delete_user(session, author_id, admin.id)
+        assert await admin_service.delete_user(session, author_id, admin.id, reason="Support ticket 12")
         session.expunge_all()
         await _assert_author_gone(session, author_id, closed=with_client)
         kept_author = author_id if with_client else None
@@ -221,7 +221,7 @@ async def test_deleting_a_client_creator_keeps_the_workspaces_clients_and_invoic
         if migrate_existing:
             await _migrate_existing(session)
 
-        assert await admin_service.delete_user(session, author_id, admin.id)
+        assert await admin_service.delete_user(session, author_id, admin.id, reason="Support ticket 12")
         await session.refresh(invoice)
         assert invoice.payee_id == client_id and invoice.user_id == admin.id
         survivor = await session.get(Payee, unused_id, populate_existing=True)
@@ -239,7 +239,9 @@ async def test_downgrade_refuses_to_invent_a_retained_client_creator(postgres_se
         admin, author, workspace, schedule = await _agreement(session, with_client=True)
         # A mapping would keep the author's row; this is about a creator that is gone.
         await session.execute(delete(PayeeMapping).where(PayeeMapping.user_id == author.id))
-        assert await admin_service.delete_user(session, author.id, admin.id)
+        assert await admin_service.delete_user(
+            session, author.id, admin.id, reason="Support ticket 12"
+        )
         migration = _migration()
         connection = await session.connection()
         schema = connection.sync_connection.get_execution_options()["schema_translate_map"][None]
@@ -275,7 +277,7 @@ async def test_generation_refreshes_an_author_deleted_after_the_schedule_was_loa
         admin, author, workspace, schedule = await _agreement(worker)
         author_id = author.id
         async with postgres_sessions() as deleting:
-            assert await admin_service.delete_user(deleting, author_id, admin.id)
+            assert await admin_service.delete_user(deleting, author_id, admin.id, reason="Support ticket 12")
 
         # The worker already loaded the old author. PostgreSQL cleared the FK
         # in another session, so the post-lock refresh must reload that field.

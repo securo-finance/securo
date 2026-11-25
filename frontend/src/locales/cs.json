@@ -3156,10 +3156,14 @@
       "sender": "Odesílatel",
       "senderMissing": "Nenastaveno",
       "templatesTitle": "Zpráva pro obnovení",
-      "templatesDescription": "To, co člověk čte. Proměnné: {app_name}, {link} a {minutes}; tělo musí zachovat {link}.",
+      "templatesDescription": "To, co člověk čte. Proměnné: {app_name}, {link} a {minutes}; {link} musí být sám na vlastním řádku a nic jiného nesmí být odkaz.",
       "subject": "Předmět",
       "body": "Tělo",
       "linkRequired": "Tělo musí obsahovat {link}.",
+      "linkInSubject": "Předmět nesmí obsahovat {link} ani adresu.",
+      "linkOnce": "Tělo musí obsahovat {link} právě jednou.",
+      "linkAlone": "Proměnná {link} musí být sama na vlastním řádku.",
+      "otherLink": "Zpráva nesmí vést nikam jinam než na {link}.",
       "restoreDefault": "Obnovit výchozí text",
       "save": "Uložit šablony",
       "saved": "Šablony uloženy",
@@ -3187,12 +3191,16 @@
       "confirmDeleteTitle": "Smazat uživatele?",
       "confirmDeleteDesc": "Uživatel {{email}} a pracovní prostory, ke kterým má přístup jen on, budou trvale smazány. To, co přidal do pracovních prostorů jiných lidí, zůstane zachováno. Tuto akci nelze vrátit zpět.",
       "soleOwner": "„{{workspace}}“ má další členy a žádného dalšího vlastníka. Než tohoto uživatele smažete, udělejte z jednoho z nich vlastníka, nebo je odeberte.",
-      "resetPassword": "Resetovat heslo",
-      "resetPasswordPlaceholder": "Ponechat prázdné pro zachování aktuálního hesla",
+      "reason": "Důvod",
+      "reasonPlaceholder": "Proč se tato změna provádí?",
+      "reasonHint": "Zaznamená se do protokolu přístupů a zobrazí se dotčenému účtu.",
       "addDesc": "Vytvořit nový uživatelský účet s přístupem do aplikace.",
       "adminRole": "Administrátorská oprávnění",
       "enabled": "Zapnuto",
-      "disabled": "Vypnuto"
+      "disabled": "Vypnuto",
+      "pending": "Čeká",
+      "pendingEmail": "Požadováno {{email}}, čeká na majitele",
+      "emailPendingHint": "Adresa se změní až po potvrzení majitelem."
     },
     "settings": {
       "title": "Nastavení administrátora",
@@ -4543,5 +4551,33 @@
       "share": "Váš podíl ve skupině {{group}}: {{amount}}",
       "paid": "{{actor}}: zaznamenána platba"
     }
+  },
+  "accessLog": {
+    "title": "Protokol přístupů",
+    "description": "Každá administrativní akce na vašem účtu a na členech pracovních prostorů, které vlastníte.",
+    "empty": "Nejsou zaznamenány žádné administrativní akce.",
+    "actionUpdate": "Účet změněn",
+    "actionDelete": "Účet smazán",
+    "actionOther": "Účet změněn",
+    "by": "Provedl {{email}}",
+    "target": "Účet {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Načíst další",
+    "loadError": "Protokol přístupů se nepodařilo načíst.",
+    "emailChange": "Adresa {{from}} → {{to}}",
+    "emailPending": "čeká na potvrzení majitele účtu",
+    "otherChanges": "Změněno také: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Změna e-mailové adresy",
+    "description": "Správce požádal o změnu adresy vašeho účtu na {{email}}. Dokud nepotvrdíte, účet si ponechá současnou adresu.",
+    "accept": "Přijmout novou adresu",
+    "decline": "Ponechat současnou adresu",
+    "accepted": "Váš účet nyní používá {{email}}",
+    "declined": "Účet si ponechá současnou adresu",
+    "unavailable": "Tato adresa již není dostupná",
+    "failed": "Vaše rozhodnutí se nepodařilo uložit",
+    "replaced": "Administrátor poslal novou žádost. Před přijetím zkontrolujte novou adresu",
+    "withdrawn": "Žádost byla stažena. Váš účet si ponechá současnou adresu"
   }
 }

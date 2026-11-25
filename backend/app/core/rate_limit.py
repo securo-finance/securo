@@ -59,6 +59,14 @@ def resolve_client_ip(
     return address
 
 
+def client_ip(request: Request) -> str:
+    """The client address, read through the configured trusted proxies (ADR 0024)."""
+    settings = get_settings()
+    return resolve_client_ip(
+        request, settings.trusted_proxy_hops, settings.trusted_proxy_networks
+    )
+
+
 class RateLimiter:
     """Sliding window per client IP, counted in Redis.
 
@@ -100,11 +108,8 @@ class RateLimiter:
         if limit <= 0:
             return
 
-        settings = get_settings()
-        client_ip = resolve_client_ip(
-            request, settings.trusted_proxy_hops, settings.trusted_proxy_networks
-        )
-        key = f"rate_limit:{self.scope or request.url.path}:{client_ip}"
+        address = client_ip(request)
+        key = f"rate_limit:{self.scope or request.url.path}:{address}"
 
         try:
             r = await get_redis()

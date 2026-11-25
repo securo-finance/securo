@@ -27,7 +27,7 @@ from app.schemas.workspace import (
     WorkspaceRead,
     WorkspaceUpdate,
 )
-from app.services import module_service, workspace_service
+from app.services import account_lookup_service, module_service, workspace_service
 from app.services.primary_restamp_service import (
     fetch_missing_today_rates,
     restamp_user_primary_amounts,
@@ -209,12 +209,13 @@ async def invite_member(
         session, workspace_id, user.id, min_role="owner"
     )
 
-    # Find existing user by email (case-insensitive — fastapi-users
-    # stores email lowercased on register, but be safe).
-    existing = await session.execute(
-        select(User).where(User.email == body.email.lower())
-    )
-    target = existing.scalar_one_or_none()
+    # Find the account without regard to case, the way sign-in resolves the
+    # address: an account stored as `Ana@example.com` must be found when the
+    # owner invites `ana@example.com`, or the invite would try to create a
+    # second account for the same mailbox (#556). One resolver for every
+    # address, so an instance that still holds two rows for it (#568) adds the
+    # person instead of answering 500.
+    target = await account_lookup_service.find_account_by_email(session, body.email)
 
     if target is None:
         # Brand-new user — creating the account here mints a local password,

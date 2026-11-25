@@ -2976,10 +2976,14 @@
       "sender": "Afzender",
       "senderMissing": "Niet ingesteld",
       "templatesTitle": "Herstelbericht",
-      "templatesDescription": "Wat de persoon leest. Variabelen: {app_name}, {link} en {minutes}; de tekst moet {link} behouden.",
+      "templatesDescription": "Wat de persoon leest. Variabelen: {app_name}, {link} en {minutes}; {link} moet alleen op een eigen regel staan en niets anders mag een link zijn.",
       "subject": "Onderwerp",
       "body": "Tekst",
       "linkRequired": "De tekst moet {link} bevatten.",
+      "linkInSubject": "Het onderwerp mag geen {link} of adres bevatten.",
+      "linkOnce": "De tekst moet {link} precies één keer bevatten.",
+      "linkAlone": "De variabele {link} moet alleen op zijn eigen regel staan.",
+      "otherLink": "Het bericht mag nergens anders heen leiden dan naar {link}.",
       "restoreDefault": "Standaardtekst herstellen",
       "save": "Sjablonen opslaan",
       "saved": "Sjablonen opgeslagen",
@@ -3007,12 +3011,16 @@
       "confirmDeleteTitle": "Gebruiker verwijderen?",
       "confirmDeleteDesc": "Hierdoor worden de gebruiker {{email}} en de workspaces waartoe alleen die gebruiker toegang heeft permanent verwijderd. Wat de gebruiker aan workspaces van anderen heeft toegevoegd, blijft behouden. Deze actie kan niet ongedaan worden gemaakt.",
       "soleOwner": "\"{{workspace}}\" heeft andere leden en geen andere eigenaar. Maak een van hen eigenaar, of verwijder hen, voordat je deze gebruiker verwijdert.",
-      "resetPassword": "Wachtwoord opnieuw instellen",
-      "resetPasswordPlaceholder": "Laat dit leeg om actueel te blijven",
+      "reason": "Reden",
+      "reasonPlaceholder": "Waarom wordt deze wijziging gedaan?",
+      "reasonHint": "Wordt vastgelegd in het toegangslogboek en getoond aan het betrokken account.",
       "addDesc": "Maak een nieuw gebruikersaccount aan met toegang tot de applicatie.",
       "adminRole": "Beheerdersrechten",
       "enabled": "Aan",
-      "disabled": "Uit"
+      "disabled": "Uit",
+      "pending": "In afwachting",
+      "pendingEmail": "Aangevraagd: {{email}}, wacht op de houder",
+      "emailPendingHint": "Het adres verandert pas nadat de houder het bevestigt."
     },
     "settings": {
       "title": "Beheerdersinstellingen",
@@ -4333,5 +4341,33 @@
       "share": "Jouw deel in {{group}}: {{amount}}",
       "paid": "{{actor}} heeft een betaling vastgelegd"
     }
+  },
+  "accessLog": {
+    "title": "Toegangslogboek",
+    "description": "Elke administratieve actie op je account en op leden van werkruimten die je bezit.",
+    "empty": "Geen administratieve acties vastgelegd.",
+    "actionUpdate": "Account gewijzigd",
+    "actionDelete": "Account verwijderd",
+    "actionOther": "Account gewijzigd",
+    "by": "Door {{email}}",
+    "target": "Account {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Meer laden",
+    "loadError": "Het toegangslogboek kon niet worden geladen.",
+    "emailChange": "Adres {{from}} → {{to}}",
+    "emailPending": "wacht op bevestiging door de accounthouder",
+    "otherChanges": "Ook gewijzigd: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Wijziging van e-mailadres",
+    "description": "Een beheerder heeft gevraagd om het adres van je account te wijzigen in {{email}}. Tot je bevestigt, behoudt je account het huidige adres.",
+    "accept": "Nieuw adres overnemen",
+    "decline": "Mijn huidige adres behouden",
+    "accepted": "Je account gebruikt nu {{email}}",
+    "declined": "Je account behoudt het huidige adres",
+    "unavailable": "Dat adres is niet meer beschikbaar",
+    "failed": "Je beslissing kon niet worden opgeslagen",
+    "replaced": "De beheerder heeft een nieuw verzoek gestuurd. Controleer het nieuwe adres voordat je accepteert",
+    "withdrawn": "Het verzoek is ingetrokken. Je account behoudt het huidige adres"
   }
 }
