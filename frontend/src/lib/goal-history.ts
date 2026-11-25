@@ -1,11 +1,6 @@
 import { accounts, assets, reports, transactions } from '@/lib/api'
 import type { Goal } from '@/types'
-import {
-  cleanHistory,
-  combineWalletHistories,
-  firstOfMonthAfter,
-  type AmountPoint,
-} from './goal-projection'
+import { cleanHistory, firstOfMonthAfter, type AmountPoint } from './goal-projection'
 
 export type HistoryNote =
   'manual' | 'currency' | 'missing' | 'wallet' | 'reconstructed' | 'netWorth' | 'partial'
@@ -18,7 +13,7 @@ export interface GoalHistory {
 /**
  * Loads a goal's history through the existing account, asset, and report APIs.
  * Account and asset histories retain all available dates through today. Wallet
- * history combines member valuations. Net-worth history starts three calendar
+ * history uses weekly wallet-filtered net-worth reports. Net-worth history starts three calendar
  * months back, or at its first positive snapshot if that is more recent.
  * Manual goals have no history; currency mismatches and missing data return
  * explanatory notes instead of invented balances.
@@ -46,7 +41,6 @@ export async function loadGoalHistory(goal: Goal, today: string): Promise<GoalHi
     return { points: [], notes: ['manual'] }
   }
 
-
   if (goal.tracking_type === 'account' && goal.account_id) {
     const account = await accounts.get(goal.account_id)
     if (account.currency !== goal.currency) {
@@ -62,7 +56,7 @@ export async function loadGoalHistory(goal: Goal, today: string): Promise<GoalHi
       include_opening_balance: true,
     })
     const from = first.items[0]?.date ?? today
-    
+
     // get balance history per day from the first date
     // if there are no transactions use the today as the first date
     const points = await accounts.balanceHistory(
@@ -85,30 +79,57 @@ export async function loadGoalHistory(goal: Goal, today: string): Promise<GoalHi
     return result(await assets.valueTrend(goal.asset_id), ['reconstructed'])
   }
 
-  // for a wallet, we have to combine the entire wallets history for all assets under it
-  // and use that total sum for the history.
+  // The report computes wallet totals, including historical FX and sold assets.
+  // A wallet-only filter excludes bank accounts on the backend.
   if (goal.tracking_type === 'asset_group' && goal.asset_group_id) {
     const members = (await assets.list()).filter(
-      a => a.group_id === goal.asset_group_id && !a.is_archived,
+      asset => asset.group_id === goal.asset_group_id && !asset.is_archived,
     )
-    if (members.some(a => a.currency !== goal.currency)) {
-      return { points: [], notes: ['currency'] }
-    }
     if (members.length === 0) {
       return { points: [], notes: ['missing'] }
     }
-    const series = await Promise.all(
-      members.map(async asset => ({
-        purchase_date: asset.purchase_date,
-        sell_date: asset.sell_date,
-        points: await assets.valueTrend(asset.id),
-      })),
-    )
-    const points = combineWalletHistories(series, '0001-01-01', today)
-    return result(points, [
-      'wallet',
-      ...(series.some(s => !s.points.length) ? ['partial' as const] : []),
-    ])
+
+    // Discover the full available range independently of the goal's creation date.
+    // Value trends can predate a purchase date or exist without one. These values
+    // determine only the range; all plotted totals come from the report API.
+    const histories = await Promise.all(members.map(asset => assets.valueTrend(asset.id)))
+    let earliest = today
+    for (const asset of members) {
+      if (asset.purchase_date && asset.purchase_date < earliest) {
+        earliest = asset.purchase_date
+      }
+    }
+    for (const history of histories) {
+      for (const point of history) {
+        if (point.date < earliest) {
+          earliest = point.date
+        }
+      }
+    }
+
+    // using a 'weekly' report is arbitrary, but probably reasonable for this chart.
+    const points: AmountPoint[] = []
+    for (const [from, to] of reportHistoryWindows(earliest, today)) {
+      const report = await reports.netWorth(
+        12,
+        'weekly',
+        undefined,
+        [goal.asset_group_id],
+        undefined,
+        from,
+        to,
+      )
+      if (report.meta.currency !== goal.currency) {
+        return { points: [], notes: ['currency'] }
+      }
+      points.push(
+        ...report.trend.map(point => ({
+          date: weeklySnapshotDate(point.date, from, to),
+          amount: point.value,
+        })),
+      )
+    }
+    return result(points, ['wallet'])
   }
 
   // for net worth we use the net worth report to establish the previous values.
@@ -171,6 +192,35 @@ export async function loadGoalHistory(goal: Goal, today: string): Promise<GoalHi
     )
   }
   return { points: [], notes: ['missing'] }
+}
+
+/**
+ * Restores report snapshot dates from ISO week labels such as 2026-W47.
+ * The backend samples every seven days from the request's start weekday and
+ * replaces or appends the final snapshot with the exact end date.
+ *
+ * @param {string} label - ISO week label, or a full date to preserve unchanged.
+ * @param {string} from - Inclusive request start in YYYY-MM-DD format.
+ * @param {string} to - Inclusive request end in YYYY-MM-DD format.
+ * @returns {string} Actual snapshot date in YYYY-MM-DD format.
+ */
+function weeklySnapshotDate(label: string, from: string, to: string): string {
+  const match = /^(\d{4})-W(\d{2})$/.exec(label)
+  if (!match) {
+    return label
+  }
+  const dayMs = 86_400_000
+  const january4 = new Date(Date.UTC(Number(match[1]), 0, 4))
+  const monday =
+    january4.getTime() -
+    ((january4.getUTCDay() + 6) % 7) * dayMs +
+    (Number(match[2]) - 1) * 7 * dayMs
+  const end = Date.parse(to + 'T00:00:00Z')
+  if (end >= monday && end < monday + 7 * dayMs) {
+    return to
+  }
+  const weekday = (new Date(from + 'T00:00:00Z').getUTCDay() + 6) % 7
+  return new Date(monday + weekday * dayMs).toISOString().slice(0, 10)
 }
 
 /**

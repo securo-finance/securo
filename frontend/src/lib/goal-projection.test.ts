@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { goal } from '@/test/goal-fixtures'
-import {
-  calendarMonthAfter,
-  cleanHistory,
-  combineWalletHistories,
-  projectGoal,
-} from './goal-projection'
+import { calendarMonthAfter, cleanHistory, projectGoal } from './goal-projection'
 
 const today = '2026-11-21'
 describe('goal projection', () => {
@@ -69,43 +64,5 @@ describe('goal projection', () => {
         today,
       ),
     ).toEqual([{ date: today, amount: 11 }])
-  })
-
-  it('does not silently count missing wallet valuations as zero', () => {
-    const points = combineWalletHistories(
-      [
-        {
-          purchase_date: null,
-          sell_date: null,
-          points: [
-            { date: '2026-01-01', amount: 100 },
-            { date: '2026-02-01', amount: 110 },
-          ],
-        },
-        { purchase_date: null, sell_date: null, points: [{ date: '2026-02-01', amount: 200 }] },
-      ],
-      '2026-01-01',
-      today,
-    )
-    expect(points).toEqual([{ date: '2026-02-01', amount: 310 }])
-  })
-
-  it('carries earlier valuations forward and drops sold assets after sale', () => {
-    expect(
-      combineWalletHistories(
-        [
-          {
-            purchase_date: '2025-01-01',
-            sell_date: '2026-02-01',
-            points: [{ date: '2026-01-01', amount: 100 }],
-          },
-        ],
-        '2026-01-01',
-        today,
-      ),
-    ).toEqual([
-      { date: '2026-01-01', amount: 100 },
-      { date: '2026-02-02', amount: 0 },
-    ])
   })
 })

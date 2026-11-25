@@ -72,19 +72,96 @@ describe('existing history APIs', () => {
     expect(api.assets.valueTrend).toHaveBeenCalledWith('studio')
   })
 
-  it('sums only nonarchived assets linked to this wallet', async () => {
+  it('uses weekly report totals for only the selected wallet, preserving its full history', async () => {
     api.assets.list.mockResolvedValue([
-      { id: 'fund', group_id: 'wallet', currency: 'USD', purchase_date: null, sell_date: null },
-      { id: 'bond', group_id: 'wallet', currency: 'USD', purchase_date: null, sell_date: null },
+      { id: 'fund', group_id: 'wallet', currency: 'EUR', purchase_date: null },
       { id: 'other', group_id: 'other', currency: 'USD' },
-      { id: 'archived', group_id: 'wallet', currency: 'USD', is_archived: true },
+      { id: 'archived', group_id: 'wallet', is_archived: true },
     ])
+    api.assets.valueTrend.mockResolvedValue([{ date: '2020-01-01', amount: 999 }])
+    api.reports.netWorth.mockResolvedValue({
+      meta: { currency: 'USD' },
+      trend: [
+        { date: '2020-W01', value: 120 },
+        { date: '2020-W02', value: 130 },
+        { date: '2026-W47', value: 16000 },
+      ],
+    })
     const result = await loadGoalHistory(
       goal({ tracking_type: 'asset_group', asset_group_id: 'wallet' }, today),
       today,
     )
-    expect(result.points.at(-1)?.amount).toBe(16000)
-    expect(api.assets.valueTrend.mock.calls).toEqual([['fund'], ['bond']])
+    expect(result.points).toEqual([
+      { date: '2020-01-01', amount: 120 },
+      { date: '2020-01-08', amount: 130 },
+      { date: today, amount: 16000 },
+    ])
+    expect(api.assets.valueTrend.mock.calls).toEqual([['fund']])
+    expect(api.reports.netWorth).toHaveBeenCalledWith(
+      12,
+      'weekly',
+      undefined,
+      ['wallet'],
+      undefined,
+      '2020-01-01',
+      today,
+    )
+    expect(api.transactions.list).not.toHaveBeenCalled()
+  })
+
+  it.each(['2021-01-02', '2021-01-04'])(
+    'restores ISO week-year boundaries and the exact final snapshot on %s',
+    async end => {
+      api.assets.list.mockResolvedValue([
+        { id: 'fund', group_id: 'wallet', purchase_date: '2020-12-25' },
+      ])
+      api.assets.valueTrend.mockResolvedValue([])
+      api.reports.netWorth.mockResolvedValue({
+        meta: { currency: 'USD' },
+        trend: [
+          { date: '2020-W52', value: 100 },
+          { date: '2020-W53', value: 200 },
+          ...(end === '2021-01-04' ? [{ date: '2021-W01', value: 300 }] : []),
+        ],
+      })
+      const result = await loadGoalHistory(
+        goal({ tracking_type: 'asset_group', asset_group_id: 'wallet' }, end),
+        end,
+      )
+      expect(result.points).toEqual(
+        end === '2021-01-02'
+          ? [
+              { date: '2020-12-25', amount: 100 },
+              { date: end, amount: 200 },
+            ]
+          : [
+              { date: '2020-12-25', amount: 100 },
+              { date: '2021-01-01', amount: 200 },
+              { date: end, amount: 300 },
+            ],
+      )
+    },
+  )
+
+  it('fetches adjacent ranges for wallets with more than ten years of history', async () => {
+    api.assets.list.mockResolvedValue([
+      { id: 'fund', group_id: 'wallet', purchase_date: '1995-07-19' },
+    ])
+    await loadGoalHistory(
+      goal({ tracking_type: 'asset_group', asset_group_id: 'wallet' }, today),
+      today,
+    )
+    expect(api.reports.netWorth.mock.calls.map(call => call.slice(5))).toEqual([
+      ['1995-07-19', '2004-12-31'],
+      ['2005-01-01', '2014-12-31'],
+      ['2015-01-01', '2024-12-31'],
+      ['2025-01-01', today],
+    ])
+    expect(
+      api.reports.netWorth.mock.calls.every(
+        call => call[1] === 'weekly' && call[3][0] === 'wallet',
+      ),
+    ).toBe(true)
   })
 
   it('loads net worth in adjacent ranges, including asset history before transactions', async () => {
@@ -185,15 +262,11 @@ describe('existing history APIs', () => {
     })
   })
 
-  it('withholds currency-mismatched account, asset and wallet history', async () => {
+  it('withholds currency-mismatched account and asset history', async () => {
     api.accounts.get.mockResolvedValue({ currency: 'EUR' })
     api.assets.get.mockResolvedValue({ currency: 'EUR' })
     api.assets.list.mockResolvedValue([{ id: 'fund', group_id: 'wallet', currency: 'EUR' }])
-    for (const g of [
-      accountGoal(),
-      goal({ tracking_type: 'asset', asset_id: 'fund' }, today),
-      goal({ tracking_type: 'asset_group', asset_group_id: 'wallet' }, today),
-    ]) {
+    for (const g of [accountGoal(), goal({ tracking_type: 'asset', asset_id: 'fund' }, today)]) {
       expect((await loadGoalHistory(g, today)).notes).toContain('currency')
     }
     expect(api.accounts.balanceHistory).not.toHaveBeenCalled()
@@ -207,20 +280,33 @@ describe('existing history APIs', () => {
     ).toContain('currency')
   })
 
-  it('does not show partial wallet totals when a member has no valuations', async () => {
-    api.assets.list.mockResolvedValue([
-      { id: 'fund', group_id: 'wallet', currency: 'USD' },
-      { id: 'bond', group_id: 'wallet', currency: 'USD' },
-    ])
-    api.assets.valueTrend
-      .mockResolvedValueOnce([{ date: today, amount: 100 }])
-      .mockResolvedValueOnce([])
+  it('withholds wallet totals when the report currency differs from the goal', async () => {
+    api.assets.list.mockResolvedValue([{ id: 'fund', group_id: 'wallet' }])
     const result = await loadGoalHistory(
-      goal({ tracking_type: 'asset_group', asset_group_id: 'wallet' }, today),
+      goal({ tracking_type: 'asset_group', asset_group_id: 'wallet', currency: 'EUR' }, today),
       today,
     )
-    expect(result.points).toEqual([])
-    expect(result.notes).toContain('partial')
+    expect(result).toEqual({ points: [], notes: ['currency'] })
+  })
+
+  it('reports missing wallet history for an empty wallet or empty report', async () => {
+    const wallet = goal({ tracking_type: 'asset_group', asset_group_id: 'wallet' }, today)
+    expect((await loadGoalHistory(wallet, today)).notes).toContain('missing')
+    expect(api.reports.netWorth).not.toHaveBeenCalled()
+    api.assets.list.mockResolvedValue([{ id: 'fund', group_id: 'wallet' }])
+    api.reports.netWorth.mockResolvedValue({ meta: { currency: 'USD' }, trend: [] })
+    expect((await loadGoalHistory(wallet, today)).notes).toContain('missing')
+  })
+
+  it('propagates wallet report failures for retry', async () => {
+    api.assets.list.mockResolvedValue([{ id: 'fund', group_id: 'wallet' }])
+    api.reports.netWorth.mockRejectedValue(new Error('offline'))
+    await expect(
+      loadGoalHistory(
+        goal({ tracking_type: 'asset_group', asset_group_id: 'wallet' }, today),
+        today,
+      ),
+    ).rejects.toThrow('offline')
   })
 
   it('propagates failures for an explicit UI warning', async () => {
