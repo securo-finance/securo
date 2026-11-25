@@ -2,12 +2,12 @@ import uuid
 from typing import Optional
 
 from fastapi_users.exceptions import UserAlreadyExists
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import UserManager
 from app.core.config import get_settings
-from app.models.admin_access_log import AdminAccessLog
+from app.models.admin_access_log import AdminAccessLog, AdminAccessLogViewer
 from app.models.app_settings import AppSetting
 from app.models.user import User
 from app.schemas.admin import AdminUserCreate, AdminUserUpdate
@@ -245,6 +245,7 @@ async def _record_admin_access(
     """Add the audit row to the session. The caller commits it with the change."""
     actor = await get_user(session, actor_id)
     entry = AdminAccessLog(
+        id=uuid.uuid4(),
         actor_id=actor_id,
         actor_email=actor.email if actor else "unknown",
         target_user_id=target.id,
@@ -254,7 +255,29 @@ async def _record_admin_access(
         ip=ip,
     )
     session.add(entry)
+    for viewer_id in await _audience_for(session, target):
+        session.add(AdminAccessLogViewer(entry_id=entry.id, viewer_id=viewer_id))
     return entry
+
+
+async def _audience_for(session: AsyncSession, target: User) -> set[uuid.UUID]:
+    """Who may read a record about `target`: the target and its workspace owners.
+
+    Read now and written with the record, because a later deletion of the
+    target also deletes the memberships this is derived from.
+    """
+    from app.models.workspace import WorkspaceMember
+
+    member_workspaces = select(WorkspaceMember.workspace_id).where(
+        WorkspaceMember.user_id == target.id
+    )
+    owners = await session.execute(
+        select(WorkspaceMember.user_id).where(
+            WorkspaceMember.workspace_id.in_(member_workspaces),
+            WorkspaceMember.role == "owner",
+        )
+    )
+    return {target.id, *owners.scalars().all()}
 
 
 async def list_access_log(
@@ -288,21 +311,14 @@ async def list_access_log_for_viewer(
     """Administrative actions the viewer is entitled to see (ADR 0042).
 
     Entries about the viewer's own account, and entries about a member of a
-    workspace the viewer owns: whoever could be impersonated through that
-    account gets to know it happened.
+    workspace the viewer owned when they were written: whoever could be
+    impersonated through that account gets to know it happened. The audience
+    was recorded with the entry, so it survives the member's deletion.
     """
-    from app.models.workspace import WorkspaceMember
-
-    owned_workspaces = select(WorkspaceMember.workspace_id).where(
-        WorkspaceMember.user_id == viewer_id,
-        WorkspaceMember.role == "owner",
-    )
-    owned_members = select(WorkspaceMember.user_id).where(
-        WorkspaceMember.workspace_id.in_(owned_workspaces)
-    )
-    visible = or_(
-        AdminAccessLog.target_user_id == viewer_id,
-        AdminAccessLog.target_user_id.in_(owned_members),
+    visible = AdminAccessLog.id.in_(
+        select(AdminAccessLogViewer.entry_id).where(
+            AdminAccessLogViewer.viewer_id == viewer_id
+        )
     )
 
     total = (

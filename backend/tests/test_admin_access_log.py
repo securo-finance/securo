@@ -210,6 +210,32 @@ async def test_a_workspace_owner_sees_access_to_a_member(
     assert viewer.email in targets
 
 
+async def test_a_workspace_owner_still_sees_it_after_the_member_is_deleted(
+    client: AsyncClient, admin_auth_headers: dict, viewer_auth_headers: dict,
+    auth_headers: dict, session: AsyncSession,
+):
+    """Deleting the member takes the membership, not the record.
+
+    Resolved live, the owner's access would disappear together with the account
+    the record is about, which is exactly the case someone would want to check.
+    """
+    viewer = await _user_by_email(session, "viewer-role@example.com")
+    deleted = await client.delete(
+        f"/api/admin/users/{viewer.id}",
+        params={"reason": REASON},
+        headers=admin_auth_headers,
+    )
+    assert deleted.status_code == 204
+
+    response = await client.get("/api/access-log/mine", headers=auth_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["items"][0]["action"] == "user.delete"
+    assert body["items"][0]["target_email"] == viewer.email
+
+
 async def test_someone_else_sees_nothing(
     client: AsyncClient, admin_auth_headers: dict, test_user: User, session: AsyncSession
 ):

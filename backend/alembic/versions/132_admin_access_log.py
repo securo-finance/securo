@@ -46,8 +46,26 @@ def upgrade() -> None:
     op.create_index("ix_admin_access_log_action", "admin_access_log", ["action"])
     op.create_index("ix_admin_access_log_created_at", "admin_access_log", ["created_at"])
 
+    # Who may read each record, kept apart from the account and its
+    # memberships so the audience survives both (ADR 0042).
+    op.create_table(
+        "admin_access_log_viewer",
+        sa.Column(
+            "entry_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("admin_access_log.id", ondelete="CASCADE"),
+            primary_key=True,
+        ),
+        sa.Column("viewer_id", postgresql.UUID(as_uuid=True), primary_key=True),
+    )
+    op.create_index(
+        "ix_admin_access_log_viewer_viewer_id", "admin_access_log_viewer", ["viewer_id"]
+    )
+
 
 def downgrade() -> None:
+    op.drop_index("ix_admin_access_log_viewer_viewer_id", table_name="admin_access_log_viewer")
+    op.drop_table("admin_access_log_viewer")
     op.drop_index("ix_admin_access_log_created_at", table_name="admin_access_log")
     op.drop_index("ix_admin_access_log_action", table_name="admin_access_log")
     op.drop_index("ix_admin_access_log_target_user_id", table_name="admin_access_log")

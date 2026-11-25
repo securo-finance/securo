@@ -28,7 +28,7 @@ from app.models.document_extraction import DocumentExtraction, WorkspaceDocument
 from app.models.notification import Notification, NotificationDelivery, NotificationPreference
 from app.models.payee import Payee, PayeeMapping, PayeeTaxId
 from app.models.app_settings import AppSetting
-from app.models.admin_access_log import AdminAccessLog
+from app.models.admin_access_log import AdminAccessLog, AdminAccessLogViewer
 from app.models.goal import Goal
 from app.models.credit_card_bill import CreditCardBill
 from app.models.group import Group, GroupMember
@@ -100,6 +100,7 @@ __all__ = [
     "PayeeTaxId",
     "AppSetting",
     "AdminAccessLog",
+    "AdminAccessLogViewer",
     "Goal",
     "CreditCardBill",
     "Group",

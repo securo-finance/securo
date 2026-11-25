@@ -38,3 +38,23 @@ class AdminAccessLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
     )
+
+
+class AdminAccessLogViewer(Base):
+    """Who may read one administrative record (ADR 0042).
+
+    Written with the record, from the target and the owners of the workspaces
+    it belonged to at that moment. Reading it live instead would lose the
+    audience the moment the target is deleted, because the deletion also takes
+    the memberships that say who its owners were.
+    """
+
+    __tablename__ = "admin_access_log_viewer"
+
+    entry_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("admin_access_log.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    #: No foreign key: the account may be gone by the time this is read.
+    viewer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, index=True)
