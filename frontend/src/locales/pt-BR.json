@@ -2989,10 +2989,14 @@
       "sender": "Remetente",
       "senderMissing": "Não definido",
       "templatesTitle": "Mensagem de recuperação",
-      "templatesDescription": "O que a pessoa lê. Variáveis: {app_name}, {link} e {minutes}; o corpo precisa manter {link}.",
+      "templatesDescription": "O que a pessoa lê. Variáveis: {app_name}, {link} e {minutes}; {link} precisa ficar sozinho na própria linha, e nada mais pode ser um link.",
       "subject": "Assunto",
       "body": "Corpo",
       "linkRequired": "O corpo precisa conter {link}.",
+      "linkInSubject": "O assunto não pode conter {link} nem um endereço.",
+      "linkOnce": "O corpo precisa conter {link} exatamente uma vez.",
+      "linkAlone": "A variável {link} precisa ficar sozinha na própria linha.",
+      "otherLink": "A mensagem não pode levar a nenhum outro lugar além de {link}.",
       "restoreDefault": "Restaurar texto padrão",
       "save": "Salvar modelos",
       "saved": "Modelos salvos",
@@ -3019,12 +3023,16 @@
       "deleted": "Usuário excluído",
       "confirmDeleteTitle": "Excluir usuário?",
       "confirmDeleteDesc": "Isso excluirá permanentemente o usuário {{email}} e todos os seus dados. Esta ação não pode ser desfeita.",
-      "resetPassword": "Redefinir senha",
-      "resetPasswordPlaceholder": "Deixe em branco para manter a atual",
+      "reason": "Motivo",
+      "reasonPlaceholder": "Por que esta alteração está sendo feita?",
+      "reasonHint": "Fica registrado no log de acesso e aparece para a conta afetada.",
       "addDesc": "Criar uma nova conta de usuário com acesso ao aplicativo.",
       "adminRole": "Privilégios de administrador",
       "enabled": "Sim",
-      "disabled": "Não"
+      "disabled": "Não",
+      "pending": "Aguardando",
+      "pendingEmail": "Solicitado {{email}}, aguardando o titular",
+      "emailPendingHint": "O endereço só muda depois que o titular confirma."
     },
     "settings": {
       "title": "Configurações Admin",
@@ -4348,5 +4356,33 @@
       "share": "Sua parte em {{group}}: {{amount}}",
       "paid": "{{actor}} registrou um pagamento"
     }
+  },
+  "accessLog": {
+    "title": "Registro de acesso",
+    "description": "Toda ação administrativa na sua conta e nos membros dos workspaces que você possui.",
+    "empty": "Nenhuma ação administrativa registrada.",
+    "actionUpdate": "Conta alterada",
+    "actionDelete": "Conta excluída",
+    "actionOther": "Conta alterada",
+    "by": "Por {{email}}",
+    "target": "Conta {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Carregar mais",
+    "loadError": "Não foi possível carregar o registro de acesso.",
+    "emailChange": "Endereço {{from}} → {{to}}",
+    "emailPending": "aguardando a confirmação do titular da conta",
+    "otherChanges": "Também alterado: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Troca de e-mail",
+    "description": "Um administrador pediu para trocar o endereço da sua conta para {{email}}. Até você confirmar, a conta mantém o endereço atual.",
+    "accept": "Aceitar o novo endereço",
+    "decline": "Manter meu endereço atual",
+    "accepted": "Sua conta agora usa {{email}}",
+    "declined": "Sua conta mantém o endereço atual",
+    "unavailable": "Esse endereço não está mais disponível",
+    "failed": "Não foi possível registrar sua decisão",
+    "replaced": "O administrador enviou um novo pedido. Confira o novo endereço antes de aceitar",
+    "withdrawn": "O pedido foi retirado. Sua conta mantém o endereço atual"
   }
 }

@@ -36,7 +36,11 @@ WRITE_GATES = {"current_writable_workspace"}
 #: finer, which is why the reason is stored next to the path.
 ALLOWLIST: dict[tuple[str, str], str] = {
     # Not workspace-scoped: the actor is the user, on their own account.
-    ("PATCH", "/me"): "the requester's own user record",
+    ("PATCH", "/api/users/me"): "the requester's own user record",
+    # An address an administrator asked for, applied or declined by the person
+    # whose account it is. Account-level like the one above, never a workspace.
+    ("POST", "/api/users/me/email-change"): "the requester's own account address",
+    ("DELETE", "/api/users/me/email-change"): "the requester's own account address",
     ("POST", "/2fa/setup"): "the requester's own second factor",
     ("POST", "/2fa/enable"): "the requester's own second factor",
     ("POST", "/2fa/disable"): "the requester's own second factor",
@@ -53,8 +57,6 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     ("POST", "/register"): "unauthenticated by definition",
     ("POST", "/forgot-password"): "unauthenticated by definition",
     ("POST", "/reset-password"): "unauthenticated by definition",
-    ("PATCH", "/{id}"): "fastapi-users' own user router, superuser-gated",
-    ("DELETE", "/{id}"): "fastapi-users' own user router, superuser-gated",
     ("POST", "/api/setup/create-admin"): "first-run bootstrap, refuses once a user exists",
     # Instance administration: gated by `current_superuser`, not by workspace.
     ("POST", "/api/admin/users"): "superuser-gated instance administration",

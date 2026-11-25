@@ -19,6 +19,10 @@ from app.services import admin_service, email_service
 
 TOKEN_IN_LINK = re.compile(r"reset-password\?token=([A-Za-z0-9._~-]+)")
 
+# The body every test may save: `{link}` alone on a line of its own, with no
+# other address in the text.
+VALID_BODY = "Open the app:\n\n{link}\n\nIt lasts {minutes} minutes."
+
 
 @pytest.fixture
 def email_on():
@@ -277,7 +281,12 @@ def test_a_refused_setup_never_prints_the_secrets():
 
 def test_a_valid_template_is_accepted():
     templates = email_service.validate_templates(
-        {"en": {"subject": "{app_name} password", "body": "Open {link} within {minutes} minutes."}}
+        {
+            "en": {
+                "subject": "{app_name} password",
+                "body": "Open the app:\n\n{link}\n\nIt lasts {minutes} minutes.",
+            }
+        }
     )
     assert templates["en"]["subject"] == "{app_name} password"
 
@@ -294,6 +303,117 @@ def test_a_body_without_the_link_is_refused():
         email_service.validate_templates(
             {"en": {"subject": "Reset", "body": "Open the app within {minutes} minutes."}}
         )
+
+
+# The recovery link is the only thing the message may lead to, and it goes
+# alone on its own line: anywhere else, the text around it decides where the
+# reader's click goes, and the token inside it follows.
+FOREIGN_LINK_TEMPLATES = [
+    pytest.param(
+        {"subject": "Reset", "body": "https://evil.example/c?u={link}"},
+        "alone",
+        id="wrapped-in-a-foreign-url",
+    ),
+    pytest.param(
+        {"subject": "Reset", "body": "evil.example/{link}"},
+        "alone",
+        id="foreign-host-without-a-scheme",
+    ),
+    pytest.param(
+        {"subject": "Reset", "body": "Open:\n\n{link}\n\nAgain: {link}"},
+        "only once",
+        id="the-link-twice",
+    ),
+    pytest.param(
+        {"subject": "Reset", "body": "Open {link} now."},
+        "alone",
+        id="inside-a-sentence",
+    ),
+    pytest.param(
+        {"subject": "Reset {link}", "body": VALID_BODY},
+        "subject",
+        id="in-the-subject",
+    ),
+    pytest.param(
+        {
+            "subject": "Reset",
+            "body": "Open the app:\n\n{link}\n\nOr write to https://evil.example/.",
+        },
+        "other than",
+        id="a-second-address-beside-the-link",
+    ),
+    pytest.param(
+        {"subject": "Reset", "body": "Open:\n\n{link}\n\nHelp: reset{minutes}.com"},
+        "other than",
+        id="an-address-assembled-from-the-values",
+    ),
+    pytest.param(
+        {
+            "subject": "Reset",
+            "body": "{link}\n\nhttps://securo.example/reset-password?token=check",
+        },
+        "other than",
+        id="a-sample-address-typed-into-the-body",
+    ),
+]
+
+
+@pytest.mark.parametrize("template, reason", FOREIGN_LINK_TEMPLATES)
+def test_a_message_that_leads_away_from_the_link_is_refused(template, reason):
+    with pytest.raises(email_service.TemplateError, match=reason):
+        email_service.validate_templates({"en": template})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("template, reason", FOREIGN_LINK_TEMPLATES)
+async def test_the_same_templates_answer_400_and_save_nothing(
+    template, reason, client: AsyncClient, admin_auth_headers, email_on
+):
+    response = await client.put(
+        "/api/admin/email",
+        json={"templates": {"en": template}},
+        headers=admin_auth_headers,
+    )
+
+    assert response.status_code == 400, response.text
+    assert reason in response.json()["detail"]
+    state = await client.get("/api/admin/email", headers=admin_auth_headers)
+    assert state.json()["templates"] == email_service.DEFAULT_TEMPLATES
+
+
+@pytest.mark.asyncio
+async def test_a_stored_template_that_leads_away_falls_back_to_the_built_in_text(
+    client: AsyncClient, test_user: User, session, sent
+):
+    """A row written straight into the database is read, not trusted: the
+    reader gets the built-in text instead of an error or a foreign link."""
+    # Stored in the reader's own language (pt): a template saved under another
+    # language would be ignored anyway, and the test would pass with the bug.
+    await admin_service.set_app_setting(
+        session,
+        admin_service.EMAIL_TEMPLATES_KEY,
+        json.dumps(
+            {
+                "pt": {
+                    "subject": "Reset",
+                    "body": "https://evil.example/c?u={link}",
+                }
+            }
+        ),
+    )
+    try:
+        response = await client.post(
+            "/api/auth/forgot-password", json={"email": "test@example.com"}
+        )
+
+        assert response.status_code == 202
+        assert len(sent) == 1
+        assert "evil.example" not in sent[0].text
+        assert sent[0].subject == email_service.DEFAULT_TEMPLATES["pt"]["subject"].format(
+            app_name="Securo"
+        )
+    finally:
+        await admin_service.delete_app_setting(session, admin_service.EMAIL_TEMPLATES_KEY)
 
 
 def test_a_stray_brace_is_refused():
@@ -435,7 +555,7 @@ async def test_an_empty_body_answers_400_instead_of_clearing(
     must not wipe the templates that are in use."""
     await client.put(
         "/api/admin/email",
-        json={"templates": {"en": {"subject": "Mine", "body": "Open {link}."}}},
+        json={"templates": {"en": {"subject": "Mine", "body": VALID_BODY}}},
         headers=admin_auth_headers,
     )
     empty = await client.put(
@@ -521,7 +641,7 @@ async def test_an_empty_object_answers_400_instead_of_clearing(
     the templates that are in use."""
     await client.put(
         "/api/admin/email",
-        json={"templates": {"en": {"subject": "Mine", "body": "Open {link}."}}},
+        json={"templates": {"en": {"subject": "Mine", "body": VALID_BODY}}},
         headers=admin_auth_headers,
     )
 
@@ -538,7 +658,7 @@ async def test_clearing_the_templates_returns_to_the_built_in_text(
 ):
     await client.put(
         "/api/admin/email",
-        json={"templates": {"en": {"subject": "Mine", "body": "Open {link}."}}},
+        json={"templates": {"en": {"subject": "Mine", "body": VALID_BODY}}},
         headers=admin_auth_headers,
     )
     cleared = await client.put(
@@ -590,7 +710,7 @@ async def test_the_saved_template_is_what_the_recipient_reads(
             "templates": {
                 "pt": {
                     "subject": "{app_name}: nova senha",
-                    "body": "Abra {link}. O link vale {minutes} minutos.",
+                    "body": "Abra o link abaixo:\n\n{link}\n\nO link vale {minutes} minutos.",
                 }
             }
         },
@@ -618,7 +738,7 @@ async def test_a_language_without_a_saved_template_keeps_the_built_in_text(
 ):
     await client.put(
         "/api/admin/email",
-        json={"templates": {"en": {"subject": "Mine", "body": "Open {link} now."}}},
+        json={"templates": {"en": {"subject": "Mine", "body": VALID_BODY}}},
         headers=admin_auth_headers,
     )
 

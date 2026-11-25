@@ -3140,10 +3140,14 @@
       "sender": "Odosielateľ",
       "senderMissing": "Nenastavené",
       "templatesTitle": "Správa na obnovenie",
-      "templatesDescription": "To, čo človek číta. Premenné: {app_name}, {link} a {minutes}; telo musí zachovať {link}.",
+      "templatesDescription": "To, čo človek číta. Premenné: {app_name}, {link} a {minutes}; {link} musí byť sám na vlastnom riadku a nič iné nesmie byť odkaz.",
       "subject": "Predmet",
       "body": "Telo",
       "linkRequired": "Telo musí obsahovať {link}.",
+      "linkInSubject": "Predmet nesmie obsahovať {link} ani adresu.",
+      "linkOnce": "Telo musí obsahovať {link} presne raz.",
+      "linkAlone": "Premenná {link} musí byť sama na vlastnom riadku.",
+      "otherLink": "Správa nesmie viesť nikam inam než na {link}.",
       "restoreDefault": "Obnoviť predvolený text",
       "save": "Uložiť šablóny",
       "saved": "Šablóny uložené",
@@ -3170,12 +3174,16 @@
       "deleted": "Používateľ vymazaný",
       "confirmDeleteTitle": "Vymazať používateľa?",
       "confirmDeleteDesc": "Používateľ {{email}} a všetky jeho dáta budú natrvalo vymazané. Túto akciu nie je možné vrátiť späť.",
-      "resetPassword": "Resetovať heslo",
-      "resetPasswordPlaceholder": "Nechaj prázdne pre zachovanie aktuálneho",
+      "reason": "Dôvod",
+      "reasonPlaceholder": "Prečo sa táto zmena robí?",
+      "reasonHint": "Zaznamená sa do protokolu prístupov a zobrazí sa dotknutému účtu.",
       "addDesc": "Vytvor nový používateľský účet s prístupom do aplikácie.",
       "adminRole": "Administrátorské oprávnenia",
       "enabled": "Zapnuté",
-      "disabled": "Vypnuté"
+      "disabled": "Vypnuté",
+      "pending": "Čaká",
+      "pendingEmail": "Požadované {{email}}, čaká na majiteľa",
+      "emailPendingHint": "Adresa sa zmení až po potvrdení majiteľom."
     },
     "settings": {
       "title": "Nastavenia administrátora",
@@ -4529,5 +4537,33 @@
       "share": "Váš podiel v skupine {{group}}: {{amount}}",
       "paid": "{{actor}}: zaznamenaná platba"
     }
+  },
+  "accessLog": {
+    "title": "Protokol prístupov",
+    "description": "Každá administratívna akcia na vašom účte a na členoch pracovných priestorov, ktoré vlastníte.",
+    "empty": "Nie sú zaznamenané žiadne administratívne akcie.",
+    "actionUpdate": "Účet zmenený",
+    "actionDelete": "Účet odstránený",
+    "actionOther": "Účet zmenený",
+    "by": "Vykonal {{email}}",
+    "target": "Účet {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Načítať ďalšie",
+    "loadError": "Protokol prístupov sa nepodarilo načítať.",
+    "emailChange": "Adresa {{from}} → {{to}}",
+    "emailPending": "čaká na potvrdenie majiteľa účtu",
+    "otherChanges": "Zmenené aj: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Zmena e-mailovej adresy",
+    "description": "Správca požiadal o zmenu adresy vášho účtu na {{email}}. Kým nepotvrdíte, účet si ponechá aktuálnu adresu.",
+    "accept": "Prijať novú adresu",
+    "decline": "Ponechať aktuálnu adresu",
+    "accepted": "Váš účet teraz používa {{email}}",
+    "declined": "Účet si ponechá aktuálnu adresu",
+    "unavailable": "Táto adresa už nie je dostupná",
+    "failed": "Vaše rozhodnutie sa nepodarilo uložiť",
+    "replaced": "Administrátor poslal novú žiadosť. Pred prijatím skontrolujte novú adresu",
+    "withdrawn": "Žiadosť bola stiahnutá. Váš účet si ponechá aktuálnu adresu"
   }
 }

@@ -2989,10 +2989,14 @@
       "sender": "Remitente",
       "senderMissing": "Sin definir",
       "templatesTitle": "Mensaje de recuperación",
-      "templatesDescription": "Lo que lee la persona. Variables: {app_name}, {link} y {minutes}; el cuerpo debe mantener {link}.",
+      "templatesDescription": "Lo que lee la persona. Variables: {app_name}, {link} y {minutes}; {link} debe estar solo en su propia línea y nada más puede ser un enlace.",
       "subject": "Asunto",
       "body": "Cuerpo",
       "linkRequired": "El cuerpo debe contener {link}.",
+      "linkInSubject": "El asunto no puede contener {link} ni una dirección.",
+      "linkOnce": "El cuerpo debe contener {link} exactamente una vez.",
+      "linkAlone": "La variable {link} debe estar sola en su propia línea.",
+      "otherLink": "El mensaje no puede llevar a ningún otro sitio que {link}.",
       "restoreDefault": "Restaurar texto predeterminado",
       "save": "Guardar plantillas",
       "saved": "Plantillas guardadas",
@@ -3019,12 +3023,16 @@
       "deleted": "Usuario eliminado",
       "confirmDeleteTitle": "¿Eliminar usuario?",
       "confirmDeleteDesc": "Esto eliminará permanentemente al usuario {{email}} y todos sus datos. Esta acción no se puede deshacer.",
-      "resetPassword": "Restablecer contraseña",
-      "resetPasswordPlaceholder": "Déjalo vacío para mantener la actual",
+      "reason": "Motivo",
+      "reasonPlaceholder": "¿Por qué se hace este cambio?",
+      "reasonHint": "Queda registrado en el registro de accesos y se muestra a la cuenta afectada.",
       "addDesc": "Crea una nueva cuenta de usuario con acceso a la aplicación.",
       "adminRole": "Privilegios de administrador",
       "enabled": "Activado",
-      "disabled": "Desactivado"
+      "disabled": "Desactivado",
+      "pending": "Pendiente",
+      "pendingEmail": "Solicitada {{email}}, esperando al titular",
+      "emailPendingHint": "La dirección solo cambia cuando su titular la confirma."
     },
     "settings": {
       "title": "Configuración de administrador",
@@ -4348,5 +4356,33 @@
       "share": "Tu parte en {{group}}: {{amount}}",
       "paid": "{{actor}} registró un pago"
     }
+  },
+  "accessLog": {
+    "title": "Registro de acceso",
+    "description": "Todas las acciones administrativas en tu cuenta y en los miembros de los espacios de trabajo que posees.",
+    "empty": "No hay acciones administrativas registradas.",
+    "actionUpdate": "Cuenta modificada",
+    "actionDelete": "Cuenta eliminada",
+    "actionOther": "Cuenta modificada",
+    "by": "Por {{email}}",
+    "target": "Cuenta {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Cargar más",
+    "loadError": "No se pudo cargar el registro de acceso.",
+    "emailChange": "Dirección {{from}} → {{to}}",
+    "emailPending": "esperando la confirmación del titular de la cuenta",
+    "otherChanges": "También se cambió: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Cambio de correo electrónico",
+    "description": "Un administrador solicitó cambiar la dirección de su cuenta a {{email}}. Hasta que confirme, su cuenta conserva su dirección actual.",
+    "accept": "Aceptar la nueva dirección",
+    "decline": "Mantener mi dirección actual",
+    "accepted": "Su cuenta ahora usa {{email}}",
+    "declined": "Su cuenta conserva su dirección actual",
+    "unavailable": "Esa dirección ya no está disponible",
+    "failed": "No se pudo registrar su decisión",
+    "replaced": "El administrador envió una nueva solicitud. Revisa la nueva dirección antes de aceptar",
+    "withdrawn": "La solicitud fue retirada. Tu cuenta mantiene su dirección actual"
   }
 }

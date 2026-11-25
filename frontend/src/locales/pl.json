@@ -3108,10 +3108,14 @@
       "sender": "Nadawca",
       "senderMissing": "Nie ustawiono",
       "templatesTitle": "Wiadomość odzyskiwania",
-      "templatesDescription": "To, co czyta osoba. Zmienne: {app_name}, {link} i {minutes}; treść musi zachować {link}.",
+      "templatesDescription": "To, co czyta osoba. Zmienne: {app_name}, {link} i {minutes}; {link} musi stać sam w osobnym wierszu, a nic innego nie może być linkiem.",
       "subject": "Temat",
       "body": "Treść",
       "linkRequired": "Treść musi zawierać {link}.",
+      "linkInSubject": "Temat nie może zawierać {link} ani adresu.",
+      "linkOnce": "Treść musi zawierać {link} dokładnie raz.",
+      "linkAlone": "Zmienna {link} musi stać sama w swoim wierszu.",
+      "otherLink": "Wiadomość nie może prowadzić nigdzie indziej niż do {link}.",
       "restoreDefault": "Przywróć domyślny tekst",
       "save": "Zapisz szablony",
       "saved": "Szablony zapisane",
@@ -3138,12 +3142,16 @@
       "deleted": "Usunięto użytkownika",
       "confirmDeleteTitle": "Usunąć użytkownika?",
       "confirmDeleteDesc": "Spowoduje to trwałe usunięcie użytkownika {{email}} oraz wszystkich jego danych. Tej operacji nie można cofnąć.",
-      "resetPassword": "Zresetuj hasło",
-      "resetPasswordPlaceholder": "Zostaw puste, aby zachować obecne",
+      "reason": "Powód",
+      "reasonPlaceholder": "Dlaczego wprowadzasz tę zmianę?",
+      "reasonHint": "Zapisywane w dzienniku dostępu i widoczne dla danego konta.",
       "addDesc": "Utwórz nowe konto użytkownika z dostępem do aplikacji.",
       "adminRole": "Uprawnienia administratora",
       "enabled": "Wł.",
-      "disabled": "Wył."
+      "disabled": "Wył.",
+      "pending": "Oczekuje",
+      "pendingEmail": "Zażądano {{email}}, czeka na właściciela",
+      "emailPendingHint": "Adres zmieni się dopiero po potwierdzeniu przez właściciela."
     },
     "settings": {
       "title": "Ustawienia administratora",
@@ -4495,5 +4503,33 @@
       "share": "Twoja część w {{group}}: {{amount}}",
       "paid": "{{actor}}: zapisano płatność"
     }
+  },
+  "accessLog": {
+    "title": "Dziennik dostępu",
+    "description": "Każde działanie administracyjne na Twoim koncie oraz na członkach przestrzeni roboczych, których jesteś właścicielem.",
+    "empty": "Brak zapisanych działań administracyjnych.",
+    "actionUpdate": "Konto zmienione",
+    "actionDelete": "Konto usunięte",
+    "actionOther": "Konto zmienione",
+    "by": "Przez {{email}}",
+    "target": "Konto {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Wczytaj więcej",
+    "loadError": "Nie udało się wczytać dziennika dostępu.",
+    "emailChange": "Adres {{from}} → {{to}}",
+    "emailPending": "czeka na potwierdzenie właściciela konta",
+    "otherChanges": "Zmieniono także: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Zmiana adresu e-mail",
+    "description": "Administrator poprosił o zmianę adresu Twojego konta na {{email}}. Dopóki nie potwierdzisz, konto zachowuje obecny adres.",
+    "accept": "Przyjmij nowy adres",
+    "decline": "Zachowaj obecny adres",
+    "accepted": "Twoje konto używa teraz {{email}}",
+    "declined": "Konto zachowuje obecny adres",
+    "unavailable": "Ten adres nie jest już dostępny",
+    "failed": "Nie udało się zapisać decyzji",
+    "replaced": "Administrator wysłał nową prośbę. Sprawdź nowy adres przed zaakceptowaniem",
+    "withdrawn": "Prośba została wycofana. Twoje konto zachowuje obecny adres"
   }
 }

@@ -2975,10 +2975,14 @@
       "sender": "Absender",
       "senderMissing": "Nicht gesetzt",
       "templatesTitle": "Wiederherstellungsnachricht",
-      "templatesDescription": "Was die Person liest. Platzhalter: {app_name}, {link} und {minutes}; der Text muss {link} behalten.",
+      "templatesDescription": "Was die Person liest. Platzhalter: {app_name}, {link} und {minutes}; {link} muss allein in einer eigenen Zeile stehen, und nichts anderes darf ein Link sein.",
       "subject": "Betreff",
       "body": "Text",
       "linkRequired": "Der Text muss {link} enthalten.",
+      "linkInSubject": "Der Betreff darf weder {link} noch eine Adresse enthalten.",
+      "linkOnce": "Der Text muss {link} genau einmal enthalten.",
+      "linkAlone": "Der Platzhalter {link} muss allein in seiner eigenen Zeile stehen.",
+      "otherLink": "Die Nachricht darf zu nichts anderem als {link} führen.",
       "restoreDefault": "Standardtext wiederherstellen",
       "save": "Vorlagen speichern",
       "saved": "Vorlagen gespeichert",
@@ -3005,12 +3009,16 @@
       "deleted": "Benutzer gelöscht",
       "confirmDeleteTitle": "Benutzer löschen?",
       "confirmDeleteDesc": "Dadurch wird der Benutzer {{email}} und all seine Daten dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
-      "resetPassword": "Passwort zurücksetzen",
-      "resetPasswordPlaceholder": "Leer lassen, um aktuelles zu behalten",
+      "reason": "Grund",
+      "reasonPlaceholder": "Warum wird diese Änderung vorgenommen?",
+      "reasonHint": "Wird im Zugriffsprotokoll erfasst und dem betroffenen Konto angezeigt.",
       "addDesc": "Erstelle ein neues Benutzerkonto mit Zugriff auf die Anwendung.",
       "adminRole": "Administrator-Rechte",
       "enabled": "An",
-      "disabled": "Aus"
+      "disabled": "Aus",
+      "pending": "Wartet",
+      "pendingEmail": "Angefragt: {{email}}, wartet auf den Inhaber",
+      "emailPendingHint": "Die Adresse ändert sich erst, wenn der Inhaber sie bestätigt."
     },
     "settings": {
       "title": "Administrator-Einstellungen",
@@ -4334,5 +4342,33 @@
       "share": "Dein Anteil in {{group}}: {{amount}}",
       "paid": "{{actor}} hat eine Zahlung erfasst"
     }
+  },
+  "accessLog": {
+    "title": "Zugriffsprotokoll",
+    "description": "Jede administrative Aktion an Ihrem Konto und an Mitgliedern von Arbeitsbereichen, die Ihnen gehören.",
+    "empty": "Keine administrativen Aktionen erfasst.",
+    "actionUpdate": "Konto geändert",
+    "actionDelete": "Konto gelöscht",
+    "actionOther": "Konto geändert",
+    "by": "Von {{email}}",
+    "target": "Konto {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Mehr laden",
+    "loadError": "Das Zugriffsprotokoll konnte nicht geladen werden.",
+    "emailChange": "Adresse {{from}} → {{to}}",
+    "emailPending": "wartet auf die Bestätigung durch den Kontoinhaber",
+    "otherChanges": "Ebenfalls geändert: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Änderung der E-Mail-Adresse",
+    "description": "Ein Administrator hat beantragt, die Adresse Ihres Kontos auf {{email}} zu ändern. Bis Sie bestätigen, behält Ihr Konto seine aktuelle Adresse.",
+    "accept": "Neue Adresse übernehmen",
+    "decline": "Aktuelle Adresse behalten",
+    "accepted": "Ihr Konto verwendet jetzt {{email}}",
+    "declined": "Ihr Konto behält seine aktuelle Adresse",
+    "unavailable": "Diese Adresse ist nicht mehr verfügbar",
+    "failed": "Ihre Entscheidung konnte nicht gespeichert werden",
+    "replaced": "Der Administrator hat eine neue Anfrage gesendet. Prüfe die neue Adresse, bevor du annimmst",
+    "withdrawn": "Die Anfrage wurde zurückgezogen. Dein Konto behält seine aktuelle Adresse"
   }
 }

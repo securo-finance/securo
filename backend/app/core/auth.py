@@ -4,7 +4,7 @@ from decimal import Decimal
 from typing import Optional, cast
 
 import jwt
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from fastapi import Depends, Request
 from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin, exceptions, schemas
 from fastapi_users.authentication import (
@@ -31,10 +31,36 @@ _NO_SUCH_ACCOUNT = "no-such-account"
 
 
 async def get_user_db(session: AsyncSession = Depends(get_async_session)):
-    yield SQLAlchemyUserDatabase(session, User)
+    yield _AccountLookupUserDatabase(session, User)
 
 
-class _FlushingUserDatabase(SQLAlchemyUserDatabase):
+class _AccountLookupUserDatabase(SQLAlchemyUserDatabase):
+    """The SQLAlchemy adapter, resolving an address that names two rows."""
+
+    async def get_by_email(self, email: str) -> Optional[User]:
+        """The account the address names, also when two rows answer to it.
+
+        An instance can already hold two accounts for one mailbox in different
+        case (#568): the column's unique index is case-sensitive. The adapter
+        raised ``MultipleResultsFound``, so sign-in and recovery answered 500
+        for both accounts. The row written in the exact spelling that was
+        typed wins, so each spelling reaches its own account; failing that the
+        lowest id decides, so the answer never depends on row order. The id is
+        a random UUID and cannot be what tells the two apart.
+        """
+        statement = (
+            select(self.user_table)
+            .where(func.lower(self.user_table.email) == func.lower(email))
+            .order_by(
+                case((self.user_table.email == email, 0), else_=1),
+                self.user_table.id,
+            )
+            .limit(1)
+        )
+        return await self._get_user(statement)
+
+
+class _FlushingUserDatabase(_AccountLookupUserDatabase):
     """The SQLAlchemy adapter, with an `update` that flushes and leaves the
     commit to the caller."""
 
@@ -98,6 +124,11 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     ) -> User:
         if user_update.password is not None:
             require_local_auth_enabled()
+        # The owner choosing their own address ends any request an
+        # administrator left waiting (#556): there is nothing left to accept.
+        if user_update.email is not None and user_update.email != user.email:
+            user.pending_email = None
+            user.pending_email_requested_at = None
         new_currency = _requested_currency(user_update)
         if new_currency is None:
             return await super().update(user_update, user, safe=safe, request=request)

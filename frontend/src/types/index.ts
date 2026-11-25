@@ -8,11 +8,19 @@ export interface User {
   preferences: UserPreferences
   /** The theme picked from the library; null is Securo's own look. */
   theme?: string | null
+  /**
+   * An address an administrator asked to put on this account, waiting for the
+   * person whose account it is to accept it (#556). The login address stays
+   * `email` until then.
+   */
+  pending_email?: string | null
 }
 
 export interface AdminUser {
   id: string
   email: string
+  /** An address an administrator asked for and its owner has not accepted yet. */
+  pending_email?: string | null
   is_active: boolean
   is_superuser: boolean
   is_verified: boolean
@@ -21,6 +29,35 @@ export interface AdminUser {
 
 export interface AdminUserList {
   items: AdminUser[]
+  total: number
+}
+
+/** One field an administrative action touched, with its old and new value. */
+export interface AccessLogFieldChange {
+  from?: string | boolean | null
+  to?: string | boolean | null
+  /** An address change the owner has not accepted yet (#556). */
+  pending?: boolean
+  /** A value too large to keep twice in the record (preferences). */
+  changed?: boolean
+}
+
+/** One administrative action on an account, with the reason given (ADR 0042). */
+export interface AdminAccessLogEntry {
+  id: string
+  actor_email: string
+  target_email: string
+  target_user_id: string | null
+  action: string
+  /** Every field the action changed, keyed by field name (#556). */
+  changes?: Record<string, AccessLogFieldChange> | null
+  reason: string
+  ip: string | null
+  created_at: string
+}
+
+export interface AdminAccessLogList {
+  items: AdminAccessLogEntry[]
   total: number
 }
 
