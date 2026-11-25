@@ -78,9 +78,7 @@ def _token_from(message: email_service.Email) -> str:
 async def test_forgot_password_answers_503_with_the_switch_off(
     client: AsyncClient, test_user: User, email_off
 ):
-    response = await client.post(
-        "/api/auth/forgot-password", json={"email": "test@example.com"}
-    )
+    response = await client.post("/api/auth/forgot-password", json={"email": "test@example.com"})
     assert response.status_code == 503
     assert "not enabled" in response.json()["detail"]
 
@@ -100,9 +98,7 @@ async def test_forgot_password_does_not_reveal_whether_an_account_exists(
 
 
 @pytest.mark.asyncio
-async def test_recovery_link_sets_a_new_password(
-    client: AsyncClient, test_user: User, sent_emails
-):
+async def test_recovery_link_sets_a_new_password(client: AsyncClient, test_user: User, sent_emails):
     sent, _settings = sent_emails
     await _ask_for_link(client, "test@example.com")
 
@@ -145,7 +141,7 @@ async def test_account_without_a_stored_language_gets_the_english_message(
     the identical answer exists to avoid.
     """
     sent, _settings = sent_emails
-    test_user.preferences = {**test_user.preferences, "language": None}
+    test_user.preferences = {**(test_user.preferences or {}), "language": None}
     session.add(test_user)
     await session.commit()
 
@@ -211,9 +207,7 @@ async def test_relay_connection_verifies_the_certificate(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_expired_recovery_token_is_refused(
-    client: AsyncClient, test_user: User, sent_emails
-):
+async def test_expired_recovery_token_is_refused(client: AsyncClient, test_user: User, sent_emails):
     sent, settings = sent_emails
     # A link that was already past its lifetime when it went out.
     settings.password_reset_token_minutes = -1
@@ -255,9 +249,7 @@ async def test_relay_failure_keeps_the_answer_unchanged(
         raise OSError("relay refused the message")
 
     monkeypatch.setattr(email_service, "send_email", _refuse)
-    response = await client.post(
-        "/api/auth/forgot-password", json={"email": "test@example.com"}
-    )
+    response = await client.post("/api/auth/forgot-password", json={"email": "test@example.com"})
     assert response.status_code == 202
     # Logged for the operator, without the token or the link.
     assert "Could not send the password recovery email" in caplog.text
