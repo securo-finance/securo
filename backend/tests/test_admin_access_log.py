@@ -6,6 +6,7 @@ needs a reason and leaves a record the affected side can read.
 """
 import uuid
 
+import bcrypt
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -14,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_jwt_strategy
 from app.models.admin_access_log import AdminAccessLog
 from app.models.user import User
+from app.models.workspace import Workspace
 
 pytestmark = pytest.mark.asyncio
 
@@ -30,6 +32,25 @@ async def _log_entries(session: AsyncSession) -> list[AdminAccessLog]:
         select(AdminAccessLog).order_by(AdminAccessLog.created_at)
     )
     return list(result.scalars().all())
+
+
+async def _add_user(session: AsyncSession, email: str, password: str) -> User:
+    user = User(
+        id=uuid.uuid4(),
+        email=email,
+        hashed_password=bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode(),
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+    )
+    session.add(user)
+    await session.commit()
+    return user
+
+
+async def _headers_for(user: User) -> dict:
+    token = await get_jwt_strategy().write_token(user)
+    return {"Authorization": f"Bearer {token}"}
 
 
 async def test_admin_cannot_set_a_password(
@@ -236,6 +257,36 @@ async def test_a_workspace_owner_still_sees_it_after_the_member_is_deleted(
     assert body["items"][0]["target_email"] == viewer.email
 
 
+async def test_a_workspace_manager_sees_access_to_a_member(
+    client: AsyncClient, admin_auth_headers: dict, viewer_auth_headers: dict,
+    test_workspace: Workspace, session: AsyncSession,
+):
+    """A manager acts with owner rights without being on the roster (ADR 0003).
+
+    Nothing about their access can be read from a membership, so the audience
+    has to name them or the person operating the workspace never learns that
+    an administrator touched one of its accounts.
+    """
+    manager = await _add_user(session, "manager@example.com", "managerpass123")
+    test_workspace.managed_by_user_id = manager.id
+    await session.commit()
+
+    # viewer_auth_headers puts the viewer in the test workspace this user manages.
+    viewer = await _user_by_email(session, "viewer-role@example.com")
+    patched = await client.patch(
+        f"/api/admin/users/{viewer.id}",
+        json={"reason": REASON, "preferences": {"language": "en"}},
+        headers=admin_auth_headers,
+    )
+    assert patched.status_code == 200
+
+    response = await client.get("/api/access-log/mine", headers=await _headers_for(manager))
+
+    assert response.status_code == 200
+    targets = [item["target_email"] for item in response.json()["items"]]
+    assert viewer.email in targets
+
+
 async def test_someone_else_sees_nothing(
     client: AsyncClient, admin_auth_headers: dict, test_user: User, session: AsyncSession
 ):
@@ -245,23 +296,9 @@ async def test_someone_else_sees_nothing(
         headers=admin_auth_headers,
     )
 
-    import bcrypt as _bcrypt
+    stranger = await _add_user(session, "stranger@example.com", "strangerpass123")
 
-    stranger = User(
-        id=uuid.uuid4(),
-        email="stranger@example.com",
-        hashed_password=_bcrypt.hashpw(b"strangerpass123", _bcrypt.gensalt()).decode(),
-        is_active=True,
-        is_superuser=False,
-        is_verified=True,
-    )
-    session.add(stranger)
-    await session.commit()
-    token = await get_jwt_strategy().write_token(stranger)
-
-    response = await client.get(
-        "/api/access-log/mine", headers={"Authorization": f"Bearer {token}"}
-    )
+    response = await client.get("/api/access-log/mine", headers=await _headers_for(stranger))
 
     assert response.status_code == 200
     assert response.json()["total"] == 0

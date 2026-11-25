@@ -261,12 +261,15 @@ async def _record_admin_access(
 
 
 async def _audience_for(session: AsyncSession, target: User) -> set[uuid.UUID]:
-    """Who may read a record about `target`: the target and its workspace owners.
+    """Who may read a record about `target`: the target, its owners and managers.
+
+    A manager acts with owner rights without being on the roster (ADR 0003), so
+    they are named here too: their access cannot be derived from a membership.
 
     Read now and written with the record, because a later deletion of the
     target also deletes the memberships this is derived from.
     """
-    from app.models.workspace import WorkspaceMember
+    from app.models.workspace import Workspace, WorkspaceMember
 
     member_workspaces = select(WorkspaceMember.workspace_id).where(
         WorkspaceMember.user_id == target.id
@@ -277,7 +280,14 @@ async def _audience_for(session: AsyncSession, target: User) -> set[uuid.UUID]:
             WorkspaceMember.role == "owner",
         )
     )
-    return {target.id, *owners.scalars().all()}
+    managers = await session.execute(
+        select(Workspace.managed_by_user_id).where(Workspace.id.in_(member_workspaces))
+    )
+    audience = {target.id, *owners.scalars().all()}
+    # The column is nullable, and a workspace without a manager says so with a
+    # null instead of staying out of the query.
+    audience.update(manager_id for manager_id in managers.scalars().all() if manager_id)
+    return audience
 
 
 async def list_access_log(
