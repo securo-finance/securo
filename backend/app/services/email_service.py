@@ -96,10 +96,17 @@ async def deliver(message: Email, settings: Settings | None = None) -> None:
     """
     try:
         await send_email(message, settings)
-    except Exception:
-        # Operator-only, and without the token or the link.
+    except Exception as exc:
+        # Operator-only, and without the token, the link or the server's reply.
+        # An SMTPDataError keeps the relay's response text, which some relays
+        # quote from the message, so neither the exception text nor a traceback
+        # is written: just the class and the numeric status.
+        status = getattr(exc, "smtp_code", None)
         logger.warning(
-            "Could not send the password recovery email to %s", message.to, exc_info=True
+            "Could not send the password recovery email to %s (%s%s)",
+            message.to,
+            type(exc).__name__,
+            f", SMTP {status}" if status is not None else "",
         )
 
 
