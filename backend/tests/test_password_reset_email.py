@@ -153,6 +153,86 @@ async def test_account_without_a_stored_language_gets_the_english_message(
 
 
 @pytest.mark.asyncio
+async def test_a_link_stops_working_when_the_account_address_changes(
+    client: AsyncClient, test_user: User, sent_emails, session
+):
+    """The link proves control of the mailbox it reached, not of the account.
+
+    Whoever holds an address the account no longer uses must not be able to
+    take it over with a link that was sent before the change. A new request
+    to the current address still works, so the person who owns the account
+    keeps their way back in.
+    """
+    sent, _settings = sent_emails
+    await _ask_for_link(client, "test@example.com")
+    old_token = _token_from(sent[0])
+
+    test_user.email = "moved@example.com"
+    session.add(test_user)
+    await session.commit()
+
+    stale = await client.post(
+        "/api/auth/reset-password", json={"token": old_token, "password": "brandnewpass1"}
+    )
+    assert stale.status_code == 400
+    assert stale.json()["detail"] == "RESET_PASSWORD_BAD_TOKEN"
+
+    # The old password is untouched by the refused reset.
+    login = await client.post(
+        "/api/auth/login",
+        data={"username": "moved@example.com", "password": "testpass123"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert login.status_code == 200, login.text
+
+    # Asking again at the current address issues a link that works.
+    await _ask_for_link(client, "moved@example.com")
+    fresh_token = _token_from(sent[-1])
+    reset = await client.post(
+        "/api/auth/reset-password", json={"token": fresh_token, "password": "brandnewpass1"}
+    )
+    assert reset.status_code == 200, reset.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("language", [5, ["pt"], {"tag": "pt"}, True])
+async def test_a_preference_that_is_not_a_language_does_not_break_the_request(
+    client: AsyncClient, test_user: User, sent_emails, session, language
+):
+    """Free-form JSON can hold a number or a list where a language belongs.
+
+    Composing the message crashed on it, and only for accounts that exist, so
+    the 500 itself answered whether the address is registered. It must answer
+    202 like any other request and write the message in English.
+    """
+    sent, _settings = sent_emails
+    test_user.preferences = {**(test_user.preferences or {}), "language": language}
+    session.add(test_user)
+    await session.commit()
+
+    await _ask_for_link(client, "test@example.com")
+
+    assert len(sent) == 1
+    assert sent[0].subject == "Reset your Securo password"
+    assert sent[0].text.startswith("Hi")
+
+
+@pytest.mark.asyncio
+async def test_preferences_that_are_not_an_object_do_not_break_the_request(
+    client: AsyncClient, test_user: User, sent_emails, session
+):
+    sent, _settings = sent_emails
+    test_user.preferences = ["pt"]
+    session.add(test_user)
+    await session.commit()
+
+    await _ask_for_link(client, "test@example.com")
+
+    assert len(sent) == 1
+    assert sent[0].subject == "Reset your Securo password"
+
+
+@pytest.mark.asyncio
 async def test_relay_connection_verifies_the_certificate(monkeypatch):
     """smtplib's own STARTTLS default skips the certificate check."""
     import smtplib
