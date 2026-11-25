@@ -1437,12 +1437,13 @@ async def _run_oidc_login(
     session: AsyncSession,
     *,
     subject: str = "race-sub",
+    email: str = "race@example.com",
     email_verified: bool = True,
     issuer: str = "https://id.example.com",
 ):
     manager = UserManager(SQLAlchemyUserDatabase(session, User))
     return await oidc_auth._get_or_create_oidc_user(
-        {"sub": subject, "email": "race@example.com", "email_verified": email_verified},
+        {"sub": subject, "email": email, "email_verified": email_verified},
         {},
         issuer,
         session,
@@ -1784,6 +1785,34 @@ async def test_oidc_registration_race_looks_up_the_identity_before_the_address(
     await session.refresh(other)
     assert other.oidc_issuer is None
     assert other.oidc_subject is None
+
+
+@pytest.mark.asyncio
+async def test_oidc_registration_race_finds_the_address_in_another_spelling(
+    session: AsyncSession, clean_db, oidc_settings, monkeypatch
+):
+    """The address lookup after the collision is case-insensitive.
+
+    The winner stored the address in lower case and the provider may send it
+    shouting. A lookup that compares the stored value as it is finds nothing,
+    re-raises the conflict and answers an error for an account that exists.
+    """
+    oidc_settings.oidc_existing_user_link_mode = "email"
+    raced: list[User] = []
+
+    async def create_winner():
+        raced.append(await _account_created_by_the_racing_request(session))
+
+    _lose_the_race_to_a_second_request(monkeypatch, create_winner)
+
+    user = await _run_oidc_login(session, email="Race@Example.com")
+
+    winner = raced[0]
+    assert user.id == winner.id
+    await session.refresh(winner)
+    assert winner.email == "race@example.com"
+    assert winner.oidc_issuer == "https://id.example.com"
+    assert winner.oidc_subject == "race-sub"
 
 
 @pytest.mark.asyncio
