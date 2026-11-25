@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.core.app_clock import app_today, get_workspace_timezone, today_in
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
+from app.models.category import Category
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.models.user import User
@@ -20,7 +21,7 @@ from app.schemas.recurring_transaction import (
     RecurringTransactionCreate,
     RecurringTransactionUpdate,
 )
-from app.services import category_line_service, recurring_match_service
+from app.services import category_line_service, category_service, recurring_match_service
 from app.services.credit_card_service import apply_effective_date
 from app.services.fx_rate_service import (
     convert_or_none,
@@ -61,6 +62,20 @@ async def _verify_account_in_workspace(
     )
     if result.scalar_one_or_none() is None:
         raise ValueError("Account not found")
+
+
+async def _verify_category_in_workspace(
+    session: AsyncSession, workspace_id: uuid.UUID, category_id: Optional[uuid.UUID]
+) -> None:
+    """Raise ValueError unless the category is this workspace's own.
+
+    An unknown id and another workspace's id get the same answer, so the
+    response never tells whether a category exists elsewhere.
+    """
+    if category_id is not None and not await category_service.get_category(
+        session, category_id, workspace_id
+    ):
+        raise ValueError("Category not found")
 
 
 async def get_recurring_transactions(
@@ -137,6 +152,7 @@ async def create_recurring_transaction(
     data: RecurringTransactionCreate,
 ) -> RecurringTransaction:
     await _verify_account_in_workspace(session, workspace_id, data.account_id)
+    await _verify_category_in_workspace(session, workspace_id, data.category_id)
     if data.category_id and data.category_lines and data.category_lines.lines:
         raise ValueError("Choose either a category or a split across categories")
     await _fetch_rate_and_check_bounds(
@@ -257,6 +273,7 @@ async def update_recurring_transaction(
         # The editor sends a null category alongside; the largest part's
         # category is what an undone split keeps.
         update_data.pop("category_id", None)
+    await _verify_category_in_workspace(session, workspace_id, update_data.get("category_id"))
     old_amount = recurring.amount
     old_currency = recurring.currency
 
@@ -711,6 +728,23 @@ async def generate_pending(
     )
     recurring_list = list(result.scalars().all())
 
+    # Paired with the workspace: a person may have bills in several, and a
+    # category of one of them is still foreign to a bill of another. The
+    # lookup asks only for the workspaces these bills belong to, so a legacy
+    # bill that still carries another workspace's category never reads that
+    # row, not even to discard it.
+    category_ids = {r.category_id for r in recurring_list if r.category_id is not None}
+    bill_workspaces = {r.workspace_id for r in recurring_list}
+    own_categories: set[tuple[uuid.UUID | None, uuid.UUID]] = set()
+    if category_ids:
+        rows = await session.execute(
+            select(Category.id, Category.workspace_id).where(
+                Category.id.in_(category_ids),
+                Category.workspace_id.in_(bill_workspaces),
+            )
+        )
+        own_categories = {(row.id, row.workspace_id) for row in rows}
+
     count = 0
     for recurring in recurring_list:
         # Legacy rows may exist with a null account_id from before account_id
@@ -724,6 +758,11 @@ async def generate_pending(
         # account is back or the user points the bill at another one.
         if account is not None and account.workspace_id != recurring.workspace_id:
             continue
+        # A bill stored with a category of another workspace generates
+        # uncategorized, so that category never reaches a transaction here.
+        category_id = recurring.category_id
+        if (category_id, recurring.workspace_id) not in own_categories:
+            category_id = None
         cutoff = up_to or cutoffs.get(recurring.workspace_id) or app_today()
         # Generate while the effective date is due. The nominal pointer remains
         # authoritative and is the only date used for schedule advancement and
@@ -773,7 +812,7 @@ async def generate_pending(
                     user_id=user_id,
                     workspace_id=recurring.workspace_id,
                     account_id=recurring.account_id,
-                    category_id=recurring.category_id,
+                    category_id=category_id,
                     description=recurring.description,
                     amount=recurring.amount,
                     currency=recurring.currency,
