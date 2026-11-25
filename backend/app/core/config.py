@@ -54,6 +54,16 @@ class Settings(BaseSettings):
     # so that the pool never grows past DB_POOL_SIZE.
     db_pool_size: int = Field(default=5, ge=1)
     db_max_overflow: int = Field(default=10, ge=0)
+    # How PostgreSQL plans the statements sent on these connections. The
+    # default plans each execution with the values of that call: a generic plan
+    # is sized for an average call, and on an instance with a large history a
+    # 12-month report took about twice as long because of it (issue #584).
+    # Empty sends nothing and keeps the server's setting, which is what an
+    # instance behind a connection pooler that refuses an unknown startup
+    # parameter needs.
+    db_plan_cache_mode: Literal["", "auto", "force_custom_plan", "force_generic_plan"] = (
+        "force_custom_plan"
+    )
 
     # Auth. Signs session and password-reset tokens and derives the key that
     # encrypts saved credentials. Left unset (or on a public default), the
