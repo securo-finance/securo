@@ -1461,23 +1461,24 @@ async def test_oidc_registration_race_links_the_account_that_won(
     its preferences stay, and it gets no second wallet or default rules (#572).
     """
     oidc_settings.oidc_existing_user_link_mode = "verified_email"
-    winner: User | None = None
+    raced: list[User] = []
 
     async def create_winner():
-        nonlocal winner
-        winner = await _account_created_by_the_racing_request(session)
+        raced.append(await _account_created_by_the_racing_request(session))
 
     state = _lose_the_race_to_a_second_request(monkeypatch, create_winner)
 
     user = await _run_oidc_login(session)
 
     assert state["won"] is True
+    winner = raced[0]
     assert user.id == winner.id
     await session.refresh(winner)
     assert winner.oidc_issuer == "https://id.example.com"
     assert winner.oidc_subject == "race-sub"
-    assert winner.preferences["language"] == "pt-BR"
-    assert winner.preferences["display_name"] == "The first one to arrive"
+    preferences = winner.preferences or {}
+    assert preferences["language"] == "pt-BR"
+    assert preferences["display_name"] == "The first one to arrive"
     assert await _count_for(session, WorkspaceMember, winner.id) == 1
     assert await _count_for(session, Account, winner.id) == 1
     assert await _count_for(session, Rule, winner.id) == 1
@@ -1490,11 +1491,10 @@ async def test_oidc_registration_race_respects_the_link_mode(
     """The account that won the race is not claimed by an unexpected OIDC
     identity when the link mode does not allow it (#572)."""
     oidc_settings.oidc_existing_user_link_mode = "disabled"
-    winner: User | None = None
+    raced: list[User] = []
 
     async def create_winner():
-        nonlocal winner
-        winner = await _account_created_by_the_racing_request(session)
+        raced.append(await _account_created_by_the_racing_request(session))
 
     _lose_the_race_to_a_second_request(monkeypatch, create_winner)
 
@@ -1503,10 +1503,12 @@ async def test_oidc_registration_race_respects_the_link_mode(
 
     assert refused.value.status_code == 403
     assert refused.value.detail == "Existing account is not linked to this OIDC identity"
+    winner = raced[0]
     await session.refresh(winner)
     assert winner.oidc_issuer is None
     assert winner.oidc_subject is None
-    assert winner.preferences["language"] == "pt-BR"
+    preferences = winner.preferences or {}
+    assert preferences["language"] == "pt-BR"
     assert await _count_for(session, Account, winner.id) == 1
     assert await _count_for(session, Rule, winner.id) == 1
 
@@ -1519,23 +1521,26 @@ async def test_oidc_registration_race_returns_the_account_of_the_same_identity(
     not a new link: it answers as it is and nothing of it is provisioned again
     (#572)."""
     oidc_settings.oidc_existing_user_link_mode = "disabled"
-    winner: User | None = None
+    raced: list[User] = []
 
     async def create_winner():
-        nonlocal winner
-        winner = await _account_created_by_the_racing_request(
-            session,
-            oidc_issuer="https://id.example.com",
-            oidc_subject="race-sub",
+        raced.append(
+            await _account_created_by_the_racing_request(
+                session,
+                oidc_issuer="https://id.example.com",
+                oidc_subject="race-sub",
+            )
         )
 
     _lose_the_race_to_a_second_request(monkeypatch, create_winner)
 
     user = await _run_oidc_login(session)
 
+    winner = raced[0]
     assert user.id == winner.id
     await session.refresh(winner)
-    assert winner.preferences["language"] == "pt-BR"
+    preferences = winner.preferences or {}
+    assert preferences["language"] == "pt-BR"
     assert await _count_for(session, Account, winner.id) == 1
     assert await _count_for(session, Rule, winner.id) == 1
 
@@ -1547,14 +1552,15 @@ async def test_oidc_registration_race_refuses_an_account_linked_elsewhere(
     """An account the second request already linked to another OIDC identity
     keeps that identity: the loser does not overwrite it (#572)."""
     oidc_settings.oidc_existing_user_link_mode = "email"
-    winner: User | None = None
+    raced: list[User] = []
 
     async def create_winner():
-        nonlocal winner
-        winner = await _account_created_by_the_racing_request(
-            session,
-            oidc_issuer="https://id.example.com",
-            oidc_subject="another-sub",
+        raced.append(
+            await _account_created_by_the_racing_request(
+                session,
+                oidc_issuer="https://id.example.com",
+                oidc_subject="another-sub",
+            )
         )
 
     _lose_the_race_to_a_second_request(monkeypatch, create_winner)
@@ -1564,6 +1570,7 @@ async def test_oidc_registration_race_refuses_an_account_linked_elsewhere(
 
     assert refused.value.status_code == 403
     assert refused.value.detail == "OIDC identity is linked to a different account"
+    winner = raced[0]
     await session.refresh(winner)
     assert winner.oidc_subject == "another-sub"
     assert await _count_for(session, Account, winner.id) == 1
