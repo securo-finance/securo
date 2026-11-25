@@ -133,21 +133,29 @@ export function GoalVisualization({ goal }: { goal: Goal }) {
     timestamp(firstOfMonthAfter(today)),
     deadlineEnd,
   )
-  // Leave 10% above the target, current amount, or highest point in either series,
-  // whichever is largest, so historical peaks and projected overshoots stay visible.
+  // y-max = 10% above the target, current amount, or highest historical value,
+  // whichever is largest
+  // If goal target <= 90, set y-max = 100.
   const peak = chart.reduce(
     (max, point) => Math.max(max, point.actual ?? 0, point.projected ?? 0),
     Math.max(Number(goal.target_amount), Number(goal.current_amount)),
   )
-  // Keep a fixed 100 units of headroom for 90 or less targets.
   const ceiling = Number(goal.target_amount) <= 90 ? 100 : peak * 1.1
-  // Pad below the lowest displayed historical value or today's current amount.
-  // Subtracting the magnitude works for both positive and negative balances.
+
+
+  // y-min = 10% below the target, current amount, or lowest historical value
+  // whichever is lowest
+  // Use -100 for [-90, 0), and zero for [0, 90].
   const lowest = chart.reduce(
     (min, point) => Math.min(min, point.actual ?? min),
-    Number(goal.current_amount),
+    Math.min(Number(goal.current_amount), Number(goal.target_amount)),
   )
-  const floor = lowest - Math.abs(lowest) * 0.1
+  let floor = lowest - Math.abs(lowest) * 0.1
+  if (lowest >= -90 && lowest < 0) {
+    floor = -100
+  } else if (lowest >= 0 && lowest <= 90) {
+    floor = 0
+  }
 
   return (
     <section

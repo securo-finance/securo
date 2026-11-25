@@ -16,20 +16,26 @@ describe('goal projection', () => {
     'connects current amount directly to the target regardless of monthly rate %s',
     monthly_contribution => {
       const testGoal = goal({ monthly_contribution, target_date: '2027-02-15' }, today)
-      expect(projectGoal(testGoal, today).projection).toEqual([
-        { date: today, amount: 2700 },
-        { date: '2027-02-15', amount: 6000 },
-      ])
+      const projection = projectGoal(testGoal, today).projection
+      expect(projection[0]).toEqual({ date: today, amount: 2700 })
+      expect(projection.at(-1)).toEqual({ date: '2027-02-15', amount: 6000 })
+      expect(projection[1].date).toBe('2026-11-28')
+      expect(projection.length).toBeGreaterThan(2)
     },
   )
 
   it.each(['2026-11-30', '2026-12-01', '2040-02-15'])(
-    'uses the exact deadline %s with no intermediate payment points',
+    'uses weekly samples and the exact deadline %s',
     target_date => {
-      expect(projectGoal(goal({ target_date }, today), today).projection).toEqual([
-        { date: today, amount: 2700 },
-        { date: target_date, amount: 6000 },
-      ])
+      const projection = projectGoal(goal({ target_date }, today), today).projection
+      expect(projection[0]).toEqual({ date: today, amount: 2700 })
+      expect(projection.at(-1)).toEqual({ date: target_date, amount: 6000 })
+      for (let index = 1; index < projection.length; index++) {
+        const gap = Date.parse(projection[index].date) - Date.parse(projection[index - 1].date)
+        expect(gap).toBeGreaterThan(0)
+        expect(gap).toBeLessThanOrEqual(7 * 86_400_000)
+        expect(projection[index].amount).toBeLessThanOrEqual(6000)
+      }
     },
   )
 
@@ -73,4 +79,17 @@ it.each([
   { today: '2024-02-29', expected: '2014-03-01' },
 ])('caps history at ten years on $today', ({ today, expected }) => {
   expect(goalHistoryStart(goal({ created_at: '1995-01-01T00:00:00Z' }, today), today)).toBe(expected)
+})
+
+it('interpolates weekly debt progress and keeps a short final interval', () => {
+  const projection = projectGoal(
+    goal({ current_amount: -100, target_amount: 0, target_date: '2026-12-07' }, today),
+    today,
+  ).projection
+  expect(projection).toEqual([
+    { date: today, amount: -100 },
+    { date: '2026-11-28', amount: -56.25 },
+    { date: '2026-12-05', amount: -12.5 },
+    { date: '2026-12-07', amount: 0 },
+  ])
 })

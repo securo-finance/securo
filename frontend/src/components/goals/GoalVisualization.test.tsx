@@ -141,8 +141,6 @@ it('draws a straight pace guide even without a monthly contribution amount', asy
   await waitFor(() => {
     const line = region.querySelector('path[stroke-dasharray="6 5"]')
     expect(line).toBeTruthy()
-    // A linear two-point SVG path uses L, without the H/V steps of stepAfter.
-    expect(line?.getAttribute('d')).toMatch(/^M[^A-Za-z]+L[^A-Za-z]+$/)
   })
 })
 
@@ -258,11 +256,22 @@ it.each([-500, 0, 89, 90])('sets the y-axis maximum to 100 for a target of %s', 
 
 it.each([
   { historical: 500, current: 2700, target: 6000, bottom: '450' },
+  { historical: 50, current: 200, target: 500, bottom: '0' },
+  { historical: 90, current: 200, target: 500, bottom: '0' },
+  { historical: 91, current: 200, target: 500, bottom: '81.9' },
+  { historical: -1, current: 200, target: 500, bottom: '-100' },
+  { historical: -90, current: 200, target: 500, bottom: '-100' },
+  { historical: -91, current: 200, target: 500, bottom: '-100.1' },
+  { historical: -100, current: 200, target: 500, bottom: '-110' },
+  { historical: -101, current: 200, target: 500, bottom: '-111.1' },
   { historical: -5000, current: -2700, target: 0, bottom: '-5.5K' },
   { historical: -3000, current: -5000, target: 0, bottom: '-5.5K' },
   { historical: 0, current: 2700, target: 6000, bottom: '0' },
+  { historical: 500, current: 700, target: 200, bottom: '180' },
+  { historical: -3000, current: -2000, target: -5000, bottom: '-5.5K' },
+  { historical: 500, current: 700, target: 0, bottom: '0' },
 ])(
-  'pads below history $historical and current $current',
+  'pads below history $historical, current $current, and target $target',
   async ({ historical, current, target, bottom }) => {
     mocks.goals.list.mockResolvedValue([
       { ...fixtures()[0], current_amount: current, target_amount: target },

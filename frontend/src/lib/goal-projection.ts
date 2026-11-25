@@ -55,14 +55,14 @@ export function calendarMonthAfter(day: string): string {
 }
 
 /**
- * Builds the endpoints of the straight-line pace needed to reach a dated goal.
+ * Samples the straight-line pace weekly, ending exactly on the goal deadline.
  * This is a required-pace guide, not a prediction of monthly contributions.
  * Undated goals have no projection. Reached or overdue dated goals retain only
  * today's amount rather than drawing a backward or declining projection.
  *
  * @param {Goal} goal - Goal supplying its current amount, target, and deadline.
  * @param {string} today - Current workspace date in YYYY-MM-DD format.
- * @returns {{ projection: AmountPoint[] }} Zero, one, or two projection points.
+ * @returns {{ projection: AmountPoint[] }} Weekly projection points, including today and the exact deadline.
  */
 export function projectGoal(goal: Goal, today: string) {
   const projection: AmountPoint[] = []
@@ -74,7 +74,19 @@ export function projectGoal(goal: Goal, today: string) {
   const target = cents(goal.target_amount)
   projection.push({ date: today, amount: current / 100 })
 
+  // setup intermediate points for every week after today.
   if (current < target && goal.target_date > today) {
+    const start = Date.parse(today + 'T00:00:00Z')
+    const end = Date.parse(goal.target_date + 'T00:00:00Z')
+    const week = 7 * 86_400_000
+    for (let time = start + week; time < end; time += week) {
+      const fraction = (time - start) / (end - start)
+      projection.push({
+        date: new Date(time).toISOString().slice(0, 10),
+        amount: Math.round(current + (target - current) * fraction) / 100,
+      })
+    }
+    // push the final projection point at the target and gaol date.
     projection.push({ date: goal.target_date, amount: target / 100 })
   }
 
