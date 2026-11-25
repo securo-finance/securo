@@ -1,13 +1,43 @@
 import uuid
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field
+
+REASON_MIN_LENGTH = 3
+REASON_MAX_LENGTH = 500
+
+
+def clean_reason(value: str) -> str:
+    """The reason as it is stored: trimmed, and never blank or unstorable.
+
+    The length is measured after trimming, so a reason of spaces is refused
+    the same way an empty one is — the screen already disables the button for
+    it, and the API must not accept what the screen refuses. PostgreSQL text
+    cannot hold a NUL byte, so one reaching the driver answered 500 instead of
+    refusing the input (#557).
+    """
+    cleaned = value.strip()
+    if not REASON_MIN_LENGTH <= len(cleaned) <= REASON_MAX_LENGTH:
+        raise ValueError(
+            f"Reason must be between {REASON_MIN_LENGTH} and "
+            f"{REASON_MAX_LENGTH} characters"
+        )
+    if "\x00" in cleaned:
+        raise ValueError("Reason cannot contain NUL characters")
+    return cleaned
+
+
+#: A reason, in the body of an update and in the query of a deletion (#557).
+AdminReason = Annotated[str, AfterValidator(clean_reason)]
 
 
 class AdminUserRead(BaseModel):
     id: uuid.UUID
     email: str
+    #: An address an administrator asked for, waiting for the account's owner
+    #: to accept it (#556). The login address stays ``email`` until then.
+    pending_email: Optional[str] = None
     is_active: bool
     is_superuser: bool
     is_verified: bool
@@ -35,7 +65,7 @@ class AdminUserUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     #: Why the account is being touched. Required, and logged with the change.
-    reason: str = Field(min_length=3, max_length=500)
+    reason: AdminReason
     email: Optional[EmailStr] = None
     is_active: Optional[bool] = None
     is_superuser: Optional[bool] = None
@@ -55,6 +85,8 @@ class AdminAccessLogRead(BaseModel):
     target_email: str
     target_user_id: Optional[uuid.UUID] = None
     action: str
+    #: Every field the action changed, old value and new (#556).
+    changes: Optional[dict] = None
     reason: str
     ip: Optional[str] = None
     created_at: datetime

@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi_users.exceptions import UserAlreadyExists
@@ -121,21 +122,65 @@ async def update_user(
         if data.is_active is False:
             raise ValueError("Cannot deactivate your own account")
 
-    if data.email is not None and data.email != user.email:
-        existing = await session.execute(
-            select(User).where(User.email == data.email)
-        )
-        if existing.scalar_one_or_none():
-            raise ValueError("A user with this email already exists")
-        user.email = data.email
+    # What the record shows: every field this call changes, old value and new
+    # (#556). `target_email` is the account's name before it, not after.
+    changes: dict[str, dict] = {}
+    previous_email = user.email
+
+    if data.email is not None:
+        requested = str(data.email)
+        if requested != user.email:
+            taken = await session.execute(
+                select(User.id).where(User.email == requested, User.id != user_id)
+            )
+            if taken.scalar_one_or_none():
+                raise ValueError("A user with this email already exists")
+            waiting = await session.execute(
+                select(User.id).where(User.pending_email == requested, User.id != user_id)
+            )
+            if waiting.scalar_one_or_none():
+                raise ValueError("Another account is already waiting to confirm this address")
+            # The address is a recovery credential, so the administrator asks
+            # and the owner decides: the login address does not move until the
+            # person whose account it is confirms from their own session.
+            user.pending_email = requested
+            user.pending_email_requested_at = datetime.now(timezone.utc)
+            changes["email"] = {
+                "from": previous_email,
+                "to": requested,
+                "pending": True,
+            }
+        elif user.pending_email is not None:
+            # Asked back to the address it already has: the request is over.
+            changes["email"] = {
+                "from": user.pending_email,
+                "to": user.email,
+                "pending": False,
+            }
+            user.pending_email = None
+            user.pending_email_requested_at = None
     if data.is_active is not None:
+        if data.is_active != user.is_active:
+            changes["is_active"] = {"from": user.is_active, "to": data.is_active}
         user.is_active = data.is_active
     if data.is_superuser is not None:
+        if data.is_superuser != user.is_superuser:
+            changes["is_superuser"] = {"from": user.is_superuser, "to": data.is_superuser}
         user.is_superuser = data.is_superuser
     if data.preferences is not None:
+        changes["preferences"] = {"changed": True}
         user.preferences = data.preferences
 
-    await _record_admin_access(session, current_user_id, user, "user.update", data.reason, ip)
+    await _record_admin_access(
+        session,
+        current_user_id,
+        user,
+        "user.update",
+        data.reason,
+        ip,
+        target_email=previous_email,
+        changes=changes or None,
+    )
     session.add(user)
     await session.commit()
     await session.refresh(user)
@@ -153,7 +198,15 @@ async def delete_user(
     if user_id == current_user_id:
         raise ValueError("Cannot delete your own account")
 
-    user = await get_user(session, user_id)
+    # Locked, not just read: two deletions of the same account used to both
+    # find it and both write their record, and the loser died on the log's
+    # foreign key with a 500 (#557). Taking the row first makes them queue, so
+    # the second one finds nothing left and answers 404 — which is what a
+    # deletion of something already gone means.
+    locked = await session.execute(
+        select(User).where(User.id == user_id).with_for_update()
+    )
+    user = locked.scalar_one_or_none()
     if not user:
         return False
 
@@ -241,16 +294,25 @@ async def _record_admin_access(
     action: str,
     reason: str,
     ip: Optional[str],
+    *,
+    target_email: Optional[str] = None,
+    changes: Optional[dict] = None,
 ) -> AdminAccessLog:
-    """Add the audit row to the session. The caller commits it with the change."""
+    """Add the audit row to the session. The caller commits it with the change.
+
+    ``target_email`` is the address the account had when the action was taken;
+    the caller passes it because the update already moved what the row would
+    otherwise read. ``changes`` names every field it touched, old and new.
+    """
     actor = await get_user(session, actor_id)
     entry = AdminAccessLog(
         id=uuid.uuid4(),
         actor_id=actor_id,
         actor_email=actor.email if actor else "unknown",
         target_user_id=target.id,
-        target_email=target.email,
+        target_email=target_email if target_email is not None else target.email,
         action=action,
+        changes=changes,
         reason=reason,
         ip=ip,
     )

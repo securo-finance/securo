@@ -19,6 +19,15 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # An address an administrator asks to put on an account, until the person
+    # whose account it is accepts it (#556). The account keeps its email and
+    # its recovery until then, so asking is never a way in.
+    op.add_column("users", sa.Column("pending_email", sa.String(255), nullable=True))
+    op.add_column(
+        "users",
+        sa.Column("pending_email_requested_at", sa.DateTime(timezone=True), nullable=True),
+    )
+
     op.create_table(
         "admin_access_log",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -37,6 +46,8 @@ def upgrade() -> None:
         ),
         sa.Column("target_email", sa.String(255), nullable=False),
         sa.Column("action", sa.String(40), nullable=False),
+        # Every field the action changed, old value and new (#556).
+        sa.Column("changes", sa.JSON(), nullable=True),
         sa.Column("reason", sa.Text(), nullable=False),
         sa.Column("ip", sa.String(45), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -71,3 +82,6 @@ def downgrade() -> None:
     op.drop_index("ix_admin_access_log_target_user_id", table_name="admin_access_log")
     op.drop_index("ix_admin_access_log_actor_id", table_name="admin_access_log")
     op.drop_table("admin_access_log")
+
+    op.drop_column("users", "pending_email_requested_at")
+    op.drop_column("users", "pending_email")

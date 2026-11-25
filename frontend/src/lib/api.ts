@@ -299,6 +299,18 @@ export const auth = {
     const { data } = await api.patch('/users/me', { password })
     return data
   },
+  /**
+   * Move the account to the address an administrator asked for (ADR 0042,
+   * #556). Only the person whose account it is can, from their own session —
+   * which is what makes the request useless as a way into the account.
+   */
+  confirmEmailChange: async (): Promise<User> => {
+    const { data } = await api.post('/users/me/email-change')
+    return data
+  },
+  declineEmailChange: async (): Promise<void> => {
+    await api.delete('/users/me/email-change')
+  },
   setup2fa: async (): Promise<{ secret: string; otpauth_uri: string }> => {
     const { data } = await api.post('/auth/2fa/setup')
     return data

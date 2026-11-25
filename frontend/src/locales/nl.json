@@ -2977,7 +2977,10 @@
       "addDesc": "Maak een nieuw gebruikersaccount aan met toegang tot de applicatie.",
       "adminRole": "Beheerdersrechten",
       "enabled": "Aan",
-      "disabled": "Uit"
+      "disabled": "Uit",
+      "pending": "In afwachting",
+      "pendingEmail": "Aangevraagd: {{email}}, wacht op de houder",
+      "emailPendingHint": "Het adres verandert pas nadat de houder het bevestigt."
     },
     "settings": {
       "title": "Beheerdersinstellingen",
@@ -4310,6 +4313,19 @@
     "target": "Account {{email}}",
     "ip": "IP {{ip}}",
     "loadMore": "Meer laden",
-    "loadError": "Het toegangslogboek kon niet worden geladen."
+    "loadError": "Het toegangslogboek kon niet worden geladen.",
+    "emailChange": "Adres {{from}} → {{to}}",
+    "emailPending": "wacht op bevestiging door de accounthouder",
+    "otherChanges": "Ook gewijzigd: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Wijziging van e-mailadres",
+    "description": "Een beheerder heeft gevraagd om het adres van je account te wijzigen in {{email}}. Tot je bevestigt, behoudt je account het huidige adres.",
+    "accept": "Nieuw adres overnemen",
+    "decline": "Mijn huidige adres behouden",
+    "accepted": "Je account gebruikt nu {{email}}",
+    "declined": "Je account behoudt het huidige adres",
+    "unavailable": "Dat adres is niet meer beschikbaar",
+    "failed": "Je beslissing kon niet worden opgeslagen"
   }
 }

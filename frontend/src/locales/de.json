@@ -2976,7 +2976,10 @@
       "addDesc": "Erstelle ein neues Benutzerkonto mit Zugriff auf die Anwendung.",
       "adminRole": "Administrator-Rechte",
       "enabled": "An",
-      "disabled": "Aus"
+      "disabled": "Aus",
+      "pending": "Wartet",
+      "pendingEmail": "Angefragt: {{email}}, wartet auf den Inhaber",
+      "emailPendingHint": "Die Adresse ändert sich erst, wenn der Inhaber sie bestätigt."
     },
     "settings": {
       "title": "Administrator-Einstellungen",
@@ -4309,6 +4312,19 @@
     "target": "Konto {{email}}",
     "ip": "IP {{ip}}",
     "loadMore": "Mehr laden",
-    "loadError": "Das Zugriffsprotokoll konnte nicht geladen werden."
+    "loadError": "Das Zugriffsprotokoll konnte nicht geladen werden.",
+    "emailChange": "Adresse {{from}} → {{to}}",
+    "emailPending": "wartet auf die Bestätigung durch den Kontoinhaber",
+    "otherChanges": "Ebenfalls geändert: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Änderung der E-Mail-Adresse",
+    "description": "Ein Administrator hat beantragt, die Adresse Ihres Kontos auf {{email}} zu ändern. Bis Sie bestätigen, behält Ihr Konto seine aktuelle Adresse.",
+    "accept": "Neue Adresse übernehmen",
+    "decline": "Aktuelle Adresse behalten",
+    "accepted": "Ihr Konto verwendet jetzt {{email}}",
+    "declined": "Ihr Konto behält seine aktuelle Adresse",
+    "unavailable": "Diese Adresse ist nicht mehr verfügbar",
+    "failed": "Ihre Entscheidung konnte nicht gespeichert werden"
   }
 }

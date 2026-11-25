@@ -3109,7 +3109,10 @@
       "addDesc": "Utwórz nowe konto użytkownika z dostępem do aplikacji.",
       "adminRole": "Uprawnienia administratora",
       "enabled": "Wł.",
-      "disabled": "Wył."
+      "disabled": "Wył.",
+      "pending": "Oczekuje",
+      "pendingEmail": "Zażądano {{email}}, czeka na właściciela",
+      "emailPendingHint": "Adres zmieni się dopiero po potwierdzeniu przez właściciela."
     },
     "settings": {
       "title": "Ustawienia administratora",
@@ -4470,6 +4473,19 @@
     "target": "Konto {{email}}",
     "ip": "IP {{ip}}",
     "loadMore": "Wczytaj więcej",
-    "loadError": "Nie udało się wczytać dziennika dostępu."
+    "loadError": "Nie udało się wczytać dziennika dostępu.",
+    "emailChange": "Adres {{from}} → {{to}}",
+    "emailPending": "czeka na potwierdzenie właściciela konta",
+    "otherChanges": "Zmieniono także: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Zmiana adresu e-mail",
+    "description": "Administrator poprosił o zmianę adresu Twojego konta na {{email}}. Dopóki nie potwierdzisz, konto zachowuje obecny adres.",
+    "accept": "Przyjmij nowy adres",
+    "decline": "Zachowaj obecny adres",
+    "accepted": "Twoje konto używa teraz {{email}}",
+    "declined": "Konto zachowuje obecny adres",
+    "unavailable": "Ten adres nie jest już dostępny",
+    "failed": "Nie udało się zapisać decyzji"
   }
 }

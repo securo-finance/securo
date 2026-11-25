@@ -51,6 +51,7 @@ from app.api.two_factor import router as two_factor_router
 from app.api.user_lookup import router as user_lookup_router
 from app.api.workspaces import router as workspaces_router
 from app.api.access_log import router as access_log_router
+from app.api.account_email import router as account_email_router
 from app.api.access_tokens import router as access_tokens_router
 from app.api.plugins import router as plugins_router
 from app.api.ui_layouts import router as ui_layouts_router
@@ -193,6 +194,8 @@ app.include_router(
 # `/api/users/lookup` path isn't captured by the catch-all `/{id}`
 # route fastapi-users mounts.
 app.include_router(user_lookup_router)
+# Ahead of the users router for the same reason: these paths sit under `/me`.
+app.include_router(account_email_router)
 app.include_router(
     fastapi_users.get_users_router(UserRead, UserUpdate),
     prefix="/api/users",

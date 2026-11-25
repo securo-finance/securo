@@ -20,6 +20,43 @@ const ACTION_LABELS: Record<string, string> = {
   'user.delete': 'accessLog.actionDelete',
 }
 
+/**
+ * What the action changed, said in the affected person's words (#556).
+ *
+ * The address is the one that matters to them — it is a recovery credential —
+ * and whether the change is already in effect or still waiting for them. The
+ * other fields are named as the record has them: this is an audit trail, and
+ * the record is what it says.
+ */
+function ChangeLines({ entry }: { entry: AdminAccessLogEntry }) {
+  const { t } = useTranslation()
+  const changes = entry.changes ?? {}
+  const lines: string[] = []
+
+  const email = changes.email
+  if (email && (email.from || email.to)) {
+    const moved = t('accessLog.emailChange', {
+      from: String(email.from ?? ''),
+      to: String(email.to ?? ''),
+    })
+    lines.push(email.pending ? `${moved} · ${t('accessLog.emailPending')}` : moved)
+  }
+
+  const others = Object.keys(changes).filter((field) => field !== 'email')
+  if (others.length > 0) {
+    lines.push(t('accessLog.otherChanges', { fields: others.join(', ') }))
+  }
+
+  if (lines.length === 0) return null
+  return (
+    <ul className="space-y-0.5 text-xs break-words">
+      {lines.map((line) => (
+        <li key={line}>{line}</li>
+      ))}
+    </ul>
+  )
+}
+
 function ActionIcon({ action }: { action: string }) {
   if (action === 'user.delete') return <Trash2 size={14} />
   if (action === 'user.update') return <PenLine size={14} />
@@ -85,6 +122,7 @@ export function AccessLogDialog({ open, onClose }: AccessLogDialogProps) {
                   <p className="text-xs text-muted-foreground break-words">
                     {t('accessLog.target', { email: entry.target_email })}
                   </p>
+                  <ChangeLines entry={entry} />
                   <p className="rounded-md bg-muted px-2 py-1 text-xs break-words">{entry.reason}</p>
                   <p className="text-[11px] text-muted-foreground">
                     {t('accessLog.by', { email: entry.actor_email })}

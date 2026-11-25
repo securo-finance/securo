@@ -2975,7 +2975,10 @@
       "addDesc": "Új felhasználói fiók létrehozása, amely hozzáfér az alkalmazáshoz.",
       "adminRole": "Adminisztrátori jogosultságok",
       "enabled": "Be",
-      "disabled": "Ki"
+      "disabled": "Ki",
+      "pending": "Várakozik",
+      "pendingEmail": "Kért cím: {{email}}, a tulajdonosra vár",
+      "emailPendingHint": "A cím csak a tulajdonos megerősítése után változik meg."
     },
     "settings": {
       "title": "Adminisztrációs beállítások",
@@ -4308,6 +4311,19 @@
     "target": "Fiók: {{email}}",
     "ip": "IP {{ip}}",
     "loadMore": "Továbbiak betöltése",
-    "loadError": "A hozzáférési napló nem tölthető be."
+    "loadError": "A hozzáférési napló nem tölthető be.",
+    "emailChange": "Cím {{from}} → {{to}}",
+    "emailPending": "a fiók tulajdonosának megerősítésére vár",
+    "otherChanges": "Ezt is módosították: {{fields}}"
+  },
+  "emailChange": {
+    "title": "E-mail-cím módosítása",
+    "description": "Egy rendszergazda kérte, hogy a fiókja címe {{email}} legyen. Amíg nem erősíti meg, a fiók a jelenlegi címet használja.",
+    "accept": "Az új cím elfogadása",
+    "decline": "A jelenlegi cím megtartása",
+    "accepted": "A fiókja mostantól a(z) {{email}} címet használja",
+    "declined": "A fiókja megtartja a jelenlegi címet",
+    "unavailable": "Ez a cím már nem elérhető",
+    "failed": "A döntését nem sikerült rögzíteni"
   }
 }

@@ -3141,7 +3141,10 @@
       "addDesc": "Vytvor nový používateľský účet s prístupom do aplikácie.",
       "adminRole": "Administrátorské oprávnenia",
       "enabled": "Zapnuté",
-      "disabled": "Vypnuté"
+      "disabled": "Vypnuté",
+      "pending": "Čaká",
+      "pendingEmail": "Požadované {{email}}, čaká na majiteľa",
+      "emailPendingHint": "Adresa sa zmení až po potvrdení majiteľom."
     },
     "settings": {
       "title": "Nastavenia administrátora",
@@ -4504,6 +4507,19 @@
     "target": "Účet {{email}}",
     "ip": "IP {{ip}}",
     "loadMore": "Načítať ďalšie",
-    "loadError": "Protokol prístupov sa nepodarilo načítať."
+    "loadError": "Protokol prístupov sa nepodarilo načítať.",
+    "emailChange": "Adresa {{from}} → {{to}}",
+    "emailPending": "čaká na potvrdenie majiteľa účtu",
+    "otherChanges": "Zmenené aj: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Zmena e-mailovej adresy",
+    "description": "Správca požiadal o zmenu adresy vášho účtu na {{email}}. Kým nepotvrdíte, účet si ponechá aktuálnu adresu.",
+    "accept": "Prijať novú adresu",
+    "decline": "Ponechať aktuálnu adresu",
+    "accepted": "Váš účet teraz používa {{email}}",
+    "declined": "Účet si ponechá aktuálnu adresu",
+    "unavailable": "Táto adresa už nie je dostupná",
+    "failed": "Vaše rozhodnutie sa nepodarilo uložiť"
   }
 }

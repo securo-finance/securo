@@ -347,6 +347,14 @@ export default function AdminSettingsPage() {
                         {t('admin.users.you')}
                       </span>
                     )}
+                    {u.pending_email && (
+                      <span
+                        className="text-[10px] font-medium text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded"
+                        title={t('admin.users.pendingEmail', { email: u.pending_email })}
+                      >
+                        {t('admin.users.pending')}
+                      </span>
+                    )}
                   </div>
                   <span className="text-xs text-muted-foreground">
                     {u.is_superuser ? t('admin.users.admin') : t('admin.users.user')}
@@ -752,6 +760,13 @@ export default function AdminSettingsPage() {
                 <div className="space-y-1.5">
                   <Label className="text-[13px]">{t('admin.users.email')}</Label>
                   <Input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} required autoComplete="off" className="h-10 rounded-lg" />
+                  <p className="text-[11px] text-muted-foreground">
+                    {editEmail !== editUser.email
+                      ? t('admin.users.emailPendingHint')
+                      : editUser.pending_email
+                        ? t('admin.users.pendingEmail', { email: editUser.pending_email })
+                        : ''}
+                  </p>
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-[13px]">{t('admin.users.reason')}</Label>

@@ -75,6 +75,11 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     ) -> User:
         if user_update.password is not None:
             require_local_auth_enabled()
+        # The owner choosing their own address ends any request an
+        # administrator left waiting (#556): there is nothing left to accept.
+        if user_update.email is not None and user_update.email != user.email:
+            user.pending_email = None
+            user.pending_email_requested_at = None
         new_currency = _requested_currency(user_update)
         if new_currency is None:
             return await super().update(user_update, user, safe=safe, request=request)

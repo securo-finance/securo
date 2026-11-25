@@ -1,7 +1,9 @@
-import uuid
 import re
+import uuid
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from pydantic import AfterValidator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import UserManager, current_active_user, current_superuser, get_user_manager
@@ -28,6 +30,7 @@ from app.schemas.admin import (
     AppSettingUpdate,
     ProviderSettingRead,
     TimezoneSettingRead,
+    clean_reason,
 )
 from app.services import admin_service
 from app.services import provider_settings
@@ -115,7 +118,8 @@ async def update_user(
 async def delete_user(
     user_id: uuid.UUID,
     request: Request,
-    reason: str = Query(..., min_length=3, max_length=500),
+    # Same rule as the body of an update: trimmed, never blank, no NUL (#557).
+    reason: Annotated[str, Query(...), AfterValidator(clean_reason)],
     session: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(current_superuser),
 ):

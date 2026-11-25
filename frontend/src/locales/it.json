@@ -2990,7 +2990,10 @@
       "addDesc": "Crea un nuovo account utente con accesso all'applicazione.",
       "adminRole": "Privilegi di amministratore",
       "enabled": "Attivo",
-      "disabled": "Disattivo"
+      "disabled": "Disattivo",
+      "pending": "In attesa",
+      "pendingEmail": "Richiesto {{email}}, in attesa del titolare",
+      "emailPendingHint": "L'indirizzo cambia solo dopo la conferma del titolare."
     },
     "settings": {
       "title": "Impostazioni amministratore",
@@ -4323,6 +4326,19 @@
     "target": "Account {{email}}",
     "ip": "IP {{ip}}",
     "loadMore": "Carica altri",
-    "loadError": "Impossibile caricare il registro degli accessi."
+    "loadError": "Impossibile caricare il registro degli accessi.",
+    "emailChange": "Indirizzo {{from}} → {{to}}",
+    "emailPending": "in attesa della conferma del titolare dell'account",
+    "otherChanges": "Modificato anche: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Modifica dell'indirizzo email",
+    "description": "Un amministratore ha chiesto di cambiare l'indirizzo del tuo account in {{email}}. Finché non confermi, il tuo account mantiene l'indirizzo attuale.",
+    "accept": "Accetta il nuovo indirizzo",
+    "decline": "Mantieni il mio indirizzo attuale",
+    "accepted": "Il tuo account ora usa {{email}}",
+    "declined": "Il tuo account mantiene l'indirizzo attuale",
+    "unavailable": "Questo indirizzo non è più disponibile",
+    "failed": "Impossibile registrare la tua decisione"
   }
 }

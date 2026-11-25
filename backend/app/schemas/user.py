@@ -21,6 +21,9 @@ class UserRead(schemas.BaseUser[uuid.UUID]):
     preferences: Optional[dict] = None
     theme: Optional[str] = None
     is_2fa_enabled: bool = False
+    #: An address an administrator asked for, waiting for this person to
+    #: accept it (#556). Signing in still uses ``email`` until then.
+    pending_email: Optional[str] = None
 
 
 class UserCreate(schemas.BaseUserCreate):

@@ -47,6 +47,33 @@ describe('AccessLogDialog', () => {
     expect(byline.textContent).toContain('IP 203.0.113.7')
   })
 
+  it('shows the address change and that it waits for the owner', async () => {
+    api.accessLog.mine.mockResolvedValue({
+      items: [
+        entry({
+          changes: {
+            email: {
+              from: 'someone@example.com',
+              to: 'elsewhere@example.com',
+              pending: true,
+            },
+            is_active: { from: true, to: false },
+          },
+        }),
+      ],
+      total: 1,
+    })
+
+    renderWithProviders(<AccessLogDialog open onClose={vi.fn()} />)
+
+    expect(
+      await screen.findByText(
+        'Address someone@example.com → elsewhere@example.com · waiting for the account owner to confirm',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Also changed: is_active')).toBeInTheDocument()
+  })
+
   it('says so when nothing was recorded', async () => {
     api.accessLog.mine.mockResolvedValue({ items: [], total: 0 })
 

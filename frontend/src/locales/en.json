@@ -2975,7 +2975,10 @@
       "addDesc": "Create a new user account with access to the application.",
       "adminRole": "Administrator privileges",
       "enabled": "On",
-      "disabled": "Off"
+      "disabled": "Off",
+      "pending": "Waiting",
+      "pendingEmail": "Asked for {{email}}, waiting for the owner",
+      "emailPendingHint": "The address only changes after its owner confirms it."
     },
     "settings": {
       "title": "Admin Settings",
@@ -4308,6 +4311,19 @@
     "target": "Account {{email}}",
     "ip": "IP {{ip}}",
     "loadMore": "Load more",
-    "loadError": "Could not load the access log."
+    "loadError": "Could not load the access log.",
+    "emailChange": "Address {{from}} → {{to}}",
+    "emailPending": "waiting for the account owner to confirm",
+    "otherChanges": "Also changed: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Change of email address",
+    "description": "An administrator asked to change the address on your account to {{email}}. Until you confirm, your account keeps its current address.",
+    "accept": "Accept the new address",
+    "decline": "Keep my current address",
+    "accepted": "Your account now uses {{email}}",
+    "declined": "Your account keeps its current address",
+    "unavailable": "That address is no longer available",
+    "failed": "Could not record your decision"
   }
 }

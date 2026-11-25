@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -32,6 +32,10 @@ class AdminAccessLog(Base):
     target_email: Mapped[str] = mapped_column(String(255))
     #: What was done: ``user.update`` or ``user.delete``.
     action: Mapped[str] = mapped_column(String(40), index=True)
+    #: Every field the action changed, as ``{field: {"from": ..., "to": ...}}``
+    #: (#556). The email is the reason the record exists: a change of login
+    #: address is what a takeover looked like before it was closed.
+    changes: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     reason: Mapped[str] = mapped_column(Text)
     #: Client address as the request saw it, at most 45 characters (IPv6 with a scope).
     ip: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)

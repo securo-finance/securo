@@ -17,6 +17,7 @@ import { useSidebarState } from '@/contexts/sidebar-state-context'
 import { NotificationBell } from '@/components/notification-bell'
 import { CollectionSelector } from '@/components/collection-selector'
 import { ConnectionLost } from '@/components/connection-lost'
+import { EmailChangeDialog } from '@/components/email-change-dialog'
 import { auth as authApi } from '@/lib/api'
 import { resolveSupportedLang } from '@/lib/i18n'
 import { OnboardingTour } from '@/components/onboarding-tour'
@@ -702,6 +703,9 @@ export function AppLayout() {
       />
       <BackupDialog open={backupOpen} onClose={() => setBackupOpen(false)} />
       <AccessLogDialog open={accessLogOpen} onClose={() => setAccessLogOpen(false)} />
+      {/* A change of address an administrator asked for, waiting for this
+          person's decision (#556). */}
+      <EmailChangeDialog />
       {quickAddOpen && (
         <Suspense fallback={null}>
           <QuickAddTransaction open={quickAddOpen} onClose={() => setQuickAddOpen(false)} />

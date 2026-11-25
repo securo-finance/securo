@@ -2990,7 +2990,10 @@
       "addDesc": "Criar uma nova conta de usuário com acesso ao aplicativo.",
       "adminRole": "Privilégios de administrador",
       "enabled": "Sim",
-      "disabled": "Não"
+      "disabled": "Não",
+      "pending": "Aguardando",
+      "pendingEmail": "Solicitado {{email}}, aguardando o titular",
+      "emailPendingHint": "O endereço só muda depois que o titular confirma."
     },
     "settings": {
       "title": "Configurações Admin",
@@ -4323,6 +4326,19 @@
     "target": "Conta {{email}}",
     "ip": "IP {{ip}}",
     "loadMore": "Carregar mais",
-    "loadError": "Não foi possível carregar o registro de acesso."
+    "loadError": "Não foi possível carregar o registro de acesso.",
+    "emailChange": "Endereço {{from}} → {{to}}",
+    "emailPending": "aguardando a confirmação do titular da conta",
+    "otherChanges": "Também alterado: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Troca de e-mail",
+    "description": "Um administrador pediu para trocar o endereço da sua conta para {{email}}. Até você confirmar, a conta mantém o endereço atual.",
+    "accept": "Aceitar o novo endereço",
+    "decline": "Manter meu endereço atual",
+    "accepted": "Sua conta agora usa {{email}}",
+    "declined": "Sua conta mantém o endereço atual",
+    "unavailable": "Esse endereço não está mais disponível",
+    "failed": "Não foi possível registrar sua decisão"
   }
 }

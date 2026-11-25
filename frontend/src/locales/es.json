@@ -2990,7 +2990,10 @@
       "addDesc": "Crea una nueva cuenta de usuario con acceso a la aplicación.",
       "adminRole": "Privilegios de administrador",
       "enabled": "Activado",
-      "disabled": "Desactivado"
+      "disabled": "Desactivado",
+      "pending": "Pendiente",
+      "pendingEmail": "Solicitada {{email}}, esperando al titular",
+      "emailPendingHint": "La dirección solo cambia cuando su titular la confirma."
     },
     "settings": {
       "title": "Configuración de administrador",
@@ -4323,6 +4326,19 @@
     "target": "Cuenta {{email}}",
     "ip": "IP {{ip}}",
     "loadMore": "Cargar más",
-    "loadError": "No se pudo cargar el registro de acceso."
+    "loadError": "No se pudo cargar el registro de acceso.",
+    "emailChange": "Dirección {{from}} → {{to}}",
+    "emailPending": "esperando la confirmación del titular de la cuenta",
+    "otherChanges": "También se cambió: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Cambio de correo electrónico",
+    "description": "Un administrador solicitó cambiar la dirección de su cuenta a {{email}}. Hasta que confirme, su cuenta conserva su dirección actual.",
+    "accept": "Aceptar la nueva dirección",
+    "decline": "Mantener mi dirección actual",
+    "accepted": "Su cuenta ahora usa {{email}}",
+    "declined": "Su cuenta conserva su dirección actual",
+    "unavailable": "Esa dirección ya no está disponible",
+    "failed": "No se pudo registrar su decisión"
   }
 }
