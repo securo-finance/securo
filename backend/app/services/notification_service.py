@@ -293,7 +293,7 @@ async def _reconcile(
             row.resolved_at = now
 
 
-def _has(workspace: Workspace, kind: NotificationKind) -> bool:
+def _has(workspace: Workspace, kind: str) -> bool:
     return kind in kinds_for(workspace, can_write=True)
 
 
@@ -357,6 +357,8 @@ async def connection_changed(
     """Follow one connection in the caller's transaction, right after its state changed.
 
     Never fails the caller: the hourly evaluation reads the same state again."""
+    # What the caller wrote fails here, as its own error, not swallowed below.
+    await session.flush()
     try:
         async with session.begin_nested():
             wanted: list[_Wanted] = []
@@ -583,19 +585,19 @@ async def _inform(session: AsyncSession, kind: NotificationKind, told: list[_Tol
         user = await session.get(User, item.user_id)
         if user is None or not user.is_active:
             continue
-        workspace_id = await _workspace_for(session, item.user_id, item.group.workspace_id)
-        if workspace_id is None:
+        workspace = await _workspace_for(session, item.user_id, item.group.workspace_id)
+        if workspace is None or not _has(workspace, kind):
             continue
         row = await session.scalar(
             select(Notification).where(
-                Notification.workspace_id == workspace_id,
+                Notification.workspace_id == workspace.id,
                 Notification.user_id == item.user_id,
                 Notification.dedup_key == item.key,
             )
         )
         if row is None:
             row = Notification(
-                workspace_id=workspace_id,
+                workspace_id=workspace.id,
                 user_id=item.user_id,
                 kind=kind,
                 dedup_key=item.key,
@@ -616,7 +618,7 @@ def _says(data: dict[str, Any]) -> dict[str, Any]:
 
 async def _workspace_for(
     session: AsyncSession, user_id: uuid.UUID, group_workspace_id: uuid.UUID
-) -> Optional[uuid.UUID]:
+) -> Optional[Workspace]:
     """Where a person hears of a group: its workspace when they are in it,
     else their own first one (a group shows in every workspace of theirs)."""
     from app.services import workspace_service
@@ -624,11 +626,10 @@ async def _workspace_for(
     workspace = await session.get(Workspace, group_workspace_id)
     if workspace is not None and not workspace.is_archived:
         if workspace.managed_by_user_id == user_id:
-            return workspace.id
+            return workspace
         if await workspace_service.get_membership(session, workspace.id, user_id) is not None:
-            return workspace.id
-    own = await workspace_service.get_default_workspace(session, user_id)
-    return own.id if own is not None else None
+            return workspace
+    return await workspace_service.get_default_workspace(session, user_id)
 
 
 class _Member(NamedTuple):
@@ -657,11 +658,12 @@ async def _members(session: AsyncSession, group_id: uuid.UUID) -> dict[uuid.UUID
 async def _actor_name(
     session: AsyncSession, actor_id: uuid.UUID, group: Group, members: dict[uuid.UUID, _Member]
 ) -> str:
+    """Never their email: it is read by people of other workspaces."""
     for member in members.values():
         if member.person(group) == actor_id:
             return member.name
     user = await session.get(User, actor_id)
-    return (user.display_name or user.email) if user is not None else ""
+    return (user.display_name if user is not None else None) or group.name
 
 
 class _Share(NamedTuple):
@@ -715,6 +717,7 @@ async def expenses_shared(
     Several at once (installments, a batch) are one notification per person.
     `before` is each one's share before an edit: only those it changed are told.
     Runs in the caller's transaction and never fails it."""
+    await session.flush()
     try:
         async with session.begin_nested():
             await _tell_expenses(session, actor_id, transactions, before)
@@ -769,8 +772,13 @@ async def _tell_expenses(
     await _inform(session, GROUP_EXPENSE, told)
 
 
-async def settlement_recorded(session: AsyncSession, actor_id: uuid.UUID, settlement: GroupSettlement) -> None:
-    """Tell the other side of a payment between members. Never fails the caller."""
+async def settlement_recorded(
+    session: AsyncSession, actor_id: uuid.UUID, settlement: GroupSettlement, *, edited: bool = False
+) -> None:
+    """Tell the other side of a payment between members. Never fails the caller.
+
+    Edited, it is told again as it is now, and what it said to anyone else ends."""
+    await session.flush()
     try:
         async with session.begin_nested():
             group = await session.get(Group, settlement.group_id)
@@ -793,6 +801,18 @@ async def settlement_recorded(session: AsyncSession, actor_id: uuid.UUID, settle
             }
             people = {payer.person(group), receiver.person(group)} - {None, actor_id}
             key = f"{GROUP_SETTLEMENT}:{subject}:{payer.id}"
+            if edited:
+                # Each person's notice is in a workspace of theirs, so it is found by the payment.
+                rows = await session.scalars(
+                    select(Notification).where(
+                        Notification.kind == GROUP_SETTLEMENT,
+                        Notification.resolved_at.is_(None),
+                        Notification.data["settlement_id"].as_string() == str(settlement.id),
+                    )
+                )
+                for row in rows:
+                    if row.user_id not in people or row.dedup_key != key:
+                        row.resolved_at = _now()
             await _inform(
                 session, GROUP_SETTLEMENT, [_Told(p, group, key, data) for p in people if p is not None]
             )
@@ -812,7 +832,9 @@ async def _check_group_events(session: AsyncSession, workspace: Workspace) -> No
         )
     ).scalars().all()
     for row in rows:
-        if row.kind == GROUP_SETTLEMENT:
+        if not _has(workspace, row.kind):
+            there = False
+        elif row.kind == GROUP_SETTLEMENT:
             there = await session.get(GroupSettlement, uuid.UUID(row.data["settlement_id"])) is not None
         else:
             # One expense, or a batch: there while any of it is still shared with them in that group.

@@ -7,6 +7,7 @@ from unittest.mock import ANY, AsyncMock, patch
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.access_token_scopes import required_scope
@@ -15,6 +16,7 @@ from app.models.account import Account
 from app.models.app_settings import AppSetting
 from app.models.bank_connection import BankConnection
 from app.models.budget import Budget
+from app.models.group_settlement import GroupSettlement
 from app.models.invoice import Invoice
 from app.models.notification import Notification
 from app.models.plugin_connection import PluginConnection
@@ -688,6 +690,105 @@ async def test_the_group_owner_hears_of_a_payment_from_a_member(
     assert row.data["actor"] == "Ana" and row.data["amount"] == "110.00"
     await _evaluate(session, test_workspace)
     assert len(await trip.told("group_settlement")) == 1
+
+
+async def test_groups_turned_off_tell_nothing_and_end_what_was_told(
+    client: AsyncClient, session: AsyncSession, auth_headers, test_workspace: Workspace, monkeypatch
+):
+    """By the workspace of who hears of it, not the group's."""
+    trip = await _Trip(client, auth_headers, session).setup()
+    await trip.expense(trip.split("Me", "Ana"))
+    assert len(await trip.told()) == 1
+    hers = trip.ana_workspace.id
+
+    def without_groups(workspace: Workspace) -> list[str]:
+        return [m for m in resolve_modules(workspace) if workspace.id != hers or m != "split_groups"]
+
+    monkeypatch.setattr(notification_service, "resolve_modules", without_groups)
+    await notification_service.evaluate_workspace(session, hers)
+    assert await trip.told() == []
+    await trip.expense(trip.split("Me", "Ana"), "Taxi")
+    await trip._post(
+        f"/api/groups/{trip.group['id']}/settlements",
+        {
+            "from_member_id": trip.members["Me"]["id"], "to_member_id": trip.members["Ana"]["id"],
+            "amount": "40.00", "currency": "EUR", "date": app_today().isoformat(),
+        },
+    )
+    assert await trip.told() == [] and await trip.told("group_settlement") == []
+
+
+@pytest.mark.parametrize("name,actor", [(None, "Trip"), ("Tess", "Tess")])
+async def test_who_has_no_entry_in_the_group_is_never_named_by_email(
+    client: AsyncClient, session: AsyncSession, auth_headers, test_user: User, test_workspace: Workspace,
+    name: str | None, actor: str,
+):
+    """It would reach people of other workspaces."""
+    trip = await _Trip(client, auth_headers, session).setup()
+    gone = await client.delete(
+        f"/api/groups/{trip.group['id']}/members/{trip.members['Me']['id']}", headers=auth_headers
+    )
+    assert gone.status_code == 204, gone.text
+    test_user.preferences = {**(test_user.preferences or {}), "display_name": name}
+    await session.commit()
+    await trip.expense(trip.split("Ana", "Bob"))
+    [row] = await trip.told()
+    assert row.user_id == trip.ana.id and row.data["actor"] == actor
+
+
+async def test_an_edited_payment_says_what_it_is_now(
+    client: AsyncClient, session: AsyncSession, auth_headers, test_workspace: Workspace
+):
+    trip = await _Trip(client, auth_headers, session).setup()
+    cleo, _ = await _person(session, "cleo@example.com")
+    trip.members["Cleo"] = await trip._post(
+        f"/api/groups/{trip.group['id']}/members", {"name": "Cleo", "email": "cleo@example.com"}
+    )
+    path = f"/api/groups/{trip.group['id']}/settlements"
+    settlement = await trip._post(
+        path,
+        {
+            "from_member_id": trip.members["Me"]["id"], "to_member_id": trip.members["Ana"]["id"],
+            "amount": "40.00", "currency": "EUR", "date": app_today().isoformat(),
+        },
+    )
+    [row] = await trip.told("group_settlement")
+    row.read_at = datetime.now(timezone.utc)
+    await session.commit()
+
+    async def edit(body: dict) -> None:
+        response = await client.patch(f"{path}/{settlement['id']}", json=body, headers=auth_headers)
+        assert response.status_code == 200, response.text
+
+    await edit({"notes": "x", "amount": "40.00"})
+    [row] = await trip.told("group_settlement")
+    assert row.read_at is not None
+
+    await edit({"amount": "55.00"})
+    [row] = await trip.told("group_settlement")
+    assert row.user_id == trip.ana.id and row.read_at is None and row.data["amount"] == "55.00"
+
+    # Who is no longer part of it has nothing left to read; who is now hears of it.
+    await edit({"to_member_id": trip.members["Cleo"]["id"]})
+    [row] = await trip.told("group_settlement")
+    assert row.user_id == cleo.id and row.data["receiver"] == "Cleo"
+
+
+@pytest.mark.parametrize("hook", ["connection", "expense", "settlement"])
+async def test_what_the_caller_wrote_fails_as_its_own_error(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, hook: str
+):
+    connection = BankConnection(id=uuid.uuid4(), workspace_id=test_workspace.id)
+    session.add(
+        Notification(workspace_id=test_workspace.id, user_id=test_user.id, kind=None, dedup_key="x", data={})
+    )
+    with pytest.raises(IntegrityError):
+        if hook == "connection":
+            await notification_service.connection_changed(session, connection, removed=True)
+        elif hook == "expense":
+            await notification_service.expenses_shared(session, test_user.id, [])
+        else:
+            await notification_service.settlement_recorded(session, test_user.id, GroupSettlement())
 
 
 async def test_a_payback_saved_again_unchanged_is_no_news(

@@ -484,6 +484,8 @@ async def update_settlement(
         if receiver_tx is not None and update_data.get("to_member_id", settlement.to_member_id) != settlement.to_member_id:
             raise ValueError("Unlink the incoming transaction before changing who is paid")
 
+    told = ("from_member_id", "to_member_id", "amount", "currency")
+    changed = any(key in update_data and update_data[key] != getattr(settlement, key) for key in told)
     for key, value in update_data.items():
         setattr(settlement, key, value)
 
@@ -491,6 +493,8 @@ async def update_settlement(
         await session.flush()
         await check_receiver_settlements(session, receiver_tx)
 
+    if changed:
+        await notification_service.settlement_recorded(session, user_id, settlement, edited=True)
     await session.commit()
     await session.refresh(settlement)
     return settlement
