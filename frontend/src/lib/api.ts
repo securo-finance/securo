@@ -420,28 +420,29 @@ export const accessLog = {
   },
 }
 
-// Access tokens. Created, listed, and revoked in the active workspace (the
-// request's X-Workspace-Id). An owner's list includes every member's tokens.
+// Access tokens. Created, listed, and revoked in one workspace. `workspaceId`
+// pins each request to the workspace the screen shows, whatever the
+// interceptor would send if another tab switched in the meantime. An owner's
+// list includes every member's tokens.
 export const accessTokens = {
   /** Every scope a token can carry, as `<resource>:read` or `<resource>:write`. */
   scopes: async (): Promise<string[]> => {
     const { data } = await api.get('/access-tokens/scopes')
     return data.scopes
   },
-  list: async (): Promise<AccessToken[]> => {
-    const { data } = await api.get('/access-tokens')
+  list: async (workspaceId?: string | null): Promise<AccessToken[]> => {
+    const { data } = await api.get('/access-tokens', workspaceHeader(workspaceId))
     return data
   },
-  create: async (body: {
-    name: string
-    scopes: string[]
-    expires_in_days: number | null
-  }): Promise<AccessTokenCreated> => {
-    const { data } = await api.post('/access-tokens', body)
+  create: async (
+    body: { name: string; scopes: string[]; expires_in_days: number | null },
+    workspaceId?: string | null,
+  ): Promise<AccessTokenCreated> => {
+    const { data } = await api.post('/access-tokens', body, workspaceHeader(workspaceId))
     return data
   },
-  revoke: async (id: string): Promise<void> => {
-    await api.delete(`/access-tokens/${id}`)
+  revoke: async (id: string, workspaceId?: string | null): Promise<void> => {
+    await api.delete(`/access-tokens/${id}`, workspaceHeader(workspaceId))
   },
 }
 

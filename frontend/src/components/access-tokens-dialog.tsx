@@ -95,6 +95,8 @@ function AccessTokensSession({ open, onClose }: AccessTokensDialogProps) {
   const [revokingId, setRevokingId] = useState<string | null>(null)
   const [confirmRevokeId, setConfirmRevokeId] = useState<string | null>(null)
 
+  // Every request names this workspace, so the tokens listed, created, and
+  // revoked belong to the workspace on screen even if another tab switches.
   const workspaceId = current?.id
   const userId = user?.id
 
@@ -102,7 +104,7 @@ function AccessTokensSession({ open, onClose }: AccessTokensDialogProps) {
     setLoading(true)
     setLoadFailed(false)
     try {
-      const [scopes, list] = await Promise.all([accessTokens.scopes(), accessTokens.list()])
+      const [scopes, list] = await Promise.all([accessTokens.scopes(), accessTokens.list(workspaceId)])
       setResources(toResources(scopes))
       setTokens(list)
       // An owner's list includes other members' tokens. Their names are only
@@ -186,11 +188,14 @@ function AccessTokensSession({ open, onClose }: AccessTokensDialogProps) {
     if (!tokenName || chosenScopes.length === 0) return
     setSaving(true)
     try {
-      const result = await accessTokens.create({
-        name: tokenName,
-        scopes: chosenScopes,
-        expires_in_days: expiry === 'never' ? null : Number(expiry),
-      })
+      const result = await accessTokens.create(
+        {
+          name: tokenName,
+          scopes: chosenScopes,
+          expires_in_days: expiry === 'never' ? null : Number(expiry),
+        },
+        workspaceId,
+      )
       setTokens((existing) => [result, ...existing])
       setCreated(result)
       setCopied(false)
@@ -218,7 +223,7 @@ function AccessTokensSession({ open, onClose }: AccessTokensDialogProps) {
   const handleRevoke = async (token: AccessToken) => {
     setRevokingId(token.id)
     try {
-      await accessTokens.revoke(token.id)
+      await accessTokens.revoke(token.id, workspaceId)
       // The API keeps revoked tokens in the list, so the row stays.
       const revokedAt = new Date().toISOString()
       setTokens((existing) =>

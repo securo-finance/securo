@@ -2,7 +2,9 @@ import { screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { AccessTokensDialog } from '@/components/access-tokens-dialog'
-import { accessTokens, workspaces } from '@/lib/api'
+import type { InternalAxiosRequestConfig } from 'axios'
+
+import { WORKSPACE_STORAGE_KEY, accessTokens, api, workspaces } from '@/lib/api'
 import { renderWithProviders, t } from '@/test/utils'
 import type { AccessToken, AccessTokenCreated, WorkspaceMember } from '@/types'
 
@@ -105,11 +107,10 @@ it('creates a token with the chosen scopes and shows the plaintext once', async 
   await user.click(scopeBox('transactions', 'scopeRead'))
   await user.click(submit)
 
-  expect(create).toHaveBeenCalledWith({
-    name: 'CI',
-    scopes: ['accounts:write', 'transactions:read'],
-    expires_in_days: 90,
-  })
+  expect(create).toHaveBeenCalledWith(
+    { name: 'CI', scopes: ['accounts:write', 'transactions:read'], expires_in_days: 90 },
+    'ws-1',
+  )
   expect(screen.getByLabelText(t('accessTokens.newToken'))).toHaveValue('sct_secret-value')
   expect(screen.getByText(t('accessTokens.copyNow'))).toBeInTheDocument()
 
@@ -131,11 +132,10 @@ it('selects every scope from the column headers', async () => {
   await user.click(screen.getByRole('button', { name: t('accessTokens.create') }))
 
   // Reports has no write scope, so it stays at read.
-  expect(create).toHaveBeenCalledWith({
-    name: 'All',
-    scopes: ['accounts:write', 'transactions:write', 'reports:read'],
-    expires_in_days: 90,
-  })
+  expect(create).toHaveBeenCalledWith(
+    { name: 'All', scopes: ['accounts:write', 'transactions:write', 'reports:read'], expires_in_days: 90 },
+    'ws-1',
+  )
 })
 
 it('offers a read-only member only read scopes', async () => {
@@ -165,7 +165,7 @@ it('revokes a token after confirmation and keeps it listed as revoked', async ()
   expect(revoke).not.toHaveBeenCalled()
   await user.click(within(row).getByRole('button', { name: t('accessTokens.revoke') }))
 
-  expect(revoke).toHaveBeenCalledWith(existing.id)
+  expect(revoke).toHaveBeenCalledWith(existing.id, 'ws-1')
   expect(within(row).getByText(t('accessTokens.revokedBadge'))).toBeInTheDocument()
   expect(within(row).queryByRole('button', { name: t('accessTokens.revoke') })).not.toBeInTheDocument()
 })
@@ -207,4 +207,53 @@ it('stays open while a token is being created', async () => {
 
   await user.keyboard('{Escape}')
   expect(onClose).toHaveBeenCalled()
+})
+
+it('keeps every request in the workspace on screen after another tab switches', async () => {
+  // The real client runs here, so the workspace header is the one sent.
+  vi.restoreAllMocks()
+  const active: AccessToken = { ...existing, expires_at: null, is_active: true }
+  const sent: Record<string, string | undefined> = {}
+  const originalAdapter = api.defaults.adapter
+  api.defaults.adapter = (config: InternalAxiosRequestConfig) => {
+    const method = (config.method ?? 'get').toUpperCase()
+    sent[`${method} ${config.url}`] = config.headers.get('X-Workspace-Id')?.toString()
+    const data =
+      config.url === '/access-tokens/scopes'
+        ? { scopes: SCOPES }
+        : method === 'GET'
+          ? [active]
+          : method === 'POST'
+            ? { ...active, id: 'tok-4', name: 'CI', token: 'sct_pinned' }
+            : undefined
+    return Promise.resolve({ data, status: 200, statusText: 'OK', headers: {}, config })
+  }
+  localStorage.setItem(WORKSPACE_STORAGE_KEY, 'ws-1')
+
+  try {
+    const { user } = renderWithProviders(<AccessTokensDialog open onClose={vi.fn()} />)
+    await screen.findByText(active.name)
+    await user.click(screen.getByRole('button', { name: t('accessTokens.newToken') }))
+    await user.type(screen.getByLabelText(t('accessTokens.name')), 'CI')
+    await user.click(scopeBox('accounts', 'scopeRead'))
+
+    // Another tab switches workspace while the form is open.
+    localStorage.setItem(WORKSPACE_STORAGE_KEY, 'ws-2')
+    await user.click(screen.getByRole('button', { name: t('accessTokens.create') }))
+    await screen.findByDisplayValue('sct_pinned')
+
+    const row = rowOf(active.name)
+    await user.click(within(row).getByRole('button', { name: t('accessTokens.revoke') }))
+    await user.click(within(row).getByRole('button', { name: t('accessTokens.revoke') }))
+    await within(row).findByText(t('accessTokens.revokedBadge'))
+
+    expect(sent).toMatchObject({
+      'GET /access-tokens': 'ws-1',
+      'POST /access-tokens': 'ws-1',
+      [`DELETE /access-tokens/${active.id}`]: 'ws-1',
+    })
+  } finally {
+    api.defaults.adapter = originalAdapter
+    localStorage.removeItem(WORKSPACE_STORAGE_KEY)
+  }
 })
