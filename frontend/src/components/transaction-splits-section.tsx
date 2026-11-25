@@ -30,6 +30,40 @@ interface RowState {
   percent: string
 }
 
+/** Reopens a payback as its payers, one row per member with what they paid. */
+function paybackSeed(settledBy: { from_member_id: string; amount: number | string }[]): TransactionSplitsInput {
+  const byMember = new Map<string, number>()
+  for (const s of settledBy) {
+    byMember.set(s.from_member_id, (byMember.get(s.from_member_id) ?? 0) + Number(s.amount))
+  }
+  return {
+    share_type: 'equal',
+    splits: [...byMember].map(([id, part]) => ({ group_member_id: id, share_amount: Math.round(part * 100) / 100 })),
+  }
+}
+
+/** A reopened payback goes back to blank amounts, which follow the credit,
+ *  only when blank rows would split it into exactly the parts recorded. */
+function blankEqualParts(rows: RowState[], group: Group, amount: number): RowState[] {
+  const selfId = group.members.find((m) => m.is_self)?.id
+  const isPayer = (r: RowState) => r.selected && r.member_id !== selfId
+  const payers = rows.filter(isPayer)
+  const blank = paybackParts(payers.map((r) => ({ ...r, amount: '' })), amount)
+  const same = blank.every((part, i) => Math.abs(part - (parseFloat(payers[i].amount) || 0)) < 0.005)
+  return same ? rows.map((r) => (isPayer(r) ? { ...r, amount: '' } : r)) : rows
+}
+
+/** Each payer's part of a payback: the amounts typed stay, and what is left
+ *  of the credit is shared equally among the payers left blank, in cents,
+ *  the leftover cents to the first of them. */
+function paybackParts(payers: RowState[], amount: number): number[] {
+  const typed = payers.map((r) => (r.amount.trim() === '' ? null : Math.round((parseFloat(r.amount) || 0) * 100)))
+  const blank = typed.filter((c) => c === null).length
+  const rest = Math.max(Math.round(Math.abs(amount) * 100) - typed.reduce<number>((sum, c) => sum + (c ?? 0), 0), 0)
+  let i = 0
+  return typed.map((c) => (c !== null ? c : Math.floor(rest / blank) + (i++ < rest % blank ? 1 : 0)) / 100)
+}
+
 function buildRows(group: Group | null | undefined, current: TransactionSplitsInput | null): RowState[] {
   if (!group) return []
   // Pydantic serializes Decimal as a string, so values arriving from
@@ -74,7 +108,7 @@ export function TransactionSplitsSection({
   // Offered for an incoming transaction: record it as members paying back.
   onSettle?: (next: TransactionSettleInput | null) => void
   // Paybacks already recorded on this transaction: it reopens as one.
-  settledBy?: { group_id: string; from_member_id: string }[]
+  settledBy?: { group_id: string; from_member_id: string; amount: number | string }[]
 }) {
   const { t } = useTranslation()
   const locale = useDisplayLocale()
@@ -87,10 +121,9 @@ export function TransactionSplitsSection({
   // first push-state-up cycle (which zeros the parent before the
   // group has finished loading).
   const seedRef = useRef<TransactionSplitsInput | null>(
-    value ?? (settledBy?.length
-      ? { share_type: 'equal', splits: settledBy.map((s) => ({ group_member_id: s.from_member_id })) }
-      : null),
+    value ?? (settledBy?.length ? paybackSeed(settledBy) : null),
   )
+  const paybackSeededRef = useRef(!value && !!settledBy?.length)
   // Once rows have been hydrated for the seeded value, stop applying
   // it — further edits are user-driven.
   const hydratedRef = useRef(false)
@@ -211,7 +244,8 @@ export function TransactionSplitsSection({
     setRows((prevRows) => {
       // If first hydration or switched groups, rebuild completely
       if (rebuild) {
-        return buildRows(group, source)
+        const built = buildRows(group, source)
+        return source && paybackSeededRef.current ? blankEqualParts(built, group, amount) : built
       }
 
       // Otherwise, merge new group members into existing rows state to preserve user selections
@@ -229,25 +263,21 @@ export function TransactionSplitsSection({
     })
 
     hydratedRef.current = true
-  }, [group])
+  }, [group, amount])
 
   // The viewer's own member receives the payback; the others can pay it.
   const selfId = group?.members.find((m) => m.is_self)?.id
   const payers = rows.filter((r) => r.selected && r.member_id !== selfId)
+  const parts = paybackParts(payers, amount)
 
   // Push state up whenever it changes meaningfully.
   useEffect(() => {
     if (enabled && settle) {
       onChange(null)
-      // Equal parts in cents, the leftover cents to the first payers.
-      const cents = Math.round(Math.abs(amount) * 100)
       onSettle?.(group && selfId && payers.length > 0 ? {
         group_id: group.id,
         to_member_id: selfId,
-        payers: payers.map((r, i) => ({
-          member_id: r.member_id,
-          amount: (Math.floor(cents / payers.length) + (i < cents % payers.length ? 1 : 0)) / 100,
-        })),
+        payers: payers.map((r, i) => ({ member_id: r.member_id, amount: parts[i] })),
       } : null)
       return
     }
@@ -300,7 +330,12 @@ export function TransactionSplitsSection({
   // gate its save button instead of relying on a 400 round-trip.
   const isValid = useMemo(() => {
     if (!enabled) return true
-    if (settle) return !!selfId && payers.length > 0
+    // Each payer pays something, and together no more than the credit holds:
+    // what is left of it stays income.
+    if (settle) {
+      return !!selfId && payers.length > 0 && parts.every((p) => p > 0)
+        && parts.reduce((a, b) => a + b, 0) <= Math.abs(amount) + 0.005
+    }
     const selected = rows.filter((r) => r.selected)
     if (selected.length === 0) return false
     if (shareType === 'equal') return true
@@ -310,7 +345,7 @@ export function TransactionSplitsSection({
     }
     const pctSum = selected.reduce((s, r) => s + (parseFloat(r.percent) || 0), 0)
     return Math.abs(pctSum - 100) < 0.005
-  }, [enabled, shareType, rows, amount, settle, selfId, payers.length])
+  }, [enabled, shareType, rows, amount, settle, selfId, payers.length, parts])
 
   useEffect(() => {
     onValidityChange?.(isValid)
@@ -456,11 +491,9 @@ export function TransactionSplitsSection({
                       return group.members.map((m) => {
                         const row = rows.find((r) => r.member_id === m.id)
                         if (!row || (settle && m.id === selfId)) return null
-                        const computed: number | null = !row.selected
+                        const computed: number | null = !row.selected || settle
                           ? null
-                          : settle
-                            ? Math.abs(amount) / Math.max(payers.length, 1)
-                            : shareType === 'equal'
+                          : shareType === 'equal'
                             ? selectedCount > 0
                               ? absAmount / selectedCount
                               : null
@@ -492,6 +525,17 @@ export function TransactionSplitsSection({
                                 {formatCurrency(computed, currency, locale)}
                               </span>
                             )}
+                            {settle && row.selected && (
+                              <Input
+                                type="number"
+                                step="0.01"
+                                className="w-24 h-8 text-sm"
+                                aria-label={m.name}
+                                placeholder={parts[payers.indexOf(row)]?.toFixed(2)}
+                                value={row.amount}
+                                onChange={(e) => updateRow(m.id, { amount: e.target.value })}
+                              />
+                            )}
                             {!settle && shareType === 'exact' && row.selected && (
                               <Input
                                 type="number"
@@ -518,6 +562,24 @@ export function TransactionSplitsSection({
                       })
                     })()
                   )}
+                </div>
+              )}
+
+              {settle && payers.length > 0 && (
+                <div className="text-xs text-muted-foreground">
+                  <span
+                    className={
+                      parts.reduce((a, b) => a + b, 0) <= Math.abs(amount) + 0.005
+                        ? 'text-emerald-600'
+                        : 'text-amber-600'
+                    }
+                  >
+                    {t('splitGroups.amountSum', {
+                      total: parts.reduce((a, b) => a + b, 0).toFixed(2),
+                      target: Math.abs(amount).toFixed(2),
+                      currency,
+                    })}
+                  </span>
                 </div>
               )}
 
