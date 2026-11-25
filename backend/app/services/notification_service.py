@@ -588,13 +588,19 @@ async def _inform(session: AsyncSession, kind: NotificationKind, told: list[_Tol
         workspace = await _workspace_for(session, item.user_id, item.group.workspace_id)
         if workspace is None or not _has(workspace, kind):
             continue
-        row = await session.scalar(
-            select(Notification).where(
-                Notification.workspace_id == workspace.id,
-                Notification.user_id == item.user_id,
-                Notification.dedup_key == item.key,
+        rows = {
+            row.workspace_id: row
+            for row in await session.scalars(
+                select(Notification).where(
+                    Notification.user_id == item.user_id, Notification.dedup_key == item.key
+                )
             )
-        )
+        }
+        row = rows.pop(workspace.id, None)
+        # Told elsewhere before they joined or left a workspace, that is the old news.
+        for elsewhere in rows.values():
+            if elsewhere.resolved_at is None:
+                elsewhere.resolved_at = now
         if row is None:
             row = Notification(
                 workspace_id=workspace.id,

@@ -567,6 +567,34 @@ async def test_an_edit_tells_only_whose_share_it_changed(
     assert await trip.told() == []
 
 
+async def test_told_where_they_are_now_ends_where_they_were_told_before(
+    client: AsyncClient, session: AsyncSession, auth_headers, test_workspace: Workspace
+):
+    """Someone told in their own workspace joins the group's, and then it is edited."""
+    trip = await _Trip(client, auth_headers, session).setup()
+    expense = await trip.expense(trip.split("Me", "Ana"))
+    settlement = await trip._post(
+        f"/api/groups/{trip.group['id']}/settlements",
+        {
+            "from_member_id": trip.members["Me"]["id"], "to_member_id": trip.members["Ana"]["id"],
+            "amount": "40.00", "currency": "EUR", "date": app_today().isoformat(),
+        },
+    )
+    session.add(
+        WorkspaceMember(id=uuid.uuid4(), workspace_id=test_workspace.id, user_id=trip.ana.id, role="editor")
+    )
+    await session.commit()
+    for path, body in (
+        (f"/api/transactions/{expense['id']}", {"splits": trip.split(Me="50.00", Ana="40.00")}),
+        (f"/api/groups/{trip.group['id']}/settlements/{settlement['id']}", {"amount": "55.00"}),
+    ):
+        response = await client.patch(path, json=body, headers=auth_headers)
+        assert response.status_code == 200, response.text
+    [share], [payment] = await trip.told(), await trip.told("group_settlement")
+    assert share.workspace_id == payment.workspace_id == test_workspace.id
+    assert (share.data["share"], payment.data["amount"]) == ("40.00", "55.00")
+
+
 async def test_a_share_brought_to_zero_is_over(
     client: AsyncClient, session: AsyncSession, auth_headers, test_workspace: Workspace
 ):
