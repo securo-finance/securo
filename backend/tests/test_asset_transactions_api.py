@@ -128,6 +128,60 @@ async def test_deleting_a_split_a_later_sell_needs_returns_422(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("buys", [[10], [6, 4]], ids=["only_buy", "one_of_two_buys"])
+async def test_deleting_a_buy_a_later_sell_needs_returns_422(
+    client: AsyncClient, auth_headers: dict, market_asset_api: Asset, buys: list[int]
+):
+    url = f"/api/assets/{market_asset_api.id}/transactions"
+    entries = [
+        {"kind": "buy", "quantity": quantity, "price": 100, "date": f"2026-01-{day:02d}"}
+        for day, quantity in enumerate(buys, start=1)
+    ]
+    entries.append({"kind": "sell", "quantity": 10, "price": 110, "date": "2026-03-01"})
+    for body in entries:
+        assert (await client.post(url, headers=auth_headers, json=body)).status_code == 201
+    ledger = (await client.get(url, headers=auth_headers)).json()
+    buy_id = next(tx["id"] for tx in ledger if tx["kind"] == "buy" and tx["quantity"] == buys[-1])
+
+    r = await client.delete(f"/api/assets/transactions/{buy_id}", headers=auth_headers)
+
+    assert r.status_code == 422
+    assert "later sell" in r.json()["detail"]
+    assert (await client.get(url, headers=auth_headers)).json() == ledger
+    asset = (await client.get(f"/api/assets/{market_asset_api.id}", headers=auth_headers)).json()
+    assert asset["realized_gain"] == 100
+
+    # With the sell gone, nothing depends on the buy any more.
+    sell_id = next(tx["id"] for tx in ledger if tx["kind"] == "sell")
+    for tx_id in (sell_id, buy_id):
+        r = await client.delete(f"/api/assets/transactions/{tx_id}", headers=auth_headers)
+        assert r.status_code == 200
+    assert r.json()["units"] == sum(buys[:-1])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("extra_date", ["2026-01-15", "2026-04-01"], ids=["spare_units", "after_the_sell"])
+async def test_deleting_a_buy_no_sell_needs_still_works(
+    client: AsyncClient, auth_headers: dict, market_asset_api: Asset, extra_date: str
+):
+    url = f"/api/assets/{market_asset_api.id}/transactions"
+    for body in (
+        {"kind": "buy", "quantity": 10, "price": 100, "date": "2026-01-01"},
+        {"kind": "buy", "quantity": 4, "price": 100, "date": extra_date},
+        {"kind": "sell", "quantity": 10, "price": 110, "date": "2026-03-01"},
+    ):
+        assert (await client.post(url, headers=auth_headers, json=body)).status_code == 201
+    ledger = (await client.get(url, headers=auth_headers)).json()
+    extra_id = next(tx["id"] for tx in ledger if tx["quantity"] == 4)
+
+    r = await client.delete(f"/api/assets/transactions/{extra_id}", headers=auth_headers)
+
+    assert r.status_code == 200
+    assert r.json()["units"] == 0
+    assert r.json()["realized_gain"] == 100
+
+
+@pytest.mark.asyncio
 async def test_a_split_too_large_to_store_returns_422(
     client: AsyncClient, auth_headers: dict, market_asset_api: Asset
 ):

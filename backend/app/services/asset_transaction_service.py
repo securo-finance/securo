@@ -759,13 +759,13 @@ async def delete_transaction(
     if tx is None:
         return None
     others = [t for t in await _load_txs(session, tx.asset_id, refresh=True) if t.id != tx.id]
-    # The recompute would clamp a sell that needed the split's units, and that
-    # can close the holding.
-    if tx.kind == "split" and _detect_oversell(others) is not None:
+    # The recompute would clamp a sell that needed the entry's units, which
+    # changes the realized gain and can close the holding.
+    if tx.kind in ("buy", "split") and _detect_oversell(others) is not None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=(
-                "This split can't be deleted because a later sell depends on its units. "
+                f"This {tx.kind} can't be deleted because a later sell depends on its units. "
                 "Delete or edit that sell first."
             ),
         )
