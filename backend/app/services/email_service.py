@@ -70,11 +70,8 @@ URL_PATTERN = re.compile(
 # over the text as the reader gets it, not only as the admin wrote it: a host
 # name can be assembled from the values, and `reset{minutes}.com` is no
 # address in the template while `reset60.com` is one in the message.
-CHECK_VALUES = {
-    "app_name": "Securo",
-    "link": "https://securo.example/reset-password?token=check",
-    "minutes": 60,
-}
+CHECK_LINK = "https://securo.example/reset-password?token=check"
+CHECK_VALUES = {"app_name": "Securo", "link": CHECK_LINK, "minutes": 60}
 
 
 class EmailDisabled(RuntimeError):
@@ -265,7 +262,7 @@ def validate_templates(data: object) -> dict[str, dict[str, str]]:
             )
         # The recovery link itself is the only address the message may carry,
         # so it comes out before the text is read.
-        if has_url(_as_sent(body).replace(CHECK_VALUES["link"], "")):
+        if has_url(_as_sent(body).replace(CHECK_LINK, "")):
             raise TemplateError(
                 f"The {language} body must not contain a link other than {{link}}"
             )
