@@ -136,6 +136,9 @@ def validate_templates(data: object) -> dict[str, dict[str, str]]:
         body = template.get("body")
         if not isinstance(subject, str) or not subject.strip():
             raise TemplateError(f"The {language} template needs a subject")
+        # The subject becomes a header: a line break there makes every send fail.
+        if "\n" in subject or "\r" in subject:
+            raise TemplateError(f"The {language} subject must be a single line")
         if not isinstance(body, str) or not body.strip():
             raise TemplateError(f"The {language} template needs a body")
         if len(subject) > SUBJECT_MAX_LENGTH:

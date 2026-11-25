@@ -261,7 +261,7 @@ async def update_email_state(
     on. Nothing is saved unless every template sent validates.
     """
     try:
-        body = json.loads(await request.body() or b"{}")
+        body = json.loads(await request.body())
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

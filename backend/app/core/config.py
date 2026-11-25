@@ -179,15 +179,20 @@ class Settings(BaseSettings):
                     "EMAIL_FROM is required when EMAIL_ENABLED is true and "
                     "EMAIL_PROVIDER is resend"
                 )
+            # The key travels in a header: never let it go out in the clear.
+            if not self.resend_api_url:
+                raise ValueError(
+                    "RESEND_API_URL is required when EMAIL_ENABLED is true and "
+                    "EMAIL_PROVIDER is resend"
+                )
+            if not self.resend_api_url.startswith("https://"):
+                raise ValueError("RESEND_API_URL must start with https://")
         elif not self.smtp_host:
             raise ValueError("SMTP_HOST is required when EMAIL_ENABLED is true")
         if self.email_provider == "smtp" and not (self.email_from or self.smtp_username):
             raise ValueError(
                 "EMAIL_FROM (or SMTP_USERNAME) is required when EMAIL_ENABLED is true"
             )
-        # The key travels in a header: never let it go out in the clear.
-        if self.resend_api_url and not self.resend_api_url.startswith("https://"):
-            raise ValueError("RESEND_API_URL must start with https://")
         if self.password_reset_token_minutes <= 0:
             raise ValueError("PASSWORD_RESET_TOKEN_MINUTES must be positive")
         return self

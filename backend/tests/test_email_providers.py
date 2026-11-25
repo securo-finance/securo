@@ -206,6 +206,29 @@ def test_the_api_address_must_be_https():
         )
 
 
+def test_the_api_address_cannot_be_empty_for_the_hosted_provider():
+    with pytest.raises(ValidationError, match="RESEND_API_URL"):
+        _settings(
+            email_enabled=True,
+            email_provider="resend",
+            resend_api_key=SecretStr("key"),
+            email_from="Securo <no-reply@example.com>",
+            resend_api_url="",
+        )
+
+
+def test_the_api_address_is_ignored_by_the_relay():
+    settings = _settings(
+        email_enabled=True,
+        email_provider="smtp",
+        smtp_host="smtp.example.com",
+        email_from="Securo <no-reply@example.com>",
+        resend_api_url="http://api.example.com",
+    )
+
+    assert settings.email_provider == "smtp"
+
+
 def test_the_relay_still_needs_a_host_at_boot():
     with pytest.raises(ValidationError, match="SMTP_HOST"):
         _settings(email_enabled=True, email_provider="smtp")
@@ -328,6 +351,41 @@ async def test_a_body_that_is_not_json_answers_400(client: AsyncClient, admin_au
         headers={**admin_auth_headers, "Content-Type": "application/json"},
     )
     assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_an_empty_body_answers_400_instead_of_clearing(
+    client: AsyncClient, admin_auth_headers, email_on
+):
+    """Clearing is explicit ({"templates": {}}); a client that sends nothing
+    must not wipe the templates that are in use."""
+    await client.put(
+        "/api/admin/email",
+        json={"templates": {"en": {"subject": "Mine", "body": "Open {link}."}}},
+        headers=admin_auth_headers,
+    )
+    empty = await client.put(
+        "/api/admin/email",
+        content=b"",
+        headers={**admin_auth_headers, "Content-Type": "application/json"},
+    )
+    assert empty.status_code == 400
+    state = await client.get("/api/admin/email", headers=admin_auth_headers)
+    assert state.json()["templates"]["en"]["subject"] == "Mine"
+
+
+@pytest.mark.asyncio
+async def test_a_subject_with_a_line_break_answers_400(
+    client: AsyncClient, admin_auth_headers, email_on
+):
+    response = await client.put(
+        "/api/admin/email",
+        json={"templates": {"en": {"subject": "Reset\npassword", "body": "Open {link}."}}},
+        headers=admin_auth_headers,
+    )
+
+    assert response.status_code == 400
+    assert "single line" in response.json()["detail"]
 
 
 @pytest.mark.asyncio

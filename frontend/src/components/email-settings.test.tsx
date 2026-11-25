@@ -50,6 +50,11 @@ describe('email settings', () => {
   })
 
   it('saves the edited template with the other language as it was', async () => {
+    const saved: EmailState = {
+      ...state,
+      templates: { ...state.templates, en: { ...state.templates.en, subject: 'New password' } },
+    }
+    vi.mocked(admin.updateEmailTemplates).mockResolvedValue(saved)
     const { user } = renderWithProviders(<EmailSettings />)
     const region = await screen.findByRole('region', { name: 'Email' })
     const english = await within(region).findByRole('group', { name: 'English' })
@@ -67,6 +72,9 @@ describe('email settings', () => {
         pt: state.templates.pt,
       }),
     )
+    // What was saved is what the fields show, and there is nothing left to save.
+    await waitFor(() => expect(subject).toHaveValue('New password'))
+    expect(within(region).getByRole('button', { name: 'Save templates' })).toBeDisabled()
   })
 
   it('refuses a body without the link and says why', async () => {
@@ -84,12 +92,40 @@ describe('email settings', () => {
   })
 
   it('restores the built-in text by saving no template', async () => {
+    const builtIn: EmailState = {
+      ...state,
+      templates: {
+        en: { subject: 'Reset your {app_name} password', body: 'Open {link}.' },
+        pt: { subject: 'Redefinir sua senha do {app_name}', body: 'Abra {link}.' },
+      },
+    }
+    vi.mocked(admin.updateEmailTemplates).mockResolvedValue(builtIn)
     const { user } = renderWithProviders(<EmailSettings />)
     const region = await screen.findByRole('region', { name: 'Email' })
+    const english = await within(region).findByRole('group', { name: 'English' })
+    const subject = within(english).getByLabelText('Subject')
 
     await user.click(await within(region).findByRole('button', { name: 'Restore default text' }))
 
     await waitFor(() => expect(admin.updateEmailTemplates).toHaveBeenCalledWith({}))
+    await waitFor(() => expect(subject).toHaveValue('Reset your {app_name} password'))
+    expect(within(region).getByRole('button', { name: 'Save templates' })).toBeDisabled()
+  })
+
+  it('drops an unsaved edit when the restore brings back the text already loaded', async () => {
+    const { user } = renderWithProviders(<EmailSettings />)
+    const region = await screen.findByRole('region', { name: 'Email' })
+    const english = await within(region).findByRole('group', { name: 'English' })
+    const subject = within(english).getByLabelText('Subject')
+
+    await user.clear(subject)
+    await user.type(subject, 'Half written')
+    expect(subject).toHaveValue('Half written')
+
+    await user.click(within(region).getByRole('button', { name: 'Restore default text' }))
+
+    await waitFor(() => expect(subject).toHaveValue(state.templates.en.subject))
+    expect(within(region).getByRole('button', { name: 'Save templates' })).toBeDisabled()
   })
 
   it('says when email is off and where the switch lives', async () => {

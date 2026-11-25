@@ -46,6 +46,10 @@ export function EmailSettings() {
     mutationFn: (templates: Record<string, EmailTemplate>) => admin.updateEmailTemplates(templates),
     onSuccess: (state) => {
       queryClient.setQueryData(['admin', 'email'], state)
+      // What was just saved is what the fields now show: an edit kept in the
+      // draft would otherwise survive a restore that answers the same
+      // templates, because the cached references do not change.
+      setEdited(null)
       toast.success(t('admin.email.saved'))
     },
     onError: (error) => toast.error(extractApiError(error, t('admin.email.saveFailed'))),
