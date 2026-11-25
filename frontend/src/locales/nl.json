@@ -4085,23 +4085,23 @@
     "description": "Je bent offline of Securo start opnieuw op. Je gegevens zijn veilig en er is niets gewijzigd. We maken automatisch opnieuw verbinding zodra de server antwoordt."
   },
   "goalChart": {
-    "region": "Progress for {{name}}",
-    "title": "History & projection",
-    "historyFailed": "History could not be loaded. The forecast uses the current goal amount.",
-    "retry": "Retry",
-    "loading": "Loading history…",
-    "hidden": "Chart hidden in privacy mode",
-    "chartLabel": "{{name}} history and projection in {{currency}}",
-    "target": "Target",
-    "today": "Today",
-    "deadline": "Deadline",
-    "actual": "Historical amount",
-    "projected": "Projection",
-    "current": "Current amount",
+    "region": "Voortgang voor {{name}}",
+    "title": "Historie en prognose",
+    "historyFailed": "De historie kon niet worden geladen. De prognose gebruikt het huidige bedrag van het doel.",
+    "retry": "Opnieuw proberen",
+    "loading": "Historie laden…",
+    "hidden": "Grafiek verborgen in privacymodus",
+    "chartLabel": "Historie en prognose voor {{name}} in {{currency}}",
+    "target": "Doel",
+    "today": "Vandaag",
+    "deadline": "Einddatum",
+    "actual": "Historisch bedrag",
+    "projected": "Prognose",
+    "current": "Huidig bedrag",
     "notes": {
-      "missing": "No usable history was returned for this period.",
-      "currency": "History is unavailable in this goal’s currency. The forecast uses the goal’s current amount; no exchange rate is assumed.",
-      "partial": "Some valuations are missing; incomplete wallet totals are omitted."
+      "missing": "Er zijn geen bruikbare historische gegevens voor deze periode ontvangen.",
+      "currency": "De historie is niet beschikbaar in de valuta van dit doel. De prognose gebruikt het huidige bedrag van het doel; er wordt geen wisselkoers aangenomen.",
+      "partial": "Sommige waarderingen ontbreken; onvolledige totalen van de portemonnee worden weggelaten."
     }
   },
   "documentAi": {

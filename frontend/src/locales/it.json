@@ -4098,23 +4098,23 @@
     "description": "Sei offline o Securo si sta riavviando. I tuoi dati sono al sicuro e nulla è stato modificato. Ci riconnetteremo automaticamente appena il server risponderà."
   },
   "goalChart": {
-    "region": "Progress for {{name}}",
-    "title": "History & projection",
-    "historyFailed": "History could not be loaded. The forecast uses the current goal amount.",
-    "retry": "Retry",
-    "loading": "Loading history…",
-    "hidden": "Chart hidden in privacy mode",
-    "chartLabel": "{{name}} history and projection in {{currency}}",
-    "target": "Target",
-    "today": "Today",
-    "deadline": "Deadline",
-    "actual": "Historical amount",
-    "projected": "Projection",
-    "current": "Current amount",
+    "region": "Avanzamento di {{name}}",
+    "title": "Storico e proiezione",
+    "historyFailed": "Impossibile caricare lo storico. La proiezione utilizza l’importo attuale dell’obiettivo.",
+    "retry": "Riprova",
+    "loading": "Caricamento dello storico…",
+    "hidden": "Grafico nascosto in modalità privacy",
+    "chartLabel": "Storico e proiezione di {{name}} in {{currency}}",
+    "target": "Obiettivo",
+    "today": "Oggi",
+    "deadline": "Scadenza",
+    "actual": "Importo storico",
+    "projected": "Proiezione",
+    "current": "Importo attuale",
     "notes": {
-      "missing": "No usable history was returned for this period.",
-      "currency": "History is unavailable in this goal’s currency. The forecast uses the goal’s current amount; no exchange rate is assumed.",
-      "partial": "Some valuations are missing; incomplete wallet totals are omitted."
+      "missing": "Non sono stati restituiti dati storici utilizzabili per questo periodo.",
+      "currency": "Lo storico non è disponibile nella valuta di questo obiettivo. La proiezione utilizza l’importo attuale dell’obiettivo; non viene ipotizzato alcun tasso di cambio.",
+      "partial": "Mancano alcune valutazioni; i totali incompleti del portafoglio vengono omessi."
     }
   },
   "documentAi": {

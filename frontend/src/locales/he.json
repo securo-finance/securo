@@ -4120,23 +4120,23 @@
     "description": "אתם במצב לא מקוון או ש-Securo מופעל מחדש. הנתונים שלכם בטוחים ושום דבר לא השתנה. נתחבר מחדש אוטומטית ברגע שהשרת יגיב."
   },
   "goalChart": {
-    "region": "Progress for {{name}}",
-    "title": "History & projection",
-    "historyFailed": "History could not be loaded. The forecast uses the current goal amount.",
-    "retry": "Retry",
-    "loading": "Loading history…",
-    "hidden": "Chart hidden in privacy mode",
-    "chartLabel": "{{name}} history and projection in {{currency}}",
-    "target": "Target",
-    "today": "Today",
-    "deadline": "Deadline",
-    "actual": "Historical amount",
-    "projected": "Projection",
-    "current": "Current amount",
+    "region": "התקדמות עבור {{name}}",
+    "title": "היסטוריה ותחזית",
+    "historyFailed": "לא ניתן לטעון את ההיסטוריה. התחזית משתמשת בסכום הנוכחי של היעד.",
+    "retry": "ניסיון חוזר",
+    "loading": "טעינת היסטוריה…",
+    "hidden": "התרשים מוסתר במצב פרטיות",
+    "chartLabel": "היסטוריה ותחזית עבור {{name}} במטבע {{currency}}",
+    "target": "יעד",
+    "today": "היום",
+    "deadline": "תאריך יעד",
+    "actual": "סכום היסטורי",
+    "projected": "תחזית",
+    "current": "סכום נוכחי",
     "notes": {
-      "missing": "No usable history was returned for this period.",
-      "currency": "History is unavailable in this goal’s currency. The forecast uses the goal’s current amount; no exchange rate is assumed.",
-      "partial": "Some valuations are missing; incomplete wallet totals are omitted."
+      "missing": "לא התקבלו נתונים היסטוריים שמישים לתקופה זו.",
+      "currency": "ההיסטוריה אינה זמינה במטבע של יעד זה. התחזית משתמשת בסכום הנוכחי של היעד; לא נעשה שימוש בשער חליפין משוער.",
+      "partial": "חסרות כמה הערכות שווי; סכומים כוללים של הארנק שאינם מלאים אינם מוצגים."
     }
   },
   "documentAi": {

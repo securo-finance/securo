@@ -4098,23 +4098,23 @@
     "description": "Vous êtes hors ligne ou Securo redémarre. Vos données sont en sécurité et rien n'a été modifié. Nous nous reconnecterons automatiquement dès que le serveur répondra."
   },
   "goalChart": {
-    "region": "Progress for {{name}}",
-    "title": "History & projection",
-    "historyFailed": "History could not be loaded. The forecast uses the current goal amount.",
-    "retry": "Retry",
-    "loading": "Loading history…",
-    "hidden": "Chart hidden in privacy mode",
-    "chartLabel": "{{name}} history and projection in {{currency}}",
-    "target": "Target",
-    "today": "Today",
-    "deadline": "Deadline",
-    "actual": "Historical amount",
+    "region": "Progression de {{name}}",
+    "title": "Historique et projection",
+    "historyFailed": "Impossible de charger l’historique. La projection utilise le montant actuel de l’objectif.",
+    "retry": "Réessayer",
+    "loading": "Chargement de l’historique…",
+    "hidden": "Graphique masqué en mode confidentialité",
+    "chartLabel": "Historique et projection de {{name}} en {{currency}}",
+    "target": "Objectif",
+    "today": "Aujourd’hui",
+    "deadline": "Échéance",
+    "actual": "Montant historique",
     "projected": "Projection",
-    "current": "Current amount",
+    "current": "Montant actuel",
     "notes": {
-      "missing": "No usable history was returned for this period.",
-      "currency": "History is unavailable in this goal’s currency. The forecast uses the goal’s current amount; no exchange rate is assumed.",
-      "partial": "Some valuations are missing; incomplete wallet totals are omitted."
+      "missing": "Aucune donnée historique exploitable n’a été renvoyée pour cette période.",
+      "currency": "L’historique n’est pas disponible dans la devise de cet objectif. La projection utilise le montant actuel de l’objectif ; aucun taux de change n’est supposé.",
+      "partial": "Certaines valorisations sont manquantes ; les totaux incomplets du portefeuille sont omis."
     }
   },
   "documentAi": {

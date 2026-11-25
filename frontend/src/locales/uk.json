@@ -4150,23 +4150,23 @@
     "description": "Ви не в мережі або Securo перезапускається. Ваші дані в безпеці, нічого не змінено. Ми автоматично перепідключимося, щойно сервер відповість."
   },
   "goalChart": {
-    "region": "Progress for {{name}}",
-    "title": "History & projection",
-    "historyFailed": "History could not be loaded. The forecast uses the current goal amount.",
-    "retry": "Retry",
-    "loading": "Loading history…",
-    "hidden": "Chart hidden in privacy mode",
-    "chartLabel": "{{name}} history and projection in {{currency}}",
-    "target": "Target",
-    "today": "Today",
-    "deadline": "Deadline",
-    "actual": "Historical amount",
-    "projected": "Projection",
-    "current": "Current amount",
+    "region": "Прогрес цілі «{{name}}»",
+    "title": "Історія та прогноз",
+    "historyFailed": "Не вдалося завантажити історію. Прогноз використовує поточну суму цілі.",
+    "retry": "Спробувати знову",
+    "loading": "Завантаження історії…",
+    "hidden": "Графік приховано в режимі конфіденційності",
+    "chartLabel": "Історія та прогноз цілі «{{name}}» у {{currency}}",
+    "target": "Ціль",
+    "today": "Сьогодні",
+    "deadline": "Кінцевий термін",
+    "actual": "Історична сума",
+    "projected": "Прогноз",
+    "current": "Поточна сума",
     "notes": {
-      "missing": "No usable history was returned for this period.",
-      "currency": "History is unavailable in this goal’s currency. The forecast uses the goal’s current amount; no exchange rate is assumed.",
-      "partial": "Some valuations are missing; incomplete wallet totals are omitted."
+      "missing": "За цей період не отримано придатних для використання історичних даних.",
+      "currency": "Історія недоступна у валюті цієї цілі. Прогноз використовує поточну суму цілі; обмінний курс не припускається.",
+      "partial": "Деякі оцінки вартості відсутні; неповні підсумкові суми гаманця не відображаються."
     }
   },
   "documentAi": {
