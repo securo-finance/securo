@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { notifications as notificationsApi } from '@/lib/api'
-import { NOTIFICATION_ICONS } from '@/lib/notification-text'
+import { isKnownKind, NOTIFICATION_ICONS } from '@/lib/notification-text'
 import type { AppNotificationKind, NotificationPreference } from '@/types'
 
 /** The only channel there is so far; another one would be a switch beside it. */
@@ -69,7 +69,7 @@ export function NotificationPreferences() {
     <div className="space-y-3">
       <p className="px-1 text-sm text-muted-foreground">{t('notifications.preferences.hint')}</p>
       <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
-        {data.map(({ kind, channels }) => {
+        {data.filter(({ kind }) => isKnownKind(kind)).map(({ kind, channels }) => {
           const Icon = NOTIFICATION_ICONS[kind]
           const labelId = `notification-preference-${kind}`
           return (

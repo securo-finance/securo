@@ -246,3 +246,20 @@ it('tells what others did in a group, by what each share says', async () => {
   await user.click(screen.getByText('Ana recorded a payment'))
   expect(navigate).toHaveBeenLastCalledWith('/groups/g1')
 })
+
+it('still lists the rest next to a kind newer than this bundle', async () => {
+  const newer = { ...bank('z', 0), kind: 'from_a_newer_server', data: {} } as unknown as AppNotification
+  api.list.mockResolvedValue({ items: [newer, bank('a', 0)], total: 2, unread_count: 2 })
+  renderWithProviders(<NotificationsPage />)
+  expect(await screen.findByText('Bank a stopped syncing')).toBeInTheDocument()
+  expect(screen.getAllByRole('listitem')).toHaveLength(2)
+})
+
+it('leaves a kind newer than this bundle out of the switches', async () => {
+  api.preferences.mockResolvedValue([
+    { kind: 'from_a_newer_server', channels: { in_app: true } },
+    { kind: 'budget_threshold', channels: { in_app: true } },
+  ])
+  renderWithProviders(<NotificationsPage />, { route: '/notifications?tab=preferences' })
+  expect(await screen.findAllByRole('switch')).toHaveLength(1)
+})

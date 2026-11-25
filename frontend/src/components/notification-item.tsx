@@ -1,3 +1,4 @@
+import { Bell } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { useNotificationText } from '@/hooks/use-notifications'
@@ -9,7 +10,7 @@ import type { AppNotification } from '@/types'
 export function NotificationItem({ item, onFollow }: { item: AppNotification; onFollow: () => void }) {
   const { t } = useTranslation()
   const text = useNotificationText()
-  const Icon = NOTIFICATION_ICONS[item.kind]
+  const Icon = NOTIFICATION_ICONS[item.kind] ?? Bell
   const { title, detail } = describeNotification(item, text)
   // One whose cause is gone has nothing left to call attention to.
   const unread = !item.read_at && !item.resolved_at

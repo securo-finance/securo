@@ -15,6 +15,11 @@ export const NOTIFICATION_ICONS: Record<AppNotificationKind, LucideIcon> = {
   backup_failed: ArchiveX,
 }
 
+/** Whether this bundle has the words and the icon of a kind. */
+export function isKnownKind(kind: string): kind is AppNotificationKind {
+  return Object.hasOwn(NOTIFICATION_ICONS, kind)
+}
+
 export interface NotificationTextContext {
   t: TFunction
   date: (iso: string) => string
@@ -99,6 +104,9 @@ export function describeNotification(
         title: t('notifications.backup.title'),
         detail: t('notifications.backup.detail', { date: date(item.data.failed_at) }),
       }
+    // A kind newer than this bundle: said without its words, so the rest still shows.
+    default:
+      return { title: t('notifications.title'), detail: '' }
   }
 }
 
