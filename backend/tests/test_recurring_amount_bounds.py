@@ -139,6 +139,66 @@ async def test_edit_refuses_a_conversion_past_the_column(
     )
 
 
+@pytest.fixture
+def rate_fetch_commits(monkeypatch):
+    """No stored rate for the day: the on-demand fetch stores one and commits
+    the request's session, as the real `sync_rates` does."""
+    async def sync(session, target_date=None):
+        session.add(FxRate(
+            base_currency="USD", quote_currency="BRL", date=target_date,
+            rate=Decimal("5"), source="test",
+        ))
+        await session.commit()
+        return 1
+
+    monkeypatch.setattr("app.services.fx_rate_service.sync_rates", sync)
+
+
+@pytest.mark.asyncio
+async def test_a_rate_fetch_does_not_save_a_refused_create(
+    client, auth_headers, session, test_account, rate_fetch_commits
+):
+    resp = await _create(client, auth_headers, test_account, amount=TOO_BIG, currency="USD")
+
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["detail"] == LIMIT_MESSAGE
+    await session.rollback()
+    assert (await session.scalars(select(RecurringTransaction))).all() == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changes", [
+    {"amount": TOO_BIG, "currency": "USD"},
+    {"amount": TOO_BIG, "currency": "USD", "description": "Renamed"},
+])
+async def test_a_rate_fetch_does_not_save_a_refused_edit(
+    client, auth_headers, session, test_account, rate_fetch_commits, changes
+):
+    created = (await _create(client, auth_headers, test_account)).json()
+
+    resp = await _patch(client, auth_headers, created["id"], **changes)
+
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["detail"] == LIMIT_MESSAGE
+    await session.rollback()
+    row = await _stored(session, created["id"])
+    assert (row.amount, row.currency, row.amount_primary, row.description) == (
+        Decimal("100.00"), "BRL", Decimal("100.00"), created["description"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_an_edit_uses_the_rate_it_fetched(
+    client, auth_headers, test_account, rate_fetch_commits
+):
+    created = (await _create(client, auth_headers, test_account)).json()
+
+    resp = await _patch(client, auth_headers, created["id"], amount="200", currency="USD")
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["amount_primary"] == 1000
+
+
 @pytest.mark.asyncio
 async def test_an_edit_of_the_amount_converts_it_again(
     client, auth_headers, test_account, usd_rate
