@@ -256,6 +256,31 @@ async def test_relay_failure_keeps_the_answer_unchanged(
     assert "reset-password?token=" not in caplog.text
 
 
+@pytest.mark.asyncio
+async def test_relay_refusal_logs_the_status_and_never_the_reply(
+    client: AsyncClient, test_user: User, sent_emails, monkeypatch, caplog
+):
+    """An SMTP refusal keeps the server's reply, which can quote the message.
+
+    Some relays answer DATA with the body they rejected, so writing the
+    exception or its traceback would put a live token in the log.
+    """
+    import smtplib
+
+    async def _refuse(message, _settings=None):
+        raise smtplib.SMTPDataError(
+            550, b"rejected <https://app.example.com/reset-password?token=leaked-token>"
+        )
+
+    monkeypatch.setattr(email_service, "send_email", _refuse)
+    response = await client.post("/api/auth/forgot-password", json={"email": "test@example.com"})
+
+    assert response.status_code == 202
+    assert "SMTPDataError" in caplog.text
+    assert "SMTP 550" in caplog.text
+    assert "leaked-token" not in caplog.text
+
+
 def test_email_settings_refuse_half_a_configuration():
     from app.core.config import Settings
 
