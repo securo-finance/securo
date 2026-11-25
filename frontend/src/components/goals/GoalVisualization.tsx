@@ -31,7 +31,7 @@ import type { Goal } from '@/types'
 const timestamp = (day: string) => Date.parse(day + 'T00:00:00Z')
 
 /**
- * Displays a collapsible goal history chart with the API-based contribution
+ * Displays a collapsible goal history chart with the required-pace
  * projection, target, and deadline. Uses workspace dates, theme colors, and
  * privacy settings, and exposes loading, missing-data, and retry states.
  *
@@ -45,10 +45,11 @@ export function GoalVisualization({ goal }: { goal: Goal }) {
   const { current } = useWorkspace()
   const locale = useDisplayLocale()
   const { mask, privacyMode } = usePrivacyMode()
+  // Undated goals start collapsed; the user can expand them to load history.
   // Local UI state controls whether the chart is expanded. The unique id connects
   // the toggle button to its content for assistive technology.
   const id = useId()
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(Boolean(goal.target_date))
   const today = todayInTimezone(current?.timezone)
 
   // React Query loads and caches history for this goal and workspace. The key
@@ -75,8 +76,8 @@ export function GoalVisualization({ goal }: { goal: Goal }) {
     retry: false,
   })
 
-  // Calculate the projection locally from the Goal API amounts and monthly rate.
-  // This is separate from the history request and makes no API calls.
+  // Build a straight required-pace guide from today to the target and deadline.
+  // Undated goals get history only. This calculation makes no API calls.
   const plan = projectGoal(goal, today)
   /**
    * Formats a value in the goal currency and applies the current privacy mask.
@@ -127,9 +128,14 @@ export function GoalVisualization({ goal }: { goal: Goal }) {
     timestamp(firstOfMonthAfter(today)),
     deadlineEnd,
   )
-  // Leave 10% above the larger of the target and current amount. Include negative
-  // values below zero; older peaks above this fixed ceiling may be clipped.
-  const ceiling = Math.max(Number(goal.target_amount), Number(goal.current_amount)) * 1.1
+  // Leave 10% above the target, current amount, or highest point in either series,
+  // whichever is largest, so historical peaks and projected overshoots stay visible.
+  const peak = chart.reduce(
+    (max, point) => Math.max(max, point.actual ?? 0, point.projected ?? 0),
+    Math.max(Number(goal.target_amount), Number(goal.current_amount)),
+  )
+  const ceiling = peak * 1.1
+  // Keep negative historical or projected values visible below zero as well.
   const floor = chart.reduce(
     (min, point) => Math.min(min, point.actual ?? 0, point.projected ?? 0),
     0,
@@ -289,22 +295,24 @@ export function GoalVisualization({ goal }: { goal: Goal }) {
                     connectNulls
                     isAnimationActive={false}
                   />
-                  {/* Dashed forecast: step upward when each monthly contribution lands.
-                      Without a forecast, show only a dot for the current amount. */}
-                  <Line
-                    type="stepAfter"
-                    dataKey="projected"
-                    name={t(
-                      plan.projection.length > 1 ? 'goalChart.projected' : 'goalChart.current',
-                    )}
-                    stroke="var(--primary)"
-                    strokeWidth={2}
-                    strokeOpacity={0.7}
-                    strokeDasharray={plan.projection.length > 1 ? '6 5' : undefined}
-                    dot={plan.projection.length === 1}
-                    connectNulls
-                    isAnimationActive={false}
-                  />
+                  {/* Straight dashed pace guide from today to the target on the deadline.
+                      Reached/overdue dated goals show a current dot; undated goals omit it. */}
+                  {plan.projection.length > 0 && (
+                    <Line
+                      type="linear"
+                      dataKey="projected"
+                      name={t(
+                        plan.projection.length > 1 ? 'goalChart.projected' : 'goalChart.current',
+                      )}
+                      stroke="var(--primary)"
+                      strokeWidth={2}
+                      strokeOpacity={0.7}
+                      strokeDasharray={plan.projection.length > 1 ? '6 5' : undefined}
+                      dot={plan.projection.length === 1}
+                      connectNulls
+                      isAnimationActive={false}
+                    />
+                  )}
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -315,16 +323,18 @@ export function GoalVisualization({ goal }: { goal: Goal }) {
               <i className="w-5 border-t-2 border-[var(--primary)]" />
               {t('goalChart.actual')}
             </span>
-            <span className="flex items-center gap-2">
-              <i
-                className={
-                  plan.projection.length > 1
-                    ? 'w-5 border-t-2 border-dashed border-[var(--primary)] opacity-70'
-                    : 'h-2 w-2 rounded-full bg-[var(--primary)] opacity-70'
-                }
-              />
-              {t(plan.projection.length > 1 ? 'goalChart.projected' : 'goalChart.current')}
-            </span>
+            {plan.projection.length > 0 && (
+              <span className="flex items-center gap-2">
+                <i
+                  className={
+                    plan.projection.length > 1
+                      ? 'w-5 border-t-2 border-dashed border-[var(--primary)] opacity-70'
+                      : 'h-2 w-2 rounded-full bg-[var(--primary)] opacity-70'
+                  }
+                />
+                {t(plan.projection.length > 1 ? 'goalChart.projected' : 'goalChart.current')}
+              </span>
+            )}
             <span>{goal.currency}</span>
           </div>
         </div>

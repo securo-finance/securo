@@ -54,30 +54,29 @@ export function calendarMonthAfter(day: string): string {
 }
 
 /**
- * Projects a goal from its current amount using the API's monthly requirement.
- * Contributions land on the first of each month, starting next month, with no
- * investment growth. The series stops when the target is reached or after 120
- * contributions. Reached or overdue goals and nonpositive or missing monthly
- * requirements produce only the current point.
+ * Builds the endpoints of the straight-line pace needed to reach a dated goal.
+ * This is a required-pace guide, not a prediction of monthly contributions.
+ * Undated goals have no projection. Reached or overdue dated goals retain only
+ * today's amount rather than drawing a backward or declining projection.
  *
- * @param {Goal} goal - Goal API response supplying the amounts, rate, and deadline.
+ * @param {Goal} goal - Goal supplying its current amount, target, and deadline.
  * @param {string} today - Current workspace date in YYYY-MM-DD format.
- * @returns {{ projection: AmountPoint[] }} A projection including today's amount and any future contributions.
+ * @returns {{ projection: AmountPoint[] }} Zero, one, or two projection points.
  */
 export function projectGoal(goal: Goal, today: string) {
-  const current = cents(goal.current_amount)
-  const gap = Math.max(0, cents(goal.target_amount) - current)
-  const payment = goal.monthly_contribution == null ? 0 : cents(goal.monthly_contribution)
-  const projection: AmountPoint[] = [{ date: today, amount: current / 100 }]
-  if (gap > 0 && payment > 0 && (!goal.target_date || goal.target_date > today)) {
-    const months = Math.min(120, Math.ceil(gap / payment))
-    for (let month = 1; month <= months; month++) {
-      projection.push({
-        date: firstOfMonthAfter(today, month),
-        amount: (current + month * payment) / 100,
-      })
-    }
+  const projection: AmountPoint[] = []
+  if (!goal.target_date) {
+    return { projection }
   }
+
+  const current = cents(goal.current_amount)
+  const target = cents(goal.target_amount)
+  projection.push({ date: today, amount: current / 100 })
+
+  if (current < target && goal.target_date > today) {
+    projection.push({ date: goal.target_date, amount: target / 100 })
+  }
+
   return { projection }
 }
 

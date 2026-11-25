@@ -99,7 +99,7 @@ it('keeps native stats and shows charts only for nonmanual goals', async () => {
   const { container } = renderWithProviders(<GoalsPage />)
   const server = within(await screen.findByRole('region', { name: 'Progress for Server Fund' }))
   await waitFor(() =>
-    expect(screen.getAllByRole('img', { name: /history and projection in USD/ })).toHaveLength(5),
+    expect(screen.getAllByRole('img', { name: /history and projection in USD/ })).toHaveLength(4),
   )
   expect(screen.getByText('Holiday Fund')).toBeVisible()
   expect(
@@ -114,12 +114,36 @@ it('keeps native stats and shows charts only for nonmanual goals', async () => {
   expect(mocks.goals.update).not.toHaveBeenCalled()
 })
 
-it('shows only history and the current point when the API supplies no monthly amount', async () => {
-  renderWithProviders(<GoalsPage />)
+it('starts undated goals collapsed and loads only history when expanded', async () => {
+  mocks.goals.list.mockResolvedValue([{ ...fixtures()[1], monthly_contribution: 100 }])
+  const { user } = renderWithProviders(<GoalsPage />)
   const house = await screen.findByRole('region', { name: 'Progress for House Fund' })
+  const toggle = within(house).getByRole('button')
+
+  expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  expect(within(house).queryByRole('img')).not.toBeInTheDocument()
+  expect(mocks.history).not.toHaveBeenCalled()
+
+  await user.click(toggle)
+
+  expect(toggle).toHaveAttribute('aria-expanded', 'true')
   await waitFor(() => expect(house.querySelector('path.recharts-line-curve')).toBeTruthy())
   expect(house.querySelector('path[stroke-dasharray="6 5"]')).toBeNull()
-  expect(within(house).getByText('Current amount')).toBeVisible()
+  expect(within(house).queryByText('Current amount')).not.toBeInTheDocument()
+  expect(within(house).queryByText('Projection')).not.toBeInTheDocument()
+  expect(mocks.history).toHaveBeenCalledTimes(1)
+})
+
+it('draws a straight pace guide even without a monthly contribution amount', async () => {
+  mocks.goals.list.mockResolvedValue([{ ...fixtures()[0], monthly_contribution: null }])
+  renderWithProviders(<GoalsPage />)
+  const region = await screen.findByRole('region', { name: 'Progress for Server Fund' })
+  await waitFor(() => {
+    const line = region.querySelector('path[stroke-dasharray="6 5"]')
+    expect(line).toBeTruthy()
+    // A linear two-point SVG path uses L, without the H/V steps of stepAfter.
+    expect(line?.getAttribute('d')).toMatch(/^M[^A-Za-z]+L[^A-Za-z]+$/)
+  })
 })
 
 it('allows a failed history request to be retried', async () => {
@@ -160,4 +184,43 @@ it('does not project reached or overdue goals', async () => {
     expect(within(region).getByText('Current amount')).toBeVisible()
     expect(region.querySelector('path[stroke-dasharray="6 5"]')).toBeNull()
   }
+})
+
+it.each([
+  {
+    scenario: 'a historical decline above the target',
+    current: 2700,
+    monthly: 471.43,
+    top: '9.9K',
+  },
+  {
+    scenario: 'a current amount above the historical peak',
+    current: 10000,
+    monthly: null,
+    top: '11K',
+  },
+  {
+    scenario: 'a large payment capped below the historical peak',
+    current: 2700,
+    monthly: 8000,
+    top: '9.9K',
+  },
+])('keeps 10% headroom for $scenario', async ({ current, monthly, top }) => {
+  mocks.goals.list.mockResolvedValue([
+    { ...fixtures()[0], current_amount: current, monthly_contribution: monthly },
+  ])
+  mocks.history.mockResolvedValue({
+    points: [
+      { date: '2026-09-30', amount: 9000 },
+      { date: '2026-10-31', amount: 8000 },
+    ],
+    notes: [],
+  })
+
+  renderWithProviders(<GoalsPage />)
+  const region = await screen.findByRole('region', { name: 'Progress for Server Fund' })
+  await waitFor(() => {
+    expect(region.querySelector('path.recharts-line-curve')).toBeTruthy()
+    expect(within(region).getByText(top)).toBeVisible()
+  })
 })
