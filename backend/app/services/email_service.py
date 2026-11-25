@@ -45,16 +45,18 @@ def password_reset_link(token: str, settings: Settings | None = None) -> str:
 def password_reset_email(
     to: str,
     link: str,
-    language: str,
+    language: object,
     token_minutes: int,
 ) -> Email:
     """The recovery message in the account's language.
 
     Only the languages with a full translation are written here; anything
-    else gets English, which every instance can be read in.
+    else gets English, which every instance can be read in. The stored
+    preference is free-form JSON, so a number or a list is not a language and
+    must not raise: only existing accounts would see that error.
     """
     minutes = token_minutes
-    if (language or "en").lower().startswith("pt"):
+    if isinstance(language, str) and language.lower().startswith("pt"):
         subject = "Redefinir sua senha do Securo"
         text = (
             "Olá,\n\n"
