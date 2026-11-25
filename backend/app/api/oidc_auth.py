@@ -15,7 +15,7 @@ from fastapi_users import schemas
 from fastapi_users.exceptions import UserAlreadyExists
 from jose import JWTError, jwt
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,7 +26,7 @@ from app.core.redis import get_redis
 from app.models.account import Account
 from app.models.user import User
 from app.models.workspace import WORKSPACE_ROLES, Workspace, WorkspaceMember
-from app.services import admin_service
+from app.services import account_lookup_service, admin_service
 from app.services.category_service import create_default_categories
 from app.services.rule_service import create_default_rules
 from app.services.workspace_service import create_personal_workspace_for_user
@@ -499,11 +499,17 @@ async def _get_or_create_oidc_user(
     email = merged.get("email")
     if not email:
         raise HTTPException(status_code=400, detail="OIDC provider did not return an email claim")
-    email = str(EmailStr._validate(email)).lower()
+    # Keep the spelling the provider sent for every lookup: the resolver picks
+    # the row written exactly that way when an instance holds two accounts for
+    # one mailbox (#568). Only the account created here is stored in lower
+    # case, so a new row never comes in shouting.
+    email = str(EmailStr._validate(email))
     email_verified = merged.get("email_verified")
 
-    existing = await session.execute(select(User).where(func.lower(User.email) == email))
-    user = existing.scalar_one_or_none()
+    # One address can name two accounts on an instance built before the
+    # case-insensitive checks (#568); the resolver answers one of them instead
+    # of raising, and picks the row written in this spelling when there is one.
+    user = await account_lookup_service.find_account_by_email(session, email)
     if user is not None:
         return await _link_existing_account(
             user,
@@ -533,7 +539,7 @@ async def _get_or_create_oidc_user(
     provider_roles = _claim_values(merged, settings.oidc_roles_claim)
     admin_roles = {role.strip() for role in settings.oidc_admin_roles.split(",") if role.strip()}
     user_create = _OIDCUserCreate(
-        email=email,
+        email=email.lower(),
         password=secrets.token_urlsafe(32),
         is_verified=True,
         is_superuser=bool(settings.oidc_sync_roles and admin_roles and provider_roles & admin_roles),
@@ -548,15 +554,16 @@ async def _get_or_create_oidc_user(
         # this insert, so it is an existing account now. The failed insert left
         # the session unusable, so roll it back and look the row up again — by
         # the identity first, since the winner may carry another address, then
-        # by the address. Apply the same checks instead of claiming it,
-        # overwriting its preferences and provisioning a second workspace and
-        # wallet for it.
+        # by the address through the same resolver that read it before (#568).
+        # Apply the same checks instead of claiming it, overwriting its
+        # preferences and provisioning a second workspace and wallet for it
+        # (#572).
         await session.rollback()
         winner = (
             await session.execute(select(User).where(User.oidc_issuer == issuer, User.oidc_subject == subject))
         ).scalar_one_or_none()
         if winner is None:
-            winner = (await session.execute(select(User).where(func.lower(User.email) == email))).scalar_one_or_none()
+            winner = await account_lookup_service.find_account_by_email(session, email)
         if winner is None:
             raise conflict
         return await _link_existing_account(

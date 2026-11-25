@@ -10,6 +10,7 @@ import type {
   NotificationPreference,
   User,
   AdminUser,
+  AdminAccessLogList,
   AdminUserList,
   Passkey,
   PasskeyOptionsResponse,
@@ -305,6 +306,21 @@ export const auth = {
     const { data } = await api.patch('/users/me', { password })
     return data
   },
+  /**
+   * Move the account to the address an administrator asked for (ADR 0042,
+   * #556). Only the person whose account it is can, from their own session —
+   * which is what makes the request useless as a way into the account.
+   *
+   * `email` is the address that was on screen: sending it back means accepting
+   * the address the person read, not whatever an administrator asked for after.
+   */
+  confirmEmailChange: async (email: string): Promise<User> => {
+    const { data } = await api.post('/users/me/email-change', { email })
+    return data
+  },
+  declineEmailChange: async (): Promise<void> => {
+    await api.delete('/users/me/email-change')
+  },
   setup2fa: async (): Promise<{ secret: string; otpauth_uri: string }> => {
     const { data } = await api.post('/auth/2fa/setup')
     return data
@@ -386,6 +402,14 @@ export const auth = {
     // Only the sign-out asks this: it may reach the provider, so it is kept
     // off /config, which the sign-in page waits on.
     const { data } = await api.get('/auth/oidc/logout-url', { timeout: 10000 })
+    return data
+  },
+}
+
+/** Administrative actions on my account, and on members of workspaces I own (ADR 0042). */
+export const accessLog = {
+  mine: async (params?: { page?: number; limit?: number }): Promise<AdminAccessLogList> => {
+    const { data } = await api.get('/access-log/mine', { params })
     return data
   },
 }
@@ -2157,12 +2181,17 @@ export const admin = {
     const { data } = await api.post('/admin/users', user)
     return data
   },
-  updateUser: async (id: string, user: Partial<{ email: string; password: string; is_active: boolean; is_superuser: boolean; preferences: Record<string, unknown> }>): Promise<AdminUser> => {
+  /** Changing an account needs a reason, and it is logged (ADR 0042). */
+  updateUser: async (id: string, user: { reason: string; email?: string; is_active?: boolean; is_superuser?: boolean; preferences?: Record<string, unknown> }): Promise<AdminUser> => {
     const { data } = await api.patch(`/admin/users/${id}`, user)
     return data
   },
-  deleteUser: async (id: string): Promise<void> => {
-    await api.delete(`/admin/users/${id}`)
+  deleteUser: async (id: string, reason: string): Promise<void> => {
+    await api.delete(`/admin/users/${id}`, { params: { reason } })
+  },
+  accessLog: async (params?: { user_id?: string; page?: number; limit?: number }): Promise<AdminAccessLogList> => {
+    const { data } = await api.get('/admin/access-log', { params })
+    return data
   },
   providerSettings: async (): Promise<ProviderSettingStatus[]> => {
     const { data } = await api.get('/admin/provider-settings')

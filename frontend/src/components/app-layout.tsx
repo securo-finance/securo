@@ -17,6 +17,7 @@ import { useSidebarState } from '@/contexts/sidebar-state-context'
 import { NotificationBell } from '@/components/notification-bell'
 import { CollectionSelector } from '@/components/collection-selector'
 import { ConnectionLost } from '@/components/connection-lost'
+import { EmailChangeDialog } from '@/components/email-change-dialog'
 import { auth as authApi } from '@/lib/api'
 import { resolveSupportedLang } from '@/lib/i18n'
 import { OnboardingTour } from '@/components/onboarding-tour'
@@ -55,6 +56,7 @@ import {
   Shield,
   ShieldCheck,
   Fingerprint,
+  History,
   Palette,
   AlertCircle,
 } from 'lucide-react'
@@ -62,6 +64,7 @@ import { useMediaQuery } from '@/hooks/use-media-query'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { ChangePasswordDialog } from '@/components/change-password-dialog'
 import { BackupDialog } from '@/components/backup-dialog'
+import { AccessLogDialog } from '@/components/access-log-dialog'
 import { TwoFactorSetup } from '@/components/two-factor-setup'
 import { PasskeyManagementDialog } from '@/components/passkey-management-dialog'
 import { CommandPalette } from '@/components/command-palette'
@@ -118,6 +121,7 @@ export function AppLayout() {
   const [twoFactorOpen, setTwoFactorOpen] = useState(false)
   const [passkeysOpen, setPasskeysOpen] = useState(false)
   const [backupOpen, setBackupOpen] = useState(false)
+  const [accessLogOpen, setAccessLogOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
   // A message the assistant widget sent, waiting for the chat to pick it up.
@@ -311,6 +315,7 @@ export function AppLayout() {
             localAuthEnabled={localAuthEnabled}
             agentsEnabled={agentsEnabled}
             onBackup={() => setBackupOpen(true)}
+            onAccessLog={() => setAccessLogOpen(true)}
             dark
             isAdmin={user?.is_superuser}
           />
@@ -623,6 +628,7 @@ export function AppLayout() {
               onPasskeys={() => setPasskeysOpen(true)}
               localAuthEnabled={localAuthEnabled}
               onBackup={() => setBackupOpen(true)}
+              onAccessLog={() => setAccessLogOpen(true)}
               onUpdateAvailable={() => setUpdateDialogOpen(true)}
               agentsEnabled={agentsEnabled}
               collapsed={desktopSidebarCollapsed}
@@ -696,6 +702,10 @@ export function AppLayout() {
         localAuthEnabled={localAuthEnabled}
       />
       <BackupDialog open={backupOpen} onClose={() => setBackupOpen(false)} />
+      <AccessLogDialog open={accessLogOpen} onClose={() => setAccessLogOpen(false)} />
+      {/* A change of address an administrator asked for, waiting for this
+          person's decision (#556). */}
+      <EmailChangeDialog />
       {quickAddOpen && (
         <Suspense fallback={null}>
           <QuickAddTransaction open={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
@@ -731,6 +741,7 @@ function UserMenu({
   onPasskeys,
   localAuthEnabled,
   onBackup,
+  onAccessLog,
   dark,
   isAdmin,
   agentsEnabled,
@@ -742,6 +753,7 @@ function UserMenu({
   onPasskeys: () => void
   localAuthEnabled: boolean
   onBackup: () => void
+  onAccessLog: () => void
   dark?: boolean
   isAdmin?: boolean
   agentsEnabled?: boolean
@@ -816,6 +828,13 @@ function UserMenu({
         >
           <HardDriveDownload size={14} />
           {t('backup.button')}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={onAccessLog}
+          className="flex items-center gap-2"
+        >
+          <History size={14} />
+          {t('accessLog.title')}
         </DropdownMenuItem>
         {agentsEnabled && (
           <DropdownMenuItem

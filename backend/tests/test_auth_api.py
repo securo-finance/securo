@@ -1,7 +1,9 @@
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import get_jwt_strategy
+from app.core.auth import UserManager, get_jwt_strategy, get_user_db
+from app.models.user import User
 
 
 @pytest.mark.asyncio
@@ -37,6 +39,44 @@ async def test_login(client: AsyncClient, test_user):
     data = response.json()
     assert "access_token" in data
     assert data["token_type"] == "bearer"
+
+
+@pytest.mark.asyncio
+async def test_email_lookup_ignores_case(session: AsyncSession, test_user: User):
+    """Sign-in and recovery resolve the address through this lookup.
+
+    An account stored as `Test@example.com` must be found when the person
+    types `test@example.com`, or a capital reads as a wrong password (#556).
+    """
+    manager = UserManager(await anext(get_user_db(session)))
+
+    found = await manager.get_by_email("TEST@EXAMPLE.COM")
+    assert found.id == test_user.id
+
+
+@pytest.mark.asyncio
+async def test_login_and_registration_ignore_the_case_of_the_address(client: AsyncClient, clean_db):
+    registered = await client.post(
+        "/api/auth/register",
+        json={"email": "Test@example.com", "password": "casepass123"},
+    )
+    assert registered.status_code == 201
+
+    for typed in ("test@example.com", "TEST@EXAMPLE.COM"):
+        login = await client.post(
+            "/api/auth/login",
+            data={"username": typed, "password": "casepass123"},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        assert login.status_code == 200, f"{typed} did not find the account"
+
+    # The duplicate check uses the same lookup: a second account differing
+    # only in case is refused instead of leaving two accounts ambiguous.
+    duplicate = await client.post(
+        "/api/auth/register",
+        json={"email": "test@example.com", "password": "otherpass123"},
+    )
+    assert duplicate.status_code == 400
 
 
 @pytest.mark.asyncio
