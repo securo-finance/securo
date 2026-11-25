@@ -2992,6 +2992,9 @@
     },
     "settings": {
       "title": "Definições Admin",
+      "managedTitle": "Esta instância é gerida pela Securo",
+      "managedDesc": "As definições desta página são definidas por quem opera esta instância. Aplicam-se a todos e não podem ser alteradas aqui.",
+      "managedReadOnly": "Configurado pela Securo",
       "registrationTitle": "Registo",
       "registration": "Permitir registo de utilizadores",
       "registrationDesc": "Quando desativado, apenas admins podem criar novas contas.",

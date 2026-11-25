@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import UserManager, current_active_user, current_superuser, get_user_manager
 from app.core.auth_policy import require_local_auth_enabled
+from app.core.config import get_settings
 from app.core.database import get_async_session
 from app.core.app_clock import (
     app_timezone,
@@ -23,6 +24,7 @@ from app.schemas.admin import (
     AdminUserUpdate,
     AppSettingRead,
     AppSettingUpdate,
+    InstanceModeRead,
     ProviderSettingRead,
     TimezoneSettingRead,
 )
@@ -41,6 +43,34 @@ ALLOWED_SETTINGS = {
     "date_format",
     "timezone",
 }
+
+#: On a managed instance these belong to the operator, not to the person
+#: logging in as admin: every one of them is instance-wide and changes what
+#: everybody sees (ADR 0045).
+INSTANCE_SETTINGS = frozenset(ALLOWED_SETTINGS)
+
+
+def _refuse_managed_write(what: str) -> None:
+    """403 with a code the admin screen reads, when the operator owns `what`."""
+    if get_settings().managed_instance:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "instance_managed",
+                "message": f"'{what}' is configured by the operator on this instance",
+            },
+        )
+
+
+@router.get("/instance-mode", response_model=InstanceModeRead)
+async def instance_mode(_user: User = Depends(current_superuser)):
+    """What this instance lets its administrator change (ADR 0045)."""
+    managed = get_settings().managed_instance
+    return InstanceModeRead(
+        managed=managed,
+        locked_settings=sorted(INSTANCE_SETTINGS) if managed else [],
+        locked_providers=managed,
+    )
 
 
 @router.get("/users", response_model=AdminUserList)
@@ -150,6 +180,7 @@ async def update_provider_settings(
     session: AsyncSession = Depends(get_async_session),
     _user: User = Depends(current_superuser),
 ):
+    _refuse_managed_write(provider)
     # Parse explicitly so schema validation errors cannot echo submitted secrets.
     try:
         body = await request.json()
@@ -175,6 +206,7 @@ async def update_setting(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Setting '{key}' is not configurable",
         )
+    _refuse_managed_write(key)
     if key == "timezone" and not is_valid_timezone(data.value):
         raise HTTPException(status_code=400, detail="Invalid IANA timezone")
     SETTING_VALIDATORS = {
@@ -216,6 +248,7 @@ async def delete_setting(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Setting '{key}' is not configurable",
         )
+    _refuse_managed_write(key)
     await admin_service.delete_app_setting(session, key)
     if key == "timezone":
         invalidate_timezone_cache()

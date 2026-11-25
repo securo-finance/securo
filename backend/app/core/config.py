@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     # App
     app_name: str = "Securo"
     debug: bool = False
+    # Hosted instances (ADR 0045). On, the instance-side settings (bank and
+    # rate providers, open registration, defaults and timezone) are the
+    # operator's: the admin screen shows them read-only and the API refuses
+    # writes. Off by default, a self-hosted instance keeps every control.
+    managed_instance: bool = False
 
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/securo"

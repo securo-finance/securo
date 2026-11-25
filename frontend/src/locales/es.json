@@ -2993,6 +2993,9 @@
     },
     "settings": {
       "title": "Configuración de administrador",
+      "managedTitle": "Securo gestiona esta instancia",
+      "managedDesc": "La configuración de esta página la define quien opera la instancia. Se aplica a todos y no se puede cambiar aquí.",
+      "managedReadOnly": "Configurado por Securo",
       "registrationTitle": "Registro",
       "registration": "Permitir registro de usuarios",
       "registrationDesc": "Cuando está desactivado, solo los administradores pueden crear nuevas cuentas de usuario.",

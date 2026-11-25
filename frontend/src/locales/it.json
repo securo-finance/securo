@@ -2993,6 +2993,9 @@
     },
     "settings": {
       "title": "Impostazioni amministratore",
+      "managedTitle": "Questa istanza è gestita da Securo",
+      "managedDesc": "Le impostazioni di questa pagina sono definite da chi gestisce l'istanza. Valgono per tutti e non si possono modificare qui.",
+      "managedReadOnly": "Configurato da Securo",
       "registrationTitle": "Registrazione",
       "registration": "Consenti la registrazione degli utenti",
       "registrationDesc": "Quando disabilitata, solo gli amministratori possono creare nuovi account utente.",

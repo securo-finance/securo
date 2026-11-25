@@ -2088,6 +2088,14 @@ export const accountantExport = {
 }
 
 // Admin
+
+/** What the admin screen may change on this instance (ADR 0045). */
+export interface InstanceMode {
+  managed: boolean
+  locked_settings: string[]
+  locked_providers: boolean
+}
+
 export interface ProviderSettingStatus {
   name: string
   configured: boolean
@@ -2138,6 +2146,10 @@ export const admin = {
   },
   deleteUser: async (id: string): Promise<void> => {
     await api.delete(`/admin/users/${id}`)
+  },
+  instanceMode: async (): Promise<InstanceMode> => {
+    const { data } = await api.get('/admin/instance-mode')
+    return data
   },
   providerSettings: async (): Promise<ProviderSettingStatus[]> => {
     const { data } = await api.get('/admin/provider-settings')

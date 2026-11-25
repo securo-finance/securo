@@ -3007,6 +3007,9 @@
     },
     "settings": {
       "title": "הגדרות מנהל",
+      "managedTitle": "מופע זה מנוהל על ידי Securo",
+      "managedDesc": "ההגדרות בעמוד זה נקבעות על ידי מפעיל המופע. הן חלות על כולם ואי אפשר לשנותן כאן.",
+      "managedReadOnly": "מוגדר על ידי Securo",
       "registrationTitle": "הרשמה",
       "registration": "אפשור הרשמת משתמשים",
       "registrationDesc": "כשמושבת, רק מנהלים יכולים ליצור חשבונות משתמש חדשים.",

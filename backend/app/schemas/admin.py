@@ -35,6 +35,14 @@ class AdminUserList(BaseModel):
     total: int
 
 
+class InstanceModeRead(BaseModel):
+    """What the admin screen may change on this instance (ADR 0045)."""
+
+    managed: bool
+    locked_settings: list[str]
+    locked_providers: bool
+
+
 class AppSettingRead(BaseModel):
     key: str
     value: str
