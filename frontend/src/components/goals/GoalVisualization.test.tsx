@@ -226,9 +226,7 @@ it.each([
 })
 
 it('anchors the x-axis one month before creation even when history starts later', async () => {
-  mocks.goals.list.mockResolvedValue([
-    { ...fixtures()[0], created_at: '2026-03-15T12:00:00Z' },
-  ])
+  mocks.goals.list.mockResolvedValue([{ ...fixtures()[0], created_at: '2026-03-15T12:00:00Z' }])
   renderWithProviders(<GoalsPage />)
   const region = await screen.findByRole('region', { name: 'Progress for Server Fund' })
   await waitFor(() => {
@@ -236,5 +234,70 @@ it('anchors the x-axis one month before creation even when history starts later'
     const firstX = Number(path?.getAttribute('d')?.match(/^M([\d.]+)/)?.[1])
     // The first March snapshot sits to the right of the February start (plot x = 72).
     expect(firstX).toBeGreaterThan(73)
+  })
+})
+
+it.each([-500, 0, 89, 90])('sets the y-axis maximum to 100 for a target of %s', async target => {
+  mocks.goals.list.mockResolvedValue([
+    { ...fixtures()[0], target_amount: target, current_amount: -2700 },
+  ])
+  mocks.history.mockResolvedValue({
+    points: [
+      { date: '2026-09-30', amount: -5000 },
+      { date: '2026-10-31', amount: -3000 },
+    ],
+    notes: [],
+  })
+  renderWithProviders(<GoalsPage />)
+  const region = await screen.findByRole('region', { name: 'Progress for Server Fund' })
+  await waitFor(() => {
+    expect(region.querySelector('path.recharts-line-curve')).toBeTruthy()
+    expect(within(region).getByText('100')).toBeVisible()
+  })
+})
+
+it.each([
+  { historical: 500, current: 2700, target: 6000, bottom: '450' },
+  { historical: -5000, current: -2700, target: 0, bottom: '-5.5K' },
+  { historical: -3000, current: -5000, target: 0, bottom: '-5.5K' },
+  { historical: 0, current: 2700, target: 6000, bottom: '0' },
+])(
+  'pads below history $historical and current $current',
+  async ({ historical, current, target, bottom }) => {
+    mocks.goals.list.mockResolvedValue([
+      { ...fixtures()[0], current_amount: current, target_amount: target },
+    ])
+    mocks.history.mockResolvedValue({
+      points: [
+        { date: '2026-09-30', amount: historical },
+        { date: '2026-10-31', amount: historical + 100 },
+      ],
+      notes: [],
+    })
+    renderWithProviders(<GoalsPage />)
+    const region = await screen.findByRole('region', { name: 'Progress for Server Fund' })
+    await waitFor(() => {
+      expect(region.querySelector('path.recharts-line-curve')).toBeTruthy()
+      expect(within(region).getByText(bottom)).toBeVisible()
+    })
+  },
+)
+
+it('uses the padded ceiling when the target is just above 90', async () => {
+  mocks.goals.list.mockResolvedValue([
+    { ...fixtures()[0], target_amount: 91, current_amount: 50 },
+  ])
+  mocks.history.mockResolvedValue({
+    points: [
+      { date: '2026-09-30', amount: 30 },
+      { date: '2026-10-31', amount: 40 },
+    ],
+    notes: [],
+  })
+  renderWithProviders(<GoalsPage />)
+  const region = await screen.findByRole('region', { name: 'Progress for Server Fund' })
+  await waitFor(() => {
+    expect(region.querySelector('path.recharts-line-curve')).toBeTruthy()
+    expect(within(region).getByText('100.1')).toBeVisible()
   })
 })

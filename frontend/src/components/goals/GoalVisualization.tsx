@@ -139,12 +139,15 @@ export function GoalVisualization({ goal }: { goal: Goal }) {
     (max, point) => Math.max(max, point.actual ?? 0, point.projected ?? 0),
     Math.max(Number(goal.target_amount), Number(goal.current_amount)),
   )
-  const ceiling = peak * 1.1
-  // Keep negative historical or projected values visible below zero as well.
-  const floor = chart.reduce(
-    (min, point) => Math.min(min, point.actual ?? 0, point.projected ?? 0),
-    0,
+  // Keep a fixed 100 units of headroom for 90 or less targets.
+  const ceiling = Number(goal.target_amount) <= 90 ? 100 : peak * 1.1
+  // Pad below the lowest displayed historical value or today's current amount.
+  // Subtracting the magnitude works for both positive and negative balances.
+  const lowest = chart.reduce(
+    (min, point) => Math.min(min, point.actual ?? min),
+    Number(goal.current_amount),
   )
+  const floor = lowest - Math.abs(lowest) * 0.1
 
   return (
     <section
