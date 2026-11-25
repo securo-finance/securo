@@ -547,7 +547,9 @@ function AccessTokensSession({ open, onClose }: AccessTokensDialogProps) {
     // Closing while a token is being created would drop the only response
     // that carries its plaintext, so the dialog stays open until it settles.
     <Dialog open={open} onOpenChange={(v) => !v && !saving && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+      {/* grid-cols-1 lets the content shrink below its longest line, so a long
+          token name truncates instead of widening the dialog past the screen. */}
+      <DialogContent className="max-h-[90vh] grid-cols-1 overflow-y-auto sm:max-w-lg">
         {view === 'create' ? createView : listView}
       </DialogContent>
     </Dialog>
