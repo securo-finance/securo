@@ -203,6 +203,55 @@ async def test_a_pending_address_cannot_belong_to_another_account(
     assert test_user.pending_email is None
 
 
+async def test_an_own_address_pasted_in_another_case_is_no_request(
+    client: AsyncClient, admin_auth_headers: dict, test_user: User, session: AsyncSession
+):
+    """The account's own address, capitalized by someone's mail client.
+
+    `Test@example.com` and `test@example.com` are one mailbox, and it is the
+    one this account already answers to: there is nothing to ask the owner
+    for. Comparing the two byte for byte would open a request to move the
+    account onto the address it already has.
+    """
+    test_user.email = "Test@example.com"
+    await session.commit()
+
+    response = await client.patch(
+        f"/api/admin/users/{test_user.id}",
+        json={"reason": REASON, "email": "test@example.com"},
+        headers=admin_auth_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["email"] == "Test@example.com"
+    assert response.json()["pending_email"] is None
+
+
+async def test_a_pending_address_in_another_case_still_blocks_the_request(
+    client: AsyncClient, admin_auth_headers: dict, test_user: User, session: AsyncSession
+):
+    """An address another account is waiting to confirm is not free.
+
+    The waiting address is what the other account is about to move onto, so
+    handing it to this one would give two accounts the same mailbox the
+    moment the other owner accepts. Compared without regard to case, like
+    every other address check here.
+    """
+    other = await _add_user(session, "other@example.com", "whatever12345")
+    other.pending_email = "new@example.com"
+    await session.commit()
+
+    response = await client.patch(
+        f"/api/admin/users/{test_user.id}",
+        json={"reason": REASON, "email": "NEW@example.com"},
+        headers=admin_auth_headers,
+    )
+
+    assert response.status_code == 400
+    await session.refresh(test_user)
+    assert test_user.pending_email is None
+
+
 async def test_an_address_differing_only_in_case_is_taken_too(
     client: AsyncClient, admin_auth_headers: dict, test_user: User, session: AsyncSession
 ):
