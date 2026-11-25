@@ -12,7 +12,7 @@ an address is taken never raises.
 import uuid
 from typing import Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
@@ -30,13 +30,19 @@ async def find_account_by_email(
 ) -> Optional[User]:
     """The account `email` names, or None.
 
-    Without regard to case, the way sign-in resolves the address. Rows are
-    ordered by id so an instance that still holds two accounts for one mailbox
-    answers the same one every time, instead of depending on the order the
-    database happens to return.
+    Without regard to case, the way sign-in resolves the address. An instance
+    that still holds two accounts for one mailbox answers the row written in
+    the exact spelling that was asked for; only when neither is written that
+    way does the lowest id decide, so the same account answers on every
+    request instead of depending on the order the database returns. The id is
+    a random UUID, so it cannot be what tells two accounts apart: the person
+    who typed their own spelling would land on the other one.
     """
-    query = select(User).where(_address_matches(email))
+    address = email.strip()
+    query = select(User).where(_address_matches(address))
     if exclude_user_id is not None:
         query = query.where(User.id != exclude_user_id)
-    query = query.order_by(User.id).limit(1)
+    query = query.order_by(
+        case((User.email == address, 0), else_=1), User.id
+    ).limit(1)
     return (await session.execute(query)).scalars().first()

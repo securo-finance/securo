@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from webauthn import (
@@ -35,6 +35,7 @@ from app.core.webauthn import resolve_webauthn_context
 from app.api.two_factor import _parse_temp_token_payload
 from app.models.passkey import UserPasskey
 from app.models.user import User
+from app.services import account_lookup_service
 from app.schemas.passkey import (
     PasskeyAuthenticateOptionsRequest,
     PasskeyAuthenticateVerifyRequest,
@@ -326,8 +327,10 @@ async def passkey_authentication_options(
     allow_credentials: list[PublicKeyCredentialDescriptor] | None = None
 
     if email:
-        user_result = await session.execute(select(User).where(func.lower(User.email) == email))
-        login_user = user_result.scalar_one_or_none()
+        # One address can name two accounts on an instance built before the
+        # case-insensitive checks (#568); the resolver answers one of them
+        # instead of raising, and prefers the row written in this spelling.
+        login_user = await account_lookup_service.find_account_by_email(session, email)
         if login_user is not None:
             expected_user_id = str(login_user.id)
             # Listing the user's credentials lets password managers surface
