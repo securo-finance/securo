@@ -13,6 +13,7 @@ from sqlalchemy import select
 from app.api import oidc_auth
 from app.core.config import get_settings
 from app.models.app_settings import AppSetting
+from app.models.user import User
 from app.models.workspace import WorkspaceMember
 
 # The oidc_settings fixture replaces _discover; tests that need the real one
@@ -996,6 +997,132 @@ async def test_oidc_callback_verified_email_link_mode_links_existing_user(
     await session.refresh(test_user)
     assert test_user.oidc_issuer == "https://id.example.com"
     assert test_user.oidc_subject == "linked-sub"
+
+
+PAIR_ADDRESS = "pair@example.com"
+PAIR_OTHER_CASE = "Pair@example.com"
+
+
+async def _pair_of_accounts(session) -> tuple[User, User]:
+    """Two accounts for one mailbox in different case, as an older release
+    left them: the column's unique index is case-sensitive (#568).
+
+    The row written in the lower-case spelling is given the higher id, so an
+    ordering by id alone would choose the other one: only the exact spelling
+    can make the lower-case row the answer.
+    """
+    import uuid as _uuid
+
+    pair = []
+    for address, account_id in (
+        (PAIR_ADDRESS, _uuid.UUID(int=2)),
+        (PAIR_OTHER_CASE, _uuid.UUID(int=1)),
+    ):
+        user = User(
+            id=account_id,
+            email=address,
+            hashed_password="synthetic-unused",
+            is_active=True,
+            is_superuser=False,
+            is_verified=True,
+        )
+        session.add(user)
+        pair.append(user)
+    await session.commit()
+    for user in pair:
+        await session.refresh(user)
+    return pair[0], pair[1]
+
+
+def _fake_provider(monkeypatch, *, email: str, subject: str = "shared-sub") -> FakeRedis:
+    """The provider answering with one identity, without the network."""
+    fake_redis = FakeRedis()
+
+    async def fake_discover():
+        return {"issuer": "https://id.example.com"}
+
+    async def fake_exchange(discovery, code, code_verifier=""):
+        return {"id_token": "id-token", "access_token": "provider-token"}
+
+    async def fake_decode(discovery, id_token, nonce, access_token=""):
+        return {"sub": subject, "email": email, "email_verified": True}
+
+    async def fake_userinfo(discovery, access_token):
+        return {}
+
+    async def fake_get_redis():
+        return fake_redis
+
+    monkeypatch.setattr(oidc_auth, "get_redis", fake_get_redis)
+    monkeypatch.setattr(oidc_auth, "_discover", fake_discover)
+    monkeypatch.setattr(oidc_auth, "_exchange_code", fake_exchange)
+    monkeypatch.setattr(oidc_auth, "_decode_id_token", fake_decode)
+    monkeypatch.setattr(oidc_auth, "_fetch_userinfo", fake_userinfo)
+    return fake_redis
+
+
+@pytest.mark.parametrize(
+    ("link_mode", "expected_status"),
+    [("disabled", 403), ("verified_email", 307), ("email", 307)],
+)
+@pytest.mark.parametrize("provider_email", [PAIR_ADDRESS, PAIR_OTHER_CASE])
+@pytest.mark.asyncio
+async def test_oidc_callback_resolves_an_address_shared_by_two_accounts(
+    client: AsyncClient,
+    session,
+    clean_db,
+    oidc_settings,
+    monkeypatch,
+    link_mode,
+    expected_status,
+    provider_email,
+):
+    """One address naming two accounts answers like any other account: never
+    a 500, in any of the three link modes, and the row written in the exact
+    spelling the provider sent is the one that gets linked (#568)."""
+    oidc_settings.oidc_existing_user_link_mode = link_mode
+    lower_row, upper_row = await _pair_of_accounts(session)
+    spelled = lower_row if provider_email == PAIR_ADDRESS else upper_row
+    other = upper_row if provider_email == PAIR_ADDRESS else lower_row
+    fake_redis = _fake_provider(monkeypatch, email=provider_email)
+    await fake_redis.set("oidc_state:state123", json.dumps({"nonce": "nonce123"}))
+
+    response = await client.get(
+        "/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False
+    )
+
+    assert response.status_code == expected_status, response.text
+    await session.refresh(spelled)
+    await session.refresh(other)
+    if expected_status == 307:
+        assert spelled.oidc_issuer == "https://id.example.com"
+        assert spelled.oidc_subject == "shared-sub"
+    else:
+        assert spelled.oidc_issuer is None
+    # The other spelling is left alone in every mode.
+    assert other.oidc_issuer is None
+    assert other.oidc_subject is None
+
+
+@pytest.mark.asyncio
+async def test_oidc_auto_registration_stores_the_address_in_lower_case(
+    client: AsyncClient, session, clean_db, oidc_settings, monkeypatch
+):
+    """The spelling the provider sent is only used to find an existing row:
+    an account created here is stored in lower case, so the new row never
+    arrives shouting (#568)."""
+    fake_redis = _fake_provider(monkeypatch, email=PAIR_OTHER_CASE, subject="new-sub")
+    await fake_redis.set("oidc_state:state123", json.dumps({"nonce": "nonce123"}))
+
+    response = await client.get(
+        "/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False
+    )
+
+    assert response.status_code == 307, response.text
+    registered = (
+        await session.execute(select(User).where(User.oidc_subject == "new-sub"))
+    ).scalar_one()
+    assert registered.email == PAIR_ADDRESS
 
 
 @pytest.mark.asyncio

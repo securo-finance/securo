@@ -3023,12 +3023,16 @@
       "deleted": "Utente eliminato",
       "confirmDeleteTitle": "Eliminare l'utente?",
       "confirmDeleteDesc": "Questo eliminerà definitivamente l'utente {{email}} e tutti i suoi dati. Questa azione non può essere annullata.",
-      "resetPassword": "Reimposta password",
-      "resetPasswordPlaceholder": "Lascia vuoto per mantenere l'attuale",
+      "reason": "Motivo",
+      "reasonPlaceholder": "Perché viene fatta questa modifica?",
+      "reasonHint": "Registrato nel registro degli accessi e mostrato all'account interessato.",
       "addDesc": "Crea un nuovo account utente con accesso all'applicazione.",
       "adminRole": "Privilegi di amministratore",
       "enabled": "Attivo",
-      "disabled": "Disattivo"
+      "disabled": "Disattivo",
+      "pending": "In attesa",
+      "pendingEmail": "Richiesto {{email}}, in attesa del titolare",
+      "emailPendingHint": "L'indirizzo cambia solo dopo la conferma del titolare."
     },
     "settings": {
       "title": "Impostazioni amministratore",
@@ -4349,5 +4353,33 @@
       "share": "La tua quota in {{group}}: {{amount}}",
       "paid": "{{actor}} ha registrato un pagamento"
     }
+  },
+  "accessLog": {
+    "title": "Registro degli accessi",
+    "description": "Ogni azione amministrativa sul tuo account e sui membri degli spazi di lavoro che possiedi.",
+    "empty": "Nessuna azione amministrativa registrata.",
+    "actionUpdate": "Account modificato",
+    "actionDelete": "Account eliminato",
+    "actionOther": "Account modificato",
+    "by": "Da {{email}}",
+    "target": "Account {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Carica altri",
+    "loadError": "Impossibile caricare il registro degli accessi.",
+    "emailChange": "Indirizzo {{from}} → {{to}}",
+    "emailPending": "in attesa della conferma del titolare dell'account",
+    "otherChanges": "Modificato anche: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Modifica dell'indirizzo email",
+    "description": "Un amministratore ha chiesto di cambiare l'indirizzo del tuo account in {{email}}. Finché non confermi, il tuo account mantiene l'indirizzo attuale.",
+    "accept": "Accetta il nuovo indirizzo",
+    "decline": "Mantieni il mio indirizzo attuale",
+    "accepted": "Il tuo account ora usa {{email}}",
+    "declined": "Il tuo account mantiene l'indirizzo attuale",
+    "unavailable": "Questo indirizzo non è più disponibile",
+    "failed": "Impossibile registrare la tua decisione",
+    "replaced": "L'amministratore ha inviato una nuova richiesta. Controlla il nuovo indirizzo prima di accettare",
+    "withdrawn": "La richiesta è stata ritirata. Il tuo account mantiene l'indirizzo attuale"
   }
 }

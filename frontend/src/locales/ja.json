@@ -3008,12 +3008,16 @@
       "deleted": "ユーザーを削除しました",
       "confirmDeleteTitle": "ユーザーを削除しますか?",
       "confirmDeleteDesc": "{{email}}とそのすべてのデータを完全に削除します。この操作は取り消せません。",
-      "resetPassword": "パスワードをリセット",
-      "resetPasswordPlaceholder": "空欄で現在のパスワードを保持",
+      "reason": "理由",
+      "reasonPlaceholder": "この変更を行う理由は何ですか?",
+      "reasonHint": "アクセスログに記録され、対象アカウントに表示されます。",
       "addDesc": "アプリケーションにアクセスできる新しいユーザーアカウントを作成します。",
       "adminRole": "管理者権限",
       "enabled": "オン",
-      "disabled": "オフ"
+      "disabled": "オフ",
+      "pending": "確認待ち",
+      "pendingEmail": "{{email}} を申請済み、所有者の確認待ち",
+      "emailPendingHint": "アドレスは所有者が確認した後にのみ変更されます。"
     },
     "settings": {
       "title": "管理者設定",
@@ -4334,5 +4338,33 @@
       "share": "{{group}}でのあなたの負担：{{amount}}",
       "paid": "{{actor}}が支払いを記録しました"
     }
+  },
+  "accessLog": {
+    "title": "アクセスログ",
+    "description": "あなたのアカウントと、あなたが所有するワークスペースのメンバーに対するすべての管理者操作。",
+    "empty": "管理者操作は記録されていません。",
+    "actionUpdate": "アカウントを更新しました",
+    "actionDelete": "アカウントを削除しました",
+    "actionOther": "アカウントを更新しました",
+    "by": "実行者: {{email}}",
+    "target": "アカウント: {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "さらに読み込む",
+    "loadError": "アクセスログを読み込めませんでした。",
+    "emailChange": "アドレス {{from}} → {{to}}",
+    "emailPending": "アカウント所有者の確認待ち",
+    "otherChanges": "ほかの変更: {{fields}}"
+  },
+  "emailChange": {
+    "title": "メールアドレスの変更",
+    "description": "管理者がアカウントのアドレスを {{email}} に変更するよう申請しました。確認するまで、アカウントは現在のアドレスを保持します。",
+    "accept": "新しいアドレスを承認",
+    "decline": "現在のアドレスを保持",
+    "accepted": "アカウントは {{email}} を使用するようになりました",
+    "declined": "アカウントは現在のアドレスを保持します",
+    "unavailable": "そのアドレスは利用できなくなりました",
+    "failed": "決定を記録できませんでした",
+    "replaced": "管理者が新しいリクエストを送信しました。承諾する前に新しいアドレスを確認してください",
+    "withdrawn": "リクエストは取り下げられました。アカウントは現在のアドレスを維持します"
   }
 }

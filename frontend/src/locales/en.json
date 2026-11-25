@@ -3008,12 +3008,16 @@
       "deleted": "User deleted",
       "confirmDeleteTitle": "Delete user?",
       "confirmDeleteDesc": "This will permanently delete the user {{email}} and all their data. This action cannot be undone.",
-      "resetPassword": "Reset password",
-      "resetPasswordPlaceholder": "Leave blank to keep current",
+      "reason": "Reason",
+      "reasonPlaceholder": "Why is this change being made?",
+      "reasonHint": "Recorded in the access log and shown to the affected account.",
       "addDesc": "Create a new user account with access to the application.",
       "adminRole": "Administrator privileges",
       "enabled": "On",
-      "disabled": "Off"
+      "disabled": "Off",
+      "pending": "Waiting",
+      "pendingEmail": "Asked for {{email}}, waiting for the owner",
+      "emailPendingHint": "The address only changes after its owner confirms it."
     },
     "settings": {
       "title": "Admin Settings",
@@ -4334,5 +4338,33 @@
       "share": "Your share in {{group}}: {{amount}}",
       "paid": "{{actor}} recorded a payment"
     }
+  },
+  "accessLog": {
+    "title": "Access log",
+    "description": "Every administrative action on your account, and on members of workspaces you own.",
+    "empty": "No administrative actions recorded.",
+    "actionUpdate": "Account updated",
+    "actionDelete": "Account deleted",
+    "actionOther": "Account changed",
+    "by": "By {{email}}",
+    "target": "Account {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Load more",
+    "loadError": "Could not load the access log.",
+    "emailChange": "Address {{from}} → {{to}}",
+    "emailPending": "waiting for the account owner to confirm",
+    "otherChanges": "Also changed: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Change of email address",
+    "description": "An administrator asked to change the address on your account to {{email}}. Until you confirm, your account keeps its current address.",
+    "accept": "Accept the new address",
+    "decline": "Keep my current address",
+    "accepted": "Your account now uses {{email}}",
+    "declined": "Your account keeps its current address",
+    "unavailable": "That address is no longer available",
+    "failed": "Could not record your decision",
+    "replaced": "The administrator sent a new request. Check the new address before accepting",
+    "withdrawn": "The request was withdrawn. Your account keeps its current address"
   }
 }
