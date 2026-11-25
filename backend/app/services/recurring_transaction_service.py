@@ -729,12 +729,19 @@ async def generate_pending(
     recurring_list = list(result.scalars().all())
 
     # Paired with the workspace: a person may have bills in several, and a
-    # category of one of them is still foreign to a bill of another.
+    # category of one of them is still foreign to a bill of another. The
+    # lookup asks only for the workspaces these bills belong to, so a legacy
+    # bill that still carries another workspace's category never reads that
+    # row, not even to discard it.
     category_ids = {r.category_id for r in recurring_list if r.category_id is not None}
+    bill_workspaces = {r.workspace_id for r in recurring_list}
     own_categories: set[tuple[uuid.UUID | None, uuid.UUID]] = set()
     if category_ids:
         rows = await session.execute(
-            select(Category.id, Category.workspace_id).where(Category.id.in_(category_ids))
+            select(Category.id, Category.workspace_id).where(
+                Category.id.in_(category_ids),
+                Category.workspace_id.in_(bill_workspaces),
+            )
         )
         own_categories = {(row.id, row.workspace_id) for row in rows}
 

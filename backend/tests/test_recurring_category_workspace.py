@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import event, select
 
 from app.models.account import Account
 from app.models.category import Category
@@ -273,3 +273,41 @@ async def test_generation_tells_apart_the_workspaces_of_one_person(
     )
     generated = {bill_id: category_id for bill_id, category_id in rows if bill_id}
     assert generated == {foreign.id: None, own.id: category.id}
+
+
+@pytest.mark.asyncio
+async def test_generation_looks_categories_up_in_the_bills_workspaces_only(
+    session, test_user, test_workspace, test_account, foreign_category
+):
+    """The lookup asks for the bills' workspaces, not for the id wherever it is.
+
+    A bill saved before the check still carries another workspace's category.
+    The generation reads its categories in one query, and that query must not
+    bring a row of a workspace no bill here belongs to: the row is dropped by
+    the pair, but reading it first is what the check is meant to prevent.
+    """
+    bill = await _bill(session, test_user, test_workspace, test_account, foreign_category.id)
+    statements: list[str] = []
+
+    def record(conn, cursor, statement, parameters, context, executemany):
+        if "FROM categories" in statement:
+            statements.append(statement)
+
+    bind = session.sync_session.get_bind()
+    event.listen(bind, "before_cursor_execute", record)
+    try:
+        assert await generate_pending(session, test_user.id, up_to=date(2025, 2, 10)) == 2
+    finally:
+        event.remove(bind, "before_cursor_execute", record)
+
+    lookups = [statement for statement in statements if "categories.id IN" in statement]
+    assert lookups, statements
+    _, where = lookups[0].split("WHERE", 1)
+    assert "categories.workspace_id IN" in where
+
+    rows = (
+        await session.execute(
+            select(Transaction.category_id).where(Transaction.recurring_transaction_id == bill.id)
+        )
+    ).scalars().all()
+    assert rows == [None, None]
