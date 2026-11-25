@@ -20,6 +20,8 @@ import { AppLayout } from '@/components/app-layout'
 const SetupPage = lazy(() => import('@/pages/setup'))
 const LoginPage = lazy(() => import('@/pages/login'))
 const RegisterPage = lazy(() => import('@/pages/register'))
+const ForgotPasswordPage = lazy(() => import('@/pages/forgot-password'))
+const ResetPasswordPage = lazy(() => import('@/pages/reset-password'))
 const DashboardPage = lazy(() => import('@/pages/dashboard'))
 const TransactionsPage = lazy(() => import('@/pages/transactions'))
 const AccountsPage = lazy(() => import('@/pages/accounts'))
@@ -97,6 +99,10 @@ function App() {
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/auth/oidc/callback" element={<OIDCCallbackPage />} />
                 <Route path="/register" element={<RegisterPage />} />
+                {/* Password recovery: the link the email carries lands on
+                    /reset-password?token=..., outside the protected routes. */}
+                <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                <Route path="/reset-password" element={<ResetPasswordPage />} />
                 {/* A client opening a link the sender shared. Deliberately
                     outside ProtectedRoute and outside AppLayout: the
                     recipient has no account, and the token is the whole

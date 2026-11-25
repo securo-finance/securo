@@ -142,6 +142,37 @@ class Settings(BaseSettings):
     # Registration
     registration_enabled: bool = True
 
+    # Password recovery by email (ADR 0041). One switch: while it is off no
+    # message is sent and the forgot-password route answers 503 instead of
+    # pretending a mail went out.
+    email_enabled: bool = False
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: SecretStr = SecretStr("")
+    # starttls upgrades port 587, ssl connects over TLS on port 465, and none
+    # is only for a relay on a network you already trust.
+    smtp_security: Literal["starttls", "ssl", "none"] = "starttls"
+    # The From address, for example "Securo <no-reply@example.com>". Empty
+    # falls back to the SMTP username.
+    email_from: str = ""
+    # How long a recovery link stays valid.
+    password_reset_token_minutes: int = 60
+
+    @model_validator(mode="after")
+    def validate_email_settings(self):
+        if not self.email_enabled:
+            return self
+        if not self.smtp_host:
+            raise ValueError("SMTP_HOST is required when EMAIL_ENABLED is true")
+        if not (self.email_from or self.smtp_username):
+            raise ValueError(
+                "EMAIL_FROM (or SMTP_USERNAME) is required when EMAIL_ENABLED is true"
+            )
+        if self.password_reset_token_minutes <= 0:
+            raise ValueError("PASSWORD_RESET_TOKEN_MINUTES must be positive")
+        return self
+
     # OIDC login (works with Authentik, Pocket ID, and other standard OIDC providers)
     oidc_enabled: bool = False
     oidc_provider_name: str = "OIDC"

@@ -283,6 +283,13 @@ export const auth = {
     const { data } = await api.post('/auth/register', { email, password, preferences })
     return data
   },
+  /** Ask for a recovery link. Unknown addresses get the same answer. */
+  forgotPassword: async (email: string): Promise<void> => {
+    await api.post('/auth/forgot-password', { email }, readOnly)
+  },
+  resetPassword: async (token: string, password: string): Promise<void> => {
+    await api.post('/auth/reset-password', { token, password }, readOnly)
+  },
   me: async (): Promise<User> => {
     const { data } = await api.get('/users/me')
     return data
@@ -362,7 +369,7 @@ export const auth = {
     }, readOnly)
     return data
   },
-  oidcConfig: async (): Promise<{ enabled: boolean; provider_name: string; local_auth_enabled: boolean }> => {
+  oidcConfig: async (): Promise<{ enabled: boolean; provider_name: string; local_auth_enabled: boolean; password_reset_enabled: boolean }> => {
     // The login card blocks on this call while it decides which sign-in
     // methods to offer, so a hung request must fail fast and let the caller
     // fall back instead of leaving the page stuck on its loading state.
