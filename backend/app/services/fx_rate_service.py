@@ -330,6 +330,58 @@ async def convert(
     return converted.quantize(Decimal(1).scaleb(-decimals)), rate
 
 
+class RateBook:
+    """Today's rates for one read, resolved once per currency pair.
+
+    A chart that converts many rows at the same date used to resolve the same
+    rate again for each row: two ``fx_rates`` lookups and one ``app_settings``
+    read every time, plus an on-demand provider attempt. The book resolves a
+    pair once and answers the rest from memory, so the request costs one
+    lookup per currency instead of one per row (issue #582).
+
+    For reads only, where every row shares the target date and the
+    ``allow_fetch`` setting. A write that stamps rows keeps calling
+    :func:`convert` directly.
+    """
+
+    def __init__(
+        self,
+        session: AsyncSession,
+        target_date: Optional[date] = None,
+        *,
+        allow_fetch: bool = True,
+    ) -> None:
+        self._session = session
+        self._target_date = target_date
+        self._allow_fetch = allow_fetch
+        self._rates: dict[tuple[str, str], Decimal] = {}
+
+    async def rate(self, from_currency: str, to_currency: str) -> Decimal:
+        key = (_code(from_currency), _code(to_currency))
+        if key not in self._rates:
+            self._rates[key] = await get_rate(
+                self._session,
+                key[0],
+                key[1],
+                self._target_date,
+                allow_fetch=self._allow_fetch,
+            )
+        return self._rates[key]
+
+    async def convert(
+        self,
+        amount: Decimal,
+        from_currency: str,
+        to_currency: str,
+        *,
+        decimals: int = 2,
+    ) -> tuple[Decimal, Decimal]:
+        if from_currency == to_currency:
+            return amount, Decimal("1")
+        rate = await self.rate(from_currency, to_currency)
+        return (amount * rate).quantize(Decimal(1).scaleb(-decimals)), rate
+
+
 async def stamp_primary_amount(
     session: AsyncSession,
     user_id: uuid.UUID,
