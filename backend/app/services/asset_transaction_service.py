@@ -253,7 +253,7 @@ async def _load_txs(
 _USER_SOURCES = frozenset({"manual", "import"})
 
 
-def _raise_if_synced(tx: AssetTransaction) -> None:
+def _raise_if_provider_trade(tx: AssetTransaction) -> None:
     if tx.source not in _USER_SOURCES:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -702,7 +702,7 @@ async def update_transaction(
     tx = result.scalar_one_or_none()
     if tx is None:
         return None
-    _raise_if_synced(tx)
+    _raise_if_provider_trade(tx)
     # Resolve and lock the holding before anything is read off the row or
     # mutated: a buy this request only adds a note to may have been edited down
     # to fewer units while it waited, and the checks below have to see the units
@@ -786,7 +786,7 @@ async def delete_transaction(
     tx = result.scalar_one_or_none()
     if tx is None:
         return None
-    _raise_if_synced(tx)
+    _raise_if_provider_trade(tx)
     # Asset lock first, as in update_transaction and delete_asset: the delete
     # of the entry flushes after it, never before.
     asset = await _lock_asset(session, tx.asset_id, workspace_id)
