@@ -114,6 +114,31 @@ def test_public_secret_key_from_secrets_dir_is_replaced(db_url, monkeypatch, tmp
     assert settings.secret_key.get_secret_value() == stored(db_url)[0]
 
 
+@pytest.mark.parametrize("value", [None, "", "   ", *PUBLIC_DEFAULTS, f" {OLD_COMPOSE_DEFAULT}\n"])
+def test_required_secret_key_missing_or_public_refuses_to_start(db_url, monkeypatch, value):
+    monkeypatch.setenv("REQUIRE_SECRET_KEY", "true")
+
+    with pytest.raises(RuntimeError, match="REQUIRE_SECRET_KEY"):
+        settings_for(db_url, value, monkeypatch)
+
+    # Refused before the database was touched.
+    assert run(fetch(db_url, "SELECT name FROM sqlite_master WHERE name = 'instance_secrets'")) == []
+
+
+def test_required_secret_key_refuses_even_with_a_stored_key(db_url, monkeypatch):
+    generated = settings_for(db_url, None, monkeypatch).secret_key.get_secret_value()
+    monkeypatch.setenv("REQUIRE_SECRET_KEY", "true")
+
+    with pytest.raises(RuntimeError, match="REQUIRE_SECRET_KEY"):
+        settings_for(db_url, None, monkeypatch)
+
+    # Giving the instance a key of its own starts it, and what the stored key
+    # encrypted still opens.
+    settings = settings_for(db_url, "a-unique-value-only-this-install-knows", monkeypatch)
+    assert settings.secret_key.get_secret_value() == "a-unique-value-only-this-install-knows"
+    assert settings.secret_key_fallbacks[0] == generated
+
+
 def test_own_secret_key_is_kept_and_nothing_is_written(db_url, monkeypatch):
     settings = settings_for(db_url, "a-unique-value-only-this-install-knows", monkeypatch)
 
