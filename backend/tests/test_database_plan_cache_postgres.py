@@ -25,12 +25,15 @@ def database_url():
     return url
 
 
-async def test_the_app_engine_sets_the_plan_cache_mode_on_the_session(database_url):
-    """A plain query through the application's engine sees the configured mode.
+async def test_the_app_engine_plans_each_statement_with_its_own_values(database_url):
+    """A session opened by the application's engine reports force_custom_plan.
 
-    This is the setting that makes PostgreSQL plan each call with its own
-    values; without it the session reports the server's default.
+    Without it the session reports the server's own value, which is auto by
+    default; a server configured otherwise is skipped here.
     """
+    if get_settings().db_force_custom_plans is False:
+        pytest.skip("the instance turned custom plans off")
+
     engine = create_app_engine(database_url)
     try:
         async with engine.connect() as connection:
@@ -38,4 +41,4 @@ async def test_the_app_engine_sets_the_plan_cache_mode_on_the_session(database_u
     finally:
         await engine.dispose()
 
-    assert mode == get_settings().db_plan_cache_mode
+    assert mode == "force_custom_plan"

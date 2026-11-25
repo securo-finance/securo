@@ -10,18 +10,18 @@ settings = get_settings()
 ASYNC_POSTGRES_DRIVER = "postgresql+asyncpg"
 
 
-def asyncpg_connect_args(database_url: str, plan_cache_mode: str) -> dict[str, object]:
+def asyncpg_connect_args(database_url: str, force_custom_plans: bool) -> dict[str, object]:
     """Arguments the asyncpg driver takes for this database.
 
     ``plan_cache_mode`` is a PostgreSQL setting, so it only goes to PostgreSQL
     on asyncpg: the test database is SQLite and another driver would reject an
-    argument it does not know. An empty mode sends nothing and leaves the
-    server's own value, which is the way out for an instance behind a
-    connection pooler that refuses an unknown startup parameter.
+    argument it does not know. With the setting off nothing is sent and the
+    server's own plan_cache_mode stays, which is the way out for an instance
+    behind a connection pooler that refuses an unknown startup parameter.
     """
-    if not plan_cache_mode or not database_url.startswith(ASYNC_POSTGRES_DRIVER):
+    if not force_custom_plans or not database_url.startswith(ASYNC_POSTGRES_DRIVER):
         return {}
-    return {"server_settings": {"plan_cache_mode": plan_cache_mode}}
+    return {"server_settings": {"plan_cache_mode": "force_custom_plan"}}
 
 
 def create_app_engine(database_url: str | None = None) -> AsyncEngine:
@@ -43,7 +43,7 @@ def create_app_engine(database_url: str | None = None) -> AsyncEngine:
         pool_pre_ping=True,
         pool_size=settings.db_pool_size,
         max_overflow=settings.db_max_overflow,
-        connect_args=asyncpg_connect_args(url, settings.db_plan_cache_mode),
+        connect_args=asyncpg_connect_args(url, settings.db_force_custom_plans),
     )
 
 

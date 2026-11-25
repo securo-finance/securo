@@ -157,23 +157,14 @@ def test_database_pool_size_without_overflow_is_allowed(secrets: Path):
     assert (settings.db_pool_size, settings.db_max_overflow) == (3, 0)
 
 
-def test_plan_cache_mode_defaults_to_custom_plans_and_reads_an_empty_value(secrets: Path):
-    """An instance that sets nothing plans each call with its own values; an
-    empty value means "send nothing and keep the server's setting", the way out
-    for an instance behind a connection pooler that refuses the parameter
-    (#584)."""
-    assert Settings(_secrets_dir=str(secrets)).db_plan_cache_mode == "force_custom_plan"
-    assert Settings(db_plan_cache_mode="", _secrets_dir=str(secrets)).db_plan_cache_mode == ""
-    assert Settings(db_plan_cache_mode="auto", _secrets_dir=str(secrets)).db_plan_cache_mode == "auto"
+def test_custom_plans_are_on_by_default_and_can_be_turned_off(monkeypatch):
+    """An instance that sets nothing plans each call with its own values; off
+    sends nothing and keeps the server's setting, the way out for an instance
+    behind a connection pooler that refuses the parameter (#584)."""
+    assert Settings(_env_file=None).db_force_custom_plans is True
 
-
-def test_plan_cache_mode_rejects_a_value_postgres_does_not_know(secrets: Path, monkeypatch):
-    """A typo in the environment would otherwise reach the server and fail on
-    every connection."""
-    monkeypatch.setenv("DB_PLAN_CACHE_MODE", "custom")
-
-    with pytest.raises(ValidationError, match="db_plan_cache_mode"):
-        Settings(_secrets_dir=str(secrets))
+    monkeypatch.setenv("DB_FORCE_CUSTOM_PLANS", "false")
+    assert Settings(_env_file=None).db_force_custom_plans is False
 
 
 @pytest.mark.parametrize(
