@@ -409,6 +409,45 @@ async def _sync_oidc_roles(user: User, merged_claims: dict[str, Any], session: A
         session.add(member)
 
 
+async def _link_existing_account(
+    user: User,
+    *,
+    issuer: str,
+    subject: str,
+    email_verified: Any,
+    link_mode: str,
+    merged: dict[str, Any],
+    session: AsyncSession,
+) -> User:
+    """Attach this OIDC identity to an account the login found but did not
+    create.
+
+    The same checks apply whether the lookup found the account or a concurrent
+    request created it between that lookup and the insert: an account already
+    linked to another identity is refused, the link mode decides whether an
+    unlinked account may be attached, and the verified-email policy is honoured.
+    Nothing else of the account is touched: its preferences, workspace and
+    wallet belong to the person who already signed up.
+    """
+    if user.oidc_issuer or user.oidc_subject:
+        # A concurrent request for this same identity won the race: the
+        # identity is already where it belongs, so this is a login.
+        if user.oidc_issuer != issuer or user.oidc_subject != subject:
+            raise HTTPException(status_code=403, detail="OIDC identity is linked to a different account")
+    else:
+        if link_mode == "disabled":
+            raise HTTPException(status_code=403, detail="Existing account is not linked to this OIDC identity")
+        if link_mode == "verified_email" and email_verified not in (True, "true"):
+            raise HTTPException(status_code=400, detail="OIDC email is not verified")
+        user.oidc_issuer = issuer
+        user.oidc_subject = subject
+        session.add(user)
+    await _sync_oidc_roles(user, merged, session)
+    await session.commit()
+    await session.refresh(user)
+    return user
+
+
 async def _get_or_create_oidc_user(
     claims: dict[str, Any],
     userinfo: dict[str, Any],
@@ -451,19 +490,15 @@ async def _get_or_create_oidc_user(
     existing = await session.execute(select(User).where(func.lower(User.email) == email))
     user = existing.scalar_one_or_none()
     if user is not None:
-        if user.oidc_issuer or user.oidc_subject:
-            raise HTTPException(status_code=403, detail="OIDC identity is linked to a different account")
-        if link_mode == "disabled":
-            raise HTTPException(status_code=403, detail="Existing account is not linked to this OIDC identity")
-        if link_mode == "verified_email" and email_verified not in (True, "true"):
-            raise HTTPException(status_code=400, detail="OIDC email is not verified")
-        user.oidc_issuer = issuer
-        user.oidc_subject = subject
-        session.add(user)
-        await _sync_oidc_roles(user, merged, session)
-        await session.commit()
-        await session.refresh(user)
-        return user
+        return await _link_existing_account(
+            user,
+            issuer=issuer,
+            subject=subject,
+            email_verified=email_verified,
+            link_mode=link_mode,
+            merged=merged,
+            session=session,
+        )
     if settings.oidc_require_verified_email and email_verified not in (True, "true"):
         raise HTTPException(status_code=400, detail="OIDC email is not verified")
     if not await admin_service.is_registration_enabled(session):
@@ -491,7 +526,20 @@ async def _get_or_create_oidc_user(
     try:
         user = await user_manager.create(user_create, safe=True, request=None)
     except UserAlreadyExists:
+        # A concurrent request created the account between the lookup above and
+        # this insert, so it is an existing account now. Apply the same checks
+        # instead of claiming it, overwriting its preferences and provisioning
+        # a second workspace and wallet for it (#572).
         user = (await session.execute(select(User).where(func.lower(User.email) == email))).scalar_one()
+        return await _link_existing_account(
+            user,
+            issuer=issuer,
+            subject=subject,
+            email_verified=email_verified,
+            link_mode=link_mode,
+            merged=merged,
+            session=session,
+        )
 
     db_session = user_manager.db_session
     await db_session.execute(
