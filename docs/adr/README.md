@@ -54,3 +54,4 @@ Each file here records one decision about how Securo is built: what we chose, wh
 | [0039](0039-date-move-keeps-typed-stamp.md) | A move of the date alone keeps the amount the owner typed |
 | [0040](0040-viewer-currency-reads-own-amount.md) | A row already in the viewer's currency reads as its own amount |
 | [0041](0041-in-app-notifications.md) | Notifications live inside the app, one row per person, and the first kinds are read from stored state |
+| [0044](0044-email-password-recovery.md) | Password recovery goes out over the instance's own SMTP server, behind one switch |

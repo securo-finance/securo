@@ -40,6 +40,9 @@ class OIDCConfigResponse(BaseModel):
     enabled: bool
     provider_name: str = "OIDC"
     local_auth_enabled: bool = True
+    # Recovery by email exists only with EMAIL_ENABLED; the sign-in page reads
+    # it here, next to the other sign-in options.
+    password_reset_enabled: bool = False
 
 
 class OIDCLogoutUrlResponse(BaseModel):
@@ -211,6 +214,7 @@ async def oidc_config():
         enabled=settings.oidc_login_available,
         provider_name=settings.oidc_provider_name or "OIDC",
         local_auth_enabled=settings.local_auth_enabled,
+        password_reset_enabled=settings.email_enabled,
     )
 
 
