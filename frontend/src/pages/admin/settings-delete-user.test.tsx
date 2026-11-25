@@ -50,6 +50,11 @@ it('says why a deletion was refused in the language of the screen', async () => 
 
   await user.click(await screen.findByTitle(t('common.delete')))
   const dialog = await screen.findByRole('dialog')
+  // Every deletion carries its reason, so the dialog asks for one before it sends.
+  await user.type(
+    within(dialog).getByPlaceholderText(t('admin.users.reasonPlaceholder')),
+    'Support ticket 12',
+  )
   await user.click(within(dialog).getByRole('button', { name: t('common.delete') }))
 
   await waitFor(() =>
