@@ -1644,6 +1644,25 @@ def test_build_transaction_takes_earlier_value_date_without_transaction_date():
     assert tx.date == date(2026, 11, 21)
 
 
+def test_build_transaction_keeps_a_month_end_purchase_in_its_month():
+    """A card purchase on Saturday 31 October is booked on Monday 2 November.
+
+    Dated by the booking date it moved into November's spending; the value
+    date keeps it in October.
+    """
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "12.40", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-11-02",
+        "value_date": "2026-10-31",
+        "transaction_date": None,
+    }
+    tx = provider._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.date == date(2026, 10, 31)
+
+
 def test_build_transaction_keeps_booking_date_before_a_later_value_date():
     """A value date after the booking date is not the day the entry happened.
 

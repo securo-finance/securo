@@ -4465,6 +4465,37 @@ async def test_sync_connection_enable_banking_hold_claim_date_window(
 
 
 @pytest.mark.asyncio
+async def test_sync_connection_enable_banking_settles_legacy_hold_on_its_value_date(
+    session: AsyncSession, test_user, test_workspace, monkeypatch,
+):
+    """Review probe on #1868: a pending charge stored under the booking-first
+    rule keeps 5 November, while its payload holds value date 3 November.
+    The posted entry dated 3 November settles that hold instead of landing
+    as a second row."""
+    monkeypatch.setattr(
+        "app.services.connection_service.app_today", lambda: date(2026, 11, 6),
+    )
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    dates = {"transaction_date": None, "booking_date": "2026-11-05", "value_date": "2026-11-03"}
+    hold = {**_paypal_payload("1HD00000AA0000001", "2026-11-03", booked=False), **dates}
+    charge = {**_paypal_payload("7PY00000AA0000001", "2026-11-03", booked=True), **dates}
+    await _sync_paypal_holds(session, conn, test_workspace.id, test_user.id, [hold])
+    (held,) = await _account_rows(session, account_id)
+    held.date = date(2026, 11, 5)
+    await session.commit()
+    held_id = held.id
+
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, await _eb_fetch([charge], []),
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert [(row.id, row.status) for row in rows] == [(held_id, "posted")]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("hold_value_date", "claimed"),
     [("2026-11-04", True), ("2026-11-06", False)],
