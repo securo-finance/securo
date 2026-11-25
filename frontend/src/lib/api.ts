@@ -2230,8 +2230,18 @@ export const notifications = {
     const { data } = await api.get('/notifications/preferences')
     return data
   },
-  setPreference: async (change: { kind: AppNotificationKind; channel: string; enabled: boolean }): Promise<void> => {
-    await api.put(`/notifications/preferences/${change.kind}/${change.channel}`, { enabled: change.enabled }, readOnly)
+  // `workspaceId` pins the write: it may wait in line while another tab switches workspace.
+  setPreference: async (change: {
+    kind: AppNotificationKind
+    channel: string
+    enabled: boolean
+    workspaceId?: string
+  }): Promise<void> => {
+    await api.put(
+      `/notifications/preferences/${change.kind}/${change.channel}`,
+      { enabled: change.enabled },
+      { ...readOnly, ...workspaceHeader(change.workspaceId) },
+    )
   },
   markRead: async (id: string): Promise<void> => {
     await api.post(`/notifications/${id}/read`, undefined, readOnly)

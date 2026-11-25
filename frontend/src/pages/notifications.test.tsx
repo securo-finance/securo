@@ -11,7 +11,10 @@ vi.mock('react-router-dom', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react-router-dom')>()),
   useNavigate: () => navigate,
 }))
-vi.mock('@/contexts/workspace-context', () => ({ useWorkspace: () => ({ current: { id: 'ws-1', name: 'Home' } }) }))
+const workspace = vi.hoisted(() => ({ id: 'ws-1' }))
+vi.mock('@/contexts/workspace-context', () => ({
+  useWorkspace: () => ({ current: { id: workspace.id, name: 'Home' } }),
+}))
 vi.mock('@/hooks/use-display-locale', () => ({ useDisplayLocale: () => 'en-US', useDateLocale: () => 'en-US' }))
 
 const api = vi.hoisted(() => ({ list: vi.fn(), markRead: vi.fn(), markAllRead: vi.fn(), preferences: vi.fn(), setPreference: vi.fn() }))
@@ -121,7 +124,7 @@ it('turns a kind off and on, one switch each', async () => {
   expect(budgets).toBeChecked()
   expect(reminders).not.toBeChecked()
   await user.click(budgets)
-  expect(api.setPreference.mock.calls[0][0]).toEqual({ kind: 'budget_threshold', channel: 'in_app', enabled: false })
+  expect(api.setPreference.mock.calls[0][0]).toEqual({ kind: 'budget_threshold', channel: 'in_app', enabled: false, workspaceId: 'ws-1' })
   await waitFor(() => expect(budgets).not.toBeChecked())
   expect(reminders).not.toBeChecked()
   expect(saved).toEqual({ budget_threshold: false, flag_overdue: false })
@@ -162,6 +165,26 @@ it('saves clicks on a switch one at a time, so the last one stands', async () =>
   await waitFor(() => expect(api.preferences).toHaveBeenCalledTimes(2))
   expect(saved.budget_threshold).toBe(true)
   expect(budgets).toBeChecked()
+})
+
+it('saves a click that waited in the workspace it was made in', async () => {
+  const releases: (() => void)[] = []
+  api.preferences.mockResolvedValue([{ kind: 'budget_threshold', channels: { in_app: true } }])
+  api.setPreference.mockImplementation(() => new Promise<void>((resolve) => releases.push(resolve)))
+  const { user, rerender } = renderWithProviders(<NotificationsPage />, { route: '/notifications?tab=preferences' })
+  const budgets = await screen.findByRole('switch')
+  await user.click(budgets)
+  await user.click(budgets)
+  try {
+    workspace.id = 'ws-2'
+    rerender(<NotificationsPage />)
+    releases[0]()
+    await waitFor(() => expect(api.setPreference).toHaveBeenCalledTimes(2))
+    expect(api.setPreference.mock.calls.map(([change]) => change.workspaceId)).toEqual(['ws-1', 'ws-1'])
+    releases[1]()
+  } finally {
+    workspace.id = 'ws-1'
+  }
 })
 
 it('says when one could not be marked as read', async () => {

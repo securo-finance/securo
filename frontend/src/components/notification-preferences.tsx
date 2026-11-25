@@ -24,8 +24,8 @@ export function NotificationPreferences() {
     queryFn: notificationsApi.preferences,
     enabled: !!current,
   })
-  const put = (change: { kind: AppNotificationKind; channel: string; enabled: boolean }) =>
-    queryClient.setQueryData<NotificationPreference[]>(queryKey, (rows) =>
+  const put = (change: { kind: AppNotificationKind; channel: string; enabled: boolean; workspaceId?: string }) =>
+    queryClient.setQueryData<NotificationPreference[]>(['notification-preferences', change.workspaceId], (rows) =>
       rows?.map((row) =>
         row.kind === change.kind
           ? { ...row, channels: { ...row.channels, [change.channel]: change.enabled } }
@@ -89,7 +89,7 @@ export function NotificationPreferences() {
               <Switch
                 checked={channels[IN_APP]}
                 aria-labelledby={labelId}
-                onCheckedChange={(next) => save.mutate({ kind, channel: IN_APP, enabled: next })}
+                onCheckedChange={(next) => save.mutate({ kind, channel: IN_APP, enabled: next, workspaceId: current?.id })}
               />
             </li>
           )
