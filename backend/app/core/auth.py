@@ -25,6 +25,10 @@ from app.models.user import User
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
+#: A value with no account behind it, hashed where an unknown address asks for
+#: a recovery link so the answer costs what a live account's answer costs.
+_NO_SUCH_ACCOUNT = "no-such-account"
+
 
 async def get_user_db(session: AsyncSession = Depends(get_async_session)):
     yield SQLAlchemyUserDatabase(session, User)
@@ -154,6 +158,17 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         await session.refresh(updated)
         return updated
 
+    def spend_password_hash(self) -> None:
+        """Pay the hashing cost a live account pays before its link is built.
+
+        The token carries a fingerprint of the stored password, so issuing a
+        link hashes once. An address with no account never gets that far, and
+        the difference shows in the response time: a fast answer says the
+        address has no account. The route calls this before answering so every
+        request costs the same (ADR 0044).
+        """
+        self.password_helper.hash(_NO_SUCH_ACCOUNT)
+
     async def forgot_password(
         self, user: User, request: Optional[Request] = None
     ) -> None:
@@ -166,12 +181,16 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         person holding that old mailbox is no longer the account's owner, and
         the token must die with the address (ADR 0044).
         """
+        # Hash before the active check: an inactive account raises instead of
+        # sending, and skipping the work here would make its answer
+        # measurably faster than a live account's, which tells the two apart.
+        password_fgpt = self.password_helper.hash(user.hashed_password)
         if not user.is_active:
             raise exceptions.UserInactive()
 
         token_data = {
             "sub": str(user.id),
-            "password_fgpt": self.password_helper.hash(user.hashed_password),
+            "password_fgpt": password_fgpt,
             "aud": self.reset_password_token_audience,
             "email": user.email,
         }

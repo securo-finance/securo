@@ -7,9 +7,11 @@ password.
 """
 
 import re
+import uuid
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models.user import User
@@ -95,6 +97,49 @@ async def test_forgot_password_does_not_reveal_whether_an_account_exists(
     await _ask_for_link(client, "nobody@example.com")
     # No second message, and the caller cannot tell the two apart.
     assert len(sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_unknown_and_inactive_addresses_hash_as_much_as_a_live_one(
+    client: AsyncClient,
+    session: AsyncSession,
+    test_user: User,
+    sent_emails,
+    monkeypatch,
+):
+    """The answer must not be faster for an address with no account.
+
+    Building a link hashes the stored password once. An unknown address used
+    to skip that and an inactive one raised before it, so the answer came
+    back a few tens of milliseconds sooner and told which addresses have an
+    account (ADR 0044). All three now hash exactly once.
+    """
+    from fastapi_users.password import PasswordHelper
+
+    hashes: list[str] = []
+    original_hash = PasswordHelper.hash
+
+    def counting_hash(self, password):
+        hashes.append(password)
+        return original_hash(self, password)
+
+    monkeypatch.setattr(PasswordHelper, "hash", counting_hash)
+
+    inactive = User(
+        id=uuid.uuid4(),
+        email="inactive@example.com",
+        hashed_password=test_user.hashed_password,
+        is_active=False,
+        is_superuser=False,
+        is_verified=True,
+    )
+    session.add(inactive)
+    await session.commit()
+
+    for address in ("test@example.com", "nobody@example.com", "inactive@example.com"):
+        await _ask_for_link(client, address)
+
+    assert len(hashes) == 3
 
 
 @pytest.mark.asyncio
