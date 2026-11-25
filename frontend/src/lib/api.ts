@@ -2146,6 +2146,21 @@ export interface TimezoneSetting {
   available: string[]
 }
 
+export interface EmailTemplate {
+  subject: string
+  body: string
+}
+
+/** How the recovery email is set up, and the templates it would use. */
+export interface EmailState {
+  enabled: boolean
+  provider: 'smtp' | 'resend'
+  /** The From address; read-only, it comes from the server environment. */
+  sender: string
+  /** Keyed by language: 'en' and 'pt'. */
+  templates: Record<string, EmailTemplate>
+}
+
 export const timezones = {
   list: async (): Promise<{ default: string; available: string[] }> => {
     const { data } = await api.get('/timezones')
@@ -2180,6 +2195,15 @@ export const admin = {
   },
   providerSettings: async (): Promise<ProviderSettingStatus[]> => {
     const { data } = await api.get('/admin/provider-settings')
+    return data
+  },
+  emailState: async (): Promise<EmailState> => {
+    const { data } = await api.get('/admin/email')
+    return data
+  },
+  /** Replace the recovery templates; an empty object restores the built-in text. */
+  updateEmailTemplates: async (templates: Record<string, EmailTemplate>): Promise<EmailState> => {
+    const { data } = await api.put('/admin/email', { templates })
     return data
   },
   updateProviderSettings: async (

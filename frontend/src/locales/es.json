@@ -2977,6 +2977,29 @@
     "menuItem": "Comprobar actualizaciones"
   },
   "admin": {
+    "email": {
+      "title": "Correo electrónico",
+      "enabled": "Correo activado",
+      "disabled": "Correo desactivado",
+      "description": "Cómo se envían los correos de recuperación de contraseña. El proveedor y el remitente vienen de la configuración del servidor.",
+      "disabledNote": "Activa EMAIL_ENABLED en el servidor para enviar enlaces de recuperación.",
+      "provider": "Proveedor",
+      "providerSmtp": "Servidor SMTP",
+      "providerResend": "Resend",
+      "sender": "Remitente",
+      "senderMissing": "Sin definir",
+      "templatesTitle": "Mensaje de recuperación",
+      "templatesDescription": "Lo que lee la persona. Variables: {app_name}, {link} y {minutes}; el cuerpo debe mantener {link}.",
+      "subject": "Asunto",
+      "body": "Cuerpo",
+      "linkRequired": "El cuerpo debe contener {link}.",
+      "restoreDefault": "Restaurar texto predeterminado",
+      "save": "Guardar plantillas",
+      "saved": "Plantillas guardadas",
+      "saveFailed": "No se pudieron guardar las plantillas",
+      "languageEn": "Inglés",
+      "languagePt": "Portugués"
+    },
     "users": {
       "title": "Gestión de usuarios",
       "searchPlaceholder": "Buscar usuarios...",

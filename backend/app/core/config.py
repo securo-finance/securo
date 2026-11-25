@@ -146,6 +146,11 @@ class Settings(BaseSettings):
     # message is sent and the forgot-password route answers 503 instead of
     # pretending a mail went out.
     email_enabled: bool = False
+    # Who carries the message: your own relay, or the hosted API. The switch
+    # above stays the only one; this only picks the path behind it.
+    email_provider: Literal["smtp", "resend"] = "smtp"
+    resend_api_key: SecretStr = SecretStr("")
+    resend_api_url: str = "https://api.resend.com"
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_username: str = ""
@@ -163,9 +168,28 @@ class Settings(BaseSettings):
     def validate_email_settings(self):
         if not self.email_enabled:
             return self
-        if not self.smtp_host:
+        if self.email_provider == "resend":
+            if not self.resend_api_key.get_secret_value():
+                raise ValueError(
+                    "RESEND_API_KEY is required when EMAIL_ENABLED is true and "
+                    "EMAIL_PROVIDER is resend"
+                )
+            if not self.email_from:
+                raise ValueError(
+                    "EMAIL_FROM is required when EMAIL_ENABLED is true and "
+                    "EMAIL_PROVIDER is resend"
+                )
+            # The key travels in a header: never let it go out in the clear.
+            if not self.resend_api_url:
+                raise ValueError(
+                    "RESEND_API_URL is required when EMAIL_ENABLED is true and "
+                    "EMAIL_PROVIDER is resend"
+                )
+            if not self.resend_api_url.startswith("https://"):
+                raise ValueError("RESEND_API_URL must start with https://")
+        elif not self.smtp_host:
             raise ValueError("SMTP_HOST is required when EMAIL_ENABLED is true")
-        if not (self.email_from or self.smtp_username):
+        if self.email_provider == "smtp" and not (self.email_from or self.smtp_username):
             raise ValueError(
                 "EMAIL_FROM (or SMTP_USERNAME) is required when EMAIL_ENABLED is true"
             )
@@ -394,10 +418,16 @@ class Settings(BaseSettings):
     # the process environment are ignored by pydantic-settings anyway; without
     # this, the very same key written into the .env file aborted startup with
     # "Extra inputs are not permitted".
+    #
+    # hide_input_in_errors: a validator that refuses the settings prints the
+    # input it refused, and that input is every field the instance was built
+    # from — including the email API key and SECRET_KEY, truncated but legible,
+    # in the log of a container that failed to boot.
     model_config = SettingsConfigDict(
         env_file=(".env", Path(__file__).resolve().parents[2] / ".env"),
         secrets_dir=CREDENTIALS_DIRECTORY,
         extra="ignore",
+        hide_input_in_errors=True,
     )
 
 

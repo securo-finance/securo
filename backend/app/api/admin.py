@@ -1,3 +1,4 @@
+import json
 import re
 import uuid
 from typing import Annotated
@@ -8,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import UserManager, current_active_user, current_superuser, get_user_manager
 from app.core.auth_policy import require_local_auth_enabled
+from app.core.config import get_settings
 from app.core.database import get_async_session
 from app.core.rate_limit import client_ip
 from app.core.app_clock import (
@@ -28,11 +30,13 @@ from app.schemas.admin import (
     AdminUserUpdate,
     AppSettingRead,
     AppSettingUpdate,
+    EmailStateRead,
     ProviderSettingRead,
     TimezoneSettingRead,
     clean_reason,
 )
 from app.services import admin_service
+from app.services import email_service
 from app.services import provider_settings
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -250,6 +254,65 @@ async def delete_setting(
     if key == "timezone":
         invalidate_timezone_cache()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+async def _email_state(session: AsyncSession) -> EmailStateRead:
+    """The state both endpoints answer with, read after any change."""
+    settings = get_settings()
+    saved = await admin_service.get_email_templates(session)
+    return EmailStateRead(
+        enabled=settings.email_enabled,
+        provider=settings.email_provider,
+        sender=settings.email_from or settings.smtp_username,
+        templates=email_service.effective_templates(saved),
+    )
+
+
+@router.get("/email", response_model=EmailStateRead)
+async def email_state(
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_superuser),
+):
+    """How outbound email is set up: the switch, the provider, the sender and
+    the templates the recovery message would use. No secret is returned."""
+    return await _email_state(session)
+
+
+@router.put("/email", response_model=EmailStateRead)
+async def update_email_state(
+    request: Request,
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_superuser),
+):
+    """Replace the recovery templates, or clear them back to the built-in text.
+
+    The body is read here instead of through a model so a broken template
+    answers 400 with what is wrong, rather than a schema error nobody can act
+    on. Nothing is saved unless every template sent validates.
+    """
+    try:
+        body = json.loads(await request.body())
+    except (ValueError, RecursionError):
+        # RecursionError too: JSON nested past the parser's stack is a broken
+        # body, and letting it escape answers 500 instead of saying so.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The body must be a JSON object",
+        )
+    # The field is required, even when empty: {} is a body that forgot it, and
+    # clearing is explicit ({"templates": {}}), so an empty object must not
+    # wipe the templates in use by accident.
+    if not isinstance(body, dict) or "templates" not in body or set(body) - {"templates"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The body takes one field, templates, keyed by language",
+        )
+    try:
+        templates = email_service.validate_templates(body["templates"])
+    except email_service.TemplateError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    await admin_service.save_email_templates(session, templates)
+    return await _email_state(session)
 
 
 @router.get("/timezone", response_model=TimezoneSettingRead)

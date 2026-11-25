@@ -2962,6 +2962,29 @@
     "menuItem": "अपडेट के लिए जाँचें"
   },
   "admin": {
+    "email": {
+      "title": "ईमेल",
+      "enabled": "ईमेल चालू है",
+      "disabled": "ईमेल बंद है",
+      "description": "पासवर्ड रीसेट ईमेल कैसे भेजे जाते हैं। प्रदाता और प्रेषक सर्वर कॉन्फ़िगरेशन से आते हैं।",
+      "disabledNote": "रीसेट लिंक भेजने के लिए सर्वर पर EMAIL_ENABLED चालू करें।",
+      "provider": "प्रदाता",
+      "providerSmtp": "SMTP सर्वर",
+      "providerResend": "Resend",
+      "sender": "प्रेषक",
+      "senderMissing": "सेट नहीं है",
+      "templatesTitle": "रीसेट संदेश",
+      "templatesDescription": "जो व्यक्ति पढ़ता है। वेरिएबल: {app_name}, {link} और {minutes}; मुख्य भाग में {link} रहना चाहिए।",
+      "subject": "विषय",
+      "body": "मुख्य भाग",
+      "linkRequired": "मुख्य भाग में {link} होना चाहिए।",
+      "restoreDefault": "डिफ़ॉल्ट टेक्स्ट बहाल करें",
+      "save": "टेम्पलेट सहेजें",
+      "saved": "टेम्पलेट सहेजे गए",
+      "saveFailed": "टेम्पलेट सहेजे नहीं जा सके",
+      "languageEn": "अंग्रेज़ी",
+      "languagePt": "पुर्तगाली"
+    },
     "users": {
       "title": "उपयोगकर्ता प्रबंधन",
       "searchPlaceholder": "उपयोगकर्ता खोजें...",

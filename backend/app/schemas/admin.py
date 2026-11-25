@@ -110,6 +110,22 @@ class AppSettingUpdate(BaseModel):
     value: str
 
 
+class EmailTemplate(BaseModel):
+    """What goes into the recovery message, with its placeholders kept."""
+
+    subject: str
+    body: str
+
+
+class EmailStateRead(BaseModel):
+    """How outbound email is set up, and the templates it would use."""
+
+    enabled: bool
+    provider: Literal["smtp", "resend"]
+    sender: str
+    templates: dict[str, EmailTemplate]
+
+
 class ProviderFieldStatus(BaseModel):
     configured: bool
     source: Literal["app", "environment", "none"]

@@ -1,3 +1,5 @@
+import json
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -12,7 +14,9 @@ from app.models.admin_access_log import AdminAccessLog, AdminAccessLogViewer
 from app.models.app_settings import AppSetting
 from app.models.user import User
 from app.schemas.admin import AdminUserCreate, AdminUserUpdate
-from app.services import account_lookup_service
+from app.services import account_lookup_service, email_service
+
+logger = logging.getLogger(__name__)
 
 
 async def list_users(
@@ -467,6 +471,39 @@ async def set_app_setting(session: AsyncSession, key: str, value: str) -> AppSet
     await session.commit()
     await session.refresh(setting)
     return setting
+
+
+EMAIL_TEMPLATES_KEY = "email_templates"
+
+
+async def get_email_templates(session: AsyncSession) -> dict[str, dict[str, str]]:
+    """The recovery templates an administrator saved, or nothing.
+
+    A value edited by hand in the database is dropped instead of raising: the
+    person asking for their account back must still get the built-in text.
+    """
+    setting = await get_app_setting(session, EMAIL_TEMPLATES_KEY)
+    if setting is None:
+        return {}
+    try:
+        return email_service.parse_templates(setting.value)
+    except email_service.TemplateError:
+        logger.warning("Stored email templates no longer validate; using the built-in text")
+        return {}
+
+
+async def save_email_templates(
+    session: AsyncSession, templates: dict[str, dict[str, str]]
+) -> None:
+    """Store the templates, or clear them back to the built-in text."""
+    if templates:
+        await set_app_setting(
+            session,
+            EMAIL_TEMPLATES_KEY,
+            json.dumps(templates, ensure_ascii=False, sort_keys=True),
+        )
+    else:
+        await delete_app_setting(session, EMAIL_TEMPLATES_KEY)
 
 
 async def is_registration_enabled(session: AsyncSession) -> bool:
