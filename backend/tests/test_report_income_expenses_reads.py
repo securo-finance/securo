@@ -189,14 +189,55 @@ async def test_every_forecast_source_reads_the_window_once(
             session, test_workspace.id, test_user.id, months=12, interval="monthly",
         )
 
-    # One call per section that uses the data (the summary and the category
-    # composition), each covering the whole window, never one per month.
-    assert len(calls["recurring"]) == 2, calls["recurring"]
-    assert len(calls["forecast"]) == 2, calls["forecast"]
+    # One call per source for the whole report: the summary and the category
+    # composition read the same rows, never one read per month and section.
+    assert len(calls["recurring"]) == 1, calls["recurring"]
+    assert len(calls["forecast"]) == 1, calls["forecast"]
     assert len(calls["claims"]) == 1, calls["claims"]
     for range_start, range_end in calls["recurring"] + calls["forecast"] + calls["claims"]:
         assert range_start <= today
         assert range_end > today
+        # The read starts on the first day of the window's first month, the
+        # superset the category composition covers.
+        assert range_start.day == 1
+
+
+@pytest.mark.asyncio
+async def test_a_mid_month_window_keeps_the_summary_start(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The shared read starts on the first of the month; the summary keeps its own start.
+
+    The reads cover whole months for the composition, so the summary has to
+    drop the forecast rows before the day it was asked for. A projection on
+    the first of last month belongs to the composition but not to a window
+    that starts in the middle of that month.
+    """
+    acct = await _make_account(session, test_user.id, "IE Mid Month")
+    cat = await _make_category(session, test_user.id, "Rent")
+    first_of_last_month = (
+        date.today().replace(day=1) - timedelta(days=1)
+    ).replace(day=1)
+    await _make_recurring(
+        session, test_user.id, acct.id, 800, "debit",
+        next_occurrence=first_of_last_month, category_id=cat.id,
+    )
+
+    start = first_of_last_month + timedelta(days=14)
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id, months=1, interval="monthly",
+        start_date=start, end_date=date.today(), include_forecasts=True,
+    )
+
+    # Two occurrences were read (last month and this one); only the one on or
+    # after the requested start counts in the summary.
+    summary = {b.key: b.value for b in report.summary.breakdowns}
+    assert summary["projectedExpenses"] == pytest.approx(800.0)
+    slices = {(item.key, item.group): item for item in report.composition}
+    rent = [item for item in slices.values() if item.label == "Rent"]
+    assert len(rent) == 1
+    assert rent[0].value == pytest.approx(1600.0)
+
 
 
 @pytest.mark.asyncio
