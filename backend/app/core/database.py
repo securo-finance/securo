@@ -14,7 +14,7 @@ settings = get_settings()
 #
 # pool_size and max_overflow come from the instance settings, so a busy
 # instance can raise them together with the database's max_connections
-# (issue #583).
+# (issue #1901).
 engine = create_async_engine(
     settings.database_url,
     echo=settings.debug,

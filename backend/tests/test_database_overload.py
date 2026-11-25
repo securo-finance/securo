@@ -2,7 +2,7 @@
 
 The hosted instance ran out of database connections with 40 people at once and
 every request over the limit failed with a 500 carrying SQLAlchemy's
-"QueuePool limit of size 5 overflow 10 reached" (issue #583).
+"QueuePool limit of size 5 overflow 10 reached" (issue #1901).
 """
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 

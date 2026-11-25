@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import PrivateAttr, SecretStr, field_validator, model_validator
+from pydantic import Field, PrivateAttr, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Use the same environment variable that systemd uses: https://systemd.io/CREDENTIALS/
@@ -50,9 +50,10 @@ class Settings(BaseSettings):
     # that sets nothing behaves as before. Raise them together with the
     # database's own max_connections when many people share an instance: with
     # 40 simultaneous users the pool ran out and requests failed instead of
-    # queueing (issue #583).
-    db_pool_size: int = 5
-    db_max_overflow: int = 10
+    # queueing (issue #1901). The pool size is always open; overflow may be 0
+    # so that the pool never grows past DB_POOL_SIZE.
+    db_pool_size: int = Field(default=5, ge=1)
+    db_max_overflow: int = Field(default=10, ge=0)
 
     # Auth. Signs session and password-reset tokens and derives the key that
     # encrypts saved credentials. Left unset (or on a public default), the

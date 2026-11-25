@@ -166,7 +166,7 @@ app.add_middleware(
 # SQLAlchemy's pool timeout. That is the instance being busy, not a bad
 # request, so it answers 503 with a sentence that says so, and the client knows
 # to retry. Without this it surfaced as a 500 carrying "QueuePool limit of size
-# 5 overflow 10 reached" (issue #583).
+# 5 overflow 10 reached" (issue #1901).
 @app.exception_handler(PoolTimeoutError)
 async def database_pool_exhausted(request: Request, exc: PoolTimeoutError) -> JSONResponse:
     logger.warning("Database pool exhausted on %s %s: %s", request.method, request.url.path, exc)

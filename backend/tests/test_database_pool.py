@@ -84,7 +84,7 @@ def test_pool_limits_come_from_the_environment():
 
     The API opens its engine at import time, so a changed limit only shows up
     in a fresh interpreter. With 40 people at once the default pool ran out and
-    requests failed instead of queueing (issue #583); raising the two settings
+    requests failed instead of queueing (issue #1901); raising the two settings
     is how an instance takes more load.
     """
     result = subprocess.run(
