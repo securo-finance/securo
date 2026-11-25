@@ -5,13 +5,22 @@ import { EmailChangeDialog } from '@/components/email-change-dialog'
 import { renderWithProviders } from '@/test/utils'
 import type { User } from '@/types'
 
-const updateUser = vi.hoisted(() => vi.fn())
+// The account the dialog is shown for lives here, and updateUser writes to it:
+// what the owner sees after an action is the account as the app now holds it,
+// not just the call the component made.
+const updateUser = vi.hoisted(() =>
+  vi.fn((updated: User) => {
+    state.user = updated
+  }),
+)
 const auth = vi.hoisted(() => ({
   confirmEmailChange: vi.fn(),
   declineEmailChange: vi.fn(),
 }))
 const state = vi.hoisted(() => ({ user: null as User | null }))
+const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
 
+vi.mock('sonner', () => ({ toast }))
 vi.mock('@/lib/api', () => ({ auth }))
 vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => ({ user: state.user, updateUser }),
@@ -63,6 +72,10 @@ describe('EmailChangeDialog', () => {
     expect(updateUser).toHaveBeenCalledWith(
       expect.objectContaining({ email: 'asked@example.com', pending_email: null }),
     )
+    // And the question is gone: the account is on its new address.
+    await waitFor(() =>
+      expect(screen.queryByText('Change of email address')).not.toBeInTheDocument(),
+    )
   })
 
   it('declining keeps the current address', async () => {
@@ -76,6 +89,9 @@ describe('EmailChangeDialog', () => {
     expect(updateUser).toHaveBeenCalledWith(
       expect.objectContaining({ email: 'owner@example.com', pending_email: null }),
     )
+    await waitFor(() =>
+      expect(screen.queryByText('Change of email address')).not.toBeInTheDocument(),
+    )
   })
 
   it('says so when the address was taken in the meantime', async () => {
@@ -85,9 +101,10 @@ describe('EmailChangeDialog', () => {
 
     await user.click(screen.getByRole('button', { name: 'Accept the new address' }))
 
-    await waitFor(() => expect(auth.confirmEmailChange).toHaveBeenCalled())
+    await waitFor(() => expect(toast.error).toHaveBeenCalled())
     // Nothing moved: the account stays as it was and the request is still open.
     expect(updateUser).not.toHaveBeenCalled()
+    expect(screen.getByText('Change of email address')).toBeInTheDocument()
   })
 
   it('reopens when an administrator replaces the request that was put away', async () => {
