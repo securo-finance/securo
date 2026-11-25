@@ -110,6 +110,17 @@ x-backend-env: &backend-env
   # ollama/openai/openai_compatible for better quality.
   AGENTS_EMBEDDING_PROVIDER: ${AGENTS_EMBEDDING_PROVIDER:-native}
   AGENTS_EMBEDDING_MODEL: ${AGENTS_EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
+  # Password recovery by email (ADR 0044), off by default: with EMAIL_ENABLED
+  # unset nothing leaves the machine and the forgot-password route answers 503.
+  EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  # starttls | ssl | none. `none` sends the credentials in the clear.
+  SMTP_SECURITY: ${SMTP_SECURITY:-starttls}
+  SMTP_USERNAME: ${SMTP_USERNAME:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  EMAIL_FROM: ${EMAIL_FROM:-}
+  PASSWORD_RESET_TOKEN_MINUTES: ${PASSWORD_RESET_TOKEN_MINUTES:-60}
 
 x-backend-base: &backend-base
   build: ./backend
