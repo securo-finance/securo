@@ -52,6 +52,8 @@ export async function loadGoalHistory(goal: Goal, today: string): Promise<GoalHi
     if (account.currency !== goal.currency) {
       return { points: [], notes: ['currency'] }
     }
+
+    // first date is usually the first transaction date.
     const first = await transactions.list({
       account_id: goal.account_id,
       sort_by: 'transaction_date',
@@ -60,6 +62,9 @@ export async function loadGoalHistory(goal: Goal, today: string): Promise<GoalHi
       include_opening_balance: true,
     })
     const from = first.items[0]?.date ?? today
+    
+    // get balance history per day from the first date
+    // if there are no transactions use the today as the first date
     const points = await accounts.balanceHistory(
       goal.account_id,
       from > today ? today : from,
