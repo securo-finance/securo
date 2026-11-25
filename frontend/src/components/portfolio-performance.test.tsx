@@ -835,6 +835,60 @@ describe('PortfolioPerformance', () => {
     expect(screen.getByText('+12.50%')).toBeInTheDocument()
   })
 
+  it('plots dates on a time scale with one tick per month and finds dates by time', async () => {
+    const dates = ['01-10', '01-12', '03-10', '06-10', '08-10', '08-11', '10-10', '11-10', '11-25']
+    vi.mocked(assets.performance).mockResolvedValue({
+      ...performanceData,
+      start_date: '2026-01-10',
+      end_date: '2026-11-25',
+      points: dates.map((date, index) => ({
+        date: `2026-${date}`,
+        portfolio: index,
+        benchmark: null,
+        benchmarks: {},
+      })),
+    })
+    const { container } = renderPerformance()
+    const ticks = await waitFor(() => {
+      const found = [
+        ...container.querySelectorAll<SVGTextElement>(
+          '.recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value',
+        ),
+      ]
+      expect(found.length).toBeGreaterThan(0)
+      return found
+    })
+    const labels = ticks.map((tick) => tick.textContent)
+    expect(labels).toEqual(
+      ['Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov'].map((m) => `${m} 26`),
+    )
+    // Ticks sit by elapsed time: Mar 1 to Jun 1 is 92 days, Aug 1 to Sep 1 is 31.
+    const x = (label: string) => Number(ticks[labels.indexOf(label)].getAttribute('x'))
+    expect((x('Jun 26') - x('Mar 26')) / (x('Sep 26') - x('Aug 26'))).toBeCloseTo(92 / 31, 1)
+
+    const wrapper = container.querySelector<HTMLElement>('.recharts-wrapper')!
+    const pointAt = async (label: string, date: string) => {
+      fireEvent.mouseMove(wrapper, { clientX: x(label), clientY: 150 })
+      await waitFor(() =>
+        expect(container.querySelector('.recharts-tooltip-wrapper')).toHaveTextContent(date),
+      )
+    }
+    // The pointer at Mar 1 is nearest the Mar 10 point; with one slot per
+    // point it would land on Jan 12.
+    hoverChart(container, x('Mar 26'))
+    await pointAt('Mar 26', 'Mar 10, 2026')
+
+    // Dragging from Mar 1 to Nov 1 measures Mar 10 to Nov 10.
+    fireEvent.mouseDown(wrapper, { clientX: x('Mar 26'), clientY: 150 })
+    fireEvent.mouseMove(wrapper, { clientX: x('Nov 26'), clientY: 150 })
+    await waitFor(() => expect(screen.getByText('Selected period')).toBeInTheDocument())
+    fireEvent.mouseUp(wrapper, { clientX: x('Nov 26'), clientY: 150 })
+    expect(Array.from(container.querySelectorAll('time'), (date) => date.dateTime)).toEqual([
+      '2026-03-10',
+      '2026-11-10',
+    ])
+  })
+
   it('notes a benchmark that starts mid-series and shows it as unavailable before then', async () => {
     writeBenchmarkSelections(workspaceId, benchmarks.slice(0, 2))
     vi.mocked(assets.performance).mockResolvedValue({

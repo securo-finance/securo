@@ -45,12 +45,16 @@ import { invalidateSyncedRecords } from '@/lib/invalidate-queries'
 import {
   MAX_PERFORMANCE_BENCHMARKS,
   type PerformanceView,
+  dateToTimestamp,
   isSameSelection,
+  isShortSpan,
   newViewId,
   periodReturn,
   readBenchmarkSelections,
   readLastSelection,
   readSavedViews,
+  timeAxisTicks,
+  timestampToDate,
   withSavedViews,
   writeBenchmarkSelections,
   writeLastSelection,
@@ -82,11 +86,17 @@ export interface PerformanceInventory {
   assetIds: string[]
 }
 
+/** The `YYYY-MM-DD` date of a chart label, which is the point's timestamp. */
+function labelDate(label: unknown): string | null {
+  const timestamp = label == null ? NaN : Number(label)
+  return Number.isFinite(timestamp) ? timestampToDate(timestamp) : null
+}
+
 /** Reports the date under the chart's tooltip (mouse or arrow keys). */
-function ActiveDateTracker({ onChange }: { onChange: (label: string | null) => void }) {
+function ActiveDateTracker({ onChange }: { onChange: (date: string | null) => void }) {
   const label = useActiveTooltipLabel()
   useEffect(() => {
-    onChange(label == null ? null : String(label))
+    onChange(labelDate(label))
   }, [label, onChange])
   return null
 }
@@ -547,6 +557,8 @@ export function PortfolioPerformance({
       (data?.points ?? []).map((point) => {
         const row: Record<string, string | number | null> = {
           date: point.date,
+          // The x position: dates sit on a time scale, spaced by real time.
+          time: dateToTimestamp(point.date),
           portfolio: point.portfolio,
         }
         selected.forEach((benchmark, index) => {
@@ -615,13 +627,12 @@ export function PortfolioPerformance({
     }
   }, [range, chartData, indexByDate, selected])
   // Within about six months, month labels alone repeat; show the day too.
-  const shortSpan =
-    chartData.length > 1 &&
-    new Date(String(chartData[chartData.length - 1].date)).getTime() -
-      new Date(String(chartData[0].date)).getTime() <=
-      186 * 86_400_000
+  const firstTime = chartData.length ? Number(chartData[0].time) : 0
+  const lastTime = chartData.length ? Number(chartData[chartData.length - 1].time) : 0
+  const shortSpan = chartData.length > 1 && isShortSpan(firstTime, lastTime)
+  const xTicks = useMemo(() => timeAxisTicks(firstTime, lastTime), [firstTime, lastTime])
   const chartLabel = (state: { activeLabel?: unknown } | null | undefined) =>
-    state?.activeLabel == null ? null : String(state.activeLabel)
+    labelDate(state?.activeLabel)
   // A benchmark whose history begins after the portfolio's is compared from
   // its own first date; the card and legend say so.
   const benchmarkStartDate = (key: string) => {
@@ -1169,19 +1180,23 @@ export function PortfolioPerformance({
                         strokeOpacity={0.5}
                       />
                       <XAxis
-                        dataKey="date"
+                        dataKey="time"
+                        type="number"
+                        scale="time"
+                        domain={['dataMin', 'dataMax']}
+                        ticks={xTicks}
                         tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
                         axisLine={false}
                         tickLine={false}
                         tickMargin={12}
                         minTickGap={40}
-                        tickFormatter={(value: string) =>
-                          new Date(`${value}T00:00:00`).toLocaleDateString(
-                            dateLocale,
-                            shortSpan
+                        tickFormatter={(value: number) =>
+                          new Date(value).toLocaleDateString(dateLocale, {
+                            timeZone: 'UTC',
+                            ...(shortSpan
                               ? { day: 'numeric', month: 'short' }
-                              : { month: 'short', year: '2-digit' },
-                          )
+                              : { month: 'short', year: '2-digit' }),
+                          })
                         }
                       />
                       <YAxis
@@ -1194,8 +1209,8 @@ export function PortfolioPerformance({
                       />
                       {rangeStats && (
                         <ReferenceArea
-                          x1={rangeStats.startDate}
-                          x2={rangeStats.endDate}
+                          x1={dateToTimestamp(rangeStats.startDate)}
+                          x2={dateToTimestamp(rangeStats.endDate)}
                           fill="var(--primary)"
                           fillOpacity={0.08}
                           stroke="var(--primary)"
@@ -1211,8 +1226,8 @@ export function PortfolioPerformance({
                           strokeDasharray: '3 3',
                           strokeOpacity: 0.5,
                         }}
-                        content={({ active, payload, label }) => {
-                          if (!active || !payload?.length || !label) return null
+                        content={({ active, payload }) => {
+                          if (!active || !payload?.length) return null
                           const row = payload[0].payload as Record<string, string | number | null>
                           // A date with no value (e.g. outside an index's history)
                           // shows a dash, matching the gap in its line.
@@ -1220,7 +1235,7 @@ export function PortfolioPerformance({
                           return (
                             <div className="max-w-[min(20rem,75vw)] rounded-xl border border-border bg-popover p-3 text-xs shadow-lg">
                               <p className="mb-3 border-b border-border pb-2 font-medium text-muted-foreground">
-                                {formatDate(String(label))}
+                                {formatDate(String(row.date))}
                               </p>
                               <div className="flex items-center justify-between gap-4">
                                 <span className="min-w-0 truncate">
