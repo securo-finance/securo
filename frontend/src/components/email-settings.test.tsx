@@ -17,11 +17,11 @@ const state: EmailState = {
   templates: {
     en: {
       subject: 'Reset your {app_name} password',
-      body: 'Hi, open {link} within {minutes} minutes.',
+      body: 'Hi,\n\n{link}\n\nIt lasts {minutes} minutes.',
     },
     pt: {
       subject: 'Redefinir sua senha do {app_name}',
-      body: 'Olá, abra {link} em {minutes} minutos.',
+      body: 'Olá,\n\n{link}\n\nVale {minutes} minutos.',
     },
   },
 }
@@ -43,7 +43,7 @@ describe('email settings', () => {
 
     const english = within(region).getByRole('group', { name: 'English' })
     expect(within(english).getByLabelText('Subject')).toHaveValue('Reset your {app_name} password')
-    expect(within(english).getByLabelText('Body')).toHaveValue('Hi, open {link} within {minutes} minutes.')
+    expect(within(english).getByLabelText('Body')).toHaveValue('Hi,\n\n{link}\n\nIt lasts {minutes} minutes.')
 
     const portuguese = within(region).getByRole('group', { name: 'Portuguese' })
     expect(within(portuguese).getByLabelText('Subject')).toHaveValue('Redefinir sua senha do {app_name}')
@@ -94,12 +94,28 @@ describe('email settings', () => {
     expect(admin.updateEmailTemplates).not.toHaveBeenCalled()
   })
 
+  it('refuses a body that wraps the link in another address and says why', async () => {
+    const { user } = renderWithProviders(<EmailSettings />)
+    const region = await screen.findByRole('region', { name: 'Email' })
+    const english = await within(region).findByRole('group', { name: 'English' })
+
+    const body = within(english).getByLabelText('Body')
+    await user.clear(body)
+    // user-event reads `{` as the start of a key name, so `{{link}}` is how the
+    // placeholder is typed.
+    await user.type(body, 'https://evil.example/c?u={{link}}')
+
+    expect(within(english).getByRole('alert')).toHaveTextContent('alone on its own line')
+    expect(within(region).getByRole('button', { name: 'Save templates' })).toBeDisabled()
+    expect(admin.updateEmailTemplates).not.toHaveBeenCalled()
+  })
+
   it('restores the built-in text by saving no template', async () => {
     const builtIn: EmailState = {
       ...state,
       templates: {
-        en: { subject: 'Reset your {app_name} password', body: 'Open {link}.' },
-        pt: { subject: 'Redefinir sua senha do {app_name}', body: 'Abra {link}.' },
+        en: { subject: 'Reset your {app_name} password', body: 'Open the app:\n\n{link}' },
+        pt: { subject: 'Redefinir sua senha do {app_name}', body: 'Abra o app:\n\n{link}' },
       },
     }
     vi.mocked(admin.updateEmailTemplates).mockResolvedValue(builtIn)
@@ -109,12 +125,12 @@ describe('email settings', () => {
     const body = within(english).getByLabelText('Body')
     // Built-in text the saved template did not have, so the field turning
     // into it proves the response was applied.
-    expect(body).toHaveValue('Hi, open {link} within {minutes} minutes.')
+    expect(body).toHaveValue('Hi,\n\n{link}\n\nIt lasts {minutes} minutes.')
 
     await user.click(await within(region).findByRole('button', { name: 'Restore default text' }))
 
     await waitFor(() => expect(admin.updateEmailTemplates).toHaveBeenCalledWith({}))
-    await waitFor(() => expect(body).toHaveValue('Open {link}.'))
+    await waitFor(() => expect(body).toHaveValue('Open the app:\n\n{link}'))
     expect(within(region).getByRole('button', { name: 'Save templates' })).toBeDisabled()
   })
 

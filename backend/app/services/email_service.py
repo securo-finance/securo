@@ -11,10 +11,12 @@ anything is saved.
 
 import json
 import logging
+import re
 import smtplib
 import ssl
 import string
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass
 from email.message import EmailMessage
 from urllib.parse import quote
@@ -48,6 +50,21 @@ BODY_MAX_LENGTH = 4000
 # and then refused by the SMTP library while composing the message, which the
 # reader sees as a recovery email that never arrives.
 LINE_BREAK_CATEGORIES = frozenset({"Cc", "Zl", "Zp"})
+
+# An address the recovery message may not carry. The message leads back into
+# the account through `{link}` and nothing else, so a second address is either
+# a mistake or a way to take the reader somewhere else. Three shapes count: a
+# scheme (`https://`, `ftp://`, and the like), a `www.` host, and a bare host
+# name (`evil.example`): a mail client turns the last one into a link too, and
+# a host with no scheme but a path (`evil.example/{link}`) is the same attack
+# with less ceremony.
+URL_PATTERN = re.compile(
+    r"[a-z][a-z0-9+.-]*://"
+    r"|\b(?:https?|ftps?|file|javascript|vbscript):"
+    r"|www\."
+    r"|\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}\b",
+    re.IGNORECASE,
+)
 
 
 class EmailDisabled(RuntimeError):
@@ -101,9 +118,10 @@ def template_language(language: object) -> str:
     )
 
 
-def _fields_in(text: str) -> set[str]:
-    """The placeholders a template uses, refusing anything `.format` would surprise."""
-    fields: set[str] = set()
+def _fields_in(text: str) -> Counter[str]:
+    """The placeholders a template uses, and how often, refusing anything
+    `.format` would surprise."""
+    fields: Counter[str] = Counter()
     try:
         parsed = list(string.Formatter().parse(text))
     except ValueError as exc:
@@ -120,8 +138,23 @@ def _fields_in(text: str) -> set[str]:
                 f"Unknown placeholder {{{field}}}; use only "
                 + ", ".join(f"{{{name}}}" for name in sorted(TEMPLATE_FIELDS))
             )
-        fields.add(field)
+        fields[field] += 1
     return fields
+
+
+def has_url(text: str) -> bool:
+    """Whether the text holds an address of any shape (see URL_PATTERN)."""
+    return URL_PATTERN.search(text) is not None
+
+
+def _link_is_alone_on_its_line(body: str) -> bool:
+    """The one `{link}` the body may carry sits on a line of its own.
+
+    Anywhere else — inside a sentence, at the end of one, or wrapped in a URL
+    written around it — the text decides where the reader's click goes, and
+    the token inside it follows.
+    """
+    return sum(1 for line in body.splitlines() if line.strip() == "{link}") == 1
 
 
 def has_line_break(text: str) -> bool:
@@ -199,9 +232,26 @@ def validate_templates(data: object) -> dict[str, dict[str, str]]:
             raise TemplateError(
                 f"The {language} body is longer than {BODY_MAX_LENGTH} characters"
             )
-        _fields_in(subject)
-        if "link" not in _fields_in(body):
+        subject_fields = _fields_in(subject)
+        # The subject is a header, not a body: a link there is not the one line
+        # the reader clicks, and it is not checked the way the body is.
+        if subject_fields["link"]:
+            raise TemplateError(f"The {language} subject must not contain {{link}}")
+        if has_url(subject):
+            raise TemplateError(f"The {language} subject must not contain a link")
+        body_fields = _fields_in(body)
+        if body_fields["link"] == 0:
             raise TemplateError(f"The {language} body must contain {{link}}")
+        if body_fields["link"] > 1:
+            raise TemplateError(f"The {language} body must contain {{link}} only once")
+        if not _link_is_alone_on_its_line(body):
+            raise TemplateError(
+                f"In the {language} body, {{link}} must be alone on its own line"
+            )
+        if has_url(body):
+            raise TemplateError(
+                f"The {language} body must not contain a link other than {{link}}"
+            )
         checked[language] = {"subject": subject, "body": body}
     return checked
 

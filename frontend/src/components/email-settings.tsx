@@ -20,6 +20,28 @@ const LANGUAGES: { code: string; labelKey: string }[] = [
 
 const LINK = '{link}'
 
+// Mirrors the server. The recovery link is the only thing the message may lead
+// to, and it goes alone on its own line: anywhere else the text around it
+// decides where the reader's click goes. A scheme, a `www.` host and a bare
+// host name all count as an address.
+const URL_PATTERN =
+  /[a-z][a-z0-9+.-]*:\/\/|\b(?:https?|ftps?|file|javascript|vbscript):|www\.|\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}\b/i
+
+type TemplateProblem = 'linkRequired' | 'linkOnce' | 'linkAlone' | 'linkInSubject' | 'otherLink'
+
+function templateProblem(template: EmailTemplate | undefined): TemplateProblem | null {
+  const subject = template?.subject ?? ''
+  const body = template?.body ?? ''
+  if (subject.includes(LINK)) return 'linkInSubject'
+  if (URL_PATTERN.test(subject)) return 'otherLink'
+  const links = body.split(LINK).length - 1
+  if (links === 0) return 'linkRequired'
+  if (links > 1) return 'linkOnce'
+  if (body.split(/\r?\n/).filter((line) => line.trim() === LINK).length !== 1) return 'linkAlone'
+  if (URL_PATTERN.test(body)) return 'otherLink'
+  return null
+}
+
 function sameTemplate(a?: EmailTemplate, b?: EmailTemplate): boolean {
   return (a?.subject ?? '') === (b?.subject ?? '') && (a?.body ?? '') === (b?.body ?? '')
 }
@@ -77,9 +99,14 @@ export function EmailSettings() {
   }
 
   const dirty = !!data && LANGUAGES.some(({ code }) => !sameTemplate(drafts[code], data.templates[code]))
-  const withoutLink = LANGUAGES.filter(({ code }) => !(drafts[code]?.body ?? '').includes(LINK))
+  const problems = dirty
+    ? LANGUAGES.flatMap(({ code }) => {
+        const problem = templateProblem(drafts[code])
+        return problem ? [{ code, problem }] : []
+      })
+    : []
   const incomplete = LANGUAGES.some(({ code }) => !drafts[code]?.subject.trim() || !drafts[code]?.body.trim())
-  const canSave = dirty && !incomplete && withoutLink.length === 0 && !save.isPending
+  const canSave = dirty && !incomplete && problems.length === 0 && !save.isPending
 
   return (
     <section aria-labelledby="admin-email-heading" className="mb-8 overflow-hidden rounded-xl border border-border/60 bg-card">
@@ -171,9 +198,13 @@ export function EmailSettings() {
                     onChange={(event) => update(code, 'body', event.target.value)}
                   />
                 </div>
-                {withoutLink.some((item) => item.code === code) && (
-                  <p role="alert" className="text-sm text-destructive">{t('admin.email.linkRequired')}</p>
-                )}
+                {problems
+                  .filter((item) => item.code === code)
+                  .map((item) => (
+                    <p key={item.problem} role="alert" className="text-sm text-destructive">
+                      {t(`admin.email.${item.problem}`)}
+                    </p>
+                  ))}
               </fieldset>
             ))}
 
