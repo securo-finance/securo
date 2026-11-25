@@ -129,14 +129,22 @@ async def update_user(
 
     if data.email is not None:
         requested = str(data.email)
-        if requested != user.email:
+        # Addresses are compared without regard to case, the way sign-in
+        # resolves them: `Taken@example.com` and `taken@example.com` reach the
+        # same mailbox, so they must name the same account here too (#556).
+        if requested.lower() != user.email.lower():
             taken = await session.execute(
-                select(User.id).where(User.email == requested, User.id != user_id)
+                select(User.id).where(
+                    func.lower(User.email) == requested.lower(), User.id != user_id
+                )
             )
             if taken.scalar_one_or_none():
                 raise ValueError("A user with this email already exists")
             waiting = await session.execute(
-                select(User.id).where(User.pending_email == requested, User.id != user_id)
+                select(User.id).where(
+                    func.lower(User.pending_email) == requested.lower(),
+                    User.id != user_id,
+                )
             )
             if waiting.scalar_one_or_none():
                 raise ValueError("Another account is already waiting to confirm this address")

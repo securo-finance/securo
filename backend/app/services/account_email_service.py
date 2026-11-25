@@ -6,7 +6,7 @@ address it has and every credential tied to it, password recovery included —
 which is what makes the request useless as a way into the account.
 """
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,8 +44,13 @@ async def confirm_pending_email(
         raise ValueError(STALE_REQUEST)
 
     # The address may have been taken between the request and this moment.
+    # Compared without regard to case: sign-in resolves the address that way,
+    # so `Taken@example.com` and `taken@example.com` are the same account
+    # (#556, ADR 0042).
     taken = await session.execute(
-        select(User.id).where(User.email == requested, User.id != user.id)
+        select(User.id).where(
+            func.lower(User.email) == requested.lower(), User.id != user.id
+        )
     )
     if taken.scalar_one_or_none():
         raise ValueError("That address belongs to another account now")

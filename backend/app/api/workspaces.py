@@ -9,7 +9,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi_users import schemas as fu_schemas
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import is_valid_timezone
@@ -209,10 +209,12 @@ async def invite_member(
         session, workspace_id, user.id, min_role="owner"
     )
 
-    # Find existing user by email (case-insensitive — fastapi-users
-    # stores email lowercased on register, but be safe).
+    # Find the account without regard to case, the way sign-in resolves the
+    # address: an account stored as `Ana@example.com` must be found when the
+    # owner invites `ana@example.com`, or the invite would try to create a
+    # second account for the same mailbox (#556).
     existing = await session.execute(
-        select(User).where(User.email == body.email.lower())
+        select(User).where(func.lower(User.email) == body.email.lower())
     )
     target = existing.scalar_one_or_none()
 

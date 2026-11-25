@@ -203,6 +203,50 @@ async def test_a_pending_address_cannot_belong_to_another_account(
     assert test_user.pending_email is None
 
 
+async def test_an_address_differing_only_in_case_is_taken_too(
+    client: AsyncClient, admin_auth_headers: dict, test_user: User, session: AsyncSession
+):
+    """One mailbox cannot feed two accounts (#556).
+
+    Sign-in resolves the address without regard to case, so an account
+    holding `taken@example.com` already owns `Taken@example.com`. The
+    request must be refused here, not accepted and then lose a race at the
+    unique index that a capital letter walks around.
+    """
+    await _add_user(session, "taken@example.com", "whatever12345")
+
+    response = await client.patch(
+        f"/api/admin/users/{test_user.id}",
+        json={"reason": REASON, "email": "Taken@example.com"},
+        headers=admin_auth_headers,
+    )
+
+    assert response.status_code == 400
+    await session.refresh(test_user)
+    assert test_user.pending_email is None
+
+
+async def test_confirming_an_address_differing_only_in_case_is_refused(
+    client: AsyncClient, admin_auth_headers: dict, test_user: User, session: AsyncSession
+):
+    """The same rule at the moment the owner accepts the address."""
+    await client.patch(
+        f"/api/admin/users/{test_user.id}",
+        json={"reason": REASON, "email": NEW_EMAIL},
+        headers=admin_auth_headers,
+    )
+    await _add_user(session, "ATTACKER@example.com", "whatever12345")
+
+    headers = await _headers_for(test_user)
+    response = await client.post(
+        "/api/users/me/email-change", json={"email": NEW_EMAIL}, headers=headers
+    )
+
+    assert response.status_code == 400
+    await session.refresh(test_user)
+    assert test_user.email == VICTIM_EMAIL
+
+
 async def test_confirming_an_address_taken_meanwhile_is_refused(
     client: AsyncClient, admin_auth_headers: dict, test_user: User, session: AsyncSession
 ):
