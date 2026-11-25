@@ -1,3 +1,4 @@
+import logging
 import uuid
 from decimal import Decimal
 from typing import Optional, cast
@@ -20,6 +21,7 @@ from app.core.database import get_async_session
 from app.models.user import User
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 async def get_user_db(session: AsyncSession = Depends(get_async_session)):
@@ -135,6 +137,36 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         await session.refresh(updated)
         return updated
 
+    async def on_after_forgot_password(
+        self, user: User, token: str, request: Optional[Request] = None
+    ):
+        """Send the recovery link (ADR 0041).
+
+        The route only gets here with EMAIL_ENABLED on. A relay that refuses
+        the message is logged and swallowed, so a known and an unknown address
+        still get the same answer and the endpoint reveals nothing.
+        """
+        from app.services import email_service
+
+        settings = get_settings()
+        if not settings.email_enabled:
+            return
+        language = (user.preferences or {}).get("language", "en")
+        message = email_service.password_reset_email(
+            to=user.email,
+            link=email_service.password_reset_link(token, settings),
+            language=language,
+            token_minutes=settings.password_reset_token_minutes,
+        )
+        try:
+            await email_service.send_email(message, settings)
+        except Exception:
+            logger.warning(
+                "Could not send the password recovery email to %s",
+                user.email,
+                exc_info=True,
+            )
+
     async def on_after_register(self, user: User, request: Optional[Request] = None):
         print(f"User {user.id} has registered.")
         # If request is None, this was called programmatically (e.g., from setup endpoint)
@@ -173,7 +205,13 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
 
 
 async def get_user_manager(user_db: SQLAlchemyUserDatabase = Depends(get_user_db)):
-    yield UserManager(user_db)
+    manager = UserManager(user_db)
+    # How long a recovery link works (PASSWORD_RESET_TOKEN_MINUTES). Set here,
+    # per manager, because fastapi-users declares it as a plain attribute.
+    manager.reset_password_token_lifetime_seconds = (
+        get_settings().password_reset_token_minutes * 60
+    )
+    yield manager
 
 
 bearer_transport = BearerTransport(tokenUrl="/api/auth/login")

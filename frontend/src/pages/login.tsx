@@ -37,6 +37,8 @@ type OIDCConfig = {
   enabled: boolean
   provider_name: string
   local_auth_enabled: boolean
+  /** EMAIL_ENABLED on the backend: the recovery link would work. */
+  password_reset_enabled?: boolean
 }
 
 export default function LoginPage() {
@@ -444,7 +446,17 @@ export default function LoginPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="password" className="text-sm">{t('auth.password')}</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password" className="text-sm">{t('auth.password')}</Label>
+                  {oidcConfig?.password_reset_enabled && (
+                    <Link
+                      to="/forgot-password"
+                      className="text-xs text-primary font-medium hover:underline"
+                    >
+                      {t('auth.forgotPassword')}
+                    </Link>
+                  )}
+                </div>
                 <Input
                   id="password"
                   type="password"
