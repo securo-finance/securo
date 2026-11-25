@@ -164,3 +164,34 @@ describe('RecurringForm holiday calendars', () => {
     expect(recurringApi.holidayCalendars).toHaveBeenCalledTimes(2)
   })
 })
+
+describe('RecurringForm yearly schedules', () => {
+  it('keeps a yearly bill\'s business day and holiday calendar on an unchanged save', async () => {
+    vi.mocked(recurringApi.holidayCalendars).mockResolvedValue([
+      { country: 'BR', subdivisions: [{ code: 'SP', name: 'São Paulo' }] },
+    ])
+    const onSave = vi.fn()
+    const { user } = renderForm(
+      {
+        ...recurring(100),
+        frequency: 'yearly',
+        business_day: 5,
+        count_saturdays: true,
+        holiday_calendar: 'BR-SP',
+      },
+      onSave,
+    )
+
+    // The API treats yearly as month-based, so the rules show and are saved.
+    expect(await screen.findByDisplayValue('5')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onSave.mock.calls[0][0]).toMatchObject({
+      frequency: 'yearly',
+      business_day: 5,
+      count_saturdays: true,
+      holiday_calendar: 'BR-SP',
+    })
+  })
+})

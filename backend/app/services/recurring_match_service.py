@@ -121,11 +121,11 @@ def keyword_hit(recurring: RecurringTransaction, description: Optional[str]) -> 
     if not recurring.match_keywords or not description:
         return False
     text = _fold(description)
-    return any(
-        _fold(keyword) in text
-        for keyword in recurring.match_keywords.split(",")
-        if keyword.strip()
-    )
+    # A keyword is compared folded, so it is dropped when folding leaves
+    # nothing of it (a lone accent like "´"): an empty string sits in every
+    # description and would match them all.
+    folded = (_fold(keyword) for keyword in recurring.match_keywords.split(","))
+    return any(keyword in text for keyword in folded if keyword)
 
 
 def _bill_policy(
@@ -145,7 +145,10 @@ def _bill_policy(
     charge, the rule then asks for a single candidate. Returned unchanged (not
     copied) when none applies.
     """
-    from app.services.recurring_transaction_service import grace_days_for
+    from app.services.recurring_transaction_service import (
+        grace_days_for,
+        late_window_for,
+    )
 
     grace = grace_days_for(recurring)
     tolerance = Decimal(recurring.amount_tolerance_percent or 0)
@@ -157,7 +160,10 @@ def _bill_policy(
         when = strategy.get("when", {})
         window = when.get("date")
         if grace and window is not None:
-            when["date"] = {**window, late_side: int(window.get(late_side, 0)) + grace}
+            # The rule's own lateness plus the grace, kept shorter than a
+            # weekly or biweekly period (late_window_for).
+            late = late_window_for(recurring, window.get(late_side, 0))
+            when["date"] = {**window, late_side: late}
         if hit:
             when.pop("description_similarity", None)
         amount = when.get("amount") or {"match": "exact"}

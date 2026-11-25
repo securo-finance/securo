@@ -334,3 +334,83 @@ async def test_a_paused_bill_keeps_a_charge_linked_within_its_grace(
 
     february = await get_month_summary(session, test_workspace.id, date(2027, 2, 1), "BRL")
     assert february.expenses == Decimal("1200.00")
+
+
+# ---------------------------------------------------------------------------
+# The whole late window stays shorter than a weekly or biweekly period
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("frequency", "rule_after", "grace", "applied"),
+    [
+        # The default rules: two days late for a weekly bill, five otherwise.
+        ("weekly", 2, 5, 6),
+        ("weekly", 2, 3, 5),
+        ("biweekly", 5, 9, 13),
+        ("biweekly", 5, 4, 9),
+        ("monthly", 5, 15, 20),
+        # A window the workspace itself set that wide is not narrowed.
+        ("weekly", 8, 5, 8),
+    ],
+)
+def test_the_rule_and_the_grace_together_stay_shorter_than_the_period(
+    frequency, rule_after, grace, applied
+):
+    policy = {"strategies": [{
+        "id": "auto",
+        "when": {"date": {"before_days": 2, "after_days": rule_after}},
+    }]}
+    adapted = rms._bill_policy(policy, _bill(frequency=frequency, grace_days=grace))
+
+    assert adapted["strategies"][0]["when"]["date"] == {
+        "before_days": 2, "after_days": applied,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("frequency", "grace", "period"), [("weekly", 5, 7), ("biweekly", 9, 14)]
+)
+async def test_an_on_day_charge_is_not_linked_to_the_unpaid_occurrence_before_it(
+    session, test_user, test_workspace, account, frequency, grace, period
+):
+    """With the default rules, an unpaid occurrence must not take the next
+    occurrence's on-day charge: the rule's lateness plus the grace would
+    otherwise reach exactly one period."""
+    bill = await _make_bill(
+        session, test_workspace, test_user, account,
+        frequency=frequency, start_date=date(2026, 10, 5), grace_days=grace,
+        auto_generate=False,
+    )
+    unpaid = date(2026, 10, 5)
+    next_due = unpaid + timedelta(days=period)
+    on_day = await _add_tx(
+        session, test_user, test_workspace, account,
+        description="Aluguel", date=next_due,
+    )
+
+    assert await rms.find_real_tx_for_occurrence(session, bill, unpaid) is None
+    found = await rms.find_real_tx_for_occurrence(session, bill, next_due)
+    assert found is not None and found.id == on_day.id
+
+
+# ---------------------------------------------------------------------------
+# Keywords
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "keywords",
+    # An acute accent, padded, a lone combining acute, and two spacing marks.
+    ["´", " ´ , ", "́", "´,¨"],
+)
+def test_a_keyword_folding_empties_matches_nothing(keywords):
+    assert not rms.keyword_hit(_bill(match_keywords=keywords), "Compra no mercado")
+
+
+def test_an_empty_keyword_does_not_hide_a_real_one():
+    bill = _bill(match_keywords="´, Transferência Recebida")
+
+    assert rms.keyword_hit(bill, "TRANSFERENCIA RECEBIDA|EMPRESA")
+    assert not rms.keyword_hit(bill, "Compra no mercado")

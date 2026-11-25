@@ -668,7 +668,9 @@ function RecurringFormFields({
   const [graceDays, setGraceDays] = useState(recurring?.grace_days?.toString() ?? '0')
   const [amountTolerance, setAmountTolerance] = useState(recurring?.amount_tolerance_percent?.toString() ?? '0')
   const [matchKeywords, setMatchKeywords] = useState(recurring?.match_keywords ?? '')
-  const monthBased = frequency === 'monthly' || frequency === 'quarterly' || frequency === 'semiannual'
+  // The same frequencies the API treats as month-based (yearly included), so
+  // an unchanged save never drops a business day or calendar the API accepted.
+  const monthBased = frequency === 'monthly' || frequency === 'quarterly' || frequency === 'semiannual' || frequency === 'yearly'
   const useBusinessDay = monthBased && dayRule === 'business'
   const [startDate, setStartDate] = useState(recurring?.start_date ?? initial?.start_date ?? localDateString())
   const [endDate, setEndDate] = useState(recurring?.end_date ?? initial?.end_date ?? '')

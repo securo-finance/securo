@@ -493,6 +493,26 @@ def grace_days_for(recurring) -> int:
     return min(grace, period - 1) if period else grace
 
 
+def late_window_for(recurring, rule_days: int) -> int:
+    """The late side of a rule's window once the bill's grace is added to it.
+
+    Capping the grace alone is not enough: the rule already lets a charge be
+    ``rule_days`` late, and the grace comes on top. With the default rules a
+    weekly bill (two days late) with five days of grace, or a biweekly one
+    (five days) with nine, would reach the next due date, and after an unpaid
+    occurrence every on-day charge would be linked to the one before. So the
+    whole window stays shorter than a weekly or biweekly period. The grace
+    never narrows what the rule itself allows, though: a window the workspace
+    set that wide is the workspace's choice, not the bill's.
+    """
+    rule_days = int(rule_days)
+    widened = rule_days + grace_days_for(recurring)
+    period = _SHORT_PERIOD_DAYS.get(recurring.frequency)
+    if period:
+        widened = min(widened, period - 1)
+    return max(rule_days, widened)
+
+
 def nearest_occurrence(recurring, when: date) -> tuple[date, date]:
     """The occurrence, from the pointer onward, whose due date is nearest ``when``.
 
@@ -728,7 +748,7 @@ async def _charged_occurrences(
     reach = {
         rec.id: (
             rule_reach[rec.frequency][0],
-            rule_reach[rec.frequency][1] + grace_days_for(rec),
+            late_window_for(rec, rule_reach[rec.frequency][1]),
         )
         for rec in stopped
     }
