@@ -49,8 +49,14 @@ export async function loadGoalHistory(goal: Goal, today: string): Promise<GoalHi
     }
 
     const points = await accounts.balanceHistory(goal.account_id, earliest, today)
+    // Balance history reports connected liabilities as debt-positive; goals use
+    // signed balances. Manual liabilities already have the goal sign convention.
+    const sign =
+      account.connection_id && (account.type === 'credit_card' || account.type === 'loan')
+        ? -1
+        : 1
     return result(
-      points.map(p => ({ date: p.date, amount: p.balance })),
+      points.map(p => ({ date: p.date, amount: p.balance === 0 ? 0 : p.balance * sign })),
       ['reconstructed'],
     )
   }

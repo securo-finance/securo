@@ -48,6 +48,45 @@ describe('existing history APIs', () => {
     expect(api.transactions.list).not.toHaveBeenCalled()
   })
 
+  it.each(['credit_card', 'loan'])(
+    'converts connected %s history to the negative-debt convention used by goals',
+    async type => {
+      api.accounts.get.mockResolvedValue({ currency: 'USD', type, connection_id: 'bank' })
+      api.accounts.balanceHistory.mockResolvedValue([
+        { date: '2026-09-01', balance: -25 },
+        { date: '2026-10-01', balance: 0 },
+        { date: today, balance: 530.95 },
+      ])
+      const result = await loadGoalHistory(
+        goal({ tracking_type: 'account', account_id: 'card', current_amount: -530.95 }, today),
+        today,
+      )
+      expect(result.points).toEqual([
+        { date: '2026-09-01', amount: 25 },
+        { date: '2026-10-01', amount: 0 },
+        { date: today, amount: -530.95 },
+      ])
+    },
+  )
+
+  it.each([
+    { type: 'credit_card', connection_id: null },
+    { type: 'loan', connection_id: null },
+    { type: 'checking', connection_id: 'bank' },
+    { type: 'checking', connection_id: null },
+  ])('preserves signed history for $type with connection $connection_id', async account => {
+    api.accounts.get.mockResolvedValue({ currency: 'USD', ...account })
+    api.accounts.balanceHistory.mockResolvedValue([
+      { date: '2026-10-01', balance: 25 },
+      { date: today, balance: -530.95 },
+    ])
+    const result = await loadGoalHistory(accountGoal(), today)
+    expect(result.points).toEqual([
+      { date: '2026-10-01', amount: 25 },
+      { date: today, amount: -530.95 },
+    ])
+  })
+
   it('filters asset history to one month before goal creation', async () => {
     const result = await loadGoalHistory(
       goal({ tracking_type: 'asset', asset_id: 'studio' }, today),
