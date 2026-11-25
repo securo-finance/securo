@@ -342,6 +342,13 @@ async def add_member(
     return member
 
 
+async def _lock_workspace(session: AsyncSession, workspace_id: uuid.UUID) -> None:
+    """Owner changes take turns, with each other and with a user deletion."""
+    await session.execute(
+        select(Workspace.id).where(Workspace.id == workspace_id).with_for_update()
+    )
+
+
 async def update_member_role(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -350,6 +357,7 @@ async def update_member_role(
 ) -> WorkspaceMember:
     if new_role not in WORKSPACE_ROLES:
         raise HTTPException(status_code=400, detail=f"Invalid role: {new_role}")
+    await _lock_workspace(session, workspace_id)
     member = await get_membership(session, workspace_id, user_id)
     if member is None:
         raise HTTPException(status_code=404, detail="Member not found")
@@ -440,6 +448,7 @@ async def remove_member(
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
 ) -> None:
+    await _lock_workspace(session, workspace_id)
     member = await get_membership(session, workspace_id, user_id)
     if member is None:
         raise HTTPException(status_code=404, detail="Member not found")

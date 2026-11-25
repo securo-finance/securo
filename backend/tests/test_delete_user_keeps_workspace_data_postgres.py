@@ -3,11 +3,13 @@
 On Postgres: the foreign keys are half of the behavior, and SQLite here has none.
 """
 
+import asyncio
 import uuid
 from datetime import date
 from decimal import Decimal
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import func, select
 
 from app.core.database import Base
@@ -29,7 +31,7 @@ from app.models.transaction import Transaction
 from app.models.transaction_split import TransactionSplit
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
-from app.services import admin_service, user_removal_service
+from app.services import admin_service, user_removal_service, workspace_service
 
 DAY = date(2026, 10, 5)
 
@@ -315,6 +317,49 @@ async def test_the_only_owner_of_a_workspace_with_members_is_refused(postgres_se
         assert [await _counts(session, shared_id), await _counts(session, alone_id)] == before
         row = await session.get_one(User, owner_id)
         assert row.is_active and row.email == "owner@example.invalid"
+
+
+@pytest.mark.parametrize("change", ["demote", "remove"])
+async def test_a_co_owner_cannot_leave_while_the_other_is_deleted(
+    postgres_sessions, monkeypatch, change,
+):
+    async with postgres_sessions() as session:
+        admin, leaving, staying = await _people(session, "leaving", "staying")
+        shared = await _workspace(session, "Household", owner=leaving)
+        await _add(
+            session, WorkspaceMember(workspace_id=shared.id, user_id=staying.id, role="owner")
+        )
+        ids = (shared.id, staying.id)
+        await session.commit()
+
+        decided, finish = asyncio.Event(), asyncio.Event()
+        is_author = user_removal_service._is_author
+
+        async def paused(*args):
+            decided.set()
+            await finish.wait()
+            return await is_author(*args)
+
+        monkeypatch.setattr(user_removal_service, "_is_author", paused)
+
+        async def change_owner():
+            async with postgres_sessions() as other:
+                if change == "demote":
+                    await workspace_service.update_member_role(other, *ids, "editor")
+                else:
+                    await workspace_service.remove_member(other, *ids)
+                await other.commit()
+
+        deleting = asyncio.create_task(
+            admin_service.delete_user(session, leaving.id, admin.id)
+        )
+        await asyncio.wait_for(decided.wait(), 5)
+        changing = asyncio.create_task(change_owner())
+        await asyncio.wait([changing], timeout=0.5)
+        finish.set()
+        assert await deleting
+        with pytest.raises(HTTPException, match="sole owner"):
+            await changing
 
 
 async def test_an_active_account_is_never_hidden_by_its_address(postgres_sessions):
