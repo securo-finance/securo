@@ -5,6 +5,11 @@ import { CollectionSelector } from '@/components/collection-selector'
 import { CollectionFilterProvider } from '@/contexts/collection-filter-provider'
 import { renderWithProviders, t } from '@/test/utils'
 
+const navigate = vi.hoisted(() => vi.fn())
+vi.mock('react-router-dom', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('react-router-dom')>()),
+  useNavigate: () => navigate,
+}))
 vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/api')>()),
   collections: { list: async () => state.collections },
@@ -31,7 +36,8 @@ function setup() {
 it('is there without collections, and leads to making one', async () => {
   const { user } = setup()
   await user.click(screen.getByRole('button', { name: t('collections.allAccounts') }))
-  expect(screen.getByRole('menuitem', { name: t('collections.manage') })).toBeInTheDocument()
+  await user.click(screen.getByRole('menuitem', { name: t('collections.manage') }))
+  expect(navigate).toHaveBeenCalledWith('/collections')
 })
 
 it('shows the collection picked, and all accounts once cleared', async () => {

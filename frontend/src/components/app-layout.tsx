@@ -58,6 +58,7 @@ import {
   Palette,
   AlertCircle,
 } from 'lucide-react'
+import { useMediaQuery } from '@/hooks/use-media-query'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { ChangePasswordDialog } from '@/components/change-password-dialog'
 import { BackupDialog } from '@/components/backup-dialog'
@@ -123,6 +124,8 @@ export function AppLayout() {
   const [chatMessage, setChatMessage] = useState<string | null>(null)
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false)
   useCommandPaletteHotkey(setPaletteOpen)
+  // Tailwind's `lg`. Only the bell on screen mounts, as each one polls.
+  const isDesktop = useMediaQuery('(min-width: 64rem)')
   const { agentsEnabled } = useFeatureFlags()
   const {
     hasModule,
@@ -276,10 +279,12 @@ export function AppLayout() {
           >
             <Search size={18} />
           </button>
-          <NotificationBell
-            size={18}
-            className="p-1 text-sidebar-muted transition-colors hover:text-sidebar-foreground"
-          />
+          {!isDesktop && (
+            <NotificationBell
+              size={18}
+              className="p-1 text-sidebar-muted transition-colors hover:text-sidebar-foreground"
+            />
+          )}
           {chatAvailable && (
             <button
               onClick={() => setChatOpen(true)}
@@ -661,7 +666,9 @@ export function AppLayout() {
                     {t('agents.globalChat.title')}
                   </button>
                 )}
-                <NotificationBell className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/60 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground" />
+                {isDesktop && (
+                  <NotificationBell className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/60 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground" />
+                )}
               </div>
             </div>
           </div>

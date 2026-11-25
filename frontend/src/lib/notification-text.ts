@@ -122,5 +122,8 @@ export function notificationTarget(item: AppNotification): string {
       return `/groups/${item.data.group_id}`
     case 'backup_failed':
       return '/backups'
+    // A kind newer than this bundle.
+    default:
+      return '/notifications'
   }
 }

@@ -74,7 +74,7 @@ vi.mock('@/lib/webauthn', () => ({
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/components/collection-selector', () => ({ CollectionSelector: () => null }))
 vi.mock('@/components/command-palette', () => ({ CommandPalette: () => null }))
-vi.mock('@/components/notification-bell', () => ({ NotificationBell: () => null }))
+vi.mock('@/components/notification-bell', () => ({ NotificationBell: () => <span data-testid="bell" /> }))
 vi.mock('@/components/global-chat-panel', () => ({ GlobalChatPanel: () => null }))
 vi.mock('@/components/update-available-banner', () => ({ UpdateAvailableBanner: () => null }))
 vi.mock('@/components/update-available-dialog', () => ({ UpdateAvailableDialog: () => null }))
@@ -101,6 +101,23 @@ beforeEach(() => {
   ])
   state.auth.disable2fa.mockResolvedValue({})
   state.auth.deletePasskey.mockResolvedValue(undefined)
+})
+
+it.each([
+  ['top bar', true],
+  ['phone header', false],
+])('mounts one bell, in the %s', (_place, desktop) => {
+  const real = window.matchMedia
+  const media = vi
+    .spyOn(window, 'matchMedia')
+    .mockImplementation((query) => ({ ...real(query), matches: desktop && query === '(min-width: 64rem)' }))
+  try {
+    renderWithProviders(<AppLayout />)
+    const bell = screen.getByTestId('bell')
+    expect(bell.closest('main') !== null).toBe(desktop)
+  } finally {
+    media.mockRestore()
+  }
 })
 
 it('collapses the desktop sidebar and persists the preference', async () => {

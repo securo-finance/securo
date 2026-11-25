@@ -132,10 +132,17 @@ it('turns a kind off and on, one switch each', async () => {
 
 it('puts a switch back when it could not be saved', async () => {
   api.preferences.mockResolvedValue([{ kind: 'budget_threshold', channels: { in_app: true } }])
-  api.setPreference.mockRejectedValue(new Error('down'))
+  let fail = () => {}
+  api.setPreference.mockImplementation(
+    () => new Promise<void>((_, reject) => { fail = () => reject(new Error('down')) }),
+  )
   const { user } = renderWithProviders(<NotificationsPage />, { route: '/notifications?tab=preferences' })
   const budgets = await screen.findByRole('switch')
   await user.click(budgets)
+  await waitFor(() => expect(budgets).not.toBeChecked())
+  // Asking again never answers, so only the rollback can put it back.
+  api.preferences.mockImplementation(() => new Promise(() => {}))
+  fail()
   await waitFor(() => expect(budgets).toBeChecked())
 })
 
