@@ -299,6 +299,19 @@ def split_not_allowed(asset: Asset) -> bool:
     return asset.valuation_method != "market_price" or asset.connection_id is not None
 
 
+def _raise_if_synced(asset: Asset) -> None:
+    """A synced holding's position is its provider's: a trade typed here would
+    replace it with whatever this ledger adds up to."""
+    if asset.connection_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                "This holding is synced from a bank connection, "
+                "so its trades can't be added or edited by hand."
+            ),
+        )
+
+
 def too_large_to_store(transactions: list[AssetTransaction], asset: Asset) -> bool:
     """Whether the ledger would leave more units, more value at the current
     price or a higher average price than the asset's columns hold.
@@ -394,21 +407,28 @@ def _raise_if_too_large_to_store(transactions: list[AssetTransaction], asset: As
         )
 
 
-async def recompute_and_cache(session: AsyncSession, asset: Asset) -> None:
+async def recompute_and_cache(
+    session: AsyncSession, asset: Asset, *, from_sync: bool = False
+) -> None:
     """Recompute the derived position from the ledger and cache it on the asset.
 
     Keeps `purchase_price` as the cost basis of the held units so the existing
     `gain_loss = current_value - purchase_price` math reads as the unrealized
     gain, and refreshes today's AssetValue so the portfolio chart matches the
     new quantity.
+
+    A synced holding keeps the units its provider reports, and is never closed
+    by its ledger, unless the sync itself asks for the replay (`from_sync`).
     """
+    keeps_units = asset.connection_id is not None and not from_sync and bool(asset.units)
+    reported_units = asset.units
     result = await session.execute(
         select(AssetTransaction).where(AssetTransaction.asset_id == asset.id)
     )
     txs = list(result.scalars().all())
     pos = _recompute(txs)
 
-    asset.units = pos["units"]
+    asset.units = reported_units if keeps_units else pos["units"]
     asset.average_price = pos["average_price"]
     asset.realized_gain = pos["realized_gain"].quantize(Decimal("0.01"))
     asset.purchase_price = (
@@ -420,7 +440,7 @@ async def recompute_and_cache(session: AsyncSession, asset: Asset) -> None:
         # Re-opened position (or still open): clear any prior full-exit marker.
         asset.sell_date = None
         asset.sell_price = None
-    elif txs and pos["last_sell"] is not None:
+    elif not keeps_units and txs and pos["last_sell"] is not None:
         # Fully exited — mark sold so it drops out of the active portfolio.
         asset.sell_date = pos["last_sell"]
 
@@ -624,6 +644,8 @@ async def add_transaction(
     if is_split:
         _raise_if_split_not_allowed(asset)
         _raise_if_split_in_future(data.date)
+    else:
+        _raise_if_synced(asset)
     new_tx = AssetTransaction(
         asset_id=asset.id,
         workspace_id=workspace_id,
@@ -684,6 +706,8 @@ async def update_transaction(
     if tx is None:
         return None
     fields = data.model_dump(exclude_unset=True)
+    if fields.keys() - {"notes"}:
+        _raise_if_synced(asset)
     kind = fields.get("kind", tx.kind)
     if fields.get("quantity") is not None and kind != "split":
         # The checks below and the row that is written have to hold the same
@@ -805,6 +829,8 @@ async def buy_into_holding(
         .with_for_update()
     )
     asset = result.scalar_one_or_none()
+    if asset is not None:
+        _raise_if_synced(asset)
     ledger = [] if asset is None else await _load_txs(session, asset.id)
 
     if asset is None:

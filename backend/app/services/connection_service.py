@@ -1231,7 +1231,7 @@ async def _sync_holding_trades(
         was_sold = asset.sell_date is not None
         # Average price, realized gain and cost basis come from the ledger;
         # the position stays what the provider reports.
-        await recompute_and_cache(session, asset)
+        await recompute_and_cache(session, asset, from_sync=True)
         if holding.quantity is not None and not holding.is_withdrawn:
             asset.units = holding.quantity
         if sold is not None:
