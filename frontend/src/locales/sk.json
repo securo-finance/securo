@@ -3128,6 +3128,29 @@
     "menuItem": "Skontrolovať aktualizácie"
   },
   "admin": {
+    "email": {
+      "title": "E-mail",
+      "enabled": "E-mail je zapnutý",
+      "disabled": "E-mail je vypnutý",
+      "description": "Ako odchádzajú e-maily na obnovenie hesla. Poskytovateľ a odosielateľ pochádzajú z konfigurácie servera.",
+      "disabledNote": "Zapnite EMAIL_ENABLED na serveri, aby sa posielali odkazy na obnovenie.",
+      "provider": "Poskytovateľ",
+      "providerSmtp": "Server SMTP",
+      "providerResend": "Resend",
+      "sender": "Odosielateľ",
+      "senderMissing": "Nenastavené",
+      "templatesTitle": "Správa na obnovenie",
+      "templatesDescription": "To, čo človek číta. Premenné: {app_name}, {link} a {minutes}; telo musí zachovať {link}.",
+      "subject": "Predmet",
+      "body": "Telo",
+      "linkRequired": "Telo musí obsahovať {link}.",
+      "restoreDefault": "Obnoviť predvolený text",
+      "save": "Uložiť šablóny",
+      "saved": "Šablóny uložené",
+      "saveFailed": "Šablóny sa nepodarilo uložiť",
+      "languageEn": "Angličtina",
+      "languagePt": "Portugalčina"
+    },
     "users": {
       "title": "Správa používateľov",
       "searchPlaceholder": "Hľadať používateľov...",

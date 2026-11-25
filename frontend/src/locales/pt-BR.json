@@ -2977,6 +2977,29 @@
     "menuItem": "Verificar atualizações"
   },
   "admin": {
+    "email": {
+      "title": "E-mail",
+      "enabled": "E-mail ativado",
+      "disabled": "E-mail desativado",
+      "description": "Como os e-mails de recuperação de senha saem. O provedor e o remetente vêm da configuração do servidor.",
+      "disabledNote": "Ative EMAIL_ENABLED no servidor para enviar links de recuperação.",
+      "provider": "Provedor",
+      "providerSmtp": "Servidor SMTP",
+      "providerResend": "Resend",
+      "sender": "Remetente",
+      "senderMissing": "Não definido",
+      "templatesTitle": "Mensagem de recuperação",
+      "templatesDescription": "O que a pessoa lê. Variáveis: {app_name}, {link} e {minutes}; o corpo precisa manter {link}.",
+      "subject": "Assunto",
+      "body": "Corpo",
+      "linkRequired": "O corpo precisa conter {link}.",
+      "restoreDefault": "Restaurar texto padrão",
+      "save": "Salvar modelos",
+      "saved": "Modelos salvos",
+      "saveFailed": "Não foi possível salvar os modelos",
+      "languageEn": "Inglês",
+      "languagePt": "Português"
+    },
     "users": {
       "title": "Gerenciamento de Usuários",
       "searchPlaceholder": "Buscar usuários...",

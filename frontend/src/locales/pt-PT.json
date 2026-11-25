@@ -2976,6 +2976,29 @@
     "menuItem": "Verificar atualizações"
   },
   "admin": {
+    "email": {
+      "title": "E-mail",
+      "enabled": "E-mail ativado",
+      "disabled": "E-mail desativado",
+      "description": "Como saem os e-mails de recuperação de palavra-passe. O fornecedor e o remetente vêm da configuração do servidor.",
+      "disabledNote": "Ative EMAIL_ENABLED no servidor para enviar ligações de recuperação.",
+      "provider": "Fornecedor",
+      "providerSmtp": "Servidor SMTP",
+      "providerResend": "Resend",
+      "sender": "Remetente",
+      "senderMissing": "Não definido",
+      "templatesTitle": "Mensagem de recuperação",
+      "templatesDescription": "O que a pessoa lê. Variáveis: {app_name}, {link} e {minutes}; o corpo tem de manter {link}.",
+      "subject": "Assunto",
+      "body": "Corpo",
+      "linkRequired": "O corpo tem de conter {link}.",
+      "restoreDefault": "Restaurar texto predefinido",
+      "save": "Guardar modelos",
+      "saved": "Modelos guardados",
+      "saveFailed": "Não foi possível guardar os modelos",
+      "languageEn": "Inglês",
+      "languagePt": "Português"
+    },
     "users": {
       "title": "Gestão de Utilizadores",
       "searchPlaceholder": "Procurar utilizadores...",

@@ -2962,6 +2962,29 @@
     "menuItem": "Frissítések keresése"
   },
   "admin": {
+    "email": {
+      "title": "E-mail",
+      "enabled": "Az e-mail be van kapcsolva",
+      "disabled": "Az e-mail ki van kapcsolva",
+      "description": "Hogyan mennek ki a jelszó-visszaállító e-mailek. A szolgáltató és a feladó a szerver beállításaiból jön.",
+      "disabledNote": "Kapcsold be az EMAIL_ENABLED-et a szerveren a visszaállító hivatkozások küldéséhez.",
+      "provider": "Szolgáltató",
+      "providerSmtp": "SMTP-kiszolgáló",
+      "providerResend": "Resend",
+      "sender": "Feladó",
+      "senderMissing": "Nincs beállítva",
+      "templatesTitle": "Visszaállító üzenet",
+      "templatesDescription": "Amit a személy olvas. Változók: {app_name}, {link} és {minutes}; a törzsnek meg kell tartania a {link} elemet.",
+      "subject": "Tárgy",
+      "body": "Törzs",
+      "linkRequired": "A törzsnek tartalmaznia kell a {link} elemet.",
+      "restoreDefault": "Alapértelmezett szöveg visszaállítása",
+      "save": "Sablonok mentése",
+      "saved": "Sablonok mentve",
+      "saveFailed": "A sablonokat nem sikerült menteni",
+      "languageEn": "Angol",
+      "languagePt": "Portugál"
+    },
     "users": {
       "title": "Felhasználók kezelése",
       "searchPlaceholder": "Felhasználók keresése...",

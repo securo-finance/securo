@@ -2991,6 +2991,29 @@
     "menuItem": "בדיקת עדכונים"
   },
   "admin": {
+    "email": {
+      "title": "דוא\"ל",
+      "enabled": "הדוא\"ל פעיל",
+      "disabled": "הדוא\"ל כבוי",
+      "description": "איך נשלחים דוא\"לים לאיפוס סיסמה. הספק והשולח מגיעים מהגדרות השרת.",
+      "disabledNote": "יש להפעיל EMAIL_ENABLED בשרת כדי לשלוח קישורי איפוס.",
+      "provider": "ספק",
+      "providerSmtp": "שרת SMTP",
+      "providerResend": "Resend",
+      "sender": "שולח",
+      "senderMissing": "לא הוגדר",
+      "templatesTitle": "הודעת איפוס",
+      "templatesDescription": "מה שהאדם קורא. משתנים: {app_name}, {link} ו-{minutes}; הגוף חייב לשמור על {link}.",
+      "subject": "נושא",
+      "body": "גוף",
+      "linkRequired": "הגוף חייב להכיל {link}.",
+      "restoreDefault": "שחזור טקסט ברירת המחדל",
+      "save": "שמירת תבניות",
+      "saved": "התבניות נשמרו",
+      "saveFailed": "לא ניתן היה לשמור את התבניות",
+      "languageEn": "אנגלית",
+      "languagePt": "פורטוגזית"
+    },
     "users": {
       "title": "ניהול משתמשים",
       "searchPlaceholder": "חיפוש משתמשים...",

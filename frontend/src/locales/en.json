@@ -2962,6 +2962,29 @@
     "menuItem": "Check for updates"
   },
   "admin": {
+    "email": {
+      "title": "Email",
+      "enabled": "Email is on",
+      "disabled": "Email is off",
+      "description": "How password recovery mail goes out. The provider and sender come from the server configuration.",
+      "disabledNote": "Turn on EMAIL_ENABLED on the server to send recovery links.",
+      "provider": "Provider",
+      "providerSmtp": "SMTP relay",
+      "providerResend": "Resend",
+      "sender": "Sender",
+      "senderMissing": "Not set",
+      "templatesTitle": "Recovery message",
+      "templatesDescription": "What the person reads. Placeholders: {app_name}, {link} and {minutes}; the body must keep {link}.",
+      "subject": "Subject",
+      "body": "Body",
+      "linkRequired": "The body must contain {link}.",
+      "restoreDefault": "Restore default text",
+      "save": "Save templates",
+      "saved": "Templates saved",
+      "saveFailed": "Could not save the templates",
+      "languageEn": "English",
+      "languagePt": "Portuguese"
+    },
     "users": {
       "title": "User Management",
       "searchPlaceholder": "Search users...",
