@@ -13,7 +13,7 @@ from sqlalchemy import (
     update,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import contains_eager
+from sqlalchemy.orm import aliased, contains_eager
 
 from app.core.app_clock import app_today
 from app.models.account import Account
@@ -184,13 +184,44 @@ def _opening_balance_values(account_type: str, balance: Decimal) -> tuple[Decima
     return amount, "credit" if is_credit else "debit"
 
 
-def _balance_subqueries(today: _Date):
+def _accounts_in_scope(workspace_id: uuid.UUID, account_id: Optional[uuid.UUID]):
+    """Ids of the accounts a balance read covers.
+
+    The same rule as the WHERE of `_accounts_with_balances_query`, on aliases so
+    it never correlates to the Account a balance subquery joins. It scopes by
+    account, not by the row's own workspace: a balance counts every row of its
+    account. For a single account the outer query still checks the workspace.
+    """
+    if account_id is not None:
+        return [account_id]
+    account = aliased(Account)
+    connection = aliased(BankConnection)
+    return (
+        select(account.id)
+        .outerjoin(connection, account.connection_id == connection.id)
+        .where(
+            or_(
+                account.workspace_id == workspace_id,
+                connection.workspace_id == workspace_id,
+            )
+        )
+    )
+
+
+def _balance_subqueries(
+    today: _Date, workspace_id: uuid.UUID, account_id: Optional[uuid.UUID] = None
+):
     """Per-account current and previous balances, as two subqueries.
+
+    Each one reads only the accounts the caller will return, or its cost grows
+    with every other workspace on the instance.
 
     Shared by the list and the single-account read so both report the same
     number for the same account: the detail endpoint used to serialize with no
     balance at all, which made available_credit fall back to the full limit.
     """
+    scope = _accounts_in_scope(workspace_id, account_id)
+
     # Subquery: compute current_balance per account from transactions in one pass.
     # A foreign row counts only once amount_primary was stamped, so the manual
     # account's current balance does not disagree with its history (#1263).
@@ -205,6 +236,7 @@ def _balance_subqueries(today: _Date):
         .join(Account, Transaction.account_id == Account.id)
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
+            Transaction.account_id.in_(scope),
             counts_in_current_balance(today),
             Transaction.is_ignored == False,
             or_(
@@ -228,6 +260,7 @@ def _balance_subqueries(today: _Date):
         .join(Account, Transaction.account_id == Account.id)
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
+            Transaction.account_id.in_(scope),
             Transaction.date <= prev_month_end,
             Transaction.status == "posted",
             Transaction.is_ignored == False,
@@ -251,6 +284,7 @@ def _balance_subqueries(today: _Date):
         .join(Account, Transaction.account_id == Account.id)
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
+            Transaction.account_id.in_(scope),
             Account.type == "credit_card",
             Transaction.type == "debit",
             Transaction.date > today,
@@ -281,6 +315,7 @@ def _balance_subqueries(today: _Date):
         )
         .join(Account, CreditCardBill.account_id == Account.id)
         .where(
+            CreditCardBill.account_id.in_(scope),
             Account.type == "credit_card",
             Account.shared_balance_group.isnot(None),
             CreditCardBill.due_date >= today,
@@ -337,7 +372,9 @@ def _accounts_with_balances_query(
 
 
 async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_closed: bool = False) -> list[dict]:
-    query = _accounts_with_balances_query(workspace_id, *_balance_subqueries(app_today()))
+    query = _accounts_with_balances_query(
+        workspace_id, *_balance_subqueries(app_today(), workspace_id)
+    )
     if not include_closed:
         query = query.where(Account.is_closed == False)
     query = query.order_by(Account.name)
@@ -369,7 +406,7 @@ async def get_account_with_balances(
 ) -> Optional[dict]:
     """One account, serialized with the same balances the list reports."""
     query = _accounts_with_balances_query(
-        workspace_id, *_balance_subqueries(app_today())
+        workspace_id, *_balance_subqueries(app_today(), workspace_id, account_id)
     ).where(Account.id == account_id)
     row = (await session.execute(query)).first()
     if row is None:
