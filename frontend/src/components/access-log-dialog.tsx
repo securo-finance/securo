@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { History, PenLine, Trash2 } from 'lucide-react'
 import { accessLog as accessLogApi } from '@/lib/api'
@@ -40,16 +39,23 @@ interface AccessLogDialogProps {
 export function AccessLogDialog({ open, onClose }: AccessLogDialogProps) {
   const { t } = useTranslation()
   const dateLocale = useDateLocale()
-  const [limit, setLimit] = useState(PAGE_SIZE)
 
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ['access-log', 'mine', limit],
-    queryFn: () => accessLogApi.mine({ limit }),
-    enabled: open,
-  })
+  // Pages of a fixed size, appended: the endpoint refuses more than 100
+  // entries per request, so asking for everything at once stops working as
+  // soon as there is enough to read.
+  const { data, isLoading, isError, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useInfiniteQuery({
+      queryKey: ['access-log', 'mine'],
+      queryFn: ({ pageParam }) => accessLogApi.mine({ page: pageParam, limit: PAGE_SIZE }),
+      initialPageParam: 1,
+      getNextPageParam: (lastPage, allPages) => {
+        const loaded = allPages.reduce((count, page) => count + page.items.length, 0)
+        return loaded < lastPage.total ? allPages.length + 1 : undefined
+      },
+      enabled: open,
+    })
 
-  const entries = data?.items ?? []
-  const hasMore = (data?.total ?? 0) > entries.length
+  const entries = data?.pages.flatMap((page) => page.items) ?? []
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -96,8 +102,12 @@ export function AccessLogDialog({ open, onClose }: AccessLogDialogProps) {
         )}
 
         <div className="flex items-center justify-between gap-2">
-          {hasMore ? (
-            <Button variant="outline" onClick={() => setLimit((n) => n + PAGE_SIZE)}>
+          {hasNextPage ? (
+            <Button
+              variant="outline"
+              onClick={() => fetchNextPage()}
+              disabled={isFetchingNextPage}
+            >
               {t('accessLog.loadMore')}
             </Button>
           ) : (

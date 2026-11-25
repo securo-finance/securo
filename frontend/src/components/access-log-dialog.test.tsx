@@ -55,14 +55,32 @@ describe('AccessLogDialog', () => {
     expect(await screen.findByText('No administrative actions recorded.')).toBeInTheDocument()
   })
 
-  it('loads the rest only when there is more', async () => {
-    api.accessLog.mine.mockResolvedValue({ items: [entry()], total: 51 })
+  it('appends the next page and stops when everything is loaded', async () => {
+    api.accessLog.mine.mockImplementation(({ page }: { page: number }) =>
+      Promise.resolve(
+        page === 1
+          ? { items: [entry({ id: 'log-1', reason: 'First page' })], total: 2 }
+          : {
+              items: [entry({ id: 'log-2', reason: 'Second page', target_email: 'other@example.com' })],
+              total: 2,
+            },
+      ),
+    )
 
     const { user } = renderWithProviders(<AccessLogDialog open onClose={vi.fn()} />)
 
-    const more = await screen.findByRole('button', { name: 'Load more' })
-    await user.click(more)
+    expect(await screen.findByText('First page')).toBeInTheDocument()
+    expect(api.accessLog.mine).toHaveBeenCalledWith({ page: 1, limit: 50 })
 
-    expect(api.accessLog.mine).toHaveBeenLastCalledWith({ limit: 100 })
+    await user.click(screen.getByRole('button', { name: 'Load more' }))
+
+    expect(await screen.findByText('Second page')).toBeInTheDocument()
+    expect(screen.getByText('First page')).toBeInTheDocument()
+    expect(api.accessLog.mine).toHaveBeenLastCalledWith({ page: 2, limit: 50 })
+    // Every request stays inside the endpoint's ceiling, however much is left.
+    for (const [params] of api.accessLog.mine.mock.calls) {
+      expect(params.limit).toBeLessThanOrEqual(100)
+    }
+    expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument()
   })
 })
