@@ -5,6 +5,9 @@ import type { AxiosResponse } from 'axios'
 import { markDataChanged } from '@/lib/data-changed'
 import type { NumberFormat, DateFormat } from '@/lib/format'
 import type {
+  AppNotificationKind,
+  AppNotificationList,
+  NotificationPreference,
   User,
   AdminUser,
   AdminUserList,
@@ -2210,6 +2213,31 @@ export const uiLayouts = {
   },
   reset: async (surface: 'dashboard' | 'reports', workspaceId?: string | null): Promise<void> => {
     await api.delete(`/ui/layouts/${surface}`, workspaceHeader(workspaceId))
+  },
+}
+
+// Reading a notification changes nothing other tabs show.
+export type NotificationFilter = 'open' | 'unread' | 'all'
+
+export const notifications = {
+  list: async (
+    params: { status?: NotificationFilter; limit?: number; offset?: number } = {},
+  ): Promise<AppNotificationList> => {
+    const { data } = await api.get('/notifications', { params })
+    return data
+  },
+  preferences: async (): Promise<NotificationPreference[]> => {
+    const { data } = await api.get('/notifications/preferences')
+    return data
+  },
+  setPreference: async (change: { kind: AppNotificationKind; channel: string; enabled: boolean }): Promise<void> => {
+    await api.put(`/notifications/preferences/${change.kind}/${change.channel}`, { enabled: change.enabled }, readOnly)
+  },
+  markRead: async (id: string): Promise<void> => {
+    await api.post(`/notifications/${id}/read`, undefined, readOnly)
+  },
+  markAllRead: async (): Promise<void> => {
+    await api.post('/notifications/read-all', undefined, readOnly)
   },
 }
 

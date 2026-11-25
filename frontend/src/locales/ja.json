@@ -3094,8 +3094,8 @@
       "chat": "チャット"
     },
     "globalChat": {
-      "title": "チャット",
-      "openHint": "チャットを開く",
+      "title": "エージェント",
+      "openHint": "エージェントを開く",
       "history": "最近の会話",
       "selectAgent": "エージェントを選択",
       "openSettings": "エージェント設定",
@@ -4196,5 +4196,104 @@
       "turnedOff": "ドキュメントの読み取りをオフにしました"
     },
     "unreadPages": "読み取れなかったページ (スキャンで、モデルが画像を読めません): {{pages}}。これらの行はこの確認に含まれていません。"
+  },
+  "notifications": {
+    "title": "通知",
+    "unread": "未読",
+    "unreadLabel": "通知、未読{{number}}件",
+    "markAllRead": "すべて既読にする",
+    "empty": "対応が必要なものはありません。",
+    "loadError": "通知を読み込めませんでした。",
+    "connection": {
+      "title": "{{name}}の同期が停止しました",
+      "rateLimited": "銀行の1日の上限に達する状態が続いています。"
+    },
+    "recurring": {
+      "title": "{{name}}が作成されませんでした",
+      "detail": "期日は{{date}}でした。口座と設定を確認してください。"
+    },
+    "budget": {
+      "close": "{{name}}：予算の{{percent}}%を使用",
+      "reached": "{{name}}：予算を使い切りました",
+      "detail": "{{budget}}のうち{{actual}}"
+    },
+    "backup": {
+      "title": "スケジュールされたバックアップに失敗しました",
+      "detail": "最後の試行は{{date}}です。Securoが再試行します。"
+    },
+    "seeAll": "すべての通知を見る",
+    "markRead": "既読にする",
+    "loadMore": "さらに読み込む",
+    "filter": {
+      "all": "すべて",
+      "unread": "未読"
+    },
+    "emptyFilter": {
+      "all": "通知はまだありません。",
+      "unread": "未読の通知はありません。"
+    },
+    "flag": {
+      "title": "期限切れのリマインダー：{{number}}",
+      "detail": "リマインダーの日付を過ぎたフラグ付き取引があります。"
+    },
+    "match": {
+      "title": "確認待ちの照合：{{number}}",
+      "detail": "照合の候補が見つかりました。回答が必要です。"
+    },
+    "invoice": {
+      "title": "{{name}}：請求書の期限切れ",
+      "detail": "{{amount}}、期日は{{date}}でした。"
+    },
+    "preferences": {
+      "title": "設定",
+      "hint": "このワークスペースで受け取る通知を選びます。他のメンバーの選択には影響しません。",
+      "saveError": "選択を保存できませんでした。",
+      "loadError": "設定を読み込めませんでした。"
+    },
+    "kind": {
+      "connection_error": {
+        "label": "接続",
+        "hint": "銀行またはプラグインの同期が停止したとき。"
+      },
+      "budget_threshold": {
+        "label": "予算",
+        "hint": "予算が80%または100%に達したとき。"
+      },
+      "recurring_failed": {
+        "label": "定期取引",
+        "hint": "定期取引が作成されなかったとき。"
+      },
+      "flag_overdue": {
+        "label": "リマインダー",
+        "hint": "フラグ付き取引がリマインダーの日付を過ぎたとき。"
+      },
+      "reconciliation_pending": {
+        "label": "確認待ちの照合",
+        "hint": "照合の候補が見つかりました。回答が必要です。"
+      },
+      "invoice_overdue": {
+        "label": "請求書",
+        "hint": "顧客への請求書が期限を過ぎたとき。"
+      },
+      "group_expense": {
+        "label": "共有支出",
+        "hint": "グループであなたと分担する支出が追加または変更されたとき。"
+      },
+      "group_settlement": {
+        "label": "グループの支払い",
+        "hint": "グループであなた宛て、またはあなたからの支払いが記録されたとき。"
+      },
+      "backup_failed": {
+        "label": "バックアップ",
+        "hint": "スケジュールされたバックアップに失敗したとき。"
+      }
+    },
+    "group": {
+      "added": "{{actor}}が{{name}}を追加しました",
+      "changed": "{{actor}}が{{name}}を変更しました",
+      "batch": "{{actor}}が共有支出を追加しました：{{number}}件",
+      "share": "{{group}}でのあなたの負担：{{amount}}",
+      "paid": "{{actor}}が支払いを記録しました"
+    }
   }
 }

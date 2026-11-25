@@ -76,8 +76,9 @@ vi.mock('@/hooks/use-feature-flags', () => ({
   }),
 }))
 
+const setTheme = vi.hoisted(() => vi.fn())
 vi.mock('next-themes', () => ({
-  useTheme: () => ({ resolvedTheme: state.mode }),
+  useTheme: () => ({ resolvedTheme: state.mode, theme: state.mode, setTheme }),
 }))
 
 beforeEach(() => {
@@ -246,6 +247,14 @@ describe('LibraryDialog', () => {
     const { user } = open('reports')
     await user.click(await screen.findByRole('button', { name: t('library.removeFrom.reports', { name: t('reports.incomeExpenses') }) }))
     await waitFor(() => expect(state.saves.at(-1)?.ids).toEqual(['net_worth', 'plugin:maria/casa:pets']))
+  })
+
+  it('picks light, dark or system (#1203)', async () => {
+    const { user } = open('themes')
+    const mode = screen.getByRole('group', { name: t('library.appearance') })
+    expect(within(mode).getAllByRole('button')).toHaveLength(3)
+    await user.click(within(mode).getByRole('button', { name: t('settings.themeSystem') }))
+    expect(setTheme).toHaveBeenCalledWith('system')
   })
 
   it('applies a theme and saves it for the person', async () => {
