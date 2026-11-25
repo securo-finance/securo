@@ -50,9 +50,11 @@ describe('email settings', () => {
   })
 
   it('saves the edited template with the other language as it was', async () => {
+    // The server answers something the draft did not say, so a field that
+    // ignores the response keeps the typed text and the test says so.
     const saved: EmailState = {
       ...state,
-      templates: { ...state.templates, en: { ...state.templates.en, subject: 'New password' } },
+      templates: { ...state.templates, en: { ...state.templates.en, subject: 'Password changed' } },
     }
     vi.mocked(admin.updateEmailTemplates).mockResolvedValue(saved)
     const { user } = renderWithProviders(<EmailSettings />)
@@ -72,8 +74,9 @@ describe('email settings', () => {
         pt: state.templates.pt,
       }),
     )
-    // What was saved is what the fields show, and there is nothing left to save.
-    await waitFor(() => expect(subject).toHaveValue('New password'))
+    // What the server saved is what the fields show, and there is nothing
+    // left to save once it answered.
+    await waitFor(() => expect(subject).toHaveValue('Password changed'))
     expect(within(region).getByRole('button', { name: 'Save templates' })).toBeDisabled()
   })
 
@@ -103,12 +106,15 @@ describe('email settings', () => {
     const { user } = renderWithProviders(<EmailSettings />)
     const region = await screen.findByRole('region', { name: 'Email' })
     const english = await within(region).findByRole('group', { name: 'English' })
-    const subject = within(english).getByLabelText('Subject')
+    const body = within(english).getByLabelText('Body')
+    // Built-in text the saved template did not have, so the field turning
+    // into it proves the response was applied.
+    expect(body).toHaveValue('Hi, open {link} within {minutes} minutes.')
 
     await user.click(await within(region).findByRole('button', { name: 'Restore default text' }))
 
     await waitFor(() => expect(admin.updateEmailTemplates).toHaveBeenCalledWith({}))
-    await waitFor(() => expect(subject).toHaveValue('Reset your {app_name} password'))
+    await waitFor(() => expect(body).toHaveValue('Open {link}.'))
     expect(within(region).getByRole('button', { name: 'Save templates' })).toBeDisabled()
   })
 
