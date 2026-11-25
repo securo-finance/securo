@@ -211,6 +211,7 @@ async def update_recurring_transaction(
         # category is what an undone split keeps.
         update_data.pop("category_id", None)
     old_amount = recurring.amount
+    old_currency = recurring.currency
 
     for required in ("weekend_adjustment", "start_date", "frequency"):
         if required in update_data and update_data[required] is None:
@@ -253,6 +254,17 @@ async def update_recurring_transaction(
             recurring.frequency,
             intended_day=recurring.day_of_month or recurring.start_date.day,
             floor=previous_next_occurrence,
+        )
+
+    if (recurring.amount, recurring.currency) != (old_amount, old_currency):
+        # Converted again as on creation, so it follows the edit and one past
+        # the column is refused here instead of when an occurrence is written.
+        # Cleared first: without a rate, reads fall back to the native amount
+        # instead of the conversion of the old figure.
+        recurring.amount_primary = None
+        recurring.fx_rate_used = None
+        await stamp_primary_amount(
+            session, recurring.user_id, recurring, date_field="start_date",
         )
 
     await session.commit()

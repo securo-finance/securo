@@ -3,8 +3,9 @@ from datetime import date as _Date
 from decimal import Decimal
 from typing import Annotated, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.money import bounded_money
 from app.schemas.transaction_category_line import (
     TransactionCategoryLineRead,
     TransactionCategoryLinesInput,
@@ -36,6 +37,11 @@ class RecurringTransactionCreate(BaseModel):
     # Split across categories; every occurrence starts with these parts.
     category_lines: Optional[TransactionCategoryLinesInput] = None
 
+    @field_validator("amount")
+    @classmethod
+    def check_amount_bounds(cls, value: Decimal) -> Decimal:
+        return bounded_money(value)
+
 
 class RecurringTransactionUpdate(BaseModel):
     description: Optional[str] = None
@@ -52,6 +58,14 @@ class RecurringTransactionUpdate(BaseModel):
     is_active: Optional[bool] = None
     auto_generate: Optional[bool] = None
     category_lines: Optional[TransactionCategoryLinesInput] = None
+
+    @field_validator("amount")
+    @classmethod
+    def check_amount_bounds(cls, value: Optional[Decimal]) -> Decimal:
+        # The column is NOT NULL; left out, the amount is not changed.
+        if value is None:
+            raise ValueError("amount cannot be null")
+        return bounded_money(value)
 
 
 class RecurringTransactionRead(BaseModel):
