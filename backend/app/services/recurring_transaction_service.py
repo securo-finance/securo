@@ -721,8 +721,9 @@ async def generate_pending(
         account = await session.get(Account, recurring.account_id)
         # Sync can move the account to another workspace. Nothing this bill
         # generates may land there, so it waits, pointer untouched, until the
-        # account is back or the user points the bill at another one.
-        if account is not None and account.workspace_id != recurring.workspace_id:
+        # account is back or the user points the bill at another one. With row
+        # security on, the policy hides a moved account, so None means the same.
+        if account is None or account.workspace_id != recurring.workspace_id:
             continue
         cutoff = up_to or cutoffs.get(recurring.workspace_id) or app_today()
         # Generate while the effective date is due. The nominal pointer remains

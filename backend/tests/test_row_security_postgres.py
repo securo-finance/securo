@@ -368,6 +368,69 @@ async def test_recurring_job_creates_each_workspace_its_own_rows(stack, monkeypa
     assert sorted(map(tuple, made)) == sorted(owners.items())
 
 
+async def test_a_bill_whose_account_moved_away_writes_nothing(stack, monkeypatch):
+    """The policy hides the moved account, so the job must not read None as fine."""
+    from app.tasks import recurring_tasks
+
+    owners = await _add_workspaces(stack)
+    table, accounts = TABLES["recurring_transactions"], TABLES["accounts"]
+    async with _unchecked(stack) as session:
+        account = _row(accounts, workspace_id=B, user_id=owners[B], type="checking", currency="USD")
+        await session.execute(insert(accounts).values(**account))
+        bill = _row(
+            table, workspace_id=A, user_id=owners[A], account_id=account["id"], type="debit",
+            currency="USD", frequency="monthly", weekend_adjustment="none", is_active=True,
+            auto_generate=True, start_date=date(2026, 1, 1), next_occurrence=date(2026, 1, 1),
+            end_date=date(2026, 1, 31),
+        )
+        await session.execute(insert(table).values(**bill))
+
+    class Engine:
+        async def dispose(self):
+            pass
+
+    monkeypatch.setattr(recurring_tasks, "_make_session_maker", lambda: (Engine(), stack.app))
+    assert await recurring_tasks._generate_all() == 0
+    async with stack.owner() as session:
+        assert await session.scalar(select(func.count()).select_from(Transaction)) == 0
+        pointer = await session.scalar(select(table.c.next_occurrence).where(table.c.id == bill["id"]))
+    assert pointer == date(2026, 1, 1)
+
+
+async def test_an_access_token_sees_nothing_shared(stack):
+    """A token's request is bound without its creator, so the shared policy gives it nothing."""
+    from types import SimpleNamespace
+
+    from app.core.workspace_context import current_workspace
+    from app.models.user import User
+
+    owners = await _add_workspaces(stack)
+    person = owners[A]
+    transactions = TABLES["transactions"]
+    async with _unchecked(stack) as session:
+        await session.execute(insert(TABLES["workspace_members"]).values(**_row(
+            TABLES["workspace_members"], workspace_id=A, user_id=person, role="owner"
+        )))
+        for workspace in (A, B):
+            await session.execute(insert(transactions).values(**_row(transactions, workspace_id=workspace)))
+        shared = await session.scalar(select(transactions.c.id).where(transactions.c.workspace_id == B))
+        group = _row(TABLES["groups"], workspace_id=B)
+        member = _row(TABLES["group_members"], workspace_id=B, group_id=group["id"], linked_user_id=person)
+        split = _row(
+            TABLES["transaction_splits"], workspace_id=B, transaction_id=shared, group_member_id=member["id"]
+        )
+        for name, row in (("groups", group), ("group_members", member), ("transaction_splits", split)):
+            await session.execute(insert(TABLES[name]).values(**row))
+    for token, seen in ((None, 2), (SimpleNamespace(workspace_id=A), 1)):
+        async with stack.app() as session:
+            user = await session.get(User, person)
+            request = SimpleNamespace(state=SimpleNamespace(access_token=token))
+            context = current_workspace(request, None, user, session)
+            assert (await anext(context)).id == A
+            assert await session.scalar(select(func.count()).select_from(transactions)) == seen
+            await context.aclose()
+
+
 async def test_the_api_works_under_the_restricted_role(stack, monkeypatch):
     """Sign up, then read and write over HTTP, with a second person kept out."""
     async def sessions():
