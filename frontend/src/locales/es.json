@@ -2994,7 +2994,7 @@
     "settings": {
       "title": "Configuración de administrador",
       "managedTitle": "Securo gestiona esta instancia",
-      "managedDesc": "La configuración de esta página la define quien opera la instancia. Se aplica a todos y no se puede cambiar aquí.",
+      "managedDesc": "La configuración de la instancia en esta página la define quien opera la instancia. Se aplica a todos y no se puede cambiar aquí.",
       "managedReadOnly": "Configurado por Securo",
       "registrationTitle": "Registro",
       "registration": "Permitir registro de usuarios",

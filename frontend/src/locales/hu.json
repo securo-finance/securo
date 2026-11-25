@@ -2979,7 +2979,7 @@
     "settings": {
       "title": "Adminisztrációs beállítások",
       "managedTitle": "Ezt a példányt a Securo kezeli",
-      "managedDesc": "Az ezen az oldalon lévő beállításokat a példány üzemeltetője határozza meg. Mindenkire érvényesek, és itt nem módosíthatók.",
+      "managedDesc": "Az ezen az oldalon lévő példánybeállításokat a példány üzemeltetője határozza meg. Mindenkire érvényesek, és itt nem módosíthatók.",
       "managedReadOnly": "A Securo állította be",
       "registrationTitle": "Regisztráció",
       "registration": "Felhasználói regisztráció engedélyezése",

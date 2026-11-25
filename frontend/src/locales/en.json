@@ -2979,7 +2979,7 @@
     "settings": {
       "title": "Admin Settings",
       "managedTitle": "This instance is managed by Securo",
-      "managedDesc": "The settings on this page are set by whoever runs this instance. They apply to everyone and can't be changed here.",
+      "managedDesc": "The instance settings on this page are set by whoever runs this instance. They apply to everyone and can't be changed here.",
       "managedReadOnly": "Configured by Securo",
       "registrationTitle": "Registration",
       "registration": "Allow user registration",

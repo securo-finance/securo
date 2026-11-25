@@ -2994,7 +2994,7 @@
     "settings": {
       "title": "Configurações Admin",
       "managedTitle": "Esta instância é gerenciada pela Securo",
-      "managedDesc": "As configurações desta página são definidas por quem opera esta instância. Valem para todos e não podem ser alteradas aqui.",
+      "managedDesc": "As configurações da instância nesta página são definidas por quem opera esta instância. Valem para todos e não podem ser alteradas aqui.",
       "managedReadOnly": "Configurado pela Securo",
       "registrationTitle": "Registro",
       "registration": "Permitir registro de usuários",

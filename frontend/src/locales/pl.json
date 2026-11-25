@@ -3113,7 +3113,7 @@
     "settings": {
       "title": "Ustawienia administratora",
       "managedTitle": "Ta instancja jest zarządzana przez Securo",
-      "managedDesc": "Ustawienia na tej stronie ustala operator instancji. Obowiązują wszystkich i nie można ich tu zmienić.",
+      "managedDesc": "Ustawienia instancji na tej stronie ustala operator instancji. Obowiązują wszystkich i nie można ich tu zmienić.",
       "managedReadOnly": "Skonfigurowane przez Securo",
       "registrationTitle": "Rejestracja",
       "registration": "Zezwól na rejestrację użytkowników",

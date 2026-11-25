@@ -3145,7 +3145,7 @@
     "settings": {
       "title": "Nastavenia administrátora",
       "managedTitle": "Túto inštanciu spravuje Securo",
-      "managedDesc": "Nastavenia na tejto stránke určuje prevádzkovateľ inštancie. Platia pre všetkých a nedajú sa tu meniť.",
+      "managedDesc": "Nastavenia inštancie na tejto stránke určuje prevádzkovateľ inštancie. Platia pre všetkých a nedajú sa tu meniť.",
       "managedReadOnly": "Nastavené Securo",
       "registrationTitle": "Registrácia",
       "registration": "Povoliť registráciu používateľov",

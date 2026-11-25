@@ -3161,7 +3161,7 @@
     "settings": {
       "title": "Nastavení administrátora",
       "managedTitle": "Tuto instanci spravuje Securo",
-      "managedDesc": "Nastavení na této stránce určuje provozovatel instance. Platí pro všechny a zde je nelze měnit.",
+      "managedDesc": "Nastavení instance na této stránce určuje provozovatel instance. Platí pro všechny a zde je nelze měnit.",
       "managedReadOnly": "Nastaveno Securo",
       "registrationTitle": "Registrace",
       "registration": "Povolit registraci uživatelů",
