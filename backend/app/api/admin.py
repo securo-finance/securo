@@ -322,6 +322,9 @@ async def update_email_state(
     answers 400 with what is wrong, rather than a schema error nobody can act
     on. Nothing is saved unless every template sent validates.
     """
+    # The message goes out from the operator's sender to every user of the
+    # instance, so on a hosted instance its text is the operator's (ADR 0045).
+    _refuse_managed_write("email")
     try:
         body = json.loads(await request.body())
     except (ValueError, RecursionError):

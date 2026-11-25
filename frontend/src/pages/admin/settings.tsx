@@ -418,7 +418,7 @@ export default function AdminSettingsPage() {
       </div>
 
       <TimezoneSettings readOnly={managed} />
-      <EmailSettings />
+      <EmailSettings readOnly={managed} />
       <ProviderSettings readOnly={managed} />
 
       {/* Theme and Customization Section */}

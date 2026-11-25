@@ -24,6 +24,8 @@ vi.mock('@/lib/api', () => ({
     createUser: vi.fn(),
     updateUser: vi.fn(),
     deleteUser: vi.fn(),
+    emailState: vi.fn(),
+    updateEmailTemplates: vi.fn(),
   },
   currencies: { list: vi.fn() },
   auth: { oidcConfig: vi.fn() },
@@ -61,6 +63,15 @@ beforeEach(() => {
       fields: {},
     },
   ])
+  vi.mocked(admin.emailState).mockResolvedValue({
+    enabled: true,
+    provider: 'smtp',
+    sender: 'Securo <no-reply@example.com>',
+    templates: {
+      en: { subject: 'Reset your password', body: 'Hi,\n\n{link}\n' },
+      pt: { subject: 'Redefinir sua senha', body: 'Olá,\n\n{link}\n' },
+    },
+  })
 })
 
 describe('admin settings on a managed instance', () => {
@@ -81,6 +92,13 @@ describe('admin settings on a managed instance', () => {
 
     // The timezone is the operator's: the value shows, the picker does not.
     expect(await screen.findByTestId('timezone-managed')).toHaveTextContent('America/Sao_Paulo')
+
+    // The recovery templates go out from the operator's sender to every user
+    // of the instance, so their text is read-only too.
+    const email = await screen.findByRole('region', { name: 'Email' })
+    expect(await within(email).findByTestId('email-managed')).toHaveTextContent('Configured by Securo')
+    expect(within(email).getAllByLabelText('Subject')[0]).toBeDisabled()
+    expect(within(email).queryByRole('button', { name: 'Save templates' })).not.toBeInTheDocument()
   })
 
   it('keeps every control on a self-hosted instance', async () => {
@@ -97,5 +115,10 @@ describe('admin settings on a managed instance', () => {
     const providers = await screen.findByRole('region', { name: 'Bank connections' })
     expect(await within(providers).findByRole('button', { name: 'Manage Pluggy' })).toBeVisible()
     expect(screen.queryByText('This instance is managed by Securo')).not.toBeInTheDocument()
+
+    // The email templates stay editable on an instance the admin runs.
+    const email = await screen.findByRole('region', { name: 'Email' })
+    expect(await within(email).findByRole('button', { name: 'Save templates' })).toBeInTheDocument()
+    expect(within(email).queryByTestId('email-managed')).not.toBeInTheDocument()
   })
 })

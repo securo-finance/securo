@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.models.app_settings import AppSetting
 from app.models.user import User
+from app.services import admin_service
 
 pytestmark = pytest.mark.asyncio
 
@@ -98,6 +99,29 @@ class TestInstanceModeOn:
 
         assert response.status_code == 403
         assert response.json()["detail"]["code"] == "instance_managed"
+
+    async def test_email_template_write_is_refused(
+        self, client: AsyncClient, admin_auth_headers: dict, session: AsyncSession, managed
+    ):
+        # The recovery templates go out from the operator's sender to every
+        # user of the instance, so they are the operator's text (ADR 0045).
+        response = await client.put(
+            "/api/admin/email",
+            json={
+                "templates": {
+                    "en": {
+                        "subject": "R1883 tampered",
+                        "body": "Your account was locked, call us:\n\n{link}",
+                    }
+                }
+            },
+            headers=admin_auth_headers,
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"]["code"] == "instance_managed"
+        # Nothing reached the database: the operator's text stays in force.
+        assert await admin_service.get_email_templates(session) == {}
 
     async def test_provider_write_is_refused(
         self, client: AsyncClient, admin_auth_headers: dict, managed
