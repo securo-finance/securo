@@ -6,15 +6,22 @@ import logging
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from fastapi import HTTPException
+from fastapi_users.db import SQLAlchemyUserDatabase
 from pydantic import SecretStr
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import oidc_auth
+from app.core.auth import UserManager
 from app.core.config import get_settings
+from app.models.account import Account
 from app.models.app_settings import AppSetting
+from app.models.rule import Rule
 from app.models.user import User
 from app.models.workspace import WorkspaceMember
+from app.services.workspace_service import create_personal_workspace_for_user
 
 # The oidc_settings fixture replaces _discover; tests that need the real one
 # put this back.
@@ -1352,3 +1359,211 @@ async def test_oidc_callback_registration_disabled_does_not_block_existing_email
     assert response.status_code == 307
     await session.refresh(test_user)
     assert test_user.oidc_subject == "linked-with-registration-disabled"
+
+
+async def _account_created_by_the_racing_request(
+    session: AsyncSession,
+    *,
+    oidc_issuer: str | None = None,
+    oidc_subject: str | None = None,
+) -> User:
+    """The account a second request commits between our lookup and our insert,
+    provisioned the way a completed sign-up leaves it."""
+    user = User(
+        email="race@example.com",
+        hashed_password="not-used-by-these-tests",
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+        preferences={
+            "language": "pt-BR",
+            "date_format": "DD/MM/YYYY",
+            "timezone": "America/Sao_Paulo",
+            "currency_display": "BRL",
+            "display_name": "The first one to arrive",
+        },
+        oidc_issuer=oidc_issuer,
+        oidc_subject=oidc_subject,
+    )
+    session.add(user)
+    await session.flush()
+    workspace = await create_personal_workspace_for_user(session, user)
+    session.add(
+        Account(
+            user_id=user.id,
+            workspace_id=workspace.id,
+            name="Carteira",
+            type="checking",
+            balance=0,
+            currency="BRL",
+        )
+    )
+    session.add(
+        Rule(
+            user_id=user.id,
+            workspace_id=workspace.id,
+            name="Racing rule",
+            conditions_op="and",
+            conditions=[],
+            actions=[],
+            priority=0,
+        )
+    )
+    await session.commit()
+    await session.refresh(user)
+    return user
+
+
+def _lose_the_race_to_a_second_request(monkeypatch, create_winner) -> dict:
+    """Have the account committed just before the manager's own insert, so the
+    create raises `UserAlreadyExists` exactly like a concurrent sign-up."""
+    state = {"won": False}
+    original_create = UserManager.create
+
+    async def create_after_the_race(self, user_create, safe=False, request=None):
+        if not state["won"]:
+            state["won"] = True
+            await create_winner()
+        return await original_create(self, user_create, safe=safe, request=request)
+
+    monkeypatch.setattr(UserManager, "create", create_after_the_race)
+    return state
+
+
+async def _run_oidc_login(
+    session: AsyncSession,
+    *,
+    subject: str = "race-sub",
+    email_verified: bool = True,
+):
+    manager = UserManager(SQLAlchemyUserDatabase(session, User))
+    return await oidc_auth._get_or_create_oidc_user(
+        {"sub": subject, "email": "race@example.com", "email_verified": email_verified},
+        {},
+        "https://id.example.com",
+        session,
+        manager,
+    )
+
+
+async def _count_for(session: AsyncSession, column, user_id) -> int:
+    return (
+        await session.execute(select(func.count()).select_from(column).where(column.user_id == user_id))
+    ).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_oidc_registration_race_links_the_account_that_won(
+    session: AsyncSession, clean_db, oidc_settings, monkeypatch
+):
+    """A concurrent sign-up that creates the account between our lookup and our
+    insert is an existing account like any other: the identity is linked to it,
+    its preferences stay, and it gets no second wallet or default rules (#572).
+    """
+    oidc_settings.oidc_existing_user_link_mode = "verified_email"
+    winner: User | None = None
+
+    async def create_winner():
+        nonlocal winner
+        winner = await _account_created_by_the_racing_request(session)
+
+    state = _lose_the_race_to_a_second_request(monkeypatch, create_winner)
+
+    user = await _run_oidc_login(session)
+
+    assert state["won"] is True
+    assert user.id == winner.id
+    await session.refresh(winner)
+    assert winner.oidc_issuer == "https://id.example.com"
+    assert winner.oidc_subject == "race-sub"
+    assert winner.preferences["language"] == "pt-BR"
+    assert winner.preferences["display_name"] == "The first one to arrive"
+    assert await _count_for(session, WorkspaceMember, winner.id) == 1
+    assert await _count_for(session, Account, winner.id) == 1
+    assert await _count_for(session, Rule, winner.id) == 1
+
+
+@pytest.mark.asyncio
+async def test_oidc_registration_race_respects_the_link_mode(
+    session: AsyncSession, clean_db, oidc_settings, monkeypatch
+):
+    """The account that won the race is not claimed by an unexpected OIDC
+    identity when the link mode does not allow it (#572)."""
+    oidc_settings.oidc_existing_user_link_mode = "disabled"
+    winner: User | None = None
+
+    async def create_winner():
+        nonlocal winner
+        winner = await _account_created_by_the_racing_request(session)
+
+    _lose_the_race_to_a_second_request(monkeypatch, create_winner)
+
+    with pytest.raises(HTTPException) as refused:
+        await _run_oidc_login(session)
+
+    assert refused.value.status_code == 403
+    assert refused.value.detail == "Existing account is not linked to this OIDC identity"
+    await session.refresh(winner)
+    assert winner.oidc_issuer is None
+    assert winner.oidc_subject is None
+    assert winner.preferences["language"] == "pt-BR"
+    assert await _count_for(session, Account, winner.id) == 1
+    assert await _count_for(session, Rule, winner.id) == 1
+
+
+@pytest.mark.asyncio
+async def test_oidc_registration_race_returns_the_account_of_the_same_identity(
+    session: AsyncSession, clean_db, oidc_settings, monkeypatch
+):
+    """When the second request is this same identity, the account is a login,
+    not a new link: it answers as it is and nothing of it is provisioned again
+    (#572)."""
+    oidc_settings.oidc_existing_user_link_mode = "disabled"
+    winner: User | None = None
+
+    async def create_winner():
+        nonlocal winner
+        winner = await _account_created_by_the_racing_request(
+            session,
+            oidc_issuer="https://id.example.com",
+            oidc_subject="race-sub",
+        )
+
+    _lose_the_race_to_a_second_request(monkeypatch, create_winner)
+
+    user = await _run_oidc_login(session)
+
+    assert user.id == winner.id
+    await session.refresh(winner)
+    assert winner.preferences["language"] == "pt-BR"
+    assert await _count_for(session, Account, winner.id) == 1
+    assert await _count_for(session, Rule, winner.id) == 1
+
+
+@pytest.mark.asyncio
+async def test_oidc_registration_race_refuses_an_account_linked_elsewhere(
+    session: AsyncSession, clean_db, oidc_settings, monkeypatch
+):
+    """An account the second request already linked to another OIDC identity
+    keeps that identity: the loser does not overwrite it (#572)."""
+    oidc_settings.oidc_existing_user_link_mode = "email"
+    winner: User | None = None
+
+    async def create_winner():
+        nonlocal winner
+        winner = await _account_created_by_the_racing_request(
+            session,
+            oidc_issuer="https://id.example.com",
+            oidc_subject="another-sub",
+        )
+
+    _lose_the_race_to_a_second_request(monkeypatch, create_winner)
+
+    with pytest.raises(HTTPException) as refused:
+        await _run_oidc_login(session)
+
+    assert refused.value.status_code == 403
+    assert refused.value.detail == "OIDC identity is linked to a different account"
+    await session.refresh(winner)
+    assert winner.oidc_subject == "another-sub"
+    assert await _count_for(session, Account, winner.id) == 1
