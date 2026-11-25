@@ -196,3 +196,17 @@ def test_set_frontend_url_is_used_as_is(monkeypatch):
     monkeypatch.setenv("FRONTEND_PORT", "3132")
 
     assert Settings(_env_file=None).frontend_url == "https://securo.example.com"
+
+
+def test_empty_managed_instance_reads_as_off(monkeypatch):
+    """MANAGED_INSTANCE with no value documents the key without setting it: an
+    empty string has to mean the default (off), not abort the boot (ADR 0045)."""
+    monkeypatch.setenv("MANAGED_INSTANCE", "")
+
+    assert Settings(_env_file=None).managed_instance is False
+
+
+def test_managed_instance_reads_true(monkeypatch):
+    monkeypatch.setenv("MANAGED_INSTANCE", "true")
+
+    assert Settings(_env_file=None).managed_instance is True

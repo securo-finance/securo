@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-11-25
-- Origin: board task #555 (Tássio, 2026-11-25: on the hosted version the operator configures providers and the rest behind the scenes, and the customer must not change them)
+- Origin: #1886 (on the hosted version the operator configures providers and the rest behind the scenes, and the customer must not change them)
 
 ## Context
 
@@ -14,7 +14,7 @@ A flag per feature would grow into a matrix no one tests. One switch is enough, 
 
 ## Decision
 
-- One setting, `MANAGED_INSTANCE` (`managed_instance` in `backend/app/core/config.py`), off by default, so a self-hosted instance is exactly as before ([0004](0004-optional-features-are-one-switch.md)).
+- One setting, `MANAGED_INSTANCE` (`managed_instance` in `backend/app/core/config.py`), off by default, so a self-hosted instance is exactly as before ([0004](0004-optional-capabilities.md)).
 - On, the instance settings — `INSTANCE_SETTINGS` in `backend/app/api/admin.py`, every key of `ALLOWED_SETTINGS` — are the operator's. `PATCH` and `DELETE /api/admin/settings/{key}` and `PATCH /api/admin/provider-settings/{provider}` answer `403` with `detail.code = "instance_managed"`. Reading them stays open: the admin screen has to show what is in force.
 - `GET /api/admin/instance-mode` tells the admin screen what is locked (`managed`, `locked_settings`, `locked_providers`). It is for the superuser, like the rest of that screen.
 - The screen shows the locked sections read-only with "Configured by Securo" in place of the control, instead of a form that would fail on save.

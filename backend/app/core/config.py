@@ -48,6 +48,15 @@ class Settings(BaseSettings):
     # writes. Off by default, a self-hosted instance keeps every control.
     managed_instance: bool = False
 
+    @field_validator("managed_instance", mode="before")
+    @classmethod
+    def _blank_managed_instance_is_off(cls, value: object) -> object:
+        """`MANAGED_INSTANCE=` in a .env — a documented but unset key — arrives as
+        an empty string. Read it as off, the default, instead of failing the boot."""
+        if isinstance(value, str) and not value.strip():
+            return False
+        return value
+
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/securo"
 
