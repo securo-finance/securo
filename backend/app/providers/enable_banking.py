@@ -262,6 +262,21 @@ def _parse_iso_date(value: Any) -> Optional[date]:
         return None
 
 
+# How far a value date may precede the booking date and still be taken as the
+# day of the entry. A card purchase books a few working days later; a value
+# date further back is a back-valued correction or a bad payload, and the
+# booking date stays.
+_MAX_VALUE_DATE_LEAD = timedelta(days=7)
+
+
+def _plausible_date(value: Any) -> Optional[date]:
+    """A payload date, or None when it is missing or a placeholder: a date at
+    or before 1970 is no real entry's, the same floor `_merge_sync_metadata`
+    treats as a placeholder."""
+    parsed = _parse_iso_date(value)
+    return parsed if parsed is not None and parsed.year > 1970 else None
+
+
 def entry_date(raw: dict) -> Optional[date]:
     """The day an entry happened, from the dates its payload carries.
 
@@ -270,13 +285,19 @@ def entry_date(raw: dict) -> Optional[date]:
     that day: a card purchase made on Saturday has Saturday's value date and
     is booked on Monday, while a bank that sets a later value date (interest
     on a card statement, a forward-dated credit) still keeps the booking date.
+    A value date more than `_MAX_VALUE_DATE_LEAD` before the booking date
+    does not win either.
     """
-    txn_date = _parse_iso_date(raw.get("transaction_date"))
+    txn_date = _plausible_date(raw.get("transaction_date"))
     if txn_date:
         return txn_date
-    value = _parse_iso_date(raw.get("value_date"))
-    booking = _parse_iso_date(raw.get("booking_date"))
-    return min(filter(None, (value, booking)), default=None)
+    value = _plausible_date(raw.get("value_date"))
+    booking = _plausible_date(raw.get("booking_date"))
+    if value and booking:
+        if booking - _MAX_VALUE_DATE_LEAD <= value < booking:
+            return value
+        return booking
+    return value or booking
 
 
 def _join_remittance(value: Any) -> str:

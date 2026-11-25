@@ -4496,6 +4496,64 @@ async def test_sync_connection_enable_banking_settles_legacy_hold_on_its_value_d
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("held_ref", ["1HD00000AA0000001", None], ids=["reference", "no-reference"])
+@pytest.mark.parametrize("complete_fetch", [True, False], ids=["complete", "incomplete"])
+async def test_sync_connection_enable_banking_posted_entry_updates_legacy_pending_row(
+    session: AsyncSession, test_user, test_workspace, monkeypatch, held_ref, complete_fetch,
+):
+    """Review on #1868: a pending charge stored under the booking-first rule
+    keeps 9 November, while its payload holds value date 7 November. The
+    posted entry comes back dated 7 November under a new reference, and the
+    pending row becomes it (Path 2) instead of a second row landing beside
+    it, also when the fetch was cut short and no hold can be claimed."""
+    monkeypatch.setattr(
+        "app.services.connection_service.app_today", lambda: date(2026, 11, 10),
+    )
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    dates = {"transaction_date": None, "booking_date": "2026-11-09", "value_date": "2026-11-07"}
+    pending = {**_paypal_payload("p1", "2026-11-07", booked=False), **dates, "entry_reference": held_ref}
+    posted = {**_paypal_payload("b1", "2026-11-07", booked=True), **dates}
+    await _sync_paypal_holds(session, conn, test_workspace.id, test_user.id, [pending])
+    (held,) = await _account_rows(session, account_id)
+    held.date = date(2026, 11, 9)
+    await session.commit()
+    held_id = held.id
+
+    fetch = await _eb_fetch([posted], [])
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, fetch, incomplete=not complete_fetch,
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert [(row.id, row.status) for row in rows] == [(held_id, "posted")]
+    assert rows[0].external_id == _eb_txn(posted).external_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value_date", ["0001-01-01", "1970-01-01"])
+async def test_sync_connection_enable_banking_ignores_a_placeholder_value_date(
+    session: AsyncSession, test_user, test_workspace, value_date,
+):
+    """Review on #1868: an impossible value date neither wins over the booking
+    date nor stops the sync; the entry lands on its booking date."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    raw = {
+        **_paypal_payload("7PY00000AA0000001", "2026-11-09", booked=True),
+        "transaction_date": None,
+        "booking_date": "2026-11-09",
+        "value_date": value_date,
+    }
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [_eb_txn(raw)])
+
+    rows = await _account_rows(session, account_id)
+    assert [row.date for row in rows] == [date(2026, 11, 9)]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("hold_value_date", "claimed"),
     [("2026-11-04", True), ("2026-11-06", False)],

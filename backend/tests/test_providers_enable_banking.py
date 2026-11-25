@@ -35,6 +35,7 @@ from app.providers.enable_banking import (
     _map_cash_account_type,
     _repeat_external_id,
     _txn_fingerprint,
+    entry_date,
 )
 from app.providers.psu import PsuContext, psu_present
 
@@ -1679,6 +1680,23 @@ def test_build_transaction_keeps_booking_date_before_a_later_value_date():
     tx = provider._build_transaction("acc-1", raw, "posted", "auto")
     assert tx is not None
     assert tx.date == date(2026, 9, 2)
+
+
+@pytest.mark.parametrize(
+    "value_date",
+    ["0001-01-01", "1970-01-01", "2026-08-25"],
+    ids=["year-one", "epoch", "weeks-before-booking"],
+)
+def test_entry_date_keeps_booking_date_over_an_implausible_value_date(value_date):
+    """A placeholder value date, or one weeks before the booking date, is not
+    the day the entry happened, so the booking date stays."""
+    raw = {"booking_date": "2026-09-02", "value_date": value_date, "transaction_date": None}
+    assert entry_date(raw) == date(2026, 9, 2)
+
+
+def test_entry_date_takes_value_date_when_booking_date_is_a_placeholder():
+    raw = {"booking_date": "1970-01-01", "value_date": "2026-09-01"}
+    assert entry_date(raw) == date(2026, 9, 1)
 
 
 def test_build_transaction_falls_back_to_booking_date_alone():

@@ -3061,6 +3061,8 @@ async def _find_synced_duplicate(
     incoming_external_ids: set[str],
     live_external_ids: Optional[set[str]] = None,
     incoming_batch: Sequence[TransactionData] = (),
+    *,
+    eb_payload_dates: bool = False,
 ) -> Optional[Transaction]:
     """Find an existing row that the incoming `txn_data` is a twin of.
 
@@ -3090,6 +3092,8 @@ async def _find_synced_duplicate(
     was cut short, as a partial set would make a hold the provider still
     lists look gone. ``incoming_batch`` is the fetch `txn_data` came from;
     it and ``live_external_ids`` let Path 4 match a reworded remittance text.
+    ``eb_payload_dates`` lets Path 2 read an Enable Banking row's date from
+    its payload; pass it only for an Enable Banking connection.
     """
     # Path 1: installment fingerprint. Highly specific, so we don't require a
     # description match on top.
@@ -3121,11 +3125,20 @@ async def _find_synced_duplicate(
     # day and amount. A light description-similarity check guards against
     # the residual false positive of two different merchants charging the
     # same amount the same day where one is pending and one is posted.
+    #
+    # On Enable Banking a row stored before the provider read the value date
+    # keeps the later booking date; it is the twin when the date its payload
+    # gives the entry is this one's.
+    same_date = Transaction.date == txn_data.date
+    if eb_payload_dates:
+        same_date = Transaction.date.between(
+            txn_data.date, txn_data.date + timedelta(days=_EB_HOLD_SETTLE_DAYS),
+        )
     result = await session.execute(
         select(Transaction).where(
             Transaction.account_id == account_id,
             Transaction.source == "sync",
-            Transaction.date == txn_data.date,
+            same_date,
             Transaction.amount == txn_data.amount,
             Transaction.type == txn_data.type,
             Transaction.status != txn_data.status,
@@ -3134,6 +3147,11 @@ async def _find_synced_duplicate(
     )
     for candidate in result.scalars():
         if candidate.external_id and candidate.external_id.startswith("bill_charge:"):
+            continue
+        if candidate.date != txn_data.date and not (
+            isinstance(candidate.raw_data, dict)
+            and entry_date(candidate.raw_data) == txn_data.date
+        ):
             continue
         if token_overlap(
             candidate.original_description or candidate.description,
@@ -4935,6 +4953,7 @@ async def sync_connection(
                     incoming_txn_external_ids,
                     live_external_ids=hold_live_ids,
                     incoming_batch=transactions_data,
+                    eb_payload_dates=connection.provider == "enable_banking",
                 )
                 if synced_dup:
                     settles = synced_dup.status == "pending" and txn_data.status == "posted"
