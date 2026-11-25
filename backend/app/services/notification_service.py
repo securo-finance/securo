@@ -818,7 +818,7 @@ async def _check_group_events(session: AsyncSession, workspace: Workspace) -> No
             # One expense, or a batch: there while any of it is still shared with them in that group.
             ids = row.data.get("transaction_ids") or [row.data["transaction_id"]]
             there = any(
-                share.person == row.user_id and str(share.group.id) == row.data["group_id"]
+                share.person == row.user_id and share.amount > 0 and str(share.group.id) == row.data["group_id"]
                 for share in await _shares(session, [uuid.UUID(value) for value in ids])
             )
         if not there:
