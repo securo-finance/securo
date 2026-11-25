@@ -45,6 +45,14 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/securo"
+    # Connections the API keeps open, and how many extra ones a burst may open
+    # before a request waits for one. Defaults are SQLAlchemy's, so an instance
+    # that sets nothing behaves as before. Raise them together with the
+    # database's own max_connections when many people share an instance: with
+    # 40 simultaneous users the pool ran out and requests failed instead of
+    # queueing (issue #583).
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
 
     # Auth. Signs session and password-reset tokens and derives the key that
     # encrypts saved credentials. Left unset (or on a public default), the

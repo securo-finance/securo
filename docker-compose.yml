@@ -9,6 +9,11 @@ x-podman:
 
 x-backend-env: &backend-env
   DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/securo
+  # Connections the API keeps open and the extra ones a burst may open. Raise
+  # both with the database's max_connections when many people share the
+  # instance; the defaults are in backend/app/core/config.py (#583).
+  DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+  DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
   # Optional. Left empty, Securo generates a unique key on first start and
   # keeps it in the database. Set one (openssl rand -hex 32) to manage it yourself.
   SECRET_KEY: ${SECRET_KEY:-}

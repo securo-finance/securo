@@ -11,10 +11,16 @@ settings = get_settings()
 # application. Without it, a PostgreSQL failover leaves dead connections in
 # the pool and the first request that borrows one fails with
 # "connection is closed" instead of transparently reconnecting.
+#
+# pool_size and max_overflow come from the instance settings, so a busy
+# instance can raise them together with the database's max_connections
+# (issue #583).
 engine = create_async_engine(
     settings.database_url,
     echo=settings.debug,
     pool_pre_ping=True,
+    pool_size=settings.db_pool_size,
+    max_overflow=settings.db_max_overflow,
 )
 async_session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
