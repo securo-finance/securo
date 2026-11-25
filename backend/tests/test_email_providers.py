@@ -342,6 +342,11 @@ FOREIGN_LINK_TEMPLATES = [
         "other than",
         id="a-second-address-beside-the-link",
     ),
+    pytest.param(
+        {"subject": "Reset", "body": "Open:\n\n{link}\n\nHelp: reset{minutes}.com"},
+        "other than",
+        id="an-address-assembled-from-the-values",
+    ),
 ]
 
 
@@ -374,12 +379,14 @@ async def test_a_stored_template_that_leads_away_falls_back_to_the_built_in_text
 ):
     """A row written straight into the database is read, not trusted: the
     reader gets the built-in text instead of an error or a foreign link."""
+    # Stored in the reader's own language (pt): a template saved under another
+    # language would be ignored anyway, and the test would pass with the bug.
     await admin_service.set_app_setting(
         session,
         admin_service.EMAIL_TEMPLATES_KEY,
         json.dumps(
             {
-                "en": {
+                "pt": {
                     "subject": "Reset",
                     "body": "https://evil.example/c?u={link}",
                 }

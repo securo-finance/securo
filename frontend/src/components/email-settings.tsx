@@ -27,18 +27,45 @@ const LINK = '{link}'
 const URL_PATTERN =
   /[a-z][a-z0-9+.-]*:\/\/|\b(?:https?|ftps?|file|javascript|vbscript):|www\.|\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}\b/i
 
+// What the placeholders stand for while a template is checked, so both sides
+// read the text as the reader gets it: `reset{minutes}.com` is no address in
+// the template and `reset60.com` is one in the message.
+const SAMPLE_LINK = 'https://securo.example/reset-password?token=check'
+
+// `{{link}}` is the literal text `{link}`, which the server's formatter leaves
+// alone: only an unescaped `{link}` is a field.
+function linkFields(text: string): number {
+  return text.replace(/\{\{/g, '').replace(/\}\}/g, '').split(LINK).length - 1
+}
+
+function asSent(text: string): string {
+  return text
+    .replace(/\{\{/g, '\u0000')
+    .replace(/\}\}/g, '\u0001')
+    .split(LINK)
+    .join(SAMPLE_LINK)
+    .split('{minutes}')
+    .join('60')
+    .split('{app_name}')
+    .join('Securo')
+    .split('\u0000')
+    .join('{')
+    .split('\u0001')
+    .join('}')
+}
+
 type TemplateProblem = 'linkRequired' | 'linkOnce' | 'linkAlone' | 'linkInSubject' | 'otherLink'
 
 function templateProblem(template: EmailTemplate | undefined): TemplateProblem | null {
   const subject = template?.subject ?? ''
   const body = template?.body ?? ''
-  if (subject.includes(LINK)) return 'linkInSubject'
-  if (URL_PATTERN.test(subject)) return 'otherLink'
-  const links = body.split(LINK).length - 1
+  if (linkFields(subject) > 0) return 'linkInSubject'
+  if (URL_PATTERN.test(asSent(subject))) return 'otherLink'
+  const links = linkFields(body)
   if (links === 0) return 'linkRequired'
   if (links > 1) return 'linkOnce'
   if (body.split(/\r?\n/).filter((line) => line.trim() === LINK).length !== 1) return 'linkAlone'
-  if (URL_PATTERN.test(body)) return 'otherLink'
+  if (URL_PATTERN.test(asSent(body).split(SAMPLE_LINK).join(''))) return 'otherLink'
   return null
 }
 

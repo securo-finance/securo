@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 
 import { admin, type EmailState } from '@/lib/api'
 import { renderWithProviders } from '@/test/utils'
@@ -95,17 +95,47 @@ describe('email settings', () => {
   })
 
   it('refuses a body that wraps the link in another address and says why', async () => {
-    const { user } = renderWithProviders(<EmailSettings />)
+    renderWithProviders(<EmailSettings />)
     const region = await screen.findByRole('region', { name: 'Email' })
     const english = await within(region).findByRole('group', { name: 'English' })
 
-    const body = within(english).getByLabelText('Body')
-    await user.clear(body)
-    // user-event reads `{` as the start of a key name, so `{{link}}` is how the
-    // placeholder is typed.
-    await user.type(body, 'https://evil.example/c?u={{link}}')
+    // Typed straight in, because user-event reads `{` as the start of a key
+    // name and cannot write the placeholder unchanged.
+    fireEvent.change(within(english).getByLabelText('Body'), {
+      target: { value: 'https://evil.example/c?u={link}' },
+    })
 
     expect(within(english).getByRole('alert')).toHaveTextContent('alone on its own line')
+    expect(within(region).getByRole('button', { name: 'Save templates' })).toBeDisabled()
+    expect(admin.updateEmailTemplates).not.toHaveBeenCalled()
+  })
+
+  it('saves a body whose braces are the escaped literal, not a second field', async () => {
+    renderWithProviders(<EmailSettings />)
+    const region = await screen.findByRole('region', { name: 'Email' })
+    const english = await within(region).findByRole('group', { name: 'English' })
+
+    // `{{link}}` is the literal text `{link}` the server's formatter leaves
+    // alone, so it is not a second field.
+    fireEvent.change(within(english).getByLabelText('Body'), {
+      target: { value: 'Example: {{link}}\n\n{link}' },
+    })
+
+    expect(within(english).queryByRole('alert')).not.toBeInTheDocument()
+    expect(within(region).getByRole('button', { name: 'Save templates' })).toBeEnabled()
+  })
+
+  it('refuses a body that builds an address out of the values', async () => {
+    renderWithProviders(<EmailSettings />)
+    const region = await screen.findByRole('region', { name: 'Email' })
+    const english = await within(region).findByRole('group', { name: 'English' })
+
+    // No address in the template; `reset60.com` is one once {minutes} is filled.
+    fireEvent.change(within(english).getByLabelText('Body'), {
+      target: { value: 'Open:\n\n{link}\n\nHelp: reset{minutes}.com' },
+    })
+
+    expect(within(english).getByRole('alert')).toHaveTextContent('cannot lead anywhere but')
     expect(within(region).getByRole('button', { name: 'Save templates' })).toBeDisabled()
     expect(admin.updateEmailTemplates).not.toHaveBeenCalled()
   })

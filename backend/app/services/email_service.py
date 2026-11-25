@@ -66,6 +66,16 @@ URL_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# What the placeholders stand for while a template is checked. The check runs
+# over the text as the reader gets it, not only as the admin wrote it: a host
+# name can be assembled from the values, and `reset{minutes}.com` is no
+# address in the template while `reset60.com` is one in the message.
+CHECK_VALUES = {
+    "app_name": "Securo",
+    "link": "https://securo.example/reset-password?token=check",
+    "minutes": 60,
+}
+
 
 class EmailDisabled(RuntimeError):
     """EMAIL_ENABLED is off, so no message can be sent."""
@@ -157,6 +167,11 @@ def _link_is_alone_on_its_line(body: str) -> bool:
     return sum(1 for line in body.splitlines() if line.strip() == "{link}") == 1
 
 
+def _as_sent(text: str) -> str:
+    """The text with the placeholders filled in, as the reader would get it."""
+    return text.format(**CHECK_VALUES)
+
+
 def has_line_break(text: str) -> bool:
     """Whether the text holds any character that ends or separates a line."""
     return any(unicodedata.category(character) in LINE_BREAK_CATEGORIES for character in text)
@@ -237,7 +252,7 @@ def validate_templates(data: object) -> dict[str, dict[str, str]]:
         # the reader clicks, and it is not checked the way the body is.
         if subject_fields["link"]:
             raise TemplateError(f"The {language} subject must not contain {{link}}")
-        if has_url(subject):
+        if has_url(_as_sent(subject)):
             raise TemplateError(f"The {language} subject must not contain a link")
         body_fields = _fields_in(body)
         if body_fields["link"] == 0:
@@ -248,7 +263,9 @@ def validate_templates(data: object) -> dict[str, dict[str, str]]:
             raise TemplateError(
                 f"In the {language} body, {{link}} must be alone on its own line"
             )
-        if has_url(body):
+        # The recovery link itself is the only address the message may carry,
+        # so it comes out before the text is read.
+        if has_url(_as_sent(body).replace(CHECK_VALUES["link"], "")):
             raise TemplateError(
                 f"The {language} body must not contain a link other than {{link}}"
             )
