@@ -3,15 +3,17 @@ import uuid
 from decimal import Decimal
 from typing import Optional, cast
 
+import jwt
 from sqlalchemy import select
 from fastapi import Depends, Request
-from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin, schemas
+from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin, exceptions, schemas
 from fastapi_users.authentication import (
     AuthenticationBackend,
     BearerTransport,
     JWTStrategy,
 )
 from fastapi_users.db import SQLAlchemyUserDatabase
+from fastapi_users.jwt import decode_jwt, generate_jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette._utils import get_route_path
 
@@ -38,6 +40,21 @@ class _FlushingUserDatabase(SQLAlchemyUserDatabase):
         self.session.add(user)
         await self.session.flush()
         return user
+
+
+def _stored_language(preferences: object) -> str:
+    """The account's language tag, or English when it is not a string.
+
+    ``preferences`` is free-form JSON, so a number, a list or a null can be
+    stored there. Treating one as a language crashed while composing the
+    message, and only for accounts that exist: the 500 was itself the answer
+    that the address is registered (ADR 0044).
+    """
+    if isinstance(preferences, dict):
+        language = preferences.get("language")
+        if isinstance(language, str) and language:
+            return language
+    return "en"
 
 
 def _requested_currency(user_update: schemas.BaseUserUpdate) -> Optional[str]:
@@ -137,6 +154,62 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         await session.refresh(updated)
         return updated
 
+    async def forgot_password(
+        self, user: User, request: Optional[Request] = None
+    ) -> None:
+        """Issue a recovery link bound to the address it is sent to.
+
+        fastapi-users' own token names the account and a fingerprint of its
+        password, so it stops working when the password changes and keeps
+        working when the email does. A link only proves control of the mailbox
+        it reached: if the account's address changes after it went out, the
+        person holding that old mailbox is no longer the account's owner, and
+        the token must die with the address (ADR 0044).
+        """
+        if not user.is_active:
+            raise exceptions.UserInactive()
+
+        token_data = {
+            "sub": str(user.id),
+            "password_fgpt": self.password_helper.hash(user.hashed_password),
+            "aud": self.reset_password_token_audience,
+            "email": user.email,
+        }
+        token = generate_jwt(
+            token_data,
+            self.reset_password_token_secret,
+            self.reset_password_token_lifetime_seconds,
+        )
+        await self.on_after_forgot_password(user, token, request)
+
+    async def reset_password(
+        self, token: str, password: str, request: Optional[Request] = None
+    ) -> User:
+        """Refuse a link issued for an address the account no longer has."""
+        claims = self._reset_token_claims(token)
+        issued_for = claims.get("email")
+        if not isinstance(issued_for, str):
+            # A link from before the address was part of the token: refuse it
+            # rather than guess which mailbox it reached.
+            raise exceptions.InvalidResetPasswordToken()
+        try:
+            current = await self.get(uuid.UUID(str(claims.get("sub"))))
+        except (exceptions.UserNotExists, ValueError):
+            raise exceptions.InvalidResetPasswordToken() from None
+        if current.email != issued_for:
+            raise exceptions.InvalidResetPasswordToken()
+        return await super().reset_password(token, password, request)
+
+    def _reset_token_claims(self, token: str) -> dict:
+        try:
+            return decode_jwt(
+                token,
+                self.reset_password_token_secret,
+                [self.reset_password_token_audience],
+            )
+        except jwt.PyJWTError:
+            raise exceptions.InvalidResetPasswordToken() from None
+
     async def on_after_forgot_password(
         self, user: User, token: str, request: Optional[Request] = None
     ):
@@ -151,9 +224,10 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         settings = get_settings()
         if not settings.email_enabled:
             return
-        # A stored null is not a language; keep the default instead of
-        # crashing while composing (which only a known address would hit).
-        language = (user.preferences or {}).get("language") or "en"
+        # A stored null, number or list is not a language; keep the default
+        # instead of crashing while composing (which only a known address
+        # would hit).
+        language = _stored_language(user.preferences)
         templates = await admin_service.get_email_templates(self.db_session)
         message = email_service.password_reset_email(
             to=user.email,
@@ -189,7 +263,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
 
         session = self.db_session
         currency = user.primary_currency
-        lang = (user.preferences or {}).get("language", "en")
+        lang = _stored_language(user.preferences)
 
         # Every new user gets a Personal workspace + owner membership.
         # All their seeded data (wallet, categories, rules) reparent to it.

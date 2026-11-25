@@ -80,9 +80,14 @@ DEFAULT_TEMPLATES: dict[str, dict[str, str]] = {
 }
 
 
-def template_language(language: str | None) -> str:
-    """The template a reader's language maps to."""
-    return "pt" if (language or "en").lower().startswith("pt") else "en"
+def template_language(language: object) -> str:
+    """The template a reader's language maps to.
+
+    The stored preference is free-form JSON, so a number or a list is not a
+    language and must not raise while composing: only existing accounts would
+    see that error (ADR 0044).
+    """
+    return "pt" if isinstance(language, str) and language.lower().startswith("pt") else "en"
 
 
 def _fields_in(text: str) -> set[str]:
@@ -200,13 +205,17 @@ def password_reset_link(token: str, settings: Settings | None = None) -> str:
 def password_reset_email(
     to: str,
     link: str,
-    language: str,
+    language: object,
     token_minutes: int,
     *,
     app_name: str = "Securo",
     templates: dict[str, dict[str, str]] | None = None,
 ) -> Email:
-    """The recovery message in the account's language."""
+    """The recovery message in the account's language.
+
+    Only the languages with a template are written here; anything else gets
+    English, which every instance can be read in.
+    """
     template = effective_templates(templates)[template_language(language)]
     subject, text = render_template(
         template, app_name=app_name, link=link, minutes=token_minutes
