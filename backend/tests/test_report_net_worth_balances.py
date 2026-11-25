@@ -16,6 +16,7 @@ import pytest
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.transaction import Transaction
@@ -192,3 +193,62 @@ async def test_net_worth_report_counts_a_shared_credit_line_once_from_the_batch(
 
     assert report.trend[-1].breakdowns["liabilities"] == pytest.approx(1000.0)
     assert report.trend[-1].value == pytest.approx(4000.0)
+
+
+@pytest.mark.asyncio
+async def test_a_daily_ten_year_trend_reads_every_cutoff_in_batches(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The custom range goes up to ten years, and at a daily interval that is
+    3,654 cutoffs, more SUM columns than one SELECT may carry (1,664 on
+    Postgres, 2,000 on SQLite). Every date still answers what the
+    single-account read answers, on both sides of each batch boundary."""
+    today = app_today()
+    manual = await _make_account(session, test_user.id, "Manual")
+    await _add_txn(session, test_user.id, manual.id, 5000, "credit", today - timedelta(days=3600))
+    await _add_txn(session, test_user.id, manual.id, 1200, "debit", today - timedelta(days=800))
+
+    conn = await _make_connection(session, test_user.id, "ext-nw-wide")
+    connected = await _make_account(
+        session, test_user.id, "Connected", balance="3000", connection_id=conn.id,
+    )
+    await _add_txn(session, test_user.id, connected.id, 700, "debit", today - timedelta(days=2000))
+
+    cutoffs = [today - timedelta(days=days) for days in range(3653, -1, -1)]
+    batched = await _account_balances_at(session, [manual, connected], cutoffs)
+
+    assert len(batched) == len(cutoffs) * 2
+    # A few dates on each side of every 500-column batch boundary, plus the ends.
+    sampled = cutoffs[0:2] + cutoffs[498:502] + cutoffs[998:1002] + cutoffs[2998:3002] + cutoffs[-2:]
+    for account in (manual, connected):
+        for cutoff in sampled:
+            expected = await _account_balance_at(session, account, cutoff)
+            assert batched[(account.id, cutoff)] == pytest.approx(expected), (
+                account.name, cutoff
+            )
+
+
+@pytest.mark.asyncio
+async def test_net_worth_report_covers_a_daily_ten_year_range(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The report endpoint the screen calls answers a ten-year daily range,
+    which used to fail with the database's target-list limit."""
+    today = app_today()
+    checking = await _make_account(session, test_user.id, "Checking")
+    await _add_txn(session, test_user.id, checking.id, 9000, "credit", today - timedelta(days=3500))
+    await _add_txn(session, test_user.id, checking.id, 2500, "debit", today - timedelta(days=1100))
+
+    report = await get_net_worth_report(
+        session, test_workspace.id, test_user.id, interval="daily",
+        start_date=today - timedelta(days=3653), end_date=today,
+    )
+
+    assert len(report.trend) == 3654
+    # The trend starts 3,653 days back: before the first movement, then after
+    # it, then after the second, which is also today's number.
+    assert report.trend[0].value == pytest.approx(0.0)
+    assert report.trend[153].value == pytest.approx(9000.0)
+    assert report.trend[2553].value == pytest.approx(6500.0)
+    assert report.trend[-1].value == pytest.approx(6500.0)
+    assert report.summary.primary_value == pytest.approx(6500.0)

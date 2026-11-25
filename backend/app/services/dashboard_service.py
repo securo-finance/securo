@@ -1571,6 +1571,20 @@ async def _account_balance_at(
         return float(result or 0)
 
 
+# A balance trend used to be one SUM column per cutoff in a single SELECT, and
+# a target list holds at most 1,664 entries on Postgres (2,000 on SQLite). A
+# daily ten-year custom range, which the reports screen allows, is 3,654
+# cutoffs, so the sums go out in batches of at most this many columns and are
+# merged.
+_BALANCE_COLUMN_BATCH = 500
+
+
+def _column_batches(columns: list[date]):
+    """Split the cutoff columns so no SELECT goes over the target-list limit."""
+    for start in range(0, len(columns), _BALANCE_COLUMN_BATCH):
+        yield start, columns[start:start + _BALANCE_COLUMN_BATCH]
+
+
 async def _account_balances_at(
     session: AsyncSession,
     accounts: list[Account],
@@ -1586,6 +1600,10 @@ async def _account_balances_at(
     (issue #584). This reads them together, one grouped query per currency for
     the manual accounts and one or two for the connected ones, and returns
     exactly the number ``_account_balance_at`` returns for each pair.
+
+    A wide range sends its cutoffs in batches (``_BALANCE_COLUMN_BATCH``), so a
+    daily ten-year trend, which is one SUM column per day and would exceed the
+    database's target-list limit in a single query, still gets an answer.
 
     Manual cutoffs are capped at today, as there, so two cutoffs after today
     share a column. Connected accounts are the same: from today on the provider
@@ -1621,25 +1639,30 @@ async def _account_balances_at(
         columns = sorted({min(cutoff, today) for cutoff in wanted})
         column_index = {cutoff: i for i, cutoff in enumerate(columns)}
         signed = signed_amount_expr(currency)
-        sums = [
-            func.coalesce(
-                func.sum(case((Transaction.date <= cutoff, signed), else_=0)), 0
-            ).label(f"b{i}")
-            for i, cutoff in enumerate(columns)
-        ]
         status_filter = [] if include_pending else [Transaction.status == "posted"]
-        rows = await session.execute(
-            select(Transaction.account_id, *sums)
-            .outerjoin(Category, Transaction.category_id == Category.id)
-            .where(*_scope([a.id for a in group]), *status_filter)
-            .group_by(Transaction.account_id)
-        )
-        by_account = {row[0]: row for row in rows.all()}
+        totals: dict[uuid.UUID, list[float]] = {}
+        for start, chunk in _column_batches(columns):
+            sums = [
+                func.coalesce(
+                    func.sum(case((Transaction.date <= cutoff, signed), else_=0)), 0
+                ).label(f"b{i}")
+                for i, cutoff in enumerate(chunk)
+            ]
+            rows = await session.execute(
+                select(Transaction.account_id, *sums)
+                .outerjoin(Category, Transaction.category_id == Category.id)
+                .where(*_scope([a.id for a in group]), *status_filter)
+                .group_by(Transaction.account_id)
+            )
+            for row in rows.all():
+                values = totals.setdefault(row[0], [0.0] * len(columns))
+                for offset in range(len(chunk)):
+                    values[start + offset] = float(row[offset + 1] or 0)
         for account in group:
-            row = by_account.get(account.id)
+            row = totals.get(account.id)
             for cutoff in wanted:
                 i = column_index[min(cutoff, today)]
-                balances[(account.id, cutoff)] = float(row[i + 1] or 0) if row else 0.0
+                balances[(account.id, cutoff)] = row[i] if row else 0.0
 
     for currency, group in connected.items():
         ids = [a.id for a in group]
@@ -1648,12 +1671,12 @@ async def _account_balances_at(
         signed = signed_amount_expr(currency)
         status_filter = [] if include_pending else [Transaction.status == "posted"]
         deltas: dict[uuid.UUID, list[float]] = {}
-        if before_today:
+        for start, chunk in _column_batches(before_today):
             sums = [
                 func.coalesce(
                     func.sum(case((Transaction.date > cutoff, signed), else_=0)), 0
                 ).label(f"d{i}")
-                for i, cutoff in enumerate(before_today)
+                for i, cutoff in enumerate(chunk)
             ]
             rows = await session.execute(
                 select(Transaction.account_id, *sums)
@@ -1665,7 +1688,10 @@ async def _account_balances_at(
                 )
                 .group_by(Transaction.account_id)
             )
-            deltas = {row[0]: [float(value or 0) for value in row[1:]] for row in rows.all()}
+            for row in rows.all():
+                values = deltas.setdefault(row[0], [0.0] * len(before_today))
+                for offset in range(len(chunk)):
+                    values[start + offset] = float(row[offset + 1] or 0)
         pending: dict[uuid.UUID, float] = {}
         if not include_pending:
             rows = await session.execute(
@@ -1686,12 +1712,12 @@ async def _account_balances_at(
             current = float(account.balance)
             if account.type in {"credit_card", "loan"}:
                 current = -current
-            row = deltas.get(account.id)
+            delta = deltas.get(account.id)
             for cutoff in wanted:
                 if cutoff >= today:
                     balances[(account.id, cutoff)] = current
                     continue
-                value = current - (row[before_index[cutoff]] if row else 0.0)
+                value = current - (delta[before_index[cutoff]] if delta else 0.0)
                 if not include_pending:
                     value -= pending.get(account.id, 0.0)
                 balances[(account.id, cutoff)] = value
