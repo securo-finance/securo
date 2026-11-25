@@ -37,6 +37,10 @@ WRITE_GATES = {"current_writable_workspace"}
 ALLOWLIST: dict[tuple[str, str], str] = {
     # Not workspace-scoped: the actor is the user, on their own account.
     ("PATCH", "/me"): "the requester's own user record",
+    # An address an administrator asked for, applied or declined by the person
+    # whose account it is. Account-level like the one above, never a workspace.
+    ("POST", "/api/users/me/email-change"): "the requester's own account address",
+    ("DELETE", "/api/users/me/email-change"): "the requester's own account address",
     ("POST", "/2fa/setup"): "the requester's own second factor",
     ("POST", "/2fa/enable"): "the requester's own second factor",
     ("POST", "/2fa/disable"): "the requester's own second factor",

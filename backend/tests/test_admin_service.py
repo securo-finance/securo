@@ -214,13 +214,19 @@ async def test_get_user_not_found(session: AsyncSession, clean_db):
 # ---------------------------------------------------------------------------
 
 async def test_update_user_email(session: AsyncSession, clean_db):
+    """The administrator asks for the address; the owner applies it (ADR 0042).
+
+    The login address is a recovery credential, so it does not move here: the
+    request waits on the account for the person whose account it is.
+    """
     admin = await _make_user(session, "admin_upd@test.com", is_superuser=True)
     target = await _make_user(session, "target_upd@test.com")
     data = AdminUserUpdate(reason="Support ticket 12", email="newemail@test.com")
     result = await update_user(session, target.id, data, admin.id)
 
     assert result is not None
-    assert result.email == "newemail@test.com"
+    assert result.email == "target_upd@test.com"
+    assert result.pending_email == "newemail@test.com"
 
 
 async def test_update_user_email_conflict(session: AsyncSession, clean_db):
