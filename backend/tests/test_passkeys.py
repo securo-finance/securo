@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from webauthn.helpers import base64url_to_bytes
 
 from app.models.passkey import UserPasskey
+from app.models.user import User
 
 
 class _RedisStore:
@@ -544,6 +545,67 @@ async def test_authenticate_email_bound_challenge_rejects_unknown_email(
 
     assert verify_response.status_code == 401
     verify_mock.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("asked", "expected_key"),
+    [("pair@example.com", "exact"), ("Pair@example.com", "other")],
+)
+async def test_authenticate_options_resolve_an_address_shared_by_two_accounts(
+    client: AsyncClient,
+    session: AsyncSession,
+    clean_db,
+    asked: str,
+    expected_key: str,
+):
+    """One address naming two accounts offers the passkeys of the row written
+    in the exact spelling that was asked for, and never answers 500 (#568)."""
+    import uuid as _uuid
+
+    # The exact row carries the higher id, so an ordering by id alone would
+    # offer the other account's passkey: only the spelling can decide.
+    exact = User(
+        id=_uuid.UUID(int=2),
+        email="pair@example.com",
+        hashed_password="synthetic-unused",
+        is_active=True,
+        is_verified=True,
+    )
+    other = User(
+        id=_uuid.UUID(int=1),
+        email="Pair@example.com",
+        hashed_password="synthetic-unused",
+        is_active=True,
+        is_verified=True,
+    )
+    session.add_all([exact, other])
+    await session.commit()
+    exact_key = UserPasskey(
+        user_id=exact.id,
+        credential_id="ZXhhY3Qta2V5",
+        public_key="cHVibGljLWtleS1leGFjdA",
+        sign_count=0,
+        name="Exact key",
+    )
+    other_key = UserPasskey(
+        user_id=other.id,
+        credential_id="b3RoZXIta2V5",
+        public_key="cHVibGljLWtleS1vdGhlcg",
+        sign_count=0,
+        name="Other key",
+    )
+    session.add_all([exact_key, other_key])
+    await session.commit()
+
+    response = await client.post(
+        "/api/auth/passkeys/authenticate/options",
+        json={"email": asked},
+    )
+
+    assert response.status_code == 200, response.text
+    allow = response.json()["options"]["allowCredentials"]
+    wanted = exact_key if expected_key == "exact" else other_key
+    assert [credential["id"] for credential in allow] == [wanted.credential_id]
 
 
 async def test_delete_passkey_is_owner_scoped(
