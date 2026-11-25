@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.core.app_clock import app_today, get_workspace_timezone, today_in
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
+from app.models.category import Category
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.models.user import User
@@ -61,6 +62,32 @@ async def _verify_account_in_workspace(
     )
     if result.scalar_one_or_none() is None:
         raise ValueError("Account not found")
+
+
+async def _category_in_workspace(
+    session: AsyncSession, workspace_id: uuid.UUID, category_id: uuid.UUID
+) -> bool:
+    return (
+        await session.scalar(
+            select(Category.id).where(
+                Category.id == category_id, Category.workspace_id == workspace_id
+            )
+        )
+    ) is not None
+
+
+async def _verify_category_in_workspace(
+    session: AsyncSession, workspace_id: uuid.UUID, category_id: Optional[uuid.UUID]
+) -> None:
+    """Raise ValueError unless the category is this workspace's own.
+
+    An unknown id and another workspace's id get the same answer, so the
+    response never tells whether a category exists elsewhere.
+    """
+    if category_id is not None and not await _category_in_workspace(
+        session, workspace_id, category_id
+    ):
+        raise ValueError("Category not found")
 
 
 async def get_recurring_transactions(
@@ -137,6 +164,7 @@ async def create_recurring_transaction(
     data: RecurringTransactionCreate,
 ) -> RecurringTransaction:
     await _verify_account_in_workspace(session, workspace_id, data.account_id)
+    await _verify_category_in_workspace(session, workspace_id, data.category_id)
     if data.category_id and data.category_lines and data.category_lines.lines:
         raise ValueError("Choose either a category or a split across categories")
     await _fetch_rate_and_check_bounds(
@@ -257,6 +285,7 @@ async def update_recurring_transaction(
         # The editor sends a null category alongside; the largest part's
         # category is what an undone split keeps.
         update_data.pop("category_id", None)
+    await _verify_category_in_workspace(session, workspace_id, update_data.get("category_id"))
     old_amount = recurring.amount
     old_currency = recurring.currency
 
@@ -724,6 +753,13 @@ async def generate_pending(
         # account is back or the user points the bill at another one.
         if account is not None and account.workspace_id != recurring.workspace_id:
             continue
+        # A bill stored with a category of another workspace generates
+        # uncategorized, so that category never reaches a transaction here.
+        category_id = recurring.category_id
+        if category_id is not None and not await _category_in_workspace(
+            session, recurring.workspace_id, category_id
+        ):
+            category_id = None
         cutoff = up_to or cutoffs.get(recurring.workspace_id) or app_today()
         # Generate while the effective date is due. The nominal pointer remains
         # authoritative and is the only date used for schedule advancement and
@@ -773,7 +809,7 @@ async def generate_pending(
                     user_id=user_id,
                     workspace_id=recurring.workspace_id,
                     account_id=recurring.account_id,
-                    category_id=recurring.category_id,
+                    category_id=category_id,
                     description=recurring.description,
                     amount=recurring.amount,
                     currency=recurring.currency,
