@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/select'
 import { PageHeader } from '@/components/page-header'
 import { TimezoneSettings } from '@/components/timezone-settings'
+import { WorkspaceStatusSettings } from '@/components/workspace-status-settings'
 import { ProviderSettings } from '@/components/provider-settings'
 import { DEFAULT_COLORS_QUERY_KEY } from '@/hooks/use-app-theme'
 import { useLocalAuthEnabled } from '@/hooks/use-local-auth'
@@ -372,6 +373,7 @@ export default function AdminSettingsPage() {
         )}
       </div>
 
+      <WorkspaceStatusSettings />
       <TimezoneSettings />
       <ProviderSettings />
 

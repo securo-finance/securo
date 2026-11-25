@@ -36,6 +36,7 @@ from app.schemas.asset import (
 )
 from app.services.asset_group_service import ensure_group_in_workspace
 from app.services.fx_rate_service import convert, convert_or_none, has_rate, stamp_primary_amount
+from app.services.workspace_status_service import in_active_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -1641,6 +1642,7 @@ async def refresh_all_market_prices(
         Asset.is_archived == False,
         Asset.sell_date.is_(None),
         Asset.ticker.isnot(None),
+        in_active_workspace(Asset.workspace_id),
     ]
     if workspace_id is not None:
         conditions.append(Asset.workspace_id == workspace_id)

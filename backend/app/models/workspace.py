@@ -26,6 +26,12 @@ if TYPE_CHECKING:
 WorkspaceKind = Literal["personal", "business"]
 WORKSPACE_KINDS: tuple[str, ...] = get_args(WorkspaceKind)
 
+# Whether a workspace can be written to (ADR 0041). Set by an instance
+# administrator; unrelated to `is_archived`, which is the owner's own choice
+# and hides the workspace.
+WorkspaceStatus = Literal["active", "suspended"]
+WORKSPACE_ACTIVE: WorkspaceStatus = "active"
+
 # Roles a member can hold inside a workspace. `owner` is the
 # member-management + workspace-config role; `editor` can read/write
 # financial data; `viewer` is read-only.
@@ -53,6 +59,14 @@ class Workspace(Base):
     # is too aggressive; archived workspaces stay in the DB until an
     # admin purge.
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # See `WorkspaceStatus`. A suspended workspace is read and exported, never
+    # written: `WorkspaceContext.require_write` and the scheduled jobs check it.
+    status: Mapped[str] = mapped_column(
+        String(20), default=WORKSPACE_ACTIVE, server_default=WORKSPACE_ACTIVE
+    )
+    status_changed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     # Optional external administrator. When set, this user has effective
     # owner rights in the workspace without being a member. Use case:
     # one user provisions and operates a workspace on behalf of another

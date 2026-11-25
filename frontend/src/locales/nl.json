@@ -4198,5 +4198,22 @@
       "turnedOff": "Documenten lezen uitgeschakeld"
     },
     "unreadPages": "Niet gelezen pagina's (scans, en het model leest geen afbeeldingen): {{pages}}. Hun regels ontbreken in deze controle."
+  },
+  "workspaceStatus": {
+    "notice": "Deze werkruimte is opgeschort. Je kunt alles lezen en exporteren, maar niets wijzigen.",
+    "error": "Deze werkruimte is opgeschort: lezen en exporteren kan, wijzigen niet.",
+    "title": "Werkruimtes",
+    "description": "Een opgeschorte werkruimte kan worden gelezen en geëxporteerd, maar niet gewijzigd, en de bankkoppelingen worden niet meer gesynchroniseerd.",
+    "search": "Zoek op naam of e-mailadres van de eigenaar...",
+    "empty": "Geen werkruimtes gevonden",
+    "suspended": "Opgeschort",
+    "suspend": "Opschorten",
+    "reactivate": "Heractiveren",
+    "suspendNamed": "{{name}} opschorten",
+    "reactivateNamed": "{{name}} heractiveren",
+    "confirmTitle": "{{name}} opschorten?",
+    "confirmDescription": "Leden kunnen blijven lezen en exporteren, maar niets wijzigen tot de werkruimte wordt geheractiveerd. Ook geplande taken stoppen.",
+    "showing": "{{shown}} van {{total}} getoond. Zoek om de andere te vinden.",
+    "updated": "Werkruimte bijgewerkt"
   }
 }

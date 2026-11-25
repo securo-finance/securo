@@ -1,7 +1,10 @@
 import uuid
+from datetime import datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+from app.models.workspace import WorkspaceStatus
 
 
 class AdminUserRead(BaseModel):
@@ -33,6 +36,27 @@ class AdminUserUpdate(BaseModel):
 class AdminUserList(BaseModel):
     items: list[AdminUserRead]
     total: int
+
+
+class AdminWorkspaceRead(BaseModel):
+    id: uuid.UUID
+    name: str
+    kind: str
+    status: str
+    status_changed_at: Optional[datetime] = None
+    #: Emails of the members with the owner role.
+    owners: list[str] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AdminWorkspaceList(BaseModel):
+    items: list[AdminWorkspaceRead]
+    total: int
+
+
+class AdminWorkspaceStatusUpdate(BaseModel):
+    status: WorkspaceStatus
 
 
 class AppSettingRead(BaseModel):

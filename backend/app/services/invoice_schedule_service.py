@@ -70,6 +70,7 @@ from app.models.workspace import Workspace
 from app.services import invoice_archive, invoice_service, reconciliation_service
 from app.services.invoice_service import InvoiceError
 from app.services.recurring_transaction_service import _advance_date
+from app.services.workspace_status_service import in_active_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -1212,7 +1213,9 @@ async def due_schedule_ids(session: AsyncSession) -> list[uuid.UUID]:
     walk from the anchor and not a column to compare in SQL."""
     result = await session.execute(
         select(InvoiceSchedule.id).where(
-            InvoiceSchedule.status == "active", InvoiceSchedule.origin == "local"
+            InvoiceSchedule.status == "active",
+            InvoiceSchedule.origin == "local",
+            in_active_workspace(InvoiceSchedule.workspace_id),
         )
     )
     return [row[0] for row in result.all()]

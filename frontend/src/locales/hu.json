@@ -4196,5 +4196,22 @@
       "turnedOff": "Dokumentumok olvasása kikapcsolva"
     },
     "unreadPages": "Be nem olvasott oldalak (szkennelt, és a modell nem olvas képeket): {{pages}}. A soraik hiányoznak ebből az áttekintésből."
+  },
+  "workspaceStatus": {
+    "notice": "Ez a munkaterület fel van függesztve. Mindent olvashat és exportálhat, de semmi sem módosítható.",
+    "error": "Ez a munkaterület fel van függesztve: olvasható és exportálható, de nem módosítható.",
+    "title": "Munkaterületek",
+    "description": "A felfüggesztett munkaterület olvasható és exportálható, de nem módosítható, és a bankkapcsolatai nem szinkronizálódnak.",
+    "search": "Keresés név vagy a tulajdonos e-mail-címe alapján...",
+    "empty": "Nem található munkaterület",
+    "suspended": "Felfüggesztve",
+    "suspend": "Felfüggesztés",
+    "reactivate": "Újraaktiválás",
+    "suspendNamed": "{{name}} felfüggesztése",
+    "reactivateNamed": "{{name}} újraaktiválása",
+    "confirmTitle": "Felfüggeszti ezt: {{name}}?",
+    "confirmDescription": "A tagok továbbra is olvashatnak és exportálhatnak, de az újraaktiválásig semmit sem módosíthatnak. Az ütemezett feladatok is leállnak.",
+    "showing": "{{shown}} / {{total}} megjelenítve. A többit kereséssel találja meg.",
+    "updated": "Munkaterület frissítve"
   }
 }

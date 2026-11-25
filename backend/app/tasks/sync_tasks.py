@@ -19,6 +19,7 @@ from app.plugins.provider import PLUGIN_PROVIDER_PREFIX
 from app.providers.base import ProviderNotConfiguredError
 from app.services import connection_service
 from app.services.connection_service import SyncOutcome
+from app.services.workspace_status_service import in_active_workspace, is_suspended
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +197,7 @@ async def _sync_all() -> dict:
                     BankConnection.status.in_(["active", "error"]),
                     # A plugin's connection follows its plugin's schedule.
                     ~BankConnection.provider.startswith(PLUGIN_PROVIDER_PREFIX),
+                    in_active_workspace(BankConnection.workspace_id),
                     (BankConnection.last_sync_at < cutoff)
                     | (BankConnection.last_sync_at.is_(None)),
                 )
@@ -296,6 +298,10 @@ async def _sync_one(
         if workspace_id is None:
             logger.warning("Connection %s has no workspace; skipping sync", connection_id)
             return None
+        # Suspended while this run was working through the connections.
+        if await is_suspended(session, workspace_id):
+            logger.info("Connection %s: workspace suspended; skipping sync", connection_id)
+            return None
         with use_resolved_timezone(await get_workspace_timezone(session, workspace_id)):
             _, _, outcome = await connection_service.sync_connection(
                 session,
@@ -342,6 +348,9 @@ async def _sync_one_celery(connection_id: str, user_id: str) -> None:
             )
             if workspace_id is None:
                 logger.warning("Connection %s has no workspace; skipping sync", connection_id)
+                return
+            if await is_suspended(session, workspace_id):
+                logger.info("Connection %s: workspace suspended; skipping sync", connection_id)
                 return
             async with use_timezone(session, workspace_id, fresh=True):
                 await connection_service.sync_connection(

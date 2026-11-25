@@ -4392,5 +4392,22 @@
       "turnedOff": "Čítanie dokumentov vypnuté"
     },
     "unreadPages": "Neprečítané strany (skeny, a model nečíta obrázky): {{pages}}. Ich riadky v tejto kontrole chýbajú."
+  },
+  "workspaceStatus": {
+    "notice": "Tento pracovný priestor je pozastavený. Všetko môžete čítať a exportovať, ale nič sa nedá meniť.",
+    "error": "Tento pracovný priestor je pozastavený: dá sa čítať a exportovať, ale nie meniť.",
+    "title": "Pracovné priestory",
+    "description": "Pozastavený priestor sa dá čítať a exportovať, ale nie meniť, a jeho bankové pripojenia sa prestanú synchronizovať.",
+    "search": "Hľadať podľa názvu alebo e-mailu vlastníka...",
+    "empty": "Nenašli sa žiadne pracovné priestory",
+    "suspended": "Pozastavený",
+    "suspend": "Pozastaviť",
+    "reactivate": "Obnoviť",
+    "suspendNamed": "Pozastaviť {{name}}",
+    "reactivateNamed": "Obnoviť {{name}}",
+    "confirmTitle": "Pozastaviť {{name}}?",
+    "confirmDescription": "Členovia môžu ďalej čítať a exportovať, ale do obnovenia nemôžu nič meniť. Zastavia sa aj naplánované úlohy.",
+    "showing": "Zobrazené {{shown}} z {{total}}. Ostatné nájdete vyhľadávaním.",
+    "updated": "Pracovný priestor aktualizovaný"
   }
 }

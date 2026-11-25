@@ -4197,5 +4197,22 @@
       "turnedOff": "Dokumente lesen ausgeschaltet"
     },
     "unreadPages": "Nicht gelesene Seiten (Scans, und das Modell liest keine Bilder): {{pages}}. Ihre Zeilen fehlen in dieser Prüfung."
+  },
+  "workspaceStatus": {
+    "notice": "Dieser Arbeitsbereich ist gesperrt. Du kannst alles lesen und exportieren, aber nichts ändern.",
+    "error": "Dieser Arbeitsbereich ist gesperrt: Er kann gelesen und exportiert, aber nicht geändert werden.",
+    "title": "Arbeitsbereiche",
+    "description": "Ein gesperrter Arbeitsbereich kann gelesen und exportiert, aber nicht geändert werden, und seine Bankverbindungen werden nicht mehr synchronisiert.",
+    "search": "Nach Name oder E-Mail des Eigentümers suchen...",
+    "empty": "Keine Arbeitsbereiche gefunden",
+    "suspended": "Gesperrt",
+    "suspend": "Sperren",
+    "reactivate": "Reaktivieren",
+    "suspendNamed": "{{name}} sperren",
+    "reactivateNamed": "{{name}} reaktivieren",
+    "confirmTitle": "{{name}} sperren?",
+    "confirmDescription": "Die Mitglieder können weiterhin lesen und exportieren, aber bis zur Reaktivierung nichts ändern. Auch geplante Aufgaben werden angehalten.",
+    "showing": "{{shown}} von {{total}} werden angezeigt. Suche, um die übrigen zu finden.",
+    "updated": "Arbeitsbereich aktualisiert"
   }
 }

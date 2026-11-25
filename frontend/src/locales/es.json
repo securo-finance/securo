@@ -4211,5 +4211,22 @@
       "turnedOff": "Lectura de documentos desactivada"
     },
     "unreadPages": "Páginas no leídas (escaneadas, y el modelo no lee imágenes): {{pages}}. Sus líneas no están en esta revisión."
+  },
+  "workspaceStatus": {
+    "notice": "Este espacio de trabajo está suspendido. Puedes leer y exportar todo, pero no se puede cambiar nada.",
+    "error": "Este espacio de trabajo está suspendido: se puede leer y exportar, pero no cambiar.",
+    "title": "Espacios de trabajo",
+    "description": "Un espacio suspendido se puede leer y exportar, pero no cambiar, y sus conexiones bancarias dejan de sincronizarse.",
+    "search": "Buscar por nombre o correo del propietario...",
+    "empty": "No se encontraron espacios de trabajo",
+    "suspended": "Suspendido",
+    "suspend": "Suspender",
+    "reactivate": "Reactivar",
+    "suspendNamed": "Suspender {{name}}",
+    "reactivateNamed": "Reactivar {{name}}",
+    "confirmTitle": "¿Suspender {{name}}?",
+    "confirmDescription": "Sus miembros pueden seguir leyendo y exportando, pero no cambiar nada hasta que se reactive. Las tareas programadas también se detienen.",
+    "showing": "Mostrando {{shown}} de {{total}}. Busca para encontrar los demás.",
+    "updated": "Espacio de trabajo actualizado"
   }
 }

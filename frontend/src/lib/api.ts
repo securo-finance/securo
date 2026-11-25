@@ -7,7 +7,7 @@ import type { NumberFormat, DateFormat } from '@/lib/format'
 import type {
   User,
   AdminUser,
-  AdminUserList,
+  AdminUserList, AdminWorkspace, AdminWorkspaceList, WorkspaceStatus,
   Passkey,
   PasskeyOptionsResponse,
   AppSetting,
@@ -2138,6 +2138,14 @@ export const admin = {
   },
   deleteUser: async (id: string): Promise<void> => {
     await api.delete(`/admin/users/${id}`)
+  },
+  listWorkspaces: async (params?: { search?: string; page?: number; limit?: number }): Promise<AdminWorkspaceList> => {
+    const { data } = await api.get('/admin/workspaces', { params })
+    return data
+  },
+  updateWorkspaceStatus: async (id: string, status: WorkspaceStatus): Promise<AdminWorkspace> => {
+    const { data } = await api.patch(`/admin/workspaces/${id}/status`, { status })
+    return data
   },
   providerSettings: async (): Promise<ProviderSettingStatus[]> => {
     const { data } = await api.get('/admin/provider-settings')

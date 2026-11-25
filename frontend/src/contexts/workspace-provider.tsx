@@ -145,7 +145,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const role = current?.role ?? null
   const canManage = role === 'owner' || role === 'manager'
-  const canWrite = role === 'owner' || role === 'manager' || role === 'editor'
+  const canWrite =
+    current?.status !== 'suspended' &&
+    (role === 'owner' || role === 'manager' || role === 'editor')
 
   const enabledModules = useMemo(
     () => (current?.enabled_modules ?? []) as ModuleId[],

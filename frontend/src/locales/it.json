@@ -4211,5 +4211,22 @@
       "turnedOff": "Lettura documenti disattivata"
     },
     "unreadPages": "Pagine non lette (scansioni, e il modello non legge immagini): {{pages}}. Le loro righe mancano da questa revisione."
+  },
+  "workspaceStatus": {
+    "notice": "Questo spazio di lavoro è sospeso. Puoi leggere ed esportare tutto, ma non modificare nulla.",
+    "error": "Questo spazio di lavoro è sospeso: può essere letto ed esportato, ma non modificato.",
+    "title": "Spazi di lavoro",
+    "description": "Uno spazio sospeso può essere letto ed esportato, ma non modificato, e le sue connessioni bancarie smettono di sincronizzarsi.",
+    "search": "Cerca per nome o e-mail del proprietario...",
+    "empty": "Nessuno spazio di lavoro trovato",
+    "suspended": "Sospeso",
+    "suspend": "Sospendi",
+    "reactivate": "Riattiva",
+    "suspendNamed": "Sospendi {{name}}",
+    "reactivateNamed": "Riattiva {{name}}",
+    "confirmTitle": "Sospendere {{name}}?",
+    "confirmDescription": "I membri possono ancora leggere ed esportare, ma non modificare nulla fino alla riattivazione. Si fermano anche le attività pianificate.",
+    "showing": "Mostrati {{shown}} di {{total}}. Cerca per trovare gli altri.",
+    "updated": "Spazio di lavoro aggiornato"
   }
 }

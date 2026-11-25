@@ -64,6 +64,7 @@ import {
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { ChangePasswordDialog } from '@/components/change-password-dialog'
 import { BackupDialog } from '@/components/backup-dialog'
+import { WorkspaceSuspendedNotice } from '@/components/workspace-suspended-notice'
 import { TwoFactorSetup } from '@/components/two-factor-setup'
 import { PasskeyManagementDialog } from '@/components/passkey-management-dialog'
 import { CommandPalette } from '@/components/command-palette'
@@ -690,6 +691,7 @@ export function AppLayout() {
             {/* Active-collection filter (issue #105): sticky bar above the
                 content so the scope is visible right where the data is. */}
             <CollectionSelector variant="header" />
+            <WorkspaceSuspendedNotice />
             <Outlet />
           </div>
         </main>

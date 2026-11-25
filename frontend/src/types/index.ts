@@ -24,6 +24,21 @@ export interface AdminUserList {
   total: number
 }
 
+export interface AdminWorkspace {
+  id: string
+  name: string
+  kind: string
+  status: WorkspaceStatus
+  status_changed_at: string | null
+  /** Emails of the members with the owner role. */
+  owners: string[]
+}
+
+export interface AdminWorkspaceList {
+  items: AdminWorkspace[]
+  total: number
+}
+
 export interface Passkey {
   id: string
   name: string
@@ -49,6 +64,9 @@ export type WorkspaceRole = 'owner' | 'editor' | 'viewer' | 'manager'
 
 export type WorkspaceKind = 'personal' | 'business'
 
+/** A suspended workspace is read and exported, never changed (ADR 0041). */
+export type WorkspaceStatus = 'active' | 'suspended'
+
 export interface Workspace {
   id: string
   name: string
@@ -56,6 +74,7 @@ export interface Workspace {
   // still has to render. Writes are narrowed to WorkspaceKind.
   kind: string
   is_archived: boolean
+  status: WorkspaceStatus
   default_currency: string
   locale: string | null
   /** The calendar this workspace keeps its books in, or null to follow the

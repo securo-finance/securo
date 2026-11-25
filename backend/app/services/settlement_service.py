@@ -16,6 +16,7 @@ from app.schemas.group_settlement import (
     GroupSettlementUpdate,
 )
 from app.schemas.transaction import TransactionPaybackInput
+from app.services.workspace_status_service import in_active_workspace, require_not_suspended
 
 
 async def _ensure_group_visible(
@@ -29,6 +30,20 @@ async def _ensure_group_visible(
     from app.services.group_service import get_group_visible
 
     return await get_group_visible(session, group_id, workspace_id, user_id)
+
+
+async def _ensure_group_writable(
+    session: AsyncSession,
+    group_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> Optional[Group]:
+    """The visible group, refused when its own workspace is suspended: a
+    linked member reaches it from another workspace, whose gate passes."""
+    group = await _ensure_group_visible(session, group_id, workspace_id, user_id)
+    if group is not None:
+        await require_not_suspended(session, group.workspace_id)
+    return group
 
 
 async def _user_member_id(
@@ -140,6 +155,7 @@ async def _pick_default_account_for_user(
         .where(
             Account.user_id == user_id,
             Account.workspace_id.in_(user_workspaces_subq),
+            in_active_workspace(Account.workspace_id),
             Account.is_closed.is_(False),
             Account.type.in_(("checking", "savings")),
         )
@@ -275,7 +291,7 @@ async def create_settlement(
     *,
     commit: bool = True,
 ) -> Optional[GroupSettlement]:
-    group = await _ensure_group_visible(session, group_id, workspace_id, user_id)
+    group = await _ensure_group_writable(session, group_id, workspace_id, user_id)
     if not group:
         return None
 
@@ -435,7 +451,7 @@ async def update_settlement(
     user_id: uuid.UUID,
     data: GroupSettlementUpdate,
 ) -> Optional[GroupSettlement]:
-    group = await _ensure_group_visible(session, group_id, workspace_id, user_id)
+    group = await _ensure_group_writable(session, group_id, workspace_id, user_id)
     if not group:
         return None
 
@@ -501,7 +517,7 @@ async def delete_settlement(
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
 ) -> bool:
-    group = await _ensure_group_visible(session, group_id, workspace_id, user_id)
+    group = await _ensure_group_writable(session, group_id, workspace_id, user_id)
     if not group:
         return False
     result = await session.execute(

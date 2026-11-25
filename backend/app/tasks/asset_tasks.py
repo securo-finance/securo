@@ -19,6 +19,7 @@ from app.core.config import get_settings
 from app.models.asset import Asset
 from app.models.asset_value import AssetValue
 from app.services.asset_service import refresh_all_market_prices
+from app.services.workspace_status_service import in_active_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ async def _apply_growth_rules() -> int:
                     Asset.growth_frequency.isnot(None),
                     Asset.is_archived == False,
                     Asset.sell_date.is_(None),
+                    in_active_workspace(Asset.workspace_id),
                 )
             )
             assets = list(result.scalars().all())

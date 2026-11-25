@@ -16,11 +16,15 @@ from app.core.app_clock import (
     timezone_names,
 )
 from app.models.user import User
+from app.models.workspace import Workspace
 from app.schemas.admin import (
     AdminUserCreate,
     AdminUserList,
     AdminUserRead,
     AdminUserUpdate,
+    AdminWorkspaceList,
+    AdminWorkspaceRead,
+    AdminWorkspaceStatusUpdate,
     AppSettingRead,
     AppSettingUpdate,
     ProviderSettingRead,
@@ -28,6 +32,7 @@ from app.schemas.admin import (
 )
 from app.services import admin_service
 from app.services import provider_settings
+from app.services import workspace_status_service
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -119,6 +124,37 @@ async def delete_user(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+
+def _workspace_read(workspace: Workspace, owners: list[str]) -> AdminWorkspaceRead:
+    item = AdminWorkspaceRead.model_validate(workspace)
+    item.owners = owners
+    return item
+
+
+@router.get("/workspaces", response_model=AdminWorkspaceList)
+async def list_workspaces(
+    search: str = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_superuser),
+):
+    rows, total = await workspace_status_service.list_workspaces(session, search, page, limit)
+    return AdminWorkspaceList(items=[_workspace_read(w, o) for w, o in rows], total=total)
+
+
+@router.patch("/workspaces/{workspace_id}/status", response_model=AdminWorkspaceRead)
+async def update_workspace_status(
+    workspace_id: uuid.UUID,
+    data: AdminWorkspaceStatusUpdate,
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_superuser),
+):
+    updated = await workspace_status_service.set_status(session, workspace_id, data.status)
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    return _workspace_read(*updated)
 
 
 @router.get("/settings/{key}", response_model=AppSettingRead)

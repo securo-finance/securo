@@ -365,6 +365,15 @@ describe('roles', () => {
     })
   }
 
+  it('lets nobody write into a suspended workspace', async () => {
+    workspacesApi.list.mockResolvedValue([makeWorkspace({ role: 'owner', status: 'suspended' })])
+
+    const { result } = await renderWorkspace()
+
+    expect(result.current.canManage).toBe(true)
+    expect(result.current.canWrite).toBe(false)
+  })
+
   it('grants nothing when there is no active workspace', async () => {
     workspacesApi.list.mockResolvedValue([])
 

@@ -4358,5 +4358,22 @@
       "turnedOff": "Wyłączono odczyt dokumentów"
     },
     "unreadPages": "Nieodczytane strony (skany, a model nie czyta obrazów): {{pages}}. Ich wierszy brakuje w tym przeglądzie."
+  },
+  "workspaceStatus": {
+    "notice": "Ta przestrzeń robocza jest zawieszona. Możesz wszystko czytać i eksportować, ale niczego nie można zmienić.",
+    "error": "Ta przestrzeń robocza jest zawieszona: można ją czytać i eksportować, ale nie zmieniać.",
+    "title": "Przestrzenie robocze",
+    "description": "Zawieszoną przestrzeń można czytać i eksportować, ale nie zmieniać, a jej połączenia bankowe przestają się synchronizować.",
+    "search": "Szukaj po nazwie lub e-mailu właściciela...",
+    "empty": "Nie znaleziono przestrzeni roboczych",
+    "suspended": "Zawieszona",
+    "suspend": "Zawieś",
+    "reactivate": "Przywróć",
+    "suspendNamed": "Zawieś {{name}}",
+    "reactivateNamed": "Przywróć {{name}}",
+    "confirmTitle": "Zawiesić {{name}}?",
+    "confirmDescription": "Członkowie nadal mogą czytać i eksportować, ale nie mogą nic zmienić do czasu przywrócenia. Zaplanowane zadania też się zatrzymują.",
+    "showing": "Wyświetlono {{shown}} z {{total}}. Użyj wyszukiwania, aby znaleźć pozostałe.",
+    "updated": "Przestrzeń robocza zaktualizowana"
   }
 }
