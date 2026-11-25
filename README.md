@@ -55,6 +55,7 @@ Open [http://localhost:3000](http://localhost:3000) and create an account. That'
 - Goals and savings targets with progress tracking
 - Asset management with valuation tracking and growth rules
 - Reports: Net Worth and Income vs Expenses with category sparklines
+- Notifications in the app for what needs you, each kind on or off per person
 - Multi-currency support with automatic FX conversion
 - Multi-user support with workspaces, roles, and an admin panel
 - Passkeys, two-factor authentication (TOTP), and OIDC single sign-on

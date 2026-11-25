@@ -96,7 +96,9 @@ def template_language(language: object) -> str:
     language and must not raise while composing: only existing accounts would
     see that error (ADR 0044).
     """
-    return "pt" if isinstance(language, str) and language.lower().startswith("pt") else "en"
+    return (
+        "pt" if isinstance(language, str) and language.lower().startswith("pt") else "en"
+    )
 
 
 def _fields_in(text: str) -> set[str]:
@@ -259,11 +261,7 @@ def password_reset_email(
     app_name: str = "Securo",
     templates: dict[str, dict[str, str]] | None = None,
 ) -> Email:
-    """The recovery message in the account's language.
-
-    Only the languages with a template are written here; anything else gets
-    English, which every instance can be read in.
-    """
+    """The recovery message in the account's language."""
     template = effective_templates(templates)[template_language(language)]
     subject, text = render_template(
         template, app_name=app_name, link=link, minutes=token_minutes

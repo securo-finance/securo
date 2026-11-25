@@ -3130,8 +3130,8 @@
       "chat": "Chat"
     },
     "globalChat": {
-      "title": "Chat",
-      "openHint": "Chat öffnen",
+      "title": "Agent",
+      "openHint": "Agent öffnen",
       "history": "Letzte Konversationen",
       "selectAgent": "Agent auswählen",
       "openSettings": "Agenteneinstellungen",
@@ -4232,5 +4232,104 @@
       "turnedOff": "Dokumente lesen ausgeschaltet"
     },
     "unreadPages": "Nicht gelesene Seiten (Scans, und das Modell liest keine Bilder): {{pages}}. Ihre Zeilen fehlen in dieser Prüfung."
+  },
+  "notifications": {
+    "title": "Benachrichtigungen",
+    "unread": "Ungelesen",
+    "unreadLabel": "Benachrichtigungen, {{number}} ungelesen",
+    "markAllRead": "Alle als gelesen markieren",
+    "empty": "Nichts erfordert deine Aufmerksamkeit.",
+    "loadError": "Benachrichtigungen konnten nicht geladen werden.",
+    "connection": {
+      "title": "{{name}} wird nicht mehr synchronisiert",
+      "rateLimited": "Die Bank erreicht immer wieder ihr Tageslimit."
+    },
+    "recurring": {
+      "title": "{{name}} wurde nicht erstellt",
+      "detail": "Fällig am {{date}}. Prüfe Konto und Einstellungen."
+    },
+    "budget": {
+      "close": "{{name}}: {{percent}} % des Budgets verbraucht",
+      "reached": "{{name}}: Budget aufgebraucht",
+      "detail": "{{actual}} von {{budget}}"
+    },
+    "backup": {
+      "title": "Geplante Sicherung fehlgeschlagen",
+      "detail": "Der letzte Versuch war am {{date}}. Securo versucht es erneut."
+    },
+    "seeAll": "Alle Benachrichtigungen ansehen",
+    "markRead": "Als gelesen markieren",
+    "loadMore": "Mehr laden",
+    "filter": {
+      "all": "Alle",
+      "unread": "Ungelesen"
+    },
+    "emptyFilter": {
+      "all": "Noch keine Benachrichtigungen.",
+      "unread": "Nichts mehr zu lesen."
+    },
+    "flag": {
+      "title": "Überfällige Erinnerungen: {{number}}",
+      "detail": "Markierte Buchungen, deren Erinnerung vorbei ist."
+    },
+    "match": {
+      "title": "Zuordnungen zu prüfen: {{number}}",
+      "detail": "Securo hat mögliche Zuordnungen gefunden und braucht deine Antwort."
+    },
+    "invoice": {
+      "title": "{{name}}: Rechnung überfällig",
+      "detail": "{{amount}}, fällig am {{date}}."
+    },
+    "preferences": {
+      "title": "Einstellungen",
+      "hint": "Wähle, worüber du in diesem Arbeitsbereich informiert werden willst. Andere Mitglieder behalten ihre eigene Auswahl.",
+      "saveError": "Deine Auswahl konnte nicht gespeichert werden.",
+      "loadError": "Deine Einstellungen konnten nicht geladen werden."
+    },
+    "kind": {
+      "connection_error": {
+        "label": "Verbindungen",
+        "hint": "Eine Bank oder ein Plugin wird nicht mehr synchronisiert."
+      },
+      "budget_threshold": {
+        "label": "Budgets",
+        "hint": "Ein Budget hat 80 % oder 100 % erreicht."
+      },
+      "recurring_failed": {
+        "label": "Wiederkehrend",
+        "hint": "Eine wiederkehrende Buchung wurde nicht erstellt."
+      },
+      "flag_overdue": {
+        "label": "Erinnerungen",
+        "hint": "Das Erinnerungsdatum einer markierten Buchung ist vorbei."
+      },
+      "reconciliation_pending": {
+        "label": "Zuordnungen zu prüfen",
+        "hint": "Securo hat mögliche Zuordnungen gefunden und braucht deine Antwort."
+      },
+      "invoice_overdue": {
+        "label": "Rechnungen",
+        "hint": "Eine Rechnung an einen Kunden ist überfällig."
+      },
+      "group_expense": {
+        "label": "Geteilte Ausgaben",
+        "hint": "Jemand fügt eine mit dir geteilte Gruppenausgabe hinzu oder ändert sie."
+      },
+      "group_settlement": {
+        "label": "Gruppenzahlungen",
+        "hint": "Jemand erfasst in einer Gruppe eine Zahlung an dich oder von dir."
+      },
+      "backup_failed": {
+        "label": "Sicherungen",
+        "hint": "Eine geplante Sicherung ist fehlgeschlagen."
+      }
+    },
+    "group": {
+      "added": "{{actor}} hat {{name}} hinzugefügt",
+      "changed": "{{actor}} hat {{name}} geändert",
+      "batch": "{{actor}} hat geteilte Ausgaben hinzugefügt: {{number}}",
+      "share": "Dein Anteil in {{group}}: {{amount}}",
+      "paid": "{{actor}} hat eine Zahlung erfasst"
+    }
   }
 }

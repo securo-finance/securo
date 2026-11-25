@@ -60,6 +60,9 @@ async def forgot_password(
     try:
         user = await user_manager.get_by_email(email)
     except exceptions.UserNotExists:
+        # Spend the hashing time a real account spends, so the answer's timing
+        # does not say the address has no account (ADR 0044).
+        user_manager.spend_password_hash()
         return None
 
     try:

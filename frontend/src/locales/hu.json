@@ -3129,8 +3129,8 @@
       "chat": "Csevegés"
     },
     "globalChat": {
-      "title": "Csevegés",
-      "openHint": "Csevegés megnyitása",
+      "title": "Ügynök",
+      "openHint": "Ügynök megnyitása",
       "history": "Legutóbbi beszélgetések",
       "selectAgent": "Ügynök kiválasztása",
       "openSettings": "Ügynök beállításai",
@@ -4231,5 +4231,104 @@
       "turnedOff": "Dokumentumok olvasása kikapcsolva"
     },
     "unreadPages": "Be nem olvasott oldalak (szkennelt, és a modell nem olvas képeket): {{pages}}. A soraik hiányoznak ebből az áttekintésből."
+  },
+  "notifications": {
+    "title": "Értesítések",
+    "unread": "Olvasatlan",
+    "unreadLabel": "Értesítések, {{number}} olvasatlan",
+    "markAllRead": "Összes megjelölése olvasottként",
+    "empty": "Semmi sem igényli a figyelmedet.",
+    "loadError": "Az értesítéseket nem sikerült betölteni.",
+    "connection": {
+      "title": "Leállt a szinkronizálás: {{name}}",
+      "rateLimited": "A bank folyamatosan eléri a napi korlátot."
+    },
+    "recurring": {
+      "title": "Nem jött létre: {{name}}",
+      "detail": "Esedékes volt: {{date}}. Ellenőrizd a számlát és a beállításokat."
+    },
+    "budget": {
+      "close": "{{name}}: a költségkeret {{percent}}%-a elfogyott",
+      "reached": "{{name}}: a költségkeret elfogyott",
+      "detail": "{{actual}} / {{budget}}"
+    },
+    "backup": {
+      "title": "Az ütemezett biztonsági mentés sikertelen",
+      "detail": "Utolsó próbálkozás: {{date}}. A Securo újra megpróbálja."
+    },
+    "seeAll": "Összes értesítés megtekintése",
+    "markRead": "Megjelölés olvasottként",
+    "loadMore": "Továbbiak betöltése",
+    "filter": {
+      "all": "Összes",
+      "unread": "Olvasatlan"
+    },
+    "emptyFilter": {
+      "all": "Még nincsenek értesítések.",
+      "unread": "Nincs több olvasnivaló."
+    },
+    "flag": {
+      "title": "Lejárt emlékeztetők: {{number}}",
+      "detail": "Megjelölt tranzakciók, amelyek emlékeztetője lejárt."
+    },
+    "match": {
+      "title": "Ellenőrizendő egyezések: {{number}}",
+      "detail": "A Securo lehetséges egyezéseket talált, és a válaszodra vár."
+    },
+    "invoice": {
+      "title": "{{name}}: lejárt számla",
+      "detail": "{{amount}}, esedékes volt: {{date}}."
+    },
+    "preferences": {
+      "title": "Beállítások",
+      "hint": "Válaszd ki, miről szeretnél értesülni ebben a munkaterületben. A többi tag megtartja a saját választásait.",
+      "saveError": "A választást nem sikerült menteni.",
+      "loadError": "A beállításokat nem sikerült betölteni."
+    },
+    "kind": {
+      "connection_error": {
+        "label": "Kapcsolatok",
+        "hint": "Egy bank vagy bővítmény szinkronizálása leállt."
+      },
+      "budget_threshold": {
+        "label": "Költségkeretek",
+        "hint": "Egy költségkeret elérte a 80%-ot vagy a 100%-ot."
+      },
+      "recurring_failed": {
+        "label": "Ismétlődő",
+        "hint": "Egy ismétlődő tranzakció nem jött létre."
+      },
+      "flag_overdue": {
+        "label": "Emlékeztetők",
+        "hint": "Egy megjelölt tranzakció emlékeztetője lejárt."
+      },
+      "reconciliation_pending": {
+        "label": "Ellenőrizendő egyezések",
+        "hint": "A Securo lehetséges egyezéseket talált, és a válaszodra vár."
+      },
+      "invoice_overdue": {
+        "label": "Számlák",
+        "hint": "Egy ügyfélnek kiállított számla lejárt."
+      },
+      "group_expense": {
+        "label": "Közös kiadások",
+        "hint": "Valaki hozzáad vagy módosít egy veled megosztott kiadást egy csoportban."
+      },
+      "group_settlement": {
+        "label": "Csoportos fizetések",
+        "hint": "Valaki neked szóló vagy tőled származó fizetést rögzít egy csoportban."
+      },
+      "backup_failed": {
+        "label": "Biztonsági mentések",
+        "hint": "Egy ütemezett biztonsági mentés sikertelen."
+      }
+    },
+    "group": {
+      "added": "{{actor}} hozzáadta: {{name}}",
+      "changed": "{{actor}} módosította: {{name}}",
+      "batch": "{{actor}} közös kiadásokat adott hozzá: {{number}}",
+      "share": "A te részed itt: {{group}}: {{amount}}",
+      "paid": "{{actor}} fizetést rögzített"
+    }
   }
 }

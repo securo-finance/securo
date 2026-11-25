@@ -56,7 +56,7 @@ from app.providers.base import (
 from app.services.provider_settings import resolve_settings
 from app.services import oauth_state
 from app.services import admin_service
-from app.services import category_line_service, reconciliation_service, recurring_match_service
+from app.services import category_line_service, notification_service, reconciliation_service, recurring_match_service
 from app.services.text_similarity import normalize_words, token_overlap
 from app.services.account_service import (
     LIABILITY_ACCOUNT_TYPES,
@@ -5451,6 +5451,7 @@ async def sync_connection(
         else:
             connection.status = "active"
         connection.settings = _with_sync_failure(connection.settings, failure)
+        await notification_service.connection_changed(session, connection)
         if rate_limited_accounts:
             logger.warning(
                 "Sync %s finished %s: %d account(s) rate-limited by the provider "
@@ -5558,6 +5559,7 @@ async def _mark_failed_sync(
             conn.settings = _with_retry_after(conn.settings, retry_after)
         if failure is not None:
             conn.settings = _with_sync_failure(conn.settings, failure)
+        await notification_service.connection_changed(session, conn)
 
 
 def _with_sync_failure(settings: Optional[dict], failure: Optional[dict]) -> dict:
@@ -5657,6 +5659,7 @@ async def delete_connection(
     connection = await get_connection(session, connection_id, workspace_id)
     if not connection:
         return False
+    await notification_service.connection_changed(session, connection, removed=True)
 
     if keep_accounts:
         # Disconnecting keeps the accounts, their history, payees and
