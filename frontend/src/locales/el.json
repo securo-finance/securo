@@ -2962,6 +2962,29 @@
     "menuItem": "Έλεγχος για ενημερώσεις"
   },
   "admin": {
+    "email": {
+      "title": "Email",
+      "enabled": "Το email είναι ενεργό",
+      "disabled": "Το email είναι ανενεργό",
+      "description": "Πώς φεύγουν τα email επαναφοράς κωδικού. Ο πάροχος και ο αποστολέας προέρχονται από τη ρύθμιση του διακομιστή.",
+      "disabledNote": "Ενεργοποιήστε το EMAIL_ENABLED στον διακομιστή για να στέλνονται σύνδεσμοι επαναφοράς.",
+      "provider": "Πάροχος",
+      "providerSmtp": "Διακομιστής SMTP",
+      "providerResend": "Resend",
+      "sender": "Αποστολέας",
+      "senderMissing": "Δεν έχει οριστεί",
+      "templatesTitle": "Μήνυμα επαναφοράς",
+      "templatesDescription": "Αυτό που διαβάζει το άτομο. Μεταβλητές: {app_name}, {link} και {minutes}. Το σώμα πρέπει να κρατά το {link}.",
+      "subject": "Θέμα",
+      "body": "Σώμα",
+      "linkRequired": "Το σώμα πρέπει να περιέχει το {link}.",
+      "restoreDefault": "Επαναφορά προεπιλεγμένου κειμένου",
+      "save": "Αποθήκευση προτύπων",
+      "saved": "Τα πρότυπα αποθηκεύτηκαν",
+      "saveFailed": "Δεν ήταν δυνατή η αποθήκευση των προτύπων",
+      "languageEn": "Αγγλικά",
+      "languagePt": "Πορτογαλικά"
+    },
     "users": {
       "title": "Διαχείριση χρηστών",
       "searchPlaceholder": "Αναζήτηση χρηστών...",

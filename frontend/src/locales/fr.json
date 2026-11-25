@@ -2977,6 +2977,29 @@
     "menuItem": "Vérifier les mises à jour"
   },
   "admin": {
+    "email": {
+      "title": "E-mail",
+      "enabled": "E-mail activé",
+      "disabled": "E-mail désactivé",
+      "description": "Comment partent les e-mails de récupération de mot de passe. Le fournisseur et l'expéditeur viennent de la configuration du serveur.",
+      "disabledNote": "Activez EMAIL_ENABLED sur le serveur pour envoyer des liens de récupération.",
+      "provider": "Fournisseur",
+      "providerSmtp": "Serveur SMTP",
+      "providerResend": "Resend",
+      "sender": "Expéditeur",
+      "senderMissing": "Non défini",
+      "templatesTitle": "Message de récupération",
+      "templatesDescription": "Ce que la personne lit. Variables : {app_name}, {link} et {minutes} ; le corps doit garder {link}.",
+      "subject": "Objet",
+      "body": "Corps",
+      "linkRequired": "Le corps doit contenir {link}.",
+      "restoreDefault": "Rétablir le texte par défaut",
+      "save": "Enregistrer les modèles",
+      "saved": "Modèles enregistrés",
+      "saveFailed": "Impossible d'enregistrer les modèles",
+      "languageEn": "Anglais",
+      "languagePt": "Portugais"
+    },
     "users": {
       "title": "Gestion des utilisateurs",
       "searchPlaceholder": "Rechercher des utilisateurs...",

@@ -210,3 +210,33 @@ def test_managed_instance_reads_true(monkeypatch):
     monkeypatch.setenv("MANAGED_INSTANCE", "true")
 
     assert Settings(_env_file=None).managed_instance is True
+
+
+EMAIL_COMPOSE_KEYS = (
+    "EMAIL_ENABLED",
+    "EMAIL_PROVIDER",
+    "RESEND_API_KEY",
+    "RESEND_API_URL",
+    "SMTP_HOST",
+    "SMTP_PORT",
+    "SMTP_SECURITY",
+    "SMTP_USERNAME",
+    "SMTP_PASSWORD",
+    "EMAIL_FROM",
+    "PASSWORD_RESET_TOKEN_MINUTES",
+)
+
+
+@pytest.mark.parametrize("compose_file", ["docker-compose.yml", "docker-compose.prod.yml"])
+def test_compose_forwards_every_email_setting(compose_file: str):
+    """A setting the container never receives silently keeps the code default:
+    an .env with EMAIL_PROVIDER=resend booted as smtp and stopped on the
+    missing SMTP_HOST. Both compose files forward every email key, and the
+    provider keeps its own default instead of pinning one."""
+    compose = Path(__file__).resolve().parents[2] / compose_file
+    text = compose.read_text()
+    block = text[text.index("x-backend-env: &backend-env") : text.index("\nx-backend-base:")]
+    for key in EMAIL_COMPOSE_KEYS:
+        assert f"\n  {key}: ${{{key}:-" in block, f"{compose_file} does not forward {key}"
+    assert "\n  EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}" in block
+    assert "\n  RESEND_API_URL: ${RESEND_API_URL:-https://api.resend.com}" in block

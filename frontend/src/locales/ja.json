@@ -2962,6 +2962,29 @@
     "menuItem": "更新を確認"
   },
   "admin": {
+    "email": {
+      "title": "メール",
+      "enabled": "メールは有効です",
+      "disabled": "メールは無効です",
+      "description": "パスワード再設定メールの送信方法です。プロバイダーと送信者はサーバー設定から読み取ります。",
+      "disabledNote": "再設定リンクを送るには、サーバーで EMAIL_ENABLED を有効にしてください。",
+      "provider": "プロバイダー",
+      "providerSmtp": "SMTP サーバー",
+      "providerResend": "Resend",
+      "sender": "送信者",
+      "senderMissing": "未設定",
+      "templatesTitle": "再設定メッセージ",
+      "templatesDescription": "相手が読む内容です。変数: {app_name}、{link}、{minutes}。本文には {link} を残してください。",
+      "subject": "件名",
+      "body": "本文",
+      "linkRequired": "本文に {link} が必要です。",
+      "restoreDefault": "既定の文面に戻す",
+      "save": "テンプレートを保存",
+      "saved": "テンプレートを保存しました",
+      "saveFailed": "テンプレートを保存できませんでした",
+      "languageEn": "英語",
+      "languagePt": "ポルトガル語"
+    },
     "users": {
       "title": "ユーザー管理",
       "searchPlaceholder": "ユーザーを検索...",

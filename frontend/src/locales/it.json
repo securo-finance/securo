@@ -2977,6 +2977,29 @@
     "menuItem": "Controlla aggiornamenti"
   },
   "admin": {
+    "email": {
+      "title": "Email",
+      "enabled": "Email attiva",
+      "disabled": "Email disattivata",
+      "description": "Come partono le email di recupero password. Il provider e il mittente vengono dalla configurazione del server.",
+      "disabledNote": "Attiva EMAIL_ENABLED sul server per inviare i link di recupero.",
+      "provider": "Provider",
+      "providerSmtp": "Server SMTP",
+      "providerResend": "Resend",
+      "sender": "Mittente",
+      "senderMissing": "Non impostato",
+      "templatesTitle": "Messaggio di recupero",
+      "templatesDescription": "Quello che legge la persona. Variabili: {app_name}, {link} e {minutes}; il corpo deve mantenere {link}.",
+      "subject": "Oggetto",
+      "body": "Corpo",
+      "linkRequired": "Il corpo deve contenere {link}.",
+      "restoreDefault": "Ripristina il testo predefinito",
+      "save": "Salva modelli",
+      "saved": "Modelli salvati",
+      "saveFailed": "Impossibile salvare i modelli",
+      "languageEn": "Inglese",
+      "languagePt": "Portoghese"
+    },
     "users": {
       "title": "Gestione utenti",
       "searchPlaceholder": "Cerca utenti...",

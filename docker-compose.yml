@@ -113,6 +113,11 @@ x-backend-env: &backend-env
   # Password recovery by email (ADR 0044), off by default: with EMAIL_ENABLED
   # unset nothing leaves the machine and the forgot-password route answers 503.
   EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
+  # Who carries the message: smtp (your own relay) or resend (hosted API).
+  # With resend nothing under SMTP_* is read; only the RESEND_* values.
+  EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
+  RESEND_API_KEY: ${RESEND_API_KEY:-}
+  RESEND_API_URL: ${RESEND_API_URL:-https://api.resend.com}
   SMTP_HOST: ${SMTP_HOST:-}
   SMTP_PORT: ${SMTP_PORT:-587}
   # starttls | ssl | none. `none` sends the credentials in the clear.
