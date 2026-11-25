@@ -294,6 +294,8 @@ JOBS = [
     ("app.tasks.invoice_schedule_tasks", "_make_session_maker", "_generate_all"),
     ("app.tasks.plugin_tasks", "_session_maker", "_sync_due"),
     ("app.tasks.backup_tasks", "_make_session_maker", "_run_scheduled_backups"),
+    ("app.tasks.notification_tasks", "_make_session_maker", "_evaluate_all"),
+    ("app.tasks.notification_tasks", "_make_session_maker", "_deliver"),
 ]
 
 
