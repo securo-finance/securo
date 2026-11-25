@@ -3006,6 +3006,7 @@
       "deleted": "Gebruiker verwijderd",
       "confirmDeleteTitle": "Gebruiker verwijderen?",
       "confirmDeleteDesc": "Hierdoor worden de gebruiker {{email}} en de workspaces waartoe alleen die gebruiker toegang heeft permanent verwijderd. Wat de gebruiker aan workspaces van anderen heeft toegevoegd, blijft behouden. Deze actie kan niet ongedaan worden gemaakt.",
+      "soleOwner": "\"{{workspace}}\" heeft andere leden en geen andere eigenaar. Maak een van hen eigenaar, of verwijder hen, voordat je deze gebruiker verwijdert.",
       "resetPassword": "Wachtwoord opnieuw instellen",
       "resetPasswordPlaceholder": "Laat dit leeg om actueel te blijven",
       "addDesc": "Maak een nieuw gebruikersaccount aan met toegang tot de applicatie.",

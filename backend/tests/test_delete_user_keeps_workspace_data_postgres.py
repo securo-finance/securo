@@ -5,7 +5,7 @@ On Postgres: the foreign keys are half of the behavior, and SQLite here has none
 
 import asyncio
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -393,6 +393,41 @@ async def test_a_member_cannot_be_promoted_while_they_are_deleted(postgres_sessi
         assert await deleting
         with pytest.raises(HTTPException, match="Member not found"):
             await promoting
+
+
+@pytest.mark.parametrize("wrote", [False, True])
+async def test_parallel_deletions_delete_once(postgres_sessions, wrote):
+    async with postgres_sessions() as session:
+        admin, owner, editor = await _people(session, "owner", "editor")
+        shared = await _workspace(session, "Household", owner=owner, editor=editor)
+        if wrote:
+            await _fill(session, shared, editor)
+        admin_id, editor_id = admin.id, editor.id
+        await session.commit()
+
+    async def remove():
+        async with postgres_sessions() as other:
+            return await admin_service.delete_user(other, editor_id, admin_id)
+
+    results = await asyncio.gather(*(remove() for _ in range(6)), return_exceptions=True)
+    assert sorted(results, key=str) == [False] * 5 + [True]
+
+
+def test_a_closed_row_keeps_only_its_id_and_currency():
+    """A column added to users is stripped, or this says it is not."""
+    user = _user("gone")
+    for column in User.__table__.columns:
+        if column.key in {"id", "preferences"}:
+            continue
+        python_type = column.type.python_type
+        value = {bool: True, str: "theirs", datetime: datetime.now(timezone.utc)}[python_type]
+        setattr(user, column.key, value)
+    before = {column.key: getattr(user, column.key) for column in User.__table__.columns}
+
+    user_removal_service._close(user)
+
+    assert {key for key, value in before.items() if getattr(user, key) == value} == {"id"}
+    assert user.preferences == {"currency_display": "BRL"}
 
 
 async def test_an_active_account_is_never_hidden_by_its_address(postgres_sessions):

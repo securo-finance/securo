@@ -68,7 +68,18 @@ AUTHORED_TABLES = (
 )
 
 
-def not_removed() -> sa.ColumnElement[bool]:
+class SoleOwnerError(ValueError):
+    """The person is the only owner of a workspace that has other members."""
+
+    def __init__(self, workspace_name: str):
+        self.workspace_name = workspace_name
+        super().__init__(
+            f"{workspace_name} has other members and no other owner. "
+            "Make one of them an owner, or remove them, before deleting this user"
+        )
+
+
+def not_removed()-> sa.ColumnElement[bool]:
     # An active account is never hidden, whatever its address says.
     return or_(User.is_active.is_(True), User.email.not_like(_REMOVED_EMAIL_PATTERN))
 
@@ -112,10 +123,7 @@ async def _workspaces_to_delete(session: AsyncSession, user_id: uuid.UUID) -> li
         if "owner" in roles.values() or workspace.managed_by_user_id not in (None, user_id):
             continue
         if roles:
-            raise ValueError(
-                f"{workspace.name} has other members and no other owner. "
-                "Make one of them an owner, or remove them, before deleting this user"
-            )
+            raise SoleOwnerError(workspace.name)
         doomed.append(workspace.id)
     return doomed
 
@@ -159,24 +167,22 @@ async def _is_author(session: AsyncSession, user_id: uuid.UUID) -> bool:
 def _close(user: User) -> None:
     """Strip the row to what the kept data reads: who wrote it, and in which currency."""
     currency = (user.preferences or {}).get("currency_display")
-    user.email = _REMOVED_EMAIL.format(id=user.id)
+    # Every optional column, so one added later is stripped too.
+    for column in User.__table__.columns:
+        if column.nullable:
+            setattr(user, column.key, None)
+    user.email =_REMOVED_EMAIL.format(id=user.id)
     user.hashed_password = PasswordHelper().hash(secrets.token_urlsafe(32))
     user.is_active = False
     user.is_superuser = False
     user.is_verified = False
     user.preferences = {"currency_display": currency} if currency else {}
-    user.theme = None
-    user.totp_secret = None
     user.is_2fa_enabled = False
-    user.oidc_issuer = None
-    user.oidc_subject = None
 
 
 async def remove_user(session: AsyncSession, user: User) -> None:
-    """Delete the person; the caller has already checked that they may be deleted."""
+    """Delete the person; the caller has locked their row and checked that they may be deleted."""
     user_id = user.id
-    # Holds back rows being written in their name until this commits.
-    await session.refresh(user, with_for_update=True)
     workspace_ids = await _workspaces_to_delete(session, user_id)
     if workspace_ids:
         await _delete_workspaces(session, workspace_ids)

@@ -3186,6 +3186,7 @@
       "deleted": "Uživatel smazán",
       "confirmDeleteTitle": "Smazat uživatele?",
       "confirmDeleteDesc": "Uživatel {{email}} a pracovní prostory, ke kterým má přístup jen on, budou trvale smazány. To, co přidal do pracovních prostorů jiných lidí, zůstane zachováno. Tuto akci nelze vrátit zpět.",
+      "soleOwner": "„{{workspace}}“ má další členy a žádného dalšího vlastníka. Než tohoto uživatele smažete, udělejte z jednoho z nich vlastníka, nebo je odeberte.",
       "resetPassword": "Resetovat heslo",
       "resetPasswordPlaceholder": "Ponechat prázdné pro zachování aktuálního hesla",
       "addDesc": "Vytvořit nový uživatelský účet s přístupem do aplikace.",

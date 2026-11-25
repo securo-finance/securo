@@ -192,6 +192,19 @@ class TestAdminUserCRUD:
         )
         assert get_resp.status_code == 404
 
+    async def test_delete_sole_owner_is_refused_with_a_code(
+        self, client: AsyncClient, admin_auth_headers: dict, test_user: User,
+        test_workspace, viewer_auth_headers: dict,
+    ):
+        response = await client.delete(
+            f"/api/admin/users/{test_user.id}", headers=admin_auth_headers
+        )
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        assert detail["code"] == "user_sole_owner"
+        assert detail["workspace"] == test_workspace.name
+        assert detail["message"].startswith(test_workspace.name)
+
     async def test_update_user_email_conflict(self, client: AsyncClient, admin_auth_headers: dict, test_superuser: User):
         # Create two users
         resp_a = await client.post(

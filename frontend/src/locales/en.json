@@ -3004,6 +3004,7 @@
       "deleted": "User deleted",
       "confirmDeleteTitle": "Delete user?",
       "confirmDeleteDesc": "This will permanently delete the user {{email}} and the workspaces only they have access to. What they added to other people's workspaces is kept. This action cannot be undone.",
+      "soleOwner": "\"{{workspace}}\" has other members and no other owner. Make one of them an owner, or remove them, before deleting this user.",
       "resetPassword": "Reset password",
       "resetPasswordPlaceholder": "Leave blank to keep current",
       "addDesc": "Create a new user account with access to the application.",

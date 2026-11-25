@@ -3005,6 +3005,7 @@
       "deleted": "Benutzer gelöscht",
       "confirmDeleteTitle": "Benutzer löschen?",
       "confirmDeleteDesc": "Dadurch werden der Benutzer {{email}} und die Workspaces, auf die nur er Zugriff hat, dauerhaft gelöscht. Was er in Workspaces anderer Personen hinzugefügt hat, bleibt erhalten. Diese Aktion kann nicht rückgängig gemacht werden.",
+      "soleOwner": "„{{workspace}}“ hat weitere Mitglieder und keinen weiteren Besitzer. Mache eines davon zum Besitzer oder entferne sie, bevor du diesen Benutzer löschst.",
       "resetPassword": "Passwort zurücksetzen",
       "resetPasswordPlaceholder": "Leer lassen, um aktuelles zu behalten",
       "addDesc": "Erstelle ein neues Benutzerkonto mit Zugriff auf die Anwendung.",

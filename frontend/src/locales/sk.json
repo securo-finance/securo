@@ -3170,6 +3170,7 @@
       "deleted": "Používateľ vymazaný",
       "confirmDeleteTitle": "Vymazať používateľa?",
       "confirmDeleteDesc": "Používateľ {{email}} a pracovné priestory, ku ktorým má prístup iba on, budú natrvalo vymazané. To, čo pridal do pracovných priestorov iných ľudí, zostane zachované. Túto akciu nie je možné vrátiť späť.",
+      "soleOwner": "„{{workspace}}“ má ďalších členov a žiadneho ďalšieho vlastníka. Pred vymazaním tohto používateľa urob jedného z nich vlastníkom alebo ich odstráň.",
       "resetPassword": "Resetovať heslo",
       "resetPasswordPlaceholder": "Nechaj prázdne pre zachovanie aktuálneho",
       "addDesc": "Vytvor nový používateľský účet s prístupom do aplikácie.",

@@ -3019,6 +3019,7 @@
       "deleted": "Usuário excluído",
       "confirmDeleteTitle": "Excluir usuário?",
       "confirmDeleteDesc": "Isso excluirá permanentemente o usuário {{email}} e os workspaces aos quais só ele tem acesso. O que ele adicionou a workspaces de outras pessoas será mantido. Esta ação não pode ser desfeita.",
+      "soleOwner": "\"{{workspace}}\" tem outros membros e nenhum outro dono. Torne um deles dono, ou remova-os, antes de excluir este usuário.",
       "resetPassword": "Redefinir senha",
       "resetPasswordPlaceholder": "Deixe em branco para manter a atual",
       "addDesc": "Criar uma nova conta de usuário com acesso ao aplicativo.",

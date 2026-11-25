@@ -3019,6 +3019,7 @@
       "deleted": "Utente eliminato",
       "confirmDeleteTitle": "Eliminare l'utente?",
       "confirmDeleteDesc": "Questo eliminerà definitivamente l'utente {{email}} e le aree di lavoro a cui solo lui ha accesso. Ciò che ha aggiunto alle aree di lavoro di altre persone viene conservato. Questa azione non può essere annullata.",
+      "soleOwner": "\"{{workspace}}\" ha altri membri e nessun altro proprietario. Rendi proprietario uno di loro, o rimuovili, prima di eliminare questo utente.",
       "resetPassword": "Reimposta password",
       "resetPasswordPlaceholder": "Lascia vuoto per mantenere l'attuale",
       "addDesc": "Crea un nuovo account utente con accesso all'applicazione.",

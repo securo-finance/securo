@@ -160,7 +160,14 @@ async def delete_user(
     if user_id == current_user_id:
         raise ValueError("Cannot delete your own account")
 
-    user = await get_user(session, user_id)
+    # Locked: parallel deletions queue, and the next finds nothing left. It also
+    # holds back rows being written in their name until this commits.
+    user = await session.scalar(
+        select(User)
+        .where(User.id == user_id, user_removal_service.not_removed())
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     if not user:
         return False
 
