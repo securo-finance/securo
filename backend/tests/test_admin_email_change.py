@@ -117,6 +117,7 @@ async def test_the_access_log_shows_the_old_address_the_new_one_and_the_fields(
     assert len(entries) == 1
     entry = entries[0]
     assert entry.target_email == VICTIM_EMAIL
+    assert entry.changes is not None
     assert entry.changes["email"] == {
         "from": VICTIM_EMAIL,
         "to": NEW_EMAIL,
@@ -272,26 +273,29 @@ async def test_with_recovery_on_the_administrator_still_cannot_take_the_account(
     takeover needs both features, and this is the test that keeps the pair
     honest once they are together.
     """
-    password_reset = pytest.importorskip(
+    pytest.importorskip(
         "app.api.password_reset", reason="the recovery route from #540 is not here"
     )
-    del password_reset
+
+    from importlib import import_module
+    from typing import Any
 
     from app.core.config import get_settings
-    from app.services import email_service
 
+    # The transport's settings and module only exist on the branch from #540,
+    # so they are reached by name: this file has to type-check on both.
+    email_service = import_module("app.services.email_service")
     settings = get_settings()
-    previous = (
-        settings.email_enabled,
-        settings.frontend_url,
-        settings.smtp_host,
-        settings.email_from,
-    )
-    settings.email_enabled = True
-    settings.frontend_url = "https://app.example.com"
-    settings.smtp_host = "smtp.example.com"
-    settings.email_from = "Securo <no-reply@example.com>"
-    sent: list[email_service.Email] = []
+    relay = {
+        "email_enabled": True,
+        "frontend_url": "https://app.example.com",
+        "smtp_host": "smtp.example.com",
+        "email_from": "Securo <no-reply@example.com>",
+    }
+    previous = {name: getattr(settings, name) for name in relay}
+    for name, value in relay.items():
+        setattr(settings, name, value)
+    sent: list[Any] = []
 
     async def _fake_send(message, _settings=None):
         sent.append(message)
@@ -339,9 +343,5 @@ async def test_with_recovery_on_the_administrator_still_cannot_take_the_account(
         ).status_code == 200
         assert (await _login(client, NEW_EMAIL, new_password)).status_code != 200
     finally:
-        (
-            settings.email_enabled,
-            settings.frontend_url,
-            settings.smtp_host,
-            settings.email_from,
-        ) = previous
+        for name, value in previous.items():
+            setattr(settings, name, value)
