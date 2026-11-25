@@ -3013,6 +3013,29 @@
     "menuItem": "Перевірити оновлення"
   },
   "admin": {
+    "email": {
+      "title": "Ел. пошта",
+      "enabled": "Пошту ввімкнено",
+      "disabled": "Пошту вимкнено",
+      "description": "Як надсилаються листи для відновлення пароля. Провайдер і відправник беруться з налаштувань сервера.",
+      "disabledNote": "Увімкніть EMAIL_ENABLED на сервері, щоб надсилати посилання для відновлення.",
+      "provider": "Провайдер",
+      "providerSmtp": "Сервер SMTP",
+      "providerResend": "Resend",
+      "sender": "Відправник",
+      "senderMissing": "Не задано",
+      "templatesTitle": "Лист для відновлення",
+      "templatesDescription": "Те, що прочитає людина. Змінні: {app_name}, {link} і {minutes}; у тексті має залишитися {link}.",
+      "subject": "Тема",
+      "body": "Текст",
+      "linkRequired": "У тексті має бути {link}.",
+      "restoreDefault": "Повернути типовий текст",
+      "save": "Зберегти шаблони",
+      "saved": "Шаблони збережено",
+      "saveFailed": "Не вдалося зберегти шаблони",
+      "languageEn": "Англійська",
+      "languagePt": "Португальська"
+    },
     "users": {
       "title": "Керування користувачами",
       "searchPlaceholder": "Пошук користувачів...",

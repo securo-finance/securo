@@ -146,7 +146,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         the message is logged and swallowed, so a known and an unknown address
         still get the same answer and the endpoint reveals nothing.
         """
-        from app.services import email_service
+        from app.services import admin_service, email_service
 
         settings = get_settings()
         if not settings.email_enabled:
@@ -154,11 +154,14 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         # A stored null is not a language; keep the default instead of
         # crashing while composing (which only a known address would hit).
         language = (user.preferences or {}).get("language") or "en"
+        templates = await admin_service.get_email_templates(self.db_session)
         message = email_service.password_reset_email(
             to=user.email,
             link=email_service.password_reset_link(token, settings),
             language=language,
             token_minutes=settings.password_reset_token_minutes,
+            app_name=settings.app_name,
+            templates=templates,
         )
         # Not sent here: handing it to the relay on this path would make a
         # known address answer later than an unknown one whenever the relay is

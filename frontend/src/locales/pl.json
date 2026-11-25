@@ -3096,6 +3096,29 @@
     "menuItem": "Sprawdź aktualizacje"
   },
   "admin": {
+    "email": {
+      "title": "E-mail",
+      "enabled": "E-mail włączony",
+      "disabled": "E-mail wyłączony",
+      "description": "Jak wychodzą e-maile do odzyskiwania hasła. Dostawca i nadawca pochodzą z konfiguracji serwera.",
+      "disabledNote": "Włącz EMAIL_ENABLED na serwerze, aby wysyłać linki do odzyskiwania.",
+      "provider": "Dostawca",
+      "providerSmtp": "Serwer SMTP",
+      "providerResend": "Resend",
+      "sender": "Nadawca",
+      "senderMissing": "Nie ustawiono",
+      "templatesTitle": "Wiadomość odzyskiwania",
+      "templatesDescription": "To, co czyta osoba. Zmienne: {app_name}, {link} i {minutes}; treść musi zachować {link}.",
+      "subject": "Temat",
+      "body": "Treść",
+      "linkRequired": "Treść musi zawierać {link}.",
+      "restoreDefault": "Przywróć domyślny tekst",
+      "save": "Zapisz szablony",
+      "saved": "Szablony zapisane",
+      "saveFailed": "Nie udało się zapisać szablonów",
+      "languageEn": "Angielski",
+      "languagePt": "Portugalski"
+    },
     "users": {
       "title": "Zarządzanie użytkownikami",
       "searchPlaceholder": "Szukaj użytkowników...",

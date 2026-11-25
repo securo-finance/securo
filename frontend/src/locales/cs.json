@@ -3144,6 +3144,29 @@
     "menuItem": "Zkontrolovat aktualizace"
   },
   "admin": {
+    "email": {
+      "title": "E-mail",
+      "enabled": "E-mail je zapnutý",
+      "disabled": "E-mail je vypnutý",
+      "description": "Jak odcházejí e-maily pro obnovení hesla. Poskytovatel a odesílatel pocházejí z konfigurace serveru.",
+      "disabledNote": "Zapněte EMAIL_ENABLED na serveru, aby se posílaly odkazy pro obnovení.",
+      "provider": "Poskytovatel",
+      "providerSmtp": "Server SMTP",
+      "providerResend": "Resend",
+      "sender": "Odesílatel",
+      "senderMissing": "Nenastaveno",
+      "templatesTitle": "Zpráva pro obnovení",
+      "templatesDescription": "To, co člověk čte. Proměnné: {app_name}, {link} a {minutes}; tělo musí zachovat {link}.",
+      "subject": "Předmět",
+      "body": "Tělo",
+      "linkRequired": "Tělo musí obsahovat {link}.",
+      "restoreDefault": "Obnovit výchozí text",
+      "save": "Uložit šablony",
+      "saved": "Šablony uloženy",
+      "saveFailed": "Šablony se nepodařilo uložit",
+      "languageEn": "Angličtina",
+      "languagePt": "Portugalština"
+    },
     "users": {
       "title": "Správa uživatelů",
       "searchPlaceholder": "Hledat uživatele...",

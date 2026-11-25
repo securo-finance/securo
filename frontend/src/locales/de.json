@@ -2963,6 +2963,29 @@
     "menuItem": "Nach Updates suchen"
   },
   "admin": {
+    "email": {
+      "title": "E-Mail",
+      "enabled": "E-Mail ist an",
+      "disabled": "E-Mail ist aus",
+      "description": "Wie die E-Mails zur Passwort-Wiederherstellung rausgehen. Anbieter und Absender kommen aus der Serverkonfiguration.",
+      "disabledNote": "Aktiviere EMAIL_ENABLED auf dem Server, um Wiederherstellungslinks zu senden.",
+      "provider": "Anbieter",
+      "providerSmtp": "SMTP-Server",
+      "providerResend": "Resend",
+      "sender": "Absender",
+      "senderMissing": "Nicht gesetzt",
+      "templatesTitle": "Wiederherstellungsnachricht",
+      "templatesDescription": "Was die Person liest. Platzhalter: {app_name}, {link} und {minutes}; der Text muss {link} behalten.",
+      "subject": "Betreff",
+      "body": "Text",
+      "linkRequired": "Der Text muss {link} enthalten.",
+      "restoreDefault": "Standardtext wiederherstellen",
+      "save": "Vorlagen speichern",
+      "saved": "Vorlagen gespeichert",
+      "saveFailed": "Die Vorlagen konnten nicht gespeichert werden",
+      "languageEn": "Englisch",
+      "languagePt": "Portugiesisch"
+    },
     "users": {
       "title": "Benutzerverwaltung",
       "searchPlaceholder": "Benutzer suchen...",
