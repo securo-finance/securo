@@ -5,8 +5,12 @@ import type { AxiosResponse } from 'axios'
 import { markDataChanged } from '@/lib/data-changed'
 import type { NumberFormat, DateFormat } from '@/lib/format'
 import type {
+  AppNotificationKind,
+  AppNotificationList,
+  NotificationPreference,
   User,
   AdminUser,
+  AdminAccessLogList,
   AdminUserList,
   Passkey,
   PasskeyOptionsResponse,
@@ -283,6 +287,13 @@ export const auth = {
     const { data } = await api.post('/auth/register', { email, password, preferences })
     return data
   },
+  /** Ask for a recovery link. Unknown addresses get the same answer. */
+  forgotPassword: async (email: string): Promise<void> => {
+    await api.post('/auth/forgot-password', { email }, readOnly)
+  },
+  resetPassword: async (token: string, password: string): Promise<void> => {
+    await api.post('/auth/reset-password', { token, password }, readOnly)
+  },
   me: async (): Promise<User> => {
     const { data } = await api.get('/users/me')
     return data
@@ -294,6 +305,21 @@ export const auth = {
   changePassword: async (password: string): Promise<User> => {
     const { data } = await api.patch('/users/me', { password })
     return data
+  },
+  /**
+   * Move the account to the address an administrator asked for (ADR 0042,
+   * #556). Only the person whose account it is can, from their own session —
+   * which is what makes the request useless as a way into the account.
+   *
+   * `email` is the address that was on screen: sending it back means accepting
+   * the address the person read, not whatever an administrator asked for after.
+   */
+  confirmEmailChange: async (email: string): Promise<User> => {
+    const { data } = await api.post('/users/me/email-change', { email })
+    return data
+  },
+  declineEmailChange: async (): Promise<void> => {
+    await api.delete('/users/me/email-change')
   },
   setup2fa: async (): Promise<{ secret: string; otpauth_uri: string }> => {
     const { data } = await api.post('/auth/2fa/setup')
@@ -362,7 +388,7 @@ export const auth = {
     }, readOnly)
     return data
   },
-  oidcConfig: async (): Promise<{ enabled: boolean; provider_name: string; local_auth_enabled: boolean }> => {
+  oidcConfig: async (): Promise<{ enabled: boolean; provider_name: string; local_auth_enabled: boolean; password_reset_enabled: boolean }> => {
     // The login card blocks on this call while it decides which sign-in
     // methods to offer, so a hung request must fail fast and let the caller
     // fall back instead of leaving the page stuck on its loading state.
@@ -376,6 +402,14 @@ export const auth = {
     // Only the sign-out asks this: it may reach the provider, so it is kept
     // off /config, which the sign-in page waits on.
     const { data } = await api.get('/auth/oidc/logout-url', { timeout: 10000 })
+    return data
+  },
+}
+
+/** Administrative actions on my account, and on members of workspaces I own (ADR 0042). */
+export const accessLog = {
+  mine: async (params?: { page?: number; limit?: number }): Promise<AdminAccessLogList> => {
+    const { data } = await api.get('/access-log/mine', { params })
     return data
   },
 }
@@ -2112,6 +2146,21 @@ export interface TimezoneSetting {
   available: string[]
 }
 
+export interface EmailTemplate {
+  subject: string
+  body: string
+}
+
+/** How the recovery email is set up, and the templates it would use. */
+export interface EmailState {
+  enabled: boolean
+  provider: 'smtp' | 'resend'
+  /** The From address; read-only, it comes from the server environment. */
+  sender: string
+  /** Keyed by language: 'en' and 'pt'. */
+  templates: Record<string, EmailTemplate>
+}
+
 export const timezones = {
   list: async (): Promise<{ default: string; available: string[] }> => {
     const { data } = await api.get('/timezones')
@@ -2132,15 +2181,29 @@ export const admin = {
     const { data } = await api.post('/admin/users', user)
     return data
   },
-  updateUser: async (id: string, user: Partial<{ email: string; password: string; is_active: boolean; is_superuser: boolean; preferences: Record<string, unknown> }>): Promise<AdminUser> => {
+  /** Changing an account needs a reason, and it is logged (ADR 0042). */
+  updateUser: async (id: string, user: { reason: string; email?: string; is_active?: boolean; is_superuser?: boolean; preferences?: Record<string, unknown> }): Promise<AdminUser> => {
     const { data } = await api.patch(`/admin/users/${id}`, user)
     return data
   },
-  deleteUser: async (id: string): Promise<void> => {
-    await api.delete(`/admin/users/${id}`)
+  deleteUser: async (id: string, reason: string): Promise<void> => {
+    await api.delete(`/admin/users/${id}`, { params: { reason } })
+  },
+  accessLog: async (params?: { user_id?: string; page?: number; limit?: number }): Promise<AdminAccessLogList> => {
+    const { data } = await api.get('/admin/access-log', { params })
+    return data
   },
   providerSettings: async (): Promise<ProviderSettingStatus[]> => {
     const { data } = await api.get('/admin/provider-settings')
+    return data
+  },
+  emailState: async (): Promise<EmailState> => {
+    const { data } = await api.get('/admin/email')
+    return data
+  },
+  /** Replace the recovery templates; an empty object restores the built-in text. */
+  updateEmailTemplates: async (templates: Record<string, EmailTemplate>): Promise<EmailState> => {
+    const { data } = await api.put('/admin/email', { templates })
     return data
   },
   updateProviderSettings: async (
@@ -2210,6 +2273,41 @@ export const uiLayouts = {
   },
   reset: async (surface: 'dashboard' | 'reports', workspaceId?: string | null): Promise<void> => {
     await api.delete(`/ui/layouts/${surface}`, workspaceHeader(workspaceId))
+  },
+}
+
+// Reading a notification changes nothing other tabs show.
+export type NotificationFilter = 'open' | 'unread' | 'all'
+
+export const notifications = {
+  list: async (
+    params: { status?: NotificationFilter; limit?: number; offset?: number } = {},
+  ): Promise<AppNotificationList> => {
+    const { data } = await api.get('/notifications', { params })
+    return data
+  },
+  preferences: async (): Promise<NotificationPreference[]> => {
+    const { data } = await api.get('/notifications/preferences')
+    return data
+  },
+  // `workspaceId` pins the write: it may wait in line while another tab switches workspace.
+  setPreference: async (change: {
+    kind: AppNotificationKind
+    channel: string
+    enabled: boolean
+    workspaceId?: string
+  }): Promise<void> => {
+    await api.put(
+      `/notifications/preferences/${change.kind}/${change.channel}`,
+      { enabled: change.enabled },
+      { ...readOnly, ...workspaceHeader(change.workspaceId) },
+    )
+  },
+  markRead: async (id: string): Promise<void> => {
+    await api.post(`/notifications/${id}/read`, undefined, readOnly)
+  },
+  markAllRead: async (): Promise<void> => {
+    await api.post('/notifications/read-all', undefined, readOnly)
   },
 }
 

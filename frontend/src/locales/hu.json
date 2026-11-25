@@ -743,6 +743,16 @@
     "email": "E-mail",
     "password": "Jelszó",
     "forgotPassword": "Elfelejtetted a jelszavad?",
+    "forgotPasswordDescription": "Add meg a fiókod e-mail-címét, és elküldünk egy hivatkozást az új jelszó kiválasztásához.",
+    "sendResetLink": "Helyreállítási hivatkozás küldése",
+    "resetSentTitle": "Ellenőrizd az e-mailjeidet",
+    "resetSentBody": "Ha létezik fiók a(z) {{email}} címmel, a helyreállítási hivatkozás úton van. Hamarosan lejár.",
+    "resetUnavailable": "Az e-mailes jelszó-helyreállítás nincs bekapcsolva ezen a példányon. Kérdezd a rendszergazdát.",
+    "resetRequestError": "Nem sikerült elküldeni a helyreállítási hivatkozást. Próbáld újra.",
+    "resetPasswordDescription": "Válassz új jelszót a fiókodhoz.",
+    "resetPasswordRejected": "Az új jelszót nem fogadták el. Használj legalább 8 karaktert, és próbáld újra.",
+    "resetTokenMissing": "Ez a hivatkozás hiányos. Nyisd meg újra a helyreállítási e-mail hivatkozását, vagy kérj újat.",
+    "resetTokenInvalid": "Ez a helyreállítási hivatkozás érvénytelen vagy lejárt. Kérj újat.",
     "loginDescription": "Jelentkezz be a fiókod eléréséhez",
     "invalidCredentials": "Hibás e-mail-cím vagy jelszó",
     "serverError": "Nem sikerült csatlakozni a szerverhez. Ellenőrizd a kapcsolatot, illetve hogy fut-e a backend, majd próbáld újra.",
@@ -753,6 +763,8 @@
     "changePassword": "Jelszó módosítása",
     "newPassword": "Új jelszó",
     "passwordTooShort": "A jelszónak legalább 8 karakterből kell állnia",
+    "passwordTooLong": "A jelszó legfeljebb 72 karakter lehet",
+    "resetPassword": "Jelszó visszaállítása",
     "currentPassword": "Jelenlegi jelszó",
     "currentPasswordWrong": "A jelenlegi jelszó hibás",
     "passwordChanged": "Jelszó sikeresen módosítva",
@@ -2950,6 +2962,33 @@
     "menuItem": "Frissítések keresése"
   },
   "admin": {
+    "email": {
+      "title": "E-mail",
+      "enabled": "Az e-mail be van kapcsolva",
+      "disabled": "Az e-mail ki van kapcsolva",
+      "description": "Hogyan mennek ki a jelszó-visszaállító e-mailek. A szolgáltató és a feladó a szerver beállításaiból jön.",
+      "disabledNote": "Kapcsold be az EMAIL_ENABLED-et a szerveren a visszaállító hivatkozások küldéséhez.",
+      "provider": "Szolgáltató",
+      "providerSmtp": "SMTP-kiszolgáló",
+      "providerResend": "Resend",
+      "sender": "Feladó",
+      "senderMissing": "Nincs beállítva",
+      "templatesTitle": "Visszaállító üzenet",
+      "templatesDescription": "Amit a személy olvas. Változók: {app_name}, {link} és {minutes}; a {link} elemnek egyedül kell állnia egy saját sorban, és semmi más nem lehet hivatkozás.",
+      "subject": "Tárgy",
+      "body": "Törzs",
+      "linkRequired": "A törzsnek tartalmaznia kell a {link} elemet.",
+      "linkInSubject": "A tárgy nem tartalmazhat {link} elemet vagy címet.",
+      "linkOnce": "A törzsnek pontosan egyszer kell tartalmaznia a {link} elemet.",
+      "linkAlone": "A {link} helyőrzőnek egyedül kell állnia a saját sorában.",
+      "otherLink": "Az üzenet nem vezethet máshová, csak a {link} címre.",
+      "restoreDefault": "Alapértelmezett szöveg visszaállítása",
+      "save": "Sablonok mentése",
+      "saved": "Sablonok mentve",
+      "saveFailed": "A sablonokat nem sikerült menteni",
+      "languageEn": "Angol",
+      "languagePt": "Portugál"
+    },
     "users": {
       "title": "Felhasználók kezelése",
       "searchPlaceholder": "Felhasználók keresése...",
@@ -2969,12 +3008,16 @@
       "deleted": "Felhasználó törölve",
       "confirmDeleteTitle": "Törlöd a felhasználót?",
       "confirmDeleteDesc": "Ezzel véglegesen törlöd a(z) {{email}} felhasználót és az összes adatát. Ez a művelet nem vonható vissza.",
-      "resetPassword": "Jelszó visszaállítása",
-      "resetPasswordPlaceholder": "Hagyd üresen a jelenlegi megtartásához",
+      "reason": "Indok",
+      "reasonPlaceholder": "Miért történik ez a módosítás?",
+      "reasonHint": "A hozzáférési naplóba kerül, és az érintett fiók látja.",
       "addDesc": "Új felhasználói fiók létrehozása, amely hozzáfér az alkalmazáshoz.",
       "adminRole": "Adminisztrátori jogosultságok",
       "enabled": "Be",
-      "disabled": "Ki"
+      "disabled": "Ki",
+      "pending": "Várakozik",
+      "pendingEmail": "Kért cím: {{email}}, a tulajdonosra vár",
+      "emailPendingHint": "A cím csak a tulajdonos megerősítése után változik meg."
     },
     "settings": {
       "title": "Adminisztrációs beállítások",
@@ -3094,8 +3137,8 @@
       "chat": "Csevegés"
     },
     "globalChat": {
-      "title": "Csevegés",
-      "openHint": "Csevegés megnyitása",
+      "title": "Ügynök",
+      "openHint": "Ügynök megnyitása",
       "history": "Legutóbbi beszélgetések",
       "selectAgent": "Ügynök kiválasztása",
       "openSettings": "Ügynök beállításai",
@@ -4196,5 +4239,132 @@
       "turnedOff": "Dokumentumok olvasása kikapcsolva"
     },
     "unreadPages": "Be nem olvasott oldalak (szkennelt, és a modell nem olvas képeket): {{pages}}. A soraik hiányoznak ebből az áttekintésből."
+  },
+  "notifications": {
+    "title": "Értesítések",
+    "unread": "Olvasatlan",
+    "unreadLabel": "Értesítések, {{number}} olvasatlan",
+    "markAllRead": "Összes megjelölése olvasottként",
+    "empty": "Semmi sem igényli a figyelmedet.",
+    "loadError": "Az értesítéseket nem sikerült betölteni.",
+    "connection": {
+      "title": "Leállt a szinkronizálás: {{name}}",
+      "rateLimited": "A bank folyamatosan eléri a napi korlátot."
+    },
+    "recurring": {
+      "title": "Nem jött létre: {{name}}",
+      "detail": "Esedékes volt: {{date}}. Ellenőrizd a számlát és a beállításokat."
+    },
+    "budget": {
+      "close": "{{name}}: a költségkeret {{percent}}%-a elfogyott",
+      "reached": "{{name}}: a költségkeret elfogyott",
+      "detail": "{{actual}} / {{budget}}"
+    },
+    "backup": {
+      "title": "Az ütemezett biztonsági mentés sikertelen",
+      "detail": "Utolsó próbálkozás: {{date}}. A Securo újra megpróbálja."
+    },
+    "seeAll": "Összes értesítés megtekintése",
+    "markRead": "Megjelölés olvasottként",
+    "loadMore": "Továbbiak betöltése",
+    "filter": {
+      "all": "Összes",
+      "unread": "Olvasatlan"
+    },
+    "emptyFilter": {
+      "all": "Még nincsenek értesítések.",
+      "unread": "Nincs több olvasnivaló."
+    },
+    "flag": {
+      "title": "Lejárt emlékeztetők: {{number}}",
+      "detail": "Megjelölt tranzakciók, amelyek emlékeztetője lejárt."
+    },
+    "match": {
+      "title": "Ellenőrizendő egyezések: {{number}}",
+      "detail": "A Securo lehetséges egyezéseket talált, és a válaszodra vár."
+    },
+    "invoice": {
+      "title": "{{name}}: lejárt számla",
+      "detail": "{{amount}}, esedékes volt: {{date}}."
+    },
+    "preferences": {
+      "title": "Beállítások",
+      "hint": "Válaszd ki, miről szeretnél értesülni ebben a munkaterületben. A többi tag megtartja a saját választásait.",
+      "saveError": "A választást nem sikerült menteni.",
+      "loadError": "A beállításokat nem sikerült betölteni."
+    },
+    "kind": {
+      "connection_error": {
+        "label": "Kapcsolatok",
+        "hint": "Egy bank vagy bővítmény szinkronizálása leállt."
+      },
+      "budget_threshold": {
+        "label": "Költségkeretek",
+        "hint": "Egy költségkeret elérte a 80%-ot vagy a 100%-ot."
+      },
+      "recurring_failed": {
+        "label": "Ismétlődő",
+        "hint": "Egy ismétlődő tranzakció nem jött létre."
+      },
+      "flag_overdue": {
+        "label": "Emlékeztetők",
+        "hint": "Egy megjelölt tranzakció emlékeztetője lejárt."
+      },
+      "reconciliation_pending": {
+        "label": "Ellenőrizendő egyezések",
+        "hint": "A Securo lehetséges egyezéseket talált, és a válaszodra vár."
+      },
+      "invoice_overdue": {
+        "label": "Számlák",
+        "hint": "Egy ügyfélnek kiállított számla lejárt."
+      },
+      "group_expense": {
+        "label": "Közös kiadások",
+        "hint": "Valaki hozzáad vagy módosít egy veled megosztott kiadást egy csoportban."
+      },
+      "group_settlement": {
+        "label": "Csoportos fizetések",
+        "hint": "Valaki neked szóló vagy tőled származó fizetést rögzít egy csoportban."
+      },
+      "backup_failed": {
+        "label": "Biztonsági mentések",
+        "hint": "Egy ütemezett biztonsági mentés sikertelen."
+      }
+    },
+    "group": {
+      "added": "{{actor}} hozzáadta: {{name}}",
+      "changed": "{{actor}} módosította: {{name}}",
+      "batch": "{{actor}} közös kiadásokat adott hozzá: {{number}}",
+      "share": "A te részed itt: {{group}}: {{amount}}",
+      "paid": "{{actor}} fizetést rögzített"
+    }
+  },
+  "accessLog": {
+    "title": "Hozzáférési napló",
+    "description": "Minden adminisztratív művelet a fiókján és az Ön tulajdonában lévő munkaterületek tagjain.",
+    "empty": "Nincs rögzített adminisztratív művelet.",
+    "actionUpdate": "Fiók módosítva",
+    "actionDelete": "Fiók törölve",
+    "actionOther": "Fiók módosítva",
+    "by": "Végrehajtó: {{email}}",
+    "target": "Fiók: {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Továbbiak betöltése",
+    "loadError": "A hozzáférési napló nem tölthető be.",
+    "emailChange": "Cím {{from}} → {{to}}",
+    "emailPending": "a fiók tulajdonosának megerősítésére vár",
+    "otherChanges": "Ezt is módosították: {{fields}}"
+  },
+  "emailChange": {
+    "title": "E-mail-cím módosítása",
+    "description": "Egy rendszergazda kérte, hogy a fiókja címe {{email}} legyen. Amíg nem erősíti meg, a fiók a jelenlegi címet használja.",
+    "accept": "Az új cím elfogadása",
+    "decline": "A jelenlegi cím megtartása",
+    "accepted": "A fiókja mostantól a(z) {{email}} címet használja",
+    "declined": "A fiókja megtartja a jelenlegi címet",
+    "unavailable": "Ez a cím már nem elérhető",
+    "failed": "A döntését nem sikerült rögzíteni",
+    "replaced": "Az adminisztrátor új kérést küldött. Elfogadás előtt ellenőrizze az új címet",
+    "withdrawn": "A kérést visszavonták. A fiókja megtartja a jelenlegi címét"
   }
 }

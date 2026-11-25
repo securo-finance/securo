@@ -57,7 +57,7 @@ from app.schemas.transaction import (
     TransferCreate,
 )
 from app.schemas.transaction_split import TransactionSplitInput, TransactionSplitsInput
-from app.services import category_line_service, reconciliation_service, split_service
+from app.services import category_line_service, notification_service, reconciliation_service, split_service
 from app.services.account_service import get_account, get_running_balances
 from app.services.primary_restamp_service import typed_primary_amount
 from app.services.credit_card_service import apply_effective_date, cc_cycle_bill_due_dates
@@ -1151,6 +1151,18 @@ async def flagged_summary(session: AsyncSession, workspace_id: uuid.UUID) -> dic
     return {"flagged": row[0], "overdue": row[1], "due_soon": row[2]}
 
 
+async def overdue_flags(session: AsyncSession, workspace_id: uuid.UUID) -> tuple[int, Optional[date]]:
+    """How many flagged rows are past their reminder date, and the latest of those dates."""
+    row = (
+        await session.execute(
+            select(func.count(), func.max(Transaction.flag_due_date)).where(
+                _flagged_in_workspace(workspace_id), Transaction.flag_due_date < app_today()
+            )
+        )
+    ).one()
+    return row[0], row[1]
+
+
 def _normalize_flag_update(tx: Transaction, update_data: dict) -> None:
     """Keep the flag and its reminder consistent within one edit.
 
@@ -1483,6 +1495,8 @@ async def create_transaction(
 
     if data.splits is not None:
         await split_service.replace_splits(session, transaction, data.splits, user_id)
+        await session.flush()
+        await notification_service.expenses_shared(session, user_id, [transaction])
 
     # A payment recorded by hand settles an invoice exactly as a synced one
     # does. Someone who reconciles by typing the Pix in should not have to
@@ -1616,6 +1630,10 @@ async def create_installment_series(
             await stamp_primary_amount(session, user_id, tx)
         if base.splits is not None:
             await split_service.replace_splits(session, tx, base.splits, user_id)
+
+    if base.splits is not None:
+        await session.flush()
+        await notification_service.expenses_shared(session, user_id, created)
 
     await session.commit()
     for tx in created:
@@ -2365,7 +2383,10 @@ async def _apply_update_to_row(
                 apply_effective_date(paired_tx, paired_account)
 
     if splits_payload is not None:
+        before = await notification_service.shares_of(session, tx.id)
         await split_service.replace_splits(session, tx, splits_payload, user_id)
+        await session.flush()
+        await notification_service.expenses_shared(session, user_id, [tx], before=before)
 
 
 # Columns that decide how a transaction moves a balance. Changing any of them
@@ -3093,16 +3114,20 @@ async def bulk_add_to_group(
 
     updated = 0
     skipped = 0
+    shared: list[Transaction] = []
     for tx in txs:
         if tx.transfer_pair_id is not None or tx.splits or tx.has_category_lines:
             skipped += 1
             continue
         await split_service.replace_splits(session, tx, payload, user_id)
+        shared.append(tx)
         updated += 1
 
     # Account for ids that didn't match (wrong user, deleted, etc.)
     skipped += len(set(transaction_ids)) - len(txs)
 
+    await session.flush()
+    await notification_service.expenses_shared(session, user_id, shared)
     await session.commit()
     return {"updated": updated, "skipped": skipped}
 

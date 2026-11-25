@@ -767,6 +767,16 @@
     "email": "E-mail",
     "password": "Heslo",
     "forgotPassword": "Zapomenuté heslo?",
+    "forgotPasswordDescription": "Zadejte e-mail svého účtu a pošleme vám odkaz pro výběr nového hesla.",
+    "sendResetLink": "Odeslat odkaz pro obnovení",
+    "resetSentTitle": "Zkontrolujte svůj e-mail",
+    "resetSentBody": "Pokud účet pro {{email}} existuje, odkaz pro obnovení je na cestě. Brzy vyprší.",
+    "resetUnavailable": "Obnovení hesla e-mailem není v této instanci zapnuté. Obraťte se na správce.",
+    "resetRequestError": "Odkaz pro obnovení se nepodařilo odeslat. Zkuste to znovu.",
+    "resetPasswordDescription": "Zvolte nové heslo pro svůj účet.",
+    "resetPasswordRejected": "Nové heslo nebylo přijato. Použijte alespoň 8 znaků a zkuste to znovu.",
+    "resetTokenMissing": "Tento odkaz je neúplný. Otevřete znovu odkaz z e-mailu pro obnovení nebo požádejte o nový.",
+    "resetTokenInvalid": "Tento odkaz pro obnovení je neplatný nebo vypršel. Požádejte o nový.",
     "loginDescription": "Přihlásit se ke svému účtu",
     "invalidCredentials": "Nesprávný e-mail nebo heslo",
     "serverError": "Nepodařilo se připojit k serveru. Zkontrolujte připojení nebo zda běží backend a zkuste to znovu.",
@@ -777,6 +787,8 @@
     "changePassword": "Změnit heslo",
     "newPassword": "Nové heslo",
     "passwordTooShort": "Heslo musí mít alespoň 8 znaků",
+    "passwordTooLong": "Heslo může mít nejvýše 72 znaků",
+    "resetPassword": "Obnovit heslo",
     "currentPassword": "Aktuální heslo",
     "currentPasswordWrong": "Aktuální heslo je nesprávné",
     "passwordChanged": "Heslo bylo změněno",
@@ -3132,6 +3144,33 @@
     "menuItem": "Zkontrolovat aktualizace"
   },
   "admin": {
+    "email": {
+      "title": "E-mail",
+      "enabled": "E-mail je zapnutý",
+      "disabled": "E-mail je vypnutý",
+      "description": "Jak odcházejí e-maily pro obnovení hesla. Poskytovatel a odesílatel pocházejí z konfigurace serveru.",
+      "disabledNote": "Zapněte EMAIL_ENABLED na serveru, aby se posílaly odkazy pro obnovení.",
+      "provider": "Poskytovatel",
+      "providerSmtp": "Server SMTP",
+      "providerResend": "Resend",
+      "sender": "Odesílatel",
+      "senderMissing": "Nenastaveno",
+      "templatesTitle": "Zpráva pro obnovení",
+      "templatesDescription": "To, co člověk čte. Proměnné: {app_name}, {link} a {minutes}; {link} musí být sám na vlastním řádku a nic jiného nesmí být odkaz.",
+      "subject": "Předmět",
+      "body": "Tělo",
+      "linkRequired": "Tělo musí obsahovat {link}.",
+      "linkInSubject": "Předmět nesmí obsahovat {link} ani adresu.",
+      "linkOnce": "Tělo musí obsahovat {link} právě jednou.",
+      "linkAlone": "Proměnná {link} musí být sama na vlastním řádku.",
+      "otherLink": "Zpráva nesmí vést nikam jinam než na {link}.",
+      "restoreDefault": "Obnovit výchozí text",
+      "save": "Uložit šablony",
+      "saved": "Šablony uloženy",
+      "saveFailed": "Šablony se nepodařilo uložit",
+      "languageEn": "Angličtina",
+      "languagePt": "Portugalština"
+    },
     "users": {
       "title": "Správa uživatelů",
       "searchPlaceholder": "Hledat uživatele...",
@@ -3151,12 +3190,16 @@
       "deleted": "Uživatel smazán",
       "confirmDeleteTitle": "Smazat uživatele?",
       "confirmDeleteDesc": "Uživatel {{email}} a všechna jeho data budou trvale smazána. Tuto akci nelze vrátit zpět.",
-      "resetPassword": "Resetovat heslo",
-      "resetPasswordPlaceholder": "Ponechat prázdné pro zachování aktuálního hesla",
+      "reason": "Důvod",
+      "reasonPlaceholder": "Proč se tato změna provádí?",
+      "reasonHint": "Zaznamená se do protokolu přístupů a zobrazí se dotčenému účtu.",
       "addDesc": "Vytvořit nový uživatelský účet s přístupem do aplikace.",
       "adminRole": "Administrátorská oprávnění",
       "enabled": "Zapnuto",
-      "disabled": "Vypnuto"
+      "disabled": "Vypnuto",
+      "pending": "Čeká",
+      "pendingEmail": "Požadováno {{email}}, čeká na majitele",
+      "emailPendingHint": "Adresa se změní až po potvrzení majitelem."
     },
     "settings": {
       "title": "Nastavení administrátora",
@@ -3276,8 +3319,8 @@
       "chat": "Chat"
     },
     "globalChat": {
-      "title": "Chat",
-      "openHint": "Otevřít chat",
+      "title": "Agent",
+      "openHint": "Otevřít agenta",
       "history": "Nedávné konverzace",
       "selectAgent": "Vybrat agenta",
       "openSettings": "Nastavení agenta",
@@ -4408,5 +4451,132 @@
       "turnedOff": "Čtení dokumentů vypnuto"
     },
     "unreadPages": "Nepřečtené stránky (skeny, a model nečte obrázky): {{pages}}. Jejich řádky v této kontrole chybí."
+  },
+  "notifications": {
+    "title": "Oznámení",
+    "unread": "Nepřečtené",
+    "unreadLabel": "Oznámení, nepřečtených: {{number}}",
+    "markAllRead": "Označit vše jako přečtené",
+    "empty": "Nic nevyžaduje vaši pozornost.",
+    "loadError": "Oznámení se nepodařilo načíst.",
+    "connection": {
+      "title": "Synchronizace se zastavila: {{name}}",
+      "rateLimited": "Banka opakovaně dosahuje denního limitu."
+    },
+    "recurring": {
+      "title": "Nevytvořeno: {{name}}",
+      "detail": "Splatnost byla {{date}}. Zkontrolujte účet a nastavení."
+    },
+    "budget": {
+      "close": "{{name}}: využito {{percent}} % rozpočtu",
+      "reached": "{{name}}: rozpočet vyčerpán",
+      "detail": "{{actual}} z {{budget}}"
+    },
+    "backup": {
+      "title": "Plánovaná záloha selhala",
+      "detail": "Poslední pokus byl {{date}}. Securo to zkusí znovu."
+    },
+    "seeAll": "Zobrazit všechna oznámení",
+    "markRead": "Označit jako přečtené",
+    "loadMore": "Načíst další",
+    "filter": {
+      "all": "Vše",
+      "unread": "Nepřečtené"
+    },
+    "emptyFilter": {
+      "all": "Zatím žádná oznámení.",
+      "unread": "Není co číst."
+    },
+    "flag": {
+      "title": "Prošlé připomínky: {{number}}",
+      "detail": "Označené transakce po datu připomínky."
+    },
+    "match": {
+      "title": "Shody ke kontrole: {{number}}",
+      "detail": "Securo našlo možné shody a potřebuje vaši odpověď."
+    },
+    "invoice": {
+      "title": "{{name}}: faktura po splatnosti",
+      "detail": "{{amount}}, splatnost {{date}}."
+    },
+    "preferences": {
+      "title": "Předvolby",
+      "hint": "Vyberte, o čem chcete v tomto prostoru vědět. Ostatní členové si ponechají vlastní volby.",
+      "saveError": "Volbu se nepodařilo uložit.",
+      "loadError": "Předvolby se nepodařilo načíst."
+    },
+    "kind": {
+      "connection_error": {
+        "label": "Připojení",
+        "hint": "Banka nebo plugin se přestaly synchronizovat."
+      },
+      "budget_threshold": {
+        "label": "Rozpočty",
+        "hint": "Rozpočet dosáhl 80 % nebo 100 %."
+      },
+      "recurring_failed": {
+        "label": "Opakované",
+        "hint": "Opakovaná transakce nebyla vytvořena."
+      },
+      "flag_overdue": {
+        "label": "Připomínky",
+        "hint": "Označená transakce překročila datum připomínky."
+      },
+      "reconciliation_pending": {
+        "label": "Shody ke kontrole",
+        "hint": "Securo našlo možné shody a potřebuje vaši odpověď."
+      },
+      "invoice_overdue": {
+        "label": "Faktury",
+        "hint": "Faktura klientovi je po splatnosti."
+      },
+      "group_expense": {
+        "label": "Sdílené výdaje",
+        "hint": "Někdo přidá nebo změní výdaj sdílený s vámi ve skupině."
+      },
+      "group_settlement": {
+        "label": "Platby ve skupinách",
+        "hint": "Někdo ve skupině zaznamená platbu vám nebo od vás."
+      },
+      "backup_failed": {
+        "label": "Zálohy",
+        "hint": "Plánovaná záloha selhala."
+      }
+    },
+    "group": {
+      "added": "{{actor}}: přidáno {{name}}",
+      "changed": "{{actor}}: změněno {{name}}",
+      "batch": "{{actor}}: přidány sdílené výdaje: {{number}}",
+      "share": "Váš podíl ve skupině {{group}}: {{amount}}",
+      "paid": "{{actor}}: zaznamenána platba"
+    }
+  },
+  "accessLog": {
+    "title": "Protokol přístupů",
+    "description": "Každá administrativní akce na vašem účtu a na členech pracovních prostorů, které vlastníte.",
+    "empty": "Nejsou zaznamenány žádné administrativní akce.",
+    "actionUpdate": "Účet změněn",
+    "actionDelete": "Účet smazán",
+    "actionOther": "Účet změněn",
+    "by": "Provedl {{email}}",
+    "target": "Účet {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Načíst další",
+    "loadError": "Protokol přístupů se nepodařilo načíst.",
+    "emailChange": "Adresa {{from}} → {{to}}",
+    "emailPending": "čeká na potvrzení majitele účtu",
+    "otherChanges": "Změněno také: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Změna e-mailové adresy",
+    "description": "Správce požádal o změnu adresy vašeho účtu na {{email}}. Dokud nepotvrdíte, účet si ponechá současnou adresu.",
+    "accept": "Přijmout novou adresu",
+    "decline": "Ponechat současnou adresu",
+    "accepted": "Váš účet nyní používá {{email}}",
+    "declined": "Účet si ponechá současnou adresu",
+    "unavailable": "Tato adresa již není dostupná",
+    "failed": "Vaše rozhodnutí se nepodařilo uložit",
+    "replaced": "Administrátor poslal novou žádost. Před přijetím zkontrolujte novou adresu",
+    "withdrawn": "Žádost byla stažena. Váš účet si ponechá současnou adresu"
   }
 }

@@ -751,6 +751,16 @@
     "email": "E-mail",
     "password": "Hasło",
     "forgotPassword": "Nie pamiętasz hasła?",
+    "forgotPasswordDescription": "Podaj adres e-mail swojego konta, a wyślemy link do wyboru nowego hasła.",
+    "sendResetLink": "Wyślij link do odzyskania",
+    "resetSentTitle": "Sprawdź swoją skrzynkę",
+    "resetSentBody": "Jeśli konto dla {{email}} istnieje, link do odzyskania jest w drodze. Wkrótce wygaśnie.",
+    "resetUnavailable": "Odzyskiwanie hasła e-mailem nie jest włączone w tej instancji. Skontaktuj się z administratorem.",
+    "resetRequestError": "Nie udało się wysłać linku do odzyskania. Spróbuj ponownie.",
+    "resetPasswordDescription": "Wybierz nowe hasło do swojego konta.",
+    "resetPasswordRejected": "Nowe hasło nie zostało przyjęte. Użyj co najmniej 8 znaków i spróbuj ponownie.",
+    "resetTokenMissing": "Ten link jest niekompletny. Otwórz ponownie link z e-maila do odzyskania albo poproś o nowy.",
+    "resetTokenInvalid": "Ten link do odzyskania jest nieprawidłowy lub wygasł. Poproś o nowy.",
     "loginDescription": "Zaloguj się, aby uzyskać dostęp do konta",
     "invalidCredentials": "Nieprawidłowy e-mail lub hasło",
     "serverError": "Nie można połączyć się z serwerem. Sprawdź połączenie lub czy backend działa, a następnie spróbuj ponownie.",
@@ -761,6 +771,8 @@
     "changePassword": "Zmień hasło",
     "newPassword": "Nowe hasło",
     "passwordTooShort": "Hasło musi mieć co najmniej 8 znaków",
+    "passwordTooLong": "Hasło może mieć najwyżej 72 znaki",
+    "resetPassword": "Zresetuj hasło",
     "currentPassword": "Bieżące hasło",
     "currentPasswordWrong": "Bieżące hasło jest nieprawidłowe",
     "passwordChanged": "Hasło zmienione pomyślnie",
@@ -3084,6 +3096,33 @@
     "menuItem": "Sprawdź aktualizacje"
   },
   "admin": {
+    "email": {
+      "title": "E-mail",
+      "enabled": "E-mail włączony",
+      "disabled": "E-mail wyłączony",
+      "description": "Jak wychodzą e-maile do odzyskiwania hasła. Dostawca i nadawca pochodzą z konfiguracji serwera.",
+      "disabledNote": "Włącz EMAIL_ENABLED na serwerze, aby wysyłać linki do odzyskiwania.",
+      "provider": "Dostawca",
+      "providerSmtp": "Serwer SMTP",
+      "providerResend": "Resend",
+      "sender": "Nadawca",
+      "senderMissing": "Nie ustawiono",
+      "templatesTitle": "Wiadomość odzyskiwania",
+      "templatesDescription": "To, co czyta osoba. Zmienne: {app_name}, {link} i {minutes}; {link} musi stać sam w osobnym wierszu, a nic innego nie może być linkiem.",
+      "subject": "Temat",
+      "body": "Treść",
+      "linkRequired": "Treść musi zawierać {link}.",
+      "linkInSubject": "Temat nie może zawierać {link} ani adresu.",
+      "linkOnce": "Treść musi zawierać {link} dokładnie raz.",
+      "linkAlone": "Zmienna {link} musi stać sama w swoim wierszu.",
+      "otherLink": "Wiadomość nie może prowadzić nigdzie indziej niż do {link}.",
+      "restoreDefault": "Przywróć domyślny tekst",
+      "save": "Zapisz szablony",
+      "saved": "Szablony zapisane",
+      "saveFailed": "Nie udało się zapisać szablonów",
+      "languageEn": "Angielski",
+      "languagePt": "Portugalski"
+    },
     "users": {
       "title": "Zarządzanie użytkownikami",
       "searchPlaceholder": "Szukaj użytkowników...",
@@ -3103,12 +3142,16 @@
       "deleted": "Usunięto użytkownika",
       "confirmDeleteTitle": "Usunąć użytkownika?",
       "confirmDeleteDesc": "Spowoduje to trwałe usunięcie użytkownika {{email}} oraz wszystkich jego danych. Tej operacji nie można cofnąć.",
-      "resetPassword": "Zresetuj hasło",
-      "resetPasswordPlaceholder": "Zostaw puste, aby zachować obecne",
+      "reason": "Powód",
+      "reasonPlaceholder": "Dlaczego wprowadzasz tę zmianę?",
+      "reasonHint": "Zapisywane w dzienniku dostępu i widoczne dla danego konta.",
       "addDesc": "Utwórz nowe konto użytkownika z dostępem do aplikacji.",
       "adminRole": "Uprawnienia administratora",
       "enabled": "Wł.",
-      "disabled": "Wył."
+      "disabled": "Wył.",
+      "pending": "Oczekuje",
+      "pendingEmail": "Zażądano {{email}}, czeka na właściciela",
+      "emailPendingHint": "Adres zmieni się dopiero po potwierdzeniu przez właściciela."
     },
     "settings": {
       "title": "Ustawienia administratora",
@@ -3421,8 +3464,8 @@
     "defaultBadge": "Domyślny",
     "defaultLabel": "Domyślny",
     "globalChat": {
-      "title": "Czat",
-      "openHint": "Otwórz czat",
+      "title": "Agent",
+      "openHint": "Otwórz agenta",
       "history": "Ostatnie rozmowy",
       "selectAgent": "Wybierz agenta",
       "openSettings": "Ustawienia agenta",
@@ -4358,5 +4401,132 @@
       "turnedOff": "Wyłączono odczyt dokumentów"
     },
     "unreadPages": "Nieodczytane strony (skany, a model nie czyta obrazów): {{pages}}. Ich wierszy brakuje w tym przeglądzie."
+  },
+  "notifications": {
+    "title": "Powiadomienia",
+    "unread": "Nieprzeczytane",
+    "unreadLabel": "Powiadomienia, nieprzeczytane: {{number}}",
+    "markAllRead": "Oznacz wszystkie jako przeczytane",
+    "empty": "Nic nie wymaga Twojej uwagi.",
+    "loadError": "Nie udało się wczytać powiadomień.",
+    "connection": {
+      "title": "Synchronizacja przerwana: {{name}}",
+      "rateLimited": "Bank wciąż osiąga dzienny limit."
+    },
+    "recurring": {
+      "title": "Nie wygenerowano: {{name}}",
+      "detail": "Termin minął {{date}}. Sprawdź konto i ustawienia."
+    },
+    "budget": {
+      "close": "{{name}}: wykorzystano {{percent}}% budżetu",
+      "reached": "{{name}}: budżet wyczerpany",
+      "detail": "{{actual}} z {{budget}}"
+    },
+    "backup": {
+      "title": "Zaplanowana kopia zapasowa nie powiodła się",
+      "detail": "Ostatnia próba: {{date}}. Securo spróbuje ponownie."
+    },
+    "seeAll": "Zobacz wszystkie powiadomienia",
+    "markRead": "Oznacz jako przeczytane",
+    "loadMore": "Wczytaj więcej",
+    "filter": {
+      "all": "Wszystkie",
+      "unread": "Nieprzeczytane"
+    },
+    "emptyFilter": {
+      "all": "Brak powiadomień.",
+      "unread": "Nie ma nic do przeczytania."
+    },
+    "flag": {
+      "title": "Zaległe przypomnienia: {{number}}",
+      "detail": "Oznaczone transakcje po terminie przypomnienia."
+    },
+    "match": {
+      "title": "Dopasowania do sprawdzenia: {{number}}",
+      "detail": "Securo znalazło możliwe dopasowania i czeka na odpowiedź."
+    },
+    "invoice": {
+      "title": "{{name}}: faktura po terminie",
+      "detail": "{{amount}}, termin minął {{date}}."
+    },
+    "preferences": {
+      "title": "Preferencje",
+      "hint": "Wybierz, o czym chcesz wiedzieć w tym obszarze. Inni członkowie zachowują własne ustawienia.",
+      "saveError": "Nie udało się zapisać wyboru.",
+      "loadError": "Nie udało się wczytać preferencji."
+    },
+    "kind": {
+      "connection_error": {
+        "label": "Połączenia",
+        "hint": "Bank lub wtyczka przestały się synchronizować."
+      },
+      "budget_threshold": {
+        "label": "Budżety",
+        "hint": "Budżet osiągnął 80% lub 100%."
+      },
+      "recurring_failed": {
+        "label": "Cykliczne",
+        "hint": "Transakcja cykliczna nie została wygenerowana."
+      },
+      "flag_overdue": {
+        "label": "Przypomnienia",
+        "hint": "Minęła data przypomnienia oznaczonej transakcji."
+      },
+      "reconciliation_pending": {
+        "label": "Dopasowania do sprawdzenia",
+        "hint": "Securo znalazło możliwe dopasowania i czeka na odpowiedź."
+      },
+      "invoice_overdue": {
+        "label": "Faktury",
+        "hint": "Faktura dla klienta jest po terminie."
+      },
+      "group_expense": {
+        "label": "Wspólne wydatki",
+        "hint": "Ktoś dodaje lub zmienia wydatek dzielony z Tobą w grupie."
+      },
+      "group_settlement": {
+        "label": "Płatności w grupach",
+        "hint": "Ktoś zapisuje w grupie płatność od Ciebie lub dla Ciebie."
+      },
+      "backup_failed": {
+        "label": "Kopie zapasowe",
+        "hint": "Zaplanowana kopia zapasowa nie powiodła się."
+      }
+    },
+    "group": {
+      "added": "{{actor}}: dodano {{name}}",
+      "changed": "{{actor}}: zmieniono {{name}}",
+      "batch": "{{actor}}: dodano wspólne wydatki: {{number}}",
+      "share": "Twoja część w {{group}}: {{amount}}",
+      "paid": "{{actor}}: zapisano płatność"
+    }
+  },
+  "accessLog": {
+    "title": "Dziennik dostępu",
+    "description": "Każde działanie administracyjne na Twoim koncie oraz na członkach przestrzeni roboczych, których jesteś właścicielem.",
+    "empty": "Brak zapisanych działań administracyjnych.",
+    "actionUpdate": "Konto zmienione",
+    "actionDelete": "Konto usunięte",
+    "actionOther": "Konto zmienione",
+    "by": "Przez {{email}}",
+    "target": "Konto {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Wczytaj więcej",
+    "loadError": "Nie udało się wczytać dziennika dostępu.",
+    "emailChange": "Adres {{from}} → {{to}}",
+    "emailPending": "czeka na potwierdzenie właściciela konta",
+    "otherChanges": "Zmieniono także: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Zmiana adresu e-mail",
+    "description": "Administrator poprosił o zmianę adresu Twojego konta na {{email}}. Dopóki nie potwierdzisz, konto zachowuje obecny adres.",
+    "accept": "Przyjmij nowy adres",
+    "decline": "Zachowaj obecny adres",
+    "accepted": "Twoje konto używa teraz {{email}}",
+    "declined": "Konto zachowuje obecny adres",
+    "unavailable": "Ten adres nie jest już dostępny",
+    "failed": "Nie udało się zapisać decyzji",
+    "replaced": "Administrator wysłał nową prośbę. Sprawdź nowy adres przed zaakceptowaniem",
+    "withdrawn": "Prośba została wycofana. Twoje konto zachowuje obecny adres"
   }
 }

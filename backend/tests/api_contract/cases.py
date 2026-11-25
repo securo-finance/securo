@@ -52,6 +52,8 @@ STATIC_PARAMS = {
     "provider": "pluggy",
     "key": "registration_enabled",
     "surface": "dashboard",
+    "kind": "budget_threshold",
+    "channel": "in_app",
 }
 
 # Parameters that identify a row, so the unknown_id variant swaps them out.
@@ -97,6 +99,13 @@ BODY_OVERRIDES: dict[tuple[str, str], Callable[[dict], Any]] = {
     ("POST", "/api/transactions/link-transfer"): lambda w: {
         "transaction_ids": [w["second_transaction_id"], w["savings_transaction_id"]],
     },
+}
+
+# Routes that read the request body themselves instead of through a model, so
+# the OpenAPI spec declares no requestBody and the sweep would send none: an
+# empty body answers 400 there before the case reaches what it checks.
+MANUAL_JSON_BODIES: dict[tuple[str, str], Callable[[dict], Any]] = {
+    ("PUT", "/api/admin/email"): lambda world: {"templates": {}},
 }
 
 # Routes that need an issued (open) invoice rather than the world's draft.
@@ -264,7 +273,11 @@ def request_kwargs(op: Operation, world: dict, empty_body: bool = False) -> dict
     query = query_for(op, world)
     if query:
         kwargs["params"] = query
-    if op.content_type == "application/json":
+    manual = MANUAL_JSON_BODIES.get((op.method, op.path))
+    if manual is not None:
+        if not empty_body:
+            kwargs["json"] = manual(world)
+    elif op.content_type == "application/json":
         if empty_body:
             kwargs["json"] = {}
         else:
