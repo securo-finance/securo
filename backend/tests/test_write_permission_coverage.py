@@ -36,7 +36,7 @@ WRITE_GATES = {"current_writable_workspace"}
 #: finer, which is why the reason is stored next to the path.
 ALLOWLIST: dict[tuple[str, str], str] = {
     # Not workspace-scoped: the actor is the user, on their own account.
-    ("PATCH", "/me"): "the requester's own user record",
+    ("PATCH", "/api/users/me"): "the requester's own user record",
     # An address an administrator asked for, applied or declined by the person
     # whose account it is. Account-level like the one above, never a workspace.
     ("POST", "/api/users/me/email-change"): "the requester's own account address",

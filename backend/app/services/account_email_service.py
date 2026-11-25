@@ -18,6 +18,15 @@ STALE_REQUEST = (
 )
 
 
+class AccountGone(Exception):
+    """The account this session belongs to was deleted while it ran (#567).
+
+    An administrator deleting the account holds its row with a lock, so this
+    call waits and then finds nothing. That is not a failure of the request:
+    the answer is that the account is no longer there.
+    """
+
+
 async def confirm_pending_email(
     session: AsyncSession, user: User, *, expected_email: str
 ) -> User:
@@ -36,7 +45,12 @@ async def confirm_pending_email(
         .with_for_update()
         .execution_options(populate_existing=True)
     )
-    user = locked.scalar_one()
+    # A deletion of the same account holds the row, so this waits for it and
+    # then finds nothing; reading with `scalar_one` made that a 500 (#567).
+    held = locked.scalar_one_or_none()
+    if held is None:
+        raise AccountGone
+    user = held
 
     if not user.pending_email:
         raise ValueError("There is no pending change of email to confirm")
@@ -72,7 +86,22 @@ async def confirm_pending_email(
 
 
 async def cancel_pending_email(session: AsyncSession, user: User) -> User:
-    """Leave the account where it is: the owner declined the change."""
+    """Leave the account where it is: the owner declined the change.
+
+    The row is taken before it is written, like the acceptance above: a
+    deletion arriving first otherwise leaves an UPDATE that matched no row and
+    the decline answers 500 (#567).
+    """
+    locked = await session.execute(
+        select(User)
+        .where(User.id == user.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    held = locked.scalar_one_or_none()
+    if held is None:
+        raise AccountGone
+    user = held
     user.pending_email = None
     user.pending_email_requested_at = None
     session.add(user)

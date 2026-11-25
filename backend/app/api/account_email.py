@@ -17,6 +17,8 @@ from app.services import account_email_service
 
 router = APIRouter(prefix="/api/users/me", tags=["users"])
 
+GONE = "This account no longer exists"
+
 
 @router.post("/email-change", response_model=UserRead)
 async def confirm_email_change(
@@ -33,6 +35,10 @@ async def confirm_email_change(
         updated = await account_email_service.confirm_pending_email(
             session, user, expected_email=str(body.email)
         )
+    except account_email_service.AccountGone as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=GONE
+        ) from exc
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
@@ -46,5 +52,10 @@ async def decline_email_change(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Keep the current address; the request is dropped."""
-    await account_email_service.cancel_pending_email(session, user)
+    try:
+        await account_email_service.cancel_pending_email(session, user)
+    except account_email_service.AccountGone as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=GONE
+        ) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
