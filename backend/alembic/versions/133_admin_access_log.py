@@ -1,7 +1,7 @@
 """admin access log: every administrative action on an account, with its reason
 
-Revision ID: 132
-Revises: 131
+Revision ID: 133
+Revises: 132
 
 Letting an administrator change a person's account is only defensible if the
 person can see it happened and why (ADR 0042). The emails are snapshots; the
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "132"
-down_revision = "131"
+revision = "133"
+down_revision = "132"
 branch_labels = None
 depends_on = None
 
