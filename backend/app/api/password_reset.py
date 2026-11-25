@@ -1,4 +1,4 @@
-"""Password recovery routes (ADR 0041).
+"""Password recovery routes (ADR 0044).
 
 These replace fastapi-users' own reset router so the forgot-password answer
 can admit it when email is off: with EMAIL_ENABLED unset the route answers

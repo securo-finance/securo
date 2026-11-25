@@ -140,7 +140,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     async def on_after_forgot_password(
         self, user: User, token: str, request: Optional[Request] = None
     ):
-        """Send the recovery link (ADR 0041).
+        """Send the recovery link (ADR 0044).
 
         The route only gets here with EMAIL_ENABLED on. A relay that refuses
         the message is logged and swallowed, so a known and an unknown address

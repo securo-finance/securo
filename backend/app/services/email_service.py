@@ -1,4 +1,4 @@
-"""Outbound email over SMTP, for password recovery (ADR 0041).
+"""Outbound email over SMTP, for password recovery (ADR 0044).
 
 Nothing leaves the instance unless EMAIL_ENABLED is on; the same switch makes
 the forgot-password route answer 503 instead of pretending a message went
