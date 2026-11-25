@@ -328,7 +328,15 @@ def _balance_subqueries(today: _Date, account_ids: list[uuid.UUID]):
     return balance_sq, prev_balance_sq, future_charges_sq, open_bill_sq
 
 
-def _accounts_with_balances_query(account_ids: list[uuid.UUID], today: _Date):
+def _accounts_with_balances_query(
+    workspace_id: uuid.UUID, account_ids: list[uuid.UUID], today: _Date
+):
+    """The accounts with their balances, still checked against the workspace.
+
+    The ids come from an earlier statement, and a sync can move an account to
+    another workspace in between: keeping the workspace rule here means the
+    workspace that lost it stops seeing it in this same request.
+    """
     balance_sq, prev_balance_sq, future_charges_sq, open_bill_sq = _balance_subqueries(
         today, account_ids
     )
@@ -365,7 +373,13 @@ def _accounts_with_balances_query(account_ids: list[uuid.UUID], today: _Date):
             open_bill_sq,
             and_(Account.id == open_bill_sq.c.account_id, open_bill_sq.c.rn == 1),
         )
-        .where(Account.id.in_(account_ids))
+        .where(
+            Account.id.in_(account_ids),
+            or_(
+                Account.workspace_id == workspace_id,
+                BankConnection.workspace_id == workspace_id,
+            ),
+        )
     )
 
 
@@ -375,7 +389,9 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
     )
     if not account_ids:
         return []
-    query = _accounts_with_balances_query(account_ids, app_today()).order_by(Account.name)
+    query = _accounts_with_balances_query(
+        workspace_id, account_ids, app_today()
+    ).order_by(Account.name)
     result = await session.execute(query)
     return [
             serialize_account(
@@ -406,7 +422,8 @@ async def get_account_with_balances(
     account_ids = await _account_ids_in_scope(session, workspace_id, account_id=account_id)
     if not account_ids:
         return None
-    row = (await session.execute(_accounts_with_balances_query(account_ids, app_today()))).first()
+    query = _accounts_with_balances_query(workspace_id, account_ids, app_today())
+    row = (await session.execute(query)).first()
     if row is None:
         return None
     acc, connection, current_balance, previous_balance, future_charges, open_bill_total, balance_date = row

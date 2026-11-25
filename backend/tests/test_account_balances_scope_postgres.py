@@ -190,3 +190,24 @@ async def test_balance_subqueries_read_only_the_accounts_in_scope(session, data,
     balance, previous, future, bills = read
     assert balance == previous == expected
     assert future == bills == {data["card"].id}
+
+
+async def test_an_account_moved_after_its_id_was_read_is_not_returned(session, data, monkeypatch):
+    """A sync can move an account between the id lookup and the balance read."""
+    home, other = data["home"].id, data["other"].id
+    checking = data["checking"]
+    read_ids = account_service._account_ids_in_scope
+
+    async def ids_then_move(*args, **kwargs):
+        ids = await read_ids(*args, **kwargs)
+        checking.workspace_id = other
+        await session.flush()
+        return ids
+
+    monkeypatch.setattr(account_service, "_account_ids_in_scope", ids_then_move)
+
+    names = {row["name"] for row in await account_service.get_accounts(session, home)}
+    assert names == {"Card", "Linked"}
+    checking.workspace_id = home
+    await session.flush()
+    assert await account_service.get_account_with_balances(session, checking.id, home) is None
