@@ -4584,6 +4584,103 @@ async def test_sync_connection_enable_banking_posted_entry_matches_pending_by_bo
     assert rows[0].external_id == _eb_txn(posted).external_id
 
 
+def _same_merchant_purchase(entry_ref: str, transaction_date: str, *, booked: bool) -> dict:
+    """One of two purchases from the same merchant for the same amount, made
+    on different days and booked on the same day, 20 November."""
+    return {
+        **_paypal_payload(entry_ref, transaction_date, booked=booked),
+        "booking_date": "2026-11-20",
+    }
+
+
+async def _hold_two_same_merchant_purchases(
+    session, conn, account_id, workspace_id, user_id, *, later_first: bool,
+):
+    """Sync the holds of the purchases made on 18 and 19 November, and note
+    each one, so a later sync that swaps them shows. The order they are
+    stored in decides which one a lookup meets first."""
+    holds = [
+        _same_merchant_purchase("p18", "2026-11-18", booked=False),
+        _same_merchant_purchase("p19", "2026-11-19", booked=False),
+    ]
+    if later_first:
+        holds.reverse()
+    await _sync_paypal_holds(session, conn, workspace_id, user_id, holds)
+    for row in await _account_rows(session, account_id):
+        row.notes = f"held {row.date.day}"
+    await session.commit()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("later_first", [False, True], ids=["18th-stored-first", "19th-stored-first"])
+@pytest.mark.parametrize("complete_fetch", [True, False], ids=["left-feed", "incomplete"])
+async def test_sync_connection_enable_banking_booking_date_does_not_merge_dated_purchases(
+    session: AsyncSession, test_user, test_workspace, monkeypatch, complete_fetch, later_first,
+):
+    """Review on #1868: two purchases that each carry their own transaction
+    date share a booking date, which says nothing about them being one
+    entry. The purchase of the 19th books first and takes the row of its own
+    hold, not that of the 18th, whether the hold of the 18th has left the
+    feed or the fetch was cut short."""
+    monkeypatch.setattr(
+        "app.services.connection_service.app_today", lambda: date(2026, 11, 21),
+    )
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    await _hold_two_same_merchant_purchases(
+        session, conn, account_id, test_workspace.id, test_user.id,
+        later_first=later_first,
+    )
+
+    booked = _same_merchant_purchase("b19", "2026-11-19", booked=True)
+    held_18 = _same_merchant_purchase("p18", "2026-11-18", booked=False)
+    pending = [] if complete_fetch else [held_18]
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, await _eb_fetch([booked], pending),
+        incomplete=not complete_fetch,
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert sorted((row.notes, row.status, row.external_id) for row in rows) == [
+        ("held 18", "pending", _eb_txn(held_18, "pending").external_id),
+        ("held 19", "posted", _eb_txn(booked).external_id),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("later_first", [False, True], ids=["18th-stored-first", "19th-stored-first"])
+async def test_sync_connection_enable_banking_dated_purchases_keep_their_notes(
+    session: AsyncSession, test_user, test_workspace, monkeypatch, later_first,
+):
+    """Review on #1868: when both purchases book in one fetch, the 18th
+    first, each takes the row of its own hold and keeps its notes."""
+    monkeypatch.setattr(
+        "app.services.connection_service.app_today", lambda: date(2026, 11, 21),
+    )
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    await _hold_two_same_merchant_purchases(
+        session, conn, account_id, test_workspace.id, test_user.id,
+        later_first=later_first,
+    )
+
+    booked = [
+        _same_merchant_purchase("b18", "2026-11-18", booked=True),
+        _same_merchant_purchase("b19", "2026-11-19", booked=True),
+    ]
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, await _eb_fetch(booked, []),
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert sorted((row.notes, row.external_id) for row in rows) == [
+        ("held 18", _eb_txn(booked[0]).external_id),
+        ("held 19", _eb_txn(booked[1]).external_id),
+    ]
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("value_date", ["0001-01-01", "1970-01-01"])
 async def test_sync_connection_enable_banking_ignores_a_placeholder_value_date(

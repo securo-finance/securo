@@ -282,6 +282,15 @@ def booking_date(raw: dict) -> Optional[date]:
     return _plausible_date(raw.get("booking_date"))
 
 
+def dated_by_booking_only(raw: dict) -> bool:
+    """Whether a payload carries neither a transaction nor a value date, so
+    nothing tells its entry's day apart from the day it booked."""
+    return not (
+        _plausible_date(raw.get("transaction_date"))
+        or _plausible_date(raw.get("value_date"))
+    )
+
+
 def entry_date(raw: dict) -> Optional[date]:
     """The day an entry happened, from the dates its payload carries.
 

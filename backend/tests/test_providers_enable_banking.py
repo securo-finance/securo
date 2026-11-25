@@ -35,6 +35,7 @@ from app.providers.enable_banking import (
     _map_cash_account_type,
     _repeat_external_id,
     _txn_fingerprint,
+    dated_by_booking_only,
     entry_date,
 )
 from app.providers.psu import PsuContext, psu_present
@@ -1697,6 +1698,21 @@ def test_entry_date_keeps_booking_date_over_an_implausible_value_date(value_date
 def test_entry_date_takes_value_date_when_booking_date_is_a_placeholder():
     raw = {"booking_date": "1970-01-01", "value_date": "2026-09-01"}
     assert entry_date(raw) == date(2026, 9, 1)
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ({"booking_date": "2026-09-02"}, True),
+        ({"booking_date": "2026-09-02", "value_date": "1970-01-01"}, True),
+        ({"booking_date": "2026-09-02", "value_date": "2026-09-01"}, False),
+        ({"booking_date": "2026-09-02", "transaction_date": "2026-08-31"}, False),
+    ],
+    ids=["booking-only", "placeholder-value-date", "value-date", "transaction-date"],
+)
+def test_dated_by_booking_only(raw, expected):
+    """A placeholder date is no date of the entry's own."""
+    assert dated_by_booking_only(raw) is expected
 
 
 def test_build_transaction_falls_back_to_booking_date_alone():

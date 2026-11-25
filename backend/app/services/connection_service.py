@@ -45,6 +45,7 @@ from app.providers.enable_banking import (
     MAX_VALUE_DATE_LEAD,
     SKIPPED_TRANSACTION_STATUSES,
     booking_date,
+    dated_by_booking_only,
     entry_date,
     is_account_txn_id,
 )
@@ -3064,12 +3065,15 @@ def _eb_same_entry_day(stored: Transaction, txn_data) -> bool:
     booking date, while its payload gives the entry's date now. And one
     payload of an entry can carry only the booking date while the other
     also carries the earlier value date; both then name the same booking
-    date.
+    date. That fallback holds only while one of them has no date of its own:
+    two purchases dated the 18th and the 19th can both book on the 20th.
     """
     stored_raw = stored.raw_data if isinstance(stored.raw_data, dict) else {}
     if entry_date(stored_raw) == txn_data.date:
         return True
     incoming_raw = txn_data.raw_data if isinstance(txn_data.raw_data, dict) else {}
+    if not (dated_by_booking_only(stored_raw) or dated_by_booking_only(incoming_raw)):
+        return False
     booked_on = booking_date(stored_raw)
     return booked_on is not None and booked_on == booking_date(incoming_raw)
 
