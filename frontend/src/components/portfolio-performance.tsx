@@ -1203,7 +1203,7 @@ export function PortfolioPerformance({
                         tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
                         axisLine={false}
                         tickLine={false}
-                        width={58}
+                        width="auto"
                         tickMargin={8}
                         tickFormatter={(value: number) => mask(axisFormatter.format(value / 100))}
                       />
